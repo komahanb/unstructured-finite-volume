@@ -149,9 +149,31 @@ contains
     end subroutine read_lines
     
     !=================================================================!
-    ! Read one line and return a character array
+    ! Read one line and return a string object
     !=================================================================!
-    
+!!$    
+!!$    subroutine read_line(this, line)
+!!$
+!!$      ! Arguments
+!!$      class(file)  , intent(in)  :: this
+!!$      type(string) , intent(out) :: line
+!!$      character(len=1024) :: buffer(:)
+!!$      integer :: iostat, isize
+!!$
+!!$      print *, 'reading line from unit', this % get_unit()
+!!$
+!!$      read( this % get_unit(), &
+!!$           & iostat  = iostat, &
+!!$           & fmt     = '(a)' , &
+!!$           & advance = 'no'  , &
+!!$           & size    = isize) buffer
+!!$      
+!!$      print *, 'size of line', isize, 'iostat', iostat, buffer
+!!$
+!!$      line = string(buffer)
+!!$
+!!$    end subroutine read_line
+!!$    
     subroutine read_line(this, linestr)
 
       ! Arguments
@@ -165,6 +187,7 @@ contains
       integer                        :: last
       integer                        :: isize, ier
 
+      isize = 0
       line = ''
       ier = 0
 

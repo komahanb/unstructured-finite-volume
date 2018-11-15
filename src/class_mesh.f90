@@ -1027,12 +1027,3 @@ contains
   end subroutine get_heterogenous_test_mesh
 
 end module mesh_loader
-
-program main
-
-  character(len=*), parameter   :: filename     = 'rectangle-v2-1.msh'
-  character(len=*), parameter   :: mesh_format  = 'GMSH'
-
-  print *, 'hello world'
-
-end program main

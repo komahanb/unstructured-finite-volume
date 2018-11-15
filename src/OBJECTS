@@ -1,0 +1,7 @@
+objects= \
+string_class.o \
+file_class.o \
+class_mesh_loader.o \
+mesh_utils.o \
+class_mesh.o \
+string_class.o

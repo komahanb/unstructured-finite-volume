@@ -1,0 +1,154 @@
+#=====================================================================#
+# User Options
+#=====================================================================#
+
+# general
+COMPILER = gnu
+F2008    = yes
+COMPLEX  = no
+
+# optimization level
+DEBUG    = no
+PROFILE  = no
+OPTIMIZE = yes
+
+# libraries
+LAPACK   = yes
+MPI      = no
+HDF5     = no
+PETSC    = no
+
+#=====================================================================#
+# External Library Paths
+#=====================================================================#
+
+MPI_DIR    = $(HOME)/install/mpich-3.2/builild
+HDF5_DIR   = /opt/hdf5/1.8.9-$(COMPILER)
+PETSC_DIR  = $(HOME)/install/petsc/3.7.4
+LAPACK_DIR = /usr
+
+#=====================================================================#
+# Add git SHA-1 hash
+#=====================================================================#
+
+# GIT_SHA1 = $(shell git log -1 | head -n 1 | awk '{print $$2}')
+
+#=====================================================================#
+# GNU Fortran compiler options
+#=====================================================================#
+
+ifeq ($(COMPILER),gnu)
+  F90 = gfortran-7
+  F90FLAGS := -cpp
+
+  # COMPLEX mode
+  ifeq ($(COMPLEX),yes)
+    F90FLAGS += -DUSE_COMPLEX
+  endif
+
+  # Disable F2008 STD
+  ifeq ($(F2008),no)
+    F90FLAGS += -DNO_F2008
+  else
+    F90FLAGS += -std=f2008
+  endif
+
+  # Debugging
+  ifeq ($(DEBUG),yes)
+    F90FLAGS += -g -Wall -pedantic -fbounds-check -fbacktrace\
+                -ffpe-trap=invalid,overflow,underflow
+    LDFLAGS  += -g
+  endif
+
+  # Profiling
+  ifeq ($(PROFILE),yes)
+    F90FLAGS += -pg
+    LDFLAGS  += -pg
+  endif
+
+  # Optimization
+  ifeq ($(OPTIMIZE),yes)
+    F90FLAGS += -O3
+  endif
+endif
+
+#=====================================================================#
+# Intel Fortran compiler options
+#=====================================================================#
+
+ifeq ($(COMPILER),intel)
+  F90 = ifort
+  F90FLAGS := -cpp -warn -assume byterecl -traceback
+  LDFLAGS =
+
+  # Debugging
+  ifeq ($(DEBUG),yes)
+    F90FLAGS += -g -ftrapuv -fp-stack-check -check all -fpe0
+    LDFLAGS  += -g
+  endif
+
+  # Profiling
+  ifeq ($(PROFILE),yes)
+    F90FLAGS += -pg
+    LDFLAGS  += -pg
+  endif
+
+  # Optimization
+  ifeq ($(OPTIMIZE),yes)
+    F90FLAGS += -O3
+  endif
+endif
+
+#=====================================================================#
+# Setup External Libraries
+#=====================================================================#
+
+# LAPACK for linear algebra
+ifeq ($(LAPACK),yes)
+  F90FLAGS += -I$(LAPACK_DIR)/include
+  LDFLAGS  += -L$(LAPACK_DIR)/lib -llapack
+endif
+
+# MPI for distributed-memory parallelism
+ifeq ($(MPI),yes)
+  F90 = mpif90
+  F90FLAGS += -DMPI
+endif
+
+# HDF5 for I/O
+ifeq ($(HDF5),yes)
+  F90FLAGS += -DHDF5 -I$(HDF5_DIR)/include
+  LDFLAGS += -L$(HDF5_DIR)/lib $(HDF5_DIR)/lib/libhdf5hl_fortran.a \
+             $(HDF5_DIR)/lib/libhdf5_hl.a $(HDF5_DIR)/lib/libhdf5_fortran.a \
+             $(HDF5_DIR)/lib/libhdf5.a -lz -lrt -lm -Wl,-rpath -Wl,$(HDF5_DIR)/lib
+endif
+
+# PETSC
+ifeq ($(PETSC),yes)
+  # Check to make sure MPI is set
+  ifneq ($(MPI),yes)
+    $(error MPI must be enabled to compile with PETSC!)
+  endif
+
+  # Set up PETSc environment
+  F90FLAGS += -I${PETSC_DIR}/linux-gnu-c-opt/include -DPETSC
+  LDFLAGS +=  -lpetsc
+endif
+
+#=====================================================================#
+# Machine-specific setup
+#=====================================================================#
+
+# IBM Blue Gene/P ANL supercomputer
+
+ifeq ($(MACHINE),bluegene)
+  F90 = /bgsys/drivers/ppcfloor/comm/xl/bin/mpixlf2003
+  F90FLAGS = -WF,-DNO_F2008,-DMPI -O3
+endif
+
+# Cray XK6 ORNL Titan supercomputer
+
+ifeq ($(MACHINE),crayxk6)
+  F90 = ftn
+  F90FLAGS += -DMPI
+endif

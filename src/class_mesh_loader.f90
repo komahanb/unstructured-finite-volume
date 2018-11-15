@@ -2,8 +2,8 @@ module class_mesh_loader
 
   ! import dependencies
   use iso_fortran_env, only : dp => real64
-  use file_class     , only : file
-  use string_class, only : string
+  use class_file     , only : file
+  use class_string, only : string
 
   implicit none
 

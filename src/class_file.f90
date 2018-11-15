@@ -1,6 +1,6 @@
-module file_class
+module class_file
 
-  use string_class, only : string
+  use class_string, only : string
 
   implicit none
   
@@ -203,4 +203,4 @@ contains
 
     end subroutine read_line
 
-end module file_class
+end module class_file

@@ -4,11 +4,11 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module module_mesh
+module class_mesh
 
   use iso_fortran_env  , only : dp => REAL64, error_unit
   use class_mesh_loader, only : mesh_loader    
-  use mesh_utils
+  use module_mesh_utils
   
   implicit none
 
@@ -591,7 +591,7 @@ end subroutine evaluate_cell_volumes
 
   end function get_num_lines
 
-end module module_mesh
+end module class_mesh
 
 !===================================================================!
 ! Main program to run basic test of functionalities of mesh module.
@@ -601,8 +601,8 @@ module mesh_loader
 
   ! Dependencies
   use iso_fortran_env , only : dp => REAL64
-  use mesh_utils
-  use module_mesh     , only : mesh
+  use module_mesh_utils
+  use class_mesh     , only : mesh
 
   implicit none
   

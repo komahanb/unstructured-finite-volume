@@ -1,4 +1,4 @@
-module mesh_utils
+module module_mesh_utils
 
   use iso_fortran_env , only : dp => REAL64, error_unit
   
@@ -145,5 +145,4 @@ contains
 
   end function find
 
-
-end module mesh_utils
+end module module_mesh_utils

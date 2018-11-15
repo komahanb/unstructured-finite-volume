@@ -4,7 +4,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module string_class
+module class_string
 
   use iso_fortran_env, only : dp => REAL64, error_unit
 
@@ -194,4 +194,4 @@ contains
     
   end function asreal
   
-end module string_class
+end module class_string

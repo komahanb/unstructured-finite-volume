@@ -78,12 +78,88 @@ contains
     integer, intent(out), allocatable :: cell_tags(:)
 
     ! Local
-    type(string), allocatable, dimension(:) :: lines
+    type(string), allocatable, dimension(:) :: lines    
+    
+    ! Mesh tag
+    character(len=*), parameter :: BEGIN_MESH = "$MeshFormat"
+    character(len=*), parameter :: END_MESH   = "$EndMeshFormat"  
+    integer :: idx_start_mesh
+    integer :: idx_end_mesh
 
+    ! Physical_Names tag
+    character(len=*), parameter :: BEGIN_PHYSICAL_NAMES = "$PhysicalNames"
+    character(len=*), parameter :: END_PHYSICAL_NAMES   = "$EndPhysicalNames"  
+    integer :: idx_start_physical_names
+    integer :: idx_end_physical_names
+
+    ! Nodes tag
+    character(len=*), parameter   :: BEGIN_NODES = "$Nodes"
+    character(len=*), parameter   :: END_NODES   = "$EndNodes"  
+    integer :: idx_start_nodes
+    integer :: idx_end_nodes
+
+    ! Elements tag
+    character(len=*), parameter   :: BEGIN_ELEMENTS = "$Elements"
+    character(len=*), parameter   :: END_ELEMENTS   = "$EndElements"  
+    integer :: idx_start_elements
+    integer :: idx_end_elements
+
+    integer :: iline, num_lines
+
+    write(*,'(a,a)') "Loading mesh file : ", this % file % filename
+    
     ! Load the mesh into memory
     call this % file % read_lines(lines)
-    
+    ! call lines % print()  
+
+    ! Extract start and end indices of different mesh tags used by
+    ! GMSH
+    num_lines = size(lines)
+    do concurrent(iline = 1:num_lines)
+
+       ! Find mesh start and end
+       if (index(lines(iline) % str, BEGIN_MESH) .eq. 1) then
+          idx_start_mesh = iline
+       end if
+       if (index(lines(iline) % str, END_MESH) .eq. 1) then
+          idx_end_mesh = iline
+       end if
+
+       ! Find physical_names start and end
+       if (index(lines(iline) % str, BEGIN_PHYSICAL_NAMES) .eq. 1) then
+          idx_start_physical_names = iline
+       end if
+       if (index(lines(iline) % str, END_PHYSICAL_NAMES) .eq. 1) then
+          idx_end_physical_names = iline
+       end if
+
+       ! Find nodes start and end
+       if (index(lines(iline) % str, BEGIN_NODES) .eq. 1) then
+          idx_start_nodes = iline
+       end if
+       if (index(lines(iline) % str, END_NODES) .eq. 1) then
+          idx_end_nodes = iline
+       end if
+
+       ! Find elements start and end
+       if (index(lines(iline) % str, BEGIN_ELEMENTS) .eq. 1) then
+          idx_start_elements = iline
+       end if
+       if (index(lines(iline) % str, END_ELEMENTS) .eq. 1) then
+          idx_end_elements = iline
+       end if
+
+    end do
+
+    write(*,'(a,i8,i8)') "mesh           : " , idx_start_mesh           , idx_end_mesh
+    write(*,'(a,i8,i8)') "physical names : " , idx_start_physical_names , idx_end_physical_names
+    write(*,'(a,i8,i8)') "nodes          : " , idx_start_nodes          , idx_end_nodes
+    write(*,'(a,i8,i8)') "elements       : " , idx_start_elements       , idx_end_elements   
+
     ! Process nodes
+!!$    num_vertices = idx_end_nodes - idx_start_nodes
+!!$    allocate(vertices(num_vertices))
+!!$    vertex_numbers = lines(iline) % tokenize(" ", tokens, num_tokens)
 
     ! process elements
 

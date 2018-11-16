@@ -72,7 +72,7 @@ module class_mesh
 
      ! Inverse edge information
      integer  , allocatable :: vertex_edges(:,:)    ! [[e1,e2,e3],[1:nedges]]
-     integer  , allocatable :: num_edge_cells(:)    ! [1:nedges]
+     integer  , allocatable :: num_vertex_edges(:)  ! [1:nedges]
 
      ! Intermidiate connectivities and their inverse
      integer  , allocatable :: num_cell_faces(:)         ! [1:ncells]
@@ -143,18 +143,58 @@ contains
   subroutine initialize(this)
 
     class(mesh), intent(inout) :: this
+    integer :: i
 
-    print *, 'finding inverse topology'
-    
+    write(*,'(a)') 'Finding inverse topologies...'
+    write(*,'(a)') '1. vertex to cell connectivites'
+
     ! revere mapping from cell vertices to vertex_cells
     call reverse_map( &
          & this % cell_vertices, &
          & this % num_cell_vertices, &
          & this % vertex_cells, &
          & this % num_vertex_cells)
-!!$    do i = 1, size(this % vertex_cells, dim=2)
-!!$       print *, 'vertex', i, 'cells', this % vertex_cells(1:this%num_vertex_cells(i),i)
-!!$    end do
+    do i = 1, size(this % vertex_cells, dim=2)
+       print *, 'vertex', i, 'num_vertex_cells', this % num_vertex_cells(i) ,'cells', &
+            & this % vertex_cells(1:this % num_vertex_cells(i),i)
+    end do
+
+    write(*,'(a)') '2. vertex to face connectivites'
+    call reverse_map( &
+         & this % face_vertices, &
+         & this % num_face_vertices, &
+         & this % vertex_faces, &
+         & this % num_vertex_faces)
+    do i = 1, size(this % vertex_faces, dim=2)
+       print *, 'vertex', i, 'num_vertex_faces', this % num_vertex_faces(i) ,'cells', &
+            & this % vertex_faces(1:this % num_vertex_faces(i),i)
+    end do
+
+    write(*,'(a)') '3. vertex to edge connectivites'
+    call reverse_map( &
+         & this % edge_vertices, &
+         & this % num_edge_vertices, &
+         & this % vertex_edges, &
+         & this % num_vertex_edges)
+    do i = 1, size(this % vertex_edges, dim=2)
+       print *, 'vertex', i, 'num_vertex_edges', this % num_vertex_edges(i) ,'cells', &
+            & this % vertex_edges(1:this % num_vertex_edges(i),i)
+    end do
+
+    stop
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     print *, 'finding mesh geometry'
     

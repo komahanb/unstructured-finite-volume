@@ -11,7 +11,7 @@ program test_mesh
 
   implicit none
 
-  character(len=*), parameter :: filename = 'rectangle.msh'
+  character(len=*), parameter :: filename = 'rectangle-v2-1.msh'
   type(mesh_loader) :: gmsh_loader
   type(mesh)        :: grid
   

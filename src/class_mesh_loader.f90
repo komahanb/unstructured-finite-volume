@@ -291,6 +291,9 @@ contains
     allocate(edge_vertices(4,num_edges)) ! upto quads
     allocate(face_vertices(2,num_faces)) ! linear faces
     allocate(cell_vertices(4,num_cells)) ! upto quads
+    edge_vertices = 0
+    face_vertices = 0
+    cell_vertices = 0
 
     allocate(num_edge_vertices(num_edges))
     allocate(num_face_vertices(num_faces))

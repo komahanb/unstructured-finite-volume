@@ -249,30 +249,92 @@ contains
     integer, intent(out), allocatable :: cell_vertices(:,:)
     integer, intent(out), allocatable :: num_cell_vertices(:)
 
-
     type(string), allocatable :: tokens(:)
     integer                   :: num_tokens    
     integer                   :: num_lines, iline
-    
+
     ! Extract start and end indices of different mesh tags used by
     ! GMSH
     num_lines = size(lines)
 
+    num_edges = 0
     num_faces = 0
     num_cells = 0
     
     do iline = 1, num_lines
+
+       call lines(iline) % tokenize(" ", num_tokens, tokens)
+       
+       if (tokens(2) % asinteger() .eq. 1) then
+          ! Line element
+          num_faces = num_faces + 1
+       else if (tokens(2) % asinteger() .eq. 2) then
+          ! Triangular element
+          num_cells = num_cells + 1
+       else if (tokens(2) % asinteger() .eq. 3) then
+          ! Quadrilateral element
+          num_cells = num_cells + 1          
+       else
+          error stop
+       end if
+       
+    end do
+
+    allocate(edge_numbers(num_edges))
+    allocate(face_numbers(num_faces))
+    allocate(cell_numbers(num_cells))
+    
+    allocate(edge_tags(num_edges))
+    allocate(face_tags(num_faces))
+    allocate(cell_tags(num_cells))
+
+    allocate(edge_vertices(4,num_edges)) ! upto quads
+    allocate(face_vertices(2,num_faces)) ! linear faces
+    allocate(cell_vertices(4,num_cells)) ! upto quads
+
+    allocate(num_edge_vertices(num_edges))
+    allocate(num_face_vertices(num_faces))
+    allocate(num_cell_vertices(num_cells))
+
+    num_faces = 0
+    num_cells = 0
+    num_edges = 0
+
+    do iline = 1, num_lines
        
        call lines(iline) % tokenize(" ", num_tokens, tokens)
 
-       if (tokens(2) % asinteger() .eq. 1) then ! Line element
+       
+       ! Line element
+       if (tokens(2) % asinteger() .eq. 1) then
           
           num_faces = num_faces + 1
 
-       else if (tokens(2) % asinteger() .eq. 2) then ! Triangular element
+          face_numbers(num_faces)      = iline          
+          face_tags(num_faces)         = tokens(4) % asinteger()          
+          face_vertices(:,num_faces)   = tokens(6:7) % asinteger()
+          num_face_vertices(num_faces) = 2
+          
+          ! Triangular element
+       else if (tokens(2) % asinteger() .eq. 2) then
 
           num_cells = num_cells + 1
           
+          cell_numbers(num_cells )      = iline
+          cell_tags(num_cells)          = tokens(4) % asinteger()                    
+          cell_vertices(1:3,num_cells)  = tokens(6:8) % asinteger()
+          num_cell_vertices(num_cells)  = 3
+          
+          ! Quadrilateral element
+       else if (tokens(2) % asinteger() .eq. 3) then
+
+          num_cells = num_cells + 1
+          
+          cell_numbers(num_cells )      = iline
+          cell_tags(num_cells)          = tokens(4) % asinteger()                    
+          cell_vertices(1:4,num_cells)  = tokens(6:9) % asinteger()
+          num_cell_vertices(num_cells)  = 4
+
        else
 
           error stop

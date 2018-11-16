@@ -8,9 +8,9 @@ F2008    = yes
 COMPLEX  = no
 
 # optimization level
-DEBUG    = no
+DEBUG    = yes
 PROFILE  = no
-OPTIMIZE = yes
+OPTIMIZE = no
 
 # libraries
 LAPACK   = yes

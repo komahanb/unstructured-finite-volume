@@ -145,4 +145,65 @@ contains
 
   end function find
 
+  !===================================================================!
+  ! Forms the cell faces from a pair of vertices belonging to cell.
+  !===================================================================!
+  
+  subroutine get_cell_faces( cell_vertices, &
+       & vertex_faces, num_vertex_faces, &
+       & cell_faces, num_cell_faces ) 
+    
+    integer, intent(in)  :: cell_vertices(:,:)
+    integer, intent(in)  :: vertex_faces(:,:)
+    integer, intent(in)  :: num_vertex_faces(:)
+
+    integer, allocatable, intent(out) :: cell_faces(:,:)
+    integer, allocatable, intent(out) :: num_cell_faces(:)
+
+    integer :: icell, iface
+    integer :: v1, v2
+    integer :: face_ptr, ctr
+    integer :: ncells, nvertices, nfaces
+
+    nvertices = size(cell_vertices,dim=1)
+    nfaces = nvertices
+    ncells = size(cell_vertices,dim=2)
+
+    ! find how many faces are there based on nodes
+    allocate(num_cell_faces(ncells))
+    do icell = 1, ncells      
+       ctr = 0
+       do iface = 1, nvertices
+          if (cell_vertices(iface, icell) .ne. 0) then
+             ctr = ctr + 1
+          end if
+       end do
+       num_cell_faces(icell) = ctr
+    end do
+
+    ! Cell to face cell_vertices
+    allocate(cell_faces(maxval(num_cell_faces),ncells))
+    cell_faces = 0
+    do icell = 1, ncells
+       face_ptr = 0
+       do iface = 1, num_cell_faces(icell)
+          ! Get the first two vertices
+          if (iface .eq. num_cell_faces(icell)) then
+             v1 = cell_vertices(iface,icell)
+             v2 = cell_vertices(1,icell)
+          else 
+             v1 = cell_vertices(iface,icell)
+             v2 = cell_vertices(iface+1,icell)
+          end if
+
+          face_ptr = face_ptr + 1
+          call intersection( &
+               & vertex_faces(1:num_vertex_faces(v2), v2), &
+               & vertex_faces(1:num_vertex_faces(v1), v1), &
+               & cell_faces(face_ptr:face_ptr,icell))
+       end do
+    end do
+
+  end subroutine get_cell_faces
+
 end module module_mesh_utils

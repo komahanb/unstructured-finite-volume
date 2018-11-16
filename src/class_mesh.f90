@@ -144,11 +144,20 @@ contains
 
     class(mesh), intent(inout) :: this
     integer :: i
+    integer :: lvertex, gvertex, icell, iface
+
+    ! write(*,'(a)') 'Finding inverse mapping of vertex, edge, face, and cell numbers...'
+    ! revere mapping from cell vertices to vertex_cells
 
     write(*,'(a)') 'Finding inverse topologies...'
     write(*,'(a)') '1. vertex to cell connectivites'
 
     ! revere mapping from cell vertices to vertex_cells
+    do i = 1, this % num_cells
+       print *, 'cell', i, this % cell_numbers(i), 'num_cell_vertices', this % num_cell_vertices(i) ,'vertices', &
+            & this % cell_vertices(1:this % num_cell_vertices(i),i)
+    end do
+
     call reverse_map( &
          & this % cell_vertices, &
          & this % num_cell_vertices, &
@@ -160,6 +169,10 @@ contains
     end do
 
     write(*,'(a)') '2. vertex to face connectivites'
+    do i = 1, this % num_faces
+       print *, 'face', i, this % face_numbers(i), 'num_face_vertices', this % num_face_vertices(i) ,'vertices', &
+            & this % face_vertices(1:this % num_face_vertices(i),i)
+    end do
     call reverse_map( &
          & this % face_vertices, &
          & this % num_face_vertices, &
@@ -169,22 +182,58 @@ contains
        print *, 'vertex', i, 'num_vertex_faces', this % num_vertex_faces(i) ,'cells', &
             & this % vertex_faces(1:this % num_vertex_faces(i),i)
     end do
+!!$
+!!$    write(*,'(a)') '3. vertex to edge connectivites'
+!!$    call reverse_map( &
+!!$         & this % edge_vertices, &
+!!$         & this % num_edge_vertices, &
+!!$         & this % vertex_edges, &
+!!$         & this % num_vertex_edges)
+!!$    do i = 1, size(this % vertex_edges, dim=2)
+!!$       print *, 'vertex', i, 'num_vertex_edges', this % num_vertex_edges(i) ,'cells', &
+!!$            & this % vertex_edges(1:this % num_vertex_edges(i),i)
+!!$    end do
 
-    write(*,'(a)') '3. vertex to edge connectivites'
-    call reverse_map( &
-         & this % edge_vertices, &
-         & this % num_edge_vertices, &
-         & this % vertex_edges, &
-         & this % num_vertex_edges)
-    do i = 1, size(this % vertex_edges, dim=2)
-       print *, 'vertex', i, 'num_vertex_edges', this % num_vertex_edges(i) ,'cells', &
-            & this % vertex_edges(1:this % num_vertex_edges(i),i)
-    end do
+    !=================================================================!
+    ! Intermediate Topologies
+    !=================================================================!
+
+    write(*,'(a)') 'Finding intermediate topologies...'
+    write(*,'(a)') '1.a. cell to face connectivites'
+
+    ! Combine maps to get cell_faces
+    call get_cell_faces(this % cell_vertices, &
+         & this % vertex_faces , this % num_vertex_faces, &
+         & this % cell_faces   , this % num_cell_faces)
+    do icell = 1, this % num_cells
+       print *, 'cell', icell, 'num_faces', this % num_cell_faces(icell), &
+            & 'faces', this % cell_faces(1:this%num_cell_faces(icell),icell)
+    end do   
+    print *, ''
+!!$
+!!$    write(*,'(a)') '1.b. face to cell connectivites'
+!!$    ! Invert cell_faces
+!!$    call reverse_map(cell_faces, num_cell_faces, face_cells, num_face_cells)
+!!$    do iface = 1, size(face_cells, dim=2)
+!!$       print *, 'face', iface, 'cells', face_cells(1:num_face_cells(iface),iface)
+!!$    end do
+
+
+
+
+
+
+!!$
+!!$    ! Finding the vertex tags based on faces
+!!$    do lvertex = 1, this % num_vertices
+!!$       gvertex = this % vertex_numbers(lvertex)
+!!$       gface   = this % vertex_faces(1,gvertex)
+!!$       this % vertex_tags(lvertex) = this % face_tags(lface(gf))
+!!$    end do
 
     stop
 
-
-
+    write(*,'(a)') 'Calculating geometry information...'
 
 
 
@@ -575,13 +624,7 @@ end subroutine evaluate_cell_volumes
          & error stop
     if (me % num_cells    .gt. 0 .and. maxval(me % cell_numbers  ) -  minval(me % cell_numbers  ) + 1 .ne. me % num_cells   ) &
          & error stop
-
-    print *, me % vertex_tags
-    print *, me % cell_tags
-    print *, me % face_tags
-    print *, me % edge_tags
-
-    !
+    
     ! Perform initialization tasks
     call me % initialize()
 
@@ -716,7 +759,6 @@ module mesh_loader
 
   implicit none
   
-
 contains
   
   subroutine create(grid)
@@ -899,69 +941,7 @@ contains
     end do
 
   end subroutine get_boundary_faces
-  
-  !===================================================================!
-  ! Forms the cell faces from a pair of vertices belonging to cell.
-  !===================================================================!
-  
-  subroutine get_cell_faces( cell_vertices, &
-       & vertex_faces, num_vertex_faces, &
-       & cell_faces, num_cell_faces ) 
-    
-    integer, intent(in)  :: cell_vertices(:,:)
-    integer, intent(in)  :: vertex_faces(:,:)
-    integer, intent(in)  :: num_vertex_faces(:)
-
-    integer, allocatable, intent(out) :: cell_faces(:,:)
-    integer, allocatable, intent(out) :: num_cell_faces(:)
-
-    integer :: icell, iface
-    integer :: v1, v2
-    integer :: face_ptr, ctr
-    integer :: ncells, nvertices, nfaces
-
-    nvertices = size(cell_vertices,dim=1)
-    nfaces = nvertices
-    ncells = size(cell_vertices,dim=2)
-
-    ! find how many faces are there based on nodes
-    allocate(num_cell_faces(ncells))
-    do icell = 1, ncells      
-       ctr = 0
-       do iface = 1, nvertices
-          if (cell_vertices(iface, icell) .ne. 0) then
-             ctr = ctr + 1
-          end if
-       end do
-       num_cell_faces(icell) = ctr
-    end do
-
-    ! Cell to face cell_vertices
-    allocate(cell_faces(maxval(num_cell_faces),ncells))
-    cell_faces = 0
-    do icell = 1, ncells
-       face_ptr = 0
-       do iface = 1, num_cell_faces(icell)
-          ! Get the first two vertices
-          if (iface .eq. num_cell_faces(icell)) then
-             v1 = cell_vertices(iface,icell)
-             v2 = cell_vertices(1,icell)
-          else 
-             v1 = cell_vertices(iface,icell)
-             v2 = cell_vertices(iface+1,icell)
-          end if
-
-          face_ptr = face_ptr + 1
-          call intersection( &
-               & vertex_faces(1:num_vertex_faces(v2), v2), &
-               & vertex_faces(1:num_vertex_faces(v1), v1), &
-               & cell_faces(face_ptr:face_ptr,icell))
-       end do
-    end do
-
-  end subroutine get_cell_faces
-  
-  subroutine get_triangular_test_mesh(npoints, xpts, ncells, &
+    subroutine get_triangular_test_mesh(npoints, xpts, ncells, &
        & cell_vertices, num_cell_vertices, &
        & nfaces, face_vertices, num_face_vertices)
 

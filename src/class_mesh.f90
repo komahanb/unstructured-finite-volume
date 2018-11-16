@@ -557,8 +557,6 @@ end subroutine evaluate_cell_volumes
 
     ! Arguments
     class(mesh_loader), intent(in) :: loader
-
-    integer ::i
     
     ! Get the fundamental information needed 
     call loader % get_mesh_data( &
@@ -567,6 +565,16 @@ end subroutine evaluate_cell_volumes
          & me % num_faces   , me % face_numbers  , me % face_tags   , me % face_vertices , me % num_face_vertices , &
          & me % num_cells   , me % cell_numbers  , me % cell_tags   , me % cell_vertices , me % num_cell_vertices   &
          & )
+
+    ! Sanity check
+    if (me % num_vertices .gt. 0 .and. maxval(me % vertex_numbers) -  minval(me % vertex_numbers) + 1 .ne. me % num_vertices) &
+         & error stop
+    if (me % num_edges    .gt. 0 .and. maxval(me % edge_numbers  ) -  minval(me % edge_numbers  ) + 1 .ne. me % num_edges   ) &
+         & error stop
+    if (me % num_faces    .gt. 0 .and. maxval(me % face_numbers  ) -  minval(me % face_numbers  ) + 1 .ne. me % num_faces   ) &
+         & error stop
+    if (me % num_cells    .gt. 0 .and. maxval(me % cell_numbers  ) -  minval(me % cell_numbers  ) + 1 .ne. me % num_cells   ) &
+         & error stop
 
     ! Perform initialization tasks
     call me % initialize()

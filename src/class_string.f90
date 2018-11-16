@@ -111,7 +111,7 @@ contains
     ! Set the return arguments
     num_tokens = token_ctr
     allocate(tokens(num_tokens))
-    do i = 1, num_tokens
+    do concurrent (i = 1:num_tokens)
        tokens(i) = string(this % str(tidx(1,i):tidx(2,i)))
     end do
 
@@ -122,7 +122,7 @@ contains
   ! length, initialize its hashcode as zero.
   !===================================================================!
 
-  pure type(string) function create(str) result (this)
+  pure elemental type(string) function create(str) result (this)
 
     type(character(*)), intent(in) :: str
     

@@ -566,7 +566,7 @@ end subroutine evaluate_cell_volumes
          & me % num_cells   , me % cell_numbers  , me % cell_tags   , me % cell_vertices , me % num_cell_vertices   &
          & )
 
-    ! Sanity check
+    ! Sanity check (make sure numbering is continuous), although it may not start from one
     if (me % num_vertices .gt. 0 .and. maxval(me % vertex_numbers) -  minval(me % vertex_numbers) + 1 .ne. me % num_vertices) &
          & error stop
     if (me % num_edges    .gt. 0 .and. maxval(me % edge_numbers  ) -  minval(me % edge_numbers  ) + 1 .ne. me % num_edges   ) &
@@ -576,6 +576,12 @@ end subroutine evaluate_cell_volumes
     if (me % num_cells    .gt. 0 .and. maxval(me % cell_numbers  ) -  minval(me % cell_numbers  ) + 1 .ne. me % num_cells   ) &
          & error stop
 
+    print *, me % vertex_tags
+    print *, me % cell_tags
+    print *, me % face_tags
+    print *, me % edge_tags
+
+    !
     ! Perform initialization tasks
     call me % initialize()
 

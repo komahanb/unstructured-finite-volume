@@ -291,9 +291,9 @@ contains
     allocate(edge_vertices(4,num_edges)) ! upto quads
     allocate(face_vertices(2,num_faces)) ! linear faces
     allocate(cell_vertices(4,num_cells)) ! upto quads
-    edge_vertices = 0
-    face_vertices = 0
-    cell_vertices = 0
+!!$    edge_vertices = 0
+!!$    face_vertices = 0
+!!$    cell_vertices = 0
 
     allocate(num_edge_vertices(num_edges))
     allocate(num_face_vertices(num_faces))
@@ -306,7 +306,6 @@ contains
     do iline = 1, num_lines
        
        call lines(iline) % tokenize(" ", num_tokens, tokens)
-
        
        ! Line element
        if (tokens(2) % asinteger() .eq. 1) then
@@ -314,7 +313,7 @@ contains
           num_faces = num_faces + 1
 
           face_numbers(num_faces)      = iline          
-          face_tags(num_faces)         = tokens(4) % asinteger()          
+          face_tags(num_faces)         = tokens(5) % asinteger()
           face_vertices(:,num_faces)   = tokens(6:7) % asinteger()
           num_face_vertices(num_faces) = 2
           
@@ -324,7 +323,7 @@ contains
           num_cells = num_cells + 1
           
           cell_numbers(num_cells )      = iline
-          cell_tags(num_cells)          = tokens(4) % asinteger()                    
+          cell_tags(num_cells)          = tokens(5) % asinteger()
           cell_vertices(1:3,num_cells)  = tokens(6:8) % asinteger()
           num_cell_vertices(num_cells)  = 3
           
@@ -334,7 +333,7 @@ contains
           num_cells = num_cells + 1
           
           cell_numbers(num_cells )      = iline
-          cell_tags(num_cells)          = tokens(4) % asinteger()                    
+          cell_tags(num_cells)          = tokens(5) % asinteger()
           cell_vertices(1:4,num_cells)  = tokens(6:9) % asinteger()
           num_cell_vertices(num_cells)  = 4
 

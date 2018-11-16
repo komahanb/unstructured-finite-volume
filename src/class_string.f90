@@ -93,6 +93,9 @@ contains
           ! Check if its the last substring
           if (token_ctr .gt. 1) then
 
+             ! Yes, this is a token
+             token_ctr = token_ctr + 1
+                       
              token_idx = 1
 
              tidx(:,token_ctr) = [sidx, eidx]

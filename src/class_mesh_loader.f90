@@ -24,6 +24,11 @@ module class_mesh_loader
      ! mesh creation
      procedure :: get_mesh_data
 
+     ! Helper functions
+     procedure :: find_tags
+     procedure :: process_vertices
+     !procedure :: process_elements
+     
   end type mesh_loader
 
   !-------------------------------------------------------------------!
@@ -81,30 +86,20 @@ contains
     type(string), allocatable, dimension(:) :: lines    
     
     ! Mesh tag
-    character(len=*), parameter :: BEGIN_MESH = "$MeshFormat"
-    character(len=*), parameter :: END_MESH   = "$EndMeshFormat"  
     integer :: idx_start_mesh
     integer :: idx_end_mesh
 
-    ! Physical_Names tag
-    character(len=*), parameter :: BEGIN_PHYSICAL_NAMES = "$PhysicalNames"
-    character(len=*), parameter :: END_PHYSICAL_NAMES   = "$EndPhysicalNames"  
+    ! Physical_Names tag    
     integer :: idx_start_physical_names
     integer :: idx_end_physical_names
 
     ! Nodes tag
-    character(len=*), parameter   :: BEGIN_NODES = "$Nodes"
-    character(len=*), parameter   :: END_NODES   = "$EndNodes"  
     integer :: idx_start_nodes
     integer :: idx_end_nodes
 
     ! Elements tag
-    character(len=*), parameter   :: BEGIN_ELEMENTS = "$Elements"
-    character(len=*), parameter   :: END_ELEMENTS   = "$EndElements"  
     integer :: idx_start_elements
     integer :: idx_end_elements
-
-    integer :: iline, num_lines
 
     write(*,'(a,a)') "Loading mesh file : ", this % file % filename
     
@@ -112,6 +107,65 @@ contains
     call this % file % read_lines(lines)
     ! call lines % print()  
 
+    write(*,'(a)') "Identifying tags..."
+    call this % find_tags(lines, &
+         & idx_start_mesh           , idx_end_mesh  , &
+         & idx_start_physical_names , idx_end_physical_names , &
+         & idx_start_nodes          , idx_end_nodes, &
+         & idx_start_elements       , idx_end_elements)
+    write(*,'(a,i8,i8)') "mesh           : " , idx_start_mesh           , idx_end_mesh
+    write(*,'(a,i8,i8)') "physical names : " , idx_start_physical_names , idx_end_physical_names
+    write(*,'(a,i8,i8)') "nodes          : " , idx_start_nodes          , idx_end_nodes
+    write(*,'(a,i8,i8)') "elements       : " , idx_start_elements       , idx_end_elements   
+
+    write(*,'(a)') "Reading vertices... "        
+    call this % process_vertices(lines(idx_start_nodes+2:idx_end_nodes-1), &
+         & num_vertices, vertices, vertex_numbers, vertex_tags)
+    write(*,'(a,i8)') "number of vertices", num_vertices
+
+    ! process elements
+
+    deallocate(lines)
+
+  end subroutine get_mesh_data
+
+  pure subroutine find_tags(this, lines, &
+       & idx_start_mesh           , idx_end_mesh  , &
+       & idx_start_physical_names , idx_end_physical_names , &
+       & idx_start_nodes          , idx_end_nodes, &
+       & idx_start_elements       , idx_end_elements)
+    
+    ! Arguments
+    class(mesh_loader) , intent(in) :: this
+    type(string)       , intent(in) :: lines(:)
+
+    ! Mesh tag
+    integer, intent(out) :: idx_start_mesh
+    integer, intent(out) :: idx_end_mesh
+
+    ! Physical_Names tag    
+    integer, intent(out) :: idx_start_physical_names
+    integer, intent(out) :: idx_end_physical_names
+
+    ! Nodes tag
+    integer, intent(out) :: idx_start_nodes
+    integer, intent(out) :: idx_end_nodes
+
+    ! Elements tag
+    integer, intent(out) :: idx_start_elements
+    integer, intent(out) :: idx_end_elements
+
+    character(len=*), parameter :: BEGIN_MESH           = "$MeshFormat"
+    character(len=*), parameter :: END_MESH             = "$EndMeshFormat"  
+    character(len=*), parameter :: BEGIN_PHYSICAL_NAMES = "$PhysicalNames"
+    character(len=*), parameter :: END_PHYSICAL_NAMES   = "$EndPhysicalNames"    
+    character(len=*), parameter :: BEGIN_NODES          = "$Nodes"
+    character(len=*), parameter :: END_NODES            = "$EndNodes"  
+    character(len=*), parameter :: BEGIN_ELEMENTS       = "$Elements"
+    character(len=*), parameter :: END_ELEMENTS         = "$EndElements"  
+
+    integer :: num_lines, iline
+    
     ! Extract start and end indices of different mesh tags used by
     ! GMSH
     num_lines = size(lines)
@@ -151,47 +205,53 @@ contains
 
     end do
 
-    write(*,'(a,i8,i8)') "mesh           : " , idx_start_mesh           , idx_end_mesh
-    write(*,'(a,i8,i8)') "physical names : " , idx_start_physical_names , idx_end_physical_names
-    write(*,'(a,i8,i8)') "nodes          : " , idx_start_nodes          , idx_end_nodes
-    write(*,'(a,i8,i8)') "elements       : " , idx_start_elements       , idx_end_elements   
+  end subroutine find_tags
+  
+  pure subroutine process_vertices(this, lines, &
+       & num_vertices, vertices, &
+       & vertex_numbers, vertex_tags)
+    
+    ! Arguments
+    class(mesh_loader) , intent(in)               :: this
+    type(string)       , intent(in)               :: lines(:)
+    integer            , intent(out)              :: num_vertices
+    real(dp)           , intent(out), allocatable :: vertices(:,:)
+    integer            , intent(out), allocatable :: vertex_numbers(:)
+    integer            , intent(out), allocatable :: vertex_tags(:)
 
     ! Process nodes
     process_nodes: block
       
+      integer                   :: iline
       integer                   :: num_tokens
-      type(string), allocatable :: tokens(:)
       integer                   :: ivertex
-      
-      num_vertices = idx_end_nodes - idx_start_nodes + 1 - 3 !(head, tail, num)
-      
+      type(string), allocatable :: tokens(:)
+
+      ! Set the number of vertices
+      num_vertices = size(lines)
       allocate(vertices(3, num_vertices))
-
+      allocate(vertex_numbers(num_vertices))
+      
       ! Parse lines and store vertices
-      ivertex = 0
-      do iline = idx_start_nodes+2, idx_end_nodes-1
+      do concurrent(ivertex=1:num_vertices)
 
-         ! Get the numbers of tokens
-         call lines(iline) % tokenize(" ", num_tokens)
+         ! Get the numbers of tokens and tokens
+         call lines(ivertex) % tokenize(" ", num_tokens, tokens)
 
-         if (num_tokens .gt. 0) then
-            ivertex = ivertex + 1
-            call lines(iline) % tokenize(" ", num_tokens, tokens)
-            vertices(1:3,ivertex) = tokens % asreal()
-         else
-            error stop
-         end if
+         ! First token is the vertex number
+         vertex_numbers(ivertex) = tokens(1) % asinteger()
+
+         ! Second, third and fourth token are the coordinates
+         vertices(:,ivertex) = tokens(2:) % asreal()
 
       end do
 
       if (allocated(tokens)) deallocate(tokens)
 
+      ! Determine tags?
+      
     end block process_nodes
 
-    ! process elements
-
-    deallocate(lines)
-
-  end subroutine get_mesh_data
+  end subroutine process_vertices
 
 end module class_mesh_loader

@@ -157,9 +157,36 @@ contains
     write(*,'(a,i8,i8)') "elements       : " , idx_start_elements       , idx_end_elements   
 
     ! Process nodes
-!!$    num_vertices = idx_end_nodes - idx_start_nodes
-!!$    allocate(vertices(num_vertices))
-!!$    vertex_numbers = lines(iline) % tokenize(" ", tokens, num_tokens)
+    process_nodes: block
+      
+      integer                   :: num_tokens
+      type(string), allocatable :: tokens(:)
+      integer                   :: ivertex
+      
+      num_vertices = idx_end_nodes - idx_start_nodes + 1 - 3 !(head, tail, num)
+      
+      allocate(vertices(3, num_vertices))
+
+      ! Parse lines and store vertices
+      ivertex = 0
+      do iline = idx_start_nodes+2, idx_end_nodes-1
+
+         ! Get the numbers of tokens
+         call lines(iline) % tokenize(" ", num_tokens)
+
+         if (num_tokens .gt. 0) then
+            ivertex = ivertex + 1
+            call lines(iline) % tokenize(" ", num_tokens, tokens)
+            vertices(1:3,ivertex) = tokens % asreal()
+         else
+            error stop
+         end if
+
+      end do
+
+      if (allocated(tokens)) deallocate(tokens)
+
+    end block process_nodes
 
     ! process elements
 

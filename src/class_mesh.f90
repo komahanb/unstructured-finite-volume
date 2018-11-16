@@ -466,6 +466,8 @@ end subroutine evaluate_cell_volumes
     ! Arguments
     class(mesh_loader), intent(in) :: loader
 
+    integer ::i
+    
     ! Get the fundamental information needed 
     call loader % get_mesh_data( &
          & me % num_vertices, me % vertices     , me % vertex_numbers   , me % vertex_tags, & 
@@ -473,6 +475,10 @@ end subroutine evaluate_cell_volumes
          & me % num_faces   , me % face_vertices, me % num_face_vertices, me % face_tags  , &
          & me % num_cells   , me % cell_vertices, me % num_cell_vertices, me % cell_tags    &
          & )
+
+    do i = 1, me % num_vertices
+       print *, me % vertices(:,i)
+    end do
 
     ! Perform initialization tasks
     call me % initialize()

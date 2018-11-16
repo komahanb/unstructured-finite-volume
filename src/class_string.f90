@@ -50,13 +50,13 @@ contains
   ! Tokenize the string object and return an array of tokens 
   !===================================================================!
   
-  pure subroutine tokenize(this, delimiter, tokens, num_tokens)
+  pure subroutine tokenize(this, delimiter, num_tokens, tokens)
 
     ! Arguments
-    class(string)    , intent(in)               :: this
-    character(len=*) , intent(in)               :: delimiter
-    type(string)     , intent(out), allocatable :: tokens(:)
-    integer          , intent(out)              :: num_tokens
+    class(string)    , intent(in)  :: this
+    character(len=*) , intent(in)  :: delimiter
+    integer          , intent(out) :: num_tokens    
+    type(string)     , intent(out), allocatable, optional :: tokens(:)
     
     ! Locals
     integer , allocatable :: tidx(:,:)
@@ -93,9 +93,6 @@ contains
           ! Check if its the last substring
           if (token_ctr .gt. 1) then
 
-             ! Yes, this is a token
-             token_ctr = token_ctr + 1
-
              token_idx = 1
 
              tidx(:,token_ctr) = [sidx, eidx]
@@ -110,11 +107,14 @@ contains
 
     ! Set the return arguments
     num_tokens = token_ctr
-    allocate(tokens(num_tokens))
-    do concurrent (i = 1:num_tokens)
-       tokens(i) = string(this % str(tidx(1,i):tidx(2,i)))
-    end do
-
+    if (present(tokens)) then
+       if (allocated(tokens)) deallocate(tokens)
+       allocate(tokens(num_tokens))
+       do concurrent (i=1:num_tokens)
+          tokens(i) = string(this % str(tidx(1,i):tidx(2,i)))
+       end do
+    end if
+    
   end subroutine tokenize
 
   !===================================================================!

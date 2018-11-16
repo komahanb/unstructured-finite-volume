@@ -25,7 +25,11 @@ module class_mesh
   ! Mesh datatype. A collection of vertices, cells and faces.
   !-------------------------------------------------------------------!
   
-  type :: mesh
+  type :: mesh ! rename as topology?
+     
+     !================================================================!
+     ! Basic Topology information
+     !================================================================!
 
      ! Fundamental vertex info
      integer :: num_vertices
@@ -51,52 +55,60 @@ module class_mesh
      integer :: num_cells
      integer  , allocatable :: cell_numbers(:)
      integer  , allocatable :: cell_tags(:)
-     integer  , allocatable :: cell_vertices(:,:)        ! [[v1,v2,v3], 1:ncells]
-     integer  , allocatable :: num_cell_vertices(:)      ! [1:ncells]
+     integer  , allocatable :: cell_vertices(:,:)   ! [[v1,v2,v3], 1:ncells]
+     integer  , allocatable :: num_cell_vertices(:) ! [1:ncells]
 
+     !================================================================!
+     ! Derived Topology information
+     !================================================================!
+     
+     ! Inverse cell information
+     integer  , allocatable :: vertex_cells(:,:)    ! [[c1,c2,c3],[1:nvertices]]
+     integer  , allocatable :: num_vertex_cells(:)  ! [1:nvertices]
+     
+     ! Inverse face information
+     integer  , allocatable :: vertex_faces(:,:)    ! [[f1,f2,f3],[1:nfaces]]
+     integer  , allocatable :: num_vertex_faces(:)  ! [1:nfaces]
 
+     ! Inverse edge information
+     integer  , allocatable :: vertex_edges(:,:)    ! [[e1,e2,e3],[1:nedges]]
+     integer  , allocatable :: num_edge_cells(:)    ! [1:nedges]
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-     ! Derived cell info
-     real(dp) , allocatable :: cell_centers(:,:)         ! [[x,y,z] , 1:ncells]
-     real(dp) , allocatable :: cell_volumes(:)           ! [1:ncells]
-     real(dp) , allocatable :: cell_gamma(:)             ! [1:ncells]
-     integer  , allocatable :: cell_tag(:)
-
-     ! Derived vertex info
-     real(dp) , allocatable :: vertex_cell_weights(:,:)  ! [[wc1,wc2...],1:vertices]
-     integer  , allocatable :: vertex_cells(:,:)         ! [[c1,c2,c3],[1:nvertices]]
-     integer  , allocatable :: num_vertex_cells(:)       ! [1:nvertices]
-     integer  , allocatable :: vertex_tag(:)             ! [[t1],[1:nvertices]]
-
-     real(dp) , allocatable :: face_centers(:,:)         ! [[x,y,z],1:nfaces]
-     real(dp) , allocatable :: face_areas(:)             ! [1:nfaces]
-     real(dp) , allocatable :: face_cell_weights(:,:)    ! [[wc1,wc2],1:nfaces]
-     real(dp) , allocatable :: face_gamma(:)             ! [1:nfaces]
-     real(dp) , allocatable :: face_delta(:)             ! [1:nfaces]
-     real(dp) , allocatable :: lvec(:,:)                 ! [[lx,ly,lz],1:nfaces]     
+     ! Intermidiate connectivities and their inverse
      integer  , allocatable :: num_cell_faces(:)         ! [1:ncells]
      integer  , allocatable :: cell_faces(:,:)           ! [[f1,f2,f3..],1:ncells]
      integer  , allocatable :: num_face_cells(:)         ! [1:nfaces]
      integer  , allocatable :: face_cells(:,:)           ! [[c1,c2...],1:nfaces]
-     integer  , allocatable :: face_tag(:)
      
+     ! Intermidiate connectivities and their inverse
+     integer  , allocatable :: num_face_edges(:)         ! [1:nfaces]
+     integer  , allocatable :: face_edges(:,:)           ! [[e1,e2,e3..],1:nfaces]
+     integer  , allocatable :: num_edge_faces(:)         ! [1:nedges]
+     integer  , allocatable :: edge_faces(:,:)           ! [[f1,f2...],1:nedges]
+     
+     !================================================================!
+     ! Derived Geometry information
+     !================================================================!
+     
+     ! Derived cell info
+     real(dp) , allocatable :: cell_centers(:,:)         ! [[x,y,z] , 1:ncells]
+     real(dp) , allocatable :: cell_volumes(:)           ! [1:ncells]
+     real(dp) , allocatable :: cell_gamma(:)             ! [1:ncells]
+
+     ! Derived vertex info
+     real(dp) , allocatable :: face_centers(:,:)         ! [[x,y,z],1:nfaces]
+     real(dp) , allocatable :: face_areas(:)             ! [1:nfaces]
+     real(dp) , allocatable :: face_gamma(:)             ! [1:nfaces]
+     real(dp) , allocatable :: face_delta(:)             ! [1:nfaces]
+     real(dp) , allocatable :: lvec(:,:)                 ! [[lx,ly,lz],1:nfaces]     
+  
      real(dp) , allocatable :: cell_face_tangents(:,:,:) ! [[tx,ty,tz], [f1,f2,f3..] 1:ncells]
      real(dp) , allocatable :: cell_face_normals(:,:,:)  ! [[nx,ny,nz], [f1,f2,f3..] 1:ncells]          
+    
+     real(dp) , allocatable :: vertex_cell_weights(:,:)  ! [[wc1,wc2...],1:vertices]
+     real(dp) , allocatable :: face_cell_weights(:,:)    ! [[wc1,wc2],1:nfaces]
 
+     
      ! Generalize to tag numbers. Right now we can't differentiate
      ! lower face from upper face.
      integer  :: num_boundary_faces
@@ -128,9 +140,47 @@ module class_mesh
 
 contains
   
-  pure subroutine initialize(this)
+  subroutine initialize(this)
 
     class(mesh), intent(inout) :: this
+
+    print *, 'finding inverse topology'
+    
+    ! revere mapping from cell vertices to vertex_cells
+    call reverse_map( &
+         & this % cell_vertices, &
+         & this % num_cell_vertices, &
+         & this % vertex_cells, &
+         & this % num_vertex_cells)
+!!$    do i = 1, size(this % vertex_cells, dim=2)
+!!$       print *, 'vertex', i, 'cells', this % vertex_cells(1:this%num_vertex_cells(i),i)
+!!$    end do
+
+    print *, 'finding mesh geometry'
+    
+    allocate(this % cell_gamma(this % num_cells))      
+    this % cell_gamma = 1.0d0
+
+    call this % evaluate_cell_centers()
+!!$    print *, 'cell center'
+!!$    do i = 1, this % num_cells
+!!$       print *, i, this % cell_centers(:,i)
+!!$    end do
+
+    call this % evaluate_face_centers_areas()      
+!!$    print *, 'face'
+!!$    do i = 1, this % num_faces
+!!$       print *, i, this % face_areas(i), &
+!!$            & this % face_centers(:,i)
+!!$    end do
+
+    ! Use divergence theorem to find are
+    call this % evaluate_tangents_normals()
+    call this % evaluate_cell_volumes()
+    call this % evaluate_centroidal_vector()
+    call this % evaluate_face_delta()
+    call this % evaluate_face_weight()   
+    call this % evaluate_vertex_weight()    
 
   end subroutine initialize
   
@@ -346,7 +396,7 @@ end subroutine evaluate_cell_volumes
      ! Find cell centers O = (A + B + C) /3
     type(integer) :: icell
 
-    print *, 'num_vertices for each cell', this % num_cell_vertices
+    !print *, 'num_vertices for each cell', this % num_cell_vertices
 
     allocate(this % cell_centers(3, this % num_cells))
     
@@ -477,8 +527,6 @@ end subroutine evaluate_cell_volumes
          & me % num_faces   , me % face_numbers  , me % face_tags   , me % face_vertices , me % num_face_vertices , &
          & me % num_cells   , me % cell_numbers  , me % cell_tags   , me % cell_vertices , me % num_cell_vertices   &
          & )
-    
-    call me % to_string()
 
     ! Perform initialization tasks
     call me % initialize()
@@ -542,37 +590,39 @@ end subroutine evaluate_cell_volumes
           this % is_node_boundary_node(ivertex) = 0
        end if
     end do
-   
-    ! revere mapping from cell vertices to vertex_cells
-    call reverse_map(this % cell_vertices, this % num_cell_vertices, &
-         & this % vertex_cells, this % num_vertex_cells)
-    do i = 1, size(this % vertex_cells, dim=2)
-       print *, 'vertex', i, 'cells', this % vertex_cells(1:this%num_vertex_cells(i),i)
-    end do
+
+    call this % initialize()
     
-    allocate(this % cell_gamma(this % num_cells))      
-    this % cell_gamma = 1.0d0
-
-    call this % evaluate_cell_centers()
-    print *, 'cell center'
-    do i = 1, this % num_cells
-       print *, i, this % cell_centers(:,i)
-    end do
-
-    call this % evaluate_face_centers_areas()      
-    print *, 'face'
-    do i = 1, this % num_faces
-       print *, i, this % face_areas(i), &
-            & this % face_centers(:,i)
-    end do
-
-    ! Use divergence theorem to find are
-    call this % evaluate_tangents_normals()
-    call this % evaluate_cell_volumes()
-    call this % evaluate_centroidal_vector()
-    call this % evaluate_face_delta()
-    call this % evaluate_face_weight()   
-    call this % evaluate_vertex_weight()    
+!!$    ! revere mapping from cell vertices to vertex_cells
+!!$    call reverse_map(this % cell_vertices, this % num_cell_vertices, &
+!!$         & this % vertex_cells, this % num_vertex_cells)
+!!$    do i = 1, size(this % vertex_cells, dim=2)
+!!$       print *, 'vertex', i, 'cells', this % vertex_cells(1:this%num_vertex_cells(i),i)
+!!$    end do
+!!$    
+!!$    allocate(this % cell_gamma(this % num_cells))      
+!!$    this % cell_gamma = 1.0d0
+!!$
+!!$    call this % evaluate_cell_centers()
+!!$    print *, 'cell center'
+!!$    do i = 1, this % num_cells
+!!$       print *, i, this % cell_centers(:,i)
+!!$    end do
+!!$
+!!$    call this % evaluate_face_centers_areas()      
+!!$    print *, 'face'
+!!$    do i = 1, this % num_faces
+!!$       print *, i, this % face_areas(i), &
+!!$            & this % face_centers(:,i)
+!!$    end do
+!!$
+!!$    ! Use divergence theorem to find are
+!!$    call this % evaluate_tangents_normals()
+!!$    call this % evaluate_cell_volumes()
+!!$    call this % evaluate_centroidal_vector()
+!!$    call this % evaluate_face_delta()
+!!$    call this % evaluate_face_weight()   
+!!$    call this % evaluate_vertex_weight()    
 
   end function create_mesh
   

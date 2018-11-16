@@ -35,22 +35,24 @@ module class_mesh
 
      ! Fundamental face info
      integer :: num_edges
-     integer  , allocatable :: edge_vertices(:,:)        ! [[v1,v2],1:nedges]
+     integer  , allocatable :: edge_numbers(:)
      integer  , allocatable :: edge_tags(:)
+     integer  , allocatable :: edge_vertices(:,:)        ! [[v1,v2],1:nedges]
      integer  , allocatable :: num_edge_vertices(:)
 
      ! Fundamental face info
      integer :: num_faces
+     integer  , allocatable :: face_numbers(:)          
+     integer  , allocatable :: face_tags(:)          
      integer  , allocatable :: face_vertices(:,:)        ! [[v1,v2],1:nfaces]
-     integer  , allocatable :: face_tags(:)
      integer  , allocatable :: num_face_vertices(:)
 
      ! Fundamental cell info
      integer :: num_cells
-     integer  , allocatable :: cell_vertices(:,:)        ! [[v1,v2,v3], 1:ncells]
+     integer  , allocatable :: cell_numbers(:)
      integer  , allocatable :: cell_tags(:)
+     integer  , allocatable :: cell_vertices(:,:)        ! [[v1,v2,v3], 1:ncells]
      integer  , allocatable :: num_cell_vertices(:)      ! [1:ncells]
-
 
 
 
@@ -470,15 +472,13 @@ end subroutine evaluate_cell_volumes
     
     ! Get the fundamental information needed 
     call loader % get_mesh_data( &
-         & me % num_vertices, me % vertices     , me % vertex_numbers   , me % vertex_tags, & 
-         & me % num_edges   , me % edge_vertices, me % num_edge_vertices, me % edge_tags  , &
-         & me % num_faces   , me % face_vertices, me % num_face_vertices, me % face_tags  , &
-         & me % num_cells   , me % cell_vertices, me % num_cell_vertices, me % cell_tags    &
+         & me % num_vertices, me % vertex_numbers, me % vertex_tags , me % vertices ,  & 
+         & me % num_edges   , me % edge_numbers  , me % edge_tags   , me % edge_vertices , me % num_edge_vertices , &
+         & me % num_faces   , me % face_numbers  , me % face_tags   , me % face_vertices , me % num_face_vertices , &
+         & me % num_cells   , me % cell_numbers  , me % cell_tags   , me % cell_vertices , me % num_cell_vertices   &
          & )
-
-    do i = 1, me % num_vertices
-       print *, me % vertices(:,i)
-    end do
+    
+    call me % to_string()
 
     ! Perform initialization tasks
     call me % initialize()

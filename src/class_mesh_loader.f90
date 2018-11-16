@@ -1,9 +1,9 @@
 module class_mesh_loader
 
   ! import dependencies
-  use iso_fortran_env, only : dp => real64
-  use class_file     , only : file
-  use class_string, only : string
+  use iso_fortran_env , only : dp => real64
+  use class_file      , only : file
+  use class_string    , only : string
 
   implicit none
 
@@ -27,7 +27,7 @@ module class_mesh_loader
      ! Helper functions
      procedure :: find_tags
      procedure :: process_vertices
-     !procedure :: process_elements
+     procedure :: process_elements
      
   end type mesh_loader
 
@@ -54,33 +54,40 @@ contains
   !====================================================================!
 
   subroutine get_mesh_data(this, &
-       & num_vertices, vertices, vertex_numbers, vertex_tags, & 
-       & num_edges, edge_vertices, num_edge_vertices, edge_tags, &
-       & num_faces, face_vertices, num_face_vertices, face_tags, &
-       & num_cells, cell_vertices, num_cell_vertices, cell_tags)
-
+       & num_vertices, vertex_numbers, vertex_tags , vertices ,  & 
+       & num_edges   , edge_numbers  , edge_tags   , edge_vertices , num_edge_vertices , &
+       & num_faces   , face_numbers  , face_tags   , face_vertices , num_face_vertices , &
+       & num_cells   , cell_numbers  , cell_tags   , cell_vertices , num_cell_vertices   )
+    
     ! Arguments
     class(mesh_loader)  , intent(in)   :: this
 
+    ! Vertices
     integer , intent(out)              :: num_vertices
-    real(dp), intent(out), allocatable :: vertices(:,:)
     integer , intent(out), allocatable :: vertex_numbers(:)
     integer , intent(out), allocatable :: vertex_tags(:)
+    real(dp), intent(out), allocatable :: vertices(:,:)
 
-    integer, intent(out)              :: num_faces
-    integer, intent(out), allocatable :: face_vertices(:,:)
-    integer, intent(out), allocatable :: num_face_vertices(:)
-    integer, intent(out), allocatable :: face_tags(:)
-
+    ! Edges
     integer, intent(out)              :: num_edges
+    integer, intent(out), allocatable :: edge_numbers(:)
+    integer, intent(out), allocatable :: edge_tags(:)
     integer, intent(out), allocatable :: edge_vertices(:,:)
     integer, intent(out), allocatable :: num_edge_vertices(:)
-    integer, intent(out), allocatable :: edge_tags(:)
 
+    ! Faces    
+    integer, intent(out)              :: num_faces
+    integer, intent(out), allocatable :: face_numbers(:)
+    integer, intent(out), allocatable :: face_tags(:)
+    integer, intent(out), allocatable :: face_vertices(:,:)
+    integer, intent(out), allocatable :: num_face_vertices(:)
+
+    ! Cells
     integer, intent(out)              :: num_cells
+    integer, intent(out), allocatable :: cell_numbers(:)
+    integer, intent(out), allocatable :: cell_tags(:)
     integer, intent(out), allocatable :: cell_vertices(:,:)
     integer, intent(out), allocatable :: num_cell_vertices(:)
-    integer, intent(out), allocatable :: cell_tags(:)
 
     ! Local
     type(string), allocatable, dimension(:) :: lines    
@@ -101,9 +108,8 @@ contains
     integer :: idx_start_elements
     integer :: idx_end_elements
 
-    write(*,'(a,a)') "Loading mesh file : ", this % file % filename
-    
     ! Load the mesh into memory
+    write(*,'(a,a)') "Loading mesh file : ", this % file % filename
     call this % file % read_lines(lines)
     ! call lines % print()  
 
@@ -123,10 +129,18 @@ contains
          & num_vertices, vertices, vertex_numbers, vertex_tags)
     write(*,'(a,i8)') "number of vertices", num_vertices
 
-    ! process elements
+    ! How to find vertex tags?   
+    write(*,'(a)') "Reading elements... "
+    call this % process_elements(lines(idx_start_elements+2:idx_end_elements-1), &
+         & num_edges, edge_numbers, edge_tags, edge_vertices, num_edge_vertices, &              
+         & num_faces, face_numbers, face_tags, face_vertices, num_face_vertices, &
+         & num_cells, cell_numbers, cell_tags, cell_vertices, num_cell_vertices  )
+    write(*,'(a,i8)') "number of cells :", num_cells
+    write(*,'(a,i8)') "number of faces :", num_faces
+    write(*,'(a,i8)') "number of edges :", num_edges
 
     deallocate(lines)
-
+    
   end subroutine get_mesh_data
 
   pure subroutine find_tags(this, lines, &
@@ -206,6 +220,70 @@ contains
     end do
 
   end subroutine find_tags
+  
+  subroutine process_elements(this, &
+       & lines, &
+       & num_edges, edge_numbers, edge_tags, edge_vertices, num_edge_vertices, &              
+       & num_faces, face_numbers, face_tags, face_vertices, num_face_vertices, &
+       & num_cells, cell_numbers, cell_tags, cell_vertices, num_cell_vertices  &       
+       & )
+
+    class(mesh_loader) , intent(in)   :: this
+    type(string)       , intent(in)   :: lines(:)
+    
+    integer, intent(out)              :: num_edges
+    integer, intent(out), allocatable :: edge_numbers(:)
+    integer, intent(out), allocatable :: edge_tags(:)        
+    integer, intent(out), allocatable :: edge_vertices(:,:)
+    integer, intent(out), allocatable :: num_edge_vertices(:)
+    
+    integer, intent(out)              :: num_faces
+    integer, intent(out), allocatable :: face_numbers(:)
+    integer, intent(out), allocatable :: face_tags(:)        
+    integer, intent(out), allocatable :: face_vertices(:,:)
+    integer, intent(out), allocatable :: num_face_vertices(:)
+    
+    integer, intent(out)              :: num_cells
+    integer, intent(out), allocatable :: cell_numbers(:)
+    integer, intent(out), allocatable :: cell_tags(:)        
+    integer, intent(out), allocatable :: cell_vertices(:,:)
+    integer, intent(out), allocatable :: num_cell_vertices(:)
+
+
+    type(string), allocatable :: tokens(:)
+    integer                   :: num_tokens    
+    integer                   :: num_lines, iline
+    
+    ! Extract start and end indices of different mesh tags used by
+    ! GMSH
+    num_lines = size(lines)
+
+    num_faces = 0
+    num_cells = 0
+    
+    do iline = 1, num_lines
+       
+       call lines(iline) % tokenize(" ", num_tokens, tokens)
+
+       if (tokens(2) % asinteger() .eq. 1) then ! Line element
+          
+          num_faces = num_faces + 1
+
+       else if (tokens(2) % asinteger() .eq. 2) then ! Triangular element
+
+          num_cells = num_cells + 1
+          
+       else
+
+          error stop
+
+       end if
+
+       if (allocated(tokens)) deallocate(tokens)
+
+    end do
+
+  end subroutine process_elements
   
   pure subroutine process_vertices(this, lines, &
        & num_vertices, vertices, &

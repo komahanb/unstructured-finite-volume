@@ -262,9 +262,9 @@ contains
     num_cells = 0
     
     do iline = 1, num_lines
-
-       call lines(iline) % tokenize(" ", num_tokens, tokens)
        
+       call lines(iline) % tokenize(" ", num_tokens, tokens)
+   
        if (tokens(2) % asinteger() .eq. 1) then
           ! Line element
           num_faces = num_faces + 1
@@ -273,7 +273,9 @@ contains
           num_cells = num_cells + 1
        else if (tokens(2) % asinteger() .eq. 3) then
           ! Quadrilateral element
-          num_cells = num_cells + 1          
+          num_cells = num_cells + 1
+       else if (tokens(2) % asinteger() .eq. 15) then
+          print *, 'skip node'
        else
           error stop
        end if
@@ -283,22 +285,27 @@ contains
     allocate(edge_numbers(num_edges))
     allocate(face_numbers(num_faces))
     allocate(cell_numbers(num_cells))
+    edge_numbers = 0
+    face_numbers = 0
+    cell_numbers = 0
     
     allocate(edge_tags(num_edges))
     allocate(face_tags(num_faces))
     allocate(cell_tags(num_cells))
-
+    edge_tags = 0
+    face_tags = 0
+    cell_tags = 0
+    
     allocate(edge_vertices(4,num_edges)) ! upto quads
     allocate(face_vertices(2,num_faces)) ! linear faces
     allocate(cell_vertices(4,num_cells)) ! upto quads
-!!$    edge_vertices = 0
-!!$    face_vertices = 0
-!!$    cell_vertices = 0
+    edge_vertices = 0
+    face_vertices = 0
+    cell_vertices = 0
 
     allocate(num_edge_vertices(num_edges))
     allocate(num_face_vertices(num_faces))
     allocate(num_cell_vertices(num_cells))
-
     num_faces = 0
     num_cells = 0
     num_edges = 0
@@ -339,6 +346,7 @@ contains
 
        else
 
+          print *, 'unknown element number', tokens(2) % asinteger()
           error stop
 
        end if
@@ -350,8 +358,7 @@ contains
   end subroutine process_elements
   
   pure subroutine process_vertices(this, lines, &
-       & num_vertices, vertices, &
-       & vertex_numbers, vertex_tags)
+       & num_vertices, vertices, vertex_numbers, vertex_tags)
     
     ! Arguments
     class(mesh_loader) , intent(in)               :: this
@@ -373,6 +380,10 @@ contains
       num_vertices = size(lines)
       allocate(vertices(3, num_vertices))
       allocate(vertex_numbers(num_vertices))
+      allocate(vertex_tags(num_vertices))
+      vertices       = 0
+      vertex_numbers = 0
+      vertex_tags    = 0
       
       ! Parse lines and store vertices
       do concurrent(ivertex=1:num_vertices)

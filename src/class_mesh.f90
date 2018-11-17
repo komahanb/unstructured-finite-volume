@@ -199,24 +199,20 @@ contains
     !=================================================================!
 
     write(*,'(a)') 'Finding intermediate topologies...'
-    write(*,'(a)') '1.a. cell to face connectivites'
+    write(*,'(a)') '1.a. face to cell connectivites'
+    call get_face_cells( &
+       & this % cell_vertices, this % num_cell_vertices, &
+       & this % face_vertices, this % num_face_vertices, &
+       & this % face_cells   , this % num_face_cells)
+    do iface = 1, size(this % face_cells, dim=2)
+       print *, 'face', iface,  'num face cells', this%num_face_cells(iface), 'cells',&
+            & this % face_cells(1:this%num_face_cells(iface),iface)
+    end do
 
-    ! Combine maps to get cell_faces
-    call get_cell_faces(this % cell_vertices, &
-         & this % vertex_faces , this % num_vertex_faces, &
-         & this % cell_faces   , this % num_cell_faces)
-    do icell = 1, this % num_cells
-       print *, 'cell', icell, 'num_faces', this % num_cell_faces(icell), &
-            & 'faces', this % cell_faces(1:this%num_cell_faces(icell),icell)
-    end do   
-    print *, ''
 !!$
 !!$    write(*,'(a)') '1.b. face to cell connectivites'
 !!$    ! Invert cell_faces
 !!$    call reverse_map(cell_faces, num_cell_faces, face_cells, num_face_cells)
-!!$    do iface = 1, size(face_cells, dim=2)
-!!$       print *, 'face', iface, 'cells', face_cells(1:num_face_cells(iface),iface)
-!!$    end do
 
 
 

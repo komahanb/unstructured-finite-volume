@@ -237,6 +237,21 @@ contains
       allocate(cell_tags(num_cells)); cell_tags = 0
       allocate(face_tags(num_faces)); face_tags = 0
       allocate(edge_tags(num_edges)); edge_tags = 0
+      
+      ! Here the principle is that a cell with only one neighbour is
+      ! tagged as boundary
+
+      ! Then we loop through all such tagged cells as 'say 1', extract
+      ! the three faces
+
+      ! Maybe have a default option for user to tag things, if not we
+      ! can do some processing internally after all the inverse
+      ! information is obtained and tag these separately than interior
+      ! nodes. But for advanced appliations, the user might want to
+      ! supply tags externally.
+
+      ! With this information it is not possible to Use geometry and
+      ! x,y coords to find vertices, then faces, then cells, edges?
 
     end block tag_find
 

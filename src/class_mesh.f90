@@ -26,7 +26,9 @@ module class_mesh
   !-------------------------------------------------------------------!
   
   type :: mesh ! rename as topology?
-     
+
+     logical :: initialized = .false.
+
      !================================================================!
      ! Basic Topology information
      !================================================================!
@@ -140,7 +142,7 @@ module class_mesh
 
 contains
   
-  subroutine initialize(this)
+  type(logical) function initialize(this)
 
     class(mesh), intent(inout) :: this
     integer :: i
@@ -267,7 +269,10 @@ contains
     call this % evaluate_face_weight()   
     call this % evaluate_vertex_weight()    
 
-  end subroutine initialize
+    ! Signal that all tasks are complete
+    initialize = .true.
+
+  end function initialize
   
   subroutine evaluate_vertex_weight(this)
 
@@ -570,9 +575,10 @@ end subroutine evaluate_cell_volumes
     write(*,*) 'Number of faces    :', this % num_faces
     
     if (this % num_vertices .gt. 0) then
-       write(*,*) "Vertex Info:"
+       write(*,'(a,i4,a,i4)') "Vertex info for ", min(10,this % num_vertices), &
+            & ' vertices out of ', this % num_vertices
        write(*,*) "number tag x y z"
-       do ivertex = 1, this % num_vertices
+       do ivertex = 1, min(10,this % num_vertices)
           write(*,'(i6,i2,3E15.6)') &
                & this % vertex_numbers(ivertex), &
                & this % vertex_tags(ivertex), &
@@ -581,9 +587,10 @@ end subroutine evaluate_cell_volumes
     end if
 
     if (this % num_cells .gt. 0) then
-       write(*,*) "Cell Info:"
+       write(*,'(a,i4,a,i4)') "Cell info for ", min(10,this % num_cells), &
+            & ' cells out of ', this % num_cells
        write(*,*) "cno ctag ncv iverts"
-       do icell = 1, this % num_cells
+       do icell = 1, min(10,this % num_cells)
           write(*,'(i6,i2,i2,10i6)') &
                & this % cell_numbers(icell), &
                & this % cell_tags(icell), &
@@ -593,9 +600,10 @@ end subroutine evaluate_cell_volumes
     end if
 
     if (this % num_faces .gt. 0) then
-       write(*,*) "Face Info:"
+       write(*,'(a,i4,a,i4)') "Face info for ", min(10,this % num_faces), &
+            & ' faces out of ', this % num_faces       
        write(*,*) "fno ftag nfv iverts"
-       do iface = 1, this % num_faces
+       do iface = 1, min(10,this % num_faces)
           write(*,'(i6,i2,i2,10i6)') &
                & this % face_numbers(iface), &
                & this % face_tags(iface), &
@@ -605,9 +613,10 @@ end subroutine evaluate_cell_volumes
     end if
 
     if (this % num_edges .gt. 0) then    
-       write(*,*) "Edge Info:"
+       write(*,'(a,i4,a,i4)') "Edge info for ", min(10,this % num_edges), &
+            & ' edges out of ', this % num_edges
        write(*,*) "eno etag nev iverts"
-       do iedge = 1, this % num_edges
+       do iedge = 1, min(10,this % num_edges)
           write(*,'(i6,i2,i2,10i6)') &
                & this % edge_numbers(iedge), &
                & this % edge_tags(iedge), &
@@ -615,28 +624,34 @@ end subroutine evaluate_cell_volumes
                & this % edge_vertices(1:this % num_edge_vertices(iedge), iedge)
        end do
     end if
+    
+    if (this % initialized .eqv. .true.) then
 
-!!$    write(*,*) "Face Data [index] [center] [volume]"
-!!$    do icell = 1, this % num_cells
-!!$       write(*,*) "[",icell,"]", "[",this % cell_centers(:, icell),"]", &
-!!$            & "[",this % cell_volumes(icell),"]"
-!!$    end do
-!!$
-!!$    write(*,*) "Face Data [index] [center] [area]"
-!!$    do iface = 1, this % num_faces
-!!$       write(*,*) "[",iface,"]", "[",this % face_centers(:, iface),"]", &
-!!$            & "[",this % face_areas(iface),"]"
-!!$    end do
-!!$    
-!!$    write(*,*) "Face to Face Connectivity"
-!!$    do icell = 1, this % num_cells
-!!$       write(*,*) icell, this % cell_faces(1:this % num_cell_faces(icell), icell)
-!!$    end do
-!!$
-!!$    write(*,*) "Face to Cell Connectivity"
-!!$    do iface = 1, this % num_faces
-!!$       write(*,*) iface, this % face_cells(1:this % num_face_cells(iface), iface)
-!!$    end do
+       write(*,*) "Cell Geo. Data [index] [center] [volume]"
+       do icell = 1, this % num_cells
+          write(*,*) &
+               & "[", this % cell_numbers(icell)   ,"]", &
+               & "[", this % cell_centers(:,icell) ,"]", &
+               & "[", this % cell_volumes(icell)   ,"]"
+       end do
+
+       write(*,*) "Face Data [index] [center] [area]"
+       do iface = 1, this % num_faces
+          write(*,*) "[",iface,"]", "[",this % face_centers(:, iface),"]", &
+               & "[",this % face_areas(iface),"]"
+       end do
+
+       write(*,*) "Face to Face Connectivity"
+       do icell = 1, this % num_cells
+          write(*,*) icell, this % cell_faces(1:this % num_cell_faces(icell), icell)
+       end do
+
+       write(*,*) "Face to Cell Connectivity"
+       do iface = 1, this % num_faces
+          write(*,*) iface, this % face_cells(1:this % num_face_cells(iface), iface)
+       end do
+
+    end if
 
   end subroutine to_string
     
@@ -670,11 +685,14 @@ end subroutine evaluate_cell_volumes
          & error stop
 
     call me % to_string()
-    print *, 'passed initialization check'
-    stop
 
-    ! Perform initialization tasks
-    call me % initialize()
+    ! Perform initialization tasks and store the resulting flag
+    me % initialized = me % initialize()
+    if (me % initialized .eqv. .false.) then
+       write(error_unit,*) "Mesh.Construct: failed"
+    end if
+
+    call me % to_string()
 
   end function create_mesh_from_file
 
@@ -736,7 +754,11 @@ end subroutine evaluate_cell_volumes
        end if
     end do
 
-    call this % initialize()
+    this % initialized = this % initialize()
+    if (this % initialized .eqv. .false.) then
+       write(error_unit,*) "Mesh.Construct: failed"
+    end if
+    call this % to_string()
     
 !!$    ! revere mapping from cell vertices to vertex_cells
 !!$    call reverse_map(this % cell_vertices, this % num_cell_vertices, &

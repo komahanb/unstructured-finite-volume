@@ -1,54 +1,51 @@
-module class_mesh_loader
+module class_gmsh_loader
 
   ! import dependencies
-  use iso_fortran_env , only : dp => real64
-  use class_file      , only : file
-  use class_string    , only : string
+  use iso_fortran_env       , only : dp => real64
+  use interface_mesh_loader , only : mesh_loader
+  use class_file            , only : file
+  use class_string          , only : string
 
   implicit none
 
   private
-  public :: mesh_loader
+  public :: gmsh_loader
 
   !-------------------------------------------------------------------!
-  ! Derived type for mesh load
+  ! Interface to construct a mesh_loader for GMSH
   !-------------------------------------------------------------------!
   
-  type :: mesh_loader
+  interface gmsh_loader
+     module procedure create
+  end interface gmsh_loader
+  
+  type, extends(mesh_loader) :: gmsh_loader
 
      type(file) :: file ! mesh file
 
    contains
 
-     ! Type bound procedure that returns all information needed for
-     ! mesh creation
+     ! Implement deferred procedure from interface
      procedure :: get_mesh_data
 
-     ! Helper functions
+     ! Helper routines
      procedure :: find_tags
      procedure :: process_vertices
      procedure :: process_elements
-     
-  end type mesh_loader
 
-  !-------------------------------------------------------------------!
-  ! interface to construct a mesh_loader
-  !-------------------------------------------------------------------!
-
-  interface mesh_loader
-     module procedure create
-  end interface mesh_loader
+  end type gmsh_loader
 
 contains
 
-  type(mesh_loader) function create(filename) result (this)
-    
+  type(gmsh_loader) function create(filename) result (this)
+
     type(character(*)), intent(in) :: filename
 
     this % file = file(filename)
 
   end function create
-  
+
+
   !====================================================================!
   ! Supply all information needed to create a mesh object
   !====================================================================!
@@ -60,7 +57,7 @@ contains
        & num_cells   , cell_numbers  , cell_tags   , cell_vertices , num_cell_vertices   )
     
     ! Arguments
-    class(mesh_loader)  , intent(in)   :: this
+    class(gmsh_loader)  , intent(in)   :: this
 
     ! Vertices
     integer , intent(out)              :: num_vertices
@@ -150,7 +147,7 @@ contains
        & idx_start_elements       , idx_end_elements)
     
     ! Arguments
-    class(mesh_loader) , intent(in) :: this
+    class(gmsh_loader) , intent(in) :: this
     type(string)       , intent(in) :: lines(:)
 
     ! Mesh tag
@@ -228,7 +225,7 @@ contains
        & num_cells, cell_numbers, cell_tags, cell_vertices, num_cell_vertices  &       
        & )
 
-    class(mesh_loader) , intent(in)   :: this
+    class(gmsh_loader) , intent(in)   :: this
     type(string)       , intent(in)   :: lines(:)
     
     integer, intent(out)              :: num_edges
@@ -361,7 +358,7 @@ contains
        & num_vertices, vertices, vertex_numbers, vertex_tags)
     
     ! Arguments
-    class(mesh_loader) , intent(in)               :: this
+    class(gmsh_loader) , intent(in)               :: this
     type(string)       , intent(in)               :: lines(:)
     integer            , intent(out)              :: num_vertices
     real(dp)           , intent(out), allocatable :: vertices(:,:)
@@ -407,4 +404,4 @@ contains
 
   end subroutine process_vertices
 
-end module class_mesh_loader
+end module class_gmsh_loader

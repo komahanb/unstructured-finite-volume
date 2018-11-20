@@ -3,7 +3,7 @@
 !=====================================================================!
 
 program test_mesh
-  
+
   use class_mesh_loader , only : mesh_loader
   use class_mesh        , only : mesh
 !!$  use class_file        , only : file
@@ -14,7 +14,6 @@ program test_mesh
   character(len=*), parameter :: filename = 'rectangle.msh'
   type(mesh_loader) :: gmsh_loader
   type(mesh)        :: grid
-
 
 !!$  type(file)        :: ofile
 !!$
@@ -33,12 +32,12 @@ program test_mesh
 !!$
 !!$  call ofile % read_lines(lines)
 !!$  call lines % print()
-  
+
   ! Create a mesh loader for mesh file
   gmsh_loader = mesh_loader(filename)
 
   ! Get the mesh using loader object
   grid = mesh(gmsh_loader)
   !call grid % to_string()
-  
+
 end program test_mesh

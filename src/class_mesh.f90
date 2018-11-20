@@ -6,8 +6,8 @@
 
 module class_mesh
 
-  use iso_fortran_env  , only : dp => REAL64, error_unit
-  use class_mesh_loader, only : mesh_loader    
+  use iso_fortran_env       , only : dp => REAL64, error_unit
+  use interface_mesh_loader , only : mesh_loader    
   use module_mesh_utils
   
   implicit none

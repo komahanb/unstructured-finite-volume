@@ -22,6 +22,8 @@ program test_mesh
   mesh_obj             = mesh(test_mesh_loader_obj)
   call mesh_obj % to_string()
 
+  stop
+
   !===================================================================!
   ! Test the functionalities of Class String and Class File
   !===================================================================!

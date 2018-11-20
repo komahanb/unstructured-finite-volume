@@ -109,7 +109,6 @@ module class_mesh
     
      real(dp) , allocatable :: vertex_cell_weights(:,:)  ! [[wc1,wc2...],1:vertices]
      real(dp) , allocatable :: face_cell_weights(:,:)    ! [[wc1,wc2],1:nfaces]
-
      
      ! Generalize to tag numbers. Right now we can't differentiate
      ! lower face from upper face.
@@ -145,134 +144,226 @@ contains
   type(logical) function initialize(this)
 
     class(mesh), intent(inout) :: this
-    integer :: i
-    integer :: lvertex, gvertex, icell, iface
 
-    ! write(*,'(a)') 'Finding inverse mapping of vertex, edge, face, and cell numbers...'
-    ! revere mapping from cell vertices to vertex_cells
+    !-----------------------------------------------------------------!
+    ! Find VertexCell conn. by inverting CellVertex conn.
+    !-----------------------------------------------------------------!
 
-    write(*,'(a)') 'Finding inverse topologies...'
-    write(*,'(a)') '1. vertex to cell connectivites'
+    vertex_cell: block
 
-    ! revere mapping from cell vertices to vertex_cells
-    do i = 1, this % num_cells
-       print *, 'cell', i, this % cell_numbers(i), 'num_cell_vertices', this % num_cell_vertices(i) ,'vertices', &
-            & this % cell_vertices(1:this % num_cell_vertices(i),i)
-    end do
+      integer :: ivertex
+      
+      write(*,*) "Inverting CellVertex Map..."
+      call reverse_map( &
+           & this % cell_vertices, &
+           & this % num_cell_vertices, &
+           & this % vertex_cells, &
+           & this % num_vertex_cells)      
 
-    call reverse_map( &
-         & this % cell_vertices, &
-         & this % num_cell_vertices, &
-         & this % vertex_cells, &
-         & this % num_vertex_cells)
-    do i = 1, size(this % vertex_cells, dim=2)
-       print *, 'vertex', i, 'num_vertex_cells', this % num_vertex_cells(i) ,'cells', &
-            & this % vertex_cells(1:this % num_vertex_cells(i),i)
-    end do
+      if (allocated(this % vertex_cells)) then
 
-    write(*,'(a)') '2. vertex to face connectivites'
-    do i = 1, this % num_faces
-       print *, 'face', i, this % face_numbers(i), 'num_face_vertices', this % num_face_vertices(i) ,'vertices', &
-            & this % face_vertices(1:this % num_face_vertices(i),i)
-    end do
-    call reverse_map( &
-         & this % face_vertices, &
-         & this % num_face_vertices, &
-         & this % vertex_faces, &
-         & this % num_vertex_faces)
-    do i = 1, size(this % vertex_faces, dim=2)
-       print *, 'vertex', i, 'num_vertex_faces', this % num_vertex_faces(i) ,'cells', &
-            & this % vertex_faces(1:this % num_vertex_faces(i),i)
-    end do
-!!$
-!!$    write(*,'(a)') '3. vertex to edge connectivites'
-!!$    call reverse_map( &
-!!$         & this % edge_vertices, &
-!!$         & this % num_edge_vertices, &
-!!$         & this % vertex_edges, &
-!!$         & this % num_vertex_edges)
-!!$    do i = 1, size(this % vertex_edges, dim=2)
-!!$       print *, 'vertex', i, 'num_vertex_edges', this % num_vertex_edges(i) ,'cells', &
-!!$            & this % vertex_edges(1:this % num_vertex_edges(i),i)
-!!$    end do
+         write(*,'(a,i4,a,i4)') &
+              & "Vertex to cell info for", min(10,this % num_vertices), &
+              & " vertices out of ", this % num_vertices
 
-    !=================================================================!
-    ! Intermediate Topologies
-    !=================================================================!
+         do ivertex = 1, min(10,this % num_vertices)
+            write(*,*) &
+                 & 'vertex ', this % vertex_numbers(ivertex), &
+                 & 'num_vertex_cells ', this % num_vertex_cells(ivertex) ,&
+                 & 'cells ', this % vertex_cells(1:this % num_vertex_cells(ivertex),ivertex)
+         end do
 
-    write(*,'(a)') 'Finding intermediate topologies...'
-    write(*,'(a)') '1.a. face to cell connectivites'
-    call get_face_cells( &
-       & this % cell_vertices, this % num_cell_vertices, &
-       & this % face_vertices, this % num_face_vertices, &
-       & this % face_cells   , this % num_face_cells)
-    do iface = 1, size(this % face_cells, dim=2)
-       print *, 'face', iface,  'num face cells', this%num_face_cells(iface), 'cells',&
-            & this % face_cells(1:this%num_face_cells(iface),iface)
-    end do
+         ! Sanity check
+         if (minval(this % num_vertex_cells) .lt. 1) then
+            write(error_unit, *) 'Error: There are vertices not mapped to a cell'
+            error stop
+         end if
 
-!!$
-!!$    write(*,'(a)') '1.b. face to cell connectivites'
-!!$    ! Invert cell_faces
-!!$    call reverse_map(cell_faces, num_cell_faces, face_cells, num_face_cells)
+      else
 
+         write(*,'(a)') "Vertex to cell info not computed"
 
+      end if
+      
+    end block vertex_cell
 
+    !-----------------------------------------------------------------!
+    ! Find VertexFace conn. by inverting FaceVertex conn.
+    !-----------------------------------------------------------------!
 
+    vertex_face: block
 
+      integer :: ivertex
+      
+      write(*,*) "Inverting FaceVertex Map..."
+      call reverse_map( &
+           & this % face_vertices, &
+           & this % num_face_vertices, &
+           & this % vertex_faces, &
+           & this % num_vertex_faces)      
 
-!!$
-!!$    ! Finding the vertex tags based on faces
-!!$    do lvertex = 1, this % num_vertices
-!!$       gvertex = this % vertex_numbers(lvertex)
-!!$       gface   = this % vertex_faces(1,gvertex)
-!!$       this % vertex_tags(lvertex) = this % face_tags(lface(gf))
-!!$    end do
+      if (allocated(this % vertex_faces)) then
 
-    stop
+         write(*,'(a,i4,a,i4)') &
+              & "Vertex to face info for", min(10,this % num_vertices), &
+              & " vertices out of ", this % num_vertices
 
-    write(*,'(a)') 'Calculating geometry information...'
+         do ivertex = 1, min(10,this % num_vertices)
+            write(*,*) &
+                 & 'vertex ', this % vertex_numbers(ivertex), &
+                 & 'num_vertex_faces ', this % num_vertex_faces(ivertex) ,&
+                 & 'faces ', this % vertex_faces(1:this % num_vertex_faces(ivertex),ivertex)
+         end do
 
+         ! Sanity check
+         if (minval(this % num_vertex_faces) .lt. 1) then
+            write(error_unit, *) 'Error: There are vertices not mapped to a face'
+            error stop
+         end if
 
+      else
 
+         write(*,'(a)') "Vertex to face info not computed"
 
+      end if
 
+    end block vertex_face
 
+    !-----------------------------------------------------------------!
+    ! Find VertexEdge conn. by inverting EdgeVertex conn.
+    !-----------------------------------------------------------------!
 
+    vertex_edge: block
 
+      integer :: ivertex
 
+      write(*,*) "Inverting EdgeVertex Map..."
 
+      call reverse_map( &
+           & this % edge_vertices, &
+           & this % num_edge_vertices, &
+           & this % vertex_edges, &
+           & this % num_vertex_edges)      
+      
+      if (allocated(this % vertex_edges)) then
 
-    print *, 'finding mesh geometry'
-    
-    allocate(this % cell_gamma(this % num_cells))      
-    this % cell_gamma = 1.0d0
+         write(*,'(a,i4,a,i4)') &
+              & "Vertex to edge info for", min(10,this % num_vertices), &
+              & " vertices out of ", this % num_vertices
 
-    call this % evaluate_cell_centers()
-!!$    print *, 'cell center'
-!!$    do i = 1, this % num_cells
-!!$       print *, i, this % cell_centers(:,i)
-!!$    end do
+         do ivertex = 1, min(10,this % num_vertices)
+            write(*,*) &
+                 & 'vertex ', this % vertex_numbers(ivertex), &
+                 & 'num_vertex_edges ', this % num_vertex_edges(ivertex) ,&
+                 & 'edges ', this % vertex_edges(1:this % num_vertex_edges(ivertex),ivertex)
+         end do
 
-    call this % evaluate_face_centers_areas()      
-!!$    print *, 'face'
-!!$    do i = 1, this % num_faces
-!!$       print *, i, this % face_areas(i), &
-!!$            & this % face_centers(:,i)
-!!$    end do
+         ! Sanity check
+         if (minval(this % num_vertex_edges) .lt. 1) then
+            write(error_unit, *) 'Error: There are vertices not mapped to a edge'
+            error stop
+         end if
+         
+      else
 
-    ! Use divergence theorem to find are
-    call this % evaluate_tangents_normals()
-    call this % evaluate_cell_volumes()
-    call this % evaluate_centroidal_vector()
-    call this % evaluate_face_delta()
-    call this % evaluate_face_weight()   
-    call this % evaluate_vertex_weight()    
+         write(*,'(a)') "Vertex to edge info not computed"
 
-    ! Signal that all tasks are complete
-    initialize = .true.
+      end if
 
-  end function initialize
+    end block vertex_edge
+
+    !-----------------------------------------------------------------!
+    ! Find Cell Face conn. by combining two maps
+    !-----------------------------------------------------------------!
+
+    cell_face: block
+      
+      integer :: icell
+
+      write(*,*) "Combining CellVertex with VertexFace to get CellFace Map..."
+      
+      ! Combine maps to get cell_faces
+      call get_cell_faces(this % cell_vertices, &
+           & this % vertex_faces, this % num_vertex_faces, &
+           & this % cell_faces, this % num_cell_faces)
+
+      if (allocated(this % cell_faces)) then
+
+         write(*,'(a,i4,a,i4)') &
+              & "Cell to face info for", min(10,this % num_cells), &
+              & " cells out of ", this % num_cells
+
+         do icell = 1, min(10,this % num_cells)
+            write(*,*) &
+                 & 'cell'  , icell, &
+                 & 'nfaces', this % num_cell_faces(icell), &
+                 & 'faces' , this % cell_faces(1:this % num_cell_faces(icell),icell)
+         end do
+
+      else
+
+         write(*,'(a)') "Vertex to edge info not computed"
+
+      end if
+
+    end block cell_face
+
+    !-----------------------------------------------------------------!
+    ! Find Face Cell conn. by inverting Cell Face conn.    
+    !-----------------------------------------------------------------!
+   
+    face_cell : block
+      
+      integer :: iface
+
+      ! Invert cell_faces
+      call reverse_map(this % cell_faces, this % num_cell_faces, &
+           & this % face_cells, this % num_face_cells)
+
+      do iface = 1, this % num_faces
+         print *, 'face', iface, 'cells', this % face_cells(1:this%num_face_cells(iface),iface)
+      end do
+      
+      if (minval(this % num_face_cells) .lt. 1) then
+         write(error_unit, *) 'Error: There are faces not mapped to a cell'
+      end if
+      
+    end block face_cell
+
+    geom : block
+
+      integer :: i
+
+      write(*,*) 'Calculating mesh geometry information'
+
+      allocate(this % cell_gamma(this % num_cells))      
+      this % cell_gamma = 1.0d0
+      call this % evaluate_cell_centers()
+      print *, 'cell center'
+      do i = 1, this % num_cells
+         print *, i, this % cell_centers(:,i)
+      end do
+
+      call this % evaluate_face_centers_areas()      
+      print *, 'face'
+      do i = 1, this % num_faces
+         print *, i, this % face_areas(i), &
+              & this % face_centers(:,i)
+      end do
+
+      call this % evaluate_tangents_normals()
+      call this % evaluate_cell_volumes()
+      call this % evaluate_centroidal_vector()
+      call this % evaluate_face_delta()
+      call this % evaluate_face_weight()   
+      call this % evaluate_vertex_weight()    
+
+    end block geom
+
+   ! Signal that all tasks are complete
+   initialize = .true.
+
+ end function initialize
   
   subroutine evaluate_vertex_weight(this)
 
@@ -690,8 +781,9 @@ end subroutine evaluate_cell_volumes
     me % initialized = me % initialize()
     if (me % initialized .eqv. .false.) then
        write(error_unit,*) "Mesh.Construct: failed"
+       error stop
     end if
-
+    
     call me % to_string()
 
   end function create_mesh_from_file

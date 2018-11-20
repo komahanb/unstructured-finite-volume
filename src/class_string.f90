@@ -75,7 +75,7 @@ contains
     sidx      = 1
     eidx      = len(this % str)
     token_ctr = 0 
-    parse: do while (len(this % str(sidx:eidx)) .gt. 0)
+    parse: do while (len(this % str(sidx:eidx)) .ge. 0)
 
        ! Get the -th index of delimiter
        token_idx = index(this % str(sidx:eidx), delimiter)
@@ -91,7 +91,7 @@ contains
        else
 
           ! Check if its the last substring
-          if (token_ctr .gt. 1) then
+          if (token_ctr .ge. 1) then
 
              ! Yes, this is a token
              token_ctr = token_ctr + 1
@@ -169,7 +169,11 @@ contains
     
     class(string), intent(in) :: this
     
-    print *, "string : ", this % str
+    if (allocated(this % str)) then
+       print *, "string : ", this % str
+    else
+       print *, "string : ", "NULL"
+    end if
     
   end subroutine print
 

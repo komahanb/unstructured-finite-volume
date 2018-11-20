@@ -4,13 +4,23 @@
 
 program test_mesh
   
-  use class_mesh        , only : mesh
-  use class_gmsh_loader , only : gmsh_loader
-
-  use class_file        , only : file
-  use class_string      , only : string
+  use class_mesh             , only : mesh
+  use class_gmsh_loader      , only : gmsh_loader
+  use class_test_mesh_loader , only : test_mesh_loader
+  use class_file             , only : file
+  use class_string           , only : string
 
   implicit none
+   
+  character(len=*), parameter :: coord_file = 'coordinates_10.input'
+  character(len=*), parameter :: elem_file  = 'elements_10.input'
+
+  type(test_mesh_loader)      :: test_mesh_loader_obj
+  type(mesh)                  :: mesh_obj
+
+  test_mesh_loader_obj = test_mesh_loader(coord_file, elem_file)
+  mesh_obj             = mesh(test_mesh_loader_obj)
+  call mesh_obj % to_string()
 
   !===================================================================!
   ! Test the functionalities of Class String and Class File
@@ -56,13 +66,13 @@ program test_mesh
   end block test_gmsh
   
 contains
-
+  
   subroutine test_gmsh_loader(filename)
-
+    
     character(len=*), intent(in) :: filename
     type(gmsh_loader) :: gmsh_loader_obj
     type(mesh)        :: mesh_obj
-
+    
     ! Create a mesh loader for mesh file
     gmsh_loader_obj =  gmsh_loader(filename)
 

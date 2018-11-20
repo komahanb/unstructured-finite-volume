@@ -611,6 +611,8 @@ end subroutine evaluate_cell_volumes
          & me % num_cells   , me % cell_numbers  , me % cell_tags   , me % cell_vertices , me % num_cell_vertices   &
          & )
 
+    ! Check allocations and print error messages and stop
+
     ! Sanity check (make sure numbering is continuous), although it may not start from one
     if (me % num_vertices .gt. 0 .and. maxval(me % vertex_numbers) -  minval(me % vertex_numbers) + 1 .ne. me % num_vertices) &
          & error stop
@@ -620,7 +622,11 @@ end subroutine evaluate_cell_volumes
          & error stop
     if (me % num_cells    .gt. 0 .and. maxval(me % cell_numbers  ) -  minval(me % cell_numbers  ) + 1 .ne. me % num_cells   ) &
          & error stop
-    
+
+    print *, 'passed initialization check'
+
+    stop
+
     ! Perform initialization tasks
     call me % initialize()
 

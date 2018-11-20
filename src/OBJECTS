@@ -1,6 +1,7 @@
 objects= \
 class_string.o \
 class_file.o \
+class_set.o \
 interface_mesh_loader.o \
 class_gmsh_loader.o \
 module_mesh_utils.o \

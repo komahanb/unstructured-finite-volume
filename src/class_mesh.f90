@@ -656,19 +656,21 @@ end subroutine evaluate_cell_volumes
     ! Check allocations and print error messages and stop
 
     ! Sanity check (make sure numbering is continuous), although it may not start from one
-    if (me % num_vertices .gt. 0 .and. maxval(me % vertex_numbers) -  minval(me % vertex_numbers) + 1 .ne. me % num_vertices) &
+    if (me % num_vertices .gt. 0 .and. &
+         & maxval(me % vertex_numbers) -  minval(me % vertex_numbers) + 1 .ne. me % num_vertices) &
          & error stop
-    if (me % num_edges    .gt. 0 .and. maxval(me % edge_numbers  ) -  minval(me % edge_numbers  ) + 1 .ne. me % num_edges   ) &
+    if (me % num_edges    .gt. 0 .and. &
+         & maxval(me % edge_numbers  ) -  minval(me % edge_numbers  ) + 1 .ne. me % num_edges   ) &
          & error stop
-    if (me % num_faces    .gt. 0 .and. maxval(me % face_numbers  ) -  minval(me % face_numbers  ) + 1 .ne. me % num_faces   ) &
+    if (me % num_faces    .gt. 0 .and. &
+         & maxval(me % face_numbers  ) -  minval(me % face_numbers  ) + 1 .ne. me % num_faces   ) &
          & error stop
-    if (me % num_cells    .gt. 0 .and. maxval(me % cell_numbers  ) -  minval(me % cell_numbers  ) + 1 .ne. me % num_cells   ) &
+    if (me % num_cells    .gt. 0 .and. &
+         & maxval(me % cell_numbers  ) -  minval(me % cell_numbers  ) + 1 .ne. me % num_cells   ) &
          & error stop
 
     call me % to_string()
-
     print *, 'passed initialization check'
-
     stop
 
     ! Perform initialization tasks

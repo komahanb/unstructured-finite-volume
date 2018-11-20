@@ -100,11 +100,9 @@ contains
       ! No edges in 2D. Edges are faces.
       num_edges = 0
       allocate(edge_numbers(num_edges))
-      allocate(edge_tags(num_edges))
       allocate(edge_vertices(0,num_edges))
       allocate(num_edge_vertices(num_edges))
       edge_numbers      = 0
-      edge_tags         = 0
       edge_vertices     = 0
       num_edge_vertices = 0
 
@@ -113,24 +111,34 @@ contains
       call this % elem_file % read_lines(lines)
       num_lines = size(lines)
 
+      ! Allocate space
       num_cells = num_lines      
-      allocate(cell_numbers(num_cells))
-      allocate(cell_vertices(3,num_cells))
+
       allocate(num_cell_vertices(num_cells))
-      cell_numbers      = 0
-      cell_vertices     = 0
       num_cell_vertices = 0
 
+      allocate(cell_numbers(num_cells))
+      cell_numbers = 0
+
+      ! Do an intial read to know the kind of cells present
+      do concurrent(icell=1:num_lines)
+         call lines(icell) % tokenize(",", num_tokens)
+         num_cell_vertices(icell)  = num_tokens
+      end do
+
+      allocate(cell_vertices(maxval(num_cell_vertices),num_cells))
+      cell_vertices = 0
+      
+      ! Now read the data
       do concurrent (icell=1:num_lines)
 
          call lines(icell) % tokenize(",", num_tokens, tokens)
-
-         if (num_tokens .gt. 0) then
-
-            cell_numbers(icell)       = icell
-            cell_vertices(1:3,icell)  = tokens % asinteger()
-            num_cell_vertices(icell)  = num_tokens ! hopefully 3
-
+         
+         if (num_tokens .ne. 0) then
+            cell_numbers(icell) = icell
+            cell_vertices(1:num_cell_vertices(icell),icell) = tokens % asinteger() 
+         else
+            error stop
          end if
 
       end do
@@ -191,7 +199,7 @@ contains
       type(integer) :: icell, iverpair, iface
 
       ! Create space for as many faces possible (rehash maybe?)
-      faces = set(3*num_cells)
+      faces = set(maxval(num_cell_vertices)*num_cells)
 
       ! Make ordered pair of vertices as faces in 2D
       do icell = 1, num_cells

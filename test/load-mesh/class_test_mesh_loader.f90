@@ -115,11 +115,11 @@ contains
 
       num_cells = num_lines      
       allocate(cell_numbers(num_cells))
-      !allocate(cell_tags(num_cells))
+      allocate(cell_tags(num_cells))
       allocate(cell_vertices(3,num_cells))
       allocate(num_cell_vertices(num_cells))
       cell_numbers      = 0
-      !cell_tags         = 0
+      cell_tags         = 0
       cell_vertices     = 0
       num_cell_vertices = 0
 
@@ -227,8 +227,8 @@ contains
     end block face_finder
     
     ! Tag vertices, faces and cells
-    !allocate(face_tags(num_faces))
-    !face_tags         = 0
+    allocate(face_tags(num_faces))
+    face_tags         = 0
     
     ! All 16 inputs OK?
 

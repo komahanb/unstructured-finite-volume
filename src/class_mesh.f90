@@ -569,32 +569,56 @@ end subroutine evaluate_cell_volumes
     write(*,*) 'Number of cells    :', this % num_cells
     write(*,*) 'Number of faces    :', this % num_faces
 
-    write(*,*) "Vertex Data"
+    write(*,*) "Vertex Info:"
+    write(*,*) "number tag x y z"
     do ivertex = 1, this % num_vertices
-       write(*,*) ivertex, this % vertices(:, ivertex)
-    end do
-
-    write(*,*) "Cell Data [index] [center] [volume]"
-    do icell = 1, this % num_cells
-       write(*,*) "[",icell,"]", "[",this % cell_centers(:, icell),"]", &
-            & "[",this % cell_volumes(icell),"]"
-    end do
-
-    write(*,*) "Face Data [index] [center] [area]"
-    do iface = 1, this % num_faces
-       write(*,*) "[",iface,"]", "[",this % face_centers(:, iface),"]", &
-            & "[",this % face_areas(iface),"]"
+       write(*,'(i6,i2,3E15.6)') &
+            & this % vertex_numbers(ivertex), &
+            & this % vertex_tags(ivertex), &
+            & this % vertices(:, ivertex)
     end do
     
-    write(*,*) "Cell to Face Connectivity"
+    write(*,*) "Cell Info:"
+    write(*,*) "cno ctag ncv iverts"
     do icell = 1, this % num_cells
-       write(*,*) icell, this % cell_faces(1:this % num_cell_faces(icell), icell)
+       write(*,'(i6,i2,i2,10i6)') &
+            & this % cell_numbers(icell), &
+            & this % cell_tags(icell), &
+            & this % num_cell_vertices(icell), &
+            & this % cell_vertices(1:this % num_cell_vertices(icell), icell)
+    end do
+    
+    write(*,*) "Face Info:"
+    write(*,*) "fno ftag nfv iverts"
+    do iface = 1, this % num_faces
+       write(*,'(i6,i2,i2,10i6)') &
+            & this % face_numbers(iface), &
+            & this % face_tags(iface), &
+            & this % num_face_vertices(iface), &
+            & this % face_vertices(1:this % num_face_vertices(iface), iface)
     end do
 
-    write(*,*) "Face to Cell Connectivity"
-    do iface = 1, this % num_faces
-       write(*,*) iface, this % face_cells(1:this % num_face_cells(iface), iface)
-    end do
+!!$    write(*,*) "Face Data [index] [center] [volume]"
+!!$    do icell = 1, this % num_cells
+!!$       write(*,*) "[",icell,"]", "[",this % cell_centers(:, icell),"]", &
+!!$            & "[",this % cell_volumes(icell),"]"
+!!$    end do
+!!$
+!!$    write(*,*) "Face Data [index] [center] [area]"
+!!$    do iface = 1, this % num_faces
+!!$       write(*,*) "[",iface,"]", "[",this % face_centers(:, iface),"]", &
+!!$            & "[",this % face_areas(iface),"]"
+!!$    end do
+!!$    
+!!$    write(*,*) "Face to Face Connectivity"
+!!$    do icell = 1, this % num_cells
+!!$       write(*,*) icell, this % cell_faces(1:this % num_cell_faces(icell), icell)
+!!$    end do
+!!$
+!!$    write(*,*) "Face to Cell Connectivity"
+!!$    do iface = 1, this % num_faces
+!!$       write(*,*) iface, this % face_cells(1:this % num_face_cells(iface), iface)
+!!$    end do
 
   end subroutine to_string
     
@@ -622,6 +646,8 @@ end subroutine evaluate_cell_volumes
          & error stop
     if (me % num_cells    .gt. 0 .and. maxval(me % cell_numbers  ) -  minval(me % cell_numbers  ) + 1 .ne. me % num_cells   ) &
          & error stop
+
+    call me % to_string()
 
     print *, 'passed initialization check'
 

@@ -563,40 +563,58 @@ end subroutine evaluate_cell_volumes
 
     class(mesh), intent(in) :: this
 
-    integer :: icell, ivertex, iface
+    integer :: icell, ivertex, iface, iedge
 
     write(*,*) 'Number of vertices :', this % num_vertices
     write(*,*) 'Number of cells    :', this % num_cells
     write(*,*) 'Number of faces    :', this % num_faces
+    
+    if (this % num_vertices .gt. 0) then
+       write(*,*) "Vertex Info:"
+       write(*,*) "number tag x y z"
+       do ivertex = 1, this % num_vertices
+          write(*,'(i6,i2,3E15.6)') &
+               & this % vertex_numbers(ivertex), &
+               & this % vertex_tags(ivertex), &
+               & this % vertices(:, ivertex)
+       end do
+    end if
 
-    write(*,*) "Vertex Info:"
-    write(*,*) "number tag x y z"
-    do ivertex = 1, this % num_vertices
-       write(*,'(i6,i2,3E15.6)') &
-            & this % vertex_numbers(ivertex), &
-            & this % vertex_tags(ivertex), &
-            & this % vertices(:, ivertex)
-    end do
-    
-    write(*,*) "Cell Info:"
-    write(*,*) "cno ctag ncv iverts"
-    do icell = 1, this % num_cells
-       write(*,'(i6,i2,i2,10i6)') &
-            & this % cell_numbers(icell), &
-            & this % cell_tags(icell), &
-            & this % num_cell_vertices(icell), &
-            & this % cell_vertices(1:this % num_cell_vertices(icell), icell)
-    end do
-    
-    write(*,*) "Face Info:"
-    write(*,*) "fno ftag nfv iverts"
-    do iface = 1, this % num_faces
-       write(*,'(i6,i2,i2,10i6)') &
-            & this % face_numbers(iface), &
-            & this % face_tags(iface), &
-            & this % num_face_vertices(iface), &
-            & this % face_vertices(1:this % num_face_vertices(iface), iface)
-    end do
+    if (this % num_cells .gt. 0) then
+       write(*,*) "Cell Info:"
+       write(*,*) "cno ctag ncv iverts"
+       do icell = 1, this % num_cells
+          write(*,'(i6,i2,i2,10i6)') &
+               & this % cell_numbers(icell), &
+               & this % cell_tags(icell), &
+               & this % num_cell_vertices(icell), &
+               & this % cell_vertices(1:this % num_cell_vertices(icell), icell)
+       end do
+    end if
+
+    if (this % num_faces .gt. 0) then
+       write(*,*) "Face Info:"
+       write(*,*) "fno ftag nfv iverts"
+       do iface = 1, this % num_faces
+          write(*,'(i6,i2,i2,10i6)') &
+               & this % face_numbers(iface), &
+               & this % face_tags(iface), &
+               & this % num_face_vertices(iface), &
+               & this % face_vertices(1:this % num_face_vertices(iface), iface)
+       end do
+    end if
+
+    if (this % num_edges .gt. 0) then    
+       write(*,*) "Edge Info:"
+       write(*,*) "eno etag nev iverts"
+       do iedge = 1, this % num_edges
+          write(*,'(i6,i2,i2,10i6)') &
+               & this % edge_numbers(iedge), &
+               & this % edge_tags(iedge), &
+               & this % num_edge_vertices(iedge), &
+               & this % edge_vertices(1:this % num_edge_vertices(iedge), iedge)
+       end do
+    end if
 
 !!$    write(*,*) "Face Data [index] [center] [volume]"
 !!$    do icell = 1, this % num_cells

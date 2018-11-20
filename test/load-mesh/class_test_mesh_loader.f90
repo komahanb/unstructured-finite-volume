@@ -56,7 +56,7 @@ contains
        & num_edges   , edge_numbers  , edge_tags   , edge_vertices , num_edge_vertices , &
        & num_faces   , face_numbers  , face_tags   , face_vertices , num_face_vertices , &
        & num_cells   , cell_numbers  , cell_tags   , cell_vertices , num_cell_vertices   )
-    
+
     ! Arguments
     class(test_mesh_loader)  , intent(in)   :: this
 
@@ -115,18 +115,16 @@ contains
 
       num_cells = num_lines      
       allocate(cell_numbers(num_cells))
-      allocate(cell_tags(num_cells))
       allocate(cell_vertices(3,num_cells))
       allocate(num_cell_vertices(num_cells))
       cell_numbers      = 0
-      cell_tags         = 0
       cell_vertices     = 0
       num_cell_vertices = 0
 
       do concurrent (icell=1:num_lines)
 
          call lines(icell) % tokenize(",", num_tokens, tokens)
-         
+
          if (num_tokens .gt. 0) then
 
             cell_numbers(icell)       = icell
@@ -136,7 +134,7 @@ contains
          end if
 
       end do
-          
+
       if (allocated(tokens)) deallocate(tokens)
       if (allocated(lines)) deallocate(lines)
 
@@ -159,10 +157,8 @@ contains
       num_vertices = size(lines)
       allocate(vertices(3, num_vertices))
       allocate(vertex_numbers(num_vertices))
-      allocate(vertex_tags(num_vertices))
       vertices       = 0
       vertex_numbers = 0
-      vertex_tags    = 0
 
       ! Parse lines and store vertices
       do concurrent(ivertex=1:num_vertices)
@@ -223,41 +219,18 @@ contains
       ! Linear face has two vertices
       allocate(num_face_vertices(num_faces))
       num_face_vertices = 2
-      
-    end block face_finder
-    
-    ! Tag vertices, faces and cells
-    allocate(face_tags(num_faces))
-    face_tags         = 0
-    
-    ! All 16 inputs OK?
 
-!!$
-!!$    write(*,'(a)') "Identifying tags..."
-!!$    call this % find_tags(lines, &
-!!$         & idx_start_mesh           , idx_end_mesh  , &
-!!$         & idx_start_physical_names , idx_end_physical_names , &
-!!$         & idx_start_nodes          , idx_end_nodes, &
-!!$         & idx_start_elements       , idx_end_elements)
-!!$    write(*,'(a,i8,i8)') "mesh           : " , idx_start_mesh           , idx_end_mesh
-!!$    write(*,'(a,i8,i8)') "physical names : " , idx_start_physical_names , idx_end_physical_names
-!!$    write(*,'(a,i8,i8)') "nodes          : " , idx_start_nodes          , idx_end_nodes
-!!$    write(*,'(a,i8,i8)') "elements       : " , idx_start_elements       , idx_end_elements   
-!!$
-!!$    write(*,'(a)') "Reading vertices... "        
-!!$    call this % process_vertices(lines(idx_start_nodes+2:idx_end_nodes-1), &
-!!$         & num_vertices, vertices, vertex_numbers, vertex_tags)
-!!$    write(*,'(a,i8)') "number of vertices", num_vertices
-!!$
-!!$    ! How to find vertex tags?   
-!!$    write(*,'(a)') "Reading elements... "
-!!$    call this % process_elements(lines(idx_start_elements+2:idx_end_elements-1), &
-!!$         & num_edges, edge_numbers, edge_tags, edge_vertices, num_edge_vertices, &              
-!!$         & num_faces, face_numbers, face_tags, face_vertices, num_face_vertices, &
-!!$         & num_cells, cell_numbers, cell_tags, cell_vertices, num_cell_vertices  )
-!!$    write(*,'(a,i8)') "number of cells :", num_cells
-!!$    write(*,'(a,i8)') "number of faces :", num_faces
-!!$    write(*,'(a,i8)') "number of edges :", num_edges
+    end block face_finder
+
+    tag_find: block 
+
+      ! Tag vertices, faces and cells
+      allocate(vertex_tags(num_vertices)); vertex_tags = 0
+      allocate(cell_tags(num_cells)); cell_tags = 0
+      allocate(face_tags(num_faces)); face_tags = 0
+      allocate(edge_tags(num_edges)); edge_tags = 0
+
+    end block tag_find
 
   end subroutine get_mesh_data
 

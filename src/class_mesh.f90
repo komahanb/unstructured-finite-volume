@@ -392,7 +392,7 @@ contains
       ! [t1,t2,1:nfaces]
       allocate(this % is_face_boundary_face(this % num_faces))
       do iface = 1, this % num_faces
-         if (any(this % boundary_face_face .eq. iface) .eqv. .true.) then
+         if ( is_subset([iface], [this % boundary_face_face]) .eqv. .true.) then
             this % is_face_boundary_face(iface) = 1
          else
             this % is_face_boundary_face(iface) = 0
@@ -402,8 +402,9 @@ contains
       ! Find if a node is boundary node (node tag)
       allocate(this % is_node_boundary_node(this % num_vertices))
       do ivertex = 1, this % num_vertices
-         if (any(this % face_vertices(:,this % boundary_face_face) &
-              & .eq. ivertex) .eqv. .true.) then
+         if (is_subset([ivertex], &
+              & [this % face_vertices(:,this % boundary_face_face)]) &
+              & .eqv. .true.) then
             this % is_node_boundary_node(ivertex) = 1
          else
             this % is_node_boundary_node(ivertex) = 0

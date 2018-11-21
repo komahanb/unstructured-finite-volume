@@ -556,7 +556,7 @@ contains
     end do
 
     ! Check for negative volumes
-    if (abs(minval(this % face_deltas)) .lt. 10.0d0*tiny(1.0d0)) then
+    if (abs(minval(this % face_deltas)) .lt. > 1.0d-10) then
        print *, 'collinear faces/bad cell?'
        error stop
     end if
@@ -734,16 +734,14 @@ end subroutine evaluate_cell_volumes
 
           ! Sanity check if the normal if facing out of the face
           call cross_product(n,t,tcn)
-          if (tcn(3) < 0) then
-             print *, 'face', gface, 'of cell', icell, 'has inward normal'
+          if (abs(tcn(3) - 1.0d0) > 1.0d-10) then ! tangent cross normal should give +k vector
+             print *, 'face', gface, 'of cell', icell, 'has inward/non-unit normal', tcn(3)
              error stop
           end if
 
           this % cell_face_normals (:, iface, icell) = n
           this % cell_face_tangents(:, iface, icell) = t
           
-          print *, icell, gface, n(1:2), tcn
-
        end do
 
        end associate

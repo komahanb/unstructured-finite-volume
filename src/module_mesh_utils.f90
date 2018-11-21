@@ -62,7 +62,7 @@ contains
     integer, allocatable, intent(out) :: num_inverse_vals(:)
 
     ! Locals
-    integer              :: key, value
+    integer              :: value
     integer              :: i, j              ! loop indices
     integer              :: nkeysin, nkeysout ! input map size
     integer              :: nvalsin, nvalsout ! output map size    
@@ -174,7 +174,7 @@ contains
     integer, allocatable :: sub(:)
     integer, allocatable :: set(:)
 
-    integer :: lensub, i, j
+    integer :: lensub, i
 
     is_subset = .false.
 
@@ -288,4 +288,36 @@ contains
 
   end subroutine get_cell_faces
   
+  !===================================================================!
+  ! Determine if the face is a boundary face based on how many
+  ! neighbouring cells it has.
+  !===================================================================!
+  
+  pure subroutine get_boundary_faces(num_face_cells, boundary_faces)
+
+    integer, intent(in)               :: num_face_cells(:)
+    integer, intent(out), allocatable :: boundary_faces(:)
+    integer                           :: iface, nfaces, nbfaces, ctr
+
+    nfaces = size(num_face_cells, dim=1)
+
+    ! Boundary faces are the faces corresponding to just one cell
+    nbfaces = 0
+    do iface = 1, nfaces
+       if (num_face_cells(iface) .eq. 1) then
+          nbfaces = nbfaces + 1
+       end if
+    end do
+
+    allocate(boundary_faces(nbfaces))
+    ctr = 0 
+    do iface = 1, nfaces
+       if (num_face_cells(iface) .eq. 1) then
+          ctr = ctr + 1
+          boundary_faces(ctr) = iface
+       end if
+    end do
+
+  end subroutine get_boundary_faces
+
 end module module_mesh_utils

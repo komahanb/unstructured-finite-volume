@@ -141,7 +141,6 @@ contains
 
     ! Locals
     character(len=this % buffer_size) :: buffer
-    integer                           :: iostat
 
     read(this % get_unit(), fmt = '(a)') buffer
     line = string(trim(buffer))

@@ -13,7 +13,7 @@ module class_set
    contains     
      procedure :: add_entry
      procedure :: get_entries
-     procedure :: present
+     procedure :: contains
   end type set
 
   ! Constructor interface for set
@@ -48,7 +48,7 @@ contains
 
     ! Check if edge is in table
 
-    if (this % present(edge) .eqv. .false.) then
+    if (this % contains(edge) .eqv. .false.) then
        this % num_entries = this % num_entries + 1
        this % table(:, this % num_entries) = edge(:)
     end if
@@ -56,27 +56,27 @@ contains
   end subroutine add_entry
 
   !===================================================================!
-  ! Check if an entry is present in the set
+  ! Check if an entry is contains in the set
   !===================================================================!
 
-  pure type(logical) function present(this, edge)
+  pure type(logical) function contains(this, edge)
 
     class(set), intent(in) :: this
     integer   , intent(in) :: edge(2)
     integer :: i
     
     ! loop through enties and see if they exist
-    present = .false.
+    contains = .false.
 
     do i = 1, this % num_entries
        if (edge(1) .eq. this % table (1,i) .and. edge(2) .eq. this % table(2,i)) then
-          present = .true.
+          contains = .true.
        else if (edge(2) .eq. this % table (1,i) .and. edge(1) .eq. this % table(2,i)) then
-          present = .true.                    
+          contains = .true.                    
        end if
     end do
 
-  end function present
+  end function contains
 
   !===================================================================!
   ! Get all the entries in the set as an array

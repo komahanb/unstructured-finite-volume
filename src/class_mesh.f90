@@ -422,20 +422,10 @@ contains
       write(*,*) 'Calculating mesh geometry information'
 
       call this % evaluate_cell_centers()
-      print *, 'cell center'
-      do icell = 1, this % num_cells
-         print *, icell, this % cell_centers(:,icell)
-      end do
-
-      call this % evaluate_face_centers_areas()      
-      print *, 'face'
-      do iface = 1, this % num_faces
-         print *, iface, this % face_areas(iface), &
-              & this % face_centers(:,iface)
-      end do
-
+      call this % evaluate_face_centers_areas()
       call this % evaluate_face_tangents_normals()
       call this % evaluate_cell_volumes()
+
       call this % evaluate_centroidal_vector()
       call this % evaluate_face_deltas()
       call this % evaluate_face_weight()   
@@ -455,7 +445,7 @@ contains
     real(dp) :: total, dcell
     integer  :: icell, ivertex
 
-    print *, 'face weights for interpolation from cells to vertex'
+    write(*,*) 'Evaluating face weights for interpolation from cells to vertex'
 
     allocate(cells(maxval(this % num_vertex_cells)))
 
@@ -501,7 +491,7 @@ contains
     real(dp) :: dinv1, dinv2
     real(dp) :: weight
 
-    print *, 'face weights for interpolation from cells to face'
+    write(*, *) 'Evaluating face weights for interpolation from cells to face'
     allocate(this % face_cell_weights(2, this % num_faces))      
 
     !do concurrent(iface = 1: this % num_faces)
@@ -540,6 +530,7 @@ contains
     integer  :: gface, gcell, lface
     real(dp) :: fn(3)
 
+    write(*,*) "Evaluating face deltas"
     allocate(this % face_deltas(this % num_faces))
 
     do gface = 1, this % num_faces
@@ -564,6 +555,12 @@ contains
 
     end do
 
+    ! Check for negative volumes
+    if (abs(minval(this % face_deltas)) .lt. 10.0d0*tiny(1.0d0)) then
+       print *, 'collinear faces/bad cell?'
+       error stop
+    end if
+
   end subroutine evaluate_face_deltas
 
   subroutine evaluate_centroidal_vector(this)
@@ -571,15 +568,18 @@ contains
     class(mesh), intent(inout) :: this
     integer :: iface, cells(2)
 
+    write (*,*) "Evaluating centroidal vector..."
+
     allocate(this % lvec(3,this % num_faces))
 
     do iface = 1, this % num_faces
 
-       cells = this % face_cells(:,iface)
+       cells = 0
+       cells(1:this%num_face_cells(iface)) = this % face_cells(1:this%num_face_cells(iface),iface)
 
        if (this % is_face_boundary_face(iface) .eq. 1) then
           ! Boundary faces .or. iface is in bfaces
-          this % lvec(:,iface) = this % face_centers(:,iface) - this % cell_centers(:,cells(1))         
+          this % lvec(:,iface) = this % face_centers(:,iface) - this % cell_centers(:,cells(1))        
        else
           ! Interior face; subtract neighbouring cell centers (not sure which orientation)
           this % lvec(:,iface) = this % cell_centers(:,cells(2)) - this % cell_centers(:,cells(1))          
@@ -595,6 +595,8 @@ contains
 
     ! Use divergence theorem to find volumes
     integer :: lcell, lface, gface
+    
+    write (*,*) "Evaluating cell volumes..."
 
     allocate(this % cell_volumes (this % num_cells))
     this % cell_volumes = 0_dp      
@@ -613,18 +615,24 @@ contains
                & nx*xmid*area              
         end associate
      end do
-     print *, 'cell', lcell, 'volume', this % cell_volumes(lcell)       
   end do
 
+  ! Check for negative volumes
+  if (minval(this % cell_volumes) .lt. 0) then
+     print *, 'negative volume encountered'
+     error stop
+  end if
+  
 end subroutine evaluate_cell_volumes
 
   subroutine evaluate_face_centers_areas(this)
 
     class(mesh), intent(inout) :: this
 
-
     ! Currently the length as its a 1D face
     type(integer) :: iface
+
+    write(*, *) 'Evaluating face centers and areas'
 
     allocate(this % face_areas(this % num_faces))
     allocate(this % face_centers(3,this % num_faces))         
@@ -650,6 +658,12 @@ end subroutine evaluate_cell_volumes
       end associate
 
    end do
+
+   ! Check for zero areas
+   if (abs(minval(this % face_areas)) .lt. 10.0d0*tiny(1.0d0)) then
+      print *, 'same points/bad face?'
+      error stop
+   end if
    
  end subroutine evaluate_face_centers_areas
  
@@ -660,6 +674,8 @@ end subroutine evaluate_cell_volumes
      ! Find cell centers O = (A + B + C) /3
     type(integer) :: icell
 
+    write(*,*) 'Evaluating cell centers'
+    
     !print *, 'num_vertices for each cell', this % num_cell_vertices
 
     allocate(this % cell_centers(3, this % num_cells))
@@ -683,6 +699,8 @@ end subroutine evaluate_cell_volumes
     real(dp) :: t(3), n(3), tcn(3) ! all spatial dim
     integer  :: ifv(2)
 
+    write(*,*) 'Evaluating face tangents normals'
+    
     allocate(this % cell_face_normals (3, maxval(this % num_cell_faces), this % num_cells))
     allocate(this % cell_face_tangents(3, maxval(this % num_cell_faces), this % num_cells))
 

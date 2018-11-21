@@ -94,13 +94,11 @@ module class_mesh
      ! Derived cell info
      real(dp) , allocatable :: cell_centers(:,:)         ! [[x,y,z] , 1:ncells]
      real(dp) , allocatable :: cell_volumes(:)           ! [1:ncells]
-     real(dp) , allocatable :: cell_gamma(:)             ! [1:ncells]
 
      ! Derived vertex info
      real(dp) , allocatable :: face_centers(:,:)         ! [[x,y,z],1:nfaces]
      real(dp) , allocatable :: face_areas(:)             ! [1:nfaces]
-     real(dp) , allocatable :: face_gamma(:)             ! [1:nfaces]
-     real(dp) , allocatable :: face_delta(:)             ! [1:nfaces]
+     real(dp) , allocatable :: face_deltas(:)             ! [1:nfaces]
      real(dp) , allocatable :: lvec(:,:)                 ! [[lx,ly,lz],1:nfaces]     
   
      real(dp) , allocatable :: cell_face_tangents(:,:,:) ! [[tx,ty,tz], [f1,f2,f3..] 1:ncells]
@@ -123,12 +121,12 @@ module class_mesh
      procedure :: initialize
 
      ! Evaluation routines
-     procedure :: evaluate_tangents_normals
      procedure :: evaluate_cell_centers
+     procedure :: evaluate_cell_volumes     
      procedure :: evaluate_face_centers_areas
-     procedure :: evaluate_cell_volumes
+     procedure :: evaluate_face_tangents_normals
      procedure :: evaluate_centroidal_vector
-     procedure :: evaluate_face_delta
+     procedure :: evaluate_face_deltas
      procedure :: evaluate_face_weight
      procedure :: evaluate_vertex_weight
 
@@ -423,8 +421,6 @@ contains
 
       write(*,*) 'Calculating mesh geometry information'
 
-      allocate(this % cell_gamma(this % num_cells))      
-      this % cell_gamma = 1.0d0
       call this % evaluate_cell_centers()
       print *, 'cell center'
       do icell = 1, this % num_cells
@@ -438,10 +434,10 @@ contains
               & this % face_centers(:,iface)
       end do
 
-      call this % evaluate_tangents_normals()
+      call this % evaluate_face_tangents_normals()
       call this % evaluate_cell_volumes()
       call this % evaluate_centroidal_vector()
-      call this % evaluate_face_delta()
+      call this % evaluate_face_deltas()
       call this % evaluate_face_weight()   
       call this % evaluate_vertex_weight()    
 
@@ -538,13 +534,13 @@ contains
 
   end subroutine evaluate_face_weight
 
-  subroutine evaluate_face_delta(this)
+  subroutine evaluate_face_deltas(this)
 
     class(mesh), intent(inout) :: this
     integer  :: gface, gcell, lface
     real(dp) :: fn(3)
 
-    allocate(this % face_delta(this % num_faces))
+    allocate(this % face_deltas(this % num_faces))
 
     do gface = 1, this % num_faces
 
@@ -558,9 +554,9 @@ contains
        fn =  this % cell_face_normals(:, lface, gcell)
 
        ! Take absolute value of dot product
-       this % face_delta(gface) = abs(dot_product(this % lvec(1:3,gface), fn))
+       this % face_deltas(gface) = abs(dot_product(this % lvec(1:3,gface), fn))
 
-       print *, "face", gface, "delta", this % face_delta(gface), &
+       print *, "face", gface, "delta", this % face_deltas(gface), &
             & "skewness", dot_product(this % lvec(1:3,gface), &
             & this % cell_face_tangents(:, lface, gcell)), &
             & dot_product(this % cell_face_tangents(:, lface, gcell), &
@@ -568,7 +564,7 @@ contains
 
     end do
 
-  end subroutine evaluate_face_delta
+  end subroutine evaluate_face_deltas
 
   subroutine evaluate_centroidal_vector(this)
 
@@ -598,30 +594,30 @@ contains
     class(mesh), intent(inout) :: this
 
     ! Use divergence theorem to find volumes
-      integer :: lcell, lface, gface
+    integer :: lcell, lface, gface
 
-      allocate(this % cell_volumes (this % num_cells))
-      this % cell_volumes = 0_dp      
+    allocate(this % cell_volumes (this % num_cells))
+    this % cell_volumes = 0_dp      
 
-      ! V = \sum_f nx_f \times  xmid_f \times A_f
-      do lcell = 1, this % num_cells
-         this % cell_volumes(lcell) = 0.0d0
-         do lface = 1, this % num_cell_faces(lcell)
-            ! Global face index
-            gface = this % cell_faces(lface, lcell)
-            associate( &
-                 & xmid => this % face_centers(1,gface), &
-                 & nx   => this % cell_face_normals(1,lface,lcell),&
-                 & area => this % face_areas(gface))
-            this % cell_volumes(lcell) = this % cell_volumes(lcell) + &
-                 & nx*xmid*area              
-          end associate
-       end do
-       print *, 'cell', lcell, 'volume', this % cell_volumes(lcell)       
-    end do
+    ! V = \sum_f nx_f \times  xmid_f \times A_f
+    do lcell = 1, this % num_cells
+       this % cell_volumes(lcell) = 0.0d0
+       do lface = 1, this % num_cell_faces(lcell)
+          ! Global face index
+          gface = this % cell_faces(lface, lcell)
+          associate( &
+               & xmid => this % face_centers(1,gface), &
+               & nx   => this % cell_face_normals(1,lface,lcell),&
+               & area => this % face_areas(gface))
+          this % cell_volumes(lcell) = this % cell_volumes(lcell) + &
+               & nx*xmid*area              
+        end associate
+     end do
+     print *, 'cell', lcell, 'volume', this % cell_volumes(lcell)       
+  end do
 
 end subroutine evaluate_cell_volumes
-  
+
   subroutine evaluate_face_centers_areas(this)
 
     class(mesh), intent(inout) :: this
@@ -679,7 +675,7 @@ end subroutine evaluate_cell_volumes
     
   end subroutine evaluate_cell_centers
   
-  subroutine evaluate_tangents_normals(this)
+  subroutine evaluate_face_tangents_normals(this)
 
     class(mesh), intent(inout) :: this
 
@@ -735,8 +731,8 @@ end subroutine evaluate_cell_volumes
        end associate
 
     end do
-
-  end subroutine evaluate_tangents_normals
+    
+  end subroutine evaluate_face_tangents_normals
 
   !===================================================================!
   ! Constructor for mesh creation
@@ -804,33 +800,27 @@ end subroutine evaluate_cell_volumes
     end if
     
     if (this % initialized .eqv. .true.) then
-
+       
        write(*,*) "Cell Geo. Data [index] [center] [volume]"
        do icell = 1, this % num_cells
           write(*,*) &
-               & "[", this % cell_numbers(icell)   ,"]", &
-               & "[", this % cell_centers(:,icell) ,"]", &
-               & "[", this % cell_volumes(icell)   ,"]"
+               & "local number [", this % cell_numbers(icell)   ,"]", &
+               & "center [", this % cell_centers(:,icell) ,"]", &
+               & "volume [", this % cell_volumes(icell)   ,"]"
        end do
 
        write(*,*) "Face Data [index] [center] [area]"
        do iface = 1, this % num_faces
-          write(*,*) "[",iface,"]", "[",this % face_centers(:, iface),"]", &
-               & "[",this % face_areas(iface),"]"
-       end do
-
-       write(*,*) "Face to Face Connectivity"
-       do icell = 1, this % num_cells
-          write(*,*) icell, this % cell_faces(1:this % num_cell_faces(icell), icell)
-       end do
-
-       write(*,*) "Face to Cell Connectivity"
-       do iface = 1, this % num_faces
-          write(*,*) iface, this % face_cells(1:this % num_face_cells(iface), iface)
+          write(*,*) &
+               & "local number [",iface,"]", &
+               & "face center [",this % face_centers(:, iface),"]", &
+               & "face deltas [",this % face_deltas(iface),"]", &                              
+               & "face areas [",this % face_areas(iface),"]", &
+               & "face lvec  [",this % lvec(:,iface),"]"
        end do
 
     end if
 
-  end subroutine to_string    
+  end subroutine to_string
   
 end module class_mesh

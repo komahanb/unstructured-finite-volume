@@ -52,7 +52,7 @@ contains
   ! values of 'map' are the keys of 'inverse'
   ! ===================================================================!
 
-  pure subroutine reverse_map(map, num_map_vals, inverse, num_inverse_vals)
+   subroutine reverse_map(map, num_map_vals, inverse, num_inverse_vals)
 
     ! Arguments
     integer, intent(in) :: map(:,:)
@@ -68,10 +68,12 @@ contains
     integer              :: nvalsin, nvalsout ! output map size    
     integer, allocatable :: ptr(:)
 
+    if (size(num_map_vals).eq.0) return
+    
     ! Forward mapping size 
     nkeysin = size(map, dim = 2)
     nvalsin = size(map, dim = 1)
-
+    
     ! Nothing to do (probably empty map)!
     if (nkeysin.eq.0) return
 

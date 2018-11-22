@@ -5,6 +5,7 @@ module class_gmsh_loader
   use interface_mesh_loader , only : mesh_loader
   use class_file            , only : file
   use class_string          , only : string
+  use class_set             , only : set
 
   implicit none
 
@@ -124,7 +125,6 @@ contains
     write(*,'(a)') "Reading vertices... "        
     call this % process_vertices(lines(idx_start_nodes+2:idx_end_nodes-1), &
          & num_vertices, vertices, vertex_numbers, vertex_tags)
-    write(*,'(a,i8)') "number of vertices", num_vertices
 
     ! How to find vertex tags?   
     write(*,'(a)') "Reading elements... "
@@ -132,11 +132,73 @@ contains
          & num_edges, edge_numbers, edge_tags, edge_vertices, num_edge_vertices, &              
          & num_faces, face_numbers, face_tags, face_vertices, num_face_vertices, &
          & num_cells, cell_numbers, cell_tags, cell_vertices, num_cell_vertices  )
-    write(*,'(a,i8)') "number of cells :", num_cells
-    write(*,'(a,i8)') "number of faces :", num_faces
-    write(*,'(a,i8)') "number of edges :", num_edges
 
     deallocate(lines)
+    
+    face_finder: block         
+
+      type(set)     :: faces
+      type(integer) :: idx(2)
+      type(integer) :: icell, iverpair, iface
+
+      ! Create space for as many faces possible (rehash maybe?)
+      faces = set(maxval(num_cell_vertices)*num_cells)
+
+      ! Make ordered pair of vertices as faces in 2D
+      do icell = 1, num_cells
+         do iverpair = 1, num_cell_vertices(icell)
+            if (iverpair .eq. num_cell_vertices(icell)) then           
+               idx = [iverpair, 1]
+            else           
+               idx = [iverpair, iverpair+1]
+            end if
+            ! Add ordered pair of integers into set
+            call faces % add_entry(cell_vertices(idx, icell))
+         end do
+      end do
+
+      ! Get the relevant entires into memory
+      call faces % get_entries(face_vertices)
+      num_faces = size(face_vertices,dim=2)
+
+      ! Set face numbers
+      allocate(face_numbers(num_faces))
+      do concurrent(iface=1:num_faces)
+         face_numbers(iface) = iface
+      end do
+
+      ! Linear face has two vertices
+      allocate(num_face_vertices(num_faces))
+      num_face_vertices = 2
+
+    end block face_finder
+
+    tag_find: block 
+
+      ! Tag vertices, faces and cells
+      allocate(vertex_tags(num_vertices)); vertex_tags = 0
+      !allocate(cell_tags(num_cells)); cell_tags = 0
+      allocate(face_tags(num_faces)); face_tags = 0
+      allocate(edge_tags(num_edges)); edge_tags = 0
+
+      ! Here the principle is that a cell with only one neighbour is
+      ! tagged as boundary
+
+      ! Then we loop through all such tagged cells as 'say 1', extract
+      ! the three faces
+
+      ! Maybe have a default option for user to tag things, if not we
+      ! can do some processing internally after all the inverse
+      ! information is obtained and tag these separately than interior
+      ! nodes. But for advanced appliations, the user might want to
+      ! supply tags externally.
+
+      ! With this information it is not possible to Use geometry and
+      ! x,y coords to find vertices, then faces, then cells, edges?
+
+    end block tag_find
+    
+    num_edges = 0    
     
   end subroutine get_mesh_data
 
@@ -249,13 +311,14 @@ contains
     type(string), allocatable :: tokens(:)
     integer                   :: num_tokens    
     integer                   :: num_lines, iline
-
+    integer                   :: face_idx, edge_idx, cell_idx, node_idx
+    
     ! Extract start and end indices of different mesh tags used by
     ! GMSH
     num_lines = size(lines)
 
-    num_edges = 0
-    num_faces = 0
+    !num_edges = 0
+    !num_faces = 0
     num_cells = 0
     
     do iline = 1, num_lines
@@ -264,7 +327,7 @@ contains
    
        if (tokens(2) % asinteger() .eq. 1) then
           ! Line element
-          num_faces = num_faces + 1
+     !     num_faces = num_faces + 1
        else if (tokens(2) % asinteger() .eq. 2) then
           ! Triangular element
           num_cells = num_cells + 1
@@ -279,34 +342,34 @@ contains
        
     end do
 
-    allocate(edge_numbers(num_edges))
-    allocate(face_numbers(num_faces))
+!!$    allocate(edge_numbers(num_edges))
+!!$    allocate(face_numbers(num_faces))
     allocate(cell_numbers(num_cells))
-    edge_numbers = 0
-    face_numbers = 0
+!!$    edge_numbers = 0
+!!$    face_numbers = 0
     cell_numbers = 0
-    
-    allocate(edge_tags(num_edges))
-    allocate(face_tags(num_faces))
+!!$    
+!!$    allocate(edge_tags(num_edges))
+!!$    allocate(face_tags(num_faces))
     allocate(cell_tags(num_cells))
-    edge_tags = 0
-    face_tags = 0
+!!$    edge_tags = 0
+!!$    face_tags = 0
     cell_tags = 0
     
-    allocate(edge_vertices(4,num_edges)) ! upto quads
-    allocate(face_vertices(2,num_faces)) ! linear faces
+!!$    allocate(edge_vertices(4,num_edges)) ! upto quads
+!!$    allocate(face_vertices(2,num_faces)) ! linear faces
     allocate(cell_vertices(4,num_cells)) ! upto quads
-    edge_vertices = 0
-    face_vertices = 0
+!!$    edge_vertices = 0
+!!$    face_vertices = 0
     cell_vertices = 0
 
-    allocate(num_edge_vertices(num_edges))
-    allocate(num_face_vertices(num_faces))
+!!$    allocate(num_edge_vertices(num_edges))
+!!$    allocate(num_face_vertices(num_faces))
     allocate(num_cell_vertices(num_cells))
-    num_faces = 0
-    num_cells = 0
-    num_edges = 0
 
+!!$    face_idx = 0
+    cell_idx = 0
+    !vertex_idx = 0
     do iline = 1, num_lines
        
        call lines(iline) % tokenize(" ", num_tokens, tokens)
@@ -314,32 +377,42 @@ contains
        ! Line element
        if (tokens(2) % asinteger() .eq. 1) then
           
-          num_faces = num_faces + 1
-
-          face_numbers(num_faces)      = iline          
-          face_tags(num_faces)         = tokens(5) % asinteger()
-          face_vertices(:,num_faces)   = tokens(6:7) % asinteger()
-          num_face_vertices(num_faces) = 2
-          
+      !    face_idx = face_idx + 1
+!!$
+!!$          face_numbers(face_idx)      = face_idx
+!!$          face_tags(face_idx)         = tokens(5) % asinteger()
+!!$          face_vertices(:,face_idx)   = tokens(6:7) % asinteger()
+!!$          num_face_vertices(face_idx) = 2
+!!$          
           ! Triangular element
        else if (tokens(2) % asinteger() .eq. 2) then
 
-          num_cells = num_cells + 1
+          cell_idx = cell_idx + 1
           
-          cell_numbers(num_cells )      = iline
-          cell_tags(num_cells)          = tokens(5) % asinteger()
-          cell_vertices(1:3,num_cells)  = tokens(6:8) % asinteger()
-          num_cell_vertices(num_cells)  = 3
+          cell_numbers(cell_idx )      = cell_idx
+          cell_tags(cell_idx)          = tokens(5) % asinteger()
+          cell_vertices(1:3,cell_idx)  = tokens(6:8) % asinteger()
+          num_cell_vertices(cell_idx)  = 3
           
           ! Quadrilateral element
        else if (tokens(2) % asinteger() .eq. 3) then
 
-          num_cells = num_cells + 1
+          cell_idx = cell_idx + 1
           
-          cell_numbers(num_cells )      = iline
-          cell_tags(num_cells)          = tokens(5) % asinteger()
-          cell_vertices(1:4,num_cells)  = tokens(6:9) % asinteger()
-          num_cell_vertices(num_cells)  = 4
+          cell_numbers(cell_idx )      = cell_idx
+          cell_tags(cell_idx)          = tokens(5) % asinteger()
+          cell_vertices(1:4,cell_idx)  = tokens(6:9) % asinteger()
+          num_cell_vertices(cell_idx)  = 4
+          
+          ! Node
+       else if (tokens(2) % asinteger() .eq. 15) then
+
+!!$          vertex_idx = vertex_idx + 1
+!!$          
+!!$          cell_numbers(vertex_idx )      = iline
+!!$          cell_tags(vertex_idx)          = tokens(5) % asinteger()
+!!$          cell_vertices(1:4,vertex_idx)  = tokens(6:9) % asinteger()
+!!$          num_cell_vertices(vertex_idx)  = 4
 
        else
 
@@ -377,10 +450,10 @@ contains
       num_vertices = size(lines)
       allocate(vertices(3, num_vertices))
       allocate(vertex_numbers(num_vertices))
-      allocate(vertex_tags(num_vertices))
+!!$      allocate(vertex_tags(num_vertices))
       vertices       = 0
       vertex_numbers = 0
-      vertex_tags    = 0
+  !!$    vertex_tags    = 0
       
       ! Parse lines and store vertices
       do concurrent(ivertex=1:num_vertices)

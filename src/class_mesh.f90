@@ -170,8 +170,6 @@ contains
          & maxval(me % cell_numbers  ) -  minval(me % cell_numbers  ) + 1 .ne. me % num_cells   ) &
          & error stop
 
-    call me % to_string()
-
     ! Perform initialization tasks and store the resulting flag
     me % initialized = me % initialize()
     if (me % initialized .eqv. .false.) then
@@ -179,8 +177,6 @@ contains
        error stop
     end if
     
-    call me % to_string()
-
   end function create_mesh
   
   type(logical) function initialize(this)
@@ -286,7 +282,7 @@ contains
            & this % num_edge_vertices, &
            & this % vertex_edges, &
            & this % num_vertex_edges)      
-      
+
       if (allocated(this % vertex_edges)) then
 
          write(*,'(a,i4,a,i4)') &
@@ -556,7 +552,7 @@ contains
     end do
 
     ! Check for negative volumes
-    if (abs(minval(this % face_deltas)) .lt. > 1.0d-10) then
+    if (abs(minval(this % face_deltas)) < 1.0d-10) then
        print *, 'collinear faces/bad cell?'
        error stop
     end if

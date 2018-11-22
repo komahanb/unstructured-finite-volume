@@ -11,16 +11,76 @@ program test_mesh
   use class_string           , only : string
 
   implicit none
-   
-  character(len=*), parameter :: coord_file = 'coordinates_10.input'
-  character(len=*), parameter :: elem_file  = 'elements_10.input'
+  
+  !===================================================================!
+  ! Test the functionalities of Class GMSH_LOADER
+  !===================================================================!
+  
+  test_gmsh_delaunay: block
 
-  type(test_mesh_loader)      :: test_mesh_loader_obj
-  type(mesh)                  :: mesh_obj
+    character(len=*)  , parameter   :: filename = 'frontal.msh'
+    class(gmsh_loader), allocatable :: gmsh_loader_obj
+    class(mesh)       , allocatable :: mesh_obj
 
-  test_mesh_loader_obj = test_mesh_loader(coord_file, elem_file)
-  mesh_obj             = mesh(test_mesh_loader_obj)
-  call mesh_obj % to_string()
+    ! Create a mesh loader for mesh file
+    allocate(gmsh_loader_obj, source =  gmsh_loader(filename))
+    allocate(mesh_obj, source = mesh(gmsh_loader_obj))
+    call mesh_obj % to_string()
+    deallocate(mesh_obj)
+    deallocate(gmsh_loader_obj)
+
+  end block test_gmsh_delaunay
+
+  !===================================================================!
+  ! Test the functionalities of Class GMSH_LOADER
+  !===================================================================!
+  
+  test_gmsh_triangle: block
+    
+    character(len=*)  , parameter   :: filename = 'rectangle.msh'
+    class(gmsh_loader), allocatable :: gmsh_loader_obj
+    class(mesh)       , allocatable :: mesh_obj
+
+    ! Create a mesh loader for mesh file
+    allocate(gmsh_loader_obj, source =  gmsh_loader(filename))
+    allocate(mesh_obj, source = mesh(gmsh_loader_obj))
+    call mesh_obj % to_string()
+    deallocate(mesh_obj)
+    deallocate(gmsh_loader_obj)
+
+  end block test_gmsh_triangle
+  
+  test_mesh1 : block
+
+    character(len=*), parameter :: coord_file = 'coordinates_10.input'
+    character(len=*), parameter :: elem_file  = 'elements_10.input'
+
+    class(test_mesh_loader), allocatable :: test_mesh_loader_obj
+    class(mesh), allocatable             :: mesh_obj
+
+    allocate(test_mesh_loader_obj, source = test_mesh_loader(coord_file, elem_file))
+    allocate(mesh_obj, source = mesh(test_mesh_loader_obj))
+    !call mesh_obj % to_string()
+    deallocate(mesh_obj)
+    deallocate(test_mesh_loader_obj)
+
+  end block test_mesh1
+
+  test_mesh2 : block
+
+    character(len=*), parameter :: coord_file = 'coordinates_20.input'
+    character(len=*), parameter :: elem_file  = 'elements_20.input'
+
+    class(test_mesh_loader), allocatable :: test_mesh_loader_obj
+    class(mesh), allocatable             :: mesh_obj
+
+    allocate(test_mesh_loader_obj, source = test_mesh_loader(coord_file, elem_file))
+    allocate(mesh_obj, source = mesh(test_mesh_loader_obj))
+    !call mesh_obj % to_string()
+    deallocate(mesh_obj)
+    deallocate(test_mesh_loader_obj)
+
+  end block test_mesh2
 
   stop
 
@@ -54,34 +114,5 @@ program test_mesh
     call lines % print()  
 
   end block test_file_string
-
-  !===================================================================!
-  ! Test the functionalities of Class GMSH_LOADER
-  !===================================================================!
-
-  test_gmsh: block
-
-    character(len=*), parameter :: filename = 'rectangle.msh'
-
-    call test_gmsh_loader(filename)
-
-  end block test_gmsh
-  
-contains
-  
-  subroutine test_gmsh_loader(filename)
-    
-    character(len=*), intent(in) :: filename
-    type(gmsh_loader) :: gmsh_loader_obj
-    type(mesh)        :: mesh_obj
-    
-    ! Create a mesh loader for mesh file
-    gmsh_loader_obj =  gmsh_loader(filename)
-
-    ! Get the mesh using loader object
-    mesh_obj = mesh(gmsh_loader_obj)
-    call mesh_obj % to_string()
-
-  end subroutine test_gmsh_loader
 
 end program test_mesh

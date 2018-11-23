@@ -51,7 +51,8 @@ contains
        & num_vertices, vertex_numbers, vertex_tags , vertices ,  & 
        & num_edges   , edge_numbers  , edge_tags   , edge_vertices , num_edge_vertices , &
        & num_faces   , face_numbers  , face_tags   , face_vertices , num_face_vertices , &
-       & num_cells   , cell_numbers  , cell_tags   , cell_vertices , num_cell_vertices   )
+       & num_cells   , cell_numbers  , cell_tags   , cell_vertices , num_cell_vertices , &
+       & tag_numbers , tag_info )
     
     ! Arguments
     class(gmsh_loader)  , intent(in)   :: this
@@ -82,6 +83,10 @@ contains
     integer, intent(out), allocatable :: cell_tags(:)
     integer, intent(out), allocatable :: cell_vertices(:,:)
     integer, intent(out), allocatable :: num_cell_vertices(:)
+    
+    ! Tagging boundaries and domain with integers/strings
+    integer     , allocatable, intent(out) :: tag_numbers(:)
+    type(string), allocatable, intent(out) :: tag_info(:)
 
     ! Local
     type(string), allocatable, dimension(:) :: lines    
@@ -139,6 +144,12 @@ contains
         end if
       end associate
     end block process_mesh_version
+    
+    process_tags: block
+
+      ! parse tag information and store into variables
+
+    end block process_tags
     
     write(*,'(a)') "Reading vertices..."
 

@@ -1,6 +1,7 @@
 module interface_mesh_loader
 
-  use iso_fortran_env       , only : dp => real64
+  use iso_fortran_env , only : dp => real64
+  use class_string    , only : string
 
   implicit none
 
@@ -27,11 +28,13 @@ module interface_mesh_loader
           & num_vertices, vertex_numbers, vertex_tags , vertices ,  & 
           & num_edges   , edge_numbers  , edge_tags   , edge_vertices , num_edge_vertices , &
           & num_faces   , face_numbers  , face_tags   , face_vertices , num_face_vertices , &
-          & num_cells   , cell_numbers  , cell_tags   , cell_vertices , num_cell_vertices   )
+          & num_cells   , cell_numbers  , cell_tags   , cell_vertices , num_cell_vertices , &
+          & tag_numbers , tag_info )
 
        import mesh_loader
        import dp
-
+       import string
+       
        ! Arguments
        class(mesh_loader)  , intent(in)   :: this
 
@@ -61,6 +64,10 @@ module interface_mesh_loader
        integer, intent(out), allocatable :: cell_tags(:)
        integer, intent(out), allocatable :: cell_vertices(:,:)
        integer, intent(out), allocatable :: num_cell_vertices(:)
+       
+       ! Tagging boundaries and domain with integers/strings
+       integer     , allocatable, intent(out) :: tag_numbers(:)
+       type(string), allocatable, intent(out) :: tag_info(:)
 
      end subroutine get_mesh_data_interface
 

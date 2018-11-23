@@ -7,7 +7,8 @@
 module class_mesh
 
   use iso_fortran_env       , only : dp => REAL64, error_unit
-  use interface_mesh_loader , only : mesh_loader    
+  use interface_mesh_loader , only : mesh_loader
+  use class_string          , only : string    
   use module_mesh_utils
   
   implicit none
@@ -27,8 +28,10 @@ module class_mesh
   type :: mesh ! rename as topology?
 
      logical              :: initialized = .false.
-     integer              :: domain_tag
-     integer, allocatable :: boundary_tags(:)
+
+     ! Based on PhysicalNames?
+     integer     , allocatable :: tag_numbers(:)
+     type(string), allocatable :: tag_info(:)
      
      !================================================================!
      ! Basic Topology information
@@ -153,8 +156,8 @@ contains
          & me % num_vertices, me % vertex_numbers, me % vertex_tags , me % vertices ,  & 
          & me % num_edges   , me % edge_numbers  , me % edge_tags   , me % edge_vertices , me % num_edge_vertices , &
          & me % num_faces   , me % face_numbers  , me % face_tags   , me % face_vertices , me % num_face_vertices , &
-         & me % num_cells   , me % cell_numbers  , me % cell_tags   , me % cell_vertices , me % num_cell_vertices   &
-         & )
+         & me % num_cells   , me % cell_numbers  , me % cell_tags   , me % cell_vertices , me % num_cell_vertices , &
+         & me % tag_numbers , me % tag_info )
 
     ! Check allocations and print error messages and stop
 
@@ -382,16 +385,24 @@ contains
 
       integer :: iface
       
-      ! Use the face tags to tag cells and nodes
+      ! Tag everything as domain
+      this % cell_tags = 0 !this % domain_tag
+      this % vertex_tags = 0 !this % domain_tag
+
+      ! Loop through boundary faces and tag cells and vertices
       do concurrent (iface=1:this % num_faces)
+         
+         if ( this % face_tags(iface) .gt. 0 ) then
+            
+            ! Copy face tags into corresponding cells
+            this % cell_tags(this % face_cells(1:this % num_face_cells(iface),iface)) = &
+                 & this % face_tags(iface)
 
-         ! Copy face tags into corresponding cells
-         this % cell_tags(this % face_cells(1:this % num_face_cells(iface),iface)) = &
-              & this % face_tags(iface)
-
-         ! Copy face tags into corresponding vertices
-         this % vertex_tags(this % face_vertices(1:this % num_face_vertices(iface),iface)) = &
-              & this % face_tags(iface)
+            ! Copy face tags into corresponding vertices
+            this % vertex_tags(this % face_vertices(1:this%num_face_cells(iface),iface)) = &
+                 & this % face_tags(iface)
+            
+         end if
 
       end do
       
@@ -594,15 +605,14 @@ contains
     end do
     
     do gface = 1, min(10, this % num_faces)
-       print *, &
-            & "face [", gface, &
-            & "delta [", this % face_deltas(gface), &
-            & "skewness [", dot_product(this % lvec(1:3,gface), &
-            & this % cell_face_tangents(:, lface, gcell)), "] ",&
-            & " t.n [", dot_product(this % cell_face_tangents(:, lface, gcell), &
-            & this % cell_face_normals(:, lface, gcell)), "] "
+       print *, "face [", gface, "] ",&
+            & "delta [", this % face_deltas(gface), "] "!,&
+!!$            & "skewness [", &
+!!$            & dot_product(this % lvec(1:3,gface)                    , this % cell_face_tangents(:, lface, gcell)), "] ", &
+!!$            & "orthogonality [", &
+!!$            & dot_product(this % cell_face_tangents(:, lface, gcell), this % cell_face_normals(:, lface, gcell)), "] "
     end do
-    
+
     ! Check for negative volumes
     if (abs(minval(this % face_deltas)) < 1.0d-10) then
        print *, 'collinear faces/bad cell?'
@@ -724,8 +734,6 @@ end subroutine evaluate_cell_volumes
 
     write(*,*) 'Evaluating cell centers'
     
-    !print *, 'num_vertices for each cell', this % num_cell_vertices
-
     allocate(this % cell_centers(3, this % num_cells))
     
     do concurrent(icell = 1 : this % num_cells)
@@ -866,7 +874,7 @@ end subroutine evaluate_cell_volumes
     if (this % initialized .eqv. .true.) then
        
        write(*,*) "Cell Geo. Data [index] [center] [volume] "
-       do icell = 1, this % num_cells
+       do icell = 1, min(10,this % num_cells)
           write(*,*) &
                & "local number [", this % cell_numbers(icell)   ,"] ", &
                & "center [", this % cell_centers(:,icell) ,"] ", &
@@ -874,7 +882,7 @@ end subroutine evaluate_cell_volumes
        end do
 
        write(*,*) "Face Data [index] [center] [area] "
-       do iface = 1, this % num_faces
+       do iface = 1, min(10,this % num_faces)
           write(*,*) &
                & "local number [",iface,"] ", &
                & "face center [",this % face_centers(:, iface),"] ", &

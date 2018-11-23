@@ -1,5 +1,5 @@
 !=====================================================================!
-!============== Basic implementation of a set tuple ==================!
+! Basic implementation of an unordered set tuple
 !=====================================================================!
 
 module class_set
@@ -10,6 +10,7 @@ module class_set
   type :: set
      integer, allocatable :: table(:,:)
      integer              :: num_entries
+     integer              :: num_tuples
    contains     
      procedure :: add_entry
      procedure :: get_entries
@@ -27,52 +28,121 @@ contains
   ! Constructor implementaion of set
   !===================================================================!
 
-  type(set) function create(max_entries) result(this)
+  type(set) function create(num_tuples, max_entries) result(this)
 
     integer, intent(in) :: max_entries
+    integer, intent(in) :: num_tuples
 
-    allocate(this % table(2,max_entries))
+    this % num_tuples = num_tuples
+    
+    allocate(this % table(num_tuples, max_entries))
     this % table = 0
     this % num_entries = 0
-
+    
   end function create
 
   !===================================================================!
   ! Add an entry into the set
   !===================================================================!
 
-  subroutine add_entry(this, edge)
+  subroutine add_entry(this, tuple)
 
     class(set), intent(inout) :: this
-    integer, intent(in) :: edge(2)
+    integer   , intent(in)    :: tuple(:)
 
-    ! Check if edge is in table
+    ! Check if tuple is in table
 
-    if (this % contains(edge) .eqv. .false.) then
+    if (this % contains(tuple) .eqv. .false.) then
        this % num_entries = this % num_entries + 1
-       this % table(:, this % num_entries) = edge(:)
+       this % table(:, this % num_entries) = tuple(:)
     end if
 
   end subroutine add_entry
+
+   !===================================================================!
+  ! Checks if the first argument is a subset of the second argument
+  ! (move elsewhere?)
+  !===================================================================!
+  
+  pure type(logical) function is_subset(small, big)
+
+    integer, intent(in) :: small(:)
+    integer, intent(in) :: big(:)
+
+    integer, allocatable :: sub(:)
+    integer, allocatable :: set(:)
+
+    integer :: lensub, i
+
+    is_subset = .false.
+
+    if (size(small) .gt. size(big)) return
+
+    ! Create local copy of arrays
+    allocate(sub, source = small)
+    allocate(set, source = big)
+
+    ! Sort two arrays
+    call isort(sub)
+    call isort(set)    
+    lensub = size(sub)
+
+    ! Check if all entries are equal upto the length of the smallest
+    ! array
+    is_subset = .true.
+    do i = 1, lensub
+       if (any(set .eq. sub(i)) .eqv. .false.) then
+          is_subset = .false.
+          exit
+       end if
+    end do
+
+    deallocate(sub,set)    
+
+  end function is_subset
+  
+  !===================================================================!
+  ! Sort an integer array ! move elsewhere?
+  !===================================================================!
+  
+  pure subroutine isort(array)
+
+    integer, intent(inout) :: array(:)
+    integer :: temp , j , k
+    integer :: n
+
+    n = ubound(array,1)
+
+    do j = 1 , n
+       do k = j + 1 , n
+          if(array(j) > array(k)) then
+             temp     = array(k)
+             array(k) = array(j)
+             array(j) = temp
+          end if
+       end do
+    end do
+
+  end subroutine isort
 
   !===================================================================!
   ! Check if an entry is contains in the set
   !===================================================================!
 
-  pure type(logical) function contains(this, edge)
+  pure type(logical) function contains(this, tuple)
 
     class(set), intent(in) :: this
-    integer   , intent(in) :: edge(2)
+    integer   , intent(in) :: tuple(:)
     integer :: i
-    
-    ! loop through enties and see if they exist
+
     contains = .false.
 
+    ! loop through existing tuples and find if it exists
     do i = 1, this % num_entries
-       if (edge(1) .eq. this % table (1,i) .and. edge(2) .eq. this % table(2,i)) then
+       ! Improve logic. This is expensive and unnnecessary
+       if (is_subset(tuple, this % table(:,i)) .eqv. .true.) then
           contains = .true.
-       else if (edge(2) .eq. this % table (1,i) .and. edge(1) .eq. this % table(2,i)) then
-          contains = .true.                    
+          exit
        end if
     end do
 
@@ -86,8 +156,8 @@ contains
     
     class(set), intent(in)            :: this
     integer, allocatable, intent(out) :: entries(:,:)
-
-    allocate(entries(2, this % num_entries))
+   
+    allocate(entries(this % num_tuples, this % num_entries))
     
     entries(:,:) = this % table(:,1:this % num_entries)
 
@@ -118,7 +188,7 @@ subroutine test_set
 !!$  |   |   |
 !!$  1---2---3
 
-  faces = set(16)    
+  faces = set(2,16)    
 
   conn(:,1) = [1,2,5,4]
   conn(:,2) = [2,3,6,5]

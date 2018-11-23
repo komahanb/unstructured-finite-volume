@@ -199,7 +199,7 @@ contains
       type(integer) :: icell, iverpair, iface
 
       ! Create space for as many faces possible (rehash maybe?)
-      faces = set(maxval(num_cell_vertices)*num_cells)
+      faces = set(2,maxval(num_cell_vertices)*num_cells)
 
       ! Make ordered pair of vertices as faces in 2D
       do icell = 1, num_cells

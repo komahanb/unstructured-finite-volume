@@ -413,8 +413,6 @@ contains
 
     geom : block
 
-      integer :: icell, iface
-
       write(*,*) 'Calculating mesh geometry information'
 
       call this % evaluate_cell_centers()

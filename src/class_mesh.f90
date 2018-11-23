@@ -26,8 +26,10 @@ module class_mesh
   
   type :: mesh ! rename as topology?
 
-     logical :: initialized = .false.
-
+     logical              :: initialized = .false.
+     integer              :: domain_tag
+     integer, allocatable :: boundary_tags(:)
+     
      !================================================================!
      ! Basic Topology information
      !================================================================!
@@ -375,7 +377,26 @@ contains
       end if
       
     end block face_cell
-    
+
+    tag_cells_vertices: block
+
+      integer :: iface
+      
+      ! Use the face tags to tag cells and nodes
+      do concurrent (iface=1:this % num_faces)
+
+         ! Copy face tags into corresponding cells
+         this % cell_tags(this % face_cells(1:this % num_face_cells(iface),iface)) = &
+              & this % face_tags(iface)
+
+         ! Copy face tags into corresponding vertices
+         this % vertex_tags(this % face_vertices(1:this % num_face_vertices(iface),iface)) = &
+              & this % face_tags(iface)
+
+      end do
+      
+    end block tag_cells_vertices
+
     !-----------------------------------------------------------------!
     ! Identify boundary faces, nodes
     !-----------------------------------------------------------------!

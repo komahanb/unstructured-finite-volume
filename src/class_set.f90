@@ -159,13 +159,13 @@ contains
     contains = .false.
 
     ! loop through existing tuples and find if it exists
-    do i = 1, this % num_entries
+   check: do i = 1, this % num_entries
        ! Improve logic. This is expensive and unnnecessary
        if (is_subset(tuple, this % table(:,i)) .eqv. .true.) then
           contains = .true.
-          exit
+          exit check
        end if
-    end do
+    end do check
 
   end function contains
 

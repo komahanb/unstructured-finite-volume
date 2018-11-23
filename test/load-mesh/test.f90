@@ -16,40 +16,24 @@ program test_mesh
   ! Test the functionalities of Class GMSH_LOADER
   !===================================================================!
   
-  test_gmsh_delaunay: block
+  test_gmsh: block
 
-    character(len=*)  , parameter   :: filename = 'frontal.msh'
-    class(gmsh_loader), allocatable :: gmsh_loader_obj
-    class(mesh)       , allocatable :: mesh_obj
+    type(string) :: files(5)
+    integer      :: ifile
 
-    ! Create a mesh loader for mesh file
-    allocate(gmsh_loader_obj, source =  gmsh_loader(filename))
-    allocate(mesh_obj, source = mesh(gmsh_loader_obj))
-    call mesh_obj % to_string()
-    deallocate(mesh_obj)
-    deallocate(gmsh_loader_obj)
-
-  end block test_gmsh_delaunay
-
-  !===================================================================!
-  ! Test the functionalities of Class GMSH_LOADER
-  !===================================================================!
-  
-  test_gmsh_triangle: block
+    files(1) = string('rectangle.msh')
+    files(2) = string('square-10.msh')
+    files(3) = string('triangle.msh')
+    files(4) = string('triquad.msh')
+    files(5) = string('frontal.msh')
     
-    character(len=*)  , parameter   :: filename = 'frontal.msh'
-    class(gmsh_loader), allocatable :: gmsh_loader_obj
-    class(mesh)       , allocatable :: mesh_obj
+    do ifile = 1, size(files)
+       write(*,*) "Testing GMSH Loader with file ", files(ifile) % str
+       call test_gmsh_loader(files(ifile) % str)
+    end do
 
-    ! Create a mesh loader for mesh file
-    allocate(gmsh_loader_obj, source =  gmsh_loader(filename))
-    allocate(mesh_obj, source = mesh(gmsh_loader_obj))
-    call mesh_obj % to_string()
-    deallocate(mesh_obj)
-    deallocate(gmsh_loader_obj)
+  end block test_gmsh
 
-  end block test_gmsh_triangle
-  
   test_mesh1 : block
 
     character(len=*), parameter :: coord_file = 'coordinates_10.input'
@@ -82,8 +66,6 @@ program test_mesh
 
   end block test_mesh2
 
-  stop
-
   !===================================================================!
   ! Test the functionalities of Class String and Class File
   !===================================================================!
@@ -114,5 +96,22 @@ program test_mesh
     call lines % print()  
 
   end block test_file_string
+
+contains
+  
+  subroutine test_gmsh_loader(filename)
+
+    character(len=*)  , intent(in)   :: filename
+    class(gmsh_loader), allocatable :: gmsh_loader_obj
+    class(mesh)       , allocatable :: mesh_obj
+
+    ! Create a mesh loader for mesh file
+    allocate(gmsh_loader_obj, source =  gmsh_loader(filename))
+    allocate(mesh_obj, source = mesh(gmsh_loader_obj))
+    call mesh_obj % to_string()
+    deallocate(mesh_obj)
+    deallocate(gmsh_loader_obj)
+
+  end subroutine test_gmsh_loader
 
 end program test_mesh

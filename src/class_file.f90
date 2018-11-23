@@ -80,9 +80,16 @@ contains
   subroutine open(this)
 
     class(file), intent(in) :: this
+    logical :: file_exists
 
+    inquire(file=this % filename, exist=file_exists)
+    if (file_exists  .eqv. .false.) then
+       print *, 'file does not exist ', this % filename
+       error stop
+    end if
+    
     open(unit = this % file_unit, file = this % filename)
-
+    
   end subroutine open
 
   !===================================================================!

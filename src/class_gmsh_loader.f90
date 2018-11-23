@@ -119,14 +119,29 @@ contains
          & idx_start_physical_names , idx_end_physical_names , &
          & idx_start_nodes          , idx_end_nodes, &
          & idx_start_elements       , idx_end_elements)
+    write(*,*) "mesh           : " , idx_start_mesh           , idx_end_mesh
+    write(*,*) "physical names : " , idx_start_physical_names , idx_end_physical_names
+    write(*,*) "nodes          : " , idx_start_nodes          , idx_end_nodes
+    write(*,*) "elements       : " , idx_start_elements       , idx_end_elements   
     
-    write(*,'(a,i8,i8)') "mesh           : " , idx_start_mesh           , idx_end_mesh
-    write(*,'(a,i8,i8)') "physical names : " , idx_start_physical_names , idx_end_physical_names
-    write(*,'(a,i8,i8)') "nodes          : " , idx_start_nodes          , idx_end_nodes
-    write(*,'(a,i8,i8)') "elements       : " , idx_start_elements       , idx_end_elements   
+    write(*,'(a)') "Reading mesh information..."
+    
+    process_mesh_version: block
+      
+      integer                   :: num_tokens
+      type(string), allocatable :: tokens(:)
 
-    write(*,'(a)') "Reading vertices..."
+      associate(mlines => lines(idx_start_mesh+1:idx_start_mesh+1))
+        call mlines(1) % tokenize(" ", num_tokens, tokens)
+        if (floor(tokens(1) % asreal()) > 2) then
+           print *, "unsupported version of gmsh version ", tokens(1) % str
+           stop
+        end if
+      end associate
+    end block process_mesh_version
     
+    write(*,'(a)') "Reading vertices..."
+
     ! Process nodes
     process_nodes: block
       
@@ -284,6 +299,8 @@ contains
     
     end block elements
 
+    write(*,'(a)') "Finding faces..."
+
     ! Extract the remaining faces based on cell vertices
     process_faces: block
 
@@ -335,6 +352,8 @@ contains
       
     end block process_faces
 
+    write(*,'(a)') "Processing edges..."
+    
     process_edges : block
 
       ! Edges are not in 2D

@@ -56,7 +56,7 @@ contains
        & num_edges   , edge_numbers  , edge_tags   , edge_vertices , num_edge_vertices , &
        & num_faces   , face_numbers  , face_tags   , face_vertices , num_face_vertices , &
        & num_cells   , cell_numbers  , cell_tags   , cell_vertices , num_cell_vertices , &
-       & tag_numbers , tag_info &
+       & num_tags    , tag_numbers   , tag_info &
        & )
 
     ! Arguments
@@ -90,6 +90,7 @@ contains
     integer, intent(out), allocatable :: num_cell_vertices(:)
 
     ! Tagging boundaries and domain with integers/strings
+    integer     , intent(out)              :: num_tags
     integer     , allocatable, intent(out) :: tag_numbers(:)
     type(string), allocatable, intent(out) :: tag_info(:)
 

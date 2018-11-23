@@ -30,6 +30,7 @@ module class_mesh
      logical              :: initialized = .false.
 
      ! Based on PhysicalNames?
+     integer                   :: num_tags
      integer     , allocatable :: tag_numbers(:)
      type(string), allocatable :: tag_info(:)
      
@@ -157,7 +158,7 @@ contains
          & me % num_edges   , me % edge_numbers  , me % edge_tags   , me % edge_vertices , me % num_edge_vertices , &
          & me % num_faces   , me % face_numbers  , me % face_tags   , me % face_vertices , me % num_face_vertices , &
          & me % num_cells   , me % cell_numbers  , me % cell_tags   , me % cell_vertices , me % num_cell_vertices , &
-         & me % tag_numbers , me % tag_info )
+         & me % num_tags    , me % tag_numbers , me % tag_info )
 
     ! Check allocations and print error messages and stop
 

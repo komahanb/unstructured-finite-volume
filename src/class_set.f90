@@ -11,7 +11,8 @@ module class_set
      integer, allocatable :: table(:,:)
      integer              :: num_entries
      integer              :: num_tuples
-   contains     
+   contains
+     procedure :: insert
      procedure :: add_entry
      procedure :: get_entries
      procedure :: contains
@@ -40,6 +41,26 @@ contains
     this % num_entries = 0
     
   end function create
+
+  !===================================================================!
+  ! Add an entry into the set
+  !===================================================================!
+
+  type(logical) function insert(this, tuple)
+
+    class(set), intent(inout) :: this
+    integer   , intent(in)    :: tuple(:)
+
+    ! Check if tuple is in table   
+    if (this % contains(tuple) .eqv. .false.) then
+       this % num_entries = this % num_entries + 1
+       this % table(:, this % num_entries) = tuple(:)
+       insert = .true.
+    else
+       insert = .false.
+    end if
+
+  end function insert
 
   !===================================================================!
   ! Add an entry into the set

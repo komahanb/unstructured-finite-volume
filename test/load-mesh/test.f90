@@ -18,7 +18,7 @@ program test_mesh
   
   test_gmsh_delaunay: block
 
-    character(len=*)  , parameter   :: filename = 'rectangle.msh'
+    character(len=*)  , parameter   :: filename = 'frontal.msh'
     class(gmsh_loader), allocatable :: gmsh_loader_obj
     class(mesh)       , allocatable :: mesh_obj
 

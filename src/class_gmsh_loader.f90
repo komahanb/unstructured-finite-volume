@@ -6,6 +6,7 @@ module class_gmsh_loader
   use class_file            , only : file
   use class_string          , only : string
   use class_set             , only : set
+  use class_list            , only : list
 
   implicit none
 
@@ -104,12 +105,9 @@ contains
     integer :: face_idx, cell_idx, vertex_idx
     
     ! Collection to store face information
-    type(set) :: set_face_vertices
-    type(set) :: set_face_tags
-    type(set) :: set_face_numbers
-
-    integer, allocatable :: tagged_face_tags(:,:)
-    integer, allocatable :: tagged_face_numbers(:,:)
+    type(set)  :: set_face_vertices
+    type(set)  :: set_face_numbers
+    type(list) :: list_face_tags
 
     ! Load the mesh into memory
     write(*,'(a,a)') "Loading mesh file :", this % file % filename
@@ -157,7 +155,7 @@ contains
            call vlines(ivertex) % tokenize(" ", num_tokens, tokens)
            
            ! First token is the vertex number
-           vertex_numbers(ivertex) = ivertex !tokens(1) % asinteger()
+           vertex_numbers(ivertex) = ivertex
            
            ! Second, third and fourth tokens are the coordinates
            vertices(:,ivertex) = tokens(2:4) % asreal()
@@ -177,6 +175,7 @@ contains
       type(string), allocatable :: tokens(:)
       integer                   :: num_tokens    
       integer                   :: num_lines, iline
+      type(logical)             :: added
 
       associate(elines => lines(idx_start_elements+2:idx_end_elements-1))
 
@@ -219,8 +218,8 @@ contains
 
         ! Create space for processing face information
         set_face_vertices = set(2, 4*num_cells)
-        set_face_tags = set(1, 4*num_cells)
-        set_face_numbers = set(1, 4*num_cells)
+        set_face_numbers  = set(1, 4*num_cells)
+        list_face_tags    = list(1, 4*num_cells)
         
         face_idx   = 0
         cell_idx   = 0
@@ -232,14 +231,15 @@ contains
 
            ! Line element
            if (tokens(2) % asinteger() .eq. 1) then
-
-              ! Carry out processing of physically tagged faces
-              face_idx = face_idx + 1
               
-              call set_face_vertices     % add_entry([tokens(6:7) % asinteger()])
-              call set_face_tags         % add_entry([tokens(5) % asinteger()])
-              call set_face_numbers      % add_entry([face_idx])
-
+              ! Carry out processing of physically tagged faces
+              added = set_face_vertices % insert([tokens(6:7) % asinteger()])             
+              if (added .eqv. .true.) then               
+                 face_idx = face_idx + 1
+                 call set_face_numbers % add_entry([face_idx])
+                 call list_face_tags % add_entry([tokens(5) % asinteger()])                 
+              end if
+              
               ! Triangular element
            else if (tokens(2) % asinteger() .eq. 2) then
 
@@ -279,60 +279,62 @@ contains
         end do
 
       end associate
-
+      
+      deallocate(lines)
+    
     end block elements
 
     ! Extract the remaining faces based on cell vertices
     process_faces: block
 
       type(integer) :: idx(2)
-      type(integer) :: icell, iverpair, iface
+      type(integer) :: icell, iverpair
+      type(logical) :: added
+      integer, allocatable :: lface_numbers(:,:), lface_tags(:,:)
       
       ! Make ordered pair of vertices as faces in 2D
       do icell = 1, num_cells
          do iverpair = 1, num_cell_vertices(icell)
+
+            ! Figure out a vertex pair that makes a face
             if (iverpair .eq. num_cell_vertices(icell)) then
                idx = [iverpair, 1]
             else
                idx = [iverpair, iverpair+1]
             end if
+
             ! Add ordered pair of integers into set
-            call set_face_vertices % add_entry(cell_vertices(idx, icell))
+            added = set_face_vertices % insert(cell_vertices(idx, icell))
+            if (added .eqv. .true.) then               
+               face_idx = face_idx + 1
+               call set_face_numbers % add_entry([face_idx])
+               call list_face_tags % add_entry([0])
+            end if
+
          end do
       end do
+
+      num_faces = face_idx
       
-      ! Get the relevant entires into memory
-      call set_face_vertices % get_entries(face_vertices)
-      num_faces = size(face_vertices,dim=2)
-
-      ! Set face numbers
-      call set_face_numbers % get_entries(tagged_face_numbers)
-
-      allocate(face_numbers(num_faces))
-      do concurrent(iface=1:num_faces)
-         face_numbers(iface) = iface
-      end do
-      print *, face_numbers
-      !face_numbers(1:face_idx) = tagged_face_numbers(:,1)
-
-      print *, 'num_faces', num_faces
-      
-      ! Set face tags
-      call set_face_tags % get_entries(tagged_face_tags)
-      allocate(face_tags(num_faces))
-      do concurrent(iface=1:num_faces)
-         face_tags(iface) = iface
-      end do
-      !face_tags(1:face_idx) = tagged_face_tags(:,1)
-
-      ! Linear face has two vertices
       allocate(num_face_vertices(num_faces))
       num_face_vertices = 2
 
+      call set_face_vertices % get_entries(face_vertices)
+
+      ! Set face numbers
+      call set_face_numbers % get_entries(lface_numbers)
+      allocate(face_numbers(num_faces))
+      face_numbers = lface_numbers(1,:)
+      deallocate(lface_numbers)
+
+      ! Set face tags
+      call list_face_tags % get_entries(lface_tags)
+      allocate(face_tags(num_faces))
+      face_tags = lface_tags(1,:)
+      deallocate(lface_tags)
+      
     end block process_faces
 
-    deallocate(lines)
-    
     process_edges : block
 
       ! Edges are not in 2D
@@ -350,8 +352,8 @@ contains
 
     end block process_edges
 
-
     if (num_faces .gt. 4*num_cells) error stop
+    
   end subroutine get_mesh_data
 
   pure subroutine find_tags(lines, &

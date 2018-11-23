@@ -111,12 +111,12 @@ contains
     ! Check if all entries are equal upto the length of the smallest
     ! array
     is_subset = .true.
-    do i = 1, lensub
+    check : do i = 1, lensub
        if (any(set .eq. sub(i)) .eqv. .false.) then
           is_subset = .false.
-          exit
+          exit check
        end if
-    end do
+    end do check
 
     deallocate(sub,set)    
 
@@ -159,11 +159,11 @@ contains
     contains = .false.
 
     ! loop through existing tuples and find if it exists
-   check: do i = 1, this % num_entries
+   check: do i = this % num_entries, 1, -1
        ! Improve logic. This is expensive and unnnecessary
        if (is_subset(tuple, this % table(:,i)) .eqv. .true.) then
           contains = .true.
-          exit check
+          return
        end if
     end do check
 

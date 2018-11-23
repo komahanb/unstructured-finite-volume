@@ -3,7 +3,7 @@
 !=====================================================================!
 
 program test_mesh
-  
+
   use class_mesh             , only : mesh
   use class_gmsh_loader      , only : gmsh_loader
   use class_test_mesh_loader , only : test_mesh_loader
@@ -11,11 +11,11 @@ program test_mesh
   use class_string           , only : string
 
   implicit none
-  
+
   !===================================================================!
   ! Test the functionalities of Class GMSH_LOADER
   !===================================================================!
-  
+
   test_gmsh: block
 
     type(string) :: files(5)
@@ -26,7 +26,7 @@ program test_mesh
     files(3) = string('triangle.msh')
     files(4) = string('triquad.msh')
     files(5) = string('frontal.msh')
-    
+
     do ifile = 1, size(files)
        write(*,*) "Testing GMSH Loader with file ", files(ifile) % str
        call test_gmsh_loader(files(ifile) % str)
@@ -79,7 +79,7 @@ program test_mesh
 
     ! Create a file object
     file_obj = file(filename)
-    
+
     ! Do a line by line read and print contents
     num_lines = file_obj % get_num_lines()
     allocate(lines(num_lines))

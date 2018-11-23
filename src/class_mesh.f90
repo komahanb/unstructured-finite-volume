@@ -206,9 +206,11 @@ contains
 
          do ivertex = 1, min(10,this % num_vertices)
             write(*,*) &
-                 & 'vertex ', this % vertex_numbers(ivertex), &
-                 & 'num_vertex_cells ', this % num_vertex_cells(ivertex) ,&
-                 & 'cells ', this % vertex_cells(1:this % num_vertex_cells(ivertex),ivertex)
+                 & 'vertex [', this % vertex_numbers(ivertex), ']', &
+                 & 'num cells [', this % num_vertex_cells(ivertex), ']',&
+                 & 'cells [', &
+                 & this % vertex_cells(&
+                 & 1:this % num_vertex_cells(ivertex),ivertex), ']'
          end do
 
          ! Sanity check
@@ -248,9 +250,10 @@ contains
 
          do ivertex = 1, min(10,this % num_vertices)
             write(*,*) &
-                 & 'vertex ', this % vertex_numbers(ivertex), &
-                 & 'num_vertex_faces ', this % num_vertex_faces(ivertex) ,&
-                 & 'faces ', this % vertex_faces(1:this % num_vertex_faces(ivertex),ivertex)
+                 & 'vertex [', this % vertex_numbers(ivertex), ']',&
+                 & 'num_vertex_faces [', this % num_vertex_faces(ivertex), ']',&
+                 & 'faces [', this % vertex_faces( &
+                 & 1:this % num_vertex_faces(ivertex),ivertex), ']'
          end do
 
          ! Sanity check
@@ -291,9 +294,10 @@ contains
 
          do ivertex = 1, min(10,this % num_vertices)
             write(*,*) &
-                 & 'vertex ', this % vertex_numbers(ivertex), &
-                 & 'num_vertex_edges ', this % num_vertex_edges(ivertex) ,&
-                 & 'edges ', this % vertex_edges(1:this % num_vertex_edges(ivertex),ivertex)
+                 & 'vertex [', this % vertex_numbers(ivertex), ']',&
+                 & 'num_vertex_edges [', this % num_vertex_edges(ivertex) , ']',&
+                 & 'edges [', this % vertex_edges(&
+                 & 1:this % num_vertex_edges(ivertex),ivertex), ']'
          end do
 
          ! Sanity check
@@ -333,9 +337,10 @@ contains
 
          do icell = 1, min(10,this % num_cells)
             write(*,*) &
-                 & 'cell'  , icell, &
-                 & 'nfaces', this % num_cell_faces(icell), &
-                 & 'faces' , this % cell_faces(1:this % num_cell_faces(icell),icell)
+                 & 'cell ['  , icell, ']',&
+                 & 'nfaces [', this % num_cell_faces(icell), ']',&
+                 & 'faces [' , this % cell_faces(&
+                 & 1:this % num_cell_faces(icell),icell), ']'
          end do
 
       else
@@ -358,8 +363,11 @@ contains
       call reverse_map(this % cell_faces, this % num_cell_faces, &
            & this % face_cells, this % num_face_cells)
 
-      do iface = 1, this % num_faces
-         print *, 'face', iface, 'cells', this % face_cells(1:this%num_face_cells(iface),iface)
+      do iface = 1, min(10,this % num_faces)
+         print *, &
+              & 'face [', this % face_numbers(iface), ']', &
+              & 'cells [', this % face_cells( &
+              & 1:this % num_face_cells(iface),iface), ']'
       end do
       
       if (minval(this % num_face_cells) .lt. 1) then
@@ -385,7 +393,7 @@ contains
       ! Find if a face is boundary face (Tag faces with index) face_tags
       ! [t1,t2,1:nfaces]
       allocate(this % is_face_boundary_face(this % num_faces))
-      do iface = 1, this % num_faces
+      do concurrent (iface = 1 : this % num_faces)
          if ( is_subset([iface], [this % boundary_face_face]) .eqv. .true.) then
             this % is_face_boundary_face(iface) = 1
          else
@@ -395,7 +403,7 @@ contains
 
       ! Find if a node is boundary node (node tag)
       allocate(this % is_node_boundary_node(this % num_vertices))
-      do ivertex = 1, this % num_vertices
+      do concurrent (ivertex = 1 : this % num_vertices)
          if (is_subset([ivertex], &
               & [this % face_vertices(:,this % boundary_face_face)]) &
               & .eqv. .true.) then
@@ -450,7 +458,7 @@ contains
          & )
     this % vertex_cell_weights = 0
 
-    do ivertex = 1, this % num_vertices
+    do concurrent (ivertex = 1 : this % num_vertices)
 
        cells(1:this % num_vertex_cells(ivertex)) = &
             & this % vertex_cells(1:this % num_vertex_cells(ivertex), ivertex)
@@ -469,8 +477,13 @@ contains
 
        this % vertex_cell_weights(:,ivertex) = this % vertex_cell_weights(:,ivertex)/total
 
-       print *, "vertex", ivertex, this % vertex_cell_weights(1:this % num_vertex_cells(ivertex),ivertex)
-
+    end do
+    
+    do ivertex = 1, min(10,this % num_vertices)
+       write(*,*) &
+            & "vertex [", this % vertex_numbers(ivertex), ']', &
+            & "weights [", this % vertex_cell_weights(&
+            & 1:this % num_vertex_cells(ivertex),ivertex), ']'
     end do
 
   end subroutine evaluate_vertex_weight
@@ -488,9 +501,7 @@ contains
     write(*, *) 'Evaluating face weights for interpolation from cells to face'
     allocate(this % face_cell_weights(2, this % num_faces))      
 
-    !do concurrent(iface = 1: this % num_faces)
-
-    do iface = 1, this % num_faces
+    do concurrent (iface = 1 : this % num_faces)
 
        cellindex1   = this % face_cells(1, iface)
        xcellcenter1 = this % cell_centers(:, cellindex1)
@@ -511,11 +522,15 @@ contains
        weight       = dinv1/(dinv1+dinv2)
 
        this % face_cell_weights(1:2,iface) = [weight,1.0_dp - weight]
-
-       print *, "face weight", iface, this % face_cell_weights(1:2,iface)
-
+       
     end do
-
+    
+    do iface = 1, min(10,this % num_faces)
+       write(*,*) &
+            & "face [", iface, "] ",&
+            & "weight [", this % face_cell_weights(1:2,iface), "] "
+    end do
+    
   end subroutine evaluate_face_weight
 
   subroutine evaluate_face_deltas(this)
@@ -527,7 +542,7 @@ contains
     write(*,*) "Evaluating face deltas"
     allocate(this % face_deltas(this % num_faces))
 
-    do gface = 1, this % num_faces
+    do concurrent (gface = 1 : this % num_faces)
 
        ! First cell belonging to the face
        gcell = this % face_cells(1, gface)
@@ -541,14 +556,18 @@ contains
        ! Take absolute value of dot product
        this % face_deltas(gface) = abs(dot_product(this % lvec(1:3,gface), fn))
 
-       print *, "face", gface, "delta", this % face_deltas(gface), &
-            & "skewness", dot_product(this % lvec(1:3,gface), &
-            & this % cell_face_tangents(:, lface, gcell)), &
-            & dot_product(this % cell_face_tangents(:, lface, gcell), &
-            & this % cell_face_normals(:, lface, gcell))
-
     end do
-
+    
+    do gface = 1, min(10, this % num_faces)
+       print *, &
+            & "face [", gface, &
+            & "delta [", this % face_deltas(gface), &
+            & "skewness [", dot_product(this % lvec(1:3,gface), &
+            & this % cell_face_tangents(:, lface, gcell)), "] ",&
+            & " t.n [", dot_product(this % cell_face_tangents(:, lface, gcell), &
+            & this % cell_face_normals(:, lface, gcell)), "] "
+    end do
+    
     ! Check for negative volumes
     if (abs(minval(this % face_deltas)) < 1.0d-10) then
        print *, 'collinear faces/bad cell?'
@@ -566,7 +585,7 @@ contains
 
     allocate(this % lvec(3,this % num_faces))
 
-    do iface = 1, this % num_faces
+    do concurrent (iface = 1 : this % num_faces)
 
        cells = 0
        cells(1:this%num_face_cells(iface)) = this % face_cells(1:this%num_face_cells(iface),iface)
@@ -596,7 +615,7 @@ contains
     this % cell_volumes = 0_dp      
 
     ! V = \sum_f nx_f \times  xmid_f \times A_f
-    do lcell = 1, this % num_cells
+    do concurrent (lcell = 1 : this % num_cells)
        this % cell_volumes(lcell) = 0.0d0
        do lface = 1, this % num_cell_faces(lcell)
           ! Global face index
@@ -699,7 +718,7 @@ end subroutine evaluate_cell_volumes
     allocate(this % cell_face_tangents(3, maxval(this % num_cell_faces), this % num_cells))
 
     ! loop cells
-    do icell = 1, this % num_cells
+    do concurrent (icell = 1 : this % num_cells)
 
        ! get cell verties
        associate( icv =>  this % cell_vertices(:, icell) ) 
@@ -811,22 +830,22 @@ end subroutine evaluate_cell_volumes
     
     if (this % initialized .eqv. .true.) then
        
-       write(*,*) "Cell Geo. Data [index] [center] [volume]"
+       write(*,*) "Cell Geo. Data [index] [center] [volume] "
        do icell = 1, this % num_cells
           write(*,*) &
-               & "local number [", this % cell_numbers(icell)   ,"]", &
-               & "center [", this % cell_centers(:,icell) ,"]", &
-               & "volume [", this % cell_volumes(icell)   ,"]"
+               & "local number [", this % cell_numbers(icell)   ,"] ", &
+               & "center [", this % cell_centers(:,icell) ,"] ", &
+               & "volume [", this % cell_volumes(icell)   ,"] "
        end do
 
-       write(*,*) "Face Data [index] [center] [area]"
+       write(*,*) "Face Data [index] [center] [area] "
        do iface = 1, this % num_faces
           write(*,*) &
-               & "local number [",iface,"]", &
-               & "face center [",this % face_centers(:, iface),"]", &
-               & "face deltas [",this % face_deltas(iface),"]", &                              
-               & "face areas [",this % face_areas(iface),"]", &
-               & "face lvec  [",this % lvec(:,iface),"]"
+               & "local number [",iface,"] ", &
+               & "face center [",this % face_centers(:, iface),"] ", &
+               & "face deltas [",this % face_deltas(iface),"] ", &                              
+               & "face areas [",this % face_areas(iface),"] ", &
+               & "face lvec  [",this % lvec(:,iface),"] "
        end do
 
     end if

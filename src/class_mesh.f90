@@ -394,13 +394,20 @@ contains
       ! [t1,t2,1:nfaces]
       allocate(this % is_face_boundary_face(this % num_faces))
       do concurrent (iface = 1 : this % num_faces)
-         if ( is_subset([iface], [this % boundary_face_face]) .eqv. .true.) then
+         if (is_subset([iface], [this % boundary_face_face]) .eqv. .true.) then
             this % is_face_boundary_face(iface) = 1
          else
             this % is_face_boundary_face(iface) = 0
          end if
       end do
 
+      do iface = 1, min(10,this % num_faces)
+         print *, &
+              & "fnum [", iface, this % face_numbers(iface), "] ", &
+              & "tag [", this % is_face_boundary_face(iface), "] ",&
+              & "tag [", this % face_tags(iface), "]"
+      end do
+      
       ! Find if a node is boundary node (node tag)
       allocate(this % is_node_boundary_node(this % num_vertices))
       do concurrent (ivertex = 1 : this % num_vertices)
@@ -411,6 +418,13 @@ contains
          else
             this % is_node_boundary_node(ivertex) = 0
          end if
+      end do
+
+      do ivertex = 1, min(10,this % num_vertices)
+         print *, &
+              & "vnum [", ivertex, this % vertex_numbers(ivertex), "] ", &
+              & "tag [", this % is_node_boundary_node(ivertex), "] ",&
+              & "tag [", this % vertex_tags(ivertex), "]"
       end do
 
     end block boundary

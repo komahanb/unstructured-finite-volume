@@ -102,7 +102,7 @@ contains
     integer :: idx_start_elements
     integer :: idx_end_elements
 
-    integer :: face_idx, cell_idx, vertex_idx
+    integer :: face_idx, cell_idx
     
     ! Collection to store face information
     type(set)  :: set_face_vertices
@@ -238,7 +238,6 @@ contains
         
         face_idx   = 0
         cell_idx   = 0
-        vertex_idx = 0
         
         do iline = 1, num_lines
 
@@ -277,10 +276,6 @@ contains
 
               ! Node
            else if (tokens(2) % asinteger() .eq. 15) then
-
-              ! Complete vertex processing with tagging
-              vertex_idx = vertex_idx + 1
-              vertex_tags(vertex_idx) = tokens(5) % asinteger()
               
            else
 
@@ -300,7 +295,7 @@ contains
     end block elements
 
     write(*,'(a)') "Finding faces..."
-
+    
     ! Extract the remaining faces based on cell vertices
     process_faces: block
 
@@ -308,7 +303,7 @@ contains
       type(integer) :: icell, iverpair
       type(logical) :: added
       integer, allocatable :: lface_numbers(:,:), lface_tags(:,:)
-      
+
       ! Make ordered pair of vertices as faces in 2D
       do icell = 1, num_cells
          do iverpair = 1, num_cell_vertices(icell)
@@ -332,7 +327,7 @@ contains
       end do
 
       num_faces = face_idx
-      
+
       allocate(num_face_vertices(num_faces))
       num_face_vertices = 2
 
@@ -349,11 +344,11 @@ contains
       allocate(face_tags(num_faces))
       face_tags = lface_tags(1,:)
       deallocate(lface_tags)
-      
-    end block process_faces
 
-    write(*,'(a)') "Processing edges..."
+    end block process_faces
     
+    write(*,'(a)') "Processing edges..."
+
     process_edges : block
 
       ! Edges are not in 2D

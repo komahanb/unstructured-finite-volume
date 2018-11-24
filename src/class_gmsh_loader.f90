@@ -145,10 +145,40 @@ contains
         end if
       end associate
     end block process_mesh_version
-    
+
+    write(*,'(a)') "Reading physical tags..."
+
     process_tags: block
 
-      ! parse tag information and store into variables
+      type(string), allocatable :: tokens(:)
+      integer                   :: num_tokens    
+      integer                   :: iline, length
+
+      associate(tag_lines=>lines(idx_start_physical_names+1:idx_end_physical_names-1))
+
+        ! Set the intent(out) variable for number of tags present 
+        num_tags = tag_lines(1) % asinteger()
+        
+        ! Allocate space for other two return variables
+        allocate(tag_info(num_tags))        
+        allocate(tag_numbers(num_tags))
+        tag_numbers = 0
+        
+        do concurrent(iline = 1: num_tags)
+
+           ! Tokenize based on delimited space
+           call tag_lines(iline+1) % tokenize(" ", num_tokens, tokens)
+           
+           ! Second tag is the tag number
+           tag_numbers(iline) = tokens(2) % asinteger()
+
+           ! Remove quotes on third tag
+           length = len(tokens(3) % str)
+           tag_info(iline) = string(tokens(3) % str(2:length-1))
+
+        end do
+
+      end associate
 
     end block process_tags
     

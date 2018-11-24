@@ -158,7 +158,7 @@ contains
          & me % num_edges   , me % edge_numbers  , me % edge_tags   , me % edge_vertices , me % num_edge_vertices , &
          & me % num_faces   , me % face_numbers  , me % face_tags   , me % face_vertices , me % num_face_vertices , &
          & me % num_cells   , me % cell_numbers  , me % cell_tags   , me % cell_vertices , me % num_cell_vertices , &
-         & me % num_tags    , me % tag_numbers , me % tag_info )
+         & me % num_tags    , me % tag_numbers   , me % tag_info )
 
     ! Check allocations and print error messages and stop
 
@@ -815,11 +815,17 @@ end subroutine evaluate_cell_volumes
 
     class(mesh), intent(in) :: this
 
-    integer :: icell, ivertex, iface, iedge
+    integer :: icell, ivertex, iface, iedge, itag
 
     write(*,*) 'Number of vertices :', this % num_vertices
     write(*,*) 'Number of cells    :', this % num_cells
     write(*,*) 'Number of faces    :', this % num_faces
+
+    do itag = 1, this % num_tags
+       write(*,*) &
+            & "tag number [", this % tag_numbers(itag) , "] ", &
+            & "info [", this % tag_info(itag) % str, "] "
+    end do
     
     if (this % num_vertices .gt. 0) then
        write(*,'(a,i4,a,i4)') "Vertex info for ", min(10,this % num_vertices), &

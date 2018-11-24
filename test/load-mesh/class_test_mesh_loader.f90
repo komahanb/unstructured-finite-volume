@@ -237,13 +237,27 @@ contains
 
     end block face_finder
 
-    tag_find: block 
+    tag_find: block
+      
+      ! Boundary and domain
+      num_tags = 2
+
+      allocate(tag_info(num_tags))
+      tag_info(1) = string("Boundary")
+      tag_info(2) = string("Domain")
+
+      allocate(tag_numbers(num_tags))
+      tag_numbers(1) = 1
+      tag_numbers(2) = 2
 
       ! Tag vertices, faces and cells
       allocate(vertex_tags(num_vertices)); vertex_tags = 0
       allocate(cell_tags(num_cells)); cell_tags = 0
       allocate(face_tags(num_faces)); face_tags = 0
       allocate(edge_tags(num_edges)); edge_tags = 0
+
+      print *, 'set tags to proceed'
+      stop
       
       ! Here the principle is that a cell with only one neighbour is
       ! tagged as boundary
@@ -256,9 +270,9 @@ contains
       ! information is obtained and tag these separately than interior
       ! nodes. But for advanced appliations, the user might want to
       ! supply tags externally.
-
+      
       ! With this information it is not possible to Use geometry and
-      ! x,y coords to find vertices, then faces, then cells, edges?
+      ! x,y coords to find vertices, then faces, then cells, edges?      
 
     end block tag_find
 

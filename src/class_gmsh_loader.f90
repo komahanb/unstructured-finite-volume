@@ -125,6 +125,7 @@ contains
          & idx_start_physical_names , idx_end_physical_names , &
          & idx_start_nodes          , idx_end_nodes, &
          & idx_start_elements       , idx_end_elements)
+
     write(*,*) "mesh           : " , idx_start_mesh           , idx_end_mesh
     write(*,*) "physical names : " , idx_start_physical_names , idx_end_physical_names
     write(*,*) "nodes          : " , idx_start_nodes          , idx_end_nodes
@@ -154,7 +155,7 @@ contains
       integer                   :: num_tokens    
       integer                   :: iline, length
 
-      associate(tag_lines=>lines(idx_start_physical_names+1:idx_end_physical_names-1))
+      associate(tag_lines => lines(idx_start_physical_names+1:idx_end_physical_names-1))
 
         ! Set the intent(out) variable for number of tags present 
         num_tags = tag_lines(1) % asinteger()

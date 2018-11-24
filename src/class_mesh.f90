@@ -160,8 +160,6 @@ contains
          & me % num_cells   , me % cell_numbers  , me % cell_tags   , me % cell_vertices , me % num_cell_vertices , &
          & me % num_tags    , me % tag_numbers   , me % tag_info )
 
-    ! Check allocations and print error messages and stop
-
     ! Sanity check (make sure numbering is continuous), although it may not start from one
     if (me % num_vertices .gt. 0 .and. &
          & maxval(me % vertex_numbers) -  minval(me % vertex_numbers) + 1 .ne. me % num_vertices) &
@@ -214,9 +212,7 @@ contains
             write(*,*) &
                  & 'vertex [', this % vertex_numbers(ivertex), ']', &
                  & 'num cells [', this % num_vertex_cells(ivertex), ']',&
-                 & 'cells [', &
-                 & this % vertex_cells(&
-                 & 1:this % num_vertex_cells(ivertex),ivertex), ']'
+                 & 'cells [', this % vertex_cells(1:this % num_vertex_cells(ivertex),ivertex), ']'
          end do
 
          ! Sanity check
@@ -372,8 +368,7 @@ contains
       do iface = 1, min(10,this % num_faces)
          print *, &
               & 'face [', this % face_numbers(iface), ']', &
-              & 'cells [', this % face_cells( &
-              & 1:this % num_face_cells(iface),iface), ']'
+              & 'cells [', this % face_cells(1 : this % num_face_cells(iface),iface), ']'
       end do
       
       if (minval(this % num_face_cells) .lt. 1) then
@@ -382,6 +377,7 @@ contains
       
     end block face_cell
 
+    ! Use a call back to mesh loader?
     tag_cells_vertices: block
 
       integer :: iface
@@ -392,76 +388,41 @@ contains
 
       ! Loop through boundary faces and tag cells and vertices
       do concurrent (iface=1:this % num_faces)
-         
-         if ( this % face_tags(iface) .gt. 0 ) then
+
+         ! will work only at this point the domain is marked 0
+         if (this % face_tags(iface) .gt. 0) then
             
             ! Copy face tags into corresponding cells
             this % cell_tags(this % face_cells(1:this % num_face_cells(iface),iface)) = &
                  & this % face_tags(iface)
 
             ! Copy face tags into corresponding vertices
-            this % vertex_tags(this % face_vertices(1:this%num_face_cells(iface),iface)) = &
+            this % vertex_tags(this % face_vertices(1:this % num_face_cells(iface),iface)) = &
                  & this % face_tags(iface)
             
          end if
 
       end do
+
+      !  Set the domain tags to maxval
+      where (this % face_tags .eq. 0)
+         this % face_tags = maxval(this % tag_numbers)
+      end where
       
+      where (this % edge_tags .eq. 0)
+         this % edge_tags = maxval(this % tag_numbers)
+      end where
+      
+      where (this % cell_tags .eq. 0)
+         this % cell_tags = maxval(this % tag_numbers)
+      end where
+      
+      where (this % vertex_tags .eq. 0)
+         this % vertex_tags = maxval(this % tag_numbers)
+      end where
+
     end block tag_cells_vertices
 
-    !-----------------------------------------------------------------!
-    ! Identify boundary faces, nodes
-    !-----------------------------------------------------------------!
-    
-    boundary : block
-
-      integer :: iface, ivertex
-
-      write(*,*) "Identifying boundary faces"
-
-      ! Form boundary faces from faces with 1 boundary
-      call get_boundary_faces(this % num_face_cells, this % boundary_face_face)
-      print *, this % boundary_face_face
-
-      ! Find if a face is boundary face (Tag faces with index) face_tags
-      ! [t1,t2,1:nfaces]
-      allocate(this % is_face_boundary_face(this % num_faces))
-      do concurrent (iface = 1 : this % num_faces)
-         if (is_subset([iface], [this % boundary_face_face]) .eqv. .true.) then
-            this % is_face_boundary_face(iface) = 1
-         else
-            this % is_face_boundary_face(iface) = 0
-         end if
-      end do
-
-      do iface = 1, min(10,this % num_faces)
-         print *, &
-              & "fnum [", iface, this % face_numbers(iface), "] ", &
-              & "tag [", this % is_face_boundary_face(iface), "] ",&
-              & "tag [", this % face_tags(iface), "]"
-      end do
-      
-      ! Find if a node is boundary node (node tag)
-      allocate(this % is_node_boundary_node(this % num_vertices))
-      do concurrent (ivertex = 1 : this % num_vertices)
-         if (is_subset([ivertex], &
-              & [this % face_vertices(:,this % boundary_face_face)]) &
-              & .eqv. .true.) then
-            this % is_node_boundary_node(ivertex) = 1
-         else
-            this % is_node_boundary_node(ivertex) = 0
-         end if
-      end do
-
-      do ivertex = 1, min(10,this % num_vertices)
-         print *, &
-              & "vnum [", ivertex, this % vertex_numbers(ivertex), "] ", &
-              & "tag [", this % is_node_boundary_node(ivertex), "] ",&
-              & "tag [", this % vertex_tags(ivertex), "]"
-      end do
-
-    end block boundary
-        
     !-----------------------------------------------------------------!
     ! Evaluate all geometric quantities needed for FVM assembly
     !-----------------------------------------------------------------!
@@ -546,8 +507,7 @@ contains
     real(dp) :: weight
 
     write(*, *) 'Evaluating face weights for interpolation from cells to face'
-    allocate(this % face_cell_weights(2, this % num_faces))      
-
+    allocate(this % face_cell_weights(2, this % num_faces))
     do concurrent (iface = 1 : this % num_faces)
 
        cellindex1   = this % face_cells(1, iface)
@@ -557,7 +517,7 @@ contains
        dinv1        = 1.0_dp/d1
 
        ! Extract the second cell if this is not a boundary face
-       if (this % is_face_boundary_face(iface) .ne. 1) then
+       if (this % face_tags(iface) .eq. maxval(this % tag_numbers)) then
           cellindex2   = this % face_cells(2, iface)
           xcellcenter2 = this % cell_centers(:, cellindex2)
           d2           = distance(xcellcenter2, xfacecenter)
@@ -589,7 +549,7 @@ contains
     write(*,*) "Evaluating face deltas"
     allocate(this % face_deltas(this % num_faces))
 
-    do concurrent (gface = 1 : this % num_faces)
+    do concurrent (gface=1:this % num_faces)
 
        ! First cell belonging to the face
        gcell = this % face_cells(1, gface)
@@ -631,12 +591,12 @@ contains
 
     allocate(this % lvec(3,this % num_faces))
 
-    do concurrent (iface = 1 : this % num_faces)
+    do concurrent (iface=1:this % num_faces)       
 
-       cells = 0
-       cells(1:this%num_face_cells(iface)) = this % face_cells(1:this%num_face_cells(iface),iface)
+       cells(1:this % num_face_cells(iface)) = this % face_cells(1:this%num_face_cells(iface),iface)
 
-       if (this % is_face_boundary_face(iface) .eq. 1) then
+       ! boundary face if not the highest tag
+       if (this % face_tags(iface) .lt. maxval(this % tag_numbers)) then
           ! Boundary faces .or. iface is in bfaces
           this % lvec(:,iface) = this % face_centers(:,iface) - this % cell_centers(:,cells(1))        
        else
@@ -702,17 +662,15 @@ end subroutine evaluate_cell_volumes
        associate(facenodes => this % face_vertices(:,iface))
 
          ! Compute the coordinates of face centers
-       this % face_centers(1:3, iface) = &
-            & sum(this % vertices(1:3, facenodes),dim=2)/&
-            & real(2,kind=dp) ! this face has 2 edges
-
-       associate(v1 => this % vertices(:,facenodes(1)), &
-            & v2 => this % vertices(:,facenodes(2))  )
-
+         this % face_centers(1:3, iface) = &
+              & sum(this % vertices(1:3, facenodes),dim=2)/&
+              & real(2,kind=dp) ! this face has 2 edges
+         
          ! Compute face areas
-       this % face_areas(iface) = distance(v1, v2)
-
-        end associate
+         associate(v1 => this % vertices(:,facenodes(1)), &
+              & v2 => this % vertices(:,facenodes(2))  )
+           this % face_areas(iface) = distance(v1, v2)
+         end associate
        
       end associate
 
@@ -737,7 +695,7 @@ end subroutine evaluate_cell_volumes
     
     allocate(this % cell_centers(3, this % num_cells))
     
-    do concurrent(icell = 1 : this % num_cells)
+    do concurrent(icell=1:this % num_cells)
        this % cell_centers(:, icell) = sum(&
             & this % vertices(&
             & :, this % cell_vertices(&

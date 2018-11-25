@@ -182,18 +182,19 @@ contains
          call lines(ivertex) % tokenize(",", num_tokens, tokens)
 
          if (num_tokens .gt. 0) then
+
             ! We create our own vertex number
             vertex_numbers(ivertex) = ivertex
 
             ! First and second tokens are the x and y coordinates
             vertices(1:2,ivertex) = tokens(:) % asreal()
+            
          end if
 
       end do
 
       ! Tag vertices if they are a part of boundary tag (later) after
       ! reading the elements
-
       if (allocated(tokens)) deallocate(tokens)
       if (allocated(lines)) deallocate(lines)
 

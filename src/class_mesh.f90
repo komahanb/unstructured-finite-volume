@@ -115,10 +115,14 @@ module class_mesh
      
      ! Generalize to tag numbers. Right now we can't differentiate
      ! lower face from upper face.
-     integer  :: num_boundary_faces
-     integer  , allocatable :: boundary_face_face(:)      ! [1:num_boundary_faces]
-     integer  , allocatable :: is_face_boundary_face(:)   ! [1:num_faces]
-     integer  , allocatable :: is_node_boundary_node(:)   ! [1:num_vertices]
+!!$     integer  :: num_boundary_faces
+!!$     integer  , allocatable :: boundary_face_face(:)      ! [1:num_boundary_faces]
+!!$     integer  , allocatable :: is_face_boundary_face(:)   ! [1:num_faces]
+!!$     integer  , allocatable :: is_node_boundary_node(:)   ! [1:num_vertices]
+
+     ! Number boundary faces separately
+     integer  , allocatable :: num_tagged_faces(:)        ! [1:num_tags]
+     integer  , allocatable :: tagged_face_face(:,:)      ! [[f1,f2,f3],[t1,t2,t3,t4,...]]
      
    contains
 
@@ -422,7 +426,47 @@ contains
       end where
 
     end block tag_cells_vertices
+    
+    number_tagged_faces : block
 
+      integer :: iface, itag, ftag, mintag, maxtag
+
+      ! Allocate the number of tagged faces
+      allocate(this % num_tagged_faces(this % num_tags))
+      this % num_tagged_faces = 0
+      
+      mintag = minval(this % tag_numbers)
+      maxtag = maxval(this % tag_numbers)
+      
+      ! Count the number of tagged faces of each kind by looping
+      ! through faces
+      do iface = 1, this % num_faces
+         inc_tag: do itag = mintag, maxtag
+            ftag = this % face_tags(iface)
+            if (itag .eq. ftag) then
+               this % num_tagged_faces(itag) = 1 + this % num_tagged_faces(itag)
+               exit inc_tag
+            end if
+         end do inc_tag
+      end do
+
+      ! Use the counted number to allocate and recount
+      allocate(this % tagged_face_face(maxval(this % num_tagged_faces), this % num_tags))
+      this % tagged_face_face = 0
+      this % num_tagged_faces = 0      
+      do iface = 1, this % num_faces
+         set_tag: do itag = mintag, maxtag
+            ftag = this % face_tags(iface)
+            if (itag .eq. ftag) then
+               this % num_tagged_faces(itag) = 1 + this % num_tagged_faces(itag)
+               this % tagged_face_face(this % num_tagged_faces(itag),itag) = iface
+               exit set_tag
+            end if
+         end do set_tag
+      end do
+      
+    end block number_tagged_faces
+    
     !-----------------------------------------------------------------!
     ! Evaluate all geometric quantities needed for FVM assembly
     !-----------------------------------------------------------------!

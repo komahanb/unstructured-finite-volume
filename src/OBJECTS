@@ -6,4 +6,5 @@ class_list.o \
 interface_mesh_loader.o \
 class_gmsh_loader.o \
 module_mesh_utils.o \
-class_mesh.o
+class_mesh.o \
+class_assembler.o 

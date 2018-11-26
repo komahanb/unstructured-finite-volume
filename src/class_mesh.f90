@@ -27,6 +27,7 @@ module class_mesh
   
   type :: mesh ! rename as topology?
 
+     integer :: max_print = 10
      logical              :: initialized = .false.
 
      ! Based on PhysicalNames?
@@ -209,10 +210,10 @@ contains
       if (allocated(this % vertex_cells)) then
 
          write(*,'(a,i4,a,i4)') &
-              & "Vertex to cell info for", min(10,this % num_vertices), &
+              & "Vertex to cell info for", min(this % max_print,this % num_vertices), &
               & " vertices out of ", this % num_vertices
 
-         do ivertex = 1, min(10,this % num_vertices)
+         do ivertex = 1, min(this % max_print,this % num_vertices)
             write(*,*) &
                  & 'vertex [', this % vertex_numbers(ivertex), ']', &
                  & 'num cells [', this % num_vertex_cells(ivertex), ']',&
@@ -251,10 +252,10 @@ contains
       if (allocated(this % vertex_faces)) then
 
          write(*,'(a,i4,a,i4)') &
-              & "Vertex to face info for", min(10,this % num_vertices), &
+              & "Vertex to face info for", min(this % max_print,this % num_vertices), &
               & " vertices out of ", this % num_vertices
 
-         do ivertex = 1, min(10,this % num_vertices)
+         do ivertex = 1, min(this % max_print,this % num_vertices)
             write(*,*) &
                  & 'vertex [', this % vertex_numbers(ivertex), ']',&
                  & 'num_vertex_faces [', this % num_vertex_faces(ivertex), ']',&
@@ -295,10 +296,10 @@ contains
       if (allocated(this % vertex_edges)) then
 
          write(*,'(a,i4,a,i4)') &
-              & "Vertex to edge info for", min(10,this % num_vertices), &
+              & "Vertex to edge info for", min(this % max_print,this % num_vertices), &
               & " vertices out of ", this % num_vertices
 
-         do ivertex = 1, min(10,this % num_vertices)
+         do ivertex = 1, min(this % max_print,this % num_vertices)
             write(*,*) &
                  & 'vertex [', this % vertex_numbers(ivertex), ']',&
                  & 'num_vertex_edges [', this % num_vertex_edges(ivertex) , ']',&
@@ -338,10 +339,10 @@ contains
       if (allocated(this % cell_faces)) then
 
          write(*,'(a,i4,a,i4)') &
-              & "Cell to face info for", min(10,this % num_cells), &
+              & "Cell to face info for", min(this % max_print,this % num_cells), &
               & " cells out of ", this % num_cells
 
-         do icell = 1, min(10,this % num_cells)
+         do icell = 1, min(this % max_print,this % num_cells)
             write(*,*) &
                  & 'cell ['  , icell, ']',&
                  & 'nfaces [', this % num_cell_faces(icell), ']',&
@@ -369,7 +370,7 @@ contains
       call reverse_map(this % cell_faces, this % num_cell_faces, &
            & this % face_cells, this % num_face_cells)
 
-      do iface = 1, min(10,this % num_faces)
+      do iface = 1, min(this % max_print,this % num_faces)
          print *, &
               & 'face [', this % face_numbers(iface), ']', &
               & 'cells [', this % face_cells(1 : this % num_face_cells(iface),iface), ']'
@@ -531,7 +532,7 @@ contains
 
     end do
     
-    do ivertex = 1, min(10,this % num_vertices)
+    do ivertex = 1, min(this % max_print,this % num_vertices)
        write(*,*) &
             & "vertex [", this % vertex_numbers(ivertex), ']', &
             & "weights [", this % vertex_cell_weights(&
@@ -576,7 +577,7 @@ contains
        
     end do
     
-    do iface = 1, min(10,this % num_faces)
+    do iface = 1, min(this % max_print,this % num_faces)
        write(*,*) &
             & "face [", iface, "] ",&
             & "weight [", this % face_cell_weights(1:2,iface), "] "
@@ -609,7 +610,7 @@ contains
 
     end do
     
-    do gface = 1, min(10, this % num_faces)
+    do gface = 1, min(this % max_print, this % num_faces)
        print *, "face [", gface, "] ",&
             & "delta [", this % face_deltas(gface), "] "!,&
 !!$            & "skewness [", &
@@ -830,10 +831,10 @@ end subroutine evaluate_cell_volumes
     end do
     
     if (this % num_vertices .gt. 0) then
-       write(*,'(a,i4,a,i4)') "Vertex info for ", min(10,this % num_vertices), &
+       write(*,'(a,i4,a,i4)') "Vertex info for ", min(this % max_print,this % num_vertices), &
             & ' vertices out of ', this % num_vertices
        write(*,*) "number tag x y z"
-       do ivertex = 1, min(10,this % num_vertices)
+       do ivertex = 1, min(this % max_print,this % num_vertices)
           write(*,'(i6,i2,3E15.6)') &
                & this % vertex_numbers(ivertex), &
                & this % vertex_tags(ivertex), &
@@ -842,10 +843,10 @@ end subroutine evaluate_cell_volumes
     end if
 
     if (this % num_cells .gt. 0) then
-       write(*,'(a,i4,a,i4)') "Cell info for ", min(10,this % num_cells), &
+       write(*,'(a,i4,a,i4)') "Cell info for ", min(this % max_print,this % num_cells), &
             & ' cells out of ', this % num_cells
        write(*,*) "cno ctag ncv iverts"
-       do icell = 1, min(10,this % num_cells)
+       do icell = 1, min(this % max_print,this % num_cells)
           write(*,'(i6,i2,i2,10i6)') &
                & this % cell_numbers(icell), &
                & this % cell_tags(icell), &
@@ -855,10 +856,10 @@ end subroutine evaluate_cell_volumes
     end if
 
     if (this % num_faces .gt. 0) then
-       write(*,'(a,i4,a,i4)') "Face info for ", min(10,this % num_faces), &
+       write(*,'(a,i4,a,i4)') "Face info for ", min(this % max_print,this % num_faces), &
             & ' faces out of ', this % num_faces       
        write(*,*) "fno ftag nfv iverts"
-       do iface = 1, min(10,this % num_faces)
+       do iface = 1, min(this % max_print,this % num_faces)
           write(*,'(i6,i2,i2,10i6)') &
                & this % face_numbers(iface), &
                & this % face_tags(iface), &
@@ -868,10 +869,10 @@ end subroutine evaluate_cell_volumes
     end if
 
     if (this % num_edges .gt. 0) then    
-       write(*,'(a,i4,a,i4)') "Edge info for ", min(10,this % num_edges), &
+       write(*,'(a,i4,a,i4)') "Edge info for ", min(this % max_print,this % num_edges), &
             & ' edges out of ', this % num_edges
        write(*,*) "eno etag nev iverts"
-       do iedge = 1, min(10,this % num_edges)
+       do iedge = 1, min(this % max_print,this % num_edges)
           write(*,'(i6,i2,i2,10i6)') &
                & this % edge_numbers(iedge), &
                & this % edge_tags(iedge), &
@@ -883,7 +884,7 @@ end subroutine evaluate_cell_volumes
     if (this % initialized .eqv. .true.) then
        
        write(*,*) "Cell Geo. Data [index] [center] [volume] "
-       do icell = 1, min(10,this % num_cells)
+       do icell = 1, min(this % max_print,this % num_cells)
           write(*,*) &
                & "local number [", this % cell_numbers(icell)   ,"] ", &
                & "center [", this % cell_centers(:,icell) ,"] ", &
@@ -891,7 +892,7 @@ end subroutine evaluate_cell_volumes
        end do
 
        write(*,*) "Face Data [index] [center] [area] "
-       do iface = 1, min(10,this % num_faces)
+       do iface = 1, min(this % max_print,this % num_faces)
           write(*,*) &
                & "local number [",iface,"] ", &
                & "face center [",this % face_centers(:, iface),"] ", &

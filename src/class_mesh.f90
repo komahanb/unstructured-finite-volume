@@ -27,7 +27,7 @@ module class_mesh
   
   type :: mesh ! rename as topology?
 
-     integer :: max_print = 10
+     integer :: max_print = 20
      logical              :: initialized = .false.
 
      ! Based on PhysicalNames?
@@ -611,17 +611,16 @@ contains
        ! Take absolute value of dot product
        this % face_deltas(gface) = abs(dot_product(this % lvec(1:3,gface), fn))
 
+       print *, "face [", gface, "] ",&
+            & "delta [", this % face_deltas(gface), "] ",&
+            & "skewness t.l [", &
+            & dot_product(this % lvec(1:3,gface)                    , this % cell_face_tangents(:, lface, gcell)), "] ", &
+            & "orthogonality t.n [", &
+            & dot_product(this % cell_face_tangents(:, lface, gcell), this % cell_face_normals(:, lface, gcell)), "] ", &
+            & this % cell_face_normals(:, lface, gcell)
+       
     end do
     
-    do gface = 1, min(this % max_print, this % num_faces)
-       print *, "face [", gface, "] ",&
-            & "delta [", this % face_deltas(gface), "] "!,&
-!!$            & "skewness [", &
-!!$            & dot_product(this % lvec(1:3,gface)                    , this % cell_face_tangents(:, lface, gcell)), "] ", &
-!!$            & "orthogonality [", &
-!!$            & dot_product(this % cell_face_tangents(:, lface, gcell), this % cell_face_normals(:, lface, gcell)), "] "
-    end do
-
     ! Check for negative volumes
     if (abs(minval(this % face_deltas)) < 1.0d-10) then
        print *, 'collinear faces/bad cell?'
@@ -751,7 +750,7 @@ end subroutine evaluate_cell_volumes
             & ), dim=2)&
             & /real(this % num_cell_vertices(icell), kind=dp)
     end do
-    
+   
   end subroutine evaluate_cell_centers
   
   subroutine evaluate_face_tangents_normals(this)
@@ -897,11 +896,11 @@ end subroutine evaluate_cell_volumes
        write(*,*) "Face Data [index] [center] [area] "
        do iface = 1, min(this % max_print,this % num_faces)
           write(*,*) &
-               & "local number [",iface,"] ", &
-               & "face center [",this % face_centers(:, iface),"] ", &
-               & "face deltas [",this % face_deltas(iface),"] ", &                              
-               & "face areas [",this % face_areas(iface),"] ", &
-               & "face lvec  [",this % lvec(:,iface),"] "
+               & "num [",iface,"] ", &
+               & "center [",this % face_centers(:, iface),"] ", &
+               & "area [",this % face_areas(iface),"] ", &
+               & "lvec [",this % lvec(:,iface),"] ", &
+               & "delta [",this % face_deltas(iface),"] "
        end do
 
     end if

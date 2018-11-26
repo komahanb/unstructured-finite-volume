@@ -17,8 +17,17 @@ module class_assembler
 
   type :: assembler
 
-     type(mesh), pointer :: grid
+     ! set symmetry to .true. for structured grid
      logical :: symmetry = .false.
+
+     ! Mesh object
+     type(mesh), pointer :: grid
+
+     ! Number of state varibles 
+     integer :: num_state_vars
+
+     ! Flux vector
+     real(dp), allocatable :: phi(:)
 
    contains
 
@@ -56,11 +65,18 @@ contains
 
     ! Set mesh
     allocate(this % grid, source  = grid)
+    call this % grid % to_string()
 
     ! Non symmetric jacobian
     this % symmetry = .false.
 
-    call this % grid % to_string()
+    ! Determine the number of state variables to solve based on the
+    ! mesh. In FVM it is the number of cells present.
+    this % num_state_vars = this % grid % num_cells
+
+    ! Allocate the flux vector
+    allocate(this % phi(this % num_state_vars))
+    this % phi = 0
 
   end function construct
 
@@ -77,9 +93,11 @@ contains
        nullify(this % grid)
     end if
 
+    if (allocated(this % phi)) deallocate(this % phi)
+    
   end subroutine destroy
 
-  subroutine get_jacobian_vector_product(this, x, Ax)
+  subroutine get_jacobian_vector_product(this, Ax, x)
 
     class(assembler) , intent(in)    :: this
     real(dp)         , intent(in)    :: x(:)
@@ -101,7 +119,7 @@ contains
 
   end subroutine get_jacobian_vector_product
   
-  subroutine get_transpose_jacobian_vector_product(this, x, Ax)
+  subroutine get_transpose_jacobian_vector_product(this, Ax, x)
 
     class(assembler) , intent(in)    :: this
     real(dp)         , intent(in)    :: x(:)
@@ -130,6 +148,17 @@ contains
     b(1) = 1.0d0
     b(2) = 1.0d0
     b(3) = 1.0d0
+!!$    
+!!$    source: block
+!!$      
+!!$      integer :: icell
+!!$
+!!$      do icell = this % grid % num_cells
+!!$         
+!!$         
+!!$      end do
+!!$
+!!$    end block source
 
   end subroutine get_source
 
@@ -159,16 +188,16 @@ contains
     ! Norm of the right hand side
     call oassembler % get_source(tmp)
     if (oassembler % symmetry .eqv. .false.) then
-       call oassembler % get_transpose_jacobian_vector_product(tmp, b)
+       call oassembler % get_transpose_jacobian_vector_product(b, tmp)
     end if
     bnorm = norm2(b)
 
     ! Norm of the initial residual
-    call oassembler % get_jacobian_vector_product(x, tmp)
+    call oassembler % get_jacobian_vector_product(tmp, x)
     if (oassembler % symmetry .eqv. .false.) then
-       call oassembler % get_transpose_jacobian_vector_product(tmp, Ax)
+       call oassembler % get_transpose_jacobian_vector_product(Ax, tmp)
     end if
-    r         = b - Ax
+    r         = b - Ax ! could directly form this residual using get_residual_call
     rnorm     = norm2(r)
     tol       = rnorm/bnorm
     rho(2)    = rnorm*rnorm
@@ -191,9 +220,9 @@ contains
        end if
 
        ! step (b) compute the solution update
-       call oassembler % get_jacobian_vector_product(p, tmp)
+       call oassembler % get_jacobian_vector_product(tmp, p)
        if (oassembler % symmetry .eqv. .false.) then
-          call oassembler % get_transpose_jacobian_vector_product(tmp, w)
+          call oassembler % get_transpose_jacobian_vector_product(w, tmp)
        end if
        !w = matmul(A,p)
 

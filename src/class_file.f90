@@ -27,6 +27,9 @@ module class_file
      procedure :: read_lines
      procedure :: get_num_lines
 
+     ! Destructor
+     final :: destroy
+
   end type file
 
   !-------------------------------------------------------------------!
@@ -72,6 +75,18 @@ contains
     end do check_unit
 
   end function create
+  
+  !===================================================================!
+  ! Destructor for file object
+  !===================================================================!
+  
+  pure subroutine destroy(this)
+
+    type(file), intent(inout) :: this
+
+    if(allocated(this % filename)) deallocate(this % filename)
+
+  end subroutine destroy
 
   !===================================================================!
   ! Open the file

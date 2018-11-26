@@ -25,12 +25,10 @@ program test_mesh
   ! Create a mesh object
   allocate(gmsh_loader_obj, source =  gmsh_loader(filename))
   allocate(mesh_obj, source = mesh(gmsh_loader_obj))
-  call mesh_obj % to_string()
   deallocate(gmsh_loader_obj)
 
   ! Create an assembler object for assembling the linear system
   ! Geometry and meshing
-
   allocate(FVMAssembler, source = assembler(mesh_obj))
 
   ! Writes the mesh for tecplot
@@ -38,16 +36,15 @@ program test_mesh
   
   ! Create a solver object to solve the linear system
   
-  ! Solve (wrap this into a solver object)
   allocate(x(npts))
   x = 1.0d0
-  !call random_number(x)
   print *, 'xinit', x
   call solve_conjugate_gradient(FVMAssembler, max_it, max_tol, x)
   print *, 'solution', x
-  
+
   deallocate(mesh_obj)
   deallocate(FVMAssembler)
+  deallocate(x)
 
   contains
 

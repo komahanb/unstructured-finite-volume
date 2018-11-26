@@ -15,6 +15,10 @@ module class_list
      procedure :: insert
      procedure :: add_entry
      procedure :: get_entries
+
+     ! Destructor
+     final :: destroy
+
   end type list
 
   ! Constructor interface for list
@@ -40,6 +44,18 @@ contains
     this % num_entries = 0
     
   end function create
+
+  !===================================================================!
+  ! Destructor for list object
+  !===================================================================!
+  
+  pure subroutine destroy(this)
+
+    type(list), intent(inout) :: this
+
+    if(allocated(this % table)) deallocate(this % table)
+
+  end subroutine destroy
 
   !===================================================================!
   ! Add an entry into the list

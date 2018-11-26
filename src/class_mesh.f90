@@ -142,7 +142,7 @@ module class_mesh
      procedure :: evaluate_vertex_weight
 
      ! Destructor
-     ! final   :: destruct
+     final   :: destroy
      
   end type mesh
 
@@ -188,6 +188,76 @@ contains
     
   end function create_mesh
   
+  !===================================================================!
+  ! Destructor for file object
+  !===================================================================!
+  
+  pure subroutine destroy(this)
+
+    type(mesh), intent(inout) :: this
+    
+    if (allocated(this % tag_numbers)) deallocate(this % tag_numbers)
+    if (allocated(this % tag_info)) deallocate(this % tag_info)
+
+    if (allocated(this % vertices)) deallocate(this % vertices)
+    if (allocated(this % vertex_numbers)) deallocate(this % vertex_numbers)
+    if (allocated(this % vertex_tags)) deallocate(this % vertex_tags)
+
+    if (allocated(this % edge_numbers)) deallocate(this % edge_numbers)
+    if (allocated(this % edge_tags)) deallocate(this % edge_tags)
+    if (allocated(this % edge_vertices)) deallocate(this % edge_vertices)
+    if (allocated(this % num_edge_vertices)) deallocate( this % num_edge_vertices)
+
+    if (allocated(this % face_numbers)) deallocate(this % face_numbers)
+    if (allocated(this % face_tags)) deallocate(this % face_tags)
+    if (allocated(this % face_vertices)) deallocate(this % face_vertices)
+    if (allocated(this % num_face_vertices)) deallocate(this % num_face_vertices)
+
+    if (allocated(this % cell_numbers)) deallocate(this % cell_numbers)
+    if (allocated(this % cell_tags)) deallocate(this % cell_tags)
+    if (allocated(this % cell_vertices)) deallocate(this % cell_vertices)
+    if (allocated(this % num_cell_vertices)) deallocate(this % num_cell_vertices)
+
+    if (allocated(this % vertex_cells)) deallocate(this % vertex_cells)
+    if (allocated(this % num_vertex_cells)) deallocate(this % num_vertex_cells)
+
+    if (allocated(this % vertex_faces)) deallocate(this % vertex_faces)
+    if (allocated(this % num_vertex_faces)) deallocate(this % num_vertex_faces)
+
+    if (allocated(this % vertex_edges)) deallocate(this % vertex_edges)
+    if (allocated(this % num_vertex_edges)) deallocate(this % num_vertex_edges)
+
+    if (allocated(this % num_cell_faces)) deallocate(this % num_cell_faces)
+    if (allocated(this % cell_faces)) deallocate(this % cell_faces)
+    if (allocated(this % num_face_cells)) deallocate(this % num_face_cells)
+    if (allocated(this % face_cells)) deallocate(this % face_cells)
+
+    if (allocated(this % num_face_edges)) deallocate(this % num_face_edges)
+    if (allocated(this % face_edges)) deallocate(this % face_edges)
+    if (allocated(this % num_edge_faces)) deallocate(this % num_edge_faces)
+    if (allocated(this % edge_faces)) deallocate(this % edge_faces)
+
+    if (allocated(this % cell_centers)) deallocate(this % cell_centers)
+    if (allocated(this % cell_volumes)) deallocate(this % cell_volumes)
+
+    if (allocated(this % face_centers)) deallocate(this % face_centers)
+    if (allocated(this % face_areas)) deallocate(this % face_areas)
+    if (allocated(this % face_deltas)) deallocate(this % face_deltas)
+    if (allocated(this % lvec)) deallocate(this % lvec)
+
+    if (allocated(this % cell_face_tangents)) deallocate(this % cell_face_tangents)
+    if (allocated(this % cell_face_normals)) deallocate(this % cell_face_normals)
+    if (allocated(this % vertex_cell_weights)) deallocate(this % vertex_cell_weights)
+    if (allocated(this % face_cell_weights)) deallocate(this % face_cell_weights)
+
+    if (allocated(this % num_tagged_faces)) deallocate(this % num_tagged_faces)
+    if (allocated(this % tagged_face_face)) deallocate(this % tagged_face_face)
+
+!!$    if (allocated()) deallocate()
+!!$    if (allocated()) deallocate()
+
+  end subroutine destroy
+
   type(logical) function initialize(this)
 
     class(mesh), intent(inout) :: this
@@ -542,6 +612,8 @@ contains
             & 1:this % num_vertex_cells(ivertex),ivertex), ']'
     end do
     
+    deallocate(cells)
+
   end subroutine evaluate_vertex_weight
 
   subroutine evaluate_face_weight(this)

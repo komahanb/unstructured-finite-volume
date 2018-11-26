@@ -33,6 +33,9 @@ module class_assembler
      procedure :: get_transpose_jacobian_vector_product
      procedure :: write_solution
      
+     ! Destructor
+     final :: destroy
+
   end type assembler
 
   interface assembler
@@ -57,7 +60,24 @@ contains
     ! Non symmetric jacobian
     this % symmetry = .false.
 
+    call this % grid % to_string()
+
   end function construct
+
+  !===================================================================!
+  ! Destructor for file object
+  !===================================================================!
+  
+  pure subroutine destroy(this)
+    
+    type(assembler), intent(inout) :: this
+    
+    if(associated(this % grid)) then
+       deallocate(this % grid)
+       nullify(this % grid)
+    end if
+
+  end subroutine destroy
 
   subroutine get_jacobian_vector_product(this, x, Ax)
 
@@ -153,7 +173,7 @@ contains
     tol       = rnorm/bnorm
     rho(2)    = rnorm*rnorm
     
-    open(10, file='cg.log', action='write', position='append')
+    open(13, file='cg.log', action='write', position='append')
 
     tol = huge(1.0_dp)
 
@@ -190,8 +210,8 @@ contains
        rnorm = norm2(r)
        tol = rnorm/bnorm
 
-       write(10,*) iter, tol
-       print *, iter, tol, rnorm, rho
+       write(13,*) iter, tol
+       !write(*,*) iter, tol, rnorm, rho ! causes valgrind errors
 
        iter = iter + 1
 
@@ -200,9 +220,9 @@ contains
 
     end do
 
-    close(10)
+    close(13)
 
-    deallocate(r, p, w, b)
+    deallocate(r, p, w, b, Ax, tmp)
 
   end subroutine solve_conjugate_gradient
   
@@ -212,17 +232,17 @@ contains
   
   subroutine write_solution(this, filename)!, phi)
 
-    class(assembler)              :: this
+    class(assembler), intent(in)  :: this
     character(len=*), intent(in)  :: filename
     character(len=:), allocatable :: path
     character(len=:), allocatable :: new_name
 !    real(dp)        , intent(in)  :: phi(:)
-    integer                       :: k, j, i, ierr
+    integer                       ::  i, ierr
 
     ! Open resource
     path = trim(filename)
 
-    open(unit=90, file=trim(path), iostat= ierr)
+    open(unit=90, file=path, iostat= ierr)
     if (ierr .ne. 0) then
        write(*,'("  >> Opening file ", 39A, " failed")') path
        return
@@ -247,6 +267,9 @@ contains
 
     ! Close resource
     close(90)
+    
+    if (allocated(path)) deallocate(path)
+    if (allocated(new_name)) deallocate(new_name)
 
   end subroutine write_solution
 

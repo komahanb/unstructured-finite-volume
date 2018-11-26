@@ -513,14 +513,16 @@ contains
 
     do concurrent (ivertex = 1 : this % num_vertices)
 
+       ! actual cells numbers
        cells(1:this % num_vertex_cells(ivertex)) = &
-            & this % vertex_cells(1:this % num_vertex_cells(ivertex), ivertex)
+            & this % vertex_cells(1:this % num_vertex_cells(ivertex), &
+            & ivertex)
 
        total  = 0.0d0
 
        do icell = 1, this % num_vertex_cells(ivertex)
 
-          dcell = distance(this % cell_centers(:,icell), this % vertices(:,ivertex))
+          dcell = distance(this % cell_centers(:,cells(icell)), this % vertices(:,ivertex))
 
           this % vertex_cell_weights(icell,ivertex) = 1.0_dp/dcell
 
@@ -528,8 +530,9 @@ contains
 
        end do
 
-       this % vertex_cell_weights(:,ivertex) = this % vertex_cell_weights(:,ivertex)/total
-
+       this % vertex_cell_weights(1:this % num_vertex_cells(ivertex),ivertex) = &
+            & this % vertex_cell_weights(1:this % num_vertex_cells(ivertex),ivertex)/total
+       
     end do
     
     do ivertex = 1, min(this % max_print,this % num_vertices)
@@ -538,7 +541,7 @@ contains
             & "weights [", this % vertex_cell_weights(&
             & 1:this % num_vertex_cells(ivertex),ivertex), ']'
     end do
-
+    
   end subroutine evaluate_vertex_weight
 
   subroutine evaluate_face_weight(this)

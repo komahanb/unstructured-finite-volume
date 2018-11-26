@@ -33,39 +33,39 @@ program test_mesh
     end do
 
   end block test_gmsh
-
-  test_mesh1 : block
-
-    character(len=*), parameter :: coord_file = 'coordinates_10.input'
-    character(len=*), parameter :: elem_file  = 'elements_10.input'
-
-    class(test_mesh_loader), allocatable :: test_mesh_loader_obj
-    class(mesh), allocatable             :: mesh_obj
-
-    allocate(test_mesh_loader_obj, source = test_mesh_loader(coord_file, elem_file))
-    allocate(mesh_obj, source = mesh(test_mesh_loader_obj))
-    !call mesh_obj % to_string()
-    deallocate(mesh_obj)
-    deallocate(test_mesh_loader_obj)
-
-  end block test_mesh1
-
-  test_mesh2 : block
-
-    character(len=*), parameter :: coord_file = 'coordinates_20.input'
-    character(len=*), parameter :: elem_file  = 'elements_20.input'
-
-    class(test_mesh_loader), allocatable :: test_mesh_loader_obj
-    class(mesh), allocatable             :: mesh_obj
-
-    allocate(test_mesh_loader_obj, source = test_mesh_loader(coord_file, elem_file))
-    allocate(mesh_obj, source = mesh(test_mesh_loader_obj))
-    !call mesh_obj % to_string()
-    deallocate(mesh_obj)
-    deallocate(test_mesh_loader_obj)
-
-  end block test_mesh2
-
+!!$
+!!$  test_mesh1 : block
+!!$
+!!$    character(len=*), parameter :: coord_file = 'coordinates_10.input'
+!!$    character(len=*), parameter :: elem_file  = 'elements_10.input'
+!!$
+!!$    class(test_mesh_loader), allocatable :: test_mesh_loader_obj
+!!$    class(mesh), allocatable             :: mesh_obj
+!!$
+!!$    allocate(test_mesh_loader_obj, source = test_mesh_loader(coord_file, elem_file))
+!!$    allocate(mesh_obj, source = mesh(test_mesh_loader_obj))
+!!$    !call mesh_obj % to_string()
+!!$    deallocate(mesh_obj)
+!!$    deallocate(test_mesh_loader_obj)
+!!$
+!!$  end block test_mesh1
+!!$
+!!$  test_mesh2 : block
+!!$
+!!$    character(len=*), parameter :: coord_file = 'coordinates_20.input'
+!!$    character(len=*), parameter :: elem_file  = 'elements_20.input'
+!!$
+!!$    class(test_mesh_loader), allocatable :: test_mesh_loader_obj
+!!$    class(mesh), allocatable             :: mesh_obj
+!!$
+!!$    allocate(test_mesh_loader_obj, source = test_mesh_loader(coord_file, elem_file))
+!!$    allocate(mesh_obj, source = mesh(test_mesh_loader_obj))
+!!$    !call mesh_obj % to_string()
+!!$    deallocate(mesh_obj)
+!!$    deallocate(test_mesh_loader_obj)
+!!$
+!!$  end block test_mesh2
+!!$
   !===================================================================!
   ! Test the functionalities of Class String and Class File
   !===================================================================!

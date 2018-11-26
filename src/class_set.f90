@@ -5,17 +5,24 @@
 module class_set
 
   implicit none
-
+  
   ! Datatype
   type :: set
+
      integer, allocatable :: table(:,:)
      integer              :: num_entries
      integer              :: num_tuples
+
    contains
+
      procedure :: insert
      procedure :: add_entry
      procedure :: get_entries
      procedure :: contains
+
+     ! Destructor
+     final :: destroy
+
   end type set
 
   ! Constructor interface for set
@@ -41,6 +48,18 @@ contains
     this % num_entries = 0
     
   end function create
+
+  !===================================================================!
+  ! Destructor for set object
+  !===================================================================!
+  
+  pure subroutine destroy(this)
+
+    type(set), intent(inout) :: this
+
+    if(allocated(this % table)) deallocate(this % table)
+
+  end subroutine destroy
 
   !===================================================================!
   ! Add an entry into the set

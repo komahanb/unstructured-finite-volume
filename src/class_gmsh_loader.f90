@@ -145,6 +145,9 @@ contains
            stop
         end if
       end associate
+
+      if (allocated(tokens)) deallocate(tokens)
+
     end block process_mesh_version
     
     write(*,'(a)') "Reading physical tags..."
@@ -180,6 +183,8 @@ contains
         end do
 
       end associate
+
+      if (allocated(tokens)) deallocate(tokens)
 
     end block process_tags
     
@@ -223,6 +228,8 @@ contains
         if (allocated(tokens)) deallocate(tokens)
 
       end associate
+
+      if (allocated(tokens)) deallocate(tokens)
 
     end block process_nodes
     

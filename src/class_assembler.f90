@@ -18,7 +18,7 @@ module class_assembler
   type :: assembler
 
      ! set symmetry to .true. for structured grid
-     logical :: symmetry = .false.
+     logical :: symmetry = .true.
 
      ! Mesh object
      type(mesh), pointer :: grid
@@ -69,7 +69,7 @@ contains
     call this % grid % to_string()
 
     ! Non symmetric jacobian
-    this % symmetry = .false.
+    this % symmetry = .true.
 
     ! Determine the number of state variables to solve based on the
     ! mesh. In FVM it is the number of cells present.
@@ -119,17 +119,23 @@ contains
     real(dp)         , intent(in)    :: x(:)
     real(dp)         , intent(out)   :: Ax(:)
 
-    test: block 
-      integer               :: n
-      real(dp), allocatable :: A(:,:)
-      n = size(x,dim=1)
-      allocate(A(n,n))
-      A(1,:) = [2.0d0,1.0d0,1.0d0]
-      A(2,:) = [1.0d0,2.0d0,1.0d0]
-      A(3,:) = [0.0d0,1.0d0,2.0d0]
-      Ax = matmul(A,x)
-      deallocate(A)
-    end block test
+!!$    test: block 
+!!$      integer               :: n
+!!$      real(dp), allocatable :: A(:,:)
+!!$      n = size(x,dim=1)
+!!$      allocate(A(n,n))
+!!$      A(:,1) = [-6.0d0,1.0d0,1.0d0,0.0d0]
+!!$      A(:,2) = [1.0d0,-6.0d0,0.0d0,1.0d0]
+!!$      A(:,3) = [1.0d0,0.0d0,-6.0d0,1.0d0]
+!!$      A(:,4) = [0.0d0,1.0d0,1.0d0,-6.0d0]
+!!$
+!!$      Ax = matmul(A,x)
+!!$      deallocate(A)
+!!$    end block test
+!!$
+!!$    print *, "Ax=",Ax
+!!$    
+!!$    return
     
     laplace: block
       
@@ -202,11 +208,7 @@ contains
       end do loop_cells
       
     end block laplace
-
-
-    print *, Ax
-
-stop
+    
   end subroutine get_jacobian_vector_product
   
   subroutine get_transpose_jacobian_vector_product(this, Ax, x)
@@ -217,16 +219,17 @@ stop
     real(dp), allocatable :: A(:,:)
     integer               :: n
 
-    n = size(x)
-    allocate(A(n,n))
-
-    A(1,:) = [2.0d0,1.0d0,1.0d0]
-    A(2,:) = [1.0d0,2.0d0,1.0d0]
-    A(3,:) = [0.0d0,1.0d0,2.0d0]
-
-    Ax = matmul(transpose(A),x)
-
-    deallocate(A)
+!!$    n = size(x)
+!!$    allocate(A(n,n))
+!!$    
+!!$    A(:,1) = [-6.0d0,1.0d0,1.0d0,0.0d0]
+!!$    A(:,2) = [1.0d0,-6.0d0,0.0d0,1.0d0]
+!!$    A(:,3) = [1.0d0,0.0d0,-6.0d0,1.0d0]
+!!$    A(:,4) = [0.0d0,1.0d0,1.0d0,-6.0d0]
+!!$
+!!$    Ax = matmul(transpose(A),x)
+!!$
+!!$    deallocate(A)
 
   end subroutine get_transpose_jacobian_vector_product
   
@@ -235,22 +238,94 @@ stop
     class(assembler), intent(in)  :: this
     real(dp)        , intent(out) :: b(:)
 
-    b(1) = 1.0d0
-    b(2) = 1.0d0
-    b(3) = 1.0d0
+    real(dp) , parameter :: phib = -1.0d0
 !!$    
-!!$    source: block
-!!$      
-!!$      integer :: icell
+!!$    block
+!!$      b(1) = 4.0d-1
+!!$      b(2) = 4.0d-1
+!!$      b(3) = 4.0d-1
+!!$      b(4) = 4.0d-1
+!!$    end block
 !!$
-!!$      do icell = this % grid % num_cells
-!!$         
-!!$         
-!!$      end do
-!!$
-!!$    end block source
+!!$    print *, 'source', b
+!!$    return
+    
+    add_boundary_terms: block
+
+      integer :: icell, iface
+      integer :: ncell, fcells(2)
+      
+      ! Loop cells
+      !loop_cells: do icell = 1, this % grid % num_cells
+      loop_cells: do concurrent (icell = 1:this % grid % num_cells)
+
+         ! Get the faces corresponding to this cell
+         associate( &
+              & faces => this % grid % cell_faces &
+              & (1:this % grid % num_cell_faces(icell),icell), &
+              & highest_tag => maxval(this % grid % tag_numbers) &
+              & )
+           
+           !print *, icell, faces, highest_tag
+
+           ! Loop faces
+           b(icell) = 0.0d0
+         
+         loop_faces: do iface = 1, this % grid % num_cell_faces(icell)
+
+            associate (&
+                 & ftag   => this % grid % face_tags(faces(iface))  , &
+                 & fdelta => this % grid % face_deltas(faces(iface)), &
+                 & farea  => this % grid % face_areas(faces(iface))  &
+                 & )
+              
+              ! Interpolate to get face gammas
+              !print *, iface, faces(iface), ftag, fdelta, farea !, !fgamma
+              
+              ! Add contribution from internal faces
+              if (ftag .ne. highest_tag) then ! homogenous dirichlet T = 1.0d0
+               
+               ! Boundary faces (call boundary physics)
+                b(icell) = b(icell) + farea*(-phib)/fdelta
+                !print *, icell, "boundary", faces(iface), ftag, fdelta, farea !, !fgamma
+               
+              end if
+            
+            end associate
+
+         end do loop_faces
+         
+       end associate
+
+      end do loop_cells
+    
+    end block add_boundary_terms
+
+    
+    cell_source: block
+
+      integer :: icell
+
+      ! Loop cells
+      loop_cells: do concurrent (icell = 1 : this % grid % num_cells)
+         associate( &
+              & x => this % grid % cell_centers(:,icell), &
+              & cell_volume => this % grid % cell_volumes(icell))
+           b(icell) = b(icell) + evaluate_source(x)*cell_volume
+         end associate
+      end do loop_cells
+
+    end block cell_source
 
   end subroutine get_source
+  
+  pure type(real(dp)) function evaluate_source(x)
+
+    real(dp), intent(in) :: x(3)
+
+    evaluate_source = 0.0d0 !sin(x(1)) + cos(x(2))
+
+  end function evaluate_source
 
   subroutine solve_conjugate_gradient(oassembler, max_it, max_tol, x)
 
@@ -279,6 +354,8 @@ stop
     call oassembler % get_source(tmp)
     if (oassembler % symmetry .eqv. .false.) then
        call oassembler % get_transpose_jacobian_vector_product(b, tmp)
+    else
+       b = tmp
     end if
     bnorm = norm2(b)
 
@@ -286,6 +363,8 @@ stop
     call oassembler % get_jacobian_vector_product(tmp, x)
     if (oassembler % symmetry .eqv. .false.) then
        call oassembler % get_transpose_jacobian_vector_product(Ax, tmp)
+    else
+       Ax = tmp
     end if
     r         = b - Ax ! could directly form this residual using get_residual_call
     rnorm     = norm2(r)
@@ -313,8 +392,9 @@ stop
        call oassembler % get_jacobian_vector_product(tmp, p)
        if (oassembler % symmetry .eqv. .false.) then
           call oassembler % get_transpose_jacobian_vector_product(w, tmp)
+       else
+          w = tmp
        end if
-       !w = matmul(A,p)
 
        ! step (c) compute the step size for update
        alpha = rho(2)/dot_product(p, w)
@@ -330,7 +410,7 @@ stop
        tol = rnorm/bnorm
 
        write(13,*) iter, tol
-       !write(*,*) iter, tol, rnorm, rho ! causes valgrind errors
+       write(*,*) iter, tol, rnorm, rho ! causes valgrind errors
 
        iter = iter + 1
 

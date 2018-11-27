@@ -34,11 +34,9 @@ program test_mesh
   ! Writes the mesh for tecplot
   call FVMassembler % write_solution("mesh.dat")
   
-  ! Create a solver object to solve the linear system
-  
+  ! Create a solver object to solve the linear system  
   allocate(x(npts))
-  x = 0
-  x(4) = 1.0d0
+  call random_number(x)
   print *, 'xinit', x
   call solve_conjugate_gradient(FVMAssembler, max_it, max_tol, x)
   print *, 'solution', x

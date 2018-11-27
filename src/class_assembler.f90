@@ -38,6 +38,7 @@ module class_assembler
      ! Assembly Routines
      procedure :: get_source
      !procedure :: add_skew_source
+     !procedure :: get_jacobian
      procedure :: get_jacobian_vector_product
      procedure :: get_transpose_jacobian_vector_product
      procedure :: write_solution
@@ -97,26 +98,115 @@ contains
     
   end subroutine destroy
 
+!!$  subroutine get_jacobian(this, A, x)
+!!$
+!!$    class(assembler) , intent(in)    :: this
+!!$    real(dp)         , intent(in)    :: x(:)
+!!$    real(dp)         , intent(out)   :: A(:,:)
+!!$
+!!$    ! okay for nonlinear case?
+!!$    matdim = size(x)
+!!$    x = 
+!!$    do icol = 1, matdim
+!!$       call this % get_jacobian_vector_product(A(icol,:),x)
+!!$    end do
+!!$
+!!$  end subroutine get_jacobian
+
   subroutine get_jacobian_vector_product(this, Ax, x)
 
     class(assembler) , intent(in)    :: this
     real(dp)         , intent(in)    :: x(:)
     real(dp)         , intent(out)   :: Ax(:)
 
-    integer               :: n
-    real(dp), allocatable :: A(:,:)
+    test: block 
+      integer               :: n
+      real(dp), allocatable :: A(:,:)
+      n = size(x,dim=1)
+      allocate(A(n,n))
+      A(1,:) = [2.0d0,1.0d0,1.0d0]
+      A(2,:) = [1.0d0,2.0d0,1.0d0]
+      A(3,:) = [0.0d0,1.0d0,2.0d0]
+      Ax = matmul(A,x)
+      deallocate(A)
+    end block test
+    
+    laplace: block
+      
+      integer :: icell, iface
+      integer :: ncell, fcells(2)
 
-    n = size(x,dim=1)
-    allocate(A(n,n))
+      ! Loop cells
+      !loop_cells: do icell = 1, this % grid % num_cells
+      loop_cells: do concurrent (icell = 1 : this % grid % num_cells)
 
-    A(1,:) = [2.0d0,1.0d0,1.0d0]
-    A(2,:) = [1.0d0,2.0d0,1.0d0]
-    A(3,:) = [0.0d0,1.0d0,2.0d0]
+         ! Get the faces corresponding to this cell
+         associate( &
+              & faces => this % grid % cell_faces &
+              & (1:this % grid % num_cell_faces(icell),icell), &
+              & highest_tag => maxval(this % grid % tag_numbers) &
+              & )
 
-    Ax = matmul(A,x)
+           !print *, icell, faces, highest_tag
+           
+           ! Loop faces
+           Ax(icell) = 0.0d0
 
-    deallocate(A)
+           loop_faces: do iface = 1, this % grid % num_cell_faces(icell)
+              
+              associate (&
+                   & ftag   => this % grid % face_tags(faces(iface))  , &
+                   & fdelta => this % grid % face_deltas(faces(iface)), &
+                   & farea  => this % grid % face_areas(faces(iface)),  &
+                   & nfcells => this % grid % num_face_cells(faces(iface)) &
+                   & )
 
+                ! Interpolate to get face gammas
+                !print *, iface, faces(iface), ftag, fdelta, farea !, !fgamma
+                
+              ! Add contribution from internal faces
+              if (ftag .eq. highest_tag) then
+
+                 ! Neighbour cell index
+                 fcells(1:nfcells) = this % grid % face_cells(1:nfcells,faces(iface))
+
+                 ! Neighbour is the one that has a different cell
+                 ! index than current icell
+                 if (fcells(1) .eq. icell) then 
+                    ncell = fcells(2)
+                 else 
+                    ncell = fcells(1)
+                 end if
+
+                 !print *, "cell=",icell, "face=", faces(iface), "ncell=", ncell
+
+                 ! Interior faces (call tagged physics) (FVM Equation)
+                 Ax(icell) = Ax(icell) + farea*(x(ncell) - x(icell))/fdelta
+
+                 !print *, icell, "internal", faces(iface), ftag, fdelta, farea !, !fgamma
+
+              else
+
+                 ! Boundary faces (call boundary physics)
+                 Ax(icell) = Ax(icell) + farea*(0.0d0 - x(icell))/fdelta
+                 !print *, icell, "boundary", faces(iface), ftag, fdelta, farea !, !fgamma
+
+              end if
+
+            end associate
+
+           end do loop_faces
+
+         end associate
+
+      end do loop_cells
+      
+    end block laplace
+
+
+    print *, Ax
+
+stop
   end subroutine get_jacobian_vector_product
   
   subroutine get_transpose_jacobian_vector_product(this, Ax, x)

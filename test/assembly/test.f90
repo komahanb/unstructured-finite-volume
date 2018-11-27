@@ -16,7 +16,7 @@ program test_mesh
   class(mesh)       , allocatable :: mesh_obj
 
   ! Solution parameters
-  integer  , parameter   :: npts = 3
+  integer  , parameter   :: npts = 4
   real(dp) , parameter   :: max_tol = 1.0d-8
   integer  , parameter   :: max_it = 100
   real(dp) , allocatable :: x(:)
@@ -37,7 +37,8 @@ program test_mesh
   ! Create a solver object to solve the linear system
   
   allocate(x(npts))
-  x = 1.0d0
+  x = 0
+  x(4) = 1.0d0
   print *, 'xinit', x
   call solve_conjugate_gradient(FVMAssembler, max_it, max_tol, x)
   print *, 'solution', x

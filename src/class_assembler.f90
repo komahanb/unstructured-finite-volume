@@ -461,7 +461,7 @@ contains
     ! Interpolate the supplied cell centered solution to form the
     ! nodal solution
     allocate(phiv(this % grid % num_vertices)); phiv = 0
-    do ivertex = 1, this % grid % num_vertices
+    do concurrent (ivertex = 1: this % grid % num_vertices)
        associate(&
             & w => this % grid % vertex_cell_weights(&
             & 1:this % grid % num_vertex_cells(ivertex), ivertex&

@@ -11,17 +11,17 @@ program test_mesh
 
   implicit none
   
-  character(len=*)  , parameter   :: filename = "rectangle.msh"
+  character(len=*)  , parameter   :: filename = "rectangle-100.msh"
   class(gmsh_loader), allocatable :: gmsh_loader_obj
   class(mesh)       , allocatable :: mesh_obj
 
   ! Solution parameters
-  integer  , parameter   :: npts = 4
   real(dp) , parameter   :: max_tol = 1.0d-8
   integer  , parameter   :: max_it = 100
   real(dp) , allocatable :: x(:)
   class(assembler), allocatable :: FVMAssembler
-
+  integer :: npts
+  
   ! Create a mesh object
   allocate(gmsh_loader_obj, source =  gmsh_loader(filename))
   allocate(mesh_obj, source = mesh(gmsh_loader_obj))
@@ -31,8 +31,7 @@ program test_mesh
   ! Geometry and meshing
   allocate(FVMAssembler, source = assembler(mesh_obj))
 
-  ! Writes the mesh for tecplot
-  call FVMassembler % write_solution("mesh.dat")
+  npts = FVMAssembler % num_state_vars
   
   ! Create a solver object to solve the linear system  
   allocate(x(npts))
@@ -40,6 +39,9 @@ program test_mesh
   print *, 'xinit', x
   call solve_conjugate_gradient(FVMAssembler, max_it, max_tol, x)
   print *, 'solution', x
+
+  ! Writes the mesh for tecplot
+  call FVMassembler % write_solution("mesh.dat", x)
 
   deallocate(mesh_obj)
   deallocate(FVMAssembler)

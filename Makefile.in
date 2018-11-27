@@ -8,9 +8,9 @@ F2008    = yes
 COMPLEX  = no
 
 # optimization level
-DEBUG    = yes
+DEBUG    = no
 PROFILE  = no
-OPTIMIZE = no
+OPTIMIZE = yes
 
 # libraries
 LAPACK   = yes
@@ -38,7 +38,7 @@ LAPACK_DIR = /usr
 #=====================================================================#
 
 ifeq ($(COMPILER),gnu)
-  F90 = gfortran-7
+  F90 = caf
   F90FLAGS := -cpp
 
   # COMPLEX mode

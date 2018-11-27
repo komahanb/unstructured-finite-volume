@@ -238,7 +238,7 @@ contains
     class(assembler), intent(in)  :: this
     real(dp)        , intent(out) :: b(:)
 
-    real(dp) , parameter :: phib = -1.0d0
+    real(dp) , parameter :: phib = 0.0d0
 !!$    
 !!$    block
 !!$      b(1) = 4.0d-1
@@ -323,7 +323,7 @@ contains
 
     real(dp), intent(in) :: x(3)
 
-    evaluate_source = 0.0d0 !sin(x(1)) + cos(x(2))
+    evaluate_source = -1.0d0 !sin(x(1)) + cos(x(2))
 
   end function evaluate_source
 
@@ -429,13 +429,13 @@ contains
   ! Write solution to file
   !===================================================================!
   
-  subroutine write_solution(this, filename)!, phi)
+  subroutine write_solution(this, filename, phi)
 
     class(assembler), intent(in)  :: this
     character(len=*), intent(in)  :: filename
     character(len=:), allocatable :: path
     character(len=:), allocatable :: new_name
-!    real(dp)        , intent(in)  :: phi(:)
+    real(dp)        , intent(in)  :: phi(:)
     integer                       ::  i, ierr
 
     ! Open resource
@@ -449,14 +449,14 @@ contains
 
     ! Write header
     write(90, *) 'TITLE = "FVM-Laplace"'
-    write(90, *) 'VARIABLES = "x" "y"'
+    write(90, *) 'VARIABLES = "x" "y"  "T"'
     write(90, *) 'ZONE T="Temperature", N=', this % grid % num_vertices, &
          & ', E=', this % grid % num_cells, &
          & ', DATAPACKING=POINT, ZONETYPE=FEQUADRILATERAL'
     
     ! Write vertices
     do i = 1, this % grid % num_vertices
-       write(90,*) this % grid % vertices(1:2,i)!, phi(i)
+       write(90,*) this % grid % vertices(1:2,i)!, phi(i) ? interpolate cell centered values to vertices?
     end do
     
     ! Write cell connectivities

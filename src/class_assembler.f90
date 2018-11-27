@@ -410,7 +410,7 @@ contains
        tol = rnorm/bnorm
 
        write(13,*) iter, tol
-       write(*,*) iter, tol, rnorm, rho ! causes valgrind errors
+       !write(*,*) iter, tol, rnorm, rho ! causes valgrind errors
 
        iter = iter + 1
 
@@ -429,14 +429,18 @@ contains
   ! Write solution to file
   !===================================================================!
   
-  subroutine write_solution(this, filename, phi)
+  subroutine write_solution(this, filename, phic)
 
     class(assembler), intent(in)  :: this
     character(len=*), intent(in)  :: filename
     character(len=:), allocatable :: path
     character(len=:), allocatable :: new_name
-    real(dp)        , intent(in)  :: phi(:)
+    real(dp)        , intent(in)  :: phic(:)
     integer                       ::  i, ierr
+
+
+    integer :: ivertex
+    real(dp), allocatable :: phiv(:)
 
     ! Open resource
     path = trim(filename)
@@ -454,9 +458,24 @@ contains
          & ', E=', this % grid % num_cells, &
          & ', DATAPACKING=POINT, ZONETYPE=FEQUADRILATERAL'
     
+    ! Interpolate the supplied cell centered solution to form the
+    ! nodal solution
+    allocate(phiv(this % grid % num_vertices)); phiv = 0
+    do ivertex = 1, this % grid % num_vertices
+       associate(&
+            & w => this % grid % vertex_cell_weights(&
+            & 1:this % grid % num_vertex_cells(ivertex), ivertex&
+            & ), &
+            & icells => this % grid % vertex_cells(&
+            & 1:this % grid % num_vertex_cells(ivertex), ivertex)&
+            & )
+         phiv(ivertex) = dot_product(phic(icells), w)
+       end associate
+    end do
+    
     ! Write vertices
     do i = 1, this % grid % num_vertices
-       write(90,*) this % grid % vertices(1:2,i)!, phi(i) ? interpolate cell centered values to vertices?
+       write(90,*) this % grid % vertices(1:2,i), phiv(i)
     end do
     
     ! Write cell connectivities
@@ -469,6 +488,7 @@ contains
     
     if (allocated(path)) deallocate(path)
     if (allocated(new_name)) deallocate(new_name)
+    if (allocated(phiv)) deallocate(phiv)
 
   end subroutine write_solution
 

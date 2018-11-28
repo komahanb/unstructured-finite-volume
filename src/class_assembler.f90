@@ -32,8 +32,8 @@ module class_assembler
    contains
 
      ! Evaluation routines
-     !procedure :: evaluate_vertex_flux
-     !procedure :: evaluate_face_flux
+     procedure :: evaluate_vertex_flux
+     procedure :: evaluate_face_flux
 
      ! Assembly Routines
      procedure :: get_source
@@ -42,6 +42,8 @@ module class_assembler
      procedure :: get_jacobian_vector_product
      procedure :: get_transpose_jacobian_vector_product
      procedure :: write_solution
+
+
      
      ! Destructor
      final :: destroy
@@ -137,7 +139,7 @@ contains
 !!$    
 !!$    return
     
-    laplace: block
+    laplace_normal: block
       
       integer :: icell, iface
       integer :: ncell, fcells(2)
@@ -207,10 +209,108 @@ contains
 
       end do loop_cells
       
-    end block laplace
-    
+    end block laplace_normal
+!!$
+!!$    ! Add the tangential flux terms
+!!$    laplace_tangential: block
+!!$
+!!$      integer :: icell, iface
+!!$      integer :: ncell, fcells(2)
+!!$
+!!$      ! Loop cells
+!!$      loop_cells: do icell = 1, this % grid % num_cells
+!!$      !loop_cells2: do concurrent (icell = 1 : this % grid % num_cells)
+!!$
+!!$         ! Get the faces corresponding to this cell
+!!$         associate( &
+!!$              & faces => this % grid % cell_faces &
+!!$              & (1:this % grid % num_cell_faces(icell),icell), &
+!!$              & highest_tag => maxval(this % grid % tag_numbers) &
+!!$              & )
+!!$
+!!$           ! Loop faces
+!!$           Ax(icell) = 0.0d0
+!!$
+!!$           loop_faces2: do iface = 1, this % grid % num_cell_faces(icell)
+!!$              
+!!$              associate (&
+!!$                   & ftag   => this % grid % face_tags(faces(iface))  , &
+!!$                   & fdelta => this % grid % face_deltas(faces(iface)), &
+!!$                   & farea  => this % grid % face_areas(faces(iface)),  &
+!!$                   & nfcells => this % grid % num_face_cells(faces(iface)) &
+!!$                   & )
+!!$     
+!!$                
+!!$              end associate
+!!$
+!!$           end do loop_faces2
+!!$
+!!$         end associate
+!!$
+!!$      end do loop_cells2
+!!$      
+!!$    end block laplace_tangential
+
   end subroutine get_jacobian_vector_product
-  
+
+  !===================================================================!
+  ! Compute vertex values by interpolating cell center values
+  !===================================================================!
+
+  subroutine evaluate_vertex_flux(this, phiv, phic)
+
+    class(assembler) , intent(in)               :: this
+    real(dp)         , intent(in)               :: phic(:)
+    real(dp)         , intent(out), allocatable :: phiv(:)
+
+    integer :: ivertex
+
+    ! Interpolate the supplied cell centered solution to form the
+    ! nodal solution
+    allocate(phiv(this % grid % num_vertices)); phiv = 0
+    do concurrent (ivertex = 1: this % grid % num_vertices)
+       associate(&
+            & w => this % grid % vertex_cell_weights(&
+            & 1:this % grid % num_vertex_cells(ivertex), ivertex&
+            & ), &
+            & icells => this % grid % vertex_cells(&
+            & 1:this % grid % num_vertex_cells(ivertex), ivertex)&
+            & )
+         phiv(ivertex) = dot_product(phic(icells), w)
+       end associate
+    end do
+
+  end subroutine evaluate_vertex_flux
+
+  !===================================================================!
+  ! Compute face center values by interpolating cell center values
+  !===================================================================!
+
+  subroutine evaluate_face_flux(this, phif, phic)
+
+    class(assembler) , intent(in)               :: this
+    real(dp)         , intent(in)               :: phic(:)
+    real(dp)         , intent(out), allocatable :: phif(:)
+
+    integer :: iface
+
+    ! Interpolate the supplied cell centered solution to form the
+    ! face center solution
+    allocate(phif(this % grid % num_faces)); phif = 0
+    do concurrent (iface = 1: this % grid % num_faces)
+       associate(&
+            & w => this % grid % face_cell_weights(&
+            & 1:this % grid % num_face_cells(iface), iface&
+            & ), &
+            & icells => this % grid % face_cells(&
+            & 1:this % grid % num_face_cells(iface), iface)&
+            & )
+         phif(iface) = dot_product(phic(icells), w)
+       end associate
+    end do
+
+  end subroutine evaluate_face_flux
+
   subroutine get_transpose_jacobian_vector_product(this, Ax, x)
 
     class(assembler) , intent(in)    :: this
@@ -410,7 +510,7 @@ contains
        tol = rnorm/bnorm
 
        write(13,*) iter, tol
-       !write(*,*) iter, tol, rnorm, rho ! causes valgrind errors
+       write(*,*) iter, tol, rnorm, rho ! causes valgrind errors
 
        iter = iter + 1
 
@@ -438,8 +538,6 @@ contains
     real(dp)        , intent(in)  :: phic(:)
     integer                       ::  i, ierr
 
-
-    integer :: ivertex
     real(dp), allocatable :: phiv(:)
 
     ! Open resource
@@ -451,27 +549,20 @@ contains
        return
     end if
 
+    ! Compute vertex values by interpolating cell center values
+    call this % evaluate_vertex_flux(phiv, phic)
+    
     ! Write header
     write(90, *) 'TITLE = "FVM-Laplace"'
     write(90, *) 'VARIABLES = "x" "y"  "T"'
+
+    !-----------------------------------------------------------------!
+    ! Write Triangles
+    !-----------------------------------------------------------------!
+
     write(90, *) 'ZONE T="Temperature", N=', this % grid % num_vertices, &
          & ', E=', this % grid % num_cells, &
-         & ', DATAPACKING=POINT, ZONETYPE=FEQUADRILATERAL'
-    
-    ! Interpolate the supplied cell centered solution to form the
-    ! nodal solution
-    allocate(phiv(this % grid % num_vertices)); phiv = 0
-    do concurrent (ivertex = 1: this % grid % num_vertices)
-       associate(&
-            & w => this % grid % vertex_cell_weights(&
-            & 1:this % grid % num_vertex_cells(ivertex), ivertex&
-            & ), &
-            & icells => this % grid % vertex_cells(&
-            & 1:this % grid % num_vertex_cells(ivertex), ivertex)&
-            & )
-         phiv(ivertex) = dot_product(phic(icells), w)
-       end associate
-    end do
+         & ', DATAPACKING=POINT, ZONETYPE=FETRIANGLE'
     
     ! Write vertices
     do i = 1, this % grid % num_vertices
@@ -480,8 +571,12 @@ contains
     
     ! Write cell connectivities
     do i = 1, this % grid % num_cells
-       write(90,*) this % grid % cell_vertices(:,i)
+       write(90,*) this % grid % cell_vertices(1:this % grid % num_cell_vertices(i),i)
     end do
+
+    !-----------------------------------------------------------------!
+    ! Write Other types of elements too
+    !-----------------------------------------------------------------!
 
     ! Close resource
     close(90)

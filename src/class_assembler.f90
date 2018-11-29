@@ -340,9 +340,9 @@ contains
 
   subroutine get_skew_source(this, ss, phic)
 
-    class(assembler), intent(in)               :: this
-    type(real(dp))  , intent(in)               :: phic(:)
-    type(real(dp))  , intent(out), allocatable :: ss(:)
+    class(assembler), intent(in)  :: this
+    type(real(dp))  , intent(in)  :: phic(:)
+    type(real(dp))  , intent(out) :: ss(:)
 
     ! Evaluation procedure
     evaluate: block
@@ -356,7 +356,7 @@ contains
     call this % evaluate_vertex_flux(phiv, phic)
 
     ! Make space for skew source terms
-    allocate(ss(this % grid % num_cells)); ss = 0;
+	ss = 0;
 
     loop_cells: do icell = 1, this % grid % num_cells
 
@@ -500,12 +500,13 @@ contains
 
   end function evaluate_source
 
-  subroutine solve_conjugate_gradient(oassembler, max_it, max_tol, x)
+  subroutine solve_conjugate_gradient(oassembler, max_it, max_tol, ss, x)
 
     ! Arguments
     type(assembler)  , intent(in)    :: oassembler
     integer          , intent(in)    :: max_it
     real(dp)         , intent(in)    :: max_tol
+    real(dp)         , intent(in)    :: ss(:)
     real(dp)         , intent(inout) :: x(:)
 
     ! Create local data
@@ -530,6 +531,8 @@ contains
     else
        b = tmp
     end if
+    ! Add the additional right hand side supplied
+    b = b + ss
     bnorm = norm2(b)
 
     ! Homogeneous case
@@ -551,8 +554,6 @@ contains
     rho(2)    = rnorm*rnorm
     
     open(13, file='cg.log', action='write', position='append')
-
-    tol = huge(1.0_dp)
 
     ! Apply Iterative scheme until tolerance is achieved
     do while ((tol .gt. max_tol) .and. (iter .lt. max_it))

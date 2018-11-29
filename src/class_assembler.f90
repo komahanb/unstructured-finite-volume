@@ -37,7 +37,7 @@ module class_assembler
 
      ! Assembly Routines
      procedure :: get_source
-     !procedure :: add_skew_source
+     procedure :: get_skew_source
      !procedure :: get_jacobian
      procedure :: get_jacobian_vector_product
      procedure :: get_transpose_jacobian_vector_product
@@ -333,6 +333,79 @@ contains
 
   end subroutine get_transpose_jacobian_vector_product
   
+  !===================================================================!
+  ! Evaluate internal skew source based on the current cell states and
+  ! return
+  !===================================================================!
+
+  subroutine get_skew_source(this, ss, phic)
+
+    class(assembler), intent(in)               :: this
+    type(real(dp))  , intent(in)               :: phic(:)
+    type(real(dp))  , intent(out), allocatable :: ss(:)
+
+    ! Evaluation procedure
+    evaluate: block
+    
+    ! Local variables
+    real(8) :: scale
+    integer :: icell, iface, gface
+    type(real(dp)) , allocatable :: phiv(:)
+
+    ! Evaluate nodal values of phi
+    call this % evaluate_vertex_flux(phiv, phic)
+
+    ! Make space for skew source terms
+    allocate(ss(this % grid % num_cells)); ss = 0;
+
+    loop_cells: do icell = 1, this % grid % num_cells
+
+       ! Get the faces corresponding to this cell
+       associate( &
+            & faces => this % grid % cell_faces &
+            & (1:this % grid % num_cell_faces(icell),icell), &
+            & highest_tag => maxval(this % grid % tag_numbers) &
+            & )
+
+           loop_faces : do iface = 1, this % grid % num_cell_faces(icell) 
+
+              ! Global face number
+              gface = faces(iface)
+                 
+              ! Ignore boundary faces from skew source evaluation
+              if (this % grid % face_tags(gface) .eq. highest_tag) then
+
+                 ! Compute tangent.dot.lvector/delta
+                 scale = dot_product(&
+                      & this % grid % lvec(1:3,gface), &
+                      & this % grid % cell_face_tangents(1:3,iface,icell) &
+                      & )/this % grid % face_deltas(gface)
+
+                 ! Get the vertices associated with this face
+                 associate(&
+                      & fvertices => this % grid % face_vertices( &
+                      & 1:this % grid % num_face_vertices(gface), gface)&
+                      & )
+
+                 ss(icell) = ss(icell) + scale*(phiv(fvertices(2))-phiv(fvertices(1)))
+
+               end associate
+              
+              end if
+
+           end do loop_faces
+           
+         end associate
+         
+      end do loop_cells
+
+      ! Deallocate the vertex flux values
+      deallocate(phiv)
+
+    end block evaluate
+
+  end subroutine get_skew_source
+    
   subroutine get_source(this, b)
 
     class(assembler), intent(in)  :: this

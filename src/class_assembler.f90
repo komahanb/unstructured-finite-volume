@@ -532,6 +532,12 @@ contains
     end if
     bnorm = norm2(b)
 
+    ! Homogeneous case
+    if (bnorm .le. max_tol) then
+       x = 0.0d0
+       return
+    end if
+
     ! Norm of the initial residual
     call oassembler % get_jacobian_vector_product(tmp, x)
     if (oassembler % symmetry .eqv. .false.) then
@@ -635,7 +641,7 @@ contains
 
     write(90, *) 'ZONE T="Temperature", N=', this % grid % num_vertices, &
          & ', E=', this % grid % num_cells, &
-         & ', DATAPACKING=POINT, ZONETYPE=FETRIANGLE'
+         & ', DATAPACKING=POINT, ZONETYPE=FEQUADRILATERAL'
     
     ! Write vertices
     do i = 1, this % grid % num_vertices

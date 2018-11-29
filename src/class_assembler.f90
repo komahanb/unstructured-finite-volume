@@ -356,7 +356,7 @@ contains
     call this % evaluate_vertex_flux(phiv, phic)
 
     ! Make space for skew source terms
-	ss = 0;
+    ss = 0;
 
     loop_cells: do icell = 1, this % grid % num_cells
 
@@ -642,7 +642,7 @@ contains
 
     write(90, *) 'ZONE T="Temperature", N=', this % grid % num_vertices, &
          & ', E=', this % grid % num_cells, &
-         & ', DATAPACKING=POINT, ZONETYPE=FEQUADRILATERAL'
+         & ', DATAPACKING=POINT, ZONETYPE=FETRIANGLE'
     
     ! Write vertices
     do i = 1, this % grid % num_vertices

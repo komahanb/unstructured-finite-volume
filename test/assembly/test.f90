@@ -32,18 +32,76 @@ program test_mesh
   allocate(FVMAssembler, source = assembler(mesh_obj))
 
   npts = FVMAssembler % num_state_vars
+
+  block
+
+    real(8), allocatable :: phinoskew(:), phic(:), ss(:)
+
+    ! Initial solution guess
+    allocate(phic(npts))
+    phic = 0;
+    allocate(phinoskew(npts))    
+    call random_number(phinoskew)    
+    call FVMassembler % write_solution("mesh-in.dat", phinoskew)
+
+    allocate(ss(npts)); ss = 0.0d0;
+    call solve_conjugate_gradient(FVMAssembler, max_it, max_tol, ss, phinoskew)
+    print *, "delphi", norm2(phic-phinoskew)
+    call FVMassembler % write_solution("mesh-noskew.dat", phinoskew)
+    phic = phinoskew
+    call FVMAssembler % get_skew_source(ss, phic)
+    print *, "norm of skew source before solution", norm2(ss)
+    call solve_conjugate_gradient(FVMAssembler, max_it, max_tol, ss, phic)
+    print *, "delphi", norm2(phic-phinoskew)
+    call FVMassembler % write_solution("mesh-skew.dat", phic)
+
+    call FVMAssembler % get_skew_source(ss, phic)
+    print *, "norm of skew source before solution", norm2(ss)
+    call solve_conjugate_gradient(FVMAssembler, max_it, max_tol, ss, phic)
+    print *, "delphi", norm2(phic-phinoskew)
+
+
+    call FVMAssembler % get_skew_source(ss, phic)
+    print *, "norm of skew source before solution", norm2(ss)
+    call solve_conjugate_gradient(FVMAssembler, max_it, max_tol, ss, phic)
+    print *, "delphi", norm2(phic-phinoskew)
+
+
+    call FVMAssembler % get_skew_source(ss, phic)
+    print *, "norm of skew source before solution", norm2(ss)
+    call solve_conjugate_gradient(FVMAssembler, max_it, max_tol, ss, phic)
+    print *, "delphi", norm2(phic-phinoskew)
+
+
+    call FVMAssembler % get_skew_source(ss, phic)
+    print *, "norm of skew source before solution", norm2(ss)
+    call solve_conjugate_gradient(FVMAssembler, max_it, max_tol, ss, phic)
+    print *, "delphi", norm2(phic-phinoskew)
+
+
+
+    call FVMassembler % write_solution("mesh-diff.dat", phic-phinoskew)
+    
+    ! Writes the mesh for tecplot
+    call FVMassembler % write_solution("mesh-out.dat", phic)  
+
+  end block
+
+  stop
   
-  ! Create a solver object to solve the linear system  
-  allocate(x(npts))
-  call random_number(x)
-  !print *, 'xinit', x
-  call solve_conjugate_gradient(FVMAssembler, max_it, max_tol, x)
-  !print *, 'solution', x
-
-  print *, max_it, max_tol
-
-  ! Writes the mesh for tecplot
-  call FVMassembler % write_solution("mesh.dat", x)
+!!$  ! Iterate until skew source is zero
+!!$
+!!$  ! Create a solver object to solve the linear system  
+!!$  allocate(x(npts))
+!!$  call random_number(x)
+!!$  !print *, 'xinit', x
+!!$  call solve_conjugate_gradient(FVMAssembler, max_it, max_tol, ssx)
+!!$  !print *, 'solution', x
+!!$
+!!$  print *, max_it, max_tol
+!!$
+!!$  ! Writes the mesh for tecplot
+!!$  call FVMassembler % write_solution("mesh.dat", x)
 
   deallocate(mesh_obj)
   deallocate(FVMAssembler)

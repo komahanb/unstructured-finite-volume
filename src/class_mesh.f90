@@ -141,9 +141,12 @@ module class_mesh
      procedure :: evaluate_face_weight
      procedure :: evaluate_vertex_weight
 
+     ! Mesh info
+     procedure :: get_num_elems
+
      ! Destructor
      final   :: destroy
-     
+
   end type mesh
 
 contains
@@ -885,6 +888,20 @@ end subroutine evaluate_cell_volumes
   end subroutine evaluate_face_tangents_normals
 
   !===================================================================!
+  ! Counts and returns the number of elements with supplied number of
+  ! nodes
+  !===================================================================!
+
+  pure elemental type(integer) function get_num_elems(this, num_elem_nodes)
+
+    class(mesh)  , intent(in) :: this
+    type(integer), intent(in) :: num_elem_nodes
+
+    get_num_elems = count(MASK=(this % num_cell_vertices .eq. num_elem_nodes))
+
+  end function get_num_elems
+
+  !===================================================================!
   ! Constructor for mesh creation
   !===================================================================!
   
@@ -978,5 +995,5 @@ end subroutine evaluate_cell_volumes
     end if
 
   end subroutine to_string
-  
+
 end module class_mesh

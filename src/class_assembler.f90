@@ -8,7 +8,6 @@ module class_assembler
 
   private
   public :: assembler
-  public :: solve_conjugate_gradient
 
   !===================================================================!
   ! Class responsible for matrix, right hand side assembly and boundary
@@ -21,7 +20,7 @@ module class_assembler
      logical :: symmetry = .true.
 
      ! Mesh object
-     type(mesh), pointer :: grid
+     class(mesh), pointer :: grid
 
      ! Number of state varibles 
      integer :: num_state_vars
@@ -42,8 +41,6 @@ module class_assembler
      procedure :: get_jacobian_vector_product
      procedure :: get_transpose_jacobian_vector_product
      procedure :: write_solution
-
-
      
      ! Destructor
      final :: destroy
@@ -193,6 +190,10 @@ contains
 
                  !print *, icell, "internal", faces(iface), ftag, fdelta, farea !, !fgamma
 
+!!$              else if (ftag .eq. 1) then
+!!$
+!!$                 Ax(icell) = Ax(icell) + farea*1.0d0
+                 
               else
 
                  ! Boundary faces (call boundary physics)
@@ -210,46 +211,6 @@ contains
       end do loop_cells
       
     end block laplace_normal
-!!$
-!!$    ! Add the tangential flux terms
-!!$    laplace_tangential: block
-!!$
-!!$      integer :: icell, iface
-!!$      integer :: ncell, fcells(2)
-!!$
-!!$      ! Loop cells
-!!$      loop_cells: do icell = 1, this % grid % num_cells
-!!$      !loop_cells2: do concurrent (icell = 1 : this % grid % num_cells)
-!!$
-!!$         ! Get the faces corresponding to this cell
-!!$         associate( &
-!!$              & faces => this % grid % cell_faces &
-!!$              & (1:this % grid % num_cell_faces(icell),icell), &
-!!$              & highest_tag => maxval(this % grid % tag_numbers) &
-!!$              & )
-!!$
-!!$           ! Loop faces
-!!$           Ax(icell) = 0.0d0
-!!$
-!!$           loop_faces2: do iface = 1, this % grid % num_cell_faces(icell)
-!!$              
-!!$              associate (&
-!!$                   & ftag   => this % grid % face_tags(faces(iface))  , &
-!!$                   & fdelta => this % grid % face_deltas(faces(iface)), &
-!!$                   & farea  => this % grid % face_areas(faces(iface)),  &
-!!$                   & nfcells => this % grid % num_face_cells(faces(iface)) &
-!!$                   & )
-!!$     
-!!$                
-!!$              end associate
-!!$
-!!$           end do loop_faces2
-!!$
-!!$         end associate
-!!$
-!!$      end do loop_cells2
-!!$      
-!!$    end block laplace_tangential
 
   end subroutine get_jacobian_vector_product
 
@@ -337,7 +298,8 @@ contains
   ! Evaluate internal skew source based on the current cell states and
   ! return
   !===================================================================!
-
+  
+  !subroutine get_tangential_flux(this, ss, phic)  
   subroutine get_skew_source(this, ss, phic)
 
     class(assembler), intent(in)  :: this
@@ -499,111 +461,6 @@ contains
     evaluate_source = -1.0d0 !sin(x(1)) + cos(x(2))
 
   end function evaluate_source
-
-  subroutine solve_conjugate_gradient(oassembler, max_it, max_tol, ss, x)
-
-    ! Arguments
-    type(assembler)  , intent(in)    :: oassembler
-    integer          , intent(in)    :: max_it
-    real(dp)         , intent(in)    :: max_tol
-    real(dp)         , intent(in)    :: ss(:)
-    real(dp)         , intent(inout) :: x(:)
-
-    ! Create local data
-    real(dp), allocatable :: p(:), r(:), w(:), Ax(:), tmp(:)
-    real(dp), allocatable :: b(:)
-    real(dp)              :: alpha, beta
-    real(dp)              :: bnorm, rnorm
-    real(dp)              :: tol
-    integer               :: iter
-    real(dp)              :: rho(2)
-
-    ! Start the iteration counter
-    iter = 1
-
-    ! Memory allocations
-    allocate(b,p,r,w,Ax,tmp,mold=x)
-
-    ! Norm of the right hand side
-    call oassembler % get_source(tmp)
-    if (oassembler % symmetry .eqv. .false.) then
-       call oassembler % get_transpose_jacobian_vector_product(b, tmp)
-    else
-       b = tmp
-    end if
-    ! Add the additional right hand side supplied
-    b = b + ss
-    bnorm = norm2(b)
-
-    ! Homogeneous case
-    if (bnorm .le. max_tol) then
-       x = 0.0d0
-       return
-    end if
-
-    ! Norm of the initial residual
-    call oassembler % get_jacobian_vector_product(tmp, x)
-    if (oassembler % symmetry .eqv. .false.) then
-       call oassembler % get_transpose_jacobian_vector_product(Ax, tmp)
-    else
-       Ax = tmp
-    end if
-    r         = b - Ax ! could directly form this residual using get_residual_call
-    rnorm     = norm2(r)
-    tol       = rnorm/bnorm
-    rho(2)    = rnorm*rnorm
-    
-    open(13, file='cg.log', action='write', position='append')
-
-    ! Apply Iterative scheme until tolerance is achieved
-    do while ((tol .gt. max_tol) .and. (iter .lt. max_it))
-
-       ! step (a) compute the descent direction
-       if ( iter .eq. 1) then
-          ! steepest descent direction p
-          p = r
-       else
-          ! take a conjugate direction
-          beta = rho(2)/rho(1)
-          p = r + beta*p
-       end if
-
-       ! step (b) compute the solution update
-       call oassembler % get_jacobian_vector_product(tmp, p)
-       if (oassembler % symmetry .eqv. .false.) then
-          call oassembler % get_transpose_jacobian_vector_product(w, tmp)
-       else
-          w = tmp
-       end if
-
-       ! step (c) compute the step size for update
-       alpha = rho(2)/dot_product(p, w)
-
-       ! step (d) Add dx to the old solution
-       x = x + alpha*p
-
-       ! step (e) compute the new residual
-       r = r - alpha*w
-
-       ! step(f) update values before next iteration
-       rnorm = norm2(r)
-       tol = rnorm/bnorm
-
-       write(13,*) iter, tol
-       write(*,*) iter, tol, rnorm, rho ! causes valgrind errors
-
-       iter = iter + 1
-
-       rho(1) = rho(2)
-       rho(2) = rnorm*rnorm
-
-    end do
-
-    close(13)
-
-    deallocate(r, p, w, b, Ax, tmp)
-
-  end subroutine solve_conjugate_gradient
   
   !===================================================================!
   ! Write solution to file

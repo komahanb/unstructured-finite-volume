@@ -13,7 +13,7 @@ program test_mesh
 
   implicit none
   
-  character(len=*)     , parameter   :: filename = "triangle.msh"
+  character(len=*)     , parameter   :: filename = "delaunay.msh"
   class(gmsh_loader)   , allocatable :: gmsh
   class(mesh)          , allocatable :: grid
   class(linear_solver) , allocatable :: CG

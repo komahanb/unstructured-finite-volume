@@ -21,7 +21,8 @@ module class_conjugate_gradient
 
   type, extends(linear_solver) :: conjugate_gradient
 
-     class(assembler), pointer :: FVAssembler
+     !type(assembler), pointer :: FVAssembler
+     class(assembler), allocatable :: FVAssembler
 
    contains
 
@@ -47,11 +48,16 @@ contains
   ! Constructor for linear solver
   !===================================================================!
   
-  type(conjugate_gradient) function construct(FVAssembler) result (this)
+  type(conjugate_gradient) function construct(FVAssembler, max_it, max_tol) &
+       & result (this)
 
-    class(assembler), intent(in) :: FVAssembler
+    type(assembler), intent(in) :: FVAssembler
+    type(integer)   , intent(in) :: max_it
+    type(real(dp))  , intent(in) :: max_tol
 
-    allocate(this % FVassembler, source = FVAssembler)  
+    allocate(this % FVassembler, source = FVAssembler)
+    this % max_it = max_it
+    this % max_tol = max_tol
 
   end function construct
 
@@ -63,10 +69,12 @@ contains
 
     type(conjugate_gradient), intent(inout) :: this
 
-    if(associated(this % FVAssembler)) then
-       deallocate(this % FVAssembler)
-       nullify(this % FVAssembler)
-    end if
+!!$    if(associated(this % FVAssembler)) then
+!!$       deallocate(this % FVAssembler)
+!!$       nullify(this % FVAssembler)
+!!$    end if
+!!$    
+    if (allocated(this % FVAssembler)) deallocate(this % FVAssembler)
 
   end subroutine destroy
 

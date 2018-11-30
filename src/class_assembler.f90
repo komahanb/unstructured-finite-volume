@@ -20,7 +20,8 @@ module class_assembler
      logical :: symmetry = .true.
 
      ! Mesh object
-     class(mesh), pointer :: grid
+     ! type(mesh), pointer :: grid
+     class(mesh), allocatable :: grid
 
      ! Number of state varibles 
      integer :: num_state_vars
@@ -87,11 +88,12 @@ contains
   pure subroutine destroy(this)
     
     type(assembler), intent(inout) :: this
-    
-    if(associated(this % grid)) then
-       deallocate(this % grid)
-       nullify(this % grid)
-    end if
+
+    if (allocated(this % grid)) deallocate(this % grid)
+!!$    if(associated(this % grid)) then
+!!$       deallocate(this % grid)
+!!$       nullify(this % grid)
+!!$    end if
 
     if (allocated(this % phi)) deallocate(this % phi)
     

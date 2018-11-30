@@ -32,13 +32,12 @@ module interface_linear_solver
   ! Interface for multiple constructors
   !===================================================================!
   
-  interface 
-     subroutine solve_interface(this, x, ss)
+  interface
+     subroutine solve_interface(this, x)
        import linear_solver
        import dp
-       class(linear_solver), intent(in)    :: this
-       real(dp)            , intent(inout) :: x(:)
-       real(dp)            , intent(in)    :: ss(:)
+       class(linear_solver)  , intent(in)  :: this
+       real(dp), allocatable , intent(out) :: x(:)
      end subroutine solve_interface
   end interface
   

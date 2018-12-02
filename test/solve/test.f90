@@ -48,7 +48,7 @@ program test_mesh
   jacobi_solver : block
 
     real(dp) , parameter   :: max_tol     = 100.0d0*epsilon(1.0d0)
-    integer  , parameter   :: max_it      = 10000
+    integer  , parameter   :: max_it      = 100
     integer  , parameter   :: print_level = 1
     real(dp) , allocatable :: x(:)
     integer :: i
@@ -78,7 +78,7 @@ program test_mesh
   cg_solver : block
 
     real(dp) , parameter   :: max_tol     = 100.0d0*epsilon(1.0d0)
-    integer  , parameter   :: max_it      = 10000
+    integer  , parameter   :: max_it      = 100
     integer  , parameter   :: print_level = 1
     real(dp) , allocatable :: x(:)
     integer :: i

@@ -145,18 +145,66 @@ contains
 
     ! Locals
     real(dp) :: tol
+    real(dp) , allocatable :: b(:)
+    real(dp) , allocatable :: Ux(:)
+    real(dp) , allocatable :: Lx(:)
+    real(dp) , allocatable :: Dx(:)
+    real(dp) , allocatable :: R(:)
+    real(dp) , allocatable :: xtmp(:)
+    real(dp) , allocatable :: identity(:)
 
-    iter = 1
-    tol  = huge(1.0d0)
+    real(dp) :: bnorm
 
+    allocate(b, Ux, Lx, Dx, R, xtmp, identity, mold=x)
+    identity = 1.0d0
+    
+    ! Assemble RHS of the linear system (source + boundary terms)
+    call this % FVAssembler % get_source(b)
+
+    ! Add the skew source terms if supplied 
+    b = b + ss
+
+    bnorm = norm2(b)
+
+    ! Homogeneous case (nothing to do)
+    if (bnorm .le. this % max_tol) then
+       x = 0.0d0
+       return
+    end if
+
+    !-----------------------------------------------------------------!
     ! Apply Gauss Jacobi Iterative scheme until tolerance is achieved
+    !-----------------------------------------------------------------!
+
+    iter = 1; tol  = huge(1.0d0);
     do while ((tol .gt. this % max_tol) .and. (iter .lt. this % max_it))
 
-       print *, 'doing gauss jacobi iteration'
+       ! Form the residual (partial) after split
+       call this % FVAssembler % get_jacobian_vector_product(&
+            & Ux, x, filter = this % FVAssembler % UPPER_TRIANGLE)
+       call this % FVAssembler % get_jacobian_vector_product(&
+            & Lx, x, filter = this % FVAssembler % LOWER_TRIANGLE)
+       R = b - Lx - Ux
 
-       return
+       ! Apply precondtioner with the reamining split
+       call this % FVAssembler % get_jacobian_vector_product(&
+            & Dx, identity, filter = this % FVAssembler % DIAGONAL)
+
+       ! call this % FVAssembler % apply_preconditioner(x, Dx)
+       ! Invert diagonal
+       xtmp = R/Dx ! D^{-1}(b-Lx-Ux)
+       tol = norm2(x-xtmp)
+
+       if (this % print_level .gt. 1) then
+          write(*,*) iter, tol
+       end if
+
+       x = xtmp
+       iter = iter + 1
 
     end do
+    
+    deallocate(b, Ux, Lx, Dx, R, xtmp, identity)
 
   end subroutine iterate
 

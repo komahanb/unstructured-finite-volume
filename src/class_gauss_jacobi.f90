@@ -150,12 +150,12 @@ contains
     real(dp) , allocatable :: Lx(:)
     real(dp) , allocatable :: D(:)
     real(dp) , allocatable :: R(:)
-    real(dp) , allocatable :: xtmp(:)
+    real(dp) , allocatable :: xnew(:)
     real(dp) , allocatable :: identity(:)
 
     real(dp) :: bnorm
 
-    allocate(b, Ux, Lx, D, R, xtmp, identity, mold=x)
+    allocate(b, Ux, Lx, D, R, xnew, identity, mold=x)
     identity = 1.0d0
     
     ! Assemble RHS of the linear system (source + boundary terms)
@@ -193,19 +193,19 @@ contains
 
        ! call this % FVAssembler % apply_preconditioner(x, D)
        ! Invert diagonal
-       xtmp = R/D ! D^{-1}(b-Lx-Ux)
-       tol = norm2(x-xtmp)
+       xnew = R/D ! D^{-1}(b-Lx-Ux)
+       tol = norm2(x-xnew)
 
        if (this % print_level .gt. 1) then
           write(*,*) iter, tol
        end if
 
-       x = xtmp
+       x = xnew
        iter = iter + 1
 
     end do
     
-    deallocate(b, Ux, Lx, D, R, xtmp, identity)
+    deallocate(b, Ux, Lx, D, R, xnew, identity)
 
   end subroutine iterate
 

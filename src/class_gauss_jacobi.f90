@@ -148,14 +148,14 @@ contains
     real(dp) , allocatable :: b(:)
     real(dp) , allocatable :: Ux(:)
     real(dp) , allocatable :: Lx(:)
-    real(dp) , allocatable :: Dx(:)
+    real(dp) , allocatable :: D(:)
     real(dp) , allocatable :: R(:)
     real(dp) , allocatable :: xtmp(:)
     real(dp) , allocatable :: identity(:)
 
     real(dp) :: bnorm
 
-    allocate(b, Ux, Lx, Dx, R, xtmp, identity, mold=x)
+    allocate(b, Ux, Lx, D, R, xtmp, identity, mold=x)
     identity = 1.0d0
     
     ! Assemble RHS of the linear system (source + boundary terms)
@@ -182,17 +182,18 @@ contains
        ! Form the residual (partial) after split
        call this % FVAssembler % get_jacobian_vector_product(&
             & Ux, x, filter = this % FVAssembler % UPPER_TRIANGLE)
+       
        call this % FVAssembler % get_jacobian_vector_product(&
             & Lx, x, filter = this % FVAssembler % LOWER_TRIANGLE)
        R = b - Lx - Ux
 
        ! Apply precondtioner with the reamining split
        call this % FVAssembler % get_jacobian_vector_product(&
-            & Dx, identity, filter = this % FVAssembler % DIAGONAL)
+            & D, identity, filter = this % FVAssembler % DIAGONAL)
 
-       ! call this % FVAssembler % apply_preconditioner(x, Dx)
+       ! call this % FVAssembler % apply_preconditioner(x, D)
        ! Invert diagonal
-       xtmp = R/Dx ! D^{-1}(b-Lx-Ux)
+       xtmp = R/D ! D^{-1}(b-Lx-Ux)
        tol = norm2(x-xtmp)
 
        if (this % print_level .gt. 1) then
@@ -204,7 +205,7 @@ contains
 
     end do
     
-    deallocate(b, Ux, Lx, Dx, R, xtmp, identity)
+    deallocate(b, Ux, Lx, D, R, xtmp, identity)
 
   end subroutine iterate
 

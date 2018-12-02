@@ -31,9 +31,6 @@ program test_mesh
 
   assembly : block
 
-    real(dp), allocatable :: A(:,:)
-    real(dp), allocatable :: AT(:,:)
-
     ! Create an assembler object for assembling the linear system
     ! Geometry and meshing
     allocate(FVMAssembler, source = assembler(grid))

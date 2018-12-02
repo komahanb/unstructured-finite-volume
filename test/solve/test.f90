@@ -10,6 +10,7 @@ program test_mesh
   use class_assembler          , only : assembler
   use interface_linear_solver  , only : linear_solver
   use class_conjugate_gradient , only : conjugate_gradient
+  use class_gauss_jacobi , only : gauss_jacobi
 
   implicit none
   
@@ -43,8 +44,38 @@ program test_mesh
     ! + BC) to provide linear/nonlinear systems
 
   end block assembly
+  
+  jacobi_solver : block
 
-  solver : block
+    real(dp) , parameter   :: max_tol     = 100.0d0*epsilon(1.0d0)
+    integer  , parameter   :: max_it      = 10000
+    integer  , parameter   :: print_level = 1
+    real(dp) , allocatable :: x(:)
+    integer :: i
+
+    allocate(CG, &
+         & source      = gauss_jacobi( &
+         & FVAssembler = FVMassembler, &
+         & max_tol     = max_tol, &
+         & max_it      = max_it, &
+         & print_level = print_level))
+
+    ! Solve using Jacobi method
+    call CG % solve(x)
+    print *, 'jacobi solution = '
+    do i = 1, min(10, size(x))
+       print *, i,  x(i)
+    end do
+
+    ! Writes the mesh for tecplot
+    call FVMassembler % write_solution("mesh-jacobi.dat", x)
+
+    deallocate(x)   
+    deallocate(CG)
+    
+  end block jacobi_solver
+
+  cg_solver : block
 
     real(dp) , parameter   :: max_tol     = 100.0d0*epsilon(1.0d0)
     integer  , parameter   :: max_it      = 10000
@@ -61,18 +92,18 @@ program test_mesh
 
     ! Solve using CG method
     call CG % solve(x)
-    print *, 'solution = '
+    print *, 'cg solution = '
     do i = 1, min(10, size(x))
        print *, i,  x(i)
     end do
 
     ! Writes the mesh for tecplot
-    call FVMassembler % write_solution("mesh.dat", x)
+    call FVMassembler % write_solution("mesh-cg.dat", x)
 
     deallocate(x)   
     deallocate(CG)
-
-  end block solver
+    
+  end block cg_solver
 
   deallocate(grid)
   deallocate(FVMAssembler)

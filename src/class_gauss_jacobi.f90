@@ -156,8 +156,14 @@ contains
     real(dp) :: bnorm
 
     allocate(b, Ux, Lx, D, R, xnew, identity, mold=x)
+
+    ! Identity vector
     identity = 1.0d0
     
+    ! Extract the diagonal entries
+    call this % FVAssembler % get_jacobian_vector_product(&
+         & D, identity, filter = this % FVAssembler % DIAGONAL)
+
     ! Assemble RHS of the linear system (source + boundary terms)
     call this % FVAssembler % get_source(b)
 
@@ -185,11 +191,8 @@ contains
        
        call this % FVAssembler % get_jacobian_vector_product(&
             & Lx, x, filter = this % FVAssembler % LOWER_TRIANGLE)
+       
        R = b - Lx - Ux
-
-       ! Apply precondtioner with the reamining split
-       call this % FVAssembler % get_jacobian_vector_product(&
-            & D, identity, filter = this % FVAssembler % DIAGONAL)
 
        ! call this % FVAssembler % apply_preconditioner(x, D)
        ! Invert diagonal

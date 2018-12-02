@@ -21,13 +21,19 @@ module class_assembler
 
      ! Mesh object
      ! type(mesh), pointer :: grid
-     class(mesh), allocatable :: grid
+     class(mesh)   , allocatable :: grid
+     !class(physics), allocatable :: system(:) ! poisson on \Omega, dirichlet on dOmega1 , dirchlet dOmega3 , dirichlet, Neumann dOmega4 
 
      ! Number of state varibles 
      integer :: num_state_vars
 
      ! Flux vector
      real(dp), allocatable :: phi(:)
+
+     ! Matrix filters
+     integer :: DIAGONAL       = 0
+     integer :: LOWER_TRIANGLE = -1
+     integer :: UPPER_TRIANGLE = 1
 
    contains
 
@@ -38,7 +44,7 @@ module class_assembler
      ! Assembly Routines
      procedure :: get_source
      procedure :: get_skew_source
-     !procedure :: get_jacobian
+     procedure :: get_jacobian
      procedure :: get_jacobian_vector_product
      procedure :: get_transpose_jacobian_vector_product
      procedure :: write_solution
@@ -79,6 +85,10 @@ contains
     allocate(this % phi(this % num_state_vars))
     this % phi = 0
 
+    this % DIAGONAL       = 0
+    this % LOWER_TRIANGLE = -1
+    this % UPPER_TRIANGLE = 1
+
   end function construct
 
   !===================================================================!
@@ -99,26 +109,54 @@ contains
     
   end subroutine destroy
 
-!!$  subroutine get_jacobian(this, A, x)
-!!$
-!!$    class(assembler) , intent(in)    :: this
-!!$    real(dp)         , intent(in)    :: x(:)
-!!$    real(dp)         , intent(out)   :: A(:,:)
-!!$
-!!$    ! okay for nonlinear case?
-!!$    matdim = size(x)
-!!$    x = 
-!!$    do icol = 1, matdim
-!!$       call this % get_jacobian_vector_product(A(icol,:),x)
-!!$    end do
-!!$
-!!$  end subroutine get_jacobian
+  subroutine get_jacobian(this, A, filter)
 
-  subroutine get_jacobian_vector_product(this, Ax, x)
+    ! Arguments
+    class(assembler)      , intent(in)    :: this
+    real(dp), allocatable , intent(out)   :: A(:,:)
+    integer , optional    , intent(in)    :: filter 
+
+    ! Locals
+    real(dp), allocatable :: ex(:)
+    integer :: icol
+
+    allocate(A(this % num_state_vars, this % num_state_vars))
+    allocate(ex(this % num_state_vars)); ex = 0
+    
+    if (present(filter)) then 
+
+       ! okay for nonlinear case? the state vectors are required for linearization
+       ! Assemble only a part of the matrix (lower(-1), upper(1), or diagonal (0))
+       do icol = 1, this % num_state_vars
+          ex(icol) = 1.0d0
+          call this % get_jacobian_vector_product(A(:,icol), ex, filter)
+          ex(icol) = 0.0d0
+       end do
+
+    else
+
+       ! Assemble Full Matrix A = L + D + U
+       do icol = 1, this % num_state_vars
+          ex(icol) = 1.0d0
+          call this % get_jacobian_vector_product(A(:,icol),ex)
+          ex(icol) = 0.0d0
+       end do
+
+    end if
+
+    deallocate(ex)
+
+  end subroutine get_jacobian
+
+  subroutine get_jacobian_vector_product(this, Ax, x, filter)
 
     class(assembler) , intent(in)    :: this
     real(dp)         , intent(in)    :: x(:)
     real(dp)         , intent(out)   :: Ax(:)
+    integer, optional, intent(in)    :: filter 
+
+    ! Finite difference coeff for flux approximation between two cells
+    real(dp), parameter  :: alpha(2) = [-1.0_dp, 1.0_dp]
 
 !!$    test: block 
 !!$      integer               :: n
@@ -137,7 +175,7 @@ contains
 !!$    print *, "Ax=",Ax
 !!$    
 !!$    return
-    
+
     laplace_normal: block
       
       integer :: icell, iface
@@ -145,7 +183,8 @@ contains
 
       ! Loop cells
       !loop_cells: do icell = 1, this % grid % num_cells
-      loop_cells: do concurrent (icell = 1 : this % grid % num_cells)
+      !loop_cells: do concurrent (icell = 1 : this % grid % num_cells)
+      loop_cells: do icell = 1 , this % grid % num_cells
 
          ! Get the faces corresponding to this cell
          associate( &
@@ -170,41 +209,93 @@ contains
 
                 ! Interpolate to get face gammas
                 !print *, iface, faces(iface), ftag, fdelta, farea !, !fgamma
-                
-              ! Add contribution from internal faces
-              if (ftag .eq. highest_tag) then
 
-                 ! Neighbour cell index
-                 fcells(1:nfcells) = this % grid % face_cells(1:nfcells,faces(iface))
+                ! Add contribution from internal faces
+                domain: if (ftag .eq. highest_tag) then
 
-                 ! Neighbour is the one that has a different cell
-                 ! index than current icell
-                 if (fcells(1) .eq. icell) then 
-                    ncell = fcells(2)
-                 else 
-                    ncell = fcells(1)
-                 end if
+                   ! Neighbour cell index !? filter here probably?
+                   fcells(1:nfcells) = this % grid % face_cells(1:nfcells,faces(iface))
 
-                 !print *, "cell=",icell, "face=", faces(iface), "ncell=", ncell
+                   ! Neighbour is the one that has a different cell
+                   ! index than current icell
+                   if (fcells(1) .eq. icell) then 
+                      ncell = fcells(2)
+                   else 
+                      ncell = fcells(1)
+                   end if
 
-                 ! Interior faces (call tagged physics) (FVM Equation)
-                 Ax(icell) = Ax(icell) + farea*(x(ncell) - x(icell))/fdelta
+                   !print *, "cell=",icell, "face=", faces(iface), "ncell=", ncell
 
-                 !print *, icell, "internal", faces(iface), ftag, fdelta, farea !, !fgamma
+                   ! Interior faces (call tagged physics) (FVM Equation)
+                   ! Ax(icell) = Ax(icell) + farea*(x(ncell)-x(icell))/fdelta
+
+                   present_filter: if (present(filter)) then
+                      
+                      !-------------------------------------------------!
+                      ! Assemble part of matrix 
+                      !-------------------------------------------------!
+                      
+                      apply_filter: if (filter .eq. this % UPPER_TRIANGLE) then 
+
+                         ! Activate Upper Trianglular Filter
+                         if (ncell .gt. icell) then 
+                            Ax(icell) = Ax(icell) + farea*(x(ncell))/fdelta
+                         end if
+
+                      else if (filter .eq. this % LOWER_TRIANGLE) then
+
+                         ! Activate Lower Trianglular Filter
+                         if (ncell .lt. icell) then
+                            Ax(icell) = Ax(icell) + farea*(x(ncell))/fdelta
+                         end if
+
+                      else if (filter .eq. this % DIAGONAL) then
+
+                         ! Activate DIAGONAL Trianglular Filter (note icell)
+                         Ax(icell) = Ax(icell) + farea*(-x(icell))/fdelta
+
+                      end if apply_filter
+
+                   else
+
+                      !-------------------------------------------------!
+                      ! Assemble Full of matrix 
+                      !-------------------------------------------------!
+
+                      Ax(icell) = Ax(icell) + farea*(x(ncell)-x(icell))/fdelta
+
+                   end if present_filter
+
+!!$                 Ax(icell) = Ax(icell) + &
+!!$                      & farea*dot_product(alpha, [x(icell), x(ncell)])&
+!!$                      & /fdelta
 
 !!$              else if (ftag .eq. 1) then
 !!$
 !!$                 Ax(icell) = Ax(icell) + farea*1.0d0
-                 
-              else
 
-                 ! Boundary faces (call boundary physics)
-                 Ax(icell) = Ax(icell) + farea*(0.0d0 - x(icell))/fdelta
-                 !print *, icell, "boundary", faces(iface), ftag, fdelta, farea !, !fgamma
+                else
 
-              end if
+                   !----------------------------------------------------!
+                   ! Diagonal self contributions
+                   !----------------------------------------------------!
 
-            end associate
+                   ! Adds more things to diagonal (makes the matrix more
+                   ! diagonally dominant) Boundary faces (call boundary
+                   ! physics) If the supplied filter is diagonal then add.
+                   if (present(filter)) then 
+                      ! If diagonals are flagged
+                      if (filter .eq. this % DIAGONAL) then
+                         Ax(icell) = Ax(icell) + farea*(0.0d0 - x(icell))/fdelta
+                      end if
+                   else
+                      ! Add diagonal if filter is not supplied
+                      Ax(icell) = Ax(icell) + farea*(0.0d0 - x(icell))/fdelta
+                   end if
+
+                end if domain
+
+              end associate
 
            end do loop_faces
 
@@ -375,7 +466,9 @@ contains
     class(assembler), intent(in)  :: this
     real(dp)        , intent(out) :: b(:)
 
-    real(dp) , parameter :: phib = 0.0d0
+    real(dp) , parameter :: phib = 1.0d0
+
+    
 !!$    
 !!$    block
 !!$      b(1) = 4.0d-1
@@ -391,7 +484,12 @@ contains
 
       integer :: icell, iface
       integer :: ncell, fcells(2)
-      
+
+
+      ! Form boundary face values
+
+      !phib(,) =
+
       ! Loop cells
       !loop_cells: do icell = 1, this % grid % num_cells
       loop_cells: do concurrent (icell = 1:this % grid % num_cells)
@@ -422,7 +520,7 @@ contains
               ! Add contribution from internal faces
               if (ftag .ne. highest_tag) then ! homogenous dirichlet T = 1.0d0
                
-               ! Boundary faces (call boundary physics)
+               ! Boundary faces (call boundary physics) (minus as we moved it to rhs)
                 b(icell) = b(icell) + farea*(-phib)/fdelta
                 !print *, icell, "boundary", faces(iface), ftag, fdelta, farea !, !fgamma
                
@@ -501,7 +599,7 @@ contains
 
     write(90, *) 'ZONE T="Temperature", N=', this % grid % num_vertices, &
          & ', E=', this % grid % num_cells, &
-         & ', DATAPACKING=POINT, ZONETYPE=FETRIANGLE'
+         & ', DATAPACKING=POINT, ZONETYPE=FEQUADRILATERAL'
     
     ! Write vertices
     do i = 1, this % grid % num_vertices

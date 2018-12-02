@@ -45,6 +45,7 @@ module class_assembler
      procedure :: get_source
      procedure :: get_skew_source
      procedure :: get_jacobian
+     procedure :: get_transpose_jacobian
      procedure :: get_jacobian_vector_product
      procedure :: get_transpose_jacobian_vector_product
      procedure :: write_solution
@@ -109,6 +110,10 @@ contains
     
   end subroutine destroy
 
+  !===================================================================!
+  ! Assemble and return the full jacobian matrix
+  !===================================================================!
+  
   subroutine get_jacobian(this, A, filter)
 
     ! Arguments
@@ -147,6 +152,49 @@ contains
     deallocate(ex)
 
   end subroutine get_jacobian
+
+  !===================================================================!
+  ! Assemble and return the full transpose jacobian matrix
+  !===================================================================!
+  
+  subroutine get_transpose_jacobian(this, A, filter)
+
+    ! Arguments
+    class(assembler)      , intent(in)    :: this
+    real(dp), allocatable , intent(out)   :: A(:,:)
+    integer , optional    , intent(in)    :: filter 
+
+    ! Locals
+    real(dp), allocatable :: ex(:)
+    integer :: irow
+
+    allocate(A(this % num_state_vars, this % num_state_vars))
+    allocate(ex(this % num_state_vars)); ex = 0
+    
+    if (present(filter)) then 
+
+       ! okay for nonlinear case? the state vectors are required for linearization
+       ! Assemble only a part of the matrix (lower(-1), upper(1), or diagonal (0))
+       do irow = 1, this % num_state_vars
+          ex(irow) = 1.0d0
+          call this % get_jacobian_vector_product(A(irow,:), ex, filter)
+          ex(irow) = 0.0d0
+       end do
+
+    else
+
+       ! Assemble Full Matrix A = L + D + U
+       do irow = 1, this % num_state_vars
+          ex(irow) = 1.0d0
+          call this % get_jacobian_vector_product(A(irow,:),ex)
+          ex(irow) = 0.0d0
+       end do
+
+    end if
+
+    deallocate(ex)
+
+  end subroutine get_transpose_jacobian
 
   subroutine get_jacobian_vector_product(this, Ax, x, filter)
 
@@ -373,6 +421,8 @@ contains
     real(dp), allocatable :: A(:,:)
     integer               :: n
 
+    error stop 'not implemented'
+
 !!$    n = size(x)
 !!$    allocate(A(n,n))
 !!$    
@@ -483,7 +533,7 @@ contains
     add_boundary_terms: block
 
       integer :: icell, iface
-      integer :: ncell, fcells(2)
+      !integer :: ncell!, fcells(2)
 
 
       ! Form boundary face values

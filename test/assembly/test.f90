@@ -65,24 +65,10 @@ program test_mesh
        print *, 'passed assembly test'
     end if
 
-!!$
-!!$    print *, 'getting transpose jacobian'
-!!$    call FVMAssembler % get_transpose_jacobian(A)
-!!$    call print (DT)
-
-!!$    
-!!$    allocate(AT, mold = A); AT = transpose(A)   
-!!$    allocate(AT, mold = A); AT = transpose(A)   
-!!$    print *, "asymmetry", maxval(abs(A-AT))
-!!$
-!!$    call print (A)
-
-    stop
-
-    ! Also supply
-    ! allocate(FVMAssembler, source = assembler(grid,physics_list)) 
-    ! physics with tags Assembler combines Geometry and Physics ( EQNS
-    ! + BC) to provide linear/nonlinear systems
+    print *, 'performing symmetry test'
+    call FVMAssembler % get_transpose_jacobian(AT)
+    call print (AT)
+    print *, "asymmetry", (maxval(abs(A-AT)) .gt. tiny(1.0d0))
 
   end block assembly
 

@@ -11,7 +11,7 @@ program test_mesh
 
   implicit none
   
-  character(len=*)     , parameter   :: filename = "delaunay.msh"
+  character(len=*)     , parameter   :: filename = "triangle.msh"
   class(gmsh_loader)   , allocatable :: gmsh
   class(mesh)          , allocatable :: grid
   class(assembler)     , allocatable :: FVMAssembler
@@ -69,6 +69,8 @@ program test_mesh
     call FVMAssembler % get_transpose_jacobian(AT)
     call print (AT)
     print *, "asymmetry", (maxval(abs(A-AT)) .gt. tiny(1.0d0))
+
+    deallocate(A, D, U, L, AT)
 
   end block assembly
 

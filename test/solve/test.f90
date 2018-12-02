@@ -13,7 +13,7 @@ program test_mesh
 
   implicit none
   
-  character(len=*)     , parameter   :: filename = "rectangle.msh"
+  character(len=*)     , parameter   :: filename = "square-10.msh"
   class(gmsh_loader)   , allocatable :: gmsh
   class(mesh)          , allocatable :: grid
   class(linear_solver) , allocatable :: CG
@@ -37,14 +37,6 @@ program test_mesh
     ! Geometry and meshing
     allocate(FVMAssembler, source = assembler(grid))
 
-    call FVMAssembler % get_jacobian(A, filter=FVMAssembler % UPPER_TRIANGLE)
-    allocate(AT, mold = A); AT = transpose(A)   
-    print *, "asymmetry", maxval(abs(A-AT))
-
-    call print (A)
-
-    stop
-
     ! Also supply
     ! allocate(FVMAssembler, source = assembler(grid,physics_list)) 
     ! physics with tags Assembler combines Geometry and Physics ( EQNS
@@ -52,35 +44,35 @@ program test_mesh
 
   end block assembly
 
-!!$  solver : block
-!!$
-!!$    real(dp) , parameter   :: max_tol     = 100.0d0*epsilon(1.0d0)
-!!$    integer  , parameter   :: max_it      = 10000
-!!$    integer  , parameter   :: print_level = 1
-!!$    real(dp) , allocatable :: x(:)
-!!$    integer :: i
-!!$
-!!$    allocate(CG, &
-!!$         & source      = conjugate_gradient( &
-!!$         & FVAssembler = FVMassembler, &
-!!$         & max_tol     = max_tol, &
-!!$         & max_it      = max_it, &
-!!$         & print_level = print_level))
-!!$
-!!$    ! Solve using CG method
-!!$    call CG % solve(x)
-!!$    print *, 'solution = '
-!!$    do i = 1, min(10, size(x))
-!!$       print *, i,  x(i)
-!!$    end do
-!!$
-!!$    ! Writes the mesh for tecplot
-!!$    call FVMassembler % write_solution("mesh.dat", x)
-!!$
-!!$    deallocate(x)   
-!!$    deallocate(CG)
-!!$
-!!$  end block solver
+  solver : block
+
+    real(dp) , parameter   :: max_tol     = 100.0d0*epsilon(1.0d0)
+    integer  , parameter   :: max_it      = 10000
+    integer  , parameter   :: print_level = 1
+    real(dp) , allocatable :: x(:)
+    integer :: i
+
+    allocate(CG, &
+         & source      = conjugate_gradient( &
+         & FVAssembler = FVMassembler, &
+         & max_tol     = max_tol, &
+         & max_it      = max_it, &
+         & print_level = print_level))
+
+    ! Solve using CG method
+    call CG % solve(x)
+    print *, 'solution = '
+    do i = 1, min(10, size(x))
+       print *, i,  x(i)
+    end do
+
+    ! Writes the mesh for tecplot
+    call FVMassembler % write_solution("mesh.dat", x)
+
+    deallocate(x)   
+    deallocate(CG)
+
+  end block solver
 
   deallocate(grid)
   deallocate(FVMAssembler)
@@ -95,8 +87,8 @@ program test_mesh
     m = size(matrix, 1)
     n = size(matrix, 2)
 
-    do i = 1, m
-       write(*,'(100g15.1)') (matrix(i,j),j=1,n)
+    do i = 1, min(10,m)
+       write(*,'(100g15.1)') (matrix(i,j),j=1,min(10,n))
     end do
 
 !!$    do i = 1, m

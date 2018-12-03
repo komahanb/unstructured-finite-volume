@@ -11,4 +11,5 @@ class_assembler.o \
 interface_linear_solver.o \
 class_conjugate_gradient.o \
 class_gauss_jacobi.o \
-class_gauss_seidel.o 
+class_gauss_seidel.o \
+class_sor.o 

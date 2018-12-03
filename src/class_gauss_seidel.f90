@@ -193,15 +193,41 @@ contains
 
        ! call this % FVAssembler % apply_preconditioner(x, D)
        ! Invert diagonal
-       xnew = R/D ! (D+L)^{-1}(b-Ux)       
+       !xnew = R/D ! (D+L)^{-1}(b-Ux)       
+
+       !--------------------------------------------------------------!
+       ! Solve the linear system: By=R ; (D+L)y=R ;  Dy=R-Ly
+       !--------------------------------------------------------------!
        
-       call this % FVAssembler % get_jacobian_vector_product(&
-            & Lx, xnew, filter = this % FVAssembler % LOWER_TRIANGLE)
+       solve_lower_triangle: block
 
+         real(dp) :: tol2
+         integer :: iter2
+
+         iter2 = 1; tol2 = huge(1.0d0)
+         do while ((tol2 .gt. this % max_tol) .and. (iter2 .lt. this % max_it))
+
+            call this % FVAssembler % get_jacobian_vector_product(&
+                 & Lx, x, filter = this % FVAssembler % LOWER_TRIANGLE)
+
+            xnew  = (R - Lx)/D
+            tol2  = norm2(x-xnew)
+            
+            if (this % print_level .gt. 2) then
+               write(*,*) "inner (2)", iter2, tol2
+            end if
+            
+            x = xnew
+            iter2 = iter2 + 1
+
+         end do
+         
+       end block solve_lower_triangle
+       
        tol = norm2(x-xnew)
-
+       
        if (this % print_level .gt. 1) then
-          write(*,*) iter, tol
+          write(*,*) "inner (1)", iter, tol
        end if
 
        x = xnew

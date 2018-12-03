@@ -200,7 +200,7 @@ contains
        tol = norm2(x-xnew)
 
        if (this % print_level .gt. 1) then
-          write(*,*) iter, tol
+          write(*,*) "inner (1)", iter, tol
        end if
 
        x = xnew

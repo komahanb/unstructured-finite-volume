@@ -15,7 +15,7 @@ program test_mesh
 
   implicit none
   
-  character(len=*)     , parameter   :: filename = "../rectangle.msh"
+  character(len=*)     , parameter   :: filename = "../square-10.msh"
   class(gmsh_loader)   , allocatable :: gmsh
   class(mesh)          , allocatable :: grid
   class(linear_solver) , allocatable :: CG
@@ -47,7 +47,7 @@ program test_mesh
 
     real(dp) , parameter   :: max_tol     = 100.0d0*epsilon(1.0d0)
     integer  , parameter   :: max_it      = 100
-    integer  , parameter   :: print_level = 1
+    integer  , parameter   :: print_level = 3
     real(dp) , allocatable :: x(:)
     integer :: i
 

@@ -647,7 +647,7 @@ contains
     ! Write Triangles/Quads (works only for homogeneous elements)
     !-----------------------------------------------------------------!
 
-    if ( max(this % grid % num_cell_vertices) .eq. 4 ) then
+    if ( maxval(this % grid % num_cell_vertices) .eq. 4 ) then
        write(90, *) &
             & 'ZONE T="Temperature", N=', this % grid % num_vertices, &
             & ', E=', this % grid % num_cells, &

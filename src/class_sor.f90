@@ -30,7 +30,7 @@ module class_sor
      ! type bound procedures
      procedure :: solve
      procedure :: iterate
-     !procedure :: estimate_spectral_radius
+     procedure :: estimate_spectral_radius
 
      ! destructor
      final :: destroy
@@ -82,6 +82,43 @@ contains
     if (allocated(this % FVAssembler)) deallocate(this % FVAssembler)
 
   end subroutine destroy
+  
+  !===================================================================!
+  ! Estimate spectral radius using power iteration (maximum absolute
+  ! eigen value)
+  !===================================================================!
+  
+  subroutine estimate_spectral_radius(this, mu, max_iter)
+    
+    ! Arguments
+    class(sor), intent(in)  :: this
+    real(dp)  , intent(out) :: mu
+    integer   , intent(in)  :: max_iter
+
+    ! Random vector
+    real(dp) , allocatable :: v(:), w(:)
+    integer  :: iter
+    real(dp) :: wnorm
+
+    ! Create a random unit vector
+    call this % FVAssembler % create_vector(v)
+    call random_number(v)
+    v = v/norm2(v)
+
+    ! A temp vector for processing
+    call this % FVAssembler % create_vector(w)
+    
+    power_iteration: do iter = 1, max_iter       
+       call this % FVAssembler % get_jacobian_vector_product(w, v)
+       wnorm = norm2(w)
+       v = w/wnorm
+       mu = dot_product(v,w)
+       print *, iter, mu
+    end do power_iteration
+    
+    deallocate(v, w)
+
+  end subroutine estimate_spectral_radius
 
   !===================================================================!
   ! Iterative linear solution using conjugate gradient method
@@ -249,3 +286,8 @@ contains
   end subroutine iterate
 
 end module class_sor
+
+!!$    real(dp) :: rho
+!!$    call this % estimate_spectral_radius(rho, 100)
+!!$    print *, rho
+!!$    stop

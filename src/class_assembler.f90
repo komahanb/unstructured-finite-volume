@@ -26,7 +26,7 @@ module class_assembler
 
      ! Number of state varibles 
      integer :: num_state_vars
-
+     
      ! Flux vector
      real(dp), allocatable :: phi(:)
 
@@ -36,6 +36,8 @@ module class_assembler
      integer :: UPPER_TRIANGLE = 1
 
    contains
+
+     procedure :: create_vector
 
      ! Evaluation routines
      procedure :: evaluate_vertex_flux
@@ -681,5 +683,21 @@ contains
     if (allocated(phiv)) deallocate(phiv)
 
   end subroutine write_solution
+
+  !===================================================================!
+  ! Create a state vector and sets values if a scalar is supplied
+  !===================================================================!
+
+  subroutine create_vector(this, x, scalar)
+    
+    class(assembler), intent(in)               :: this    
+    real(dp)        , intent(out), allocatable :: x(:)
+    real(dp)        , intent(in) , optional    :: scalar
+    
+    if (allocated(x)) error stop "vector already allocated"
+    allocate(x(this % num_state_vars))
+    if (present(scalar))  x = scalar
+    
+  end subroutine create_vector
 
 end module class_assembler

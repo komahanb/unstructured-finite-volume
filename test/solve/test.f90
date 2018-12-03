@@ -16,7 +16,7 @@ program test_mesh
 
   implicit none
   
-  character(len=*)     , parameter   :: filename = "../rectangle.msh"
+  character(len=*)     , parameter   :: filename = "../square-10.msh"
   class(gmsh_loader)   , allocatable :: gmsh
   class(mesh)          , allocatable :: grid
   class(linear_solver) , allocatable :: solver
@@ -55,6 +55,7 @@ program test_mesh
     allocate(solver, &
          & source      = sor( &
          & FVAssembler = FVMassembler, &
+         & omega       = 1.5d0, &
          & max_tol     = max_tol, &
          & max_it      = max_it, &
          & print_level = print_level))

@@ -24,6 +24,7 @@ module class_sor
      !type(assembler), pointer :: FVAssembler
      class(assembler), allocatable :: FVAssembler
      integer                       :: print_level
+     real(dp)                      :: omega
 
    contains
 
@@ -51,10 +52,11 @@ contains
   ! Constructor for linear solver
   !===================================================================!
   
-  type(sor) function construct(FVAssembler, max_it, &
+  type(sor) function construct(FVAssembler, omega, max_it, &
        & max_tol, print_level) result (this)
 
     type(assembler), intent(in) :: FVAssembler
+    type(real(dp)) , intent(in) :: omega
     type(integer)  , intent(in) :: max_it
     type(real(dp)) , intent(in) :: max_tol
     type(integer)  , intent(in) :: print_level
@@ -63,6 +65,7 @@ contains
     this % max_it      = max_it
     this % max_tol     = max_tol
     this % print_level = print_level
+    this % omega       = omega
 
   end function construct
 
@@ -186,6 +189,7 @@ contains
     real(dp) , allocatable :: b(:)
     real(dp) , allocatable :: Ux(:)
     real(dp) , allocatable :: D(:)
+    real(dp) , allocatable :: Dx(:)
     real(dp) , allocatable :: R(:)
     real(dp) , allocatable :: xnew(:)
     real(dp) , allocatable :: identity(:)
@@ -195,7 +199,7 @@ contains
     real(dp) , allocatable :: Ly(:)
     real(dp) , allocatable :: y(:), ynew(:)
 
-    allocate(b, Ux, D, R, xnew, identity, mold=x)
+    allocate(b, Ux, D, Dx, R, xnew, identity, mold=x)
     allocate(y, ynew, Ly, mold=x)
 
     ! Identity vector
@@ -226,18 +230,19 @@ contains
     iter = 1; tol  = huge(1.0d0);
     do while ((tol .gt. this % max_tol) .and. (iter .lt. this % max_it))
 
-       ! Form the residual (partial) after split
+       ! Form Ux
        call this % FVAssembler % get_jacobian_vector_product(&
             & Ux, x, filter = this % FVAssembler % UPPER_TRIANGLE)
 
-       R = b - Ux
+       ! Form Dx
+       call this % FVAssembler % get_jacobian_vector_product(&
+            & Dx, x, filter = this % FVAssembler % DIAGONAL)
 
-       ! call this % FVAssembler % apply_preconditioner(x, D)
-       ! Invert diagonal
-       !xnew = R/D ! (D+L)^{-1}(b-Ux)       
-
+       ! R = w(b-Ux_k)+(1-w)Dx_k
+       R = this % omega * (b - Ux) + (1.0_dp-this % omega)*Dx
+      
        !--------------------------------------------------------------!
-       ! Solve the linear system: By=R ; (D+L)y=R ;  Dy=R-Ly
+       ! Solve the linear system: By=R ; (D+wL)y=R ;  Dy=R-Ly
        !--------------------------------------------------------------!
        
        solve_lower_triangle: block
@@ -254,7 +259,7 @@ contains
             call this % FVAssembler % get_jacobian_vector_product(&
                  & Ly, y, filter = this % FVAssembler % LOWER_TRIANGLE)
 
-            ynew  = (R - Ly)/D
+            ynew  = (R - this % omega*Ly)/D
             tol2  = norm2(y-ynew)
             
             if (this % print_level .gt. 2) then
@@ -280,7 +285,7 @@ contains
 
     end do
     
-    deallocate(b, Ux, D, R, xnew, identity)
+    deallocate(b, Ux, D, Dx, R, xnew, identity)
     deallocate(y, ynew, Ly)
 
   end subroutine iterate

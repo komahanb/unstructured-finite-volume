@@ -11,7 +11,7 @@ program test_mesh
 
   implicit none
   
-  character(len=*)     , parameter   :: filename = "triangle.msh"
+  character(len=*)     , parameter   :: filename = "../triangle.msh"
   class(gmsh_loader)   , allocatable :: gmsh
   class(mesh)          , allocatable :: grid
   class(assembler)     , allocatable :: FVMAssembler

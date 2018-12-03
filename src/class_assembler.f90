@@ -644,13 +644,21 @@ contains
     write(90, *) 'VARIABLES = "x" "y"  "T"'
 
     !-----------------------------------------------------------------!
-    ! Write Triangles
+    ! Write Triangles/Quads (works only for homogeneous elements)
     !-----------------------------------------------------------------!
 
-    write(90, *) 'ZONE T="Temperature", N=', this % grid % num_vertices, &
-         & ', E=', this % grid % num_cells, &
-         & ', DATAPACKING=POINT, ZONETYPE=FEQUADRILATERAL'
-    
+    if ( max(this % grid % num_cell_vertices) .eq. 4 ) then
+       write(90, *) &
+            & 'ZONE T="Temperature", N=', this % grid % num_vertices, &
+            & ', E=', this % grid % num_cells, &
+            & ', DATAPACKING=POINT, ZONETYPE=FEQUADRILATERAL'
+    else
+       write(90, *) &
+            & 'ZONE T="Temperature", N=', this % grid % num_vertices, &
+            & ', E=', this % grid % num_cells, &
+            & ', DATAPACKING=POINT, ZONETYPE=FETRIANGLE'
+    end if
+
     ! Write vertices
     do i = 1, this % grid % num_vertices
        write(90,*) this % grid % vertices(1:2,i), phiv(i)

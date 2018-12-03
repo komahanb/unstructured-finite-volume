@@ -21,11 +21,11 @@ program test_mesh
     type(string) :: files(5)
     integer      :: ifile
 
-    files(1) = string('rectangle.msh')
-    files(2) = string('square-10.msh')
-    files(3) = string('triangle.msh')
-    files(4) = string('frontal.msh')
-    files(5) = string('delaunay.msh')
+    files(1) = string('../rectangle.msh')
+    files(2) = string('../square-10.msh')
+    files(3) = string('../triangle.msh')
+    files(4) = string('../frontal.msh')
+    files(5) = string('../delaunay.msh')
 
     do ifile = 1, size(files)
        write(*,*) "Testing GMSH Loader with file ", files(ifile) % str
@@ -72,7 +72,7 @@ program test_mesh
 
   test_file_string : block
 
-    character(len=*), parameter :: filename = 'rectangle.msh'
+    character(len=*), parameter :: filename = '../rectangle.msh'
     type(string), allocatable :: lines(:)
     type(file)                :: file_obj
     integer                   :: iline, num_lines

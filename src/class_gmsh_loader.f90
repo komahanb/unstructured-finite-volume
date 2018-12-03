@@ -301,7 +301,7 @@ contains
               if (added .eqv. .true.) then               
                  face_idx = face_idx + 1
                  call set_face_numbers % add_entry([face_idx])
-                 call list_face_tags % add_entry([tokens(5) % asinteger()])                 
+                 call list_face_tags % add_entry([tokens(4) % asinteger()])                 
               end if
               
               ! Triangular element
@@ -310,7 +310,7 @@ contains
               cell_idx = cell_idx + 1
 
               cell_numbers(cell_idx )      = cell_idx
-              cell_tags(cell_idx)          = tokens(5) % asinteger()
+              cell_tags(cell_idx)          = tokens(4) % asinteger()
               cell_vertices(1:3,cell_idx)  = tokens(6:8) % asinteger()
               num_cell_vertices(cell_idx)  = 3
 
@@ -320,7 +320,7 @@ contains
               cell_idx = cell_idx + 1
 
               cell_numbers(cell_idx )      = cell_idx
-              cell_tags(cell_idx)          = tokens(5) % asinteger()
+              cell_tags(cell_idx)          = tokens(4) % asinteger()
               cell_vertices(1:4,cell_idx)  = tokens(6:9) % asinteger()
               num_cell_vertices(cell_idx)  = 4
 

@@ -715,6 +715,7 @@ contains
 
     do concurrent (iface=1:this % num_faces)       
 
+       cells = 0
        cells(1:this % num_face_cells(iface)) = this % face_cells(1:this%num_face_cells(iface),iface)
 
        ! boundary face if not the highest tag

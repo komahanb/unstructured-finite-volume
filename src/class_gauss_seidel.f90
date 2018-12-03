@@ -104,6 +104,11 @@ contains
     allocate(xold(this % FVAssembler % num_state_vars))
     allocate(ss(this % FVAssembler % num_state_vars))
 
+    if (this % print_level .eq. -1) then
+       open(13, file='gs.res', action='write')
+       write(13,*) "iteration ", " residual"
+    end if
+
     update_norm = huge(1.0d0);
     iter = 1;
     outer_iterations: do while (update_norm .gt. this % max_tol)
@@ -120,12 +125,20 @@ contains
        end if
        
        update_norm = norm2(x - xold)
+       if (this % print_level .eq. -1) then
+          write(13, *) iter, update_norm
+       end if
        if (this % print_level .gt. 0) then
           print *, "outer iter", iter, "num_inner_iters", num_inner_iters,  "update norm", update_norm
+          
        end if
        iter = iter + 1
 
     end do outer_iterations
+
+    if (this % print_level .eq. -1) then
+       close(13)
+    end if
 
     deallocate(xold)
     deallocate(ss)

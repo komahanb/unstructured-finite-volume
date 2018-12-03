@@ -518,8 +518,8 @@ contains
     class(assembler), intent(in)  :: this
     real(dp)        , intent(out) :: b(:)
 
-    real(dp) , parameter :: phib = 1.0d0
-
+    ! Homogenous dirichlet boundary conditions
+    real(dp) , parameter :: phib = 0.0d0
     
 !!$    
 !!$    block

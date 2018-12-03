@@ -47,7 +47,7 @@ program test_mesh
 
     real(dp) , parameter   :: max_tol     = 100.0d0*epsilon(1.0d0)
     integer  , parameter   :: max_it      = 100
-    integer  , parameter   :: print_level = 3
+    integer  , parameter   :: print_level = 1
     real(dp) , allocatable :: x(:)
     integer :: i
 
@@ -137,23 +137,5 @@ program test_mesh
   deallocate(FVMAssembler)
 
   contains
-  
-  subroutine print(matrix)
-
-    real(dp), intent(in) :: matrix(:,:)
-    integer :: i, j, m, n
-
-    m = size(matrix, 1)
-    n = size(matrix, 2)
-
-    do i = 1, min(10,m)
-       write(*,'(100g15.1)') (matrix(i,j),j=1,min(10,n))
-    end do
-
-!!$    do i = 1, m
-!!$       print *, sum(matrix(:,i))
-!!$    end do
-
-  end subroutine print
 
 end program test_mesh

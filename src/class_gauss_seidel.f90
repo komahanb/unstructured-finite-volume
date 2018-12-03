@@ -147,7 +147,6 @@ contains
     real(dp) :: tol
     real(dp) , allocatable :: b(:)
     real(dp) , allocatable :: Ux(:)
-    real(dp) , allocatable :: Lx(:)
     real(dp) , allocatable :: D(:)
     real(dp) , allocatable :: R(:)
     real(dp) , allocatable :: xnew(:)
@@ -155,7 +154,11 @@ contains
 
     real(dp) :: bnorm
 
-    allocate(b, Ux, Lx, D, R, xnew, identity, mold=x)
+    real(dp) , allocatable :: Ly(:)
+    real(dp) , allocatable :: y(:), ynew(:)
+
+    allocate(b, Ux, D, R, xnew, identity, mold=x)
+    allocate(y, ynew, Ly, mold=x)
 
     ! Identity vector
     identity = 1.0d0
@@ -204,26 +207,30 @@ contains
          real(dp) :: tol2
          integer :: iter2
 
+         ! Initial guess is the current solution
+         y = x
+
          iter2 = 1; tol2 = huge(1.0d0)
          do while ((tol2 .gt. this % max_tol) .and. (iter2 .lt. this % max_it))
 
             call this % FVAssembler % get_jacobian_vector_product(&
-                 & Lx, x, filter = this % FVAssembler % LOWER_TRIANGLE)
+                 & Ly, y, filter = this % FVAssembler % LOWER_TRIANGLE)
 
-            xnew  = (R - Lx)/D
-            tol2  = norm2(x-xnew)
+            ynew  = (R - Ly)/D
+            tol2  = norm2(y-ynew)
             
             if (this % print_level .gt. 2) then
                write(*,*) "inner (2)", iter2, tol2
             end if
             
-            x = xnew
+            y = ynew
             iter2 = iter2 + 1
 
          end do
          
        end block solve_lower_triangle
        
+       xnew = y 
        tol = norm2(x-xnew)
        
        if (this % print_level .gt. 1) then
@@ -235,7 +242,8 @@ contains
 
     end do
     
-    deallocate(b, Ux, Lx, D, R, xnew, identity)
+    deallocate(b, Ux, D, R, xnew, identity)
+    deallocate(y, ynew, Ly)
 
   end subroutine iterate
 

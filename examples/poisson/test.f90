@@ -18,7 +18,7 @@ program test_mesh
   implicit none
 
 !!$  
-!!$  type(string)         , parameter   :: fname = string("square-10.msh")
+!!$  type(string)         , parameter   :: fname = string("square-40.msh")
 
   character(len=*)     , parameter   :: filename = "square-10.msh"
   class(gmsh_loader)   , allocatable :: gmsh
@@ -54,8 +54,9 @@ program test_mesh
 
     real(dp) , parameter   :: max_tol     = 100.0d0*epsilon(1.0d0)
     integer  , parameter   :: max_it      = 100
-    integer  , parameter   :: print_level = 1
-    real(dp) , allocatable :: x(:)
+    integer  , parameter   :: print_level = -1
+    real(dp) , allocatable :: x(:), exact(:), error(:)
+    real(dp) :: rmse
     integer :: i
 
     allocate(solver, &
@@ -75,23 +76,39 @@ program test_mesh
     ! Writes the mesh for tecplot
     call FVMassembler % write_solution("poission-cg-10.dat", x)
 
+    call get_exact_solution(FVMassembler, exact)
+    call FVMassembler % write_solution("poission-exact-10.dat", exact)
+
+    call FVMassembler % create_vector(error)
+    error = exact-x
+    call FVMassembler % write_solution("poission-error-10.dat", error)
+
+    rmse = sqrt(sum(error**2.0d0)/dble(FVMassembler % num_state_vars))
+    print *, "rmse", rmse
+
     deallocate(x)   
+    deallocate(exact)
+    deallocate(error)
     deallocate(solver)
     
   end block cg_solver
+
+  stop
+
+
 
   sor_solver : block
 
     real(dp) , parameter   :: max_tol     = 100.0d0*epsilon(1.0d0)
     integer  , parameter   :: max_it      = 100
-    integer  , parameter   :: print_level = 1
+    integer  , parameter   :: print_level = -1
     real(dp) , allocatable :: x(:)
     integer :: i
 
     allocate(solver, &
          & source      = sor( &
          & FVAssembler = FVMassembler, &
-         & omega       = 1.5d0, &
+         & omega       = 1.8545d0, &
          & max_tol     = max_tol, &
          & max_it      = max_it, &
          & print_level = print_level))
@@ -104,7 +121,7 @@ program test_mesh
     end do
 
     ! Writes the mesh for tecplot
-    call FVMassembler % write_solution("poission-sor-10.dat", x)
+    call FVMassembler % write_solution("poission-sor-40.dat", x)
 
     deallocate(x)   
     deallocate(solver)
@@ -115,7 +132,7 @@ program test_mesh
 
     real(dp) , parameter   :: max_tol     = 100.0d0*epsilon(1.0d0)
     integer  , parameter   :: max_it      = 100
-    integer  , parameter   :: print_level = 1
+    integer  , parameter   :: print_level = -1
     real(dp) , allocatable :: x(:)
     integer :: i
 
@@ -134,7 +151,7 @@ program test_mesh
     end do
 
     ! Writes the mesh for tecplot
-    call FVMassembler % write_solution("poission-seidel-10.dat", x)
+    call FVMassembler % write_solution("poission-seidel-40.dat", x)
 
     deallocate(x)   
     deallocate(solver)
@@ -145,7 +162,7 @@ program test_mesh
 
     real(dp) , parameter   :: max_tol     = 100.0d0*epsilon(1.0d0)
     integer  , parameter   :: max_it      = 100
-    integer  , parameter   :: print_level = 1
+    integer  , parameter   :: print_level = -1
     real(dp) , allocatable :: x(:)
     integer :: i
 
@@ -164,13 +181,14 @@ program test_mesh
     end do
 
     ! Writes the mesh for tecplot
-    call FVMassembler % write_solution("poission-jacobi-10.dat", x)
+    call FVMassembler % write_solution("poission-jacobi-40.dat", x)
 
     deallocate(x)   
     deallocate(solver)
     
   end block jacobi_solver
 
+!!$
 !!$  ! Exact solution for homogenous poisson equation
 !!$  exact: block
 !!$
@@ -179,13 +197,49 @@ program test_mesh
 !!$  ! Compute the root mean square error
 !!$  rmse: block
 !!$
+!!$    rmse = sqrt(sum(error**2.0d0)/dble(ncells))
 !!$  end block rmse
-!!$  
+  
 !!$  write(*,*) ncells, error
-
+  
   deallocate(grid)
   deallocate(FVMAssembler)
+  
+contains
 
-  contains
+  subroutine get_exact_solution(FVAssembler, exact)
 
-end program test_mesh
+    ! Arguments
+    class(assembler)      , intent(in)  :: FVAssembler
+    real(dp), allocatable , intent(out) :: exact(:)
+
+    ! Locals
+    real(dp), parameter :: PI = 4.0d0*atan(1.0d0)
+    real(dp), parameter :: alpha = 16.0d0/(PI**4.0d0)
+    integer     :: icell, ii, jj, mm, nn
+    real(dp)    :: x(2)
+
+    ! Allocate space for exact solution
+    call FVAssembler % create_vector(exact, 0.0d0)
+
+    loop_cells: do icell = 1, FVAssembler % num_state_vars
+
+       ! Get the cell center vertex coordinates
+       x = FVAssembler % grid % cell_centers(1:2,icell)
+
+       ! Exact solution as a function of coordinate
+       do ii = 0, 9
+          do jj = 0, 9
+             mm = 2*ii+1
+             nn = 2*jj+1
+             exact(icell) = exact(icell) + &
+                  & alpha*sin(dble(mm)*x(1)*pi) *sin(dble(nn)*x(2)*pi) &
+                  &/(dble(mm*nn)*dble(mm**2+nn**2))
+          end do
+       end do
+
+    end do loop_cells
+
+  end subroutine get_exact_solution
+
+end program

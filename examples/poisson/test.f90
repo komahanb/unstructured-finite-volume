@@ -20,7 +20,7 @@ program test_mesh
 !!$  
 !!$  type(string)         , parameter   :: fname = string("square-40.msh")
 
-  character(len=*)     , parameter   :: filename = "square-10.msh"
+  character(len=*)     , parameter   :: filename = "square-40.msh"
   class(gmsh_loader)   , allocatable :: gmsh
   class(mesh)          , allocatable :: grid
   class(linear_solver) , allocatable :: solver
@@ -47,7 +47,7 @@ program test_mesh
     ! allocate(FVMAssembler, source = assembler(grid,physics_list)) 
     ! physics with tags Assembler combines Geometry and Physics ( EQNS
     ! + BC) to provide linear/nonlinear systems
-
+    
   end block assembly
 
   cg_solver : block
@@ -55,9 +55,11 @@ program test_mesh
     real(dp) , parameter   :: max_tol     = 100.0d0*epsilon(1.0d0)
     integer  , parameter   :: max_it      = 100
     integer  , parameter   :: print_level = -1
-    real(dp) , allocatable :: x(:), exact(:), error(:)
+    real(dp) , allocatable :: fhatc(:), fhatf(:), fhatv(:)
+    real(dp) , allocatable :: fc(:), ff(:), fv(:)
+    real(dp) , allocatable :: ec(:), ef(:), ev(:)
     real(dp) :: rmse
-    integer :: i
+    integer  :: i, npts
 
     allocate(solver, &
          & source      = conjugate_gradient( &
@@ -67,35 +69,62 @@ program test_mesh
          & print_level = print_level))
 
     ! Solve using solver method
-    call solver % solve(x)
+    call solver % solve(fhatc)
     print *, 'cg solution = '
-    do i = 1, min(10, size(x))
-       print *, i,  x(i)
+    do i = 1, min(10, size(fhatc))
+       print *, i,  fhatc(i)
     end do
 
     ! Writes the mesh for tecplot
-    call FVMassembler % write_solution("poission-cg-10.dat", x)
+    call FVMassembler % write_solution("poission-cg-40.dat", fhatc)
+    call FVMAssembler % evaluate_vertex_flux(fhatv, fhatc)
+    call FVMAssembler % evaluate_face_flux(fhatf, fhatc)
+    
+    ! Get exact cell center values of solution
+    call get_exact_solution(ff, FVMAssembler % grid % face_centers(1:2,:))
+    call get_exact_solution(fc, FVMAssembler % grid % cell_centers(1:2,:))
+    call get_exact_solution(fv, FVMAssembler % grid % vertices(1:2,:))
+    
+    print *, "num_faces      ", FVMAssembler % grid % num_faces
+    print *, "num_cells      ", FVMAssembler % grid % num_cells
+    print *, "num_vertices   ", FVMAssembler % grid % num_vertices
+    print *, "num_state_vars ", FVMAssembler % num_state_vars
 
-    call get_exact_solution(FVMassembler, exact)
-    call FVMassembler % write_solution("poission-exact-10.dat", exact)
+    npts = FVMAssembler % grid % num_cells &
+         & + FVMAssembler % grid % num_vertices  &
+         & + FVMAssembler % grid % num_faces
 
-    call FVMassembler % create_vector(error)
-    error = exact-x
-    call FVMassembler % write_solution("poission-error-10.dat", error)
+    rmse =  sum(abs(fv-fhatv)**2)
+    !rmse = rmse + sum(abs(ff-fhatf)**2)
+    !rmse = rmse + sum(abs(fc-fhatc)**2)
+    rmse = sqrt(rmse/dble(FVMAssembler % grid % num_vertices))
 
-    rmse = sqrt(sum(error**2.0d0)/dble(FVMassembler % num_state_vars))
-    print *, "rmse", rmse
+    print *, "rmse = ", rmse
+    print *, "cell volume = ", &
+         & sum(FVMAssembler % grid % cell_volumes)/dble(FVMAssembler % grid % num_cells), &
+         & minval(FVMAssembler % grid % cell_volumes), &
+         & maxval(FVMAssembler % grid % cell_volumes)
+    
+!!$
+!!$    rmse = sqrt(&
+!!$         & sum(abs(fc-fhatc)**2) + sum(abs(ff-fhatf)**2) + sum(abs(fv-fhatv)**2)&
+!!$         & /dble(npts) &
+!!$         & )
 
-    deallocate(x)   
-    deallocate(exact)
-    deallocate(error)
+!!$    call FVMassembler % create_vector(error)
+!!$    error = abs(exact-x)
+!!$    call FVMassembler % write_solution("poission-error-40.dat", error)
+!!$
+!!$    rmse = sqrt(sum(error**2.0d0)/dble(FVMassembler % num_state_vars))
+!!$    print *, "rmse cell center", rmse, rmse_vertices
+
+    deallocate(fhatc, fhatv, fhatf)
+    deallocate(fc, fv, ff)
     deallocate(solver)
     
   end block cg_solver
 
   stop
-
-
 
   sor_solver : block
 
@@ -207,38 +236,36 @@ program test_mesh
   
 contains
 
-  subroutine get_exact_solution(FVAssembler, exact)
+  subroutine get_exact_solution(fexact, x)
 
     ! Arguments
-    class(assembler)      , intent(in)  :: FVAssembler
-    real(dp), allocatable , intent(out) :: exact(:)
+    real(dp)              , intent(in)  :: x(:,:)
+    real(dp), allocatable , intent(out) :: fexact(:)
 
     ! Locals
     real(dp), parameter :: PI = 4.0d0*atan(1.0d0)
     real(dp), parameter :: alpha = 16.0d0/(PI**4.0d0)
-    integer     :: icell, ii, jj, mm, nn
-    real(dp)    :: x(2)
+    integer  :: i, ii, jj, mm, nn, npts
+            
+    npts = size(x, dim=2)
+    allocate(fexact(npts))
+    fexact = 0.0d0
 
-    ! Allocate space for exact solution
-    call FVAssembler % create_vector(exact, 0.0d0)
+    ! Exact solution as a function of coordinate
+    do i = 1, npts
 
-    loop_cells: do icell = 1, FVAssembler % num_state_vars
-
-       ! Get the cell center vertex coordinates
-       x = FVAssembler % grid % cell_centers(1:2,icell)
-
-       ! Exact solution as a function of coordinate
-       do ii = 0, 9
-          do jj = 0, 9
+       ! Evalute f(x) as a summation
+       do ii = 0, 99
+          do jj = 0, 99
              mm = 2*ii+1
              nn = 2*jj+1
-             exact(icell) = exact(icell) + &
-                  & alpha*sin(dble(mm)*x(1)*pi) *sin(dble(nn)*x(2)*pi) &
+             fexact(i) = fexact(i) + &
+                  & alpha*sin(dble(mm)*x(1,i)*pi) *sin(dble(nn)*x(2,i)*pi) &
                   &/(dble(mm*nn)*dble(mm**2+nn**2))
           end do
        end do
 
-    end do loop_cells
+    end do
 
   end subroutine get_exact_solution
 

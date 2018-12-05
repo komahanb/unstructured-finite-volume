@@ -18,7 +18,7 @@ program test_mesh
   implicit none
 
 !!$  
-!!$  type(string)         , parameter   :: fname = string("square-40.msh")
+!!$  type(string)         , parameter   :: fname = string("rectangle-40.msh")
 
   character(len=*)     , parameter   :: filename = "square-40.msh"
   class(gmsh_loader)   , allocatable :: gmsh
@@ -84,7 +84,12 @@ program test_mesh
     call get_exact_solution(ff, FVMAssembler % grid % face_centers(1:2,:))
     call get_exact_solution(fc, FVMAssembler % grid % cell_centers(1:2,:))
     call get_exact_solution(fv, FVMAssembler % grid % vertices(1:2,:))
-    
+
+    ! Write tecplot output of error
+    call FVMassembler % create_vector(ec)
+    ec = abs(fc-fhatc)
+    call FVMassembler % write_solution("poission-ec-40.dat", ec)
+
     print *, "num_faces      ", FVMAssembler % grid % num_faces
     print *, "num_cells      ", FVMAssembler % grid % num_cells
     print *, "num_vertices   ", FVMAssembler % grid % num_vertices
@@ -110,10 +115,8 @@ program test_mesh
 !!$         & sum(abs(fc-fhatc)**2) + sum(abs(ff-fhatf)**2) + sum(abs(fv-fhatv)**2)&
 !!$         & /dble(npts) &
 !!$         & )
+    
 
-!!$    call FVMassembler % create_vector(error)
-!!$    error = abs(exact-x)
-!!$    call FVMassembler % write_solution("poission-error-40.dat", error)
 !!$
 !!$    rmse = sqrt(sum(error**2.0d0)/dble(FVMassembler % num_state_vars))
 !!$    print *, "rmse cell center", rmse, rmse_vertices
@@ -216,20 +219,6 @@ program test_mesh
     deallocate(solver)
     
   end block jacobi_solver
-
-!!$
-!!$  ! Exact solution for homogenous poisson equation
-!!$  exact: block
-!!$
-!!$  end block exact
-!!$
-!!$  ! Compute the root mean square error
-!!$  rmse: block
-!!$
-!!$    rmse = sqrt(sum(error**2.0d0)/dble(ncells))
-!!$  end block rmse
-  
-!!$  write(*,*) ncells, error
   
   deallocate(grid)
   deallocate(FVMAssembler)

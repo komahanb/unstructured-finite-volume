@@ -633,14 +633,15 @@ contains
     allocate(this % face_cell_weights(2, this % num_faces))
     do concurrent (iface = 1 : this % num_faces)
 
+       ! first cell is found for all faces
        cellindex1   = this % face_cells(1, iface)
        xcellcenter1 = this % cell_centers(:, cellindex1)
        xfacecenter  = this % face_centers(:,iface)       
        d1           = distance(xcellcenter1, xfacecenter)
        dinv1        = 1.0_dp/d1
-
-       ! Extract the second cell if this is not a boundary face
-       if (this % face_tags(iface) .eq. maxval(this % tag_numbers)) then
+       
+       ! Extract the second cell if this is not a boundary face/hole
+       if (this % num_face_cells(iface) .ne. 1) then
           cellindex2   = this % face_cells(2, iface)
           xcellcenter2 = this % cell_centers(:, cellindex2)
           d2           = distance(xcellcenter2, xfacecenter)
@@ -724,7 +725,12 @@ contains
           this % lvec(:,iface) = this % face_centers(:,iface) - this % cell_centers(:,cells(1))        
        else
           ! Interior face; subtract neighbouring cell centers (not sure which orientation)
-          this % lvec(:,iface) = this % cell_centers(:,cells(2)) - this % cell_centers(:,cells(1))          
+          if (this % num_face_cells(iface) .eq. 1) then
+             ! Accounts for internal holes
+             this % lvec(:,iface) = this % face_centers(:,iface) - this % cell_centers(:,cells(1))
+          else            
+             this % lvec(:,iface) = this % cell_centers(:,cells(2)) - this % cell_centers(:,cells(1))
+          end if
        end if
 
     end do

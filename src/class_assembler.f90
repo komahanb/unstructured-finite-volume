@@ -519,6 +519,10 @@ contains
     real(dp)        , intent(out) :: b(:)
 
     ! Homogenous dirichlet boundary conditions
+    real(dp) , parameter :: phi_left   = 1.0d0
+    real(dp) , parameter :: phi_right  = 0.0d0
+    real(dp) , parameter :: phi_top    = 0.0d0
+    real(dp) , parameter :: phi_bottom = 0.0d0
     real(dp) , parameter :: phib = 0.0d0
     
 !!$    
@@ -610,7 +614,7 @@ contains
 
     real(dp), intent(in) :: x(3)
 
-    evaluate_source = -1.0d0 !sin(x(1)) + cos(x(2))
+    evaluate_source = 0.0d0 !-1.0d0 !sin(x(1)) + cos(x(2))
 
   end function evaluate_source
   

@@ -16,7 +16,7 @@ program test_mesh
 
   implicit none
   
-  character(len=*)     , parameter   :: filename = "../square-10.msh"
+  character(len=*)     , parameter   :: filename = "../airfoil.msh"
   class(gmsh_loader)   , allocatable :: gmsh
   class(mesh)          , allocatable :: grid
   class(linear_solver) , allocatable :: solver
@@ -43,97 +43,97 @@ program test_mesh
     ! + BC) to provide linear/nonlinear systems
 
   end block assembly
-
-  sor_solver : block
-
-    real(dp) , parameter   :: max_tol     = 100.0d0*epsilon(1.0d0)
-    integer  , parameter   :: max_it      = 100
-    integer  , parameter   :: print_level = 1
-    real(dp) , allocatable :: x(:)
-    integer :: i
-
-    allocate(solver, &
-         & source      = sor( &
-         & FVAssembler = FVMassembler, &
-         & omega       = 1.5d0, &
-         & max_tol     = max_tol, &
-         & max_it      = max_it, &
-         & print_level = print_level))
-
-    ! Solve using Seidel method
-    call solver % solve(x)
-    print *, 'sor solution = '
-    do i = 1, min(10, size(x))
-       print *, i,  x(i)
-    end do
-
-    ! Writes the mesh for tecplot
-    call FVMassembler % write_solution("mesh-sor.dat", x)
-
-    deallocate(x)   
-    deallocate(solver)
-    
-  end block sor_solver
-  
-  seidel_solver : block
-
-    real(dp) , parameter   :: max_tol     = 100.0d0*epsilon(1.0d0)
-    integer  , parameter   :: max_it      = 100
-    integer  , parameter   :: print_level = 1
-    real(dp) , allocatable :: x(:)
-    integer :: i
-
-    allocate(solver, &
-         & source      = gauss_seidel( &
-         & FVAssembler = FVMassembler, &
-         & max_tol     = max_tol, &
-         & max_it      = max_it, &
-         & print_level = print_level))
-
-    ! Solve using Seidel method
-    call solver % solve(x)
-    print *, 'seidel solution = '
-    do i = 1, min(10, size(x))
-       print *, i,  x(i)
-    end do
-
-    ! Writes the mesh for tecplot
-    call FVMassembler % write_solution("mesh-seidel.dat", x)
-
-    deallocate(x)   
-    deallocate(solver)
-    
-  end block seidel_solver
-
-  jacobi_solver : block
-
-    real(dp) , parameter   :: max_tol     = 100.0d0*epsilon(1.0d0)
-    integer  , parameter   :: max_it      = 100
-    integer  , parameter   :: print_level = 1
-    real(dp) , allocatable :: x(:)
-    integer :: i
-
-    allocate(solver, &
-         & source      = gauss_jacobi( &
-         & FVAssembler = FVMassembler, &
-         & max_tol     = max_tol, &
-         & max_it      = max_it, &
-         & print_level = print_level))
-
-    ! Solve using Jacobi method
-    call solver % solve(x)
-    print *, 'jacobi solution = '
-    do i = 1, min(10, size(x))
-       print *, i,  x(i)
-    end do
-
-    ! Writes the mesh for tecplot
-    call FVMassembler % write_solution("mesh-jacobi.dat", x)
-
-    deallocate(x)   
-    deallocate(solver)
-    
-  end block jacobi_solver
+!!$
+!!$  sor_solver : block
+!!$
+!!$    real(dp) , parameter   :: max_tol     = 100.0d0*epsilon(1.0d0)
+!!$    integer  , parameter   :: max_it      = 100
+!!$    integer  , parameter   :: print_level = 1
+!!$    real(dp) , allocatable :: x(:)
+!!$    integer :: i
+!!$
+!!$    allocate(solver, &
+!!$         & source      = sor( &
+!!$         & FVAssembler = FVMassembler, &
+!!$         & omega       = 1.5d0, &
+!!$         & max_tol     = max_tol, &
+!!$         & max_it      = max_it, &
+!!$         & print_level = print_level))
+!!$
+!!$    ! Solve using Seidel method
+!!$    call solver % solve(x)
+!!$    print *, 'sor solution = '
+!!$    do i = 1, min(10, size(x))
+!!$       print *, i,  x(i)
+!!$    end do
+!!$
+!!$    ! Writes the mesh for tecplot
+!!$    call FVMassembler % write_solution("mesh-sor.dat", x)
+!!$
+!!$    deallocate(x)   
+!!$    deallocate(solver)
+!!$    
+!!$  end block sor_solver
+!!$  
+!!$  seidel_solver : block
+!!$
+!!$    real(dp) , parameter   :: max_tol     = 100.0d0*epsilon(1.0d0)
+!!$    integer  , parameter   :: max_it      = 100
+!!$    integer  , parameter   :: print_level = 1
+!!$    real(dp) , allocatable :: x(:)
+!!$    integer :: i
+!!$
+!!$    allocate(solver, &
+!!$         & source      = gauss_seidel( &
+!!$         & FVAssembler = FVMassembler, &
+!!$         & max_tol     = max_tol, &
+!!$         & max_it      = max_it, &
+!!$         & print_level = print_level))
+!!$
+!!$    ! Solve using Seidel method
+!!$    call solver % solve(x)
+!!$    print *, 'seidel solution = '
+!!$    do i = 1, min(10, size(x))
+!!$       print *, i,  x(i)
+!!$    end do
+!!$
+!!$    ! Writes the mesh for tecplot
+!!$    call FVMassembler % write_solution("mesh-seidel.dat", x)
+!!$
+!!$    deallocate(x)   
+!!$    deallocate(solver)
+!!$    
+!!$  end block seidel_solver
+!!$
+!!$  jacobi_solver : block
+!!$
+!!$    real(dp) , parameter   :: max_tol     = 100.0d0*epsilon(1.0d0)
+!!$    integer  , parameter   :: max_it      = 100
+!!$    integer  , parameter   :: print_level = 1
+!!$    real(dp) , allocatable :: x(:)
+!!$    integer :: i
+!!$
+!!$    allocate(solver, &
+!!$         & source      = gauss_jacobi( &
+!!$         & FVAssembler = FVMassembler, &
+!!$         & max_tol     = max_tol, &
+!!$         & max_it      = max_it, &
+!!$         & print_level = print_level))
+!!$
+!!$    ! Solve using Jacobi method
+!!$    call solver % solve(x)
+!!$    print *, 'jacobi solution = '
+!!$    do i = 1, min(10, size(x))
+!!$       print *, i,  x(i)
+!!$    end do
+!!$
+!!$    ! Writes the mesh for tecplot
+!!$    call FVMassembler % write_solution("mesh-jacobi.dat", x)
+!!$
+!!$    deallocate(x)   
+!!$    deallocate(solver)
+!!$    
+!!$  end block jacobi_solver
 
   cg_solver : block
 

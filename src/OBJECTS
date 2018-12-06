@@ -1,5 +1,6 @@
 objects= \
 interface_physics.o \
+interface_assembler.o \
 utils.o \
 class_string.o \
 class_file.o \

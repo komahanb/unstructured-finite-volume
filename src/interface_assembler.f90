@@ -45,6 +45,8 @@ module interface_assembler
      ! Default finite difference jacobian implementation
      procedure :: add_jacobian => add_jacobian_fd
 
+     procedure :: create_vector
+
   end type assembler
 
   !===================================================================!
@@ -237,4 +239,20 @@ contains
 
   end subroutine add_jacobian_fd
 
+  !===================================================================!
+  ! Create a state vector and sets values if a scalar is supplied
+  !===================================================================!
+
+  subroutine create_vector(this, x, val)
+    
+    class(assembler), intent(in)               :: this
+    real(dp)        , intent(out), allocatable :: x(:)
+    real(dp)        , intent(in) , optional    :: val
+    
+    if (allocated(x)) error stop "vector already allocated"
+    allocate(x(this % num_state_vars))
+    if (present(val))  x = val
+    
+  end subroutine create_vector
+  
 end module interface_assembler

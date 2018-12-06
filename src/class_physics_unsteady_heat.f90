@@ -14,7 +14,6 @@ module class_physics_unsteady_heat
   implicit none
 
   private
-
   public :: unsteady_heat
 
   !-------------------------------------------------------------------!

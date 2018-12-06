@@ -1,17 +1,24 @@
+!=====================================================================!
+! Class that coodinates tasks of discretiztion, mesh and physics
+! 
+! Author: Komahan Boopathy
+!=====================================================================!
+
 module class_assembler
 
   ! import dependencies
   use iso_fortran_env, only : dp => REAL64
   use class_mesh, only : mesh
-  
+  use interface_physics, only : physics
+
   implicit none
 
   private
   public :: assembler
 
   !===================================================================!
-  ! Class responsible for matrix, right hand side assembly and boundary
-  ! conditions
+  ! Class responsible for matrix, right hand side assembly and
+  ! boundary conditions
   !===================================================================!
 
   type :: assembler
@@ -22,7 +29,7 @@ module class_assembler
      ! Mesh object
      ! type(mesh), pointer :: grid
      class(mesh)   , allocatable :: grid
-     !class(physics), allocatable :: system(:) ! poisson on \Omega, dirichlet on dOmega1 , dirchlet dOmega3 , dirichlet, Neumann dOmega4 
+     class(physics), allocatable :: system ! poisson on \Omega, dirichlet on dOmega1 , dirchlet dOmega3 , dirichlet, Neumann dOmega4 
 
      ! Number of state varibles 
      integer :: num_state_vars
@@ -67,27 +74,31 @@ contains
   ! Constructor for physics
   !===================================================================!
   
-  type(assembler) function construct(grid) result (this)
+  type(assembler) function construct(grid, system) result (this)
 
-    type(mesh), intent(in) :: grid
+    class(mesh)   , intent(in) :: grid
+    class(physics), intent(in) :: system
 
     print *, "constructing assembler"
 
     ! Set mesh
     allocate(this % grid, source  = grid)
-    call this % grid % to_string()
+
+    ! Set physics to assemble
+    allocate(this % grid, source  = grid)
 
     ! Non symmetric jacobian
     this % symmetry = .true.
 
     ! Determine the number of state variables to solve based on the
     ! mesh. In FVM it is the number of cells present.
-    this % num_state_vars = this % grid % num_cells
+    this % num_state_vars = this % grid % num_cells * this % system % get_num_state_vars()
 
     ! Allocate the flux vector
     allocate(this % phi(this % num_state_vars))
     this % phi = 0
 
+    ! Filters for matrix assembly (used by solvers)
     this % DIAGONAL       = 0
     this % LOWER_TRIANGLE = -1
     this % UPPER_TRIANGLE = 1

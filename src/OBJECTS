@@ -1,4 +1,5 @@
 objects= \
+interface_physics.o \
 utils.o \
 class_string.o \
 class_file.o \
@@ -14,5 +15,4 @@ class_conjugate_gradient.o \
 class_gauss_jacobi.o \
 class_gauss_seidel.o \
 class_sor.o \
-interface_physics.o \
 class_physics_unsteady_heat.o

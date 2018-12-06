@@ -99,7 +99,10 @@ contains
     ! Initial guess vector for the subspace is "b"
     allocate(x(this % FVAssembler % num_state_vars))
     call this % FVAssembler % get_source(x)
-    if (norm2(x) .lt. epsilon(1.0_dp)) error stop
+    if (norm2(x) .lt. epsilon(1.0_dp)) then
+       print *, 'zero rhs? stopping'
+       error stop
+    end if
 
     allocate(xold(this % FVAssembler % num_state_vars))
     allocate(ss(this % FVAssembler % num_state_vars))

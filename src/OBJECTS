@@ -10,6 +10,7 @@ class_gmsh_loader.o \
 module_mesh_utils.o \
 class_mesh.o \
 class_assembler.o \
+class_finite_volume_assembler.o \
 interface_linear_solver.o \
 class_conjugate_gradient.o \
 class_gauss_jacobi.o \

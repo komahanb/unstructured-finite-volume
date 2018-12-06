@@ -529,7 +529,7 @@ contains
     real(dp) , parameter :: phi_right  = 0.0d0
     real(dp) , parameter :: phi_top    = 0.0d0
     real(dp) , parameter :: phi_bottom = 0.0d0
-    real(dp) , parameter :: phib = 0.0d0
+    real(dp) , parameter :: phib = 1.0d0
     
 !!$    
 !!$    block

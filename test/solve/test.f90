@@ -16,7 +16,7 @@ program test_mesh
 
   implicit none
   
-  character(len=*)     , parameter   :: filename = "../airfoil.msh"
+  character(len=*)     , parameter   :: filename = "../rectangle.msh"
   class(gmsh_loader)   , allocatable :: gmsh
   class(mesh)          , allocatable :: grid
   class(linear_solver) , allocatable :: solver

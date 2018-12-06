@@ -7,20 +7,19 @@
 
 module nonlinear_algebra
 
-  ! import dependencies
-  use iso_fortran_env           , only : dp => REAL64
-  use dynamic_physics_interface , only : dynamics
-  use utils                     , only : norm
+  ! Import dependencies
+  use iso_fortran_env   , only : dp => REAL64
+  use interface_physics , only : dynamics
+  use utils             , only : norm
 
-  ! disable implicit datatypes
+  ! Disable implicit datatypes
   implicit none
 
   ! Define constants used  
-  real(dp) :: abs_res_tol          = 1.0d-14
-  real(dp) :: rel_res_tol          = 1.0d-10
-
-  integer  :: max_newton_iters     = 15
-  integer  :: print_level          = 0
+  real(dp) :: abs_res_tol = 1.0d-14
+  real(dp) :: rel_res_tol = 1.0d-10
+  integer  :: max_newton_iters = 15
+  integer  :: print_level = 0
   
   public :: solve
 

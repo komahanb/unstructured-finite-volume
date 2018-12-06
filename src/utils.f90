@@ -478,7 +478,7 @@ contains
 
     integer, intent(in) :: n
     real(dp)    :: eye(n,n)
-    integer     :: i, j
+    integer     :: i
 
     ! generate a zero matrix
     eye = 0.0_dp

@@ -20,7 +20,7 @@ install:
 	mv *.mod ../lib
 
 clean:
-	@rm -f ../lib/*.o ../lib/*.mod ../lib/*.so ../lib/*.a
+	@rm -f ../lib/*.o ../lib/*.mod ../lib/*.so ../lib/*.a *.mod *.o
 
 #=====================================================================#
 # Rule

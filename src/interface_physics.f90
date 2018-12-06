@@ -7,7 +7,7 @@
 ! Author: Komahan Boopathy
 !=====================================================================!
 
-module physics_interface
+module interface_physics
 
   use iso_fortran_env, only : dp => REAL64
   implicit none
@@ -22,6 +22,7 @@ module physics_interface
   type, abstract :: physics
 
      type(character(len=:)), allocatable :: description
+
      type(integer) :: num_state_vars
      type(logical) :: approximate_jacobian
      type(integer) :: differential_order
@@ -236,4 +237,4 @@ contains
 
   end subroutine add_jacobian_fd
 
-end module physics_interface
+end module interface_physics

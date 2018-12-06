@@ -14,5 +14,4 @@ class_conjugate_gradient.o \
 class_gauss_jacobi.o \
 class_gauss_seidel.o \
 class_sor.o \
-physics_interface.o \
-nonlinear.o
+interface_physics.o 

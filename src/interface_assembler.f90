@@ -36,6 +36,7 @@ module interface_assembler
      
      ! Assembler knows the size of state array
      procedure :: create_vector
+     procedure :: create_state
 
      ! Provided procedures
      procedure :: get_num_state_vars, set_num_state_vars

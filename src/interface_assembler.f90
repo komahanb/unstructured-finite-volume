@@ -9,7 +9,7 @@
 
 module interface_assembler
 
-  use iso_fortran_env, only : dp => REAL64
+  use iso_fortran_env  , only : dp => REAL64
   implicit none
   
   private
@@ -33,6 +33,9 @@ module interface_assembler
      procedure(add_residual_interface)               , deferred :: add_residual
      procedure(add_jacobian_vector_product_interface), deferred :: add_jacobian_vector_product
      procedure(add_initial_condition_interface)      , deferred :: add_initial_condition
+     
+     ! Assembler knows the size of state array
+     procedure :: create_vector
 
      ! Provided procedures
      procedure :: get_num_state_vars, set_num_state_vars
@@ -41,11 +44,6 @@ module interface_assembler
      ! Defined procedures
      procedure :: get_differential_order
      procedure :: set_differential_order
-
-     ! Default finite difference jacobian implementation
-     procedure :: add_jacobian => add_jacobian_fd
-
-     procedure :: create_vector
 
   end type assembler
 
@@ -59,14 +57,13 @@ module interface_assembler
      ! Interface for residual assembly R(U,xi)
      !================================================================!
 
-     impure subroutine add_residual_interface(this, residual, U, xi)
+     impure subroutine add_residual_interface(this, residual, filter)
 
        import :: assembler
 
-       class(assembler), intent(in)    :: this
-       type(scalar)  , intent(inout) :: residual(:)
-       type(scalar)  , intent(in)    :: U(:,:)
-       type(scalar)  , intent(in)    :: xi(:)
+       class(assembler), intent(in)           :: this
+       type(scalar)    , intent(inout)        :: residual(:)
+       type(integer)   , intent(in), optional :: filter
 
      end subroutine add_residual_interface
 
@@ -75,17 +72,15 @@ module interface_assembler
      ! ble vector pdt <---- [scalar(i)*dR(U,X)/dU(i)]*vec
      !================================================================!
      
-     impure subroutine add_jacobian_vector_product_interface(this, pdt, vec, &
-          & scalars, U, xi)
+     impure subroutine add_jacobian_vector_product_interface(this, pdt, vec, scalars, filter)
 
        import :: assembler
 
        class(assembler) , intent(in)    :: this
-       type(scalar)   , intent(inout) :: pdt(:)
-       type(scalar)   , intent(in)    :: vec(:)
-       type(scalar)   , intent(in)    :: scalars(:)
-       type(scalar)   , intent(in)    :: U(:,:)
-       type(scalar)   , intent(in)    :: xi(:)
+       type(scalar)     , intent(inout) :: pdt(:)
+       type(scalar)     , intent(in)    :: vec(:)
+       type(scalar)     , intent(in)    :: scalars(:)
+       type(integer)    , intent(in), optional :: filter
 
      end subroutine add_jacobian_vector_product_interface
 
@@ -93,13 +88,12 @@ module interface_assembler
      ! Supplying the initial condition to march in time
      !================================================================!
 
-     impure subroutine add_initial_condition_interface(this, U, xi)
+     impure subroutine add_initial_condition_interface(this, U)
 
        import :: assembler
 
        class(assembler), intent(in)    :: this
-       type(scalar)  , intent(inout) :: U(:,:)
-       type(scalar)  , intent(in)    :: xi(:)
+       type(scalar)    , intent(inout) :: U(:,:)
 
      end subroutine add_initial_condition_interface
 
@@ -181,63 +175,6 @@ contains
     this % differential_order = order
 
   end subroutine set_differential_order
-  
-  !===================================================================!
-  ! Jacobian assembly at each time step.
-  !===================================================================!
-  
-  impure subroutine add_jacobian_fd(this, jacobian, coeff, U, xi)
-
-    class(assembler) , intent(inout) :: this
-    type(scalar)   , intent(inout) :: jacobian(:,:)
-    type(scalar)   , intent(in)    :: coeff(:)
-    type(scalar)   , intent(in)    :: U(:,:)
-    type(scalar)   , intent(in)    :: xi(:)
-
-    type(integer)             :: nvars, dorder
-    type(integer)             :: n, m
-    type(scalar), allocatable :: R(:), Rtmp(:), Utmp(:,:)
-    real(8)     , parameter   :: dh = 1.0d-8
-
-    nvars = this % get_num_state_vars()
-    dorder = this % get_differential_order()
-
-    ! Make a copy of state variables
-    allocate(Utmp, source=U)
-
-    ! Allocate space for residual perturbations
-    allocate(R(nvars))
-    allocate(Rtmp(nvars))
-
-    ! Make a residual call with original variables
-    R = 0.0d0
-    call this % add_residual(R, U, xi)
-
-    diff_order: do n = 1, dorder + 1
-
-       loop_vars: do m = 1, nvars
-
-          ! Perturb the m-th variable of n-th order
-          Utmp(n,m) = Utmp(n,m) + dh
-
-          ! Make a residual call with the perturbed variable
-          rtmp = 0.0d0
-          call this % add_residual(Rtmp, Utmp, xi)
-
-          ! Unperturb (restore) the m-th variable of n-th order
-          Utmp(n+1,m) = U(n+1,m)
-
-          ! Approximate the jacobian with respect to the m-th variable
-          jacobian(:,m) = jacobian(:,m) + coeff(n)*(Rtmp-R)/dh
-
-       end do loop_vars
-
-    end do diff_order
-
-    ! Freeup memory
-    deallocate(R, Rtmp)
-
-  end subroutine add_jacobian_fd
 
   !===================================================================!
   ! Create a state vector and sets values if a scalar is supplied
@@ -254,5 +191,25 @@ contains
     if (present(val))  x = val
     
   end subroutine create_vector
+
+  !===================================================================!
+  ! Create a state vector and sets values if a scalar is supplied
+  !===================================================================!
+
+  subroutine create_state(this, S, val)
+    
+    class(assembler), intent(in)               :: this
+    real(dp)        , intent(out), allocatable :: S(:,:)
+    real(dp)        , intent(in) , optional    :: val
+    
+    if (allocated(S)) error stop "vector already allocated"
+    allocate( &
+         & S( &
+         & this % num_state_vars, &
+         & this % get_differential_order() + 1 &
+         & ))
+    if (present(val))  S = val
+    
+  end subroutine create_state
   
 end module interface_assembler

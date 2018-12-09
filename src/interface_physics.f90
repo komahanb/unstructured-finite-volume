@@ -57,7 +57,7 @@ module interface_physics
      ! Interface for residual assembly R(U,xi)
      !================================================================!
 
-     impure subroutine add_residual_interface(this, residual, U, xi)
+     impure subroutine add_residual_interface(this, residual, U, xi, filter)
 
        import :: physics
 
@@ -65,6 +65,7 @@ module interface_physics
        type(scalar)  , intent(inout) :: residual(:)
        type(scalar)  , intent(in)    :: U(:,:)
        type(scalar)  , intent(in)    :: xi(:)
+       type(integer) , intent(in), optional :: filter
 
      end subroutine add_residual_interface
 
@@ -74,7 +75,7 @@ module interface_physics
      !================================================================!
      
      impure subroutine add_jacobian_vector_product_interface(this, pdt, vec, &
-          & scalars, U, xi)
+          & scalars, U, xi, filter)
 
        import :: physics
 
@@ -84,6 +85,7 @@ module interface_physics
        type(scalar)   , intent(in)    :: scalars(:)
        type(scalar)   , intent(in)    :: U(:,:)
        type(scalar)   , intent(in)    :: xi(:)
+       type(integer)  , intent(in), optional :: filter
 
      end subroutine add_jacobian_vector_product_interface
 
@@ -91,13 +93,14 @@ module interface_physics
      ! Supplying the initial condition to march in time
      !================================================================!
 
-     impure subroutine add_initial_condition_interface(this, U, xi)
+     impure subroutine add_initial_condition_interface(this, U, xi, filter)
 
        import :: physics
 
        class(physics), intent(in)    :: this
        type(scalar)  , intent(inout) :: U(:,:)
        type(scalar)  , intent(in)    :: xi(:)
+       type(integer) , intent(in), optional :: filter
 
      end subroutine add_initial_condition_interface
 

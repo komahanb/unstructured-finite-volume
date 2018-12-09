@@ -6,7 +6,7 @@
 module class_conjugate_gradient
 
   use iso_fortran_env         , only : dp => REAL64
-  use interface_linear_solver , only : linear_solver
+  use interface_linear_solver , only : abstract_linear_solver
   use class_assembler         , only : assembler
 
   implicit none
@@ -19,7 +19,7 @@ module class_conjugate_gradient
   ! Linear solver datatype
   !===================================================================!
 
-  type, extends(linear_solver) :: conjugate_gradient
+  type, extends(abstract_linear_solver) :: conjugate_gradient
 
      !type(assembler), pointer :: FVAssembler
      class(assembler), allocatable :: FVAssembler

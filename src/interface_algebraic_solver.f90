@@ -1,32 +1,36 @@
 !=====================================================================!
-! Interface for linear solvers to implement.
+! Interface for linear and nonlinear solvers to implement.
+! 
+! Author : Komahan Boopathy
 !=====================================================================!
 
-module interface_linear_solver
+module interface_algebraic_solver
 
   use iso_fortran_env , only : dp => REAL64
+  use class_assembler , only : assembler
 
   implicit none
   
-  ! Expose only the linear solver interface
   private
-  public :: linear_solver
+  public :: algebraic_solver
 
   !===================================================================!
-  ! Linear solver datatype
+  ! Any solver for algebraic set of equations resulting after
+  ! discretization
   !===================================================================!
   
-  type, abstract :: linear_solver
+  type, abstract :: algebraic_solver
 
-     real(dp) :: max_tol
-     integer  :: max_it
+     ! Governing System to be solved until R = 0
+     class(assembler), allocatable :: system
 
    contains
 
-     ! type bound procedures
+     ! Deferred behavior for system that is solved until get_residual
+     ! = 0
      procedure(solve_interface), deferred :: solve
 
-  end type linear_solver
+  end type algebraic_solver
   
   !===================================================================!
   ! Interface for multiple constructors
@@ -34,13 +38,13 @@ module interface_linear_solver
   
   interface
      subroutine solve_interface(this, x)
-       import linear_solver
+       import algebraic_solver
        import dp
-       class(linear_solver)  , intent(in)  :: this
-       real(dp), allocatable , intent(out) :: x(:)
+       class(algebraic_solver) , intent(in)  :: this
+       real(dp), allocatable   , intent(out) :: x(:)
      end subroutine solve_interface
   end interface
   
 contains
 
-end module interface_linear_solver
+end module interface_algebraic_solver

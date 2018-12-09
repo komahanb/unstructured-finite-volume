@@ -27,6 +27,8 @@ module interface_assembler
      type(logical) :: approximate_jacobian
      type(integer) :: differential_order
 
+     real(dp), allocatable :: S(:,:)
+
    contains  
 
      ! Deferred procedures
@@ -36,6 +38,7 @@ module interface_assembler
      
      ! Assembler knows the size of state array
      procedure :: create_vector
+     procedure :: create_state
 
      ! Provided procedures
      procedure :: get_num_state_vars, set_num_state_vars

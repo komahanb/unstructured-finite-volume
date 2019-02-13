@@ -33,13 +33,13 @@ module interface_algebraic_solver
   !===================================================================!
   
   interface
-     subroutine solve_interface(this, system)
+     subroutine solve_interface(this, system, x)
        import algebraic_solver
        import assembler
        import dp
        class(algebraic_solver), intent(in)  :: this
        class(assembler)       , intent(in)  :: system
-       !real(dp), allocatable  , intent(out) :: x(:) ! maybe 2D for qdot
+       real(dp), allocatable  , intent(out) :: x(:) ! maybe 2D for qdot
      end subroutine solve_interface
   end interface
   

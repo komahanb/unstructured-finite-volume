@@ -1,13 +1,13 @@
 !=====================================================================!
-! Conjugate Gradient linear solver class that uses the functionalities
-! of assembler class in the iterative solution process.
+! Conjugate Gradient linear solver class that uses the functionalities of assembler class 
+! in the iterative solution process.
 !=====================================================================!
 
 module class_gauss_seidel
 
-  use iso_fortran_env            , only : dp => REAL64
-  use interface_algebraic_solver , only : algebraic_solver
-  use class_assembler            , only : assembler
+  use iso_fortran_env         , only : dp => REAL64
+  use interface_linear_solver , only : linear_solver
+  use class_assembler         , only : assembler
 
   implicit none
   
@@ -19,7 +19,7 @@ module class_gauss_seidel
   ! Linear solver datatype
   !===================================================================!
 
-  type, extends(algebraic_solver) :: gauss_seidel
+  type, extends(linear_solver) :: gauss_seidel
 
      !type(assembler), pointer :: FVAssembler
      class(assembler), allocatable :: FVAssembler

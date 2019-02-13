@@ -1,24 +1,17 @@
-!=====================================================================!
-! Class that coodinates tasks of discretiztion, mesh and physics
-! 
-! Author: Komahan Boopathy
-!=====================================================================!
-
 module class_assembler
 
   ! import dependencies
   use iso_fortran_env, only : dp => REAL64
   use class_mesh, only : mesh
-  use interface_physics, only : physics
-
+  
   implicit none
 
   private
   public :: assembler
 
   !===================================================================!
-  ! Class responsible for matrix, right hand side assembly and
-  ! boundary conditions
+  ! Class responsible for matrix, right hand side assembly and boundary
+  ! conditions
   !===================================================================!
 
   type :: assembler
@@ -29,14 +22,15 @@ module class_assembler
      ! Mesh object
      ! type(mesh), pointer :: grid
      class(mesh)   , allocatable :: grid
-     
+     !class(physics), allocatable :: system(:) ! poisson on \Omega, dirichlet on dOmega1 , dirchlet dOmega3 , dirichlet, Neumann dOmega4 
+
      ! Number of state varibles 
      integer :: num_state_vars
      
      ! Flux vector
      real(dp), allocatable :: phi(:)
 
-     ! Matrix filters (used by classical iterations)
+     ! Matrix filters
      integer :: DIAGONAL       = 0
      integer :: LOWER_TRIANGLE = -1
      integer :: UPPER_TRIANGLE = 1
@@ -75,12 +69,13 @@ contains
   
   type(assembler) function construct(grid) result (this)
 
-    class(mesh)   , intent(in) :: grid
+    type(mesh), intent(in) :: grid
 
     print *, "constructing assembler"
 
     ! Set mesh
     allocate(this % grid, source  = grid)
+    call this % grid % to_string()
 
     ! Non symmetric jacobian
     this % symmetry = .true.
@@ -93,7 +88,6 @@ contains
     allocate(this % phi(this % num_state_vars))
     this % phi = 0
 
-    ! Filters for matrix assembly (used by solvers)
     this % DIAGONAL       = 0
     this % LOWER_TRIANGLE = -1
     this % UPPER_TRIANGLE = 1
@@ -529,7 +523,7 @@ contains
     real(dp) , parameter :: phi_right  = 0.0d0
     real(dp) , parameter :: phi_top    = 0.0d0
     real(dp) , parameter :: phi_bottom = 0.0d0
-    real(dp) , parameter :: phib = 1.0d0
+    real(dp) , parameter :: phib = 0.0d0
     
 !!$    
 !!$    block

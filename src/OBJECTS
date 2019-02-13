@@ -1,10 +1,4 @@
 objects= \
-interface_physics.o \
-interface_assembler.o \
-interface_algebraic_solver.o \
-interface_linear_solver.o \
-interface_nonlinear_solver.o \
-utils.o \
 class_string.o \
 class_file.o \
 class_set.o \
@@ -14,11 +8,8 @@ class_gmsh_loader.o \
 module_mesh_utils.o \
 class_mesh.o \
 class_assembler.o \
-<<<<<<< Updated upstream
-class_finite_volume_assembler.o \
 interface_linear_solver.o \
 class_conjugate_gradient.o \
 class_gauss_jacobi.o \
 class_gauss_seidel.o \
-class_sor.o \
-class_physics_unsteady_heat.o
+class_sor.o 

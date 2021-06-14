@@ -39,7 +39,7 @@ LAPACK_DIR = /usr
 
 ifeq ($(COMPILER),gnu)
   F90 = gfortran-7
-  F90FLAGS := -cpp
+  F90FLAGS := -cpp -fPIC
 
   # COMPLEX mode
   ifeq ($(COMPLEX),yes)

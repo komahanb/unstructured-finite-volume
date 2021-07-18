@@ -17,6 +17,7 @@ LAPACK   = yes
 MPI      = no
 HDF5     = no
 PETSC    = no
+TECIO    = yes
 
 #=====================================================================#
 # External Library Paths
@@ -26,6 +27,7 @@ MPI_DIR    = $(HOME)/install/mpich-3.2/builild
 HDF5_DIR   = /opt/hdf5/1.8.9-$(COMPILER)
 PETSC_DIR  = $(HOME)/install/petsc/3.7.4
 LAPACK_DIR = /usr
+TECIO_DIR  = $(HOME)/install/tecplot360ex
 
 #=====================================================================#
 # Add git SHA-1 hash
@@ -107,6 +109,12 @@ endif
 ifeq ($(LAPACK),yes)
   F90FLAGS += -I$(LAPACK_DIR)/include
   LDFLAGS  += -L$(LAPACK_DIR)/lib -llapack
+endif
+
+# TECIO for post processing
+ifeq ($(TECIO),yes)
+  F90FLAGS += -I$(TECIO_DIR)/include
+  LDFLAGS  += -L$(TECIO_DIR)/lib -ltecio
 endif
 
 # MPI for distributed-memory parallelism

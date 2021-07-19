@@ -12,11 +12,14 @@ include OBJECTS
 
 default: $(objects) 
 	ar rvs libufvm.a $(objects)
-	@echo "----------- libufvm.a created -----------"
+	@echo "----------- static library: libufvm.a created -----------"
+	$(F90) $(F90FLAGS) -shared -o libufvm.so $(objects)
+	@echo "----------- shared library: libufvm.so created -----------"
 
 install:
 	mv *.o ../lib
 	mv *.a ../lib
+	mv *.so ../lib
 	mv *.mod ../lib
 
 clean:

@@ -10,7 +10,7 @@ include OBJECTS
 
 # Ufvm
 F90FLAGS += -I../../lib/
-LDFLAGS += -L../../lib/ ../../lib/libufvm.a -llapack
+LDFLAGS += -L../../lib/ -lufvm -Wl,-rpath=../../lib/
 
 #=====================================================================#
 # Targets

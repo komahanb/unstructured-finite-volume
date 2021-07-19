@@ -13,11 +13,11 @@ PROFILE  = no
 OPTIMIZE = no
 
 # libraries
-LAPACK   = yes
+LAPACK   = no
 MPI      = no
 HDF5     = no
 PETSC    = no
-TECIO    = yes
+TECIO    = no
 
 #=====================================================================#
 # External Library Paths
@@ -114,7 +114,7 @@ endif
 # TECIO for post processing
 ifeq ($(TECIO),yes)
   F90FLAGS += -I$(TECIO_DIR)/include
-  LDFLAGS  += -L$(TECIO_DIR)/lib -ltecio
+  LDFLAGS  += -L$(TECIO_DIR)/bin -ltecio -lstdc++ # tecplot libraries are in bin folder
 endif
 
 # MPI for distributed-memory parallelism

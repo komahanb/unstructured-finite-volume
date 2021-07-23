@@ -26,6 +26,9 @@ module class_assembler
 
      ! Number of state varibles 
      integer :: num_state_vars
+
+     ! Number of variables each cell
+     integer :: num_variables
      
      ! Flux vector
      real(dp), allocatable :: phi(:)
@@ -80,6 +83,9 @@ contains
     ! Non symmetric jacobian
     this % symmetry = .true.
 
+    ! Number of unknowns in the problem (currently only "T")
+    this % num_variables = 1
+    
     ! Determine the number of state variables to solve based on the
     ! mesh. In FVM it is the number of cells present.
     this % num_state_vars = this % grid % num_cells
@@ -630,8 +636,7 @@ contains
     character(len=:), allocatable :: new_name
     real(dp)        , intent(in)  :: phic(:)
     integer                       ::  i, ierr
-
-    real(dp), allocatable :: phiv(:)
+    real(dp)        , allocatable :: phiv(:)
 
     ! Open resource
     path = trim(filename)

@@ -630,6 +630,8 @@ contains
   
   subroutine write_solution(this, filename, phic)
 
+    use class_paraview_writer, only  : paraview_writer
+
     class(assembler), intent(in)  :: this
     character(len=*), intent(in)  :: filename
     character(len=:), allocatable :: path
@@ -637,6 +639,14 @@ contains
     real(dp)        , intent(in)  :: phic(:)
     integer                       ::  i, ierr
     real(dp)        , allocatable :: phiv(:)
+
+    class(paraview_writer), allocatable :: pwriter
+
+    allocate(pwriter, source = paraview_writer(this % grid))
+
+    call pwriter % write('paraview.vtu'//char(0))
+
+    if (allocated(pwriter)) deallocate(pwriter)
 
     ! Open resource
     path = trim(filename)

@@ -10,7 +10,7 @@
 module class_paraview_writer
 
   ! import dependencies
-  use iso_fortran_env, only : dp => REAL64
+  use iso_fortran_env, only : dp => real64, int32
   use class_mesh     , only : mesh_t => mesh
   use class_string   , only : string
   implicit none
@@ -34,6 +34,29 @@ module class_paraview_writer
      procedure :: write
     
   end type paraview_writer
+
+
+  type :: linear_cell_type
+
+     integer(kind=int32) :: VTK_EMPTY_CELL        = 0
+     integer(kind=int32) :: VTK_VERTEX            = 1
+     integer(kind=int32) :: VTK_POLY_VERTEX       = 2
+     integer(kind=int32) :: VTK_LINE              = 3
+     integer(kind=int32) :: VTK_POLY_LINE         = 4
+     integer(kind=int32) :: VTK_TRIANGLE          = 5
+     integer(kind=int32) :: VTK_TRIANGLE_STRIP    = 6
+     integer(kind=int32) :: VTK_POLYGON           = 7
+     integer(kind=int32) :: VTK_PIXEL             = 8
+     integer(kind=int32) :: VTK_QUAD              = 9
+     integer(kind=int32) :: VTK_TETRA             = 10
+     integer(kind=int32) :: VTK_VOXEL             = 11
+     integer(kind=int32) :: VTK_HEXAHEDRON        = 12
+     integer(kind=int32) :: VTK_WEDGE             = 13
+     integer(kind=int32) :: VTK_PYRAMID           = 14
+     integer(kind=int32) :: VTK_PENTAGONAL_PRISM  = 15
+     integer(kind=int32) :: VTK_HEXAGONAL_PRISM   = 16
+
+  end type linear_cell_type
   
   !===================================================================!
   ! Interface for multiple constructors

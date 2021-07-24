@@ -24,6 +24,10 @@ module class_paraview_writer
      ! attributes
      class(mesh_t), allocatable :: mesh
 
+     ! support binary and ascii
+     ! deduce cell types from num cell vertices
+     ! write cell and point data
+
    contains
 
      ! type bound procedures
@@ -69,21 +73,104 @@ contains
     integer                       :: ierr
     integer, parameter            :: fhandle = 90
 
-    open(unit=fhandle, file=trim(filename), iostat= ierr)
+    
+    open(unit=fhandle, file=trim(filename), iostat= ierr, action = 'write', form = 'formatted')
     if (ierr .ne. 0) then
        write(*,'("  >> Opening file ", 39A, " failed")') trim(filename)
        return
     end if
 
-    write(fhandle, *) '<VTKFile type="UnstructuredGrid">'
-    write(fhandle, *) '<UnstructuredGrid>'
-
-    write(fhandle, *) '<Piece NumberOfPoints="', this % mesh % num_vertices, &
+    write(fhandle, '(a)') '<VTKFile type="UnstructuredGrid" version="0.1" byte_order="LittleEndian">'
+    write(fhandle, '(a)') '<UnstructuredGrid>'
+    write(fhandle, '(a,i0,a,i0,a)') '<Piece NumberOfPoints="', this % mesh % num_vertices, &
          & '" NumberOfCells="', this % mesh % num_cells, '">'
+    
+    write_points: block
 
-    write(fhandle, *) '</Piece>'
-    write(fhandle, *) '</UnstructuredGrid>'
-    write(fhandle, *) '</VTKFile>'
+      integer :: ivertex, jdim
+
+      write(fhandle, '(a)') '<Points>'
+      write(fhandle, '(a)') '<DataArray type="Float64" NumberOfComponents="3" format="ascii">'
+
+      do ivertex = 1, this % mesh % num_vertices
+         
+         write(fhandle, *) (this % mesh % vertices(jdim, ivertex), jdim = 1, 3)
+         
+      end do
+
+      write(fhandle, '(a)') '</DataArray>'
+      write(fhandle, '(a)') '</Points>'
+
+    end block write_points
+
+    write_cells: block
+
+      integer :: icell, jvertex
+      integer, allocatable :: cell_types(:)
+
+      integer :: offset
+      
+      write(fhandle, '(a)') '<Cells>'
+
+      !---------------------------------------------------------------!
+      ! write cell vertex connectivities
+      !---------------------------------------------------------------!
+      
+      write(fhandle, '(a)') '<DataArray type="Int32" Name="connectivity" format="ascii">'
+      
+      do icell = 1, this % mesh % num_cells
+
+         ! correct for paraview's 0 based numbering
+         write(fhandle, *) (this % mesh % cell_vertices(jvertex, icell) - 1, &
+              & jvertex = 1, this % mesh % num_cell_vertices(icell))
+         
+      end do
+      
+      write(fhandle, '(a)') '</DataArray>'
+
+      !---------------------------------------------------------------!
+      ! write cell to vertex connectivity offsets
+      !---------------------------------------------------------------!
+      
+ 
+      write(fhandle, '(a)') '<DataArray type="Int32" Name="offsets" format="ascii">'
+
+      offset = 0
+      
+      do icell = 1, this % mesh % num_cells
+
+         write(fhandle, '(i0)') offset + this % mesh % num_cell_vertices(icell)
+         
+         offset = offset + this % mesh % num_cell_vertices(icell)
+
+      end do
+      
+      write(fhandle, '(a)') '</DataArray>'
+
+      !---------------------------------------------------------------!
+      ! write cell types
+      !---------------------------------------------------------------!
+      
+      write(fhandle, *) '<DataArray type="UInt8" Name="types" format="ascii">'
+      
+      do icell = 1, this % mesh % num_cells
+         write(fhandle, '(i0)') 7 ! polyhedrals
+      end do
+      write(fhandle, '(a)') '</DataArray>'
+      
+      write(fhandle, '(a)') '</Cells>'
+
+      write(fhandle, '(a)') '<PointData></PointData>'
+      write(fhandle, '(a)') '<CellData></CellData>'
+  
+      if (allocated(cell_types))   deallocate(cell_types)
+      
+    end block write_cells
+
+    ! close the opened tags
+    write(fhandle, '(a)') '</Piece>'
+    write(fhandle, '(a)') '</UnstructuredGrid>'
+    write(fhandle, '(a)') '</VTKFile>'
 
     close(unit=fhandle)
     

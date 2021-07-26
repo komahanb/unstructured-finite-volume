@@ -18,7 +18,7 @@ program test_mesh
 
   test_gmsh: block
 
-    type(string) :: files(5)
+    type(string) :: files(6)
     integer      :: ifile
 
     files(1) = string('../rectangle.msh')
@@ -26,13 +26,15 @@ program test_mesh
     files(3) = string('../triangle.msh')
     files(4) = string('../frontal.msh')
     files(5) = string('../delaunay.msh')
+    files(6) = string('../box2.msh')
 
-    do ifile = 1, size(files)
+    do ifile = 6, size(files)
        write(*,*) "Testing GMSH Loader with file ", files(ifile) % str
        call test_gmsh_loader(files(ifile) % str)
     end do
 
   end block test_gmsh
+  
 !!$
 !!$  test_mesh1 : block
 !!$
@@ -66,6 +68,7 @@ program test_mesh
 !!$
 !!$  end block test_mesh2
 !!$
+  
   !===================================================================!
   ! Test the functionalities of Class String and Class File
   !===================================================================!
@@ -107,9 +110,13 @@ contains
 
     ! Create a mesh loader for mesh file
     allocate(gmsh_loader_obj, source =  gmsh_loader(filename))
+    
     allocate(mesh_obj, source = mesh(gmsh_loader_obj))
+    
     call mesh_obj % to_string()
+    
     deallocate(mesh_obj)
+    
     deallocate(gmsh_loader_obj)
 
   end subroutine test_gmsh_loader

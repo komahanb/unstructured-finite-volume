@@ -165,9 +165,22 @@ contains
   ! Returns the string representation of the object
   !===================================================================!
   
-  impure elemental subroutine print(this)
+  impure elemental subroutine print(this, fmt)
     
-    class(string), intent(in) :: this
+    class(string)   , intent(in) :: this
+    character(len=*), intent(in), optional :: fmt
+
+    if (present(fmt)) then
+       
+       if (allocated(this % str)) then
+          write(*,fmt) this % str
+       else
+          print *, "string : ", "NULL"
+       end if
+       
+       return
+       
+    end if
     
     if (allocated(this % str)) then
        print *, "string : ", this % str

@@ -108,7 +108,7 @@ contains
     integer :: idx_start_elements
     integer :: idx_end_elements
 
-    integer :: face_idx, cell_idx
+    integer :: face_idx, cell_idx, edge_idx
     
     ! Collection to store face information
     type(set)  :: set_face_vertices
@@ -130,13 +130,13 @@ contains
     write(*,*) "physical names : " , idx_start_physical_names , idx_end_physical_names
     write(*,*) "nodes          : " , idx_start_nodes          , idx_end_nodes
     write(*,*) "elements       : " , idx_start_elements       , idx_end_elements   
-    
-    write(*,'(a)') "Reading mesh information..."
-    
+       
     process_mesh_version: block
       
       integer                   :: num_tokens
       type(string), allocatable :: tokens(:)
+      
+      write(*,'(a)') "Reading mesh information..."
 
       associate(mlines => lines(idx_start_mesh+1:idx_start_mesh+1))
         call mlines(1) % tokenize(" ", num_tokens, tokens)
@@ -148,15 +148,18 @@ contains
 
       if (allocated(tokens)) deallocate(tokens)
 
+      write(*,'(a)') "Reading mesh information completed..."
+          
     end block process_mesh_version
-    
-    write(*,'(a)') "Reading physical tags..."
+
 
     process_tags: block
 
       type(string), allocatable :: tokens(:)
       integer                   :: num_tokens    
       integer                   :: iline, length
+
+      write(*,'(a)') "Reading physical tags..."
 
       associate(tag_lines => lines(idx_start_physical_names+1:idx_end_physical_names-1))
 
@@ -186,9 +189,18 @@ contains
 
       if (allocated(tokens)) deallocate(tokens)
 
+      write(*,'(4x,a,i0)') "num physical tags : ", num_tags
+
+      write(*,'(4x,a)') "physical tags are : "
+
+      write(*,*) tag_numbers
+
+      call tag_info % print('(8x,a)')
+
+      write(*,'(a)') "Reading physical tags completed..."
+
     end block process_tags
-    
-    write(*,'(a)') "Reading vertices..."
+      
 
     ! Process nodes
     process_nodes: block
@@ -196,6 +208,8 @@ contains
       integer                   :: num_tokens
       type(string), allocatable :: tokens(:)
       integer                   :: ivertex
+
+      write(*,'(a)') "Reading vertices..."
 
       associate(vlines => lines(idx_start_nodes+2:idx_end_nodes-1))
       
@@ -219,6 +233,11 @@ contains
            
            ! First token is the vertex number
            vertex_numbers(ivertex) = ivertex
+
+           ! check for consistency of local node numebrs with gmsh
+           if (ivertex .ne. tokens(1) % asinteger()) then
+              error stop "inconsistent node numbering"
+           end if           
            
            ! Second, third and fourth tokens are the coordinates
            vertices(:,ivertex) = tokens(2:4) % asreal()
@@ -231,9 +250,11 @@ contains
 
       if (allocated(tokens)) deallocate(tokens)
 
+      write(*,'(4x,a,i0)') "num vertices   : ", num_vertices
+      
+      write(*,'(a)') "Reading vertices completed..."
+      
     end block process_nodes
-    
-    write(*,'(a)') "Reading elements..."
 
     elements : block
 
@@ -241,6 +262,8 @@ contains
       integer                   :: num_tokens    
       integer                   :: num_lines, iline
       type(logical)             :: added
+      
+      write(*,'(a)') "Reading elements..."
 
       associate(elines => lines(idx_start_elements+2:idx_end_elements-1))
 
@@ -257,81 +280,204 @@ contains
         do iline = 1, num_lines
 
            call elines(iline) % tokenize(" ", num_tokens, tokens)
+          
+           if (tokens(2) % asinteger() .eq. 1) then
 
-           if (tokens(2) % asinteger() .eq. 2) then
-              ! Triangular element
-              num_cells = num_cells + 1
+              ! 2-node line. 
+              num_edges = num_edges + 1
+              
+           else if (tokens(2) % asinteger() .eq. 2) then
+
+              ! 3-node triangle. 
+              num_faces = num_faces + 1
+
            else if (tokens(2) % asinteger() .eq. 3) then
-              ! Quadrilateral element
+
+              ! 4-node quadrangle. 
+              num_faces = num_faces + 1
+
+           else if (tokens(2) % asinteger() .eq. 4) then
+              
+              ! 4-node tetrahedron.
               num_cells = num_cells + 1
+
+           else if (tokens(2) % asinteger() .eq. 5) then
+              
+              ! 8-node hexahedron. 
+              num_cells = num_cells + 1
+
+           else if (tokens(2) % asinteger() .eq. 6) then
+
+              ! 6-node prism
+              num_cells = num_cells + 1
+
+           else if (tokens(2) % asinteger() .eq. 7) then
+                 
+              ! 5-node prism
+              num_cells = num_cells + 1
+
+           else if (tokens(2) % asinteger() .eq. 15) then
+                 
+              ! 1-node point (skip)
+                            
+           else
+
+              call tokens(2) % print()
+              
+              error stop "unsupported GMSH mesh element type"
+           
            end if
 
         end do
 
-        ! Allocate space based on counted num of cells
+        write(*,'(4x,a,i0)') "num edges      : ", num_edges
+        write(*,'(4x,a,i0)') "num faces      : ", num_faces
+        write(*,'(4x,a,i0)') "num cells      : ", num_cells       
+
+        ! Allocate space for cells
         allocate(cell_numbers(num_cells))
         cell_numbers = 0
 
         allocate(num_cell_vertices(num_cells))
         num_cell_vertices = 0
 
-        allocate(cell_vertices(4,num_cells))
+        allocate(cell_vertices(8,num_cells)) ! max is 8noded tetrahedron
         cell_vertices = 0
 
         allocate(cell_tags(num_cells))
         cell_tags = 0
-
-        ! Create space for processing face information
-        set_face_vertices = set(2, 4*num_cells)
-        set_face_numbers  = set(1, 4*num_cells)
-        list_face_tags    = list(1, 4*num_cells)
         
+        ! Allocate space for faces
+        allocate(face_numbers(num_faces))
+        face_numbers = 0
+
+        allocate(num_face_vertices(num_faces))
+        num_face_vertices = 0
+
+        allocate(face_vertices(4,num_faces)) ! max is 4 noded quadrilateral
+        face_vertices = 0
+
+        allocate(face_tags(num_faces))
+        face_tags = 0
+
+        ! Allocate space for edges
+        allocate(edge_numbers(num_edges))
+        edge_numbers = 0
+
+        allocate(edge_vertices(2,num_edges))
+        edge_vertices = 0
+
+        allocate(num_edge_vertices(num_edges))
+        num_edge_vertices = 0
+
+        allocate(edge_tags(num_edges))
+        edge_tags = 0
+
+!!$        ! Create space for processing face information
+!!$        set_face_vertices = set(2, 4*num_cells)
+!!$        set_face_numbers  = set(1, 4*num_cells)
+!!$        list_face_tags    = list(1, 4*num_cells)
+
+        edge_idx   = 0
         face_idx   = 0
         cell_idx   = 0
         
         do iline = 1, num_lines
 
+           ! elm-number elm-type number-of-tags < tag > … node-number-list
            call elines(iline) % tokenize(" ", num_tokens, tokens)
 
-           ! Line element
            if (tokens(2) % asinteger() .eq. 1) then
+
+              !!$              ! Carry out processing of physically tagged faces
+!!$              added = set_face_vertices % insert([tokens(6:7) % asinteger()])             
+!!$              if (added .eqv. .true.) then               
+!!$                 face_idx = face_idx + 1
+!!$                 call set_face_numbers % add_entry([face_idx])
+!!$                 call list_face_tags % add_entry([tokens(4) % asinteger()])                 
+!!$              end if
+!!$
+!!$              error stop
+
+              ! 2-node line.
+              edge_idx = edge_idx + 1
+
+              edge_numbers(edge_idx)       = edge_idx
+              edge_tags(edge_idx)          = tokens(4) % asinteger()
+              edge_vertices(1:2,edge_idx)  = tokens(6:6+2-1) % asinteger()
+              num_edge_vertices(edge_idx)  = 2
               
-              ! Carry out processing of physically tagged faces
-              added = set_face_vertices % insert([tokens(6:7) % asinteger()])             
-              if (added .eqv. .true.) then               
-                 face_idx = face_idx + 1
-                 call set_face_numbers % add_entry([face_idx])
-                 call list_face_tags % add_entry([tokens(4) % asinteger()])                 
-              end if
-              
-              ! Triangular element
            else if (tokens(2) % asinteger() .eq. 2) then
 
-              cell_idx = cell_idx + 1
+              ! 3-node triangle.
+              face_idx = face_idx + 1
 
-              cell_numbers(cell_idx )      = cell_idx
-              cell_tags(cell_idx)          = tokens(4) % asinteger()
-              cell_vertices(1:3,cell_idx)  = tokens(6:8) % asinteger()
-              num_cell_vertices(cell_idx)  = 3
+              face_numbers(face_idx)       = face_idx
+              face_tags(face_idx)          = tokens(4) % asinteger()
+              face_vertices(1:3,face_idx)  = tokens(6:6+3-1) % asinteger()
+              num_face_vertices(face_idx)  = 3
 
-              ! Quadrilateral element
            else if (tokens(2) % asinteger() .eq. 3) then
 
+              ! 4-node quadrangle.
+              face_idx = face_idx + 1
+
+              face_numbers(face_idx)       = face_idx
+              face_tags(face_idx)          = tokens(4) % asinteger()
+              face_vertices(1:4,face_idx)  = tokens(6:6+4-1) % asinteger()
+              num_face_vertices(face_idx)  = 4
+
+           else if (tokens(2) % asinteger() .eq. 4) then
+              
+              ! 4-node tetrahedron.
               cell_idx = cell_idx + 1
 
               cell_numbers(cell_idx )      = cell_idx
               cell_tags(cell_idx)          = tokens(4) % asinteger()
-              cell_vertices(1:4,cell_idx)  = tokens(6:9) % asinteger()
+              cell_vertices(1:4,cell_idx)  = tokens(6:6+4-1) % asinteger()
               num_cell_vertices(cell_idx)  = 4
 
-              ! Node
+           else if (tokens(2) % asinteger() .eq. 5) then
+              
+              ! 8-node hexahedron.
+              cell_idx = cell_idx + 1
+
+              cell_numbers(cell_idx )      = cell_idx
+              cell_tags(cell_idx)          = tokens(4) % asinteger()
+              cell_vertices(1:8,cell_idx)  = tokens(6:6+8-1) % asinteger()
+              num_cell_vertices(cell_idx)  = 8
+              
+
+           else if (tokens(2) % asinteger() .eq. 6) then
+
+              ! 6-node prism
+              cell_idx = cell_idx + 1
+
+              cell_numbers(cell_idx )      = cell_idx
+              cell_tags(cell_idx)          = tokens(4) % asinteger()
+              cell_vertices(1:6,cell_idx)  = tokens(6:6+6-1) % asinteger()
+              num_cell_vertices(cell_idx)  = 6
+
+           else if (tokens(2) % asinteger() .eq. 7) then
+                 
+              ! 5-node prism
+              cell_idx = cell_idx + 1
+
+              cell_numbers(cell_idx )      = cell_idx
+              cell_tags(cell_idx)          = tokens(4) % asinteger()
+              cell_vertices(1:5,cell_idx)  = tokens(6:6+5-1) % asinteger()
+              num_cell_vertices(cell_idx)  = 5
+
            else if (tokens(2) % asinteger() .eq. 15) then
+
+              ! 1-node point (skip)
               
            else
 
-              print *, 'unknown element number', tokens(2) % asinteger()
-              error stop
-
+              call tokens(2) % print()
+              
+              error stop "unsupported GMSH mesh element type"
+           
            end if
 
            if (allocated(tokens)) deallocate(tokens)
@@ -341,82 +487,86 @@ contains
       end associate
       
       deallocate(lines)
-    
+
+      write(*,'(a)') "Reading elements completed..."
+
     end block elements
 
-    write(*,'(a)') "Finding faces..."
-    
-    ! Extract the remaining faces based on cell vertices
-    process_faces: block
-
-      type(integer) :: idx(2)
-      type(integer) :: icell, iverpair
-      type(logical) :: added
-      integer, allocatable :: lface_numbers(:,:), lface_tags(:,:)
-
-      ! Make ordered pair of vertices as faces in 2D
-      do icell = 1, num_cells
-         do iverpair = 1, num_cell_vertices(icell)
-
-            ! Figure out a vertex pair that makes a face
-            if (iverpair .eq. num_cell_vertices(icell)) then
-               idx = [iverpair, 1]
-            else
-               idx = [iverpair, iverpair+1]
-            end if
-
-            ! Add ordered pair of integers into set
-            added = set_face_vertices % insert(cell_vertices(idx, icell))
-            if (added .eqv. .true.) then               
-               face_idx = face_idx + 1
-               call set_face_numbers % add_entry([face_idx])
-               call list_face_tags % add_entry([0])
-            end if
-
-         end do
-      end do
-
-      num_faces = face_idx
-
-      allocate(num_face_vertices(num_faces))
-      num_face_vertices = 2
-
-      call set_face_vertices % get_entries(face_vertices)
-
-      ! Set face numbers
-      call set_face_numbers % get_entries(lface_numbers)
-      allocate(face_numbers(num_faces))
-      face_numbers = lface_numbers(1,:)
-      deallocate(lface_numbers)
-
-      ! Set face tags
-      call list_face_tags % get_entries(lface_tags)
-      allocate(face_tags(num_faces))
-      face_tags = lface_tags(1,:)
-      deallocate(lface_tags)
-
-    end block process_faces
-    
-    write(*,'(a)') "Processing edges..."
-
-    process_edges : block
-
-      ! Edges are not in 2D
-      allocate(edge_numbers(num_edges))
-      edge_numbers = 0
-
-      allocate(edge_vertices(4,num_edges))
-      edge_vertices = 0
-
-      allocate(num_edge_vertices(num_edges))
-      num_edge_vertices = 0
-
-      allocate(edge_tags(num_edges))
-      edge_tags = 0
-
-    end block process_edges
-
-    if (num_faces .gt. 4*num_cells) error stop
+!!$    error stop
+!!$
+!!$    write(*,'(a)') "Finding faces..."
+!!$    
+!!$    ! Extract the remaining faces based on cell vertices
+!!$    process_faces: block
+!!$
+!!$      type(integer) :: idx(2)
+!!$      type(integer) :: icell, iverpair
+!!$      type(logical) :: added
+!!$      integer, allocatable :: lface_numbers(:,:), lface_tags(:,:)
+!!$
+!!$      ! Make ordered pair of vertices as faces in 2D
+!!$      do icell = 1, num_cells
+!!$         do iverpair = 1, num_cell_vertices(icell)
+!!$
+!!$            ! Figure out a vertex pair that makes a face
+!!$            if (iverpair .eq. num_cell_vertices(icell)) then
+!!$               idx = [iverpair, 1]
+!!$            else
+!!$               idx = [iverpair, iverpair+1]
+!!$            end if
+!!$
+!!$            ! Add ordered pair of integers into set
+!!$            added = set_face_vertices % insert(cell_vertices(idx, icell))
+!!$            if (added .eqv. .true.) then               
+!!$               face_idx = face_idx + 1
+!!$               call set_face_numbers % add_entry([face_idx])
+!!$               call list_face_tags % add_entry([0])
+!!$            end if
+!!$
+!!$         end do
+!!$      end do
+!!$
+!!$      num_faces = face_idx
+!!$
+!!$      allocate(num_face_vertices(num_faces))
+!!$      num_face_vertices = 2
+!!$
+!!$      call set_face_vertices % get_entries(face_vertices)
+!!$
+!!$      ! Set face numbers
+!!$      call set_face_numbers % get_entries(lface_numbers)
+!!$      allocate(face_numbers(num_faces))
+!!$      face_numbers = lface_numbers(1,:)
+!!$      deallocate(lface_numbers)
+!!$
+!!$      ! Set face tags
+!!$      call list_face_tags % get_entries(lface_tags)
+!!$      allocate(face_tags(num_faces))
+!!$      face_tags = lface_tags(1,:)
+!!$      deallocate(lface_tags)
+!!$
+!!$    end block process_faces
+!!$    
+!!$    write(*,'(a)') "Processing edges..."
+!!$
+!!$    process_edges : block
+!!$
+!!$      ! Edges are not in 2D
+!!$      allocate(edge_numbers(num_edges))
+!!$      edge_numbers = 0
+!!$
+!!$      allocate(edge_vertices(2,num_edges))
+!!$      edge_vertices = 0
+!!$
+!!$      allocate(num_edge_vertices(num_edges))
+!!$      num_edge_vertices = 0
+!!$
+!!$      allocate(edge_tags(num_edges))
+!!$      edge_tags = 0
+!!$
+!!$    end block process_edges
+!!$
+!!$    if (num_faces .gt. 4*num_cells) error stop
     
   end subroutine get_mesh_data
 

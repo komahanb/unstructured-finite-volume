@@ -182,6 +182,7 @@ contains
          & maxval(me % cell_numbers  ) -  minval(me % cell_numbers  ) + 1 .ne. me % num_cells   ) &
          & error stop
 
+
     ! Perform initialization tasks and store the resulting flag
     me % initialized = me % initialize()
     if (me % initialized .eqv. .false.) then

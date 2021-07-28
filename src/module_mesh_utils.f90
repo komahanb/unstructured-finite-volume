@@ -1,7 +1,7 @@
 module module_mesh_utils
 
   use iso_fortran_env , only : dp => REAL64, error_unit
-  
+
   implicit none
 
   interface distance
@@ -10,11 +10,11 @@ module module_mesh_utils
   end interface distance
 
 contains
-  
+
   !===================================================================!
   ! Cross product for area computations
   ! ===================================================================!
-  
+
   pure subroutine cross_product(a, b, pdt)
 
     real(dp), intent(in)  :: a(3), b(3)
@@ -47,6 +47,59 @@ contains
 
   end function distanceAB
 
+  subroutine transpose_connectivities(cell_vertices, num_cell_vertices, &
+       & vertex_cells, num_vertex_cells)
+
+    ! Arguments
+    integer, intent(in) :: cell_vertices(:,:)
+    integer, intent(in) :: num_cell_vertices(:)
+
+    integer, allocatable, intent(out) :: vertex_cells(:,:)
+    integer, allocatable, intent(out) :: num_vertex_cells(:)
+
+    ! Locals
+    integer, allocatable :: A(:,:)
+    integer, allocatable :: cell_indices(:)
+    integer :: num_cells, num_vertices, icell, ivertex
+
+    num_cells    = size(num_cell_vertices, dim=1)
+    num_vertices = maxval(cell_vertices) ! assume continuity starting from 1 ... num_vertices
+
+    ! form the matrix from forward connectivities
+    allocate(A(num_vertices, num_cells))
+    A = 0
+    do icell = 1, num_cells
+       do ivertex = 1, num_cell_vertices(icell)
+          A(cell_vertices(ivertex, icell), icell) = 1
+       end do
+    end do
+
+    ! count the number of nonzeros referring to cells
+    allocate(num_vertex_cells(num_vertices))
+    num_vertex_cells = 0
+    do ivertex = 1, num_vertices
+       num_vertex_cells(ivertex) = count(A(ivertex,:) .ne. 0)
+    end do
+
+    allocate(cell_indices(num_cells))
+    forall(icell=1:num_cells) cell_indices(icell) = icell
+
+    ! Fill the vertex cells based on A
+    allocate(vertex_cells(maxval(num_vertex_cells), num_vertices))
+    vertex_cells = 0
+    do ivertex = 1, num_vertices
+       vertex_cells(1:num_vertex_cells(ivertex),ivertex) = pack(cell_indices, A(ivertex,:) .ne. 0)
+    end do
+
+    if (allocated(A)) deallocate(A)
+    if (allocated(cell_indices)) deallocate(cell_indices)
+
+    if (sum(num_cell_vertices) .ne. sum(num_vertex_cells)) then
+       error stop "inconsistent connectivity inversion"
+    end if
+
+  end subroutine transpose_connectivities
+
   !===================================================================!
   ! Invert a map. The keys of 'map' are values of 'inverse'. The
   ! values of 'map' are the keys of 'inverse'
@@ -65,15 +118,15 @@ contains
     integer              :: value
     integer              :: i, j              ! loop indices
     integer              :: nkeysin, nkeysout ! input map size
-    integer              :: nvalsin, nvalsout ! output map size    
+    integer              :: nvalsin, nvalsout ! output map size
     integer, allocatable :: ptr(:)
 
     if (size(num_map_vals).eq.0) return
-    
-    ! Forward mapping size 
+
+    ! Forward mapping size
     nkeysin = size(map, dim = 2)
     nvalsin = size(map, dim = 1)
-    
+
     ! Nothing to do (probably empty map)!
     if (nkeysin.eq.0) return
 
@@ -110,7 +163,7 @@ contains
   !===================================================================!
   ! Find the intersection of two arrays (move elsewhere)?
   !===================================================================!
-  
+
   pure subroutine intersection(a, b, c)
 
     ! Arguments
@@ -167,7 +220,7 @@ contains
   ! Checks if the first argument is a subset of the second argument
   ! (move elsewhere?)
   !===================================================================!
-  
+
   pure type(logical) function is_subset(small, big)
 
     integer, intent(in) :: small(:)
@@ -188,7 +241,7 @@ contains
 
     ! Sort two arrays
     call isort(sub)
-    call isort(set)    
+    call isort(set)
     lensub = size(sub)
 
     ! Check if all entries are equal upto the length of the smallest
@@ -201,7 +254,7 @@ contains
        end if
     end do
 
-    deallocate(sub,set)    
+    deallocate(sub,set)
 
   end function is_subset
 
@@ -232,10 +285,10 @@ contains
   !===================================================================!
   ! Forms the cell faces from a pair of vertices belonging to cell.
   !===================================================================!
-  
+
   subroutine get_cell_faces( cell_vertices, &
        & vertex_faces, num_vertex_faces, &
-       & cell_faces, num_cell_faces ) 
+       & cell_faces, num_cell_faces )
 
     integer, intent(in)  :: cell_vertices(:,:)
     integer, intent(in)  :: vertex_faces(:,:)
@@ -255,7 +308,7 @@ contains
 
     ! find how many faces are there based on nodes
     allocate(num_cell_faces(ncells))
-    do icell = 1, ncells      
+    do icell = 1, ncells
        ctr = 0
        do iface = 1, nvertices
           if (cell_vertices(iface, icell) .ne. 0) then
@@ -275,7 +328,7 @@ contains
           if (iface .eq. num_cell_faces(icell)) then
              v1 = cell_vertices(iface,icell)
              v2 = cell_vertices(1,icell)
-          else 
+          else
              v1 = cell_vertices(iface,icell)
              v2 = cell_vertices(iface+1,icell)
           end if
@@ -289,12 +342,12 @@ contains
     end do
 
   end subroutine get_cell_faces
-  
+
   !===================================================================!
   ! Determine if the face is a boundary face based on how many
   ! neighbouring cells it has.
   !===================================================================!
-  
+
   pure subroutine get_boundary_faces(num_face_cells, boundary_faces)
 
     integer, intent(in)               :: num_face_cells(:)

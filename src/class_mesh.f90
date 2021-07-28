@@ -1,6 +1,6 @@
 !=====================================================================!
 ! Unstructured mesh handler.
-! 
+!
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
@@ -8,23 +8,23 @@ module class_mesh
 
   use iso_fortran_env       , only : dp => REAL64, error_unit
   use interface_mesh_loader , only : mesh_loader
-  use class_string          , only : string    
+  use class_string          , only : string
   use module_mesh_utils
 
   implicit none
 
   private
   public :: mesh
-  
+
   ! Constructor
   interface mesh
      module procedure create_mesh
   end interface mesh
 
-  !-------------------------------------------------------------------! 
+  !-------------------------------------------------------------------!
   ! Mesh datatype. A collection of vertices, cells and faces.
   !-------------------------------------------------------------------!
-  
+
   type :: mesh ! rename as topology?
 
      integer :: max_print = 20
@@ -34,7 +34,7 @@ module class_mesh
      integer                   :: num_tags
      integer     , allocatable :: tag_numbers(:)
      type(string), allocatable :: tag_info(:)
-     
+
      !================================================================!
      ! Basic Topology information
      !================================================================!
@@ -55,7 +55,7 @@ module class_mesh
 
      ! Fundamental face info
      integer :: num_faces
-     integer  , allocatable :: face_numbers(:)          
+     integer  , allocatable :: face_numbers(:)
      integer  , allocatable :: face_tags(:)
      integer  , allocatable :: face_types(:)
      integer  , allocatable :: face_vertices(:,:)        ! [[v1,v2],1:nfaces]
@@ -72,11 +72,11 @@ module class_mesh
      !================================================================!
      ! Derived Topology information
      !================================================================!
-     
+
      ! Inverse cell information
      integer  , allocatable :: vertex_cells(:,:)    ! [[c1,c2,c3],[1:nvertices]]
      integer  , allocatable :: num_vertex_cells(:)  ! [1:nvertices]
-     
+
      ! Inverse face information
      integer  , allocatable :: vertex_faces(:,:)    ! [[f1,f2,f3],[1:nfaces]]
      integer  , allocatable :: num_vertex_faces(:)  ! [1:nfaces]
@@ -90,17 +90,17 @@ module class_mesh
      integer  , allocatable :: cell_faces(:,:)           ! [[f1,f2,f3..],1:ncells]
      integer  , allocatable :: num_face_cells(:)         ! [1:nfaces]
      integer  , allocatable :: face_cells(:,:)           ! [[c1,c2...],1:nfaces]
-     
+
      ! Intermidiate connectivities and their inverse
      integer  , allocatable :: num_face_edges(:)         ! [1:nfaces]
      integer  , allocatable :: face_edges(:,:)           ! [[e1,e2,e3..],1:nfaces]
      integer  , allocatable :: num_edge_faces(:)         ! [1:nedges]
      integer  , allocatable :: edge_faces(:,:)           ! [[f1,f2...],1:nedges]
-     
+
      !================================================================!
      ! Derived Geometry information
      !================================================================!
-     
+
      ! Derived cell info
      real(dp) , allocatable :: cell_centers(:,:)         ! [[x,y,z] , 1:ncells]
      real(dp) , allocatable :: cell_volumes(:)           ! [1:ncells]
@@ -109,14 +109,14 @@ module class_mesh
      real(dp) , allocatable :: face_centers(:,:)         ! [[x,y,z],1:nfaces]
      real(dp) , allocatable :: face_areas(:)             ! [1:nfaces]
      real(dp) , allocatable :: face_deltas(:)             ! [1:nfaces]
-     real(dp) , allocatable :: lvec(:,:)                 ! [[lx,ly,lz],1:nfaces]     
-  
+     real(dp) , allocatable :: lvec(:,:)                 ! [[lx,ly,lz],1:nfaces]
+
      real(dp) , allocatable :: cell_face_tangents(:,:,:) ! [[tx,ty,tz], [f1,f2,f3..] 1:ncells]
-     real(dp) , allocatable :: cell_face_normals(:,:,:)  ! [[nx,ny,nz], [f1,f2,f3..] 1:ncells]          
-    
+     real(dp) , allocatable :: cell_face_normals(:,:,:)  ! [[nx,ny,nz], [f1,f2,f3..] 1:ncells]
+
      real(dp) , allocatable :: vertex_cell_weights(:,:)  ! [[wc1,wc2...],1:vertices]
      real(dp) , allocatable :: face_cell_weights(:,:)    ! [[wc1,wc2],1:nfaces]
-     
+
      ! Generalize to tag numbers. Right now we can't differentiate
      ! lower face from upper face.
 !!$     integer  :: num_boundary_faces
@@ -127,7 +127,7 @@ module class_mesh
      ! Number boundary faces separately
      integer  , allocatable :: num_tagged_faces(:)        ! [1:num_tags]
      integer  , allocatable :: tagged_face_face(:,:)      ! [[f1,f2,f3],[t1,t2,t3,t4,...]]
-     
+
    contains
 
      ! Type bound procedures
@@ -136,7 +136,7 @@ module class_mesh
 
      ! Evaluation routines
      procedure :: evaluate_cell_centers
-     procedure :: evaluate_cell_volumes     
+     procedure :: evaluate_cell_volumes
      procedure :: evaluate_face_centers_areas
      procedure :: evaluate_face_tangents_normals
      procedure :: evaluate_centroidal_vector
@@ -157,15 +157,15 @@ contains
   !================================================================!
   ! Constructor for mesh object using mesh loader
   !================================================================!
-  
+
   type(mesh) function create_mesh(loader) result(me)
 
     ! Arguments
     class(mesh_loader), intent(in) :: loader
-    
-    ! Get the fundamental information needed 
+
+    ! Get the fundamental information needed
     call loader % get_mesh_data( &
-         & me % num_vertices, me % vertex_numbers, me % vertex_tags , me % vertices ,  & 
+         & me % num_vertices, me % vertex_numbers, me % vertex_tags , me % vertices ,  &
          & me % num_edges   , me % edge_numbers  , me % edge_tags   , me % edge_vertices , me % num_edge_vertices , &
          & me % num_faces   , me % face_numbers  , me % face_tags   , me % face_vertices , me % num_face_vertices , &
          & me % num_cells   , me % cell_numbers  , me % cell_tags   , me % cell_vertices , me % num_cell_vertices , &
@@ -188,22 +188,22 @@ contains
 
 
     ! Perform initialization tasks and store the resulting flag
-!    me % initialized = me % initialize()
+    me % initialized = me % initialize()
     if (me % initialized .eqv. .false.) then
        write(error_unit,*) "Mesh.Construct: failed"
-!       error stop
+       error stop
     end if
-    
+
   end function create_mesh
-  
+
   !===================================================================!
   ! Destructor for file object
   !===================================================================!
-  
+
   pure subroutine destroy(this)
 
     type(mesh), intent(inout) :: this
-    
+
     if (allocated(this % tag_numbers)) deallocate(this % tag_numbers)
     if (allocated(this % tag_info)) deallocate(this % tag_info)
 
@@ -277,13 +277,13 @@ contains
     vertex_cell: block
 
       integer :: ivertex
-      
+
       write(*,*) "Inverting CellVertex Map..."
-      call reverse_map( &
+      call transpose_connectivities( &
            & this % cell_vertices, &
            & this % num_cell_vertices, &
            & this % vertex_cells, &
-           & this % num_vertex_cells)      
+           & this % num_vertex_cells)
 
       if (allocated(this % vertex_cells)) then
 
@@ -291,7 +291,7 @@ contains
               & "Vertex to cell info for", min(this % max_print,this % num_vertices), &
               & " vertices out of ", this % num_vertices
 
-         do ivertex = 1, min(this % max_print,this % num_vertices)
+         do ivertex = 1, max(this % max_print,this % num_vertices)
             write(*,*) &
                  & 'vertex [', this % vertex_numbers(ivertex), ']', &
                  & 'num cells [', this % num_vertex_cells(ivertex), ']',&
@@ -309,7 +309,7 @@ contains
          write(*,'(a)') "Vertex to cell info not computed"
 
       end if
-      
+
     end block vertex_cell
 
     !-----------------------------------------------------------------!
@@ -319,13 +319,13 @@ contains
     vertex_face: block
 
       integer :: ivertex
-      
+
       write(*,*) "Inverting FaceVertex Map..."
-      call reverse_map( &
+      call transpose_connectivities( &
            & this % face_vertices, &
            & this % num_face_vertices, &
            & this % vertex_faces, &
-           & this % num_vertex_faces)      
+           & this % num_vertex_faces)
 
       if (allocated(this % vertex_faces)) then
 
@@ -333,7 +333,7 @@ contains
               & "Vertex to face info for", min(this % max_print,this % num_vertices), &
               & " vertices out of ", this % num_vertices
 
-         do ivertex = 1, min(this % max_print,this % num_vertices)
+         do ivertex = 1, max(this % max_print,this % num_vertices)
             write(*,*) &
                  & 'vertex [', this % vertex_numbers(ivertex), ']',&
                  & 'num_vertex_faces [', this % num_vertex_faces(ivertex), ']',&
@@ -365,11 +365,11 @@ contains
 
       write(*,*) "Inverting EdgeVertex Map..."
 
-      call reverse_map( &
+      call transpose_connectivities( &
            & this % edge_vertices, &
            & this % num_edge_vertices, &
            & this % vertex_edges, &
-           & this % num_vertex_edges)      
+           & this % num_vertex_edges)
 
       if (allocated(this % vertex_edges)) then
 
@@ -377,7 +377,7 @@ contains
               & "Vertex to edge info for", min(this % max_print,this % num_vertices), &
               & " vertices out of ", this % num_vertices
 
-         do ivertex = 1, min(this % max_print,this % num_vertices)
+         do ivertex = 1, max(this % max_print,this % num_vertices)
             write(*,*) &
                  & 'vertex [', this % vertex_numbers(ivertex), ']',&
                  & 'num_vertex_edges [', this % num_vertex_edges(ivertex) , ']',&
@@ -390,7 +390,7 @@ contains
             write(error_unit, *) 'Error: There are vertices not mapped to a edge'
             error stop
          end if
-         
+
       else
 
          write(*,'(a)') "Vertex to edge info not computed"
@@ -404,11 +404,11 @@ contains
 !!$    !-----------------------------------------------------------------!
 !!$
 !!$    cell_face: block
-!!$      
+!!$
 !!$      integer :: icell
 !!$
 !!$      write(*,*) "Combining CellVertex with VertexFace to get CellFace Map..."
-!!$      
+!!$
 !!$      ! Combine maps to get cell_faces
 !!$      call get_cell_faces(this % cell_vertices, &
 !!$           & this % vertex_faces, this % num_vertex_faces, &
@@ -437,11 +437,11 @@ contains
 !!$    end block cell_face
 !!$
 !!$    !-----------------------------------------------------------------!
-!!$    ! Find Face Cell conn. by inverting Cell Face conn.    
+!!$    ! Find Face Cell conn. by inverting Cell Face conn.
 !!$    !-----------------------------------------------------------------!
-!!$   
+!!$
 !!$    face_cell : block
-!!$      
+!!$
 !!$      integer :: iface
 !!$
 !!$      ! Invert cell_faces
@@ -453,18 +453,18 @@ contains
 !!$              & 'face [', this % face_numbers(iface), ']', &
 !!$              & 'cells [', this % face_cells(1 : this % num_face_cells(iface),iface), ']'
 !!$      end do
-!!$      
+!!$
 !!$      if (minval(this % num_face_cells) .lt. 1) then
 !!$         write(error_unit, *) 'Error: There are faces not mapped to a cell'
 !!$      end if
-!!$      
+!!$
 !!$    end block face_cell
 !!$
 !!$    ! Use a call back to mesh loader?
 !!$    tag_cells_vertices: block
 !!$
 !!$      integer :: iface
-!!$      
+!!$
 !!$      ! Tag everything as domain
 !!$      this % cell_tags = 0 !this % domain_tag
 !!$      this % vertex_tags = 0 !this % domain_tag
@@ -474,7 +474,7 @@ contains
 !!$
 !!$         ! will work only at this point the domain is marked 0
 !!$         if (this % face_tags(iface) .gt. 0) then
-!!$            
+!!$
 !!$            ! Copy face tags into corresponding cells
 !!$            this % cell_tags(this % face_cells(1:this % num_face_cells(iface),iface)) = &
 !!$                 & this % face_tags(iface)
@@ -482,7 +482,7 @@ contains
 !!$            ! Copy face tags into corresponding vertices
 !!$            this % vertex_tags(this % face_vertices(1:this % num_face_cells(iface),iface)) = &
 !!$                 & this % face_tags(iface)
-!!$            
+!!$
 !!$         end if
 !!$
 !!$      end do
@@ -491,21 +491,21 @@ contains
 !!$      where (this % face_tags .eq. 0)
 !!$         this % face_tags = maxval(this % tag_numbers)
 !!$      end where
-!!$      
+!!$
 !!$      where (this % edge_tags .eq. 0)
 !!$         this % edge_tags = maxval(this % tag_numbers)
 !!$      end where
-!!$      
+!!$
 !!$      where (this % cell_tags .eq. 0)
 !!$         this % cell_tags = maxval(this % tag_numbers)
 !!$      end where
-!!$      
+!!$
 !!$      where (this % vertex_tags .eq. 0)
 !!$         this % vertex_tags = maxval(this % tag_numbers)
 !!$      end where
 !!$
 !!$    end block tag_cells_vertices
-!!$    
+!!$
 !!$    number_tagged_faces : block
 !!$
 !!$      integer :: iface, itag, ftag, mintag, maxtag
@@ -513,10 +513,10 @@ contains
 !!$      ! Allocate the number of tagged faces
 !!$      allocate(this % num_tagged_faces(this % num_tags))
 !!$      this % num_tagged_faces = 0
-!!$      
+!!$
 !!$      mintag = minval(this % tag_numbers)
 !!$      maxtag = maxval(this % tag_numbers)
-!!$      
+!!$
 !!$      ! Count the number of tagged faces of each kind by looping
 !!$      ! through faces
 !!$      do iface = 1, this % num_faces
@@ -532,7 +532,7 @@ contains
 !!$      ! Use the counted number to allocate and recount
 !!$      allocate(this % tagged_face_face(maxval(this % num_tagged_faces), this % num_tags))
 !!$      this % tagged_face_face = 0
-!!$      this % num_tagged_faces = 0      
+!!$      this % num_tagged_faces = 0
 !!$      do iface = 1, this % num_faces
 !!$         set_tag: do itag = mintag, maxtag
 !!$            ftag = this % face_tags(iface)
@@ -543,9 +543,9 @@ contains
 !!$            end if
 !!$         end do set_tag
 !!$      end do
-!!$      
+!!$
 !!$    end block number_tagged_faces
-!!$    
+!!$
     !-----------------------------------------------------------------!
     ! Evaluate all geometric quantities needed for FVM assembly
     !-----------------------------------------------------------------!
@@ -561,16 +561,16 @@ contains
 !!$
 !!$      call this % evaluate_centroidal_vector()
 !!$      call this % evaluate_face_deltas()
-!!$      call this % evaluate_face_weight()   
-!!$      call this % evaluate_vertex_weight()    
+!!$      call this % evaluate_face_weight()
+!!$      call this % evaluate_vertex_weight()
 !!$
 !!$    end block geom
- 
+
    ! Signal that all tasks are complete
 !!$   initialize = .true.
 
  end function initialize
-  
+
   subroutine evaluate_vertex_weight(this)
 
     class(mesh), intent(inout) :: this
@@ -610,16 +610,16 @@ contains
 
        this % vertex_cell_weights(1:this % num_vertex_cells(ivertex),ivertex) = &
             & this % vertex_cell_weights(1:this % num_vertex_cells(ivertex),ivertex)/total
-       
+
     end do
-    
+
     do ivertex = 1, min(this % max_print,this % num_vertices)
        write(*,*) &
             & "vertex [", this % vertex_numbers(ivertex), ']', &
             & "weights [", this % vertex_cell_weights(&
             & 1:this % num_vertex_cells(ivertex),ivertex), ']'
     end do
-    
+
     deallocate(cells)
 
   end subroutine evaluate_vertex_weight
@@ -641,10 +641,10 @@ contains
        ! first cell is found for all faces
        cellindex1   = this % face_cells(1, iface)
        xcellcenter1 = this % cell_centers(:, cellindex1)
-       xfacecenter  = this % face_centers(:,iface)       
+       xfacecenter  = this % face_centers(:,iface)
        d1           = distance(xcellcenter1, xfacecenter)
        dinv1        = 1.0_dp/d1
-       
+
        ! Extract the second cell if this is not a boundary face/hole
        if (this % num_face_cells(iface) .ne. 1) then
           cellindex2   = this % face_cells(2, iface)
@@ -652,21 +652,21 @@ contains
           d2           = distance(xcellcenter2, xfacecenter)
           dinv2        = 1.0_dp/d2
        else
-          dinv2        = 0.0_dp                    
+          dinv2        = 0.0_dp
        end if
 
        weight       = dinv1/(dinv1+dinv2)
 
        this % face_cell_weights(1:2,iface) = [weight,1.0_dp - weight]
-       
+
     end do
-    
+
     do iface = 1, min(this % max_print,this % num_faces)
        write(*,*) &
             & "face [", iface, "] ",&
             & "weight [", this % face_cell_weights(1:2,iface), "] "
     end do
-    
+
   end subroutine evaluate_face_weight
 
   subroutine evaluate_face_deltas(this)
@@ -699,9 +699,9 @@ contains
             & "orthogonality t.n [", &
             & dot_product(this % cell_face_tangents(:, lface, gcell), this % cell_face_normals(:, lface, gcell)), "] ", &
             & this % cell_face_normals(:, lface, gcell)
-       
+
     end do
-    
+
     ! Check for negative volumes
     if (abs(minval(this % face_deltas)) < 1.0d-10) then
        print *, 'collinear faces/bad cell?'
@@ -719,7 +719,7 @@ contains
 
     allocate(this % lvec(3,this % num_faces))
 
-    do concurrent (iface=1:this % num_faces)       
+    do concurrent (iface=1:this % num_faces)
 
        cells = 0
        cells(1:this % num_face_cells(iface)) = this % face_cells(1:this%num_face_cells(iface),iface)
@@ -727,13 +727,13 @@ contains
        ! boundary face if not the highest tag
        if (this % face_tags(iface) .lt. maxval(this % tag_numbers)) then
           ! Boundary faces .or. iface is in bfaces
-          this % lvec(:,iface) = this % face_centers(:,iface) - this % cell_centers(:,cells(1))        
+          this % lvec(:,iface) = this % face_centers(:,iface) - this % cell_centers(:,cells(1))
        else
           ! Interior face; subtract neighbouring cell centers (not sure which orientation)
           if (this % num_face_cells(iface) .eq. 1) then
              ! Accounts for internal holes
              this % lvec(:,iface) = this % face_centers(:,iface) - this % cell_centers(:,cells(1))
-          else            
+          else
              this % lvec(:,iface) = this % cell_centers(:,cells(2)) - this % cell_centers(:,cells(1))
           end if
        end if
@@ -748,11 +748,11 @@ contains
 
     ! Use divergence theorem to find volumes
     integer :: lcell, lface, gface
-    
+
     write (*,*) "Evaluating cell volumes..."
 
     allocate(this % cell_volumes (this % num_cells))
-    this % cell_volumes = 0_dp      
+    this % cell_volumes = 0_dp
 
     ! V = \sum_f nx_f \times  xmid_f \times A_f
     do concurrent (lcell = 1 : this % num_cells)
@@ -765,7 +765,7 @@ contains
                & nx   => this % cell_face_normals(1,lface,lcell),&
                & area => this % face_areas(gface))
           this % cell_volumes(lcell) = this % cell_volumes(lcell) + &
-               & nx*xmid*area              
+               & nx*xmid*area
         end associate
      end do
   end do
@@ -775,7 +775,7 @@ contains
      print *, 'negative volume encountered'
      error stop
   end if
-  
+
 end subroutine evaluate_cell_volumes
 
   subroutine evaluate_face_centers_areas(this)
@@ -788,7 +788,7 @@ end subroutine evaluate_cell_volumes
     write(*, *) 'Evaluating face centers and areas'
 
     allocate(this % face_areas(this % num_faces))
-    allocate(this % face_centers(3,this % num_faces))         
+    allocate(this % face_centers(3,this % num_faces))
 
     do concurrent(iface = 1 : this % num_faces)
 
@@ -799,13 +799,13 @@ end subroutine evaluate_cell_volumes
          this % face_centers(1:3, iface) = &
               & sum(this % vertices(1:3, facenodes),dim=2)/&
               & real(2,kind=dp) ! this face has 2 edges
-         
+
          ! Compute face areas
          associate(v1 => this % vertices(:,facenodes(1)), &
               & v2 => this % vertices(:,facenodes(2))  )
            this % face_areas(iface) = distance(v1, v2)
          end associate
-       
+
       end associate
 
    end do
@@ -815,9 +815,9 @@ end subroutine evaluate_cell_volumes
       print *, 'same points/bad face?'
       error stop
    end if
-   
+
  end subroutine evaluate_face_centers_areas
- 
+
   subroutine evaluate_cell_centers(this)
 
     class(mesh), intent(inout) :: this
@@ -826,9 +826,9 @@ end subroutine evaluate_cell_volumes
     type(integer) :: icell
 
     write(*,*) 'Evaluating cell centers'
-    
+
     allocate(this % cell_centers(3, this % num_cells))
-    
+
     do concurrent(icell=1:this % num_cells)
        this % cell_centers(:, icell) = sum(&
             & this % vertices(&
@@ -837,9 +837,9 @@ end subroutine evaluate_cell_volumes
             & ), dim=2)&
             & /real(this % num_cell_vertices(icell), kind=dp)
     end do
-   
+
   end subroutine evaluate_cell_centers
-  
+
   subroutine evaluate_face_tangents_normals(this)
 
     class(mesh), intent(inout) :: this
@@ -849,7 +849,7 @@ end subroutine evaluate_cell_volumes
     integer  :: ifv(2)
 
     write(*,*) 'Evaluating face tangents normals'
-    
+
     allocate(this % cell_face_normals (3, maxval(this % num_cell_faces), this % num_cells))
     allocate(this % cell_face_tangents(3, maxval(this % num_cell_faces), this % num_cells))
 
@@ -857,7 +857,7 @@ end subroutine evaluate_cell_volumes
     do concurrent (icell = 1 : this % num_cells)
 
        ! get cell verties
-       associate( icv =>  this % cell_vertices(:, icell) ) 
+       associate( icv =>  this % cell_vertices(:, icell) )
 
        ! loop faces of each cell
        do iface = 1, this % num_cell_faces(icell)
@@ -867,10 +867,10 @@ end subroutine evaluate_cell_volumes
              ifv(2) = icv(1)
           else
              ifv(1) = icv(iface)
-             ifv(2) = icv(iface+1)               
+             ifv(2) = icv(iface+1)
           end if
 
-          ! find the face vertex in cell order                       
+          ! find the face vertex in cell order
           gface = this % cell_faces(iface,icell)
 
           t = this % vertices(:,ifv(2)) - this % vertices(:,ifv(1))
@@ -890,13 +890,13 @@ end subroutine evaluate_cell_volumes
 
           this % cell_face_normals (:, iface, icell) = n
           this % cell_face_tangents(:, iface, icell) = t
-          
+
        end do
 
        end associate
 
     end do
-    
+
   end subroutine evaluate_face_tangents_normals
 
   !===================================================================!
@@ -916,7 +916,7 @@ end subroutine evaluate_cell_volumes
   !===================================================================!
   ! Constructor for mesh creation
   !===================================================================!
-  
+
   subroutine to_string(this)
 
     class(mesh), intent(in) :: this
@@ -932,7 +932,7 @@ end subroutine evaluate_cell_volumes
             & "tag number [", this % tag_numbers(itag) , "] ", &
             & "info [", this % tag_info(itag) % str, "] "
     end do
-    
+
     if (this % num_vertices .gt. 0) then
        write(*,'(a,i4,a,i4)') "Vertex info for ", min(this % max_print,this % num_vertices), &
             & ' vertices out of ', this % num_vertices
@@ -960,7 +960,7 @@ end subroutine evaluate_cell_volumes
 
     if (this % num_faces .gt. 0) then
        write(*,'(a,i4,a,i4)') "Face info for ", min(this % max_print,this % num_faces), &
-            & ' faces out of ', this % num_faces       
+            & ' faces out of ', this % num_faces
        write(*,*) "fno ftag nfv iverts"
        do iface = 1, min(this % max_print,this % num_faces)
           write(*,'(i6,i2,i2,10i6)') &
@@ -971,7 +971,7 @@ end subroutine evaluate_cell_volumes
        end do
     end if
 
-    if (this % num_edges .gt. 0) then    
+    if (this % num_edges .gt. 0) then
        write(*,'(a,i4,a,i4)') "Edge info for ", min(this % max_print,this % num_edges), &
             & ' edges out of ', this % num_edges
        write(*,*) "eno etag nev iverts"
@@ -983,9 +983,9 @@ end subroutine evaluate_cell_volumes
                & this % edge_vertices(1:this % num_edge_vertices(iedge), iedge)
        end do
     end if
-!!$    
+!!$
 !!$    if (this % initialized .eqv. .true.) then
-!!$       
+!!$
 !!$       write(*,*) "Cell Geo. Data [index] [center] [volume] "
 !!$       do icell = 1, min(this % max_print,this % num_cells)
 !!$          write(*,*) &

@@ -10,7 +10,7 @@ module class_mesh
   use interface_mesh_loader , only : mesh_loader
   use class_string          , only : string    
   use module_mesh_utils
-  
+
   implicit none
 
   private
@@ -49,13 +49,15 @@ module class_mesh
      integer :: num_edges
      integer  , allocatable :: edge_numbers(:)
      integer  , allocatable :: edge_tags(:)
+     integer  , allocatable :: edge_types(:)
      integer  , allocatable :: edge_vertices(:,:)        ! [[v1,v2],1:nedges]
      integer  , allocatable :: num_edge_vertices(:)
 
      ! Fundamental face info
      integer :: num_faces
      integer  , allocatable :: face_numbers(:)          
-     integer  , allocatable :: face_tags(:)          
+     integer  , allocatable :: face_tags(:)
+     integer  , allocatable :: face_types(:)
      integer  , allocatable :: face_vertices(:,:)        ! [[v1,v2],1:nfaces]
      integer  , allocatable :: num_face_vertices(:)
 
@@ -63,6 +65,7 @@ module class_mesh
      integer :: num_cells
      integer  , allocatable :: cell_numbers(:)
      integer  , allocatable :: cell_tags(:)
+     integer  , allocatable :: cell_types(:)
      integer  , allocatable :: cell_vertices(:,:)   ! [[v1,v2,v3], 1:ncells]
      integer  , allocatable :: num_cell_vertices(:) ! [1:ncells]
 
@@ -166,6 +169,7 @@ contains
          & me % num_edges   , me % edge_numbers  , me % edge_tags   , me % edge_vertices , me % num_edge_vertices , &
          & me % num_faces   , me % face_numbers  , me % face_tags   , me % face_vertices , me % num_face_vertices , &
          & me % num_cells   , me % cell_numbers  , me % cell_tags   , me % cell_vertices , me % num_cell_vertices , &
+         & me % cell_types  , me % face_types    , me % edge_types  , &
          & me % num_tags    , me % tag_numbers   , me % tag_info )
 
     ! Sanity check (make sure numbering is continuous), although it may not start from one
@@ -184,10 +188,10 @@ contains
 
 
     ! Perform initialization tasks and store the resulting flag
-    me % initialized = me % initialize()
+!    me % initialized = me % initialize()
     if (me % initialized .eqv. .false.) then
        write(error_unit,*) "Mesh.Construct: failed"
-       error stop
+!       error stop
     end if
     
   end function create_mesh
@@ -394,176 +398,176 @@ contains
       end if
 
     end block vertex_edge
-
-    !-----------------------------------------------------------------!
-    ! Find Cell Face conn. by combining two maps
-    !-----------------------------------------------------------------!
-
-    cell_face: block
-      
-      integer :: icell
-
-      write(*,*) "Combining CellVertex with VertexFace to get CellFace Map..."
-      
-      ! Combine maps to get cell_faces
-      call get_cell_faces(this % cell_vertices, &
-           & this % vertex_faces, this % num_vertex_faces, &
-           & this % cell_faces, this % num_cell_faces)
-
-      if (allocated(this % cell_faces)) then
-
-         write(*,'(a,i4,a,i4)') &
-              & "Cell to face info for", min(this % max_print,this % num_cells), &
-              & " cells out of ", this % num_cells
-
-         do icell = 1, min(this % max_print,this % num_cells)
-            write(*,*) &
-                 & 'cell ['  , icell, ']',&
-                 & 'nfaces [', this % num_cell_faces(icell), ']',&
-                 & 'faces [' , this % cell_faces(&
-                 & 1:this % num_cell_faces(icell),icell), ']'
-         end do
-
-      else
-
-         write(*,'(a)') "Vertex to edge info not computed"
-
-      end if
-
-    end block cell_face
-
-    !-----------------------------------------------------------------!
-    ! Find Face Cell conn. by inverting Cell Face conn.    
-    !-----------------------------------------------------------------!
-   
-    face_cell : block
-      
-      integer :: iface
-
-      ! Invert cell_faces
-      call reverse_map(this % cell_faces, this % num_cell_faces, &
-           & this % face_cells, this % num_face_cells)
-
-      do iface = 1, min(this % max_print,this % num_faces)
-         print *, &
-              & 'face [', this % face_numbers(iface), ']', &
-              & 'cells [', this % face_cells(1 : this % num_face_cells(iface),iface), ']'
-      end do
-      
-      if (minval(this % num_face_cells) .lt. 1) then
-         write(error_unit, *) 'Error: There are faces not mapped to a cell'
-      end if
-      
-    end block face_cell
-
-    ! Use a call back to mesh loader?
-    tag_cells_vertices: block
-
-      integer :: iface
-      
-      ! Tag everything as domain
-      this % cell_tags = 0 !this % domain_tag
-      this % vertex_tags = 0 !this % domain_tag
-
-      ! Loop through boundary faces and tag cells and vertices
-      do concurrent (iface=1:this % num_faces)
-
-         ! will work only at this point the domain is marked 0
-         if (this % face_tags(iface) .gt. 0) then
-            
-            ! Copy face tags into corresponding cells
-            this % cell_tags(this % face_cells(1:this % num_face_cells(iface),iface)) = &
-                 & this % face_tags(iface)
-
-            ! Copy face tags into corresponding vertices
-            this % vertex_tags(this % face_vertices(1:this % num_face_cells(iface),iface)) = &
-                 & this % face_tags(iface)
-            
-         end if
-
-      end do
-
-      !  Set the domain tags to maxval
-      where (this % face_tags .eq. 0)
-         this % face_tags = maxval(this % tag_numbers)
-      end where
-      
-      where (this % edge_tags .eq. 0)
-         this % edge_tags = maxval(this % tag_numbers)
-      end where
-      
-      where (this % cell_tags .eq. 0)
-         this % cell_tags = maxval(this % tag_numbers)
-      end where
-      
-      where (this % vertex_tags .eq. 0)
-         this % vertex_tags = maxval(this % tag_numbers)
-      end where
-
-    end block tag_cells_vertices
-    
-    number_tagged_faces : block
-
-      integer :: iface, itag, ftag, mintag, maxtag
-
-      ! Allocate the number of tagged faces
-      allocate(this % num_tagged_faces(this % num_tags))
-      this % num_tagged_faces = 0
-      
-      mintag = minval(this % tag_numbers)
-      maxtag = maxval(this % tag_numbers)
-      
-      ! Count the number of tagged faces of each kind by looping
-      ! through faces
-      do iface = 1, this % num_faces
-         inc_tag: do itag = mintag, maxtag
-            ftag = this % face_tags(iface)
-            if (itag .eq. ftag) then
-               this % num_tagged_faces(itag) = 1 + this % num_tagged_faces(itag)
-               exit inc_tag
-            end if
-         end do inc_tag
-      end do
-
-      ! Use the counted number to allocate and recount
-      allocate(this % tagged_face_face(maxval(this % num_tagged_faces), this % num_tags))
-      this % tagged_face_face = 0
-      this % num_tagged_faces = 0      
-      do iface = 1, this % num_faces
-         set_tag: do itag = mintag, maxtag
-            ftag = this % face_tags(iface)
-            if (itag .eq. ftag) then
-               this % num_tagged_faces(itag) = 1 + this % num_tagged_faces(itag)
-               this % tagged_face_face(this % num_tagged_faces(itag),itag) = iface
-               exit set_tag
-            end if
-         end do set_tag
-      end do
-      
-    end block number_tagged_faces
-    
+!!$
+!!$    !-----------------------------------------------------------------!
+!!$    ! Find Cell Face conn. by combining two maps CF = CV x VF
+!!$    !-----------------------------------------------------------------!
+!!$
+!!$    cell_face: block
+!!$      
+!!$      integer :: icell
+!!$
+!!$      write(*,*) "Combining CellVertex with VertexFace to get CellFace Map..."
+!!$      
+!!$      ! Combine maps to get cell_faces
+!!$      call get_cell_faces(this % cell_vertices, &
+!!$           & this % vertex_faces, this % num_vertex_faces, &
+!!$           & this % cell_faces, this % num_cell_faces)
+!!$
+!!$      if (allocated(this % cell_faces)) then
+!!$
+!!$         write(*,'(a,i4,a,i4)') &
+!!$              & "Cell to face info for", min(this % max_print,this % num_cells), &
+!!$              & " cells out of ", this % num_cells
+!!$
+!!$         do icell = 1, max(this % max_print,this % num_cells)
+!!$            write(*,*) &
+!!$                 & 'cell ['  , icell, ']',&
+!!$                 & 'nfaces [', this % num_cell_faces(icell), ']',&
+!!$                 & 'faces [' , this % cell_faces(&
+!!$                 & 1:this % num_cell_faces(icell),icell), ']'
+!!$         end do
+!!$
+!!$      else
+!!$
+!!$         write(*,'(a)') "Vertex to edge info not computed"
+!!$
+!!$      end if
+!!$
+!!$    end block cell_face
+!!$
+!!$    !-----------------------------------------------------------------!
+!!$    ! Find Face Cell conn. by inverting Cell Face conn.    
+!!$    !-----------------------------------------------------------------!
+!!$   
+!!$    face_cell : block
+!!$      
+!!$      integer :: iface
+!!$
+!!$      ! Invert cell_faces
+!!$      call reverse_map(this % cell_faces, this % num_cell_faces, &
+!!$           & this % face_cells, this % num_face_cells)
+!!$
+!!$      do iface = 1, min(this % max_print,this % num_faces)
+!!$         print *, &
+!!$              & 'face [', this % face_numbers(iface), ']', &
+!!$              & 'cells [', this % face_cells(1 : this % num_face_cells(iface),iface), ']'
+!!$      end do
+!!$      
+!!$      if (minval(this % num_face_cells) .lt. 1) then
+!!$         write(error_unit, *) 'Error: There are faces not mapped to a cell'
+!!$      end if
+!!$      
+!!$    end block face_cell
+!!$
+!!$    ! Use a call back to mesh loader?
+!!$    tag_cells_vertices: block
+!!$
+!!$      integer :: iface
+!!$      
+!!$      ! Tag everything as domain
+!!$      this % cell_tags = 0 !this % domain_tag
+!!$      this % vertex_tags = 0 !this % domain_tag
+!!$
+!!$      ! Loop through boundary faces and tag cells and vertices
+!!$      do concurrent (iface=1:this % num_faces)
+!!$
+!!$         ! will work only at this point the domain is marked 0
+!!$         if (this % face_tags(iface) .gt. 0) then
+!!$            
+!!$            ! Copy face tags into corresponding cells
+!!$            this % cell_tags(this % face_cells(1:this % num_face_cells(iface),iface)) = &
+!!$                 & this % face_tags(iface)
+!!$
+!!$            ! Copy face tags into corresponding vertices
+!!$            this % vertex_tags(this % face_vertices(1:this % num_face_cells(iface),iface)) = &
+!!$                 & this % face_tags(iface)
+!!$            
+!!$         end if
+!!$
+!!$      end do
+!!$
+!!$      !  Set the domain tags to maxval
+!!$      where (this % face_tags .eq. 0)
+!!$         this % face_tags = maxval(this % tag_numbers)
+!!$      end where
+!!$      
+!!$      where (this % edge_tags .eq. 0)
+!!$         this % edge_tags = maxval(this % tag_numbers)
+!!$      end where
+!!$      
+!!$      where (this % cell_tags .eq. 0)
+!!$         this % cell_tags = maxval(this % tag_numbers)
+!!$      end where
+!!$      
+!!$      where (this % vertex_tags .eq. 0)
+!!$         this % vertex_tags = maxval(this % tag_numbers)
+!!$      end where
+!!$
+!!$    end block tag_cells_vertices
+!!$    
+!!$    number_tagged_faces : block
+!!$
+!!$      integer :: iface, itag, ftag, mintag, maxtag
+!!$
+!!$      ! Allocate the number of tagged faces
+!!$      allocate(this % num_tagged_faces(this % num_tags))
+!!$      this % num_tagged_faces = 0
+!!$      
+!!$      mintag = minval(this % tag_numbers)
+!!$      maxtag = maxval(this % tag_numbers)
+!!$      
+!!$      ! Count the number of tagged faces of each kind by looping
+!!$      ! through faces
+!!$      do iface = 1, this % num_faces
+!!$         inc_tag: do itag = mintag, maxtag
+!!$            ftag = this % face_tags(iface)
+!!$            if (itag .eq. ftag) then
+!!$               this % num_tagged_faces(itag) = 1 + this % num_tagged_faces(itag)
+!!$               exit inc_tag
+!!$            end if
+!!$         end do inc_tag
+!!$      end do
+!!$
+!!$      ! Use the counted number to allocate and recount
+!!$      allocate(this % tagged_face_face(maxval(this % num_tagged_faces), this % num_tags))
+!!$      this % tagged_face_face = 0
+!!$      this % num_tagged_faces = 0      
+!!$      do iface = 1, this % num_faces
+!!$         set_tag: do itag = mintag, maxtag
+!!$            ftag = this % face_tags(iface)
+!!$            if (itag .eq. ftag) then
+!!$               this % num_tagged_faces(itag) = 1 + this % num_tagged_faces(itag)
+!!$               this % tagged_face_face(this % num_tagged_faces(itag),itag) = iface
+!!$               exit set_tag
+!!$            end if
+!!$         end do set_tag
+!!$      end do
+!!$      
+!!$    end block number_tagged_faces
+!!$    
     !-----------------------------------------------------------------!
     ! Evaluate all geometric quantities needed for FVM assembly
     !-----------------------------------------------------------------!
-
-    geom : block
-
-      write(*,*) 'Calculating mesh geometry information'
-
-      call this % evaluate_cell_centers()
-      call this % evaluate_face_centers_areas()
-      call this % evaluate_face_tangents_normals()
-      call this % evaluate_cell_volumes()
-
-      call this % evaluate_centroidal_vector()
-      call this % evaluate_face_deltas()
-      call this % evaluate_face_weight()   
-      call this % evaluate_vertex_weight()    
-
-    end block geom
-
+!!$
+!!$    geom : block
+!!$
+!!$      write(*,*) 'Calculating mesh geometry information'
+!!$
+!!$      call this % evaluate_cell_centers()
+!!$      call this % evaluate_face_centers_areas()
+!!$      call this % evaluate_face_tangents_normals()
+!!$      call this % evaluate_cell_volumes()
+!!$
+!!$      call this % evaluate_centroidal_vector()
+!!$      call this % evaluate_face_deltas()
+!!$      call this % evaluate_face_weight()   
+!!$      call this % evaluate_vertex_weight()    
+!!$
+!!$    end block geom
+ 
    ! Signal that all tasks are complete
-   initialize = .true.
+!!$   initialize = .true.
 
  end function initialize
   
@@ -979,28 +983,28 @@ end subroutine evaluate_cell_volumes
                & this % edge_vertices(1:this % num_edge_vertices(iedge), iedge)
        end do
     end if
-    
-    if (this % initialized .eqv. .true.) then
-       
-       write(*,*) "Cell Geo. Data [index] [center] [volume] "
-       do icell = 1, min(this % max_print,this % num_cells)
-          write(*,*) &
-               & "local number [", this % cell_numbers(icell)   ,"] ", &
-               & "center [", this % cell_centers(:,icell) ,"] ", &
-               & "volume [", this % cell_volumes(icell)   ,"] "
-       end do
-
-       write(*,*) "Face Data [index] [center] [area] "
-       do iface = 1, min(this % max_print,this % num_faces)
-          write(*,*) &
-               & "num [",iface,"] ", &
-               & "center [",this % face_centers(:, iface),"] ", &
-               & "area [",this % face_areas(iface),"] ", &
-               & "lvec [",this % lvec(:,iface),"] ", &
-               & "delta [",this % face_deltas(iface),"] "
-       end do
-
-    end if
+!!$    
+!!$    if (this % initialized .eqv. .true.) then
+!!$       
+!!$       write(*,*) "Cell Geo. Data [index] [center] [volume] "
+!!$       do icell = 1, min(this % max_print,this % num_cells)
+!!$          write(*,*) &
+!!$               & "local number [", this % cell_numbers(icell)   ,"] ", &
+!!$               & "center [", this % cell_centers(:,icell) ,"] ", &
+!!$               & "volume [", this % cell_volumes(icell)   ,"] "
+!!$       end do
+!!$
+!!$       write(*,*) "Face Data [index] [center] [area] "
+!!$       do iface = 1, min(this % max_print,this % num_faces)
+!!$          write(*,*) &
+!!$               & "num [",iface,"] ", &
+!!$               & "center [",this % face_centers(:, iface),"] ", &
+!!$               & "area [",this % face_areas(iface),"] ", &
+!!$               & "lvec [",this % lvec(:,iface),"] ", &
+!!$               & "delta [",this % face_deltas(iface),"] "
+!!$       end do
+!!$
+!!$    end if
 
   end subroutine to_string
 

@@ -29,6 +29,7 @@ module interface_mesh_loader
           & num_edges   , edge_numbers  , edge_tags   , edge_vertices , num_edge_vertices , &
           & num_faces   , face_numbers  , face_tags   , face_vertices , num_face_vertices , &
           & num_cells   , cell_numbers  , cell_tags   , cell_vertices , num_cell_vertices , &
+          & cell_types  , face_types    , edge_types  , &
           & num_tags    , tag_numbers , tag_info )
 
        import mesh_loader
@@ -50,6 +51,7 @@ module interface_mesh_loader
        integer, intent(out), allocatable :: edge_tags(:)
        integer, intent(out), allocatable :: edge_vertices(:,:)
        integer, intent(out), allocatable :: num_edge_vertices(:)
+       integer, intent(out), allocatable :: edge_types(:)
 
        ! Faces    
        integer, intent(out)              :: num_faces
@@ -57,6 +59,7 @@ module interface_mesh_loader
        integer, intent(out), allocatable :: face_tags(:)
        integer, intent(out), allocatable :: face_vertices(:,:)
        integer, intent(out), allocatable :: num_face_vertices(:)
+       integer, intent(out), allocatable :: face_types(:)
 
        ! Cells
        integer, intent(out)              :: num_cells
@@ -64,7 +67,8 @@ module interface_mesh_loader
        integer, intent(out), allocatable :: cell_tags(:)
        integer, intent(out), allocatable :: cell_vertices(:,:)
        integer, intent(out), allocatable :: num_cell_vertices(:)
-       
+       integer, intent(out), allocatable :: cell_types(:)
+
        ! Tagging boundaries and domain with integers/strings
        integer     , intent(out)              :: num_tags              
        integer     , allocatable, intent(out) :: tag_numbers(:)       

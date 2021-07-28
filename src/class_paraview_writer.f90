@@ -13,29 +13,13 @@ module class_paraview_writer
   use iso_fortran_env, only : dp => real64, int32
   use class_mesh     , only : mesh_t => mesh
   use class_string   , only : string
+  
   implicit none
 
   !===================================================================!
-  ! Paraview writer datatype
+  ! Paraview cell types datatype (enum)
   !===================================================================!
-
-  type :: paraview_writer
-
-     ! attributes
-     class(mesh_t), allocatable :: mesh
-
-     ! support binary and ascii
-     ! deduce cell types from num cell vertices
-     ! write cell and point data
-
-   contains
-
-     ! type bound procedures
-     procedure :: write
-    
-  end type paraview_writer
-
-
+  
   type :: linear_cell_type
 
      integer(kind=int32) :: VTK_EMPTY_CELL        = 0
@@ -55,8 +39,34 @@ module class_paraview_writer
      integer(kind=int32) :: VTK_PYRAMID           = 14
      integer(kind=int32) :: VTK_PENTAGONAL_PRISM  = 15
      integer(kind=int32) :: VTK_HEXAGONAL_PRISM   = 16
+     integer(kind=int32) :: VTK_POLYHEDRON        = 42
+     
+   contains
+
+     procedure :: get_element_type          
 
   end type linear_cell_type
+
+  !===================================================================!
+  ! Paraview writer datatype
+  !===================================================================!
+
+  type :: paraview_writer
+
+     ! attributes
+     class(mesh_t), allocatable :: mesh
+
+     type(linear_cell_type)     :: cell_type
+
+     ! support binary and ascii
+     ! write cell and point data
+
+   contains
+
+     ! type bound procedures
+     procedure :: write
+    
+  end type paraview_writer
   
   !===================================================================!
   ! Interface for multiple constructors
@@ -67,6 +77,37 @@ module class_paraview_writer
   end interface paraview_writer
   
 contains
+
+  !===================================================================!
+  ! Function to map gmsh element numbers to paraview types
+  !===================================================================!
+  
+  pure elemental type(integer) function get_element_type(this, gmsh_type) &
+       & result (paraview_type)
+
+    class(linear_cell_type), intent(in) :: this
+    integer                , intent(in) :: gmsh_type
+    
+    select case (gmsh_type)
+    case (1) ! 2-node line.
+       paraview_type = this % VTK_LINE
+    case (2) ! 3-node triangle
+       paraview_type = this % VTK_TRIANGLE
+    case (3) ! 4-node quadrangle
+       paraview_type = this % VTK_QUAD
+    case (4) ! 4-node tetrahedron
+       paraview_type = this % VTK_TETRA
+    case (5) ! 8-node hexahedron
+       paraview_type = this % VTK_HEXAHEDRON
+    case (6) ! 6-node prism
+       paraview_type = this % VTK_WEDGE
+    case (7) ! 5-node prism (pyramid)
+       paraview_type = this % VTK_PYRAMID
+    case default
+       paraview_type = this % VTK_POLYHEDRON
+    end select
+    
+  end function get_element_type
 
   !===================================================================!
   ! Constructor for paraview wrtier
@@ -91,7 +132,8 @@ contains
     character(len=*)       , intent(in)           :: filename
     real(dp)               , intent(in), optional :: phic(:,:) ! (icell, ivar)
     type(string)           , optional             :: solution_labels(:)
-
+    type(linear_cell_type) :: paraview_type
+    
     ! locals
     integer                       :: ierr
     integer, parameter            :: fhandle = 90
@@ -103,10 +145,18 @@ contains
        return
     end if
 
+    !-----------------------------------------------------------------!
+    ! Basic header information
+    !-----------------------------------------------------------------!
+
     write(fhandle, '(a)') '<VTKFile type="UnstructuredGrid" version="0.1" byte_order="LittleEndian">'
     write(fhandle, '(a)') '<UnstructuredGrid>'
     write(fhandle, '(a,i0,a,i0,a)') '<Piece NumberOfPoints="', this % mesh % num_vertices, &
          & '" NumberOfCells="', this % mesh % num_cells, '">'
+
+    !-----------------------------------------------------------------!
+    ! Write the vertices
+    !-----------------------------------------------------------------!
     
     write_points: block
 
@@ -117,7 +167,7 @@ contains
 
       do ivertex = 1, this % mesh % num_vertices
          
-         write(fhandle, *) (this % mesh % vertices(jdim, ivertex), jdim = 1, 3)
+         write(fhandle, '(f0.2,1x,f0.2,1x,f0.2)') (this % mesh % vertices(jdim, ivertex), jdim = 1, 3)
          
       end do
 
@@ -129,7 +179,6 @@ contains
     write_cells: block
 
       integer :: icell, jvertex
-      integer, allocatable :: cell_types(:)
 
       integer :: offset
       
@@ -176,8 +225,8 @@ contains
       
       write(fhandle, *) '<DataArray type="UInt8" Name="types" format="ascii">'
       
-      do icell = 1, this % mesh % num_cells
-         write(fhandle, '(i0)') 7 ! polyhedrals
+      do icell = 1, this % mesh % num_cells         
+         write(fhandle, '(i0)')  paraview_type % get_element_type (this % mesh % cell_types(icell)) 
       end do
       write(fhandle, '(a)') '</DataArray>'
       
@@ -185,9 +234,7 @@ contains
 
       write(fhandle, '(a)') '<PointData></PointData>'
       write(fhandle, '(a)') '<CellData></CellData>'
-  
-      if (allocated(cell_types))   deallocate(cell_types)
-      
+       
     end block write_cells
 
     ! close the opened tags

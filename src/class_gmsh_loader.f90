@@ -52,6 +52,7 @@ contains
        & num_edges   , edge_numbers  , edge_tags   , edge_vertices , num_edge_vertices , &
        & num_faces   , face_numbers  , face_tags   , face_vertices , num_face_vertices , &
        & num_cells   , cell_numbers  , cell_tags   , cell_vertices , num_cell_vertices , &
+       & cell_types  , face_types    , edge_types  , &
        & num_tags    , tag_numbers , tag_info )
     
     ! Arguments
@@ -69,6 +70,7 @@ contains
     integer, intent(out), allocatable :: edge_tags(:)
     integer, intent(out), allocatable :: edge_vertices(:,:)
     integer, intent(out), allocatable :: num_edge_vertices(:)
+    integer, intent(out), allocatable :: edge_types(:)
 
     ! Faces    
     integer, intent(out)              :: num_faces
@@ -76,6 +78,7 @@ contains
     integer, intent(out), allocatable :: face_tags(:)
     integer, intent(out), allocatable :: face_vertices(:,:)
     integer, intent(out), allocatable :: num_face_vertices(:)
+    integer, intent(out), allocatable :: face_types(:)
 
     ! Cells
     integer, intent(out)              :: num_cells
@@ -83,6 +86,7 @@ contains
     integer, intent(out), allocatable :: cell_tags(:)
     integer, intent(out), allocatable :: cell_vertices(:,:)
     integer, intent(out), allocatable :: num_cell_vertices(:)
+    integer, intent(out), allocatable :: cell_types(:)
     
     ! Tagging boundaries and domain with integers/strings
     integer     , intent(out)              :: num_tags
@@ -277,56 +281,27 @@ contains
         num_cells = 0
 
         ! Count the number of cells present in elements
+        ! https://gmsh.info/doc/texinfo/gmsh.html        
         do iline = 1, num_lines
 
            call elines(iline) % tokenize(" ", num_tokens, tokens)
-          
-           if (tokens(2) % asinteger() .eq. 1) then
 
+           select case (tokens(2) % asinteger())
+           case (1)
               ! 2-node line. 
               num_edges = num_edges + 1
-              
-           else if (tokens(2) % asinteger() .eq. 2) then
-
-              ! 3-node triangle. 
+           case (2:3)
+              ! 3-node triangle, 4-node quadrangle
               num_faces = num_faces + 1
-
-           else if (tokens(2) % asinteger() .eq. 3) then
-
-              ! 4-node quadrangle. 
-              num_faces = num_faces + 1
-
-           else if (tokens(2) % asinteger() .eq. 4) then
-              
-              ! 4-node tetrahedron.
+           case (4:7)
+              ! 4-node tetrahedron, 8-node hexahedron, 6-node prism, 5-node prism (pyramid)
               num_cells = num_cells + 1
-
-           else if (tokens(2) % asinteger() .eq. 5) then
-              
-              ! 8-node hexahedron. 
-              num_cells = num_cells + 1
-
-           else if (tokens(2) % asinteger() .eq. 6) then
-
-              ! 6-node prism
-              num_cells = num_cells + 1
-
-           else if (tokens(2) % asinteger() .eq. 7) then
-                 
-              ! 5-node prism
-              num_cells = num_cells + 1
-
-           else if (tokens(2) % asinteger() .eq. 15) then
-                 
+           case (15)
               ! 1-node point (skip)
-                            
-           else
-
-              call tokens(2) % print()
-              
+           case default              
+              call tokens(2) % print()              
               error stop "unsupported GMSH mesh element type"
-           
-           end if
+           end select
 
         end do
 
@@ -346,7 +321,10 @@ contains
 
         allocate(cell_tags(num_cells))
         cell_tags = 0
-        
+
+        allocate(cell_types(num_cells))
+        cell_types = 0
+              
         ! Allocate space for faces
         allocate(face_numbers(num_faces))
         face_numbers = 0
@@ -360,6 +338,9 @@ contains
         allocate(face_tags(num_faces))
         face_tags = 0
 
+        allocate(face_types(num_faces))
+        face_types = 0
+      
         ! Allocate space for edges
         allocate(edge_numbers(num_edges))
         edge_numbers = 0
@@ -373,6 +354,9 @@ contains
         allocate(edge_tags(num_edges))
         edge_tags = 0
 
+        allocate(edge_types(num_edges))
+        edge_types = 0
+      
 !!$        ! Create space for processing face information
 !!$        set_face_vertices = set(2, 4*num_cells)
 !!$        set_face_numbers  = set(1, 4*num_cells)
@@ -406,6 +390,7 @@ contains
               edge_tags(edge_idx)          = tokens(4) % asinteger()
               edge_vertices(1:2,edge_idx)  = tokens(6:6+2-1) % asinteger()
               num_edge_vertices(edge_idx)  = 2
+              edge_types(edge_idx)         = tokens(2) % asinteger()
               
            else if (tokens(2) % asinteger() .eq. 2) then
 
@@ -416,6 +401,7 @@ contains
               face_tags(face_idx)          = tokens(4) % asinteger()
               face_vertices(1:3,face_idx)  = tokens(6:6+3-1) % asinteger()
               num_face_vertices(face_idx)  = 3
+              face_types(face_idx)         = tokens(2) % asinteger()
 
            else if (tokens(2) % asinteger() .eq. 3) then
 
@@ -426,6 +412,7 @@ contains
               face_tags(face_idx)          = tokens(4) % asinteger()
               face_vertices(1:4,face_idx)  = tokens(6:6+4-1) % asinteger()
               num_face_vertices(face_idx)  = 4
+              face_types(face_idx)         = tokens(2) % asinteger()
 
            else if (tokens(2) % asinteger() .eq. 4) then
               
@@ -436,6 +423,7 @@ contains
               cell_tags(cell_idx)          = tokens(4) % asinteger()
               cell_vertices(1:4,cell_idx)  = tokens(6:6+4-1) % asinteger()
               num_cell_vertices(cell_idx)  = 4
+              cell_types(cell_idx)         = tokens(2) % asinteger()
 
            else if (tokens(2) % asinteger() .eq. 5) then
               
@@ -446,7 +434,7 @@ contains
               cell_tags(cell_idx)          = tokens(4) % asinteger()
               cell_vertices(1:8,cell_idx)  = tokens(6:6+8-1) % asinteger()
               num_cell_vertices(cell_idx)  = 8
-              
+              cell_types(cell_idx)         = tokens(2) % asinteger()              
 
            else if (tokens(2) % asinteger() .eq. 6) then
 
@@ -457,6 +445,7 @@ contains
               cell_tags(cell_idx)          = tokens(4) % asinteger()
               cell_vertices(1:6,cell_idx)  = tokens(6:6+6-1) % asinteger()
               num_cell_vertices(cell_idx)  = 6
+              cell_types(cell_idx)         = tokens(2) % asinteger()              
 
            else if (tokens(2) % asinteger() .eq. 7) then
                  
@@ -467,6 +456,7 @@ contains
               cell_tags(cell_idx)          = tokens(4) % asinteger()
               cell_vertices(1:5,cell_idx)  = tokens(6:6+5-1) % asinteger()
               num_cell_vertices(cell_idx)  = 5
+              cell_types(cell_idx)         = tokens(2) % asinteger()
 
            else if (tokens(2) % asinteger() .eq. 15) then
 

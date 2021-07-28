@@ -9,6 +9,7 @@ program test_mesh
   use class_test_mesh_loader , only : test_mesh_loader
   use class_file             , only : file
   use class_string           , only : string
+  use class_paraview_writer  , only : paraview_writer
 
   implicit none
 
@@ -26,7 +27,7 @@ program test_mesh
     files(3) = string('../triangle.msh')
     files(4) = string('../frontal.msh')
     files(5) = string('../delaunay.msh')
-    files(6) = string('../box2.msh')
+    files(6) = string('../box-72.msh')
 
     do ifile = 6, size(files)
        write(*,*) "Testing GMSH Loader with file ", files(ifile) % str
@@ -107,6 +108,7 @@ contains
     character(len=*)  , intent(in)   :: filename
     class(gmsh_loader), allocatable :: gmsh_loader_obj
     class(mesh)       , allocatable :: mesh_obj
+    class(paraview_writer), allocatable :: pwriter
 
     ! Create a mesh loader for mesh file
     allocate(gmsh_loader_obj, source =  gmsh_loader(filename))
@@ -114,6 +116,14 @@ contains
     allocate(mesh_obj, source = mesh(gmsh_loader_obj))
     
     call mesh_obj % to_string()
+
+    allocate(pwriter, source = paraview_writer(mesh_obj))
+
+    print *, filename(1:index(filename, '.'))//'.vtu'
+    
+    call pwriter % write('check.vtu')
+
+    deallocate(pwriter)
     
     deallocate(mesh_obj)
     

@@ -21,6 +21,22 @@ module class_mesh
      module procedure create_mesh
   end interface mesh
 
+  type :: face_group
+
+     ! Faces
+     integer :: group_number
+     integer :: num_faces
+     integer, allocatable :: face_numbers(:)
+     integer, allocatable :: face_vertices(:,:)
+     integer, allocatable :: num_face_vertices(:)
+     integer, allocatable :: face_types(:)
+
+   contains
+
+     final :: destroy_face_group
+
+  end type face_group
+
   !-------------------------------------------------------------------!
   ! Mesh datatype. A collection of vertices, cells and faces.
   !-------------------------------------------------------------------!
@@ -40,12 +56,16 @@ module class_mesh
      !================================================================!
 
      ! Fundamental vertex info
+     ! type(vertex_group), allocatable :: vertex_groups(:)
+
      integer :: num_vertices
      real(dp) , allocatable :: vertices(:,:)             ! [[x,y,z],1:nvertices]
      integer  , allocatable :: vertex_numbers(:)
      integer  , allocatable :: vertex_tags(:)
 
      ! Fundamental face info
+     ! type(edge_group), allocatable :: face_groups(:)
+
      integer :: num_edges
      integer  , allocatable :: edge_numbers(:)
      integer  , allocatable :: edge_tags(:)
@@ -54,6 +74,8 @@ module class_mesh
      integer  , allocatable :: num_edge_vertices(:)
 
      ! Fundamental face info
+     type(face_group), allocatable :: face_groups(:)
+
      integer :: num_faces
      integer  , allocatable :: face_numbers(:)
      integer  , allocatable :: face_tags(:)
@@ -153,6 +175,17 @@ module class_mesh
   end type mesh
 
 contains
+
+  pure subroutine destroy_face_group(this)
+
+    type(face_group), intent(inout) :: this
+
+    if (allocated(this % face_numbers)) deallocate(this % face_numbers)
+    if (allocated(this % face_vertices)) deallocate(this % face_vertices)
+    if (allocated(this % num_face_vertices)) deallocate(this % num_face_vertices)
+    if (allocated(this % face_types)) deallocate(this % face_types)
+
+  end subroutine destroy_face_group
 
   !================================================================!
   ! Constructor for mesh object using mesh loader

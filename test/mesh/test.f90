@@ -27,7 +27,7 @@ program test_mesh
     files(3) = string('../triangle.msh')
     files(4) = string('../frontal.msh')
     files(5) = string('../delaunay.msh')
-    files(6) = string('../box-72.msh')
+    files(6) = string('../box.msh')
 
     do ifile = 6, size(files)
        write(*,*) "Testing GMSH Loader with file ", files(ifile) % str

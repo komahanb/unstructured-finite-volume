@@ -30,7 +30,7 @@ module interface_mesh_loader
           & num_faces   , face_numbers  , face_tags   , face_vertices , num_face_vertices , &
           & num_cells   , cell_numbers  , cell_tags   , cell_vertices , num_cell_vertices , &
           & cell_types  , face_types    , edge_types  , &
-          & num_tags    , tag_numbers , tag_info )
+          & num_tags    , tag_numbers   , tag_physical_dimensions, tag_info )
 
        import mesh_loader
        import dp
@@ -71,7 +71,8 @@ module interface_mesh_loader
 
        ! Tagging boundaries and domain with integers/strings
        integer     , intent(out)              :: num_tags              
-       integer     , allocatable, intent(out) :: tag_numbers(:)       
+       integer     , allocatable, intent(out) :: tag_numbers(:)
+       integer     , allocatable, intent(out) :: tag_physical_dimensions(:)
        type(string), allocatable, intent(out) :: tag_info(:)
 
      end subroutine get_mesh_data_interface

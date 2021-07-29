@@ -24,18 +24,25 @@ module class_mesh
   type :: face_group
 
      ! Faces
+     type(string) :: group_name
      integer :: group_number
-     integer :: num_faces
-     integer, allocatable :: face_numbers(:)
-     integer, allocatable :: face_vertices(:,:)
-     integer, allocatable :: num_face_vertices(:)
-     integer, allocatable :: face_types(:)
+     integer :: group_num_faces
+     integer, allocatable :: group_face_numbers(:)
+     integer, allocatable :: group_face_vertices(:,:)
+     integer, allocatable :: group_num_face_vertices(:)
+     integer, allocatable :: group_face_types(:)
 
    contains
 
-     final :: destroy_face_group
+     procedure :: print
+     final     :: destroy_face_group
 
   end type face_group
+
+  ! constructor function for face_group
+  interface face_group
+     module procedure create_face_group
+  end interface face_group
 
   !-------------------------------------------------------------------!
   ! Mesh datatype. A collection of vertices, cells and faces.
@@ -49,6 +56,7 @@ module class_mesh
      ! Based on PhysicalNames?
      integer                   :: num_tags
      integer     , allocatable :: tag_numbers(:)
+     integer     , allocatable :: tag_physical_dimensions(:)
      type(string), allocatable :: tag_info(:)
 
      !================================================================!
@@ -139,17 +147,6 @@ module class_mesh
      real(dp) , allocatable :: vertex_cell_weights(:,:)  ! [[wc1,wc2...],1:vertices]
      real(dp) , allocatable :: face_cell_weights(:,:)    ! [[wc1,wc2],1:nfaces]
 
-     ! Generalize to tag numbers. Right now we can't differentiate
-     ! lower face from upper face.
-!!$     integer  :: num_boundary_faces
-!!$     integer  , allocatable :: boundary_face_face(:)      ! [1:num_boundary_faces]
-!!$     integer  , allocatable :: is_face_boundary_face(:)   ! [1:num_faces]
-!!$     integer  , allocatable :: is_node_boundary_node(:)   ! [1:num_vertices]
-
-     ! Number boundary faces separately
-!!$     integer  , allocatable :: num_tagged_faces(:)        ! [1:num_tags]
-!!$     integer  , allocatable :: tagged_face_face(:,:)      ! [[f1,f2,f3],[t1,t2,t3,t4,...]]
-
    contains
 
      ! Type bound procedures
@@ -168,6 +165,7 @@ module class_mesh
 
      ! Mesh info
      procedure :: get_num_elems
+     procedure :: create_face_groups
 
      ! Destructor
      final   :: destroy
@@ -176,16 +174,62 @@ module class_mesh
 
 contains
 
+  impure type(face_group) function create_face_group( &
+       & group_name, group_number, &
+       & num_faces, face_numbers, face_vertices, &
+       & num_face_vertices, face_types ) &
+       & result(this)
+
+    type(string) , intent(in) :: group_name
+    integer      , intent(in) :: group_number
+    integer      , intent(in) :: num_faces
+    integer      , intent(in) :: face_numbers(:)
+    integer      , intent(in) :: face_vertices(:,:)
+    integer      , intent(in) :: num_face_vertices(:)
+    integer      , intent(in) :: face_types(:)
+
+    this % group_name      = group_name
+    this % group_number    = group_number
+    this % group_num_faces = num_faces
+
+    allocate(this % group_face_numbers     , source = face_numbers)
+    allocate(this % group_face_vertices    , source = face_vertices)
+    allocate(this % group_num_face_vertices, source = num_face_vertices)
+    allocate(this % group_face_types       , source = face_types)
+
+    ! sanity checks
+    if (this % group_num_faces .ne. size(face_numbers)) &
+         & error stop "face group creation failed: inconsistent face numbers"
+    if (this % group_num_faces .ne. size(face_vertices, dim=2)) &
+         & error stop "face group creation failed: inconsistent face vertices"
+    if (this % group_num_faces .ne. size(face_types)) &
+         & error stop "face group creation failed : inconsistent face types"
+    if (this % group_num_faces .ne. size(num_face_vertices)) &
+         & error stop "face group creation failed : inconsistent # face vertices"
+
+  end function create_face_group
+
   pure subroutine destroy_face_group(this)
 
     type(face_group), intent(inout) :: this
 
-    if (allocated(this % face_numbers)) deallocate(this % face_numbers)
-    if (allocated(this % face_vertices)) deallocate(this % face_vertices)
-    if (allocated(this % num_face_vertices)) deallocate(this % num_face_vertices)
-    if (allocated(this % face_types)) deallocate(this % face_types)
+    if (allocated(this % group_name % str)) deallocate(this % group_name % str)
+    if (allocated(this % group_face_numbers)) deallocate(this % group_face_numbers)
+    if (allocated(this % group_face_vertices)) deallocate(this % group_face_vertices)
+    if (allocated(this % group_num_face_vertices)) deallocate(this % group_num_face_vertices)
+    if (allocated(this % group_face_types)) deallocate(this % group_face_types)
 
   end subroutine destroy_face_group
+
+  impure elemental subroutine print(this)
+
+    class(face_group), intent(in) :: this
+
+    print *, "face group number : ", this % group_number
+    print *, "face group number of faces : ", this % group_num_faces
+    print *, "face group name : ", this % group_name % str
+
+  end subroutine print
 
   !================================================================!
   ! Constructor for mesh object using mesh loader
@@ -203,7 +247,7 @@ contains
          & me % num_faces   , me % face_numbers  , me % face_tags   , me % face_vertices , me % num_face_vertices , &
          & me % num_cells   , me % cell_numbers  , me % cell_tags   , me % cell_vertices , me % num_cell_vertices , &
          & me % cell_types  , me % face_types    , me % edge_types  , &
-         & me % num_tags    , me % tag_numbers   , me % tag_info )
+         & me % num_tags    , me % tag_numbers   , me % tag_physical_dimensions, me % tag_info )
 
     ! Sanity check (make sure numbering is continuous), although it may not start from one
     if (me % num_vertices .gt. 0 .and. &
@@ -223,10 +267,75 @@ contains
     me % initialized = me % initialize()
     if (me % initialized .eqv. .false.) then
        write(error_unit,*) "Mesh.Construct: failed"
-       error stop
+       ! error stop
     end if
 
+    call me % create_face_groups()
+
   end function create_mesh
+
+  impure elemental subroutine create_face_groups(this)
+
+    class(mesh), intent(inout) :: this
+
+    integer, allocatable :: face_tag_numbers(:)
+    logical, allocatable :: group_mask(:)
+
+    integer :: iface, ifacegroup, face_group_number
+    integer :: num_node_tags, num_edge_tags, num_face_tags, num_cell_tags
+
+    num_node_tags = count(this % tag_physical_dimensions .eq. 0)
+    num_edge_tags = count(this % tag_physical_dimensions .eq. 1)
+    num_face_tags = count(this % tag_physical_dimensions .eq. 2)
+    num_cell_tags = count(this % tag_physical_dimensions .eq. 3)
+
+    write (*, '(1x, a, 1x, i0)') "number of node tags :", num_node_tags
+    write (*, '(1x, a, 1x, i0)') "number of edge tags :", num_edge_tags
+    write (*, '(1x, a, 1x, i0)') "number of face tags :", num_face_tags
+    write (*, '(1x, a, 1x, i0)') "number of cell tags :", num_cell_tags
+
+    allocate(face_tag_numbers(num_face_tags))
+    face_tag_numbers = pack(this % tag_numbers, mask = this % tag_physical_dimensions .eq. 2)
+
+    allocate(this % face_groups(num_face_tags))
+
+    ! create face groups
+    loop_face_groups: do ifacegroup = 1, num_face_tags
+
+       face_group_number = face_tag_numbers(ifacegroup)
+
+       ! allocate group mask
+       allocate(group_mask, source = this % face_tags .eq. face_group_number)
+
+       associate(&
+            & gname              => this % tag_info(face_group_number), &
+            & gnumber            => face_group_number, &
+            & gnum_faces         => count(group_mask), &
+            & gface_numbers      => pack(this % face_numbers, mask = group_mask), &
+            & gface_vertices     => pack(this % face_vertices, mask = spread(group_mask, 1, size(this % face_vertices, 1))), &
+            & gnum_face_vertices => pack(this % num_face_vertices, mask = group_mask), &
+            & gface_types        => pack(this % face_types, mask = group_mask) &
+            & )
+
+         ! todo: may not need to use the first dimension of
+         ! 'face_vertices', instead extract from 'face_ypes' in the
+         ! group, and the corresponding # vertices
+
+         this % face_groups(ifacegroup) = face_group(gname, gnumber, gnum_faces, &
+              & gface_numbers, &
+              & reshape(gface_vertices, [size(this % face_vertices, 1), gnum_faces]), &
+              & gnum_face_vertices, gface_types)
+
+       end associate
+
+     ! deallocate group mask
+     if (allocated(group_mask)) deallocate(group_mask)
+
+    end do loop_face_groups
+
+    if (allocated(face_tag_numbers)) deallocate(face_tag_numbers)
+
+  end subroutine create_face_groups
 
   !===================================================================!
   ! Destructor for file object
@@ -237,10 +346,12 @@ contains
     type(mesh), intent(inout) :: this
 
     if (allocated(this % tag_numbers)) deallocate(this % tag_numbers)
+    if (allocated(this % tag_physical_dimensions)) deallocate(this % tag_physical_dimensions)
     if (allocated(this % tag_info)) deallocate(this % tag_info)
 
     if (allocated(this % vertices)) deallocate(this % vertices)
     if (allocated(this % vertex_numbers)) deallocate(this % vertex_numbers)
+
     if (allocated(this % vertex_tags)) deallocate(this % vertex_tags)
 
     if (allocated(this % edge_numbers)) deallocate(this % edge_numbers)
@@ -289,12 +400,6 @@ contains
     if (allocated(this % cell_face_normals)) deallocate(this % cell_face_normals)
     if (allocated(this % vertex_cell_weights)) deallocate(this % vertex_cell_weights)
     if (allocated(this % face_cell_weights)) deallocate(this % face_cell_weights)
-
-!!$    if (allocated(this % num_tagged_faces)) deallocate(this % num_tagged_faces)
-!!$    if (allocated(this % tagged_face_face)) deallocate(this % tagged_face_face)
-
-!!$    if (allocated()) deallocate()
-!!$    if (allocated()) deallocate()
 
   end subroutine destroy
 
@@ -961,7 +1066,7 @@ contains
     write(*,*) 'Number of faces    :', this % num_faces
 
     do itag = 1, this % num_tags
-       write(*,*) &
+       write(*,'(1x,a,i0,a,a,a,a)') &
             & "tag number [", this % tag_numbers(itag) , "] ", &
             & "info [", this % tag_info(itag) % str, "] "
     end do

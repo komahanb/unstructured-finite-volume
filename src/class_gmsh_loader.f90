@@ -16,11 +16,12 @@ module class_gmsh_loader
   !-------------------------------------------------------------------!
   ! Interface to construct a mesh_loader for GMSH
   !-------------------------------------------------------------------!
-  
+
   interface gmsh_loader
      module procedure create
   end interface gmsh_loader
-  
+
+
   type, extends(mesh_loader) :: gmsh_loader
 
      type(file) :: file ! mesh file
@@ -48,13 +49,13 @@ contains
   !====================================================================!
 
   subroutine get_mesh_data(this, &
-       & num_vertices, vertex_numbers, vertex_tags , vertices ,  & 
+       & num_vertices, vertex_numbers, vertex_tags , vertices ,  &
        & num_edges   , edge_numbers  , edge_tags   , edge_vertices , num_edge_vertices , &
        & num_faces   , face_numbers  , face_tags   , face_vertices , num_face_vertices , &
        & num_cells   , cell_numbers  , cell_tags   , cell_vertices , num_cell_vertices , &
        & cell_types  , face_types    , edge_types  , &
-       & num_tags    , tag_numbers , tag_info )
-    
+       & num_tags    , tag_numbers   , tag_physical_dimensions, tag_info )
+
     ! Arguments
     class(gmsh_loader)  , intent(in)   :: this
 
@@ -72,7 +73,7 @@ contains
     integer, intent(out), allocatable :: num_edge_vertices(:)
     integer, intent(out), allocatable :: edge_types(:)
 
-    ! Faces    
+    ! Faces
     integer, intent(out)              :: num_faces
     integer, intent(out), allocatable :: face_numbers(:)
     integer, intent(out), allocatable :: face_tags(:)
@@ -87,20 +88,21 @@ contains
     integer, intent(out), allocatable :: cell_vertices(:,:)
     integer, intent(out), allocatable :: num_cell_vertices(:)
     integer, intent(out), allocatable :: cell_types(:)
-    
+
     ! Tagging boundaries and domain with integers/strings
     integer     , intent(out)              :: num_tags
     integer     , allocatable, intent(out) :: tag_numbers(:)
+    integer     , allocatable, intent(out) :: tag_physical_dimensions(:)
     type(string), allocatable, intent(out) :: tag_info(:)
 
     ! Local
-    type(string), allocatable, dimension(:) :: lines    
-    
+    type(string), allocatable, dimension(:) :: lines
+
     ! Mesh tag
     integer :: idx_start_mesh
     integer :: idx_end_mesh
 
-    ! Physical_Names tag    
+    ! Physical_Names tag
     integer :: idx_start_physical_names
     integer :: idx_end_physical_names
 
@@ -113,7 +115,7 @@ contains
     integer :: idx_end_elements
 
     integer :: face_idx, cell_idx, edge_idx
-    
+
     ! Collection to store face information
     type(set)  :: set_face_vertices
     type(set)  :: set_face_numbers
@@ -133,13 +135,13 @@ contains
     write(*,*) "mesh           : " , idx_start_mesh           , idx_end_mesh
     write(*,*) "physical names : " , idx_start_physical_names , idx_end_physical_names
     write(*,*) "nodes          : " , idx_start_nodes          , idx_end_nodes
-    write(*,*) "elements       : " , idx_start_elements       , idx_end_elements   
-       
+    write(*,*) "elements       : " , idx_start_elements       , idx_end_elements
+
     process_mesh_version: block
-      
+
       integer                   :: num_tokens
       type(string), allocatable :: tokens(:)
-      
+
       write(*,'(a)') "Reading mesh information..."
 
       associate(mlines => lines(idx_start_mesh+1:idx_start_mesh+1))
@@ -153,37 +155,41 @@ contains
       if (allocated(tokens)) deallocate(tokens)
 
       write(*,'(a)') "Reading mesh information completed..."
-          
-    end block process_mesh_version
 
+    end block process_mesh_version
 
     process_tags: block
 
       type(string), allocatable :: tokens(:)
-      integer                   :: num_tokens    
+      integer                   :: num_tokens
       integer                   :: iline, length
 
       write(*,'(a)') "Reading physical tags..."
 
       associate(tag_lines => lines(idx_start_physical_names+1:idx_end_physical_names-1))
 
-        ! Set the intent(out) variable for number of tags present 
+        ! Set the intent(out) variable for number of tags present
         num_tags = tag_lines(1) % asinteger()
-        
+
         ! Allocate space for other two return variables
-        allocate(tag_info(num_tags))        
+        allocate(tag_info(num_tags))
         allocate(tag_numbers(num_tags))
         tag_numbers = 0
-        
+        allocate(tag_physical_dimensions(num_tags))
+        tag_physical_dimensions = 0
+
         do concurrent(iline = 1: num_tags)
 
            ! Tokenize based on delimited space
            call tag_lines(iline+1) % tokenize(" ", num_tokens, tokens)
-           
-           ! Second tag is the tag number
+
+           ! First token is the physical dim
+           tag_physical_dimensions(iline) = tokens(1) % asinteger()
+
+           ! Second token is the tag number
            tag_numbers(iline) = tokens(2) % asinteger()
 
-           ! Remove quotes on third tag
+           ! Remove quotes on third token
            length = len(tokens(3) % str)
            tag_info(iline) = string(tokens(3) % str(2:length-1))
 
@@ -204,11 +210,11 @@ contains
       write(*,'(a)') "Reading physical tags completed..."
 
     end block process_tags
-      
+
 
     ! Process nodes
     process_nodes: block
-      
+
       integer                   :: num_tokens
       type(string), allocatable :: tokens(:)
       integer                   :: ivertex
@@ -216,38 +222,38 @@ contains
       write(*,'(a)') "Reading vertices..."
 
       associate(vlines => lines(idx_start_nodes+2:idx_end_nodes-1))
-      
+
         ! Set the number of vertices
         num_vertices = size(vlines)
 
         allocate(vertices(3, num_vertices))
         vertices = 0
-        
+
         allocate(vertex_numbers(num_vertices))
-        vertex_numbers = 0        
+        vertex_numbers = 0
 
         allocate(vertex_tags(num_vertices))
         vertex_tags = 0
 
         ! Parse lines and store vertices
         do concurrent(ivertex=1:num_vertices)
-           
+
            ! Get the numbers of tokens and tokens
            call vlines(ivertex) % tokenize(" ", num_tokens, tokens)
-           
+
            ! First token is the vertex number
            vertex_numbers(ivertex) = ivertex
 
            ! check for consistency of local node numebrs with gmsh
            if (ivertex .ne. tokens(1) % asinteger()) then
               error stop "inconsistent node numbering"
-           end if           
-           
+           end if
+
            ! Second, third and fourth tokens are the coordinates
            vertices(:,ivertex) = tokens(2:4) % asreal()
-           
+
         end do
-   
+
         if (allocated(tokens)) deallocate(tokens)
 
       end associate
@@ -255,18 +261,18 @@ contains
       if (allocated(tokens)) deallocate(tokens)
 
       write(*,'(4x,a,i0)') "num vertices   : ", num_vertices
-      
+
       write(*,'(a)') "Reading vertices completed..."
-      
+
     end block process_nodes
 
     elements : block
 
       type(string), allocatable :: tokens(:)
-      integer                   :: num_tokens    
+      integer                   :: num_tokens
       integer                   :: num_lines, iline
       type(logical)             :: added
-      
+
       write(*,'(a)') "Reading elements..."
 
       associate(elines => lines(idx_start_elements+2:idx_end_elements-1))
@@ -281,14 +287,14 @@ contains
         num_cells = 0
 
         ! Count the number of cells present in elements
-        ! https://gmsh.info/doc/texinfo/gmsh.html        
+        ! https://gmsh.info/doc/texinfo/gmsh.html
         do iline = 1, num_lines
 
            call elines(iline) % tokenize(" ", num_tokens, tokens)
 
            select case (tokens(2) % asinteger())
            case (1)
-              ! 2-node line. 
+              ! 2-node line.
               num_edges = num_edges + 1
            case (2:3)
               ! 3-node triangle, 4-node quadrangle
@@ -298,8 +304,8 @@ contains
               num_cells = num_cells + 1
            case (15)
               ! 1-node point (skip)
-           case default              
-              call tokens(2) % print()              
+           case default
+              call tokens(2) % print()
               error stop "unsupported GMSH mesh element type"
            end select
 
@@ -307,7 +313,7 @@ contains
 
         write(*,'(4x,a,i0)') "num edges      : ", num_edges
         write(*,'(4x,a,i0)') "num faces      : ", num_faces
-        write(*,'(4x,a,i0)') "num cells      : ", num_cells       
+        write(*,'(4x,a,i0)') "num cells      : ", num_cells
 
         ! Allocate space for cells
         allocate(cell_numbers(num_cells))
@@ -324,7 +330,7 @@ contains
 
         allocate(cell_types(num_cells))
         cell_types = 0
-              
+
         ! Allocate space for faces
         allocate(face_numbers(num_faces))
         face_numbers = 0
@@ -340,7 +346,7 @@ contains
 
         allocate(face_types(num_faces))
         face_types = 0
-      
+
         ! Allocate space for edges
         allocate(edge_numbers(num_edges))
         edge_numbers = 0
@@ -356,7 +362,7 @@ contains
 
         allocate(edge_types(num_edges))
         edge_types = 0
-      
+
 !!$        ! Create space for processing face information
 !!$        set_face_vertices = set(2, 4*num_cells)
 !!$        set_face_numbers  = set(1, 4*num_cells)
@@ -365,7 +371,7 @@ contains
         edge_idx   = 0
         face_idx   = 0
         cell_idx   = 0
-        
+
         do iline = 1, num_lines
 
            ! elm-number elm-type number-of-tags < tag > … node-number-list
@@ -374,11 +380,11 @@ contains
            if (tokens(2) % asinteger() .eq. 1) then
 
               !!$              ! Carry out processing of physically tagged faces
-!!$              added = set_face_vertices % insert([tokens(6:7) % asinteger()])             
-!!$              if (added .eqv. .true.) then               
+!!$              added = set_face_vertices % insert([tokens(6:7) % asinteger()])
+!!$              if (added .eqv. .true.) then
 !!$                 face_idx = face_idx + 1
 !!$                 call set_face_numbers % add_entry([face_idx])
-!!$                 call list_face_tags % add_entry([tokens(4) % asinteger()])                 
+!!$                 call list_face_tags % add_entry([tokens(4) % asinteger()])
 !!$              end if
 !!$
 !!$              error stop
@@ -391,7 +397,7 @@ contains
               edge_vertices(1:2,edge_idx)  = tokens(6:6+2-1) % asinteger()
               num_edge_vertices(edge_idx)  = 2
               edge_types(edge_idx)         = tokens(2) % asinteger()
-              
+
            else if (tokens(2) % asinteger() .eq. 2) then
 
               ! 3-node triangle.
@@ -415,7 +421,7 @@ contains
               face_types(face_idx)         = tokens(2) % asinteger()
 
            else if (tokens(2) % asinteger() .eq. 4) then
-              
+
               ! 4-node tetrahedron.
               cell_idx = cell_idx + 1
 
@@ -426,7 +432,7 @@ contains
               cell_types(cell_idx)         = tokens(2) % asinteger()
 
            else if (tokens(2) % asinteger() .eq. 5) then
-              
+
               ! 8-node hexahedron.
               cell_idx = cell_idx + 1
 
@@ -434,7 +440,7 @@ contains
               cell_tags(cell_idx)          = tokens(4) % asinteger()
               cell_vertices(1:8,cell_idx)  = tokens(6:6+8-1) % asinteger()
               num_cell_vertices(cell_idx)  = 8
-              cell_types(cell_idx)         = tokens(2) % asinteger()              
+              cell_types(cell_idx)         = tokens(2) % asinteger()
 
            else if (tokens(2) % asinteger() .eq. 6) then
 
@@ -445,10 +451,10 @@ contains
               cell_tags(cell_idx)          = tokens(4) % asinteger()
               cell_vertices(1:6,cell_idx)  = tokens(6:6+6-1) % asinteger()
               num_cell_vertices(cell_idx)  = 6
-              cell_types(cell_idx)         = tokens(2) % asinteger()              
+              cell_types(cell_idx)         = tokens(2) % asinteger()
 
            else if (tokens(2) % asinteger() .eq. 7) then
-                 
+
               ! 5-node prism
               cell_idx = cell_idx + 1
 
@@ -461,13 +467,13 @@ contains
            else if (tokens(2) % asinteger() .eq. 15) then
 
               ! 1-node point (skip)
-              
+
            else
 
               call tokens(2) % print()
-              
+
               error stop "unsupported GMSH mesh element type"
-           
+
            end if
 
            if (allocated(tokens)) deallocate(tokens)
@@ -475,7 +481,9 @@ contains
         end do
 
       end associate
-      
+
+      if (count(face_tags .ne. 0) .eq.0 ) error stop "untagged faces exist - mesh not useful for simulation"
+
       deallocate(lines)
 
       write(*,'(a)') "Reading elements completed..."
@@ -485,7 +493,7 @@ contains
 !!$    error stop
 !!$
 !!$    write(*,'(a)') "Finding faces..."
-!!$    
+!!$
 !!$    ! Extract the remaining faces based on cell vertices
 !!$    process_faces: block
 !!$
@@ -507,7 +515,7 @@ contains
 !!$
 !!$            ! Add ordered pair of integers into set
 !!$            added = set_face_vertices % insert(cell_vertices(idx, icell))
-!!$            if (added .eqv. .true.) then               
+!!$            if (added .eqv. .true.) then
 !!$               face_idx = face_idx + 1
 !!$               call set_face_numbers % add_entry([face_idx])
 !!$               call list_face_tags % add_entry([0])
@@ -536,7 +544,7 @@ contains
 !!$      deallocate(lface_tags)
 !!$
 !!$    end block process_faces
-!!$    
+!!$
 !!$    write(*,'(a)') "Processing edges..."
 !!$
 !!$    process_edges : block
@@ -557,7 +565,7 @@ contains
 !!$    end block process_edges
 !!$
 !!$    if (num_faces .gt. 4*num_cells) error stop
-    
+
   end subroutine get_mesh_data
 
   pure subroutine find_tags(lines, &
@@ -565,7 +573,7 @@ contains
        & idx_start_physical_names , idx_end_physical_names , &
        & idx_start_nodes          , idx_end_nodes, &
        & idx_start_elements       , idx_end_elements)
-    
+
     ! Arguments
     type(string)       , intent(in) :: lines(:)
 
@@ -573,7 +581,7 @@ contains
     integer, intent(out) :: idx_start_mesh
     integer, intent(out) :: idx_end_mesh
 
-    ! Physical_Names tag    
+    ! Physical_Names tag
     integer, intent(out) :: idx_start_physical_names
     integer, intent(out) :: idx_end_physical_names
 
@@ -586,16 +594,16 @@ contains
     integer, intent(out) :: idx_end_elements
 
     character(len=*), parameter :: BEGIN_MESH           = "$MeshFormat"
-    character(len=*), parameter :: END_MESH             = "$EndMeshFormat"  
+    character(len=*), parameter :: END_MESH             = "$EndMeshFormat"
     character(len=*), parameter :: BEGIN_PHYSICAL_NAMES = "$PhysicalNames"
-    character(len=*), parameter :: END_PHYSICAL_NAMES   = "$EndPhysicalNames"    
+    character(len=*), parameter :: END_PHYSICAL_NAMES   = "$EndPhysicalNames"
     character(len=*), parameter :: BEGIN_NODES          = "$Nodes"
-    character(len=*), parameter :: END_NODES            = "$EndNodes"  
+    character(len=*), parameter :: END_NODES            = "$EndNodes"
     character(len=*), parameter :: BEGIN_ELEMENTS       = "$Elements"
-    character(len=*), parameter :: END_ELEMENTS         = "$EndElements"  
+    character(len=*), parameter :: END_ELEMENTS         = "$EndElements"
 
     integer :: num_lines, iline
-    
+
     ! Extract start and end indices of different mesh tags used by
     ! GMSH
     num_lines = size(lines)
@@ -636,5 +644,5 @@ contains
     end do
 
   end subroutine find_tags
-  
+
 end module class_gmsh_loader

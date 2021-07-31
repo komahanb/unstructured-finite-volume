@@ -529,7 +529,7 @@ contains
       end associate
 
       if (count(face_tags .ne. 0) .eq.0 ) then
-         error stop "untagged faces exist - mesh not useful for simulation"
+         write(*,*) "untagged faces exist - mesh not useful for simulation"
       end if
 
       deallocate(lines)

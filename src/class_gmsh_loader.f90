@@ -1,3 +1,10 @@
+!=====================================================================!
+! Module that reads gmsh mesh files. Currently supports only version 2.
+!
+! The format information is present here:
+! http://gmsh.info/doc/texinfo/gmsh.html#MSH-file-format-version-2-_0028Legacy_0029
+!=====================================================================!
+
 module class_gmsh_loader
 
   ! import dependencies
@@ -272,9 +279,18 @@ contains
       integer                   :: num_tokens
       integer                   :: num_lines, iline
       type(logical)             :: added
+      integer                   :: vloc
 
       write(*,'(a)') "Reading elements..."
-
+      
+      !---------------------------------------------------------------!
+      ! $Elements
+      ! number-of-elements
+      ! elm-number elm-type number-of-tags < tag > … node-number-list
+      ! …
+      ! $EndElements
+      !---------------------------------------------------------------!
+      
       associate(elines => lines(idx_start_elements+2:idx_end_elements-1))
 
         ! Extract start and end indices of different mesh tags used by
@@ -286,8 +302,18 @@ contains
         num_faces = 0
         num_cells = 0
 
-        ! Count the number of cells present in elements
-        ! https://gmsh.info/doc/texinfo/gmsh.html
+        ! gives the number of integer tags that follow for the n-th
+        ! element. By default, the first tag is the tag of the
+        ! physical entity to which the element belongs; the second is
+        ! the tag of the elementary model entity to which the element
+        ! belongs; the third is the number of mesh partitions to which
+        ! the element belongs, followed by the partition ids (negative
+        ! partition ids indicate ghost cells). A zero tag is
+        ! equivalent to no tag. Gmsh and most codes using the MSH 2
+        ! format require at least the first two tags (physical and
+        ! elementary tags).
+
+        ! Count the number of cells present in elements https://gmsh.info/doc/texinfo/gmsh.html
         do iline = 1, num_lines
 
            call elines(iline) % tokenize(" ", num_tokens, tokens)
@@ -391,79 +417,80 @@ contains
 
               ! 2-node line.
               edge_idx = edge_idx + 1
-
-              edge_numbers(edge_idx)       = edge_idx
-              edge_tags(edge_idx)          = tokens(4) % asinteger()
-              edge_vertices(1:2,edge_idx)  = tokens(6:6+2-1) % asinteger()
-              num_edge_vertices(edge_idx)  = 2
+              edge_numbers(edge_idx)       = tokens(1) % asinteger()
               edge_types(edge_idx)         = tokens(2) % asinteger()
+              vloc                         = 2 + 1 + tokens(3) % asinteger()
+              edge_tags(edge_idx)          = tokens(4) % asinteger()
+              edge_vertices(1:2,edge_idx)  = tokens(vloc:vloc+2-1) % asinteger()
+              num_edge_vertices(edge_idx)  = 2
+
 
            else if (tokens(2) % asinteger() .eq. 2) then
 
               ! 3-node triangle.
               face_idx = face_idx + 1
-
-              face_numbers(face_idx)       = face_idx
-              face_tags(face_idx)          = tokens(4) % asinteger()
-              face_vertices(1:3,face_idx)  = tokens(6:6+3-1) % asinteger()
-              num_face_vertices(face_idx)  = 3
+              face_numbers(face_idx)       = tokens(1) % asinteger()
               face_types(face_idx)         = tokens(2) % asinteger()
+              vloc                         = 2 + 1 + tokens(3) % asinteger()
+              face_tags(face_idx)          = tokens(4) % asinteger()
+              face_vertices(1:3,face_idx)  = tokens(vloc:vloc+3-1) % asinteger()
+              num_face_vertices(face_idx)  = 3
 
            else if (tokens(2) % asinteger() .eq. 3) then
 
               ! 4-node quadrangle.
               face_idx = face_idx + 1
-
-              face_numbers(face_idx)       = face_idx
-              face_tags(face_idx)          = tokens(4) % asinteger()
-              face_vertices(1:4,face_idx)  = tokens(6:6+4-1) % asinteger()
-              num_face_vertices(face_idx)  = 4
+              face_numbers(face_idx)       = tokens(1) % asinteger()
               face_types(face_idx)         = tokens(2) % asinteger()
+              vloc                         = 2 + 1 + tokens(3) % asinteger()
+              face_tags(face_idx)          = tokens(4) % asinteger()
+              face_vertices(1:4,face_idx)  = tokens(vloc:vloc+4-1) % asinteger()
+              num_face_vertices(face_idx)  = 4
 
            else if (tokens(2) % asinteger() .eq. 4) then
 
               ! 4-node tetrahedron.
               cell_idx = cell_idx + 1
-
-              cell_numbers(cell_idx )      = cell_idx
-              cell_tags(cell_idx)          = tokens(4) % asinteger()
-              cell_vertices(1:4,cell_idx)  = tokens(6:6+4-1) % asinteger()
-              num_cell_vertices(cell_idx)  = 4
+              cell_numbers(cell_idx)       = tokens(1) % asinteger()
               cell_types(cell_idx)         = tokens(2) % asinteger()
+              vloc                         = 2 + 1 + tokens(3) % asinteger()
+              cell_tags(cell_idx)          = tokens(4) % asinteger()
+              cell_vertices(1:4,cell_idx)  = tokens(vloc:vloc+4-1) % asinteger()
+              num_cell_vertices(cell_idx)  = 4
 
            else if (tokens(2) % asinteger() .eq. 5) then
 
               ! 8-node hexahedron.
               cell_idx = cell_idx + 1
-
-              cell_numbers(cell_idx )      = cell_idx
-              cell_tags(cell_idx)          = tokens(4) % asinteger()
-              cell_vertices(1:8,cell_idx)  = tokens(6:6+8-1) % asinteger()
-              num_cell_vertices(cell_idx)  = 8
+              cell_numbers(cell_idx)       = tokens(1) % asinteger()
               cell_types(cell_idx)         = tokens(2) % asinteger()
+              vloc                         = 2 + 1 + tokens(3) % asinteger()
+              cell_tags(cell_idx)          = tokens(4) % asinteger()
+              cell_vertices(1:8,cell_idx)  = tokens(vloc:vloc+8-1) % asinteger()
+              num_cell_vertices(cell_idx)  = 8
 
            else if (tokens(2) % asinteger() .eq. 6) then
 
               ! 6-node prism
               cell_idx = cell_idx + 1
-
-              cell_numbers(cell_idx )      = cell_idx
-              cell_tags(cell_idx)          = tokens(4) % asinteger()
-              cell_vertices(1:6,cell_idx)  = tokens(6:6+6-1) % asinteger()
-              num_cell_vertices(cell_idx)  = 6
+              cell_numbers(cell_idx)       = tokens(1) % asinteger()
               cell_types(cell_idx)         = tokens(2) % asinteger()
+              vloc                         = 2 + 1 + tokens(3) % asinteger()
+              cell_tags(cell_idx)          = tokens(4) % asinteger()
+              cell_vertices(1:6,cell_idx)  = tokens(vloc:vloc+6-1) % asinteger()
+              num_cell_vertices(cell_idx)  = 6
 
            else if (tokens(2) % asinteger() .eq. 7) then
 
               ! 5-node prism
               cell_idx = cell_idx + 1
-
-              cell_numbers(cell_idx )      = cell_idx
-              cell_tags(cell_idx)          = tokens(4) % asinteger()
-              cell_vertices(1:5,cell_idx)  = tokens(6:6+5-1) % asinteger()
-              num_cell_vertices(cell_idx)  = 5
+              cell_numbers(cell_idx)       = tokens(1) % asinteger()
               cell_types(cell_idx)         = tokens(2) % asinteger()
-
+              vloc                         = 2 + 1 + tokens(3) % asinteger()
+              cell_tags(cell_idx)          = tokens(4) % asinteger()
+              cell_vertices(1:5,cell_idx)  = tokens(vloc:vloc+5-1) % asinteger()
+              num_cell_vertices(cell_idx)  = 5
+              
            else if (tokens(2) % asinteger() .eq. 15) then
 
               ! 1-node point (skip)

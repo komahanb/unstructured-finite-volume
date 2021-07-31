@@ -50,7 +50,6 @@ contains
 
   end function create
 
-
   !====================================================================!
   ! Supply all information needed to create a mesh object
   !====================================================================!
@@ -249,12 +248,12 @@ contains
            call vlines(ivertex) % tokenize(" ", num_tokens, tokens)
 
            ! First token is the vertex number
-           vertex_numbers(ivertex) = ivertex
+           vertex_numbers(ivertex) = tokens(1) % asinteger() ! ivertex
 
            ! check for consistency of local node numebrs with gmsh
-           if (ivertex .ne. tokens(1) % asinteger()) then
-              error stop "inconsistent node numbering"
-           end if
+!!$           if (ivertex .ne. tokens(1) % asinteger()) then
+!!$              error stop "inconsistent node numbering"
+!!$           end if
 
            ! Second, third and fourth tokens are the coordinates
            vertices(:,ivertex) = tokens(2:4) % asreal()
@@ -280,6 +279,7 @@ contains
       integer                   :: num_lines, iline
       type(logical)             :: added
       integer                   :: vloc
+      integer                   :: ivertex, num_vertices
 
       write(*,'(a)') "Reading elements..."
 
@@ -416,80 +416,114 @@ contains
 !!$              error stop
 
               ! 2-node line.
-              edge_idx = edge_idx + 1
-              edge_numbers(edge_idx)       = edge_idx !tokens(1) % asinteger()
-              edge_types(edge_idx)         = tokens(2) % asinteger()
-              vloc                         = 4 + tokens(3) % asinteger()
-              edge_tags(edge_idx)          = tokens(4) % asinteger()
-              edge_vertices(1:2,edge_idx)  = tokens(vloc:vloc+2-1) % asinteger()
-              num_edge_vertices(edge_idx)  = 2
+              edge_idx                               = edge_idx + 1
+              num_vertices                           = 2
+              edge_numbers(edge_idx)                 = tokens(1) % asinteger()
+              edge_types(edge_idx)                   = tokens(2) % asinteger()
+              vloc                                   = 4 + tokens(3) % asinteger()
+              edge_tags(edge_idx)                    = tokens(4) % asinteger()
+              edge_vertices(1:num_vertices,edge_idx) = tokens(vloc:vloc+num_vertices-1) % asinteger()
+              num_edge_vertices(edge_idx)            = num_vertices
 
+              do concurrent (ivertex = 1 : num_vertices)
+                 edge_vertices(ivertex, edge_idx) = find_index(vertex_numbers, edge_vertices(ivertex,edge_idx))
+              end do
 
            else if (tokens(2) % asinteger() .eq. 2) then
 
               ! 3-node triangle.
-              face_idx = face_idx + 1
-              face_numbers(face_idx)       = face_idx !tokens(1) % asinteger()
-              face_types(face_idx)         = tokens(2) % asinteger()
-              vloc                         = 4 + tokens(3) % asinteger()
-              face_tags(face_idx)          = tokens(4) % asinteger()
-              face_vertices(1:3,face_idx)  = tokens(vloc:vloc+3-1) % asinteger()
-              num_face_vertices(face_idx)  = 3
+              face_idx                               = face_idx + 1
+              num_vertices                           = 3
+              face_numbers(face_idx)                 = tokens(1) % asinteger()
+              face_types(face_idx)                   = tokens(2) % asinteger()
+              vloc                                   = 4 + tokens(3) % asinteger()
+              face_tags(face_idx)                    = tokens(4) % asinteger()
+              face_vertices(1:num_vertices,face_idx) = tokens(vloc:vloc+num_vertices-1) % asinteger()
+              num_face_vertices(face_idx)            = num_vertices
+
+              do concurrent (ivertex = 1 : num_vertices)
+                 face_vertices(ivertex, face_idx) = find_index(vertex_numbers, face_vertices(ivertex,face_idx))
+              end do
 
            else if (tokens(2) % asinteger() .eq. 3) then
 
               ! 4-node quadrangle.
-              face_idx = face_idx + 1
-              face_numbers(face_idx)       = face_idx !tokens(1) % asinteger()
-              face_types(face_idx)         = tokens(2) % asinteger()
-              vloc                         = 4 + tokens(3) % asinteger()
-              face_tags(face_idx)          = tokens(4) % asinteger()
-              face_vertices(1:4,face_idx)  = tokens(vloc:vloc+4-1) % asinteger()
-              num_face_vertices(face_idx)  = 4
+              face_idx                               = face_idx + 1
+              num_vertices                           = 4
+              face_numbers(face_idx)                 = tokens(1) % asinteger()
+              face_types(face_idx)                   = tokens(2) % asinteger()
+              vloc                                   = 4 + tokens(3) % asinteger()
+              face_tags(face_idx)                    = tokens(4) % asinteger()
+              face_vertices(1:num_vertices,face_idx) = tokens(vloc:vloc+num_vertices-1) % asinteger()
+              num_face_vertices(face_idx)            = num_vertices
+
+              do concurrent (ivertex = 1 : num_vertices)
+                 face_vertices(ivertex, face_idx) = find_index(vertex_numbers, face_vertices(ivertex,face_idx))
+              end do
 
            else if (tokens(2) % asinteger() .eq. 4) then
 
               ! 4-node tetrahedron.
-              cell_idx = cell_idx + 1
-              cell_numbers(cell_idx)       = cell_idx !tokens(1) % asinteger()
-              cell_types(cell_idx)         = tokens(2) % asinteger()
-              vloc                         = 4 + tokens(3) % asinteger()
-              cell_tags(cell_idx)          = tokens(4) % asinteger()
-              cell_vertices(1:4,cell_idx)  = tokens(vloc:vloc+4-1) % asinteger()
-              num_cell_vertices(cell_idx)  = 4
+              cell_idx                               = cell_idx + 1
+              num_vertices                           = 4
+              cell_numbers(cell_idx)                 = tokens(1) % asinteger()
+              cell_types(cell_idx)                   = tokens(2) % asinteger()
+              vloc                                   = 4 + tokens(3) % asinteger()
+              cell_tags(cell_idx)                    = tokens(4) % asinteger()
+              cell_vertices(1:num_vertices,cell_idx) = tokens(vloc:vloc+num_vertices-1) % asinteger()
+              num_cell_vertices(cell_idx)            = num_vertices
+
+              do concurrent (ivertex = 1 : num_vertices)
+                 cell_vertices(ivertex, cell_idx) = find_index(vertex_numbers, cell_vertices(ivertex,cell_idx))
+              end do
 
            else if (tokens(2) % asinteger() .eq. 5) then
 
               ! 8-node hexahedron.
-              cell_idx = cell_idx + 1
-              cell_numbers(cell_idx)       = cell_idx !tokens(1) % asinteger()
-              cell_types(cell_idx)         = tokens(2) % asinteger()
-              vloc                         = 4 + tokens(3) % asinteger()
-              cell_tags(cell_idx)          = tokens(4) % asinteger()
-              cell_vertices(1:8,cell_idx)  = tokens(vloc:vloc+8-1) % asinteger()
-              num_cell_vertices(cell_idx)  = 8
+              cell_idx                                = cell_idx + 1
+              num_vertices                            = 8
+              cell_numbers(cell_idx)                  = tokens(1) % asinteger()
+              cell_types(cell_idx)                    = tokens(2) % asinteger()
+              vloc                                    = 4 + tokens(3) % asinteger()
+              cell_tags(cell_idx)                     = tokens(4) % asinteger()
+              cell_vertices(1:num_vertices, cell_idx) = tokens(vloc:vloc+num_vertices-1) % asinteger() ! global numbers in parallel
+              num_cell_vertices(cell_idx)             = num_vertices
+
+              do concurrent (ivertex = 1 : num_vertices)
+                 cell_vertices(ivertex, cell_idx) = find_index(vertex_numbers, cell_vertices(ivertex,cell_idx))
+              end do
 
            else if (tokens(2) % asinteger() .eq. 6) then
 
               ! 6-node prism
-              cell_idx = cell_idx + 1
-              cell_numbers(cell_idx)       = cell_idx !tokens(1) % asinteger()
-              cell_types(cell_idx)         = tokens(2) % asinteger()
-              vloc                         = 4 + tokens(3) % asinteger()
-              cell_tags(cell_idx)          = tokens(4) % asinteger()
-              cell_vertices(1:6,cell_idx)  = tokens(vloc:vloc+6-1) % asinteger()
-              num_cell_vertices(cell_idx)  = 6
+              cell_idx                               = cell_idx + 1
+              num_vertices                           = 6
+              cell_numbers(cell_idx)                 = tokens(1) % asinteger()
+              cell_types(cell_idx)                   = tokens(2) % asinteger()
+              vloc                                   = 4 + tokens(3) % asinteger()
+              cell_tags(cell_idx)                    = tokens(4) % asinteger()
+              cell_vertices(1:num_vertices,cell_idx) = tokens(vloc:vloc+num_vertices-1) % asinteger()
+              num_cell_vertices(cell_idx)            = num_vertices
+
+              do concurrent (ivertex = 1 : num_vertices)
+                 cell_vertices(ivertex, cell_idx) = find_index(vertex_numbers, cell_vertices(ivertex,cell_idx))
+              end do
 
            else if (tokens(2) % asinteger() .eq. 7) then
 
               ! 5-node prism
-              cell_idx = cell_idx + 1
-              cell_numbers(cell_idx)       = cell_idx !tokens(1) % asinteger()
-              cell_types(cell_idx)         = tokens(2) % asinteger()
-              vloc                         = 4 + tokens(3) % asinteger()
-              cell_tags(cell_idx)          = tokens(4) % asinteger()
-              cell_vertices(1:5,cell_idx)  = tokens(vloc:vloc+5-1) % asinteger()
-              num_cell_vertices(cell_idx)  = 5
+              cell_idx                               = cell_idx + 1
+              num_vertices                           = 5
+              cell_numbers(cell_idx)                 = tokens(1) % asinteger()
+              cell_types(cell_idx)                   = tokens(2) % asinteger()
+              vloc                                   = 4 + tokens(3) % asinteger()
+              cell_tags(cell_idx)                    = tokens(4) % asinteger()
+              cell_vertices(1:num_vertices,cell_idx) = tokens(vloc:vloc+num_vertices-1) % asinteger()
+              num_cell_vertices(cell_idx)            = num_vertices
+
+              do concurrent (ivertex = 1 : num_vertices)
+                 cell_vertices(ivertex, cell_idx) = find_index(vertex_numbers, cell_vertices(ivertex,cell_idx))
+              end do
 
            else if (tokens(2) % asinteger() .eq. 15) then
 
@@ -671,5 +705,24 @@ contains
     end do
 
   end subroutine find_tags
+
+  pure integer function find_index(array, val) result(idx)
+
+    integer, intent(in) :: array(:)
+    integer, intent(in) :: val
+    integer :: i, num_elements
+
+    num_elements = size(array, dim = 1)
+
+    idx = -1
+
+    loop: do concurrent (i = 1 : num_elements)
+       if (array(i) .eq. val) then
+          idx = i
+          ! exit loop ! can't use with concurrent loop
+       endif
+    end do loop
+
+  end function find_index
 
 end module class_gmsh_loader

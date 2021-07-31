@@ -348,7 +348,7 @@ contains
         allocate(num_cell_vertices(num_cells))
         num_cell_vertices = 0
 
-        allocate(cell_vertices(8,num_cells)) ! max is 8noded tetrahedron
+        allocate(cell_vertices(8,num_cells)) ! max is 8 noded tetrahedron
         cell_vertices = 0
 
         allocate(cell_tags(num_cells))
@@ -389,11 +389,6 @@ contains
         allocate(edge_types(num_edges))
         edge_types = 0
 
-!!$        ! Create space for processing face information
-!!$        set_face_vertices = set(2, 4*num_cells)
-!!$        set_face_numbers  = set(1, 4*num_cells)
-!!$        list_face_tags    = list(1, 4*num_cells)
-
         edge_idx   = 0
         face_idx   = 0
         cell_idx   = 0
@@ -404,16 +399,6 @@ contains
            call elines(iline) % tokenize(" ", num_tokens, tokens)
 
            if (tokens(2) % asinteger() .eq. 1) then
-
-              !!$              ! Carry out processing of physically tagged faces
-!!$              added = set_face_vertices % insert([tokens(6:7) % asinteger()])
-!!$              if (added .eqv. .true.) then
-!!$                 face_idx = face_idx + 1
-!!$                 call set_face_numbers % add_entry([face_idx])
-!!$                 call list_face_tags % add_entry([tokens(4) % asinteger()])
-!!$              end if
-!!$
-!!$              error stop
 
               ! 2-node line.
               edge_idx                               = edge_idx + 1
@@ -543,7 +528,9 @@ contains
 
       end associate
 
-      if (count(face_tags .ne. 0) .eq.0 ) error stop "untagged faces exist - mesh not useful for simulation"
+      if (count(face_tags .ne. 0) .eq.0 ) then
+         error stop "untagged faces exist - mesh not useful for simulation"
+      end if
 
       deallocate(lines)
 
@@ -551,81 +538,14 @@ contains
 
     end block elements
 
-!!$    error stop
-!!$
-!!$    write(*,'(a)') "Finding faces..."
-!!$
-!!$    ! Extract the remaining faces based on cell vertices
-!!$    process_faces: block
-!!$
-!!$      type(integer) :: idx(2)
-!!$      type(integer) :: icell, iverpair
-!!$      type(logical) :: added
-!!$      integer, allocatable :: lface_numbers(:,:), lface_tags(:,:)
-!!$
-!!$      ! Make ordered pair of vertices as faces in 2D
-!!$      do icell = 1, num_cells
-!!$         do iverpair = 1, num_cell_vertices(icell)
-!!$
-!!$            ! Figure out a vertex pair that makes a face
-!!$            if (iverpair .eq. num_cell_vertices(icell)) then
-!!$               idx = [iverpair, 1]
-!!$            else
-!!$               idx = [iverpair, iverpair+1]
-!!$            end if
-!!$
-!!$            ! Add ordered pair of integers into set
-!!$            added = set_face_vertices % insert(cell_vertices(idx, icell))
-!!$            if (added .eqv. .true.) then
-!!$               face_idx = face_idx + 1
-!!$               call set_face_numbers % add_entry([face_idx])
-!!$               call list_face_tags % add_entry([0])
-!!$            end if
-!!$
-!!$         end do
-!!$      end do
-!!$
-!!$      num_faces = face_idx
-!!$
-!!$      allocate(num_face_vertices(num_faces))
-!!$      num_face_vertices = 2
-!!$
-!!$      call set_face_vertices % get_entries(face_vertices)
-!!$
-!!$      ! Set face numbers
-!!$      call set_face_numbers % get_entries(lface_numbers)
-!!$      allocate(face_numbers(num_faces))
-!!$      face_numbers = lface_numbers(1,:)
-!!$      deallocate(lface_numbers)
-!!$
-!!$      ! Set face tags
-!!$      call list_face_tags % get_entries(lface_tags)
-!!$      allocate(face_tags(num_faces))
-!!$      face_tags = lface_tags(1,:)
-!!$      deallocate(lface_tags)
-!!$
-!!$    end block process_faces
-!!$
-!!$    write(*,'(a)') "Processing edges..."
-!!$
-!!$    process_edges : block
-!!$
-!!$      ! Edges are not in 2D
-!!$      allocate(edge_numbers(num_edges))
-!!$      edge_numbers = 0
-!!$
-!!$      allocate(edge_vertices(2,num_edges))
-!!$      edge_vertices = 0
-!!$
-!!$      allocate(num_edge_vertices(num_edges))
-!!$      num_edge_vertices = 0
-!!$
-!!$      allocate(edge_tags(num_edges))
-!!$      edge_tags = 0
-!!$
-!!$    end block process_edges
-!!$
-!!$    if (num_faces .gt. 4*num_cells) error stop
+    !-----------------------------------------------------------------!
+    ! The boundary faces are already a part of the faces array whereas
+    ! we need to form the remaining internal faces
+    !-----------------------------------------------------------------!
+
+    write(*,'(a)') "Forming internal faces..."
+
+    write(*,'(a)') "Forming internal edges..."
 
   end subroutine get_mesh_data
 

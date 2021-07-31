@@ -41,7 +41,7 @@ TECIO_DIR  = $(HOME)/install/tecplot360ex
 
 ifeq ($(COMPILER),gnu)
   F90 = gfortran-7
-  F90FLAGS := -cpp -fPIC -Wno-line-truncation
+  F90FLAGS := -fcoarray=single -cpp -fPIC -Wno-line-truncation
 
   # COMPLEX mode
   ifeq ($(COMPLEX),yes)

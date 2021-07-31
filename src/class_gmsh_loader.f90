@@ -282,7 +282,7 @@ contains
       integer                   :: vloc
 
       write(*,'(a)') "Reading elements..."
-      
+
       !---------------------------------------------------------------!
       ! $Elements
       ! number-of-elements
@@ -290,7 +290,7 @@ contains
       ! …
       ! $EndElements
       !---------------------------------------------------------------!
-      
+
       associate(elines => lines(idx_start_elements+2:idx_end_elements-1))
 
         ! Extract start and end indices of different mesh tags used by
@@ -417,9 +417,9 @@ contains
 
               ! 2-node line.
               edge_idx = edge_idx + 1
-              edge_numbers(edge_idx)       = tokens(1) % asinteger()
+              edge_numbers(edge_idx)       = edge_idx !tokens(1) % asinteger()
               edge_types(edge_idx)         = tokens(2) % asinteger()
-              vloc                         = 2 + 1 + tokens(3) % asinteger()
+              vloc                         = 4 + tokens(3) % asinteger()
               edge_tags(edge_idx)          = tokens(4) % asinteger()
               edge_vertices(1:2,edge_idx)  = tokens(vloc:vloc+2-1) % asinteger()
               num_edge_vertices(edge_idx)  = 2
@@ -429,9 +429,9 @@ contains
 
               ! 3-node triangle.
               face_idx = face_idx + 1
-              face_numbers(face_idx)       = tokens(1) % asinteger()
+              face_numbers(face_idx)       = face_idx !tokens(1) % asinteger()
               face_types(face_idx)         = tokens(2) % asinteger()
-              vloc                         = 2 + 1 + tokens(3) % asinteger()
+              vloc                         = 4 + tokens(3) % asinteger()
               face_tags(face_idx)          = tokens(4) % asinteger()
               face_vertices(1:3,face_idx)  = tokens(vloc:vloc+3-1) % asinteger()
               num_face_vertices(face_idx)  = 3
@@ -440,9 +440,9 @@ contains
 
               ! 4-node quadrangle.
               face_idx = face_idx + 1
-              face_numbers(face_idx)       = tokens(1) % asinteger()
+              face_numbers(face_idx)       = face_idx !tokens(1) % asinteger()
               face_types(face_idx)         = tokens(2) % asinteger()
-              vloc                         = 2 + 1 + tokens(3) % asinteger()
+              vloc                         = 4 + tokens(3) % asinteger()
               face_tags(face_idx)          = tokens(4) % asinteger()
               face_vertices(1:4,face_idx)  = tokens(vloc:vloc+4-1) % asinteger()
               num_face_vertices(face_idx)  = 4
@@ -451,9 +451,9 @@ contains
 
               ! 4-node tetrahedron.
               cell_idx = cell_idx + 1
-              cell_numbers(cell_idx)       = tokens(1) % asinteger()
+              cell_numbers(cell_idx)       = cell_idx !tokens(1) % asinteger()
               cell_types(cell_idx)         = tokens(2) % asinteger()
-              vloc                         = 2 + 1 + tokens(3) % asinteger()
+              vloc                         = 4 + tokens(3) % asinteger()
               cell_tags(cell_idx)          = tokens(4) % asinteger()
               cell_vertices(1:4,cell_idx)  = tokens(vloc:vloc+4-1) % asinteger()
               num_cell_vertices(cell_idx)  = 4
@@ -462,9 +462,9 @@ contains
 
               ! 8-node hexahedron.
               cell_idx = cell_idx + 1
-              cell_numbers(cell_idx)       = tokens(1) % asinteger()
+              cell_numbers(cell_idx)       = cell_idx !tokens(1) % asinteger()
               cell_types(cell_idx)         = tokens(2) % asinteger()
-              vloc                         = 2 + 1 + tokens(3) % asinteger()
+              vloc                         = 4 + tokens(3) % asinteger()
               cell_tags(cell_idx)          = tokens(4) % asinteger()
               cell_vertices(1:8,cell_idx)  = tokens(vloc:vloc+8-1) % asinteger()
               num_cell_vertices(cell_idx)  = 8
@@ -473,9 +473,9 @@ contains
 
               ! 6-node prism
               cell_idx = cell_idx + 1
-              cell_numbers(cell_idx)       = tokens(1) % asinteger()
+              cell_numbers(cell_idx)       = cell_idx !tokens(1) % asinteger()
               cell_types(cell_idx)         = tokens(2) % asinteger()
-              vloc                         = 2 + 1 + tokens(3) % asinteger()
+              vloc                         = 4 + tokens(3) % asinteger()
               cell_tags(cell_idx)          = tokens(4) % asinteger()
               cell_vertices(1:6,cell_idx)  = tokens(vloc:vloc+6-1) % asinteger()
               num_cell_vertices(cell_idx)  = 6
@@ -484,13 +484,13 @@ contains
 
               ! 5-node prism
               cell_idx = cell_idx + 1
-              cell_numbers(cell_idx)       = tokens(1) % asinteger()
+              cell_numbers(cell_idx)       = cell_idx !tokens(1) % asinteger()
               cell_types(cell_idx)         = tokens(2) % asinteger()
-              vloc                         = 2 + 1 + tokens(3) % asinteger()
+              vloc                         = 4 + tokens(3) % asinteger()
               cell_tags(cell_idx)          = tokens(4) % asinteger()
               cell_vertices(1:5,cell_idx)  = tokens(vloc:vloc+5-1) % asinteger()
               num_cell_vertices(cell_idx)  = 5
-              
+
            else if (tokens(2) % asinteger() .eq. 15) then
 
               ! 1-node point (skip)

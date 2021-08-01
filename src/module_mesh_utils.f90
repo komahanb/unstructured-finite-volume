@@ -1,11 +1,12 @@
 module module_mesh_utils
 
   use iso_fortran_env , only : dp => REAL64, error_unit
+  use class_set             , only : set
+  use class_list            , only : list
 
   implicit none
 
   interface distance
-     module procedure distanceX
      module procedure distanceAB
   end interface distance
 
@@ -47,119 +48,6 @@ contains
 
   end function distanceAB
 
-  subroutine transpose_connectivities(cell_vertices, num_cell_vertices, &
-       & vertex_cells, num_vertex_cells)
-
-    ! Arguments
-    integer, intent(in) :: cell_vertices(:,:)
-    integer, intent(in) :: num_cell_vertices(:)
-
-    integer, allocatable, intent(out) :: vertex_cells(:,:)
-    integer, allocatable, intent(out) :: num_vertex_cells(:)
-
-    ! Locals
-    integer, allocatable :: A(:,:)
-    integer, allocatable :: cell_indices(:)
-    integer :: num_cells, num_vertices, icell, ivertex
-
-    num_cells    = size(num_cell_vertices, dim=1)
-    num_vertices = maxval(cell_vertices) ! assume continuity starting from 1 ... num_vertices
-
-    ! form the matrix from forward connectivities
-    allocate(A(num_vertices, num_cells))
-    A = 0
-    do icell = 1, num_cells
-       do ivertex = 1, num_cell_vertices(icell)
-          A(cell_vertices(ivertex, icell), icell) = 1
-       end do
-    end do
-
-    ! count the number of nonzeros referring to cells
-    allocate(num_vertex_cells(num_vertices))
-    num_vertex_cells = 0
-    do ivertex = 1, num_vertices
-       num_vertex_cells(ivertex) = count(A(ivertex,:) .ne. 0)
-    end do
-
-    allocate(cell_indices(num_cells))
-    forall(icell=1:num_cells) cell_indices(icell) = icell
-
-    ! Fill the vertex cells based on A
-    allocate(vertex_cells(maxval(num_vertex_cells), num_vertices))
-    vertex_cells = 0
-    do ivertex = 1, num_vertices
-       vertex_cells(1:num_vertex_cells(ivertex),ivertex) = pack(cell_indices, A(ivertex,:) .ne. 0)
-    end do
-
-    if (allocated(A)) deallocate(A)
-    if (allocated(cell_indices)) deallocate(cell_indices)
-
-    if (sum(num_cell_vertices) .ne. sum(num_vertex_cells)) then
-       error stop "inconsistent connectivity inversion"
-    end if
-
-  end subroutine transpose_connectivities
-
-  !===================================================================!
-  ! Invert a map. The keys of 'map' are values of 'inverse'. The
-  ! values of 'map' are the keys of 'inverse'
-  ! ===================================================================!
-
-   subroutine reverse_map(map, num_map_vals, inverse, num_inverse_vals)
-
-    ! Arguments
-    integer, intent(in) :: map(:,:)
-    integer, intent(in) :: num_map_vals(:)
-
-    integer, allocatable, intent(out) :: inverse(:,:)
-    integer, allocatable, intent(out) :: num_inverse_vals(:)
-
-    ! Locals
-    integer              :: value
-    integer              :: i, j              ! loop indices
-    integer              :: nkeysin, nkeysout ! input map size
-    integer              :: nvalsin, nvalsout ! output map size
-    integer, allocatable :: ptr(:)
-
-    if (size(num_map_vals).eq.0) return
-
-    ! Forward mapping size
-    nkeysin = size(map, dim = 2)
-    nvalsin = size(map, dim = 1)
-
-    ! Nothing to do (probably empty map)!
-    if (nkeysin.eq.0) return
-
-    ! Find the maximum size of the inverse map values
-    nkeysout = maxval(map) !dangerous
-    allocate(num_inverse_vals(nkeysout))
-    num_inverse_vals = 0
-    do i = 1, nkeysin
-       do j = 1, num_map_vals(i)
-          value = map(j,i)
-          num_inverse_vals(value) = num_inverse_vals(value) + 1
-       end do
-    end do
-    nvalsout = maxval(num_inverse_vals)
-
-    ! Allocate the inverse map based on determined sizes
-    allocate(inverse(nvalsout, nkeysout))
-    inverse = 0
-
-    ! Point into the next available slot for each inverse_key
-    allocate(ptr(nkeysout))
-    ptr = 0
-    do i = 1, nkeysin
-       do j = 1, num_map_vals(i)
-          value = map(j,i)
-          ptr(value) = ptr(value) + 1
-          inverse(ptr(value), value) = i
-       end do
-    end do
-    deallocate(ptr)
-
-  end subroutine reverse_map
-
   !===================================================================!
   ! Find the intersection of two arrays (move elsewhere)?
   !===================================================================!
@@ -194,7 +82,7 @@ contains
   end subroutine intersection
 
   !===================================================================!
-  ! Find if a target value is present in the array (move else where)?
+  ! Index of a target value if present in the array
   !===================================================================!
 
   pure type(integer) function find(array, target_value)
@@ -281,6 +169,119 @@ contains
     end do
 
   end subroutine isort
+
+  subroutine transpose_connectivities(cell_vertices, num_cell_vertices, &
+       & vertex_cells, num_vertex_cells)
+
+    ! Arguments
+    integer, intent(in) :: cell_vertices(:,:)
+    integer, intent(in) :: num_cell_vertices(:)
+
+    integer, allocatable, intent(out) :: vertex_cells(:,:)
+    integer, allocatable, intent(out) :: num_vertex_cells(:)
+
+    ! Locals
+    integer, allocatable :: A(:,:)
+    integer, allocatable :: cell_indices(:)
+    integer :: num_cells, num_vertices, icell, ivertex
+
+    num_cells    = size(num_cell_vertices, dim=1)
+    num_vertices = maxval(cell_vertices) ! assume continuity starting from 1 ... num_vertices
+
+    ! form the matrix from forward connectivities
+    allocate(A(num_vertices, num_cells))
+    A = 0
+    do icell = 1, num_cells
+       do ivertex = 1, num_cell_vertices(icell)
+          A(cell_vertices(ivertex, icell), icell) = 1
+       end do
+    end do
+
+    ! count the number of nonzeros referring to cells
+    allocate(num_vertex_cells(num_vertices))
+    num_vertex_cells = 0
+    do ivertex = 1, num_vertices
+       num_vertex_cells(ivertex) = count(A(ivertex,:) .ne. 0)
+    end do
+
+    allocate(cell_indices(num_cells))
+    forall(icell=1:num_cells) cell_indices(icell) = icell
+
+    ! Fill the vertex cells based on A
+    allocate(vertex_cells(maxval(num_vertex_cells), num_vertices))
+    vertex_cells = 0
+    do ivertex = 1, num_vertices
+       vertex_cells(1:num_vertex_cells(ivertex),ivertex) = pack(cell_indices, A(ivertex,:) .ne. 0)
+    end do
+
+    if (allocated(A)) deallocate(A)
+    if (allocated(cell_indices)) deallocate(cell_indices)
+
+    if (sum(num_cell_vertices) .ne. sum(num_vertex_cells)) then
+       error stop "inconsistent connectivity inversion"
+    end if
+
+  end subroutine transpose_connectivities
+
+  !===================================================================!
+  ! Invert a map. The keys of 'map' are values of 'inverse'. The
+  ! values of 'map' are the keys of 'inverse'
+  ! ===================================================================!
+
+  subroutine reverse_map(map, num_map_vals, inverse, num_inverse_vals)
+
+    ! Arguments
+    integer, intent(in) :: map(:,:)
+    integer, intent(in) :: num_map_vals(:)
+
+    integer, allocatable, intent(out) :: inverse(:,:)
+    integer, allocatable, intent(out) :: num_inverse_vals(:)
+
+    ! Locals
+    integer              :: value
+    integer              :: i, j              ! loop indices
+    integer              :: nkeysin, nkeysout ! input map size
+    integer              :: nvalsin, nvalsout ! output map size
+    integer, allocatable :: ptr(:)
+
+    if (size(num_map_vals).eq.0) return
+
+    ! Forward mapping size
+    nkeysin = size(map, dim = 2)
+    nvalsin = size(map, dim = 1)
+
+    ! Nothing to do (probably empty map)!
+    if (nkeysin.eq.0) return
+
+    ! Find the maximum size of the inverse map values
+    nkeysout = maxval(map) !dangerous
+    allocate(num_inverse_vals(nkeysout))
+    num_inverse_vals = 0
+    do i = 1, nkeysin
+       do j = 1, num_map_vals(i)
+          value = map(j,i)
+          num_inverse_vals(value) = num_inverse_vals(value) + 1
+       end do
+    end do
+    nvalsout = maxval(num_inverse_vals)
+
+    ! Allocate the inverse map based on determined sizes
+    allocate(inverse(nvalsout, nkeysout))
+    inverse = 0
+
+    ! Point into the next available slot for each inverse_key
+    allocate(ptr(nkeysout))
+    ptr = 0
+    do i = 1, nkeysin
+       do j = 1, num_map_vals(i)
+          value = map(j,i)
+          ptr(value) = ptr(value) + 1
+          inverse(ptr(value), value) = i
+       end do
+    end do
+    deallocate(ptr)
+
+  end subroutine reverse_map
 
   !===================================================================!
   ! Forms the cell faces from a pair of vertices belonging to cell.
@@ -374,5 +375,82 @@ contains
     end do
 
   end subroutine get_boundary_faces
+
+  ! generalize the name to return the number of lower dimensional entities
+  impure elemental integer function cell_type_face_count(cell_type) result (num_faces)
+
+    integer, intent(in) :: cell_type
+
+    select case (cell_type)
+    case (1)
+       ! 2-node line.
+       num_faces = 2 ! vertex
+    case (2)
+       ! 3-node triangle
+       num_faces = 3  ! 3 edges
+    case (3)
+       ! 4-node quadrangle
+       num_faces = 4 ! 4 edges
+    case (4)
+       ! 4-node tetrahedron
+       num_faces = 4
+    case (5)
+       ! 8-node hexahedron
+       num_faces = 6
+    case (6)
+       !  6-node prism
+       num_faces = 5
+    case(7)
+       ! 5-node prism (pyramid)
+       num_faces = 5
+    case default
+       num_faces = 0
+    end select
+
+  end function cell_type_face_count
+
+  ! generalize the name to return the number of lower dimensional entities
+  ! Pass in cells to get faces
+  ! Pass in faces to get edges
+  ! Pass in edges to get nodes?
+  impure integer function form_cell_faces(cell_type, cell_vertices, &
+       & cell_faces, face_numbers) result (num_faces)
+
+    integer  , intent(in)    :: cell_type
+    integer  , intent(in)    :: cell_vertices(:)
+    type(set), intent(inout) :: cell_faces
+    type(set), intent(inout) :: face_numbers
+    logical                  :: added
+
+    associate(cv=>cell_vertices)
+
+      select case (cell_type)
+      case (1)
+         ! 2-node line.
+         num_faces = 2 ! vertex
+      case (2)
+         ! 3-node triangle
+         num_faces = 3  ! 3 edges
+      case (3)
+         ! 4-node quadrangle
+         num_faces = 4 ! 4 edges
+      case (4)
+         ! 4-node tetrahedron
+         num_faces = 4         
+      case (5)
+         ! 8-node hexahedron
+         num_faces = 6
+      case (6)
+         !  6-node prism
+         num_faces = 5
+      case(7)
+         ! 5-node prism (pyramid)
+         num_faces = 5
+      case default
+         num_faces = 0
+      end select
+    end associate
+
+  end function form_cell_faces
 
 end module module_mesh_utils

@@ -12,8 +12,7 @@ module class_gmsh_loader
   use interface_mesh_loader , only : mesh_loader
   use class_file            , only : file
   use class_string          , only : string
-  use class_set             , only : set
-  use class_list            , only : list
+  use module_mesh_utils     , only : find
 
   implicit none
 
@@ -28,7 +27,10 @@ module class_gmsh_loader
      module procedure create
   end interface gmsh_loader
 
-
+  !-------------------------------------------------------------------!
+  ! gmsh_reader datatype
+  !-------------------------------------------------------------------!
+  
   type, extends(mesh_loader) :: gmsh_loader
 
      type(file) :: file ! mesh file
@@ -121,11 +123,6 @@ contains
     integer :: idx_end_elements
 
     integer :: face_idx, cell_idx, edge_idx
-
-    ! Collection to store face information
-    type(set)  :: set_face_vertices
-    type(set)  :: set_face_numbers
-    type(list) :: list_face_tags
 
     ! Load the mesh into memory
     write(*,'(a,a)') "Loading mesh file :", this % file % filename
@@ -250,11 +247,6 @@ contains
            ! First token is the vertex number
            vertex_numbers(ivertex) = tokens(1) % asinteger() ! ivertex
 
-           ! check for consistency of local node numebrs with gmsh
-!!$           if (ivertex .ne. tokens(1) % asinteger()) then
-!!$              error stop "inconsistent node numbering"
-!!$           end if
-
            ! Second, third and fourth tokens are the coordinates
            vertices(:,ivertex) = tokens(2:4) % asreal()
 
@@ -337,9 +329,9 @@ contains
 
         end do
 
-        write(*,'(4x,a,i0)') "num edges      : ", num_edges
-        write(*,'(4x,a,i0)') "num faces      : ", num_faces
-        write(*,'(4x,a,i0)') "num cells      : ", num_cells
+        write(*,'(4x,a,i0)') "num edges       : ", num_edges
+        write(*,'(4x,a,i0)') "num faces       : ", num_faces
+        write(*,'(4x,a,i0)') "num cells       : ", num_cells
 
         ! Allocate space for cells
         allocate(cell_numbers(num_cells))
@@ -411,7 +403,7 @@ contains
               num_edge_vertices(edge_idx)            = num_vertices
 
               do concurrent (ivertex = 1 : num_vertices)
-                 edge_vertices(ivertex, edge_idx) = find_index(vertex_numbers, edge_vertices(ivertex,edge_idx))
+                 edge_vertices(ivertex, edge_idx) = find(vertex_numbers, edge_vertices(ivertex,edge_idx))
               end do
 
            else if (tokens(2) % asinteger() .eq. 2) then
@@ -427,7 +419,7 @@ contains
               num_face_vertices(face_idx)            = num_vertices
 
               do concurrent (ivertex = 1 : num_vertices)
-                 face_vertices(ivertex, face_idx) = find_index(vertex_numbers, face_vertices(ivertex,face_idx))
+                 face_vertices(ivertex, face_idx) = find(vertex_numbers, face_vertices(ivertex,face_idx))
               end do
 
            else if (tokens(2) % asinteger() .eq. 3) then
@@ -443,7 +435,7 @@ contains
               num_face_vertices(face_idx)            = num_vertices
 
               do concurrent (ivertex = 1 : num_vertices)
-                 face_vertices(ivertex, face_idx) = find_index(vertex_numbers, face_vertices(ivertex,face_idx))
+                 face_vertices(ivertex, face_idx) = find(vertex_numbers, face_vertices(ivertex,face_idx))
               end do
 
            else if (tokens(2) % asinteger() .eq. 4) then
@@ -459,7 +451,7 @@ contains
               num_cell_vertices(cell_idx)            = num_vertices
 
               do concurrent (ivertex = 1 : num_vertices)
-                 cell_vertices(ivertex, cell_idx) = find_index(vertex_numbers, cell_vertices(ivertex,cell_idx))
+                 cell_vertices(ivertex, cell_idx) = find(vertex_numbers, cell_vertices(ivertex,cell_idx))
               end do
 
            else if (tokens(2) % asinteger() .eq. 5) then
@@ -475,7 +467,7 @@ contains
               num_cell_vertices(cell_idx)             = num_vertices
 
               do concurrent (ivertex = 1 : num_vertices)
-                 cell_vertices(ivertex, cell_idx) = find_index(vertex_numbers, cell_vertices(ivertex,cell_idx))
+                 cell_vertices(ivertex, cell_idx) = find(vertex_numbers, cell_vertices(ivertex,cell_idx))
               end do
 
            else if (tokens(2) % asinteger() .eq. 6) then
@@ -491,7 +483,7 @@ contains
               num_cell_vertices(cell_idx)            = num_vertices
 
               do concurrent (ivertex = 1 : num_vertices)
-                 cell_vertices(ivertex, cell_idx) = find_index(vertex_numbers, cell_vertices(ivertex,cell_idx))
+                 cell_vertices(ivertex, cell_idx) = find(vertex_numbers, cell_vertices(ivertex,cell_idx))
               end do
 
            else if (tokens(2) % asinteger() .eq. 7) then
@@ -507,7 +499,7 @@ contains
               num_cell_vertices(cell_idx)            = num_vertices
 
               do concurrent (ivertex = 1 : num_vertices)
-                 cell_vertices(ivertex, cell_idx) = find_index(vertex_numbers, cell_vertices(ivertex,cell_idx))
+                 cell_vertices(ivertex, cell_idx) = find(vertex_numbers, cell_vertices(ivertex,cell_idx))
               end do
 
            else if (tokens(2) % asinteger() .eq. 15) then
@@ -537,15 +529,6 @@ contains
       write(*,'(a)') "Reading elements completed..."
 
     end block elements
-
-    !-----------------------------------------------------------------!
-    ! The boundary faces are already a part of the faces array whereas
-    ! we need to form the remaining internal faces
-    !-----------------------------------------------------------------!
-
-    write(*,'(a)') "Forming internal faces..."
-
-    write(*,'(a)') "Forming internal edges..."
 
   end subroutine get_mesh_data
 
@@ -625,24 +608,5 @@ contains
     end do
 
   end subroutine find_tags
-
-  pure integer function find_index(array, val) result(idx)
-
-    integer, intent(in) :: array(:)
-    integer, intent(in) :: val
-    integer :: i, num_elements
-
-    num_elements = size(array, dim = 1)
-
-    idx = -1
-
-    loop: do concurrent (i = 1 : num_elements)
-       if (array(i) .eq. val) then
-          idx = i
-          ! exit loop ! can't use with concurrent loop
-       endif
-    end do loop
-
-  end function find_index
-
+  
 end module class_gmsh_loader

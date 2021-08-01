@@ -105,9 +105,46 @@ contains
   end function find
 
   !===================================================================!
-  ! Checks if the first argument is a subset of the second argument
-  ! (move elsewhere?)
+  ! Checks if the first smaller array is a subset of the second larger
+  ! array
   !===================================================================!
+
+  pure type(logical) function is_subset(small, big)
+
+    integer, intent(in) :: small(:)
+    integer, intent(in) :: big(:)
+
+    integer, allocatable :: sub(:)
+    integer, allocatable :: set(:)
+
+    integer :: lensub, i
+
+    is_subset = .false.
+
+    if (size(small) .gt. size(big)) return
+
+    ! Create local copy of arrays
+    allocate(sub, source = small)
+    allocate(set, source = big)
+
+    ! Sort two arrays
+    call isort(sub)
+    call isort(set)
+    lensub = size(sub)
+
+    ! Check if all entries are equal upto the length of the smallest
+    ! array
+    is_subset = .true.
+    do i = 1, lensub
+       if (any(set .eq. sub(i)) .eqv. .false.) then
+          is_subset = .false.
+          exit
+       end if
+    end do
+
+    deallocate(sub,set)
+
+  end function is_subset
 
   pure type(logical) function is_subset(small, big)
 
@@ -366,7 +403,7 @@ contains
     end do
 
     allocate(boundary_faces(nbfaces))
-    ctr = 0 
+    ctr = 0
     do iface = 1, nfaces
        if (num_face_cells(iface) .eq. 1) then
           ctr = ctr + 1
@@ -436,7 +473,7 @@ contains
          num_faces = 4 ! 4 edges
       case (4)
          ! 4-node tetrahedron
-         num_faces = 4         
+         num_faces = 4
       case (5)
          ! 8-node hexahedron
          num_faces = 6

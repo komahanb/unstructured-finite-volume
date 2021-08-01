@@ -3,9 +3,9 @@ class_string.o \
 class_file.o \
 class_set.o \
 class_list.o \
+module_mesh_utils.o \
 interface_mesh_loader.o \
 class_gmsh_loader.o \
-module_mesh_utils.o \
 class_mesh.o \
 class_paraview_writer.o \
 class_assembler.o \

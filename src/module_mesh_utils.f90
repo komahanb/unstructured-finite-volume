@@ -146,43 +146,6 @@ contains
 
   end function is_subset
 
-  pure type(logical) function is_subset(small, big)
-
-    integer, intent(in) :: small(:)
-    integer, intent(in) :: big(:)
-
-    integer, allocatable :: sub(:)
-    integer, allocatable :: set(:)
-
-    integer :: lensub, i
-
-    is_subset = .false.
-
-    if (size(small) .gt. size(big)) return
-
-    ! Create local copy of arrays
-    allocate(sub, source = small)
-    allocate(set, source = big)
-
-    ! Sort two arrays
-    call isort(sub)
-    call isort(set)
-    lensub = size(sub)
-
-    ! Check if all entries are equal upto the length of the smallest
-    ! array
-    is_subset = .true.
-    do i = 1, lensub
-       if (any(set .eq. sub(i)) .eqv. .false.) then
-          is_subset = .false.
-          exit
-       end if
-    end do
-
-    deallocate(sub,set)
-
-  end function is_subset
-
   !===================================================================!
   ! Sort an integer array ! move elsewhere?
   !===================================================================!
@@ -224,6 +187,7 @@ contains
 
     num_cells    = size(num_cell_vertices, dim=1)
     num_vertices = maxval(cell_vertices) ! assume continuity starting from 1 ... num_vertices
+    if (num_images().gt.1) error stop "only serial"
 
     ! form the matrix from forward connectivities
     allocate(A(num_vertices, num_cells))
@@ -260,7 +224,135 @@ contains
 
   end subroutine transpose_connectivities
 
-  !===================================================================!
+  subroutine sparse_transpose_matmul( &
+       & num_cell_vertices, cell_types, cell_numbers, cell_tags, cell_vertices, &
+       & num_face_vertices, face_types, face_numbers, face_tags, face_vertices, &
+       & num_cell_faces   , cell_faces, cell_faces_type, &
+       & num_face_cells   , face_cells, face_cells_type )
+
+    ! arguments
+    integer, intent(in)               :: num_cell_vertices(:)
+    integer, intent(in)               :: cell_types(:)
+    integer, intent(in)               :: cell_numbers(:)
+    integer, intent(in)               :: cell_tags(:)
+    integer, intent(in)               :: cell_vertices(:,:)
+    integer, intent(in)               :: num_face_vertices(:)
+    integer, intent(in)               :: face_types(:)
+    integer, intent(in)               :: face_numbers(:)
+    integer, intent(in)               :: face_tags(:)
+    integer, intent(in)               :: face_vertices(:,:)
+
+    integer, allocatable, intent(out) :: num_cell_faces(:)
+    integer, allocatable, intent(out) :: cell_faces(:,:)
+    integer, allocatable, intent(out) :: cell_faces_type(:,:)
+    integer, allocatable, intent(out) :: num_face_cells(:)
+    integer, allocatable, intent(out) :: face_cells(:,:)
+    integer, allocatable, intent(out) :: face_cells_type(:,:)
+
+    ! locals
+    integer :: icell, iface, ivertex
+    integer :: ncells, nfaces
+    integer :: max_faces_in_cell, max_cells_in_face
+    integer :: shared_vertex_count
+    integer :: shared_vertices(maxval(elem_type_vertex_count(face_types)))
+    integer :: inner_pdt_count
+
+    max_faces_in_cell = maxval(elem_type_face_count(cell_types))
+    max_cells_in_face = 2
+
+    ncells = ubound(num_cell_vertices,1)
+    nfaces = ubound(num_face_vertices,1)
+
+    ! allocate return variables
+    allocate(num_cell_faces(ncells))
+    num_cell_faces = 0
+
+    allocate(cell_faces(max_faces_in_cell, ncells))
+    cell_faces = 0
+
+    allocate(cell_faces_type(max_faces_in_cell, ncells))
+    cell_faces_type = 0
+
+    allocate(num_face_cells(nfaces))
+    num_face_cells = 0
+
+    allocate(face_cells(max_cells_in_face, nfaces))
+    face_cells = 0
+
+    allocate(face_cells_type(max_cells_in_face, nfaces))
+    face_cells_type = 0
+
+    inner_pdt_count = 0
+    do concurrent (icell=1:ncells, iface=1:nfaces) ! keep track of how many faces of this cell is found
+
+!       face_search: do iface = 1, nfaces
+
+          ! filter out the boundary faces
+          if (num_cell_faces(icell) .eq. elem_type_face_count(cell_types(icell))) then
+             !            exit face_search
+             cycle
+          end if
+
+          if ((face_tags(iface) .ne. cell_tags(icell)) &
+               & .and. &
+               & (num_face_cells(iface) .eq. 1)) then
+             cycle
+          end if
+
+          if ((face_tags(iface) .eq. cell_tags(icell)) &
+               & .and. &
+               & (num_face_cells(iface) .eq. 2)) then
+             cycle
+          end if
+
+          inner_pdt_count = inner_pdt_count + 1
+
+          shared_vertex_count = 0
+
+          shared_vertices = 0
+
+          ! we can probably match faces if that's simpler
+          ! each cell has only a given number of faces
+          dot_pdt: do ivertex = 1, num_cell_vertices(icell)
+
+             ! dot both functions with inner product in the space of
+             ! vertices
+             if (any (face_vertices(1:num_face_vertices(iface),iface) .eq. &
+                  & cell_vertices(ivertex, icell) &
+                  & ) .eqv. .true.) then
+
+                shared_vertex_count = shared_vertex_count + 1
+
+                shared_vertices(shared_vertex_count) = cell_vertices(ivertex, icell)
+
+             end if
+
+          end do dot_pdt
+
+          select case(shared_vertex_count)
+          case(3:4)
+             ! triangle face or quadrangle
+             num_cell_faces(icell)                         = num_cell_faces(icell) + 1
+             cell_faces(num_cell_faces(icell), icell)      = face_numbers(iface) ! or iface
+             cell_faces_type(num_cell_faces(icell), icell) = face_types(iface)
+
+             num_face_cells(iface)                         = num_face_cells(iface) + 1
+             face_cells(num_face_cells(iface), iface)      = cell_numbers(icell)
+             face_cells_type(num_face_cells(iface), iface) = cell_types(icell)
+          case(5:)
+             print *, "more than 4 vertices do not make a face"
+             error stop
+          case default
+             ! no vertex, one vertex, edge may be
+          end select
+
+  !     end do face_search
+
+    end do
+
+  end subroutine sparse_transpose_matmul
+
+     !===================================================================!
   ! Invert a map. The keys of 'map' are values of 'inverse'. The
   ! values of 'map' are the keys of 'inverse'
   ! ===================================================================!
@@ -324,7 +416,7 @@ contains
   ! Forms the cell faces from a pair of vertices belonging to cell.
   !===================================================================!
 
-  subroutine get_cell_faces( cell_vertices, &
+  subroutine form_cell_faces( cell_vertices, &
        & vertex_faces, num_vertex_faces, &
        & cell_faces, num_cell_faces )
 
@@ -379,7 +471,7 @@ contains
        end do
     end do
 
-  end subroutine get_cell_faces
+  end subroutine form_cell_faces
 
   !===================================================================!
   ! Determine if the face is a boundary face based on how many
@@ -414,7 +506,7 @@ contains
   end subroutine get_boundary_faces
 
   ! generalize the name to return the number of lower dimensional entities
-  impure elemental integer function cell_type_face_count(cell_type) result (num_faces)
+  pure elemental integer function elem_type_face_count(cell_type) result (num_faces)
 
     integer, intent(in) :: cell_type
 
@@ -444,50 +536,226 @@ contains
        num_faces = 0
     end select
 
-  end function cell_type_face_count
+  end function elem_type_face_count
+
+  ! generalize the name to return the number of lower dimensional entities
+  pure elemental integer function elem_type_vertex_count(elem_type) result (num_vertices)
+
+    integer, intent(in) :: elem_type
+
+    select case (elem_type)
+    case (1)
+       ! 2-node line.
+       num_vertices = 2
+    case (2)
+       ! 3-node triangle
+       num_vertices = 3
+    case (3)
+       ! 4-node quadrangle
+       num_vertices = 4
+    case (4)
+       ! 4-node tetrahedron
+       num_vertices = 4
+    case (5)
+       ! 8-node hexahedron
+       num_vertices = 8
+    case (6)
+       !  6-node prism
+       num_vertices = 6
+    case(7)
+       ! 5-node prism (pyramid)
+       num_vertices = 5
+    case default
+       num_vertices = 0
+    end select
+
+  end function elem_type_vertex_count
 
   ! generalize the name to return the number of lower dimensional entities
   ! Pass in cells to get faces
   ! Pass in faces to get edges
   ! Pass in edges to get nodes?
-  impure integer function form_cell_faces(cell_type, cell_vertices, &
-       & cell_faces, face_numbers) result (num_faces)
+  impure subroutine cell_type_face(cell_type, cell_vertices, face_number, &
+       & num_face_vertices, face_vertices)
 
-    integer  , intent(in)    :: cell_type
-    integer  , intent(in)    :: cell_vertices(:)
-    type(set), intent(inout) :: cell_faces
-    type(set), intent(inout) :: face_numbers
-    logical                  :: added
+    integer, intent(in)  :: cell_type
+    integer, intent(in)  :: cell_vertices(:)
+    integer, intent(in)  :: face_number
+    integer, intent(inout) :: num_face_vertices
+    integer, intent(inout) :: face_vertices(:)
 
-    associate(cv=>cell_vertices)
+    face_vertices = 0
 
-      select case (cell_type)
-      case (1)
-         ! 2-node line.
-         num_faces = 2 ! vertex
-      case (2)
-         ! 3-node triangle
-         num_faces = 3  ! 3 edges
-      case (3)
-         ! 4-node quadrangle
-         num_faces = 4 ! 4 edges
-      case (4)
-         ! 4-node tetrahedron
-         num_faces = 4
-      case (5)
-         ! 8-node hexahedron
-         num_faces = 6
-      case (6)
-         !  6-node prism
-         num_faces = 5
-      case(7)
-         ! 5-node prism (pyramid)
-         num_faces = 5
-      case default
-         num_faces = 0
-      end select
-    end associate
+    select case (cell_type)
+!!$    case (1)
+!!$       ! 2-node line.
+!!$       num_faces = 2 ! vertex
+!!$    case (2)
+!!$       ! 3-node triangle
+!!$       num_faces = 3  ! 3 edges
+!!$    case (3)
+!!$       ! 4-node quadrangle
+!!$       num_faces = 4 ! 4 edges
+    case (4)
 
-  end function form_cell_faces
+       ! 4-node tetrahedron
+       num_face_vertices = 3
+       if (face_number .eq. 1) then
+          face_vertices = [cell_vertices(1), cell_vertices(2), cell_vertices(3)]
+       else if (face_number .eq. 2) then
+          face_vertices = [cell_vertices(4), cell_vertices(2), cell_vertices(3)]
+       else if (face_number .eq. 3) then
+          face_vertices = [cell_vertices(1), cell_vertices(4), cell_vertices(3)]
+       else if (face_number .eq. 4) then
+          face_vertices = [cell_vertices(1), cell_vertices(4), cell_vertices(2)]
+       else
+          print *, "invalid face number", face_number
+          error stop
+       end if
+
+    case (5)
+       ! 8-node hexahedron
+       num_face_vertices = 4
+       if (face_number .eq. 1) then
+          face_vertices = [cell_vertices(1), cell_vertices(5), cell_vertices(6), cell_vertices(2)]
+       else if (face_number .eq. 2) then
+          face_vertices = [cell_vertices(4), cell_vertices(8), cell_vertices(7), cell_vertices(3)]
+       else if (face_number .eq. 3) then
+          face_vertices = [cell_vertices(1), cell_vertices(5), cell_vertices(8), cell_vertices(4)]
+       else if (face_number .eq. 4) then
+          face_vertices = [cell_vertices(2), cell_vertices(3), cell_vertices(7), cell_vertices(6)]
+       else if (face_number .eq. 5) then
+          face_vertices = [cell_vertices(5), cell_vertices(6), cell_vertices(7), cell_vertices(8)]
+       else if (face_number .eq. 6) then
+          face_vertices = [cell_vertices(1), cell_vertices(2), cell_vertices(3), cell_vertices(4)]
+       else
+          print *, "invalid face number", face_number
+          error stop
+       end if
+    case (6)
+       !  6-node prism (5 faces)
+       error stop
+    case(7)
+       ! 5-node prism (pyramid) 5 faces
+    case default
+       error stop
+    end select
+
+  end subroutine cell_type_face
+
+  pure type(logical) function same_entity(one, two)
+
+    integer, intent(in) :: one(:), two(:)
+    integer :: tmp(size(two))
+    integer :: i, n
+
+    n = size(two)
+    tmp = two
+    same_entity = .false.
+    loop: do i = 0, n - 1
+       same_entity = all(one .eq. cshift(tmp, i))
+       if (same_entity .eqv. .true.) exit loop
+    end do loop
+
+  end function same_entity
+
+  impure subroutine order_face_vertices(cell_type, cell_vertices, face_vertices_unordered)
+
+    integer, intent(in)    :: cell_type
+    integer, intent(in)    :: cell_vertices(:)
+    integer, intent(inout) :: face_vertices_unordered(:)
+
+    integer, allocatable :: face_vertices(:,:)
+    integer :: num_face_vertices, num_cell_faces
+    integer :: iface, ivertex
+    integer :: match_count
+
+    select case (cell_type)
+    case (4)
+       ! 4-node tetrahedron
+       num_face_vertices = 3
+       num_cell_faces = 4
+
+       allocate(face_vertices(num_face_vertices, num_cell_faces))
+       face_vertices = 0
+
+       face_vertices(:,1) = [cell_vertices(1), cell_vertices(2), cell_vertices(3)]
+       face_vertices(:,2) = [cell_vertices(4), cell_vertices(2), cell_vertices(3)]
+       face_vertices(:,3) = [cell_vertices(1), cell_vertices(4), cell_vertices(3)]
+       face_vertices(:,4) = [cell_vertices(1), cell_vertices(4), cell_vertices(2)]
+    case (5)
+       ! 8-node hexahedron
+       num_face_vertices = 4
+       num_cell_faces = 6
+
+       allocate(face_vertices(num_face_vertices, num_cell_faces))
+       face_vertices = 0
+
+       face_vertices(:,1) = [cell_vertices(1), cell_vertices(5), cell_vertices(6), cell_vertices(2)]
+       face_vertices(:,2) = [cell_vertices(4), cell_vertices(8), cell_vertices(7), cell_vertices(3)]
+       face_vertices(:,3) = [cell_vertices(1), cell_vertices(5), cell_vertices(8), cell_vertices(4)]
+       face_vertices(:,4) = [cell_vertices(2), cell_vertices(3), cell_vertices(7), cell_vertices(6)]
+       face_vertices(:,5) = [cell_vertices(5), cell_vertices(6), cell_vertices(7), cell_vertices(8)]
+       face_vertices(:,6) = [cell_vertices(1), cell_vertices(2), cell_vertices(3), cell_vertices(4)]
+    case (6)
+       !  6-node prism (5 faces)
+       error stop
+    case(7)
+       ! 5-node prism (pyramid) 5 faces
+       error stop
+    case default
+       error stop
+    end select
+
+    ! compare the input with face 1,2,3,4 and see which has the
+    ! matching count equal to input vertex count
+
+    match_face: do iface = 1, num_cell_faces
+
+       match_count = 0
+       match_vertex: do ivertex = 1, num_face_vertices
+          if (any (face_vertices_unordered(1:num_face_vertices) .eq. face_vertices(ivertex,iface) ) .eqv. .true.) then
+             ! exit match_vertex ! skip and go to next face
+             ! else
+             match_count = match_count + 1
+          end if
+       end do match_vertex
+
+       ! found the face with correct ordering of vertices
+       if (match_count .eq. num_face_vertices) then
+          face_vertices_unordered = face_vertices(:, iface)
+          exit match_face
+       end if
+
+    end do match_face
+
+    if (allocated(face_vertices)) deallocate(face_vertices)
+
+  end subroutine order_face_vertices
 
 end module module_mesh_utils
+
+!!$
+!!$match: do iface = 1, elem_type_face_count(me % cell_types(icell))
+!!$
+!!$   call cell_type_face(me % cell_types(icell), me % cell_vertices(:,icell), &
+!!$        & iface, inum_face_vertices, iface_vertices_tmp)
+!!$
+!!$   do jface = 1, elem_type_face_count(me % cell_types(jcell))
+!!$
+!!$      call cell_type_face(me % cell_types(jcell), me % cell_vertices(:,jcell), &
+!!$           & jface, jnum_face_vertices, jface_vertices_tmp)
+!!$
+!!$      if (same_entity( &
+!!$           & iface_vertices_tmp(1:inum_face_vertices), &
+!!$           & jface_vertices_tmp(1:jnum_face_vertices)  &
+!!$           & ) .eqv. .true.) then
+!!$
+!!$
+!!$         exit match
+!!$
+!!$      end if
+!!$
+!!$   end do
+!!$
+!!$end do match

@@ -9,7 +9,9 @@ module class_mesh
   use iso_fortran_env       , only : dp => REAL64, error_unit
   use interface_mesh_loader , only : mesh_loader
   use class_string          , only : string
-  use module_mesh_utils
+  use module_mesh_utils     , only : find, distance, elem_type_face_count, &
+       & cross_product, form_cell_faces, transpose_connectivities, &
+       & order_face_vertices, sparse_transpose_matmul
 
   implicit none
 
@@ -67,9 +69,9 @@ module class_mesh
      ! type(vertex_group), allocatable :: vertex_groups(:)
 
      integer :: num_vertices
-     real(dp) , allocatable :: vertices(:,:)             ! [[x,y,z],1:nvertices]
-     integer  , allocatable :: vertex_numbers(:)
-     integer  , allocatable :: vertex_tags(:)
+     real(dp) , allocatable :: vertices(:,:)     ! [[x,y,z],1:num_vertices]
+     integer  , allocatable :: vertex_numbers(:) ! global
+     integer  , allocatable :: vertex_tags(:)    ! not set
 
      ! Fundamental face info
      ! type(edge_group), allocatable :: face_groups(:)
@@ -86,7 +88,7 @@ module class_mesh
 
      integer :: num_faces
      integer  , allocatable :: face_numbers(:)
-     integer  , allocatable :: face_tags(:)
+     integer  , allocatable :: face_tags(:)            ! one face can be a part of two tags?
      integer  , allocatable :: face_types(:)
      integer  , allocatable :: face_vertices(:,:)        ! [[v1,v2],1:nfaces]
      integer  , allocatable :: num_face_vertices(:)
@@ -118,8 +120,11 @@ module class_mesh
      ! Intermidiate connectivities and their inverse
      integer  , allocatable :: num_cell_faces(:)         ! [1:ncells]
      integer  , allocatable :: cell_faces(:,:)           ! [[f1,f2,f3..],1:ncells]
+     integer  , allocatable :: cell_faces_type(:,:)      ! [[tri,qua,tri..],1:ncells]
+
      integer  , allocatable :: num_face_cells(:)         ! [1:nfaces]
      integer  , allocatable :: face_cells(:,:)           ! [[c1,c2...],1:nfaces]
+     integer  , allocatable :: face_cells_type(:,:)      ! [[hex,tet,..],1:nfaces]
 
      ! Intermidiate connectivities and their inverse
      integer  , allocatable :: num_face_edges(:)         ! [1:nfaces]
@@ -214,11 +219,11 @@ contains
 
     type(face_group), intent(inout) :: this
 
-    if (allocated(this % group_name % str)) deallocate(this % group_name % str)
-    if (allocated(this % group_face_numbers)) deallocate(this % group_face_numbers)
-    if (allocated(this % group_face_vertices)) deallocate(this % group_face_vertices)
+    if (allocated(this % group_name % str))        deallocate(this % group_name % str)
+    if (allocated(this % group_face_numbers))      deallocate(this % group_face_numbers)
+    if (allocated(this % group_face_vertices))     deallocate(this % group_face_vertices)
     if (allocated(this % group_num_face_vertices)) deallocate(this % group_num_face_vertices)
-    if (allocated(this % group_face_types)) deallocate(this % group_face_types)
+    if (allocated(this % group_face_types))        deallocate(this % group_face_types)
 
   end subroutine destroy_face_group
 
@@ -238,17 +243,139 @@ contains
 
   type(mesh) function create_mesh(loader) result(me)
 
-    ! Arguments
-    class(mesh_loader), intent(in) :: loader
+    class(mesh_loader), intent(in)  :: loader
+    integer           , allocatable :: bface_numbers(:)
+    integer           , allocatable :: bface_tags(:)
+    integer           , allocatable :: bface_types(:)
+    integer           , allocatable :: bface_vertices(:,:)
+    integer           , allocatable :: bnum_face_vertices(:)
+    integer                         :: bnum_faces
 
+    !-----------------------------------------------------------------!
     ! Get the fundamental information needed
+    !-----------------------------------------------------------------!
+
     call loader % get_mesh_data( &
          & me % num_vertices, me % vertex_numbers, me % vertex_tags , me % vertices ,  &
          & me % num_edges   , me % edge_numbers  , me % edge_tags   , me % edge_vertices , me % num_edge_vertices , &
-         & me % num_faces   , me % face_numbers  , me % face_tags   , me % face_vertices , me % num_face_vertices , &
+         & bnum_faces       , bface_numbers      , bface_tags       , bface_vertices     , bnum_face_vertices , &
          & me % num_cells   , me % cell_numbers  , me % cell_tags   , me % cell_vertices , me % num_cell_vertices , &
-         & me % cell_types  , me % face_types    , me % edge_types  , &
+         & me % cell_types  , bface_types       , me % edge_types  , &
          & me % num_tags    , me % tag_numbers   , me % tag_physical_dimensions, me % tag_info )
+
+    ! determine the number of faces algebraically
+    me % num_faces = (sum(elem_type_face_count(me % cell_types)) - bnum_faces)/2 + bnum_faces
+
+    ! allocate the mesh's face data
+    allocate(me % face_numbers(me % num_faces))
+    allocate(me % face_tags(me % num_faces))
+    allocate(me % face_types(me % num_faces))
+    allocate(me % face_vertices(4, me % num_faces)) ! max is quadrilateral face
+    allocate(me % num_face_vertices(me % num_faces))
+
+    me % face_numbers = 0
+    me % face_tags = 0
+    me % face_types = 0
+    me % face_vertices = 0
+    me % num_face_vertices = 0
+
+    ! add the remaining boundary faces to the array
+    add_boundary_faces : block
+
+      integer :: iface
+
+      do iface = 1, bnum_faces
+
+         me % face_numbers(iface)    = iface
+         me % face_tags(iface)       = bface_tags(iface)
+         me % face_types(iface)      = bface_types(iface)
+         me % num_face_vertices      = bnum_face_vertices(iface)
+         me % face_vertices(:,iface) = bface_vertices(1:bnum_face_vertices(iface), iface)
+
+      end do
+
+    end block add_boundary_faces
+
+    form_internal_faces: block
+
+      integer   :: num_faces
+      integer   :: icell, jcell, ivertex
+      integer   :: shared_node_count
+      integer   :: shared_vertices(4)
+
+      ! This logic will naturally avoid forming the boundary faces,
+      ! because we are dotting only with a different interior cell.
+      ! Therefore we can simply append these new internal faces to the
+      ! existing (boundary) faces provided by the mesh
+
+      ! may need to adjust a bit for partitioned mesh (may be ignore ghost cells?)
+      ! face numbers need to be global in assignment?
+
+      ! counting can be challenging for higher order mesh (uff)
+
+      ! can apply the same logic for CP x PC?
+
+      ! becareful about :, counts and 0
+
+      num_faces = bnum_faces ! me % num_boundary_faces
+
+      do icell = 1, me % num_cells
+
+         shared_vertices = 0
+
+         ! pick only upper triangle to avoid double counting
+         do jcell = icell + 1, me % num_cells
+
+            ! sparsely carry out dot product between two rows to yield
+            ! the count of shared vertices
+            shared_node_count = 0
+            do ivertex = 1, me % num_cell_vertices(icell)
+               if (any (me % cell_vertices(1 : me % num_cell_vertices(jcell),jcell) .eq. &
+                    & me % cell_vertices(ivertex, icell) &
+                    & ) .eqv. .true.) then
+                  shared_node_count = shared_node_count + 1
+                  shared_vertices(shared_node_count) = me % cell_vertices(ivertex, icell)
+               end if
+            end do
+
+            ! post-process: how is icell related to jcell?
+            select case (shared_node_count)
+            case(0)
+               ! no vertices are shared between the two cells
+            case (1:2)
+               ! a vertex or an edge is shared between the two cells
+            case (3)
+               ! a 3-noded triangle is shared between the two cells
+               num_faces = num_faces + 1
+               me % face_numbers(num_faces) = num_faces
+               me % face_tags(num_faces)    = me % cell_tags(icell)
+               me % face_types(num_faces)   = 2
+               me % num_face_vertices       = 3
+               call order_face_vertices(me % cell_types(jcell), me % cell_vertices(:,jcell), shared_vertices(1:3))
+               me % face_vertices(1:3,num_faces) = shared_vertices(1:3)
+            case (4)
+               ! a 4-node quadrangle is shared between the two cells
+               num_faces = num_faces + 1
+               me % face_numbers(num_faces) = num_faces
+               me % face_tags(num_faces)    = me % cell_tags(icell)
+               me % face_types(num_faces)   = 3
+               me % num_face_vertices       = 4
+               call order_face_vertices(me % cell_types(jcell), me % cell_vertices(:,jcell), shared_vertices(1:4))
+               me % face_vertices(1:4,num_faces) = shared_vertices(1:4)
+            case default
+               print *, shared_node_count
+               error stop "confused in shared node counting forming internal faces"
+            end select
+
+         end do
+
+      end do
+
+      if (num_faces .ne. me % num_faces) then
+         print *, "numfaces don't match", num_faces, me % num_faces
+      end if
+
+    end block form_internal_faces
 
     ! Sanity check (make sure numbering is continuous), although it
     ! may not start from one. Applicable only for unpartitioned mesh
@@ -274,7 +401,7 @@ contains
 !       error stop
     end if
 
-    call me % create_face_groups()
+    ! call me % create_face_groups()
 
   end function create_mesh
 
@@ -285,7 +412,7 @@ contains
     integer, allocatable :: face_tag_numbers(:)
     logical, allocatable :: group_mask(:)
 
-    integer :: iface, ifacegroup, face_group_number
+    integer :: ifacegroup, face_group_number
     integer :: num_node_tags, num_edge_tags, num_face_tags, num_cell_tags
 
     num_node_tags = count(this % tag_physical_dimensions .eq. 0)
@@ -459,94 +586,94 @@ contains
     !-----------------------------------------------------------------!
     ! Find VertexFace conn. by inverting FaceVertex conn.
     !-----------------------------------------------------------------!
-
-    vertex_face: block
-
-      integer :: ivertex
-
-      write(*,'(a)') "Inverting FaceVertex Map..."
-
-      call transpose_connectivities( &
-           & this % face_vertices, &
-           & this % num_face_vertices, &
-           & this % vertex_faces, &
-           & this % num_vertex_faces)
-
-      write(*,'(a)') "Inverting FaceVertex Map complete..."
-
-      if (allocated(this % vertex_faces) .and. size(this % vertex_faces, dim = 2) .gt. 0) then
-
-         write(*,'(a,i4,a,i4)') &
-              & "Vertex to face info for", min(this % max_print,this % num_vertices), &
-              & " vertices out of ", this % num_vertices
-
-         do ivertex = 1, min(this % max_print,this % num_vertices)
-            write(*,*) &
-                 & 'vertex [', this % vertex_numbers(ivertex), ']',&
-                 & 'num_vertex_faces [', this % num_vertex_faces(ivertex), ']',&
-                 & 'faces [', this % vertex_faces( &
-                 & 1:this % num_vertex_faces(ivertex),ivertex), ']'
-         end do
-
-         ! Sanity check
-         if (minval(this % num_vertex_faces) .lt. 1) then
-            write(error_unit, *) 'Error: There are vertices not mapped to a face'
-            error stop
-         end if
-
-      else
-
-         write(*,'(a)') "Vertex to face info not computed"
-
-      end if
-
-    end block vertex_face
+!!$
+!!$    vertex_face: block
+!!$
+!!$      integer :: ivertex
+!!$
+!!$      write(*,'(a)') "Inverting FaceVertex Map..."
+!!$
+!!$      call transpose_connectivities( &
+!!$           & this % face_vertices, &
+!!$           & this % num_face_vertices, &
+!!$           & this % vertex_faces, &
+!!$           & this % num_vertex_faces)
+!!$
+!!$      write(*,'(a)') "Inverting FaceVertex Map complete..."
+!!$
+!!$      if (allocated(this % vertex_faces) .and. size(this % vertex_faces, dim = 2) .gt. 0) then
+!!$
+!!$         write(*,'(a,i4,a,i4)') &
+!!$              & "Vertex to face info for", min(this % max_print,this % num_vertices), &
+!!$              & " vertices out of ", this % num_vertices
+!!$
+!!$         do ivertex = 1, min(this % max_print,this % num_vertices)
+!!$            write(*,*) &
+!!$                 & 'vertex [', this % vertex_numbers(ivertex), ']',&
+!!$                 & 'num_vertex_faces [', this % num_vertex_faces(ivertex), ']',&
+!!$                 & 'faces [', this % vertex_faces( &
+!!$                 & 1:this % num_vertex_faces(ivertex),ivertex), ']'
+!!$         end do
+!!$
+!!$         ! Sanity check
+!!$         if (minval(this % num_vertex_faces) .lt. 1) then
+!!$            write(error_unit, *) 'Error: There are vertices not mapped to a face'
+!!$            error stop
+!!$         end if
+!!$
+!!$      else
+!!$
+!!$         write(*,'(a)') "Vertex to face info not computed"
+!!$
+!!$      end if
+!!$
+!!$    end block vertex_face
 
     !-----------------------------------------------------------------!
     ! Find VertexEdge conn. by inverting EdgeVertex conn.
     !-----------------------------------------------------------------!
 
-    vertex_edge: block
-
-      integer :: ivertex
-
-      write(*,'(a)') "Inverting EdgeVertex Map..."
-
-      call transpose_connectivities( &
-           & this % edge_vertices, &
-           & this % num_edge_vertices, &
-           & this % vertex_edges, &
-           & this % num_vertex_edges)
-
-      write(*,'(a)') "Inverting EdgeVertex Map complete..."
-
-      if (allocated(this % vertex_edges) .and. size(this % vertex_edges, dim = 2) .gt. 0) then
-
-         write(*,'(a,i4,a,i4)') &
-              & "Vertex to edge info for", min(this % max_print,this % num_vertices), &
-              & " vertices out of ", this % num_vertices
-
-         do ivertex = 1, min(this % max_print,this % num_vertices)
-            write(*,*) &
-                 & 'vertex [', this % vertex_numbers(ivertex), ']',&
-                 & 'num_vertex_edges [', this % num_vertex_edges(ivertex) , ']',&
-                 & 'edges [', this % vertex_edges(&
-                 & 1:this % num_vertex_edges(ivertex),ivertex), ']'
-         end do
-
-         ! Sanity check
-         if (minval(this % num_vertex_edges) .lt. 1) then
-            write(error_unit, *) 'Error: There are vertices not mapped to a edge'
-            error stop
-         end if
-
-      else
-
-         write(*,'(a)') "Vertex to edge info not computed"
-
-      end if
-
-    end block vertex_edge
+!!$    vertex_edge: block
+!!$
+!!$      integer :: ivertex
+!!$
+!!$      write(*,'(a)') "Inverting EdgeVertex Map..."
+!!$
+!!$      call transpose_connectivities( &
+!!$           & this % edge_vertices, &
+!!$           & this % num_edge_vertices, &
+!!$           & this % vertex_edges, &
+!!$           & this % num_vertex_edges)
+!!$
+!!$      write(*,'(a)') "Inverting EdgeVertex Map complete..."
+!!$
+!!$      if (allocated(this % vertex_edges) .and. size(this % vertex_edges, dim = 2) .gt. 0) then
+!!$
+!!$         write(*,'(a,i4,a,i4)') &
+!!$              & "Vertex to edge info for", min(this % max_print,this % num_vertices), &
+!!$              & " vertices out of ", this % num_vertices
+!!$
+!!$         do ivertex = 1, min(this % max_print,this % num_vertices)
+!!$            write(*,*) &
+!!$                 & 'vertex [', this % vertex_numbers(ivertex), ']',&
+!!$                 & 'num_vertex_edges [', this % num_vertex_edges(ivertex) , ']',&
+!!$                 & 'edges [', this % vertex_edges(&
+!!$                 & 1:this % num_vertex_edges(ivertex),ivertex), ']'
+!!$         end do
+!!$
+!!$         ! Sanity check
+!!$         if (minval(this % num_vertex_edges) .lt. 1) then
+!!$            write(error_unit, *) 'Error: There are vertices not mapped to a edge'
+!!$            error stop
+!!$         end if
+!!$
+!!$      else
+!!$
+!!$         write(*,'(a)') "Vertex to edge info not computed"
+!!$
+!!$      end if
+!!$
+!!$    end block vertex_edge
 
   end subroutine invert_connectivities
 
@@ -560,16 +687,17 @@ contains
     ! Find Cell Face conn. by combining two maps CF = CV x VF
     !-----------------------------------------------------------------!
 
-    cell_face: block
+    cell_face_face_cell: block
 
-      integer :: icell
+      integer :: icell, iface
 
-      write(*,*) "Combining CellVertex with VertexFace to get CellFace Map..."
+      write(*,*) "Forming CellFace and FaceCell connectivities..."
 
-      ! Combine maps to get cell_faces
-      call get_cell_faces(this % cell_vertices, &
-           & this % vertex_faces, this % num_vertex_faces, &
-           & this % cell_faces, this % num_cell_faces)
+      call sparse_transpose_matmul(&
+           & this % num_cell_vertices, this % cell_types, this % cell_numbers, this % cell_tags, this % cell_vertices, &
+           & this % num_face_vertices, this % face_types, this % face_numbers, this % face_tags, this % face_vertices, &
+           & this % num_cell_faces, this % cell_faces, this % cell_faces_type, &
+           & this % num_face_cells, this % face_cells, this % face_cells_type)
 
       if (allocated(this % cell_faces)) then
 
@@ -577,7 +705,7 @@ contains
               & "Cell to face info for", min(this % max_print,this % num_cells), &
               & " cells out of ", this % num_cells
 
-         do icell = 1, max(this % max_print,this % num_cells)
+         do icell = 1, min(this % max_print,this % num_cells)
             write(*,*) &
                  & 'cell ['  , icell, ']',&
                  & 'nfaces [', this % num_cell_faces(icell), ']',&
@@ -587,55 +715,49 @@ contains
 
       else
 
-         write(*,'(a)') "Vertex to edge info not computed"
+         write(*,'(a)') "Cell to face info not computed"
 
       end if
 
-    end block cell_face
+      if (allocated(this % face_cells)) then
 
-    !-----------------------------------------------------------------!
-    ! Find Face Cell conn. by inverting Cell Face conn.
-    !-----------------------------------------------------------------!
+         do iface = 1, min(this % max_print,this % num_faces)
+            print *, &
+                 & 'face [', this % face_numbers(iface), ']', &
+                 & 'cells [', this % face_cells(1 : this % num_face_cells(iface),iface), ']'
+         end do
 
-    face_cell : block
+         if (minval(this % num_face_cells) .lt. 1) then
+            write(error_unit, *) 'Error: There are faces not mapped to a cell'
+         end if
 
-      integer :: iface
+      else
 
-      ! Invert cell_faces
-      call transpose_connectivities(this % cell_faces, this % num_cell_faces, &
-           & this % face_cells, this % num_face_cells)
+         write(*,'(a)') "Face to cell info not computed"
 
-      do iface = 1, max(this % max_print,this % num_faces)
-         print *, &
-              & 'face [', this % face_numbers(iface), ']', &
-              & 'cells [', this % face_cells(1 : this % num_face_cells(iface),iface), ']'
-      end do
-
-      if (minval(this % num_face_cells) .lt. 1) then
-         write(error_unit, *) 'Error: There are faces not mapped to a cell'
       end if
 
-    end block face_cell
+    end block cell_face_face_cell
 
     !-----------------------------------------------------------------!
     ! Evaluate all geometric quantities needed for FVM assembly
     !-----------------------------------------------------------------!
 
-    geom : block
-
-      write(*,*) 'Calculating mesh geometry information'
-
-      call this % evaluate_cell_centers()
-      call this % evaluate_face_centers_areas()
-      call this % evaluate_face_tangents_normals()
-      call this % evaluate_cell_volumes()
-
-      call this % evaluate_centroidal_vector()
-      call this % evaluate_face_deltas()
-      call this % evaluate_face_weight()
-      call this % evaluate_vertex_weight()
-
-    end block geom
+!!$    geom : block
+!!$
+!!$      write(*,*) 'Calculating mesh geometry information'
+!!$
+!!$      call this % evaluate_cell_centers()
+!!$      call this % evaluate_face_centers_areas()
+!!$      call this % evaluate_face_tangents_normals()
+!!$      call this % evaluate_cell_volumes()
+!!$
+!!$      call this % evaluate_centroidal_vector()
+!!$      call this % evaluate_face_deltas()
+!!$      call this % evaluate_face_weight()
+!!$      call this % evaluate_vertex_weight()
+!!$
+!!$    end block geom
 
     ! Signal that all tasks are complete
     initialize = .true.
@@ -1009,7 +1131,7 @@ contains
             & ' vertices out of ', this % num_vertices
        write(*,*) "number tag x y z"
        do ivertex = 1, min(this % max_print,this % num_vertices)
-          write(*,'(i6,i2,3E15.6)') &
+          write(*,'(i6,i2,3ES15.3)') &
                & this % vertex_numbers(ivertex), &
                & this % vertex_tags(ivertex), &
                & this % vertices(:, ivertex)

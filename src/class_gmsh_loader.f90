@@ -12,7 +12,7 @@ module class_gmsh_loader
   use interface_mesh_loader , only : mesh_loader
   use class_file            , only : file
   use class_string          , only : string
-  use module_mesh_utils     , only : find
+  use module_mesh_utils     , only : find, elem_type_face_count
 
   implicit none
 
@@ -269,7 +269,6 @@ contains
       type(string), allocatable :: tokens(:)
       integer                   :: num_tokens
       integer                   :: num_lines, iline
-      type(logical)             :: added
       integer                   :: vloc
       integer                   :: ivertex, num_vertices
 
@@ -329,9 +328,9 @@ contains
 
         end do
 
-        write(*,'(4x,a,i0)') "num edges       : ", num_edges
-        write(*,'(4x,a,i0)') "num faces       : ", num_faces
-        write(*,'(4x,a,i0)') "num cells       : ", num_cells
+        write(*,'(4x,a,i0)')  "num edges                 : ", num_edges
+        write(*,'(4x,a,2i0)') "num faces [boundary]      : ", num_faces
+        write(*,'(4x,a,i0)')  "num cells                 : ", num_cells
 
         ! Allocate space for cells
         allocate(cell_numbers(num_cells))

@@ -27,9 +27,12 @@ program test_mesh
     files(3) = string('../triangle.msh')
     files(4) = string('../frontal.msh')
     files(5) = string('../delaunay.msh')
-    files(6) = string('../box.msh')
 
-    do ifile = 6, size(files)
+    files(5) = string('../box-36.msh')
+    files(6) = string('../cylinder-coarse.msh')
+    !files(6) = string('../box-part.msh_000001')
+    
+    do ifile = 5, size(files)
        write(*,*) "Testing GMSH Loader with file ", files(ifile) % str
        call test_gmsh_loader(files(ifile) % str)
     end do
@@ -109,7 +112,7 @@ contains
     class(gmsh_loader), allocatable :: gmsh_loader_obj
     class(mesh)       , allocatable :: mesh_obj
     class(paraview_writer), allocatable :: pwriter
-
+    
     ! Create a mesh loader for mesh file
     allocate(gmsh_loader_obj, source =  gmsh_loader(filename))
     
@@ -119,9 +122,7 @@ contains
 
     allocate(pwriter, source = paraview_writer(mesh_obj))
 
-    print *, filename(1:index(filename, '.'))//'.vtu'
-    
-    call pwriter % write('check.vtu')
+    call pwriter % write(filename(1:index(filename,".msh")-1)//".vtu")
 
     deallocate(pwriter)
     

@@ -290,7 +290,7 @@ contains
          me % face_tags(iface)       = bface_tags(iface)
          me % face_types(iface)      = bface_types(iface)
          me % num_face_vertices      = bnum_face_vertices(iface)
-         me % face_vertices(:,iface) = bface_vertices(1:bnum_face_vertices(iface), iface)
+         me % face_vertices(1:bnum_face_vertices(iface),iface) = bface_vertices(1:bnum_face_vertices(iface), iface)
 
       end do
 
@@ -558,7 +558,7 @@ contains
 
       if (allocated(this % vertex_cells) .and. size(this % vertex_cells, dim = 2) .gt. 0) then
 
-         write(*,'(a,i4,a,i4)') &
+         write(*,'(a,i8,a,i8)') &
               & "Vertex to cell info for", min(this % max_print,this % num_vertices), &
               & " vertices out of ", this % num_vertices
 
@@ -603,7 +603,7 @@ contains
 !!$
 !!$      if (allocated(this % vertex_faces) .and. size(this % vertex_faces, dim = 2) .gt. 0) then
 !!$
-!!$         write(*,'(a,i4,a,i4)') &
+!!$         write(*,'(a,i8,a,i8)') &
 !!$              & "Vertex to face info for", min(this % max_print,this % num_vertices), &
 !!$              & " vertices out of ", this % num_vertices
 !!$
@@ -649,7 +649,7 @@ contains
 !!$
 !!$      if (allocated(this % vertex_edges) .and. size(this % vertex_edges, dim = 2) .gt. 0) then
 !!$
-!!$         write(*,'(a,i4,a,i4)') &
+!!$         write(*,'(a,i8,a,i8)') &
 !!$              & "Vertex to edge info for", min(this % max_print,this % num_vertices), &
 !!$              & " vertices out of ", this % num_vertices
 !!$
@@ -701,7 +701,7 @@ contains
 
       if (allocated(this % cell_faces)) then
 
-         write(*,'(a,i4,a,i4)') &
+         write(*,'(a,i8,a,i8)') &
               & "Cell to face info for", min(this % max_print,this % num_cells), &
               & " cells out of ", this % num_cells
 
@@ -1127,11 +1127,11 @@ contains
     end do
 
     if (this % num_vertices .gt. 0) then
-       write(*,'(a,i4,a,i4)') "Vertex info for ", min(this % max_print,this % num_vertices), &
+       write(*,'(a,i8,a,i8)') "Vertex info for ", min(this % max_print,this % num_vertices), &
             & ' vertices out of ', this % num_vertices
        write(*,*) "number tag x y z"
        do ivertex = 1, min(this % max_print,this % num_vertices)
-          write(*,'(i6,i2,3ES15.3)') &
+          write(*,'(i8,i2,3ES15.3)') &
                & this % vertex_numbers(ivertex), &
                & this % vertex_tags(ivertex), &
                & this % vertices(:, ivertex)
@@ -1139,11 +1139,11 @@ contains
     end if
 
     if (this % num_cells .gt. 0) then
-       write(*,'(a,i4,a,i4)') "Cell info for ", min(this % max_print,this % num_cells), &
+       write(*,'(a,i8,a,i8)') "Cell info for ", min(this % max_print,this % num_cells), &
             & ' cells out of ', this % num_cells
        write(*,*) "cno ctag ncv iverts"
        do icell = 1, min(this % max_print,this % num_cells)
-          write(*,'(i6,i2,i2,10i6)') &
+          write(*,'(i8,i2,i2,10i8)') &
                & this % cell_numbers(icell), &
                & this % cell_tags(icell), &
                & this % num_cell_vertices(icell), &
@@ -1152,11 +1152,11 @@ contains
     end if
 
     if (this % num_faces .gt. 0) then
-       write(*,'(a,i4,a,i4)') "Face info for ", min(this % max_print,this % num_faces), &
+       write(*,'(a,i8,a,i8)') "Face info for ", min(this % max_print,this % num_faces), &
             & ' faces out of ', this % num_faces
        write(*,*) "fno ftag nfv iverts"
        do iface = 1, min(this % max_print,this % num_faces)
-          write(*,'(i6,i2,i2,10i6)') &
+          write(*,'(i8,i2,i2,10i8)') &
                & this % face_numbers(iface), &
                & this % face_tags(iface), &
                & this % num_face_vertices(iface), &
@@ -1165,11 +1165,11 @@ contains
     end if
 
     if (this % num_edges .gt. 0) then
-       write(*,'(a,i4,a,i4)') "Edge info for ", min(this % max_print,this % num_edges), &
+       write(*,'(a,i8,a,i8)') "Edge info for ", min(this % max_print,this % num_edges), &
             & ' edges out of ', this % num_edges
        write(*,*) "eno etag nev iverts"
        do iedge = 1, min(this % max_print,this % num_edges)
-          write(*,'(i6,i2,i2,10i6)') &
+          write(*,'(i8,i2,i2,10i8)') &
                & this % edge_numbers(iedge), &
                & this % edge_tags(iedge), &
                & this % num_edge_vertices(iedge), &

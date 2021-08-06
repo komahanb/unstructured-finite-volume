@@ -571,78 +571,6 @@ contains
 
   end function elem_type_vertex_count
 
-  ! generalize the name to return the number of lower dimensional entities
-  ! Pass in cells to get faces
-  ! Pass in faces to get edges
-  ! Pass in edges to get nodes?
-  impure subroutine cell_type_face(cell_type, cell_vertices, face_number, &
-       & num_face_vertices, face_vertices)
-
-    integer, intent(in)  :: cell_type
-    integer, intent(in)  :: cell_vertices(:)
-    integer, intent(in)  :: face_number
-    integer, intent(inout) :: num_face_vertices
-    integer, intent(inout) :: face_vertices(:)
-
-    face_vertices = 0
-
-    select case (cell_type)
-!!$    case (1)
-!!$       ! 2-node line.
-!!$       num_faces = 2 ! vertex
-!!$    case (2)
-!!$       ! 3-node triangle
-!!$       num_faces = 3  ! 3 edges
-!!$    case (3)
-!!$       ! 4-node quadrangle
-!!$       num_faces = 4 ! 4 edges
-    case (4)
-
-       ! 4-node tetrahedron
-       num_face_vertices = 3
-       if (face_number .eq. 1) then
-          face_vertices = [cell_vertices(1), cell_vertices(2), cell_vertices(3)]
-       else if (face_number .eq. 2) then
-          face_vertices = [cell_vertices(4), cell_vertices(2), cell_vertices(3)]
-       else if (face_number .eq. 3) then
-          face_vertices = [cell_vertices(1), cell_vertices(4), cell_vertices(3)]
-       else if (face_number .eq. 4) then
-          face_vertices = [cell_vertices(1), cell_vertices(4), cell_vertices(2)]
-       else
-          print *, "invalid face number", face_number
-          error stop
-       end if
-
-    case (5)
-       ! 8-node hexahedron
-       num_face_vertices = 4
-       if (face_number .eq. 1) then
-          face_vertices = [cell_vertices(1), cell_vertices(5), cell_vertices(6), cell_vertices(2)]
-       else if (face_number .eq. 2) then
-          face_vertices = [cell_vertices(4), cell_vertices(8), cell_vertices(7), cell_vertices(3)]
-       else if (face_number .eq. 3) then
-          face_vertices = [cell_vertices(1), cell_vertices(5), cell_vertices(8), cell_vertices(4)]
-       else if (face_number .eq. 4) then
-          face_vertices = [cell_vertices(2), cell_vertices(3), cell_vertices(7), cell_vertices(6)]
-       else if (face_number .eq. 5) then
-          face_vertices = [cell_vertices(5), cell_vertices(6), cell_vertices(7), cell_vertices(8)]
-       else if (face_number .eq. 6) then
-          face_vertices = [cell_vertices(1), cell_vertices(2), cell_vertices(3), cell_vertices(4)]
-       else
-          print *, "invalid face number", face_number
-          error stop
-       end if
-    case (6)
-       !  6-node prism (5 faces)
-       error stop
-    case(7)
-       ! 5-node prism (pyramid) 5 faces
-    case default
-       error stop
-    end select
-
-  end subroutine cell_type_face
-
   pure type(logical) function same_entity(one, two)
 
     integer, intent(in) :: one(:), two(:)
@@ -676,34 +604,66 @@ contains
        num_face_vertices = 3
        num_cell_faces = 4
 
+       if (num_face_vertices .ne. size(face_vertices_unordered)) &
+            & error stop "inconstent vertices"
+
        allocate(face_vertices(num_face_vertices, num_cell_faces))
        face_vertices = 0
 
+       ! normals must point outward
        face_vertices(:,1) = [cell_vertices(1), cell_vertices(2), cell_vertices(3)]
-       face_vertices(:,2) = [cell_vertices(4), cell_vertices(2), cell_vertices(3)]
-       face_vertices(:,3) = [cell_vertices(1), cell_vertices(4), cell_vertices(3)]
+       face_vertices(:,2) = [cell_vertices(3), cell_vertices(2), cell_vertices(4)]
+       face_vertices(:,3) = [cell_vertices(1), cell_vertices(3), cell_vertices(4)]
        face_vertices(:,4) = [cell_vertices(1), cell_vertices(4), cell_vertices(2)]
+       
     case (5)
        ! 8-node hexahedron
        num_face_vertices = 4
        num_cell_faces = 6
 
+       if (num_face_vertices .ne. size(face_vertices_unordered)) &
+            & error stop "inconstent vertices"
+
        allocate(face_vertices(num_face_vertices, num_cell_faces))
        face_vertices = 0
 
-       face_vertices(:,1) = [cell_vertices(1), cell_vertices(5), cell_vertices(6), cell_vertices(2)]
-       face_vertices(:,2) = [cell_vertices(4), cell_vertices(8), cell_vertices(7), cell_vertices(3)]
-       face_vertices(:,3) = [cell_vertices(1), cell_vertices(5), cell_vertices(8), cell_vertices(4)]
-       face_vertices(:,4) = [cell_vertices(2), cell_vertices(3), cell_vertices(7), cell_vertices(6)]
-       face_vertices(:,5) = [cell_vertices(5), cell_vertices(6), cell_vertices(7), cell_vertices(8)]
-       face_vertices(:,6) = [cell_vertices(1), cell_vertices(2), cell_vertices(3), cell_vertices(4)]
+       face_vertices(:,1) = [cell_vertices(1), cell_vertices(5), cell_vertices(8), cell_vertices(4)]
+       face_vertices(:,2) = [cell_vertices(2), cell_vertices(3), cell_vertices(7), cell_vertices(6)]
+       face_vertices(:,3) = [cell_vertices(5), cell_vertices(6), cell_vertices(7), cell_vertices(8)]
+       face_vertices(:,4) = [cell_vertices(1), cell_vertices(4), cell_vertices(3), cell_vertices(2)]
+       face_vertices(:,5) = [cell_vertices(7), cell_vertices(3), cell_vertices(4), cell_vertices(8)]
+       face_vertices(:,6) = [cell_vertices(1), cell_vertices(2), cell_vertices(6), cell_vertices(5)]
+       
     case (6)
        !  6-node prism (5 faces)
-       error stop
+       num_cell_faces = 5
+       num_face_vertices = 4 ! take the max
+       
+       allocate(face_vertices(num_face_vertices, num_cell_faces))
+       face_vertices = 0
+       
+       face_vertices(:,1) = [cell_vertices(1), cell_vertices(4), cell_vertices(5), cell_vertices(6)]
+       face_vertices(:,2) = [cell_vertices(1), cell_vertices(3), cell_vertices(6), cell_vertices(4)]
+       face_vertices(:,3) = [cell_vertices(2), cell_vertices(5), cell_vertices(6), cell_vertices(3)]
+       face_vertices(:,4) = [cell_vertices(1), cell_vertices(2), cell_vertices(3)]
+       face_vertices(:,5) = [cell_vertices(4), cell_vertices(6), cell_vertices(5)]
+
     case(7)
        ! 5-node prism (pyramid) 5 faces
-       error stop
+       num_cell_faces = 5
+       num_face_vertices = 4 ! take the max
+       
+       allocate(face_vertices(num_face_vertices, num_cell_faces))
+       face_vertices = 0
+       
+       face_vertices(:,1) = [cell_vertices(1), cell_vertices(2), cell_vertices(3), cell_vertices(4)]
+       face_vertices(:,2) = [cell_vertices(1), cell_vertices(2), cell_vertices(5)]
+       face_vertices(:,3) = [cell_vertices(2), cell_vertices(3), cell_vertices(5)]
+       face_vertices(:,4) = [cell_vertices(3), cell_vertices(4), cell_vertices(5)]
+       face_vertices(:,5) = [cell_vertices(1), cell_vertices(5), cell_vertices(4)]
+       
     case default
+       print *, "unknown type"
        error stop
     end select
 
@@ -714,7 +674,7 @@ contains
 
        match_count = 0
        match_vertex: do ivertex = 1, num_face_vertices
-          if (any (face_vertices_unordered(1:num_face_vertices) .eq. face_vertices(ivertex,iface) ) .eqv. .true.) then
+          if (any (face_vertices_unordered(:) .eq. face_vertices(ivertex,iface) ) .eqv. .true.) then
              ! exit match_vertex ! skip and go to next face
              ! else
              match_count = match_count + 1
@@ -734,28 +694,3 @@ contains
   end subroutine order_face_vertices
 
 end module module_mesh_utils
-
-!!$
-!!$match: do iface = 1, elem_type_face_count(me % cell_types(icell))
-!!$
-!!$   call cell_type_face(me % cell_types(icell), me % cell_vertices(:,icell), &
-!!$        & iface, inum_face_vertices, iface_vertices_tmp)
-!!$
-!!$   do jface = 1, elem_type_face_count(me % cell_types(jcell))
-!!$
-!!$      call cell_type_face(me % cell_types(jcell), me % cell_vertices(:,jcell), &
-!!$           & jface, jnum_face_vertices, jface_vertices_tmp)
-!!$
-!!$      if (same_entity( &
-!!$           & iface_vertices_tmp(1:inum_face_vertices), &
-!!$           & jface_vertices_tmp(1:jnum_face_vertices)  &
-!!$           & ) .eqv. .true.) then
-!!$
-!!$
-!!$         exit match
-!!$
-!!$      end if
-!!$
-!!$   end do
-!!$
-!!$end do match

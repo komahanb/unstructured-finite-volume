@@ -167,7 +167,7 @@ contains
 
       do ivertex = 1, this % mesh % num_vertices
          
-         write(fhandle, '(f0.2,1x,f0.2,1x,f0.2)') (this % mesh % vertices(jdim, ivertex), jdim = 1, 3)
+         write(fhandle, *) (this % mesh % vertices(jdim, ivertex), jdim = 1, 3)
          
       end do
 

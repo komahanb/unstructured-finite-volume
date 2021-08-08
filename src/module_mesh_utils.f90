@@ -337,7 +337,7 @@ contains
              cell_faces_type(num_cell_faces(icell), icell) = face_types(iface)
 
              num_face_cells(iface)                         = num_face_cells(iface) + 1
-             face_cells(num_face_cells(iface), iface)      = cell_numbers(icell)
+             face_cells(num_face_cells(iface), iface)      = icell !cell_numbers(icell)
              face_cells_type(num_face_cells(iface), iface) = cell_types(icell)
           case(5:)
              print *, "more than 4 vertices do not make a face"

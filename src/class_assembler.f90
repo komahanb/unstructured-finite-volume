@@ -3,7 +3,7 @@ module class_assembler
   ! import dependencies
   use iso_fortran_env, only : dp => REAL64
   use class_mesh, only : mesh
-  
+
   implicit none
 
   private
@@ -22,14 +22,14 @@ module class_assembler
      ! Mesh object
      ! type(mesh), pointer :: grid
      class(mesh)   , allocatable :: grid
-     !class(physics), allocatable :: system(:) ! poisson on \Omega, dirichlet on dOmega1 , dirchlet dOmega3 , dirichlet, Neumann dOmega4 
+     !class(physics), allocatable :: system(:) ! poisson on \Omega, dirichlet on dOmega1 , dirchlet dOmega3 , dirichlet, Neumann dOmega4
 
-     ! Number of state varibles 
+     ! Number of state varibles
      integer :: num_state_vars
 
      ! Number of variables each cell
      integer :: num_variables
-     
+
      ! Flux vector
      real(dp), allocatable :: phi(:)
 
@@ -54,7 +54,7 @@ module class_assembler
      procedure :: get_jacobian_vector_product
      procedure :: get_transpose_jacobian_vector_product
      procedure :: write_solution
-     
+
      ! Destructor
      final :: destroy
 
@@ -65,11 +65,11 @@ module class_assembler
   end interface assembler
 
 contains
-    
+
   !===================================================================!
   ! Constructor for physics
   !===================================================================!
-  
+
   type(assembler) function construct(grid) result (this)
 
     type(mesh), intent(in) :: grid
@@ -85,7 +85,7 @@ contains
 
     ! Number of unknowns in the problem (currently only "T")
     this % num_variables = 1
-    
+
     ! Determine the number of state variables to solve based on the
     ! mesh. In FVM it is the number of cells present.
     this % num_state_vars = this % grid % num_cells
@@ -103,9 +103,9 @@ contains
   !===================================================================!
   ! Destructor for file object
   !===================================================================!
-  
+
   pure subroutine destroy(this)
-    
+
     type(assembler), intent(inout) :: this
 
     if (allocated(this % grid)) deallocate(this % grid)
@@ -115,19 +115,19 @@ contains
 !!$    end if
 
     if (allocated(this % phi)) deallocate(this % phi)
-    
+
   end subroutine destroy
 
   !===================================================================!
   ! Assemble and return the full jacobian matrix
   !===================================================================!
-  
+
   subroutine get_jacobian(this, A, filter)
 
     ! Arguments
     class(assembler)      , intent(in)    :: this
     real(dp), allocatable , intent(out)   :: A(:,:)
-    integer , optional    , intent(in)    :: filter 
+    integer , optional    , intent(in)    :: filter
 
     ! Locals
     real(dp), allocatable :: ex(:)
@@ -135,8 +135,8 @@ contains
 
     allocate(A(this % num_state_vars, this % num_state_vars))
     allocate(ex(this % num_state_vars)); ex = 0
-    
-    if (present(filter)) then 
+
+    if (present(filter)) then
 
        ! okay for nonlinear case? the state vectors are required for linearization
        ! Assemble only a part of the matrix (lower(-1), upper(1), or diagonal (0))
@@ -164,13 +164,13 @@ contains
   !===================================================================!
   ! Assemble and return the full transpose jacobian matrix
   !===================================================================!
-  
+
   subroutine get_transpose_jacobian(this, A, filter)
 
     ! Arguments
     class(assembler)      , intent(in)    :: this
     real(dp), allocatable , intent(out)   :: A(:,:)
-    integer , optional    , intent(in)    :: filter 
+    integer , optional    , intent(in)    :: filter
 
     ! Locals
     real(dp), allocatable :: ex(:)
@@ -178,8 +178,8 @@ contains
 
     allocate(A(this % num_state_vars, this % num_state_vars))
     allocate(ex(this % num_state_vars)); ex = 0
-    
-    if (present(filter)) then 
+
+    if (present(filter)) then
 
        ! okay for nonlinear case? the state vectors are required for linearization
        ! Assemble only a part of the matrix (lower(-1), upper(1), or diagonal (0))
@@ -209,12 +209,12 @@ contains
     class(assembler) , intent(in)    :: this
     real(dp)         , intent(in)    :: x(:)
     real(dp)         , intent(out)   :: Ax(:)
-    integer, optional, intent(in)    :: filter 
+    integer, optional, intent(in)    :: filter
 
     ! Finite difference coeff for flux approximation between two cells
     real(dp), parameter  :: alpha(2) = [-1.0_dp, 1.0_dp]
 
-!!$    test: block 
+!!$    test: block
 !!$      integer               :: n
 !!$      real(dp), allocatable :: A(:,:)
 !!$      n = size(x,dim=1)
@@ -229,11 +229,11 @@ contains
 !!$    end block test
 !!$
 !!$    print *, "Ax=",Ax
-!!$    
+!!$
 !!$    return
 
     laplace_normal: block
-      
+
       integer :: icell, iface
       integer :: ncell, fcells(2)
 
@@ -250,12 +250,12 @@ contains
               & )
 
            !print *, icell, faces, highest_tag
-           
+
            ! Loop faces
            Ax(icell) = 0.0d0
 
            loop_faces: do iface = 1, this % grid % num_cell_faces(icell)
-              
+
               associate (&
                    & ftag   => this % grid % face_tags(faces(iface))  , &
                    & fdelta => this % grid % face_deltas(faces(iface)), &
@@ -274,9 +274,9 @@ contains
 
                    ! Neighbour is the one that has a different cell
                    ! index than current icell
-                   if (fcells(1) .eq. icell) then 
+                   if (fcells(1) .eq. icell) then
                       ncell = fcells(2)
-                   else 
+                   else
                       ncell = fcells(1)
                    end if
 
@@ -286,15 +286,15 @@ contains
                    ! Ax(icell) = Ax(icell) + farea*(x(ncell)-x(icell))/fdelta
 
                    present_filter: if (present(filter)) then
-                      
+
                       !-------------------------------------------------!
-                      ! Assemble part of matrix 
+                      ! Assemble part of matrix
                       !-------------------------------------------------!
-                      
-                      apply_filter: if (filter .eq. this % UPPER_TRIANGLE) then 
+
+                      apply_filter: if (filter .eq. this % UPPER_TRIANGLE) then
 
                          ! Activate Upper Trianglular Filter
-                         if (ncell .gt. icell) then 
+                         if (ncell .gt. icell) then
                             Ax(icell) = Ax(icell) + farea*(x(ncell))/fdelta
                          end if
 
@@ -315,7 +315,7 @@ contains
                    else
 
                       !-------------------------------------------------!
-                      ! Assemble Full of matrix 
+                      ! Assemble Full of matrix
                       !-------------------------------------------------!
 
                       Ax(icell) = Ax(icell) + farea*(x(ncell)-x(icell))/fdelta
@@ -339,7 +339,7 @@ contains
                    ! Adds more things to diagonal (makes the matrix more
                    ! diagonally dominant) Boundary faces (call boundary
                    ! physics) If the supplied filter is diagonal then add.
-                   if (present(filter)) then 
+                   if (present(filter)) then
                       ! If diagonals are flagged
                       if (filter .eq. this % DIAGONAL) then
                          Ax(icell) = Ax(icell) + farea*(0.0d0 - x(icell))/fdelta
@@ -358,7 +358,7 @@ contains
          end associate
 
       end do loop_cells
-      
+
     end block laplace_normal
 
   end subroutine get_jacobian_vector_product
@@ -433,7 +433,7 @@ contains
 
 !!$    n = size(x)
 !!$    allocate(A(n,n))
-!!$    
+!!$
 !!$    A(:,1) = [-6.0d0,1.0d0,1.0d0,0.0d0]
 !!$    A(:,2) = [1.0d0,-6.0d0,0.0d0,1.0d0]
 !!$    A(:,3) = [1.0d0,0.0d0,-6.0d0,1.0d0]
@@ -444,13 +444,13 @@ contains
 !!$    deallocate(A)
 
   end subroutine get_transpose_jacobian_vector_product
-  
+
   !===================================================================!
   ! Evaluate internal skew source based on the current cell states and
   ! return
   !===================================================================!
-  
-  !subroutine get_tangential_flux(this, ss, phic)  
+
+  !subroutine get_tangential_flux(this, ss, phic)
   subroutine get_skew_source(this, ss, phic)
 
     class(assembler), intent(in)  :: this
@@ -459,7 +459,7 @@ contains
 
     ! Evaluation procedure
     evaluate: block
-    
+
     ! Local variables
     real(8) :: scale
     integer :: icell, iface, gface
@@ -480,18 +480,18 @@ contains
             & highest_tag => maxval(this % grid % tag_numbers) &
             & )
 
-           loop_faces : do iface = 1, this % grid % num_cell_faces(icell) 
+           loop_faces : do iface = 1, this % grid % num_cell_faces(icell)
 
               ! Global face number
               gface = faces(iface)
-                 
+
               ! Ignore boundary faces from skew source evaluation
               if (this % grid % face_tags(gface) .eq. highest_tag) then
 
                  ! Compute tangent.dot.lvector/delta
                  scale = dot_product(&
                       & this % grid % lvec(1:3,gface), &
-                      & this % grid % cell_face_tangents(1:3,iface,icell) &
+                      & this % grid % cell_face_tangents(1:3,1,iface,icell) &
                       & )/this % grid % face_deltas(gface)
 
                  ! Get the vertices associated with this face
@@ -503,13 +503,13 @@ contains
                  ss(icell) = ss(icell) + scale*(phiv(fvertices(2))-phiv(fvertices(1)))
 
                end associate
-              
+
               end if
 
            end do loop_faces
-           
+
          end associate
-         
+
       end do loop_cells
 
       ! Deallocate the vertex flux values
@@ -518,7 +518,7 @@ contains
     end block evaluate
 
   end subroutine get_skew_source
-    
+
   subroutine get_source(this, b)
 
     class(assembler), intent(in)  :: this
@@ -530,8 +530,8 @@ contains
     real(dp) , parameter :: phi_top    = 0.0d0
     real(dp) , parameter :: phi_bottom = 0.0d0
     real(dp) , parameter :: phib = 0.0d0
-    
-!!$    
+
+!!$
 !!$    block
 !!$      b(1) = 4.0d-1
 !!$      b(2) = 4.0d-1
@@ -541,7 +541,7 @@ contains
 !!$
 !!$    print *, 'source', b
 !!$    return
-    
+
     add_boundary_terms: block
 
       integer :: icell, iface
@@ -562,12 +562,12 @@ contains
               & (1:this % grid % num_cell_faces(icell),icell), &
               & highest_tag => maxval(this % grid % tag_numbers) &
               & )
-           
+
            !print *, icell, faces, highest_tag
 
            ! Loop faces
            b(icell) = 0.0d0
-         
+
          loop_faces: do iface = 1, this % grid % num_cell_faces(icell)
 
             associate (&
@@ -575,30 +575,30 @@ contains
                  & fdelta => this % grid % face_deltas(faces(iface)), &
                  & farea  => this % grid % face_areas(faces(iface))  &
                  & )
-              
+
               ! Interpolate to get face gammas
               !print *, iface, faces(iface), ftag, fdelta, farea !, !fgamma
-              
+
               ! Add contribution from internal faces
               if (ftag .ne. highest_tag) then ! homogenous dirichlet T = 1.0d0
-               
+
                ! Boundary faces (call boundary physics) (minus as we moved it to rhs)
                 b(icell) = b(icell) + farea*(-phib)/fdelta
                 !print *, icell, "boundary", faces(iface), ftag, fdelta, farea !, !fgamma
-               
+
               end if
-            
+
             end associate
 
          end do loop_faces
-         
+
        end associate
 
       end do loop_cells
-    
+
     end block add_boundary_terms
 
-    
+
     cell_source: block
 
       integer :: icell
@@ -615,7 +615,7 @@ contains
     end block cell_source
 
   end subroutine get_source
-  
+
   pure type(real(dp)) function evaluate_source(x)
 
     real(dp), intent(in) :: x(3)
@@ -623,11 +623,11 @@ contains
     evaluate_source = 1.0d0 !-1.0d0 !sin(x(1)) + cos(x(2))
 
   end function evaluate_source
-  
+
   !===================================================================!
   ! Write solution to file
   !===================================================================!
-  
+
   subroutine write_solution(this, filename, phic)
 
     use class_paraview_writer, only  : paraview_writer
@@ -659,7 +659,7 @@ contains
 
     ! Compute vertex values by interpolating cell center values
     call this % evaluate_vertex_flux(phiv, phic)
-    
+
     ! Write header
     write(90, *) 'TITLE = "FVM-Laplace"'
     write(90, *) 'VARIABLES = "x" "y"  "T"'
@@ -684,7 +684,7 @@ contains
     do i = 1, this % grid % num_vertices
        write(90,*) this % grid % vertices(1:2,i), phiv(i)
     end do
-    
+
     ! Write cell connectivities
     do i = 1, this % grid % num_cells
        write(90,*) this % grid % cell_vertices(1:this % grid % num_cell_vertices(i),i)
@@ -696,7 +696,7 @@ contains
 
     ! Close resource
     close(90)
-    
+
     if (allocated(path)) deallocate(path)
     if (allocated(new_name)) deallocate(new_name)
     if (allocated(phiv)) deallocate(phiv)
@@ -708,15 +708,15 @@ contains
   !===================================================================!
 
   subroutine create_vector(this, x, scalar)
-    
-    class(assembler), intent(in)               :: this    
+
+    class(assembler), intent(in)               :: this
     real(dp)        , intent(out), allocatable :: x(:)
     real(dp)        , intent(in) , optional    :: scalar
-    
+
     if (allocated(x)) error stop "vector already allocated"
     allocate(x(this % num_state_vars))
     if (present(scalar))  x = scalar
-    
+
   end subroutine create_vector
 
 end module class_assembler

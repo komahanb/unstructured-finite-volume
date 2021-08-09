@@ -32,7 +32,7 @@ program test_mesh
     files(6) = string('../cylinder-coarse.msh')
     !files(6) = string('../box-part.msh_000001')
     
-    do ifile = 5, size(files)
+    do ifile = 5, 6 ! size(files)
        write(*,*) "Testing GMSH Loader with file ", files(ifile) % str
        call test_gmsh_loader(files(ifile) % str)
     end do

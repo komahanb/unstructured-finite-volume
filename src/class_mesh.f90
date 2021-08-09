@@ -1158,8 +1158,12 @@ contains
           ! gface = this % face_numbers
           gface = this % cell_faces(iface, icell)
 
-          associate(ifv => this % face_vertices(1:this % num_face_vertices(gface),gface), &
-               & normal => this % cell_face_normals(:,iface,icell) )
+          associate(&
+               & ifv      => this % face_vertices(1:this % num_face_vertices(gface),gface), &
+               & normal   => this % cell_face_normals(:,iface,icell), &
+               & tangent1 => this % cell_face_tangents(:,1,iface,icell), &
+               & tangent2 => this % cell_face_tangents(:,2,iface,icell) &
+               & )
 
             associate(&
                  & t12 => this % vertices(:,ifv(2)) - this % vertices(:,ifv(1)), &
@@ -1171,7 +1175,7 @@ contains
               ! if quadrilateral add the second triangle (may not need this at all)
               if (this % num_face_vertices(gface) .gt. 3) then
 
-                 associate (t14 => this % vertices(:,ifv(4)) - this % vertices(:,ifv(1)))
+                 associate(t14 => this % vertices(:,ifv(4)) - this % vertices(:,ifv(1)))
 
                    call cross_product(t13,t14,tmp)
 
@@ -1181,6 +1185,7 @@ contains
 
               end if
 
+              ! normalize the normal
               normal = normal/norm2(normal)
 
               ! determine whether the normal is inward or outward by
@@ -1189,22 +1194,15 @@ contains
               if (dot_product(normal, this % face_centers(:,gface) - this % cell_centers(:,icell)) &
                    & .lt. real(0,dp)) then
 
-                 ! t1, t2, n forms a local orthonormal coordinate
-                 ! system (notice we flip the order of cross pdt to
-                 ! account for sign change). That is, the normal will
-                 ! be negative only when we do t2 cross t1.
-
                  normal = - normal
-                 this % cell_face_tangents(:, 1, iface, icell) = t13/norm2(t13)
-                 this % cell_face_tangents(:, 2, iface, icell) = t12/norm2(t12)
-
-              else
-
-                 ! t1, t2, n forms a local orthonormal coordinate system
-                 this % cell_face_tangents(:, 1, iface, icell) = t12/norm2(t12)
-                 this % cell_face_tangents(:, 2, iface, icell) = t13/norm2(t13)
 
               end if
+
+              ! normalize the first tangent
+              tangent1 = t12/norm2(t12)
+
+              ! cross tangent2 = normal x tangent1
+              call cross_product(normal, tangent1, tangent2)
 
             end associate
 
@@ -1212,7 +1210,7 @@ contains
 
        end do face_loop
 
-  end do cell_loop
+    end do cell_loop
 
   end subroutine evaluate_face_tangents_normals
 
@@ -1230,13 +1228,13 @@ contains
     allocate(this % cell_face_tangents(3, 1, maxval(this % num_cell_faces), this % num_cells))
 
     ! loop cells
-    do concurrent (icell = 1 : this % num_cells)
+    loop_cells: do concurrent (icell = 1 : this % num_cells)
 
        ! get cell verties
        associate( icv =>  this % cell_vertices(:, icell) )
 
          ! loop faces of each cell
-         do iface = 1, this % num_cell_faces(icell)
+         loop_faces: do iface = 1, this % num_cell_faces(icell)
 
             if (iface .eq. this % num_cell_faces(icell)) then
                ifv(1) = icv(iface)
@@ -1267,11 +1265,11 @@ contains
             this % cell_face_normals (:, iface, icell) = n
             this % cell_face_tangents(:, 1, iface, icell) = t
 
-         end do
+         end do loop_faces
 
        end associate
 
-    end do
+    end do loop_cells
 
   end subroutine evaluate_face_tangents_normals_2d
 

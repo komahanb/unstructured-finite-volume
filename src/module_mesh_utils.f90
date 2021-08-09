@@ -225,20 +225,18 @@ contains
   end subroutine transpose_connectivities
 
   subroutine sparse_transpose_matmul( &
-       & num_cell_vertices, cell_types, cell_numbers, cell_tags, cell_vertices, &
-       & num_face_vertices, face_types, face_numbers, face_tags, face_vertices, &
+       & num_cell_vertices, cell_types, cell_tags, cell_vertices, &
+       & num_face_vertices, face_types, face_tags, face_vertices, &
        & num_cell_faces   , cell_faces, cell_faces_type, &
        & num_face_cells   , face_cells, face_cells_type )
 
     ! arguments
     integer, intent(in)               :: num_cell_vertices(:)
     integer, intent(in)               :: cell_types(:)
-    integer, intent(in)               :: cell_numbers(:)
     integer, intent(in)               :: cell_tags(:)
     integer, intent(in)               :: cell_vertices(:,:)
     integer, intent(in)               :: num_face_vertices(:)
     integer, intent(in)               :: face_types(:)
-    integer, intent(in)               :: face_numbers(:)
     integer, intent(in)               :: face_tags(:)
     integer, intent(in)               :: face_vertices(:,:)
 
@@ -283,70 +281,67 @@ contains
     face_cells_type = 0
 
     inner_pdt_count = 0
-    do concurrent (icell=1:ncells, iface=1:nfaces) ! keep track of how many faces of this cell is found
 
-!       face_search: do iface = 1, nfaces
+    ! keep track of how many faces of this cell is found
+    do concurrent (icell=1:ncells, iface=1:nfaces)
 
-          ! filter out the boundary faces
-          if (num_cell_faces(icell) .eq. elem_type_face_count(cell_types(icell))) then
-             !            exit face_search
-             cycle
+       ! filter out the boundary faces
+       if (num_cell_faces(icell) .eq. elem_type_face_count(cell_types(icell))) then
+          cycle
+       end if
+
+       if ((face_tags(iface) .ne. cell_tags(icell)) &
+            & .and. &
+            & (num_face_cells(iface) .eq. 1)) then
+          cycle
+       end if
+
+       if ((face_tags(iface) .eq. cell_tags(icell)) &
+            & .and. &
+            & (num_face_cells(iface) .eq. 2)) then
+          cycle
+       end if
+
+       inner_pdt_count = inner_pdt_count + 1
+
+       shared_vertex_count = 0
+
+       shared_vertices = 0
+
+       ! we can probably match faces if that's simpler
+       ! each cell has only a given number of faces
+       dot_pdt: do ivertex = 1, num_cell_vertices(icell)
+
+          ! dot both functions with inner product in the space of
+          ! vertices
+          if (any (face_vertices(1:num_face_vertices(iface),iface) .eq. &
+               & cell_vertices(ivertex, icell) &
+               & ) .eqv. .true.) then
+
+             shared_vertex_count = shared_vertex_count + 1
+
+             shared_vertices(shared_vertex_count) = cell_vertices(ivertex, icell)
+
           end if
 
-          if ((face_tags(iface) .ne. cell_tags(icell)) &
-               & .and. &
-               & (num_face_cells(iface) .eq. 1)) then
-             cycle
-          end if
+       end do dot_pdt
 
-          if ((face_tags(iface) .eq. cell_tags(icell)) &
-               & .and. &
-               & (num_face_cells(iface) .eq. 2)) then
-             cycle
-          end if
+       select case(shared_vertex_count)
+       case(3:4)
+          ! triangle face or quadrangle
+          num_cell_faces(icell)                         = num_cell_faces(icell) + 1
+          cell_faces(num_cell_faces(icell), icell)      = iface
+          cell_faces_type(num_cell_faces(icell), icell) = face_types(iface)
 
-          inner_pdt_count = inner_pdt_count + 1
-
-          shared_vertex_count = 0
-
-          shared_vertices = 0
-
-          ! we can probably match faces if that's simpler
-          ! each cell has only a given number of faces
-          dot_pdt: do ivertex = 1, num_cell_vertices(icell)
-
-             ! dot both functions with inner product in the space of
-             ! vertices
-             if (any (face_vertices(1:num_face_vertices(iface),iface) .eq. &
-                  & cell_vertices(ivertex, icell) &
-                  & ) .eqv. .true.) then
-
-                shared_vertex_count = shared_vertex_count + 1
-
-                shared_vertices(shared_vertex_count) = cell_vertices(ivertex, icell)
-
-             end if
-
-          end do dot_pdt
-
-          select case(shared_vertex_count)
-          case(3:4)
-             ! triangle face or quadrangle
-             num_cell_faces(icell)                         = num_cell_faces(icell) + 1
-             cell_faces(num_cell_faces(icell), icell)      = face_numbers(iface) ! or iface
-             cell_faces_type(num_cell_faces(icell), icell) = face_types(iface)
-
-             num_face_cells(iface)                         = num_face_cells(iface) + 1
-             face_cells(num_face_cells(iface), iface)      = icell !cell_numbers(icell)
-             face_cells_type(num_face_cells(iface), iface) = cell_types(icell)
-          case(5:)
-             print *, "more than 4 vertices do not make a face"
-             error stop
-          case default
-             ! no vertex, one vertex, edge may be
-          end select
-
-  !     end do face_search
+          num_face_cells(iface)                         = num_face_cells(iface) + 1
+          face_cells(num_face_cells(iface), iface)      = icell
+          face_cells_type(num_face_cells(iface), iface) = cell_types(icell)
+       case(5:)
+          print *, "more than 4 vertices do not make a face"
+          error stop
+       case default
+          ! no vertex, one vertex, edge may be
+       end select
 
     end do
 
@@ -615,7 +610,7 @@ contains
        face_vertices(:,2) = [cell_vertices(3), cell_vertices(2), cell_vertices(4)]
        face_vertices(:,3) = [cell_vertices(1), cell_vertices(3), cell_vertices(4)]
        face_vertices(:,4) = [cell_vertices(1), cell_vertices(4), cell_vertices(2)]
-       
+
     case (5)
        ! 8-node hexahedron
        num_face_vertices = 4
@@ -633,15 +628,15 @@ contains
        face_vertices(:,4) = [cell_vertices(1), cell_vertices(4), cell_vertices(3), cell_vertices(2)]
        face_vertices(:,5) = [cell_vertices(7), cell_vertices(3), cell_vertices(4), cell_vertices(8)]
        face_vertices(:,6) = [cell_vertices(1), cell_vertices(2), cell_vertices(6), cell_vertices(5)]
-       
+
     case (6)
        !  6-node prism (5 faces)
        num_cell_faces = 5
        num_face_vertices = 4 ! take the max
-       
+
        allocate(face_vertices(num_face_vertices, num_cell_faces))
        face_vertices = 0
-       
+
        face_vertices(:,1) = [cell_vertices(1), cell_vertices(4), cell_vertices(5), cell_vertices(6)]
        face_vertices(:,2) = [cell_vertices(1), cell_vertices(3), cell_vertices(6), cell_vertices(4)]
        face_vertices(:,3) = [cell_vertices(2), cell_vertices(5), cell_vertices(6), cell_vertices(3)]
@@ -652,16 +647,16 @@ contains
        ! 5-node prism (pyramid) 5 faces
        num_cell_faces = 5
        num_face_vertices = 4 ! take the max
-       
+
        allocate(face_vertices(num_face_vertices, num_cell_faces))
        face_vertices = 0
-       
+
        face_vertices(:,1) = [cell_vertices(1), cell_vertices(2), cell_vertices(3), cell_vertices(4)]
        face_vertices(:,2) = [cell_vertices(1), cell_vertices(2), cell_vertices(5)]
        face_vertices(:,3) = [cell_vertices(2), cell_vertices(3), cell_vertices(5)]
        face_vertices(:,4) = [cell_vertices(3), cell_vertices(4), cell_vertices(5)]
        face_vertices(:,5) = [cell_vertices(1), cell_vertices(5), cell_vertices(4)]
-       
+
     case default
        print *, "unknown type"
        error stop

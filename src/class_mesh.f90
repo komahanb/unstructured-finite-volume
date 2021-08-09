@@ -168,6 +168,9 @@ module class_mesh
      procedure :: evaluate_face_weight
      procedure :: evaluate_vertex_weight
 
+     procedure :: evaluate_face_centers_areas_2d
+     procedure :: evaluate_face_tangents_normals_2d
+
      ! Mesh info
      procedure :: get_num_elems
      procedure :: create_face_groups
@@ -374,6 +377,12 @@ contains
       if (num_faces .ne. me % num_faces) then
          print *, "numfaces don't match", num_faces, me % num_faces
       end if
+
+      if (maxval(me % face_vertices) .ne. me % num_vertices) then
+         print *, "check face vertices"
+         error stop
+      end if
+
 
     end block form_internal_faces
 
@@ -694,8 +703,8 @@ contains
       write(*,*) "Forming CellFace and FaceCell connectivities..."
 
       call sparse_transpose_matmul(&
-           & this % num_cell_vertices, this % cell_types, this % cell_numbers, this % cell_tags, this % cell_vertices, &
-           & this % num_face_vertices, this % face_types, this % face_numbers, this % face_tags, this % face_vertices, &
+           & this % num_cell_vertices, this % cell_types, this % cell_tags, this % cell_vertices, &
+           & this % num_face_vertices, this % face_types, this % face_tags, this % face_vertices, &
            & this % num_cell_faces, this % cell_faces, this % cell_faces_type, &
            & this % num_face_cells, this % face_cells, this % face_cells_type)
 
@@ -721,7 +730,7 @@ contains
 
       if (allocated(this % face_cells)) then
 
-         do iface = 1, min(this % max_print,this % num_faces)
+         do iface = 1, max(this % max_print,this % num_faces)
             print *, &
                  & 'face [', this % face_numbers(iface), ']', &
                  & 'cells [', this % face_cells(1 : this % num_face_cells(iface),iface), ']'
@@ -743,21 +752,21 @@ contains
     ! Evaluate all geometric quantities needed for FVM assembly
     !-----------------------------------------------------------------!
 
-!!$    geom : block
-!!$
-!!$      write(*,*) 'Calculating mesh geometry information'
-!!$
-!!$      call this % evaluate_cell_centers()
-!!$      call this % evaluate_face_centers_areas()
-!!$      call this % evaluate_face_tangents_normals()
-!!$      call this % evaluate_cell_volumes()
-!!$
-!!$      call this % evaluate_centroidal_vector()
-!!$      call this % evaluate_face_deltas()
+    geometric_quantities : block
+
+      write(*,*) 'Calculating mesh geometry information'
+
+      call this % evaluate_cell_centers()
+      call this % evaluate_face_centers_areas()
+
+      call this % evaluate_face_tangents_normals()
+      call this % evaluate_cell_volumes()
+      call this % evaluate_centroidal_vector()
+      call this % evaluate_face_deltas()
 !!$      call this % evaluate_face_weight()
 !!$      call this % evaluate_vertex_weight()
-!!$
-!!$    end block geom
+
+    end block geometric_quantities
 
     ! Signal that all tasks are complete
     initialize = .true.
@@ -789,13 +798,13 @@ contains
             & this % vertex_cells(1:this % num_vertex_cells(ivertex), &
             & ivertex)
 
-       total  = 0.0d0
+       total = real(0,dp)
 
        do icell = 1, this % num_vertex_cells(ivertex)
 
           dcell = distance(this % cell_centers(:,cells(icell)), this % vertices(:,ivertex))
 
-          this % vertex_cell_weights(icell,ivertex) = 1.0_dp/dcell
+          this % vertex_cell_weights(icell,ivertex) = real(1,dp)/dcell
 
           total = total + this % vertex_cell_weights(icell,ivertex)
 
@@ -862,74 +871,75 @@ contains
 
   end subroutine evaluate_face_weight
 
-  subroutine evaluate_face_deltas(this)
-
-    class(mesh), intent(inout) :: this
-    integer  :: gface, gcell, lface
-    real(dp) :: fn(3)
-
-    write(*,*) "Evaluating face deltas"
-    allocate(this % face_deltas(this % num_faces))
-
-    do concurrent (gface=1:this % num_faces)
-
-       ! First cell belonging to the face
-       gcell = this % face_cells(1, gface)
-
-       ! Face number in local numbering
-       lface = find(this % cell_faces(:,gcell), gface)
-
-       ! Index into normal array
-       fn =  this % cell_face_normals(:, lface, gcell)
-
-       ! Take absolute value of dot product
-       this % face_deltas(gface) = abs(dot_product(this % lvec(1:3,gface), fn))
-
-       print *, "face [", gface, "] ",&
-            & "delta [", this % face_deltas(gface), "] ",&
-            & "skewness t.l [", &
-            & dot_product(this % lvec(1:3,gface)                    , this % cell_face_tangents(:, lface, gcell)), "] ", &
-            & "orthogonality t.n [", &
-            & dot_product(this % cell_face_tangents(:, lface, gcell), this % cell_face_normals(:, lface, gcell)), "] ", &
-            & this % cell_face_normals(:, lface, gcell)
-
-    end do
-
-    ! Check for negative volumes
-    if (abs(minval(this % face_deltas)) < 1.0d-10) then
-       print *, 'collinear faces/bad cell?'
-       error stop
-    end if
-
-  end subroutine evaluate_face_deltas
+!!$  subroutine evaluate_face_deltas(this)
+!!$
+!!$    class(mesh), intent(inout) :: this
+!!$    integer  :: gface, gcell, lface
+!!$    real(dp) :: fn(3)
+!!$
+!!$    write(*,*) "Evaluating face deltas"
+!!$    allocate(this % face_deltas(this % num_faces))
+!!$
+!!$    do concurrent (gface=1:this % num_faces)
+!!$
+!!$       ! First cell belonging to the face
+!!$       gcell = this % face_cells(1, gface)
+!!$
+!!$       ! Face number in local numbering
+!!$       ! avoid this??
+!!$       lface = find(this % cell_faces(:,gcell), gface)
+!!$
+!!$       ! Index into normal array
+!!$       fn =  this % cell_face_normals(:, lface, gcell)
+!!$
+!!$       ! Take absolute value of dot product
+!!$       this % face_deltas(gface) = abs(dot_product(this % lvec(1:3,gface), fn))
+!!$
+!!$       print *, "face [", gface, "] ",&
+!!$            & "delta [", this % face_deltas(gface), "] ",&
+!!$            & "skewness t.l [", &
+!!$            & dot_product(this % lvec(1:3,gface)                    , this % cell_face_tangents(:, lface, gcell)), "] ", &
+!!$            & "orthogonality t.n [", &
+!!$            & dot_product(this % cell_face_tangents(:, lface, gcell), this % cell_face_normals(:, lface, gcell)), "] ", &
+!!$            & this % cell_face_normals(:, lface, gcell)
+!!$
+!!$    end do
+!!$
+!!$    ! Check for negative volumes
+!!$    if (abs(minval(this % face_deltas)) < 1.0d-10) then
+!!$       print *, 'collinear faces/bad cell?'
+!!$       error stop
+!!$    end if
+!!$
+!!$  end subroutine evaluate_face_deltas
 
   subroutine evaluate_centroidal_vector(this)
 
     class(mesh), intent(inout) :: this
-    integer :: iface, cells(2)
+    integer :: iface
+    integer :: num_face_cells
 
     write (*,*) "Evaluating centroidal vector..."
 
     allocate(this % lvec(3,this % num_faces))
+    this % lvec = 0.0_dp
 
-    do concurrent (iface=1:this % num_faces)
+    do concurrent (iface = 1 : this % num_faces)
 
-       cells = 0
-       cells(1:this % num_face_cells(iface)) = this % face_cells(1:this%num_face_cells(iface),iface)
+       num_face_cells = this % num_face_cells(iface)
 
-       ! boundary face if not the highest tag
-       if (this % face_tags(iface) .lt. maxval(this % tag_numbers)) then
-          ! Boundary faces .or. iface is in bfaces
-          this % lvec(:,iface) = this % face_centers(:,iface) - this % cell_centers(:,cells(1))
-       else
-          ! Interior face; subtract neighbouring cell centers (not sure which orientation)
-          if (this % num_face_cells(iface) .eq. 1) then
-             ! Accounts for internal holes
-             this % lvec(:,iface) = this % face_centers(:,iface) - this % cell_centers(:,cells(1))
-          else
-             this % lvec(:,iface) = this % cell_centers(:,cells(2)) - this % cell_centers(:,cells(1))
-          end if
-       end if
+       associate(face_cells => this % face_cells(1:num_face_cells,iface))
+
+         ! centroidal vector joining the centroid of two cells
+         if (num_face_cells .eq. 1) then
+            ! boundary faces
+            this % lvec(:,iface) = this % face_centers(:,iface) - this % cell_centers(:,face_cells(1))
+         else
+            ! internal faces
+            this % lvec(:,iface) = this % cell_centers(:,face_cells(2)) - this % cell_centers(:,face_cells(1))
+         end if
+
+       end associate
 
     end do
 
@@ -945,11 +955,10 @@ contains
     write (*,*) "Evaluating cell volumes..."
 
     allocate(this % cell_volumes (this % num_cells))
-    this % cell_volumes = 0_dp
+    this % cell_volumes = real(0,dp)
 
     ! V = \sum_f nx_f \times  xmid_f \times A_f
     do concurrent (lcell = 1 : this % num_cells)
-       this % cell_volumes(lcell) = 0.0d0
        do lface = 1, this % num_cell_faces(lcell)
           ! Global face index
           gface = this % cell_faces(lface, lcell)
@@ -959,6 +968,8 @@ contains
                & area => this % face_areas(gface))
             this % cell_volumes(lcell) = this % cell_volumes(lcell) + &
                  & nx*xmid*area
+            ! this % cell_volumes(lcell) = this % cell_volumes(lcell) + &
+            !     & area*dot_product(nx, xmid)
           end associate
        end do
     end do
@@ -971,7 +982,97 @@ contains
 
   end subroutine evaluate_cell_volumes
 
+  subroutine evaluate_face_deltas(this)
+
+    class(mesh), intent(inout) :: this
+
+    ! Use divergence theorem to find volumes
+    integer :: lcell, lface, gface
+
+    write (*,*) "Evaluating face delta..."
+
+    allocate(this % face_deltas (this % num_faces))
+    this % face_deltas = real(0,dp)
+
+    do concurrent (lcell = 1 : this % num_cells)
+
+       do lface = 1, this % num_cell_faces(lcell)
+
+          gface = this % cell_faces(lface, lcell)
+
+          this % face_deltas(lface) = &
+               & abs(dot_product(this % lvec(:,gface), this % cell_face_normals(:, lface, lcell)))
+
+       end do
+
+    end do
+
+  end subroutine evaluate_face_deltas
+
   subroutine evaluate_face_centers_areas(this)
+
+    class(mesh), intent(inout) :: this
+
+    ! Currently the length as its a 1D face
+    type(integer) :: iface
+    real(dp)      :: n(3)
+
+    write(*, *) 'Evaluating face centers and areas'
+
+    allocate(this % face_areas(this % num_faces))
+    this % face_areas = real(0,dp)
+
+    allocate(this % face_centers(3,this % num_faces))
+    this % face_centers = real(0,dp)
+
+    face_loop: do concurrent(iface = 1 : this % num_faces)
+
+       ! Area calculation is complicated in 3D
+       associate(facenodes => this % face_vertices(1:this % num_face_vertices(iface),iface))
+
+         ! Compute the coordinates of face centers
+         associate(num_vertices => real(this % num_face_vertices(iface), kind=dp))
+           this % face_centers(:,iface) = sum(this % vertices(:,facenodes),dim=2)/num_vertices
+         end associate
+
+         ! triangle
+         associate(&
+              & t12 => this % vertices(:,facenodes(2)) - this % vertices(:,facenodes(1)), &
+              & t13 => this % vertices(:,facenodes(3)) - this % vertices(:,facenodes(1)) &
+              & )
+
+           call cross_product(t12,t13,n)
+
+           this % face_areas(iface) = norm2(n)/real(2,dp)
+
+           ! if quadrilateral add the second triangle
+           if (this % face_types(iface) .eq. 3) then
+
+              associate (t14 => this % vertices(:,facenodes(4)) - this % vertices(:,facenodes(1)))
+
+                call cross_product(t13,t14,n)
+
+                this % face_areas(iface) = norm2(n)/real(2,dp)
+
+              end associate
+
+           end if
+
+         end associate
+
+       end associate
+
+    end do face_loop
+
+    ! Check for zero areas
+    if (abs(minval(this % face_areas)) .lt. 10.0d0*tiny(1.0d0)) then
+       print *, 'same points/bad face?'
+       error stop
+    end if
+
+  end subroutine evaluate_face_centers_areas
+
+  subroutine evaluate_face_centers_areas_2d(this)
 
     class(mesh), intent(inout) :: this
 
@@ -1009,13 +1110,13 @@ contains
        error stop
     end if
 
-  end subroutine evaluate_face_centers_areas
+  end subroutine evaluate_face_centers_areas_2d
 
   subroutine evaluate_cell_centers(this)
 
     class(mesh), intent(inout) :: this
 
-    ! Find cell centers O = (A + B + C) /3
+    ! Find cell centers O = (A + B + C + ...) /count(vertices)
     type(integer) :: icell
 
     write(*,*) 'Evaluating cell centers'
@@ -1023,17 +1124,82 @@ contains
     allocate(this % cell_centers(3, this % num_cells))
 
     do concurrent(icell=1:this % num_cells)
-       this % cell_centers(:, icell) = sum(&
-            & this % vertices(&
-            & :, this % cell_vertices(&
-            & 1:this % num_cell_vertices(icell),icell)&
-            & ), dim=2)&
-            & /real(this % num_cell_vertices(icell), kind=dp)
+       associate(&
+            & num_vertices => real(this % num_cell_vertices(icell), kind=dp), &
+            & vids => this % cell_vertices(1:this % num_cell_vertices(icell), icell) &
+            & )
+         this % cell_centers(:, icell) = sum(this % vertices(:,vids),dim=2)/num_vertices
+       end associate
     end do
 
   end subroutine evaluate_cell_centers
 
   subroutine evaluate_face_tangents_normals(this)
+
+    class(mesh), intent(inout) :: this
+
+    integer  :: icell, iface, gface
+    real(dp) :: n1(3), n2(3)
+
+    write(*,*) 'Evaluating face tangents normals'
+
+    allocate(this % cell_face_normals (3, maxval(this % num_cell_faces), this % num_cells))
+    this % cell_face_normals = real(0,dp)
+
+    allocate(this % cell_face_tangents(3, maxval(this % num_cell_faces), this % num_cells))
+    this % cell_face_tangents = real(0,dp)
+
+    ! loop cells
+    do concurrent (icell = 1 : this % num_cells)
+
+       ! loop faces of each cell
+       do iface = 1, this % num_cell_faces(icell)
+
+          ! gface = this % face_numbers
+          gface = this % cell_faces(iface, icell)
+
+          associate(ifv => this % face_vertices(1:this % num_face_vertices(gface),gface))
+
+            associate(&
+                 & t12 => this % vertices(:,ifv(2)) - this % vertices(:,ifv(1)), &
+                 & t13 => this % vertices(:,ifv(3)) - this % vertices(:,ifv(1))  &
+                 & )
+
+              call cross_product(t12,t13,n1)
+
+              this % cell_face_normals(:, iface, icell) = n1/norm2(n1)
+
+              ! if quadrilateral add the second triangle (may not need this at all)
+              if (this % face_types(iface) .eq. 3) then
+
+                 associate (t14 => this % vertices(:,ifv(4)) - this % vertices(:,ifv(1)))
+
+                   call cross_product(t13,t14,n2)
+
+                   this % cell_face_normals(:,iface,icell) = (n1 + n2)/norm2(n1+n2)
+
+                 end associate
+
+              end if
+
+              ! this % cell_face_normals (:, iface, icell) = n
+              ! this % cell_face_tangents(:, iface, icell) = t
+
+              ! which way the normals are pointed (all point in one dir)
+              ! is adding normals valid here?
+              ! how many tangents we have in 3d?
+
+            end associate
+
+          end associate
+
+       end do
+
+    end do
+
+  end subroutine evaluate_face_tangents_normals
+
+  subroutine evaluate_face_tangents_normals_2d(this)
 
     class(mesh), intent(inout) :: this
 
@@ -1090,7 +1256,7 @@ contains
 
     end do
 
-  end subroutine evaluate_face_tangents_normals
+  end subroutine evaluate_face_tangents_normals_2d
 
   !===================================================================!
   ! Counts and returns the number of elements with supplied number of
@@ -1176,6 +1342,25 @@ contains
                & this % edge_vertices(1:this % num_edge_vertices(iedge), iedge)
        end do
     end if
+
+    do icell = 1, max(this % max_print,this % num_cells)
+       write(*,*) &
+            & "local number [", icell   ,"] ", &
+            & "global number [", this % cell_numbers(icell)   ,"] ", &
+            & "center [", this % cell_centers(:,icell) ,"] ", &
+            & "volume [", this % cell_volumes(icell)   ,"] "
+    end do
+
+    do iface = 1, max(this % max_print,this % num_faces)
+       write(*,*) &
+            & "num [",iface,"] ", &
+            & "center [",this % face_centers(:, iface),"] ", &
+            & "area [",this % face_areas(iface), "] " !, &
+!!$               & "lvec [",this % lvec(:,iface),"] ", &
+!!$               & "delta [",this % face_deltas(iface),"] "
+    end do
+
+
 !!$
 !!$    if (this % initialized .eqv. .true.) then
 !!$

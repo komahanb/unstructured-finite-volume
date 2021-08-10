@@ -164,13 +164,9 @@ contains
 
       write(fhandle, '(a)') '<Points>'
       write(fhandle, '(a)') '<DataArray type="Float64" NumberOfComponents="3" format="ascii">'
-
-      do ivertex = 1, this % mesh % num_vertices
-         
-         write(fhandle, *) (this % mesh % vertices(jdim, ivertex), jdim = 1, 3)
-         
+      do ivertex = 1, this % mesh % num_vertices         
+         write(fhandle, *) (this % mesh % vertices(jdim, ivertex), jdim = 1, 3)         
       end do
-
       write(fhandle, '(a)') '</DataArray>'
       write(fhandle, '(a)') '</Points>'
 
@@ -188,16 +184,12 @@ contains
       ! write cell vertex connectivities
       !---------------------------------------------------------------!
       
-      write(fhandle, '(a)') '<DataArray type="Int32" Name="connectivity" format="ascii">'
-      
+      write(fhandle, '(a)') '<DataArray type="Int32" Name="connectivity" format="ascii">'      
       do icell = 1, this % mesh % num_cells
-
          ! correct for paraview's 0 based numbering
          write(fhandle, *) (this % mesh % cell_vertices(jvertex, icell) - 1, &
-              & jvertex = 1, this % mesh % num_cell_vertices(icell))
-         
-      end do
-      
+              & jvertex = 1, this % mesh % num_cell_vertices(icell))         
+      end do      
       write(fhandle, '(a)') '</DataArray>'
 
       !---------------------------------------------------------------!
@@ -206,34 +198,41 @@ contains
       
  
       write(fhandle, '(a)') '<DataArray type="Int32" Name="offsets" format="ascii">'
-
       offset = 0
-      
       do icell = 1, this % mesh % num_cells
-
          write(fhandle, '(i0)') offset + this % mesh % num_cell_vertices(icell)
-         
          offset = offset + this % mesh % num_cell_vertices(icell)
-
       end do
-      
       write(fhandle, '(a)') '</DataArray>'
 
       !---------------------------------------------------------------!
       ! write cell types
       !---------------------------------------------------------------!
       
-      write(fhandle, *) '<DataArray type="UInt8" Name="types" format="ascii">'
-      
+      write(fhandle, *) '<DataArray type="UInt8" Name="types" format="ascii">'      
       do icell = 1, this % mesh % num_cells         
          write(fhandle, '(i0)')  paraview_type % get_element_type (this % mesh % cell_types(icell)) 
-      end do
+      end do      
       write(fhandle, '(a)') '</DataArray>'
       
       write(fhandle, '(a)') '</Cells>'
 
       write(fhandle, '(a)') '<PointData></PointData>'
-      write(fhandle, '(a)') '<CellData></CellData>'
+
+      !---------------------------------------------------------------!
+      ! write cell data
+      !---------------------------------------------------------------!
+
+      write(fhandle, '(a)') '<CellData>'
+
+      ! export cell volumes
+      write(fhandle, *) '<DataArray type="Float32" Name="volume" format="ascii">'
+      do icell = 1, this % mesh % num_cells         
+         write(fhandle, *)  this % mesh % cell_volumes(icell)
+      end do
+      write(fhandle, '(a)') '</DataArray>'
+
+      write(fhandle, '(a)') '</CellData>'
        
     end block write_cells
 

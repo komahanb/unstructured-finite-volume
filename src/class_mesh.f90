@@ -133,6 +133,9 @@ module class_mesh
      integer  , allocatable :: num_edge_faces(:)         ! [1:nedges]
      integer  , allocatable :: edge_faces(:,:)           ! [[f1,f2...],1:nedges]
 
+     integer  , allocatable :: cell_neighbours(:,:)      ! [c1,c2,c3,c4,..., 1:ncells]
+     integer  , allocatable :: num_cell_neighbours(:)    ! [1:ncells] ! each interior face of cell has a nearby cell
+
      !================================================================!
      ! Derived Geometry information
      !================================================================!
@@ -257,7 +260,7 @@ contains
     integer           , allocatable :: bnum_face_vertices(:)
     integer                         :: bnum_faces
 
-    me % verbosity = 1
+    me % verbosity = 2
 
     !-----------------------------------------------------------------!
     ! Get the fundamental information needed
@@ -268,7 +271,7 @@ contains
          & me % num_edges   , me % edge_numbers  , me % edge_tags   , me % edge_vertices , me % num_edge_vertices , &
          & bnum_faces       , bface_numbers      , bface_tags       , bface_vertices     , bnum_face_vertices , &
          & me % num_cells   , me % cell_numbers  , me % cell_tags   , me % cell_vertices , me % num_cell_vertices , &
-         & me % cell_types  , bface_types       , me % edge_types  , &
+         & me % cell_types  , bface_types        , me % edge_types  , &
          & me % num_tags    , me % tag_numbers   , me % tag_physical_dimensions, me % tag_info )
 
     ! determine the number of faces algebraically
@@ -410,6 +413,77 @@ contains
 
     ! Perform initialization tasks and store the resulting flag
     me % initialized = me % initialize()
+
+    !-----------------------------------------------------------------!
+    ! Cell neighbourhood determines the nonzero pattern in Jacobian
+    ! matrix apriori (regardless of the physics underlying the domain)
+    !-----------------------------------------------------------------!
+
+    cell_neighbours : block
+
+      integer :: icell, ncell
+      integer :: iface, gface
+
+      write(*,*) "Forming cell neighbours for matrix setup..."
+
+      allocate(me % num_cell_neighbours(me % num_cells))
+      me % num_cell_neighbours = 0
+
+      allocate(me % cell_neighbours(8, me % num_cells))
+      me % cell_neighbours = 0
+
+      cell_loop: do icell = 1, me % num_cells
+
+         cell_face_loop: do iface = 1, me % num_cell_faces(icell)
+
+            ! global face index
+            gface = me % cell_faces(iface,icell)
+
+            ! filter out internal faces from boundary faces
+            if (me % num_face_cells(gface) .gt. 1) then
+
+               ! neighbour cell is the one that has a different index
+               if (icell .eq. me % face_cells(1, gface)) then
+
+                  ncell = me % face_cells(2, gface)
+
+               else
+
+                  ncell = me % face_cells(1, gface)
+
+               end if
+
+               ! increment neighbour count
+               me % num_cell_neighbours(icell) = me % num_cell_neighbours(icell) + 1
+
+               ! keep track of neighbour cell id
+               me % cell_neighbours(me % num_cell_neighbours(icell), icell) = ncell
+
+            end if
+
+         end do cell_face_loop
+
+      end do cell_loop
+
+      write(*,*) "Finished forming cell neighbours for matrix setup"
+
+      if (me % verbosity .gt. 1) then
+
+         write(*,'(a,i8,a,i8)') &
+              & "Cell to cell info for", min(me % max_print,me % num_cells), &
+              & " cells out of ", me % num_cells
+
+         do icell = 1, min(me % max_print,me % num_cells)
+            write(*,*) &
+                 & 'cell [', icell, '] ', &
+                 & 'num neighs [', me % num_cell_neighbours(icell), '] ', &
+                 & 'neigh cells [', me % cell_neighbours(1:me % num_cell_neighbours(icell),icell), '] '
+         end do
+
+      end if
+
+    end block cell_neighbours
+
     if (me % initialized .eqv. .false.) then
        write(error_unit,*) "Mesh.Construct: failed"
        error stop
@@ -545,6 +619,9 @@ contains
     if (allocated(this % cell_face_normals)) deallocate(this % cell_face_normals)
     if (allocated(this % vertex_cell_weights)) deallocate(this % vertex_cell_weights)
     if (allocated(this % face_cell_weights)) deallocate(this % face_cell_weights)
+
+    if (allocated(this % cell_neighbours)) deallocate(this % cell_neighbours)
+    if (allocated(this % num_cell_neighbours)) deallocate(this % num_cell_neighbours)
 
   end subroutine destroy
 
@@ -1013,7 +1090,7 @@ contains
 
           gface = this % cell_faces(lface, lcell)
 
-          this % face_deltas(lface) = &
+          this % face_deltas(gface) = &
                & abs(dot_product(this % lvec(:,gface), this % cell_face_normals(:, lface, lcell)))
 
        end do

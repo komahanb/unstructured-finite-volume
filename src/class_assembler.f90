@@ -204,33 +204,15 @@ contains
 
   end subroutine get_transpose_jacobian
 
-  subroutine get_jacobian_vector_product(this, Ax, x, filter)
+  subroutine get_jacobian_vector_product(this, Aq, q, filter)
 
     class(assembler) , intent(in)    :: this
-    real(dp)         , intent(in)    :: x(:)
-    real(dp)         , intent(out)   :: Ax(:)
+    real(dp)         , intent(in)    :: q(:)
+    real(dp)         , intent(out)   :: Aq(:)
     integer, optional, intent(in)    :: filter
 
     ! Finite difference coeff for flux approximation between two cells
     real(dp), parameter  :: alpha(2) = [-1.0_dp, 1.0_dp]
-
-!!$    test: block
-!!$      integer               :: n
-!!$      real(dp), allocatable :: A(:,:)
-!!$      n = size(x,dim=1)
-!!$      allocate(A(n,n))
-!!$      A(:,1) = [-6.0d0,1.0d0,1.0d0,0.0d0]
-!!$      A(:,2) = [1.0d0,-6.0d0,0.0d0,1.0d0]
-!!$      A(:,3) = [1.0d0,0.0d0,-6.0d0,1.0d0]
-!!$      A(:,4) = [0.0d0,1.0d0,1.0d0,-6.0d0]
-!!$
-!!$      Ax = matmul(A,x)
-!!$      deallocate(A)
-!!$    end block test
-!!$
-!!$    print *, "Ax=",Ax
-!!$
-!!$    return
 
     laplace_normal: block
 
@@ -238,39 +220,30 @@ contains
       integer :: ncell, fcells(2)
 
       ! Loop cells
-      !loop_cells: do icell = 1, this % grid % num_cells
-      !loop_cells: do concurrent (icell = 1 : this % grid % num_cells)
       loop_cells: do icell = 1 , this % grid % num_cells
 
          ! Get the faces corresponding to this cell
-         associate( &
-              & faces => this % grid % cell_faces &
-              & (1:this % grid % num_cell_faces(icell),icell), &
-              & highest_tag => maxval(this % grid % tag_numbers) &
-              & )
-
-           !print *, icell, faces, highest_tag
+         associate(faces => this % grid % cell_faces (1:this % grid % num_cell_faces(icell),icell))
 
            ! Loop faces
-           Ax(icell) = 0.0d0
+           Aq(icell) = 0.0d0
 
            loop_faces: do iface = 1, this % grid % num_cell_faces(icell)
 
               associate (&
-                   & ftag   => this % grid % face_tags(faces(iface))  , &
                    & fdelta => this % grid % face_deltas(faces(iface)), &
                    & farea  => this % grid % face_areas(faces(iface)),  &
-                   & nfcells => this % grid % num_face_cells(faces(iface)) &
+                   & num_face_cells => this % grid % num_face_cells(faces(iface)) &
                    & )
 
                 ! Interpolate to get face gammas
                 !print *, iface, faces(iface), ftag, fdelta, farea !, !fgamma
 
                 ! Add contribution from internal faces
-                domain: if (ftag .eq. highest_tag) then
+                domain: if (num_face_cells .eq. 2) then
 
                    ! Neighbour cell index !? filter here probably?
-                   fcells(1:nfcells) = this % grid % face_cells(1:nfcells,faces(iface))
+                   fcells(1:num_face_cells) = this % grid % face_cells(1:num_face_cells,faces(iface))
 
                    ! Neighbour is the one that has a different cell
                    ! index than current icell
@@ -280,11 +253,9 @@ contains
                       ncell = fcells(1)
                    end if
 
-                   !print *, "cell=",icell, "face=", faces(iface), "ncell=", ncell
-
                    ! Interior faces (call tagged physics) (FVM Equation)
-                   ! Ax(icell) = Ax(icell) + farea*(x(ncell)-x(icell))/fdelta
-
+                   ! Aq(icell) = Aq(icell) + farea*(x(ncell)-x(icell))/fdelta
+                   ! for interior faces: ncell .ne. icell
                    present_filter: if (present(filter)) then
 
                       !-------------------------------------------------!
@@ -295,20 +266,20 @@ contains
 
                          ! Activate Upper Trianglular Filter
                          if (ncell .gt. icell) then
-                            Ax(icell) = Ax(icell) + farea*(x(ncell))/fdelta
+                            Aq(icell) = Aq(icell) + farea*(q(ncell))/fdelta
                          end if
 
                       else if (filter .eq. this % LOWER_TRIANGLE) then
 
                          ! Activate Lower Trianglular Filter
                          if (ncell .lt. icell) then
-                            Ax(icell) = Ax(icell) + farea*(x(ncell))/fdelta
+                            Aq(icell) = Aq(icell) + farea*(q(ncell))/fdelta
                          end if
 
                       else if (filter .eq. this % DIAGONAL) then
 
                          ! Activate DIAGONAL Trianglular Filter (note icell)
-                         Ax(icell) = Ax(icell) + farea*(-x(icell))/fdelta
+                         Aq(icell) = Aq(icell) + farea*(-q(icell))/fdelta
 
                       end if apply_filter
 
@@ -318,17 +289,9 @@ contains
                       ! Assemble Full of matrix
                       !-------------------------------------------------!
 
-                      Ax(icell) = Ax(icell) + farea*(x(ncell)-x(icell))/fdelta
+                      Aq(icell) = Aq(icell) + farea*(q(ncell)-q(icell))/fdelta
 
                    end if present_filter
-
-!!$                 Ax(icell) = Ax(icell) + &
-!!$                      & farea*dot_product(alpha, [x(icell), x(ncell)])&
-!!$                      & /fdelta
-
-!!$              else if (ftag .eq. 1) then
-!!$
-!!$                 Ax(icell) = Ax(icell) + farea*1.0d0
 
                 else
 
@@ -342,12 +305,14 @@ contains
                    if (present(filter)) then
                       ! If diagonals are flagged
                       if (filter .eq. this % DIAGONAL) then
-                         Ax(icell) = Ax(icell) + farea*(0.0d0 - x(icell))/fdelta
+                         Aq(icell) = Aq(icell) + farea*(0.0d0 - q(icell))/fdelta
                       end if
                    else
                       ! Add diagonal if filter is not supplied
-                      Ax(icell) = Ax(icell) + farea*(0.0d0 - x(icell))/fdelta
+                      Aq(icell) = Aq(icell) + farea*(0.0d0 - q(icell))/fdelta
                    end if
+
+                   print *, "check on how the boundary faces contribute to jacobian"
 
                 end if domain
 
@@ -421,27 +386,15 @@ contains
 
   end subroutine evaluate_face_flux
 
-  subroutine get_transpose_jacobian_vector_product(this, Ax, x)
+  subroutine get_transpose_jacobian_vector_product(this, Aq, x)
 
     class(assembler) , intent(in)    :: this
     real(dp)         , intent(in)    :: x(:)
-    real(dp)         , intent(out)   :: Ax(:)
+    real(dp)         , intent(out)   :: Aq(:)
     real(dp), allocatable :: A(:,:)
     integer               :: n
 
     error stop 'not implemented'
-
-!!$    n = size(x)
-!!$    allocate(A(n,n))
-!!$
-!!$    A(:,1) = [-6.0d0,1.0d0,1.0d0,0.0d0]
-!!$    A(:,2) = [1.0d0,-6.0d0,0.0d0,1.0d0]
-!!$    A(:,3) = [1.0d0,0.0d0,-6.0d0,1.0d0]
-!!$    A(:,4) = [0.0d0,1.0d0,1.0d0,-6.0d0]
-!!$
-!!$    Ax = matmul(transpose(A),x)
-!!$
-!!$    deallocate(A)
 
   end subroutine get_transpose_jacobian_vector_product
 
@@ -469,7 +422,7 @@ contains
     call this % evaluate_vertex_flux(phiv, phic)
 
     ! Make space for skew source terms
-    ss = 0;
+    ss = real(0,dp)
 
     loop_cells: do icell = 1, this % grid % num_cells
 
@@ -486,7 +439,7 @@ contains
               gface = faces(iface)
 
               ! Ignore boundary faces from skew source evaluation
-              if (this % grid % face_tags(gface) .eq. highest_tag) then
+              domain: if (this % grid % num_cell_faces(gface) .eq. 2) then
 
                  ! Compute tangent.dot.lvector/delta
                  scale = dot_product(&
@@ -504,7 +457,7 @@ contains
 
                end associate
 
-              end if
+            end if domain
 
            end do loop_faces
 
@@ -531,26 +484,9 @@ contains
     real(dp) , parameter :: phi_bottom = 0.0d0
     real(dp) , parameter :: phib = 0.0d0
 
-!!$
-!!$    block
-!!$      b(1) = 4.0d-1
-!!$      b(2) = 4.0d-1
-!!$      b(3) = 4.0d-1
-!!$      b(4) = 4.0d-1
-!!$    end block
-!!$
-!!$    print *, 'source', b
-!!$    return
-
     add_boundary_terms: block
 
       integer :: icell, iface
-      !integer :: ncell!, fcells(2)
-
-
-      ! Form boundary face values
-
-      !phib(,) =
 
       ! Loop cells
       !loop_cells: do icell = 1, this % grid % num_cells
@@ -562,8 +498,6 @@ contains
               & (1:this % grid % num_cell_faces(icell),icell), &
               & highest_tag => maxval(this % grid % tag_numbers) &
               & )
-
-           !print *, icell, faces, highest_tag
 
            ! Loop faces
            b(icell) = 0.0d0
@@ -580,13 +514,13 @@ contains
               !print *, iface, faces(iface), ftag, fdelta, farea !, !fgamma
 
               ! Add contribution from internal faces
-              if (ftag .ne. highest_tag) then ! homogenous dirichlet T = 1.0d0
+              boundary_faces: if (this % grid % num_cell_faces(faces(iface)) .eq. 1) then
 
-               ! Boundary faces (call boundary physics) (minus as we moved it to rhs)
-                b(icell) = b(icell) + farea*(-phib)/fdelta
-                !print *, icell, "boundary", faces(iface), ftag, fdelta, farea !, !fgamma
+                 ! Boundary faces (call boundary physics) (minus as we moved it to rhs)
+                 b(icell) = b(icell) + farea*(-phib)/fdelta
+                 !print *, icell, "boundary", faces(iface), ftag, fdelta, farea !, !fgamma
 
-              end if
+              end if boundary_faces
 
             end associate
 
@@ -598,18 +532,21 @@ contains
 
     end block add_boundary_terms
 
-
     cell_source: block
 
       integer :: icell
 
-      ! Loop cells
       loop_cells: do concurrent (icell = 1 : this % grid % num_cells)
-         associate( &
+
+         associate(&
               & x => this % grid % cell_centers(:,icell), &
-              & cell_volume => this % grid % cell_volumes(icell))
+              & cell_volume => this % grid % cell_volumes(icell)&
+              & )
+
            b(icell) = b(icell) + evaluate_source(x)*cell_volume
+
          end associate
+
       end do loop_cells
 
     end block cell_source
@@ -620,7 +557,7 @@ contains
 
     real(dp), intent(in) :: x(3)
 
-    evaluate_source = 1.0d0 !-1.0d0 !sin(x(1)) + cos(x(2))
+    evaluate_source = sin(x(1)) !1.0d0 !-1.0d0 !sin(x(1)) + cos(x(2))
 
   end function evaluate_source
 

@@ -52,6 +52,7 @@ module class_mesh
 
   type :: mesh ! rename as topology?
 
+     integer :: verbosity
      integer :: max_print = 20
      logical :: initialized = .false.
 
@@ -255,6 +256,8 @@ contains
     integer           , allocatable :: bface_vertices(:,:)
     integer           , allocatable :: bnum_face_vertices(:)
     integer                         :: bnum_faces
+
+    me % verbosity = 1
 
     !-----------------------------------------------------------------!
     ! Get the fundamental information needed
@@ -567,28 +570,32 @@ contains
 
       write(*,'(a)') "Inverting CellVertex Map complete ..."
 
-      if (allocated(this % vertex_cells) .and. size(this % vertex_cells, dim = 2) .gt. 0) then
+      if (this % verbosity .gt. 1) then
 
-         write(*,'(a,i8,a,i8)') &
-              & "Vertex to cell info for", min(this % max_print,this % num_vertices), &
-              & " vertices out of ", this % num_vertices
+         if (allocated(this % vertex_cells) .and. size(this % vertex_cells, dim = 2) .gt. 0) then
 
-         do ivertex = 1, min(this % max_print,this % num_vertices)
-            write(*,*) &
-                 & 'vertex [', this % vertex_numbers(ivertex), ']', &
-                 & 'num cells [', this % num_vertex_cells(ivertex), ']',&
-                 & 'cells [', this % vertex_cells(1:this % num_vertex_cells(ivertex),ivertex), ']'
-         end do
+            write(*,'(a,i8,a,i8)') &
+                 & "Vertex to cell info for", min(this % max_print,this % num_vertices), &
+                 & " vertices out of ", this % num_vertices
 
-         ! Sanity check
-         if (minval(this % num_vertex_cells) .lt. 1) then
-            write(error_unit, *) 'Error: There are vertices not mapped to a cell'
-            error stop
+            do ivertex = 1, min(this % max_print,this % num_vertices)
+               write(*,*) &
+                    & 'vertex [', this % vertex_numbers(ivertex), ']', &
+                    & 'num cells [', this % num_vertex_cells(ivertex), ']',&
+                    & 'cells [', this % vertex_cells(1:this % num_vertex_cells(ivertex),ivertex), ']'
+            end do
+
+            ! Sanity check
+            if (minval(this % num_vertex_cells) .lt. 1) then
+               write(error_unit, *) 'Error: There are vertices not mapped to a cell'
+               error stop
+            end if
+
+         else
+
+            write(*,'(a)') "Vertex to cell info not computed"
+
          end if
-
-      else
-
-         write(*,'(a)') "Vertex to cell info not computed"
 
       end if
 
@@ -710,41 +717,45 @@ contains
            & this % num_cell_faces, this % cell_faces, this % cell_faces_type, &
            & this % num_face_cells, this % face_cells, this % face_cells_type)
 
-      if (allocated(this % cell_faces)) then
+      if (this % verbosity .gt. 1) then
 
-         write(*,'(a,i8,a,i8)') &
-              & "Cell to face info for", min(this % max_print,this % num_cells), &
-              & " cells out of ", this % num_cells
+         if (allocated(this % cell_faces)) then
 
-         do icell = 1, min(this % max_print,this % num_cells)
-            write(*,*) &
-                 & 'cell ['  , icell, ']',&
-                 & 'nfaces [', this % num_cell_faces(icell), ']',&
-                 & 'faces [' , this % cell_faces(&
-                 & 1:this % num_cell_faces(icell),icell), ']'
-         end do
+            write(*,'(a,i8,a,i8)') &
+                 & "Cell to face info for", min(this % max_print,this % num_cells), &
+                 & " cells out of ", this % num_cells
 
-      else
+            do icell = 1, min(this % max_print,this % num_cells)
+               write(*,*) &
+                    & 'cell ['  , icell, ']',&
+                    & 'nfaces [', this % num_cell_faces(icell), ']',&
+                    & 'faces [' , this % cell_faces(&
+                    & 1:this % num_cell_faces(icell),icell), ']'
+            end do
 
-         write(*,'(a)') "Cell to face info not computed"
+         else
 
-      end if
+            write(*,'(a)') "Cell to face info not computed"
 
-      if (allocated(this % face_cells)) then
-
-         do iface = 1, min(this % max_print,this % num_faces)
-            print *, &
-                 & 'face [', this % face_numbers(iface), ']', &
-                 & 'cells [', this % face_cells(1 : this % num_face_cells(iface),iface), ']'
-         end do
-
-         if (minval(this % num_face_cells) .lt. 1) then
-            write(error_unit, *) 'Error: There are faces not mapped to a cell'
          end if
 
-      else
+         if (allocated(this % face_cells)) then
 
-         write(*,'(a)') "Face to cell info not computed"
+            do iface = 1, min(this % max_print,this % num_faces)
+               print *, &
+                    & 'face [', this % face_numbers(iface), ']', &
+                    & 'cells [', this % face_cells(1 : this % num_face_cells(iface),iface), ']'
+            end do
+
+            if (minval(this % num_face_cells) .lt. 1) then
+               write(error_unit, *) 'Error: There are faces not mapped to a cell'
+            end if
+
+         else
+
+            write(*,'(a)') "Face to cell info not computed"
+
+         end if
 
       end if
 
@@ -816,12 +827,14 @@ contains
 
     end do
 
-    do ivertex = 1, min(this % max_print,this % num_vertices)
-       write(*,*) &
-            & "vertex [", this % vertex_numbers(ivertex), ']', &
-            & "weights [", this % vertex_cell_weights(&
-            & 1:this % num_vertex_cells(ivertex),ivertex), ']'
-    end do
+    if (this % verbosity .gt. 1) then
+       do ivertex = 1, min(this % max_print,this % num_vertices)
+          write(*,*) &
+               & "vertex [", this % vertex_numbers(ivertex), ']', &
+               & "weights [", this % vertex_cell_weights(&
+               & 1:this % num_vertex_cells(ivertex),ivertex), ']'
+       end do
+    end if
 
     deallocate(cells)
 
@@ -864,11 +877,13 @@ contains
 
     end do
 
-    do iface = 1, min(this % max_print,this % num_faces)
-       write(*,*) &
-            & "face [", iface, "] ",&
-            & "weight [", this % face_cell_weights(1:2,iface), "] "
-    end do
+    if (this % verbosity .gt. 1) then
+       do iface = 1, min(this % max_print,this % num_faces)
+          write(*,*) &
+               & "face [", iface, "] ",&
+               & "weight [", this % face_cell_weights(1:2,iface), "] "
+       end do
+    end if
 
   end subroutine evaluate_face_weight
 

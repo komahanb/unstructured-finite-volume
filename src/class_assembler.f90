@@ -312,7 +312,7 @@ contains
                       Aq(icell) = Aq(icell) + farea*(0.0d0 - q(icell))/fdelta
                    end if
 
-                   print *, "check on how the boundary faces contribute to jacobian"
+                   ! print *, "check on how the boundary faces contribute to jacobian"
 
                 end if domain
 
@@ -439,7 +439,7 @@ contains
               gface = faces(iface)
 
               ! Ignore boundary faces from skew source evaluation
-              domain: if (this % grid % num_cell_faces(gface) .eq. 2) then
+              domain: if (this % grid % num_face_cells(gface) .eq. 2) then
 
                  ! Compute tangent.dot.lvector/delta
                  scale = dot_product(&
@@ -514,7 +514,7 @@ contains
               !print *, iface, faces(iface), ftag, fdelta, farea !, !fgamma
 
               ! Add contribution from internal faces
-              boundary_faces: if (this % grid % num_cell_faces(faces(iface)) .eq. 1) then
+              boundary_faces: if (this % grid % num_face_cells(faces(iface)) .eq. 1) then
 
                  ! Boundary faces (call boundary physics) (minus as we moved it to rhs)
                  b(icell) = b(icell) + farea*(-phib)/fdelta

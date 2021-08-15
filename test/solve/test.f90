@@ -13,22 +13,25 @@ program test_mesh
   use class_gauss_jacobi       , only : gauss_jacobi
   use class_gauss_seidel       , only : gauss_seidel
   use class_sor                , only : sor
+  use class_paraview_writer    , only : paraview_writer
+  use class_string             , only : string
 
   implicit none
-  
-  character(len=*)     , parameter   :: filename = "../airfoil.msh"
-  class(gmsh_loader)   , allocatable :: gmsh
-  class(mesh)          , allocatable :: grid
-  class(linear_solver) , allocatable :: solver
-  class(assembler)     , allocatable :: FVMAssembler
+
+  character(len=*)      , parameter   :: filename = "../box-3.msh"
+  class(gmsh_loader)    , allocatable :: gmsh
+  class(mesh)           , allocatable :: grid
+  class(linear_solver)  , allocatable :: solver
+  class(assembler)      , allocatable :: FVMAssembler
+  class(paraview_writer), allocatable :: paraview
 
   meshing : block
 
     ! Create a mesh object
-    allocate(gmsh, source =  gmsh_loader(filename))
+    allocate(gmsh, source = gmsh_loader(filename))
     allocate(grid, source = mesh(gmsh))
     deallocate(gmsh)
-    
+
   end block meshing
 
   assembly : block
@@ -38,7 +41,7 @@ program test_mesh
     allocate(FVMAssembler, source = assembler(grid))
 
     ! Also supply
-    ! allocate(FVMAssembler, source = assembler(grid,physics_list)) 
+    ! allocate(FVMAssembler, source = assembler(grid,physics_list))
     ! physics with tags Assembler combines Geometry and Physics ( EQNS
     ! + BC) to provide linear/nonlinear systems
 
@@ -70,11 +73,11 @@ program test_mesh
 !!$    ! Writes the mesh for tecplot
 !!$    call FVMassembler % write_solution("mesh-sor.dat", x)
 !!$
-!!$    deallocate(x)   
+!!$    deallocate(x)
 !!$    deallocate(solver)
-!!$    
+!!$
 !!$  end block sor_solver
-!!$  
+!!$
 !!$  seidel_solver : block
 !!$
 !!$    real(dp) , parameter   :: max_tol     = 100.0d0*epsilon(1.0d0)
@@ -100,9 +103,9 @@ program test_mesh
 !!$    ! Writes the mesh for tecplot
 !!$    call FVMassembler % write_solution("mesh-seidel.dat", x)
 !!$
-!!$    deallocate(x)   
+!!$    deallocate(x)
 !!$    deallocate(solver)
-!!$    
+!!$
 !!$  end block seidel_solver
 !!$
 !!$  jacobi_solver : block
@@ -130,9 +133,9 @@ program test_mesh
 !!$    ! Writes the mesh for tecplot
 !!$    call FVMassembler % write_solution("mesh-jacobi.dat", x)
 !!$
-!!$    deallocate(x)   
+!!$    deallocate(x)
 !!$    deallocate(solver)
-!!$    
+!!$
 !!$  end block jacobi_solver
 
   cg_solver : block
@@ -141,6 +144,8 @@ program test_mesh
     integer  , parameter   :: max_it      = 100
     integer  , parameter   :: print_level = 1
     real(dp) , allocatable :: x(:)
+    real(dp) , allocatable :: phi(:,:)
+    type(string), allocatable :: field_names(:)
     integer :: i
 
     allocate(solver, &
@@ -158,11 +163,21 @@ program test_mesh
     end do
 
     ! Writes the mesh for tecplot
-    call FVMassembler % write_solution("mesh-cg.dat", x)
+    ! call FVMassembler % write_solution("mesh-cg.dat", x)
 
-    deallocate(x)   
+    allocate(field_names(1))
+    field_names(1) = string("phi")
+    allocate(paraview, source = paraview_writer(FVMAssembler % grid))
+    allocate(phi(size(x),1))
+    phi(:,1) = x
+
+    call paraview % write("output.vtu", phi, field_names)
+
+    deallocate(phi)
+    deallocate(paraview)
+    deallocate(x)
     deallocate(solver)
-    
+
   end block cg_solver
 
   deallocate(grid)

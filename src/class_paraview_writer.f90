@@ -13,13 +13,13 @@ module class_paraview_writer
   use iso_fortran_env, only : dp => real64, int32
   use class_mesh     , only : mesh_t => mesh
   use class_string   , only : string
-  
+
   implicit none
 
   !===================================================================!
   ! Paraview cell types datatype (enum)
   !===================================================================!
-  
+
   type :: linear_cell_type
 
      integer(kind=int32) :: VTK_EMPTY_CELL        = 0
@@ -40,10 +40,10 @@ module class_paraview_writer
      integer(kind=int32) :: VTK_PENTAGONAL_PRISM  = 15
      integer(kind=int32) :: VTK_HEXAGONAL_PRISM   = 16
      integer(kind=int32) :: VTK_POLYHEDRON        = 42
-     
+
    contains
 
-     procedure :: get_element_type          
+     procedure :: get_element_type
 
   end type linear_cell_type
 
@@ -65,9 +65,9 @@ module class_paraview_writer
 
      ! type bound procedures
      procedure :: write
-    
+
   end type paraview_writer
-  
+
   !===================================================================!
   ! Interface for multiple constructors
   !===================================================================!
@@ -75,19 +75,19 @@ module class_paraview_writer
   interface paraview_writer
      module procedure construct
   end interface paraview_writer
-  
+
 contains
 
   !===================================================================!
   ! Function to map gmsh element numbers to paraview types
   !===================================================================!
-  
+
   pure elemental type(integer) function get_element_type(this, gmsh_type) &
        & result (paraview_type)
 
     class(linear_cell_type), intent(in) :: this
     integer                , intent(in) :: gmsh_type
-    
+
     select case (gmsh_type)
     case (1) ! 2-node line.
        paraview_type = this % VTK_LINE
@@ -106,13 +106,13 @@ contains
     case default
        paraview_type = this % VTK_POLYHEDRON
     end select
-    
+
   end function get_element_type
 
   !===================================================================!
   ! Constructor for paraview wrtier
   !===================================================================!
-  
+
   pure type(paraview_writer) function construct(mesh) result (this)
 
     class(mesh_t), intent(in) :: mesh
@@ -124,7 +124,7 @@ contains
   !===================================================================!
   ! Constructor for paraview wrtier
   !===================================================================!
-  
+
   subroutine write(this, filename, phic, solution_labels)
 
     ! arguments
@@ -133,12 +133,12 @@ contains
     real(dp)               , intent(in), optional :: phic(:,:) ! (icell, ivar)
     type(string)           , optional             :: solution_labels(:)
     type(linear_cell_type) :: paraview_type
-    
+
     ! locals
     integer                       :: ierr
     integer, parameter            :: fhandle = 90
+    integer                       :: iresult
 
-    
     open(unit=fhandle, file=trim(filename), iostat= ierr, action = 'write', form = 'formatted')
     if (ierr .ne. 0) then
        write(*,'("  >> Opening file ", 39A, " failed")') trim(filename)
@@ -157,15 +157,15 @@ contains
     !-----------------------------------------------------------------!
     ! Write the vertices
     !-----------------------------------------------------------------!
-    
+
     write_points: block
 
       integer :: ivertex, jdim
 
       write(fhandle, '(a)') '<Points>'
       write(fhandle, '(a)') '<DataArray type="Float64" NumberOfComponents="3" format="ascii">'
-      do ivertex = 1, this % mesh % num_vertices         
-         write(fhandle, *) (this % mesh % vertices(jdim, ivertex), jdim = 1, 3)         
+      do ivertex = 1, this % mesh % num_vertices
+         write(fhandle, *) (this % mesh % vertices(jdim, ivertex), jdim = 1, 3)
       end do
       write(fhandle, '(a)') '</DataArray>'
       write(fhandle, '(a)') '</Points>'
@@ -177,26 +177,26 @@ contains
       integer :: icell, jvertex
 
       integer :: offset
-      
+
       write(fhandle, '(a)') '<Cells>'
 
       !---------------------------------------------------------------!
       ! write cell vertex connectivities
       !---------------------------------------------------------------!
-      
-      write(fhandle, '(a)') '<DataArray type="Int32" Name="connectivity" format="ascii">'      
+
+      write(fhandle, '(a)') '<DataArray type="Int32" Name="connectivity" format="ascii">'
       do icell = 1, this % mesh % num_cells
          ! correct for paraview's 0 based numbering
          write(fhandle, *) (this % mesh % cell_vertices(jvertex, icell) - 1, &
-              & jvertex = 1, this % mesh % num_cell_vertices(icell))         
-      end do      
+              & jvertex = 1, this % mesh % num_cell_vertices(icell))
+      end do
       write(fhandle, '(a)') '</DataArray>'
 
       !---------------------------------------------------------------!
       ! write cell to vertex connectivity offsets
       !---------------------------------------------------------------!
-      
- 
+
+
       write(fhandle, '(a)') '<DataArray type="Int32" Name="offsets" format="ascii">'
       offset = 0
       do icell = 1, this % mesh % num_cells
@@ -208,13 +208,13 @@ contains
       !---------------------------------------------------------------!
       ! write cell types
       !---------------------------------------------------------------!
-      
-      write(fhandle, *) '<DataArray type="UInt8" Name="types" format="ascii">'      
-      do icell = 1, this % mesh % num_cells         
-         write(fhandle, '(i0)')  paraview_type % get_element_type (this % mesh % cell_types(icell)) 
-      end do      
+
+      write(fhandle, *) '<DataArray type="UInt8" Name="types" format="ascii">'
+      do icell = 1, this % mesh % num_cells
+         write(fhandle, '(i0)')  paraview_type % get_element_type (this % mesh % cell_types(icell))
+      end do
       write(fhandle, '(a)') '</DataArray>'
-      
+
       write(fhandle, '(a)') '</Cells>'
 
       write(fhandle, '(a)') '<PointData></PointData>'
@@ -227,13 +227,23 @@ contains
 
       ! export cell volumes
       write(fhandle, *) '<DataArray type="Float32" Name="volume" format="ascii">'
-      do icell = 1, this % mesh % num_cells         
+      do icell = 1, this % mesh % num_cells
          write(fhandle, *)  this % mesh % cell_volumes(icell)
       end do
       write(fhandle, '(a)') '</DataArray>'
 
+      if (present(solution_labels) .and. present(phic)) then
+         do iresult = 1, size(solution_labels)
+            write(fhandle, '(a,a,a)') '<DataArray type="Float32" Name="', solution_labels(iresult) % str, '" format="ascii">'
+            do icell = 1, this % mesh % num_cells
+               write(fhandle, *) phic(icell,iresult)
+            end do
+            write(fhandle, '(a)') '</DataArray>'
+         end do
+      end if
+
       write(fhandle, '(a)') '</CellData>'
-       
+
     end block write_cells
 
     ! close the opened tags
@@ -242,9 +252,7 @@ contains
     write(fhandle, '(a)') '</VTKFile>'
 
     close(unit=fhandle)
-    
+
   end subroutine write
-  
+
 end module class_paraview_writer
-
-

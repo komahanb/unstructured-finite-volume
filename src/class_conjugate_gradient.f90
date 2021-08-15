@@ -1,5 +1,5 @@
 !=====================================================================!
-! Conjugate Gradient linear solver class that uses the functionalities of assembler class 
+! Conjugate Gradient linear solver class that uses the functionalities of assembler class
 ! in the iterative solution process.
 !=====================================================================!
 
@@ -10,7 +10,7 @@ module class_conjugate_gradient
   use class_assembler         , only : assembler
 
   implicit none
-  
+
   ! Expose only the linear solver datatype
   private
   public :: conjugate_gradient
@@ -45,11 +45,11 @@ module class_conjugate_gradient
   end interface conjugate_gradient
 
 contains
-  
+
   !===================================================================!
   ! Constructor for linear solver
   !===================================================================!
-  
+
   type(conjugate_gradient) function construct(FVAssembler, max_it, &
        & max_tol, print_level) result (this)
 
@@ -77,7 +77,7 @@ contains
 !!$       deallocate(this % FVAssembler)
 !!$       nullify(this % FVAssembler)
 !!$    end if
-!!$    
+!!$
     if (allocated(this % FVAssembler)) deallocate(this % FVAssembler)
 
   end subroutine destroy
@@ -85,7 +85,7 @@ contains
   !===================================================================!
   ! Iterative linear solution using conjugate gradient method
   !===================================================================!
-  
+
   subroutine solve(this, x)
 
     class(conjugate_gradient), intent(in)  :: this
@@ -100,8 +100,8 @@ contains
     allocate(x(this % FVAssembler % num_state_vars))
     call this % FVAssembler % get_source(x)
     if (norm2(x) .lt. epsilon(1.0_dp)) then
-       print *, 'zero rhs? stopping'
-       error stop
+       print *, 'zero rhs?'
+       ! error stop
     end if
 
     allocate(xold(this % FVAssembler % num_state_vars))
@@ -126,7 +126,7 @@ contains
           call this % FVAssembler % get_skew_source(ss, x)
           call this % iterate(x, ss, num_inner_iters)
        end if
-       
+
        update_norm = norm2(x - xold)
        if (this % print_level .eq. -1) then
           write(13, *) iter, update_norm
@@ -137,7 +137,7 @@ contains
        iter = iter + 1
 
     end do outer_iterations
-    
+
     if (this % print_level .eq. -1) then
        close(13)
     end if
@@ -146,7 +146,7 @@ contains
     deallocate(ss)
 
   end subroutine solve
-  
+
   !===================================================================!
   ! Iterative linear solution using conjugate gradient method
   !===================================================================!

@@ -478,11 +478,12 @@ contains
     real(dp)        , intent(out) :: b(:)
 
     ! Homogenous dirichlet boundary conditions
-    real(dp) , parameter :: phi_left   = 1.0d0
-    real(dp) , parameter :: phi_right  = 0.0d0
-    real(dp) , parameter :: phi_top    = 0.0d0
-    real(dp) , parameter :: phi_bottom = 0.0d0
-    real(dp) , parameter :: phib = 0.0d0
+    real(dp) , parameter :: phifront = real(5,dp)
+    real(dp) , parameter :: phibottom = real(10,dp)
+    real(dp) , parameter :: phiright = real(15,dp)
+    real(dp) , parameter :: phitop = real(0,dp)
+    real(dp) , parameter :: phileft = real(0,dp)
+    real(dp) , parameter :: phiback = real(0,dp)
 
     add_boundary_terms: block
 
@@ -516,8 +517,21 @@ contains
               ! Add contribution from internal faces
               boundary_faces: if (this % grid % num_face_cells(faces(iface)) .eq. 1) then
 
+                 if (ftag .eq. 1) then
+                    b(icell) = b(icell) + farea*(-phifront)/fdelta
+                 else if (ftag .eq. 3) then
+                    b(icell) = b(icell) + farea*(-phibottom)/fdelta
+                 else if (ftag .eq. 4) then
+                    b(icell) = b(icell) + farea*(-phiright)/fdelta
+                 else if (ftag .eq. 5) then
+                    b(icell) = b(icell) + farea*(-phitop)/fdelta
+                 else if (ftag .eq. 6) then
+                    b(icell) = b(icell) + farea*(-phileft)/fdelta
+                 else if (ftag .eq. 7) then
+                    b(icell) = b(icell) + farea*(-phiback)/fdelta
+                 end if
+
                  ! Boundary faces (call boundary physics) (minus as we moved it to rhs)
-                 b(icell) = b(icell) + farea*(-phib)/fdelta
                  !print *, icell, "boundary", faces(iface), ftag, fdelta, farea !, !fgamma
 
               end if boundary_faces
@@ -557,7 +571,7 @@ contains
 
     real(dp), intent(in) :: x(3)
 
-    evaluate_source = sin(x(1)) !1.0d0 !-1.0d0 !sin(x(1)) + cos(x(2))
+    evaluate_source = 0.0 !sin(x(1)) !1.0d0 !-1.0d0 !sin(x(1)) + cos(x(2))
 
   end function evaluate_source
 

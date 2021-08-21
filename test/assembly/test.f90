@@ -10,8 +10,8 @@ program test_mesh
   use class_assembler          , only : assembler
 
   implicit none
-  
-  character(len=*)     , parameter   :: filename = "../triangle.msh"
+
+  character(len=*)     , parameter   :: filename = "../box-36.msh"
   class(gmsh_loader)   , allocatable :: gmsh
   class(mesh)          , allocatable :: grid
   class(assembler)     , allocatable :: FVMAssembler
@@ -22,7 +22,7 @@ program test_mesh
     allocate(gmsh, source =  gmsh_loader(filename))
     allocate(grid, source = mesh(gmsh))
     deallocate(gmsh)
-    
+
   end block meshing
 
   assembly : block
@@ -78,7 +78,7 @@ program test_mesh
   deallocate(FVMAssembler)
 
   contains
-  
+
   subroutine print(matrix)
 
     real(dp), intent(in) :: matrix(:,:)

@@ -614,7 +614,7 @@ contains
 
     real(dp), intent(in) :: x(3)
 
-    evaluate_source = 0.0d0 !-1.0d0 !sin(x(1)) + cos(x(2))
+    evaluate_source = 1.0d0 !-1.0d0 !sin(x(1)) + cos(x(2))
 
   end function evaluate_source
   

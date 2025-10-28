@@ -6,7 +6,7 @@ program test_mesh
 
   use class_mesh             , only : mesh
   use class_gmsh_loader      , only : gmsh_loader
-  use class_test_mesh_loader , only : test_mesh_loader
+!!$  use class_test_mesh_loader , only : test_mesh_loader
   use class_file             , only : file
   use class_string           , only : string
 
@@ -80,25 +80,41 @@ program test_mesh
     ! Create a file object
     file_obj = file(filename)
 
+    !-----------------------------------------------------------------!
     ! Do a line by line read and print contents
-    num_lines = file_obj % get_num_lines()
-    allocate(lines(num_lines))
-    call file_obj % open()
-    do iline = 1, num_lines
-       call file_obj % read_line(lines(iline))
-    end do
-    call file_obj % close()
-    call lines % print()
-    deallocate(lines)
+    !-----------------------------------------------------------------!
 
+    line_by_line_read : block
+
+      num_lines = file_obj % get_num_lines()
+      allocate(lines(num_lines))
+
+      call file_obj % open()
+      do iline = 1, num_lines
+         call file_obj % read_line(lines(iline))
+      end do
+      call file_obj % close()
+      call lines % print()
+
+      deallocate(lines)
+
+    end block line_by_line_read
+
+    !-----------------------------------------------------------------!
     ! Read everything and print content
-    call file_obj % read_lines(lines)
-    call lines % print()  
+    !-----------------------------------------------------------------!
+
+    read_at_once : block
+
+      call file_obj % read_lines(lines)
+      call lines % print()
+
+    end block read_at_once
 
   end block test_file_string
 
 contains
-  
+
   subroutine test_gmsh_loader(filename)
 
     character(len=*)  , intent(in)   :: filename

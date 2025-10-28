@@ -38,7 +38,7 @@ LAPACK_DIR = /usr
 #=====================================================================#
 
 ifeq ($(COMPILER),gnu)
-  F90 = gfortran-7
+  F90 = gfortran
   F90FLAGS := -cpp -fPIC
 
   # COMPLEX mode
@@ -47,16 +47,16 @@ ifeq ($(COMPILER),gnu)
   endif
 
   # Disable F2008 STD
-  ifeq ($(F2008),no)
-    F90FLAGS += -DNO_F2008
-  else
-    F90FLAGS += -std=f2008
-  endif
+  #ifeq ($(F2008),no)
+  #  F90FLAGS += -DNO_F2008
+  #else
+  #  F90FLAGS += -std=f2008
+  #endif
 
   # Debugging
   ifeq ($(DEBUG),yes)
     F90FLAGS += -g -Wall -pedantic -fbounds-check -fbacktrace\
-                -ffpe-trap=invalid,overflow,underflow
+		-ffpe-trap=invalid,overflow,underflow
     LDFLAGS  += -g
   endif
 
@@ -119,8 +119,8 @@ endif
 ifeq ($(HDF5),yes)
   F90FLAGS += -DHDF5 -I$(HDF5_DIR)/include
   LDFLAGS += -L$(HDF5_DIR)/lib $(HDF5_DIR)/lib/libhdf5hl_fortran.a \
-             $(HDF5_DIR)/lib/libhdf5_hl.a $(HDF5_DIR)/lib/libhdf5_fortran.a \
-             $(HDF5_DIR)/lib/libhdf5.a -lz -lrt -lm -Wl,-rpath -Wl,$(HDF5_DIR)/lib
+	     $(HDF5_DIR)/lib/libhdf5_hl.a $(HDF5_DIR)/lib/libhdf5_fortran.a \
+	     $(HDF5_DIR)/lib/libhdf5.a -lz -lrt -lm -Wl,-rpath -Wl,$(HDF5_DIR)/lib
 endif
 
 # PETSC

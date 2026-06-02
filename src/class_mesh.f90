@@ -580,7 +580,7 @@ contains
     allocate( &
          & this % vertex_cell_weights( &
          & 1:maxval(this % num_vertex_cells), &
-         & this % num_faces) &
+         & this % num_vertices) &
          & )
     this % vertex_cell_weights = 0
 

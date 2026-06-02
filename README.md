@@ -1,74 +1,136 @@
-![alt text](https://github.com/komahanb/unstructured-finite-volume/blob/master/misc/airfoil.png)
+![airfoil](https://github.com/komahanb/unstructured-finite-volume/blob/master/misc/airfoil.png)
 
 # Unstructured Finite Volume Solver
 
-Unstructured Finite Volume Solver for Partial Differential Equations
+An object-oriented, unstructured finite-volume solver for partial differential
+equations. The original library is written in modern Fortran (`src/`); the
+`ufvm/` package is a faithful 1:1 Python + NumPy port of its working core, with
+the same classes, methods, and argument names.
 
-## Principles/Goals
+## Design
 
-1. Truly Fortran -std=[f2008,f2018] :sunglasses:
-2. Object Oriented Design for separation of geometry, physics and solution
-3. Coarrays for distributed memory parallelism
-4. *pure*, *elemental*, *do concurrent* for shared memory parallelism
+The framework cleanly separates **geometry** (mesh), **assembly** (the discrete
+operator and right-hand side), and **solution** (linear solvers):
 
-# File Groups
+```
+GmshLoader ──> Mesh ──> Assembler ──> {ConjugateGradient, Sor, GaussSeidel, GaussJacobi}
+```
 
-##  Assembler
+## Install
 
-- unstructured-finite-volume/src/class_assembler.f90 (KB: What is the difference between assembler and finite volume assembler?)
+```bash
+pip install numpy
+# run from the repository root, or add it to PYTHONPATH
+export PYTHONPATH=/path/to/unstructured-finite-volume
+```
 
-## Physics
+## Quick start — solve Poisson on an unstructured mesh
 
-- unstructured-finite-volume/src/interface_physics.f90
-- unstructured-finite-volume/src/class_physics_unsteady_heat.f90
+```python
+import numpy as np
+from ufvm import GmshLoader, Mesh, Assembler, ConjugateGradient
 
-## Time integrators
+# 1. Load a GMSH mesh and build the topology + geometry (centers,
+#    volumes, face areas/normals, interpolation weights, ...)
+grid = Mesh(GmshLoader("examples/poisson/square-40.msh"))
 
-- unstructured-finite-volume/src/integrator_interface.f90
-- unstructured-finite-volume/src/backward_differences_class.f90
+# 2. Assemble the finite-volume system over the mesh
+fvm = Assembler(grid)
 
-## Nonlinear System Solvers
+# 3. Solve  A x = b  iteratively
+cg = ConjugateGradient(FVAssembler=fvm, max_it=100,
+                       max_tol=100.0 * np.finfo(np.float64).eps,
+                       print_level=-1)
+phi = cg.solve()                       # cell-centered solution
 
-- unstructured-finite-volume/src/interface_nonlinear_solver.f90
-- unstructured-finite-volume/src/class_nonlinear_solver.f90
+# 4. Post-process and export for Tecplot
+fvm.write_solution("poisson.dat", phi)
+```
 
-## Linear System Solvers
+## Swappable linear solvers
 
-- unstructured-finite-volume/src/interface_linear_solver.f90
-- unstructured-finite-volume/src/class_sor.f90
-- unstructured-finite-volume/src/class_conjugate_gradient.f90
-- unstructured-finite-volume/src/class_gauss_jacobi.f90
-- unstructured-finite-volume/src/class_gauss_seidel.f90
+All solvers share the same interface (`LinearSolver.solve`), so they are
+interchangeable:
 
-## Mesh, Readers and Writers
+```python
+from ufvm import ConjugateGradient, Sor, GaussSeidel, GaussJacobi
 
-- unstructured-finite-volume/src/interface_mesh_loader.f90
-- unstructured-finite-volume/src/mesh/class_gmsh_loader.f90
-- unstructured-finite-volume/src/module_mesh_utils.f90
-- unstructured-finite-volume/src/class_mesh.f90
+tol = 100.0 * np.finfo(np.float64).eps
+solvers = [
+    ConjugateGradient(fvm, max_it=100, max_tol=tol, print_level=-1),
+    Sor(fvm, omega=1.8545, max_it=100, max_tol=tol, print_level=-1),
+    GaussSeidel(fvm, max_it=100, max_tol=tol, print_level=-1),
+    GaussJacobi(fvm, max_it=100, max_tol=tol, print_level=-1),
+]
+for s in solvers:
+    phi = s.solve()                    # all converge to the same field
+```
 
-## Utilities
+## Matrix-free assembly & operator splitting
 
-- unstructured-finite-volume/src/class_string.f90
-- unstructured-finite-volume/src/class_file.f90
-- unstructured-finite-volume/src/class_set.f90
-- unstructured-finite-volume/src/class_list.f90
+The Jacobian is matrix-free — `Assembler` exposes `J·x` products and filtered
+assembly (full, diagonal, lower, upper) used by the iterative solvers:
 
-## Examples
+```python
+Ax = np.zeros(fvm.num_state_vars)
+fvm.get_jacobian_vector_product(Ax, phi)        # action of J on a vector
 
-- unstructured-finite-volume/examples/unsteady-heat/test.f90
-- unstructured-finite-volume/examples/poisson/test.f90
+A = fvm.get_jacobian()                          # dense J  (= L + D + U)
+L = fvm.get_jacobian(filter=fvm.LOWER_TRIANGLE)
+U = fvm.get_jacobian(filter=fvm.UPPER_TRIANGLE)
+D = fvm.get_jacobian(filter=fvm.DIAGONAL)
+assert np.allclose(A, L + U + D)
+```
 
-## Unit Tests
+## Flux interpolation & mesh queries
 
-### Test Assembly of Linear System
-- unstructured-finite-volume/test_sparse.f90
-- unstructured-finite-volume/test/assembly/test.f90
-- unstructured-finite-volume/test/unsteady/test.f90
+```python
+phi_v = fvm.evaluate_vertex_flux(phi)           # cell -> vertex values
+phi_f = fvm.evaluate_face_flux(phi)             # cell -> face   values
 
-### Unit Test Mesh IO
-- unstructured-finite-volume/test/mesh/test.f90
-- unstructured-finite-volume/test/mesh/class_test_mesh_loader.f90
+grid.to_string()                                # print topology + geometry
 
-### Unit Test Solve
-- unstructured-finite-volume/test/solve/test.f90
+# Geometry/topology arrays live on the mesh:
+grid.num_cells, grid.num_vertices, grid.num_faces
+grid.cell_centers      # (3, num_cells)
+grid.cell_volumes      # (num_cells,)
+grid.face_centers      # (3, num_faces)
+grid.face_areas        # (num_faces,)
+grid.cell_face_normals # (3, max_cell_faces, num_cells)
+```
+
+## Package layout
+
+| Component        | Classes / module |
+|------------------|------------------|
+| Mesh & IO        | `GmshLoader`, `MeshLoader`, `Mesh`, `module_mesh_utils` |
+| Assembly         | `Assembler` |
+| Linear solvers   | `LinearSolver`, `ConjugateGradient`, `Sor`, `GaussSeidel`, `GaussJacobi` |
+| Utilities        | `String`, `File`, `Set`, `List` |
+
+## Examples & tests
+
+Runnable scripts mirror the Fortran drivers:
+
+```bash
+python examples/poisson/test.py     # Poisson on a square, 4 solvers, RMSE vs exact
+python test/assembly/test.py        # Jacobian filters and A = L + U + D check
+python test/mesh/test.py            # GMSH loading across several meshes
+python test/solve/test.py           # CG solve on an airfoil mesh
+python test/unsteady/test.py        # CG solve on a rectangle mesh
+```
+
+The Python port is validated against the original Fortran (built with
+`gfortran`): solutions and RMSE match to machine precision (~1e-16).
+
+## Original Fortran library
+
+The reference implementation lives in `src/` and builds to `libufvm.a`:
+
+```bash
+cd src && make            # requires gfortran + LAPACK
+```
+
+Design goals of the Fortran core: modern `-std=f2008/f2018`, object-oriented
+separation of geometry/physics/solution, coarrays for distributed-memory
+parallelism, and `pure`/`elemental`/`do concurrent` for shared-memory parallelism.

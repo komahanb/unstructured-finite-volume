@@ -1,0 +1,3 @@
+ SOLVEDsphere.msh ncells=         490  min=   4.9999999999998854       max=   5.0000000000000986       mean=   5.0000000000000009     
+ SOLVEDcylinder-coarse.msh ncells=        1010  min=  0.27233389234016109       max=   9.7740335292763021       mean=   4.9994500179483445     
+ SOLVEDbox-3.msh ncells=        2304  min=   6.6145253893987691E-002  max=   10.759884372658664       mean=   2.9430930128890953     

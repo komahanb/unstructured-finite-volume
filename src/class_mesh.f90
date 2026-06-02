@@ -182,6 +182,9 @@ module class_mesh
      procedure :: create_face_groups
      procedure :: invert_connectivities
 
+     ! Tag lookup - address a physical group by its name
+     procedure :: find_tag_by_name
+
      ! Destructor
      final   :: destroy
 
@@ -489,9 +492,30 @@ contains
        error stop
     end if
 
-    ! call me % create_face_groups()
+    call me % create_face_groups()
 
   end function create_mesh
+
+  !===================================================================!
+  ! Resolve a physical group name to its tag number. Returns -1 if the
+  ! name is not among the named groups read from the mesh file.
+  !===================================================================!
+
+  pure type(integer) function find_tag_by_name(this, name) result(tag)
+
+    class(mesh)      , intent(in) :: this
+    character(len=*) , intent(in) :: name
+    integer :: itag
+
+    tag = -1
+    do itag = 1, this % num_tags
+       if (this % tag_info(itag) % str .eq. name) then
+          tag = this % tag_numbers(itag)
+          return
+       end if
+    end do
+
+  end function find_tag_by_name
 
   impure elemental subroutine create_face_groups(this)
 
@@ -527,7 +551,7 @@ contains
        allocate(group_mask, source = this % face_tags .eq. face_group_number)
 
        associate(&
-            & gname              => this % tag_info(face_group_number), &
+            & gname              => this % tag_info(findloc(this % tag_numbers, face_group_number, dim=1)), &
             & gnumber            => face_group_number, &
             & gnum_faces         => count(group_mask), &
             & gface_numbers      => pack(this % face_numbers, mask = group_mask), &

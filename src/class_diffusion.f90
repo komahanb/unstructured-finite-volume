@@ -37,11 +37,13 @@ module class_diffusion
 
 contains
 
-  pure type(diffusion) function create_isotropic(kappa, source) result(this)
+  pure type(diffusion) function create_isotropic(kappa, source, nvars) result(this)
     real(dp), intent(in)           :: kappa
     real(dp), intent(in), optional :: source
+    integer , intent(in), optional :: nvars
     integer :: i
     this % num_variables = 1
+    if (present(nvars)) this % num_variables = nvars
     this % kmat = 0.0_dp
     do i = 1, 3
        this % kmat(i,i) = kappa
@@ -50,10 +52,12 @@ contains
     if (present(source)) this % src = source
   end function create_isotropic
 
-  pure type(diffusion) function create_tensor(K, source) result(this)
+  pure type(diffusion) function create_tensor(K, source, nvars) result(this)
     real(dp), intent(in)           :: K(3,3)
     real(dp), intent(in), optional :: source
+    integer , intent(in), optional :: nvars
     this % num_variables = 1
+    if (present(nvars)) this % num_variables = nvars
     this % kmat = K
     this % src = 0.0_dp
     if (present(source)) this % src = source

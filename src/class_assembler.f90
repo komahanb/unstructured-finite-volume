@@ -7,6 +7,7 @@ module class_assembler
   use class_boundary_condition, only : boundary_condition, dirichlet, neumann, robin
   use interface_equation      , only : equation
   use class_diffusion         , only : diffusion
+  use class_graph             , only : graph
 
   implicit none
 
@@ -34,11 +35,14 @@ module class_assembler
      ! Number of variables each cell
      integer :: num_variables
 
+     ! Dof / connectivity graph (cells = vertices, interior faces = edges)
+     type(graph) :: g
+
      ! Flux vector
      real(dp), allocatable :: phi(:)
 
-     ! Boundary conditions - one per face tag, addressed by name
-     type(boundary_condition), allocatable :: bcs(:)
+     ! Boundary conditions - one per (face tag, variable), addressed by name
+     type(boundary_condition), allocatable :: bcs(:,:)
 
      ! The pde being discretized (diffusion tensor, source, #variables)
      class(equation), allocatable :: model
@@ -102,21 +106,22 @@ contains
     ! Non symmetric jacobian
     this % symmetry = .true.
 
-    ! Number of unknowns in the problem (currently only "T")
+    ! One variable per cell by default ("T"); set_equation bumps this up
     this % num_variables = 1
 
-    ! Determine the number of state variables to solve based on the
-    ! mesh. In FVM it is the number of cells present.
-    this % num_state_vars = this % grid % num_cells
+    ! Build the dof/connectivity graph and size the system from it. For a
+    ! single field num_state_vars = num_cells, as before.
+    this % g = graph(grid, this % num_variables)
+    this % num_state_vars = this % g % num_dofs()
 
     ! Allocate the flux vector
     allocate(this % phi(this % num_state_vars))
     this % phi = 0
 
-    ! Default every boundary tag to homogeneous dirichlet (phi=0). The
-    ! driver overrides the ones it cares about, by name. Interior faces
-    ! never look this table up.
-    allocate(this % bcs(maxval(this % grid % tag_numbers)))
+    ! Default every (boundary tag, variable) to homogeneous dirichlet
+    ! (phi=0). The driver overrides by name. Interior faces never look
+    ! this table up.
+    allocate(this % bcs(maxval(this % grid % tag_numbers), this % num_variables))
 
     ! Default physics: isotropic unit diffusion, no source - recovers the
     ! old laplace operator. The driver overrides with set_equation.
@@ -133,59 +138,87 @@ contains
   ! from the mesh PhysicalNames; the tag is resolved through the mesh.
   !===================================================================!
 
-  subroutine set_dirichlet(this, name, value)
+  ! The optional `var` targets a single variable; omitted, the bc is set
+  ! on every variable on that boundary.
+  subroutine set_dirichlet(this, name, value, var)
     class(assembler), intent(inout) :: this
     character(len=*), intent(in)    :: name
     real(dp)        , intent(in)    :: value
-    call set_bc(this, this % grid % find_tag_by_name(name), name, dirichlet(value))
+    integer, optional, intent(in)   :: var
+    call set_bc(this, this % grid % find_tag_by_name(name), name, dirichlet(value), var)
   end subroutine set_dirichlet
 
-  subroutine set_neumann(this, name, flux)
+  subroutine set_neumann(this, name, flux, var)
     class(assembler), intent(inout) :: this
     character(len=*), intent(in)    :: name
     real(dp)        , intent(in)    :: flux
-    call set_bc(this, this % grid % find_tag_by_name(name), name, neumann(flux))
+    integer, optional, intent(in)   :: var
+    call set_bc(this, this % grid % find_tag_by_name(name), name, neumann(flux), var)
   end subroutine set_neumann
 
-  subroutine set_robin(this, name, a, b, c)
+  subroutine set_robin(this, name, a, b, c, var)
     class(assembler), intent(inout) :: this
     character(len=*), intent(in)    :: name
     real(dp)        , intent(in)    :: a, b, c
-    call set_bc(this, this % grid % find_tag_by_name(name), name, robin(a,b,c))
+    integer, optional, intent(in)   :: var
+    call set_bc(this, this % grid % find_tag_by_name(name), name, robin(a,b,c), var)
   end subroutine set_robin
 
   ! Convenience for replicating tag-keyed setups without names
-  subroutine set_dirichlet_tag(this, tag, value)
+  subroutine set_dirichlet_tag(this, tag, value, var)
     class(assembler), intent(inout) :: this
     integer , intent(in) :: tag
     real(dp), intent(in) :: value
-    call set_bc(this, tag, "", dirichlet(value))
+    integer, optional, intent(in) :: var
+    call set_bc(this, tag, "", dirichlet(value), var)
   end subroutine set_dirichlet_tag
 
   !===================================================================!
   ! Set the pde being solved (diffusion tensor, source, #variables)
   !===================================================================!
 
+  ! Note: call set_equation BEFORE setting boundary conditions - changing
+  ! the number of variables rebuilds the (tag,variable) bc table.
   subroutine set_equation(this, model)
     class(assembler), intent(inout) :: this
     class(equation) , intent(in)    :: model
     if (allocated(this % model)) deallocate(this % model)
     allocate(this % model, source = model)
+
+    ! Resize the system for this many variables per cell
+    this % num_variables  = model % num_variables
+    this % g % num_variables = this % num_variables
+    this % num_state_vars = this % g % num_dofs()
+
+    if (allocated(this % phi)) deallocate(this % phi)
+    allocate(this % phi(this % num_state_vars)); this % phi = 0
+
+    if (allocated(this % bcs)) deallocate(this % bcs)
+    allocate(this % bcs(maxval(this % grid % tag_numbers), this % num_variables))
   end subroutine set_equation
 
-  ! Stamp a resolved bc into the table (module-private helper)
-  subroutine set_bc(this, tag, name, bc)
+  ! Stamp a resolved bc into the table (module-private helper). With no
+  ! variable index the bc applies to every variable on the boundary.
+  subroutine set_bc(this, tag, name, bc, var)
     class(assembler)        , intent(inout) :: this
     integer                 , intent(in)    :: tag
     character(len=*)        , intent(in)    :: name
     type(boundary_condition), intent(in)    :: bc
-    if (tag .lt. 1 .or. tag .gt. size(this % bcs)) then
+    integer, optional       , intent(in)    :: var
+    integer :: v, vlo, vhi
+    if (tag .lt. 1 .or. tag .gt. size(this % bcs, 1)) then
        write(*,*) "set_bc: unknown boundary '", name, "' -> tag ", tag
        error stop
     end if
-    this % bcs(tag)      = bc
-    this % bcs(tag) % tag  = tag
-    this % bcs(tag) % name = string(name)
+    vlo = 1; vhi = this % num_variables
+    if (present(var)) then
+       vlo = var; vhi = var
+    end if
+    do v = vlo, vhi
+       this % bcs(tag, v)      = bc
+       this % bcs(tag, v) % tag  = tag
+       this % bcs(tag, v) % name = string(name)
+    end do
   end subroutine set_bc
 
   !===================================================================!
@@ -304,9 +337,11 @@ contains
 
     laplace_normal: block
 
-      integer  :: icell, iface
+      integer  :: icell, iface, ivar, p, n
       integer  :: ncell, fcells(2)
       real(dp) :: nf(3), Kf(3,3), keff
+
+      associate(nv => this % g % num_variables)
 
       ! Loop cells
       loop_cells: do icell = 1 , this % grid % num_cells
@@ -314,8 +349,10 @@ contains
          ! Get the faces corresponding to this cell
          associate(faces => this % grid % cell_faces (1:this % grid % num_cell_faces(icell),icell))
 
-           ! Loop faces
-           Aq(icell) = 0.0d0
+           ! Zero this cell's dofs
+           do ivar = 1, nv
+              Aq(this % g % dof(icell,ivar)) = 0.0d0
+           end do
 
            loop_faces: do iface = 1, this % grid % num_cell_faces(icell)
 
@@ -345,45 +382,32 @@ contains
                       ncell = fcells(1)
                    end if
 
-                   ! Interior faces (call tagged physics) (FVM Equation)
-                   ! Aq(icell) = Aq(icell) + farea*(x(ncell)-x(icell))/fdelta
-                   ! for interior faces: ncell .ne. icell
-                   present_filter: if (present(filter)) then
+                   ! Interior face: couple each variable to the same
+                   ! variable in the neighbour cell (decoupled fields).
+                   ! The upper/lower split is by cell index, which for a
+                   ! fixed variable matches the dof ordering.
+                   variables_interior: do ivar = 1, nv
 
-                      !-------------------------------------------------!
-                      ! Assemble part of matrix
-                      !-------------------------------------------------!
+                      p = this % g % dof(icell, ivar)
+                      n = this % g % dof(ncell, ivar)
 
-                      apply_filter: if (filter .eq. this % UPPER_TRIANGLE) then
+                      present_filter: if (present(filter)) then
 
-                         ! Activate Upper Trianglular Filter
-                         if (ncell .gt. icell) then
-                            Aq(icell) = Aq(icell) + keff*farea*(q(ncell))/fdelta
-                         end if
+                         apply_filter: if (filter .eq. this % UPPER_TRIANGLE) then
+                            if (ncell .gt. icell) Aq(p) = Aq(p) + keff*farea*(q(n))/fdelta
+                         else if (filter .eq. this % LOWER_TRIANGLE) then
+                            if (ncell .lt. icell) Aq(p) = Aq(p) + keff*farea*(q(n))/fdelta
+                         else if (filter .eq. this % DIAGONAL) then
+                            Aq(p) = Aq(p) + keff*farea*(-q(p))/fdelta
+                         end if apply_filter
 
-                      else if (filter .eq. this % LOWER_TRIANGLE) then
+                      else
 
-                         ! Activate Lower Trianglular Filter
-                         if (ncell .lt. icell) then
-                            Aq(icell) = Aq(icell) + keff*farea*(q(ncell))/fdelta
-                         end if
+                         Aq(p) = Aq(p) + keff*farea*(q(n)-q(p))/fdelta
 
-                      else if (filter .eq. this % DIAGONAL) then
+                      end if present_filter
 
-                         ! Activate DIAGONAL Trianglular Filter (note icell)
-                         Aq(icell) = Aq(icell) + keff*farea*(-q(icell))/fdelta
-
-                      end if apply_filter
-
-                   else
-
-                      !-------------------------------------------------!
-                      ! Assemble Full of matrix
-                      !-------------------------------------------------!
-
-                      Aq(icell) = Aq(icell) + keff*farea*(q(ncell)-q(icell))/fdelta
-
-                   end if present_filter
+                   end do variables_interior
 
                 else
 
@@ -395,17 +419,21 @@ contains
                    ! the phi_p (diagonal) part lives in the operator; the
                    ! constant goes to the rhs in get_source. A neumann bc
                    ! has lhs_coeff = 0, so it adds nothing here.
-                   if (present(filter)) then
-                      ! If diagonals are flagged
-                      if (filter .eq. this % DIAGONAL) then
-                         Aq(icell) = Aq(icell) &
-                              & + this % bcs(ftag) % lhs_coeff(farea, fdelta, keff)*q(icell)
+                   variables_boundary: do ivar = 1, nv
+
+                      p = this % g % dof(icell, ivar)
+
+                      if (present(filter)) then
+                         if (filter .eq. this % DIAGONAL) then
+                            Aq(p) = Aq(p) &
+                                 & + this % bcs(ftag,ivar) % lhs_coeff(farea, fdelta, keff)*q(p)
+                         end if
+                      else
+                         Aq(p) = Aq(p) &
+                              & + this % bcs(ftag,ivar) % lhs_coeff(farea, fdelta, keff)*q(p)
                       end if
-                   else
-                      ! Add diagonal if filter is not supplied
-                      Aq(icell) = Aq(icell) &
-                           & + this % bcs(ftag) % lhs_coeff(farea, fdelta, keff)*q(icell)
-                   end if
+
+                   end do variables_boundary
 
                 end if domain
 
@@ -416,6 +444,8 @@ contains
          end associate
 
       end do loop_cells
+
+      end associate
 
     end block laplace_normal
 
@@ -507,7 +537,7 @@ contains
     evaluate: block
 
     ! Local variables
-    integer  :: icell, iface, gface
+    integer  :: icell, iface, gface, ivar, jcell
     integer  :: iv, gv, nfv
     real(dp) :: nf(3), dunit(3), kvec(3), gradt(3)
     real(dp) :: t1(3), t2(3), fc(3), rv(3), Kf(3,3)
@@ -515,13 +545,21 @@ contains
     real(dp) :: av(8), bv(8), pv(8)             ! in-face coords (a,b) and phi per vertex
     real(dp) :: abar, bbar, pbar, da, db, dphi
     real(dp) :: Saa, Sab, Sbb, Sap, Sbp, det, ca, cb
-    type(real(dp)) , allocatable :: phiv(:)
-
-    ! Evaluate nodal values of phi
-    call this % evaluate_vertex_flux(phiv, phic)
+    type(real(dp)) , allocatable :: phiv(:), phic_v(:)
 
     ! Make space for skew source terms
     ss = real(0,dp)
+
+    allocate(phic_v(this % grid % num_cells))
+
+    ! One field at a time - gather its cell values, interpolate to
+    ! vertices, then add its non-orthogonal correction to its own dofs.
+    variables: do ivar = 1, this % g % num_variables
+
+    do jcell = 1, this % grid % num_cells
+       phic_v(jcell) = phic(this % g % dof(jcell, ivar))
+    end do
+    call this % evaluate_vertex_flux(phiv, phic_v)
 
     loop_cells: do icell = 1, this % grid % num_cells
 
@@ -608,8 +646,10 @@ contains
                  ! Deferred non-orthogonal correction flux, projected
                  ! through the diffusion tensor: Area*((K grad_t) . kvec)
                  Kf = this % model % diffusion_tensor(fc)
-                 ss(icell) = ss(icell) &
+                 associate(p => this % g % dof(icell, ivar))
+                 ss(p) = ss(p) &
                       & + this % grid % face_areas(gface)*dot_product(matmul(Kf, gradt), kvec)
+                 end associate
 
             end if domain
 
@@ -619,8 +659,11 @@ contains
 
       end do loop_cells
 
+      end do variables
+
       ! Deallocate the vertex flux values
       deallocate(phiv)
+      deallocate(phic_v)
 
     end block evaluate
 
@@ -633,11 +676,12 @@ contains
 
     add_boundary_terms: block
 
-      integer  :: icell, iface
+      integer  :: icell, iface, ivar
       real(dp) :: nf(3), Kf(3,3), keff
 
+      associate(nv => this % g % num_variables)
+
       ! Loop cells
-      !loop_cells: do icell = 1, this % grid % num_cells
       loop_cells: do concurrent (icell = 1:this % grid % num_cells)
 
          ! Get the faces corresponding to this cell
@@ -646,8 +690,10 @@ contains
               & (1:this % grid % num_cell_faces(icell),icell) &
               & )
 
-           ! Loop faces
-           b(icell) = 0.0d0
+           ! Zero this cell's dofs
+           do ivar = 1, nv
+              b(this % g % dof(icell,ivar)) = 0.0d0
+           end do
 
          loop_faces: do iface = 1, this % grid % num_cell_faces(icell)
 
@@ -657,20 +703,19 @@ contains
                  & farea  => this % grid % face_areas(faces(iface))  &
                  & )
 
-              ! Interpolate to get face gammas
-              !print *, iface, faces(iface), ftag, fdelta, farea !, !fgamma
-
-              ! Boundary face: add the bc's constant to the rhs (the
-              ! phi_p part of the same bc went to the diagonal in the
-              ! jacobian-vector product). dirichlet/neumann/robin all
-              ! come out of rhs_coeff.
+              ! Boundary face: add each variable's bc constant to the rhs
+              ! (the phi_p part went to the diagonal in the jvp).
               boundary_faces: if (this % grid % num_face_cells(faces(iface)) .eq. 1) then
 
                  nf   = this % grid % cell_face_normals(1:3, iface, icell)
                  Kf   = this % model % diffusion_tensor(this % grid % face_centers(1:3, faces(iface)))
                  keff = dot_product(nf, matmul(Kf, nf))
 
-                 b(icell) = b(icell) + this % bcs(ftag) % rhs_coeff(farea, fdelta, keff)
+                 do ivar = 1, nv
+                    associate(p => this % g % dof(icell,ivar))
+                    b(p) = b(p) + this % bcs(ftag,ivar) % rhs_coeff(farea, fdelta, keff)
+                    end associate
+                 end do
 
               end if boundary_faces
 
@@ -682,11 +727,15 @@ contains
 
       end do loop_cells
 
+      end associate
+
     end block add_boundary_terms
 
     cell_source: block
 
-      integer :: icell
+      integer :: icell, ivar
+
+      associate(nv => this % g % num_variables)
 
       loop_cells: do concurrent (icell = 1 : this % grid % num_cells)
 
@@ -695,11 +744,17 @@ contains
               & cell_volume => this % grid % cell_volumes(icell)&
               & )
 
-           b(icell) = b(icell) + this % model % source(x)*cell_volume
+           do ivar = 1, nv
+              associate(p => this % g % dof(icell,ivar))
+              b(p) = b(p) + this % model % source(x)*cell_volume
+              end associate
+           end do
 
          end associate
 
       end do loop_cells
+
+      end associate
 
     end block cell_source
 

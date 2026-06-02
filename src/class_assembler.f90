@@ -5,6 +5,8 @@ module class_assembler
   use class_mesh              , only : mesh
   use class_string            , only : string
   use class_boundary_condition, only : boundary_condition, dirichlet, neumann, robin
+  use interface_equation      , only : equation
+  use class_diffusion         , only : diffusion
 
   implicit none
 
@@ -38,6 +40,9 @@ module class_assembler
      ! Boundary conditions - one per face tag, addressed by name
      type(boundary_condition), allocatable :: bcs(:)
 
+     ! The pde being discretized (diffusion tensor, source, #variables)
+     class(equation), allocatable :: model
+
      ! Matrix filters
      integer :: DIAGONAL       = 0
      integer :: LOWER_TRIANGLE = -1
@@ -52,6 +57,9 @@ module class_assembler
      procedure :: set_neumann
      procedure :: set_robin
      procedure :: set_dirichlet_tag
+
+     ! The pde
+     procedure :: set_equation
 
      ! Evaluation routines
      procedure :: evaluate_vertex_flux
@@ -110,6 +118,10 @@ contains
     ! never look this table up.
     allocate(this % bcs(maxval(this % grid % tag_numbers)))
 
+    ! Default physics: isotropic unit diffusion, no source - recovers the
+    ! old laplace operator. The driver overrides with set_equation.
+    allocate(this % model, source = diffusion(1.0_dp))
+
     this % DIAGONAL       = 0
     this % LOWER_TRIANGLE = -1
     this % UPPER_TRIANGLE = 1
@@ -149,6 +161,17 @@ contains
     real(dp), intent(in) :: value
     call set_bc(this, tag, "", dirichlet(value))
   end subroutine set_dirichlet_tag
+
+  !===================================================================!
+  ! Set the pde being solved (diffusion tensor, source, #variables)
+  !===================================================================!
+
+  subroutine set_equation(this, model)
+    class(assembler), intent(inout) :: this
+    class(equation) , intent(in)    :: model
+    if (allocated(this % model)) deallocate(this % model)
+    allocate(this % model, source = model)
+  end subroutine set_equation
 
   ! Stamp a resolved bc into the table (module-private helper)
   subroutine set_bc(this, tag, name, bc)
@@ -281,8 +304,9 @@ contains
 
     laplace_normal: block
 
-      integer :: icell, iface
-      integer :: ncell, fcells(2)
+      integer  :: icell, iface
+      integer  :: ncell, fcells(2)
+      real(dp) :: nf(3), Kf(3,3), keff
 
       ! Loop cells
       loop_cells: do icell = 1 , this % grid % num_cells
@@ -302,8 +326,10 @@ contains
                    & num_face_cells => this % grid % num_face_cells(faces(iface)) &
                    & )
 
-                ! Interpolate to get face gammas
-                !print *, iface, faces(iface), ftag, fdelta, farea !, !fgamma
+                ! Effective normal conductivity from the diffusion tensor
+                nf   = this % grid % cell_face_normals(1:3, iface, icell)
+                Kf   = this % model % diffusion_tensor(this % grid % face_centers(1:3, faces(iface)))
+                keff = dot_product(nf, matmul(Kf, nf))
 
                 ! Add contribution from internal faces
                 domain: if (num_face_cells .eq. 2) then
@@ -332,20 +358,20 @@ contains
 
                          ! Activate Upper Trianglular Filter
                          if (ncell .gt. icell) then
-                            Aq(icell) = Aq(icell) + farea*(q(ncell))/fdelta
+                            Aq(icell) = Aq(icell) + keff*farea*(q(ncell))/fdelta
                          end if
 
                       else if (filter .eq. this % LOWER_TRIANGLE) then
 
                          ! Activate Lower Trianglular Filter
                          if (ncell .lt. icell) then
-                            Aq(icell) = Aq(icell) + farea*(q(ncell))/fdelta
+                            Aq(icell) = Aq(icell) + keff*farea*(q(ncell))/fdelta
                          end if
 
                       else if (filter .eq. this % DIAGONAL) then
 
                          ! Activate DIAGONAL Trianglular Filter (note icell)
-                         Aq(icell) = Aq(icell) + farea*(-q(icell))/fdelta
+                         Aq(icell) = Aq(icell) + keff*farea*(-q(icell))/fdelta
 
                       end if apply_filter
 
@@ -355,7 +381,7 @@ contains
                       ! Assemble Full of matrix
                       !-------------------------------------------------!
 
-                      Aq(icell) = Aq(icell) + farea*(q(ncell)-q(icell))/fdelta
+                      Aq(icell) = Aq(icell) + keff*farea*(q(ncell)-q(icell))/fdelta
 
                    end if present_filter
 
@@ -373,12 +399,12 @@ contains
                       ! If diagonals are flagged
                       if (filter .eq. this % DIAGONAL) then
                          Aq(icell) = Aq(icell) &
-                              & + this % bcs(ftag) % lhs_coeff(farea, fdelta)*q(icell)
+                              & + this % bcs(ftag) % lhs_coeff(farea, fdelta, keff)*q(icell)
                       end if
                    else
                       ! Add diagonal if filter is not supplied
                       Aq(icell) = Aq(icell) &
-                           & + this % bcs(ftag) % lhs_coeff(farea, fdelta)*q(icell)
+                           & + this % bcs(ftag) % lhs_coeff(farea, fdelta, keff)*q(icell)
                    end if
 
                 end if domain
@@ -484,7 +510,7 @@ contains
     integer  :: icell, iface, gface
     integer  :: iv, gv, nfv
     real(dp) :: nf(3), dunit(3), kvec(3), gradt(3)
-    real(dp) :: t1(3), t2(3), fc(3), rv(3)
+    real(dp) :: t1(3), t2(3), fc(3), rv(3), Kf(3,3)
     real(dp) :: cosang, dnorm
     real(dp) :: av(8), bv(8), pv(8)             ! in-face coords (a,b) and phi per vertex
     real(dp) :: abar, bbar, pbar, da, db, dphi
@@ -579,9 +605,11 @@ contains
                     gradt = 0.0_dp     ! degenerate face: skip correction
                  end if
 
-                 ! Deferred non-orthogonal correction flux: Area*(grad_t . kvec)
+                 ! Deferred non-orthogonal correction flux, projected
+                 ! through the diffusion tensor: Area*((K grad_t) . kvec)
+                 Kf = this % model % diffusion_tensor(fc)
                  ss(icell) = ss(icell) &
-                      & + this % grid % face_areas(gface)*dot_product(gradt, kvec)
+                      & + this % grid % face_areas(gface)*dot_product(matmul(Kf, gradt), kvec)
 
             end if domain
 
@@ -605,7 +633,8 @@ contains
 
     add_boundary_terms: block
 
-      integer :: icell, iface
+      integer  :: icell, iface
+      real(dp) :: nf(3), Kf(3,3), keff
 
       ! Loop cells
       !loop_cells: do icell = 1, this % grid % num_cells
@@ -637,7 +666,11 @@ contains
               ! come out of rhs_coeff.
               boundary_faces: if (this % grid % num_face_cells(faces(iface)) .eq. 1) then
 
-                 b(icell) = b(icell) + this % bcs(ftag) % rhs_coeff(farea, fdelta)
+                 nf   = this % grid % cell_face_normals(1:3, iface, icell)
+                 Kf   = this % model % diffusion_tensor(this % grid % face_centers(1:3, faces(iface)))
+                 keff = dot_product(nf, matmul(Kf, nf))
+
+                 b(icell) = b(icell) + this % bcs(ftag) % rhs_coeff(farea, fdelta, keff)
 
               end if boundary_faces
 
@@ -662,7 +695,7 @@ contains
               & cell_volume => this % grid % cell_volumes(icell)&
               & )
 
-           b(icell) = b(icell) + evaluate_source(x)*cell_volume
+           b(icell) = b(icell) + this % model % source(x)*cell_volume
 
          end associate
 
@@ -671,14 +704,6 @@ contains
     end block cell_source
 
   end subroutine get_source
-
-  pure type(real(dp)) function evaluate_source(x)
-
-    real(dp), intent(in) :: x(3)
-
-    evaluate_source = 0.0 !sin(x(1)) !1.0d0 !-1.0d0 !sin(x(1)) + cos(x(2))
-
-  end function evaluate_source
 
   !===================================================================!
   ! Write solution to file

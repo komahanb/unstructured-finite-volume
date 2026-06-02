@@ -79,12 +79,12 @@ contains
   ! Coefficient on phi_p contributed to the diagonal of the operator
   !===================================================================!
 
-  pure real(dp) function lhs_coeff(this, area, delta)
+  pure real(dp) function lhs_coeff(this, area, delta, kappa)
     class(boundary_condition), intent(in) :: this
-    real(dp), intent(in) :: area, delta
+    real(dp), intent(in) :: area, delta, kappa   ! kappa = n^T K n (normal conductivity)
     real(dp) :: denom
     denom = this % a + this % b/delta
-    lhs_coeff = - area*this % a/(delta*denom)
+    lhs_coeff = - kappa*area*this % a/(delta*denom)
   end function lhs_coeff
 
   !===================================================================!
@@ -92,12 +92,12 @@ contains
   ! carries the sign for moving to the rhs)
   !===================================================================!
 
-  pure real(dp) function rhs_coeff(this, area, delta)
+  pure real(dp) function rhs_coeff(this, area, delta, kappa)
     class(boundary_condition), intent(in) :: this
-    real(dp), intent(in) :: area, delta
+    real(dp), intent(in) :: area, delta, kappa   ! kappa = n^T K n (normal conductivity)
     real(dp) :: denom
     denom = this % a + this % b/delta
-    rhs_coeff = - area*this % c/(delta*denom)
+    rhs_coeff = - kappa*area*this % c/(delta*denom)
   end function rhs_coeff
 
   !===================================================================!

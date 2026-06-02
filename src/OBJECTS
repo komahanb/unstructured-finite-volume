@@ -9,6 +9,8 @@ class_gmsh_loader.o \
 class_mesh.o \
 class_paraview_writer.o \
 class_boundary_condition.o \
+interface_equation.o \
+class_diffusion.o \
 class_assembler.o \
 interface_linear_solver.o \
 class_conjugate_gradient.o \

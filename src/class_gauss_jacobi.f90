@@ -114,7 +114,7 @@ contains
 
     update_norm = huge(1.0d0);
     iter = 1;
-    outer_iterations: do while (update_norm .gt. this % max_tol)
+    outer_iterations: do while (update_norm .gt. this % max_tol .and. iter .le. this % max_it)
 
        xold = x
 
@@ -140,6 +140,12 @@ contains
  
     if (this % print_level .eq. -1) then
        close(13)
+    end if
+
+    ! Safety net: report if the outer (deferred-correction) loop was
+    ! capped at max_it without meeting the tolerance.
+    if (update_norm .gt. this % max_tol) then
+       write(*,*) "warning: outer correction loop hit max_it without convergence; update_norm =", update_norm
     end if
 
     deallocate(xold)

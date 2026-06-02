@@ -414,8 +414,14 @@ contains
     evaluate: block
 
     ! Local variables
-    real(8) :: scale
-    integer :: icell, iface, gface
+    integer  :: icell, iface, gface
+    integer  :: iv, gv, nfv
+    real(dp) :: nf(3), dunit(3), kvec(3), gradt(3)
+    real(dp) :: t1(3), t2(3), fc(3), rv(3)
+    real(dp) :: cosang, dnorm
+    real(dp) :: av(8), bv(8), pv(8)             ! in-face coords (a,b) and phi per vertex
+    real(dp) :: abar, bbar, pbar, da, db, dphi
+    real(dp) :: Saa, Sab, Sbb, Sap, Sbp, det, ca, cb
     type(real(dp)) , allocatable :: phiv(:)
 
     ! Evaluate nodal values of phi
@@ -429,8 +435,7 @@ contains
        ! Get the faces corresponding to this cell
        associate( &
             & faces => this % grid % cell_faces &
-            & (1:this % grid % num_cell_faces(icell),icell), &
-            & highest_tag => maxval(this % grid % tag_numbers) &
+            & (1:this % grid % num_cell_faces(icell),icell) &
             & )
 
            loop_faces : do iface = 1, this % grid % num_cell_faces(icell)
@@ -438,24 +443,78 @@ contains
               ! Global face number
               gface = faces(iface)
 
-              ! Ignore boundary faces from skew source evaluation
+              ! Skew (non-orthogonal) correction applies to interior faces only
               domain: if (this % grid % num_face_cells(gface) .eq. 2) then
 
-                 ! Compute tangent.dot.lvector/delta
-                 scale = dot_product(&
-                      & this % grid % lvec(1:3,gface), &
-                      & this % grid % cell_face_tangents(1:3,1,iface,icell) &
-                      & )/this % grid % face_deltas(gface)
+                 ! Unit face normal as seen from this cell
+                 nf = this % grid % cell_face_normals(1:3,iface,icell)
 
-                 ! Get the vertices associated with this face
-                 associate(&
-                      & fvertices => this % grid % face_vertices( &
-                      & 1:this % grid % num_face_vertices(gface), gface)&
-                      & )
+                 ! Unit centroid-to-centroid vector
+                 dnorm  = norm2(this % grid % lvec(1:3,gface))
+                 dunit  = this % grid % lvec(1:3,gface)/dnorm
+                 cosang = dot_product(dunit, nf)
 
-                 ss(icell) = ss(icell) + scale*(phiv(fvertices(2))-phiv(fvertices(1)))
+                 ! Minimum-correction vector: the component of the face
+                 ! normal orthogonal to the centroid vector. It is bounded
+                 ! (|kvec| = |sin(angle)| <= 1), so the explicit correction
+                 ! stays finite on highly skewed/non-orthogonal cells where
+                 ! the old (lvec.t)/delta form blew up (delta -> 0).
+                 kvec = nf - cosang*dunit
 
-               end associate
+                 ! Least-squares tangential gradient over ALL face vertices.
+                 ! Work in the in-face coordinates (a,b) spanned by the
+                 ! orthonormal face-tangent pair (t1,t2), fitting
+                 !   phi ~ phi0 + ca*a + cb*b
+                 ! so grad_t = ca*t1 + cb*t2 lies in the face plane. For a
+                 ! triangle (3 pts, 3 unknowns) this is exact; for a quad it
+                 ! is a least-squares plane. More accurate than a single-edge
+                 ! difference on stretched/warped faces.
+                 t1  = this % grid % cell_face_tangents(1:3,1,iface,icell)
+                 t2  = this % grid % cell_face_tangents(1:3,2,iface,icell)
+                 fc  = this % grid % face_centers(1:3,gface)
+                 nfv = this % grid % num_face_vertices(gface)
+
+                 abar = 0.0_dp; bbar = 0.0_dp; pbar = 0.0_dp
+                 do iv = 1, nfv
+                    gv = this % grid % face_vertices(iv, gface)
+                    rv = this % grid % vertices(1:3,gv) - fc
+                    av(iv) = dot_product(rv, t1)
+                    bv(iv) = dot_product(rv, t2)
+                    pv(iv) = phiv(gv)
+                    abar = abar + av(iv)
+                    bbar = bbar + bv(iv)
+                    pbar = pbar + pv(iv)
+                 end do
+                 abar = abar/real(nfv,dp)
+                 bbar = bbar/real(nfv,dp)
+                 pbar = pbar/real(nfv,dp)
+
+                 Saa = 0.0_dp; Sab = 0.0_dp; Sbb = 0.0_dp
+                 Sap = 0.0_dp; Sbp = 0.0_dp
+                 do iv = 1, nfv
+                    da   = av(iv) - abar
+                    db   = bv(iv) - bbar
+                    dphi = pv(iv) - pbar
+                    Saa  = Saa + da*da
+                    Sab  = Sab + da*db
+                    Sbb  = Sbb + db*db
+                    Sap  = Sap + da*dphi
+                    Sbp  = Sbp + db*dphi
+                 end do
+
+                 ! Solve the 2x2 normal equations for the in-plane slopes
+                 det = Saa*Sbb - Sab*Sab
+                 if (abs(det) .gt. tiny(1.0_dp)) then
+                    ca    = (Sbb*Sap - Sab*Sbp)/det
+                    cb    = (Saa*Sbp - Sab*Sap)/det
+                    gradt = ca*t1 + cb*t2
+                 else
+                    gradt = 0.0_dp     ! degenerate face: skip correction
+                 end if
+
+                 ! Deferred non-orthogonal correction flux: Area*(grad_t . kvec)
+                 ss(icell) = ss(icell) &
+                      & + this % grid % face_areas(gface)*dot_product(gradt, kvec)
 
             end if domain
 

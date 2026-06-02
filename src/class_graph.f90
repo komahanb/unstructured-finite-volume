@@ -46,6 +46,8 @@ module class_graph
 
      procedure :: dof
      procedure :: num_dofs
+     procedure :: partition
+     procedure :: edge_cut
      procedure :: print
 
   end type graph
@@ -109,6 +111,87 @@ contains
     class(graph), intent(in) :: this
     num_dofs = this % num_vertices * this % num_variables
   end function num_dofs
+
+  !===================================================================!
+  ! Partition the vertices into nparts pieces and stamp vertex % part.
+  !
+  ! This is the serial placeholder: a breadth-first ordering of the
+  ! graph cut into nparts balanced contiguous chunks. bfs keeps
+  ! neighbours close so the chunks stay mostly connected and the cut is
+  ! reasonable. (KB: swap this body for a parmetis call - same in/out,
+  ! the graph already holds the adjacency parmetis wants.)
+  !===================================================================!
+
+  subroutine partition(this, nparts)
+
+    class(graph) , intent(inout) :: this
+    integer      , intent(in)    :: nparts
+
+    integer, allocatable :: xadj(:), adj(:), ptr(:), order(:), queue(:)
+    logical, allocatable :: seen(:)
+    integer :: nv, e, i, v, w, pos, qh, qt, start
+
+    nv = this % num_vertices
+
+    ! Compressed adjacency (csr) from the undirected edge list
+    allocate(xadj(nv+1)); xadj = 0
+    do e = 1, this % num_edges
+       xadj(this % edges(e) % tail + 1) = xadj(this % edges(e) % tail + 1) + 1
+       xadj(this % edges(e) % head + 1) = xadj(this % edges(e) % head + 1) + 1
+    end do
+    xadj(1) = 1
+    do i = 1, nv
+       xadj(i+1) = xadj(i+1) + xadj(i)
+    end do
+    allocate(adj(xadj(nv+1)-1))
+    allocate(ptr(nv)); ptr = xadj(1:nv)
+    do e = 1, this % num_edges
+       associate(t => this % edges(e) % tail, h => this % edges(e) % head)
+       adj(ptr(t)) = h; ptr(t) = ptr(t) + 1
+       adj(ptr(h)) = t; ptr(h) = ptr(h) + 1
+       end associate
+    end do
+
+    ! Breadth-first ordering (restart for disconnected components)
+    allocate(order(nv), queue(nv), seen(nv)); seen = .false.
+    pos = 0; qh = 1; qt = 0
+    do start = 1, nv
+       if (seen(start)) cycle
+       qt = qt + 1; queue(qt) = start; seen(start) = .true.
+       do while (qh .le. qt)
+          v = queue(qh); qh = qh + 1
+          pos = pos + 1; order(pos) = v
+          do i = xadj(v), xadj(v+1)-1
+             w = adj(i)
+             if (.not. seen(w)) then
+                seen(w) = .true.; qt = qt + 1; queue(qt) = w
+             end if
+          end do
+       end do
+    end do
+
+    ! Cut the bfs order into nparts balanced contiguous chunks
+    do pos = 1, nv
+       this % vertices(order(pos)) % part = (pos-1)*nparts/nv + 1
+    end do
+
+  end subroutine partition
+
+  !===================================================================!
+  ! Number of edges whose endpoints lie in different partitions.
+  !===================================================================!
+
+  pure type(integer) function edge_cut(this)
+    class(graph), intent(in) :: this
+    integer :: e
+    edge_cut = 0
+    do e = 1, this % num_edges
+       if (this % vertices(this % edges(e) % tail) % part .ne. &
+            & this % vertices(this % edges(e) % head) % part) then
+          edge_cut = edge_cut + 1
+       end if
+    end do
+  end function edge_cut
 
   subroutine print(this)
     class(graph), intent(in) :: this

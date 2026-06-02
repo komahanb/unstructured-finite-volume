@@ -6,3 +6,7 @@
 *.dat
 *.log
 *.pdf
+lib/
+*.vtu
+test/*/run
+examples/*/run

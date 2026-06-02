@@ -766,76 +766,33 @@ contains
 
   subroutine write_solution(this, filename, phic)
 
-    use class_paraview_writer, only  : paraview_writer
+    use class_paraview_writer, only : paraview_writer
 
-    class(assembler), intent(in)  :: this
-    character(len=*), intent(in)  :: filename
-    character(len=:), allocatable :: path
-    character(len=:), allocatable :: new_name
-    real(dp)        , intent(in)  :: phic(:)
-    integer                       ::  i, ierr
-    real(dp)        , allocatable :: phiv(:)
+    class(assembler), intent(in) :: this
+    character(len=*), intent(in) :: filename
+    real(dp)        , intent(in) :: phic(:)
 
     class(paraview_writer), allocatable :: pwriter
+    real(dp)    , allocatable :: cellfields(:,:)   ! (cell, variable)
+    type(string), allocatable :: labels(:)
+    integer :: icell, ivar, nv
+    character(len=16) :: vname
+
+    ! Scatter the flat dof vector into per-variable cell fields and write
+    ! them all (3d, any element type) through the paraview writer.
+    nv = this % g % num_variables
+    allocate(cellfields(this % grid % num_cells, nv))
+    allocate(labels(nv))
+    do ivar = 1, nv
+       do icell = 1, this % grid % num_cells
+          cellfields(icell, ivar) = phic(this % g % dof(icell, ivar))
+       end do
+       write(vname,'(a,i0)') "phi", ivar
+       labels(ivar) = string(trim(vname))
+    end do
 
     allocate(pwriter, source = paraview_writer(this % grid))
-
-    call pwriter % write('paraview.vtu'//char(0))
-
-    if (allocated(pwriter)) deallocate(pwriter)
-
-    ! Open resource
-    path = trim(filename)
-
-    open(unit=90, file=path, iostat= ierr)
-    if (ierr .ne. 0) then
-       write(*,'("  >> Opening file ", 39A, " failed")') path
-       return
-    end if
-
-    ! Compute vertex values by interpolating cell center values
-    call this % evaluate_vertex_flux(phiv, phic)
-
-    ! Write header
-    write(90, *) 'TITLE = "FVM-Laplace"'
-    write(90, *) 'VARIABLES = "x" "y"  "T"'
-
-    !-----------------------------------------------------------------!
-    ! Write Triangles/Quads (works only for homogeneous elements)
-    !-----------------------------------------------------------------!
-
-    if ( maxval(this % grid % num_cell_vertices) .eq. 4 ) then
-       write(90, *) &
-            & 'ZONE T="Temperature", N=', this % grid % num_vertices, &
-            & ', E=', this % grid % num_cells, &
-            & ', DATAPACKING=POINT, ZONETYPE=FEQUADRILATERAL'
-    else
-       write(90, *) &
-            & 'ZONE T="Temperature", N=', this % grid % num_vertices, &
-            & ', E=', this % grid % num_cells, &
-            & ', DATAPACKING=POINT, ZONETYPE=FETRIANGLE'
-    end if
-
-    ! Write vertices
-    do i = 1, this % grid % num_vertices
-       write(90,*) this % grid % vertices(1:2,i), phiv(i)
-    end do
-
-    ! Write cell connectivities
-    do i = 1, this % grid % num_cells
-       write(90,*) this % grid % cell_vertices(1:this % grid % num_cell_vertices(i),i)
-    end do
-
-    !-----------------------------------------------------------------!
-    ! Write Other types of elements too
-    !-----------------------------------------------------------------!
-
-    ! Close resource
-    close(90)
-
-    if (allocated(path)) deallocate(path)
-    if (allocated(new_name)) deallocate(new_name)
-    if (allocated(phiv)) deallocate(phiv)
+    call pwriter % write(trim(filename), cellfields, labels)
 
   end subroutine write_solution
 

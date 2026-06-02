@@ -47,6 +47,12 @@ module class_assembler
      ! The pde being discretized (diffusion tensor, source, #variables)
      class(equation), allocatable :: model
 
+     ! Transient (backward euler) support. The operator becomes
+     ! (M/dt - A) and the rhs (M/dt) phi_old - b, with M = cell volume.
+     logical               :: transient = .false.
+     real(dp)              :: dt = 0.0_dp
+     real(dp), allocatable :: phi_old(:)
+
      ! Matrix filters
      integer :: DIAGONAL       = 0
      integer :: LOWER_TRIANGLE = -1
@@ -64,6 +70,9 @@ module class_assembler
 
      ! The pde
      procedure :: set_equation
+
+     ! Transient marching (backward euler)
+     procedure :: set_transient
 
      ! Evaluation routines
      procedure :: evaluate_vertex_flux
@@ -195,7 +204,26 @@ contains
 
     if (allocated(this % bcs)) deallocate(this % bcs)
     allocate(this % bcs(maxval(this % grid % tag_numbers), this % num_variables))
+
+    if (this % transient) then
+       if (allocated(this % phi_old)) deallocate(this % phi_old)
+       allocate(this % phi_old(this % num_state_vars)); this % phi_old = 0.0_dp
+    end if
   end subroutine set_equation
+
+  !===================================================================!
+  ! Enable backward-euler transient marching with step dt. The class_-
+  ! time_integrator advances phi_old between solves.
+  !===================================================================!
+
+  subroutine set_transient(this, dt)
+    class(assembler), intent(inout) :: this
+    real(dp)        , intent(in)    :: dt
+    this % transient = .true.
+    this % dt = dt
+    if (allocated(this % phi_old)) deallocate(this % phi_old)
+    allocate(this % phi_old(this % num_state_vars)); this % phi_old = 0.0_dp
+  end subroutine set_transient
 
   ! Stamp a resolved bc into the table (module-private helper). With no
   ! variable index the bc applies to every variable on the boundary.
@@ -440,6 +468,22 @@ contains
               end associate
 
            end do loop_faces
+
+           ! Transient: the operator is (M/dt - A). Negate the spatial
+           ! part assembled above and add the mass term M/dt to the
+           ! diagonal (full and DIAGONAL filter only).
+           if (this % transient) then
+              do ivar = 1, nv
+                 p = this % g % dof(icell, ivar)
+                 Aq(p) = -Aq(p)
+                 if (present(filter)) then
+                    if (filter .eq. this % DIAGONAL) &
+                         & Aq(p) = Aq(p) + this % grid % cell_volumes(icell)/this % dt*q(p)
+                 else
+                    Aq(p) = Aq(p) + this % grid % cell_volumes(icell)/this % dt*q(p)
+                 end if
+              end do
+           end if
 
          end associate
 
@@ -757,6 +801,22 @@ contains
       end associate
 
     end block cell_source
+
+    ! Transient: rhs becomes (M/dt) phi_old - b_steady
+    transient_rhs: block
+      integer :: icell, ivar
+      if (this % transient) then
+         associate(nv => this % g % num_variables)
+         do concurrent (icell = 1 : this % grid % num_cells)
+            do ivar = 1, nv
+               associate(p => this % g % dof(icell, ivar))
+               b(p) = this % grid % cell_volumes(icell)/this % dt*this % phi_old(p) - b(p)
+               end associate
+            end do
+         end do
+         end associate
+      end if
+    end block transient_rhs
 
   end subroutine get_source
 

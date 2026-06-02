@@ -48,6 +48,12 @@ module class_config
      real(dp)     :: omega   = 1.5_dp
      real(dp)     :: max_tol = 1.0d-12
      integer      :: max_it  = 200
+
+     ! Transient marching - dt > 0 turns it on (backward euler)
+     real(dp)     :: dt     = 0.0_dp
+     real(dp)     :: tinit  = 0.0_dp
+     real(dp)     :: tfinal = 0.0_dp
+
      type(string) :: output
 
    contains
@@ -108,6 +114,9 @@ contains
        case ("omega");    this % omega   = tok(2) % asreal()
        case ("max_tol");  this % max_tol = tok(2) % asreal()
        case ("max_it");   this % max_it  = tok(2) % asinteger()
+       case ("dt");       this % dt      = tok(2) % asreal()
+       case ("t_init");   this % tinit   = tok(2) % asreal()
+       case ("t_final");  this % tfinal  = tok(2) % asreal()
        case ("output");   this % output  = string(trim(tok(2) % str))
 
        case ("boundary")

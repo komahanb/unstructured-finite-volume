@@ -20,6 +20,7 @@ program solver
   use class_sor                , only : sor
   use class_gauss_seidel       , only : gauss_seidel
   use class_gauss_jacobi       , only : gauss_jacobi
+  use class_time_integrator    , only : time_integrator
   use class_paraview_writer    , only : paraview_writer
   use class_string             , only : string
 
@@ -31,8 +32,9 @@ program solver
   class(mesh)         , allocatable  :: grid
   class(assembler)    , allocatable  :: fvm
   class(linear_solver), allocatable  :: lsolver
+  type(time_integrator)              :: ti
   class(paraview_writer), allocatable :: pw
-  real(dp), allocatable              :: x(:)
+  real(dp), allocatable              :: x(:), phi0(:)
   type(string)                       :: labels(1)
   integer                            :: i
 
@@ -71,27 +73,38 @@ program solver
      end select
   end do
 
-  ! Linear lsolver
-  select case (trim(cfg % solver % str))
-  case ("cg")
-     allocate(lsolver, source = conjugate_gradient(FVAssembler=fvm, &
-          & max_tol=cfg % max_tol, max_it=cfg % max_it, print_level=1))
-  case ("sor")
-     allocate(lsolver, source = sor(FVAssembler=fvm, omega=cfg % omega, &
-          & max_tol=cfg % max_tol, max_it=cfg % max_it, print_level=1))
-  case ("gs")
-     allocate(lsolver, source = gauss_seidel(FVAssembler=fvm, &
-          & max_tol=cfg % max_tol, max_it=cfg % max_it, print_level=1))
-  case ("gj")
-     allocate(lsolver, source = gauss_jacobi(FVAssembler=fvm, &
-          & max_tol=cfg % max_tol, max_it=cfg % max_it, print_level=1))
-  case default
-     print *, "unknown lsolver '", trim(cfg % solver % str), "'"
-     error stop
-  end select
+  if (cfg % dt .gt. 0.0_dp) then
 
-  ! Solve and report
-  call lsolver % solve(x)
+     ! Transient: backward-euler march from a zero initial state
+     ti = time_integrator(fvm, cfg % tinit, cfg % tfinal, cfg % dt, cfg % max_it, cfg % max_tol)
+     allocate(phi0(fvm % num_state_vars)); phi0 = 0.0_dp
+     call ti % integrate(phi0, x)
+
+  else
+
+     ! Steady: pick the linear solver
+     select case (trim(cfg % solver % str))
+     case ("cg")
+        allocate(lsolver, source = conjugate_gradient(FVAssembler=fvm, &
+             & max_tol=cfg % max_tol, max_it=cfg % max_it, print_level=1))
+     case ("sor")
+        allocate(lsolver, source = sor(FVAssembler=fvm, omega=cfg % omega, &
+             & max_tol=cfg % max_tol, max_it=cfg % max_it, print_level=1))
+     case ("gs")
+        allocate(lsolver, source = gauss_seidel(FVAssembler=fvm, &
+             & max_tol=cfg % max_tol, max_it=cfg % max_it, print_level=1))
+     case ("gj")
+        allocate(lsolver, source = gauss_jacobi(FVAssembler=fvm, &
+             & max_tol=cfg % max_tol, max_it=cfg % max_it, print_level=1))
+     case default
+        print *, "unknown solver '", trim(cfg % solver % str), "'"
+        error stop
+     end select
+
+     call lsolver % solve(x)
+
+  end if
+
   print *, "solution: min/max/mean =", minval(x), maxval(x), sum(x)/size(x)
 
   ! Output

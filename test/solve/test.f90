@@ -40,6 +40,14 @@ program test_mesh
     ! Geometry and meshing
     allocate(FVMAssembler, source = assembler(grid))
 
+    ! Boundary conditions, by physical group name (box-3.msh)
+    call FVMAssembler % set_dirichlet("front" , 5.0d0)
+    call FVMAssembler % set_dirichlet("bottom", 10.0d0)
+    call FVMAssembler % set_dirichlet("right" , 15.0d0)
+    call FVMAssembler % set_dirichlet("top"   , 0.0d0)
+    call FVMAssembler % set_dirichlet("left"  , 0.0d0)
+    call FVMAssembler % set_dirichlet("back"  , 0.0d0)
+
     ! Also supply
     ! allocate(FVMAssembler, source = assembler(grid,physics_list))
     ! physics with tags Assembler combines Geometry and Physics ( EQNS

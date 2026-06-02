@@ -1,8 +1,10 @@
 module class_assembler
 
   ! import dependencies
-  use iso_fortran_env, only : dp => REAL64
-  use class_mesh, only : mesh
+  use iso_fortran_env         , only : dp => REAL64
+  use class_mesh              , only : mesh
+  use class_string            , only : string
+  use class_boundary_condition, only : boundary_condition, dirichlet, neumann, robin
 
   implicit none
 
@@ -33,6 +35,9 @@ module class_assembler
      ! Flux vector
      real(dp), allocatable :: phi(:)
 
+     ! Boundary conditions - one per face tag, addressed by name
+     type(boundary_condition), allocatable :: bcs(:)
+
      ! Matrix filters
      integer :: DIAGONAL       = 0
      integer :: LOWER_TRIANGLE = -1
@@ -41,6 +46,12 @@ module class_assembler
    contains
 
      procedure :: create_vector
+
+     ! Boundary conditions - addressed by physical group name
+     procedure :: set_dirichlet
+     procedure :: set_neumann
+     procedure :: set_robin
+     procedure :: set_dirichlet_tag
 
      ! Evaluation routines
      procedure :: evaluate_vertex_flux
@@ -94,11 +105,65 @@ contains
     allocate(this % phi(this % num_state_vars))
     this % phi = 0
 
+    ! Default every boundary tag to homogeneous dirichlet (phi=0). The
+    ! driver overrides the ones it cares about, by name. Interior faces
+    ! never look this table up.
+    allocate(this % bcs(maxval(this % grid % tag_numbers)))
+
     this % DIAGONAL       = 0
     this % LOWER_TRIANGLE = -1
     this % UPPER_TRIANGLE = 1
 
   end function construct
+
+  !===================================================================!
+  ! Set a boundary condition on a named physical group. The name comes
+  ! from the mesh PhysicalNames; the tag is resolved through the mesh.
+  !===================================================================!
+
+  subroutine set_dirichlet(this, name, value)
+    class(assembler), intent(inout) :: this
+    character(len=*), intent(in)    :: name
+    real(dp)        , intent(in)    :: value
+    call set_bc(this, this % grid % find_tag_by_name(name), name, dirichlet(value))
+  end subroutine set_dirichlet
+
+  subroutine set_neumann(this, name, flux)
+    class(assembler), intent(inout) :: this
+    character(len=*), intent(in)    :: name
+    real(dp)        , intent(in)    :: flux
+    call set_bc(this, this % grid % find_tag_by_name(name), name, neumann(flux))
+  end subroutine set_neumann
+
+  subroutine set_robin(this, name, a, b, c)
+    class(assembler), intent(inout) :: this
+    character(len=*), intent(in)    :: name
+    real(dp)        , intent(in)    :: a, b, c
+    call set_bc(this, this % grid % find_tag_by_name(name), name, robin(a,b,c))
+  end subroutine set_robin
+
+  ! Convenience for replicating tag-keyed setups without names
+  subroutine set_dirichlet_tag(this, tag, value)
+    class(assembler), intent(inout) :: this
+    integer , intent(in) :: tag
+    real(dp), intent(in) :: value
+    call set_bc(this, tag, "", dirichlet(value))
+  end subroutine set_dirichlet_tag
+
+  ! Stamp a resolved bc into the table (module-private helper)
+  subroutine set_bc(this, tag, name, bc)
+    class(assembler)        , intent(inout) :: this
+    integer                 , intent(in)    :: tag
+    character(len=*)        , intent(in)    :: name
+    type(boundary_condition), intent(in)    :: bc
+    if (tag .lt. 1 .or. tag .gt. size(this % bcs)) then
+       write(*,*) "set_bc: unknown boundary '", name, "' -> tag ", tag
+       error stop
+    end if
+    this % bcs(tag)      = bc
+    this % bcs(tag) % tag  = tag
+    this % bcs(tag) % name = string(name)
+  end subroutine set_bc
 
   !===================================================================!
   ! Destructor for file object
@@ -233,6 +298,7 @@ contains
               associate (&
                    & fdelta => this % grid % face_deltas(faces(iface)), &
                    & farea  => this % grid % face_areas(faces(iface)),  &
+                   & ftag   => this % grid % face_tags(faces(iface)),   &
                    & num_face_cells => this % grid % num_face_cells(faces(iface)) &
                    & )
 
@@ -296,23 +362,24 @@ contains
                 else
 
                    !----------------------------------------------------!
-                   ! Diagonal self contributions
+                   ! Boundary face - the bc contributes to the diagonal
                    !----------------------------------------------------!
 
-                   ! Adds more things to diagonal (makes the matrix more
-                   ! diagonally dominant) Boundary faces (call boundary
-                   ! physics) If the supplied filter is diagonal then add.
+                   ! Robin-type bc: flux = lhs_coeff*phi_p + const. Only
+                   ! the phi_p (diagonal) part lives in the operator; the
+                   ! constant goes to the rhs in get_source. A neumann bc
+                   ! has lhs_coeff = 0, so it adds nothing here.
                    if (present(filter)) then
                       ! If diagonals are flagged
                       if (filter .eq. this % DIAGONAL) then
-                         Aq(icell) = Aq(icell) + farea*(0.0d0 - q(icell))/fdelta
+                         Aq(icell) = Aq(icell) &
+                              & + this % bcs(ftag) % lhs_coeff(farea, fdelta)*q(icell)
                       end if
                    else
                       ! Add diagonal if filter is not supplied
-                      Aq(icell) = Aq(icell) + farea*(0.0d0 - q(icell))/fdelta
+                      Aq(icell) = Aq(icell) &
+                           & + this % bcs(ftag) % lhs_coeff(farea, fdelta)*q(icell)
                    end if
-
-                   ! print *, "check on how the boundary faces contribute to jacobian"
 
                 end if domain
 
@@ -536,14 +603,6 @@ contains
     class(assembler), intent(in)  :: this
     real(dp)        , intent(out) :: b(:)
 
-    ! Homogenous dirichlet boundary conditions
-    real(dp) , parameter :: phifront = real(5,dp)
-    real(dp) , parameter :: phibottom = real(10,dp)
-    real(dp) , parameter :: phiright = real(15,dp)
-    real(dp) , parameter :: phitop = real(0,dp)
-    real(dp) , parameter :: phileft = real(0,dp)
-    real(dp) , parameter :: phiback = real(0,dp)
-
     add_boundary_terms: block
 
       integer :: icell, iface
@@ -555,8 +614,7 @@ contains
          ! Get the faces corresponding to this cell
          associate( &
               & faces => this % grid % cell_faces &
-              & (1:this % grid % num_cell_faces(icell),icell), &
-              & highest_tag => maxval(this % grid % tag_numbers) &
+              & (1:this % grid % num_cell_faces(icell),icell) &
               & )
 
            ! Loop faces
@@ -573,25 +631,13 @@ contains
               ! Interpolate to get face gammas
               !print *, iface, faces(iface), ftag, fdelta, farea !, !fgamma
 
-              ! Add contribution from internal faces
+              ! Boundary face: add the bc's constant to the rhs (the
+              ! phi_p part of the same bc went to the diagonal in the
+              ! jacobian-vector product). dirichlet/neumann/robin all
+              ! come out of rhs_coeff.
               boundary_faces: if (this % grid % num_face_cells(faces(iface)) .eq. 1) then
 
-                 if (ftag .eq. 1) then
-                    b(icell) = b(icell) + farea*(-phifront)/fdelta
-                 else if (ftag .eq. 3) then
-                    b(icell) = b(icell) + farea*(-phibottom)/fdelta
-                 else if (ftag .eq. 4) then
-                    b(icell) = b(icell) + farea*(-phiright)/fdelta
-                 else if (ftag .eq. 5) then
-                    b(icell) = b(icell) + farea*(-phitop)/fdelta
-                 else if (ftag .eq. 6) then
-                    b(icell) = b(icell) + farea*(-phileft)/fdelta
-                 else if (ftag .eq. 7) then
-                    b(icell) = b(icell) + farea*(-phiback)/fdelta
-                 end if
-
-                 ! Boundary faces (call boundary physics) (minus as we moved it to rhs)
-                 !print *, icell, "boundary", faces(iface), ftag, fdelta, farea !, !fgamma
+                 b(icell) = b(icell) + this % bcs(ftag) % rhs_coeff(farea, fdelta)
 
               end if boundary_faces
 

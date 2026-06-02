@@ -17,5 +17,6 @@ interface_linear_solver.o \
 class_conjugate_gradient.o \
 class_gauss_jacobi.o \
 class_gauss_seidel.o \
-class_sor.o
+class_sor.o \
+class_config.o
 #tecplot_write.o

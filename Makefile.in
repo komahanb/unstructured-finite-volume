@@ -48,11 +48,11 @@ ifeq ($(COMPILER),gnu)
     F90FLAGS += -DUSE_COMPLEX
   endif
 
-  # Disable F2008 STD
+  # Fortran standard (F2018)
   ifeq ($(F2008),no)
     F90FLAGS += -DNO_F2008
   else
-    F90FLAGS += -std=f2008
+    F90FLAGS += -std=f2018
   endif
 
   # Debugging

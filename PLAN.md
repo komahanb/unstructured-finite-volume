@@ -151,6 +151,22 @@ regression. (KB: the first three already kill the hardcoding - that is the impor
 7. distributed - partition the graph with parmetis, one image per part, exchange halo dofs over
    coarrays (goal 4). (KB: the long game - the graph is what makes this tractable)
 
+## Status
+
+done: 0 name lookup; 1 named dirichlet/neumann/robin bcs; 2 equation layer (anisotropic K +
+source); 3 graph + multi-field; 4 config-driven generic driver; 6 3d / n-field paraview output;
+5 transient backward-euler (nonlinear newton still open); 7 serial graph partitioner (the
+parmetis + coarray distributed solve still open).
+
+2d restored :sunglasses: - the loader classifies elements by dimension (top -> cells), the mesh
+carries num_spatial_dim and dispatches the *_2d face geometry, and interior 2d faces come from
+shared-edge matches. test-first in test/regression/test_2d.f90 (constant -> u=5 ; left0/right1
+insulated -> u=x exactly). run.sh runs both the 3d and 2d suites; examples/poisson tracks the
+fourier exact again (rmse 0.013). 3d stayed bit-identical throughout.
+
+open: nonlinear newton (needs a phi-dependent equation), the distributed solve, per-variable K,
+mesh-by-reference in the solvers, and a refinement-order mms (needs g(x) dirichlet data).
+
 ## Verification
 
 - build the usual way - `make -C src F90=gfortran && make -C src install` (now `-std=f2018`),

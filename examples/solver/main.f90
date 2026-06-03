@@ -22,6 +22,7 @@ program solver
   use class_gauss_jacobi       , only : gauss_jacobi
   use class_time_integrator    , only : time_integrator
   use class_paraview_writer    , only : paraview_writer
+  use class_gmsh_writer        , only : gmsh_writer
   use class_string             , only : string
   use module_verbosity         , only : set_verbosity
 
@@ -109,9 +110,29 @@ program solver
 
   print *, "solution: min/max/mean =", minval(x), maxval(x), sum(x)/size(x)
 
-  ! Output
+  ! Output - paraview (.vtu) and gmsh (.msh) views of the same field
   labels(1) = string("phi")
   allocate(pw, source = paraview_writer(fvm % grid))
   call pw % write(trim(cfg % output % str), reshape(x, [size(x), 1]), labels)
+
+  ! gmsh post-processing file (input mesh + cell field); open: gmsh <out>.msh
+  gmsh_output: block
+
+    type(gmsh_writer)             :: gw
+    character(len=:), allocatable :: gout
+    integer                       :: idot
+
+    if (size(x) .eq. fvm % grid % num_cells) then
+
+       gout = trim(cfg % output % str)
+       idot = index(gout, ".vtu", back = .true.)
+       if (idot .gt. 0) gout = gout(1:idot-1)//".msh"
+
+       gw = gmsh_writer(trim(cfg % meshfile % str))
+       call gw % write(gout, fvm % grid % cell_numbers, x, "phi")
+
+    end if
+
+  end block gmsh_output
 
 end program solver

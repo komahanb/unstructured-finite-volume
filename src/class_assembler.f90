@@ -8,6 +8,7 @@ module class_assembler
   use interface_equation      , only : equation
   use class_diffusion         , only : diffusion
   use class_graph             , only : graph
+  use module_verbosity        , only : verbosity
 
   implicit none
 
@@ -102,11 +103,11 @@ contains
 
     type(mesh), intent(in) :: grid
 
-    print *, "constructing assembler"
+    if (verbosity .ge. 1) print *, "constructing assembler"
 
     ! Set mesh
     allocate(this % grid, source  = grid)
-    call this % grid % to_string()
+    if (verbosity .ge. 2) call this % grid % to_string()
     ! One variable per cell by default ("T"); set_equation bumps this up
     this % num_variables = 1
 

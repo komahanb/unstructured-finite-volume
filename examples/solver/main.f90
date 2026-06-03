@@ -23,6 +23,7 @@ program solver
   use class_time_integrator    , only : time_integrator
   use class_paraview_writer    , only : paraview_writer
   use class_string             , only : string
+  use module_verbosity         , only : set_verbosity
 
   implicit none
 
@@ -46,6 +47,7 @@ program solver
   end if
   cfg = config(trim(cfgfile))
   call cfg % print()
+  call set_verbosity(cfg % verbosity)
 
   ! Geometry
   allocate(gmsh, source = gmsh_loader(trim(cfg % meshfile % str)))

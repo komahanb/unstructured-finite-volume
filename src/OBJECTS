@@ -1,4 +1,5 @@
 objects= \
+module_verbosity.o \
 class_string.o \
 class_file.o \
 class_set.o \

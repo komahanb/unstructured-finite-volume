@@ -14,6 +14,7 @@ module class_gmsh_loader
   use class_string          , only : string
   use module_mesh_utils     , only : find, elem_type_face_count, &
        & elem_type_dimension, elem_type_vertex_count
+  use module_verbosity      , only : verbosity
 
   implicit none
 
@@ -126,27 +127,29 @@ contains
     integer :: face_idx, cell_idx, edge_idx
 
     ! Load the mesh into memory
-    write(*,'(a,a)') "Loading mesh file :", this % file % filename
+    if (verbosity .ge. 1) write(*,'(a,a)') "Loading mesh file :", this % file % filename
     call this % file % read_lines(lines)
 
-    write(*,'(a)') "Identifying tags..."
+    if (verbosity .ge. 1) write(*,'(a)') "Identifying tags..."
     call find_tags(lines, &
          & idx_start_mesh           , idx_end_mesh  , &
          & idx_start_physical_names , idx_end_physical_names , &
          & idx_start_nodes          , idx_end_nodes, &
          & idx_start_elements       , idx_end_elements)
 
-    write(*,*) "mesh           : " , idx_start_mesh           , idx_end_mesh
-    write(*,*) "physical names : " , idx_start_physical_names , idx_end_physical_names
-    write(*,*) "nodes          : " , idx_start_nodes          , idx_end_nodes
-    write(*,*) "elements       : " , idx_start_elements       , idx_end_elements
+    if (verbosity .ge. 1) then
+       write(*,*) "mesh           : " , idx_start_mesh           , idx_end_mesh
+       write(*,*) "physical names : " , idx_start_physical_names , idx_end_physical_names
+       write(*,*) "nodes          : " , idx_start_nodes          , idx_end_nodes
+       write(*,*) "elements       : " , idx_start_elements       , idx_end_elements
+    end if
 
     process_mesh_version: block
 
       integer                   :: num_tokens
       type(string), allocatable :: tokens(:)
 
-      write(*,'(a)') "Reading mesh information..."
+      if (verbosity .ge. 1) write(*,'(a)') "Reading mesh information..."
 
       associate(mlines => lines(idx_start_mesh+1:idx_start_mesh+1))
         call mlines(1) % tokenize(" ", num_tokens, tokens)
@@ -158,7 +161,7 @@ contains
 
       if (allocated(tokens)) deallocate(tokens)
 
-      write(*,'(a)') "Reading mesh information completed..."
+      if (verbosity .ge. 1) write(*,'(a)') "Reading mesh information completed..."
 
     end block process_mesh_version
 
@@ -168,7 +171,7 @@ contains
       integer                   :: num_tokens
       integer                   :: iline
 
-      write(*,'(a)') "Reading physical tags..."
+      if (verbosity .ge. 1) write(*,'(a)') "Reading physical tags..."
 
       associate(tag_lines => lines(idx_start_physical_names+1:idx_end_physical_names-1))
 
@@ -204,15 +207,13 @@ contains
 
       if (allocated(tokens)) deallocate(tokens)
 
-      write(*,'(4x,a,i0)') "num physical tags : ", num_tags
-
-      write(*,'(4x,a)') "physical tags are : "
-
-      write(*,*) tag_numbers
-
-      call tag_info % print('(8x,a)')
-
-      write(*,'(a)') "Reading physical tags completed..."
+      if (verbosity .ge. 1) then
+         write(*,'(4x,a,i0)') "num physical tags : ", num_tags
+         write(*,'(4x,a)') "physical tags are : "
+         write(*,*) tag_numbers
+         call tag_info % print('(8x,a)')
+         write(*,'(a)') "Reading physical tags completed..."
+      end if
 
     end block process_tags
 
@@ -224,7 +225,7 @@ contains
       type(string), allocatable :: tokens(:)
       integer                   :: ivertex
 
-      write(*,'(a)') "Reading vertices..."
+      if (verbosity .ge. 1) write(*,'(a)') "Reading vertices..."
 
       associate(vlines => lines(idx_start_nodes+2:idx_end_nodes-1))
 
@@ -260,9 +261,10 @@ contains
 
       if (allocated(tokens)) deallocate(tokens)
 
-      write(*,'(4x,a,i0)') "num vertices   : ", num_vertices
-
-      write(*,'(a)') "Reading vertices completed..."
+      if (verbosity .ge. 1) then
+         write(*,'(4x,a,i0)') "num vertices   : ", num_vertices
+         write(*,'(a)') "Reading vertices completed..."
+      end if
 
     end block process_nodes
 
@@ -275,7 +277,7 @@ contains
       integer                   :: ivertex, num_vertices
       integer                   :: mesh_dim, edim
 
-      write(*,'(a)') "Reading elements..."
+      if (verbosity .ge. 1) write(*,'(a)') "Reading elements..."
 
       !---------------------------------------------------------------!
       ! $Elements
@@ -335,9 +337,11 @@ contains
 
         end do
 
-        write(*,'(4x,a,i0)')  "num edges                 : ", num_edges
-        write(*,'(4x,a,2i0)') "num faces [boundary]      : ", num_faces
-        write(*,'(4x,a,i0)')  "num cells                 : ", num_cells
+        if (verbosity .ge. 1) then
+           write(*,'(4x,a,i0)')  "num edges                 : ", num_edges
+           write(*,'(4x,a,2i0)') "num faces [boundary]      : ", num_faces
+           write(*,'(4x,a,i0)')  "num cells                 : ", num_cells
+        end if
 
         ! Allocate space for cells
         allocate(cell_numbers(num_cells))
@@ -459,7 +463,7 @@ contains
 
       deallocate(lines)
 
-      write(*,'(a)') "Reading elements completed..."
+      if (verbosity .ge. 1) write(*,'(a)') "Reading elements completed..."
 
     end block elements
 

@@ -12,6 +12,7 @@ module class_mesh
   use module_mesh_utils     , only : find, distance, elem_type_face_count, &
        & elem_type_dimension, cross_product, form_cell_faces, &
        & transpose_connectivities, order_face_vertices, sparse_transpose_matmul
+  use module_verbosity      , only : verbosity
 
   implicit none
 
@@ -52,7 +53,6 @@ module class_mesh
 
   type :: mesh ! rename as topology?
 
-     integer :: verbosity
      integer :: max_print = 20
      integer :: num_spatial_dim   ! 2 or 3, from the top element dimension
      logical :: initialized = .false.
@@ -264,8 +264,6 @@ contains
     integer           , allocatable :: bnum_face_vertices(:)
     integer                         :: bnum_faces
 
-    me % verbosity = 2
-
     !-----------------------------------------------------------------!
     ! Get the fundamental information needed
     !-----------------------------------------------------------------!
@@ -444,7 +442,7 @@ contains
       integer :: icell, ncell
       integer :: iface, gface
 
-      write(*,*) "Forming cell neighbours for matrix setup..."
+      if (verbosity .ge. 1) write(*,*) "Forming cell neighbours for matrix setup..."
 
       allocate(me % num_cell_neighbours(me % num_cells))
       me % num_cell_neighbours = 0
@@ -485,9 +483,9 @@ contains
 
       end do cell_loop
 
-      write(*,*) "Finished forming cell neighbours for matrix setup"
+      if (verbosity .ge. 1) write(*,*) "Finished forming cell neighbours for matrix setup"
 
-      if (me % verbosity .gt. 1) then
+      if (verbosity .gt. 1) then
 
          write(*,'(a,i8,a,i8)') &
               & "Cell to cell info for", min(me % max_print,me % num_cells), &
@@ -549,10 +547,12 @@ contains
     num_face_tags = count(this % tag_physical_dimensions .eq. 2)
     num_cell_tags = count(this % tag_physical_dimensions .eq. 3)
 
-    write (*, '(1x, a, 1x, i0)') "number of node tags :", num_node_tags
-    write (*, '(1x, a, 1x, i0)') "number of edge tags :", num_edge_tags
-    write (*, '(1x, a, 1x, i0)') "number of face tags :", num_face_tags
-    write (*, '(1x, a, 1x, i0)') "number of cell tags :", num_cell_tags
+    if (verbosity .ge. 1) then
+       write (*, '(1x, a, 1x, i0)') "number of node tags :", num_node_tags
+       write (*, '(1x, a, 1x, i0)') "number of edge tags :", num_edge_tags
+       write (*, '(1x, a, 1x, i0)') "number of face tags :", num_face_tags
+       write (*, '(1x, a, 1x, i0)') "number of cell tags :", num_cell_tags
+    end if
 
     allocate(face_tag_numbers(num_face_tags))
     face_tag_numbers = pack(this % tag_numbers, mask = this % tag_physical_dimensions .eq. 2)
@@ -678,7 +678,7 @@ contains
 
       integer :: ivertex
 
-      write(*,'(a)') "Inverting CellVertex Map..."
+      if (verbosity .ge. 1) write(*,'(a)') "Inverting CellVertex Map..."
 
       call transpose_connectivities( &
            & this % cell_vertices, &
@@ -686,9 +686,9 @@ contains
            & this % vertex_cells, &
            & this % num_vertex_cells)
 
-      write(*,'(a)') "Inverting CellVertex Map complete ..."
+      if (verbosity .ge. 1) write(*,'(a)') "Inverting CellVertex Map complete ..."
 
-      if (this % verbosity .gt. 1) then
+      if (verbosity .gt. 1) then
 
          if (allocated(this % vertex_cells) .and. size(this % vertex_cells, dim = 2) .gt. 0) then
 
@@ -827,7 +827,7 @@ contains
 
       integer :: icell, iface
 
-      write(*,*) "Forming CellFace and FaceCell connectivities..."
+      if (verbosity .ge. 1) write(*,*) "Forming CellFace and FaceCell connectivities..."
 
       call sparse_transpose_matmul(&
            & this % num_cell_vertices, this % cell_types, this % cell_tags, this % cell_vertices, &
@@ -835,7 +835,7 @@ contains
            & this % num_cell_faces, this % cell_faces, this % cell_faces_type, &
            & this % num_face_cells, this % face_cells, this % face_cells_type)
 
-      if (this % verbosity .gt. 1) then
+      if (verbosity .gt. 1) then
 
          if (allocated(this % cell_faces)) then
 
@@ -885,7 +885,7 @@ contains
 
     geometric_quantities : block
 
-      write(*,*) 'Calculating mesh geometry information'
+      if (verbosity .ge. 1) write(*,*) 'Calculating mesh geometry information'
 
       call this % evaluate_cell_centers()
 
@@ -919,7 +919,7 @@ contains
     real(dp) :: total, dcell
     integer  :: icell, ivertex
 
-    write(*,*) 'Evaluating face weights for interpolation from cells to vertex'
+    if (verbosity .ge. 1) write(*,*) 'Evaluating face weights for interpolation from cells to vertex'
 
     allocate(cells(maxval(this % num_vertex_cells)))
 
@@ -954,7 +954,7 @@ contains
 
     end do
 
-    if (this % verbosity .gt. 1) then
+    if (verbosity .gt. 1) then
        do ivertex = 1, min(this % max_print,this % num_vertices)
           write(*,*) &
                & "vertex [", this % vertex_numbers(ivertex), ']', &
@@ -977,7 +977,7 @@ contains
     real(dp) :: dinv1, dinv2
     real(dp) :: weight
 
-    write(*, *) 'Evaluating face weights for interpolation from cells to face'
+    if (verbosity .ge. 1) write(*, *) 'Evaluating face weights for interpolation from cells to face'
     allocate(this % face_cell_weights(2, this % num_faces))
     do concurrent (iface = 1 : this % num_faces)
 
@@ -1004,7 +1004,7 @@ contains
 
     end do
 
-    if (this % verbosity .gt. 1) then
+    if (verbosity .gt. 1) then
        do iface = 1, min(this % max_print,this % num_faces)
           write(*,*) &
                & "face [", iface, "] ",&
@@ -1061,7 +1061,7 @@ contains
     class(mesh), intent(inout) :: this
     integer :: iface
 
-    write (*,*) "Evaluating centroidal vector..."
+    if (verbosity .ge. 1) write (*,*) "Evaluating centroidal vector..."
 
     allocate(this % lvec(3,this % num_faces))
     this % lvec = real(0,dp)
@@ -1092,7 +1092,7 @@ contains
     ! Use divergence theorem to find volumes
     integer :: lcell, lface, gface
 
-    write (*,*) "Evaluating cell volumes..."
+    if (verbosity .ge. 1) write (*,*) "Evaluating cell volumes..."
 
     allocate(this % cell_volumes (this % num_cells))
     this % cell_volumes = real(0,dp)
@@ -1129,7 +1129,7 @@ contains
     ! Use divergence theorem to find volumes
     integer :: lcell, lface, gface
 
-    write (*,*) "Evaluating face delta..."
+    if (verbosity .ge. 1) write (*,*) "Evaluating face delta..."
 
     allocate(this % face_deltas (this % num_faces))
     this % face_deltas = real(0,dp)
@@ -1157,7 +1157,7 @@ contains
     type(integer) :: iface
     real(dp)      :: n(3)
 
-    write(*, *) 'Evaluating face centers and areas'
+    if (verbosity .ge. 1) write(*, *) 'Evaluating face centers and areas'
 
     allocate(this % face_areas(this % num_faces))
     this % face_areas = real(0,dp)
@@ -1221,7 +1221,7 @@ contains
     ! Currently the length as its a 1D face
     type(integer) :: iface
 
-    write(*, *) 'Evaluating face centers and areas'
+    if (verbosity .ge. 1) write(*, *) 'Evaluating face centers and areas'
 
     allocate(this % face_areas(this % num_faces))
     allocate(this % face_centers(3,this % num_faces))
@@ -1262,7 +1262,7 @@ contains
     ! Find cell centers O = (A + B + C + ...) /count(vertices)
     type(integer) :: icell
 
-    write(*,*) 'Evaluating cell centers'
+    if (verbosity .ge. 1) write(*,*) 'Evaluating cell centers'
 
     allocate(this % cell_centers(3, this % num_cells))
 
@@ -1283,7 +1283,7 @@ contains
     integer  :: icell, iface, gface
     real(dp) :: tmp(3)
 
-    write(*,*) 'Evaluating face tangents normals'
+    if (verbosity .ge. 1) write(*,*) 'Evaluating face tangents normals'
 
     allocate(this % cell_face_normals(3, maxval(this % num_cell_faces), this % num_cells))
     this % cell_face_normals = real(0,dp)
@@ -1365,7 +1365,7 @@ contains
     real(dp) :: t(3), n(3)
     integer  :: fv1, fv2
 
-    write(*,*) 'Evaluating face tangents normals'
+    if (verbosity .ge. 1) write(*,*) 'Evaluating face tangents normals'
 
     allocate(this % cell_face_normals (3, maxval(this % num_cell_faces), this % num_cells))
     allocate(this % cell_face_tangents(3, 2, maxval(this % num_cell_faces), this % num_cells))

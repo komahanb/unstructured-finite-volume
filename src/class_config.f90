@@ -53,6 +53,9 @@ module class_config
      real(dp)     :: max_tol = 1.0d-12
      integer      :: max_it  = 200
 
+     ! Diagnostics: 0 quiet, 1 progress, 2 debug dumps
+     integer      :: verbosity = 0
+
      ! Transient marching - dt > 0 turns it on (backward euler)
      real(dp)     :: dt     = 0.0_dp
      real(dp)     :: tinit  = 0.0_dp
@@ -144,6 +147,9 @@ contains
 
        case ("max_it")
           this % max_it = tok(2) % asinteger()
+
+       case ("verbosity")
+          this % verbosity = tok(2) % asinteger()
 
        case ("dt")
           this % dt = tok(2) % asreal()

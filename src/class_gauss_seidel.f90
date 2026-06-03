@@ -8,6 +8,7 @@ module class_gauss_seidel
   use iso_fortran_env         , only : dp => REAL64
   use interface_linear_solver , only : linear_solver
   use class_assembler         , only : assembler
+  use module_solver_monitor   , only : monitor_step, residual_norm
 
   implicit none
   
@@ -93,7 +94,7 @@ contains
 
     ! Locals
     real(dp), allocatable :: xold(:), ss(:)
-    real(dp) :: update_norm
+    real(dp) :: update_norm, rnorm0
     integer  :: iter, num_inner_iters
 
     ! Initial guess vector for the subspace is "b"
@@ -111,6 +112,9 @@ contains
        open(13, file='gs.res', action='write')
        write(13,*) "iteration ", " residual"
     end if
+
+    rnorm0 = 0.0_dp
+    if (this % print_level .gt. 0) rnorm0 = residual_norm(this % FVAssembler, x)
 
     update_norm = huge(1.0d0);
     iter = 1;
@@ -132,7 +136,7 @@ contains
           write(13, *) iter, update_norm
        end if
        if (this % print_level .gt. 0) then
-          print *, "outer iter", iter, "num_inner_iters", num_inner_iters,  "update norm", update_norm
+          call monitor_step(this % FVAssembler, iter, num_inner_iters, x, xold, rnorm0)
           
        end if
        iter = iter + 1

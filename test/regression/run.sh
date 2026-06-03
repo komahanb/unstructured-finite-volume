@@ -10,6 +10,11 @@ make -C "$root/src" install F90=gfortran >/dev/null
 
 cd "$root/test/regression"
 
+# generate the meshes the suites need (msh 4.1, on the fly - nothing committed)
+for m in sphere box-3 box-36 square-10; do
+   bash "$root/meshgen/ensure.sh" "$root/test/$m.msh"
+done
+
 gfortran $flags -I "$root/lib/" -c test.f90 -o test.o
 gfortran test.o -o run "$root/lib/libufvm.a" -llapack -fcoarray=single
 

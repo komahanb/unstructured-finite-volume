@@ -12,7 +12,8 @@ module class_gmsh_loader
   use interface_mesh_loader , only : mesh_loader
   use class_file            , only : file
   use class_string          , only : string
-  use module_mesh_utils     , only : find, elem_type_face_count
+  use module_mesh_utils     , only : find, elem_type_face_count, &
+       & elem_type_dimension, elem_type_vertex_count
 
   implicit none
 
@@ -272,6 +273,7 @@ contains
       integer                   :: num_lines, iline
       integer                   :: vloc
       integer                   :: ivertex, num_vertices
+      integer                   :: mesh_dim, edim
 
       write(*,'(a)') "Reading elements..."
 
@@ -305,27 +307,31 @@ contains
         ! format require at least the first two tags (physical and
         ! elementary tags).
 
-        ! Count the number of cells present in elements https://gmsh.info/doc/texinfo/gmsh.html
+        ! Determine the mesh (top) dimension from the elements present.
+        ! Elements are then classified by dimension RELATIVE to the mesh:
+        ! the top dimension are cells, one lower are faces, two lower are
+        ! edges. This is what makes 2d and 3d meshes both work - in 3d the
+        ! cells are tet/hex/..., in 2d the cells are tri/quad.
+        mesh_dim = 0
+        do iline = 1, num_lines
+           call elines(iline) % tokenize(" ", num_tokens, tokens)
+           mesh_dim = max(mesh_dim, elem_type_dimension(tokens(2) % asinteger()))
+        end do
+
+        ! Count cells / faces / edges by relative dimension
         do iline = 1, num_lines
 
            call elines(iline) % tokenize(" ", num_tokens, tokens)
 
-           select case (tokens(2) % asinteger())
-           case (1)
-              ! 2-node line.
-              num_edges = num_edges + 1
-           case (2:3)
-              ! 3-node triangle, 4-node quadrangle
-              num_faces = num_faces + 1
-           case (4:7)
-              ! 4-node tetrahedron, 8-node hexahedron, 6-node prism, 5-node prism (pyramid)
+           edim = elem_type_dimension(tokens(2) % asinteger())
+
+           if (edim .eq. mesh_dim) then
               num_cells = num_cells + 1
-           case (15)
-              ! 1-node point (skip)
-           case default
-              call tokens(2) % print()
-              error stop "unsupported GMSH mesh element type"
-           end select
+           else if (edim .eq. mesh_dim - 1) then
+              num_faces = num_faces + 1
+           else if (edim .eq. mesh_dim - 2) then
+              num_edges = num_edges + 1
+           end if
 
         end do
 
@@ -390,127 +396,54 @@ contains
            ! elm-number elm-type number-of-tags < tag > … node-number-list
            call elines(iline) % tokenize(" ", num_tokens, tokens)
 
-           if (tokens(2) % asinteger() .eq. 1) then
+           edim         = elem_type_dimension(tokens(2) % asinteger())
+           num_vertices = elem_type_vertex_count(tokens(2) % asinteger())
+           vloc         = 4 + tokens(3) % asinteger()
 
-              ! 2-node line.
-              edge_idx                               = edge_idx + 1
-              num_vertices                           = 2
-              edge_numbers(edge_idx)                 = tokens(1) % asinteger()
-              edge_types(edge_idx)                   = tokens(2) % asinteger()
-              vloc                                   = 4 + tokens(3) % asinteger()
-              edge_tags(edge_idx)                    = tokens(4) % asinteger()
-              edge_vertices(1:num_vertices,edge_idx) = tokens(vloc:vloc+num_vertices-1) % asinteger()
-              num_edge_vertices(edge_idx)            = num_vertices
+           if (edim .eq. mesh_dim) then
 
-              do concurrent (ivertex = 1 : num_vertices)
-                 edge_vertices(ivertex, edge_idx) = find(vertex_numbers, edge_vertices(ivertex,edge_idx))
-              end do
+              ! a cell (top dimension)
+              cell_idx = cell_idx + 1
 
-           else if (tokens(2) % asinteger() .eq. 2) then
-
-              ! 3-node triangle.
-              face_idx                               = face_idx + 1
-              num_vertices                           = 3
-              face_numbers(face_idx)                 = tokens(1) % asinteger()
-              face_types(face_idx)                   = tokens(2) % asinteger()
-              vloc                                   = 4 + tokens(3) % asinteger()
-              face_tags(face_idx)                    = tokens(4) % asinteger()
-              face_vertices(1:num_vertices,face_idx) = tokens(vloc:vloc+num_vertices-1) % asinteger()
-              num_face_vertices(face_idx)            = num_vertices
-
-              do concurrent (ivertex = 1 : num_vertices)
-                 face_vertices(ivertex, face_idx) = find(vertex_numbers, face_vertices(ivertex,face_idx))
-              end do
-
-           else if (tokens(2) % asinteger() .eq. 3) then
-
-              ! 4-node quadrangle.
-              face_idx                               = face_idx + 1
-              num_vertices                           = 4
-              face_numbers(face_idx)                 = tokens(1) % asinteger()
-              face_types(face_idx)                   = tokens(2) % asinteger()
-              vloc                                   = 4 + tokens(3) % asinteger()
-              face_tags(face_idx)                    = tokens(4) % asinteger()
-              face_vertices(1:num_vertices,face_idx) = tokens(vloc:vloc+num_vertices-1) % asinteger()
-              num_face_vertices(face_idx)            = num_vertices
-
-              do concurrent (ivertex = 1 : num_vertices)
-                 face_vertices(ivertex, face_idx) = find(vertex_numbers, face_vertices(ivertex,face_idx))
-              end do
-
-           else if (tokens(2) % asinteger() .eq. 4) then
-
-              ! 4-node tetrahedron.
-              cell_idx                               = cell_idx + 1
-              num_vertices                           = 4
-              cell_numbers(cell_idx)                 = tokens(1) % asinteger()
-              cell_types(cell_idx)                   = tokens(2) % asinteger()
-              vloc                                   = 4 + tokens(3) % asinteger()
-              cell_tags(cell_idx)                    = tokens(4) % asinteger()
-              cell_vertices(1:num_vertices,cell_idx) = tokens(vloc:vloc+num_vertices-1) % asinteger()
-              num_cell_vertices(cell_idx)            = num_vertices
-
-              do concurrent (ivertex = 1 : num_vertices)
-                 cell_vertices(ivertex, cell_idx) = find(vertex_numbers, cell_vertices(ivertex,cell_idx))
-              end do
-
-           else if (tokens(2) % asinteger() .eq. 5) then
-
-              ! 8-node hexahedron.
-              cell_idx                                = cell_idx + 1
-              num_vertices                            = 8
               cell_numbers(cell_idx)                  = tokens(1) % asinteger()
               cell_types(cell_idx)                    = tokens(2) % asinteger()
-              vloc                                    = 4 + tokens(3) % asinteger()
               cell_tags(cell_idx)                     = tokens(4) % asinteger()
-              cell_vertices(1:num_vertices, cell_idx) = tokens(vloc:vloc+num_vertices-1) % asinteger() ! global numbers in parallel
+              cell_vertices(1:num_vertices, cell_idx) = tokens(vloc:vloc+num_vertices-1) % asinteger()
               num_cell_vertices(cell_idx)             = num_vertices
 
               do concurrent (ivertex = 1 : num_vertices)
-                 cell_vertices(ivertex, cell_idx) = find(vertex_numbers, cell_vertices(ivertex,cell_idx))
+                 cell_vertices(ivertex, cell_idx) = find(vertex_numbers, cell_vertices(ivertex, cell_idx))
               end do
 
-           else if (tokens(2) % asinteger() .eq. 6) then
+           else if (edim .eq. mesh_dim - 1) then
 
-              ! 6-node prism
-              cell_idx                               = cell_idx + 1
-              num_vertices                           = 6
-              cell_numbers(cell_idx)                 = tokens(1) % asinteger()
-              cell_types(cell_idx)                   = tokens(2) % asinteger()
-              vloc                                   = 4 + tokens(3) % asinteger()
-              cell_tags(cell_idx)                    = tokens(4) % asinteger()
-              cell_vertices(1:num_vertices,cell_idx) = tokens(vloc:vloc+num_vertices-1) % asinteger()
-              num_cell_vertices(cell_idx)            = num_vertices
+              ! a face (one dimension lower)
+              face_idx = face_idx + 1
+
+              face_numbers(face_idx)                  = tokens(1) % asinteger()
+              face_types(face_idx)                    = tokens(2) % asinteger()
+              face_tags(face_idx)                     = tokens(4) % asinteger()
+              face_vertices(1:num_vertices, face_idx) = tokens(vloc:vloc+num_vertices-1) % asinteger()
+              num_face_vertices(face_idx)             = num_vertices
 
               do concurrent (ivertex = 1 : num_vertices)
-                 cell_vertices(ivertex, cell_idx) = find(vertex_numbers, cell_vertices(ivertex,cell_idx))
+                 face_vertices(ivertex, face_idx) = find(vertex_numbers, face_vertices(ivertex, face_idx))
               end do
 
-           else if (tokens(2) % asinteger() .eq. 7) then
+           else if (edim .eq. mesh_dim - 2) then
 
-              ! 5-node prism
-              cell_idx                               = cell_idx + 1
-              num_vertices                           = 5
-              cell_numbers(cell_idx)                 = tokens(1) % asinteger()
-              cell_types(cell_idx)                   = tokens(2) % asinteger()
-              vloc                                   = 4 + tokens(3) % asinteger()
-              cell_tags(cell_idx)                    = tokens(4) % asinteger()
-              cell_vertices(1:num_vertices,cell_idx) = tokens(vloc:vloc+num_vertices-1) % asinteger()
-              num_cell_vertices(cell_idx)            = num_vertices
+              ! an edge (two dimensions lower)
+              edge_idx = edge_idx + 1
+
+              edge_numbers(edge_idx)                  = tokens(1) % asinteger()
+              edge_types(edge_idx)                    = tokens(2) % asinteger()
+              edge_tags(edge_idx)                     = tokens(4) % asinteger()
+              edge_vertices(1:num_vertices, edge_idx) = tokens(vloc:vloc+num_vertices-1) % asinteger()
+              num_edge_vertices(edge_idx)             = num_vertices
 
               do concurrent (ivertex = 1 : num_vertices)
-                 cell_vertices(ivertex, cell_idx) = find(vertex_numbers, cell_vertices(ivertex,cell_idx))
+                 edge_vertices(ivertex, edge_idx) = find(vertex_numbers, edge_vertices(ivertex, edge_idx))
               end do
-
-           else if (tokens(2) % asinteger() .eq. 15) then
-
-              ! 1-node point (skip)
-
-           else
-
-              call tokens(2) % print()
-
-              error stop "unsupported GMSH mesh element type"
 
            end if
 

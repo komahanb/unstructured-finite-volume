@@ -1,8 +1,23 @@
 #!/bin/bash
-# Build the library and the regression suite, then run it.
+# Build the library and the regression suites (3d and 2d), then run them.
 set -e
+
 root="$(cd "$(dirname "$0")/../.." && pwd)"
-make -C "$root/src"  F90=gfortran        >/dev/null
-make -C "$root/src"  install F90=gfortran >/dev/null
-make -C "$root/test/regression" F90=gfortran >/dev/null
-cd "$root/test/regression" && ./run
+flags="-std=f2018 -fcoarray=single -cpp -fPIC -Wno-line-truncation"
+
+make -C "$root/src" F90=gfortran         >/dev/null
+make -C "$root/src" install F90=gfortran >/dev/null
+
+cd "$root/test/regression"
+
+gfortran $flags -I "$root/lib/" -c test.f90 -o test.o
+gfortran test.o -o run "$root/lib/libufvm.a" -llapack -fcoarray=single
+
+gfortran $flags -I "$root/lib/" -c test_2d.f90 -o test_2d.o
+gfortran test_2d.o -o run2d "$root/lib/libufvm.a" -llapack -fcoarray=single
+
+echo "===================== 3D suite ====================="
+./run
+
+echo "===================== 2D suite ====================="
+./run2d

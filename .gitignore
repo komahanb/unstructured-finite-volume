@@ -10,3 +10,5 @@ lib/
 *.vtu
 test/*/run
 examples/*/run
+test/*/run2d
+*.res

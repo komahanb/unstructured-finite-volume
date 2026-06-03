@@ -34,6 +34,12 @@ program test_mesh
   ! Assembler Object coordinating geometry and physics
   allocate(FVMAssembler, source = assembler(grid))!, physics))
 
+  ! Boundary conditions by physical group name (rectangle.msh, 2D)
+  call FVMAssembler % set_dirichlet("BoundaryLeft"  , 1.0d0)
+  call FVMAssembler % set_dirichlet("BoundaryRight" , 0.0d0)
+  call FVMAssembler % set_neumann  ("BoundaryTop"   , 0.0d0)
+  call FVMAssembler % set_neumann  ("BoundaryBottom", 0.0d0)
+
   ! Nonlinear Solution
 !!$  allocate(nonlinear, &
 !!$       & source = newton( &

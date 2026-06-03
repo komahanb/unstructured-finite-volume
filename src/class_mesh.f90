@@ -10,8 +10,8 @@ module class_mesh
   use interface_mesh_loader , only : mesh_loader
   use class_string          , only : string
   use module_mesh_utils     , only : find, distance, elem_type_face_count, &
-       & cross_product, form_cell_faces, transpose_connectivities, &
-       & order_face_vertices, sparse_transpose_matmul
+       & elem_type_dimension, cross_product, form_cell_faces, &
+       & transpose_connectivities, order_face_vertices, sparse_transpose_matmul
 
   implicit none
 
@@ -54,6 +54,7 @@ module class_mesh
 
      integer :: verbosity
      integer :: max_print = 20
+     integer :: num_spatial_dim   ! 2 or 3, from the top element dimension
      logical :: initialized = .false.
 
      ! Based on PhysicalNames?
@@ -277,6 +278,9 @@ contains
          & me % cell_types  , bface_types        , me % edge_types  , &
          & me % num_tags    , me % tag_numbers   , me % tag_physical_dimensions, me % tag_info )
 
+    ! spatial dimension is the dimension of the (top) cell elements
+    me % num_spatial_dim = maxval(elem_type_dimension(me % cell_types))
+
     ! determine the number of faces algebraically
     me % num_faces = (sum(elem_type_face_count(me % cell_types)) - bnum_faces)/2 + bnum_faces
 
@@ -356,8 +360,21 @@ contains
             select case (shared_node_count)
             case(0)
                ! no vertices are shared between the two cells
-            case (1:2)
-               ! a vertex or an edge is shared between the two cells
+            case (1)
+               ! only a vertex is shared - never an interior face
+            case (2)
+               ! a shared edge. In 2d that IS an interior face (a line);
+               ! in 3d two cells can touch along an edge without sharing
+               ! a face, so ignore it there.
+               if (me % num_spatial_dim .eq. 2) then
+                  num_faces = num_faces + 1
+                  me % face_numbers(num_faces)      = num_faces
+                  me % face_tags(num_faces)         = me % cell_tags(icell)
+                  me % face_types(num_faces)        = 1
+                  me % num_face_vertices(num_faces) = 2
+                  call order_face_vertices(me % cell_types(jcell), me % cell_vertices(:,jcell), shared_vertices(1:2))
+                  me % face_vertices(1:2,num_faces) = shared_vertices(1:2)
+               end if
             case (3)
                ! a 3-noded triangle is shared between the two cells
                num_faces = num_faces + 1
@@ -871,8 +888,17 @@ contains
       write(*,*) 'Calculating mesh geometry information'
 
       call this % evaluate_cell_centers()
-      call this % evaluate_face_centers_areas()
-      call this % evaluate_face_tangents_normals()
+
+      ! Face areas/normals are dimension specific: in 2d a face is a line
+      ! (area = length, normal in-plane), in 3d a polygon.
+      if (this % num_spatial_dim .eq. 2) then
+         call this % evaluate_face_centers_areas_2d()
+         call this % evaluate_face_tangents_normals_2d()
+      else
+         call this % evaluate_face_centers_areas()
+         call this % evaluate_face_tangents_normals()
+      end if
+
       call this % evaluate_cell_volumes()
       call this % evaluate_centroidal_vector()
       call this % evaluate_face_deltas()
@@ -1202,8 +1228,9 @@ contains
 
     do concurrent(iface = 1 : this % num_faces)
 
-       ! Area calculation is complicated in 3D
-       associate(facenodes => this % face_vertices(:,iface))
+       ! A 2d face is a line - use only its two vertices, not the zero
+       ! padding of the (4,nfaces) face_vertices array
+       associate(facenodes => this % face_vertices(1:this % num_face_vertices(iface), iface))
 
          ! Compute the coordinates of face centers
          this % face_centers(1:3, iface) = &
@@ -1335,55 +1362,45 @@ contains
     class(mesh), intent(inout) :: this
 
     integer  :: icell, iface, gface
-    real(dp) :: t(3), n(3), tcn(3) ! all spatial dim
-    integer  :: ifv(2)
+    real(dp) :: t(3), n(3)
+    integer  :: fv1, fv2
 
     write(*,*) 'Evaluating face tangents normals'
 
     allocate(this % cell_face_normals (3, maxval(this % num_cell_faces), this % num_cells))
-    allocate(this % cell_face_tangents(3, 1, maxval(this % num_cell_faces), this % num_cells))
+    allocate(this % cell_face_tangents(3, 2, maxval(this % num_cell_faces), this % num_cells))
+    this % cell_face_tangents = 0.0d0
 
     ! loop cells
     loop_cells: do concurrent (icell = 1 : this % num_cells)
 
-       ! get cell verties
-       associate( icv =>  this % cell_vertices(:, icell) )
+       ! loop faces of each cell
+       loop_faces: do iface = 1, this % num_cell_faces(icell)
 
-         ! loop faces of each cell
-         loop_faces: do iface = 1, this % num_cell_faces(icell)
+          ! the global face and its two end vertices
+          gface = this % cell_faces(iface, icell)
+          fv1   = this % face_vertices(1, gface)
+          fv2   = this % face_vertices(2, gface)
 
-            if (iface .eq. this % num_cell_faces(icell)) then
-               ifv(1) = icv(iface)
-               ifv(2) = icv(1)
-            else
-               ifv(1) = icv(iface)
-               ifv(2) = icv(iface+1)
-            end if
+          ! tangent along the edge
+          t = this % vertices(:,fv2) - this % vertices(:,fv1)
+          t = t/norm2(t)
 
-            ! find the face vertex in cell order
-            gface = this % cell_faces(iface,icell)
+          ! in-plane normal (rotate the tangent by -90 degrees)
+          n(1) =  t(2)
+          n(2) = -t(1)
+          n(3) =  0.0d0
 
-            t = this % vertices(:,ifv(2)) - this % vertices(:,ifv(1))
-            t = t/norm2(t)
+          ! orient it to point out of this cell (towards the face centre)
+          if (dot_product(n, this % face_centers(:,gface) - this % cell_centers(:,icell)) .lt. 0.0d0) then
+             n = -n
+             t = -t
+          end if
 
-            ! By anticlockwise convention
-            n(1) =  t(2)
-            n(2) = -t(1)
-            n(3) = 0
+          this % cell_face_normals (:, iface, icell)    = n
+          this % cell_face_tangents(:, 1, iface, icell) = t
 
-            ! Sanity check if the normal if facing out of the face
-            call cross_product(n,t,tcn)
-            if (abs(tcn(3) - 1.0d0) > 1.0d-10) then ! tangent cross normal should give +k vector
-               print *, 'face', gface, 'of cell', icell, 'has inward/non-unit normal', tcn(3)
-               error stop
-            end if
-
-            this % cell_face_normals (:, iface, icell) = n
-            this % cell_face_tangents(:, 1, iface, icell) = t
-
-         end do loop_faces
-
-       end associate
+       end do loop_faces
 
     end do loop_cells
 

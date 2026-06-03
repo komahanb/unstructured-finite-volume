@@ -534,14 +534,26 @@ contains
   ! tri/quad=2, tet/hex/prism/pyramid=3). Used to classify elements into
   ! cells / faces / edges by dimension rather than by type.
   pure elemental integer function elem_type_dimension(elem_type) result (dim)
+
     integer, intent(in) :: elem_type
+
     select case (elem_type)
-    case (15);    dim = 0   ! point
-    case (1);     dim = 1   ! line
-    case (2:3);   dim = 2   ! triangle, quadrangle
-    case (4:7);   dim = 3   ! tet, hex, prism, pyramid
-    case default; dim = -1
+    case (15)
+       ! 1-node point
+       dim = 0
+    case (1)
+       ! 2-node line
+       dim = 1
+    case (2:3)
+       ! triangle, quadrangle
+       dim = 2
+    case (4:7)
+       ! tet, hex, prism, pyramid
+       dim = 3
+    case default
+       dim = -1
     end select
+
   end function elem_type_dimension
 
   ! generalize the name to return the number of lower dimensional entities

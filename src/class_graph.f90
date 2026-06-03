@@ -143,41 +143,75 @@ contains
 
     nv = this % num_vertices
 
-    ! Compressed adjacency (csr) from the undirected edge list
-    allocate(xadj(nv+1)); xadj = 0
+    ! Compressed adjacency (csr) from the undirected edge list. First the
+    ! per-vertex degree, accumulated into the row pointer xadj ...
+    allocate(xadj(nv+1))
+    xadj = 0
+
     do e = 1, this % num_edges
        xadj(this % edges(e) % tail + 1) = xadj(this % edges(e) % tail + 1) + 1
        xadj(this % edges(e) % head + 1) = xadj(this % edges(e) % head + 1) + 1
     end do
+
     xadj(1) = 1
     do i = 1, nv
        xadj(i+1) = xadj(i+1) + xadj(i)
     end do
+
+    ! ... then scatter the neighbours into adj using a running pointer
     allocate(adj(xadj(nv+1)-1))
-    allocate(ptr(nv)); ptr = xadj(1:nv)
+    allocate(ptr(nv))
+    ptr = xadj(1:nv)
+
     do e = 1, this % num_edges
+
        associate(t => this % edges(e) % tail, h => this % edges(e) % head)
-       adj(ptr(t)) = h; ptr(t) = ptr(t) + 1
-       adj(ptr(h)) = t; ptr(h) = ptr(h) + 1
+
+       adj(ptr(t)) = h
+       ptr(t)      = ptr(t) + 1
+
+       adj(ptr(h)) = t
+       ptr(h)      = ptr(h) + 1
+
        end associate
+
     end do
 
-    ! Breadth-first ordering (restart for disconnected components)
-    allocate(order(nv), queue(nv), seen(nv)); seen = .false.
-    pos = 0; qh = 1; qt = 0
+    ! Breadth-first ordering, restarting for disconnected components
+    allocate(order(nv), queue(nv), seen(nv))
+    seen = .false.
+
+    pos = 0
+    qh  = 1
+    qt  = 0
+
     do start = 1, nv
+
        if (seen(start)) cycle
-       qt = qt + 1; queue(qt) = start; seen(start) = .true.
+
+       qt = qt + 1
+       queue(qt)   = start
+       seen(start) = .true.
+
        do while (qh .le. qt)
-          v = queue(qh); qh = qh + 1
-          pos = pos + 1; order(pos) = v
+
+          v  = queue(qh)
+          qh = qh + 1
+
+          pos = pos + 1
+          order(pos) = v
+
           do i = xadj(v), xadj(v+1)-1
              w = adj(i)
              if (.not. seen(w)) then
-                seen(w) = .true.; qt = qt + 1; queue(qt) = w
+                seen(w) = .true.
+                qt = qt + 1
+                queue(qt) = w
              end if
           end do
+
        end do
+
     end do
 
     ! Cut the bfs order into nparts balanced contiguous chunks

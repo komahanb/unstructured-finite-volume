@@ -681,7 +681,10 @@ contains
                  fc  = this % grid % face_centers(1:3,gface)
                  nfv = this % grid % num_face_vertices(gface)
 
-                 abar = 0.0_dp; bbar = 0.0_dp; pbar = 0.0_dp
+                 abar = 0.0_dp
+                 bbar = 0.0_dp
+                 pbar = 0.0_dp
+
                  do iv = 1, nfv
                     gv = this % grid % face_vertices(iv, gface)
                     rv = this % grid % vertices(1:3,gv) - fc
@@ -696,8 +699,12 @@ contains
                  bbar = bbar/real(nfv,dp)
                  pbar = pbar/real(nfv,dp)
 
-                 Saa = 0.0_dp; Sab = 0.0_dp; Sbb = 0.0_dp
-                 Sap = 0.0_dp; Sbp = 0.0_dp
+                 Saa = 0.0_dp
+                 Sab = 0.0_dp
+                 Sbb = 0.0_dp
+                 Sap = 0.0_dp
+                 Sbp = 0.0_dp
+
                  do iv = 1, nfv
                     da   = av(iv) - abar
                     db   = bv(iv) - bbar

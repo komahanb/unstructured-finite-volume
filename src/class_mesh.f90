@@ -1097,13 +1097,14 @@ contains
     allocate(this % cell_volumes (this % num_cells))
     this % cell_volumes = real(0,dp)
 
-    ! V = \sum_f nx_f \times  xmid_f \times A_f
+    ! Divergence theorem: V = (1/d) \sum_f (x_f . n_f) A_f, with d the
+    ! spatial dimension - 1/2 in 2d (area), 1/3 in 3d (volume).
     do concurrent (lcell = 1 : this % num_cells)
        do lface = 1, this % num_cell_faces(lcell)
           ! Global face index
           gface = this % cell_faces(lface, lcell)
           associate( &
-               & face_center => this % face_centers(:,gface)/real(3,dp), &
+               & face_center => this % face_centers(:,gface)/real(this % num_spatial_dim, dp), &
                & face_normal => this % cell_face_normals(:,lface,lcell),&
                & face_area => this % face_areas(gface))
             this % cell_volumes(lcell) = this % cell_volumes(lcell) + &

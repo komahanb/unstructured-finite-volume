@@ -326,9 +326,11 @@ contains
 
        end do dot_pdt
 
-       select case(shared_vertex_count)
-       case(3:4)
-          ! triangle face or quadrangle
+       ! A face belongs to this cell when the cell contains all of the
+       ! face's vertices. Matching on the face's own vertex count (rather
+       ! than the old hardcoded 3:4) generalises to 2D line faces (2
+       ! vertices) as well as 3D tri/quad faces, and is equivalent for 3D.
+       if (shared_vertex_count .eq. num_face_vertices(iface)) then
           num_cell_faces(icell)                         = num_cell_faces(icell) + 1
           cell_faces(num_cell_faces(icell), icell)      = iface
           cell_faces_type(num_cell_faces(icell), icell) = face_types(iface)
@@ -336,12 +338,7 @@ contains
           num_face_cells(iface)                         = num_face_cells(iface) + 1
           face_cells(num_face_cells(iface), iface)      = icell
           face_cells_type(num_face_cells(iface), iface) = cell_types(icell)
-       case(5:)
-          print *, "more than 4 vertices do not make a face"
-          error stop
-       case default
-          ! no vertex, one vertex, edge may be
-       end select
+       end if
 
     end do
 
@@ -533,6 +530,20 @@ contains
 
   end function elem_type_face_count
 
+  ! Spatial dimension of a gmsh element type (point=0, line=1,
+  ! tri/quad=2, tet/hex/prism/pyramid=3). Used to classify elements into
+  ! cells / faces / edges by dimension rather than by type.
+  pure elemental integer function elem_type_dimension(elem_type) result (dim)
+    integer, intent(in) :: elem_type
+    select case (elem_type)
+    case (15);    dim = 0   ! point
+    case (1);     dim = 1   ! line
+    case (2:3);   dim = 2   ! triangle, quadrangle
+    case (4:7);   dim = 3   ! tet, hex, prism, pyramid
+    case default; dim = -1
+    end select
+  end function elem_type_dimension
+
   ! generalize the name to return the number of lower dimensional entities
   pure elemental integer function elem_type_vertex_count(elem_type) result (num_vertices)
 
@@ -594,6 +605,37 @@ contains
     integer :: match_count
 
     select case (cell_type)
+    case (2)
+       ! 3-node triangle (2d cell) - faces are its 3 edges
+       num_face_vertices = 2
+       num_cell_faces = 3
+
+       if (num_face_vertices .ne. size(face_vertices_unordered)) &
+            & error stop "inconstent vertices"
+
+       allocate(face_vertices(num_face_vertices, num_cell_faces))
+       face_vertices = 0
+
+       face_vertices(:,1) = [cell_vertices(1), cell_vertices(2)]
+       face_vertices(:,2) = [cell_vertices(2), cell_vertices(3)]
+       face_vertices(:,3) = [cell_vertices(3), cell_vertices(1)]
+
+    case (3)
+       ! 4-node quadrangle (2d cell) - faces are its 4 edges
+       num_face_vertices = 2
+       num_cell_faces = 4
+
+       if (num_face_vertices .ne. size(face_vertices_unordered)) &
+            & error stop "inconstent vertices"
+
+       allocate(face_vertices(num_face_vertices, num_cell_faces))
+       face_vertices = 0
+
+       face_vertices(:,1) = [cell_vertices(1), cell_vertices(2)]
+       face_vertices(:,2) = [cell_vertices(2), cell_vertices(3)]
+       face_vertices(:,3) = [cell_vertices(3), cell_vertices(4)]
+       face_vertices(:,4) = [cell_vertices(4), cell_vertices(1)]
+
     case (4)
        ! 4-node tetrahedron
        num_face_vertices = 3

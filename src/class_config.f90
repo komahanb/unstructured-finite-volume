@@ -68,6 +68,10 @@ module class_config
 
 contains
 
+  !===================================================================!
+  ! Read a config from a text file
+  !===================================================================!
+
   type(config) function create(filename) result(this)
 
     character(len=*), intent(in) :: filename
@@ -146,6 +150,15 @@ contains
 
     end do
 
+    ! Minimal validation
+    if (.not. allocated(this % meshfile % str)) then
+       print *, "config: no 'mesh <file>' line in ", trim(filename)
+       error stop
+    end if
+    if (this % nbc .eq. 0) then
+       print *, "config: warning - no boundary conditions specified (all default to phi=0)"
+    end if
+
   end function create
 
   !===================================================================!
@@ -159,12 +172,24 @@ contains
     type(string), allocatable , intent(out) :: words(:)
     type(string) :: tmp(64)
     integer      :: i, n, start
-    logical      :: inword
+    logical      :: inword, inquote
     character(len=1), parameter :: tab = char(9)
+    character(len=1), parameter :: quote = '"'
     n = len_trim(str)
-    nw = 0; inword = .false.; start = 1
+    nw = 0; inword = .false.; inquote = .false.; start = 1
     do i = 1, n
-       if (str(i:i) .ne. ' ' .and. str(i:i) .ne. tab) then
+       if (str(i:i) .eq. quote) then
+          ! A double-quoted span is one word (quotes stripped), so names
+          ! with spaces work, e.g. boundary "cylindrical wall" dirichlet 5
+          if (.not. inquote) then
+             inquote = .true.; inword = .true.; start = i + 1
+          else
+             inquote = .false.; inword = .false.
+             nw = nw + 1; tmp(nw) = string(str(start:i-1))
+          end if
+       else if (inquote) then
+          cycle   ! inside quotes: keep accumulating
+       else if (str(i:i) .ne. ' ' .and. str(i:i) .ne. tab) then
           if (.not. inword) then
              inword = .true.; start = i
           end if
@@ -174,12 +199,16 @@ contains
           end if
        end if
     end do
-    if (inword) then
+    if (inword .and. .not. inquote) then
        nw = nw + 1; tmp(nw) = string(str(start:n))
     end if
     allocate(words(max(nw,1)))
     if (nw .gt. 0) words(1:nw) = tmp(1:nw)
   end subroutine split_words
+
+  !===================================================================!
+  ! Print the parsed configuration
+  !===================================================================!
 
   subroutine print(this)
     class(config), intent(in) :: this

@@ -165,7 +165,7 @@ contains
 
       type(string), allocatable :: tokens(:)
       integer                   :: num_tokens
-      integer                   :: iline, length
+      integer                   :: iline
 
       write(*,'(a)') "Reading physical tags..."
 
@@ -181,20 +181,21 @@ contains
         allocate(tag_physical_dimensions(num_tags))
         tag_physical_dimensions = 0
 
-        do concurrent(iline = 1: num_tags)
+        do iline = 1, num_tags
 
            ! Tokenize based on delimited space
            call tag_lines(iline+1) % tokenize(" ", num_tokens, tokens)
 
-           ! First token is the physical dim
+           ! First token is the physical dim, second is the tag number
            tag_physical_dimensions(iline) = tokens(1) % asinteger()
+           tag_numbers(iline)             = tokens(2) % asinteger()
 
-           ! Second token is the tag number
-           tag_numbers(iline) = tokens(2) % asinteger()
-
-           ! Remove quotes on third token
-           length = len(tokens(3) % str)
-           tag_info(iline) = string(tokens(3) % str(2:length-1))
+           ! The name is the quoted string on the line. Take everything
+           ! between the first and last double quote so names with spaces
+           ! (e.g. "cylindrical wall") survive.
+           associate(s => tag_lines(iline+1) % str)
+             tag_info(iline) = string(s(index(s,'"')+1 : index(s,'"',back=.true.)-1))
+           end associate
 
         end do
 

@@ -135,110 +135,162 @@ contains
   end function construct
 
   !===================================================================!
-  ! Set a boundary condition on a named physical group. The name comes
-  ! from the mesh PhysicalNames; the tag is resolved through the mesh.
+  ! Set a dirichlet condition on a named physical group. The optional
+  ! var targets a single variable; omitted, it applies to all variables.
   !===================================================================!
 
-  ! The optional `var` targets a single variable; omitted, the bc is set
-  ! on every variable on that boundary.
   subroutine set_dirichlet(this, name, value, var)
-    class(assembler), intent(inout) :: this
-    character(len=*), intent(in)    :: name
-    real(dp)        , intent(in)    :: value
-    integer, optional, intent(in)   :: var
+
+    class(assembler) , intent(inout) :: this
+    character(len=*) , intent(in)    :: name
+    real(dp)         , intent(in)    :: value
+    integer, optional, intent(in)    :: var
+
     call set_bc(this, this % grid % find_tag_by_name(name), name, dirichlet(value), var)
+
   end subroutine set_dirichlet
 
+  !===================================================================!
+  ! Set a neumann condition on a named physical group
+  !===================================================================!
+
   subroutine set_neumann(this, name, flux, var)
-    class(assembler), intent(inout) :: this
-    character(len=*), intent(in)    :: name
-    real(dp)        , intent(in)    :: flux
-    integer, optional, intent(in)   :: var
+
+    class(assembler) , intent(inout) :: this
+    character(len=*) , intent(in)    :: name
+    real(dp)         , intent(in)    :: flux
+    integer, optional, intent(in)    :: var
+
     call set_bc(this, this % grid % find_tag_by_name(name), name, neumann(flux), var)
+
   end subroutine set_neumann
 
+  !===================================================================!
+  ! Set a robin condition  a*phi + b*dphi/dn = c  on a named group
+  !===================================================================!
+
   subroutine set_robin(this, name, a, b, c, var)
-    class(assembler), intent(inout) :: this
-    character(len=*), intent(in)    :: name
-    real(dp)        , intent(in)    :: a, b, c
-    integer, optional, intent(in)   :: var
+
+    class(assembler) , intent(inout) :: this
+    character(len=*) , intent(in)    :: name
+    real(dp)         , intent(in)    :: a, b, c
+    integer, optional, intent(in)    :: var
+
     call set_bc(this, this % grid % find_tag_by_name(name), name, robin(a,b,c), var)
+
   end subroutine set_robin
 
+  !===================================================================!
   ! Convenience for replicating tag-keyed setups without names
+  !===================================================================!
+
   subroutine set_dirichlet_tag(this, tag, value, var)
-    class(assembler), intent(inout) :: this
-    integer , intent(in) :: tag
-    real(dp), intent(in) :: value
-    integer, optional, intent(in) :: var
+
+    class(assembler) , intent(inout) :: this
+    integer          , intent(in)    :: tag
+    real(dp)         , intent(in)    :: value
+    integer, optional, intent(in)    :: var
+
     call set_bc(this, tag, "", dirichlet(value), var)
+
   end subroutine set_dirichlet_tag
 
   !===================================================================!
-  ! Set the pde being solved (diffusion tensor, source, #variables)
+  ! Set the pde being solved (diffusion tensor, source, #variables).
+  ! Call this BEFORE setting boundary conditions - changing the number
+  ! of variables rebuilds the (tag,variable) bc table.
   !===================================================================!
 
-  ! Note: call set_equation BEFORE setting boundary conditions - changing
-  ! the number of variables rebuilds the (tag,variable) bc table.
   subroutine set_equation(this, model)
+
     class(assembler), intent(inout) :: this
     class(equation) , intent(in)    :: model
+
+    ! Guard the ordering footgun: set_equation rebuilds the (tag,variable)
+    ! bc table, so any boundary conditions set earlier would be lost.
+    if (allocated(this % bcs)) then
+       if (any(this % bcs % tag .ne. -1)) then
+          write(*,*) "warning: set_equation called after boundary conditions; ", &
+               & "they have been reset - call set_equation first"
+       end if
+    end if
+
     if (allocated(this % model)) deallocate(this % model)
     allocate(this % model, source = model)
 
     ! Resize the system for this many variables per cell
-    this % num_variables  = model % num_variables
+    this % num_variables     = model % num_variables
     this % g % num_variables = this % num_variables
-    this % num_state_vars = this % g % num_dofs()
+    this % num_state_vars    = this % g % num_dofs()
 
     if (allocated(this % phi)) deallocate(this % phi)
-    allocate(this % phi(this % num_state_vars)); this % phi = 0
+    allocate(this % phi(this % num_state_vars))
+    this % phi = 0
 
     if (allocated(this % bcs)) deallocate(this % bcs)
     allocate(this % bcs(maxval(this % grid % tag_numbers), this % num_variables))
 
     if (this % transient) then
        if (allocated(this % phi_old)) deallocate(this % phi_old)
-       allocate(this % phi_old(this % num_state_vars)); this % phi_old = 0.0_dp
+       allocate(this % phi_old(this % num_state_vars))
+       this % phi_old = 0.0_dp
     end if
+
   end subroutine set_equation
 
   !===================================================================!
-  ! Enable backward-euler transient marching with step dt. The class_-
+  ! Enable backward-euler transient marching with step dt. The
   ! time_integrator advances phi_old between solves.
   !===================================================================!
 
   subroutine set_transient(this, dt)
+
     class(assembler), intent(inout) :: this
     real(dp)        , intent(in)    :: dt
+
     this % transient = .true.
     this % dt = dt
+
     if (allocated(this % phi_old)) deallocate(this % phi_old)
-    allocate(this % phi_old(this % num_state_vars)); this % phi_old = 0.0_dp
+    allocate(this % phi_old(this % num_state_vars))
+    this % phi_old = 0.0_dp
+
   end subroutine set_transient
 
+  !===================================================================!
   ! Stamp a resolved bc into the table (module-private helper). With no
   ! variable index the bc applies to every variable on the boundary.
+  !===================================================================!
+
   subroutine set_bc(this, tag, name, bc, var)
+
     class(assembler)        , intent(inout) :: this
     integer                 , intent(in)    :: tag
     character(len=*)        , intent(in)    :: name
     type(boundary_condition), intent(in)    :: bc
     integer, optional       , intent(in)    :: var
+
     integer :: v, vlo, vhi
+
     if (tag .lt. 1 .or. tag .gt. size(this % bcs, 1)) then
        write(*,*) "set_bc: unknown boundary '", name, "' -> tag ", tag
        error stop
     end if
-    vlo = 1; vhi = this % num_variables
+
+    vlo = 1
+    vhi = this % num_variables
+
     if (present(var)) then
-       vlo = var; vhi = var
+       vlo = var
+       vhi = var
     end if
+
     do v = vlo, vhi
-       this % bcs(tag, v)      = bc
+       this % bcs(tag, v)        = bc
        this % bcs(tag, v) % tag  = tag
        this % bcs(tag, v) % name = string(name)
     end do
+
   end subroutine set_bc
 
   !===================================================================!

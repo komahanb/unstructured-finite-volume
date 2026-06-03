@@ -102,14 +102,24 @@ contains
   !===================================================================!
 
   pure type(integer) function dof(this, cell, ivar)
+
     class(graph), intent(in) :: this
     integer     , intent(in) :: cell, ivar
+
     dof = (cell - 1)*this % num_variables + ivar
+
   end function dof
 
+  !===================================================================!
+  ! Total number of degrees of freedom in the graph
+  !===================================================================!
+
   pure type(integer) function num_dofs(this)
+
     class(graph), intent(in) :: this
+
     num_dofs = this % num_vertices * this % num_variables
+
   end function num_dofs
 
   !===================================================================!
@@ -182,22 +192,34 @@ contains
   !===================================================================!
 
   pure type(integer) function edge_cut(this)
+
     class(graph), intent(in) :: this
+
     integer :: e
+
     edge_cut = 0
+
     do e = 1, this % num_edges
        if (this % vertices(this % edges(e) % tail) % part .ne. &
             & this % vertices(this % edges(e) % head) % part) then
           edge_cut = edge_cut + 1
        end if
     end do
+
   end function edge_cut
 
+  !===================================================================!
+  ! Print a one line summary of the graph
+  !===================================================================!
+
   subroutine print(this)
+
     class(graph), intent(in) :: this
+
     write(*,'(1x,a,i0,a,i0,a,i0,a,i0)') &
          & "graph: ", this % num_vertices, " vertices, ", this % num_edges, &
          & " edges, ", this % num_variables, " variables/cell, ", this % num_dofs(), " dofs"
+
   end subroutine print
 
 end module class_graph

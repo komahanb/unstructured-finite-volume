@@ -34,6 +34,10 @@ module class_boundary_condition
   integer, parameter :: BC_NEUMANN   = 2
   integer, parameter :: BC_ROBIN     = 3
 
+  !-------------------------------------------------------------------!
+  ! Derived type for a single boundary condition
+  !-------------------------------------------------------------------!
+
   type :: boundary_condition
 
      type(string) :: name             ! physical group name
@@ -54,68 +58,114 @@ module class_boundary_condition
 contains
 
   !===================================================================!
-  ! Named constructors - set the (a,b,c) triad and the kind tag
+  ! Construct a dirichlet condition  phi = value
   !===================================================================!
 
   pure type(boundary_condition) function dirichlet(value) result(bc)
+
     real(dp), intent(in) :: value
+
     bc % kind = BC_DIRICHLET
-    bc % a = 1.0_dp; bc % b = 0.0_dp; bc % c = value
+
+    bc % a = 1.0_dp
+    bc % b = 0.0_dp
+    bc % c = value
+
   end function dirichlet
 
+  !===================================================================!
+  ! Construct a neumann condition  dphi/dn = flux
+  !===================================================================!
+
   pure type(boundary_condition) function neumann(flux) result(bc)
+
     real(dp), intent(in) :: flux
+
     bc % kind = BC_NEUMANN
-    bc % a = 0.0_dp; bc % b = 1.0_dp; bc % c = flux
+
+    bc % a = 0.0_dp
+    bc % b = 1.0_dp
+    bc % c = flux
+
   end function neumann
 
+  !===================================================================!
+  ! Construct a robin condition  a*phi + b*dphi/dn = c
+  !===================================================================!
+
   pure type(boundary_condition) function robin(a, b, c) result(bc)
+
     real(dp), intent(in) :: a, b, c
+
     bc % kind = BC_ROBIN
-    bc % a = a; bc % b = b; bc % c = c
+
+    bc % a = a
+    bc % b = b
+    bc % c = c
+
   end function robin
 
   !===================================================================!
-  ! Coefficient on phi_p contributed to the diagonal of the operator
+  ! Coefficient on phi_p contributed to the diagonal of the operator.
+  ! kappa = n^T K n is the normal conductivity carried by the equation.
   !===================================================================!
 
   pure real(dp) function lhs_coeff(this, area, delta, kappa)
+
     class(boundary_condition), intent(in) :: this
-    real(dp), intent(in) :: area, delta, kappa   ! kappa = n^T K n (normal conductivity)
+    real(dp)                 , intent(in) :: area, delta, kappa
+
     real(dp) :: denom
+
     denom = this % a + this % b/delta
+
     lhs_coeff = - kappa*area*this % a/(delta*denom)
+
   end function lhs_coeff
 
   !===================================================================!
   ! Constant the face contributes to the right hand side (already
-  ! carries the sign for moving to the rhs)
+  ! carries the sign for moving it to the rhs).
   !===================================================================!
 
   pure real(dp) function rhs_coeff(this, area, delta, kappa)
+
     class(boundary_condition), intent(in) :: this
-    real(dp), intent(in) :: area, delta, kappa   ! kappa = n^T K n (normal conductivity)
+    real(dp)                 , intent(in) :: area, delta, kappa
+
     real(dp) :: denom
+
     denom = this % a + this % b/delta
+
     rhs_coeff = - kappa*area*this % c/(delta*denom)
+
   end function rhs_coeff
 
   !===================================================================!
-  ! Pretty print
+  ! Print a one line summary of the boundary condition
   !===================================================================!
 
   subroutine print(this)
+
     class(boundary_condition), intent(in) :: this
+
     character(len=9) :: kindname
+
     select case (this % kind)
-    case (BC_DIRICHLET); kindname = "dirichlet"
-    case (BC_NEUMANN);   kindname = "neumann"
-    case (BC_ROBIN);     kindname = "robin"
-    case default;        kindname = "unknown"
+    case (BC_DIRICHLET)
+       kindname = "dirichlet"
+    case (BC_NEUMANN)
+       kindname = "neumann"
+    case (BC_ROBIN)
+       kindname = "robin"
+    case default
+       kindname = "unknown"
     end select
+
     write(*,'(1x,a,1x,a,1x,a,i0,1x,3(a,es12.4))') &
          & "bc", trim(kindname), "tag=", this % tag, &
          & "a=", this % a, " b=", this % b, " c=", this % c
+
   end subroutine print
 
 end module class_boundary_condition

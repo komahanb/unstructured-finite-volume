@@ -104,6 +104,27 @@ def square(n):
     gmsh.model.mesh.generate(2)
 
 
+def rectangle(n):
+    """2 x 1 rectangle, structured quad (2d); same edge names as the square."""
+    gmsh.model.add("rectangle")
+    gmsh.model.occ.addRectangle(0, 0, 0, 2.0, 1.0)
+    gmsh.model.occ.synchronize()
+
+    structured(2, n)
+
+    def edge(c):
+        x, y, _ = c
+        if abs(x)       < EPS: return "BoundaryLeft"
+        if abs(x - 2.0) < EPS: return "BoundaryRight"
+        if abs(y)       < EPS: return "BoundaryBottom"
+        if abs(y - 1.0) < EPS: return "BoundaryTop"
+        return None
+
+    name_entities(1, edge)
+    whole_group(2, "surface")
+    gmsh.model.mesh.generate(2)
+
+
 def sphere(h):
     """unit ball, unstructured tets; whole surface named 'boundary'."""
     gmsh.model.add("sphere")
@@ -141,6 +162,7 @@ RECIPES = {
     "box-fine":        lambda: box(24),
     "sphere":          lambda: sphere(0.25),
     "cylinder-coarse": lambda: cylinder(0.30),
+    "rectangle":       lambda: rectangle(8),
     "square-10":       lambda: square(10),
     "square-20":       lambda: square(20),
     "square-40":       lambda: square(40),

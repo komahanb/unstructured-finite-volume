@@ -26,3 +26,6 @@ echo "===================== 3D suite ====================="
 
 echo "===================== 2D suite ====================="
 ./run2d
+
+echo "================= order of accuracy ================"
+bash "$root/test/spatial-discretization/run.sh"

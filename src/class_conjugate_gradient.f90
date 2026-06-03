@@ -183,11 +183,7 @@ contains
     call this % FVAssembler % get_source(tmp)
     ! Add the additional right hand side supplied
     tmp = tmp + ss
-    if (this % FVAssembler % symmetry .eqv. .false.) then
-       call this % FVAssembler % get_transpose_jacobian_vector_product(b, tmp)
-    else
-       b = tmp
-    end if
+    b = tmp
     bnorm = norm2(b)
 
     ! Homogeneous case
@@ -198,11 +194,7 @@ contains
 
     ! Norm of the initial residual
     call this % FVAssembler % get_jacobian_vector_product(tmp, x)
-    if (this % FVAssembler % symmetry .eqv. .false.) then
-       call this % FVAssembler % get_transpose_jacobian_vector_product(Ax, tmp)
-    else
-       Ax = tmp
-    end if
+    Ax = tmp
     r         = b - Ax ! could directly form this residual using get_residual_call
     rnorm     = norm2(r)
     tol       = rnorm/bnorm
@@ -225,11 +217,7 @@ contains
 
        ! step (b) compute the solution update
        call this % FVAssembler % get_jacobian_vector_product(tmp, p)
-       if (this % FVAssembler % symmetry .eqv. .false.) then
-          call this % FVAssembler % get_transpose_jacobian_vector_product(w, tmp)
-       else
-          w = tmp
-       end if
+       w = tmp
 
        ! step (c) compute the step size for update
        alpha = rho(2)/dot_product(p, w)

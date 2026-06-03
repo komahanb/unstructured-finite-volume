@@ -21,9 +21,6 @@ module class_assembler
 
   type :: assembler
 
-     ! set symmetry to .true. for structured grid
-     logical :: symmetry = .true.
-
      ! Mesh object
      ! type(mesh), pointer :: grid
      class(mesh)   , allocatable :: grid
@@ -84,7 +81,6 @@ module class_assembler
      procedure :: get_jacobian
      procedure :: get_transpose_jacobian
      procedure :: get_jacobian_vector_product
-     procedure :: get_transpose_jacobian_vector_product
      procedure :: write_solution
 
      ! Destructor
@@ -111,10 +107,6 @@ contains
     ! Set mesh
     allocate(this % grid, source  = grid)
     call this % grid % to_string()
-
-    ! Non symmetric jacobian
-    this % symmetry = .true.
-
     ! One variable per cell by default ("T"); set_equation bumps this up
     this % num_variables = 1
 
@@ -553,18 +545,6 @@ contains
 
   end subroutine evaluate_face_flux
 
-  subroutine get_transpose_jacobian_vector_product(this, Aq, x)
-
-    class(assembler) , intent(in)    :: this
-    real(dp)         , intent(in)    :: x(:)
-    real(dp)         , intent(out)   :: Aq(:)
-    real(dp), allocatable :: A(:,:)
-    integer               :: n
-
-    error stop 'not implemented'
-
-  end subroutine get_transpose_jacobian_vector_product
-
   !===================================================================!
   ! Evaluate internal skew source based on the current cell states and
   ! return
@@ -726,7 +706,9 @@ contains
       associate(nv => this % g % num_variables)
 
       ! Loop cells
-      loop_cells: do concurrent (icell = 1:this % grid % num_cells)
+      ! plain do: the per-face temporaries (nf, Kf, keff) are shared, so
+      ! this is not a safe do concurrent without f2018 locality specs
+      loop_cells: do icell = 1, this % grid % num_cells
 
          ! Get the faces corresponding to this cell
          associate( &
@@ -781,7 +763,7 @@ contains
 
       associate(nv => this % g % num_variables)
 
-      loop_cells: do concurrent (icell = 1 : this % grid % num_cells)
+      loop_cells: do icell = 1, this % grid % num_cells
 
          associate(&
               & x => this % grid % cell_centers(:,icell), &
@@ -807,7 +789,7 @@ contains
       integer :: icell, ivar
       if (this % transient) then
          associate(nv => this % g % num_variables)
-         do concurrent (icell = 1 : this % grid % num_cells)
+         do icell = 1, this % grid % num_cells
             do ivar = 1, nv
                associate(p => this % g % dof(icell, ivar))
                b(p) = this % grid % cell_volumes(icell)/this % dt*this % phi_old(p) - b(p)

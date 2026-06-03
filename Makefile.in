@@ -40,7 +40,8 @@ TECIO_DIR  = $(HOME)/install/tecplot360ex
 #=====================================================================#
 
 ifeq ($(COMPILER),gnu)
-  F90 = gfortran-7
+  # auto-pick an available gfortran (override with `make F90=...`)
+  F90 := $(shell for c in gfortran gfortran-13 gfortran-12 gfortran-11 gfortran-10 gfortran-9 gfortran-8 gfortran-7; do command -v $$c >/dev/null 2>&1 && { echo $$c; exit; }; done; echo gfortran)
   F90FLAGS := -fcoarray=single -cpp -fPIC -Wno-line-truncation
 
   # COMPLEX mode

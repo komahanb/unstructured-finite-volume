@@ -1,11 +1,12 @@
-# Check if compiler exists
-# command -v gfortran-7 >/dev/null 2>&1 || { echo "I require gfortran-7 but it's not installed.  Aborting. Try sudo apt-get install gfortran-7 and retry." >&2; exit 1; }
+#!/bin/bash
+# build the ufvm library into lib/.
+# the compiler is auto-detected in Makefile.in, so a bare make just works -
+# here, in every example and in the tests. override with `make F90=...`.
+set -e
 
-# Execute the sequence of commands to build the library
 mkdir -p lib
-cd src
-make clean
-make
-make install
-cd ../
-echo "Now proceed to tests to 'make' and run examples"
+make -C src clean
+make -C src
+make -C src install
+
+echo "library built in lib/ - now 'make' and run an example (e.g. examples/solver)"

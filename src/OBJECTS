@@ -1,5 +1,9 @@
 objects= \
 module_verbosity.o \
+interface_assembler.o \
+interface_integrator.o \
+nonlinear_marching.o \
+class_bdf.o \
 class_string.o \
 class_file.o \
 class_set.o \

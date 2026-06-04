@@ -1,243 +1,221 @@
 #include "scalar.fpp"
 
 !=====================================================================!
-! Module that contains common procedures for any physical system
-! subject to governing equations
+! Continuous, pointwise, discretization-agnostic physics operators.
 !
-! Author: Komahan Boopathy
+! A conservation law is written as
+!
+!     dq/dt + div F(q, grad q) = S(q, grad q)
+!
+! and a function of interest as  J = integral f(q, grad q) dV. The three
+! operators - flux F, source S, objective f - are pointwise functions of
+! the state q and its gradient grad q (first derivatives only; the
+! divergence theorem / integration by parts removes the second). They
+! provide their value and their state/design partials. They know nothing
+! about meshes or cells: a finite-volume assembler integrates F over
+! faces and S over the volume; a finite-element assembler would weight
+! the same operators differently. This is the seam that keeps the
+! framework law-agnostic (and discretization-agnostic).
+!
+! flux, source and objective extend a common base `physics`. Fortran has
+! single inheritance, so a concrete law supplies a flux object and a
+! source object separately (composed at setup), not one type that is
+! both.
+!
+! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module interface_physics
 
   use iso_fortran_env, only : dp => REAL64
+
   implicit none
-  
+
   private
-  public :: physics
- 
-  !===================================================================!
-  ! Type that models any physical system
-  !===================================================================!
-  
+  public :: physics, flux, source, objective, point_state
+
+  !-------------------------------------------------------------------!
+  ! Pointwise evaluation context: the state and its gradient at a point
+  ! (a face centroid for the flux, a cell centroid for the source). The
+  ! state is type(scalar) so complex-step partials drop in later; the
+  ! spatial point x is geometry (real).
+  !-------------------------------------------------------------------!
+
+  type :: point_state
+     integer                   :: nv = 1       ! number of variables
+     type(scalar), allocatable :: q(:)         ! q        (nv)
+     type(scalar), allocatable :: gradq(:,:)   ! grad q   (3, nv)
+     real(dp)                  :: x(3) = 0.0_dp ! spatial point
+  end type point_state
+
+  !-------------------------------------------------------------------!
+  ! Common base: number of components it acts on + design variables.
+  !-------------------------------------------------------------------!
+
   type, abstract :: physics
-
-     type(character(len=:)), allocatable :: description
-
-     type(integer) :: num_state_vars
-     type(logical) :: approximate_jacobian
-     type(integer) :: differential_order
-
-   contains  
-
-     ! Deferred procedures
-     procedure(add_residual_interface)               , deferred :: add_residual
-     procedure(add_jacobian_vector_product_interface), deferred :: add_jacobian_vector_product
-     procedure(add_initial_condition_interface)      , deferred :: add_initial_condition
-
-     ! Provided procedures
-     procedure :: get_num_state_vars, set_num_state_vars
-     procedure :: get_description   , set_description
-  
-     ! Defined procedures
-     procedure :: get_differential_order
-     procedure :: set_differential_order
-
-     ! Default finite difference jacobian implementation
-     procedure :: add_jacobian => add_jacobian_fd
-
+     integer :: num_components = 1
+   contains
+     procedure :: num_design_vars => physics_num_design_vars  ! default 0
+     procedure :: set_design_vars => physics_set_design_vars  ! default no-op
+     procedure :: get_design_vars => physics_get_design_vars  ! default no-op
   end type physics
 
-  !===================================================================!
-  ! Interfaces for deferred procedures
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Flux F(q, grad q): the vector under the divergence. value -> F(3,nv);
+  ! state jacobians dflux_dq (3,nv,nv) and dflux_dgradq (3,nv,3,nv); the
+  ! trailing variable index is the block-coupling seam (diagonal today).
+  !-------------------------------------------------------------------!
+
+  type, extends(physics), abstract :: flux
+   contains
+     procedure(flux_value_interface)   , deferred :: value
+     procedure(flux_dq_interface)      , deferred :: dflux_dq
+     procedure(flux_dgradq_interface)  , deferred :: dflux_dgradq
+     procedure :: dflux_ddesign => flux_ddesign_zero          ! (3,nv) for design var k
+  end type flux
+
+  !-------------------------------------------------------------------!
+  ! Volumetric source S(q, grad q): value -> S(nv) + partials.
+  !-------------------------------------------------------------------!
+
+  type, extends(physics), abstract :: source
+   contains
+     procedure(source_value_interface), deferred :: value
+     procedure :: dsource_dq      => source_dq_zero           ! (nv,nv)
+     procedure :: dsource_dgradq  => source_dgradq_zero       ! (nv,3,nv)
+     procedure :: dsource_ddesign => source_ddesign_zero      ! (nv) for design var k
+  end type source
+
+  !-------------------------------------------------------------------!
+  ! Function-of-interest integrand f(q, grad q): value -> scalar + parts.
+  !-------------------------------------------------------------------!
+
+  type, extends(physics), abstract :: objective
+   contains
+     procedure(objective_value_interface), deferred :: value
+     procedure :: dobj_dq      => objective_dq_zero           ! (nv)
+     procedure :: dobj_dgradq  => objective_dgradq_zero       ! (3,nv)
+     procedure :: dobj_ddesign => objective_ddesign_zero      ! scalar for design var k
+  end type objective
+
+  !-------------------------------------------------------------------!
+  ! Deferred interfaces
+  !-------------------------------------------------------------------!
 
   abstract interface
 
-     !================================================================!
-     ! Interface for residual assembly R(U,xi)
-     !================================================================!
+     pure function flux_value_interface(this, st) result(F)
+       import :: flux, point_state
+       class(flux)      , intent(in) :: this
+       type(point_state), intent(in) :: st
+       type(scalar)                  :: F(3, this % num_components)
+     end function flux_value_interface
 
-     impure subroutine add_residual_interface(this, residual, U, xi, filter)
+     pure function flux_dq_interface(this, st) result(dF)
+       import :: flux, point_state
+       class(flux)      , intent(in) :: this
+       type(point_state), intent(in) :: st
+       type(scalar)                  :: dF(3, this % num_components, this % num_components)
+     end function flux_dq_interface
 
-       import :: physics
+     pure function flux_dgradq_interface(this, st) result(dF)
+       import :: flux, point_state
+       class(flux)      , intent(in) :: this
+       type(point_state), intent(in) :: st
+       type(scalar)                  :: dF(3, this % num_components, 3, this % num_components)
+     end function flux_dgradq_interface
 
-       class(physics), intent(in)    :: this
-       type(scalar)  , intent(inout) :: residual(:)
-       type(scalar)  , intent(in)    :: U(:,:)
-       type(scalar)  , intent(in)    :: xi(:)
-       type(integer) , intent(in), optional :: filter
+     pure function source_value_interface(this, st) result(S)
+       import :: source, point_state
+       class(source)    , intent(in) :: this
+       type(point_state), intent(in) :: st
+       type(scalar)                  :: S(this % num_components)
+     end function source_value_interface
 
-     end subroutine add_residual_interface
-
-     !================================================================!
-     ! Routine to return the product of jacobian matrix with a compati-
-     ! ble vector pdt <---- [scalar(i)*dR(U,X)/dU(i)]*vec
-     !================================================================!
-     
-     impure subroutine add_jacobian_vector_product_interface(this, pdt, vec, &
-          & scalars, U, xi, filter)
-
-       import :: physics
-
-       class(physics) , intent(in)    :: this
-       type(scalar)   , intent(inout) :: pdt(:)
-       type(scalar)   , intent(in)    :: vec(:)
-       type(scalar)   , intent(in)    :: scalars(:)
-       type(scalar)   , intent(in)    :: U(:,:)
-       type(scalar)   , intent(in)    :: xi(:)
-       type(integer)  , intent(in), optional :: filter
-
-     end subroutine add_jacobian_vector_product_interface
-
-     !================================================================!
-     ! Supplying the initial condition to march in time
-     !================================================================!
-
-     impure subroutine add_initial_condition_interface(this, U, xi, filter)
-
-       import :: physics
-
-       class(physics), intent(in)    :: this
-       type(scalar)  , intent(inout) :: U(:,:)
-       type(scalar)  , intent(in)    :: xi(:)
-       type(integer) , intent(in), optional :: filter
-
-     end subroutine add_initial_condition_interface
+     pure function objective_value_interface(this, st) result(f)
+       import :: objective, point_state
+       class(objective) , intent(in) :: this
+       type(point_state), intent(in) :: st
+       type(scalar)                  :: f
+     end function objective_value_interface
 
   end interface
 
 contains
-  
-  !===================================================================!
-  ! Returns the number of state variables in the physical system
-  !===================================================================!
-  
-  pure type(integer) function get_num_state_vars(this)
 
+  !===================================================================!
+  ! Design-variable defaults (no design dependence)
+  !===================================================================!
+
+  pure integer function physics_num_design_vars(this) result(n)
     class(physics), intent(in) :: this
+    n = 0
+  end function physics_num_design_vars
 
-    get_num_state_vars = this % num_state_vars
-
-  end function get_num_state_vars
-
-  !===================================================================!
-  ! Sets the number of state variables in the physical system
-  !===================================================================!
-  
-  pure subroutine set_num_state_vars(this, num_state_vars)
-
+  subroutine physics_set_design_vars(this, x)
     class(physics), intent(inout) :: this
-    type(integer)  , intent(in)   :: num_state_vars
+    real(dp)      , intent(in)    :: x(:)
+  end subroutine physics_set_design_vars
 
-    this % num_state_vars  = num_state_vars
-
-  end subroutine set_num_state_vars
-  
-  !===================================================================!
-  ! Returns the description set for the physical system
-  !===================================================================!
-  
-  pure type(character) function get_description(this)
-
-    class(physics), intent(in) :: this
-
-    get_description = this % description
-
-  end function get_description
+  subroutine physics_get_design_vars(this, x)
+    class(physics), intent(in)  :: this
+    real(dp)      , intent(out) :: x(:)
+  end subroutine physics_get_design_vars
 
   !===================================================================!
-  ! Sets the description for physical system
+  ! Default partials: zero (overridden by laws that depend on them)
   !===================================================================!
 
-  pure subroutine set_description(this, description)
+  pure function flux_ddesign_zero(this, st, k) result(dF)
+    class(flux)      , intent(in) :: this
+    type(point_state), intent(in) :: st
+    integer          , intent(in) :: k
+    type(scalar)                  :: dF(3, this % num_components)
+    dF = 0.0_dp
+  end function flux_ddesign_zero
 
-    class(physics), intent(inout) :: this
-    type(character(len=*)), intent(in) :: description
-    
-    allocate(this % description, source = trim(description))
+  pure function source_dq_zero(this, st) result(dS)
+    class(source)    , intent(in) :: this
+    type(point_state), intent(in) :: st
+    type(scalar)                  :: dS(this % num_components, this % num_components)
+    dS = 0.0_dp
+  end function source_dq_zero
 
-  end subroutine set_description
+  pure function source_dgradq_zero(this, st) result(dS)
+    class(source)    , intent(in) :: this
+    type(point_state), intent(in) :: st
+    type(scalar)                  :: dS(this % num_components, 3, this % num_components)
+    dS = 0.0_dp
+  end function source_dgradq_zero
 
-  !===================================================================!
-  ! Returns the highest order of time derivative in the physics
-  !===================================================================!
-  
-  pure type(integer) function get_differential_order(this)
+  pure function source_ddesign_zero(this, st, k) result(dS)
+    class(source)    , intent(in) :: this
+    type(point_state), intent(in) :: st
+    integer          , intent(in) :: k
+    type(scalar)                  :: dS(this % num_components)
+    dS = 0.0_dp
+  end function source_ddesign_zero
 
-    class(physics), intent(in) :: this
+  pure function objective_dq_zero(this, st) result(df)
+    class(objective) , intent(in) :: this
+    type(point_state), intent(in) :: st
+    type(scalar)                  :: df(this % num_components)
+    df = 0.0_dp
+  end function objective_dq_zero
 
-    get_differential_order = this % differential_order
+  pure function objective_dgradq_zero(this, st) result(df)
+    class(objective) , intent(in) :: this
+    type(point_state), intent(in) :: st
+    type(scalar)                  :: df(3, this % num_components)
+    df = 0.0_dp
+  end function objective_dgradq_zero
 
-  end function get_differential_order
-
-  !===================================================================!
-  ! Sets the highest order of time derivative in the physics
-  !===================================================================!
-
-  pure subroutine set_differential_order(this, order)
-
-    class(physics), intent(inout) :: this
-    type(integer) , intent(in)    :: order
-
-    this % differential_order = order
-
-  end subroutine set_differential_order
-  
-  !===================================================================!
-  ! Jacobian assembly at each time step.
-  !===================================================================!
-  
-  impure subroutine add_jacobian_fd(this, jacobian, coeff, U, xi)
-
-    class(physics) , intent(inout) :: this
-    type(scalar)   , intent(inout) :: jacobian(:,:)
-    type(scalar)   , intent(in)    :: coeff(:)
-    type(scalar)   , intent(in)    :: U(:,:)
-    type(scalar)   , intent(in)    :: xi(:)
-
-    type(integer)             :: nvars, dorder
-    type(integer)             :: n, m
-    type(scalar), allocatable :: R(:), Rtmp(:), Utmp(:,:)
-    real(8)     , parameter   :: dh = 1.0d-8
-
-    nvars = this % get_num_state_vars()
-    dorder = this % get_differential_order()
-
-    ! Make a copy of state variables
-    allocate(Utmp, source=U)
-
-    ! Allocate space for residual perturbations
-    allocate(R(nvars))
-    allocate(Rtmp(nvars))
-
-    ! Make a residual call with original variables
-    R = 0.0d0
-    call this % add_residual(R, U, xi)
-
-    diff_order: do n = 1, dorder + 1
-
-       loop_vars: do m = 1, nvars
-
-          ! Perturb the m-th variable of n-th order
-          Utmp(n,m) = Utmp(n,m) + dh
-
-          ! Make a residual call with the perturbed variable
-          rtmp = 0.0d0
-          call this % add_residual(Rtmp, Utmp, xi)
-
-          ! Unperturb (restore) the m-th variable of n-th order
-          Utmp(n+1,m) = U(n+1,m)
-
-          ! Approximate the jacobian with respect to the m-th variable
-          jacobian(:,m) = jacobian(:,m) + coeff(n)*(Rtmp-R)/dh
-
-       end do loop_vars
-
-    end do diff_order
-
-    ! Freeup memory
-    deallocate(R, Rtmp)
-
-  end subroutine add_jacobian_fd
+  pure function objective_ddesign_zero(this, st, k) result(df)
+    class(objective) , intent(in) :: this
+    type(point_state), intent(in) :: st
+    integer          , intent(in) :: k
+    type(scalar)                  :: df
+    df = 0.0_dp
+  end function objective_ddesign_zero
 
 end module interface_physics

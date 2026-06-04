@@ -19,7 +19,7 @@ program unsteady_heat
   use class_gmsh_loader     , only : gmsh_loader
   use class_mesh            , only : mesh
   use class_assembler       , only : assembler
-  use class_diffusion       , only : diffusion
+  use class_diffusion_flux  , only : diffusion_flux, constant_source
   use class_time_integrator , only : time_integrator
   use class_paraview_writer , only : paraview_writer
   use class_string          , only : string
@@ -61,7 +61,7 @@ program unsteady_heat
 
   ! Assembler + physics (set the equation before the boundaries)
   allocate(fvm, source = assembler(grid))
-  call fvm % set_equation(diffusion(cfg % kappa, source = cfg % source))
+  call fvm % set_equation(diffusion_flux(cfg % kappa), constant_source(cfg % source))
 
   ! Boundary conditions, by physical group name
   do i = 1, cfg % nbc

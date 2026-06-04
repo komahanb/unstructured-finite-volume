@@ -20,7 +20,7 @@ program regression
   use class_gmsh_loader        , only : gmsh_loader
   use class_mesh               , only : mesh
   use class_assembler          , only : assembler
-  use class_diffusion          , only : diffusion
+  use class_diffusion_flux  , only : diffusion_flux, constant_source
   use class_conjugate_gradient , only : conjugate_gradient
   use class_time_integrator    , only : time_integrator
   use class_bdf                , only : bdf
@@ -141,7 +141,7 @@ contains
     class(conjugate_gradient), allocatable :: cg
 
     call make(meshfile, fvm)
-    call fvm % set_equation(diffusion(kappa, source = 1.0_dp))
+    call fvm % set_equation(diffusion_flux(kappa), constant_source(1.0_dp))
 
     allocate(cg, source = conjugate_gradient(fvm, 500, tol, 0))
     call cg % solve(x)

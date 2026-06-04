@@ -8,8 +8,9 @@ module class_assembler
   use class_mesh              , only : mesh
   use class_string            , only : string
   use class_boundary_condition, only : boundary_condition, dirichlet, neumann, robin
-  use interface_equation      , only : equation
-  use class_diffusion         , only : diffusion
+  use interface_physics       , only : flux, source, point_state
+  use class_diffusion_flux    , only : diffusion_flux, constant_source
+  use class_fvm_field         , only : fvm_field
   use class_graph             , only : graph
   use module_verbosity        , only : verbosity
 
@@ -45,8 +46,12 @@ module class_assembler
      ! Boundary conditions - one per (face tag, variable), addressed by name
      type(boundary_condition), allocatable :: bcs(:,:)
 
-     ! The pde being discretized (diffusion tensor, source, #variables)
-     class(equation), allocatable :: model
+     ! The law-agnostic seam: the flux operator, the source operator, and
+     ! the cell-centred reconstruction field. A concrete law (diffusion,
+     ! advection, ...) is set by providing its flux and source.
+     class(flux)        , allocatable :: fx     ! flux operator F(q, grad q)
+     class(source)      , allocatable :: src    ! source operator S(q, grad q)
+     type(fvm_field)    , allocatable :: fld    ! cell-centred reconstruction
 
      ! Transient (backward euler) support. The operator becomes
      ! (M/dt - A) and the rhs (M/dt) phi_old - b, with M = cell volume.
@@ -85,6 +90,9 @@ module class_assembler
      procedure :: get_jacobian
      procedure :: get_transpose_jacobian
      procedure :: get_jacobian_vector_product
+     ! law-agnostic flux/source assembly (the operator + rhs)
+     procedure :: get_jvp_via_flux
+     procedure :: get_source_via_flux
      procedure :: write_solution
      procedure :: write_solution_fields
      procedure :: write_gmsh_series
@@ -154,7 +162,9 @@ contains
 
     ! Default physics: isotropic unit diffusion, no source - recovers the
     ! old laplace operator. The driver overrides with set_equation.
-    allocate(this % model, source = diffusion(1.0_dp))
+    allocate(this % fx , source = diffusion_flux(1.0_dp, this % num_variables))
+    allocate(this % src, source = constant_source(0.0_dp, this % num_variables))
+    allocate(this % fld, source = fvm_field(this % num_variables, this % num_state_vars))
 
     this % DIAGONAL       = 0
     this % LOWER_TRIANGLE = -1
@@ -229,10 +239,11 @@ contains
   ! of variables rebuilds the (tag,variable) bc table.
   !===================================================================!
 
-  subroutine set_equation(this, model)
+  subroutine set_equation(this, flux_op, source_op)
 
     class(assembler), intent(inout) :: this
-    class(equation) , intent(in)    :: model
+    class(flux)     , intent(in)    :: flux_op    ! F(q, grad q)
+    class(source)   , intent(in)    :: source_op  ! S(q, grad q)
 
     ! Guard the ordering footgun: set_equation rebuilds the (tag,variable)
     ! bc table, so any boundary conditions set earlier would be lost.
@@ -243,11 +254,8 @@ contains
        end if
     end if
 
-    if (allocated(this % model)) deallocate(this % model)
-    allocate(this % model, source = model)
-
     ! Resize the system for this many variables per cell
-    this % num_variables     = model % num_variables
+    this % num_variables     = flux_op % num_components
     this % g % num_variables = this % num_variables
     this % num_state_vars    = this % g % num_dofs()
 
@@ -263,6 +271,14 @@ contains
        allocate(this % phi_old(this % num_state_vars))
        this % phi_old = 0.0_dp
     end if
+
+    ! store the flux/source operators and the reconstruction field
+    if (allocated(this % fx))  deallocate(this % fx)
+    if (allocated(this % src)) deallocate(this % src)
+    if (allocated(this % fld)) deallocate(this % fld)
+    allocate(this % fx , source = flux_op)
+    allocate(this % src, source = source_op)
+    allocate(this % fld, source = fvm_field(this % num_variables, this % num_state_vars))
 
   end subroutine set_equation
 
@@ -432,140 +448,226 @@ contains
     real(dp)         , intent(out)   :: Aq(:)
     integer, optional, intent(in)    :: filter
 
-    ! Finite difference coeff for flux approximation between two cells
-    real(dp), parameter  :: alpha(2) = [-1.0_dp, 1.0_dp]
-
-    laplace_normal: block
-
-      integer  :: icell, iface, ivar, p, n
-      integer  :: ncell, fcells(2)
-      real(dp) :: nf(3), Kf(3,3), keff
-
-      associate(nv => this % g % num_variables)
-
-      ! Loop cells
-      loop_cells: do icell = 1 , this % grid % num_cells
-
-         ! Get the faces corresponding to this cell
-         associate(faces => this % grid % cell_faces (1:this % grid % num_cell_faces(icell),icell))
-
-           ! Zero this cell's dofs
-           do ivar = 1, nv
-              Aq(this % g % dof(icell,ivar)) = 0.0d0
-           end do
-
-           loop_faces: do iface = 1, this % grid % num_cell_faces(icell)
-
-              associate (&
-                   & fdelta => this % grid % face_deltas(faces(iface)), &
-                   & farea  => this % grid % face_areas(faces(iface)),  &
-                   & ftag   => this % grid % face_tags(faces(iface)),   &
-                   & num_face_cells => this % grid % num_face_cells(faces(iface)) &
-                   & )
-
-                ! Effective normal conductivity from the diffusion tensor
-                nf   = this % grid % cell_face_normals(1:3, iface, icell)
-                Kf   = this % model % diffusion_tensor(this % grid % face_centers(1:3, faces(iface)))
-                keff = dot_product(nf, matmul(Kf, nf))
-
-                ! Add contribution from internal faces
-                domain: if (num_face_cells .eq. 2) then
-
-                   ! Neighbour cell index !? filter here probably?
-                   fcells(1:num_face_cells) = this % grid % face_cells(1:num_face_cells,faces(iface))
-
-                   ! Neighbour is the one that has a different cell
-                   ! index than current icell
-                   if (fcells(1) .eq. icell) then
-                      ncell = fcells(2)
-                   else
-                      ncell = fcells(1)
-                   end if
-
-                   ! Interior face: couple each variable to the same
-                   ! variable in the neighbour cell (decoupled fields).
-                   ! The upper/lower split is by cell index, which for a
-                   ! fixed variable matches the dof ordering.
-                   variables_interior: do ivar = 1, nv
-
-                      p = this % g % dof(icell, ivar)
-                      n = this % g % dof(ncell, ivar)
-
-                      present_filter: if (present(filter)) then
-
-                         apply_filter: if (filter .eq. this % UPPER_TRIANGLE) then
-                            if (ncell .gt. icell) Aq(p) = Aq(p) + keff*farea*(q(n))/fdelta
-                         else if (filter .eq. this % LOWER_TRIANGLE) then
-                            if (ncell .lt. icell) Aq(p) = Aq(p) + keff*farea*(q(n))/fdelta
-                         else if (filter .eq. this % DIAGONAL) then
-                            Aq(p) = Aq(p) + keff*farea*(-q(p))/fdelta
-                         end if apply_filter
-
-                      else
-
-                         Aq(p) = Aq(p) + keff*farea*(q(n)-q(p))/fdelta
-
-                      end if present_filter
-
-                   end do variables_interior
-
-                else
-
-                   !----------------------------------------------------!
-                   ! Boundary face - the bc contributes to the diagonal
-                   !----------------------------------------------------!
-
-                   ! Robin-type bc: flux = lhs_coeff*phi_p + const. Only
-                   ! the phi_p (diagonal) part lives in the operator; the
-                   ! constant goes to the rhs in get_source. A neumann bc
-                   ! has lhs_coeff = 0, so it adds nothing here.
-                   variables_boundary: do ivar = 1, nv
-
-                      p = this % g % dof(icell, ivar)
-
-                      if (present(filter)) then
-                         if (filter .eq. this % DIAGONAL) then
-                            Aq(p) = Aq(p) &
-                                 & + this % bcs(ftag,ivar) % lhs_coeff(farea, fdelta, keff)*q(p)
-                         end if
-                      else
-                         Aq(p) = Aq(p) &
-                              & + this % bcs(ftag,ivar) % lhs_coeff(farea, fdelta, keff)*q(p)
-                      end if
-
-                   end do variables_boundary
-
-                end if domain
-
-              end associate
-
-           end do loop_faces
-
-           ! Transient: the operator is (M/dt - A). Negate the spatial
-           ! part assembled above and add the mass term M/dt to the
-           ! diagonal (full and DIAGONAL filter only).
-           if (this % transient) then
-              do ivar = 1, nv
-                 p = this % g % dof(icell, ivar)
-                 Aq(p) = -Aq(p)
-                 if (present(filter)) then
-                    if (filter .eq. this % DIAGONAL) &
-                         & Aq(p) = Aq(p) + this % grid % cell_volumes(icell)/this % dt*q(p)
-                 else
-                    Aq(p) = Aq(p) + this % grid % cell_volumes(icell)/this % dt*q(p)
-                 end if
-              end do
-           end if
-
-         end associate
-
-      end do loop_cells
-
-      end associate
-
-    end block laplace_normal
+    ! The diffusion operator is assembled law-agnostically through the
+    ! flux seam: F = -K grad q, reconstructed at faces and dotted with
+    ! the face normals. (Was the hard-coded laplace_normal block.)
+    call this % get_jvp_via_flux(Aq, q, filter)
 
   end subroutine get_jacobian_vector_product
+
+  !===================================================================!
+  ! Jacobian-vector product via the flux seam (parallel to the legacy
+  ! get_jacobian_vector_product, used to pin the new path against the
+  ! old before the switch). The normal diffusivity keff = n^T K n comes
+  ! from the flux's dF/d(grad q); the diagonal (own) and neighbour face-
+  ! jacobian contributions are formed as separate sub-expressions so the
+  ! L/U/D split stays bit-exact.
+  !===================================================================!
+
+  subroutine get_jvp_via_flux(this, Aq, q, filter)
+
+    class(assembler) , intent(in)    :: this
+    real(dp)         , intent(in)    :: q(:)
+    real(dp)         , intent(out)   :: Aq(:)
+    integer, optional, intent(in)    :: filter
+
+    integer           :: icell, iface, ivar, p, n, ncell, fcells(2), gface
+    real(dp)          :: nf(3), keff, diag, neigh
+    type(point_state) :: st
+
+    associate(nv => this % g % num_variables)
+
+    allocate(st % q(nv), st % gradq(3, nv))
+    st % nv = nv
+    st % q  = 0.0d0
+
+    loop_cells: do icell = 1, this % grid % num_cells
+
+       associate(faces => this % grid % cell_faces(1:this % grid % num_cell_faces(icell), icell))
+
+         do ivar = 1, nv
+            Aq(this % g % dof(icell, ivar)) = 0.0d0
+         end do
+
+         loop_faces: do iface = 1, this % grid % num_cell_faces(icell)
+
+            gface = faces(iface)
+
+            associate( &
+                 & fdelta => this % grid % face_deltas(gface), &
+                 & farea  => this % grid % face_areas(gface),  &
+                 & ftag   => this % grid % face_tags(gface),   &
+                 & nfc    => this % grid % num_face_cells(gface))
+
+              nf        = this % grid % cell_face_normals(1:3, iface, icell)
+              st % x    = this % grid % face_centers(1:3, gface)
+              st % gradq = 0.0d0
+
+              domain: if (nfc .eq. 2) then
+
+                 fcells(1:nfc) = this % grid % face_cells(1:nfc, gface)
+                 if (fcells(1) .eq. icell) then
+                    ncell = fcells(2)
+                 else
+                    ncell = fcells(1)
+                 end if
+
+                 do ivar = 1, nv
+                    p = this % g % dof(icell, ivar)
+                    n = this % g % dof(ncell, ivar)
+                    keff  = flux_keff(this % fx, st, nf, ivar)
+                    diag  = -farea*( keff/fdelta)*q(p)   ! d(F.n)/dq_p contribution
+                    neigh = -farea*(-keff/fdelta)*q(n)   ! d(F.n)/dq_n contribution
+                    if (present(filter)) then
+                       if (filter .eq. this % UPPER_TRIANGLE) then
+                          if (ncell .gt. icell) Aq(p) = Aq(p) + neigh
+                       else if (filter .eq. this % LOWER_TRIANGLE) then
+                          if (ncell .lt. icell) Aq(p) = Aq(p) + neigh
+                       else if (filter .eq. this % DIAGONAL) then
+                          Aq(p) = Aq(p) + diag
+                       end if
+                    else
+                       Aq(p) = Aq(p) + diag + neigh
+                    end if
+                 end do
+
+              else
+
+                 do ivar = 1, nv
+                    p    = this % g % dof(icell, ivar)
+                    keff = flux_keff(this % fx, st, nf, ivar)
+                    if (present(filter)) then
+                       if (filter .eq. this % DIAGONAL) &
+                            & Aq(p) = Aq(p) + this % bcs(ftag,ivar) % lhs_coeff(farea, fdelta, keff)*q(p)
+                    else
+                       Aq(p) = Aq(p) + this % bcs(ftag,ivar) % lhs_coeff(farea, fdelta, keff)*q(p)
+                    end if
+                 end do
+
+              end if domain
+
+            end associate
+
+         end do loop_faces
+
+         ! Transient: operator (M/dt - A) (identical to the legacy path)
+         if (this % transient) then
+            do ivar = 1, nv
+               p = this % g % dof(icell, ivar)
+               Aq(p) = -Aq(p)
+               if (present(filter)) then
+                  if (filter .eq. this % DIAGONAL) &
+                       & Aq(p) = Aq(p) + this % grid % cell_volumes(icell)/this % dt*q(p)
+               else
+                  Aq(p) = Aq(p) + this % grid % cell_volumes(icell)/this % dt*q(p)
+               end if
+            end do
+         end if
+
+       end associate
+
+    end do loop_cells
+
+    end associate
+
+  end subroutine get_jvp_via_flux
+
+  !===================================================================!
+  ! Source via the flux seam (parallel to get_source): boundary-condition
+  ! constants (keff from the flux) + volumetric source from the source
+  ! operator + the transient rhs.
+  !===================================================================!
+
+  subroutine get_source_via_flux(this, b, boundary_only)
+
+    class(assembler), intent(in)           :: this
+    real(dp)        , intent(out)          :: b(:)
+    logical         , intent(in), optional :: boundary_only
+
+    logical           :: bnd_only
+    integer           :: icell, iface, ivar, p, gface
+    real(dp)          :: nf(3), keff
+    type(point_state) :: st
+    type(scalar)      :: Sval(this % g % num_variables)
+
+    bnd_only = .false.
+    if (present(boundary_only)) bnd_only = boundary_only
+
+    associate(nv => this % g % num_variables)
+
+    allocate(st % q(nv), st % gradq(3, nv))
+    st % nv = nv; st % q = 0.0d0; st % gradq = 0.0d0
+
+    ! boundary-condition constants
+    do icell = 1, this % grid % num_cells
+       associate(faces => this % grid % cell_faces(1:this % grid % num_cell_faces(icell), icell))
+         do ivar = 1, nv
+            b(this % g % dof(icell, ivar)) = 0.0d0
+         end do
+         do iface = 1, this % grid % num_cell_faces(icell)
+            gface = faces(iface)
+            associate( &
+                 & fdelta => this % grid % face_deltas(gface), &
+                 & farea  => this % grid % face_areas(gface),  &
+                 & ftag   => this % grid % face_tags(gface))
+              if (this % grid % num_face_cells(gface) .eq. 1) then
+                 nf     = this % grid % cell_face_normals(1:3, iface, icell)
+                 st % x = this % grid % face_centers(1:3, gface)
+                 do ivar = 1, nv
+                    p    = this % g % dof(icell, ivar)
+                    keff = flux_keff(this % fx, st, nf, ivar)
+                    b(p) = b(p) + this % bcs(ftag,ivar) % rhs_coeff(farea, fdelta, keff)
+                 end do
+              end if
+            end associate
+         end do
+       end associate
+    end do
+
+    ! volumetric source
+    if (.not. bnd_only) then
+       do icell = 1, this % grid % num_cells
+          st % x = this % grid % cell_centers(:, icell)
+          Sval   = this % src % value(st)
+          do ivar = 1, nv
+             p    = this % g % dof(icell, ivar)
+             b(p) = b(p) + real(Sval(ivar), dp)*this % grid % cell_volumes(icell)
+          end do
+       end do
+    end if
+
+    ! transient rhs (M/dt) phi_old - b_steady
+    if (this % transient .and. .not. bnd_only) then
+       do icell = 1, this % grid % num_cells
+          do ivar = 1, nv
+             p    = this % g % dof(icell, ivar)
+             b(p) = this % grid % cell_volumes(icell)/this % dt*this % phi_old(p) - b(p)
+          end do
+       end do
+    end if
+
+    end associate
+
+  end subroutine get_source_via_flux
+
+  !===================================================================!
+  ! Normal diffusivity keff = n^T K n for variable ivar, read from the
+  ! flux's gradient-jacobian dF/d(grad q) = -K.
+  !===================================================================!
+
+  pure real(dp) function flux_keff(fx, st, nf, ivar) result(keff)
+
+    class(flux)      , intent(in) :: fx
+    type(point_state), intent(in) :: st
+    real(dp)         , intent(in) :: nf(3)
+    integer          , intent(in) :: ivar
+
+    type(scalar) :: dFg(3, fx % num_components, 3, fx % num_components)
+
+    dFg  = fx % dflux_dgradq(st)
+    keff = -real(dot_product(nf, matmul(dFg(:,ivar,:,ivar), nf)), dp)
+
+  end function flux_keff
 
   !===================================================================!
   ! Compute vertex values by interpolating cell center values
@@ -755,8 +857,14 @@ contains
                  end if
 
                  ! Deferred non-orthogonal correction flux, projected
-                 ! through the diffusion tensor: Area*((K grad_t) . kvec)
-                 Kf = this % model % diffusion_tensor(fc)
+                 ! through the diffusion tensor: Area*((K grad_t) . kvec).
+                 ! (Diffusion-specific correction; reads the tensor from the
+                 ! diffusion flux.)
+                 Kf = 0.0_dp
+                 select type (fxp => this % fx)
+                 type is (diffusion_flux)
+                    Kf = fxp % kmat
+                 end select
                  associate(p => this % g % dof(icell, ivar))
                  ss(p) = ss(p) &
                       & + this % grid % face_areas(gface)*dot_product(matmul(Kf, gradt), kvec)
@@ -786,119 +894,11 @@ contains
     real(dp)        , intent(out)          :: b(:)
     logical         , intent(in), optional :: boundary_only
 
-    logical :: bnd_only
-
-    ! boundary_only returns just the (kappa-dependent) boundary-condition
-    ! constants, dropping the volumetric source - used to form the analytic
-    ! design derivative dR/dkappa.
-    bnd_only = .false.
-    if (present(boundary_only)) bnd_only = boundary_only
-
-    add_boundary_terms: block
-
-      integer  :: icell, iface, ivar
-      real(dp) :: nf(3), Kf(3,3), keff
-
-      associate(nv => this % g % num_variables)
-
-      ! Loop cells
-      ! plain do: the per-face temporaries (nf, Kf, keff) are shared, so
-      ! this is not a safe do concurrent without f2018 locality specs
-      loop_cells: do icell = 1, this % grid % num_cells
-
-         ! Get the faces corresponding to this cell
-         associate( &
-              & faces => this % grid % cell_faces &
-              & (1:this % grid % num_cell_faces(icell),icell) &
-              & )
-
-           ! Zero this cell's dofs
-           do ivar = 1, nv
-              b(this % g % dof(icell,ivar)) = 0.0d0
-           end do
-
-         loop_faces: do iface = 1, this % grid % num_cell_faces(icell)
-
-            associate (&
-                 & ftag   => this % grid % face_tags(faces(iface))  , &
-                 & fdelta => this % grid % face_deltas(faces(iface)), &
-                 & farea  => this % grid % face_areas(faces(iface))  &
-                 & )
-
-              ! Boundary face: add each variable's bc constant to the rhs
-              ! (the phi_p part went to the diagonal in the jvp).
-              boundary_faces: if (this % grid % num_face_cells(faces(iface)) .eq. 1) then
-
-                 nf   = this % grid % cell_face_normals(1:3, iface, icell)
-                 Kf   = this % model % diffusion_tensor(this % grid % face_centers(1:3, faces(iface)))
-                 keff = dot_product(nf, matmul(Kf, nf))
-
-                 do ivar = 1, nv
-                    associate(p => this % g % dof(icell,ivar))
-                    b(p) = b(p) + this % bcs(ftag,ivar) % rhs_coeff(farea, fdelta, keff)
-                    end associate
-                 end do
-
-              end if boundary_faces
-
-            end associate
-
-         end do loop_faces
-
-       end associate
-
-      end do loop_cells
-
-      end associate
-
-    end block add_boundary_terms
-
-    cell_source: block
-
-      integer :: icell, ivar
-
-      if (.not. bnd_only) then
-
-      associate(nv => this % g % num_variables)
-
-      loop_cells: do icell = 1, this % grid % num_cells
-
-         associate(&
-              & x => this % grid % cell_centers(:,icell), &
-              & cell_volume => this % grid % cell_volumes(icell)&
-              & )
-
-           do ivar = 1, nv
-              associate(p => this % g % dof(icell,ivar))
-              b(p) = b(p) + this % model % source(x)*cell_volume
-              end associate
-           end do
-
-         end associate
-
-      end do loop_cells
-
-      end associate
-
-      end if
-
-    end block cell_source
-
-    ! Transient: rhs becomes (M/dt) phi_old - b_steady
-    transient_rhs: block
-      integer :: icell, ivar
-      if (this % transient .and. .not. bnd_only) then
-         associate(nv => this % g % num_variables)
-         do icell = 1, this % grid % num_cells
-            do ivar = 1, nv
-               associate(p => this % g % dof(icell, ivar))
-               b(p) = this % grid % cell_volumes(icell)/this % dt*this % phi_old(p) - b(p)
-               end associate
-            end do
-         end do
-         end associate
-      end if
-    end block transient_rhs
+    ! The source (boundary-condition constants + volumetric source + the
+    ! transient rhs) is assembled law-agnostically through the flux seam.
+    ! boundary_only drops the volumetric source (used by the adjoint
+    ! design partial). (Was the add_boundary_terms / cell_source blocks.)
+    call this % get_source_via_flux(b, boundary_only)
 
   end subroutine get_source
 
@@ -1148,15 +1148,17 @@ contains
   end subroutine add_initial_condition
 
   !===================================================================!
-  ! Design variables live on the equation (the isotropic conductivity
-  ! kappa); the assembler just forwards to the model.
+  ! Design variables live on the flux operator (the isotropic
+  ! conductivity kappa); the assembler forwards to it. The operator now
+  ! reads kappa from fx, so perturbing a design variable must update fx
+  ! (not the legacy model) for the forward solve to respond.
   !===================================================================!
 
   pure integer function get_num_design_vars(this)
 
     class(assembler), intent(in) :: this
 
-    get_num_design_vars = this % model % get_num_design_vars()
+    get_num_design_vars = this % fx % num_design_vars()
 
   end function get_num_design_vars
 
@@ -1165,7 +1167,7 @@ contains
     class(assembler), intent(inout) :: this
     real(dp)        , intent(in)    :: x(:)
 
-    call this % model % set_design_vars(x)
+    call this % fx % set_design_vars(x)
 
   end subroutine set_design_vars
 
@@ -1174,24 +1176,26 @@ contains
     class(assembler), intent(in)  :: this
     real(dp)        , intent(out) :: x(:)
 
-    call this % model % get_design_vars(x)
+    call this % fx % get_design_vars(x)
 
   end subroutine get_design_vars
 
   !===================================================================!
-  ! Adjoint design contribution  dfdx += psi^T dR/dkappa, computed
-  ! ANALYTICALLY for isotropic diffusion. K = kappa*I enters every
-  ! operator and boundary term only through keff = n^T K n = kappa*(n.n),
-  ! so each kappa-dependent contribution is proportional to kappa and its
-  ! derivative is that contribution divided by kappa:
+  ! Adjoint design contribution  dfdx(k) += psi^T dR/dx_k, assembled
+  ! through the flux seam (state S held fixed):
   !
-  !   dR/dkappa = ( b_bc - A*u ) / kappa
+  !   dR/dx_k = ( + integral_faces (dF/dx_k . n)        )   interior flux
+  !             ( + integral_volume (dS/dx_k)           )   source
+  !             ( + boundary-condition design derivative )
   !
-  ! where A*u is the spatial operator action and b_bc is the boundary-
-  ! condition rhs; the mass term M*udot and the volumetric source are
-  ! kappa-independent and drop out. Exact (no finite-difference
-  ! truncation), with the state S held fixed. The single design variable
-  ! is the isotropic conductivity, so the contribution lands in dfdx(1).
+  ! The interior contribution is law-agnostic: the flux operator supplies
+  ! its own design partial dF/dx_k (for diffusion dF/dkappa = -grad q),
+  ! and the assembler integrates it - no assumption of linearity in the
+  ! design variable. The boundary uses the (diffusion-shaped) Robin
+  ! closure, whose coefficients scale with keff ~ kappa, so its design
+  ! derivative is the boundary residual divided by kappa (generalising
+  ! with the boundary flux is deferred). For constant diffusion this
+  ! reproduces the exact (b_bc - A*u)/kappa.
   !===================================================================!
 
   subroutine add_design_residual_transpose_product(this, dfdx, psi)
@@ -1200,26 +1204,83 @@ contains
     real(dp)        , intent(inout) :: dfdx(:)
     type(scalar)    , intent(in)    :: psi(:)
 
-    real(dp), allocatable :: kappa(:), Au(:), bbc(:), dRdk(:)
-    integer               :: ndv, n
+    real(dp), allocatable :: kappa(:), dRdk(:)
+    type(point_state)     :: st
+    integer               :: ndv, n, k, icell, iface, ivar, p, gface
 
     ndv = this % get_num_design_vars()
     if (ndv .eq. 0) return
 
     n = this % num_state_vars
-    allocate(kappa(ndv), Au(n), bbc(n), dRdk(n))
-
+    allocate(kappa(ndv), dRdk(n))
     call this % get_design_vars(kappa)
 
-    ! A*u (steady operator, state held fixed) and the boundary-only source
-    call this % get_jacobian_vector_product(Au, this % S(:,1))
-    call this % get_source(bbc, boundary_only = .true.)
+    associate(nv => this % g % num_variables)
 
-    dRdk = (bbc - Au)/kappa(1)
+    design_vars: do k = 1, ndv
 
-    dfdx(1) = dfdx(1) + real(dot_product(psi, dRdk), dp)
+       dRdk = 0.0_dp
 
-    deallocate(kappa, Au, bbc, dRdk)
+       do icell = 1, this % grid % num_cells
+          associate(faces => this % grid % cell_faces(1:this % grid % num_cell_faces(icell), icell))
+          do iface = 1, this % grid % num_cell_faces(icell)
+
+             gface = faces(iface)
+             associate( &
+                  & farea  => this % grid % face_areas(gface),  &
+                  & fdelta => this % grid % face_deltas(gface), &
+                  & ftag   => this % grid % face_tags(gface))
+
+               ! reconstruct (q, grad q) at the face from the (fixed) state
+               call this % fld % face_state(this % grid, this % g, &
+                    & this % S(:,1), icell, iface, gface, st)
+
+               interior: if (this % grid % num_face_cells(gface) .eq. 2) then
+
+                  ! integral of (dF/dx_k . n) over the face - the flux's own
+                  ! design partial, integrated (law-agnostic)
+                  block
+                    type(scalar) :: dFk(3, nv)
+                    real(dp)     :: nf(3)
+                    nf  = this % grid % cell_face_normals(1:3, iface, icell)
+                    dFk = this % fx % dflux_ddesign(st, k)
+                    do ivar = 1, nv
+                       p = this % g % dof(icell, ivar)
+                       dRdk(p) = dRdk(p) + farea*real(dot_product(dFk(:,ivar), nf), dp)
+                    end do
+                  end block
+
+               else
+
+                  ! boundary: Robin closure scales with keff ~ kappa, so the
+                  ! design derivative is the boundary residual over kappa
+                  block
+                    real(dp) :: nf(3), keff, lhs, rhs
+                    nf = this % grid % cell_face_normals(1:3, iface, icell)
+                    do ivar = 1, nv
+                       p    = this % g % dof(icell, ivar)
+                       keff = flux_keff(this % fx, st, nf, ivar)
+                       lhs  = this % bcs(ftag,ivar) % lhs_coeff(farea, fdelta, keff)
+                       rhs  = this % bcs(ftag,ivar) % rhs_coeff(farea, fdelta, keff)
+                       dRdk(p) = dRdk(p) + (rhs - lhs*real(this % S(p,1), dp))/kappa(k)
+                    end do
+                  end block
+
+               end if interior
+
+             end associate
+
+          end do
+          end associate
+       end do
+
+       dfdx(k) = dfdx(k) + real(dot_product(psi, dRdk), dp)
+
+    end do design_vars
+
+    end associate
+
+    deallocate(kappa, dRdk)
 
   end subroutine add_design_residual_transpose_product
 

@@ -9,7 +9,7 @@ program test_mesh
   use class_gmsh_loader        , only : gmsh_loader
   use class_mesh               , only : mesh
   use class_assembler          , only : assembler
-  use class_diffusion          , only : diffusion
+  use class_diffusion_flux  , only : diffusion_flux, constant_source
   use interface_linear_solver  , only : linear_solver
   use class_conjugate_gradient , only : conjugate_gradient
   use class_gauss_jacobi       , only : gauss_jacobi
@@ -46,7 +46,7 @@ program test_mesh
 
     ! Poisson on the unit square: unit source, homogeneous dirichlet on
     ! all four named boundaries (square-*.msh, 2D)
-    call FVMAssembler % set_equation(diffusion(1.0d0, source = -1.0d0))
+    call FVMAssembler % set_equation(diffusion_flux(1.0d0), constant_source(-1.0d0))
     call FVMAssembler % set_dirichlet("BoundaryLeft"  , 0.0d0)
     call FVMAssembler % set_dirichlet("BoundaryRight" , 0.0d0)
     call FVMAssembler % set_dirichlet("BoundaryTop"   , 0.0d0)

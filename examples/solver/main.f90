@@ -14,7 +14,7 @@ program solver
   use class_gmsh_loader        , only : gmsh_loader
   use class_mesh               , only : mesh
   use class_assembler          , only : assembler
-  use class_diffusion          , only : diffusion
+  use class_diffusion_flux  , only : diffusion_flux, constant_source
   use interface_linear_solver  , only : linear_solver
   use class_conjugate_gradient , only : conjugate_gradient
   use class_sor                , only : sor
@@ -58,7 +58,7 @@ program solver
   allocate(fvm, source = assembler(grid))
   select case (trim(cfg % equation % str))
   case ("diffusion")
-     call fvm % set_equation(diffusion(cfg % kappa, source = cfg % source))
+     call fvm % set_equation(diffusion_flux(cfg % kappa), constant_source(cfg % source))
   case default
      print *, "unknown equation '", trim(cfg % equation % str), "'"
      error stop

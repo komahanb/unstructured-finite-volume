@@ -23,7 +23,7 @@ program spatial_discretization
   use class_gmsh_loader        , only : gmsh_loader
   use class_mesh               , only : mesh
   use class_assembler          , only : assembler
-  use class_diffusion          , only : diffusion
+  use class_diffusion_flux  , only : diffusion_flux, constant_source
   use class_conjugate_gradient , only : conjugate_gradient
 
   implicit none
@@ -99,7 +99,7 @@ contains
 
     ! Poisson: unit source (source=-1 is the assembler's sign convention
     ! matching the +1 fourier rhs), homogeneous dirichlet on all sides
-    call fvm % set_equation(diffusion(1.0_dp, source = -1.0_dp))
+    call fvm % set_equation(diffusion_flux(1.0_dp), constant_source(-1.0_dp))
     call fvm % set_dirichlet("BoundaryLeft"  , 0.0_dp)
     call fvm % set_dirichlet("BoundaryRight" , 0.0_dp)
     call fvm % set_dirichlet("BoundaryTop"   , 0.0_dp)

@@ -19,7 +19,7 @@ program test_adjoint
   use class_gmsh_loader , only : gmsh_loader
   use class_mesh        , only : mesh
   use class_assembler   , only : assembler
-  use class_diffusion   , only : diffusion
+  use class_diffusion_flux  , only : diffusion_flux, constant_source
   use class_state_energy, only : state_energy
   use adjoint           , only : eval_func_grad, eval_fd_func_grad
 
@@ -43,7 +43,7 @@ program test_adjoint
 
   ! steady poisson: isotropic kappa = 2, unit volumetric source, all six
   ! faces held at zero (homogeneous dirichlet)
-  call fvm % set_equation(diffusion(2.0_dp, source = 1.0_dp))
+  call fvm % set_equation(diffusion_flux(2.0_dp), constant_source(1.0_dp))
   call fvm % set_dirichlet("front" , 0.0_dp)
   call fvm % set_dirichlet("back"  , 0.0_dp)
   call fvm % set_dirichlet("top"   , 0.0_dp)

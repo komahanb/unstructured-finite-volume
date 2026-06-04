@@ -11,6 +11,7 @@ module class_assembler
   use interface_physics       , only : flux, source, point_state
   use class_diffusion_flux    , only : diffusion_flux, constant_source
   use class_fvm_field         , only : fvm_field
+  use class_csr               , only : csr_matrix
   use class_graph             , only : graph
   use module_verbosity        , only : verbosity
 
@@ -93,6 +94,7 @@ module class_assembler
      ! law-agnostic flux/source assembly (the operator + rhs)
      procedure :: get_jvp_via_flux
      procedure :: get_source_via_flux
+     procedure :: get_operator_csr       ! assemble the operator as sparse CSR (for AMG)
      procedure :: write_solution
      procedure :: write_solution_fields
      procedure :: write_gmsh_series
@@ -571,6 +573,131 @@ contains
     end associate
 
   end subroutine get_jvp_via_flux
+
+  !===================================================================!
+  ! Assemble the steady operator as a sparse CSR matrix - the same matrix
+  ! the matrix-free get_jvp_via_flux applies, but with explicit entries so
+  ! algebraic multigrid can build a hierarchy on it. Mirrors that routine's
+  ! face loop: interior face contributes A(p,p) += -farea*keff/fdelta and
+  ! A(p,n) += +farea*keff/fdelta; a boundary face contributes the bc
+  ! lhs_coeff to the diagonal. Single-field-or-decoupled (the ivar loop is
+  ! the multi-field hook); steady only.
+  !===================================================================!
+
+  subroutine get_operator_csr(this, A)
+
+    class(assembler), intent(in)  :: this
+    type(csr_matrix), intent(out) :: A
+
+    integer , allocatable :: nnz_row(:), row_ptr(:), col_idx(:), cursor(:)
+    integer               :: ndof, icell, iface, ivar, p, n, ncell, fcells(2), gface, ftag, nfc
+    real(dp)              :: nf(3), keff, farea, fdelta
+    type(point_state)     :: st
+
+    if (this % transient) error stop "get_operator_csr: steady operator only"
+
+    associate(nv => this % g % num_variables)
+
+    ndof = this % g % num_dofs()
+
+    !---------------------------------------------------------------!
+    ! symbolic pass: row p has its diagonal + one column per interior
+    ! face neighbour (same variable)
+    !---------------------------------------------------------------!
+    allocate(nnz_row(ndof)); nnz_row = 1
+    do icell = 1, this % grid % num_cells
+       do iface = 1, this % grid % num_cell_faces(icell)
+          gface = this % grid % cell_faces(iface, icell)
+          if (this % grid % num_face_cells(gface) .eq. 2) then
+             do ivar = 1, nv
+                p = this % g % dof(icell, ivar)
+                nnz_row(p) = nnz_row(p) + 1
+             end do
+          end if
+       end do
+    end do
+
+    allocate(row_ptr(ndof + 1))
+    row_ptr(1) = 1
+    do p = 1, ndof
+       row_ptr(p+1) = row_ptr(p) + nnz_row(p)
+    end do
+    allocate(col_idx(row_ptr(ndof+1) - 1))
+
+    ! seed each row's diagonal, then append neighbour columns
+    allocate(cursor(ndof))
+    do p = 1, ndof
+       col_idx(row_ptr(p)) = p
+       cursor(p) = row_ptr(p) + 1
+    end do
+    do icell = 1, this % grid % num_cells
+       do iface = 1, this % grid % num_cell_faces(icell)
+          gface = this % grid % cell_faces(iface, icell)
+          if (this % grid % num_face_cells(gface) .eq. 2) then
+             fcells(1:2) = this % grid % face_cells(1:2, gface)
+             if (fcells(1) .eq. icell) then
+                ncell = fcells(2)
+             else
+                ncell = fcells(1)
+             end if
+             do ivar = 1, nv
+                p = this % g % dof(icell, ivar)
+                col_idx(cursor(p)) = this % g % dof(ncell, ivar)
+                cursor(p) = cursor(p) + 1
+             end do
+          end if
+       end do
+    end do
+
+    A = csr_matrix(ndof, ndof, row_ptr, col_idx)   ! pattern, values zeroed
+
+    !---------------------------------------------------------------!
+    ! numeric pass: identical entries to get_jvp_via_flux
+    !---------------------------------------------------------------!
+    allocate(st % q(nv), st % gradq(3, nv))
+    st % nv = nv
+    st % q  = 0.0d0
+
+    do icell = 1, this % grid % num_cells
+       do iface = 1, this % grid % num_cell_faces(icell)
+
+          gface  = this % grid % cell_faces(iface, icell)
+          nf     = this % grid % cell_face_normals(1:3, iface, icell)
+          st % x = this % grid % face_centers(1:3, gface)
+          st % gradq = 0.0d0
+          farea  = this % grid % face_areas(gface)
+          fdelta = this % grid % face_deltas(gface)
+          ftag   = this % grid % face_tags(gface)
+          nfc    = this % grid % num_face_cells(gface)
+
+          if (nfc .eq. 2) then
+             fcells(1:2) = this % grid % face_cells(1:2, gface)
+             if (fcells(1) .eq. icell) then
+                ncell = fcells(2)
+             else
+                ncell = fcells(1)
+             end if
+             do ivar = 1, nv
+                p    = this % g % dof(icell, ivar)
+                n    = this % g % dof(ncell, ivar)
+                keff = flux_keff(this % fx, st, nf, ivar)
+                call A % add_entry(p, p, -farea*keff/fdelta)
+                call A % add_entry(p, n,  farea*keff/fdelta)
+             end do
+          else
+             do ivar = 1, nv
+                p    = this % g % dof(icell, ivar)
+                keff = flux_keff(this % fx, st, nf, ivar)
+                call A % add_entry(p, p, this % bcs(ftag,ivar) % lhs_coeff(farea, fdelta, keff))
+             end do
+          end if
+
+       end do
+    end do
+
+    end associate
+
+  end subroutine get_operator_csr
 
   !===================================================================!
   ! Source via the flux seam (parallel to get_source): boundary-condition

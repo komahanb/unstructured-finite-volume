@@ -48,6 +48,18 @@ module interface_assembler
      procedure :: get_differential_order
      procedure :: set_differential_order
 
+     ! Adjoint support (provided defaults; physics overrides as needed)
+     procedure :: add_jacobian_vector_product_transpose
+     procedure :: get_num_design_vars
+     procedure :: set_design_vars
+     procedure :: get_design_vars
+     procedure :: add_design_residual_transpose_product
+
+     ! Post-processing (provided default: no-op; an assembler that owns a
+     ! mesh overrides these to export the named fields)
+     procedure :: write_solution_fields
+     procedure :: write_gmsh_series
+
   end type assembler
 
   !===================================================================!
@@ -212,7 +224,109 @@ contains
          & this % get_differential_order() + 1 &
          & ))
     if (present(val))  S = val
-    
+
   end subroutine create_state
-  
+
+  !===================================================================!
+  ! Transpose jacobian-vector product  pdt += [scalar(i) dR/dU(i)]^T vec.
+  ! Default: assume a symmetric jacobian (A^T = A), so the transpose
+  ! action equals the forward one. Physics with a non-symmetric operator
+  ! (e.g. advection) overrides this with a true transpose.
+  !===================================================================!
+
+  impure subroutine add_jacobian_vector_product_transpose(this, pdt, vec, scalars, filter)
+
+    class(assembler), intent(in)           :: this
+    type(scalar)    , intent(inout)        :: pdt(:)
+    type(scalar)    , intent(in)           :: vec(:)
+    type(scalar)    , intent(in)           :: scalars(:)
+    type(integer)   , intent(in), optional :: filter
+
+    call this % add_jacobian_vector_product(pdt, vec, scalars, filter)
+
+  end subroutine add_jacobian_vector_product_transpose
+
+  !===================================================================!
+  ! Number of design variables x the residual depends on. Default: none
+  ! (no design dependence), so the adjoint total derivative is just the
+  ! function's explicit df/dx. Physics with design variables overrides.
+  !===================================================================!
+
+  pure type(integer) function get_num_design_vars(this)
+
+    class(assembler), intent(in) :: this
+
+    get_num_design_vars = 0
+
+  end function get_num_design_vars
+
+  !===================================================================!
+  ! Set / get the design variables. Default: no design dependence, so
+  ! these are no-ops. Physics carrying design variables overrides them.
+  !===================================================================!
+
+  subroutine set_design_vars(this, x)
+
+    class(assembler), intent(inout) :: this
+    real(dp)        , intent(in)    :: x(:)
+
+  end subroutine set_design_vars
+
+  subroutine get_design_vars(this, x)
+
+    class(assembler), intent(in)  :: this
+    real(dp)        , intent(out) :: x(:)
+
+  end subroutine get_design_vars
+
+  !===================================================================!
+  ! Accumulate the adjoint design contribution  dfdx += psi^T dR/dx,
+  ! the product of the adjoint variables with the residual's design
+  ! jacobian. Default: no design dependence, so this adds nothing.
+  ! Physics with design variables overrides it (analytic, or finite
+  ! differenced as a temporary stand-in).
+  !===================================================================!
+
+  impure subroutine add_design_residual_transpose_product(this, dfdx, psi)
+
+    class(assembler), intent(inout) :: this
+    real(dp)        , intent(inout) :: dfdx(:)
+    type(scalar)    , intent(in)    :: psi(:)
+
+  end subroutine add_design_residual_transpose_product
+
+  !===================================================================!
+  ! Export named flat-dof fields (state, adjoint state, ...) for post-
+  ! processing. fields is (num_state_vars, nfield), labels names each.
+  ! Default: no-op (an abstract / mesh-less system has nothing to write);
+  ! a mesh-backed assembler overrides this to write a real file.
+  !===================================================================!
+
+  impure subroutine write_solution_fields(this, filename, fields, labels)
+
+    class(assembler), intent(in) :: this
+    character(len=*), intent(in) :: filename
+    real(dp)        , intent(in) :: fields(:,:)
+    character(len=*), intent(in) :: labels(:)
+
+  end subroutine write_solution_fields
+
+  !===================================================================!
+  ! Export named flat-dof fields over a time series as a gmsh post file.
+  ! fields is (num_state_vars, nfield, nstep); names labels each field
+  ! (a gmsh view), times gives the time of each step. meshfile is the
+  ! source mesh copied verbatim and keyed by its element tags. Default:
+  ! no-op; a mesh-backed assembler overrides it. (Steady = nstep 1.)
+  !===================================================================!
+
+  impure subroutine write_gmsh_series(this, meshfile, filename, fields, names, times)
+
+    class(assembler), intent(in) :: this
+    character(len=*), intent(in) :: meshfile, filename
+    real(dp)        , intent(in) :: fields(:,:,:)
+    character(len=*), intent(in) :: names(:)
+    real(dp)        , intent(in) :: times(:)
+
+  end subroutine write_gmsh_series
+
 end module interface_assembler

@@ -31,6 +31,11 @@ module class_diffusion
      procedure :: diffusion_tensor
      procedure :: source
 
+     ! Design variable: the isotropic conductivity kappa (K = kappa*I)
+     procedure :: get_num_design_vars
+     procedure :: set_design_vars
+     procedure :: get_design_vars
+
   end type diffusion
 
   ! isotropic: diffusion(kappa [,source] [,nvars])
@@ -114,5 +119,49 @@ contains
     s = this % src
 
   end function source
+
+  !===================================================================!
+  ! One design variable: the isotropic conductivity kappa
+  !===================================================================!
+
+  pure integer function get_num_design_vars(this)
+
+    class(diffusion), intent(in) :: this
+
+    get_num_design_vars = 1
+
+  end function get_num_design_vars
+
+  !===================================================================!
+  ! Set kappa: rebuild the tensor as K = kappa*I (isotropic). This is
+  ! the design parameter the adjoint differentiates with respect to.
+  !===================================================================!
+
+  subroutine set_design_vars(this, x)
+
+    class(diffusion), intent(inout) :: this
+    real(dp)        , intent(in)    :: x(:)
+
+    integer :: i
+
+    this % kmat = 0.0_dp
+    do i = 1, 3
+       this % kmat(i,i) = x(1)
+    end do
+
+  end subroutine set_design_vars
+
+  !===================================================================!
+  ! Get kappa from the (isotropic) tensor diagonal
+  !===================================================================!
+
+  subroutine get_design_vars(this, x)
+
+    class(diffusion), intent(in)  :: this
+    real(dp)        , intent(out) :: x(:)
+
+    x(1) = this % kmat(1,1)
+
+  end subroutine get_design_vars
 
 end module class_diffusion

@@ -1,7 +1,10 @@
+#include "scalar.fpp"
+
 module class_assembler
 
   ! import dependencies
   use iso_fortran_env         , only : dp => REAL64
+  use interface_assembler     , only : base_assembler => assembler
   use class_mesh              , only : mesh
   use class_string            , only : string
   use class_boundary_condition, only : boundary_condition, dirichlet, neumann, robin
@@ -20,15 +23,15 @@ module class_assembler
   ! conditions
   !===================================================================!
 
-  type :: assembler
+  type, extends(base_assembler) :: assembler
 
      ! Mesh object
      ! type(mesh), pointer :: grid
      class(mesh)   , allocatable :: grid
      !class(physics), allocatable :: system(:) ! poisson on \Omega, dirichlet on dOmega1 , dirchlet dOmega3 , dirichlet, Neumann dOmega4
 
-     ! Number of state varibles
-     integer :: num_state_vars
+     ! num_state_vars, differential_order and the state S(nvars,order+1)
+     ! are inherited from the abstract base_assembler.
 
      ! Number of variables each cell
      integer :: num_variables
@@ -83,6 +86,23 @@ module class_assembler
      procedure :: get_transpose_jacobian
      procedure :: get_jacobian_vector_product
      procedure :: write_solution
+     procedure :: write_solution_fields
+     procedure :: write_gmsh_series
+
+     ! Semi-discrete contract driven by the time integrator: the residual
+     ! R = M*udot + A*u - b, its jacobian-vector product and the initial
+     ! condition (deferred in base_assembler).
+     procedure :: add_residual
+     procedure :: add_jacobian_vector_product
+     procedure :: add_initial_condition
+
+     ! Design-variable sensitivity support: the design variables live on
+     ! the equation (kappa); the residual design partial dR/dx is finite
+     ! differenced for now (a stand-in for analytic / complex-step).
+     procedure :: get_num_design_vars
+     procedure :: set_design_vars
+     procedure :: get_design_vars
+     procedure :: add_design_residual_transpose_product
 
      ! Destructor
      final :: destroy
@@ -115,6 +135,13 @@ contains
     ! single field num_state_vars = num_cells, as before.
     this % g = graph(grid, this % num_variables)
     this % num_state_vars = this % g % num_dofs()
+
+    ! Semi-discrete in time: R(u,udot) = M*udot + A*u - b is first order,
+    ! and the jacobian-vector product below is exact (not approximated).
+    ! Allocate the integrator state S(num_state_vars, order+1).
+    call this % set_differential_order(1)
+    this % approximate_jacobian = .false.
+    call this % create_state(this % S, 0.0_dp)
 
     ! Allocate the flux vector
     allocate(this % phi(this % num_state_vars))
@@ -753,10 +780,19 @@ contains
 
   end subroutine get_skew_source
 
-  subroutine get_source(this, b)
+  subroutine get_source(this, b, boundary_only)
 
-    class(assembler), intent(in)  :: this
-    real(dp)        , intent(out) :: b(:)
+    class(assembler), intent(in)           :: this
+    real(dp)        , intent(out)          :: b(:)
+    logical         , intent(in), optional :: boundary_only
+
+    logical :: bnd_only
+
+    ! boundary_only returns just the (kappa-dependent) boundary-condition
+    ! constants, dropping the volumetric source - used to form the analytic
+    ! design derivative dR/dkappa.
+    bnd_only = .false.
+    if (present(boundary_only)) bnd_only = boundary_only
 
     add_boundary_terms: block
 
@@ -821,6 +857,8 @@ contains
 
       integer :: icell, ivar
 
+      if (.not. bnd_only) then
+
       associate(nv => this % g % num_variables)
 
       loop_cells: do icell = 1, this % grid % num_cells
@@ -842,12 +880,14 @@ contains
 
       end associate
 
+      end if
+
     end block cell_source
 
     ! Transient: rhs becomes (M/dt) phi_old - b_steady
     transient_rhs: block
       integer :: icell, ivar
-      if (this % transient) then
+      if (this % transient .and. .not. bnd_only) then
          associate(nv => this % g % num_variables)
          do icell = 1, this % grid % num_cells
             do ivar = 1, nv
@@ -899,19 +939,288 @@ contains
   end subroutine write_solution
 
   !===================================================================!
-  ! Create a state vector and sets values if a scalar is supplied
+  ! Write several named flat-dof fields (e.g. the state and the adjoint
+  ! state) as cell data in one paraview file. fields is (ndof, nfield)
+  ! and labels names each. For multi-variable systems each field expands
+  ! to one column per variable (suffixed _vN).
   !===================================================================!
 
-  subroutine create_vector(this, x, scalar)
+  subroutine write_solution_fields(this, filename, fields, labels)
+
+    use class_paraview_writer, only : paraview_writer
+
+    class(assembler), intent(in) :: this
+    character(len=*), intent(in) :: filename
+    real(dp)        , intent(in) :: fields(:,:)   ! (ndof, nfield)
+    character(len=*), intent(in) :: labels(:)     ! (nfield)
+
+    class(paraview_writer), allocatable :: pwriter
+    real(dp)    , allocatable :: cellfields(:,:)  ! (cell, column)
+    type(string), allocatable :: colnames(:)
+    integer :: icell, ivar, nv, ifield, nfield, col
+    character(len=64) :: cname
+
+    nv     = this % g % num_variables
+    nfield = size(fields, 2)
+
+    allocate(cellfields(this % grid % num_cells, nfield*nv))
+    allocate(colnames(nfield*nv))
+
+    col = 0
+    do ifield = 1, nfield
+       do ivar = 1, nv
+          col = col + 1
+          do icell = 1, this % grid % num_cells
+             cellfields(icell, col) = fields(this % g % dof(icell, ivar), ifield)
+          end do
+          if (nv .eq. 1) then
+             colnames(col) = string(trim(labels(ifield)))
+          else
+             write(cname, '(a,a,i0)') trim(labels(ifield)), "_v", ivar
+             colnames(col) = string(trim(cname))
+          end if
+       end do
+    end do
+
+    allocate(pwriter, source = paraview_writer(this % grid))
+    call pwriter % write(trim(filename), cellfields, colnames)
+
+  end subroutine write_solution_fields
+
+  !===================================================================!
+  ! Export named flat-dof fields over a time series to a gmsh post file
+  ! (overrides base_assembler % write_gmsh_series). Scatters each field
+  ! to its cells (first variable), keys by the gmsh element tags and
+  ! writes through the gmsh writer. fields is (ndof, nfield, nstep).
+  !===================================================================!
+
+  subroutine write_gmsh_series(this, meshfile, filename, fields, names, times)
+
+    use class_gmsh_writer, only : gmsh_writer
+
+    class(assembler), intent(in) :: this
+    character(len=*), intent(in) :: meshfile, filename
+    real(dp)        , intent(in) :: fields(:,:,:)   ! (ndof, nfield, nstep)
+    character(len=*), intent(in) :: names(:)        ! (nfield)
+    real(dp)        , intent(in) :: times(:)        ! (nstep)
+
+    type(gmsh_writer)     :: gw
+    real(dp), allocatable :: cellvals(:,:,:)        ! (ncell, nfield, nstep)
+    integer , allocatable :: cell_numbers(:)
+    integer               :: icell, ifield, istep, ncell, nfield, nstep
+
+    ncell  = this % grid % num_cells
+    nfield = size(fields, 2)
+    nstep  = size(fields, 3)
+
+    allocate(cellvals(ncell, nfield, nstep), cell_numbers(ncell))
+
+    ! scatter the flat dof fields to cell values (first variable) and
+    ! collect the gmsh element tags the loader read
+    do istep = 1, nstep
+       do ifield = 1, nfield
+          do icell = 1, ncell
+             cellvals(icell, ifield, istep) = fields(this % g % dof(icell, 1), ifield, istep)
+          end do
+       end do
+    end do
+    do icell = 1, ncell
+       cell_numbers(icell) = this % grid % cell_numbers(icell)
+    end do
+
+    gw = gmsh_writer(meshfile)
+    call gw % write_time_series(trim(filename), cell_numbers, names, times, cellvals)
+
+    deallocate(cellvals, cell_numbers)
+
+  end subroutine write_gmsh_series
+
+  !===================================================================!
+  ! Create a state vector and sets values if a value is supplied
+  ! (overrides base_assembler % create_vector)
+  !===================================================================!
+
+  subroutine create_vector(this, x, val)
 
     class(assembler), intent(in)               :: this
     real(dp)        , intent(out), allocatable :: x(:)
-    real(dp)        , intent(in) , optional    :: scalar
+    real(dp)        , intent(in) , optional    :: val
 
     if (allocated(x)) error stop "vector already allocated"
     allocate(x(this % num_state_vars))
-    if (present(scalar))  x = scalar
+    if (present(val))  x = val
 
   end subroutine create_vector
+
+  !===================================================================!
+  ! Semi-discrete residual  R = M*udot + A*u - b, assembled from the
+  ! inherited state S (S(:,1) = u, S(:,2) = udot). The spatial operator
+  ! A*u and the source b are the steady FVM pieces
+  ! (get_jacobian_vector_product and get_source with the legacy transient
+  ! flag off); M = cell volume is the mass term. The time integrator owns
+  ! the marching, so the assembler's own transient flag stays off here.
+  !
+  ! Sign: R = M*udot - A*u + b, so the steady root (udot = 0) recovers the
+  ! laplace solve A*u = b, and dR/du = -A makes the newton operator
+  ! beta*M - alpha*A symmetric positive definite (CG-friendly).
+  !===================================================================!
+
+  subroutine add_residual(this, residual, filter)
+
+    class(assembler), intent(in)           :: this
+    type(scalar)    , intent(inout)        :: residual(:)
+    integer         , intent(in), optional :: filter
+
+    real(dp), allocatable :: Au(:), b(:)
+    integer               :: icell, ivar, p
+
+    allocate(Au(this % num_state_vars))
+    allocate(b (this % num_state_vars))
+
+    ! Steady spatial operator A*u and source b
+    call this % get_jacobian_vector_product(Au, this % S(:,1), filter)
+    call this % get_source(b)
+
+    do icell = 1, this % grid % num_cells
+       do ivar = 1, this % g % num_variables
+          p = this % g % dof(icell, ivar)
+          residual(p) = residual(p) &
+               & + this % grid % cell_volumes(icell)*this % S(p,2) &
+               & - Au(p) + b(p)
+       end do
+    end do
+
+    deallocate(Au, b)
+
+  end subroutine add_residual
+
+  !===================================================================!
+  ! Jacobian-vector product for the integrator
+  !   pdt += [alpha dR/du + beta dR/dudot] vec = [beta*M - alpha*A] vec
+  ! with scalars = [alpha, beta] (the linearization coefficients). The
+  ! spatial operator action A*vec is the steady jacobian-vector product;
+  ! M*vec is the cell-volume mass term.
+  !===================================================================!
+
+  subroutine add_jacobian_vector_product(this, pdt, vec, scalars, filter)
+
+    class(assembler), intent(in)           :: this
+    type(scalar)    , intent(inout)        :: pdt(:)
+    type(scalar)    , intent(in)           :: vec(:)
+    type(scalar)    , intent(in)           :: scalars(:)
+    integer         , intent(in), optional :: filter
+
+    real(dp), allocatable :: Av(:)
+    integer               :: icell, ivar, p
+
+    allocate(Av(this % num_state_vars))
+
+    ! Steady spatial operator action A*vec
+    call this % get_jacobian_vector_product(Av, vec, filter)
+
+    do icell = 1, this % grid % num_cells
+       do ivar = 1, this % g % num_variables
+          p = this % g % dof(icell, ivar)
+          pdt(p) = pdt(p) &
+               & + scalars(2)*this % grid % cell_volumes(icell)*vec(p) &
+               & - scalars(1)*Av(p)
+       end do
+    end do
+
+    deallocate(Av)
+
+  end subroutine add_jacobian_vector_product
+
+  !===================================================================!
+  ! Initial condition: u(0) from the stored field phi (a driver may prime
+  ! it; defaults to zero); udot(0) = 0, since the first BDF step recovers
+  ! the time derivative from the stencil.
+  !===================================================================!
+
+  subroutine add_initial_condition(this, U)
+
+    class(assembler), intent(in)    :: this
+    type(scalar)    , intent(inout) :: U(:,:)
+
+    U(:,1) = this % phi
+    U(:,2) = 0.0_dp
+
+  end subroutine add_initial_condition
+
+  !===================================================================!
+  ! Design variables live on the equation (the isotropic conductivity
+  ! kappa); the assembler just forwards to the model.
+  !===================================================================!
+
+  pure integer function get_num_design_vars(this)
+
+    class(assembler), intent(in) :: this
+
+    get_num_design_vars = this % model % get_num_design_vars()
+
+  end function get_num_design_vars
+
+  subroutine set_design_vars(this, x)
+
+    class(assembler), intent(inout) :: this
+    real(dp)        , intent(in)    :: x(:)
+
+    call this % model % set_design_vars(x)
+
+  end subroutine set_design_vars
+
+  subroutine get_design_vars(this, x)
+
+    class(assembler), intent(in)  :: this
+    real(dp)        , intent(out) :: x(:)
+
+    call this % model % get_design_vars(x)
+
+  end subroutine get_design_vars
+
+  !===================================================================!
+  ! Adjoint design contribution  dfdx += psi^T dR/dkappa, computed
+  ! ANALYTICALLY for isotropic diffusion. K = kappa*I enters every
+  ! operator and boundary term only through keff = n^T K n = kappa*(n.n),
+  ! so each kappa-dependent contribution is proportional to kappa and its
+  ! derivative is that contribution divided by kappa:
+  !
+  !   dR/dkappa = ( b_bc - A*u ) / kappa
+  !
+  ! where A*u is the spatial operator action and b_bc is the boundary-
+  ! condition rhs; the mass term M*udot and the volumetric source are
+  ! kappa-independent and drop out. Exact (no finite-difference
+  ! truncation), with the state S held fixed. The single design variable
+  ! is the isotropic conductivity, so the contribution lands in dfdx(1).
+  !===================================================================!
+
+  subroutine add_design_residual_transpose_product(this, dfdx, psi)
+
+    class(assembler), intent(inout) :: this
+    real(dp)        , intent(inout) :: dfdx(:)
+    type(scalar)    , intent(in)    :: psi(:)
+
+    real(dp), allocatable :: kappa(:), Au(:), bbc(:), dRdk(:)
+    integer               :: ndv, n
+
+    ndv = this % get_num_design_vars()
+    if (ndv .eq. 0) return
+
+    n = this % num_state_vars
+    allocate(kappa(ndv), Au(n), bbc(n), dRdk(n))
+
+    call this % get_design_vars(kappa)
+
+    ! A*u (steady operator, state held fixed) and the boundary-only source
+    call this % get_jacobian_vector_product(Au, this % S(:,1))
+    call this % get_source(bbc, boundary_only = .true.)
+
+    dRdk = (bbc - Au)/kappa(1)
+
+    dfdx(1) = dfdx(1) + real(dot_product(psi, dRdk), dp)
+
+    deallocate(kappa, Au, bbc, dRdk)
+
+  end subroutine add_design_residual_transpose_product
 
 end module class_assembler

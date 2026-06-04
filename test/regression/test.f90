@@ -7,6 +7,7 @@
 !   3. transient (t -> inf)              -> the steady solution
 !   4. operator split                    -> A = L + U + D
 !   5. neumann insulated box             -> linear profile, exact mean
+!   6. bdf-1 integrator                  -> matches legacy backward-euler
 !
 ! A nonzero exit (error stop) means a check failed.
 !
@@ -22,6 +23,7 @@ program regression
   use class_diffusion          , only : diffusion
   use class_conjugate_gradient , only : conjugate_gradient
   use class_time_integrator    , only : time_integrator
+  use class_bdf                , only : bdf
 
   implicit none
 
@@ -36,6 +38,7 @@ program regression
   call check_transient_steady(nfail)
   call check_operator_split(nfail)
   call check_neumann_insulated(nfail)
+  call check_bdf_matches_be(nfail)
 
   write(*,*) "============================================="
   if (nfail .eq. 0) then
@@ -176,6 +179,41 @@ contains
          & maxval(abs(xt - xs)) .lt. 1.0e-8_dp, nfail)
 
   end subroutine check_transient_steady
+
+  !===================================================================!
+  ! The order-1 bdf integrator (M*udot - A*u + b = 0, marched by newton)
+  ! must reproduce the legacy backward-euler march step for step. Same
+  ! mesh, bcs, dt and step count, both from a zero initial field.
+  !===================================================================!
+
+  subroutine check_bdf_matches_be(nfail)
+
+    integer, intent(inout) :: nfail
+
+    class(assembler)      , allocatable :: fbe, fbdf
+    type(time_integrator)               :: ti
+    type(bdf)                           :: bi
+    real(dp), allocatable :: xbe(:), xbdf(:), phi0(:)
+
+    ! legacy backward-euler reference
+    call make("../box-3.msh", fbe)
+    call box_bc(fbe)
+    ti = time_integrator(fbe, 0.0_dp, 200.0_dp, 10.0_dp, 500, tol)
+    allocate(phi0(fbe % num_state_vars)); phi0 = 0.0_dp
+    call ti % integrate(phi0, xbe)
+
+    ! same march through the general bdf integrator at order 1 (transient
+    ! flag stays off: the integrator, not the assembler, owns the time term)
+    call make("../box-3.msh", fbdf)
+    call box_bc(fbdf)
+    bi = bdf(fbdf, 0.0_dp, 200.0_dp, 10.0_dp, max_order = 1)
+    call bi % solve()
+    xbdf = real(bi % U(bi % num_steps, :, 1), dp)
+
+    call report("bdf-1 integrator -> matches backward-euler", &
+         & maxval(abs(xbdf - xbe)) .lt. 1.0e-8_dp, nfail)
+
+  end subroutine check_bdf_matches_be
 
   !===================================================================!
   ! The assembled operator must split as A = L + U + D

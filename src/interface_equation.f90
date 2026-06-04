@@ -29,6 +29,12 @@ module interface_equation
      procedure(diffusion_tensor_interface), deferred :: diffusion_tensor
      procedure(source_interface)          , deferred :: source
 
+     ! Design variables for sensitivity analysis (provided defaults; a
+     ! concrete equation overrides them to expose its parameters)
+     procedure :: get_num_design_vars
+     procedure :: set_design_vars
+     procedure :: get_design_vars
+
   end type equation
 
   interface
@@ -50,5 +56,37 @@ module interface_equation
      end function source_interface
 
   end interface
+
+contains
+
+  !===================================================================!
+  ! Number of design variables this equation exposes. Default: none.
+  !===================================================================!
+
+  pure integer function get_num_design_vars(this)
+
+    class(equation), intent(in) :: this
+
+    get_num_design_vars = 0
+
+  end function get_num_design_vars
+
+  !===================================================================!
+  ! Set / get the design variables. Default: no design dependence.
+  !===================================================================!
+
+  subroutine set_design_vars(this, x)
+
+    class(equation), intent(inout) :: this
+    real(dp)       , intent(in)    :: x(:)
+
+  end subroutine set_design_vars
+
+  subroutine get_design_vars(this, x)
+
+    class(equation), intent(in)  :: this
+    real(dp)       , intent(out) :: x(:)
+
+  end subroutine get_design_vars
 
 end module interface_equation

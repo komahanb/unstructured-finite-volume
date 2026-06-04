@@ -12,4 +12,5 @@ lib/
 test/*/run
 examples/*/run
 test/*/run2d
+test/*/run_transient
 *.res

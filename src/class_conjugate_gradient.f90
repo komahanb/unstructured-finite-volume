@@ -7,6 +7,7 @@ module class_conjugate_gradient
 
   use iso_fortran_env         , only : dp => REAL64
   use interface_linear_solver , only : linear_solver
+  use interface_preconditioner, only : preconditioner
   use class_assembler         , only : assembler
   use module_solver_monitor   , only : monitor_step, residual_norm
 
@@ -15,6 +16,12 @@ module class_conjugate_gradient
   ! Expose only the linear solver datatype
   private
   public :: conjugate_gradient
+  public :: cg_last_iters          ! inner CG iterations of the last solve (diagnostics)
+
+  ! Accumulated inner CG iterations of the most recent solve. Written by
+  ! solve/iterate (which take `this` as intent(in), so this cannot live on
+  ! the object); read by tests comparing plain-CG vs PCG-AMG iteration counts.
+  integer :: cg_last_iters = 0
 
   !===================================================================!
   ! Linear solver datatype
@@ -23,8 +30,9 @@ module class_conjugate_gradient
   type, extends(linear_solver) :: conjugate_gradient
 
      !type(assembler), pointer :: FVAssembler
-     class(assembler), allocatable :: FVAssembler
-     integer                       :: print_level
+     class(assembler)     , allocatable :: FVAssembler
+     class(preconditioner), allocatable :: precond     ! optional; absent => plain CG
+     integer                            :: print_level
 
    contains
 
@@ -52,17 +60,21 @@ contains
   !===================================================================!
 
   type(conjugate_gradient) function construct(FVAssembler, max_it, &
-       & max_tol, print_level) result (this)
+       & max_tol, print_level, precond) result (this)
 
-    type(assembler), intent(in) :: FVAssembler
-    type(integer)  , intent(in) :: max_it
-    type(real(dp)) , intent(in) :: max_tol
-    type(integer)  , intent(in) :: print_level
+    type(assembler)     , intent(in)           :: FVAssembler
+    type(integer)       , intent(in)           :: max_it
+    type(real(dp))      , intent(in)           :: max_tol
+    type(integer)       , intent(in)           :: print_level
+    class(preconditioner), intent(in), optional :: precond
 
     allocate(this % FVassembler, source = FVAssembler)
     this % max_it      = max_it
     this % max_tol     = max_tol
     this % print_level = print_level
+
+    ! optional preconditioner (absent => plain CG, bit-identical to before)
+    if (present(precond)) allocate(this % precond, source = precond)
 
   end function construct
 
@@ -80,6 +92,7 @@ contains
 !!$    end if
 !!$
     if (allocated(this % FVAssembler)) deallocate(this % FVAssembler)
+    if (allocated(this % precond))     deallocate(this % precond)
 
   end subroutine destroy
 
@@ -96,6 +109,9 @@ contains
     real(dp), allocatable :: xold(:), ss(:)
     real(dp) :: update_norm, rnorm0
     integer  :: iter, num_inner_iters
+
+    ! reset the inner-iteration counter for this solve
+    cg_last_iters = 0
 
     ! Initial guess vector for the subspace is "b"
     allocate(x(this % FVAssembler % num_state_vars))
@@ -169,7 +185,7 @@ contains
     integer                   , intent(out)   :: iter
 
     ! Create local data
-    real(dp), allocatable :: p(:), r(:), w(:), Ax(:), tmp(:)
+    real(dp), allocatable :: p(:), r(:), w(:), Ax(:), tmp(:), z(:)
     real(dp), allocatable :: b(:)
     real(dp)              :: alpha, beta
     real(dp)              :: bnorm, rnorm
@@ -180,8 +196,9 @@ contains
     ! Start the iteration counter
     iter = 1
 
-    ! Memory allocations
-    allocate(b,p,r,w,Ax,tmp,mold=x)
+    ! Memory allocations. z holds the preconditioned residual M^-1 r
+    ! (z = r when no preconditioner is attached -> reduces to plain CG).
+    allocate(b,p,r,w,Ax,tmp,z,mold=x)
 
     ! Norm of the right hand side
     call this % FVAssembler % get_source(tmp)
@@ -202,21 +219,24 @@ contains
     r         = b - Ax ! could directly form this residual using get_residual_call
     rnorm     = norm2(r)
     tol       = rnorm/bnorm
-    rho(2)    = rnorm*rnorm
+    ! preconditioned residual z = M^-1 r; rho = <r, z> (PCG). z = r when
+    ! unpreconditioned, so rho = <r, r> and this is exactly plain CG.
+    call apply_precond(this, r, z)
+    rho(2)    = dot_product(r, z)
 
     !open(13, file='cg.log', action='write', position='append')
 
     ! Apply Iterative scheme until tolerance is achieved
     do while ((tol .gt. this % max_tol) .and. (iter .lt. this % max_it))
 
-       ! step (a) compute the descent direction
+       ! step (a) compute the descent direction (on the preconditioned residual)
        if ( iter .eq. 1) then
           ! steepest descent direction p
-          p = r
+          p = z
        else
           ! take a conjugate direction
           beta = rho(2)/rho(1)
-          p = r + beta*p
+          p = z + beta*p
        end if
 
        ! step (b) compute the solution update
@@ -229,7 +249,7 @@ contains
        ! step (d) Add dx to the old solution
        x = x + alpha*p
 
-       ! step (e) compute the new residual
+       ! step (e) compute the new residual (true residual drives the tolerance)
        r = r - alpha*w
 
        ! step(f) update values before next iteration
@@ -243,15 +263,37 @@ contains
 
        iter = iter + 1
 
+       call apply_precond(this, r, z)
        rho(1) = rho(2)
-       rho(2) = rnorm*rnorm
+       rho(2) = dot_product(r, z)
 
     end do
 
     !close(13)
 
-    deallocate(r, p, w, b, Ax, tmp)
+    ! record inner iterations done (iter starts at 1; iter-1 = CG steps)
+    cg_last_iters = cg_last_iters + (iter - 1)
+
+    deallocate(r, p, w, b, Ax, tmp, z)
 
   end subroutine iterate
+
+  !===================================================================!
+  ! Apply the preconditioner z = M^-1 r, or z = r if none is attached
+  !===================================================================!
+
+  subroutine apply_precond(this, r, z)
+
+    class(conjugate_gradient), intent(in)  :: this
+    real(dp)                 , intent(in)  :: r(:)
+    real(dp)                 , intent(out) :: z(:)
+
+    if (allocated(this % precond)) then
+       call this % precond % apply(r, z)
+    else
+       z = r
+    end if
+
+  end subroutine apply_precond
 
 end module class_conjugate_gradient

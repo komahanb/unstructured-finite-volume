@@ -20,6 +20,8 @@ program solver
   use class_sor                , only : sor
   use class_gauss_seidel       , only : gauss_seidel
   use class_gauss_jacobi       , only : gauss_jacobi
+  use class_csr                , only : csr_matrix
+  use class_amg                , only : amg
   use class_time_integrator    , only : time_integrator
   use class_paraview_writer    , only : paraview_writer
   use class_gmsh_writer        , only : gmsh_writer
@@ -34,6 +36,8 @@ program solver
   class(mesh)         , allocatable  :: grid
   class(assembler)    , allocatable  :: fvm
   class(linear_solver), allocatable  :: lsolver
+  type(csr_matrix)                   :: amg_op       ! assembled operator (for pcg-amg)
+  type(amg)                          :: amg_precond  ! SA-AMG preconditioner
   type(time_integrator)              :: ti
   class(paraview_writer), allocatable :: pw
   real(dp), allocatable              :: x(:), phi0(:)
@@ -99,6 +103,14 @@ program solver
      case ("gj")
         allocate(lsolver, source = gauss_jacobi(FVAssembler=fvm, &
              & max_tol=cfg % max_tol, max_it=cfg % max_it, print_level=1))
+     case ("pcg-amg")
+        ! smoothed-aggregation AMG-preconditioned CG: assemble the operator
+        ! once, build the multigrid hierarchy, hand it to CG as the precond
+        call fvm % get_operator_csr(amg_op)
+        call amg_precond % setup(amg_op)
+        allocate(lsolver, source = conjugate_gradient(FVAssembler=fvm, &
+             & max_tol=cfg % max_tol, max_it=cfg % max_it, print_level=1, &
+             & precond=amg_precond))
      case default
         print *, "unknown solver '", trim(cfg % solver % str), "'"
         error stop

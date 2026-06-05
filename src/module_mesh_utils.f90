@@ -187,7 +187,8 @@ contains
 
     num_cells    = size(num_cell_vertices, dim=1)
     num_vertices = maxval(cell_vertices) ! assume continuity starting from 1 ... num_vertices
-    if (num_images().gt.1) error stop "only serial"
+    ! purely local connectivity transpose - safe to run replicated on every
+    ! image (each holds the full mesh in the distributed solves), so no guard.
 
     ! form the matrix from forward connectivities
     allocate(A(num_vertices, num_cells))

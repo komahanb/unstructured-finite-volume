@@ -16,6 +16,8 @@
 !   5. block-AMG    - a per-image AMG built on each owned block (restricted
 !                     additive schwarz preconditioner) gives the same answer
 !                     in fewer CG iterations than the unpreconditioned solve
+!   6. RCB quality  - recursive coordinate bisection cuts fewer edges (a
+!                     smaller halo) than the BFS partitioner on the squares
 !
 ! Run: /usr/bin/cafrun.openmpi -np {2,4} ./run   (and serial: ./run_serial).
 ! A nonzero exit (error stop) means a check failed.
@@ -53,8 +55,8 @@ program test_parallel
   ! square-20: correctness (one-level block-jacobi's gain is subdomain-count
   ! dependent at this size - ties unpreconditioned at 4 images).
   ! square-40: large enough that per-subdomain AMG always cuts iterations.
-  call run_square(20, 1, .false., me, np, nfail)
-  call run_square(40, 2, .true. , me, np, nfail)   ! print_level 2: iteration trace
+  call run_square(20, 1, .false., .true., me, np, nfail)
+  call run_square(40, 2, .true. , .true., me, np, nfail)   ! print_level 2: iteration trace
   call run_box(me, np, nfail)
 
   if (me .eq. 1) then
@@ -74,9 +76,9 @@ contains
   !===================================================================!
   ! 2d poisson on square-n (homogeneous dirichlet, unit source)
   !===================================================================!
-  subroutine run_square(n, plvl, assert_speedup, me, np, nfail)
+  subroutine run_square(n, plvl, assert_speedup, assert_cut, me, np, nfail)
     integer, intent(in)    :: n, plvl, me, np
-    logical, intent(in)    :: assert_speedup
+    logical, intent(in)    :: assert_speedup, assert_cut
     integer, intent(inout) :: nfail
     class(assembler), allocatable :: fvm
     class(gmsh_loader), allocatable :: gl
@@ -92,7 +94,7 @@ contains
     call fvm % set_dirichlet("BoundaryRight" , 0.0_dp)
     call fvm % set_dirichlet("BoundaryTop"   , 0.0_dp)
     call fvm % set_dirichlet("BoundaryBottom", 0.0_dp)
-    call solve_and_check(fvm, trim(label), plvl, assert_speedup, me, np, nfail)
+    call solve_and_check(fvm, trim(label), plvl, assert_speedup, assert_cut, me, np, nfail)
   end subroutine run_square
 
   !===================================================================!
@@ -114,18 +116,20 @@ contains
     call fvm % set_neumann  ("bottom", 0.0_dp)
     call fvm % set_dirichlet("left"  , 1.0_dp)
     call fvm % set_dirichlet("right" , 3.0_dp)
-    ! box-36 is too small for block-jacobi to help, so don't require a speedup
-    call solve_and_check(fvm, "box-36", 0, .false., me, np, nfail)
+    ! box-36 is too small for block-jacobi to help or for a reliable cut win,
+    ! so don't assert speedup or the edge-cut comparison - just correctness
+    call solve_and_check(fvm, "box-36", 0, .false., .false., me, np, nfail)
   end subroutine run_box
 
   !===================================================================!
   ! partition, distributed solve, serial reference, and the four checks
   !===================================================================!
-  subroutine solve_and_check(fvm, label, plvl, assert_speedup, me, np, nfail)
+  subroutine solve_and_check(fvm, label, plvl, assert_speedup, assert_cut, me, np, nfail)
     class(assembler), allocatable, intent(inout) :: fvm
     character(*), intent(in)    :: label
     integer     , intent(in)    :: plvl, me, np
     logical     , intent(in)    :: assert_speedup   ! require block-amg to cut iters
+    logical     , intent(in)    :: assert_cut       ! require RCB cut <= BFS cut
     integer     , intent(inout) :: nfail
 
     type(csr_matrix) :: A, Ablock
@@ -134,11 +138,16 @@ contains
     type(amg)        :: M
     class(conjugate_gradient), allocatable :: cg
     real(dp), allocatable :: b(:), x_dist(:), x_pc(:), x_ref(:), r(:)
-    integer  :: n, nown_tot, it_unprec, it_pc
+    integer  :: n, nown_tot, it_unprec, it_pc, bfs_cut, rcb_cut
     real(dp) :: e, e_pc, relres, bnorm
 
-    ! partition the graph across images (deterministic - every image agrees)
+    ! partition the graph: BFS (placeholder) vs RCB (geometric); compare the
+    ! edge cut, then USE the RCB partition for the solve. both are deterministic,
+    ! so every image computes the identical partition and agrees without comm.
     call fvm % g % partition(np)
+    bfs_cut = fvm % g % edge_cut()
+    call fvm % g % partition_rcb(fvm % grid % cell_centers, np)
+    rcb_cut = fvm % g % edge_cut()
     p = partition(fvm % g, np)
     h = halo(p, me, np)
 
@@ -183,6 +192,7 @@ contains
        write(*,'(2x,a,a)') "case: ", label
        call p % print()
        write(*,'(4x,a,i0,a,i0)')      "dofs covered      : ", nown_tot, " / ", n
+       write(*,'(4x,a,i0,a,i0)')      "edge cut  bfs=", bfs_cut, "  rcb=", rcb_cut
        write(*,'(4x,a,es12.4)')       "dist residual rel : ", relres
        write(*,'(4x,a,es12.4)')       "dist vs serial    : ", e
        write(*,'(4x,a,es12.4)')       "block-amg vs serial: ", e_pc
@@ -198,6 +208,8 @@ contains
     ! trivially small mesh (box-36, ~7 cells/block) unpreconditioned CG already
     ! converges in a handful of iters and block-jacobi cannot beat it.
     if (assert_speedup .and. it_pc .ge. it_unprec) nfail = nfail + 1
+    ! RCB should cut no more edges (smaller/equal halo) than BFS
+    if (np .gt. 1 .and. assert_cut .and. rcb_cut .gt. bfs_cut) nfail = nfail + 1
 
     deallocate(b, x_dist, x_pc, x_ref, r)
   end subroutine solve_and_check

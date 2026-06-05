@@ -47,6 +47,7 @@ module class_graph
      procedure :: dof
      procedure :: num_dofs
      procedure :: partition
+     procedure :: partition_rcb
      procedure :: edge_cut
      procedure :: print
 
@@ -220,6 +221,123 @@ contains
     end do
 
   end subroutine partition
+
+  !===================================================================!
+  ! Geometric partitioner: recursive coordinate bisection (RCB).
+  !
+  ! Sibling to partition() above (which is adjacency-only BFS). Uses the
+  ! cell centroids coords(:,cell) (e.g. mesh % cell_centers) to recursively
+  ! split the cells by the median coordinate along the longest-spread axis -
+  ! balanced, COMPACT subdomains (small edge cut / halo) where the BFS chunks
+  ! would go stringy. pure fortran, no external deps; stamps the same
+  ! vertex % part contract so everything downstream is unchanged.
+  ! (KB: METIS could still slot in behind this same contract.)
+  !===================================================================!
+
+  subroutine partition_rcb(this, coords, nparts)
+
+    class(graph), intent(inout) :: this
+    real(dp)    , intent(in)    :: coords(:,:)   ! (ndim, num_vertices) centroids
+    integer     , intent(in)    :: nparts
+
+    integer, allocatable :: idx(:), part(:)
+    integer :: nv, c
+
+    nv = this % num_vertices
+    if (nparts .lt. 1)  error stop "partition_rcb: nparts < 1"
+    if (nparts .gt. nv) error stop "partition_rcb: more parts than cells"
+
+    allocate(idx(nv), part(nv))
+    do c = 1, nv
+       idx(c) = c
+    end do
+    part = 1
+
+    call rcb(idx, 1, nv, nparts, 1, coords, part)
+
+    do c = 1, nv
+       this % vertices(c) % part = part(c)
+    end do
+
+  end subroutine partition_rcb
+
+  !===================================================================!
+  ! RCB recursion: assign cells idx(lo:hi) to k parts numbered
+  ! base..base+k-1. Halve the part count, send a proportional share of the
+  ! cells (by count - CG work is ~one row per cell) to each side, split at
+  ! the median along the axis of largest spread.
+  !===================================================================!
+
+  recursive subroutine rcb(idx, lo, hi, k, base, coords, part)
+
+    integer , intent(inout) :: idx(:)
+    integer , intent(in)    :: lo, hi, k, base
+    real(dp), intent(in)    :: coords(:,:)
+    integer , intent(inout) :: part(:)
+
+    integer  :: n, d, axis, kL, kR, nL, mid
+    real(dp) :: spread, best
+
+    n = hi - lo + 1
+    if (k .le. 1 .or. n .le. 0) then
+       if (n .gt. 0) part(idx(lo:hi)) = base
+       return
+    end if
+
+    ! axis of largest coordinate spread over this subset (zero-spread axes,
+    ! e.g. z in 2d, are never chosen)
+    axis = 1; best = -1.0_dp
+    do d = 1, size(coords, 1)
+       spread = maxval(coords(d, idx(lo:hi))) - minval(coords(d, idx(lo:hi)))
+       if (spread .gt. best) then
+          best = spread; axis = d
+       end if
+    end do
+
+    ! split the part count, and the cells proportionally (both sides nonempty)
+    kL = k/2; kR = k - kL
+    nL = nint(real(n,dp)*real(kL,dp)/real(k,dp))
+    nL = max(1, min(n-1, nL))
+
+    ! order idx(lo:hi) by the chosen axis so the nL smallest go left
+    call qsort_axis(idx, lo, hi, coords, axis)
+    mid = lo + nL - 1
+
+    call rcb(idx, lo,    mid, kL, base,      coords, part)
+    call rcb(idx, mid+1, hi,  kR, base + kL, coords, part)
+
+  end subroutine rcb
+
+  !===================================================================!
+  ! Quicksort idx(lo:hi) ascending by coords(axis, idx(:)). Middle pivot so
+  ! structured (already-ordered) meshes don't hit the O(n^2) worst case.
+  !===================================================================!
+
+  recursive subroutine qsort_axis(idx, lo, hi, coords, axis)
+
+    integer , intent(inout) :: idx(:)
+    integer , intent(in)    :: lo, hi, axis
+    real(dp), intent(in)    :: coords(:,:)
+
+    integer  :: i, j, tmp
+    real(dp) :: pivot
+
+    if (lo .ge. hi) return
+    pivot = coords(axis, idx((lo+hi)/2))
+    i = lo; j = hi
+    do
+       do while (coords(axis, idx(i)) .lt. pivot); i = i + 1; end do
+       do while (coords(axis, idx(j)) .gt. pivot); j = j - 1; end do
+       if (i .le. j) then
+          tmp = idx(i); idx(i) = idx(j); idx(j) = tmp
+          i = i + 1; j = j - 1
+       end if
+       if (i .gt. j) exit
+    end do
+    if (lo .lt. j) call qsort_axis(idx, lo, j, coords, axis)
+    if (i .lt. hi) call qsort_axis(idx, i, hi, coords, axis)
+
+  end subroutine qsort_axis
 
   !===================================================================!
   ! Number of edges whose endpoints lie in different partitions.

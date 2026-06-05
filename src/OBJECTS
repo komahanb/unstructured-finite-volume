@@ -31,6 +31,8 @@ module_solver_monitor.o \
 interface_linear_solver.o \
 interface_preconditioner.o \
 class_distributed_cg.o \
+class_normal_cg.o \
+class_gmres.o \
 class_amg.o \
 class_conjugate_gradient.o \
 class_gauss_jacobi.o \

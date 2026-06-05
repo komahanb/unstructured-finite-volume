@@ -7,7 +7,7 @@ program test_mesh
   use iso_fortran_env          , only : dp => REAL64
   use class_gmsh_loader        , only : gmsh_loader
   use class_mesh               , only : mesh
-  use class_assembler          , only : assembler
+  use class_assembler          , only : assembler, DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE
 
   implicit none
 
@@ -43,15 +43,15 @@ program test_mesh
     !-----------------------------------------------------------------!
 
     print *, 'getting upper triangle'
-    call FVMAssembler % get_jacobian(U, filter = FVMAssembler % UPPER_TRIANGLE)
+    call FVMAssembler % get_jacobian(U, filter = UPPER_TRIANGLE)
     call print (U)
 
     print *, 'getting lower triangle'
-    call FVMAssembler % get_jacobian(L, filter = FVMAssembler % LOWER_TRIANGLE)
+    call FVMAssembler % get_jacobian(L, filter = LOWER_TRIANGLE)
     call print (L)
 
     print *, 'getting diagonal matrix'
-    call FVMAssembler % get_jacobian(D, filter = FVMAssembler % DIAGONAL)
+    call FVMAssembler % get_jacobian(D, filter = DIAGONAL)
     call print (D)
 
     print *, 'getting full jacobian'

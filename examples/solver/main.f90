@@ -25,7 +25,7 @@ program solver
   use class_gauss_seidel       , only : gauss_seidel
   use class_gauss_jacobi       , only : gauss_jacobi
   use class_csr                , only : csr_matrix
-  use class_amg                , only : amg
+  use class_algebraic_multigrid, only : algebraic_multigrid
   use class_bdf                , only : bdf
   use class_paraview_writer    , only : paraview_writer
   use class_gmsh_writer        , only : gmsh_writer
@@ -41,7 +41,7 @@ program solver
   class(assembler)    , allocatable  :: fvm
   class(linear_solver), allocatable  :: lsolver
   type(csr_matrix)                   :: amg_op       ! assembled operator (for pcg-amg)
-  type(amg)                          :: amg_precond  ! SA-AMG preconditioner
+  type(algebraic_multigrid)                          :: amg_precond  ! SA-AMG preconditioner
   type(bdf)                          :: ti
   class(paraview_writer), allocatable :: pw
   real(dp), allocatable              :: x(:)
@@ -93,7 +93,7 @@ program solver
 
      ! Transient: backward-euler (bdf order 1) march from a zero initial state
      ti = bdf(fvm, cfg % tinit, cfg % tfinal, cfg % dt, max_order = 1)
-     call ti % solve()
+     call ti % integrate()
      x = real(ti % U(ti % num_steps, :, 1), dp)
 
   else
@@ -101,48 +101,48 @@ program solver
      ! Steady: pick the linear solver
      select case (trim(cfg % solver % str))
      case ("cg")
-        allocate(lsolver, source = conjugate_gradient(FVAssembler=fvm, &
+        allocate(lsolver, source = conjugate_gradient(&
              & max_tol=cfg % max_tol, max_it=cfg % max_it, print_level=1))
      case ("sor")
-        allocate(lsolver, source = sor(FVAssembler=fvm, omega=cfg % omega, &
+        allocate(lsolver, source = sor(omega=cfg % omega, &
              & max_tol=cfg % max_tol, max_it=cfg % max_it, print_level=1))
      case ("gs")
-        allocate(lsolver, source = gauss_seidel(FVAssembler=fvm, &
+        allocate(lsolver, source = gauss_seidel(&
              & max_tol=cfg % max_tol, max_it=cfg % max_it, print_level=1))
      case ("gj")
-        allocate(lsolver, source = gauss_jacobi(FVAssembler=fvm, &
+        allocate(lsolver, source = gauss_jacobi(&
              & max_tol=cfg % max_tol, max_it=cfg % max_it, print_level=1))
      case ("pcg-amg")
         ! smoothed-aggregation AMG-preconditioned CG: assemble the operator
         ! once, build the multigrid hierarchy, hand it to CG as the precond
         call fvm % get_operator_csr(amg_op)
         call amg_precond % setup(amg_op)
-        allocate(lsolver, source = conjugate_gradient(FVAssembler=fvm, &
+        allocate(lsolver, source = conjugate_gradient(&
              & max_tol=cfg % max_tol, max_it=cfg % max_it, print_level=1, &
              & precond=amg_precond))
      case ("gmres")
         ! restarted GMRES on the assembled operator (for nonsymmetric /
         ! advection problems where CG does not apply)
-        allocate(lsolver, source = gmres_solver(FVAssembler=fvm, &
+        allocate(lsolver, source = gmres_solver(&
              & max_tol=cfg % max_tol, max_it=cfg % max_it, print_level=1))
      case ("cgnr")
         ! CG on the normal equations A^T A (robust baseline; kappa^2 convergence)
-        allocate(lsolver, source = normal_cg(FVAssembler=fvm, &
+        allocate(lsolver, source = normal_cg(&
              & max_tol=cfg % max_tol, max_it=cfg % max_it, method=CGNR_METHOD, print_level=1))
      case ("cgne")
         ! CG on the normal equations A A^T (Craig)
-        allocate(lsolver, source = normal_cg(FVAssembler=fvm, &
+        allocate(lsolver, source = normal_cg(&
              & max_tol=cfg % max_tol, max_it=cfg % max_it, method=CGNE_METHOD, print_level=1))
      case ("distributed_cg")
         ! coarray domain-decomposed CG (serial build reduces to plain CG); SPD only
-        allocate(lsolver, source = distributed_cg_solver(FVAssembler=fvm, &
+        allocate(lsolver, source = distributed_cg_solver(&
              & max_tol=cfg % max_tol, max_it=cfg % max_it, print_level=1))
      case default
         print *, "unknown solver '", trim(cfg % solver % str), "'"
         error stop
      end select
 
-     call lsolver % solve(x)
+     call lsolver % solve(fvm, x)
 
   end if
 

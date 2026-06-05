@@ -49,13 +49,12 @@ program test_mesh
   ! Linear Solution
   allocate(linear, &
        & source      = conjugate_gradient( &
-       & FVAssembler = FVMassembler, &
        & max_tol     = max_tol, &
        & max_it      = max_it, &
        & print_level = print_level))
   
   ! Solve using solver method
-  call linear % solve(x)
+  call linear % solve(FVMassembler, x)
   print *, 'cg solution = '
   do i = 1, min(10, size(x))
      print *, i,  x(i)

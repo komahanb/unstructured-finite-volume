@@ -97,8 +97,8 @@ contains
     call fvm % set_dirichlet("BoundaryTop"   , 5.0_dp)
     call fvm % set_dirichlet("BoundaryBottom", 5.0_dp)
 
-    allocate(cg, source = conjugate_gradient(fvm, 500, tol, 0))
-    call cg % solve(x)
+    allocate(cg, source = conjugate_gradient(500, tol, 0))
+    call cg % solve(fvm, x)
 
     call report("2d constant dirichlet -> u = 5", &
          & maxval(abs(x - 5.0_dp)) .lt. 1.0e-10_dp, nfail)
@@ -127,8 +127,8 @@ contains
     call fvm % set_neumann  ("BoundaryTop"   , 0.0_dp)
     call fvm % set_neumann  ("BoundaryBottom", 0.0_dp)
 
-    allocate(cg, source = conjugate_gradient(fvm, 500, tol, 0))
-    call cg % solve(x)
+    allocate(cg, source = conjugate_gradient(500, tol, 0))
+    call cg % solve(fvm, x)
 
     err = 0.0_dp
     do icell = 1, fvm % grid % num_cells

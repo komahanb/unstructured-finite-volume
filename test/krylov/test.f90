@@ -29,9 +29,10 @@ program test_krylov
 
   use iso_fortran_env , only : dp => real64
   use class_csr       , only : csr_matrix
-  use class_normal_cg , only : cgnr, cgne, cgnr_last_iters, cgne_last_iters
-  use class_gmres     , only : gmres, gmres_last_iters
-  use class_amg       , only : amg
+  use class_normal_cg , only : normal_cg, CGNR_METHOD, CGNE_METHOD, &
+       & cgnr_last_iters, cgne_last_iters
+  use class_gmres     , only : gmres_solver, gmres_last_iters
+  use class_algebraic_multigrid, only : algebraic_multigrid
 
   implicit none
 
@@ -134,24 +135,30 @@ contains
     type(csr_matrix) :: A
     real(dp), allocatable :: xex(:), b(:), x(:)
     real(dp) :: rr, se
+    type(normal_cg)    :: cgnr_solver, cgne_solver
+    type(gmres_solver) :: gs
 
     A = advdiff_csr(0.6_dp)
     call make_problem(A, xex, b)
     allocate(x(A % ncols))
 
+    cgnr_solver = normal_cg(max_it=50000, max_tol=TOL, method=CGNR_METHOD, print_level=0)
+    cgne_solver = normal_cg(max_it=50000, max_tol=TOL, method=CGNE_METHOD, print_level=0)
+    gs          = gmres_solver(max_it=50000, restart=400, max_tol=TOL, print_level=0)
+
     write(*,'(a)') " ---- correctness (gamma = 0.6) ----"
 
-    call cgnr(A, b, x, 50000, TOL, 0)
+    call cgnr_solver % cgnr(A, b, x)
     rr = relresid(A, x, b); se = solerr(x, xex)
     write(*,'(2x,a,es11.3,a,es11.3,a,i0)') "cgnr  resid=", rr, "  err=", se, "  iters=", cgnr_last_iters
     if (rr .gt. 1.0e-6_dp .or. se .gt. 1.0e-3_dp) nf = nf + 1
 
-    call cgne(A, b, x, 50000, TOL, 0)
+    call cgne_solver % cgne(A, b, x)
     rr = relresid(A, x, b); se = solerr(x, xex)
     write(*,'(2x,a,es11.3,a,es11.3,a,i0)') "cgne  resid=", rr, "  err=", se, "  iters=", cgne_last_iters
     if (rr .gt. 1.0e-6_dp .or. se .gt. 1.0e-3_dp) nf = nf + 1
 
-    call gmres(A, b, x, 50000, 400, TOL, 0)
+    call gs % gmres(A, b, x)
     rr = relresid(A, x, b); se = solerr(x, xex)
     write(*,'(2x,a,es11.3,a,es11.3,a,i0)') "gmres resid=", rr, "  err=", se, "  iters=", gmres_last_iters
     if (rr .gt. 1.0e-6_dp .or. se .gt. 1.0e-3_dp) nf = nf + 1
@@ -166,6 +173,11 @@ contains
     type(csr_matrix) :: A
     real(dp), allocatable :: xex(:), b(:), x(:)
     integer :: t
+    type(normal_cg)    :: cgnr_solver
+    type(gmres_solver) :: gs
+
+    cgnr_solver = normal_cg(max_it=50000, max_tol=TOL, method=CGNR_METHOD, print_level=0)
+    gs          = gmres_solver(max_it=50000, restart=400, max_tol=TOL, print_level=0)
 
     write(*,'(a)') " ---- Peclet sweep: CGNR (A^T A, kappa^2) vs GMRES (A, kappa) ----"
     write(*,'(2x,a8,2x,a10,2x,a10,2x,a8)') "gamma", "cgnr_its", "gmres_its", "ratio"
@@ -174,13 +186,13 @@ contains
        call make_problem(A, xex, b)
        if (allocated(x)) deallocate(x); allocate(x(A % ncols))
 
-       call cgnr (A, b, x, 50000, TOL, 0)
+       call cgnr_solver % cgnr(A, b, x)
        block
          real(dp) :: rr_c
          integer  :: it_cgnr, it_gmres
          rr_c = relresid(A, x, b)
          it_cgnr = cgnr_last_iters
-         call gmres(A, b, x, 50000, 400, TOL, 0)
+         call gs % gmres(A, b, x)
          it_gmres = gmres_last_iters
          write(*,'(2x,f8.2,2x,i10,2x,i10,2x,f8.1)') gammas(t), it_cgnr, it_gmres, &
               & real(it_cgnr,dp)/real(max(it_gmres,1),dp)
@@ -201,11 +213,14 @@ contains
     type(csr_matrix) :: A
     real(dp), allocatable :: xex(:), b(:), x(:)
     real(dp) :: rr
+    type(gmres_solver) :: gs
 
     A = advdiff_csr(0.6_dp)
     call make_problem(A, xex, b)
     allocate(x(A % ncols))
-    call gmres(A, b, x, 50000, 20, TOL, 0)     ! restart every 20
+
+    gs = gmres_solver(max_it=50000, restart=20, max_tol=TOL, print_level=0)   ! restart every 20
+    call gs % gmres(A, b, x)
     rr = relresid(A, x, b)
     write(*,'(a,es11.3,a,i0)') " ---- GMRES(20) restart: resid=", rr, "  iters=", gmres_last_iters
     if (rr .gt. 1.0e-6_dp) nf = nf + 1
@@ -217,10 +232,11 @@ contains
   subroutine check_amg_precond(nf)
     integer, intent(inout) :: nf
     type(csr_matrix) :: A, Asym
-    type(amg)        :: M
+    type(algebraic_multigrid)        :: M
     real(dp), allocatable :: xex(:), b(:), x(:)
     integer :: it_plain, it_prec
     real(dp) :: rr
+    type(gmres_solver) :: gs, gs_prec
 
     A    = advdiff_csr(0.6_dp)
     Asym = advdiff_csr(0.0_dp)        ! symmetric part = the SPD laplacian
@@ -228,10 +244,12 @@ contains
     call make_problem(A, xex, b)
     allocate(x(A % ncols))
 
-    call gmres(A, b, x, 50000, 400, TOL, 0)
+    gs = gmres_solver(max_it=50000, restart=400, max_tol=TOL, print_level=0)
+    call gs % gmres(A, b, x)
     it_plain = gmres_last_iters
 
-    call gmres(A, b, x, 50000, 400, TOL, 0, precond = M)
+    gs_prec = gmres_solver(max_it=50000, restart=400, max_tol=TOL, print_level=0, precond=M)
+    call gs_prec % gmres(A, b, x)
     it_prec = gmres_last_iters
     rr = relresid(A, x, b)
 

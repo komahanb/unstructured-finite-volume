@@ -19,7 +19,7 @@ program regression
   use iso_fortran_env          , only : dp => REAL64
   use class_gmsh_loader        , only : gmsh_loader
   use class_mesh               , only : mesh
-  use class_assembler          , only : assembler
+  use class_assembler          , only : assembler, DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE
   use class_diffusion_flux  , only : diffusion_flux, constant_source
   use class_conjugate_gradient , only : conjugate_gradient
   use class_normal_cg          , only : normal_cg, CGNR_METHOD
@@ -104,8 +104,8 @@ contains
     call make("../sphere.msh", fvm)
     call fvm % set_dirichlet("boundary", 5.0_dp)
 
-    allocate(cg, source = conjugate_gradient(fvm, 500, tol, 0))
-    call cg % solve(x)
+    allocate(cg, source = conjugate_gradient(500, tol, 0))
+    call cg % solve(fvm, x)
 
     call report("sphere constant dirichlet -> phi = 5", &
          & maxval(abs(x - 5.0_dp)) .lt. 1.0e-10_dp, nfail)
@@ -144,8 +144,8 @@ contains
     call make(meshfile, fvm)
     call fvm % set_equation(diffusion_flux(kappa), constant_source(1.0_dp))
 
-    allocate(cg, source = conjugate_gradient(fvm, 500, tol, 0))
-    call cg % solve(x)
+    allocate(cg, source = conjugate_gradient(500, tol, 0))
+    call cg % solve(fvm, x)
 
   end subroutine poisson
 
@@ -165,14 +165,14 @@ contains
     ! steady
     call make("../box-3.msh", fsteady)
     call box_bc(fsteady)
-    allocate(cg, source = conjugate_gradient(fsteady, 500, tol, 0))
-    call cg % solve(xs)
+    allocate(cg, source = conjugate_gradient(500, tol, 0))
+    call cg % solve(fsteady, xs)
 
     ! transient from zero, marched far (bdf order 1 = backward euler)
     call make("../box-3.msh", ftrans)
     call box_bc(ftrans)
     ti = bdf(ftrans, 0.0_dp, 200.0_dp, 10.0_dp, max_order = 1)
-    call ti % solve()
+    call ti % integrate()
     xt = real(ti % U(ti % num_steps, :, 1), dp)
 
     call report("transient (t -> inf) -> steady", &
@@ -197,19 +197,19 @@ contains
 
     ! reference: plain CG
     call make("../box-3.msh", f1); call box_bc(f1)
-    allocate(cg, source = conjugate_gradient(f1, 5000, tol, 0))
-    call cg % solve(xref)
+    allocate(cg, source = conjugate_gradient(5000, tol, 0))
+    call cg % solve(f1, xref)
 
     ! normal_cg (cgnr): CG on the normal equations (kappa^2 -> looser tol)
     call make("../box-3.msh", f2); call box_bc(f2)
-    ncg = normal_cg(FVAssembler=f2, max_it=50000, max_tol=1.0e-10_dp, &
+    ncg = normal_cg(max_it=50000, max_tol=1.0e-10_dp, &
          & method=CGNR_METHOD, print_level=0)
-    call ncg % solve(xn)
+    call ncg % solve(f2, xn)
 
     ! distributed_cg wrapper (serial build -> plain CG)
     call make("../box-3.msh", f3); call box_bc(f3)
-    dcg = distributed_cg_solver(FVAssembler=f3, max_it=5000, max_tol=tol, print_level=0)
-    call dcg % solve(xd)
+    dcg = distributed_cg_solver(max_it=5000, max_tol=tol, print_level=0)
+    call dcg % solve(f3, xd)
 
     call report("cgnr wrapper      -> matches cg", &
          & maxval(abs(xn - xref)) .lt. 1.0e-5_dp, nfail)
@@ -232,9 +232,9 @@ contains
     call make("../box-36.msh", fvm)
 
     call fvm % get_jacobian(A)
-    call fvm % get_jacobian(L, filter = fvm % LOWER_TRIANGLE)
-    call fvm % get_jacobian(U, filter = fvm % UPPER_TRIANGLE)
-    call fvm % get_jacobian(D, filter = fvm % DIAGONAL)
+    call fvm % get_jacobian(L, filter = LOWER_TRIANGLE)
+    call fvm % get_jacobian(U, filter = UPPER_TRIANGLE)
+    call fvm % get_jacobian(D, filter = DIAGONAL)
 
     call report("operator split A = L + U + D", &
          & maxval(abs(A - L - U - D)) .lt. tiny(1.0_dp), nfail)
@@ -264,8 +264,8 @@ contains
     call fvm % set_neumann  ("left"  , 0.0_dp)
     call fvm % set_neumann  ("right" , 0.0_dp)
 
-    allocate(cg, source = conjugate_gradient(fvm, 500, tol, 0))
-    call cg % solve(x)
+    allocate(cg, source = conjugate_gradient(500, tol, 0))
+    call cg % solve(fvm, x)
 
     ok =       (abs(sum(x)/size(x) - 2.5_dp) .lt. 1.0e-8_dp) &
          .and. (minval(x) .gt. 0.0_dp) &

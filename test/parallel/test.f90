@@ -33,9 +33,9 @@ program test_parallel
   use class_assembler       , only : assembler
   use class_diffusion_flux  , only : diffusion_flux, constant_source
   use class_csr             , only : csr_matrix
-  use class_partition       , only : partition
-  use class_amg             , only : amg
-  use class_distributed_cg  , only : halo, distributed_cg, owned_block, dist_cg_last_iters
+  use class_graph           , only : graph
+  use class_algebraic_multigrid, only : algebraic_multigrid
+  use class_distributed_cg  , only : halo, distributed_cg_solver, dist_cg_last_iters
   use class_conjugate_gradient, only : conjugate_gradient
 
   implicit none
@@ -133,10 +133,11 @@ contains
     integer     , intent(inout) :: nfail
 
     type(csr_matrix) :: A, Ablock
-    type(partition)  :: p
+    type(graph)      :: gp
     type(halo)       :: h
-    type(amg)        :: M
+    type(algebraic_multigrid)        :: M
     class(conjugate_gradient), allocatable :: cg
+    type(distributed_cg_solver) :: dcg, dcg_pc
     real(dp), allocatable :: b(:), x_dist(:), x_pc(:), x_ref(:), r(:)
     integer  :: n, nown_tot, it_unprec, it_pc, bfs_cut, rcb_cut
     real(dp) :: e, e_pc, relres, bnorm
@@ -144,12 +145,11 @@ contains
     ! partition the graph: BFS (placeholder) vs RCB (geometric); compare the
     ! edge cut, then USE the RCB partition for the solve. both are deterministic,
     ! so every image computes the identical partition and agrees without comm.
-    call fvm % g % partition(np)
-    bfs_cut = fvm % g % edge_cut()
-    call fvm % g % partition_rcb(fvm % grid % cell_centers, np)
-    rcb_cut = fvm % g % edge_cut()
-    p = partition(fvm % g, np)
-    h = halo(p, me, np)
+    gp      = fvm % g % partition(np)
+    bfs_cut = gp % edge_cut()
+    gp      = fvm % g % partition_rcb(fvm % grid % cell_centers, np)
+    rcb_cut = gp % edge_cut()
+    h       = halo(gp, me, np)
 
     ! assembled operator + source (replicated on every image)
     call fvm % get_operator_csr(A)
@@ -158,20 +158,22 @@ contains
 
     ! (a) unpreconditioned distributed (coarray) CG
     allocate(x_dist(n))
-    call distributed_cg(A, b, x_dist, h, 20000, 1.0e-10_dp, plvl)
+    dcg = distributed_cg_solver(max_it=20000, max_tol=1.0e-10_dp, print_level=plvl)
+    call dcg % distributed_cg(A, b, x_dist, h)
     it_unprec = dist_cg_last_iters
 
     ! (b) per-image block-AMG preconditioned distributed CG: each image builds
     ! an AMG on its OWNED diagonal block (restricted additive schwarz)
-    Ablock = owned_block(A, h % own)
+    Ablock = A % principal_submatrix(h % own)
     call M % setup(Ablock)
     allocate(x_pc(n))
-    call distributed_cg(A, b, x_pc, h, 20000, 1.0e-10_dp, 0, precond = M)
+    dcg_pc = distributed_cg_solver(max_it=20000, max_tol=1.0e-10_dp, print_level=0, precond=M)
+    call dcg_pc % distributed_cg(A, b, x_pc, h)
     it_pc = dist_cg_last_iters
 
     ! serial reference: matrix-free library CG, run replicated
-    allocate(cg, source = conjugate_gradient(fvm, 20000, 1.0e-10_dp, 0))
-    call cg % solve(x_ref)
+    allocate(cg, source = conjugate_gradient(20000, 1.0e-10_dp, 0))
+    call cg % solve(fvm, x_ref)
     deallocate(cg)
 
     ! check 1: owned sets cover every dof exactly once
@@ -190,7 +192,7 @@ contains
     if (me .eq. 1) then
        write(*,'(a)') " -----------------------------------------------------"
        write(*,'(2x,a,a)') "case: ", label
-       call p % print()
+       call gp % print_partition()
        write(*,'(4x,a,i0,a,i0)')      "dofs covered      : ", nown_tot, " / ", n
        write(*,'(4x,a,i0,a,i0)')      "edge cut  bfs=", bfs_cut, "  rcb=", rcb_cut
        write(*,'(4x,a,es12.4)')       "dist residual rel : ", relres
@@ -200,7 +202,7 @@ contains
     end if
 
     if (nown_tot .ne. n)                 nfail = nfail + 1
-    if (np .gt. 1 .and. p % ncut .le. 0) nfail = nfail + 1
+    if (np .gt. 1 .and. gp % ncut .le. 0) nfail = nfail + 1
     if (relres .gt. 1.0e-6_dp)           nfail = nfail + 1
     if (e .gt. 1.0e-6_dp)                nfail = nfail + 1
     if (e_pc .gt. 1.0e-6_dp)             nfail = nfail + 1

@@ -21,7 +21,6 @@ program test_transient_adjoint
   use class_diffusion_flux  , only : diffusion_flux, constant_source
   use class_state_energy, only : state_energy
   use class_bdf         , only : bdf
-  use class_adjoint     , only : adjoint
 
   implicit none
 
@@ -30,7 +29,6 @@ program test_transient_adjoint
   class(assembler)  , allocatable :: fvm
   type(bdf)                       :: ti
   type(state_energy)              :: func
-  type(adjoint)                   :: adj
   real(dp), allocatable :: g_adj(:), g_fd(:)
   real(dp)              :: relerr
   integer               :: nfail
@@ -56,16 +54,15 @@ program test_transient_adjoint
   ! march with bdf order 2 over t in [0,1], dt = 0.1 (the bandwidth ramps
   ! 1 -> 2, exercising the variable-bandwidth future-step coupling)
   ti  = bdf(fvm, 0.0_dp, 1.0_dp, 0.1_dp, 2)
-  adj = adjoint(ti, func)
 
   ! transient adjoint gradient and the finite-difference reference
-  call adj % eval_func_grad   (g_adj)
-  call adj % eval_fd_func_grad(g_fd)
+  call ti % integrate_adjoint   (func, g_adj)
+  call ti % integrate_adjoint_fd(func, g_fd)
 
   ! export the state and adjoint-state trajectories: paraview (one .vtu
   ! per step) and gmsh (one .msh, two animated views over the time steps)
-  call adj % write_solution("transient_adjoint")
-  call adj % write_gmsh_solution("box-36.msh", "transient_adjoint.msh")
+  call ti % write_adjoint_solution("transient_adjoint")
+  call ti % write_adjoint_gmsh("box-36.msh", "transient_adjoint.msh")
 
   relerr = abs(g_adj(1) - g_fd(1))/max(abs(g_fd(1)), tiny(1.0_dp))
 

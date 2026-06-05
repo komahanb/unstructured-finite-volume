@@ -38,7 +38,7 @@ program test_integrator
         h   = 0.1_dp/real(2**(lev-1), dp)
         ode = decay_ode(lambda)
         ti  = bdf(ode, 0.0_dp, tfinal, h, p)
-        call ti % solve()
+        call ti % integrate()
         err(lev) = abs(real(ti % U(ti % num_steps, 1, 1), dp) - uexact)
      end do
 

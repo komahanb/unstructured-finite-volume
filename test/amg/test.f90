@@ -25,7 +25,7 @@ program test_amg
   use class_assembler       , only : assembler
   use class_diffusion_flux  , only : diffusion_flux, constant_source
   use class_csr             , only : csr_matrix
-  use class_amg             , only : amg
+  use class_algebraic_multigrid, only : algebraic_multigrid
   use class_conjugate_gradient, only : conjugate_gradient, cg_last_iters
 
   implicit none
@@ -131,7 +131,7 @@ contains
     integer, intent(inout) :: nf
     class(assembler), allocatable :: fvm
     type(csr_matrix)              :: A
-    type(amg)                     :: M
+    type(algebraic_multigrid)                     :: M
     real(dp), allocatable :: u(:), v(:), Mu(:), Mv(:)
     real(dp) :: sym, pd_u, pd_v
     integer  :: n, i
@@ -167,7 +167,7 @@ contains
     class(assembler)         , allocatable :: fvm
     class(conjugate_gradient), allocatable :: cg
     type(csr_matrix)                       :: A
-    type(amg)                              :: M
+    type(algebraic_multigrid)                              :: M
     real(dp), allocatable :: x_cg(:), x_amg(:)
     integer :: iters_cg, iters_amg
     real(dp) :: e
@@ -175,16 +175,16 @@ contains
     call make_square(40, fvm)
 
     ! plain CG
-    allocate(cg, source = conjugate_gradient(fvm, 5000, 1.0e-10_dp, 0))
-    call cg % solve(x_cg)
+    allocate(cg, source = conjugate_gradient(5000, 1.0e-10_dp, 0))
+    call cg % solve(fvm, x_cg)
     iters_cg = cg_last_iters
     deallocate(cg)
 
     ! PCG-AMG (same operator, same tolerance)
     call fvm % get_operator_csr(A)
     call M % setup(A)
-    allocate(cg, source = conjugate_gradient(fvm, 5000, 1.0e-10_dp, 0, precond = M))
-    call cg % solve(x_amg)
+    allocate(cg, source = conjugate_gradient(5000, 1.0e-10_dp, 0, precond = M))
+    call cg % solve(fvm, x_amg)
     iters_amg = cg_last_iters
     deallocate(cg)
 
@@ -204,7 +204,7 @@ contains
     class(assembler)         , allocatable :: fvm
     class(conjugate_gradient), allocatable :: cg
     type(csr_matrix)                       :: A
-    type(amg)                              :: M
+    type(algebraic_multigrid)                              :: M
     real(dp), allocatable :: x(:)
     integer :: ic(4), ia(4), k
 
@@ -213,15 +213,15 @@ contains
     do k = 1, 4
        call make_square(ns(k), fvm)
 
-       allocate(cg, source = conjugate_gradient(fvm, 20000, 1.0e-8_dp, 0))
-       call cg % solve(x)
+       allocate(cg, source = conjugate_gradient(20000, 1.0e-8_dp, 0))
+       call cg % solve(fvm, x)
        ic(k) = cg_last_iters
        deallocate(cg)
 
        call fvm % get_operator_csr(A)
        call M % setup(A)
-       allocate(cg, source = conjugate_gradient(fvm, 20000, 1.0e-8_dp, 0, precond = M))
-       call cg % solve(x)
+       allocate(cg, source = conjugate_gradient(20000, 1.0e-8_dp, 0, precond = M))
+       call cg % solve(fvm, x)
        ia(k) = cg_last_iters
        deallocate(cg)
 

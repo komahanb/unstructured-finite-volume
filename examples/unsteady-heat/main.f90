@@ -82,7 +82,7 @@ program unsteady_heat
   ! Backward-euler (bdf order 1) marches the whole range in one solve,
   ! storing every step's state; we slice frames out of it below.
   ti = bdf(fvm, cfg % tinit, cfg % tfinal, cfg % dt, max_order = 1)
-  call ti % solve()
+  call ti % integrate()
 
   ! Output
   labels(1) = string("phi")

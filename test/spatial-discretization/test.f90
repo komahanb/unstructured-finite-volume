@@ -105,8 +105,8 @@ contains
     call fvm % set_dirichlet("BoundaryTop"   , 0.0_dp)
     call fvm % set_dirichlet("BoundaryBottom", 0.0_dp)
 
-    allocate(cg, source = conjugate_gradient(fvm, 500, tol, 0))
-    call cg % solve(uh)
+    allocate(cg, source = conjugate_gradient(500, tol, 0))
+    call cg % solve(fvm, uh)
 
     call get_exact_solution(uex, fvm % grid % cell_centers(1:2,:))
 

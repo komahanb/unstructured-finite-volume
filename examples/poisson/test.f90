@@ -67,13 +67,12 @@ program test_mesh
 
     allocate(solver, &
          & source      = conjugate_gradient( &
-         & FVAssembler = FVMassembler, &
          & max_tol     = max_tol, &
          & max_it      = max_it, &
          & print_level = print_level))
 
     ! Solve using solver method
-    call solver % solve(fhatc)
+    call solver % solve(FVMassembler, fhatc)
     print *, 'cg solution = '
     do i = 1, min(10, size(fhatc))
        print *, i,  fhatc(i)
@@ -143,14 +142,13 @@ program test_mesh
 
     allocate(solver, &
          & source      = sor( &
-         & FVAssembler = FVMassembler, &
          & omega       = 1.8545d0, &
          & max_tol     = max_tol, &
          & max_it      = max_it, &
          & print_level = print_level))
 
     ! Solve using Seidel method
-    call solver % solve(x)
+    call solver % solve(FVMassembler, x)
     print *, 'sor solution = '
     do i = 1, min(10, size(x))
        print *, i,  x(i)
@@ -174,13 +172,12 @@ program test_mesh
 
     allocate(solver, &
          & source      = gauss_seidel( &
-         & FVAssembler = FVMassembler, &
          & max_tol     = max_tol, &
          & max_it      = max_it, &
          & print_level = print_level))
 
     ! Solve using Seidel method
-    call solver % solve(x)
+    call solver % solve(FVMassembler, x)
     print *, 'seidel solution = '
     do i = 1, min(10, size(x))
        print *, i,  x(i)
@@ -204,13 +201,12 @@ program test_mesh
 
     allocate(solver, &
          & source      = gauss_jacobi( &
-         & FVAssembler = FVMassembler, &
          & max_tol     = max_tol, &
          & max_it      = max_it, &
          & print_level = print_level))
 
     ! Solve using Jacobi method
-    call solver % solve(x)
+    call solver % solve(FVMassembler, x)
     print *, 'jacobi solution = '
     do i = 1, min(10, size(x))
        print *, i,  x(i)

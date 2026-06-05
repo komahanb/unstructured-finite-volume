@@ -19,15 +19,16 @@ program test_adjoint
   use class_gmsh_loader , only : gmsh_loader
   use class_mesh        , only : mesh
   use class_assembler   , only : assembler
+  use class_newton_solver, only : newton
   use class_diffusion_flux  , only : diffusion_flux, constant_source
   use class_state_energy, only : state_energy
-  use adjoint           , only : eval_func_grad, eval_fd_func_grad
 
   implicit none
 
   class(gmsh_loader), allocatable :: gl
   class(mesh)       , allocatable :: grid
   class(assembler)  , allocatable :: fvm
+  type(newton)                    :: nl
   type(state_energy)              :: func
   real(dp)    , allocatable :: g_adj(:), g_fd(:), fields(:,:)
   type(scalar), allocatable :: psi(:)
@@ -54,8 +55,8 @@ program test_adjoint
   func = state_energy()
 
   ! adjoint gradient (also hand back the adjoint state) and the fd reference
-  call eval_func_grad   (fvm, func, g_adj, psi)
-  call eval_fd_func_grad(fvm, func, g_fd)
+  call nl % eval_func_grad   (fvm, func, g_adj, psi)
+  call nl % eval_fd_func_grad(fvm, func, g_fd)
 
   ! export the state and adjoint state for post-processing (paraview .vtu
   ! and gmsh .msh)

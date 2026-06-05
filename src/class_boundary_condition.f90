@@ -49,8 +49,10 @@ module class_boundary_condition
 
    contains
 
-     procedure :: lhs_coeff           ! diagonal contribution (multiplies phi_p)
-     procedure :: rhs_coeff           ! constant contribution to the rhs
+     procedure :: lhs_coeff           ! diffusive diagonal contribution (multiplies phi_p)
+     procedure :: rhs_coeff           ! diffusive constant contribution to the rhs
+     procedure :: adv_lhs_coeff       ! advective diagonal contribution (multiplies phi_p)
+     procedure :: adv_rhs_coeff       ! advective constant contribution to the rhs
      procedure :: print
 
   end type boundary_condition
@@ -140,6 +142,41 @@ contains
     rhs_coeff = - kappa*area*this % c/(delta*denom)
 
   end function rhs_coeff
+
+  !===================================================================!
+  ! Advection at the boundary. With the SAME eliminated face value
+  ! phi_b = (c + (b/delta) phi_p)/denom, the advective face flux
+  ! area*vn*phi_b (vn = v.n is the normal advection speed) splits into a
+  ! phi_p coefficient (to the diagonal) and a constant (to the rhs). For
+  ! dirichlet (a=1, b=0) the diagonal part vanishes and the rhs part is
+  ! area*vn*c; for neumann (a=0) the face value rides on phi_p.
+  !===================================================================!
+
+  pure real(dp) function adv_lhs_coeff(this, area, delta, vn)
+
+    class(boundary_condition), intent(in) :: this
+    real(dp)                 , intent(in) :: area, delta, vn
+
+    real(dp) :: denom
+
+    denom = this % a + this % b/delta
+
+    adv_lhs_coeff = - vn*area*(this % b/delta)/denom
+
+  end function adv_lhs_coeff
+
+  pure real(dp) function adv_rhs_coeff(this, area, delta, vn)
+
+    class(boundary_condition), intent(in) :: this
+    real(dp)                 , intent(in) :: area, delta, vn
+
+    real(dp) :: denom
+
+    denom = this % a + this % b/delta
+
+    adv_rhs_coeff = vn*area*this % c/denom
+
+  end function adv_rhs_coeff
 
   !===================================================================!
   ! Print a one line summary of the boundary condition

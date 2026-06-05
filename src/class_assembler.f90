@@ -474,7 +474,7 @@ contains
     integer, optional, intent(in)    :: filter
 
     integer           :: icell, iface, ivar, p, n, ncell, fcells(2), gface
-    real(dp)          :: nf(3), keff, diag, neigh
+    real(dp)          :: nf(3), keff, vn, diag, neigh
     type(point_state) :: st
 
     associate(nv => this % g % num_variables)
@@ -518,8 +518,11 @@ contains
                     p = this % g % dof(icell, ivar)
                     n = this % g % dof(ncell, ivar)
                     keff  = flux_keff(this % fx, st, nf, ivar)
-                    diag  = -farea*( keff/fdelta)*q(p)   ! d(F.n)/dq_p contribution
-                    neigh = -farea*(-keff/fdelta)*q(n)   ! d(F.n)/dq_n contribution
+                    vn    = flux_vn  (this % fx, st, nf, ivar)
+                    ! d(F.n)/dq_p and /dq_n: diffusion (keff/fdelta) + central
+                    ! advection (0.5 vn on each side; skew-symmetric -> nonsym)
+                    diag  = -farea*( keff/fdelta + 0.5d0*vn)*q(p)
+                    neigh = -farea*(-keff/fdelta + 0.5d0*vn)*q(n)
                     if (present(filter)) then
                        if (filter .eq. this % UPPER_TRIANGLE) then
                           if (ncell .gt. icell) Aq(p) = Aq(p) + neigh
@@ -538,12 +541,17 @@ contains
                  do ivar = 1, nv
                     p    = this % g % dof(icell, ivar)
                     keff = flux_keff(this % fx, st, nf, ivar)
-                    if (present(filter)) then
-                       if (filter .eq. this % DIAGONAL) &
-                            & Aq(p) = Aq(p) + this % bcs(ftag,ivar) % lhs_coeff(farea, fdelta, keff)*q(p)
-                    else
-                       Aq(p) = Aq(p) + this % bcs(ftag,ivar) % lhs_coeff(farea, fdelta, keff)*q(p)
-                    end if
+                    vn   = flux_vn  (this % fx, st, nf, ivar)
+                    associate(bc => this % bcs(ftag,ivar))
+                      if (present(filter)) then
+                         if (filter .eq. this % DIAGONAL) &
+                              & Aq(p) = Aq(p) + ( bc % lhs_coeff(farea, fdelta, keff) &
+                              &                 + bc % adv_lhs_coeff(farea, fdelta, vn) )*q(p)
+                      else
+                         Aq(p) = Aq(p) + ( bc % lhs_coeff(farea, fdelta, keff) &
+                              &          + bc % adv_lhs_coeff(farea, fdelta, vn) )*q(p)
+                      end if
+                    end associate
                  end do
 
               end if domain
@@ -591,7 +599,7 @@ contains
 
     integer , allocatable :: nnz_row(:), row_ptr(:), col_idx(:), cursor(:)
     integer               :: ndof, icell, iface, ivar, p, n, ncell, fcells(2), gface, ftag, nfc
-    real(dp)              :: nf(3), keff, farea, fdelta
+    real(dp)              :: nf(3), keff, vn, farea, fdelta
     type(point_state)     :: st
 
     if (this % transient) error stop "get_operator_csr: steady operator only"
@@ -681,14 +689,17 @@ contains
                 p    = this % g % dof(icell, ivar)
                 n    = this % g % dof(ncell, ivar)
                 keff = flux_keff(this % fx, st, nf, ivar)
-                call A % add_entry(p, p, -farea*keff/fdelta)
-                call A % add_entry(p, n,  farea*keff/fdelta)
+                vn   = flux_vn  (this % fx, st, nf, ivar)
+                call A % add_entry(p, p, -farea*(keff/fdelta + 0.5d0*vn))
+                call A % add_entry(p, n,  farea*(keff/fdelta - 0.5d0*vn))
              end do
           else
              do ivar = 1, nv
                 p    = this % g % dof(icell, ivar)
                 keff = flux_keff(this % fx, st, nf, ivar)
-                call A % add_entry(p, p, this % bcs(ftag,ivar) % lhs_coeff(farea, fdelta, keff))
+                vn   = flux_vn  (this % fx, st, nf, ivar)
+                call A % add_entry(p, p, this % bcs(ftag,ivar) % lhs_coeff(farea, fdelta, keff) &
+                     &                 + this % bcs(ftag,ivar) % adv_lhs_coeff(farea, fdelta, vn))
              end do
           end if
 
@@ -713,7 +724,7 @@ contains
 
     logical           :: bnd_only
     integer           :: icell, iface, ivar, p, gface
-    real(dp)          :: nf(3), keff
+    real(dp)          :: nf(3), keff, vn
     type(point_state) :: st
     type(scalar)      :: Sval(this % g % num_variables)
 
@@ -743,7 +754,9 @@ contains
                  do ivar = 1, nv
                     p    = this % g % dof(icell, ivar)
                     keff = flux_keff(this % fx, st, nf, ivar)
-                    b(p) = b(p) + this % bcs(ftag,ivar) % rhs_coeff(farea, fdelta, keff)
+                    vn   = flux_vn  (this % fx, st, nf, ivar)
+                    b(p) = b(p) + this % bcs(ftag,ivar) % rhs_coeff(farea, fdelta, keff) &
+                         &      + this % bcs(ftag,ivar) % adv_rhs_coeff(farea, fdelta, vn)
                  end do
               end if
             end associate
@@ -795,6 +808,27 @@ contains
     keff = -real(dot_product(nf, matmul(dFg(:,ivar,:,ivar), nf)), dp)
 
   end function flux_keff
+
+  !===================================================================!
+  ! Normal advection speed vn = v . n for variable ivar, read from the
+  ! flux's state-jacobian dF/dq = v. Zero for a pure-diffusion flux
+  ! (dF/dq = 0), so the advection terms below vanish and the operator is
+  ! bit-identical to the diffusion-only path.
+  !===================================================================!
+
+  pure real(dp) function flux_vn(fx, st, nf, ivar) result(vn)
+
+    class(flux)      , intent(in) :: fx
+    type(point_state), intent(in) :: st
+    real(dp)         , intent(in) :: nf(3)
+    integer          , intent(in) :: ivar
+
+    type(scalar) :: dFq(3, fx % num_components, fx % num_components)
+
+    dFq = fx % dflux_dq(st)
+    vn  = real(dot_product(nf, dFq(:,ivar,ivar)), dp)
+
+  end function flux_vn
 
   !===================================================================!
   ! Compute vertex values by interpolating cell center values

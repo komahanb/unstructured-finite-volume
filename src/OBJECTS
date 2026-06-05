@@ -26,6 +26,7 @@ class_gmsh_writer.o \
 class_boundary_condition.o \
 class_csr.o \
 class_diffusion_flux.o \
+class_advection_flux.o \
 class_assembler.o \
 module_solver_monitor.o \
 interface_linear_solver.o \

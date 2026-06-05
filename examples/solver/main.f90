@@ -13,10 +13,12 @@ program solver
   use class_config             , only : config
   use class_gmsh_loader        , only : gmsh_loader
   use class_mesh               , only : mesh
-  use class_assembler          , only : assembler
+  use class_assembler          , only : assembler, CONVECTION_UPWIND
   use class_diffusion_flux  , only : diffusion_flux, constant_source
+  use class_advection_flux     , only : advection_diffusion_flux
   use interface_linear_solver  , only : linear_solver
   use class_conjugate_gradient , only : conjugate_gradient
+  use class_gmres_solver       , only : gmres_solver
   use class_sor                , only : sor
   use class_gauss_seidel       , only : gauss_seidel
   use class_gauss_jacobi       , only : gauss_jacobi
@@ -63,6 +65,11 @@ program solver
   select case (trim(cfg % equation % str))
   case ("diffusion")
      call fvm % set_equation(diffusion_flux(cfg % kappa), constant_source(cfg % source))
+  case ("advection_diffusion")
+     call fvm % set_equation(advection_diffusion_flux(cfg % velocity, cfg % kappa), &
+          &                  constant_source(cfg % source))
+     if (trim(cfg % convection % str) .eq. "upwind") &
+          & call fvm % set_convection_scheme(CONVECTION_UPWIND)
   case default
      print *, "unknown equation '", trim(cfg % equation % str), "'"
      error stop
@@ -111,6 +118,11 @@ program solver
         allocate(lsolver, source = conjugate_gradient(FVAssembler=fvm, &
              & max_tol=cfg % max_tol, max_it=cfg % max_it, print_level=1, &
              & precond=amg_precond))
+     case ("gmres")
+        ! restarted GMRES on the assembled operator (for nonsymmetric /
+        ! advection problems where CG does not apply)
+        allocate(lsolver, source = gmres_solver(FVAssembler=fvm, &
+             & max_tol=cfg % max_tol, max_it=cfg % max_it, print_level=1))
      case default
         print *, "unknown solver '", trim(cfg % solver % str), "'"
         error stop

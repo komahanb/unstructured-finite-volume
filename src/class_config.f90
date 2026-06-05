@@ -38,9 +38,11 @@ module class_config
   type :: config
 
      type(string) :: meshfile
-     type(string) :: equation         ! "diffusion"
+     type(string) :: equation         ! "diffusion" | "advection_diffusion"
      real(dp)     :: kappa  = 1.0_dp
      real(dp)     :: source = 0.0_dp
+     real(dp)     :: velocity(3) = 0.0_dp  ! advection velocity (advection_diffusion)
+     type(string) :: convection           ! "central" | "upwind"
 
      ! Boundary specs (parallel arrays, nbc entries)
      integer                   :: nbc = 0
@@ -89,9 +91,10 @@ contains
     integer                   :: iline, ntok, ib
 
     ! Defaults
-    this % equation = string("diffusion")
-    this % solver   = string("cg")
-    this % output   = string("output.vtu")
+    this % equation   = string("diffusion")
+    this % convection = string("central")
+    this % solver     = string("cg")
+    this % output     = string("output.vtu")
 
     cfile = file(filename, 256)
     call cfile % read_lines(lines)
@@ -135,6 +138,15 @@ contains
 
        case ("source")
           this % source = tok(2) % asreal()
+
+       case ("velocity")        ! velocity vx [vy [vz]]
+          this % velocity = 0.0_dp
+          if (ntok .ge. 2) this % velocity(1) = tok(2) % asreal()
+          if (ntok .ge. 3) this % velocity(2) = tok(3) % asreal()
+          if (ntok .ge. 4) this % velocity(3) = tok(4) % asreal()
+
+       case ("convection")      ! central | upwind
+          this % convection = string(trim(tok(2) % str))
 
        case ("solver")
           this % solver = string(trim(tok(2) % str))
@@ -307,6 +319,10 @@ contains
 
     write(*,'(1x,a,es12.4,a,es12.4)') &
          & "kappa    : ", this % kappa, "   source : ", this % source
+
+    if (trim(this % equation % str) .eq. "advection_diffusion") &
+         & write(*,'(1x,a,3es12.4,a,a)') "velocity : ", this % velocity, &
+         & "   convection : ", trim(this % convection % str)
 
     write(*,'(1x,a,a,a,es12.4,a,i0)') &
          & "solver   : ", this % solver % str, &

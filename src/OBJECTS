@@ -19,6 +19,7 @@ interface_mesh_loader.o \
 class_gmsh_loader.o \
 class_mesh.o \
 class_graph.o \
+class_partition.o \
 class_fvm_field.o \
 class_paraview_writer.o \
 class_gmsh_writer.o \

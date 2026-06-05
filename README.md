@@ -64,6 +64,13 @@ the normal equations - a cheap robust baseline, but they converge on the
 *squared* condition number, so GMRES wins decisively once advection dominates;
 see test/krylov/run.sh for the comparison).
 
+advection is the first such operator: src/class_advection_flux.f90
+(`advection_flux` F = v q, `advection_diffusion_flux` F = v q - K grad q) plugs
+into the same flux seam - the assembler picks up the normal advection speed
+v.n (central differencing -> a skew-symmetric, non-symmetric operator). solve
+it with GMRES on the assembled csr; test/advection/run.sh checks 2nd-order
+accuracy against the exact 1d boundary-layer solution.
+
 ## Post-processing
 
 each solve writes the field as both a paraview `.vtu` and a gmsh `.msh`:

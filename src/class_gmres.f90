@@ -11,8 +11,8 @@
 !
 ! Right preconditioning (solve A M^-1 u = b, x = M^-1 u): keeps the Arnoldi
 ! residual equal to the TRUE residual ||b - A x||, so the Givens estimate
-! drives the stopping test directly, and class_amg (or any preconditioner)
-! plugs in through the optional argument.
+! drives the stopping test directly, and class_algebraic_multigrid (or any
+! preconditioner) plugs in through the optional member.
 !
 ! Method: modified Gram-Schmidt Arnoldi -> upper Hessenberg H, reduced to
 ! upper triangular by Givens rotations as columns arrive (so the residual
@@ -27,31 +27,39 @@ module class_gmres
   use iso_fortran_env         , only : dp => REAL64
   use class_csr               , only : csr_matrix
   use interface_linear_solver , only : linear_solver, preconditioner
-  use class_assembler         , only : assembler
+  use interface_assembler     , only : assembler
 
   implicit none
 
   private
-  public :: gmres
   public :: gmres_solver
   public :: gmres_last_iters          ! total inner iterations of the last solve
 
+  ! Total inner iterations of the most recent solve. Written by the gmres
+  ! kernel (which takes `this` as intent(in), so this cannot live on the
+  ! object); read by tests comparing iteration counts across operators.
   integer :: gmres_last_iters = 0
 
   !-------------------------------------------------------------------!
   ! linear_solver wrapper around restarted GMRES so the config-driven
-  ! driver can pick "gmres" the way it picks "cg". GMRES needs the
-  ! assembled operator (not matrix-free here): solve assembles the csr via
-  ! get_operator_csr, takes the rhs from get_source, and runs gmres below.
-  ! Use it for nonsymmetric operators (advection) where CG does not apply.
+  ! driver can pick "gmres" the way it picks "cg". The gmres kernel below
+  ! is a method that runs on any operator it is handed; solve assembles
+  ! the csv via get_operator_csr / get_source first. Use it for
+  ! nonsymmetric operators (advection) where CG does not apply.
   !-------------------------------------------------------------------!
 
   type, extends(linear_solver) :: gmres_solver
-     class(assembler), allocatable :: FVAssembler
-     integer                       :: restart     = 200
-     integer                       :: print_level = 0
+
+     ! stateless w.r.t. the system: solve takes the assembler as an argument
+     class(preconditioner), allocatable :: precond     ! optional; absent => plain GMRES
+     integer                            :: restart     = 200
+     integer                            :: print_level = 0
+
    contains
-     procedure :: solve => gmres_solve
+
+     procedure :: solve
+     procedure :: gmres
+
   end type gmres_solver
 
   interface gmres_solver
@@ -61,60 +69,111 @@ module class_gmres
 contains
 
   !===================================================================!
-  ! Solve A x = b with restarted, optionally right-preconditioned GMRES.
-  !   max_it  - cap on TOTAL inner iterations (across restarts)
-  !   restart - Krylov dimension m before restarting
+  ! Constructor for the gmres_solver linear-solver wrapper. FVAssembler is
+  ! optional: omit it to drive the gmres kernel on a raw csr operator.
   !===================================================================!
 
-  subroutine gmres(A, b, x, max_it, restart, max_tol, print_level, precond)
+  pure type(gmres_solver) function construct(max_it, max_tol, restart, &
+       & print_level, precond) result(this)
 
-    type(csr_matrix)     , intent(in)           :: A
-    real(dp)             , intent(in)           :: b(:)
-    real(dp)             , intent(out)          :: x(:)
     integer              , intent(in)           :: max_it
-    integer              , intent(in)           :: restart
     real(dp)             , intent(in)           :: max_tol
-    integer              , intent(in)           :: print_level
+    integer              , intent(in), optional :: restart
+    integer              , intent(in), optional :: print_level
     class(preconditioner), intent(in), optional :: precond
+
+    this % max_it  = max_it
+    this % max_tol = max_tol
+
+    if (present(restart))     this % restart     = restart
+    if (present(print_level)) this % print_level = print_level
+    if (present(precond))     allocate(this % precond,     source = precond)
+
+  end function construct
+
+  !===================================================================!
+  ! Assemble the operator + rhs and solve A x = b with restarted GMRES.
+  !===================================================================!
+
+  impure subroutine solve(this, system, x, mode)
+
+    class(gmres_solver)  , intent(in)           :: this
+    class(assembler)     , intent(in)           :: system
+    real(dp), allocatable, intent(out)          :: x(:)
+    integer              , intent(in), optional :: mode  ! FORWARD (default) / REVERSE
+
+    type(csr_matrix)      :: A
+    real(dp), allocatable :: b(:)
+    integer               :: n
+
+    call system % get_operator_csr(A)
+
+    n = system % num_state_vars
+    allocate(b(n), x(n))
+    call system % get_source(b)
+
+    call this % gmres(A, b, x)
+
+  end subroutine solve
+
+  !===================================================================!
+  ! Solve A x = b with restarted, optionally right-preconditioned GMRES.
+  ! Caps, Krylov dimension and verbosity are read from `this`; the
+  ! preconditioner member (if allocated) supplies z = M^-1 r.
+  !===================================================================!
+
+  impure subroutine gmres(this, A, b, x)
+
+    class(gmres_solver), intent(in)  :: this
+    type(csr_matrix)   , intent(in)  :: A
+    real(dp)           , intent(in)  :: b(:)
+    real(dp)           , intent(out) :: x(:)
 
     real(dp), allocatable :: V(:,:), H(:,:), cs(:), sn(:), g(:), y(:)
     real(dp), allocatable :: w(:), z(:), r(:), u(:), du(:)
-    real(dp) :: bnorm, beta, tol, tmp
-    integer  :: n, m, i, j, kk, total
-    logical  :: converged
+    real(dp)              :: bnorm, beta, tol, tmp
+    integer               :: n, m, i, j, kk, total
+    logical               :: converged
 
     n = A % ncols
-    m = min(restart, max_it)
+    m = min(this % restart, this % max_it)
+
     allocate(V(n, m+1), H(m+1, m), cs(m), sn(m), g(m+1), y(m))
     allocate(w(n), z(n), r(n), u(n), du(n))
 
     x = 0.0_dp
-    bnorm = norm2(b); if (bnorm .eq. 0.0_dp) bnorm = 1.0_dp
+    bnorm = norm2(b)
+    if (bnorm .eq. 0.0_dp) bnorm = 1.0_dp
+
     total     = 0
     converged = .false.
     tol       = huge(1.0_dp)
 
-    outer: do while (total .lt. max_it .and. .not. converged)
+    outer: do while (total .lt. this % max_it .and. .not. converged)
 
        ! restart residual r = b - A x
        call A % matvec(x, w)
        r    = b - w
        beta = norm2(r)
        tol  = beta/bnorm
-       if (tol .le. max_tol) then; converged = .true.; exit outer; end if
+       if (tol .le. this % max_tol) then
+          converged = .true.
+          exit outer
+       end if
 
        V(:,1) = r/beta
        g      = 0.0_dp
        g(1)   = beta
 
        j = 0
-       inner: do while (j .lt. m .and. total .lt. max_it)
+       inner: do while (j .lt. m .and. total .lt. this % max_it)
+
           j     = j + 1
           total = total + 1
 
           ! w = A M^-1 v_j  (right preconditioning; w = A v_j if none)
-          if (present(precond)) then
-             call precond % apply(V(:,j), z)
+          if (allocated(this % precond)) then
+             call this % precond % apply(V(:,j), z)
              call A % matvec(z, w)
           else
              call A % matvec(V(:,j), w)
@@ -144,8 +203,14 @@ contains
           g(j)   = tmp
 
           tol = abs(g(j+1))/bnorm
-          if (print_level .gt. 1) write(*,'(2x,a,i6,a,es12.5)') "gmres ", total, "  rel res ", tol
-          if (tol .le. max_tol) then; converged = .true.; exit inner; end if
+          if (this % print_level .gt. 1) then
+             write(*,'(2x,a,i6,a,es12.5)') "gmres ", total, "  rel res ", tol
+          end if
+          if (tol .le. this % max_tol) then
+             converged = .true.
+             exit inner
+          end if
+
        end do inner
 
        ! back-substitution: H(1:j,1:j) y = g(1:j)
@@ -162,8 +227,8 @@ contains
        do i = 1, j
           u = u + y(i)*V(:,i)
        end do
-       if (present(precond)) then
-          call precond % apply(u, du)
+       if (allocated(this % precond)) then
+          call this % precond % apply(u, du)
           x = x + du
        else
           x = x + u
@@ -172,8 +237,10 @@ contains
     end do outer
 
     gmres_last_iters = total
-    if (print_level .gt. 0) write(*,'(1x,a,i0,a,i0,a,es12.5)') &
-         & "gmres(", m, "): ", total, " iters, rel res ", tol
+    if (this % print_level .gt. 0) then
+       write(*,'(1x,a,i0,a,i0,a,es12.5)') &
+            & "gmres(", m, "): ", total, " iters, rel res ", tol
+    end if
 
   end subroutine gmres
 
@@ -181,50 +248,28 @@ contains
   ! Givens rotation [c s; -s c] [a; b] = [r; 0]  (drotg-style, robust)
   !===================================================================!
 
-  subroutine givens(a, b, c, s)
+  elemental subroutine givens(a, b, c, s)
+
     real(dp), intent(in)  :: a, b
     real(dp), intent(out) :: c, s
+
     real(dp) :: t, rr
+
     if (b .eq. 0.0_dp) then
-       c = 1.0_dp; s = 0.0_dp
+       c = 1.0_dp
+       s = 0.0_dp
     else if (abs(b) .gt. abs(a)) then
-       t = a/b; rr = sqrt(1.0_dp + t*t); s = 1.0_dp/rr; c = s*t
+       t = a/b
+       rr = sqrt(1.0_dp + t*t)
+       s = 1.0_dp/rr
+       c = s*t
     else
-       t = b/a; rr = sqrt(1.0_dp + t*t); c = 1.0_dp/rr; s = c*t
+       t = b/a
+       rr = sqrt(1.0_dp + t*t)
+       c = 1.0_dp/rr
+       s = c*t
     end if
+
   end subroutine givens
-
-  !===================================================================!
-  ! Constructor for the gmres_solver linear-solver wrapper
-  !===================================================================!
-
-  type(gmres_solver) function construct(FVAssembler, max_it, max_tol, restart, print_level) result(this)
-    type(assembler), intent(in)           :: FVAssembler
-    integer        , intent(in)           :: max_it
-    real(dp)       , intent(in)           :: max_tol
-    integer        , intent(in), optional :: restart, print_level
-    allocate(this % FVAssembler, source = FVAssembler)
-    this % max_it  = max_it
-    this % max_tol = max_tol
-    if (present(restart))     this % restart     = restart
-    if (present(print_level)) this % print_level = print_level
-  end function construct
-
-  !===================================================================!
-  ! Assemble the operator + rhs and solve A x = b with restarted GMRES.
-  !===================================================================!
-
-  subroutine gmres_solve(this, x)
-    class(gmres_solver)  , intent(in)  :: this
-    real(dp), allocatable, intent(out) :: x(:)
-    type(csr_matrix)      :: A
-    real(dp), allocatable :: b(:)
-    integer :: n
-    call this % FVAssembler % get_operator_csr(A)
-    n = this % FVAssembler % num_state_vars
-    allocate(b(n), x(n))
-    call this % FVAssembler % get_source(b)
-    call gmres(A, b, x, this % max_it, this % restart, this % max_tol, this % print_level)
-  end subroutine gmres_solve
 
 end module class_gmres

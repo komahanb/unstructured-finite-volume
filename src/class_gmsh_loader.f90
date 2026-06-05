@@ -59,7 +59,7 @@ module class_gmsh_loader
 
 contains
 
-  type(gmsh_loader) function create(filename) result (this)
+  impure type(gmsh_loader) function create(filename) result (this)
 
     type(character(*)), intent(in) :: filename
 
@@ -73,7 +73,7 @@ contains
   ! Supply all information needed to create a mesh object
   !====================================================================!
 
-  subroutine get_mesh_data(this, &
+  impure subroutine get_mesh_data(this, &
        & num_vertices, vertex_numbers, vertex_tags , vertices ,  &
        & num_edges   , edge_numbers  , edge_tags   , edge_vertices , num_edge_vertices , &
        & num_faces   , face_numbers  , face_tags   , face_vertices , num_face_vertices , &
@@ -511,7 +511,7 @@ contains
     ! Physical tag of the entity (edim, etag), 0 if it has no group
     !==================================================================!
 
-    integer function entity_phys(edim, etag)
+    pure integer function entity_phys(edim, etag)
 
       integer, intent(in) :: edim, etag
 

@@ -24,11 +24,17 @@ module class_newton_solver
   use iso_fortran_env           , only : dp => REAL64
   use interface_assembler       , only : assembler
   use interface_nonlinear_solver, only : nonlinear_solver
+  use interface_function        , only : functional
+  use class_conjugate_gradient  , only : conjugate_gradient
+  use module_solve_mode         , only : FORWARD, REVERSE
 
   implicit none
 
   private
   public :: newton
+
+  ! steady linearization coefficients [alpha, beta] = [1, 0]: dR/du only
+  real(dp), parameter :: steady_coeff(2) = [1.0_dp, 0.0_dp]
 
   !-------------------------------------------------------------------!
   ! Concrete Newton solver. Stopping criteria are members (defaults
@@ -44,6 +50,12 @@ module class_newton_solver
    contains
 
      procedure :: solve
+     procedure, private :: prepare_inner_solver
+
+     ! steady forward solve + adjoint total derivative dJ/dx (+ fd verify)
+     procedure, private :: solve_steady
+     procedure :: eval_func_grad
+     procedure :: eval_fd_func_grad
 
   end type newton
 
@@ -53,21 +65,22 @@ contains
   ! Drive R(U) -> 0 for the newest state U = (nvars, order+1)
   !===================================================================!
 
-  subroutine solve(this, system, coeff, U)
+  impure subroutine solve(this, system, coeff, U)
 
-    class(newton)   , intent(in)    :: this
+    class(newton)   , intent(inout) :: this
     class(assembler), intent(inout) :: system
     type(scalar)    , intent(in)    :: coeff(:)
     type(scalar)    , intent(inout) :: U(:,:)
 
-    type(scalar), allocatable :: res(:), dq(:)
+    type(scalar), allocatable :: res(:)
+    real(dp)    , allocatable :: dq(:)
     real(dp)                  :: r0, rnorm
-    integer                   :: nvars, n, iter
+    integer                   :: n, iter
 
-    nvars = system % get_num_state_vars()
+    ! point the held linear solver at this linearization (J = sum coeff dR/dU)
+    call this % prepare_inner_solver(coeff)
 
-    allocate(res(nvars))
-    allocate(dq(nvars))
+    allocate(res(system % get_num_state_vars()))
 
     r0 = 0.0_dp
 
@@ -84,8 +97,9 @@ contains
 
        if (rnorm .le. this % abs_tol .or. rnorm .le. this % rel_tol*r0) exit newton_iters
 
-       ! Matrix-free linear solve  J dq = -res
-       call cg_solve(system, coeff, -res, dq)
+       ! Matrix-free linear solve  J dq = -res, delegated to the held solver
+       ! (rhs unset => it forms -residual itself at the current state).
+       call this % linear_solver % solve(system, dq, FORWARD)
 
        ! Condensed update of every derivative order
        do n = 1, size(coeff)
@@ -95,68 +109,155 @@ contains
     end do newton_iters
 
     deallocate(res)
-    deallocate(dq)
 
   end subroutine solve
 
   !===================================================================!
-  ! Matrix-free conjugate gradient: solve J x = b where the operator
-  ! J v = sum_n coeff(n) dR/dU(n) v is the assembler's jacobian-vector
-  ! product (the state has already been set on the system).
+  ! Allocate (once) and configure the held inner linear solver to apply
+  ! the current Newton/BDF linearization J = sum_n coeff(n) dR/dU(n).
   !===================================================================!
 
-  subroutine cg_solve(system, coeff, b, x)
+  impure subroutine prepare_inner_solver(this, coeff)
 
-    class(assembler), intent(in)               :: system
-    type(scalar)    , intent(in)               :: coeff(:)
-    type(scalar)    , intent(in)               :: b(:)
-    type(scalar)    , intent(out), allocatable :: x(:)
+    class(newton), intent(inout) :: this
+    type(scalar) , intent(in)    :: coeff(:)
 
-    type(scalar), allocatable :: r(:), p(:), Jp(:)
-    type(scalar)              :: rs_old, rs_new, alpha, pJp
-    integer                   :: nvars, it, max_it
+    if (.not. allocated(this % linear_solver)) &
+         & allocate(this % linear_solver, source = conjugate_gradient(1, 1.0d-14, 0))
 
-    nvars  = system % get_num_state_vars()
-    max_it = nvars + 100
+    select type (ls => this % linear_solver)
+    type is (conjugate_gradient)
+       if (allocated(ls % lin_coeff)) deallocate(ls % lin_coeff)
+       if (allocated(ls % rhs))       deallocate(ls % rhs)
+       allocate(ls % lin_coeff(size(coeff)))
+       ls % lin_coeff = real(coeff, dp)
+    end select
 
-    allocate(x(nvars))
-    allocate(r(nvars))
-    allocate(p(nvars))
-    allocate(Jp(nvars))
+  end subroutine prepare_inner_solver
 
-    x = 0.0d0
-    r = b
-    p = r
+  !===================================================================!
+  ! Steady forward solve R(u) = 0 (the solution is left in system % S).
+  !===================================================================!
 
-    rs_old = dot_product(r, r)
+  impure subroutine solve_steady(this, system)
 
-    cg: do it = 1, max_it
+    class(newton)   , intent(inout) :: this
+    class(assembler), intent(inout) :: system
 
-       if (vector_norm(r) .le. 1.0d-14) exit cg
+    type(scalar), allocatable :: U(:,:)
+    integer                   :: n, norder
 
-       Jp = 0.0d0
-       call system % add_jacobian_vector_product(Jp, p, coeff)
+    n      = system % get_num_state_vars()
+    norder = system % get_differential_order()
 
-       pJp = dot_product(p, Jp)
-       if (abs(pJp) .le. tiny(1.0_dp)) exit cg
+    allocate(U(n, norder + 1))
+    U = 0.0d0
 
-       alpha = rs_old/pJp
+    call this % solve(system, steady_coeff, U)
 
-       x = x + alpha*p
-       r = r - alpha*Jp
+    deallocate(U)
 
-       rs_new = dot_product(r, r)
+  end subroutine solve_steady
 
-       p      = r + (rs_new/rs_old)*p
-       rs_old = rs_new
+  !===================================================================!
+  ! Discrete adjoint total derivative of a functional:
+  !   forward     R(u) = 0
+  !   adjoint     (dR/du)^T psi = -df/du           (reverse-mode solve)
+  !   derivative  dJ/dx = df/dx + psi^T dR/dx
+  ! The adjoint state is handed back if requested.
+  !===================================================================!
 
-    end do cg
+  impure subroutine eval_func_grad(this, system, func, dJdx, adjoint_state)
 
-    deallocate(r)
-    deallocate(p)
-    deallocate(Jp)
+    class(newton)    , intent(inout)                     :: this
+    class(assembler) , intent(inout)                     :: system
+    class(functional), intent(in)                        :: func
+    real(dp)         , intent(out), allocatable          :: dJdx(:)
+    type(scalar)     , intent(out), allocatable, optional :: adjoint_state(:)
 
-  end subroutine cg_solve
+    type(scalar), allocatable :: dfdu(:)
+    real(dp)    , allocatable :: psi(:)
+    integer                   :: n, ndv
+
+    n   = system % get_num_state_vars()
+    ndv = system % get_num_design_vars()
+
+    ! 1. forward steady solve  R = 0  ->  u (left in system % S)
+    call this % solve_steady(system)
+
+    ! 2. adjoint right-hand side  -df/du
+    allocate(dfdu(n))
+    dfdu = 0.0d0
+    call func % add_dfdu(system, dfdu)
+
+    ! 3. adjoint solve  (dR/du)^T psi = -df/du, via the held solver in reverse
+    call this % prepare_inner_solver(steady_coeff)
+    select type (ls => this % linear_solver)
+    type is (conjugate_gradient)
+       allocate(ls % rhs(n))
+       ls % rhs = real(-dfdu, dp)
+    end select
+    call this % linear_solver % solve(system, psi, REVERSE)
+
+    ! 4. total derivative  dJ/dx = df/dx + psi^T dR/dx
+    allocate(dJdx(ndv))
+    dJdx = 0.0_dp
+    call func % add_dfdx(system, dJdx)
+    call system % add_design_residual_transpose_product(dJdx, psi)
+
+    if (present(adjoint_state)) adjoint_state = psi
+
+    deallocate(dfdu)
+
+  end subroutine eval_func_grad
+
+  !===================================================================!
+  ! Verification gradient: central finite differences of J over each
+  ! design variable, re-solving the forward problem at each perturbation.
+  !===================================================================!
+
+  impure subroutine eval_fd_func_grad(this, system, func, dJdx)
+
+    class(newton)    , intent(inout)            :: this
+    class(assembler) , intent(inout)            :: system
+    class(functional), intent(in)               :: func
+    real(dp)         , intent(out), allocatable :: dJdx(:)
+
+    real(dp)    , allocatable :: x0(:), x(:)
+    type(scalar)              :: jp, jm
+    real(dp)                  :: delta
+    integer                   :: i, ndv
+
+    ndv = system % get_num_design_vars()
+    allocate(dJdx(ndv), x0(ndv), x(ndv))
+
+    call system % get_design_vars(x0)
+
+    do i = 1, ndv
+
+       delta = 1.0e-6_dp*max(1.0_dp, abs(x0(i)))
+
+       x = x0; x(i) = x0(i) + delta
+       call system % set_design_vars(x)
+       call this % solve_steady(system)
+       call func % eval(system, jp)
+
+       x = x0; x(i) = x0(i) - delta
+       call system % set_design_vars(x)
+       call this % solve_steady(system)
+       call func % eval(system, jm)
+
+       dJdx(i) = real(jp - jm, dp)/(2.0_dp*delta)
+
+    end do
+
+    ! restore the baseline design and state
+    call system % set_design_vars(x0)
+    call this % solve_steady(system)
+
+    deallocate(x0, x)
+
+  end subroutine eval_fd_func_grad
 
   !===================================================================!
   ! 2-norm of a state vector (real or complex-step safe)

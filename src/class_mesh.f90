@@ -254,7 +254,7 @@ contains
   ! Constructor for mesh object using mesh loader
   !================================================================!
 
-  type(mesh) function create_mesh(loader) result(me)
+  impure type(mesh) function create_mesh(loader) result(me)
 
     class(mesh_loader), intent(in)  :: loader
     integer           , allocatable :: bface_numbers(:)
@@ -666,7 +666,7 @@ contains
 
   end subroutine destroy
 
-  subroutine invert_connectivities(this)
+  impure subroutine invert_connectivities(this)
 
     class(mesh), intent(inout) :: this
 
@@ -813,7 +813,7 @@ contains
 
   end subroutine invert_connectivities
 
-  type(logical) function initialize(this)
+  impure type(logical) function initialize(this)
 
     class(mesh), intent(inout) :: this
 
@@ -912,7 +912,7 @@ contains
 
   end function initialize
 
-  subroutine evaluate_vertex_weight(this)
+  impure subroutine evaluate_vertex_weight(this)
 
     class(mesh), intent(inout) :: this
     integer,  allocatable :: cells(:)
@@ -967,7 +967,7 @@ contains
 
   end subroutine evaluate_vertex_weight
 
-  subroutine evaluate_face_weight(this)
+  impure subroutine evaluate_face_weight(this)
 
     class(mesh), intent(inout) :: this
     integer  :: iface
@@ -1056,7 +1056,7 @@ contains
 !!$
 !!$  end subroutine evaluate_face_deltas
 
-  subroutine evaluate_centroidal_vector(this)
+  impure subroutine evaluate_centroidal_vector(this)
 
     class(mesh), intent(inout) :: this
     integer :: iface
@@ -1085,7 +1085,7 @@ contains
 
   end subroutine evaluate_centroidal_vector
 
-  subroutine evaluate_cell_volumes(this)
+  impure subroutine evaluate_cell_volumes(this)
 
     class(mesh), intent(inout) :: this
 
@@ -1123,7 +1123,7 @@ contains
 
   end subroutine evaluate_cell_volumes
 
-  subroutine evaluate_face_deltas(this)
+  impure subroutine evaluate_face_deltas(this)
 
     class(mesh), intent(inout) :: this
 
@@ -1150,7 +1150,7 @@ contains
 
   end subroutine evaluate_face_deltas
 
-  subroutine evaluate_face_centers_areas(this)
+  impure subroutine evaluate_face_centers_areas(this)
 
     class(mesh), intent(inout) :: this
 
@@ -1215,7 +1215,7 @@ contains
 
   end subroutine evaluate_face_centers_areas
 
-  subroutine evaluate_face_centers_areas_2d(this)
+  impure subroutine evaluate_face_centers_areas_2d(this)
 
     class(mesh), intent(inout) :: this
 
@@ -1256,7 +1256,7 @@ contains
 
   end subroutine evaluate_face_centers_areas_2d
 
-  subroutine evaluate_cell_centers(this)
+  impure subroutine evaluate_cell_centers(this)
 
     class(mesh), intent(inout) :: this
 
@@ -1278,7 +1278,7 @@ contains
 
   end subroutine evaluate_cell_centers
 
-  subroutine evaluate_face_tangents_normals(this)
+  impure subroutine evaluate_face_tangents_normals(this)
 
     class(mesh), intent(inout) :: this
     integer  :: icell, iface, gface
@@ -1358,7 +1358,7 @@ contains
 
   end subroutine evaluate_face_tangents_normals
 
-  subroutine evaluate_face_tangents_normals_2d(this)
+  impure subroutine evaluate_face_tangents_normals_2d(this)
 
     class(mesh), intent(inout) :: this
 
@@ -1425,7 +1425,7 @@ contains
   ! Constructor for mesh creation
   !===================================================================!
 
-  subroutine to_string(this)
+  impure subroutine to_string(this)
 
     class(mesh), intent(in) :: this
 

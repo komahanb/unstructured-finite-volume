@@ -66,7 +66,7 @@ contains
   ! Construct an FV field of m components over n state dofs
   !===================================================================!
 
-  type(fvm_field) function create(num_components, num_state_vars) result(this)
+  pure type(fvm_field) function create(num_components, num_state_vars) result(this)
     integer, intent(in) :: num_components
     integer, intent(in) :: num_state_vars
     this % num_components = num_components
@@ -83,7 +83,7 @@ contains
   ! the GLOBAL face id (for area/delta/centre/neighbour).
   !===================================================================!
 
-  subroutine face_state(this, grid, g, U, icell, iface, gface, st)
+  pure subroutine face_state(this, grid, g, U, icell, iface, gface, st)
 
     class(fvm_field) , intent(in)  :: this
     class(mesh)      , intent(in)  :: grid
@@ -148,25 +148,25 @@ contains
     u = 0.0_dp
   end function evaluate
 
-  subroutine discretize(this, U)
+  impure subroutine discretize(this, U)
     class(fvm_field)     , intent(in)  :: this
     real(dp), allocatable, intent(out) :: U(:)
     error stop "fvm_field % discretize: not used by the fv solve"
   end subroutine discretize
 
-  subroutine reconstruct(this, U)
+  impure subroutine reconstruct(this, U)
     class(fvm_field), intent(inout) :: this
     real(dp)        , intent(in)    :: U(:)
     error stop "fvm_field % reconstruct: not used by the fv solve"
   end subroutine reconstruct
 
-  subroutine project(this, U)
+  impure subroutine project(this, U)
     class(fvm_field)     , intent(in)  :: this
     real(dp), allocatable, intent(out) :: U(:)
     error stop "fvm_field % project: not used by the fv solve"
   end subroutine project
 
-  subroutine remainder(this, U, e)
+  impure subroutine remainder(this, U, e)
     class(fvm_field)         , intent(in)  :: this
     real(dp)                 , intent(in)  :: U(:)
     class(field), allocatable, intent(out) :: e
@@ -181,27 +181,27 @@ contains
     phi = 0.0_dp
   end function basis
 
-  subroutine grad(this, idim, du)
+  impure subroutine grad(this, idim, du)
     class(fvm_field)         , intent(in)  :: this
     integer                  , intent(in)  :: idim
     class(field), allocatable, intent(out) :: du
     error stop "fvm_field % grad: not used by the fv solve"
   end subroutine grad
 
-  subroutine ddt(this, du)
+  impure subroutine ddt(this, du)
     class(fvm_field)         , intent(in)  :: this
     class(field), allocatable, intent(out) :: du
     error stop "fvm_field % ddt: not used by the fv solve"
   end subroutine ddt
 
-  subroutine drandom(this, k, du)
+  impure subroutine drandom(this, k, du)
     class(fvm_field)         , intent(in)  :: this
     integer                  , intent(in)  :: k
     class(field), allocatable, intent(out) :: du
     error stop "fvm_field % drandom: not used by the fv solve"
   end subroutine drandom
 
-  subroutine ddesign(this, k, du)
+  impure subroutine ddesign(this, k, du)
     class(fvm_field)         , intent(in)  :: this
     integer                  , intent(in)  :: k
     class(field), allocatable, intent(out) :: du

@@ -125,7 +125,7 @@ contains
   ! Constructor for paraview wrtier
   !===================================================================!
 
-  subroutine write(this, filename, phic, solution_labels)
+  impure subroutine write(this, filename, phic, solution_labels)
 
     ! arguments
     class(paraview_writer) , intent(in)           :: this

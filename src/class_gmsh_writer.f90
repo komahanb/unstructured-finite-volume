@@ -42,7 +42,7 @@ module class_gmsh_writer
 
 contains
 
-  type(gmsh_writer) function create(meshfile) result(this)
+  pure type(gmsh_writer) function create(meshfile) result(this)
 
     character(len=*), intent(in) :: meshfile
 
@@ -54,7 +54,7 @@ contains
   ! Copy the input mesh and append the cell field as $ElementData
   !===================================================================!
 
-  subroutine write_solution(this, filename, cell_numbers, values, label)
+  impure subroutine write_solution(this, filename, cell_numbers, values, label)
 
     class(gmsh_writer), intent(in) :: this
     character(len=*)  , intent(in) :: filename
@@ -105,7 +105,7 @@ contains
   ! animated view. Steady export is just nstep = 1.
   !===================================================================!
 
-  subroutine write_time_series(this, filename, cell_numbers, names, times, values)
+  impure subroutine write_time_series(this, filename, cell_numbers, names, times, values)
 
     class(gmsh_writer), intent(in) :: this
     character(len=*)  , intent(in) :: filename

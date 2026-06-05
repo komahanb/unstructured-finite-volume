@@ -16,7 +16,10 @@
 ! See test/krylov for the kappa^2 crossover.
 !
 ! Each iteration costs one matvec (A p) and one transpose matvec (A^T r).
-! The convergence test is on the true residual ||b - A x||/||b||.
+! The convergence test is on the true residual ||b - A x||/||b||. cgnr/cgne
+! are methods on the normal_cg solver: solve assembles the operator + rhs
+! and dispatches to the kernel; the standalone tests build a raw csr and
+! call the method directly.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -26,15 +29,17 @@ module class_normal_cg
   use iso_fortran_env        , only : dp => REAL64
   use class_csr              , only : csr_matrix
   use interface_linear_solver, only : linear_solver
-  use class_assembler        , only : assembler
+  use interface_assembler    , only : assembler
 
   implicit none
 
   private
-  public :: cgnr, cgne
   public :: cgnr_last_iters, cgne_last_iters
   public :: normal_cg, CGNR_METHOD, CGNE_METHOD
 
+  ! Inner iterations of the most recent solve. Written by the kernels
+  ! (which take `this` as intent(in), so this cannot live on the object);
+  ! read by tests comparing iteration counts.
   integer :: cgnr_last_iters = 0
   integer :: cgne_last_iters = 0
 
@@ -51,11 +56,17 @@ module class_normal_cg
   !-------------------------------------------------------------------!
 
   type, extends(linear_solver) :: normal_cg
-     class(assembler), allocatable :: FVAssembler
+
+     ! stateless w.r.t. the system: solve takes the assembler as an argument
      integer                       :: method      = CGNR_METHOD
      integer                       :: print_level = 0
+
    contains
-     procedure :: solve => normal_cg_solve
+
+     procedure :: solve
+     procedure :: cgnr
+     procedure :: cgne
+
   end type normal_cg
 
   interface normal_cg
@@ -65,51 +76,104 @@ module class_normal_cg
 contains
 
   !===================================================================!
+  ! Constructor for the normal_cg linear-solver wrapper
+  !===================================================================!
+
+  pure type(normal_cg) function construct(max_it, max_tol, method, &
+       & print_level) result(this)
+
+    integer        , intent(in)           :: max_it
+    real(dp)       , intent(in)           :: max_tol
+    integer        , intent(in), optional :: method
+    integer        , intent(in), optional :: print_level
+
+    this % max_it  = max_it
+    this % max_tol = max_tol
+
+    if (present(method))      this % method      = method
+    if (present(print_level)) this % print_level = print_level
+
+  end function construct
+
+  !===================================================================!
+  ! Assemble the operator + rhs and solve with CGNR or CGNE.
+  !===================================================================!
+
+  impure subroutine solve(this, system, x, mode)
+
+    class(normal_cg)     , intent(in)           :: this
+    class(assembler)     , intent(in)           :: system
+    real(dp), allocatable, intent(out)          :: x(:)
+    integer              , intent(in), optional :: mode  ! FORWARD (default) / REVERSE
+
+    type(csr_matrix)      :: A
+    real(dp), allocatable :: b(:)
+    integer               :: n
+
+    call system % get_operator_csr(A)
+
+    n = system % num_state_vars
+    allocate(b(n), x(n))
+    call system % get_source(b)
+
+    if (this % method .eq. CGNE_METHOD) then
+       call this % cgne(A, b, x)
+    else
+       call this % cgnr(A, b, x)
+    end if
+
+  end subroutine solve
+
+  !===================================================================!
   ! CGNR: CG on A^T A x = A^T b (residual-minimizing / LSQR).
   !===================================================================!
 
-  subroutine cgnr(A, b, x, max_it, max_tol, print_level)
+  impure subroutine cgnr(this, A, b, x)
 
+    class(normal_cg), intent(in)  :: this
     type(csr_matrix), intent(in)  :: A
     real(dp)        , intent(in)  :: b(:)
     real(dp)        , intent(out) :: x(:)
-    integer         , intent(in)  :: max_it
-    real(dp)        , intent(in)  :: max_tol
-    integer         , intent(in)  :: print_level
 
     real(dp), allocatable :: r(:), z(:), p(:), w(:)
-    real(dp) :: alpha, beta, zz, zz_new, bnorm, tol
-    integer  :: m, n, iter
+    real(dp)              :: alpha, beta, zz, zz_new, bnorm, tol
+    integer               :: m, n, iter
 
-    m = A % nrows; n = A % ncols
+    m = A % nrows
+    n = A % ncols
     allocate(r(m), w(m), z(n), p(n))
 
     x = 0.0_dp
     r = b                              ! r = b - A x0,  x0 = 0
     call A % matvec_transpose(r, z)    ! z = A^T r
-    p  = z
-    zz = dot_product(z, z)
-    bnorm = norm2(b); if (bnorm .eq. 0.0_dp) bnorm = 1.0_dp
+    p     = z
+    zz    = dot_product(z, z)
+    bnorm = norm2(b)
+    if (bnorm .eq. 0.0_dp) bnorm = 1.0_dp
     tol   = norm2(r)/bnorm
 
     iter = 0
-    do while (tol .gt. max_tol .and. iter .lt. max_it)
+    do while (tol .gt. this % max_tol .and. iter .lt. this % max_it)
+
        call A % matvec(p, w)           ! w = A p
        alpha = zz / dot_product(w, w)
        x = x + alpha*p
        r = r - alpha*w
+
        call A % matvec_transpose(r, z) ! z = A^T r
        zz_new = dot_product(z, z)
        beta   = zz_new / zz
        p  = z + beta*p
        zz = zz_new
-       tol = norm2(r)/bnorm
+
+       tol  = norm2(r)/bnorm
        iter = iter + 1
-       if (print_level .gt. 1) write(*,'(2x,a,i6,a,es12.5)') "cgnr ", iter, "  rel res ", tol
+       if (this % print_level .gt. 1) write(*,'(2x,a,i6,a,es12.5)') "cgnr ", iter, "  rel res ", tol
+
     end do
 
     cgnr_last_iters = iter
-    if (print_level .gt. 0) write(*,'(1x,a,i0,a,es12.5)') &
+    if (this % print_level .gt. 0) write(*,'(1x,a,i0,a,es12.5)') &
          & "cgnr: ", iter, " iters, rel res ", tol
 
   end subroutine cgnr
@@ -118,86 +182,53 @@ contains
   ! CGNE (Craig): CG on A A^T y = b, x = A^T y (error-minimizing).
   !===================================================================!
 
-  subroutine cgne(A, b, x, max_it, max_tol, print_level)
+  impure subroutine cgne(this, A, b, x)
 
+    class(normal_cg), intent(in)  :: this
     type(csr_matrix), intent(in)  :: A
     real(dp)        , intent(in)  :: b(:)
     real(dp)        , intent(out) :: x(:)
-    integer         , intent(in)  :: max_it
-    real(dp)        , intent(in)  :: max_tol
-    integer         , intent(in)  :: print_level
 
     real(dp), allocatable :: r(:), p(:), w(:), atr(:)
-    real(dp) :: alpha, beta, rr, rr_new, bnorm, tol
-    integer  :: m, n, iter
+    real(dp)              :: alpha, beta, rr, rr_new, bnorm, tol
+    integer               :: m, n, iter
 
-    m = A % nrows; n = A % ncols
+    m = A % nrows
+    n = A % ncols
     allocate(r(m), w(m), p(n), atr(n))
 
     x = 0.0_dp
     r = b                              ! r = b - A x0
     call A % matvec_transpose(r, p)    ! p = A^T r
-    rr = dot_product(r, r)
-    bnorm = norm2(b); if (bnorm .eq. 0.0_dp) bnorm = 1.0_dp
+    rr    = dot_product(r, r)
+    bnorm = norm2(b)
+    if (bnorm .eq. 0.0_dp) bnorm = 1.0_dp
     tol   = sqrt(rr)/bnorm
 
     iter = 0
-    do while (tol .gt. max_tol .and. iter .lt. max_it)
+    do while (tol .gt. this % max_tol .and. iter .lt. this % max_it)
+
        call A % matvec(p, w)           ! w = A p
        alpha = rr / dot_product(p, p)
        x = x + alpha*p
        r = r - alpha*w
        rr_new = dot_product(r, r)
        beta   = rr_new / rr
+
        call A % matvec_transpose(r, atr)   ! atr = A^T r
        p  = atr + beta*p
        rr = rr_new
-       tol = sqrt(rr)/bnorm
+
+       tol  = sqrt(rr)/bnorm
        iter = iter + 1
-       if (print_level .gt. 1) write(*,'(2x,a,i6,a,es12.5)') "cgne ", iter, "  rel res ", tol
+       if (this % print_level .gt. 1) write(*,'(2x,a,i6,a,es12.5)') "cgne ", iter, "  rel res ", tol
+
     end do
 
     cgne_last_iters = iter
-    if (print_level .gt. 0) write(*,'(1x,a,i0,a,es12.5)') &
+    if (this % print_level .gt. 0) write(*,'(1x,a,i0,a,es12.5)') &
          & "cgne: ", iter, " iters, rel res ", tol
 
   end subroutine cgne
-
-  !===================================================================!
-  ! Constructor for the normal_cg linear-solver wrapper
-  !===================================================================!
-
-  type(normal_cg) function construct(FVAssembler, max_it, max_tol, method, print_level) result(this)
-    type(assembler), intent(in)           :: FVAssembler
-    integer        , intent(in)           :: max_it
-    real(dp)       , intent(in)           :: max_tol
-    integer        , intent(in), optional :: method, print_level
-    allocate(this % FVAssembler, source = FVAssembler)
-    this % max_it  = max_it
-    this % max_tol = max_tol
-    if (present(method))      this % method      = method
-    if (present(print_level)) this % print_level = print_level
-  end function construct
-
-  !===================================================================!
-  ! Assemble the operator + rhs and solve with CGNR or CGNE.
-  !===================================================================!
-
-  subroutine normal_cg_solve(this, x)
-    class(normal_cg)     , intent(in)  :: this
-    real(dp), allocatable, intent(out) :: x(:)
-    type(csr_matrix)      :: A
-    real(dp), allocatable :: b(:)
-    integer :: n
-    call this % FVAssembler % get_operator_csr(A)
-    n = this % FVAssembler % num_state_vars
-    allocate(b(n), x(n))
-    call this % FVAssembler % get_source(b)
-    if (this % method .eq. CGNE_METHOD) then
-       call cgne(A, b, x, this % max_it, this % max_tol, this % print_level)
-    else
-       call cgnr(A, b, x, this % max_it, this % max_tol, this % print_level)
-    end if
-  end subroutine normal_cg_solve
 
 end module class_normal_cg

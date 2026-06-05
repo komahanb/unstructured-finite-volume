@@ -81,7 +81,7 @@ contains
   ! Read a config from a text file
   !===================================================================!
 
-  type(config) function create(filename) result(this)
+  impure type(config) function create(filename) result(this)
 
     character(len=*), intent(in) :: filename
 
@@ -232,7 +232,7 @@ contains
   ! word with the quotes stripped (so names with spaces survive).
   !===================================================================!
 
-  subroutine split_words(str, nw, words)
+  impure subroutine split_words(str, nw, words)
 
     character(len=*)          , intent(in)  :: str
     integer                   , intent(out) :: nw
@@ -308,7 +308,7 @@ contains
   ! Print the parsed configuration
   !===================================================================!
 
-  subroutine print(this)
+  impure subroutine print(this)
 
     class(config), intent(in) :: this
 

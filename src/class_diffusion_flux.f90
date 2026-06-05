@@ -151,7 +151,7 @@ contains
     n = 1
   end function diffusion_num_design_vars
 
-  subroutine diffusion_set_design_vars(this, x)
+  pure subroutine diffusion_set_design_vars(this, x)
     class(diffusion_flux), intent(inout) :: this
     real(dp)             , intent(in)    :: x(:)
     integer :: i
@@ -161,7 +161,7 @@ contains
     end do
   end subroutine diffusion_set_design_vars
 
-  subroutine diffusion_get_design_vars(this, x)
+  pure subroutine diffusion_get_design_vars(this, x)
     class(diffusion_flux), intent(in)  :: this
     real(dp)             , intent(out) :: x(:)
     x(1) = this % kmat(1,1)

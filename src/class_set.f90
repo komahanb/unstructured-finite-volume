@@ -36,7 +36,7 @@ contains
   ! Constructor implementaion of set
   !===================================================================!
 
-  type(set) function create(num_tuples, max_entries) result(this)
+  pure type(set) function create(num_tuples, max_entries) result(this)
 
     integer, intent(in) :: max_entries
     integer, intent(in) :: num_tuples
@@ -65,7 +65,7 @@ contains
   ! Add an entry into the set
   !===================================================================!
 
-  type(logical) function insert(this, tuple)
+  impure type(logical) function insert(this, tuple)
 
     class(set), intent(inout) :: this
     integer   , intent(in)    :: tuple(:)
@@ -85,7 +85,7 @@ contains
   ! Add an entry into the set
   !===================================================================!
 
-  subroutine add_entry(this, tuple)
+  pure subroutine add_entry(this, tuple)
 
     class(set), intent(inout) :: this
     integer   , intent(in)    :: tuple(:)
@@ -205,7 +205,7 @@ contains
   
 end module class_set
 
-subroutine test_set
+impure subroutine test_set
 
   use class_set, only : set
 

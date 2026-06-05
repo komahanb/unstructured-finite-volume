@@ -10,11 +10,18 @@
 module interface_assembler
 
   use iso_fortran_env  , only : dp => REAL64
+  use class_csr        , only : csr_matrix
   implicit none
   
   private
   public :: assembler
- 
+  public :: DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE
+
+  ! Filter codes selecting a part of the operator in get_jacobian_vector_product
+  integer, parameter :: DIAGONAL       =  0
+  integer, parameter :: LOWER_TRIANGLE = -1
+  integer, parameter :: UPPER_TRIANGLE =  1
+
   !===================================================================!
   ! Assembler for the physical system
   !===================================================================!
@@ -35,6 +42,15 @@ module interface_assembler
      procedure(add_residual_interface)               , deferred :: add_residual
      procedure(add_jacobian_vector_product_interface), deferred :: add_jacobian_vector_product
      procedure(add_initial_condition_interface)      , deferred :: add_initial_condition
+
+     ! The system answers these queries about itself - the right-hand side,
+     ! the non-orthogonal skew correction, and the operator action A q. The
+     ! linear-solver convergence monitor consumes them polymorphically. The
+     ! base defaults are trivial (zero); a spatial assembler overrides them.
+     procedure :: get_source
+     procedure :: get_skew_source
+     procedure :: get_jacobian_vector_product
+     procedure :: get_operator_csr   ! the operator as a sparse matrix (csr solvers)
      
      ! Assembler knows the size of state array
      procedure :: create_vector
@@ -195,7 +211,7 @@ contains
   ! Create a state vector and sets values if a scalar is supplied
   !===================================================================!
 
-  subroutine create_vector(this, x, val)
+  impure subroutine create_vector(this, x, val)
     
     class(assembler), intent(in)               :: this
     real(dp)        , intent(out), allocatable :: x(:)
@@ -211,7 +227,7 @@ contains
   ! Create a state vector and sets values if a scalar is supplied
   !===================================================================!
 
-  subroutine create_state(this, S, val)
+  impure subroutine create_state(this, S, val)
     
     class(assembler), intent(in)               :: this
     real(dp)        , intent(out), allocatable :: S(:,:)
@@ -265,14 +281,14 @@ contains
   ! these are no-ops. Physics carrying design variables overrides them.
   !===================================================================!
 
-  subroutine set_design_vars(this, x)
+  pure subroutine set_design_vars(this, x)
 
     class(assembler), intent(inout) :: this
     real(dp)        , intent(in)    :: x(:)
 
   end subroutine set_design_vars
 
-  subroutine get_design_vars(this, x)
+  pure subroutine get_design_vars(this, x)
 
     class(assembler), intent(in)  :: this
     real(dp)        , intent(out) :: x(:)
@@ -296,6 +312,7 @@ contains
     type(scalar)    , intent(in)    :: psi(:)
 
   end subroutine add_design_residual_transpose_product
+
 
   !===================================================================!
   ! Export named flat-dof fields (state, adjoint state, ...) for post-
@@ -330,5 +347,64 @@ contains
     real(dp)        , intent(in) :: times(:)
 
   end subroutine write_gmsh_series
+
+  !===================================================================!
+  ! Default right-hand side: none (a spatial assembler with boundary
+  ! conditions / a volumetric source overrides this).
+  !===================================================================!
+
+  pure subroutine get_source(this, b, boundary_only)
+
+    class(assembler), intent(in)           :: this
+    real(dp)        , intent(out)          :: b(:)
+    logical         , intent(in), optional :: boundary_only
+
+    b = 0.0_dp
+
+  end subroutine get_source
+
+  !===================================================================!
+  ! Default non-orthogonal skew correction: none (orthogonal default).
+  !===================================================================!
+
+  pure subroutine get_skew_source(this, ss, phic)
+
+    class(assembler), intent(in)  :: this
+    real(dp)        , intent(in)  :: phic(:)
+    real(dp)        , intent(out) :: ss(:)
+
+    ss = 0.0_dp
+
+  end subroutine get_skew_source
+
+  !===================================================================!
+  ! Default operator action Aq = A q via the deferred jacobian-vector
+  ! product at the steady linearization (dR/du only).
+  !===================================================================!
+
+  pure subroutine get_jacobian_vector_product(this, Aq, q, filter)
+
+    class(assembler) , intent(in)           :: this
+    real(dp)         , intent(out)          :: Aq(:)
+    real(dp)         , intent(in)           :: q(:)
+    integer          , intent(in), optional :: filter
+
+    Aq = 0.0_dp
+
+  end subroutine get_jacobian_vector_product
+
+  !===================================================================!
+  ! Default: this assembler does not assemble a sparse operator. A
+  ! spatial assembler (class_assembler) overrides this with the real csr.
+  !===================================================================!
+
+  impure subroutine get_operator_csr(this, A)
+
+    class(assembler), intent(in)  :: this
+    type(csr_matrix), intent(out) :: A
+
+    error stop "get_operator_csr: not implemented for this assembler"
+
+  end subroutine get_operator_csr
 
 end module interface_assembler

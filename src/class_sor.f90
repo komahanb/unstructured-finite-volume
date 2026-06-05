@@ -7,8 +7,7 @@ module class_sor
 
   use iso_fortran_env         , only : dp => REAL64
   use interface_linear_solver , only : linear_solver
-  use class_assembler         , only : assembler
-  use module_solver_monitor   , only : monitor_step, residual_norm
+  use interface_assembler     , only : assembler, DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE
 
   implicit none
   
@@ -22,8 +21,7 @@ module class_sor
 
   type, extends(linear_solver) :: sor
 
-     !type(assembler), pointer :: FVAssembler
-     class(assembler), allocatable :: FVAssembler
+     ! stateless w.r.t. the system: solve takes the assembler as an argument
      integer                       :: print_level
      real(dp)                      :: omega
 
@@ -53,16 +51,14 @@ contains
   ! Constructor for linear solver
   !===================================================================!
   
-  type(sor) function construct(FVAssembler, omega, max_it, &
+  pure type(sor) function construct(omega, max_it, &
        & max_tol, print_level) result (this)
 
-    type(assembler), intent(in) :: FVAssembler
     type(real(dp)) , intent(in) :: omega
     type(integer)  , intent(in) :: max_it
     type(real(dp)) , intent(in) :: max_tol
     type(integer)  , intent(in) :: print_level
 
-    allocate(this % FVassembler, source = FVAssembler)
     this % max_it      = max_it
     this % max_tol     = max_tol
     this % print_level = print_level
@@ -78,12 +74,8 @@ contains
 
     type(sor), intent(inout) :: this
 
-!!$    if(associated(this % FVAssembler)) then
-!!$       deallocate(this % FVAssembler)
-!!$       nullify(this % FVAssembler)
 !!$    end if
 !!$    
-    if (allocated(this % FVAssembler)) deallocate(this % FVAssembler)
 
   end subroutine destroy
   
@@ -92,12 +84,13 @@ contains
   ! eigen value)
   !===================================================================!
   
-  subroutine estimate_spectral_radius(this, mu, max_iter)
+  impure subroutine estimate_spectral_radius(this, system, mu, max_iter)
     
     ! Arguments
-    class(sor), intent(in)  :: this
-    real(dp)  , intent(out) :: mu
-    integer   , intent(in)  :: max_iter
+    class(sor)      , intent(in)  :: this
+    class(assembler), intent(in)  :: system
+    real(dp)        , intent(out) :: mu
+    integer         , intent(in)  :: max_iter
 
     ! Random vector
     real(dp) , allocatable :: v(:), w(:)
@@ -105,15 +98,15 @@ contains
     real(dp) :: wnorm
 
     ! Create a random unit vector
-    call this % FVAssembler % create_vector(v)
+    call system % create_vector(v)
     call random_number(v)
     v = v/norm2(v)
 
     ! A temp vector for processing
-    call this % FVAssembler % create_vector(w)
+    call system % create_vector(w)
     
     power_iteration: do iter = 1, max_iter       
-       call this % FVAssembler % get_jacobian_vector_product(w, v)
+       call system % get_jacobian_vector_product(w, v)
        wnorm = norm2(w)
        v = w/wnorm
        mu = dot_product(v,w)
@@ -128,10 +121,12 @@ contains
   ! Iterative linear solution using conjugate gradient method
   !===================================================================!
   
-  subroutine solve(this, x)
+  impure subroutine solve(this, system, x, mode)
 
-    class(sor), intent(in)  :: this
-    real(dp), allocatable    , intent(out) :: x(:)
+    class(sor)           , intent(in)           :: this
+    class(assembler)     , intent(in)           :: system
+    real(dp), allocatable, intent(out)          :: x(:)
+    integer              , intent(in), optional :: mode  ! FORWARD (default) / REVERSE
 
     ! Locals
     real(dp), allocatable :: xold(:), ss(:)
@@ -139,15 +134,15 @@ contains
     integer  :: iter, num_inner_iters
 
     ! Initial guess vector for the subspace is "b"
-    allocate(x(this % FVAssembler % num_state_vars))
-    call this % FVAssembler % get_source(x)
+    allocate(x(system % num_state_vars))
+    call system % get_source(x)
     if (norm2(x) .lt. epsilon(1.0_dp)) then
        print *, 'zero rhs? stopping'
        error stop
     end if
 
-    allocate(xold(this % FVAssembler % num_state_vars))
-    allocate(ss(this % FVAssembler % num_state_vars))
+    allocate(xold(system % num_state_vars))
+    allocate(ss(system % num_state_vars))
 
     if (this % print_level .eq. -1) then
        open(13, file='sor.res', action='write')
@@ -155,7 +150,7 @@ contains
     end if
 
     rnorm0 = 0.0_dp
-    if (this % print_level .gt. 0) rnorm0 = residual_norm(this % FVAssembler, x)
+    if (this % print_level .gt. 0) rnorm0 = this % residual_norm(system, x)
 
     update_norm = huge(1.0d0);
     iter = 1;
@@ -166,10 +161,10 @@ contains
        ! Inner iterations with CG
        if ( iter .eq. 1) then
           ss = 0.0d0
-          call this % iterate(x, ss, num_inner_iters)
+          call this % iterate(system, x, ss, num_inner_iters)
        else
-          call this % FVAssembler % get_skew_source(ss, x)
-          call this % iterate(x, ss, num_inner_iters)
+          call system % get_skew_source(ss, x)
+          call this % iterate(system, x, ss, num_inner_iters)
        end if
        
        update_norm = norm2(x - xold)
@@ -177,7 +172,7 @@ contains
           write(13, *) iter, update_norm
        end if
        if (this % print_level .gt. 0) then
-          call monitor_step(this % FVAssembler, iter, num_inner_iters, x, xold, rnorm0)
+          call this % monitor_step(system, iter, num_inner_iters, x, xold, rnorm0)
        end if
        iter = iter + 1
 
@@ -202,9 +197,10 @@ contains
   ! Iterative linear solution using conjugate gradient method
   !===================================================================!
 
-  subroutine iterate(this, x, ss, iter)
+  impure subroutine iterate(this, system, x, ss, iter)
 
-    class(sor) , intent(in)    :: this
+    class(sor)                , intent(in)    :: this
+    class(assembler)          , intent(in)    :: system
     real(dp)                  , intent(inout) :: x(:)
     real(dp)                  , intent(in)    :: ss(:)
     integer                   , intent(out)   :: iter
@@ -231,11 +227,11 @@ contains
     identity = 1.0d0
     
     ! Extract the diagonal entries
-    call this % FVAssembler % get_jacobian_vector_product(&
-         & D, identity, filter = this % FVAssembler % DIAGONAL)
+    call system % get_jacobian_vector_product(&
+         & D, identity, filter = DIAGONAL)
 
     ! Assemble RHS of the linear system (source + boundary terms)
-    call this % FVAssembler % get_source(b)
+    call system % get_source(b)
 
     ! Add the skew source terms if supplied 
     b = b + ss
@@ -256,12 +252,12 @@ contains
     do while ((tol .gt. this % max_tol) .and. (iter .lt. this % max_it))
 
        ! Form Ux
-       call this % FVAssembler % get_jacobian_vector_product(&
-            & Ux, x, filter = this % FVAssembler % UPPER_TRIANGLE)
+       call system % get_jacobian_vector_product(&
+            & Ux, x, filter = UPPER_TRIANGLE)
 
        ! Form Dx
-       call this % FVAssembler % get_jacobian_vector_product(&
-            & Dx, x, filter = this % FVAssembler % DIAGONAL)
+       call system % get_jacobian_vector_product(&
+            & Dx, x, filter = DIAGONAL)
 
        ! R = w(b-Ux_k)+(1-w)Dx_k
        R = this % omega * (b - Ux) + (1.0_dp-this % omega)*Dx
@@ -281,8 +277,8 @@ contains
          iter2 = 1; tol2 = huge(1.0d0)
          do while ((tol2 .gt. this % max_tol) .and. (iter2 .lt. this % max_it))
 
-            call this % FVAssembler % get_jacobian_vector_product(&
-                 & Ly, y, filter = this % FVAssembler % LOWER_TRIANGLE)
+            call system % get_jacobian_vector_product(&
+                 & Ly, y, filter = LOWER_TRIANGLE)
 
             ynew  = (R - this % omega*Ly)/D
             tol2  = norm2(y-ynew)

@@ -7,8 +7,8 @@ module class_conjugate_gradient
 
   use iso_fortran_env         , only : dp => REAL64
   use interface_linear_solver , only : linear_solver, preconditioner
-  use class_assembler         , only : assembler
-  use module_solver_monitor   , only : monitor_step, residual_norm
+  use interface_assembler     , only : assembler
+  use module_solve_mode       , only : FORWARD, REVERSE
 
   implicit none
 
@@ -28,16 +28,24 @@ module class_conjugate_gradient
 
   type, extends(linear_solver) :: conjugate_gradient
 
-     !type(assembler), pointer :: FVAssembler
-     class(assembler)     , allocatable :: FVAssembler
+     ! stateless w.r.t. the system: solve takes the assembler as an argument
      class(preconditioner), allocatable :: precond     ! optional; absent => plain CG
      integer                            :: print_level
+
+     ! Newton/BDF linearized mode: when lin_coeff is set, solve drives the
+     ! matrix-free system  J dq = rhs,  J v = add_jacobian_vector_product(.,.,
+     ! lin_coeff) (transpose in REVERSE), with rhs the external rhs if set
+     ! else the system residual -R. Unset => the steady A x = b path below.
+     real(dp), allocatable :: lin_coeff(:)
+     real(dp), allocatable :: rhs(:)
 
    contains
 
      ! type bound procedures
      procedure :: solve
      procedure :: iterate
+     procedure, private :: apply_precond
+     procedure, private :: solve_linearized
 
      ! destructor
      final :: destroy
@@ -58,16 +66,14 @@ contains
   ! Constructor for linear solver
   !===================================================================!
 
-  type(conjugate_gradient) function construct(FVAssembler, max_it, &
+  pure type(conjugate_gradient) function construct(max_it, &
        & max_tol, print_level, precond) result (this)
 
-    type(assembler)     , intent(in)           :: FVAssembler
-    type(integer)       , intent(in)           :: max_it
-    type(real(dp))      , intent(in)           :: max_tol
-    type(integer)       , intent(in)           :: print_level
+    type(integer)        , intent(in)           :: max_it
+    type(real(dp))       , intent(in)           :: max_tol
+    type(integer)        , intent(in)           :: print_level
     class(preconditioner), intent(in), optional :: precond
 
-    allocate(this % FVassembler, source = FVAssembler)
     this % max_it      = max_it
     this % max_tol     = max_tol
     this % print_level = print_level
@@ -85,13 +91,7 @@ contains
 
     type(conjugate_gradient), intent(inout) :: this
 
-!!$    if(associated(this % FVAssembler)) then
-!!$       deallocate(this % FVAssembler)
-!!$       nullify(this % FVAssembler)
-!!$    end if
-!!$
-    if (allocated(this % FVAssembler)) deallocate(this % FVAssembler)
-    if (allocated(this % precond))     deallocate(this % precond)
+    if (allocated(this % precond)) deallocate(this % precond)
 
   end subroutine destroy
 
@@ -99,10 +99,12 @@ contains
   ! Iterative linear solution using conjugate gradient method
   !===================================================================!
 
-  subroutine solve(this, x)
+  impure subroutine solve(this, system, x, mode)
 
-    class(conjugate_gradient), intent(in)  :: this
-    real(dp), allocatable    , intent(out) :: x(:)
+    class(conjugate_gradient), intent(in)       :: this
+    class(assembler)         , intent(in)       :: system
+    real(dp), allocatable    , intent(out)      :: x(:)
+    integer              , intent(in), optional :: mode  ! FORWARD (default) / REVERSE
 
     ! Locals
     real(dp), allocatable :: xold(:), ss(:)
@@ -112,16 +114,22 @@ contains
     ! reset the inner-iteration counter for this solve
     cg_last_iters = 0
 
+    ! Newton/BDF linearized inner solve (J dq = rhs) takes a separate path
+    if (allocated(this % lin_coeff)) then
+       call this % solve_linearized(system, x, mode)
+       return
+    end if
+
     ! Initial guess vector for the subspace is "b"
-    allocate(x(this % FVAssembler % num_state_vars))
-    call this % FVAssembler % get_source(x)
+    allocate(x(system % num_state_vars))
+    call system % get_source(x)
     if (norm2(x) .lt. epsilon(1.0_dp)) then
        print *, 'zero rhs?'
        ! error stop
     end if
 
-    allocate(xold(this % FVAssembler % num_state_vars))
-    allocate(ss(this % FVAssembler % num_state_vars))
+    allocate(xold(system % num_state_vars))
+    allocate(ss(system % num_state_vars))
 
     if (this % print_level .eq. -1) then
        open(13, file='cg.res', action='write')
@@ -129,7 +137,7 @@ contains
     end if
 
     rnorm0 = 0.0_dp
-    if (this % print_level .gt. 0) rnorm0 = residual_norm(this % FVAssembler, x)
+    if (this % print_level .gt. 0) rnorm0 = this % residual_norm(system, x)
 
     update_norm = huge(1.0d0);
     iter = 1;
@@ -140,10 +148,10 @@ contains
        ! Inner iterations with CG
        if ( iter .eq. 1) then
           ss = 0.0d0
-          call this % iterate(x, ss, num_inner_iters)
+          call this % iterate(system, x, ss, num_inner_iters)
        else
-          call this % FVAssembler % get_skew_source(ss, x)
-          call this % iterate(x, ss, num_inner_iters)
+          call system % get_skew_source(ss, x)
+          call this % iterate(system, x, ss, num_inner_iters)
        end if
 
        update_norm = norm2(x - xold)
@@ -151,7 +159,7 @@ contains
           write(13, *) iter, update_norm
        end if
        if (this % print_level .gt. 0) then
-          call monitor_step(this % FVAssembler, iter, num_inner_iters, x, xold, rnorm0)
+          call this % monitor_step(system, iter, num_inner_iters, x, xold, rnorm0)
        end if
        iter = iter + 1
 
@@ -176,9 +184,10 @@ contains
   ! Iterative linear solution using conjugate gradient method
   !===================================================================!
 
-  subroutine iterate(this, x, ss, iter)
+  impure subroutine iterate(this, system, x, ss, iter)
 
     class(conjugate_gradient) , intent(in)    :: this
+    class(assembler)          , intent(in)    :: system
     real(dp)                  , intent(inout) :: x(:)
     real(dp)                  , intent(in)    :: ss(:)
     integer                   , intent(out)   :: iter
@@ -200,7 +209,7 @@ contains
     allocate(b,p,r,w,Ax,tmp,z,mold=x)
 
     ! Norm of the right hand side
-    call this % FVAssembler % get_source(tmp)
+    call system % get_source(tmp)
     ! Add the additional right hand side supplied
     tmp = tmp + ss
     b = tmp
@@ -213,14 +222,14 @@ contains
     end if
 
     ! Norm of the initial residual
-    call this % FVAssembler % get_jacobian_vector_product(tmp, x)
+    call system % get_jacobian_vector_product(tmp, x)
     Ax = tmp
     r         = b - Ax ! could directly form this residual using get_residual_call
     rnorm     = norm2(r)
     tol       = rnorm/bnorm
     ! preconditioned residual z = M^-1 r; rho = <r, z> (PCG). z = r when
     ! unpreconditioned, so rho = <r, r> and this is exactly plain CG.
-    call apply_precond(this, r, z)
+    call this % apply_precond(r, z)
     rho(2)    = dot_product(r, z)
 
     !open(13, file='cg.log', action='write', position='append')
@@ -239,7 +248,7 @@ contains
        end if
 
        ! step (b) compute the solution update
-       call this % FVAssembler % get_jacobian_vector_product(tmp, p)
+       call system % get_jacobian_vector_product(tmp, p)
        w = tmp
 
        ! step (c) compute the step size for update
@@ -262,7 +271,7 @@ contains
 
        iter = iter + 1
 
-       call apply_precond(this, r, z)
+       call this % apply_precond(r, z)
        rho(1) = rho(2)
        rho(2) = dot_product(r, z)
 
@@ -281,7 +290,7 @@ contains
   ! Apply the preconditioner z = M^-1 r, or z = r if none is attached
   !===================================================================!
 
-  subroutine apply_precond(this, r, z)
+  impure subroutine apply_precond(this, r, z)
 
     class(conjugate_gradient), intent(in)  :: this
     real(dp)                 , intent(in)  :: r(:)
@@ -294,5 +303,77 @@ contains
     end if
 
   end subroutine apply_precond
+
+  !===================================================================!
+  ! Matrix-free CG for the linearized system  J dq = rhs, where
+  ! J v = add_jacobian_vector_product(., v, lin_coeff) (its transpose in
+  ! REVERSE for the adjoint). rhs is the external rhs member if set (the
+  ! adjoint's -df/du), else the system residual -R at the current state.
+  ! Drives the increment dq (x0 = 0); the Newton/BDF outer loop owns the
+  ! state update. This is the inner solve the nonlinear solver delegates.
+  !===================================================================!
+
+  impure subroutine solve_linearized(this, system, x, mode)
+
+    class(conjugate_gradient), intent(in)       :: this
+    class(assembler)         , intent(in)       :: system
+    real(dp), allocatable    , intent(out)      :: x(:)
+    integer              , intent(in), optional :: mode
+
+    real(dp), allocatable :: r(:), p(:), Jp(:), b(:), res(:)
+    real(dp)              :: rs_old, rs_new, alpha, pJp
+    integer               :: nvars, it, max_it, dir
+
+    dir = FORWARD
+    if (present(mode)) dir = mode
+
+    nvars  = system % get_num_state_vars()
+    max_it = nvars + 100
+
+    allocate(x(nvars), r(nvars), p(nvars), Jp(nvars), b(nvars))
+
+    ! right-hand side: external (adjoint -df/du) if set, else -residual
+    if (allocated(this % rhs)) then
+       b = this % rhs
+    else
+       allocate(res(nvars))
+       res = 0.0_dp
+       call system % add_residual(res)
+       b = -res
+    end if
+
+    x = 0.0_dp
+    r = b
+    p = r
+    rs_old = dot_product(r, r)
+
+    cg: do it = 1, max_it
+
+       if (norm2(r) .le. 1.0d-14) exit cg
+
+       Jp = 0.0_dp
+       if (dir .eq. REVERSE) then
+          call system % add_jacobian_vector_product_transpose(Jp, p, this % lin_coeff)
+       else
+          call system % add_jacobian_vector_product(Jp, p, this % lin_coeff)
+       end if
+
+       pJp = dot_product(p, Jp)
+       if (abs(pJp) .le. tiny(1.0_dp)) exit cg
+
+       alpha = rs_old/pJp
+
+       x = x + alpha*p
+       r = r - alpha*Jp
+
+       rs_new = dot_product(r, r)
+       p      = r + (rs_new/rs_old)*p
+       rs_old = rs_new
+
+    end do cg
+
+    cg_last_iters = it
+
+  end subroutine solve_linearized
 
 end module class_conjugate_gradient

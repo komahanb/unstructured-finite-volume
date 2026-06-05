@@ -170,7 +170,7 @@ contains
 
   end subroutine isort
 
-  subroutine transpose_connectivities(cell_vertices, num_cell_vertices, &
+  impure subroutine transpose_connectivities(cell_vertices, num_cell_vertices, &
        & vertex_cells, num_vertex_cells)
 
     ! Arguments
@@ -227,7 +227,7 @@ contains
 
   end subroutine transpose_connectivities
 
-  subroutine sparse_transpose_matmul( &
+  pure subroutine sparse_transpose_matmul( &
        & num_cell_vertices, cell_types, cell_tags, cell_vertices, &
        & num_face_vertices, face_types, face_tags, face_vertices, &
        & num_cell_faces   , cell_faces, cell_faces_type, &
@@ -352,7 +352,7 @@ contains
   ! values of 'map' are the keys of 'inverse'
   ! ===================================================================!
 
-  subroutine reverse_map(map, num_map_vals, inverse, num_inverse_vals)
+  pure subroutine reverse_map(map, num_map_vals, inverse, num_inverse_vals)
 
     ! Arguments
     integer, intent(in) :: map(:,:)
@@ -411,7 +411,7 @@ contains
   ! Forms the cell faces from a pair of vertices belonging to cell.
   !===================================================================!
 
-  subroutine form_cell_faces( cell_vertices, &
+  pure subroutine form_cell_faces( cell_vertices, &
        & vertex_faces, num_vertex_faces, &
        & cell_faces, num_cell_faces )
 

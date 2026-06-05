@@ -182,7 +182,7 @@ contains
   ! Print a one line summary of the boundary condition
   !===================================================================!
 
-  subroutine print(this)
+  impure subroutine print(this)
 
     class(boundary_condition), intent(in) :: this
 

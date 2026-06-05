@@ -86,7 +86,7 @@ contains
   ! adds nothing. Functionals with an explicit x term override it.
   !===================================================================!
 
-  subroutine add_dfdx(this, system, dfdx)
+  pure subroutine add_dfdx(this, system, dfdx)
 
     class(functional), intent(in)    :: this
     class(assembler) , intent(in)    :: system

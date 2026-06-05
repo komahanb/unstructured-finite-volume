@@ -40,7 +40,7 @@ contains
   ! Construct the state-energy functional
   !===================================================================!
 
-  type(state_energy) function create() result(this)
+  pure type(state_energy) function create() result(this)
 
     this % description = "state energy J = 1/2 ||u||^2"
 
@@ -50,7 +50,7 @@ contains
   ! Value  J = 1/2 ||u||^2,  u = S(:,1)
   !===================================================================!
 
-  subroutine eval(this, system, fval)
+  pure subroutine eval(this, system, fval)
 
     class(state_energy), intent(in)  :: this
     class(assembler)   , intent(in)  :: system
@@ -64,7 +64,7 @@ contains
   ! State derivative  df/du = u
   !===================================================================!
 
-  subroutine add_dfdu(this, system, dfdu)
+  pure subroutine add_dfdu(this, system, dfdu)
 
     class(state_energy), intent(in)    :: this
     class(assembler)   , intent(in)    :: system

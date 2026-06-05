@@ -29,7 +29,8 @@ module interface_integrator
 
      class(assembler), allocatable :: system     ! the semi-discrete system
      real(dp)        , allocatable :: time(:)     ! time at each step
-     type(scalar)    , allocatable :: U(:,:,:)    ! (step, nvars, order+1)
+     type(scalar)    , allocatable :: U(:,:,:)    ! primal trajectory (step, nvars, order+1)
+     type(scalar)    , allocatable :: psi(:,:)    ! adjoint trajectory (step, nvars)
 
      real(dp) :: tinit
      real(dp) :: tfinal
@@ -41,7 +42,7 @@ module interface_integrator
 
      procedure :: construct
      procedure :: destruct
-     procedure :: solve
+     procedure :: integrate
 
      ! Deferred to concrete schemes
      procedure(step_interface)            , deferred :: step
@@ -113,7 +114,7 @@ contains
   ! Base class constructor
   !===================================================================!
 
-  subroutine construct(this, system, tinit, tfinal, h, implicit)
+  pure subroutine construct(this, system, tinit, tfinal, h, implicit)
 
     class(integrator), intent(inout) :: this
     class(assembler) , intent(in)    :: system
@@ -141,16 +142,20 @@ contains
     if (allocated(this % system)) deallocate(this % system)
     if (allocated(this % time))   deallocate(this % time)
     if (allocated(this % U))      deallocate(this % U)
+    if (allocated(this % psi))    deallocate(this % psi)
 
   end subroutine destruct
 
   !===================================================================!
-  ! March the system from tinit to tfinal
+  ! Drive the integration. FORWARD (default) marches the primal system
+  ! from tinit to tfinal over the trajectory U; REVERSE drives the adjoint
+  ! backward sweep over psi (wired by the concrete integrator).
   !===================================================================!
 
-  impure subroutine solve(this)
+  impure subroutine integrate(this, mode)
 
-    class(integrator), intent(inout) :: this
+    class(integrator), intent(inout)        :: this
+    integer          , intent(in), optional :: mode
 
     integer :: k, p, ierr
 
@@ -183,6 +188,6 @@ contains
 
     end do march
 
-  end subroutine solve
+  end subroutine integrate
 
 end module interface_integrator

@@ -46,7 +46,7 @@ contains
   ! Construct a file object with filename
   !===================================================================!
   
-  type(file) function create(filename, line_width) result (this)
+  impure type(file) function create(filename, line_width) result (this)
 
     type(character(*)), intent(in)           :: filename
     type(integer)     , intent(in), optional :: line_width
@@ -92,7 +92,7 @@ contains
   ! Open the file
   !===================================================================!
 
-  subroutine open(this)
+  impure subroutine open(this)
 
     class(file), intent(in) :: this
     logical :: file_exists
@@ -111,7 +111,7 @@ contains
   ! Close the file
   !===================================================================!
 
-  subroutine close(this)
+  impure subroutine close(this)
 
     class(file), intent(in) :: this
 
@@ -135,7 +135,7 @@ contains
   ! Utility function for get number of lines in mesh file
   !===================================================================!
 
-  type(integer) function get_num_lines(this) result(nlines)
+  impure type(integer) function get_num_lines(this) result(nlines)
 
     class(file) , intent(in) :: this
     integer :: stat
@@ -155,7 +155,7 @@ contains
   ! Read one line and return a string object
   !=================================================================!
 
-  subroutine read_line(this, line)
+  impure subroutine read_line(this, line)
 
     ! Arguments
     class(file)  , intent(in)  :: this
@@ -173,7 +173,7 @@ contains
   ! Read all lines and return a string array
   !=================================================================!
 
-  subroutine read_lines(this, lines)
+  impure subroutine read_lines(this, lines)
 
     ! Arguments
     class(file)  , intent(in)            :: this

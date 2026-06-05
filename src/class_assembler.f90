@@ -4,7 +4,8 @@ module class_assembler
 
   ! import dependencies
   use iso_fortran_env         , only : dp => REAL64
-  use interface_assembler     , only : base_assembler => assembler
+  use interface_assembler     , only : base_assembler => assembler, &
+       & DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE
   use class_mesh              , only : mesh
   use class_string            , only : string
   use class_boundary_condition, only : boundary_condition, dirichlet, neumann, robin
@@ -21,6 +22,7 @@ module class_assembler
   private
   public :: assembler
   public :: CONVECTION_CENTRAL, CONVECTION_UPWIND
+  public :: DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE   ! re-exported filter codes
 
   ! Convection scheme for the advective face flux
   integer, parameter :: CONVECTION_CENTRAL = 1   ! 2nd-order central differencing
@@ -60,11 +62,6 @@ module class_assembler
      class(source)      , allocatable :: src    ! source operator S(q, grad q)
      type(fvm_field)    , allocatable :: fld    ! cell-centred reconstruction
 
-     ! Matrix filters
-     integer :: DIAGONAL       = 0
-     integer :: LOWER_TRIANGLE = -1
-     integer :: UPPER_TRIANGLE = 1
-
      ! Convective face-flux scheme (central by default; upwind for stability)
      integer :: convection_scheme = CONVECTION_CENTRAL
 
@@ -77,10 +74,15 @@ module class_assembler
      procedure :: set_neumann
      procedure :: set_robin
      procedure :: set_dirichlet_tag
+     procedure, private :: set_bc
 
      ! The pde
      procedure :: set_equation
      procedure :: set_convection_scheme
+
+     ! convection-scheme-dependent advective face closures (central/upwind)
+     procedure, private :: adv_weights
+     procedure, private :: adv_boundary
 
      ! Evaluation routines
      procedure :: evaluate_vertex_flux
@@ -130,7 +132,7 @@ contains
   ! Constructor for physics
   !===================================================================!
 
-  type(assembler) function construct(grid) result (this)
+  impure type(assembler) function construct(grid) result (this)
 
     type(mesh), intent(in) :: grid
 
@@ -169,10 +171,6 @@ contains
     allocate(this % src, source = constant_source(0.0_dp, this % num_variables))
     allocate(this % fld, source = fvm_field(this % num_variables, this % num_state_vars))
 
-    this % DIAGONAL       = 0
-    this % LOWER_TRIANGLE = -1
-    this % UPPER_TRIANGLE = 1
-
   end function construct
 
   !===================================================================!
@@ -180,14 +178,14 @@ contains
   ! var targets a single variable; omitted, it applies to all variables.
   !===================================================================!
 
-  subroutine set_dirichlet(this, name, value, var)
+  impure subroutine set_dirichlet(this, name, value, var)
 
     class(assembler) , intent(inout) :: this
     character(len=*) , intent(in)    :: name
     real(dp)         , intent(in)    :: value
     integer, optional, intent(in)    :: var
 
-    call set_bc(this, this % grid % find_tag_by_name(name), name, dirichlet(value), var)
+    call this % set_bc(this % grid % find_tag_by_name(name), name, dirichlet(value), var)
 
   end subroutine set_dirichlet
 
@@ -195,14 +193,14 @@ contains
   ! Set a neumann condition on a named physical group
   !===================================================================!
 
-  subroutine set_neumann(this, name, flux, var)
+  impure subroutine set_neumann(this, name, flux, var)
 
     class(assembler) , intent(inout) :: this
     character(len=*) , intent(in)    :: name
     real(dp)         , intent(in)    :: flux
     integer, optional, intent(in)    :: var
 
-    call set_bc(this, this % grid % find_tag_by_name(name), name, neumann(flux), var)
+    call this % set_bc(this % grid % find_tag_by_name(name), name, neumann(flux), var)
 
   end subroutine set_neumann
 
@@ -210,14 +208,14 @@ contains
   ! Set a robin condition  a*phi + b*dphi/dn = c  on a named group
   !===================================================================!
 
-  subroutine set_robin(this, name, a, b, c, var)
+  impure subroutine set_robin(this, name, a, b, c, var)
 
     class(assembler) , intent(inout) :: this
     character(len=*) , intent(in)    :: name
     real(dp)         , intent(in)    :: a, b, c
     integer, optional, intent(in)    :: var
 
-    call set_bc(this, this % grid % find_tag_by_name(name), name, robin(a,b,c), var)
+    call this % set_bc(this % grid % find_tag_by_name(name), name, robin(a,b,c), var)
 
   end subroutine set_robin
 
@@ -225,14 +223,14 @@ contains
   ! Convenience for replicating tag-keyed setups without names
   !===================================================================!
 
-  subroutine set_dirichlet_tag(this, tag, value, var)
+  impure subroutine set_dirichlet_tag(this, tag, value, var)
 
     class(assembler) , intent(inout) :: this
     integer          , intent(in)    :: tag
     real(dp)         , intent(in)    :: value
     integer, optional, intent(in)    :: var
 
-    call set_bc(this, tag, "", dirichlet(value), var)
+    call this % set_bc(tag, "", dirichlet(value), var)
 
   end subroutine set_dirichlet_tag
 
@@ -242,7 +240,7 @@ contains
   ! of variables rebuilds the (tag,variable) bc table.
   !===================================================================!
 
-  subroutine set_equation(this, flux_op, source_op)
+  impure subroutine set_equation(this, flux_op, source_op)
 
     class(assembler), intent(inout) :: this
     class(flux)     , intent(in)    :: flux_op    ! F(q, grad q)
@@ -284,7 +282,7 @@ contains
   ! variable index the bc applies to every variable on the boundary.
   !===================================================================!
 
-  subroutine set_bc(this, tag, name, bc, var)
+  impure subroutine set_bc(this, tag, name, bc, var)
 
     class(assembler)        , intent(inout) :: this
     integer                 , intent(in)    :: tag
@@ -337,7 +335,7 @@ contains
   ! Assemble and return the full jacobian matrix
   !===================================================================!
 
-  subroutine get_jacobian(this, A, filter)
+  pure subroutine get_jacobian(this, A, filter)
 
     ! Arguments
     class(assembler)      , intent(in)    :: this
@@ -380,7 +378,7 @@ contains
   ! Assemble and return the full transpose jacobian matrix
   !===================================================================!
 
-  subroutine get_transpose_jacobian(this, A, filter)
+  pure subroutine get_transpose_jacobian(this, A, filter)
 
     ! Arguments
     class(assembler)      , intent(in)    :: this
@@ -419,7 +417,7 @@ contains
 
   end subroutine get_transpose_jacobian
 
-  subroutine get_jacobian_vector_product(this, Aq, q, filter)
+  pure subroutine get_jacobian_vector_product(this, Aq, q, filter)
 
     class(assembler) , intent(in)    :: this
     real(dp)         , intent(in)    :: q(:)
@@ -442,7 +440,7 @@ contains
   ! L/U/D split stays bit-exact.
   !===================================================================!
 
-  subroutine get_jvp_via_flux(this, Aq, q, filter)
+  pure subroutine get_jvp_via_flux(this, Aq, q, filter)
 
     class(assembler) , intent(in)    :: this
     real(dp)         , intent(in)    :: q(:)
@@ -493,18 +491,18 @@ contains
                  do ivar = 1, nv
                     p = this % g % dof(icell, ivar)
                     n = this % g % dof(ncell, ivar)
-                    keff  = flux_keff(this % fx, st, nf, ivar)
-                    vn    = flux_vn  (this % fx, st, nf, ivar)
-                    call adv_weights(vn, this % convection_scheme, wp, wn)
+                    keff  = this % fx % normal_diffusivity(st, nf, ivar)
+                    vn    = this % fx % normal_speed(st, nf, ivar)
+                    call this % adv_weights(vn, wp, wn)
                     ! d(F.n)/dq_p and /dq_n: diffusion (keff/fdelta) + advection
                     diag  = -farea*( keff/fdelta + wp)*q(p)
                     neigh = -farea*(-keff/fdelta + wn)*q(n)
                     if (present(filter)) then
-                       if (filter .eq. this % UPPER_TRIANGLE) then
+                       if (filter .eq. UPPER_TRIANGLE) then
                           if (ncell .gt. icell) Aq(p) = Aq(p) + neigh
-                       else if (filter .eq. this % LOWER_TRIANGLE) then
+                       else if (filter .eq. LOWER_TRIANGLE) then
                           if (ncell .lt. icell) Aq(p) = Aq(p) + neigh
-                       else if (filter .eq. this % DIAGONAL) then
+                       else if (filter .eq. DIAGONAL) then
                           Aq(p) = Aq(p) + diag
                        end if
                     else
@@ -516,13 +514,13 @@ contains
 
                  do ivar = 1, nv
                     p    = this % g % dof(icell, ivar)
-                    keff = flux_keff(this % fx, st, nf, ivar)
-                    vn   = flux_vn  (this % fx, st, nf, ivar)
-                    call adv_boundary(this % bcs(ftag,ivar), farea, fdelta, vn, &
-                         &            this % convection_scheme, alhs, arhs)
+                    keff = this % fx % normal_diffusivity(st, nf, ivar)
+                    vn   = this % fx % normal_speed(st, nf, ivar)
+                    call this % adv_boundary(this % bcs(ftag,ivar), farea, fdelta, vn, &
+                         &            alhs, arhs)
                     associate(bc => this % bcs(ftag,ivar))
                       if (present(filter)) then
-                         if (filter .eq. this % DIAGONAL) &
+                         if (filter .eq. DIAGONAL) &
                               & Aq(p) = Aq(p) + ( bc % lhs_coeff(farea, fdelta, keff) + alhs )*q(p)
                       else
                          Aq(p) = Aq(p) + ( bc % lhs_coeff(farea, fdelta, keff) + alhs )*q(p)
@@ -554,7 +552,7 @@ contains
   ! the multi-field hook); steady only.
   !===================================================================!
 
-  subroutine get_operator_csr(this, A)
+  impure subroutine get_operator_csr(this, A)
 
     class(assembler), intent(in)  :: this
     type(csr_matrix), intent(out) :: A
@@ -648,19 +646,19 @@ contains
              do ivar = 1, nv
                 p    = this % g % dof(icell, ivar)
                 n    = this % g % dof(ncell, ivar)
-                keff = flux_keff(this % fx, st, nf, ivar)
-                vn   = flux_vn  (this % fx, st, nf, ivar)
-                call adv_weights(vn, this % convection_scheme, wp, wn)
+                keff = this % fx % normal_diffusivity(st, nf, ivar)
+                vn   = this % fx % normal_speed(st, nf, ivar)
+                call this % adv_weights(vn, wp, wn)
                 call A % add_entry(p, p, -farea*(keff/fdelta + wp))
                 call A % add_entry(p, n,  farea*(keff/fdelta - wn))
              end do
           else
              do ivar = 1, nv
                 p    = this % g % dof(icell, ivar)
-                keff = flux_keff(this % fx, st, nf, ivar)
-                vn   = flux_vn  (this % fx, st, nf, ivar)
-                call adv_boundary(this % bcs(ftag,ivar), farea, fdelta, vn, &
-                     &            this % convection_scheme, alhs, arhs)
+                keff = this % fx % normal_diffusivity(st, nf, ivar)
+                vn   = this % fx % normal_speed(st, nf, ivar)
+                call this % adv_boundary(this % bcs(ftag,ivar), farea, fdelta, vn, &
+                     &            alhs, arhs)
                 call A % add_entry(p, p, this % bcs(ftag,ivar) % lhs_coeff(farea, fdelta, keff) + alhs)
              end do
           end if
@@ -678,7 +676,7 @@ contains
   ! operator + the transient rhs.
   !===================================================================!
 
-  subroutine get_source_via_flux(this, b, boundary_only)
+  pure subroutine get_source_via_flux(this, b, boundary_only)
 
     class(assembler), intent(in)           :: this
     real(dp)        , intent(out)          :: b(:)
@@ -715,10 +713,10 @@ contains
                  st % x = this % grid % face_centers(1:3, gface)
                  do ivar = 1, nv
                     p    = this % g % dof(icell, ivar)
-                    keff = flux_keff(this % fx, st, nf, ivar)
-                    vn   = flux_vn  (this % fx, st, nf, ivar)
-                    call adv_boundary(this % bcs(ftag,ivar), farea, fdelta, vn, &
-                         &            this % convection_scheme, alhs, arhs)
+                    keff = this % fx % normal_diffusivity(st, nf, ivar)
+                    vn   = this % fx % normal_speed(st, nf, ivar)
+                    call this % adv_boundary(this % bcs(ftag,ivar), farea, fdelta, vn, &
+                         &            alhs, arhs)
                     b(p) = b(p) + this % bcs(ftag,ivar) % rhs_coeff(farea, fdelta, keff) + arhs
                  end do
               end if
@@ -744,50 +742,10 @@ contains
   end subroutine get_source_via_flux
 
   !===================================================================!
-  ! Normal diffusivity keff = n^T K n for variable ivar, read from the
-  ! flux's gradient-jacobian dF/d(grad q) = -K.
-  !===================================================================!
-
-  pure real(dp) function flux_keff(fx, st, nf, ivar) result(keff)
-
-    class(flux)      , intent(in) :: fx
-    type(point_state), intent(in) :: st
-    real(dp)         , intent(in) :: nf(3)
-    integer          , intent(in) :: ivar
-
-    type(scalar) :: dFg(3, fx % num_components, 3, fx % num_components)
-
-    dFg  = fx % dflux_dgradq(st)
-    keff = -real(dot_product(nf, matmul(dFg(:,ivar,:,ivar), nf)), dp)
-
-  end function flux_keff
-
-  !===================================================================!
-  ! Normal advection speed vn = v . n for variable ivar, read from the
-  ! flux's state-jacobian dF/dq = v. Zero for a pure-diffusion flux
-  ! (dF/dq = 0), so the advection terms below vanish and the operator is
-  ! bit-identical to the diffusion-only path.
-  !===================================================================!
-
-  pure real(dp) function flux_vn(fx, st, nf, ivar) result(vn)
-
-    class(flux)      , intent(in) :: fx
-    type(point_state), intent(in) :: st
-    real(dp)         , intent(in) :: nf(3)
-    integer          , intent(in) :: ivar
-
-    type(scalar) :: dFq(3, fx % num_components, fx % num_components)
-
-    dFq = fx % dflux_dq(st)
-    vn  = real(dot_product(nf, dFq(:,ivar,ivar)), dp)
-
-  end function flux_vn
-
-  !===================================================================!
   ! Select the convective face-flux scheme (CONVECTION_CENTRAL / _UPWIND)
   !===================================================================!
 
-  subroutine set_convection_scheme(this, scheme)
+  pure subroutine set_convection_scheme(this, scheme)
     class(assembler), intent(inout) :: this
     integer         , intent(in)    :: scheme
     this % convection_scheme = scheme
@@ -801,17 +759,20 @@ contains
   ! unconditionally stable - adds |vn|/2 numerical diffusion).
   !===================================================================!
 
-  pure subroutine adv_weights(vn, scheme, wp, wn)
-    real(dp), intent(in)  :: vn
-    integer , intent(in)  :: scheme
-    real(dp), intent(out) :: wp, wn
-    if (scheme .eq. CONVECTION_UPWIND) then
+  pure subroutine adv_weights(this, vn, wp, wn)
+
+    class(assembler), intent(in)  :: this
+    real(dp)        , intent(in)  :: vn
+    real(dp)        , intent(out) :: wp, wn
+
+    if (this % convection_scheme .eq. CONVECTION_UPWIND) then
        wp = max(vn, 0.0_dp)
        wn = min(vn, 0.0_dp)
     else
        wp = 0.5_dp*vn
        wn = 0.5_dp*vn
     end if
+
   end subroutine adv_weights
 
   !===================================================================!
@@ -821,25 +782,28 @@ contains
   ! upwinds the interior value q_p, so the flux farea*vn*q_p is all diagonal.
   !===================================================================!
 
-  pure subroutine adv_boundary(bc, farea, fdelta, vn, scheme, alhs, arhs)
+  pure subroutine adv_boundary(this, bc, farea, fdelta, vn, alhs, arhs)
+
+    class(assembler)        , intent(in)  :: this
     type(boundary_condition), intent(in)  :: bc
     real(dp)                , intent(in)  :: farea, fdelta, vn
-    integer                 , intent(in)  :: scheme
     real(dp)                , intent(out) :: alhs, arhs
-    if (scheme .eq. CONVECTION_UPWIND .and. vn .ge. 0.0_dp) then
+
+    if (this % convection_scheme .eq. CONVECTION_UPWIND .and. vn .ge. 0.0_dp) then
        alhs = -farea*vn
        arhs = 0.0_dp
     else
        alhs = bc % adv_lhs_coeff(farea, fdelta, vn)
        arhs = bc % adv_rhs_coeff(farea, fdelta, vn)
     end if
+
   end subroutine adv_boundary
 
   !===================================================================!
   ! Compute vertex values by interpolating cell center values
   !===================================================================!
 
-  subroutine evaluate_vertex_flux(this, phiv, phic)
+  pure subroutine evaluate_vertex_flux(this, phiv, phic)
 
     class(assembler) , intent(in)               :: this
     real(dp)         , intent(in)               :: phic(:)
@@ -868,7 +832,7 @@ contains
   ! Compute face center values by interpolating cell center values
   !===================================================================!
 
-  subroutine evaluate_face_flux(this, phif, phic)
+  pure subroutine evaluate_face_flux(this, phif, phic)
 
     class(assembler) , intent(in)               :: this
     real(dp)         , intent(in)               :: phic(:)
@@ -899,7 +863,7 @@ contains
   !===================================================================!
 
   !subroutine get_tangential_flux(this, ss, phic)
-  subroutine get_skew_source(this, ss, phic)
+  pure subroutine get_skew_source(this, ss, phic)
 
     class(assembler), intent(in)  :: this
     type(real(dp))  , intent(in)  :: phic(:)
@@ -1054,7 +1018,7 @@ contains
 
   end subroutine get_skew_source
 
-  subroutine get_source(this, b, boundary_only)
+  pure subroutine get_source(this, b, boundary_only)
 
     class(assembler), intent(in)           :: this
     real(dp)        , intent(out)          :: b(:)
@@ -1072,7 +1036,7 @@ contains
   ! Write solution to file
   !===================================================================!
 
-  subroutine write_solution(this, filename, phic)
+  impure subroutine write_solution(this, filename, phic)
 
     use class_paraview_writer, only : paraview_writer
 
@@ -1111,7 +1075,7 @@ contains
   ! to one column per variable (suffixed _vN).
   !===================================================================!
 
-  subroutine write_solution_fields(this, filename, fields, labels)
+  impure subroutine write_solution_fields(this, filename, fields, labels)
 
     use class_paraview_writer, only : paraview_writer
 
@@ -1160,7 +1124,7 @@ contains
   ! writes through the gmsh writer. fields is (ndof, nfield, nstep).
   !===================================================================!
 
-  subroutine write_gmsh_series(this, meshfile, filename, fields, names, times)
+  impure subroutine write_gmsh_series(this, meshfile, filename, fields, names, times)
 
     use class_gmsh_writer, only : gmsh_writer
 
@@ -1206,7 +1170,7 @@ contains
   ! (overrides base_assembler % create_vector)
   !===================================================================!
 
-  subroutine create_vector(this, x, val)
+  impure subroutine create_vector(this, x, val)
 
     class(assembler), intent(in)               :: this
     real(dp)        , intent(out), allocatable :: x(:)
@@ -1231,7 +1195,7 @@ contains
   ! beta*M - alpha*A symmetric positive definite (CG-friendly).
   !===================================================================!
 
-  subroutine add_residual(this, residual, filter)
+  pure subroutine add_residual(this, residual, filter)
 
     class(assembler), intent(in)           :: this
     type(scalar)    , intent(inout)        :: residual(:)
@@ -1268,7 +1232,7 @@ contains
   ! M*vec is the cell-volume mass term.
   !===================================================================!
 
-  subroutine add_jacobian_vector_product(this, pdt, vec, scalars, filter)
+  pure subroutine add_jacobian_vector_product(this, pdt, vec, scalars, filter)
 
     class(assembler), intent(in)           :: this
     type(scalar)    , intent(inout)        :: pdt(:)
@@ -1303,7 +1267,7 @@ contains
   ! the time derivative from the stencil.
   !===================================================================!
 
-  subroutine add_initial_condition(this, U)
+  pure subroutine add_initial_condition(this, U)
 
     class(assembler), intent(in)    :: this
     type(scalar)    , intent(inout) :: U(:,:)
@@ -1328,7 +1292,7 @@ contains
 
   end function get_num_design_vars
 
-  subroutine set_design_vars(this, x)
+  pure subroutine set_design_vars(this, x)
 
     class(assembler), intent(inout) :: this
     real(dp)        , intent(in)    :: x(:)
@@ -1337,7 +1301,7 @@ contains
 
   end subroutine set_design_vars
 
-  subroutine get_design_vars(this, x)
+  pure subroutine get_design_vars(this, x)
 
     class(assembler), intent(in)  :: this
     real(dp)        , intent(out) :: x(:)
@@ -1364,7 +1328,7 @@ contains
   ! reproduces the exact (b_bc - A*u)/kappa.
   !===================================================================!
 
-  subroutine add_design_residual_transpose_product(this, dfdx, psi)
+  pure subroutine add_design_residual_transpose_product(this, dfdx, psi)
 
     class(assembler), intent(inout) :: this
     real(dp)        , intent(inout) :: dfdx(:)
@@ -1425,7 +1389,7 @@ contains
                     nf = this % grid % cell_face_normals(1:3, iface, icell)
                     do ivar = 1, nv
                        p    = this % g % dof(icell, ivar)
-                       keff = flux_keff(this % fx, st, nf, ivar)
+                       keff = this % fx % normal_diffusivity(st, nf, ivar)
                        lhs  = this % bcs(ftag,ivar) % lhs_coeff(farea, fdelta, keff)
                        rhs  = this % bcs(ftag,ivar) % rhs_coeff(farea, fdelta, keff)
                        dRdk(p) = dRdk(p) + (rhs - lhs*real(this % S(p,1), dp))/kappa(k)
@@ -1449,5 +1413,7 @@ contains
     deallocate(kappa, dRdk)
 
   end subroutine add_design_residual_transpose_product
+
+
 
 end module class_assembler

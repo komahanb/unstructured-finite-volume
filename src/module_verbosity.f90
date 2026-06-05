@@ -27,7 +27,7 @@ contains
   ! Set the global verbosity level
   !===================================================================!
 
-  subroutine set_verbosity(level)
+  impure subroutine set_verbosity(level)
 
     integer, intent(in) :: level
 

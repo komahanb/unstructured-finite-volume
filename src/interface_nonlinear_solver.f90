@@ -56,7 +56,7 @@ module interface_nonlinear_solver
      subroutine nonlinear_solve_interface(this, system, coeff, U)
        import nonlinear_solver
        import assembler
-       class(nonlinear_solver), intent(in)    :: this
+       class(nonlinear_solver), intent(inout) :: this   ! configures its held linear solver
        class(assembler)       , intent(inout) :: system
        type(scalar)           , intent(in)    :: coeff(:)
        type(scalar)           , intent(inout) :: U(:,:)

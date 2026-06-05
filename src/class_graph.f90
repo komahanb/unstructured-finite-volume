@@ -8,8 +8,14 @@
 ! cell the dofs are interleaved variable-fastest, so for a single field
 ! dof(cell,1) = cell and everything reduces to the scalar case.
 !
-! Lots of other uses live here later: dof reordering, coloring, and -
-! the long game - partitioning with parmetis and coarray halos.
+! It also carries its own PARTITION: a partition of a graph is still
+! graph-shaped data, so partition(nparts) / partition_rcb(coords, nparts)
+! return the same graph with vertex % part stamped and the per-part owned
+! and ghost (halo) cell lists populated - exactly the bookkeeping a
+! distributed solver needs. owned(k) are part k's matrix rows; ghosts(k)
+! are the off-part cells its owned rows reference (pulled by a halo
+! exchange from part_of(g)). This is pure serial integer bookkeeping, so
+! every image computes the identical partition from the replicated graph.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -26,7 +32,7 @@ module class_graph
 
   type :: vertex
      integer :: number      ! cell number
-     integer :: part = 1    ! owning image (partitioning, later)
+     integer :: part = 1    ! owning part (image) after partitioning
   end type vertex
 
   type :: edge
@@ -42,14 +48,41 @@ module class_graph
      type(vertex), allocatable :: vertices(:)
      type(edge)  , allocatable :: edges(:)
 
+     ! Partition bookkeeping, populated by partition / partition_rcb.
+     ! part_of(cell) = vertices(cell) % part; owned/ghost cells are stored
+     ! csr-style: part k owns own_list(own_ptr(k):own_ptr(k+1)-1).
+     integer              :: nparts = 1
+     integer              :: ncut   = 0   ! edges crossing parts (cut quality)
+     integer, allocatable :: own_ptr(:)   ! (nparts+1)
+     integer, allocatable :: own_list(:)  ! (num_vertices)
+     integer, allocatable :: gh_ptr(:)    ! (nparts+1)
+     integer, allocatable :: gh_list(:)   ! deduped ghosts, by part
+
    contains
 
      procedure :: dof
      procedure :: num_dofs
+
+     ! partitioners - return the partitioned graph (same type)
      procedure :: partition
      procedure :: partition_rcb
+
+     ! partition queries
+     procedure :: part_of
+     procedure :: owned
+     procedure :: ghosts
+     procedure :: n_owned
+     procedure :: n_ghosts
+     procedure :: balance
      procedure :: edge_cut
+
      procedure :: print
+     procedure :: print_partition
+
+     ! internal: stamp vertex % part, then gather the owned/ghost csr
+     procedure, private :: stamp_bfs
+     procedure, private :: stamp_rcb
+     procedure, private :: gather_partition
 
   end type graph
 
@@ -64,7 +97,7 @@ contains
   ! (num_face_cells == 2) become edges.
   !===================================================================!
 
-  type(graph) function create(grid, num_variables) result(this)
+  pure type(graph) function create(grid, num_variables) result(this)
 
     type(mesh), intent(in)           :: grid
     integer   , intent(in), optional :: num_variables
@@ -124,16 +157,53 @@ contains
   end function num_dofs
 
   !===================================================================!
-  ! Partition the vertices into nparts pieces and stamp vertex % part.
+  ! Partition into nparts pieces by breadth-first ordering and return the
+  ! partitioned graph (vertex % part stamped, owned/ghost csr gathered).
   !
-  ! This is the serial placeholder: a breadth-first ordering of the
-  ! graph cut into nparts balanced contiguous chunks. bfs keeps
-  ! neighbours close so the chunks stay mostly connected and the cut is
-  ! reasonable. (KB: swap this body for a parmetis call - same in/out,
-  ! the graph already holds the adjacency parmetis wants.)
+  ! This is the serial placeholder: bfs keeps neighbours close so the
+  ! chunks stay mostly connected and the cut is reasonable. (KB: swap the
+  ! stamp_bfs body for a parmetis call - same contract.) Sibling to
+  ! partition_rcb (geometric).
   !===================================================================!
 
-  subroutine partition(this, nparts)
+  pure type(graph) function partition(this, nparts) result(g)
+
+    class(graph), intent(in) :: this
+    integer     , intent(in) :: nparts
+
+    g = this
+    call g % stamp_bfs(nparts)
+    call g % gather_partition(nparts)
+
+  end function partition
+
+  !===================================================================!
+  ! Geometric partitioner: recursive coordinate bisection (RCB). Uses the
+  ! cell centroids coords(:,cell) (e.g. mesh % cell_centers) to recursively
+  ! split the cells by the median coordinate along the longest-spread axis -
+  ! balanced, COMPACT subdomains (small edge cut / halo) where the BFS chunks
+  ! would go stringy. Returns the partitioned graph, same as partition().
+  ! (KB: METIS could still slot in behind this same contract.)
+  !===================================================================!
+
+  impure type(graph) function partition_rcb(this, coords, nparts) result(g)
+
+    class(graph), intent(in) :: this
+    real(dp)    , intent(in) :: coords(:,:)   ! (ndim, num_vertices) centroids
+    integer     , intent(in) :: nparts
+
+    g = this
+    call g % stamp_rcb(coords, nparts)
+    call g % gather_partition(nparts)
+
+  end function partition_rcb
+
+  !===================================================================!
+  ! Stamp vertex % part by a breadth-first ordering cut into nparts
+  ! balanced contiguous chunks (restarting for disconnected components).
+  !===================================================================!
+
+  pure subroutine stamp_bfs(this, nparts)
 
     class(graph) , intent(inout) :: this
     integer      , intent(in)    :: nparts
@@ -220,24 +290,16 @@ contains
        this % vertices(order(pos)) % part = (pos-1)*nparts/nv + 1
     end do
 
-  end subroutine partition
+  end subroutine stamp_bfs
 
   !===================================================================!
-  ! Geometric partitioner: recursive coordinate bisection (RCB).
-  !
-  ! Sibling to partition() above (which is adjacency-only BFS). Uses the
-  ! cell centroids coords(:,cell) (e.g. mesh % cell_centers) to recursively
-  ! split the cells by the median coordinate along the longest-spread axis -
-  ! balanced, COMPACT subdomains (small edge cut / halo) where the BFS chunks
-  ! would go stringy. pure fortran, no external deps; stamps the same
-  ! vertex % part contract so everything downstream is unchanged.
-  ! (KB: METIS could still slot in behind this same contract.)
+  ! Stamp vertex % part by recursive coordinate bisection of the centroids.
   !===================================================================!
 
-  subroutine partition_rcb(this, coords, nparts)
+  impure subroutine stamp_rcb(this, coords, nparts)
 
     class(graph), intent(inout) :: this
-    real(dp)    , intent(in)    :: coords(:,:)   ! (ndim, num_vertices) centroids
+    real(dp)    , intent(in)    :: coords(:,:)
     integer     , intent(in)    :: nparts
 
     integer, allocatable :: idx(:), part(:)
@@ -259,7 +321,175 @@ contains
        this % vertices(c) % part = part(c)
     end do
 
-  end subroutine partition_rcb
+  end subroutine stamp_rcb
+
+  !===================================================================!
+  ! Gather the owned/ghost csr from the already-stamped vertex % part.
+  ! ghost(k) = cells not in k but adjacent (through an edge) to a k-owned
+  ! cell - the halo part k must pull from the cells' owners.
+  !===================================================================!
+
+  pure subroutine gather_partition(this, nparts)
+
+    class(graph), intent(inout) :: this
+    integer     , intent(in)    :: nparts
+
+    integer, allocatable :: ptr(:), cnt(:), mark(:)
+    integer :: nc, ne, c, e, k, t, h, pt, ph, pos
+
+    nc = this % num_vertices
+    ne = this % num_edges
+    this % nparts = nparts
+
+    ! ---- owned cells per part (counting sort by part) ----
+    allocate(this % own_ptr(nparts+1)); this % own_ptr = 0
+    do c = 1, nc
+       this % own_ptr(this % vertices(c) % part + 1) = &
+            & this % own_ptr(this % vertices(c) % part + 1) + 1
+    end do
+    this % own_ptr(1) = 1
+    do k = 1, nparts
+       this % own_ptr(k+1) = this % own_ptr(k+1) + this % own_ptr(k)
+    end do
+    allocate(this % own_list(nc))
+    allocate(ptr(nparts)); ptr = this % own_ptr(1:nparts)
+    do c = 1, nc
+       k = this % vertices(c) % part
+       this % own_list(ptr(k)) = c
+       ptr(k) = ptr(k) + 1
+    end do
+    deallocate(ptr)
+
+    ! ---- edge cut ----
+    this % ncut = this % edge_cut()
+
+    ! ---- ghost cells per part ----
+    ! Two passes: count (size the csr) then fill, deduped by stamping
+    ! mark(cell)=k (k is monotone, so an old stamp from part k-1 reads as
+    ! unmarked for part k).
+    allocate(cnt(nparts)); cnt = 0
+    allocate(mark(nc));    mark = 0
+    do k = 1, nparts
+       do e = 1, ne
+          t = this % edges(e) % tail;  h = this % edges(e) % head
+          pt = this % vertices(t) % part;  ph = this % vertices(h) % part
+          if (pt .eq. k .and. ph .ne. k) then
+             if (mark(h) .ne. k) then; mark(h) = k; cnt(k) = cnt(k) + 1; end if
+          end if
+          if (ph .eq. k .and. pt .ne. k) then
+             if (mark(t) .ne. k) then; mark(t) = k; cnt(k) = cnt(k) + 1; end if
+          end if
+       end do
+    end do
+
+    allocate(this % gh_ptr(nparts+1))
+    this % gh_ptr(1) = 1
+    do k = 1, nparts
+       this % gh_ptr(k+1) = this % gh_ptr(k) + cnt(k)
+    end do
+    allocate(this % gh_list(this % gh_ptr(nparts+1)-1))
+
+    mark = 0
+    do k = 1, nparts
+       pos = this % gh_ptr(k)
+       do e = 1, ne
+          t = this % edges(e) % tail;  h = this % edges(e) % head
+          pt = this % vertices(t) % part;  ph = this % vertices(h) % part
+          if (pt .eq. k .and. ph .ne. k) then
+             if (mark(h) .ne. k) then; mark(h) = k; this % gh_list(pos) = h; pos = pos + 1; end if
+          end if
+          if (ph .eq. k .and. pt .ne. k) then
+             if (mark(t) .ne. k) then; mark(t) = k; this % gh_list(pos) = t; pos = pos + 1; end if
+          end if
+       end do
+    end do
+
+  end subroutine gather_partition
+
+  !===================================================================!
+  ! Owning part of a cell
+  !===================================================================!
+
+  pure integer function part_of(this, cell)
+
+    class(graph), intent(in) :: this
+    integer     , intent(in) :: cell
+
+    part_of = this % vertices(cell) % part
+
+  end function part_of
+
+  !===================================================================!
+  ! Cells owned by part k (its matrix rows)
+  !===================================================================!
+
+  pure function owned(this, k) result(cells)
+
+    class(graph), intent(in) :: this
+    integer     , intent(in) :: k
+
+    integer, allocatable :: cells(:)
+
+    cells = this % own_list(this % own_ptr(k) : this % own_ptr(k+1)-1)
+
+  end function owned
+
+  !===================================================================!
+  ! Halo (ghost) cells part k needs from other parts
+  !===================================================================!
+
+  pure function ghosts(this, k) result(cells)
+
+    class(graph), intent(in) :: this
+    integer     , intent(in) :: k
+
+    integer, allocatable :: cells(:)
+
+    cells = this % gh_list(this % gh_ptr(k) : this % gh_ptr(k+1)-1)
+
+  end function ghosts
+
+  pure integer function n_owned(this, k)
+
+    class(graph), intent(in) :: this
+    integer     , intent(in) :: k
+
+    n_owned = this % own_ptr(k+1) - this % own_ptr(k)
+
+  end function n_owned
+
+  pure integer function n_ghosts(this, k)
+
+    class(graph), intent(in) :: this
+    integer     , intent(in) :: k
+
+    n_ghosts = this % gh_ptr(k+1) - this % gh_ptr(k)
+
+  end function n_ghosts
+
+  !===================================================================!
+  ! Load-balance ratio max(owned)/min(owned) over the parts (1.0 = perfect)
+  !===================================================================!
+
+  pure real(dp) function balance(this)
+
+    class(graph), intent(in) :: this
+
+    integer :: k, lo, hi, m
+
+    lo = huge(1); hi = 0
+    do k = 1, this % nparts
+       m = this % n_owned(k)
+       lo = min(lo, m); hi = max(hi, m)
+    end do
+
+    if (lo .le. 0) then
+       balance = huge(1.0_dp)
+    else
+       balance = real(hi, dp)/real(lo, dp)
+    end if
+
+  end function balance
 
   !===================================================================!
   ! RCB recursion: assign cells idx(lo:hi) to k parts numbered
@@ -268,7 +498,7 @@ contains
   ! the median along the axis of largest spread.
   !===================================================================!
 
-  recursive subroutine rcb(idx, lo, hi, k, base, coords, part)
+  pure recursive subroutine rcb(idx, lo, hi, k, base, coords, part)
 
     integer , intent(inout) :: idx(:)
     integer , intent(in)    :: lo, hi, k, base
@@ -313,7 +543,7 @@ contains
   ! structured (already-ordered) meshes don't hit the O(n^2) worst case.
   !===================================================================!
 
-  recursive subroutine qsort_axis(idx, lo, hi, coords, axis)
+  pure recursive subroutine qsort_axis(idx, lo, hi, coords, axis)
 
     integer , intent(inout) :: idx(:)
     integer , intent(in)    :: lo, hi, axis
@@ -364,7 +594,7 @@ contains
   ! Print a one line summary of the graph
   !===================================================================!
 
-  subroutine print(this)
+  impure subroutine print(this)
 
     class(graph), intent(in) :: this
 
@@ -373,5 +603,25 @@ contains
          & " edges, ", this % num_variables, " variables/cell, ", this % num_dofs(), " dofs"
 
   end subroutine print
+
+  !===================================================================!
+  ! Print a summary of the partition (parts, cells, edge cut, balance).
+  !===================================================================!
+
+  impure subroutine print_partition(this)
+
+    class(graph), intent(in) :: this
+
+    integer :: k
+
+    write(*,'(1x,a,i0,a,i0,a,i0,a,f6.3)') "partition: ", this % nparts, &
+         & " parts, ", this % num_vertices, " cells, edge cut ", this % ncut, &
+         & ", balance ", this % balance()
+    do k = 1, this % nparts
+       write(*,'(3x,a,i0,a,i0,a,i0,a)') "part ", k, ": ", this % n_owned(k), &
+            & " owned, ", this % n_ghosts(k), " ghost"
+    end do
+
+  end subroutine print_partition
 
 end module class_graph

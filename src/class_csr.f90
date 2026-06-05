@@ -23,8 +23,6 @@ module class_csr
 
   private
   public :: csr_matrix
-  public :: csr_transpose, csr_matmat, csr_add, csr_galerkin
-  public :: csr_jacobi_smoothed_prolongation
 
   !-------------------------------------------------------------------!
   ! CSR matrix (1-based row_ptr/col_idx)
@@ -46,6 +44,12 @@ module class_csr
      procedure :: scale_rows
      procedure :: is_symmetric
      procedure :: to_dense
+     ! sparse algebra (was the free csr_* module functions)
+     procedure :: transpose
+     procedure :: matmat
+     procedure :: add
+     procedure :: matvec_rows
+     procedure :: principal_submatrix
   end type csr_matrix
 
   interface csr_matrix
@@ -59,7 +63,7 @@ contains
   ! Construct from full (row_ptr, col_idx, vals) arrays
   !===================================================================!
 
-  type(csr_matrix) function csr_from_arrays(nrows, ncols, row_ptr, col_idx, vals) result(A)
+  pure type(csr_matrix) function csr_from_arrays(nrows, ncols, row_ptr, col_idx, vals) result(A)
     integer , intent(in) :: nrows, ncols
     integer , intent(in) :: row_ptr(:), col_idx(:)
     real(dp), intent(in) :: vals(:)
@@ -79,7 +83,7 @@ contains
   ! values zeroed - then accumulate with add_entry (used by assembly)
   !===================================================================!
 
-  type(csr_matrix) function csr_from_pattern(nrows, ncols, row_ptr, col_idx) result(A)
+  pure type(csr_matrix) function csr_from_pattern(nrows, ncols, row_ptr, col_idx) result(A)
     integer, intent(in) :: nrows, ncols
     integer, intent(in) :: row_ptr(:), col_idx(:)
     A % nrows = nrows
@@ -97,7 +101,7 @@ contains
   ! y = A x
   !===================================================================!
 
-  subroutine matvec(this, x, y)
+  pure subroutine matvec(this, x, y)
     class(csr_matrix), intent(in)  :: this
     real(dp)         , intent(in)  :: x(:)
     real(dp)         , intent(out) :: y(:)
@@ -114,7 +118,7 @@ contains
   ! y = A^T x
   !===================================================================!
 
-  subroutine matvec_transpose(this, x, y)
+  pure subroutine matvec_transpose(this, x, y)
     class(csr_matrix), intent(in)  :: this
     real(dp)         , intent(in)  :: x(:)
     real(dp)         , intent(out) :: y(:)
@@ -131,7 +135,7 @@ contains
   ! Extract the diagonal (square matrices)
   !===================================================================!
 
-  function get_diagonal(this) result(d)
+  pure function get_diagonal(this) result(d)
     class(csr_matrix), intent(in) :: this
     real(dp) :: d(this % nrows)
     integer  :: i, k
@@ -147,7 +151,7 @@ contains
   ! a_ij (linear scan within the row; 0 if absent)
   !===================================================================!
 
-  real(dp) function get_entry(this, i, j) result(aij)
+  pure real(dp) function get_entry(this, i, j) result(aij)
     class(csr_matrix), intent(in) :: this
     integer          , intent(in) :: i, j
     integer :: k
@@ -164,7 +168,7 @@ contains
   ! Accumulate v into entry (i,j); (i,j) must be in the pattern
   !===================================================================!
 
-  subroutine add_entry(this, i, j, v)
+  impure subroutine add_entry(this, i, j, v)
     class(csr_matrix), intent(inout) :: this
     integer          , intent(in)    :: i, j
     real(dp)         , intent(in)    :: v
@@ -182,7 +186,7 @@ contains
   ! Scale each row i by s(i) in place
   !===================================================================!
 
-  subroutine scale_rows(this, s)
+  pure subroutine scale_rows(this, s)
     class(csr_matrix), intent(inout) :: this
     real(dp)         , intent(in)    :: s(:)
     integer :: i, k
@@ -197,7 +201,7 @@ contains
   ! max |a_ij - a_ji| (square matrices); diagnostic
   !===================================================================!
 
-  real(dp) function is_symmetric(this) result(asym)
+  pure real(dp) function is_symmetric(this) result(asym)
     class(csr_matrix), intent(in) :: this
     integer :: i, k, j
     asym = 0.0_dp
@@ -213,7 +217,7 @@ contains
   ! Dense copy (small coarse operators only)
   !===================================================================!
 
-  subroutine to_dense(this, D)
+  pure subroutine to_dense(this, D)
     class(csr_matrix)    , intent(in)  :: this
     real(dp), allocatable, intent(out) :: D(:,:)
     integer :: i, k
@@ -230,9 +234,9 @@ contains
   ! A^T as a fresh CSR (count columns, prefix-sum, scatter)
   !===================================================================!
 
-  function csr_transpose(A) result(At)
-    type(csr_matrix), intent(in) :: A
-    type(csr_matrix)             :: At
+  pure function transpose(A) result(At)
+    class(csr_matrix), intent(in) :: A
+    type(csr_matrix)              :: At
     integer, allocatable :: next(:)
     integer :: i, k, col, dest
 
@@ -261,15 +265,16 @@ contains
           next(col)          = dest + 1
        end do
     end do
-  end function csr_transpose
+  end function transpose
 
   !===================================================================!
   ! C = A B  (Gustavson: symbolic count, then numeric accumulate)
   !===================================================================!
 
-  function csr_matmat(A, B) result(C)
-    type(csr_matrix), intent(in) :: A, B
-    type(csr_matrix)             :: C
+  pure function matmat(A, B) result(C)
+    class(csr_matrix), intent(in) :: A
+    type(csr_matrix) , intent(in) :: B
+    type(csr_matrix)              :: C
     integer, allocatable :: marker(:)
     integer :: i, ka, kb, j, col, nnz, rstart, length
     real(dp) :: v
@@ -319,16 +324,17 @@ contains
           end do
        end do
     end do
-  end function csr_matmat
+  end function matmat
 
   !===================================================================!
   ! C = alpha A + beta B  (same shape; union pattern)
   !===================================================================!
 
-  function csr_add(alpha, A, beta, B) result(C)
-    real(dp)        , intent(in) :: alpha, beta
-    type(csr_matrix), intent(in) :: A, B
-    type(csr_matrix)             :: C
+  pure function add(A, alpha, beta, B) result(C)
+    class(csr_matrix), intent(in) :: A
+    real(dp)         , intent(in) :: alpha, beta
+    type(csr_matrix) , intent(in) :: B
+    type(csr_matrix)              :: C
     integer, allocatable :: marker(:)
     integer :: i, k, col, nnz, rstart, length
 
@@ -382,34 +388,89 @@ contains
           end if
        end do
     end do
-  end function csr_add
+  end function add
 
   !===================================================================!
-  ! Galerkin coarse operator  Ac = R A P  (R = P^T)
+  ! y(row) = sum_j A(row,j) x(j) for the listed rows only; other entries
+  ! of y are left untouched. x must already carry valid values on every
+  ! column those rows touch (e.g. owned + ghost after a halo exchange).
   !===================================================================!
 
-  function csr_galerkin(R, A, P) result(Ac)
-    type(csr_matrix), intent(in) :: R, A, P
-    type(csr_matrix)             :: Ac
-    type(csr_matrix)             :: AP
-    AP = csr_matmat(A, P)
-    Ac = csr_matmat(R, AP)
-  end function csr_galerkin
+  pure subroutine matvec_rows(this, x, y, rows)
+
+    class(csr_matrix), intent(in)    :: this
+    real(dp)         , intent(in)    :: x(:)
+    real(dp)         , intent(inout) :: y(:)
+    integer          , intent(in)    :: rows(:)
+
+    integer  :: i, row, k
+    real(dp) :: s
+
+    do i = 1, size(rows)
+       row = rows(i)
+       s = 0.0_dp
+       do k = this % row_ptr(row), this % row_ptr(row+1) - 1
+          s = s + this % vals(k) * x(this % col_idx(k))
+       end do
+       y(row) = s
+    end do
+
+  end subroutine matvec_rows
 
   !===================================================================!
-  ! Smoothed prolongation  P = (I - omega Dinv A) P0
-  !                           = P0 - omega * Dinv .* (A P0)
+  ! Principal submatrix on the index set idx, renumbered to 1..size(idx):
+  ! keep only rows and columns in idx (rows == cols), dropping the rest.
+  ! Used to extract a subdomain's owned-owned block from the global
+  ! operator (each image then builds a block preconditioner on it).
   !===================================================================!
 
-  function csr_jacobi_smoothed_prolongation(A, P0, Dinv, omega) result(P)
-    type(csr_matrix), intent(in) :: A, P0
-    real(dp)        , intent(in) :: Dinv(:)
-    real(dp)        , intent(in) :: omega
-    type(csr_matrix)             :: P
-    type(csr_matrix)             :: AP0
-    AP0 = csr_matmat(A, P0)        ! (n x ncoarse)
-    call AP0 % scale_rows(Dinv)    ! Dinv .* (A P0)
-    P = csr_add(1.0_dp, P0, -omega, AP0)
-  end function csr_jacobi_smoothed_prolongation
+  pure function principal_submatrix(this, idx) result(B)
+
+    class(csr_matrix), intent(in) :: this
+    integer          , intent(in) :: idx(:)
+    type(csr_matrix)              :: B
+
+    integer , allocatable :: loc(:), row_ptr(:), col_idx(:)
+    real(dp), allocatable :: vals(:)
+    integer :: n, il, row, k, jl, pos, nnz
+
+    n = size(idx)
+
+    ! global -> local map (0 = not in the set)
+    allocate(loc(this % nrows)); loc = 0
+    do il = 1, n
+       loc(idx(il)) = il
+    end do
+
+    ! symbolic: count kept entries per local row
+    allocate(row_ptr(n+1)); row_ptr(1) = 1
+    do il = 1, n
+       row = idx(il)
+       pos = 0
+       do k = this % row_ptr(row), this % row_ptr(row+1) - 1
+          if (loc(this % col_idx(k)) .gt. 0) pos = pos + 1
+       end do
+       row_ptr(il+1) = row_ptr(il) + pos
+    end do
+    nnz = row_ptr(n+1) - 1
+    allocate(col_idx(nnz), vals(nnz))
+
+    ! numeric: copy entries, remapping global columns to local indices
+    pos = 1
+    do il = 1, n
+       row = idx(il)
+       do k = this % row_ptr(row), this % row_ptr(row+1) - 1
+          jl = loc(this % col_idx(k))
+          if (jl .gt. 0) then
+             col_idx(pos) = jl
+             vals(pos)    = this % vals(k)
+             pos = pos + 1
+          end if
+       end do
+    end do
+
+    B = csr_matrix(n, n, row_ptr, col_idx, vals)
+
+  end function principal_submatrix
 
 end module class_csr

@@ -117,12 +117,12 @@ contains
     n = 0
   end function physics_num_design_vars
 
-  subroutine physics_set_design_vars(this, x)
+  pure subroutine physics_set_design_vars(this, x)
     class(physics), intent(inout) :: this
     real(dp)      , intent(in)    :: x(:)
   end subroutine physics_set_design_vars
 
-  subroutine physics_get_design_vars(this, x)
+  pure subroutine physics_get_design_vars(this, x)
     class(physics), intent(in)  :: this
     real(dp)      , intent(out) :: x(:)
     x = 0.0_dp

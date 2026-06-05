@@ -23,17 +23,44 @@
 
 module class_normal_cg
 
-  use iso_fortran_env, only : dp => REAL64
-  use class_csr      , only : csr_matrix
+  use iso_fortran_env        , only : dp => REAL64
+  use class_csr              , only : csr_matrix
+  use interface_linear_solver, only : linear_solver
+  use class_assembler        , only : assembler
 
   implicit none
 
   private
   public :: cgnr, cgne
   public :: cgnr_last_iters, cgne_last_iters
+  public :: normal_cg, CGNR_METHOD, CGNE_METHOD
 
   integer :: cgnr_last_iters = 0
   integer :: cgne_last_iters = 0
+
+  ! normal-equations method selector for the linear_solver wrapper
+  integer, parameter :: CGNR_METHOD = 1   ! CG on A^T A  (residual-minimizing)
+  integer, parameter :: CGNE_METHOD = 2   ! CG on A A^T  (Craig, error-minimizing)
+
+  !-------------------------------------------------------------------!
+  ! linear_solver wrapper so the config-driven driver can pick a
+  ! normal-equations CG ("cgnr"/"cgne") the way it picks "cg"/"gmres".
+  ! Assembles the operator + rhs once and runs the kernel below. Robust
+  ! on (mildly) nonsymmetric operators; converges on kappa(A)^2 - reach
+  ! for gmres_solver when advection dominates.
+  !-------------------------------------------------------------------!
+
+  type, extends(linear_solver) :: normal_cg
+     class(assembler), allocatable :: FVAssembler
+     integer                       :: method      = CGNR_METHOD
+     integer                       :: print_level = 0
+   contains
+     procedure :: solve => normal_cg_solve
+  end type normal_cg
+
+  interface normal_cg
+     module procedure construct
+  end interface normal_cg
 
 contains
 
@@ -135,5 +162,42 @@ contains
          & "cgne: ", iter, " iters, rel res ", tol
 
   end subroutine cgne
+
+  !===================================================================!
+  ! Constructor for the normal_cg linear-solver wrapper
+  !===================================================================!
+
+  type(normal_cg) function construct(FVAssembler, max_it, max_tol, method, print_level) result(this)
+    type(assembler), intent(in)           :: FVAssembler
+    integer        , intent(in)           :: max_it
+    real(dp)       , intent(in)           :: max_tol
+    integer        , intent(in), optional :: method, print_level
+    allocate(this % FVAssembler, source = FVAssembler)
+    this % max_it  = max_it
+    this % max_tol = max_tol
+    if (present(method))      this % method      = method
+    if (present(print_level)) this % print_level = print_level
+  end function construct
+
+  !===================================================================!
+  ! Assemble the operator + rhs and solve with CGNR or CGNE.
+  !===================================================================!
+
+  subroutine normal_cg_solve(this, x)
+    class(normal_cg)     , intent(in)  :: this
+    real(dp), allocatable, intent(out) :: x(:)
+    type(csr_matrix)      :: A
+    real(dp), allocatable :: b(:)
+    integer :: n
+    call this % FVAssembler % get_operator_csr(A)
+    n = this % FVAssembler % num_state_vars
+    allocate(b(n), x(n))
+    call this % FVAssembler % get_source(b)
+    if (this % method .eq. CGNE_METHOD) then
+       call cgne(A, b, x, this % max_it, this % max_tol, this % print_level)
+    else
+       call cgnr(A, b, x, this % max_it, this % max_tol, this % print_level)
+    end if
+  end subroutine normal_cg_solve
 
 end module class_normal_cg

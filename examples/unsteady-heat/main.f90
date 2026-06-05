@@ -20,7 +20,7 @@ program unsteady_heat
   use class_mesh            , only : mesh
   use class_assembler       , only : assembler
   use class_diffusion_flux  , only : diffusion_flux, constant_source
-  use class_time_integrator , only : time_integrator
+  use class_bdf             , only : bdf
   use class_paraview_writer , only : paraview_writer
   use class_string          , only : string
   use module_verbosity      , only : set_verbosity
@@ -32,12 +32,12 @@ program unsteady_heat
   class(gmsh_loader)    , allocatable :: gmsh
   class(mesh)           , allocatable :: grid
   class(assembler)      , allocatable :: fvm
-  type(time_integrator)               :: ti
+  type(bdf)                           :: ti
   class(paraview_writer), allocatable :: pw
-  real(dp)              , allocatable :: phi(:), phinew(:)
+  real(dp)              , allocatable :: phi(:)
   type(string)                        :: labels(1)
-  real(dp)                            :: t, out_dt
-  integer                             :: i, frame, nframes, nout, nsteps
+  real(dp)                            :: t
+  integer                             :: i, frame, nout, nsteps
 
   ! Read the run
   call get_command_argument(1, cfgfile)
@@ -75,37 +75,31 @@ program unsteady_heat
      end select
   end do
 
-  ! Frame schedule - aim for ~10 vtu snapshots across the run
-  nsteps  = nint((cfg % tfinal - cfg % tinit)/cfg % dt)
-  nout    = max(1, nsteps/10)
-  nframes = nsteps/nout
-  out_dt  = cfg % dt*real(nout, dp)
+  ! Snapshot schedule - aim for ~10 vtu frames across the run
+  nsteps = nint((cfg % tfinal - cfg % tinit)/cfg % dt)
+  nout   = max(1, nsteps/10)
 
-  ! One integrator advances the state by nout steps per call
-  ti = time_integrator(fvm, cfg % tinit, cfg % tinit + out_dt, cfg % dt, cfg % max_it, cfg % max_tol)
+  ! Backward-euler (bdf order 1) marches the whole range in one solve,
+  ! storing every step's state; we slice frames out of it below.
+  ti = bdf(fvm, cfg % tinit, cfg % tfinal, cfg % dt, max_order = 1)
+  call ti % solve()
 
   ! Output
   labels(1) = string("phi")
   allocate(pw, source = paraview_writer(fvm % grid))
-
-  ! Initial state phi = 0
   allocate(phi(fvm % num_state_vars))
-  phi = 0.0_dp
-  t   = cfg % tinit
 
-  call pw % write(frame_name(cfg % output % str, 0), reshape(phi, [size(phi), 1]), labels)
-  call report(0, t, phi)
-
-  ! March, one window (nout steps) per frame
-  do frame = 1, nframes
-     call ti % integrate(phi, phinew)
-     phi = phinew
-     t   = t + out_dt
+  ! write a snapshot every nout steps (step 1 holds the initial field)
+  frame = 0
+  do i = 1, ti % num_steps, nout
+     phi = real(ti % U(i, :, 1), dp)
+     t   = cfg % tinit + real(i - 1, dp)*cfg % dt
      call pw % write(frame_name(cfg % output % str, frame), reshape(phi, [size(phi), 1]), labels)
      call report(frame, t, phi)
+     frame = frame + 1
   end do
 
-  print *, "wrote", nframes + 1, "snapshots over t =", cfg % tinit, "..", t
+  print *, "wrote", frame, "snapshots over t =", cfg % tinit, "..", t
 
 contains
 

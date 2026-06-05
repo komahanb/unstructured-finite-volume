@@ -6,8 +6,7 @@
 module class_conjugate_gradient
 
   use iso_fortran_env         , only : dp => REAL64
-  use interface_linear_solver , only : linear_solver
-  use interface_preconditioner, only : preconditioner
+  use interface_linear_solver , only : linear_solver, preconditioner
   use class_assembler         , only : assembler
   use module_solver_monitor   , only : monitor_step, residual_norm
 

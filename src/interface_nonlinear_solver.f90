@@ -1,81 +1,69 @@
+#include "scalar.fpp"
+
 !=====================================================================!
-! Abstract class for nonlinear solvers to extend and provide iterate
-! method.
-! 
+! Abstract interface for nonlinear solvers. A nonlinear solver drives a
+! system's residual R(U) = 0 by repeatedly linearising and solving with
+! an (inner) linear solver. It extends the common algebraic_solver base
+! and carries the linear solver used for those linearised steps.
+!
+! The deferred solve takes the assembler (the system), the integrator's
+! linearisation coefficients coeff, and the multi-order state U it
+! updates in place - matching the condensed Newton step the BDF marcher
+! and the adjoint forward solve drive.
+!
 ! Author : Komahan Boopathy
 !=====================================================================!
 
-module class_nonlinear_solver
+module interface_nonlinear_solver
 
   use iso_fortran_env           , only : dp => REAL64
   use interface_algebraic_solver, only : algebraic_solver
   use interface_linear_solver   , only : linear_solver
+  use interface_assembler       , only : assembler
 
   implicit none
-  
-  ! Expose only the linear solver interface
+
   private
   public :: nonlinear_solver
 
   !===================================================================!
   ! Abstract nonlinear solver datatype
   !===================================================================!
-  
+
   type, abstract, extends(algebraic_solver) :: nonlinear_solver
 
+     ! the inner linear solver for each linearised step (optional; a
+     ! matrix-free inner iteration may be used instead)
      class(linear_solver), allocatable :: linear_solver
 
-     ! Nonlinear solvers need a linear solver to solve a linearized
-     ! nonlinear system, and they implement the solve method required
-     ! by algebraic solver interface
-     integer  :: print_level
-     real(dp) :: max_tol
-     integer  :: max_it
-     
+     integer  :: print_level = 0
+     real(dp) :: max_tol     = 1.0d-12
+     integer  :: max_it      = 25
+
    contains
-     
-     ! Generic solve procedure
-     ! procedure :: solve
-     
+
+     procedure(nonlinear_solve_interface), deferred :: solve
+
   end type nonlinear_solver
-  
+
+  !===================================================================!
+  ! Deferred solve: drive R(U) = 0 for the system at the given
+  ! linearisation coefficients, updating the multi-order state U.
+  !===================================================================!
+
+  abstract interface
+
+     subroutine nonlinear_solve_interface(this, system, coeff, U)
+       import nonlinear_solver
+       import assembler
+       class(nonlinear_solver), intent(in)    :: this
+       class(assembler)       , intent(inout) :: system
+       type(scalar)           , intent(in)    :: coeff(:)
+       type(scalar)           , intent(inout) :: U(:,:)
+     end subroutine nonlinear_solve_interface
+
+  end interface
+
 contains
-  
-  !===================================================================!
-  ! Constructor for nonlinear solver
-  !===================================================================!
-  
-  type(nonlinear_solver) function construct(FVAssembler, &
-       & max_it, max_tol, print_level) result (this)
-    
-    type(assembler), intent(in) :: FVAssembler
-    type(real(dp)) , intent(in) :: omega
-    type(integer)  , intent(in) :: max_it
-    type(real(dp)) , intent(in) :: max_tol
-    type(integer)  , intent(in) :: print_level
-    
-    allocate(this % FVassembler, source = FVAssembler)
-    this % max_it      = max_it
-    this % max_tol     = max_tol
-    this % print_level = print_level
-    
-  end function construct
 
-  !===================================================================!
-  ! Destructor for nonlinear solver
-  !===================================================================!
-  
-  pure subroutine destroy(this)
-
-    type(nonlinear_solver), intent(inout) :: this
-    
-!!$    if(associated(this % FVAssembler)) then
-!!$       deallocate(this % FVAssembler)
-!!$       nullify(this % FVAssembler)
-!!$    end if
-!!$    
-    if (allocated(this % FVAssembler)) deallocate(this % FVAssembler)
-    
-  end subroutine destroy
-  
-end module class_nonlinear_solver
+end module interface_nonlinear_solver

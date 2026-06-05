@@ -7,7 +7,7 @@
 !   3. transient (t -> inf)              -> the steady solution
 !   4. operator split                    -> A = L + U + D
 !   5. neumann insulated box             -> linear profile, exact mean
-!   6. bdf-1 integrator                  -> matches legacy backward-euler
+!   6. solver wrappers (cgnr, dist-cg)   -> match plain cg
 !
 ! A nonzero exit (error stop) means a check failed.
 !
@@ -22,7 +22,8 @@ program regression
   use class_assembler          , only : assembler
   use class_diffusion_flux  , only : diffusion_flux, constant_source
   use class_conjugate_gradient , only : conjugate_gradient
-  use class_time_integrator    , only : time_integrator
+  use class_normal_cg          , only : normal_cg, CGNR_METHOD
+  use class_distributed_cg     , only : distributed_cg_solver
   use class_bdf                , only : bdf
 
   implicit none
@@ -38,7 +39,7 @@ program regression
   call check_transient_steady(nfail)
   call check_operator_split(nfail)
   call check_neumann_insulated(nfail)
-  call check_bdf_matches_be(nfail)
+  call check_solver_wrappers(nfail)
 
   write(*,*) "============================================="
   if (nfail .eq. 0) then
@@ -158,8 +159,8 @@ contains
 
     class(assembler)         , allocatable :: fsteady, ftrans
     class(conjugate_gradient), allocatable :: cg
-    type(time_integrator)                  :: ti
-    real(dp), allocatable :: xs(:), xt(:), phi0(:)
+    type(bdf)                              :: ti
+    real(dp), allocatable :: xs(:), xt(:)
 
     ! steady
     call make("../box-3.msh", fsteady)
@@ -167,13 +168,12 @@ contains
     allocate(cg, source = conjugate_gradient(fsteady, 500, tol, 0))
     call cg % solve(xs)
 
-    ! transient from zero, marched far
+    ! transient from zero, marched far (bdf order 1 = backward euler)
     call make("../box-3.msh", ftrans)
     call box_bc(ftrans)
-    ti = time_integrator(ftrans, 0.0_dp, 200.0_dp, 10.0_dp, 500, tol)
-    allocate(phi0(ftrans % num_state_vars))
-    phi0 = 0.0_dp
-    call ti % integrate(phi0, xt)
+    ti = bdf(ftrans, 0.0_dp, 200.0_dp, 10.0_dp, max_order = 1)
+    call ti % solve()
+    xt = real(ti % U(ti % num_steps, :, 1), dp)
 
     call report("transient (t -> inf) -> steady", &
          & maxval(abs(xt - xs)) .lt. 1.0e-8_dp, nfail)
@@ -181,39 +181,42 @@ contains
   end subroutine check_transient_steady
 
   !===================================================================!
-  ! The order-1 bdf integrator (M*udot - A*u + b = 0, marched by newton)
-  ! must reproduce the legacy backward-euler march step for step. Same
-  ! mesh, bcs, dt and step count, both from a zero initial field.
+  ! The normal_cg (cgnr) and distributed_cg linear_solver wrappers must
+  ! solve the same dirichlet problem as plain CG.
   !===================================================================!
 
-  subroutine check_bdf_matches_be(nfail)
+  subroutine check_solver_wrappers(nfail)
 
     integer, intent(inout) :: nfail
 
-    class(assembler)      , allocatable :: fbe, fbdf
-    type(time_integrator)               :: ti
-    type(bdf)                           :: bi
-    real(dp), allocatable :: xbe(:), xbdf(:), phi0(:)
+    class(assembler)           , allocatable :: f1, f2, f3
+    class(conjugate_gradient)  , allocatable :: cg
+    type(normal_cg)                          :: ncg
+    type(distributed_cg_solver)              :: dcg
+    real(dp), allocatable :: xref(:), xn(:), xd(:)
 
-    ! legacy backward-euler reference
-    call make("../box-3.msh", fbe)
-    call box_bc(fbe)
-    ti = time_integrator(fbe, 0.0_dp, 200.0_dp, 10.0_dp, 500, tol)
-    allocate(phi0(fbe % num_state_vars)); phi0 = 0.0_dp
-    call ti % integrate(phi0, xbe)
+    ! reference: plain CG
+    call make("../box-3.msh", f1); call box_bc(f1)
+    allocate(cg, source = conjugate_gradient(f1, 5000, tol, 0))
+    call cg % solve(xref)
 
-    ! same march through the general bdf integrator at order 1 (transient
-    ! flag stays off: the integrator, not the assembler, owns the time term)
-    call make("../box-3.msh", fbdf)
-    call box_bc(fbdf)
-    bi = bdf(fbdf, 0.0_dp, 200.0_dp, 10.0_dp, max_order = 1)
-    call bi % solve()
-    xbdf = real(bi % U(bi % num_steps, :, 1), dp)
+    ! normal_cg (cgnr): CG on the normal equations (kappa^2 -> looser tol)
+    call make("../box-3.msh", f2); call box_bc(f2)
+    ncg = normal_cg(FVAssembler=f2, max_it=50000, max_tol=1.0e-10_dp, &
+         & method=CGNR_METHOD, print_level=0)
+    call ncg % solve(xn)
 
-    call report("bdf-1 integrator -> matches backward-euler", &
-         & maxval(abs(xbdf - xbe)) .lt. 1.0e-8_dp, nfail)
+    ! distributed_cg wrapper (serial build -> plain CG)
+    call make("../box-3.msh", f3); call box_bc(f3)
+    dcg = distributed_cg_solver(FVAssembler=f3, max_it=5000, max_tol=tol, print_level=0)
+    call dcg % solve(xd)
 
-  end subroutine check_bdf_matches_be
+    call report("cgnr wrapper      -> matches cg", &
+         & maxval(abs(xn - xref)) .lt. 1.0e-5_dp, nfail)
+    call report("distributed_cg    -> matches cg", &
+         & maxval(abs(xd - xref)) .lt. 1.0e-8_dp, nfail)
+
+  end subroutine check_solver_wrappers
 
   !===================================================================!
   ! The assembled operator must split as A = L + U + D

@@ -19,7 +19,8 @@
 module class_diffusion_flux
 
   use iso_fortran_env , only : dp => REAL64
-  use interface_physics, only : flux, source, point_state
+  use interface_flux   , only : flux
+  use interface_physics, only : source, point_state
 
   implicit none
 

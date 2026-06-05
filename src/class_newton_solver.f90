@@ -1,36 +1,51 @@
 #include "scalar.fpp"
 
 !=====================================================================!
-! Condensed newton solve for one implicit time step, R(U) = 0, where
+! Condensed Newton solver for one implicit step, R(U) = 0, where
 ! U = [q, qdot, qddot, ...] is the assembler's state. The linearised
 ! system is matrix-free:
 !
 !     J dq = -R,     J v = sum_n coeff(n) dR/dU(n) v
 !
 ! supplied by the assembler's add_jacobian_vector_product, and solved
-! with a conjugate-gradient inner iteration. The single increment dq
-! then updates every derivative order via U(:,n) += coeff(n) dq.
+! with a conjugate-gradient inner iteration. The single increment dq then
+! updates every derivative order via U(:,n) += coeff(n) dq.
 !
-! Everything is vector-level (no element indexing) so flat arrays can
-! become distributed vectors later.
+! Concrete newton extends the nonlinear_solver interface; the BDF marcher
+! (class_bdf) and the adjoint forward solve call its solve. Everything is
+! vector-level (no element indexing) so flat arrays can become distributed
+! vectors later.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module nonlinear_marching
+module class_newton_solver
 
-  use iso_fortran_env    , only : dp => REAL64
-  use interface_assembler, only : assembler
+  use iso_fortran_env           , only : dp => REAL64
+  use interface_assembler       , only : assembler
+  use interface_nonlinear_solver, only : nonlinear_solver
 
   implicit none
 
   private
-  public :: newton_solve
+  public :: newton
 
-  ! Newton stopping criteria
-  real(dp), parameter :: abs_tol          = 1.0d-12
-  real(dp), parameter :: rel_tol          = 1.0d-11
-  integer , parameter :: max_newton_iters = 25
+  !-------------------------------------------------------------------!
+  ! Concrete Newton solver. Stopping criteria are members (defaults
+  ! reproduce the previous nonlinear_marching constants).
+  !-------------------------------------------------------------------!
+
+  type, extends(nonlinear_solver) :: newton
+
+     real(dp) :: abs_tol = 1.0d-12
+     real(dp) :: rel_tol = 1.0d-11
+     ! max_it (default 25), max_tol, print_level inherited from nonlinear_solver
+
+   contains
+
+     procedure :: solve
+
+  end type newton
 
 contains
 
@@ -38,8 +53,9 @@ contains
   ! Drive R(U) -> 0 for the newest state U = (nvars, order+1)
   !===================================================================!
 
-  subroutine newton_solve(system, coeff, U)
+  subroutine solve(this, system, coeff, U)
 
+    class(newton)   , intent(in)    :: this
     class(assembler), intent(inout) :: system
     type(scalar)    , intent(in)    :: coeff(:)
     type(scalar)    , intent(inout) :: U(:,:)
@@ -55,7 +71,7 @@ contains
 
     r0 = 0.0_dp
 
-    newton: do iter = 1, max_newton_iters
+    newton_iters: do iter = 1, this % max_it
 
        ! Evaluate the residual at the current state
        system % S = U
@@ -66,7 +82,7 @@ contains
        rnorm = vector_norm(res)
        if (iter .eq. 1) r0 = rnorm
 
-       if (rnorm .le. abs_tol .or. rnorm .le. rel_tol*r0) exit newton
+       if (rnorm .le. this % abs_tol .or. rnorm .le. this % rel_tol*r0) exit newton_iters
 
        ! Matrix-free linear solve  J dq = -res
        call cg_solve(system, coeff, -res, dq)
@@ -76,12 +92,12 @@ contains
           U(:,n) = U(:,n) + coeff(n)*dq
        end do
 
-    end do newton
+    end do newton_iters
 
     deallocate(res)
     deallocate(dq)
 
-  end subroutine newton_solve
+  end subroutine solve
 
   !===================================================================!
   ! Matrix-free conjugate gradient: solve J x = b where the operator
@@ -154,4 +170,4 @@ contains
 
   end function vector_norm
 
-end module nonlinear_marching
+end module class_newton_solver

@@ -24,7 +24,7 @@ module adjoint
   use iso_fortran_env    , only : dp => REAL64
   use interface_assembler, only : assembler
   use interface_function , only : functional
-  use nonlinear_marching , only : newton_solve
+  use class_newton_solver, only : newton
 
   implicit none
 
@@ -134,13 +134,14 @@ contains
     class(assembler), intent(inout) :: system
 
     type(scalar), allocatable :: U(:,:)
+    type(newton)              :: nlsolver
     integer                   :: n, norder
 
     n      = system % get_num_state_vars()
     norder = system % get_differential_order()
 
     allocate(U(n, norder + 1)); U = 0.0d0
-    call newton_solve(system, steady_coeff, U)
+    call nlsolver % solve(system, steady_coeff, U)
 
     deallocate(U)
 

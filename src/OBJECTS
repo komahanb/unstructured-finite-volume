@@ -1,10 +1,13 @@
 objects= \
 module_verbosity.o \
+interface_algebraic_solver.o \
 interface_assembler.o \
 interface_function.o \
 class_state_energy.o \
+interface_linear_solver.o \
+interface_nonlinear_solver.o \
 interface_integrator.o \
-nonlinear_marching.o \
+class_newton_solver.o \
 class_bdf.o \
 adjoint.o \
 class_adjoint.o \
@@ -14,6 +17,7 @@ class_set.o \
 class_list.o \
 interface_field.o \
 interface_physics.o \
+interface_flux.o \
 module_mesh_utils.o \
 interface_mesh_loader.o \
 class_gmsh_loader.o \
@@ -29,17 +33,13 @@ class_diffusion_flux.o \
 class_advection_flux.o \
 class_assembler.o \
 module_solver_monitor.o \
-interface_linear_solver.o \
-interface_preconditioner.o \
 class_distributed_cg.o \
 class_normal_cg.o \
 class_gmres.o \
 class_amg.o \
 class_conjugate_gradient.o \
-class_gmres_solver.o \
 class_gauss_jacobi.o \
 class_gauss_seidel.o \
 class_sor.o \
-class_time_integrator.o \
 class_config.o
 #tecplot_write.o

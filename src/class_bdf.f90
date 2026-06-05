@@ -16,7 +16,7 @@ module class_bdf
   use iso_fortran_env     , only : dp => REAL64
   use interface_integrator, only : integrator
   use interface_assembler , only : assembler
-  use nonlinear_marching  , only : newton_solve
+  use class_newton_solver , only : newton
 
   implicit none
 
@@ -146,6 +146,7 @@ contains
     integer     , intent(out)   :: ierr
 
     type(scalar), allocatable :: coeff(:)
+    type(newton)              :: nlsolver
     integer                   :: kk, torder, n, i
 
     ierr   = 0
@@ -175,7 +176,7 @@ contains
        allocate(coeff(torder+1))
 
        call this % get_linearization_coeff(p, h, coeff)
-       call newton_solve(this % system, coeff, U(kk,:,:))
+       call nlsolver % solve(this % system, coeff, U(kk,:,:))
 
        deallocate(coeff)
 

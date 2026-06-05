@@ -25,7 +25,8 @@
 module class_advection_flux
 
   use iso_fortran_env  , only : dp => REAL64
-  use interface_physics, only : flux, point_state
+  use interface_flux   , only : flux
+  use interface_physics, only : point_state
 
   implicit none
 

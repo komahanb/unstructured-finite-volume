@@ -8,7 +8,8 @@ module class_assembler
   use class_mesh              , only : mesh
   use class_string            , only : string
   use class_boundary_condition, only : boundary_condition, dirichlet, neumann, robin
-  use interface_physics       , only : flux, source, point_state
+  use interface_flux          , only : flux
+  use interface_physics       , only : source, point_state
   use class_diffusion_flux    , only : diffusion_flux, constant_source
   use class_fvm_field         , only : fvm_field
   use class_csr               , only : csr_matrix
@@ -59,12 +60,6 @@ module class_assembler
      class(source)      , allocatable :: src    ! source operator S(q, grad q)
      type(fvm_field)    , allocatable :: fld    ! cell-centred reconstruction
 
-     ! Transient (backward euler) support. The operator becomes
-     ! (M/dt - A) and the rhs (M/dt) phi_old - b, with M = cell volume.
-     logical               :: transient = .false.
-     real(dp)              :: dt = 0.0_dp
-     real(dp), allocatable :: phi_old(:)
-
      ! Matrix filters
      integer :: DIAGONAL       = 0
      integer :: LOWER_TRIANGLE = -1
@@ -86,9 +81,6 @@ module class_assembler
      ! The pde
      procedure :: set_equation
      procedure :: set_convection_scheme
-
-     ! Transient marching (backward euler)
-     procedure :: set_transient
 
      ! Evaluation routines
      procedure :: evaluate_vertex_flux
@@ -277,12 +269,6 @@ contains
     if (allocated(this % bcs)) deallocate(this % bcs)
     allocate(this % bcs(maxval(this % grid % tag_numbers), this % num_variables))
 
-    if (this % transient) then
-       if (allocated(this % phi_old)) deallocate(this % phi_old)
-       allocate(this % phi_old(this % num_state_vars))
-       this % phi_old = 0.0_dp
-    end if
-
     ! store the flux/source operators and the reconstruction field
     if (allocated(this % fx))  deallocate(this % fx)
     if (allocated(this % src)) deallocate(this % src)
@@ -292,25 +278,6 @@ contains
     allocate(this % fld, source = fvm_field(this % num_variables, this % num_state_vars))
 
   end subroutine set_equation
-
-  !===================================================================!
-  ! Enable backward-euler transient marching with step dt. The
-  ! time_integrator advances phi_old between solves.
-  !===================================================================!
-
-  subroutine set_transient(this, dt)
-
-    class(assembler), intent(inout) :: this
-    real(dp)        , intent(in)    :: dt
-
-    this % transient = .true.
-    this % dt = dt
-
-    if (allocated(this % phi_old)) deallocate(this % phi_old)
-    allocate(this % phi_old(this % num_state_vars))
-    this % phi_old = 0.0_dp
-
-  end subroutine set_transient
 
   !===================================================================!
   ! Stamp a resolved bc into the table (module-private helper). With no
@@ -569,20 +536,6 @@ contains
 
          end do loop_faces
 
-         ! Transient: operator (M/dt - A) (identical to the legacy path)
-         if (this % transient) then
-            do ivar = 1, nv
-               p = this % g % dof(icell, ivar)
-               Aq(p) = -Aq(p)
-               if (present(filter)) then
-                  if (filter .eq. this % DIAGONAL) &
-                       & Aq(p) = Aq(p) + this % grid % cell_volumes(icell)/this % dt*q(p)
-               else
-                  Aq(p) = Aq(p) + this % grid % cell_volumes(icell)/this % dt*q(p)
-               end if
-            end do
-         end if
-
        end associate
 
     end do loop_cells
@@ -610,8 +563,6 @@ contains
     integer               :: ndof, icell, iface, ivar, p, n, ncell, fcells(2), gface, ftag, nfc
     real(dp)              :: nf(3), keff, vn, wp, wn, alhs, arhs, farea, fdelta
     type(point_state)     :: st
-
-    if (this % transient) error stop "get_operator_csr: steady operator only"
 
     associate(nv => this % g % num_variables)
 
@@ -784,16 +735,6 @@ contains
           do ivar = 1, nv
              p    = this % g % dof(icell, ivar)
              b(p) = b(p) + real(Sval(ivar), dp)*this % grid % cell_volumes(icell)
-          end do
-       end do
-    end if
-
-    ! transient rhs (M/dt) phi_old - b_steady
-    if (this % transient .and. .not. bnd_only) then
-       do icell = 1, this % grid % num_cells
-          do ivar = 1, nv
-             p    = this % g % dof(icell, ivar)
-             b(p) = this % grid % cell_volumes(icell)/this % dt*this % phi_old(p) - b(p)
           end do
        end do
     end if

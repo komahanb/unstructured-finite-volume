@@ -26,7 +26,7 @@ module class_amg
   use iso_fortran_env        , only : dp => REAL64
   use class_csr              , only : csr_matrix, csr_transpose, csr_galerkin, &
        &                              csr_jacobi_smoothed_prolongation
-  use interface_preconditioner, only : preconditioner
+  use interface_linear_solver , only : preconditioner
 
   implicit none
 

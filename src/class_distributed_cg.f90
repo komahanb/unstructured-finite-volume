@@ -30,12 +30,15 @@ module class_distributed_cg
   use iso_fortran_env         , only : dp => REAL64
   use class_csr               , only : csr_matrix
   use class_partition         , only : partition
-  use interface_preconditioner, only : preconditioner
+  use class_graph             , only : graph
+  use class_assembler         , only : assembler
+  use interface_linear_solver , only : preconditioner, linear_solver
 
   implicit none
 
   private
   public :: halo, distributed_cg, owned_block
+  public :: distributed_cg_solver
   public :: dist_cg_last_iters        ! iterations of the last distributed solve
 
   ! Inner iterations of the most recent distributed_cg (diagnostics / tests).
@@ -62,6 +65,26 @@ module class_distributed_cg
   interface halo
      module procedure make_halo
   end interface halo
+
+  !-------------------------------------------------------------------!
+  ! linear_solver wrapper: partitions the assembler's graph across the
+  ! coarray images, builds the halo, assembles the operator + rhs, and
+  ! runs distributed_cg. With one image (serial -fcoarray=single build)
+  ! the partition is trivial and this reduces to ordinary CG. SPD
+  ! operators only (diffusion), like the serial conjugate_gradient.
+  !-------------------------------------------------------------------!
+
+  type, extends(linear_solver) :: distributed_cg_solver
+     class(assembler)     , allocatable :: FVAssembler
+     class(preconditioner), allocatable :: precond     ! optional per-image block precond
+     integer                            :: print_level = 0
+   contains
+     procedure :: solve => distributed_cg_solve
+  end type distributed_cg_solver
+
+  interface distributed_cg_solver
+     module procedure construct_dist
+  end interface distributed_cg_solver
 
 contains
 
@@ -353,5 +376,61 @@ contains
 
     B = csr_matrix(nown, nown, row_ptr, col_idx, vals)
   end function owned_block
+
+  !===================================================================!
+  ! Constructor for the distributed_cg linear-solver wrapper
+  !===================================================================!
+
+  type(distributed_cg_solver) function construct_dist(FVAssembler, max_it, max_tol, print_level, precond) result(this)
+    type(assembler)      , intent(in)           :: FVAssembler
+    integer              , intent(in)           :: max_it
+    real(dp)             , intent(in)           :: max_tol
+    integer              , intent(in), optional :: print_level
+    class(preconditioner), intent(in), optional :: precond
+    allocate(this % FVAssembler, source = FVAssembler)
+    this % max_it  = max_it
+    this % max_tol = max_tol
+    if (present(print_level)) this % print_level = print_level
+    if (present(precond))     allocate(this % precond, source = precond)
+  end function construct_dist
+
+  !===================================================================!
+  ! Partition across images, build the halo, assemble, run distributed CG.
+  !===================================================================!
+
+  subroutine distributed_cg_solve(this, x)
+
+    class(distributed_cg_solver), intent(in)  :: this
+    real(dp), allocatable       , intent(out) :: x(:)
+
+    type(csr_matrix)      :: A
+    type(graph)           :: g
+    type(partition)       :: p
+    type(halo)            :: h
+    real(dp), allocatable :: b(:)
+    integer               :: n, me, np
+
+    me = this_image()
+    np = num_images()
+
+    ! local copy of the graph (partition_rcb stamps vertex % part)
+    g = this % FVAssembler % g
+    call g % partition_rcb(this % FVAssembler % grid % cell_centers, np)
+    p = partition(g, np)
+    h = halo(p, me, np)
+
+    call this % FVAssembler % get_operator_csr(A)
+    n = A % nrows
+    allocate(b(n), x(n))
+    call this % FVAssembler % get_source(b)
+
+    if (allocated(this % precond)) then
+       call distributed_cg(A, b, x, h, this % max_it, this % max_tol, &
+            &              this % print_level, precond = this % precond)
+    else
+       call distributed_cg(A, b, x, h, this % max_it, this % max_tol, this % print_level)
+    end if
+
+  end subroutine distributed_cg_solve
 
 end module class_distributed_cg

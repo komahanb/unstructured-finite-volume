@@ -66,6 +66,9 @@ contains
     A % nrows = nrows
     A % ncols = ncols
     A % nnz   = size(col_idx)
+    allocate(A % row_ptr(size(row_ptr)))
+    allocate(A % col_idx(size(col_idx)))
+    allocate(A % vals(size(vals)))
     A % row_ptr = row_ptr
     A % col_idx = col_idx
     A % vals    = vals
@@ -82,6 +85,8 @@ contains
     A % nrows = nrows
     A % ncols = ncols
     A % nnz   = size(col_idx)
+    allocate(A % row_ptr(size(row_ptr)))
+    allocate(A % col_idx(size(col_idx)))
     A % row_ptr = row_ptr
     A % col_idx = col_idx
     allocate(A % vals(A % nnz))

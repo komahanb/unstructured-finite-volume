@@ -207,7 +207,9 @@ contains
     end do
 
     allocate(cell_indices(num_cells))
-    forall(icell=1:num_cells) cell_indices(icell) = icell
+    do icell = 1, num_cells
+      cell_indices(icell) = icell
+    end do
 
     ! Fill the vertex cells based on A
     allocate(vertex_cells(maxval(num_vertex_cells), num_vertices))

@@ -125,6 +125,7 @@ contains
   subroutine physics_get_design_vars(this, x)
     class(physics), intent(in)  :: this
     real(dp)      , intent(out) :: x(:)
+    x = 0.0_dp
   end subroutine physics_get_design_vars
 
   !===================================================================!

@@ -277,6 +277,8 @@ contains
     class(assembler), intent(in)  :: this
     real(dp)        , intent(out) :: x(:)
 
+    x = 0.0_dp
+
   end subroutine get_design_vars
 
   !===================================================================!

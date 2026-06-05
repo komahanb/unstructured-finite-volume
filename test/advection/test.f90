@@ -23,6 +23,9 @@
 !                     iterations; plain CG (correct only for SPD) is wildly
 !                     inefficient here (and not guaranteed to converge at all
 !                     for stronger advection).
+!   5. upwinding    - at high cell-Peclet central differencing oscillates (the
+!                     solution overshoots the physical [0,1] range); the upwind
+!                     scheme stays monotone and bounded.
 !
 ! A nonzero exit (error stop) means a check failed.
 !
@@ -34,7 +37,7 @@ program test_advection
   use iso_fortran_env        , only : dp => real64
   use class_gmsh_loader      , only : gmsh_loader
   use class_mesh             , only : mesh
-  use class_assembler        , only : assembler
+  use class_assembler        , only : assembler, CONVECTION_UPWIND
   use class_advection_flux   , only : advection_diffusion_flux
   use class_diffusion_flux   , only : constant_source
   use class_csr              , only : csr_matrix
@@ -51,6 +54,7 @@ program test_advection
   call check_fidelity(nfail)
   call check_exact_1d(nfail)
   call check_gmres_vs_cg(nfail)
+  call check_upwind(nfail)
 
   write(*,'(a)') " ============================================="
   if (nfail .eq. 0) then
@@ -241,5 +245,42 @@ contains
     if (res_g .gt. 1.0e-6_dp) nf = nf + 1                         ! GMRES must solve it
     if (cg_last_iters .lt. 10*gmres_last_iters) nf = nf + 1       ! CG far less efficient
   end subroutine check_gmres_vs_cg
+
+  !===================================================================!
+  ! 5. upwinding: at high cell-Peclet central differencing oscillates out of
+  ! the physical [0,1] range; upwind stays monotone/bounded
+  !===================================================================!
+  subroutine check_upwind(nf)
+    integer, intent(inout) :: nf
+    class(assembler), allocatable :: fvm
+    type(csr_matrix) :: A
+    real(dp), allocatable :: b(:), x(:)
+    real(dp) :: minc, maxc, minu, maxu
+    integer  :: m
+
+    ! cell-Peclet ~ vx*h/kappa = 80/20 = 4 on square-20 (central oscillates)
+    call make_advdiff(20, 80.0_dp, 1.0_dp, fvm)
+
+    ! central (default)
+    call fvm % get_operator_csr(A)
+    m = A % nrows
+    allocate(b(m), x(m))
+    call fvm % get_source(b)
+    call gmres(A, b, x, 50000, 300, 1.0e-9_dp, 0)
+    minc = minval(x); maxc = maxval(x)
+
+    ! upwind
+    call fvm % set_convection_scheme(CONVECTION_UPWIND)
+    call fvm % get_operator_csr(A)
+    call fvm % get_source(b)
+    call gmres(A, b, x, 50000, 300, 1.0e-9_dp, 0)
+    minu = minval(x); maxu = maxval(x)
+
+    write(*,'(a)') " ---- high-Peclet (cell-Pe~4): central vs upwind range ----"
+    write(*,'(2x,a,es11.3,a,es11.3)') "central  min=", minc, "  max=", maxc
+    write(*,'(2x,a,es11.3,a,es11.3)') "upwind   min=", minu, "  max=", maxu
+    if (minc .gt. -1.0e-3_dp .and. maxc .lt. 1.0_dp + 1.0e-3_dp) nf = nf + 1  ! central must oscillate
+    if (minu .lt. -1.0e-6_dp .or.  maxu .gt. 1.0_dp + 1.0e-6_dp) nf = nf + 1  ! upwind must stay bounded
+  end subroutine check_upwind
 
 end program test_advection

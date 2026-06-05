@@ -19,6 +19,11 @@ module class_assembler
 
   private
   public :: assembler
+  public :: CONVECTION_CENTRAL, CONVECTION_UPWIND
+
+  ! Convection scheme for the advective face flux
+  integer, parameter :: CONVECTION_CENTRAL = 1   ! 2nd-order central differencing
+  integer, parameter :: CONVECTION_UPWIND  = 2   ! 1st-order upwind (stable, high Peclet)
 
   !===================================================================!
   ! Class responsible for matrix, right hand side assembly and boundary
@@ -65,6 +70,9 @@ module class_assembler
      integer :: LOWER_TRIANGLE = -1
      integer :: UPPER_TRIANGLE = 1
 
+     ! Convective face-flux scheme (central by default; upwind for stability)
+     integer :: convection_scheme = CONVECTION_CENTRAL
+
    contains
 
      procedure :: create_vector
@@ -77,6 +85,7 @@ module class_assembler
 
      ! The pde
      procedure :: set_equation
+     procedure :: set_convection_scheme
 
      ! Transient marching (backward euler)
      procedure :: set_transient
@@ -474,7 +483,7 @@ contains
     integer, optional, intent(in)    :: filter
 
     integer           :: icell, iface, ivar, p, n, ncell, fcells(2), gface
-    real(dp)          :: nf(3), keff, vn, diag, neigh
+    real(dp)          :: nf(3), keff, vn, wp, wn, alhs, arhs, diag, neigh
     type(point_state) :: st
 
     associate(nv => this % g % num_variables)
@@ -519,10 +528,10 @@ contains
                     n = this % g % dof(ncell, ivar)
                     keff  = flux_keff(this % fx, st, nf, ivar)
                     vn    = flux_vn  (this % fx, st, nf, ivar)
-                    ! d(F.n)/dq_p and /dq_n: diffusion (keff/fdelta) + central
-                    ! advection (0.5 vn on each side; skew-symmetric -> nonsym)
-                    diag  = -farea*( keff/fdelta + 0.5d0*vn)*q(p)
-                    neigh = -farea*(-keff/fdelta + 0.5d0*vn)*q(n)
+                    call adv_weights(vn, this % convection_scheme, wp, wn)
+                    ! d(F.n)/dq_p and /dq_n: diffusion (keff/fdelta) + advection
+                    diag  = -farea*( keff/fdelta + wp)*q(p)
+                    neigh = -farea*(-keff/fdelta + wn)*q(n)
                     if (present(filter)) then
                        if (filter .eq. this % UPPER_TRIANGLE) then
                           if (ncell .gt. icell) Aq(p) = Aq(p) + neigh
@@ -542,14 +551,14 @@ contains
                     p    = this % g % dof(icell, ivar)
                     keff = flux_keff(this % fx, st, nf, ivar)
                     vn   = flux_vn  (this % fx, st, nf, ivar)
+                    call adv_boundary(this % bcs(ftag,ivar), farea, fdelta, vn, &
+                         &            this % convection_scheme, alhs, arhs)
                     associate(bc => this % bcs(ftag,ivar))
                       if (present(filter)) then
                          if (filter .eq. this % DIAGONAL) &
-                              & Aq(p) = Aq(p) + ( bc % lhs_coeff(farea, fdelta, keff) &
-                              &                 + bc % adv_lhs_coeff(farea, fdelta, vn) )*q(p)
+                              & Aq(p) = Aq(p) + ( bc % lhs_coeff(farea, fdelta, keff) + alhs )*q(p)
                       else
-                         Aq(p) = Aq(p) + ( bc % lhs_coeff(farea, fdelta, keff) &
-                              &          + bc % adv_lhs_coeff(farea, fdelta, vn) )*q(p)
+                         Aq(p) = Aq(p) + ( bc % lhs_coeff(farea, fdelta, keff) + alhs )*q(p)
                       end if
                     end associate
                  end do
@@ -599,7 +608,7 @@ contains
 
     integer , allocatable :: nnz_row(:), row_ptr(:), col_idx(:), cursor(:)
     integer               :: ndof, icell, iface, ivar, p, n, ncell, fcells(2), gface, ftag, nfc
-    real(dp)              :: nf(3), keff, vn, farea, fdelta
+    real(dp)              :: nf(3), keff, vn, wp, wn, alhs, arhs, farea, fdelta
     type(point_state)     :: st
 
     if (this % transient) error stop "get_operator_csr: steady operator only"
@@ -690,16 +699,18 @@ contains
                 n    = this % g % dof(ncell, ivar)
                 keff = flux_keff(this % fx, st, nf, ivar)
                 vn   = flux_vn  (this % fx, st, nf, ivar)
-                call A % add_entry(p, p, -farea*(keff/fdelta + 0.5d0*vn))
-                call A % add_entry(p, n,  farea*(keff/fdelta - 0.5d0*vn))
+                call adv_weights(vn, this % convection_scheme, wp, wn)
+                call A % add_entry(p, p, -farea*(keff/fdelta + wp))
+                call A % add_entry(p, n,  farea*(keff/fdelta - wn))
              end do
           else
              do ivar = 1, nv
                 p    = this % g % dof(icell, ivar)
                 keff = flux_keff(this % fx, st, nf, ivar)
                 vn   = flux_vn  (this % fx, st, nf, ivar)
-                call A % add_entry(p, p, this % bcs(ftag,ivar) % lhs_coeff(farea, fdelta, keff) &
-                     &                 + this % bcs(ftag,ivar) % adv_lhs_coeff(farea, fdelta, vn))
+                call adv_boundary(this % bcs(ftag,ivar), farea, fdelta, vn, &
+                     &            this % convection_scheme, alhs, arhs)
+                call A % add_entry(p, p, this % bcs(ftag,ivar) % lhs_coeff(farea, fdelta, keff) + alhs)
              end do
           end if
 
@@ -724,7 +735,7 @@ contains
 
     logical           :: bnd_only
     integer           :: icell, iface, ivar, p, gface
-    real(dp)          :: nf(3), keff, vn
+    real(dp)          :: nf(3), keff, vn, alhs, arhs
     type(point_state) :: st
     type(scalar)      :: Sval(this % g % num_variables)
 
@@ -755,8 +766,9 @@ contains
                     p    = this % g % dof(icell, ivar)
                     keff = flux_keff(this % fx, st, nf, ivar)
                     vn   = flux_vn  (this % fx, st, nf, ivar)
-                    b(p) = b(p) + this % bcs(ftag,ivar) % rhs_coeff(farea, fdelta, keff) &
-                         &      + this % bcs(ftag,ivar) % adv_rhs_coeff(farea, fdelta, vn)
+                    call adv_boundary(this % bcs(ftag,ivar), farea, fdelta, vn, &
+                         &            this % convection_scheme, alhs, arhs)
+                    b(p) = b(p) + this % bcs(ftag,ivar) % rhs_coeff(farea, fdelta, keff) + arhs
                  end do
               end if
             end associate
@@ -829,6 +841,58 @@ contains
     vn  = real(dot_product(nf, dFq(:,ivar,ivar)), dp)
 
   end function flux_vn
+
+  !===================================================================!
+  ! Select the convective face-flux scheme (CONVECTION_CENTRAL / _UPWIND)
+  !===================================================================!
+
+  subroutine set_convection_scheme(this, scheme)
+    class(assembler), intent(inout) :: this
+    integer         , intent(in)    :: scheme
+    this % convection_scheme = scheme
+  end subroutine set_convection_scheme
+
+  !===================================================================!
+  ! Interior advective face weights: the face flux is
+  !   Phi_adv = farea * (wp*q_p + wn*q_n).
+  ! central -> wp = wn = vn/2 (2nd order, skew-symmetric); upwind -> the
+  ! upstream cell carries it (wp = max(vn,0), wn = min(vn,0); 1st order,
+  ! unconditionally stable - adds |vn|/2 numerical diffusion).
+  !===================================================================!
+
+  pure subroutine adv_weights(vn, scheme, wp, wn)
+    real(dp), intent(in)  :: vn
+    integer , intent(in)  :: scheme
+    real(dp), intent(out) :: wp, wn
+    if (scheme .eq. CONVECTION_UPWIND) then
+       wp = max(vn, 0.0_dp)
+       wn = min(vn, 0.0_dp)
+    else
+       wp = 0.5_dp*vn
+       wn = 0.5_dp*vn
+    end if
+  end subroutine adv_weights
+
+  !===================================================================!
+  ! Boundary advective contribution: diagonal coefficient (on q_p) and the
+  ! rhs constant. central and upwind-inflow use the bc face value (the same
+  ! robin elimination as the diffusive closure); upwind-outflow (vn >= 0)
+  ! upwinds the interior value q_p, so the flux farea*vn*q_p is all diagonal.
+  !===================================================================!
+
+  pure subroutine adv_boundary(bc, farea, fdelta, vn, scheme, alhs, arhs)
+    type(boundary_condition), intent(in)  :: bc
+    real(dp)                , intent(in)  :: farea, fdelta, vn
+    integer                 , intent(in)  :: scheme
+    real(dp)                , intent(out) :: alhs, arhs
+    if (scheme .eq. CONVECTION_UPWIND .and. vn .ge. 0.0_dp) then
+       alhs = -farea*vn
+       arhs = 0.0_dp
+    else
+       alhs = bc % adv_lhs_coeff(farea, fdelta, vn)
+       arhs = bc % adv_rhs_coeff(farea, fdelta, vn)
+    end if
+  end subroutine adv_boundary
 
   !===================================================================!
   ! Compute vertex values by interpolating cell center values

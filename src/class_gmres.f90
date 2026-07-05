@@ -50,13 +50,13 @@ module class_gmres
 
   type, extends(linear_solver) :: gmres_solver
 
-     ! stateless w.r.t. the system: solve takes the assembler as an argument
-     class(preconditioner), allocatable :: precond     ! optional; absent => plain GMRES
-     integer                            :: restart     = 200
+     integer :: restart = 200
 
    contains
 
-     procedure :: solve
+     ! the sweep consumed by the inherited march (the kernel below runs
+     ! on any operator it is handed)
+     procedure :: iterate
      procedure :: gmres
 
   end type gmres_solver
@@ -84,36 +84,37 @@ contains
     this % max_it  = max_it
     this % max_tol = max_tol
 
+    this % res_file = 'gmres.res'
+
     if (present(restart))     this % restart     = restart
     if (present(print_level)) this % print_level = print_level
-    if (present(precond))     allocate(this % precond,     source = precond)
+    ! the right preconditioner fills the post-operator slot (applied per
+    ! arnoldi vector, back-mapped inside the kernel)
+    if (present(precond))     allocate(this % post_conditioner, source = precond)
 
   end function construct
 
   !===================================================================!
-  ! Assemble the operator + rhs and solve A x = b with restarted GMRES.
+  ! The sweep: assemble the operator and run restarted GMRES on the
+  ! correction equation A dx = r from dx = 0.
   !===================================================================!
 
-  impure subroutine solve(this, system, x, mode)
+  impure subroutine iterate(this, system, r, dx, iter)
 
-    class(gmres_solver)  , intent(in)           :: this
-    class(assembler)     , intent(in)           :: system
-    real(dp), allocatable, intent(out)          :: x(:)
-    integer              , intent(in), optional :: mode  ! FORWARD (default) / REVERSE
+    class(gmres_solver)  , intent(in)  :: this
+    class(assembler)     , intent(in)  :: system
+    real(dp)             , intent(in)  :: r(:)
+    real(dp)             , intent(out) :: dx(:)
+    integer              , intent(out) :: iter
 
-    type(csr_matrix)      :: A
-    real(dp), allocatable :: b(:)
-    integer               :: n
+    type(csr_matrix) :: A
 
     call system % get_operator_csr(A)
 
-    n = system % num_state_vars
-    allocate(b(n), x(n))
-    call system % get_source(b)
+    call this % gmres(A, r, dx)
+    iter = gmres_last_iters
 
-    call this % gmres(A, b, x)
-
-  end subroutine solve
+  end subroutine iterate
 
   !===================================================================!
   ! Solve A x = b with restarted, optionally right-preconditioned GMRES.
@@ -171,8 +172,8 @@ contains
           total = total + 1
 
           ! w = A M^-1 v_j  (right preconditioning; w = A v_j if none)
-          if (allocated(this % precond)) then
-             call this % precond % apply(V(:,j), z)
+          if (allocated(this % post_conditioner)) then
+             call this % post_conditioner % apply(V(:,j), z)
              call A % matvec(z, w)
           else
              call A % matvec(V(:,j), w)
@@ -226,8 +227,8 @@ contains
        do i = 1, j
           u = u + y(i)*V(:,i)
        end do
-       if (allocated(this % precond)) then
-          call this % precond % apply(u, du)
+       if (allocated(this % post_conditioner)) then
+          call this % post_conditioner % apply(u, du)
           x = x + du
        else
           x = x + u

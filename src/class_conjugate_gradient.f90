@@ -1,6 +1,13 @@
 !=====================================================================!
-! Conjugate Gradient linear solver class that uses the functionalities of assembler class
-! in the iterative solution process.
+! Conjugate-gradient linear solver: supplies the sweep (`iterate`) -
+! one preconditioned cg pass driving the correction equation A dx = r -
+! and inherits the residual-minimization march from linear_solver. Its
+! optional preconditioner fills the inherited pre_conditioner slot
+! (applied inside every cg iteration).
+!
+! One documented override: the newton/bdf linearized path (lin_coeff
+! set) solves the different frozen system J dq = rhs; that state moves
+! to the system in the linearization commit.
 !=====================================================================!
 
 module class_conjugate_gradient
@@ -28,13 +35,10 @@ module class_conjugate_gradient
 
   type, extends(linear_solver) :: conjugate_gradient
 
-     ! stateless w.r.t. the system: solve takes the assembler as an argument
-     class(preconditioner), allocatable :: precond     ! optional; absent => plain CG
-
      ! Newton/BDF linearized mode: when lin_coeff is set, solve drives the
      ! matrix-free system  J dq = rhs,  J v = add_jacobian_vector_product(.,.,
      ! lin_coeff) (transpose in REVERSE), with rhs the external rhs if set
-     ! else the system residual -R. Unset => the steady A x = b path below.
+     ! else the system residual -R. Unset => the inherited march below.
      real(dp), allocatable :: lin_coeff(:)
      real(dp), allocatable :: rhs(:)
 
@@ -43,11 +47,7 @@ module class_conjugate_gradient
      ! type bound procedures
      procedure :: solve
      procedure :: iterate
-     procedure, private :: apply_precond
      procedure, private :: solve_linearized
-
-     ! destructor
-     final :: destroy
 
   end type conjugate_gradient
 
@@ -78,27 +78,15 @@ contains
     this % print_level = print_level
     this % res_file    = 'cg.res'
 
-    ! optional preconditioner (absent => plain CG, bit-identical to before)
-    if (present(precond)) allocate(this % precond, source = precond)
+    ! optional preconditioner fills the pre-operator slot (plain CG without)
+    if (present(precond)) allocate(this % pre_conditioner, source = precond)
 
   end function construct
 
   !===================================================================!
-  ! Destructor for linear solver
-  !===================================================================!
-
-  pure subroutine destroy(this)
-
-    type(conjugate_gradient), intent(inout) :: this
-
-    if (allocated(this % precond)) deallocate(this % precond)
-
-  end subroutine destroy
-
-  !===================================================================!
-  ! Solve. Resets the iteration counter, takes the Newton/BDF linearized
-  ! path when lin_coeff is set, and otherwise runs the deferred-correction
-  ! outer loop inherited from linear_solver around the CG sweep below.
+  ! Solve. Resets the iteration counter, takes the newton/bdf linearized
+  ! path when lin_coeff is set (the documented override), and otherwise
+  ! runs the inherited residual-minimization march around the cg sweep.
   !===================================================================!
 
   impure subroutine solve(this, system, x, mode)
@@ -117,134 +105,100 @@ contains
        return
     end if
 
-    call this % correction_solve(system, x, mode)
+    call this % converge(system, x, mode)
 
   end subroutine solve
 
   !===================================================================!
-  ! Correction sweep: (preconditioned) conjugate gradient on the
-  ! skew-corrected system
+  ! The sweep: one (preconditioned) conjugate-gradient pass driving the
+  ! correction equation A dx = r from dx = 0.
   !===================================================================!
 
-  impure subroutine iterate(this, system, x, ss, iter)
+  impure subroutine iterate(this, system, r, dx, iter)
 
-    class(conjugate_gradient) , intent(in)    :: this
-    class(assembler)          , intent(in)    :: system
-    real(dp)                  , intent(inout) :: x(:)
-    real(dp)                  , intent(in)    :: ss(:)
-    integer                   , intent(out)   :: iter
+    class(conjugate_gradient) , intent(in)  :: this
+    class(assembler)          , intent(in)  :: system
+    real(dp)                  , intent(in)  :: r(:)
+    real(dp)                  , intent(out) :: dx(:)
+    integer                   , intent(out) :: iter
 
-    ! Create local data
-    real(dp), allocatable :: p(:), r(:), w(:), Ax(:), tmp(:), z(:)
-    real(dp), allocatable :: b(:)
+    ! Local data. z holds the preconditioned residual M^-1 res
+    ! (z = res when no pre-operator is attached -> plain CG).
+    real(dp), allocatable :: p(:), res(:), w(:), z(:)
     real(dp)              :: alpha, beta
     real(dp)              :: bnorm, rnorm
     real(dp)              :: tol
     real(dp)              :: rho(2)
 
-
-    ! Start the iteration counter
     iter = 1
+    dx   = 0.0_dp
 
-    ! Memory allocations. z holds the preconditioned residual M^-1 r
-    ! (z = r when no preconditioner is attached -> reduces to plain CG).
-    allocate(b,p,r,w,Ax,tmp,z,mold=x)
+    allocate(p, res, w, z, mold = dx)
 
-    ! Norm of the right hand side
-    call system % get_source(tmp)
-    ! Add the additional right hand side supplied
-    tmp = tmp + ss
-    b = tmp
-    bnorm = norm2(b)
+    ! the imbalance handed in is the right-hand side of the correction
+    ! equation; at dx = 0 it is also the whole residual
+    res   = r
+    bnorm = sqrt(system % inner_product(res, res))
 
     ! Homogeneous case
     if (bnorm .le. this % max_tol) then
-       x = 0.0d0
+       iter = 0
        return
     end if
 
-    ! Norm of the initial residual
-    call system % get_jacobian_vector_product(tmp, x)
-    Ax = tmp
-    r         = b - Ax ! could directly form this residual using get_residual_call
-    rnorm     = norm2(r)
-    tol       = rnorm/bnorm
-    ! preconditioned residual z = M^-1 r; rho = <r, z> (PCG). z = r when
-    ! unpreconditioned, so rho = <r, r> and this is exactly plain CG.
-    call this % apply_precond(r, z)
-    rho(2)    = dot_product(r, z)
+    rnorm = bnorm
+    tol   = 1.0_dp
 
-    !open(13, file='cg.log', action='write', position='append')
+    ! preconditioned residual z = M^-1 res; rho = <res, z> (PCG). z = res
+    ! when unpreconditioned, so rho = <res, res> and this is plain CG.
+    call this % apply_pre_conditioner(res, z)
+    rho(2) = system % inner_product(res, z)
 
-    ! Apply Iterative scheme until tolerance is achieved
+    ! Apply the iterative scheme until tolerance is achieved
     do while ((tol .gt. this % max_tol) .and. (iter .lt. this % max_it))
 
-       ! step (a) compute the descent direction (on the preconditioned residual)
+       ! step (a) descent direction (on the preconditioned residual)
        if ( iter .eq. 1) then
-          ! steepest descent direction p
           p = z
        else
-          ! take a conjugate direction
           beta = rho(2)/rho(1)
           p = z + beta*p
        end if
 
-       ! step (b) compute the solution update
-       call system % get_jacobian_vector_product(tmp, p)
-       w = tmp
+       ! step (b) the operator action on the direction
+       call system % get_jacobian_residual_product(w, p)
 
-       ! step (c) compute the step size for update
-       alpha = rho(2)/dot_product(p, w)
+       ! step (c) the step size
+       alpha = rho(2)/system % inner_product(p, w)
 
-       ! step (d) Add dx to the old solution
-       x = x + alpha*p
+       ! step (d) update the correction
+       dx = dx + alpha*p
 
-       ! step (e) compute the new residual (true residual drives the tolerance)
-       r = r - alpha*w
+       ! step (e) the new residual (the true residual drives the tolerance)
+       res = res - alpha*w
 
-       ! step(f) update values before next iteration
-       rnorm = norm2(r)
-       tol = rnorm/bnorm
+       ! step (f) update values before the next iteration
+       rnorm = sqrt(system % inner_product(res, res))
+       tol   = rnorm/bnorm
 
-       ! write(13,*) iter, tol
        if (this % print_level .gt. 1) then
-          write(*,*) iter, tol, rnorm, rho ! causes valgrind errors
+          write(*,*) iter, tol, rnorm, rho
        end if
 
        iter = iter + 1
 
-       call this % apply_precond(r, z)
+       call this % apply_pre_conditioner(res, z)
        rho(1) = rho(2)
-       rho(2) = dot_product(r, z)
+       rho(2) = system % inner_product(res, z)
 
     end do
-
-    !close(13)
 
     ! record inner iterations done (iter starts at 1; iter-1 = CG steps)
     cg_last_iters = cg_last_iters + (iter - 1)
 
-    deallocate(r, p, w, b, Ax, tmp, z)
+    deallocate(res, p, w, z)
 
   end subroutine iterate
-
-  !===================================================================!
-  ! Apply the preconditioner z = M^-1 r, or z = r if none is attached
-  !===================================================================!
-
-  impure subroutine apply_precond(this, r, z)
-
-    class(conjugate_gradient), intent(in)  :: this
-    real(dp)                 , intent(in)  :: r(:)
-    real(dp)                 , intent(out) :: z(:)
-
-    if (allocated(this % precond)) then
-       call this % precond % apply(r, z)
-    else
-       z = r
-    end if
-
-  end subroutine apply_precond
 
   !===================================================================!
   ! Matrix-free CG for the linearized system  J dq = rhs, where
@@ -287,11 +241,11 @@ contains
     x = 0.0_dp
     r = b
     p = r
-    rs_old = dot_product(r, r)
+    rs_old = system % inner_product(r, r)
 
     cg: do it = 1, max_it
 
-       if (norm2(r) .le. 1.0d-14) exit cg
+       if (sqrt(system % inner_product(r, r)) .le. 1.0d-14) exit cg
 
        Jp = 0.0_dp
        if (dir .eq. REVERSE) then
@@ -300,7 +254,7 @@ contains
           call system % add_jacobian_vector_product(Jp, p, this % lin_coeff)
        end if
 
-       pJp = dot_product(p, Jp)
+       pJp = system % inner_product(p, Jp)
        if (abs(pJp) .le. tiny(1.0_dp)) exit cg
 
        alpha = rs_old/pJp
@@ -308,7 +262,7 @@ contains
        x = x + alpha*p
        r = r - alpha*Jp
 
-       rs_new = dot_product(r, r)
+       rs_new = system % inner_product(r, r)
        p      = r + (rs_new/rs_old)*p
        rs_old = rs_new
 

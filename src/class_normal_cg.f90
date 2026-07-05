@@ -57,12 +57,12 @@ module class_normal_cg
 
   type, extends(linear_solver) :: normal_cg
 
-     ! stateless w.r.t. the system: solve takes the assembler as an argument
-     integer                       :: method      = CGNR_METHOD
+     integer :: method = CGNR_METHOD
 
    contains
 
-     procedure :: solve
+     ! the sweep consumed by the inherited march
+     procedure :: iterate
      procedure :: cgnr
      procedure :: cgne
 
@@ -95,33 +95,33 @@ contains
   end function construct
 
   !===================================================================!
-  ! Assemble the operator + rhs and solve with CGNR or CGNE.
+  ! The sweep: assemble the operator and run CGNR or CGNE on the
+  ! correction equation A dx = r from dx = 0 (both directions of the
+  ! one product: the normal equations are the slope-zero condition of
+  ! minimizing the residual's size).
   !===================================================================!
 
-  impure subroutine solve(this, system, x, mode)
+  impure subroutine iterate(this, system, r, dx, iter)
 
-    class(normal_cg)     , intent(in)           :: this
-    class(assembler)     , intent(in)           :: system
-    real(dp), allocatable, intent(out)          :: x(:)
-    integer              , intent(in), optional :: mode  ! FORWARD (default) / REVERSE
+    class(normal_cg)     , intent(in)  :: this
+    class(assembler)     , intent(in)  :: system
+    real(dp)             , intent(in)  :: r(:)
+    real(dp)             , intent(out) :: dx(:)
+    integer              , intent(out) :: iter
 
-    type(csr_matrix)      :: A
-    real(dp), allocatable :: b(:)
-    integer               :: n
+    type(csr_matrix) :: A
 
     call system % get_operator_csr(A)
 
-    n = system % num_state_vars
-    allocate(b(n), x(n))
-    call system % get_source(b)
-
     if (this % method .eq. CGNE_METHOD) then
-       call this % cgne(A, b, x)
+       call this % cgne(A, r, dx)
+       iter = cgne_last_iters
     else
-       call this % cgnr(A, b, x)
+       call this % cgnr(A, r, dx)
+       iter = cgnr_last_iters
     end if
 
-  end subroutine solve
+  end subroutine iterate
 
   !===================================================================!
   ! CGNR: CG on A^T A x = A^T b (residual-minimizing / LSQR).

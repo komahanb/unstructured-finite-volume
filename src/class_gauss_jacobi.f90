@@ -1,6 +1,7 @@
 !=====================================================================!
-! Gauss-Jacobi linear solver: supplies only the correction sweep
-! (`iterate`); the deferred-correction outer solve is inherited from
+! Diagonal-sweep linear solver (traditionally: Gauss-Jacobi): supplies
+! only the sweep (`iterate`) - inverting the self-loop subgraph of the
+! operator - and inherits the residual-minimization march from
 ! linear_solver.
 !=====================================================================!
 
@@ -11,7 +12,7 @@ module class_gauss_jacobi
   use interface_assembler     , only : assembler, DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE
 
   implicit none
-  
+
   ! Expose only the linear solver datatype
   private
   public :: gauss_jacobi
@@ -22,15 +23,10 @@ module class_gauss_jacobi
 
   type, extends(linear_solver) :: gauss_jacobi
 
-     ! stateless w.r.t. the system: solve takes the assembler as an argument
-
    contains
 
-     ! correction sweep consumed by the inherited deferred-correction solve
+     ! the sweep consumed by the inherited march
      procedure :: iterate
-
-     ! destructor
-     final :: destroy
 
   end type gauss_jacobi
 
@@ -43,11 +39,11 @@ module class_gauss_jacobi
   end interface gauss_jacobi
 
 contains
-  
+
   !===================================================================!
   ! Constructor for linear solver
   !===================================================================!
-  
+
   pure type(gauss_jacobi) function construct(max_it, &
        & max_tol, print_level) result (this)
 
@@ -63,96 +59,64 @@ contains
   end function construct
 
   !===================================================================!
-  ! Destructor for linear solver
+  ! The sweep: jacobi iteration on the correction equation A dx = r
+  ! from dx = 0, inverting the diagonal (the self-loops) each pass.
   !===================================================================!
 
-  pure subroutine destroy(this)
+  impure subroutine iterate(this, system, r, dx, iter)
 
-    type(gauss_jacobi), intent(inout) :: this
-
-!!$    end if
-!!$    
-
-  end subroutine destroy
-
-  !===================================================================!
-  ! Correction sweep: Jacobi iteration on the skew-corrected system
-  !===================================================================!
-
-  impure subroutine iterate(this, system, x, ss, iter)
-
-    class(gauss_jacobi) , intent(in)    :: this
-    class(assembler)    , intent(in)    :: system
-    real(dp)                  , intent(inout) :: x(:)
-    real(dp)                  , intent(in)    :: ss(:)
-    integer                   , intent(out)   :: iter
+    class(gauss_jacobi) , intent(in)  :: this
+    class(assembler)    , intent(in)  :: system
+    real(dp)            , intent(in)  :: r(:)
+    real(dp)            , intent(out) :: dx(:)
+    integer             , intent(out) :: iter
 
     ! Locals
-    real(dp) :: tol
-    real(dp) , allocatable :: b(:)
-    real(dp) , allocatable :: Ux(:)
-    real(dp) , allocatable :: Lx(:)
-    real(dp) , allocatable :: D(:)
-    real(dp) , allocatable :: R(:)
-    real(dp) , allocatable :: xnew(:)
-    real(dp) , allocatable :: identity(:)
+    real(dp) :: tol, bnorm
+    real(dp) , allocatable :: Ux(:), Lx(:), D(:), R2(:), xnew(:), identity(:)
 
-    real(dp) :: bnorm
+    dx = 0.0_dp
+    allocate(Ux, Lx, D, R2, xnew, identity, mold = dx)
 
-    allocate(b, Ux, Lx, D, R, xnew, identity, mold=x)
-
-    ! Identity vector
+    ! Extract the diagonal entries (the self-loop subgraph on ones)
     identity = 1.0d0
-    
-    ! Extract the diagonal entries
-    call system % get_jacobian_vector_product(&
-         & D, identity, filter = DIAGONAL)
+    call system % get_jacobian_residual_product(D, identity, part = DIAGONAL)
 
-    ! Assemble RHS of the linear system (source + boundary terms)
-    call system % get_source(b)
-
-    ! Add the skew source terms if supplied 
-    b = b + ss
-
-    bnorm = norm2(b)
+    bnorm = sqrt(system % inner_product(r, r))
 
     ! Homogeneous case (nothing to do)
     if (bnorm .le. this % max_tol) then
-       x = 0.0d0
+       iter = 0
        return
     end if
 
     !-----------------------------------------------------------------!
-    ! Apply Gauss Jacobi Iterative scheme until tolerance is achieved
+    ! Apply the jacobi sweep until tolerance is achieved
     !-----------------------------------------------------------------!
 
-    iter = 1; tol  = huge(1.0d0);
+    iter = 1; tol  = huge(1.0d0)
     do while ((tol .gt. this % max_tol) .and. (iter .lt. this % max_it))
 
-       ! Form the residual (partial) after split
-       call system % get_jacobian_vector_product(&
-            & Ux, x, filter = UPPER_TRIANGLE)
-       
-       call system % get_jacobian_vector_product(&
-            & Lx, x, filter = LOWER_TRIANGLE)
-       
-       R = b - Lx - Ux
+       ! Form the residual (partial) after the split
+       call system % get_jacobian_residual_product(Ux, dx, part = UPPER_TRIANGLE)
+       call system % get_jacobian_residual_product(Lx, dx, part = LOWER_TRIANGLE)
 
-       ! call system % apply_preconditioner(x, D)
-       ! Invert diagonal
-       xnew = R/D ! D^{-1}(b-Lx-Ux)
-       tol = norm2(x-xnew)
+       R2 = r - Lx - Ux
+
+       ! Invert the diagonal
+       xnew = R2/D ! D^{-1}(r - L dx - U dx)
+       tol  = sqrt(system % inner_product(dx - xnew, dx - xnew))
 
        if (this % print_level .gt. 1) then
           write(*,*) "inner (1)", iter, tol
        end if
 
-       x = xnew
+       dx   = xnew
        iter = iter + 1
 
     end do
-    
-    deallocate(b, Ux, Lx, D, R, xnew, identity)
+
+    deallocate(Ux, Lx, D, R2, xnew, identity)
 
   end subroutine iterate
 

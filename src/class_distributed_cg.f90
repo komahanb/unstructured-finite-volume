@@ -78,9 +78,11 @@ module class_distributed_cg
 
   type, extends(linear_solver) :: distributed_cg_solver
      ! stateless w.r.t. the system: solve takes the assembler as an argument
-     class(preconditioner), allocatable :: precond     ! optional per-image block precond
+     ! (the inherited pre_conditioner slot holds the optional per-image
+     ! block preconditioner)
    contains
-     procedure :: solve
+     ! the sweep consumed by the inherited march
+     procedure :: iterate
      procedure :: distributed_cg
   end type distributed_cg_solver
 
@@ -287,9 +289,9 @@ contains
       real(dp), intent(in)    :: rr(:)
       real(dp), intent(inout) :: zz(:)
       integer :: ii, kk
-      if (allocated(this % precond)) then
+      if (allocated(this % pre_conditioner)) then
          do ii = 1, nown; r_loc(ii) = rr(h % own(ii)); end do
-         call this % precond % apply(r_loc, z_loc)
+         call this % pre_conditioner % apply(r_loc, z_loc)
          do ii = 1, nown; zz(h % own(ii)) = z_loc(ii); end do
       else
          do ii = 1, nown; kk = h % own(ii); zz(kk) = rr(kk); end do
@@ -314,26 +316,29 @@ contains
     this % max_tol = max_tol
 
     if (present(print_level)) this % print_level = print_level
-    if (present(precond))     allocate(this % precond, source = precond)
+    if (present(precond))     allocate(this % pre_conditioner, source = precond)
 
   end function construct_dist
 
   !===================================================================!
-  ! Partition across images, build the halo, assemble, run distributed CG.
+  ! The sweep: partition across images, build the halo, assemble, and
+  ! run distributed CG on the correction equation A dx = r from dx = 0.
+  ! Interim tenancy - this class dissolves into plain cg on a
+  ! partitioned system at stage 4.
   !===================================================================!
 
-  impure subroutine solve(this, system, x, mode)
+  impure subroutine iterate(this, system, r, dx, iter)
 
-    class(distributed_cg_solver), intent(in)       :: this
-    class(assembler)            , intent(in)       :: system
-    real(dp), allocatable       , intent(out)      :: x(:)
-    integer              , intent(in), optional :: mode  ! FORWARD (default) / REVERSE
+    class(distributed_cg_solver), intent(in)  :: this
+    class(assembler)            , intent(in)  :: system
+    real(dp)                    , intent(in)  :: r(:)
+    real(dp)                    , intent(out) :: dx(:)
+    integer                     , intent(out) :: iter
 
-    type(csr_matrix)      :: A
-    type(mesh_graph)      :: g
-    type(halo)            :: h
-    real(dp), allocatable :: b(:)
-    integer               :: n, me, np
+    type(csr_matrix) :: A
+    type(mesh_graph) :: g
+    type(halo)       :: h
+    integer          :: me, np
 
     me = this_image()
     np = num_images()
@@ -350,12 +355,10 @@ contains
     h = halo(g, me, np)
 
     call system % get_operator_csr(A)
-    n = A % nrows
-    allocate(b(n), x(n))
-    call system % get_source(b)
 
-    call this % distributed_cg(A, b, x, h)
+    call this % distributed_cg(A, r, dx, h)
+    iter = dist_cg_last_iters
 
-  end subroutine solve
+  end subroutine iterate
 
 end module class_distributed_cg

@@ -74,6 +74,30 @@ program test_mesh
 
   end block assembly
 
+  ! machine-precision audits of the one product (verify-before
+  ! witnesses; the analytic checks the finite-difference twin is not)
+  audits: block
+
+    real(dp) :: defect
+
+    defect = FVMAssembler % verify_parts_honesty()
+    if (defect .lt. 1.0d-13) then
+       write(*,'(1x,a,es10.3)') "PASS : parts honesty (D+L+U)v = Av, defect ", defect
+    else
+       write(*,'(1x,a,es10.3)') "FAIL : parts honesty, defect ", defect
+       error stop
+    end if
+
+    defect = FVMAssembler % verify_transpose_consistency()
+    if (defect .lt. 1.0d-13) then
+       write(*,'(1x,a,es10.3)') "PASS : transpose consistency <w,Av> = <A^T w,v>, defect ", defect
+    else
+       write(*,'(1x,a,es10.3)') "FAIL : transpose consistency, defect ", defect
+       error stop
+    end if
+
+  end block audits
+
   deallocate(grid)
   deallocate(FVMAssembler)
 

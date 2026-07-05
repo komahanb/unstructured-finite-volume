@@ -11,16 +11,13 @@ module interface_assembler
 
   use iso_fortran_env  , only : dp => REAL64
   use class_csr        , only : csr_matrix
+  use module_solve_mode, only : FORWARD, REVERSE, &
+       &                        WHOLE, DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE
   implicit none
-  
+
   private
   public :: assembler
-  public :: DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE
-
-  ! Filter codes selecting a part of the operator in get_jacobian_vector_product
-  integer, parameter :: DIAGONAL       =  0
-  integer, parameter :: LOWER_TRIANGLE = -1
-  integer, parameter :: UPPER_TRIANGLE =  1
+  public :: WHOLE, DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE   ! re-exported tags
 
   !===================================================================!
   ! Assembler for the physical system
@@ -43,14 +40,32 @@ module interface_assembler
      procedure(add_jacobian_vector_product_interface), deferred :: add_jacobian_vector_product
      procedure(add_initial_condition_interface)      , deferred :: add_initial_condition
 
-     ! The system answers these queries about itself - the right-hand side,
-     ! the non-orthogonal skew correction, and the operator action A q. The
-     ! linear-solver convergence monitor consumes them polymorphically. The
-     ! base defaults are trivial (zero); a spatial assembler overrides them.
+     ! The essentials a solver may ask of the system: the imbalance at a
+     ! given answer, the ONE product (jacobian on a residual-descended
+     ! vector; mode = traversal direction, part = subgraph), and the
+     ! inner product that gives the space its geometry (owned by the
+     ! system because distribution is the system's business - a
+     ! partitioned system reduces across images here).
+     procedure :: get_residual
+     procedure :: get_jacobian_residual_product
+     procedure :: inner_product
+
+     ! Machine-precision audits of the product (verify-before witnesses;
+     ! the finite-difference twin is only the coarse third witness)
+     procedure :: verify_transpose_consistency
+     procedure :: verify_parts_honesty
+
+     ! steady transpose action behind the one product's REVERSE direction
+     procedure, private :: transpose_product
+
+     ! The pieces the essentials are composed from. The base defaults are
+     ! trivial (zero); a spatial assembler overrides them. Solvers call
+     ! the essentials above, never these directly.
      procedure :: get_source
      procedure :: get_skew_source
      procedure :: get_jacobian_vector_product
-     procedure :: get_operator_csr   ! the operator as a sparse matrix (csr solvers)
+     procedure :: get_operator_csr   ! assembled entries - ONLY for building
+                                     ! algebraic preconditioners, never to iterate
      
      ! Assembler knows the size of state array
      procedure :: create_vector
@@ -347,6 +362,198 @@ contains
     real(dp)        , intent(in) :: times(:)
 
   end subroutine write_gmsh_series
+
+  !===================================================================!
+  ! The imbalance at answer x:  r = R(x). For the linear system this is
+  ! the constant source plus the solution-dependent correction, minus
+  ! the operator action - composed here so a solver never names the
+  ! pieces. Forward only: the adjoint's residual needs the functional
+  ! and stays on the linearized path until that unification lands.
+  !===================================================================!
+
+  pure subroutine get_residual(this, r, x)
+
+    class(assembler), intent(in)  :: this
+    real(dp)        , intent(out) :: r(:)
+    real(dp)        , intent(in)  :: x(:)
+
+    real(dp), allocatable :: b(:), s(:), ax(:)
+
+    allocate(b, s, ax, mold = x)
+
+    call this % get_source(b)
+    call this % get_skew_source(s, x)
+    call this % get_jacobian_vector_product(ax, x)
+
+    r = (b + s) - ax
+
+  end subroutine get_residual
+
+  !===================================================================!
+  ! The ONE product: the jacobian's action on a residual-descended
+  ! vector. mode picks the traversal direction (FORWARD = J v,
+  ! REVERSE = J^T v); part picks the subgraph (WHOLE, DIAGONAL,
+  ! LOWER_TRIANGLE, UPPER_TRIANGLE). Defaults: FORWARD, WHOLE.
+  !
+  ! The REVERSE direction currently inherits the symmetric default
+  ! (J^T = J) of add_jacobian_vector_product_transpose; a system with a
+  ! non-symmetric operator must override that transpose before REVERSE
+  ! products may be trusted - verify_transpose_consistency is the audit.
+  !===================================================================!
+
+  pure subroutine get_jacobian_residual_product(this, w, v, mode, part)
+
+    class(assembler), intent(in)           :: this
+    real(dp)        , intent(out)          :: w(:)
+    real(dp)        , intent(in)           :: v(:)
+    integer         , intent(in), optional :: mode
+    integer         , intent(in), optional :: part
+
+    integer :: dir, sub
+
+    dir = FORWARD
+    if (present(mode)) dir = mode
+    sub = WHOLE
+    if (present(part)) sub = part
+
+    if (dir .eq. REVERSE) then
+       ! transpose action at the steady linearization; symmetric systems
+       ! inherit J^T = J, non-symmetric ones override the transpose
+       call this % transpose_product(w, v, sub)
+    else
+       if (sub .eq. WHOLE) then
+          call this % get_jacobian_vector_product(w, v)
+       else
+          call this % get_jacobian_vector_product(w, v, filter = sub)
+       end if
+    end if
+
+  end subroutine get_jacobian_residual_product
+
+  !===================================================================!
+  ! Steady transpose action w = J^T v (helper for the one product).
+  ! Default: the symmetric assumption J^T = J, matching the default of
+  ! add_jacobian_vector_product_transpose.
+  !===================================================================!
+
+  pure subroutine transpose_product(this, w, v, sub)
+
+    class(assembler), intent(in)  :: this
+    real(dp)        , intent(out) :: w(:)
+    real(dp)        , intent(in)  :: v(:)
+    integer         , intent(in)  :: sub
+
+    if (sub .eq. WHOLE) then
+       call this % get_jacobian_vector_product(w, v)
+    else
+       call this % get_jacobian_vector_product(w, v, filter = sub)
+    end if
+
+  end subroutine transpose_product
+
+  !===================================================================!
+  ! The inner product of two vectors of this system's space. The system
+  ! owns it because distribution is the system's business: this serial
+  ! default is the plain dot; a partitioned system sums its own rows and
+  ! reduces across images. The volume weighting attaches here later.
+  !===================================================================!
+
+  pure real(dp) function inner_product(this, a, b)
+
+    class(assembler), intent(in) :: this
+    real(dp)        , intent(in) :: a(:)
+    real(dp)        , intent(in) :: b(:)
+
+    inner_product = dot_product(a, b)
+
+  end function inner_product
+
+  !===================================================================!
+  ! Audit: <w, J v> = <J^T w, v> for deterministic pseudo-random v, w,
+  ! per part. Two products and two inner products - an analytic witness
+  ! at machine precision, no truncation error. Returns the largest
+  ! relative defect over the parts.
+  !===================================================================!
+
+  impure real(dp) function verify_transpose_consistency(this) result(defect)
+
+    class(assembler), intent(in) :: this
+
+    real(dp), allocatable :: v(:), w(:), jv(:), jtw(:)
+    real(dp) :: lhs, rhs, scale
+    integer  :: parts(4), i, n
+
+    n = this % num_state_vars
+    allocate(v(n), w(n), jv(n), jtw(n))
+    call fill_deterministic(v, 17)
+    call fill_deterministic(w, 31)
+
+    parts  = [WHOLE, DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE]
+    defect = 0.0_dp
+
+    do i = 1, size(parts)
+       call this % get_jacobian_residual_product(jv,  v, mode = FORWARD, part = parts(i))
+       call this % get_jacobian_residual_product(jtw, w, mode = REVERSE, part = parts(i))
+       ! transpose of the lower triangle is the upper triangle: pair them
+       if (parts(i) .eq. LOWER_TRIANGLE) then
+          call this % get_jacobian_residual_product(jtw, w, mode = REVERSE, part = UPPER_TRIANGLE)
+       else if (parts(i) .eq. UPPER_TRIANGLE) then
+          call this % get_jacobian_residual_product(jtw, w, mode = REVERSE, part = LOWER_TRIANGLE)
+       end if
+       lhs   = this % inner_product(w, jv)
+       rhs   = this % inner_product(jtw, v)
+       scale = max(abs(lhs), abs(rhs), 1.0_dp)
+       defect = max(defect, abs(lhs - rhs)/scale)
+    end do
+
+  end function verify_transpose_consistency
+
+  !===================================================================!
+  ! Audit: (diagonal + lower + upper) v = whole v for a deterministic
+  ! pseudo-random v. Three part-products against one whole-product;
+  ! catches every part-implementation bug at machine precision. Returns
+  ! the relative defect.
+  !===================================================================!
+
+  impure real(dp) function verify_parts_honesty(this) result(defect)
+
+    class(assembler), intent(in) :: this
+
+    real(dp), allocatable :: v(:), wd(:), wl(:), wu(:), wf(:)
+    integer :: n
+
+    n = this % num_state_vars
+    allocate(v(n), wd(n), wl(n), wu(n), wf(n))
+    call fill_deterministic(v, 7)
+
+    call this % get_jacobian_residual_product(wd, v, part = DIAGONAL)
+    call this % get_jacobian_residual_product(wl, v, part = LOWER_TRIANGLE)
+    call this % get_jacobian_residual_product(wu, v, part = UPPER_TRIANGLE)
+    call this % get_jacobian_residual_product(wf, v, part = WHOLE)
+
+    defect = norm2((wd + wl + wu) - wf)/max(norm2(wf), 1.0_dp)
+
+  end function verify_parts_honesty
+
+  !===================================================================!
+  ! Deterministic pseudo-random fill (linear congruential), so the
+  ! audits are reproducible run to run.
+  !===================================================================!
+
+  pure subroutine fill_deterministic(v, seed)
+
+    real(dp), intent(out) :: v(:)
+    integer , intent(in)  :: seed
+
+    integer :: i, s
+
+    s = seed
+    do i = 1, size(v)
+       s    = mod(s*1103515245 + 12345, 2147483647)
+       v(i) = real(mod(s, 10000), dp)/10000.0_dp - 0.5_dp
+    end do
+
+  end subroutine fill_deterministic
 
   !===================================================================!
   ! Default right-hand side: none (a spatial assembler with boundary

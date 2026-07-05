@@ -78,6 +78,7 @@ program test_graph_suite
   call check_chain_rule(nfail)
   call check_partition_invariants(nfail)
   call check_dof_map(nfail)
+  call check_blame_walk(nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
@@ -255,6 +256,68 @@ contains
     call report(cut .eq. g % ncut, label//": edge cut as reported", nfail)
 
   end subroutine assert_partition
+
+  !===================================================================!
+  ! The reverse traversal with accumulation (the adjoint's structure,
+  ! owned by the graph): march x_{k+1} = a x_k along a chain, measure
+  ! J = x_n^2 / 2 at the end, and walk the blame back. Two witnesses:
+  ! the analytic slope dJ/dx_1 = a^{2(n-1)} x_1 at machine precision,
+  ! and a forward nudge (the coarse third witness).
+  !===================================================================!
+
+  subroutine check_blame_walk(nfail)
+
+    integer, intent(inout) :: nfail
+
+    integer , parameter :: n = 8
+    real(dp), parameter :: a = 0.7_dp, c = 1.3_dp
+
+    type(chain) :: g
+    real(dp)    :: x(n), blame(1, n), seed(1)
+    real(dp)    :: analytic, nudged, h, jp, jm
+    integer     :: k
+
+    g = chain(n)
+
+    ! forward: march the chain, cache nothing but the states
+    x(1) = c
+    do k = 1, n-1
+       x(k+1) = a*x(k)
+    end do
+
+    ! reverse: seed the blame at the merit vertex, dJ/dx_n = x_n
+    seed = x(n)
+    call g % accumulate_blame(seed, edge_apply, blame)
+
+    ! witness 1: the analytic slope, machine precision
+    analytic = a**(2*(n-1)) * c
+    call report(abs(blame(1,1) - analytic) .le. 1.0e-14_dp*max(abs(analytic), 1.0_dp), &
+         & "blame walk matches analytic slope", nfail)
+
+    ! witness 2 (coarse): forward nudge of the whole march
+    h  = 1.0e-6_dp
+    jp = 0.5_dp*(a**(n-1)*(c+h))**2
+    jm = 0.5_dp*(a**(n-1)*(c-h))**2
+    nudged = (jp - jm)/(2.0_dp*h)
+    call report(abs(blame(1,1) - nudged) .le. 1.0e-6_dp*max(abs(nudged), 1.0_dp), &
+         & "blame walk matches forward nudge", nfail)
+
+  end subroutine check_blame_walk
+
+  !===================================================================!
+  ! The edge's transpose apply for the chain march x_{k+1} = a x_k:
+  ! the slope of every edge is a.
+  !===================================================================!
+
+  subroutine edge_apply(tail, head, blame_head, contribution)
+
+    integer , intent(in)  :: tail, head
+    real(dp), intent(in)  :: blame_head(:)
+    real(dp), intent(out) :: contribution(:)
+
+    contribution = 0.7_dp * blame_head
+
+  end subroutine edge_apply
 
   !===================================================================!
   ! dof interleaving on the ancestor (variable-fastest)

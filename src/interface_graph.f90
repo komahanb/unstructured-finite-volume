@@ -86,6 +86,11 @@ module interface_graph
      ! traversal order over the whole graph (FORWARD/REVERSE)
      procedure :: traversal_order
 
+     ! the reverse traversal with accumulation: blame propagated from the
+     ! last vertex in dependency order back to the first. the graph owns
+     ! the walk; the tenant supplies each edge's transpose apply.
+     procedure :: accumulate_blame
+
      ! partitioners - stamp vertex % part and gather the csr, in place
      procedure :: partition
      procedure :: partition_rcb
@@ -287,6 +292,68 @@ contains
     if (dir .eq. REVERSE) order = order(nv:1:-1)
 
   end function traversal_order
+
+  !===================================================================!
+  ! The reverse traversal with accumulation - the adjoint's structure,
+  ! implemented once, on the graph. Vertices are visited against the
+  ! dependency order; blame is seeded at the last vertex (the merit's
+  ! seat) and each earlier vertex's blame is the sum, over its outgoing
+  ! edges (neighbours later in dependency order), of the edge's
+  ! transpose apply on the blame at the far end. The graph never
+  ! computes a slope - it asks the edge, through the tenant-supplied
+  ! edge_apply (an internal procedure of the caller, closing over
+  ! whatever system state the edge needs).
+  !
+  ! blame is (block, num_vertices): one block-sized vector per vertex
+  ! (block = 1 for scalar chains, the state size for iterate chains).
+  !===================================================================!
+
+  subroutine accumulate_blame(this, seed, edge_apply, blame)
+
+    class(graph), intent(in)  :: this
+    real(dp)    , intent(in)  :: seed(:)
+    interface
+       subroutine edge_apply(tail, head, blame_head, contribution)
+         import :: dp
+         integer , intent(in)  :: tail, head
+         real(dp), intent(in)  :: blame_head(:)
+         real(dp), intent(out) :: contribution(:)
+       end subroutine edge_apply
+    end interface
+    real(dp)    , intent(out) :: blame(:,:)
+
+    integer , allocatable :: order(:), pos(:), nbrs(:)
+    real(dp), allocatable :: contribution(:)
+    integer :: nv, i, j, v, w
+
+    nv = this % num_vertices
+    allocate(order(nv))
+    order = this % traversal_order(FORWARD)
+
+    allocate(pos(nv))
+    do i = 1, nv
+       pos(order(i)) = i
+    end do
+
+    allocate(contribution(size(seed)))
+
+    blame = 0.0_dp
+    blame(:, order(nv)) = seed
+
+    ! visit against the dependency order; the last vertex keeps its seed
+    do i = nv-1, 1, -1
+       v    = order(i)
+       nbrs = this % neighbours(v)
+       do j = 1, size(nbrs)
+          w = nbrs(j)
+          if (pos(w) .gt. pos(v)) then
+             call edge_apply(v, w, blame(:, w), contribution)
+             blame(:, v) = blame(:, v) + contribution
+          end if
+       end do
+    end do
+
+  end subroutine accumulate_blame
 
   !===================================================================!
   ! Partition into nparts pieces by breadth-first ordering, in place

@@ -91,7 +91,7 @@ contains
 
   impure subroutine solve(this, system, x, mode)
 
-    class(conjugate_gradient), intent(in)       :: this
+    class(conjugate_gradient), intent(inout)    :: this
     class(assembler)         , intent(in)       :: system
     real(dp), allocatable    , intent(out)      :: x(:)
     integer              , intent(in), optional :: mode  ! FORWARD (default) / REVERSE

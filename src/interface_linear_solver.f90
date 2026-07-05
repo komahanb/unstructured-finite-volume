@@ -47,6 +47,12 @@ module interface_linear_solver
   private
   public :: linear_solver
   public :: preconditioner
+  public :: MANUAL, AUTO
+
+  ! tuning modes: MANUAL takes the knobs as given (default); AUTO lets
+  ! the solver work its knobs out itself (opt-in, never default)
+  integer, parameter :: MANUAL = 0
+  integer, parameter :: AUTO   = 1
 
   !===================================================================!
   ! Abstract preconditioner: applies an approximate inverse z = M^-1 r -
@@ -78,6 +84,9 @@ module interface_linear_solver
      class(preconditioner), allocatable :: pre_conditioner
      class(preconditioner), allocatable :: post_conditioner
 
+     ! MANUAL (default) or AUTO - see tune below
+     integer :: tuning = MANUAL
+
    contains
 
      ! provided solve: the residual-minimization march. converge is also
@@ -91,6 +100,20 @@ module interface_linear_solver
      ! passthrough apply helpers for the two slots
      procedure :: apply_pre_conditioner
      procedure :: apply_post_conditioner
+
+     ! auto-tuning hook, called by converge when tuning == AUTO: once at
+     ! entry (pass 0, the static route - measure the convergence factor,
+     ! set the knob) and once per pass with the measured rate (the
+     ! dynamic route - the auto-time-stepping twin). the contract has
+     ! three gates: entry budget (AUTO is opt-in), progress signal (the
+     ! rate IS the measurement), and rollback (a knob change that
+     ! worsens the rate reverts, leaving no trace). default: no knobs to
+     ! tune, do nothing - a solver with a rule overrides.
+     procedure :: tune
+
+     ! the solver's merit measurement: largest eigenvalue size of the
+     ! operator by power iteration (products and norms only)
+     procedure :: estimate_spectral_radius
 
      ! shared reporting, residual-based
      procedure :: residual_norm
@@ -143,7 +166,7 @@ contains
 
   impure subroutine converge(this, system, x, mode)
 
-    class(linear_solver)  , intent(in)           :: this
+    class(linear_solver)  , intent(inout)        :: this
     class(assembler)      , intent(in)           :: system
     real(dp), allocatable , intent(out)          :: x(:)
     integer               , intent(in), optional :: mode  ! FORWARD (default) / REVERSE
@@ -164,6 +187,9 @@ contains
                & "the swap-and-transpose contract is not implemented"
        end if
     end if
+
+    ! static tuning at entry (AUTO only)
+    if (this % tuning .eq. AUTO) call this % tune(system, 0, 1.0_dp)
 
     allocate(x(system % num_state_vars))
     x = 0.0_dp
@@ -202,6 +228,11 @@ contains
 
        ! termination on the true imbalance
        if (rnorm .le. this % max_tol * rnorm0) exit marching
+
+       ! dynamic tuning with the measured rate (AUTO only)
+       if (this % tuning .eq. AUTO .and. pass .gt. 1) then
+          call this % tune(system, pass, rnorm/rnorm_prev)
+       end if
 
        ! stagnation: the sweep can no longer reduce the imbalance (its
        ! floor - typically machine precision). this is the criterion the
@@ -325,6 +356,54 @@ contains
     write(*,'(2x,i5,2x,i5,4(2x,es13.5))') pass, inner, rnorm, r_drop, dxnorm, dx_rel
 
   end subroutine monitor_step
+
+  !===================================================================!
+  ! Auto-tuning hook (see the binding comment for the three-gate
+  ! contract). Default: this solver has no knobs to tune.
+  !===================================================================!
+
+  impure subroutine tune(this, system, pass, rate)
+
+    class(linear_solver), intent(inout) :: this
+    class(assembler)    , intent(in)    :: system
+    integer             , intent(in)    :: pass   ! 0 = at entry (static)
+    real(dp)            , intent(in)    :: rate   ! ||r_k||/||r_{k-1}|| when pass > 1
+
+  end subroutine tune
+
+  !===================================================================!
+  ! Largest eigenvalue size of the operator by power iteration - the
+  ! solver-level merit measurement, built from products and norms only.
+  !===================================================================!
+
+  impure subroutine estimate_spectral_radius(this, system, mu, max_iter)
+
+    class(linear_solver), intent(in)  :: this
+    class(assembler)    , intent(in)  :: system
+    real(dp)            , intent(out) :: mu
+    integer             , intent(in)  :: max_iter
+
+    real(dp), allocatable :: v(:), w(:)
+    integer  :: iter
+    real(dp) :: wnorm
+
+    call system % create_vector(v)
+    call random_number(v)
+    v = v/sqrt(system % inner_product(v, v))
+
+    call system % create_vector(w)
+
+    power_iteration: do iter = 1, max_iter
+       call system % get_jacobian_residual_product(w, v)
+       wnorm = sqrt(system % inner_product(w, w))
+       v  = w/wnorm
+       mu = system % inner_product(v, w)
+       if (this % print_level .gt. 1) write(*,*) iter, mu
+    end do power_iteration
+
+    deallocate(v, w)
+
+  end subroutine estimate_spectral_radius
 
   !===================================================================!
   ! Name of the iteration-history trace file (print_level == -1)

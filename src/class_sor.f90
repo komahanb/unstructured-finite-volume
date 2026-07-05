@@ -26,11 +26,19 @@ module class_sor
 
      real(dp) :: omega
 
+     ! tuning state: the saved knob and the rate it achieved (the
+     ! rollback gate needs one saved scalar and one comparison)
+     real(dp) :: omega_saved = -1.0_dp
+     real(dp) :: rate_saved  = huge(1.0_dp)
+
    contains
 
      ! the sweep consumed by the inherited march
      procedure :: iterate
-     procedure :: estimate_spectral_radius
+
+     ! auto-tuning: static optimal omega from the measured convergence
+     ! factor, dynamic rollback if a knob change worsens the rate
+     procedure :: tune
 
   end type sor
 
@@ -65,42 +73,94 @@ contains
   end function construct
 
   !===================================================================!
-  ! Estimate spectral radius using power iteration (maximum absolute
-  ! eigen value)
+  ! Auto-tuning. Static route (pass 0): measure the convergence factor
+  ! of the unrelaxed sweep - the spectral radius of D^-1 (L+U), by power
+  ! iteration composed from the parts - and set the classical optimum
+  !   omega = 2 / (1 + sqrt(1 - rho^2)).
+  ! Dynamic route (pass > 1): the rollback gate - if the rate measured
+  ! after a knob change is worse than the saved one, revert to the saved
+  ! knob; a rejected tune leaves no trace.
   !===================================================================!
 
-  impure subroutine estimate_spectral_radius(this, system, mu, max_iter)
+  impure subroutine tune(this, system, pass, rate)
 
-    ! Arguments
-    class(sor)      , intent(in)  :: this
-    class(assembler), intent(in)  :: system
-    real(dp)        , intent(out) :: mu
-    integer         , intent(in)  :: max_iter
+    class(sor)      , intent(inout) :: this
+    class(assembler), intent(in)    :: system
+    integer         , intent(in)    :: pass
+    real(dp)        , intent(in)    :: rate
 
-    ! Random vector
-    real(dp) , allocatable :: v(:), w(:)
-    integer  :: iter
-    real(dp) :: wnorm
+    real(dp), allocatable :: v(:), w(:), D(:), identity(:)
+    real(dp) :: rho, wnorm
+    integer  :: it, n
 
-    ! Create a random unit vector
-    call system % create_vector(v)
-    call random_number(v)
-    v = v/sqrt(system % inner_product(v, v))
+    static: if (pass .eq. 0) then
 
-    ! A temp vector for processing
-    call system % create_vector(w)
+       n = system % num_state_vars
+       allocate(v(n), w(n), D(n), identity(n))
 
-    power_iteration: do iter = 1, max_iter
-       call system % get_jacobian_residual_product(w, v)
-       wnorm = sqrt(system % inner_product(w, w))
-       v = w/wnorm
-       mu = system % inner_product(v, w)
-       print *, iter, mu
-    end do power_iteration
+       ! the diagonal (the self-loop subgraph on ones)
+       identity = 1.0_dp
+       call system % get_jacobian_residual_product(D, identity, part = DIAGONAL)
 
-    deallocate(v, w)
+       ! power iteration on the unrelaxed sweep map v -> D^-1 (L+U) v
+       call fill_unit(v)
+       rho = 0.0_dp
+       do it = 1, 50
+          call system % get_jacobian_residual_product(w, v, part = LOWER_TRIANGLE)
+          call system % get_jacobian_residual_product(D, identity, part = DIAGONAL)
+          block
+            real(dp), allocatable :: wu(:)
+            allocate(wu(n))
+            call system % get_jacobian_residual_product(wu, v, part = UPPER_TRIANGLE)
+            w = (w + wu)/D
+          end block
+          wnorm = sqrt(system % inner_product(w, w))
+          if (wnorm .le. tiny(1.0_dp)) exit
+          rho = wnorm/sqrt(system % inner_product(v, v))
+          v   = w/wnorm
+       end do
+       rho = min(rho, 1.0_dp - epsilon(1.0_dp))
 
-  end subroutine estimate_spectral_radius
+       this % omega_saved = this % omega
+       this % rate_saved  = huge(1.0_dp)
+       this % omega       = 2.0_dp/(1.0_dp + sqrt(max(0.0_dp, 1.0_dp - rho*rho)))
+
+       if (this % print_level .gt. 0) then
+          write(*,'(1x,a,es12.5,a,f8.5)') &
+               & "sor tune: measured rho = ", rho, ", omega set to ", this % omega
+       end if
+
+    else static
+
+       ! rollback: one saved scalar, one comparison
+       if (rate .gt. this % rate_saved .and. &
+            & abs(this % omega - this % omega_saved) .gt. tiny(1.0_dp)) then
+          this % omega = this % omega_saved
+          if (this % print_level .gt. 0) then
+             write(*,'(1x,a,f8.5)') "sor tune: rate worsened, reverting omega to ", this % omega
+          end if
+       else
+          this % rate_saved  = rate
+          this % omega_saved = this % omega
+       end if
+
+    end if static
+
+  contains
+
+    ! deterministic unit start vector so the tune is reproducible
+    pure subroutine fill_unit(v)
+      real(dp), intent(out) :: v(:)
+      integer :: i, s
+      s = 13
+      do i = 1, size(v)
+         s    = mod(s*1103515245 + 12345, 2147483647)
+         v(i) = real(mod(s, 10000), dp)/10000.0_dp - 0.5_dp
+      end do
+      v = v/norm2(v)
+    end subroutine fill_unit
+
+  end subroutine tune
 
   !===================================================================!
   ! The sweep: relaxed (omega) triangle sweep on the correction

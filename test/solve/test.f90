@@ -8,7 +8,7 @@ program test_mesh
   use class_gmsh_loader        , only : gmsh_loader
   use class_mesh               , only : mesh
   use class_assembler          , only : assembler
-  use interface_linear_solver  , only : linear_solver
+  use interface_linear_solver  , only : linear_solver, AUTO
   use class_conjugate_gradient , only : conjugate_gradient
   use class_gauss_jacobi       , only : gauss_jacobi
   use class_gauss_seidel       , only : gauss_seidel
@@ -183,6 +183,42 @@ program test_mesh
     deallocate(solver)
 
   end block cg_solver
+
+  ! auto-tuned sor: the solver works its own knob out - measures the
+  ! sweep's convergence factor at entry and sets the optimal omega, with
+  ! the rollback gate live during the march. must agree with cg.
+  auto_sor : block
+
+    real(dp) , parameter   :: max_tol = 1.0d-10
+    integer  , parameter   :: max_it  = 500
+    real(dp) , allocatable :: x(:), xref(:)
+    type(sor), allocatable :: tuned
+    real(dp)               :: omega0, diff
+
+    allocate(tuned, source = sor(omega = 1.0d0, max_it = max_it, &
+         & max_tol = max_tol, print_level = 1))
+    tuned % tuning = AUTO
+    omega0 = tuned % omega
+
+    call tuned % solve(FVMassembler, x)
+
+    allocate(solver, source = conjugate_gradient(max_tol = max_tol, &
+         & max_it = 100, print_level = 0))
+    call solver % solve(FVMassembler, xref)
+
+    diff = norm2(x - xref)/norm2(xref)
+    if (abs(tuned % omega - omega0) .gt. 0.0d0 .and. diff .lt. 1.0d-8) then
+       write(*,'(1x,a,f8.5,a,es10.3)') &
+            & "PASS : auto-tuned sor (omega ", tuned % omega, ") matches cg, diff ", diff
+    else
+       write(*,'(1x,a,f8.5,a,es10.3)') &
+            & "FAIL : auto-tuned sor (omega ", tuned % omega, "), diff vs cg ", diff
+       error stop
+    end if
+
+    deallocate(x, xref, tuned, solver)
+
+  end block auto_sor
 
   deallocate(grid)
   deallocate(FVMAssembler)

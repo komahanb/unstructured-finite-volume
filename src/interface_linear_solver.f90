@@ -4,6 +4,14 @@
 ! an approximate inverse z = M^-1 r once per iteration. Both abstract
 ! types live here so a solver and its preconditioner share one home.
 !
+! The default solve is the deferred-correction outer loop shared by
+! every solver built on a correction sweep: start from x = b, run the
+! sweep (`iterate`, the hook a correction solver overrides), refresh the
+! non-orthogonal skew source at the new solution, and repeat until the
+! solution stops moving. cg / gauss-seidel / jacobi / sor differ only in
+! their sweep; solvers with a different loop structure (gmres, normal
+! cg, distributed cg) override solve itself.
+!
 ! linear_solver extends the common algebraic_solver base.
 !
 ! Author : Komahan Boopathy
@@ -29,11 +37,19 @@ module interface_linear_solver
 
      real(dp) :: max_tol
      integer  :: max_it
+     integer  :: print_level = 0
+
+     ! iteration-history file written when print_level == -1
+     character(len=:), allocatable :: res_file
 
    contains
 
-     ! type bound procedures
-     procedure(solve_interface), deferred :: solve
+     ! Default solve = the deferred-correction outer loop around the
+     ! correction sweep `iterate`. correction_solve is also bound by name
+     ! so an override of solve can pre-process and then delegate to it.
+     procedure :: solve => correction_solve
+     procedure :: correction_solve
+     procedure :: iterate
 
      ! Convergence monitor: the corrected-system residual r = (b+s) - A x of
      ! the system being solved, and a tabulated iteration history. Shared by
@@ -62,16 +78,6 @@ module interface_linear_solver
 
   interface
 
-     subroutine solve_interface(this, system, x, mode)
-       import linear_solver
-       import assembler
-       import dp
-       class(linear_solver)  , intent(in)            :: this
-       class(assembler)      , intent(in)            :: system
-       real(dp), allocatable , intent(out)           :: x(:)
-       integer               , intent(in) , optional :: mode  ! FORWARD (default) / REVERSE
-     end subroutine solve_interface
-
      ! z = M^-1 r  (the approximate-inverse action)
      subroutine apply_interface(this, r, z)
        import preconditioner
@@ -84,6 +90,121 @@ module interface_linear_solver
   end interface
 
 contains
+
+  !===================================================================!
+  ! Default solve: the deferred-correction outer loop. The initial guess
+  ! is the source b; each pass corrects the right-hand side with the
+  ! skew source at the current solution (zero on the first pass), runs
+  ! the solver's sweep, and stops when the solution stops moving. On an
+  ! orthogonal mesh the skew source is identically zero and the loop
+  ! exits after one corrected pass.
+  !===================================================================!
+
+  impure subroutine correction_solve(this, system, x, mode)
+
+    class(linear_solver)  , intent(in)           :: this
+    class(assembler)      , intent(in)           :: system
+    real(dp), allocatable , intent(out)          :: x(:)
+    integer               , intent(in), optional :: mode  ! FORWARD (default) / REVERSE
+
+    ! Locals
+    real(dp), allocatable :: xold(:), ss(:)
+    real(dp) :: update_norm, rnorm0
+    integer  :: iter, num_inner_iters
+
+    ! Initial guess vector for the subspace is "b"
+    allocate(x(system % num_state_vars))
+    call system % get_source(x)
+    if (norm2(x) .lt. epsilon(1.0_dp)) then
+       write(*,*) 'warning: zero right-hand side; solution is x = 0'
+    end if
+
+    allocate(xold, ss, mold = x)
+
+    if (this % print_level .eq. -1) then
+       open(13, file = history_file(this), action = 'write')
+       write(13,*) "iteration ", " residual"
+    end if
+
+    rnorm0 = 0.0_dp
+    if (this % print_level .gt. 0) rnorm0 = this % residual_norm(system, x)
+
+    update_norm = huge(1.0d0)
+    iter = 1
+    outer_iterations: do while (update_norm .gt. this % max_tol .and. iter .le. this % max_it)
+
+       xold = x
+
+       ! Inner iterations with the solver's correction sweep
+       if (iter .eq. 1) then
+          ss = 0.0d0
+       else
+          call system % get_skew_source(ss, x)
+       end if
+       call this % iterate(system, x, ss, num_inner_iters)
+
+       update_norm = norm2(x - xold)
+       if (this % print_level .eq. -1) then
+          write(13, *) iter, update_norm
+       end if
+       if (this % print_level .gt. 0) then
+          call this % monitor_step(system, iter, num_inner_iters, x, xold, rnorm0)
+       end if
+       iter = iter + 1
+
+    end do outer_iterations
+
+    if (this % print_level .eq. -1) then
+       close(13)
+    end if
+
+    ! Safety net: report if the outer (deferred-correction) loop was
+    ! capped at max_it without meeting the tolerance.
+    if (update_norm .gt. this % max_tol) then
+       write(*,*) "warning: outer correction loop hit max_it without convergence; update_norm =", update_norm
+    end if
+
+    deallocate(xold)
+    deallocate(ss)
+
+  end subroutine correction_solve
+
+  !===================================================================!
+  ! Correction sweep consumed by the default solve: drive the orthogonal
+  ! part of the system at the given skew-corrected right-hand side.
+  ! Correction solvers (cg, gauss-seidel, jacobi, sor) override this;
+  ! solvers that override solve itself never reach it.
+  !===================================================================!
+
+  impure subroutine iterate(this, system, x, ss, iter)
+
+    class(linear_solver), intent(in)    :: this
+    class(assembler)    , intent(in)    :: system
+    real(dp)            , intent(inout) :: x(:)
+    real(dp)            , intent(in)    :: ss(:)
+    integer             , intent(out)   :: iter
+
+    iter = 0
+    error stop 'linear_solver: no correction sweep (iterate) for this solver'
+
+  end subroutine iterate
+
+  !===================================================================!
+  ! Name of the iteration-history file (print_level == -1)
+  !===================================================================!
+
+  pure function history_file(this) result(fname)
+
+    class(linear_solver), intent(in) :: this
+    character(len=:), allocatable    :: fname
+
+    if (allocated(this % res_file)) then
+       fname = this % res_file
+    else
+       fname = 'solver.res'
+    end if
+
+  end function history_file
 
   !===================================================================!
   ! Norm of the system's corrected residual at x - used to seed the drop

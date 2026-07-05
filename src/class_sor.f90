@@ -1,6 +1,7 @@
 !=====================================================================!
-! Conjugate Gradient linear solver class that uses the functionalities of assembler class 
-! in the iterative solution process.
+! Successive over-relaxation (SOR) linear solver: supplies only the
+! correction sweep (`iterate`); the deferred-correction outer solve is
+! inherited from linear_solver.
 !=====================================================================!
 
 module class_sor
@@ -22,13 +23,11 @@ module class_sor
   type, extends(linear_solver) :: sor
 
      ! stateless w.r.t. the system: solve takes the assembler as an argument
-     integer                       :: print_level
      real(dp)                      :: omega
 
    contains
 
-     ! type bound procedures
-     procedure :: solve
+     ! correction sweep consumed by the inherited deferred-correction solve
      procedure :: iterate
      procedure :: estimate_spectral_radius
 
@@ -63,6 +62,7 @@ contains
     this % max_tol     = max_tol
     this % print_level = print_level
     this % omega       = omega
+    this % res_file    = 'sor.res'
 
   end function construct
 
@@ -118,83 +118,8 @@ contains
   end subroutine estimate_spectral_radius
 
   !===================================================================!
-  ! Iterative linear solution using conjugate gradient method
-  !===================================================================!
-  
-  impure subroutine solve(this, system, x, mode)
-
-    class(sor)           , intent(in)           :: this
-    class(assembler)     , intent(in)           :: system
-    real(dp), allocatable, intent(out)          :: x(:)
-    integer              , intent(in), optional :: mode  ! FORWARD (default) / REVERSE
-
-    ! Locals
-    real(dp), allocatable :: xold(:), ss(:)
-    real(dp) :: update_norm, rnorm0
-    integer  :: iter, num_inner_iters
-
-    ! Initial guess vector for the subspace is "b"
-    allocate(x(system % num_state_vars))
-    call system % get_source(x)
-    if (norm2(x) .lt. epsilon(1.0_dp)) then
-       print *, 'zero rhs? stopping'
-       error stop
-    end if
-
-    allocate(xold(system % num_state_vars))
-    allocate(ss(system % num_state_vars))
-
-    if (this % print_level .eq. -1) then
-       open(13, file='sor.res', action='write')
-       write(13,*) "iteration ", " residual"
-    end if
-
-    rnorm0 = 0.0_dp
-    if (this % print_level .gt. 0) rnorm0 = this % residual_norm(system, x)
-
-    update_norm = huge(1.0d0);
-    iter = 1;
-    outer_iterations: do while (update_norm .gt. this % max_tol .and. iter .le. this % max_it)
-
-       xold = x
-
-       ! Inner iterations with CG
-       if ( iter .eq. 1) then
-          ss = 0.0d0
-          call this % iterate(system, x, ss, num_inner_iters)
-       else
-          call system % get_skew_source(ss, x)
-          call this % iterate(system, x, ss, num_inner_iters)
-       end if
-       
-       update_norm = norm2(x - xold)
-       if (this % print_level .eq. -1) then
-          write(13, *) iter, update_norm
-       end if
-       if (this % print_level .gt. 0) then
-          call this % monitor_step(system, iter, num_inner_iters, x, xold, rnorm0)
-       end if
-       iter = iter + 1
-
-    end do outer_iterations
-
-    if (this % print_level .eq. -1) then
-       close(13)
-    end if
-
-    ! Safety net: report if the outer (deferred-correction) loop was
-    ! capped at max_it without meeting the tolerance.
-    if (update_norm .gt. this % max_tol) then
-       write(*,*) "warning: outer correction loop hit max_it without convergence; update_norm =", update_norm
-    end if
-
-    deallocate(xold)
-    deallocate(ss)
-
-  end subroutine solve
-  
-  !===================================================================!
-  ! Iterative linear solution using conjugate gradient method
+  ! Correction sweep: SOR on the skew-corrected system. The relaxed
+  ! lower-triangle solve (D+wL)y = R is itself done iteratively.
   !===================================================================!
 
   impure subroutine iterate(this, system, x, ss, iter)
@@ -245,7 +170,7 @@ contains
     end if
 
     !-----------------------------------------------------------------!
-    ! Apply Gauss Jacobi Iterative scheme until tolerance is achieved
+    ! Apply the SOR sweep until tolerance is achieved
     !-----------------------------------------------------------------!
 
     iter = 1; tol  = huge(1.0d0);

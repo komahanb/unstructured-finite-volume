@@ -53,7 +53,6 @@ module class_gmres
      ! stateless w.r.t. the system: solve takes the assembler as an argument
      class(preconditioner), allocatable :: precond     ! optional; absent => plain GMRES
      integer                            :: restart     = 200
-     integer                            :: print_level = 0
 
    contains
 

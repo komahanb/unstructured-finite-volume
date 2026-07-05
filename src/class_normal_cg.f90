@@ -59,7 +59,6 @@ module class_normal_cg
 
      ! stateless w.r.t. the system: solve takes the assembler as an argument
      integer                       :: method      = CGNR_METHOD
-     integer                       :: print_level = 0
 
    contains
 

@@ -79,7 +79,6 @@ module class_distributed_cg
   type, extends(linear_solver) :: distributed_cg_solver
      ! stateless w.r.t. the system: solve takes the assembler as an argument
      class(preconditioner), allocatable :: precond     ! optional per-image block precond
-     integer                            :: print_level = 0
    contains
      procedure :: solve
      procedure :: distributed_cg

@@ -18,13 +18,16 @@ general-purpose refactor, now largely done.)
   (diffusion, from dF/dgradq) and `flux_vn` (advection, from dF/dq); central or
   upwind faces (`convection_scheme`).
 - the IMPLICIT stack - exactly what compressible cfd wants: matrix-free newton
-  (`nonlinear_marching`) + bdf 1-6 (`class_bdf`) + krylov (`class_conjugate_gradient`,
-  `class_gmres`, `class_normal_cg`) + preconditioners (`class_amg`, block-jacobi) +
-  steady & transient adjoint.
+  (`class_newton_solver`) + bdf 1-6 (`class_bdf`) + krylov (`class_conjugate_gradient`,
+  `class_gmres`, `class_normal_cg`) + preconditioners (`class_algebraic_multigrid`,
+  block-jacobi) + steady & transient adjoint (adjoint trajectory in `class_bdf`).
 - assembled csr (`get_operator_csr`) + GMRES for nonsymmetric operators; coarray
-  domain decomposition (`class_distributed_cg`) + RCB partitioner.
+  domain decomposition (`class_distributed_cg`) + RCB partitioner (`graph % partition_rcb`).
 - mesh: cell-centred fv, centroids / volumes / face areas+normals, 2d & 3d, named
   boundary groups.
+- clean interface/class architecture: every concrete class extends `interface_*.f90`;
+  stateless solvers (`linear_solver % solve(system, x, mode)`); graph owns partitioning;
+  flux projections on the flux base; convergence monitor on the solver base.
 
 ## cross-cutting infrastructure gaps (needed by ALL three milestones)
 

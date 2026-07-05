@@ -29,7 +29,7 @@ module class_fvm_field
   use interface_field  , only : field
   use interface_physics, only : point_state
   use class_mesh       , only : mesh
-  use class_graph      , only : graph
+  use interface_graph  , only : graph
 
   implicit none
 
@@ -87,7 +87,7 @@ contains
 
     class(fvm_field) , intent(in)  :: this
     class(mesh)      , intent(in)  :: grid
-    type(graph)      , intent(in)  :: g
+    class(graph)     , intent(in)  :: g
     real(dp)         , intent(in)  :: U(:)
     integer          , intent(in)  :: icell, iface, gface
     type(point_state), intent(out) :: st

@@ -14,7 +14,7 @@ module class_assembler
   use class_diffusion_flux    , only : diffusion_flux, constant_source
   use class_fvm_field         , only : fvm_field
   use class_csr               , only : csr_matrix
-  use class_graph             , only : graph
+  use class_graph             , only : mesh_graph
   use module_verbosity        , only : verbosity
 
   implicit none
@@ -47,7 +47,7 @@ module class_assembler
      integer :: num_variables
 
      ! Dof / connectivity graph (cells = vertices, interior faces = edges)
-     type(graph) :: g
+     type(mesh_graph) :: g
 
      ! Flux vector
      real(dp), allocatable :: phi(:)
@@ -146,7 +146,7 @@ contains
 
     ! Build the dof/connectivity graph and size the system from it. For a
     ! single field num_state_vars = num_cells, as before.
-    this % g = graph(grid, this % num_variables)
+    this % g = mesh_graph(grid, this % num_variables)
     this % num_state_vars = this % g % num_dofs()
 
     ! Semi-discrete in time: R(u,udot) = M*udot + A*u - b is first order,

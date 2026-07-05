@@ -29,7 +29,7 @@ module class_distributed_cg
 
   use iso_fortran_env         , only : dp => REAL64
   use class_csr               , only : csr_matrix
-  use class_graph             , only : graph
+  use class_graph             , only : graph, mesh_graph
   use interface_assembler     , only : assembler
   ! the concrete spatial assembler is needed (via select type) for the mesh
   ! geometry the RCB partition uses; the rest goes through the abstract base
@@ -96,7 +96,7 @@ contains
 
   pure type(halo) function make_halo(g, me, np) result(h)
 
-    type(graph), intent(in) :: g
+    class(graph), intent(in) :: g
     integer    , intent(in) :: me, np
 
     integer, allocatable :: gh(:), cnt(:), ptr(:)
@@ -330,7 +330,7 @@ contains
     integer              , intent(in), optional :: mode  ! FORWARD (default) / REVERSE
 
     type(csr_matrix)      :: A
-    type(graph)           :: g
+    type(mesh_graph)      :: g
     type(halo)            :: h
     real(dp), allocatable :: b(:)
     integer               :: n, me, np
@@ -342,7 +342,8 @@ contains
     ! reach the concrete spatial assembler), then this image's halo
     select type (system)
     type is (spatial_assembler)
-       g = system % g % partition_rcb(system % grid % cell_centers, np)
+       g = system % g
+       call g % partition_rcb(system % grid % cell_centers, np)
     class default
        error stop "distributed_cg: needs a spatial assembler (mesh geometry)"
     end select

@@ -1,5 +1,7 @@
 objects= \
 module_solve_mode.o \
+interface_graph.o \
+class_chain.o \
 module_verbosity.o \
 class_csr.o \
 interface_algebraic_solver.o \

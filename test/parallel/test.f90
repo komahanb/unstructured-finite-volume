@@ -33,7 +33,7 @@ program test_parallel
   use class_assembler       , only : assembler
   use class_diffusion_flux  , only : diffusion_flux, constant_source
   use class_csr             , only : csr_matrix
-  use class_graph           , only : graph
+  use class_graph           , only : mesh_graph
   use class_algebraic_multigrid, only : algebraic_multigrid
   use class_distributed_cg  , only : halo, distributed_cg_solver, dist_cg_last_iters
   use class_conjugate_gradient, only : conjugate_gradient
@@ -133,7 +133,7 @@ contains
     integer     , intent(inout) :: nfail
 
     type(csr_matrix) :: A, Ablock
-    type(graph)      :: gp
+    type(mesh_graph) :: gp
     type(halo)       :: h
     type(algebraic_multigrid)        :: M
     class(conjugate_gradient), allocatable :: cg
@@ -145,9 +145,11 @@ contains
     ! partition the graph: BFS (placeholder) vs RCB (geometric); compare the
     ! edge cut, then USE the RCB partition for the solve. both are deterministic,
     ! so every image computes the identical partition and agrees without comm.
-    gp      = fvm % g % partition(np)
+    gp      = fvm % g
+    call gp % partition(np)
     bfs_cut = gp % edge_cut()
-    gp      = fvm % g % partition_rcb(fvm % grid % cell_centers, np)
+    gp      = fvm % g
+    call gp % partition_rcb(fvm % grid % cell_centers, np)
     rcb_cut = gp % edge_cut()
     h       = halo(gp, me, np)
 

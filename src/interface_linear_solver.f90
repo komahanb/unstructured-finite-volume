@@ -1,3 +1,5 @@
+#include "scalar.fpp"
+
 !=====================================================================!
 ! The generic linear solver, plus the preconditioner contract it
 ! consumes. A linear solver takes an initial guess and improves it
@@ -41,6 +43,8 @@ module interface_linear_solver
   use iso_fortran_env           , only : dp => REAL64
   use interface_marcher         , only : marcher
   use interface_assembler       , only : assembler
+  use interface_state           , only : state
+  use class_differential_state  , only : differential_state
   use module_solve_mode         , only : FORWARD, REVERSE
 
   implicit none
@@ -88,13 +92,13 @@ module interface_linear_solver
 
    contains
 
-     ! provided march: the residual-minimization iteration, bound to the
-     ! family's context name solve through the generic below. converge is
-     ! also bound by name so the one documented override can delegate to
-     ! it.
+     ! march (the marcher contract): the residual-minimization iteration,
+     ! generic over the state. converge is also bound by name so the one
+     ! documented override can delegate to it; solve is the family
+     ! wrapper over a plain solution vector.
      procedure :: march => converge
-     generic   :: solve => march
      procedure :: converge
+     procedure :: solve
 
      ! deferred: the one-step correction (the analogue of the
      ! integrator's step)
@@ -167,14 +171,14 @@ contains
   ! iteration converges the true residual.
   !===================================================================!
 
-  impure subroutine converge(this, system, x, mode)
+  impure subroutine converge(this, system, s, mode)
 
     class(linear_solver)  , intent(inout)        :: this
-    class(assembler)      , intent(in)           :: system
-    real(dp), allocatable , intent(out)          :: x(:)
+    class(assembler)      , intent(inout)        :: system
+    class(state)          , intent(inout)        :: s
     integer               , intent(in), optional :: mode  ! FORWARD (default) / REVERSE
 
-    real(dp), allocatable :: r(:), dx(:)
+    real(dp), allocatable :: r(:), dx(:), x(:)
     real(dp) :: rnorm, rnorm0, rnorm_prev, dxnorm
     integer  :: pass, inner
 
@@ -195,7 +199,6 @@ contains
     if (this % tuning .eq. AUTO) call this % tune(system, 0, 1.0_dp)
 
     allocate(x(system % num_state_vars))
-    x = 0.0_dp
     allocate(r, dx, mold = x)
 
     if (this % print_level .eq. -1) then
@@ -209,7 +212,8 @@ contains
 
     outer_iterations: do pass = 1, this % max_it + 1
 
-       ! the residual at the current solution
+       ! the residual at the state's current solution values
+       x = current_solution(s)
        call system % get_residual(r, x)
        rnorm = sqrt(system % inner_product(r, r))
 
@@ -257,10 +261,10 @@ contains
           exit outer_iterations
        end if
 
-       ! one correction step: A dx = r from dx = 0
+       ! one correction step: A dx = r from dx = 0; the state applies it
        call this % iterate(system, r, dx, inner)
 
-       x      = x + dx
+       call s % update(dx)
        dxnorm = sqrt(system % inner_product(dx, dx))
 
     end do outer_iterations
@@ -268,6 +272,46 @@ contains
     if (this % print_level .eq. -1) close(13)
 
   end subroutine converge
+
+  !===================================================================!
+  ! The family wrapper: solve for a plain solution vector. Wraps x in
+  ! an order-0 state (its update rule is u <- u + du), marches, and
+  ! copies the values back out. Every existing call site keeps this
+  ! signature.
+  !===================================================================!
+
+  impure subroutine solve(this, system, x, mode)
+
+    class(linear_solver)  , intent(inout)        :: this
+    class(assembler)      , intent(inout)        :: system
+    real(dp), allocatable , intent(out)          :: x(:)
+    integer               , intent(in), optional :: mode  ! FORWARD (default) / REVERSE
+
+    type(differential_state) :: s
+
+    s = differential_state(system % num_state_vars, 0)
+
+    call this % march(system, s, mode)
+
+    x = current_solution(s)
+
+  end subroutine solve
+
+  !===================================================================!
+  ! The solution values of a state (its zeroth derivative order)
+  !===================================================================!
+
+  function current_solution(s) result(x)
+
+    class(state), intent(in) :: s
+    real(dp), allocatable    :: x(:)
+
+    type(scalar), allocatable :: v(:,:)
+
+    v = s % values()
+    x = real(v(:,1), dp)
+
+  end function current_solution
 
   !===================================================================!
   ! Apply the pre-operator z = M^-1 r, or pass through if none attached

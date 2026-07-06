@@ -16,6 +16,8 @@ module interface_integrator
   use iso_fortran_env    , only : dp => REAL64
   use interface_marcher  , only : marcher
   use interface_assembler, only : assembler
+  use interface_state    , only : state
+  use class_differential_state, only : differential_state
 
   implicit none
 
@@ -44,10 +46,11 @@ module interface_integrator
      procedure :: construct
      procedure :: destruct
 
-     ! the provided march in physical time, bound to the family's
-     ! context name integrate through the generic
-     procedure :: march => integrate
-     generic   :: integrate => march
+     ! the marcher contract: advance the state window along the step
+     ! chain, recording the trajectory. integrate is the family wrapper
+     ! (it seeds the window from the initial condition).
+     procedure :: march
+     procedure :: integrate
 
      ! Deferred to concrete schemes
      procedure(step_interface)            , deferred :: step
@@ -152,9 +155,8 @@ contains
   end subroutine destruct
 
   !===================================================================!
-  ! Drive the integration. FORWARD (default) marches the primal system
-  ! from tinit to tfinal over the trajectory U; REVERSE drives the adjoint
-  ! backward sweep over psi (wired by the concrete integrator).
+  ! The family wrapper: seed the state window from the system's initial
+  ! condition and delegate to the march on the constructed system.
   !===================================================================!
 
   impure subroutine integrate(this, mode)
@@ -162,7 +164,41 @@ contains
     class(integrator), intent(inout)        :: this
     integer          , intent(in), optional :: mode
 
+    type(differential_state) :: s
+
+    s = differential_state( &
+         & this % system % get_num_state_vars(), &
+         & this % system % get_differential_order())
+
+    call this % system % add_initial_condition(s % U)
+
+    call this % march(this % system, s, mode)
+
+  end subroutine integrate
+
+  !===================================================================!
+  ! The marcher contract: the state window enters as the initial
+  ! condition, is advanced one step at a time along the step chain
+  ! (each step solving through the deferred step), and exits as the
+  ! final window; the trajectory this % U is the record of the states
+  ! visited - the chain's payload, not the state.
+  !===================================================================!
+
+  impure subroutine march(this, system, s, mode)
+
+    class(integrator), intent(inout)        :: this
+    class(assembler) , intent(inout)        :: system
+    class(state)     , intent(inout)        :: s
+    integer          , intent(in), optional :: mode
+
     integer :: k, p, ierr
+
+    ! the deferred step advances the system this integrator was
+    ! constructed with; a different system of the same size would march
+    ! the wrong equations
+    if (system % get_num_state_vars() .ne. this % system % get_num_state_vars()) then
+       error stop "integrator % march: the system does not match the constructed one"
+    end if
 
     ! Re-entrant: a fresh march each call (the adjoint re-solves at
     ! perturbed designs), so drop any previous history first.
@@ -181,18 +217,29 @@ contains
          & this % system % get_differential_order() + 1))
     this % U = 0.0d0
 
-    ! Initial condition into the first step
-    call this % system % add_initial_condition(this % U(1,:,:))
+    ! The seed window enters the record
+    select type (s)
+    type is (differential_state)
+       this % U(1,:,:) = s % U
+    class default
+       error stop "integrator % march: requires a differential_state"
+    end select
 
     ! March one step at a time
-    march: do k = 2, this % num_steps
+    stepping: do k = 2, this % num_steps
 
        p = this % get_bandwidth(k)
 
        call this % step(this % time(k-p:k), this % U(k-p:k,:,:), this % h, p, ierr)
 
-    end do march
+    end do stepping
 
-  end subroutine integrate
+    ! The state exits as the final window
+    select type (s)
+    type is (differential_state)
+       s % U = this % U(this % num_steps,:,:)
+    end select
+
+  end subroutine march
 
 end module interface_integrator

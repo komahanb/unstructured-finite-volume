@@ -1,41 +1,49 @@
 !=====================================================================!
 ! The common ancestor of every iterative process in the framework: the
 ! linear solver, the nonlinear solver and the time integrator are one
-! concept - advance a deferred one-step map along a chain until a
-! termination criterion is met. Each family binds its own context name
-! to the common operation:
+! concept - advance a state until a termination criterion is met. The
+! deferred contract is march:
 !
-!   common (marcher)  | linear solver | newton            | integrator
-!   ------------------+---------------+-------------------+-------------
-!   march             | solve         | solve             | integrate
-!   step (deferred    | iterate       | linearize + inner | bdf step
-!    per family)      |               | solve             |
-!   termination       | residual tol  | residual tol      | t >= t_final
-!   budget (max_it)   | max_it        | max_it            | num_steps
-!   reverse march     | adjoint       | steady adjoint    | backward
-!                     | accumulation  |                   | adjoint
+!     call marcher % march(system, s, mode)
 !
-! What lives here: the shared attributes (tolerance, iteration budget,
-! verbosity) that were previously duplicated across the solver families.
-! What stays per family, deliberately: the step signature - linear steps
-! move plain vectors, newton steps move multi-order states with
-! coefficients, time steps move trajectory windows. Fortran has no
-! generics, and a common state type would be heavy machinery for a
-! ten-line loop; each family declares its own step contract with the
-! shared name and shape, and its own short march bound to its context
-! name through a generic (solve => march, integrate => march).
+! where the system supplies residuals and products, s is the state the
+! caller owns (class(state): the concrete knows how a correction moves
+! it), and mode selects the forward or the adjoint direction - one
+! march plus a mode, never a second procedure.
+!
+! Each family implements march and keeps its context entry point as a
+! thin provided wrapper that delegates to it:
+!
+!   family            | march implementation      | wrapper
+!   ------------------+---------------------------+--------------------
+!   linear solver     | converge (residual        | solve(system, x,
+!                     | minimization around the   | mode)
+!                     | deferred iterate)         |
+!   nonlinear solver  | drive the deferred        | (bdf calls the
+!                     | solve(system, coeff, U)   | per-step solve
+!                     | at the state's            | directly)
+!                     | linearization             |
+!   integrator        | advance the state window  | integrate(mode)
+!                     | along the step chain,     |
+!                     | recording the trajectory  |
+!
+! What also lives here: the shared attributes (tolerance, iteration
+! budget, verbosity) previously duplicated across the families.
 !
 ! In graph terms: a marcher traverses a chain - the iterate sequence in
 ! solver iterations, the step sequence in physical time. The chain is a
-! graph (class_chain); the marcher advances along it, and the discrete
-! adjoint traverses it in reverse (interface_graph % accumulate_adjoint).
+! graph (class_chain), the states are its vertex payloads, and the
+! discrete adjoint traverses the chain in reverse
+! (interface_graph % accumulate_adjoint).
 !
 ! Author : Komahan Boopathy
 !=====================================================================!
 
 module interface_marcher
 
-  use iso_fortran_env, only : dp => REAL64
+  use iso_fortran_env    , only : dp => REAL64
+  use interface_assembler, only : assembler
+  use interface_state    , only : state
 
   implicit none
 
@@ -43,12 +51,7 @@ module interface_marcher
   public :: marcher
 
   !===================================================================!
-  ! The abstract marcher. It carries no deferred procedure of its own
-  ! on purpose: the march signatures differ per family (solve(this,
-  ! system, x, mode) versus solve(this, system, coeff, U) versus
-  ! integrate(this, mode)), so each family declares its own contract.
-  ! This type is the shared ancestor that lets the rest of the code
-  ! refer to "some marcher", and the one home of the shared attributes.
+  ! The abstract marcher
   !===================================================================!
 
   type, abstract :: marcher
@@ -60,7 +63,28 @@ module interface_marcher
      integer  :: max_it      = 25
      integer  :: print_level = 0
 
+   contains
+
+     ! the contract: advance the state until termination
+     procedure(march_interface), deferred :: march
+
   end type marcher
+
+  !===================================================================!
+  ! Deferred interface
+  !===================================================================!
+
+  abstract interface
+
+     impure subroutine march_interface(this, system, s, mode)
+       import :: marcher, assembler, state
+       class(marcher)  , intent(inout) :: this
+       class(assembler), intent(inout) :: system
+       class(state)    , intent(inout) :: s
+       integer         , intent(in), optional :: mode  ! FORWARD (default) / REVERSE
+     end subroutine march_interface
+
+  end interface
 
 contains
 

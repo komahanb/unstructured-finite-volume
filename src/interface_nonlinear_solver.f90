@@ -19,6 +19,9 @@ module interface_nonlinear_solver
 
   use iso_fortran_env           , only : dp => REAL64
   use interface_marcher         , only : marcher
+  use interface_state           , only : state
+  use class_differential_state  , only : differential_state
+  use module_solve_mode         , only : REVERSE
   use interface_linear_solver   , only : linear_solver
   use interface_assembler       , only : assembler
 
@@ -42,8 +45,12 @@ module interface_nonlinear_solver
 
    contains
 
-     procedure(nonlinear_solve_interface), deferred :: march
-     generic :: solve => march
+     ! the family's per-step deferred entry (bdf drives this directly)
+     procedure(nonlinear_solve_interface), deferred :: solve
+
+     ! the marcher contract, provided once for the family: drive the
+     ! deferred solve at the state's linearization
+     procedure :: march
 
   end type nonlinear_solver
 
@@ -66,5 +73,36 @@ module interface_nonlinear_solver
   end interface
 
 contains
+
+  !===================================================================!
+  ! The marcher contract for the nonlinear family: drive the deferred
+  ! solve at the state's linearization. Requires a differential_state
+  ! (the linearization coefficients live on the state) - a stated
+  ! precondition with a clear error. REVERSE is refused until the
+  ! functional supplies the adjoint right-hand side.
+  !===================================================================!
+
+  impure subroutine march(this, system, s, mode)
+
+    class(nonlinear_solver), intent(inout) :: this
+    class(assembler)       , intent(inout) :: system
+    class(state)           , intent(inout) :: s
+    integer                , intent(in), optional :: mode
+
+    if (present(mode)) then
+       if (mode .eq. REVERSE) then
+          error stop "nonlinear_solver % march: REVERSE requires the functional's " // &
+               & "adjoint right-hand side - use the adjoint driver"
+       end if
+    end if
+
+    select type (s)
+    type is (differential_state)
+       call this % solve(system, s % coeff, s % U)
+    class default
+       error stop "nonlinear_solver % march: requires a differential_state"
+    end select
+
+  end subroutine march
 
 end module interface_nonlinear_solver

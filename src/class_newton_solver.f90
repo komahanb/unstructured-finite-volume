@@ -24,6 +24,7 @@ module class_newton_solver
   use iso_fortran_env           , only : dp => REAL64
   use interface_assembler       , only : assembler
   use interface_nonlinear_solver, only : nonlinear_solver
+  use class_differential_state  , only : differential_state
   use interface_function        , only : functional
   use class_conjugate_gradient  , only : conjugate_gradient
   use module_solve_mode         , only : FORWARD, REVERSE
@@ -49,11 +50,11 @@ module class_newton_solver
 
    contains
 
-     procedure :: march => solve
+     procedure :: solve
      procedure, private :: prepare_inner_solver
 
-     ! steady forward solve + adjoint total derivative dJ/dx (+ fd verify)
-     procedure, private :: solve_steady
+     ! adjoint total derivative dJ/dx (+ fd verify); the steady forward
+     ! solve is the inherited march at the steady linearization
      procedure :: eval_func_grad
      procedure :: eval_fd_func_grad
 
@@ -74,20 +75,26 @@ contains
 
     type(scalar), allocatable :: res(:)
     real(dp)    , allocatable :: dq(:)
+    type(differential_state)  :: s
     real(dp)                  :: r0, rnorm
-    integer                   :: n, iter
+    integer                   :: iter
 
     ! point the held linear solver at this linearization (J = sum coeff dR/dU)
     call this % prepare_inner_solver(coeff)
 
     allocate(res(system % get_num_state_vars()))
 
+    ! the state owns the condensed update rule (one correction moves
+    ! every derivative order, weighted by the linearization)
+    s = differential_state(size(U, 1), size(U, 2) - 1, coeff)
+    s % U = U
+
     r0 = 0.0_dp
 
     newton_iters: do iter = 1, this % max_it
 
        ! Evaluate the residual at the current state
-       system % S = U
+       system % S = s % U
 
        res = 0.0d0
        call system % add_residual(res)
@@ -101,12 +108,11 @@ contains
        ! (rhs unset => it forms -residual itself at the current state).
        call this % linear_solver % solve(system, dq, FORWARD)
 
-       ! Condensed update of every derivative order
-       do n = 1, size(coeff)
-          U(:,n) = U(:,n) + coeff(n)*dq
-       end do
+       call s % update(dq)
 
     end do newton_iters
+
+    U = s % U
 
     deallocate(res)
 
@@ -136,30 +142,6 @@ contains
   end subroutine prepare_inner_solver
 
   !===================================================================!
-  ! Steady forward solve R(u) = 0 (the solution is left in system % S).
-  !===================================================================!
-
-  impure subroutine solve_steady(this, system)
-
-    class(newton)   , intent(inout) :: this
-    class(assembler), intent(inout) :: system
-
-    type(scalar), allocatable :: U(:,:)
-    integer                   :: n, norder
-
-    n      = system % get_num_state_vars()
-    norder = system % get_differential_order()
-
-    allocate(U(n, norder + 1))
-    U = 0.0d0
-
-    call this % solve(system, steady_coeff, U)
-
-    deallocate(U)
-
-  end subroutine solve_steady
-
-  !===================================================================!
   ! Discrete adjoint total derivative of a functional:
   !   forward     R(u) = 0
   !   adjoint     (dR/du)^T psi = -df/du           (reverse-mode solve)
@@ -182,8 +164,9 @@ contains
     n   = system % get_num_state_vars()
     ndv = system % get_num_design_vars()
 
-    ! 1. forward steady solve  R = 0  ->  u (left in system % S)
-    call this % solve_steady(system)
+    ! 1. forward steady solve R = 0 -> u (left in system % S): the
+    ! inherited march at the steady linearization
+    call march_steady(this, system)
 
     ! 2. adjoint right-hand side  -df/du
     allocate(dfdu(n))
@@ -239,12 +222,12 @@ contains
 
        x = x0; x(i) = x0(i) + delta
        call system % set_design_vars(x)
-       call this % solve_steady(system)
+       call march_steady(this, system)
        call func % eval(system, jp)
 
        x = x0; x(i) = x0(i) - delta
        call system % set_design_vars(x)
-       call this % solve_steady(system)
+       call march_steady(this, system)
        call func % eval(system, jm)
 
        dJdx(i) = real(jp - jm, dp)/(2.0_dp*delta)
@@ -253,11 +236,32 @@ contains
 
     ! restore the baseline design and state
     call system % set_design_vars(x0)
-    call this % solve_steady(system)
+    call march_steady(this, system)
 
     deallocate(x0, x)
 
   end subroutine eval_fd_func_grad
+
+  !===================================================================!
+  ! Steady forward solve through the inherited march (fresh zero state
+  ! at the steady linearization; the solution is left in system % S)
+  !===================================================================!
+
+  impure subroutine march_steady(this, system)
+
+    class(newton)   , intent(inout) :: this
+    class(assembler), intent(inout) :: system
+
+    type(differential_state) :: s
+    integer                  :: norder
+
+    norder = system % get_differential_order()
+    s = differential_state(system % get_num_state_vars(), norder, &
+         & steady_coeff(1 : norder + 1))
+
+    call this % march(system, s)
+
+  end subroutine march_steady
 
   !===================================================================!
   ! 2-norm of a state vector (real or complex-step safe)

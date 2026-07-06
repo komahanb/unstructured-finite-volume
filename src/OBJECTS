@@ -4,8 +4,10 @@ interface_graph.o \
 class_chain.o \
 module_verbosity.o \
 class_csr.o \
-interface_marcher.o \
+interface_state.o \
+class_differential_state.o \
 interface_assembler.o \
+interface_marcher.o \
 interface_function.o \
 class_state_energy.o \
 interface_linear_solver.o \

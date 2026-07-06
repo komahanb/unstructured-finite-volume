@@ -15,6 +15,7 @@ module class_conjugate_gradient
   use iso_fortran_env         , only : dp => REAL64
   use interface_linear_solver , only : linear_solver, preconditioner
   use interface_assembler     , only : assembler
+  use interface_state         , only : state
   use module_solve_mode       , only : FORWARD, REVERSE
 
   implicit none
@@ -44,9 +45,9 @@ module class_conjugate_gradient
 
    contains
 
-     ! the documented march override (linearized path), bound over the
-     ! inherited generic solve
-     procedure :: march => solve
+     ! the documented march override: the newton/bdf linearized path
+     ! when lin_coeff is set, else the inherited converge
+     procedure :: march
      procedure :: iterate
      procedure, private :: solve_linearized
 
@@ -85,30 +86,35 @@ contains
   end function construct
 
   !===================================================================!
-  ! Solve. Resets the iteration counter, takes the newton/bdf linearized
+  ! March. Resets the iteration counter, takes the newton/bdf linearized
   ! path when lin_coeff is set (the documented override), and otherwise
-  ! runs the inherited residual-minimization iteration around the cg sweep.
+  ! runs the inherited residual-minimization iteration around the cg
+  ! sweep. The linearized correction moves the state through its own
+  ! update rule.
   !===================================================================!
 
-  impure subroutine solve(this, system, x, mode)
+  impure subroutine march(this, system, s, mode)
 
     class(conjugate_gradient), intent(inout)    :: this
-    class(assembler)         , intent(in)       :: system
-    real(dp), allocatable    , intent(out)      :: x(:)
+    class(assembler)         , intent(inout)    :: system
+    class(state)             , intent(inout)    :: s
     integer              , intent(in), optional :: mode  ! FORWARD (default) / REVERSE
 
-    ! reset the inner-iteration counter for this solve
+    real(dp), allocatable :: dq(:)
+
+    ! reset the inner-iteration counter for this march
     cg_last_iters = 0
 
     ! Newton/BDF linearized inner solve (J dq = rhs) takes a separate path
     if (allocated(this % lin_coeff)) then
-       call this % solve_linearized(system, x, mode)
+       call this % solve_linearized(system, dq, mode)
+       call s % update(dq)
        return
     end if
 
-    call this % converge(system, x, mode)
+    call this % converge(system, s, mode)
 
-  end subroutine solve
+  end subroutine march
 
   !===================================================================!
   ! The sweep: one (preconditioned) conjugate-gradient pass driving the

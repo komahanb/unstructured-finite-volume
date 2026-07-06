@@ -859,9 +859,6 @@ contains
   end subroutine evaluate_face_flux
 
   !===================================================================!
-  ! Evaluate internal skew source based on the current cell states and
-  ! return
-  !===================================================================!
   ! The residual at state x, in this discretization's vocabulary: the
   ! constant source plus the solution-dependent skew correction, minus
   ! the operator action - composed here, on the layer that owns the
@@ -886,6 +883,9 @@ contains
 
   end subroutine get_residual
 
+  !===================================================================!
+  ! Evaluate internal skew source based on the current cell states and
+  ! return
   !===================================================================!
 
   !subroutine get_tangential_flux(this, ss, phic)

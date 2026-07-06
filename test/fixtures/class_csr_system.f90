@@ -17,7 +17,7 @@ module class_csr_system
   use iso_fortran_env    , only : dp => REAL64
   use class_csr          , only : csr_matrix
   use interface_assembler, only : assembler, WHOLE
-  use module_solve_mode  , only : FORWARD, REVERSE
+  use module_solve_mode  , only : FORWARD, REVERSE, is_valid_mode
 
   implicit none
 
@@ -106,6 +106,13 @@ contains
     if (present(mode)) dir = mode
     sub = WHOLE
     if (present(part)) sub = part
+
+    ! a wrong tag dies at the door - dynamic dispatch bypasses the base
+    ! door, so this override carries its own
+    if (.not. is_valid_mode(dir)) then
+       write(*,'(1x,a,i0)') "csr_system: invalid mode tag ", dir
+       error stop "csr_system: mode must be FORWARD or REVERSE"
+    end if
 
     if (sub .ne. WHOLE) then
        error stop "csr_system: operator parts are not provided - " // &

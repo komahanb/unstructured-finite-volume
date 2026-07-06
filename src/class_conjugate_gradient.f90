@@ -16,7 +16,7 @@ module class_conjugate_gradient
   use interface_linear_solver , only : linear_solver, preconditioner
   use interface_assembler     , only : assembler
   use interface_state         , only : state
-  use module_solve_mode       , only : FORWARD, REVERSE
+  use module_solve_mode       , only : FORWARD, REVERSE, is_valid_mode
 
   implicit none
 
@@ -97,9 +97,34 @@ contains
     real(dp), allocatable :: dq(:)
     integer               :: iters
 
+    ! a wrong tag dies at the door with its name (this override
+    ! short-circuits before converge's own door on the linearized path)
+    if (present(mode)) then
+       if (.not. is_valid_mode(mode)) then
+          write(*,'(1x,a,i0)') "conjugate_gradient % march: invalid mode tag ", mode
+          error stop "conjugate_gradient % march: mode must be FORWARD or REVERSE"
+       end if
+    end if
+
     ! Newton/BDF linearized inner solve (J dq = rhs) takes a separate
-    ! path; its inner count is kept on the object like every other march
+    ! path; its inner count is kept on the object like every other march.
+    ! a declared symmetry claim is verified before this path consumes
+    ! transpose products, exactly as converge verifies before its own
+    ! iteration.
     if (allocated(this % lin_coeff)) then
+       if (system % operator_is_symmetric .and. .not. system % transpose_verified) then
+          verify_claim: block
+            real(dp) :: defect
+            defect = system % verify_transpose_consistency()
+            if (.not. (defect .le. 1.0d-12)) then
+               write(*,'(1x,a,es12.5)') &
+                    & "conjugate_gradient % march: transpose-consistency defect ", defect
+               error stop "conjugate_gradient % march: the system's transpose claim " // &
+                    & "failed verification"
+            end if
+            system % transpose_verified = .true.
+          end block verify_claim
+       end if
        call this % solve_linearized(system, dq, mode, iters)
        this % last_inner_iters = iters
        call s % update(dq)

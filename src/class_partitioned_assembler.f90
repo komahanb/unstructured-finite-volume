@@ -40,7 +40,8 @@ module class_partitioned_assembler
   use class_graph            , only : mesh_graph
   use class_assembler        , only : spatial_assembler => assembler
   use interface_linear_solver, only : preconditioner
-  use module_solve_mode      , only : FORWARD, REVERSE, WHOLE
+  use module_solve_mode      , only : FORWARD, REVERSE, WHOLE, &
+       &                              is_valid_mode, is_valid_part
 
   implicit none
 
@@ -211,6 +212,19 @@ contains
     if (present(mode)) dir = mode
     sub = WHOLE
     if (present(part)) sub = part
+
+    ! a wrong tag dies at the door with its name - this override is
+    ! reached by dynamic dispatch, so it carries its own door (the
+    ! reserved stored-CSR fast path below is untouched)
+    if (.not. is_valid_mode(dir)) then
+       write(*,'(1x,a,i0)') "partitioned_assembler: invalid mode tag ", dir
+       error stop "partitioned_assembler: mode must be FORWARD or REVERSE"
+    end if
+    if (.not. is_valid_part(sub)) then
+       write(*,'(1x,a,i0)') "partitioned_assembler: invalid part tag ", sub
+       error stop "partitioned_assembler: part must be WHOLE, DIAGONAL, " // &
+            & "LOWER_TRIANGLE or UPPER_TRIANGLE"
+    end if
 
     if (this % partitioned .and. dir .eq. FORWARD .and. sub .eq. WHOLE) then
        w = 0.0_dp

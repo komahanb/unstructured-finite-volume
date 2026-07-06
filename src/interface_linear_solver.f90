@@ -229,24 +229,24 @@ contains
        end if
     end if
 
-    ! Verify-before: the first REVERSE march on a system checks the
-    ! symmetry claim against the analytic identity <w, J v> = <J^T w, v>,
-    ! once, and caches the verdict on the system. A handful of products,
-    ! machine precision, no truncation error. The comparison is written
-    ! so a NaN defect also refuses (NaN fails every ordered comparison).
-    if (present(mode)) then
-       if (mode .eq. REVERSE .and. .not. system % transpose_verified) then
-          verify_transpose: block
-            real(dp) :: defect
-            defect = system % verify_transpose_consistency()
-            if (.not. (defect .le. transpose_defect_tol)) then
-               write(*,'(1x,a,es12.5)') &
-                    & "converge: transpose-consistency defect ", defect
-               error stop "converge: the system's transpose claim failed verification"
-            end if
-            system % transpose_verified = .true.
-          end block verify_transpose
-       end if
+    ! Verify-before: a declared symmetry claim is checked against the
+    ! analytic identity <w, J v> = <J^T w, v> before the FIRST march of
+    ! any direction - forward marches consume the claim too (the
+    ! normal-equation sweeps issue transpose products from inside a
+    ! forward march). Once per system, a handful of products, machine
+    ! precision, no truncation error. The comparison is written so a NaN
+    ! defect also refuses (NaN fails every ordered comparison).
+    if (system % operator_is_symmetric .and. .not. system % transpose_verified) then
+       verify_transpose: block
+         real(dp) :: defect
+         defect = system % verify_transpose_consistency()
+         if (.not. (defect .le. transpose_defect_tol)) then
+            write(*,'(1x,a,es12.5)') &
+                 & "converge: transpose-consistency defect ", defect
+            error stop "converge: the system's transpose claim failed verification"
+         end if
+         system % transpose_verified = .true.
+       end block verify_transpose
     end if
 
     ! parameter selection at entry (AUTO only)

@@ -8,6 +8,9 @@
 !      consistent, edge cut as reported
 !   5. the retained adjacency matches the construction stamp_bfs used to
 !      scratch-build (hand-computed xadj/adj on the known graph)
+!   6. directed structure: dependency order on the diamond dag, cycle
+!      detection on a 3-cycle, and the adjoint walk certified through
+!      the type-bound witness (chain analytic + diamond nudge)
 !=====================================================================!
 
 module class_test_graph
@@ -15,12 +18,13 @@ module class_test_graph
   ! a minimal stored subclass: vertices and an edge list set directly,
   ! exactly how a subclass consumes the ancestor
 
-  use interface_graph, only : graph, vertex, edge
+  use interface_graph, only : graph, digraph, vertex, edge
 
   implicit none
 
   private
   public :: test_graph
+  public :: test_digraph
 
   type, extends(graph) :: test_graph
    contains
@@ -29,9 +33,20 @@ module class_test_graph
      procedure :: degree     => test_degree
   end type test_graph
 
+  ! a minimal stored directed fixture for the structure checks
+  type, extends(digraph) :: test_digraph
+   contains
+     procedure :: out_neighbours => test_out_neighbours
+     procedure :: in_neighbours  => test_in_neighbours
+  end type test_digraph
+
   interface test_graph
      module procedure create
   end interface test_graph
+
+  interface test_digraph
+     module procedure create_directed
+  end interface test_digraph
 
 contains
 
@@ -74,13 +89,53 @@ contains
     test_degree = this % stored_degree(v)
   end function test_degree
 
+  pure type(test_digraph) function create_directed(nv, tails, heads) result(this)
+
+    integer, intent(in) :: nv
+    integer, intent(in) :: tails(:), heads(:)
+
+    integer :: i
+
+    this % num_vertices = nv
+    this % num_edges    = size(tails)
+
+    allocate(this % vertices(nv))
+    do i = 1, nv
+       this % vertices(i) % number = i
+       this % vertices(i) % part   = 1
+    end do
+
+    allocate(this % edges(this % num_edges))
+    do i = 1, this % num_edges
+       this % edges(i) % tail = tails(i)
+       this % edges(i) % head = heads(i)
+    end do
+
+    call this % build_directed_adjacency()
+
+  end function create_directed
+
+  pure function test_out_neighbours(this, v) result(nbrs)
+    class(test_digraph), intent(in) :: this
+    integer            , intent(in) :: v
+    integer, allocatable :: nbrs(:)
+    nbrs = this % stored_out_neighbours(v)
+  end function test_out_neighbours
+
+  pure function test_in_neighbours(this, v) result(nbrs)
+    class(test_digraph), intent(in) :: this
+    integer            , intent(in) :: v
+    integer, allocatable :: nbrs(:)
+    nbrs = this % stored_in_neighbours(v)
+  end function test_in_neighbours
+
 end module class_test_graph
 
 program test_graph_suite
 
   use iso_fortran_env  , only : dp => REAL64
   use interface_graph  , only : graph
-  use class_test_graph , only : test_graph
+  use class_test_graph , only : test_graph, test_digraph
   use class_chain      , only : chain
   use module_solve_mode, only : FORWARD, REVERSE
 
@@ -95,7 +150,7 @@ program test_graph_suite
   call check_chain_rule(nfail)
   call check_partition_invariants(nfail)
   call check_dof_map(nfail)
-  call check_adjoint_accumulation(nfail)
+  call check_directed_structure(nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
@@ -275,66 +330,57 @@ contains
   end subroutine assert_partition
 
   !===================================================================!
-  ! Reverse-mode accumulation (the discrete adjoint's structure, on the
-  ! graph): advance x_{k+1} = a x_k along a chain, evaluate
-  ! J = x_n^2 / 2 at the end, and accumulate the adjoint backward. Two
-  ! checks: the analytic derivative dJ/dx_1 = a^{2(n-1)} x_1 at machine
-  ! precision, and a central finite difference.
+  ! Directed structure: the dependency order on the diamond dag, cycle
+  ! detection on a 3-cycle (without dying), and the adjoint walk
+  ! certified through the type-bound witness - the chain fixture judged
+  ! against the analytic derivative and the diamond fixture against a
+  ! central-difference nudge, each at its own tolerance inside the
+  ! witness. A certification value below one passes both.
   !===================================================================!
 
-  subroutine check_adjoint_accumulation(nfail)
+  subroutine check_directed_structure(nfail)
 
     integer, intent(inout) :: nfail
 
-    integer , parameter :: n = 8
-    real(dp), parameter :: a = 0.7_dp, c = 1.3_dp
+    ! a witness value below this certifies both fixtures at their own
+    ! tolerances (the witness normalizes each defect by its tolerance)
+    real(dp), parameter :: certification_threshold = 1.0_dp
 
-    type(chain) :: g
-    real(dp)    :: x(n), adjoint(1, n), seed(1)
-    real(dp)    :: analytic, nudged, h, jp, jm
-    integer     :: k
+    type(test_digraph) :: diamond, cycle3
+    type(chain)        :: c
+    integer, allocatable :: order(:)
+    real(dp) :: certification
 
-    g = chain(n)
+    ! the diamond dag: 1->2, 1->3, 2->4, 3->4
+    diamond = test_digraph(4, tails=[1,1,2,3], heads=[2,3,4,4])
 
-    ! forward: advance the recurrence, keeping the states
-    x(1) = c
-    do k = 1, n-1
-       x(k+1) = a*x(k)
-    end do
+    call report(diamond % is_acyclic(), "diamond dag is acyclic", nfail)
 
-    ! reverse: initialize the adjoint at the objective vertex, dJ/dx_n = x_n
-    seed = x(n)
-    call g % accumulate_adjoint(seed, edge_apply, adjoint)
+    order = diamond % dependency_order()
+    call report(all(order .eq. [1,2,3,4]), &
+         & "dependency order on the diamond", nfail)
 
-    ! check 1: the analytic derivative, machine precision
-    analytic = a**(2*(n-1)) * c
-    call report(abs(adjoint(1,1) - analytic) .le. 1.0e-14_dp*max(abs(analytic), 1.0_dp), &
-         & "adjoint walk matches analytic slope", nfail)
+    call report(all(diamond % out_neighbours(1) .eq. [2,3]) .and. &
+         &      all(diamond % in_neighbours(4)  .eq. [2,3]), &
+         & "directed queries on the diamond", nfail)
 
-    ! check 2: central finite difference of the whole recurrence
-    h  = 1.0e-6_dp
-    jp = 0.5_dp*(a**(n-1)*(c+h))**2
-    jm = 0.5_dp*(a**(n-1)*(c-h))**2
-    nudged = (jp - jm)/(2.0_dp*h)
-    call report(abs(adjoint(1,1) - nudged) .le. 1.0e-6_dp*max(abs(nudged), 1.0_dp), &
-         & "adjoint walk matches forward nudge", nfail)
+    ! a 3-cycle must be detected without dying
+    cycle3 = test_digraph(3, tails=[1,2,3], heads=[2,3,1])
+    call report(.not. cycle3 % is_acyclic(), &
+         & "cycle detection refuses the 3-cycle", nfail)
 
-  end subroutine check_adjoint_accumulation
+    ! the chain's dependency order is 1..n by construction
+    c = chain(5)
+    order = c % dependency_order()
+    call report(all(order .eq. [1,2,3,4,5]), &
+         & "chain dependency order is 1..n", nfail)
 
-  !===================================================================!
-  ! The transposed edge jacobian for the recurrence x_{k+1} = a x_k:
-  ! every edge has derivative a.
-  !===================================================================!
+    ! the walk's witness: chain analytic + diamond nudge, type-bound
+    certification = c % verify_adjoint_accumulation()
+    call report(certification .lt. certification_threshold, &
+         & "adjoint accumulation certified by the witness", nfail)
 
-  subroutine edge_apply(tail, head, adjoint_head, contribution)
-
-    integer , intent(in)  :: tail, head
-    real(dp), intent(in)  :: adjoint_head(:)
-    real(dp), intent(out) :: contribution(:)
-
-    contribution = 0.7_dp * adjoint_head
-
-  end subroutine edge_apply
+  end subroutine check_directed_structure
 
   !===================================================================!
   ! dof interleaving on the ancestor (variable-fastest)

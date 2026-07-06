@@ -1,8 +1,9 @@
 !=====================================================================!
-! The chain subclass of the abstract graph: vertices 1..n connected by
-! the neighbour rule i -> i+1. The iterate sequence of a solver and
-! the step sequence of a time integrator are both instances of this
-! class.
+! The chain subclass of the directed graph: vertices 1..n wired by the
+! rule i -> i+1. The iterate sequence of a solver and the step sequence
+! of a time integrator are both instances of this class; its dependency
+! order is 1..n by construction, and the discrete adjoint traverses it
+! in reverse through the inherited accumulation.
 !
 ! The adjacency is rule-generated, never materialized: neighbours and
 ! degree are answered by arithmetic, no edge list and no compressed
@@ -17,7 +18,7 @@
 
 module class_chain
 
-  use interface_graph, only : graph, vertex
+  use interface_graph, only : digraph, vertex
 
   implicit none
 
@@ -28,11 +29,15 @@ module class_chain
   ! Concrete chain graph
   !===================================================================!
 
-  type, extends(graph) :: chain
+  type, extends(digraph) :: chain
 
    contains
 
-     ! the deferred contract, answered by the rule - nothing stored
+     ! the directed contract, answered by the rule - nothing stored
+     procedure :: out_neighbours
+     procedure :: in_neighbours
+
+     ! cheap rule overrides of the provided union queries
      procedure :: neighbours
      procedure :: degree
 
@@ -69,6 +74,41 @@ contains
     end do
 
   end function create
+
+  !===================================================================!
+  ! The directed rule: the one out-edge goes to i+1, the one in-edge
+  ! comes from i-1, within 1..n.
+  !===================================================================!
+
+  pure function out_neighbours(this, v) result(nbrs)
+
+    class(chain), intent(in) :: this
+    integer     , intent(in) :: v
+
+    integer, allocatable :: nbrs(:)
+
+    if (v .lt. this % num_vertices) then
+       nbrs = [v+1]
+    else
+       allocate(nbrs(0))
+    end if
+
+  end function out_neighbours
+
+  pure function in_neighbours(this, v) result(nbrs)
+
+    class(chain), intent(in) :: this
+    integer     , intent(in) :: v
+
+    integer, allocatable :: nbrs(:)
+
+    if (v .gt. 1) then
+       nbrs = [v-1]
+    else
+       allocate(nbrs(0))
+    end if
+
+  end function in_neighbours
 
   !===================================================================!
   ! Neighbours of vertex i by rule: i-1 and i+1, within 1..n.

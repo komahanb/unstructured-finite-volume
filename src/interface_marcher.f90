@@ -32,9 +32,9 @@
 !
 ! In graph terms: a marcher traverses a chain - the iterate sequence in
 ! solver iterations, the step sequence in physical time. The chain is a
-! graph (class_chain), the states are its vertex payloads, and the
-! discrete adjoint traverses the chain in reverse
-! (interface_graph % accumulate_adjoint).
+! directed graph (class_chain extends digraph), the states are its
+! vertex payloads, and the discrete adjoint traverses it in reverse
+! (digraph % accumulate_adjoint, direction read from structure).
 !
 ! Author : Komahan Boopathy
 !=====================================================================!

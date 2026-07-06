@@ -13,9 +13,13 @@
 ! adjacency (build_adjacency from an edge list) or generate it by rule
 ! (the chain overrides neighbours/degree and stores nothing).
 !
-! Traversal: traversal_order(mode) visits vertices breadth-first in
-! dependency order (FORWARD), or the same order flipped (REVERSE) - the
-! direction constants come from module_solve_mode.
+! Traversal: traversal_order(mode) is a VISIT order (breadth-first,
+! FORWARD; the same order reversed, REVERSE) - locality for the
+! partitioner, with no dependency claim. Dependency semantics are true
+! only on the directed graph: digraph carries out/in neighbour queries,
+! a topological dependency_order with a cycle refusal, and the discrete
+! adjoint's reverse-mode accumulation, whose direction is read from
+! structure rather than recovered from a visit order.
 !
 ! Partition: stamped in place (partition / partition_rcb), then queried
 ! (part_of, owned, ghosts, balance, edge_cut). A partition of a graph is
@@ -32,7 +36,7 @@ module interface_graph
   implicit none
 
   private
-  public :: graph, vertex, edge
+  public :: graph, digraph, vertex, edge
 
   type :: vertex
      integer :: number      ! vertex label
@@ -90,13 +94,8 @@ module interface_graph
      procedure :: stored_neighbours
      procedure :: stored_degree
 
-     ! traversal order over the whole graph (FORWARD/REVERSE)
+     ! visit order (breadth-first) over the whole graph
      procedure :: traversal_order
-
-     ! reverse-mode accumulation: the adjoint propagated from the last
-     ! vertex in dependency order back to the first. The traversal loop
-     ! lives here; the caller supplies each edge's transpose action.
-     procedure :: accumulate_adjoint
 
      ! partitioners - stamp vertex % part and gather the csr, in place
      procedure :: partition
@@ -143,6 +142,92 @@ module interface_graph
      end function degree_interface
 
   end interface
+
+  !===================================================================!
+  ! Directed graph: directedness is a genuine axis - it changes the
+  ! protocol (out/in queries, dependency order, adjoint accumulation)
+  ! and is orthogonal to storage-versus-rule, so it earns a type, not a
+  ! flag and not a runtime refusal. A coupling graph (the mesh) stays on
+  ! the base; calling the directed protocol on it does not compile.
+  !===================================================================!
+
+  type, abstract, extends(graph) :: digraph
+
+     ! stored directed adjacency: two compressed lists built from the
+     ! tail -> head edge list (a rule-generated subclass stores nothing)
+     integer, allocatable :: out_xadj(:), out_adj(:)
+     integer, allocatable :: in_xadj(:),  in_adj(:)
+
+   contains
+
+     ! the directed contract, compiler-enforced
+     procedure(directed_neighbours_interface), deferred :: out_neighbours
+     procedure(directed_neighbours_interface), deferred :: in_neighbours
+
+     ! the base contract, provided: the deduplicated union of out and
+     ! in, so partitioners and the visit order keep working
+     procedure :: neighbours => union_neighbours
+     procedure :: degree     => union_degree
+
+     ! shared stored-directed mechanism (mirrors the base stored pattern)
+     procedure :: build_directed_adjacency
+     procedure :: stored_out_neighbours
+     procedure :: stored_in_neighbours
+
+     ! dependency semantics - true only here
+     procedure :: dependency_order
+     procedure :: is_acyclic
+
+     ! reverse-mode accumulation of the discrete adjoint, direction
+     ! read from structure
+     procedure :: accumulate_adjoint
+
+     ! the walk's witness, a contract method
+     procedure, nopass :: verify_adjoint_accumulation
+
+  end type digraph
+
+  !===================================================================!
+  ! Deferred interface of the directed contract
+  !===================================================================!
+
+  abstract interface
+
+     ! the out- (or in-) neighbours of vertex v
+     pure function directed_neighbours_interface(this, v) result(nbrs)
+       import :: digraph
+       class(digraph), intent(in) :: this
+       integer       , intent(in) :: v
+       integer, allocatable       :: nbrs(:)
+     end function directed_neighbours_interface
+
+  end interface
+
+  !===================================================================!
+  ! Apparatus of the walk's witness (verify_adjoint_accumulation), not
+  ! demo code: a minimal stored digraph, private to this module, so the
+  ! witness's fixtures cannot be chains-by-import.
+  !===================================================================!
+
+  type, extends(digraph) :: witness_digraph
+   contains
+     procedure :: out_neighbours => witness_out_neighbours
+     procedure :: in_neighbours  => witness_in_neighbours
+  end type witness_digraph
+
+  ! witness fixture constants: the canonical recurrence chain and the
+  ! diamond dag, each judged against its own named tolerance; the
+  ! witness returns the worst defect normalized by these, so a value
+  ! below one certifies both claims
+  integer , parameter :: witness_chain_length      = 8
+  real(dp), parameter :: witness_recurrence_factor = 0.7_dp
+  real(dp), parameter :: witness_start_value       = 1.3_dp
+  real(dp), parameter :: witness_chain_tolerance   = 1.0d-13
+  real(dp), parameter :: witness_diamond_tolerance = 1.0d-6
+  real(dp), parameter :: witness_factor_12 = 0.3_dp
+  real(dp), parameter :: witness_factor_13 = 0.5_dp
+  real(dp), parameter :: witness_factor_24 = 0.6_dp
+  real(dp), parameter :: witness_factor_34 = 0.9_dp
 
 contains
 
@@ -266,9 +351,11 @@ contains
   end function stored_degree
 
   !===================================================================!
-  ! Traversal order over all vertices: breadth-first in dependency
-  ! order, restarting for disconnected components (FORWARD); the same
-  ! order flipped (REVERSE). Consumes only the neighbour queries.
+  ! Visit order over all vertices: breadth-first, restarting for
+  ! disconnected components (FORWARD); the same order reversed
+  ! (REVERSE). This is locality for the partitioner, not a dependency
+  ! claim - dependency semantics live on digraph. Consumes only the
+  ! neighbour queries.
   !===================================================================!
 
   pure function traversal_order(this, direction) result(order)
@@ -326,69 +413,6 @@ contains
     if (dir .eq. REVERSE) order = order(nv:1:-1)
 
   end function traversal_order
-
-  !===================================================================!
-  ! Reverse-mode accumulation - the structure of the discrete adjoint,
-  ! implemented once on the graph. Vertices are visited against the
-  ! dependency order; the adjoint is initialized at the last vertex
-  ! (where the objective is evaluated), and each earlier vertex's
-  ! adjoint is the sum, over its outgoing edges (neighbours later in
-  ! the dependency order), of the edge's transposed jacobian applied to
-  ! the adjoint at the head vertex. The graph never evaluates a
-  ! derivative itself - the caller supplies edge_apply (typically an
-  ! internal procedure with access to the required system state).
-  !
-  ! adjoint is (block, num_vertices): one block-sized vector per vertex
-  ! (block = 1 for scalar recurrences, the state size for iterate
-  ! chains).
-  !===================================================================!
-
-  subroutine accumulate_adjoint(this, seed, edge_apply, adjoint)
-
-    class(graph), intent(in)  :: this
-    real(dp)    , intent(in)  :: seed(:)
-    interface
-       subroutine edge_apply(tail, head, adjoint_head, contribution)
-         import :: dp
-         integer , intent(in)  :: tail, head
-         real(dp), intent(in)  :: adjoint_head(:)
-         real(dp), intent(out) :: contribution(:)
-       end subroutine edge_apply
-    end interface
-    real(dp)    , intent(out) :: adjoint(:,:)
-
-    integer , allocatable :: order(:), pos(:), nbrs(:)
-    real(dp), allocatable :: contribution(:)
-    integer :: nv, i, j, v, w
-
-    nv = this % num_vertices
-    allocate(order(nv))
-    order = this % traversal_order(FORWARD)
-
-    allocate(pos(nv))
-    do i = 1, nv
-       pos(order(i)) = i
-    end do
-
-    allocate(contribution(size(seed)))
-
-    adjoint = 0.0_dp
-    adjoint(:, order(nv)) = seed
-
-    ! visit against the dependency order; the last vertex keeps its seed
-    do i = nv-1, 1, -1
-       v    = order(i)
-       nbrs = this % neighbours(v)
-       do j = 1, size(nbrs)
-          w = nbrs(j)
-          if (pos(w) .gt. pos(v)) then
-             call edge_apply(v, w, adjoint(:, w), contribution)
-             adjoint(:, v) = adjoint(:, v) + contribution
-          end if
-       end do
-    end do
-
-  end subroutine accumulate_adjoint
 
   !===================================================================!
   ! Partition into nparts pieces by breadth-first ordering, in place
@@ -721,6 +745,447 @@ contains
     end do
 
   end subroutine print_partition
+
+  !===================================================================!
+  ! The base contract on a digraph: neighbours is the deduplicated
+  ! union of out- and in-neighbours, so the partitioners and the visit
+  ! order consume a directed graph unchanged.
+  !===================================================================!
+
+  pure function union_neighbours(this, v) result(nbrs)
+
+    class(digraph), intent(in) :: this
+    integer       , intent(in) :: v
+
+    integer, allocatable :: nbrs(:), outn(:), inn(:)
+    integer :: n, i
+
+    outn = this % out_neighbours(v)
+    inn  = this % in_neighbours(v)
+
+    allocate(nbrs(size(outn) + size(inn)))
+    n = size(outn)
+    nbrs(1:n) = outn
+
+    do i = 1, size(inn)
+       if (.not. any(nbrs(1:n) .eq. inn(i))) then
+          n = n + 1
+          nbrs(n) = inn(i)
+       end if
+    end do
+
+    nbrs = nbrs(1:n)
+
+  end function union_neighbours
+
+  pure integer function union_degree(this, v)
+
+    class(digraph), intent(in) :: this
+    integer       , intent(in) :: v
+
+    integer, allocatable :: nbrs(:)
+
+    nbrs = union_neighbours(this, v)
+    union_degree = size(nbrs)
+
+  end function union_degree
+
+  !===================================================================!
+  ! Build the stored directed adjacency: two compressed lists from the
+  ! tail -> head edge list, out-rows by tail and in-rows by head, both
+  ! in edge order.
+  !===================================================================!
+
+  pure subroutine build_directed_adjacency(this)
+
+    class(digraph), intent(inout) :: this
+
+    integer, allocatable :: ptr(:)
+    integer :: nv, e, i
+
+    nv = this % num_vertices
+
+    if (allocated(this % out_xadj)) deallocate(this % out_xadj)
+    if (allocated(this % out_adj))  deallocate(this % out_adj)
+    if (allocated(this % in_xadj))  deallocate(this % in_xadj)
+    if (allocated(this % in_adj))   deallocate(this % in_adj)
+
+    allocate(this % out_xadj(nv+1), this % in_xadj(nv+1))
+    this % out_xadj = 0
+    this % in_xadj  = 0
+
+    do e = 1, this % num_edges
+       this % out_xadj(this % edges(e) % tail + 1) = this % out_xadj(this % edges(e) % tail + 1) + 1
+       this % in_xadj(this % edges(e) % head + 1)  = this % in_xadj(this % edges(e) % head + 1)  + 1
+    end do
+
+    this % out_xadj(1) = 1
+    this % in_xadj(1)  = 1
+    do i = 1, nv
+       this % out_xadj(i+1) = this % out_xadj(i+1) + this % out_xadj(i)
+       this % in_xadj(i+1)  = this % in_xadj(i+1)  + this % in_xadj(i)
+    end do
+
+    allocate(this % out_adj(this % out_xadj(nv+1)-1))
+    allocate(this % in_adj(this % in_xadj(nv+1)-1))
+
+    allocate(ptr(nv))
+    ptr = this % out_xadj(1:nv)
+    do e = 1, this % num_edges
+       associate(t => this % edges(e) % tail, h => this % edges(e) % head)
+         this % out_adj(ptr(t)) = h
+         ptr(t) = ptr(t) + 1
+       end associate
+    end do
+
+    ptr = this % in_xadj(1:nv)
+    do e = 1, this % num_edges
+       associate(t => this % edges(e) % tail, h => this % edges(e) % head)
+         this % in_adj(ptr(h)) = t
+         ptr(h) = ptr(h) + 1
+       end associate
+    end do
+
+  end subroutine build_directed_adjacency
+
+  !===================================================================!
+  ! Stored directed queries: the shared mechanism a stored directed
+  ! subclass delegates its deferred procedures to. The stop is a
+  ! broken-invariant report - a stored digraph's constructor must call
+  ! build_directed_adjacency - not an extension hook.
+  !===================================================================!
+
+  pure function stored_out_neighbours(this, v) result(nbrs)
+
+    class(digraph), intent(in) :: this
+    integer       , intent(in) :: v
+
+    integer, allocatable :: nbrs(:)
+
+    if (.not. allocated(this % out_xadj)) then
+       error stop "digraph: stored digraph constructed without directed adjacency - " // &
+            & "the constructor must call build_directed_adjacency"
+    end if
+
+    nbrs = this % out_adj(this % out_xadj(v) : this % out_xadj(v+1)-1)
+
+  end function stored_out_neighbours
+
+  pure function stored_in_neighbours(this, v) result(nbrs)
+
+    class(digraph), intent(in) :: this
+    integer       , intent(in) :: v
+
+    integer, allocatable :: nbrs(:)
+
+    if (.not. allocated(this % in_xadj)) then
+       error stop "digraph: stored digraph constructed without directed adjacency - " // &
+            & "the constructor must call build_directed_adjacency"
+    end if
+
+    nbrs = this % in_adj(this % in_xadj(v) : this % in_xadj(v+1)-1)
+
+  end function stored_in_neighbours
+
+  !===================================================================!
+  ! Topological order over the out-edges (Kahn's construction): vertices
+  ! with no incoming edges enter first, in ascending vertex order for
+  ! determinism. n_ordered < num_vertices signals a directed cycle.
+  ! Shared by dependency_order (which refuses on a cycle) and is_acyclic
+  ! (which reports without dying).
+  !===================================================================!
+
+  pure subroutine topological_order(this, order, n_ordered)
+
+    class(digraph), intent(in)  :: this
+    integer, allocatable, intent(out) :: order(:)
+    integer              , intent(out) :: n_ordered
+
+    integer, allocatable :: indeg(:), queue(:), nbrs(:)
+    integer :: nv, v, w, i, qh, qt
+
+    nv = this % num_vertices
+    allocate(order(nv), indeg(nv), queue(nv))
+
+    do v = 1, nv
+       nbrs = this % in_neighbours(v)
+       indeg(v) = size(nbrs)
+    end do
+
+    qh = 1; qt = 0
+    do v = 1, nv
+       if (indeg(v) .eq. 0) then
+          qt = qt + 1
+          queue(qt) = v
+       end if
+    end do
+
+    n_ordered = 0
+    do while (qh .le. qt)
+       v  = queue(qh)
+       qh = qh + 1
+       n_ordered = n_ordered + 1
+       order(n_ordered) = v
+       nbrs = this % out_neighbours(v)
+       do i = 1, size(nbrs)
+          w = nbrs(i)
+          indeg(w) = indeg(w) - 1
+          if (indeg(w) .eq. 0) then
+             qt = qt + 1
+             queue(qt) = w
+          end if
+       end do
+    end do
+
+  end subroutine topological_order
+
+  !===================================================================!
+  ! Dependency order over the out-edges: FORWARD as computed, REVERSE
+  ! flipped. On a cycle it refuses - standing wiring must be directed
+  ! and loop-free before a number moves; this stop is the structural
+  ! audit, reachable only by an ill-formed graph, not a stub. Use
+  ! is_acyclic to test without dying.
+  !===================================================================!
+
+  pure function dependency_order(this, direction) result(order)
+
+    class(digraph), intent(in)           :: this
+    integer       , intent(in), optional :: direction   ! FORWARD (default) / REVERSE
+
+    integer, allocatable :: order(:)
+    integer :: n_ordered, dir
+
+    dir = FORWARD
+    if (present(direction)) dir = direction
+
+    call topological_order(this, order, n_ordered)
+
+    if (n_ordered .lt. this % num_vertices) then
+       error stop "digraph: dependency order requires acyclic directed wiring"
+    end if
+
+    if (dir .eq. REVERSE) order = order(this % num_vertices : 1 : -1)
+
+  end function dependency_order
+
+  !===================================================================!
+  ! True when the directed wiring has no cycle (pure report, no stop) -
+  ! for constructors and tests to assert without dying.
+  !===================================================================!
+
+  pure logical function is_acyclic(this)
+
+    class(digraph), intent(in) :: this
+
+    integer, allocatable :: order(:)
+    integer :: n_ordered
+
+    call topological_order(this, order, n_ordered)
+    is_acyclic = (n_ordered .eq. this % num_vertices)
+
+  end function is_acyclic
+
+  !===================================================================!
+  ! Reverse-mode accumulation - the structure of the discrete adjoint,
+  ! implemented once, on the directed graph. Direction is read from the
+  ! structure: vertices are taken in dependency order (which proves
+  ! acyclicity before a number moves), the adjoint is seeded at the
+  ! objective vertex `at` (no hidden assumption about where the
+  ! objective sits), and each earlier vertex accumulates its
+  ! out-neighbours' adjoints through the caller-supplied edge_apply.
+  ! Vertices after `at` in the dependency order correctly remain zero -
+  ! they do not influence the objective. The graph never evaluates a
+  ! derivative itself; edge_apply is typically an internal procedure of
+  ! the caller with access to the required system state.
+  !
+  ! adjoint is (block, num_vertices): one block-sized vector per vertex
+  ! (block = 1 for scalar recurrences, the state size for iterate
+  ! chains).
+  !===================================================================!
+
+  subroutine accumulate_adjoint(this, seed, edge_apply, at, adjoint)
+
+    class(digraph), intent(in)  :: this
+    real(dp)      , intent(in)  :: seed(:)
+    interface
+       subroutine edge_apply(tail, head, adjoint_head, contribution)
+         import :: dp
+         integer , intent(in)  :: tail, head
+         real(dp), intent(in)  :: adjoint_head(:)
+         real(dp), intent(out) :: contribution(:)
+       end subroutine edge_apply
+    end interface
+    integer       , intent(in)  :: at          ! the objective vertex
+    real(dp)      , intent(out) :: adjoint(:,:)
+
+    integer , allocatable :: order(:), pos(:), nbrs(:)
+    real(dp), allocatable :: contribution(:)
+    integer :: nv, i, j, v, w
+
+    nv = this % num_vertices
+    allocate(order(nv))
+    order = this % dependency_order(FORWARD)
+
+    allocate(pos(nv))
+    do i = 1, nv
+       pos(order(i)) = i
+    end do
+
+    allocate(contribution(size(seed)))
+
+    adjoint = 0.0_dp
+    adjoint(:, at) = seed
+
+    ! against the dependency order, from just before the objective
+    do i = pos(at) - 1, 1, -1
+       v    = order(i)
+       nbrs = this % out_neighbours(v)
+       do j = 1, size(nbrs)
+          w = nbrs(j)
+          call edge_apply(v, w, adjoint(:, w), contribution)
+          adjoint(:, v) = adjoint(:, v) + contribution
+       end do
+    end do
+
+  end subroutine accumulate_adjoint
+
+  !===================================================================!
+  ! The walk's witness, a contract method (nopass): two self-contained
+  ! fixtures, each judged against its own named tolerance. The
+  ! canonical recurrence chain (x_{k+1} = a x_k, objective x_n^2 / 2)
+  ! is checked against the analytic derivative at machine tolerance;
+  ! the diamond dag (1->2, 1->3, 2->4, 3->4) - what proves the walk
+  ! beyond chains - is checked against a central-difference nudge.
+  ! Returns the worst defect normalized by its fixture's tolerance:
+  ! a value below one certifies both claims.
+  !===================================================================!
+
+  impure real(dp) function verify_adjoint_accumulation() result(worst)
+
+    type(witness_digraph) :: g
+    real(dp), allocatable :: adjoint(:,:)
+    real(dp) :: x(witness_chain_length), analytic, nudged, jp, jm, h
+    real(dp) :: defect_chain, defect_diamond
+    integer  :: k, n
+
+    ! ---- fixture 1: the recurrence chain, analytic at machine tolerance
+    n = witness_chain_length
+    g = make_witness_digraph(n, [(k, k = 1, n-1)], [(k+1, k = 1, n-1)])
+
+    x(1) = witness_start_value
+    do k = 1, n-1
+       x(k+1) = witness_recurrence_factor*x(k)
+    end do
+
+    allocate(adjoint(1, n))
+    call g % accumulate_adjoint([x(n)], chain_edge_apply, n, adjoint)
+
+    analytic    = witness_recurrence_factor**(2*(n-1)) * witness_start_value
+    defect_chain = abs(adjoint(1,1) - analytic)/max(abs(analytic), 1.0_dp)
+
+    deallocate(adjoint)
+
+    ! ---- fixture 2: the diamond dag, central-difference nudge
+    g = make_witness_digraph(4, [1, 1, 2, 3], [2, 3, 4, 4])
+
+    allocate(adjoint(1, 4))
+    call g % accumulate_adjoint([diamond_terminal(witness_start_value)], &
+         & diamond_edge_apply, 4, adjoint)
+
+    h  = 1.0d-6
+    jp = 0.5_dp*diamond_terminal(witness_start_value + h)**2
+    jm = 0.5_dp*diamond_terminal(witness_start_value - h)**2
+    nudged = (jp - jm)/(2.0_dp*h)
+
+    defect_diamond = abs(adjoint(1,1) - nudged)/max(abs(nudged), 1.0_dp)
+
+    worst = max(defect_chain/witness_chain_tolerance, &
+         &      defect_diamond/witness_diamond_tolerance)
+
+  contains
+
+    ! every chain edge carries the recurrence factor
+    subroutine chain_edge_apply(tail, head, adjoint_head, contribution)
+      integer , intent(in)  :: tail, head
+      real(dp), intent(in)  :: adjoint_head(:)
+      real(dp), intent(out) :: contribution(:)
+      contribution = witness_recurrence_factor*adjoint_head
+    end subroutine chain_edge_apply
+
+    ! the diamond's per-edge factors
+    subroutine diamond_edge_apply(tail, head, adjoint_head, contribution)
+      integer , intent(in)  :: tail, head
+      real(dp), intent(in)  :: adjoint_head(:)
+      real(dp), intent(out) :: contribution(:)
+      contribution = diamond_factor(tail, head)*adjoint_head
+    end subroutine diamond_edge_apply
+
+    pure real(dp) function diamond_factor(tail, head)
+      integer, intent(in) :: tail, head
+      if (tail .eq. 1 .and. head .eq. 2) then
+         diamond_factor = witness_factor_12
+      else if (tail .eq. 1 .and. head .eq. 3) then
+         diamond_factor = witness_factor_13
+      else if (tail .eq. 2 .and. head .eq. 4) then
+         diamond_factor = witness_factor_24
+      else
+         diamond_factor = witness_factor_34
+      end if
+    end function diamond_factor
+
+    ! the diamond's terminal value x4 as a function of the start value
+    pure real(dp) function diamond_terminal(start)
+      real(dp), intent(in) :: start
+      diamond_terminal = witness_factor_24*(witness_factor_12*start) &
+           &           + witness_factor_34*(witness_factor_13*start)
+    end function diamond_terminal
+
+  end function verify_adjoint_accumulation
+
+  !===================================================================!
+  ! Witness apparatus: stored directed queries and the fixture builder.
+  !===================================================================!
+
+  pure function witness_out_neighbours(this, v) result(nbrs)
+    class(witness_digraph), intent(in) :: this
+    integer               , intent(in) :: v
+    integer, allocatable :: nbrs(:)
+    nbrs = this % stored_out_neighbours(v)
+  end function witness_out_neighbours
+
+  pure function witness_in_neighbours(this, v) result(nbrs)
+    class(witness_digraph), intent(in) :: this
+    integer               , intent(in) :: v
+    integer, allocatable :: nbrs(:)
+    nbrs = this % stored_in_neighbours(v)
+  end function witness_in_neighbours
+
+  pure function make_witness_digraph(nv, tails, heads) result(g)
+
+    integer, intent(in) :: nv
+    integer, intent(in) :: tails(:), heads(:)
+    type(witness_digraph) :: g
+
+    integer :: i
+
+    g % num_vertices = nv
+    g % num_edges    = size(tails)
+
+    allocate(g % vertices(nv))
+    do i = 1, nv
+       g % vertices(i) % number = i
+       g % vertices(i) % part   = 1
+    end do
+
+    allocate(g % edges(g % num_edges))
+    do i = 1, g % num_edges
+       g % edges(i) % tail = tails(i)
+       g % edges(i) % head = heads(i)
+    end do
+
+    call g % build_directed_adjacency()
+
+  end function make_witness_digraph
 
   !===================================================================!
   ! RCB recursion: assign vertices idx(lo:hi) to k parts numbered

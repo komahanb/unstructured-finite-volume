@@ -14,6 +14,7 @@
 module interface_integrator
 
   use iso_fortran_env    , only : dp => REAL64
+  use module_solve_mode  , only : is_valid_mode
   use interface_marcher  , only : marcher
   use interface_assembler, only : assembler
   use interface_state    , only : state
@@ -166,6 +167,14 @@ contains
 
     type(differential_state) :: s
 
+    ! a wrong tag dies at the door with its name
+    if (present(mode)) then
+       if (.not. is_valid_mode(mode)) then
+          write(*,'(1x,a,i0)') "integrate: invalid mode tag ", mode
+          error stop "integrate: mode must be FORWARD or REVERSE"
+       end if
+    end if
+
     s = differential_state( &
          & this % system % get_num_state_vars(), &
          & this % system % get_differential_order())
@@ -192,6 +201,14 @@ contains
     integer          , intent(in), optional :: mode
 
     integer :: k, p, ierr
+
+    ! a wrong tag dies at the door with its name
+    if (present(mode)) then
+       if (.not. is_valid_mode(mode)) then
+          write(*,'(1x,a,i0)') "integrator % march: invalid mode tag ", mode
+          error stop "integrator % march: mode must be FORWARD or REVERSE"
+       end if
+    end if
 
     ! the deferred step advances the system this integrator was
     ! constructed with; a different system of the same size would march

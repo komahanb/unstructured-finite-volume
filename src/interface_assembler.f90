@@ -12,7 +12,8 @@ module interface_assembler
   use iso_fortran_env  , only : dp => REAL64
   use class_csr        , only : csr_matrix
   use module_solve_mode, only : FORWARD, REVERSE, &
-       &                        WHOLE, DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE
+       &                        WHOLE, DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE, &
+       &                        is_valid_mode, is_valid_part
   implicit none
 
   private
@@ -443,6 +444,18 @@ contains
     sub = WHOLE
     if (present(part)) sub = part
 
+    ! a wrong tag dies at the door with its name, never silently
+    ! reinterpreted (the mode and part ranges are disjoint)
+    if (.not. is_valid_mode(dir)) then
+       write(*,'(1x,a,i0)') "get_jacobian_residual_product: invalid mode tag ", dir
+       error stop "get_jacobian_residual_product: mode must be FORWARD or REVERSE"
+    end if
+    if (.not. is_valid_part(sub)) then
+       write(*,'(1x,a,i0)') "get_jacobian_residual_product: invalid part tag ", sub
+       error stop "get_jacobian_residual_product: part must be WHOLE, DIAGONAL, " // &
+            & "LOWER_TRIANGLE or UPPER_TRIANGLE"
+    end if
+
     if (dir .eq. REVERSE) then
        ! transpose action at the steady linearization: refused unless the
        ! instance declares symmetry or overrides the transpose seat
@@ -473,6 +486,12 @@ contains
     real(dp)        , intent(out) :: w(:)
     real(dp)        , intent(in)  :: v(:)
     integer         , intent(in)  :: sub
+
+    if (.not. is_valid_part(sub)) then
+       write(*,'(1x,a,i0)') "transpose_product: invalid part tag ", sub
+       error stop "transpose_product: part must be WHOLE, DIAGONAL, " // &
+            & "LOWER_TRIANGLE or UPPER_TRIANGLE"
+    end if
 
     if (.not. this % operator_is_symmetric) then
        error stop "assembler % transpose_product: no transpose available - " // &

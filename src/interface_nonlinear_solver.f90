@@ -21,7 +21,7 @@ module interface_nonlinear_solver
   use interface_marcher         , only : marcher
   use interface_state           , only : state
   use class_differential_state  , only : differential_state
-  use module_solve_mode         , only : REVERSE
+  use module_solve_mode         , only : REVERSE, is_valid_mode
   use interface_linear_solver   , only : linear_solver
   use interface_assembler       , only : assembler
 
@@ -90,6 +90,11 @@ contains
     integer                , intent(in), optional :: mode
 
     if (present(mode)) then
+       ! a wrong tag dies at the door with its name
+       if (.not. is_valid_mode(mode)) then
+          write(*,'(1x,a,i0)') "nonlinear_solver % march: invalid mode tag ", mode
+          error stop "nonlinear_solver % march: mode must be FORWARD or REVERSE"
+       end if
        if (mode .eq. REVERSE) then
           error stop "nonlinear_solver % march: REVERSE requires the functional's " // &
                & "adjoint right-hand side - use the adjoint driver"

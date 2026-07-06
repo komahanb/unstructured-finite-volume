@@ -45,7 +45,7 @@ module interface_linear_solver
   use interface_assembler       , only : assembler
   use interface_state           , only : state
   use class_differential_state  , only : differential_state
-  use module_solve_mode         , only : FORWARD, REVERSE
+  use module_solve_mode         , only : FORWARD, REVERSE, is_valid_mode
 
   implicit none
 
@@ -203,6 +203,14 @@ contains
             &  allocated(this % post_conditioner))) then
           error stop "linear_solver: preconditioned REVERSE solve refused - " // &
                & "the swap-and-transpose contract is not implemented"
+       end if
+    end if
+
+    ! a wrong tag dies at the door with its name
+    if (present(mode)) then
+       if (.not. is_valid_mode(mode)) then
+          write(*,'(1x,a,i0)') "converge: invalid mode tag ", mode
+          error stop "converge: mode must be FORWARD or REVERSE"
        end if
     end if
 

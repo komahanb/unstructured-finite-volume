@@ -143,3 +143,6 @@ stay); an entry retires when its condition is met, not before.
   REVERSE march through converge is refused on anything but a
   declared-symmetric operator (the loop is direction-blind); retires
   when the residual query and the sweep carry the mode.
+- **mode and part promote to one-field derived types** (compiler-visible
+  tags instead of checked integers) — retires when the marcher's
+  deferred interface next changes for its own reasons.

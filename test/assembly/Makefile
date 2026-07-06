@@ -16,7 +16,7 @@ LDFLAGS += -L../../lib/ ../../lib/libufvm.a -llapack
 # Targets
 #=====================================================================#
 
-all: $(program) refusal
+all: $(program) refusal tag_refusal
 
 $(program): $(objects)
 	$(F90) $(objects) -o $@ $(LDFLAGS)
@@ -24,8 +24,11 @@ $(program): $(objects)
 refusal: refusal.o
 	$(F90) refusal.o -o $@ $(LDFLAGS)
 
+tag_refusal: tag_refusal.o
+	$(F90) tag_refusal.o -o $@ $(LDFLAGS)
+
 clean:
-	@rm -f *.o *.mod *.so $(program) refusal
+	@rm -f *.o *.mod *.so $(program) refusal tag_refusal
 
 #=====================================================================#
 # Rule

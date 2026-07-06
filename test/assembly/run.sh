@@ -20,3 +20,12 @@ if ./refusal >/dev/null 2>&1; then
 else
   echo " PASS : transpose refusal fires on an undeclared system"
 fi
+
+# expected failure: an illegal tag (a part where a mode belongs) must
+# die at the door, never be silently reinterpreted
+if ./tag_refusal >/dev/null 2>&1; then
+  echo " FAIL : tag refusal did not fire"
+  exit 1
+else
+  echo " PASS : tag refusal fires on an illegal mode value"
+fi

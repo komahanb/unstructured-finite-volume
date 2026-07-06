@@ -20,7 +20,7 @@ program solver
   use class_conjugate_gradient , only : conjugate_gradient
   use class_gmres              , only : gmres_solver
   use class_normal_cg          , only : normal_cg, CGNR_METHOD, CGNE_METHOD
-  use class_distributed_cg     , only : distributed_cg_solver
+  use class_partitioned_assembler, only : partitioned_assembler
   use class_sor                , only : sor
   use class_gauss_seidel       , only : gauss_seidel
   use class_gauss_jacobi       , only : gauss_jacobi
@@ -62,8 +62,13 @@ program solver
   allocate(gmsh, source = gmsh_loader(trim(cfg % meshfile % str)))
   allocate(grid, source = mesh(gmsh))
 
-  ! Assembler + physics (set the equation before the boundaries)
-  allocate(fvm, source = assembler(grid))
+  ! Assembler + physics (set the equation before the boundaries). The
+  ! distributed solve uses the same plain cg on a PARTITIONED system.
+  if (trim(cfg % solver % str) .eq. "distributed_cg") then
+     allocate(fvm, source = partitioned_assembler(grid))
+  else
+     allocate(fvm, source = assembler(grid))
+  end if
   select case (trim(cfg % equation % str))
   case ("diffusion")
      call fvm % set_equation(diffusion_flux(cfg % kappa), constant_source(cfg % source))
@@ -88,6 +93,12 @@ program solver
         call fvm % set_robin(trim(cfg % bc_name(i) % str), cfg % bc_a(i), cfg % bc_b(i), cfg % bc_c(i))
      end select
   end do
+
+  ! partition the system across the images (after boundary conditions)
+  select type (fvm)
+  type is (partitioned_assembler)
+     call fvm % setup_partition()
+  end select
 
   if (cfg % dt .gt. 0.0_dp) then
 
@@ -134,8 +145,10 @@ program solver
         allocate(lsolver, source = normal_cg(&
              & max_tol=cfg % max_tol, max_it=cfg % max_it, method=CGNE_METHOD, print_level=1))
      case ("distributed_cg")
-        ! coarray domain-decomposed CG (serial build reduces to plain CG); SPD only
-        allocate(lsolver, source = distributed_cg_solver(&
+        ! the system is partitioned across the images (above); the solver
+        ! is the ordinary cg - parallelism lives on the system side.
+        ! (serial build / one image reduces to plain CG); SPD only
+        allocate(lsolver, source = conjugate_gradient(&
              & max_tol=cfg % max_tol, max_it=cfg % max_it, print_level=1))
      case default
         print *, "unknown solver '", trim(cfg % solver % str), "'"

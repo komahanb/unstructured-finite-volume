@@ -23,7 +23,7 @@ program regression
   use class_diffusion_flux  , only : diffusion_flux, constant_source
   use class_conjugate_gradient , only : conjugate_gradient
   use class_normal_cg          , only : normal_cg, CGNR_METHOD
-  use class_distributed_cg     , only : distributed_cg_solver
+  use class_partitioned_assembler, only : partitioned_assembler
   use class_bdf                , only : bdf
 
   implicit none
@@ -181,18 +181,18 @@ contains
   end subroutine check_transient_steady
 
   !===================================================================!
-  ! The normal_cg (cgnr) and distributed_cg linear_solver wrappers must
-  ! solve the same dirichlet problem as plain CG.
+  ! The normal_cg (cgnr) wrapper and plain cg on a PARTITIONED system
+  ! must solve the same dirichlet problem as plain CG on the serial one.
   !===================================================================!
 
   subroutine check_solver_wrappers(nfail)
 
     integer, intent(inout) :: nfail
 
-    class(assembler)           , allocatable :: f1, f2, f3
+    class(assembler)           , allocatable :: f1, f2
+    class(assembler)           , allocatable :: f3
     class(conjugate_gradient)  , allocatable :: cg
     type(normal_cg)                          :: ncg
-    type(distributed_cg_solver)              :: dcg
     real(dp), allocatable :: xref(:), xn(:), xd(:)
 
     ! reference: plain CG
@@ -206,17 +206,41 @@ contains
          & method=CGNR_METHOD, print_level=0)
     call ncg % solve(f2, xn)
 
-    ! distributed_cg wrapper (serial build -> plain CG)
-    call make("../box-3.msh", f3); call box_bc(f3)
-    dcg = distributed_cg_solver(max_it=5000, max_tol=tol, print_level=0)
-    call dcg % solve(f3, xd)
+    ! the same plain cg on a partitioned system (one image here, so the
+    ! distributed queries reduce exactly to their serial forms)
+    call make_partitioned("../box-3.msh", f3); call box_bc(f3)
+    select type (f3)
+    type is (partitioned_assembler)
+       call f3 % setup_partition()
+    end select
+    deallocate(cg)
+    allocate(cg, source = conjugate_gradient(5000, tol, 0))
+    call cg % solve(f3, xd)
 
     call report("cgnr wrapper      -> matches cg", &
          & maxval(abs(xn - xref)) .lt. 1.0e-5_dp, nfail)
-    call report("distributed_cg    -> matches cg", &
+    call report("partitioned system -> matches cg", &
          & maxval(abs(xd - xref)) .lt. 1.0e-8_dp, nfail)
 
   end subroutine check_solver_wrappers
+
+  !===================================================================!
+  ! Build a partitioned assembler from a mesh file
+  !===================================================================!
+
+  subroutine make_partitioned(meshfile, fvm)
+
+    character(len=*)             , intent(in)  :: meshfile
+    class(assembler), allocatable, intent(out) :: fvm
+
+    class(gmsh_loader), allocatable :: gl
+    class(mesh)       , allocatable :: grid
+
+    allocate(gl, source = gmsh_loader(meshfile))
+    allocate(grid, source = mesh(gl))
+    allocate(fvm, source = partitioned_assembler(grid))
+
+  end subroutine make_partitioned
 
   !===================================================================!
   ! The assembled operator must split as A = L + U + D

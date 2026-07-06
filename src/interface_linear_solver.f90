@@ -307,7 +307,7 @@ contains
   ! Norm of the system's residual at x
   !===================================================================!
 
-  pure function residual_norm(this, sys, x) result(rnorm)
+  impure function residual_norm(this, sys, x) result(rnorm)
 
     class(linear_solver), intent(in) :: this
     class(assembler)    , intent(in) :: sys

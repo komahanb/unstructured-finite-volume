@@ -372,7 +372,7 @@ contains
   ! functional, and remains on the linearized path for now.
   !===================================================================!
 
-  pure subroutine get_residual(this, r, x)
+  impure subroutine get_residual(this, r, x)
 
     class(assembler), intent(in)  :: this
     real(dp)        , intent(out) :: r(:)
@@ -402,7 +402,7 @@ contains
   ! products may be trusted - verify_transpose_consistency is the audit.
   !===================================================================!
 
-  pure subroutine get_jacobian_residual_product(this, w, v, mode, part)
+  impure subroutine get_jacobian_residual_product(this, w, v, mode, part)
 
     class(assembler), intent(in)           :: this
     real(dp)        , intent(out)          :: w(:)
@@ -437,7 +437,7 @@ contains
   ! add_jacobian_vector_product_transpose.
   !===================================================================!
 
-  pure subroutine transpose_product(this, w, v, sub)
+  impure subroutine transpose_product(this, w, v, sub)
 
     class(assembler), intent(in)  :: this
     real(dp)        , intent(out) :: w(:)
@@ -459,7 +459,7 @@ contains
   ! reduces across images. The volume weighting attaches here later.
   !===================================================================!
 
-  pure real(dp) function inner_product(this, a, b)
+  impure real(dp) function inner_product(this, a, b)
 
     class(assembler), intent(in) :: this
     real(dp)        , intent(in) :: a(:)

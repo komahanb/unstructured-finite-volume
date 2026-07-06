@@ -30,7 +30,7 @@ class_boundary_condition.o \
 class_diffusion_flux.o \
 class_advection_flux.o \
 class_assembler.o \
-class_distributed_cg.o \
+class_partitioned_assembler.o \
 class_normal_cg.o \
 class_gmres.o \
 interface_multigrid.o \

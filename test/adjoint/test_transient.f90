@@ -42,6 +42,11 @@ program test_transient_adjoint
 
   ! transient diffusion: isotropic kappa = 2, unit source, faces at zero
   call fvm % set_equation(diffusion_flux(2.0_dp), constant_source(1.0_dp))
+
+  ! the diffusion operator is symmetric: declare it on the configured
+  ! instance so the adjoint's transpose products run as an explicit,
+  ! gate-verifiable claim rather than a refusal
+  fvm % operator_is_symmetric = .true.
   call fvm % set_dirichlet("front" , 0.0_dp)
   call fvm % set_dirichlet("back"  , 0.0_dp)
   call fvm % set_dirichlet("top"   , 0.0_dp)

@@ -22,10 +22,12 @@
 ! consistent across images, so it composes with the solver's
 ! pre_conditioner slot like any other preconditioner.
 !
-! Operator parts (diagonal/triangles) and REVERSE products fall back to
-! the replicated serial implementation - correct on every image, just
-! not distributed. The distributed fast path covers the forward
-! whole-operator product, which is the kernel's inner loop.
+! Operator parts (diagonal/triangles) fall back to the replicated
+! serial implementation - correct on every image, just not distributed.
+! REVERSE products route through the one transpose seat, so the
+! override, the declared-symmetric claim, and the refusal behave
+! exactly as on the serial system. The distributed fast path covers the
+! forward whole-operator product, which is the kernel's inner loop.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!

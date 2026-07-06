@@ -763,10 +763,16 @@ contains
     outn = this % out_neighbours(v)
     inn  = this % in_neighbours(v)
 
+    ! deduplicate within each list as well as across them (a multigraph
+    ! may carry repeated edges)
     allocate(nbrs(size(outn) + size(inn)))
-    n = size(outn)
-    nbrs(1:n) = outn
-
+    n = 0
+    do i = 1, size(outn)
+       if (.not. any(nbrs(1:n) .eq. outn(i))) then
+          n = n + 1
+          nbrs(n) = outn(i)
+       end if
+    end do
     do i = 1, size(inn)
        if (.not. any(nbrs(1:n) .eq. inn(i))) then
           n = n + 1

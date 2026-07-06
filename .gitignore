@@ -16,3 +16,4 @@ test/*/run2d
 test/*/run_transient
 test/*/run_serial
 *.res
+test/*/refusal

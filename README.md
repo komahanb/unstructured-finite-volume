@@ -48,12 +48,16 @@ solvers are stateless w.r.t. the system; `integrator % integrate(mode)`
 owns both primal and adjoint trajectories. flux projections
 (`normal_diffusivity`, `normal_speed`) live in `interface_flux`.
 
-**graph contract**: the graph owns the retained adjacency, traversal
-orders, partitioning (`graph % partition()`, `partition_rcb`) and the
-discrete adjoint's structure (`accumulate_adjoint` — reverse-mode
-accumulation with caller-supplied edge actions). the mesh graph and the
-chain (iterate/step sequences) are its concrete subclasses; test/graph
-exercises it standalone.
+**graph contract**: the graph owns the retained adjacency, visit
+orders and partitioning (`graph % partition()`, `partition_rcb`);
+neighbour queries are its compiler-enforced deferred contract. the
+DIRECTED graph (`digraph`) adds out/in queries, the topological
+`dependency_order` (with a cycle refusal and a pure `is_acyclic`), the
+discrete adjoint's structure (`accumulate_adjoint`, direction read from
+structure, objective vertex explicit) and its type-bound witness. the
+mesh graph is an undirected subclass — the directed protocol does not
+compile on it, deliberately; the chain (iterate/step sequences) is
+directed. test/graph exercises both standalone.
 
 ## Build
 

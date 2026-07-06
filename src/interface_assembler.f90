@@ -31,13 +31,15 @@ module interface_assembler
      type(logical) :: approximate_jacobian
      type(integer) :: differential_order
 
-     ! The transpose claim and its verification. REVERSE products refuse
+     ! The transpose claim and its verification. Every REVERSE seat -
+     ! transpose_product behind the unified product AND the linearized
+     ! adjoint seat add_jacobian_vector_product_transpose - refuses
      ! unless the configured instance either declares its operator
      ! symmetric (an instance property, never a class property - one
      ! class serves symmetric diffusion and non-symmetric advection
-     ! through its flux objects) or overrides transpose_product with a
-     ! genuine transpose. The entry gate (converge) verifies whichever
-     ! claim is made, once per system, and caches the verdict here.
+     ! through its flux objects) or overrides the seat with a genuine
+     ! transpose. The entry gate (converge) verifies the claim, once per
+     ! system, and caches the verdict here.
      logical :: operator_is_symmetric = .false.
      logical :: transpose_verified    = .false.
 
@@ -272,10 +274,14 @@ contains
   end subroutine create_state
 
   !===================================================================!
-  ! Transpose jacobian-vector product  pdt += [scalar(i) dR/dU(i)]^T vec.
-  ! Default: assume a symmetric jacobian (A^T = A), so the transpose
-  ! action equals the forward one. Physics with a non-symmetric operator
-  ! (e.g. advection) overrides this with a true transpose.
+  ! Transpose jacobian-vector product  pdt += [scalar(i) dR/dU(i)]^T vec
+  ! - the seat the linearized adjoint route (newton, bdf) drives.
+  ! Law: names must not lie, on every REVERSE seat. Refused unless the
+  ! configured instance declares its operator symmetric (then the
+  ! forward product serves the transpose as an explicit claim) or a
+  ! subclass overrides this with a genuine transpose. The genuine
+  ! non-symmetric transpose inside the spatial assembler is a reserved
+  ! decision, tracked in the register.
   !===================================================================!
 
   impure subroutine add_jacobian_vector_product_transpose(this, pdt, vec, scalars, filter)
@@ -286,6 +292,13 @@ contains
     type(scalar)    , intent(in)           :: scalars(:)
     type(integer)   , intent(in), optional :: filter
 
+    if (.not. this % operator_is_symmetric) then
+       error stop "assembler % add_jacobian_vector_product_transpose: no transpose " // &
+            & "available - override with a genuine transpose, or set " // &
+            & "operator_is_symmetric on the configured instance"
+    end if
+
+    ! the symmetric identity J^T = J, an explicit per-instance claim
     call this % add_jacobian_vector_product(pdt, vec, scalars, filter)
 
   end subroutine add_jacobian_vector_product_transpose
@@ -438,8 +451,8 @@ contains
     if (present(part)) sub = part
 
     if (dir .eq. REVERSE) then
-       ! transpose action at the steady linearization; symmetric systems
-       ! inherit J^T = J, non-symmetric ones override the transpose
+       ! transpose action at the steady linearization: refused unless the
+       ! instance declares symmetry or overrides the transpose seat
        call this % transpose_product(w, v, sub)
     else
        if (sub .eq. WHOLE) then

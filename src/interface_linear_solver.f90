@@ -7,7 +7,7 @@
 ! and inner product only - it asks the system for the residual and the
 ! product, and never names a source or a correction scheme.
 !
-! The provided solve (bound to converge) is the residual-minimization
+! The provided march (implemented by converge) is the residual-minimization
 ! iteration - one cycle of state -> residual -> correction -> state per
 ! pass, terminating on the true residual. The deferred iterate is
 ! the one thing a concrete solver must supply: one application of the
@@ -25,15 +25,15 @@
 ! that is implemented, converge rejects a preconditioned REVERSE solve
 ! with a clear error rather than silently mis-preconditioning.
 !
-! One solve override exists in the family: cg's newton/bdf linearized
+! One march override exists in the family: cg's newton/bdf linearized
 ! path, where the linearization (coefficients and an external
 ! right-hand side) defines a different frozen operator. That state
 ! belongs on the system and moves there in the linearization commit;
-! until then the override is the documented exception, and solve
-! carries one meaning - drive the system's residual to zero.
+! until then the override is the documented exception.
 !
-! linear_solver extends the common marcher base; its march is bound to
-! the context name solve through a generic.
+! linear_solver extends the common marcher base: march (the marcher's
+! deferred contract) is implemented by converge, and solve is the
+! family's provided wrapper over a plain solution vector.
 !
 ! Author : Komahan Boopathy
 !=====================================================================!
@@ -200,17 +200,32 @@ contains
        end if
     end if
 
+    ! A REVERSE march through this shared iteration is valid only on a
+    ! declared-symmetric operator: the loop below evaluates the forward
+    ! residual and forward sweeps, which IS the adjoint solve exactly
+    ! when J^T = J. A genuinely non-symmetric REVERSE solve needs the
+    ! direction threaded through the residual and the sweep - deferred
+    ! and tracked in the register; refusing here prevents certifying a
+    ! claim the iteration would then ignore.
+    if (present(mode)) then
+       if (mode .eq. REVERSE .and. .not. system % operator_is_symmetric) then
+          error stop "converge: a REVERSE march through the shared iteration requires " // &
+               & "a declared-symmetric operator (the loop is direction-blind); a " // &
+               & "genuine transpose march is a tracked deferral"
+       end if
+    end if
+
     ! Verify-before: the first REVERSE march on a system checks the
-    ! transpose claim (a symmetry declaration or a genuine override)
-    ! against the analytic identity <w, J v> = <J^T w, v>, once, and
-    ! caches the verdict on the system. A handful of products, machine
-    ! precision, no truncation error.
+    ! symmetry claim against the analytic identity <w, J v> = <J^T w, v>,
+    ! once, and caches the verdict on the system. A handful of products,
+    ! machine precision, no truncation error. The comparison is written
+    ! so a NaN defect also refuses (NaN fails every ordered comparison).
     if (present(mode)) then
        if (mode .eq. REVERSE .and. .not. system % transpose_verified) then
           verify_transpose: block
             real(dp) :: defect
             defect = system % verify_transpose_consistency()
-            if (defect .gt. transpose_defect_tol) then
+            if (.not. (defect .le. transpose_defect_tol)) then
                write(*,'(1x,a,es12.5)') &
                     & "converge: transpose-consistency defect ", defect
                error stop "converge: the system's transpose claim failed verification"

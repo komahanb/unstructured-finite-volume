@@ -32,6 +32,7 @@ module class_csr_system
    contains
 
      ! the system contract on the stored operator
+     procedure :: get_residual                  => csr_residual
      procedure :: get_jacobian_residual_product => csr_product
      procedure :: transpose_product             => csr_transpose_product
 
@@ -66,6 +67,24 @@ contains
     if (present(b)) this % b = b
 
   end function create
+
+  !===================================================================!
+  ! The residual of the stored system at x: r = b - A x
+  !===================================================================!
+
+  impure subroutine csr_residual(this, r, x)
+
+    class(csr_system), intent(in)  :: this
+    real(dp)         , intent(out) :: r(:)
+    real(dp)         , intent(in)  :: x(:)
+
+    real(dp), allocatable :: w(:)
+
+    allocate(w(this % num_state_vars))
+    call this % A % matvec(x, w)
+    r = this % b - w
+
+  end subroutine csr_residual
 
   !===================================================================!
   ! The product on the stored operator: forward and genuine transpose.

@@ -53,12 +53,13 @@ module interface_assembler
      procedure(add_initial_condition_interface)      , deferred :: add_initial_condition
 
      ! The queries a solver makes of the system: the residual at a given
-     ! state, the jacobian-vector product (mode selects forward or
-     ! transpose, part selects the whole operator or a sub-part), and the
-     ! inner product (provided by the system because the data
-     ! distribution is the system's concern - a partitioned system
-     ! reduces across images here).
-     procedure :: get_residual
+     ! state (deferred - each system states its own; discretization
+     ! vocabulary stays on the discretization layer), the jacobian-vector
+     ! product (mode selects forward or transpose, part selects the whole
+     ! operator or a sub-part), and the inner product (provided by the
+     ! system because the data distribution is the system's concern - a
+     ! partitioned system reduces across images here).
+     procedure(get_residual_interface), deferred :: get_residual
      procedure :: get_jacobian_residual_product
      procedure :: inner_product
 
@@ -73,11 +74,12 @@ module interface_assembler
      ! with a genuine transpose (the stated remedy of its refusal)
      procedure :: transpose_product
 
-     ! The pieces the queries above are composed from. The base defaults
-     ! are trivial (zero); a spatial assembler overrides them. Solvers
-     ! call the queries above, never these directly.
-     procedure :: get_source
-     procedure :: get_skew_source
+     ! The forward routing of the deferred add_ mechanism. Public
+     ! because system-layer concretes (the partitioned assembler's
+     ! replicated fallback) and matrix-free checks consume it; its
+     ! consolidation into the one product is a tracked deferral
+     ! (ROADMAP: tracked deferrals). The base default is trivial (zero);
+     ! a spatial assembler overrides it.
      procedure :: get_jacobian_vector_product
      procedure :: get_operator_csr   ! assembled entries - ONLY for building
                                      ! algebraic preconditioners, never to iterate
@@ -157,6 +159,23 @@ module interface_assembler
        type(scalar)    , intent(inout) :: U(:,:)
 
      end subroutine add_initial_condition_interface
+
+     !================================================================!
+     ! The residual at state x: r = R(x). Deferred - each system states
+     ! its own residual in its own vocabulary; the solver layer sees
+     ! only this query. Forward only: the adjoint right-hand side also
+     ! needs the functional, and remains on the linearized path.
+     !================================================================!
+
+     impure subroutine get_residual_interface(this, r, x)
+
+       import :: assembler, dp
+
+       class(assembler), intent(in)  :: this
+       real(dp)        , intent(out) :: r(:)
+       real(dp)        , intent(in)  :: x(:)
+
+     end subroutine get_residual_interface
 
   end interface
 
@@ -390,32 +409,6 @@ contains
   end subroutine write_gmsh_series
 
   !===================================================================!
-  ! The residual at state x:  r = R(x). For the linear system this is
-  ! the constant source plus the solution-dependent correction, minus
-  ! the operator action - composed here so solvers depend only on this
-  ! query. Forward only: the adjoint right-hand side also needs the
-  ! functional, and remains on the linearized path for now.
-  !===================================================================!
-
-  impure subroutine get_residual(this, r, x)
-
-    class(assembler), intent(in)  :: this
-    real(dp)        , intent(out) :: r(:)
-    real(dp)        , intent(in)  :: x(:)
-
-    real(dp), allocatable :: b(:), s(:), ax(:)
-
-    allocate(b, s, ax, mold = x)
-
-    call this % get_source(b)
-    call this % get_skew_source(s, x)
-    call this % get_jacobian_vector_product(ax, x)
-
-    r = (b + s) - ax
-
-  end subroutine get_residual
-
-  !===================================================================!
   ! The unified jacobian-vector product. mode selects the direction
   ! (FORWARD = J v, REVERSE = J^T v); part selects the operator part
   ! (WHOLE, DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE). Defaults:
@@ -600,35 +593,6 @@ contains
     end do
 
   end subroutine fill_deterministic
-
-  !===================================================================!
-  ! Default right-hand side: none (a spatial assembler with boundary
-  ! conditions / a volumetric source overrides this).
-  !===================================================================!
-
-  pure subroutine get_source(this, b, boundary_only)
-
-    class(assembler), intent(in)           :: this
-    real(dp)        , intent(out)          :: b(:)
-    logical         , intent(in), optional :: boundary_only
-
-    b = 0.0_dp
-
-  end subroutine get_source
-
-  !===================================================================!
-  ! Default non-orthogonal skew correction: none (orthogonal default).
-  !===================================================================!
-
-  pure subroutine get_skew_source(this, ss, phic)
-
-    class(assembler), intent(in)  :: this
-    real(dp)        , intent(in)  :: phic(:)
-    real(dp)        , intent(out) :: ss(:)
-
-    ss = 0.0_dp
-
-  end subroutine get_skew_source
 
   !===================================================================!
   ! Default operator action Aq = A q via the deferred jacobian-vector

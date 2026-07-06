@@ -115,3 +115,31 @@ the nonlinear machinery is solid before euler's 4-5 fields. then 3 (riemann) + 6
 (bcs) -> euler 1st-order (sod). then 4 (limiters) -> euler 2nd-order. then viscous
 flux + spalart-allmaras -> rans. then harden + scale -> full ns. the adjoint,
 coarray DD, amg, gmres and bdf stacks already exist and ride along throughout.
+
+## tracked deferrals — each with its retirement condition
+
+deferred is acceptable; deferred-but-untracked is not. every standing
+deferral in the source lives here as the index (the source comments
+stay); an entry retires when its condition is met, not before.
+
+- **the product trio** (get_jacobian_vector_product, the forward
+  routing wrapper; add_jacobian_vector_product_transpose; and
+  add_design_residual_transpose_product) consolidates into the one
+  product — retires when the steady and transient adjoints migrate onto
+  the digraph's accumulate_adjoint.
+- **cg's linearized march override** (the newton/bdf inner path holding
+  lin_coeff and an external right-hand side on the solver) — retires at
+  the linearization commit, when that frozen-operator state moves onto
+  the system.
+- **bdf's hand-rolled march_backwards** — retires when the transient
+  adjoint tenants the digraph's reverse accumulation; march_backwards
+  becomes an alias, then dissolves.
+- **the genuine non-symmetric transpose inside class_assembler** —
+  gated on the reserved system-implementation decision; until then
+  transpose seats refuse on undeclared non-symmetric instances, and
+  normal_cg on such operators runs only where a genuine transpose
+  exists (the csr-backed test fixture).
+- **direction-threading through the shared linear iteration** — a
+  REVERSE march through converge is refused on anything but a
+  declared-symmetric operator (the loop is direction-blind); retires
+  when the residual query and the sweep carry the mode.

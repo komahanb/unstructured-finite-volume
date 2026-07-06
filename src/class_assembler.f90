@@ -89,6 +89,7 @@ module class_assembler
      procedure :: evaluate_face_flux
 
      ! Assembly Routines
+     procedure :: get_residual
      procedure :: get_source
      procedure :: get_skew_source
      procedure :: get_jacobian
@@ -860,6 +861,31 @@ contains
   !===================================================================!
   ! Evaluate internal skew source based on the current cell states and
   ! return
+  !===================================================================!
+  ! The residual at state x, in this discretization's vocabulary: the
+  ! constant source plus the solution-dependent skew correction, minus
+  ! the operator action - composed here, on the layer that owns the
+  ! words, and seen by solvers only through the deferred query.
+  !===================================================================!
+
+  impure subroutine get_residual(this, r, x)
+
+    class(assembler), intent(in)  :: this
+    real(dp)        , intent(out) :: r(:)
+    real(dp)        , intent(in)  :: x(:)
+
+    real(dp), allocatable :: b(:), s(:), ax(:)
+
+    allocate(b, s, ax, mold = x)
+
+    call this % get_source(b)
+    call this % get_skew_source(s, x)
+    call this % get_jacobian_vector_product(ax, x)
+
+    r = (b + s) - ax
+
+  end subroutine get_residual
+
   !===================================================================!
 
   !subroutine get_tangential_flux(this, ss, phic)

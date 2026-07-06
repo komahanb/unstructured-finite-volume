@@ -1,21 +1,21 @@
 !=====================================================================!
 ! Abstract graph: vertices, edges, the retained adjacency, traversal
-! orders, and the partition contract. The computation itself is a graph,
-! so this ancestor knows only graph-shaped data - never a mesh, a face,
-! or any payload. Dependencies point downward only: a tenant knows its
-! own world (class_graph knows the mesh, class_chain knows its rule);
-! the ancestor knows nothing about either.
+! orders, and the partition contract. This base class holds only
+! graph-structured data - never a mesh, a face, or any payload.
+! Dependencies point downward only: a subclass knows its own domain
+! (class_graph knows the mesh, class_chain knows its recurrence rule);
+! the base class knows neither.
 !
 ! The adjacency is a compressed neighbour list (xadj/adj), retained and
 ! publicly queryable - previously buried as scratch inside the bfs
 ! partitioner and rebuilt on every use. Every piece of machinery here
-! consumes only the neighbour queries, so a tenant may either store the
+! consumes only the neighbour queries, so a subclass may either store the
 ! adjacency (build_adjacency from an edge list) or generate it by rule
 ! (the chain overrides neighbours/degree and stores nothing).
 !
 ! Traversal: traversal_order(mode) visits vertices breadth-first in
 ! dependency order (FORWARD), or the same order flipped (REVERSE) - the
-! direction tags come from module_solve_mode, the one tag vocabulary.
+! direction constants come from module_solve_mode.
 !
 ! Partition: stamped in place (partition / partition_rcb), then queried
 ! (part_of, owned, ghosts, balance, edge_cut). A partition of a graph is
@@ -78,7 +78,7 @@ module interface_graph
      procedure :: num_dofs
 
      ! adjacency: build once from the edge list, query many times.
-     ! A rule-generated tenant overrides the queries and builds nothing.
+     ! A rule-generated subclass overrides the queries and builds nothing.
      procedure :: build_adjacency
      procedure :: neighbours
      procedure :: degree
@@ -86,10 +86,10 @@ module interface_graph
      ! traversal order over the whole graph (FORWARD/REVERSE)
      procedure :: traversal_order
 
-     ! the reverse traversal with accumulation: blame propagated from the
-     ! last vertex in dependency order back to the first. the graph owns
-     ! the walk; the tenant supplies each edge's transpose apply.
-     procedure :: accumulate_blame
+     ! reverse-mode accumulation: the adjoint propagated from the last
+     ! vertex in dependency order back to the first. The traversal loop
+     ! lives here; the caller supplies each edge's transpose action.
+     procedure :: accumulate_adjoint
 
      ! partitioners - stamp vertex % part and gather the csr, in place
      procedure :: partition
@@ -195,8 +195,8 @@ contains
 
   !===================================================================!
   ! Neighbours of vertex v, from the retained adjacency. Precondition:
-  ! the adjacency exists (a stored tenant builds it at creation; a
-  ! rule-generated tenant overrides this query instead).
+  ! the adjacency exists (a subclass with stored edges builds it at creation; a
+  ! rule-generated subclass overrides this query instead).
   !===================================================================!
 
   pure function neighbours(this, v) result(nbrs)
@@ -294,33 +294,34 @@ contains
   end function traversal_order
 
   !===================================================================!
-  ! The reverse traversal with accumulation - the adjoint's structure,
-  ! implemented once, on the graph. Vertices are visited against the
-  ! dependency order; blame is seeded at the last vertex (the merit's
-  ! seat) and each earlier vertex's blame is the sum, over its outgoing
-  ! edges (neighbours later in dependency order), of the edge's
-  ! transpose apply on the blame at the far end. The graph never
-  ! computes a slope - it asks the edge, through the tenant-supplied
-  ! edge_apply (an internal procedure of the caller, closing over
-  ! whatever system state the edge needs).
+  ! Reverse-mode accumulation - the structure of the discrete adjoint,
+  ! implemented once on the graph. Vertices are visited against the
+  ! dependency order; the adjoint is initialized at the last vertex
+  ! (where the objective is evaluated), and each earlier vertex's
+  ! adjoint is the sum, over its outgoing edges (neighbours later in
+  ! the dependency order), of the edge's transposed jacobian applied to
+  ! the adjoint at the head vertex. The graph never evaluates a
+  ! derivative itself - the caller supplies edge_apply (typically an
+  ! internal procedure with access to the required system state).
   !
-  ! blame is (block, num_vertices): one block-sized vector per vertex
-  ! (block = 1 for scalar chains, the state size for iterate chains).
+  ! adjoint is (block, num_vertices): one block-sized vector per vertex
+  ! (block = 1 for scalar recurrences, the state size for iterate
+  ! chains).
   !===================================================================!
 
-  subroutine accumulate_blame(this, seed, edge_apply, blame)
+  subroutine accumulate_adjoint(this, seed, edge_apply, adjoint)
 
     class(graph), intent(in)  :: this
     real(dp)    , intent(in)  :: seed(:)
     interface
-       subroutine edge_apply(tail, head, blame_head, contribution)
+       subroutine edge_apply(tail, head, adjoint_head, contribution)
          import :: dp
          integer , intent(in)  :: tail, head
-         real(dp), intent(in)  :: blame_head(:)
+         real(dp), intent(in)  :: adjoint_head(:)
          real(dp), intent(out) :: contribution(:)
        end subroutine edge_apply
     end interface
-    real(dp)    , intent(out) :: blame(:,:)
+    real(dp)    , intent(out) :: adjoint(:,:)
 
     integer , allocatable :: order(:), pos(:), nbrs(:)
     real(dp), allocatable :: contribution(:)
@@ -337,8 +338,8 @@ contains
 
     allocate(contribution(size(seed)))
 
-    blame = 0.0_dp
-    blame(:, order(nv)) = seed
+    adjoint = 0.0_dp
+    adjoint(:, order(nv)) = seed
 
     ! visit against the dependency order; the last vertex keeps its seed
     do i = nv-1, 1, -1
@@ -347,13 +348,13 @@ contains
        do j = 1, size(nbrs)
           w = nbrs(j)
           if (pos(w) .gt. pos(v)) then
-             call edge_apply(v, w, blame(:, w), contribution)
-             blame(:, v) = blame(:, v) + contribution
+             call edge_apply(v, w, adjoint(:, w), contribution)
+             adjoint(:, v) = adjoint(:, v) + contribution
           end if
        end do
     end do
 
-  end subroutine accumulate_blame
+  end subroutine accumulate_adjoint
 
   !===================================================================!
   ! Partition into nparts pieces by breadth-first ordering, in place

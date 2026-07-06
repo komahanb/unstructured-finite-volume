@@ -1,34 +1,34 @@
 !=====================================================================!
 ! The generic linear solver, plus the preconditioner contract it
-! consumes. A linear solver takes a guess and improves it until the
-! system's imbalance (the residual) is gone. It speaks matrix, vector
+! consumes. A linear solver takes an initial guess and improves it
+! until the system's residual is eliminated. It uses matrix, vector
 ! and inner product only - it asks the system for the residual and the
 ! product, and never names a source or a correction scheme.
 !
 ! The provided solve (bound to converge) is the residual-minimization
-! march - one lap of the cycle state -> residual -> correction -> state
-! per pass, terminating on the true imbalance. The deferred iterate is
+! iteration - one cycle of state -> residual -> correction -> state per
+! pass, terminating on the true residual. The deferred iterate is
 ! the one thing a concrete solver must supply: one application of the
-! inverse arrow, driving A dx = r from dx = 0. This mirrors
+! approximate inverse, driving A dx = r from dx = 0. This mirrors
 ! interface_integrator, where the provided integrate marches the
 ! deferred step.
 !
 ! Two optional operator slots accelerate the kernels: pre_conditioner
-! (acts on imbalances - the left preconditioner / smoother) and
+! (acts on residuals - the left preconditioner / smoother) and
 ! post_conditioner (acts on answers - the right preconditioner). The
 ! slots are storage, not outer-loop actions: each kernel applies its
 ! slot where its own algorithm requires (cg inside every iteration,
-! gmres inside its arnoldi loop with the back-map at the end). Under
+! gmres inside its arnoldi loop, undoing the map at the end). Under
 ! REVERSE the two must swap roles and apply their transposes; until
-! that contract is implemented, converge REFUSES a preconditioned
-! REVERSE solve rather than silently mis-preconditioning.
+! that is implemented, converge rejects a preconditioned REVERSE solve
+! with a clear error rather than silently mis-preconditioning.
 !
 ! One solve override exists in the family: cg's newton/bdf linearized
 ! path, where the linearization (coefficients and an external
 ! right-hand side) defines a different frozen operator. That state
 ! belongs on the system and moves there in the linearization commit;
 ! until then the override is the documented exception, and solve
-! carries one meaning - drive the system's imbalance to zero.
+! carries one meaning - drive the system's residual to zero.
 !
 ! linear_solver extends the common algebraic_solver base.
 !
@@ -49,14 +49,14 @@ module interface_linear_solver
   public :: preconditioner
   public :: MANUAL, AUTO
 
-  ! tuning modes: MANUAL takes the knobs as given (default); AUTO lets
-  ! the solver work its knobs out itself (opt-in, never default)
+  ! tuning modes: MANUAL takes the parameters as given (default); AUTO lets
+  ! the solver select its parameters itself (opt-in, never default)
   integer, parameter :: MANUAL = 0
   integer, parameter :: AUTO   = 1
 
   !===================================================================!
   ! Abstract preconditioner: applies an approximate inverse z = M^-1 r -
-  ! a cheap version of the residual -> correction arrow. A solver's
+  ! a cheap approximation of the residual -> correction map. A solver's
   ! kernel calls apply where its algorithm requires; concrete
   ! preconditioners (algebraic multigrid, jacobi, ...) extend this.
   !===================================================================!
@@ -89,29 +89,30 @@ module interface_linear_solver
 
    contains
 
-     ! provided solve: the residual-minimization march. converge is also
+     ! provided solve: the residual-minimization iteration. converge is also
      ! bound by name so the one documented override can delegate to it.
      procedure :: solve => converge
      procedure :: converge
 
-     ! deferred: the one-step map (the twin of the integrator's step)
+     ! deferred: the one-step correction (the analogue of the
+     ! integrator's step)
      procedure(iterate_interface), deferred :: iterate
 
      ! passthrough apply helpers for the two slots
      procedure :: apply_pre_conditioner
      procedure :: apply_post_conditioner
 
-     ! auto-tuning hook, called by converge when tuning == AUTO: once at
-     ! entry (pass 0, the static route - measure the convergence factor,
-     ! set the knob) and once per pass with the measured rate (the
-     ! dynamic route - the auto-time-stepping twin). the contract has
-     ! three gates: entry budget (AUTO is opt-in), progress signal (the
-     ! rate IS the measurement), and rollback (a knob change that
-     ! worsens the rate reverts, leaving no trace). default: no knobs to
-     ! tune, do nothing - a solver with a rule overrides.
+     ! parameter-selection hook, called by converge when tuning == AUTO:
+     ! once at entry (pass 0 - measure the convergence factor, set the
+     ! parameter) and once per pass with the measured rate (analogous to
+     ! adaptive time-step control). three requirements: AUTO is opt-in,
+     ! the residual rate is the progress measurement, and a parameter
+     ! change that worsens the rate is reverted and discarded. default:
+     ! no parameters to select - a solver with a selection rule
+     ! overrides.
      procedure :: tune
 
-     ! the solver's merit measurement: largest eigenvalue size of the
+     ! the solver's objective measurement: largest eigenvalue size of the
      ! operator by power iteration (products and norms only)
      procedure :: estimate_spectral_radius
 
@@ -127,10 +128,10 @@ module interface_linear_solver
 
   abstract interface
 
-     ! One application of the inverse arrow: drive A dx = r starting
-     ! from dx = 0, where A is the system's frozen matrix and r the
-     ! imbalance handed in by the march. iter reports the kernel's
-     ! iterations for the monitor.
+     ! One correction step: drive A dx = r starting from dx = 0, where
+     ! A is the system's operator and r the residual handed in by the
+     ! outer iteration. iter reports the kernel's iterations for the
+     ! monitor.
      impure subroutine iterate_interface(this, system, r, dx, iter)
        import linear_solver
        import assembler
@@ -156,12 +157,12 @@ module interface_linear_solver
 contains
 
   !===================================================================!
-  ! The provided solve: measure the imbalance, stop when it has dropped
-  ! below tolerance relative to where it started, otherwise apply the
-  ! sweep to the correction equation and add the correction. When the
-  ! system's residual does not depend on the answer this collapses to
-  ! solve-once-and-confirm; when it does (a non-orthogonal mesh), the
-  ! march converges the true imbalance.
+  ! The provided solve: evaluate the residual, stop when it has dropped
+  ! below the tolerance relative to its initial value, otherwise apply
+  ! the correction step and update the solution. When the residual does
+  ! not depend on the solution this reduces to a single solve plus a
+  ! confirming pass; when it does (a non-orthogonal mesh), the
+  ! iteration converges the true residual.
   !===================================================================!
 
   impure subroutine converge(this, system, x, mode)
@@ -175,10 +176,10 @@ contains
     real(dp) :: rnorm, rnorm0, rnorm_prev, dxnorm
     integer  :: pass, inner
 
-    ! Refuse a preconditioned REVERSE solve: under the transpose the two
-    ! slots swap roles and must apply their transposes, and that
-    ! contract is not implemented yet. Silence is the one option not
-    ! permitted.
+    ! Reject a preconditioned REVERSE solve: under the transpose the two
+    ! slots swap roles and must apply their transposes, and that is not
+    ! implemented yet. Failing loudly here prevents a silently
+    ! mis-preconditioned adjoint solve.
     if (present(mode)) then
        if (mode .eq. REVERSE .and. &
             & (allocated(this % pre_conditioner) .or. &
@@ -188,7 +189,7 @@ contains
        end if
     end if
 
-    ! static tuning at entry (AUTO only)
+    ! parameter selection at entry (AUTO only)
     if (this % tuning .eq. AUTO) call this % tune(system, 0, 1.0_dp)
 
     allocate(x(system % num_state_vars))
@@ -204,17 +205,17 @@ contains
     dxnorm = 0.0_dp
     inner  = 0
 
-    marching: do pass = 1, this % max_it + 1
+    outer_iterations: do pass = 1, this % max_it + 1
 
-       ! the imbalance at the current answer
+       ! the residual at the current solution
        call system % get_residual(r, x)
        rnorm = sqrt(system % inner_product(r, r))
 
        if (pass .eq. 1) then
           rnorm0 = rnorm
           if (rnorm0 .le. tiny(1.0_dp)) then
-             write(*,*) "warning: zero imbalance at the zero answer; x = 0"
-             exit marching
+             write(*,*) "warning: zero right-hand side; the solution is x = 0"
+             exit outer_iterations
           end if
        end if
 
@@ -226,24 +227,24 @@ contains
                & sqrt(system % inner_product(x, x)))
        end if
 
-       ! termination on the true imbalance
-       if (rnorm .le. this % max_tol * rnorm0) exit marching
+       ! termination on the true residual
+       if (rnorm .le. this % max_tol * rnorm0) exit outer_iterations
 
-       ! dynamic tuning with the measured rate (AUTO only)
+       ! parameter adaptation from the measured rate (AUTO only)
        if (this % tuning .eq. AUTO .and. pass .gt. 1) then
           call this % tune(system, pass, rnorm/rnorm_prev)
        end if
 
-       ! stagnation: the sweep can no longer reduce the imbalance (its
+       ! stagnation: the sweep can no longer reduce the residual (its
        ! floor - typically machine precision). this is the criterion the
        ! old update-norm loop applied implicitly.
        if (pass .gt. 1) then
           if (rnorm .ge. 0.999_dp*rnorm_prev) then
              if (this % print_level .gt. 0) then
                 write(*,'(1x,a,es12.5)') &
-                     & "converge: stagnated at the sweep's floor, ||r||/||r0|| = ", rnorm/rnorm0
+                     & "converge: stagnated at the smallest residual the sweep can attain, ||r||/||r0|| = ", rnorm/rnorm0
              end if
-             exit marching
+             exit outer_iterations
           end if
        end if
        rnorm_prev = rnorm
@@ -251,16 +252,16 @@ contains
        if (pass .gt. this % max_it) then
           write(*,*) "warning: converge hit max_it without meeting tolerance; ||r||/||r0|| =", &
                & rnorm/rnorm0
-          exit marching
+          exit outer_iterations
        end if
 
-       ! one application of the inverse arrow: A dx = r from dx = 0
+       ! one correction step: A dx = r from dx = 0
        call this % iterate(system, r, dx, inner)
 
        x      = x + dx
        dxnorm = sqrt(system % inner_product(dx, dx))
 
-    end do marching
+    end do outer_iterations
 
     if (this % print_level .eq. -1) close(13)
 
@@ -303,7 +304,7 @@ contains
   end subroutine apply_post_conditioner
 
   !===================================================================!
-  ! Norm of the system's imbalance at x
+  ! Norm of the system's residual at x
   !===================================================================!
 
   pure function residual_norm(this, sys, x) result(rnorm)
@@ -322,7 +323,7 @@ contains
   end function residual_norm
 
   !===================================================================!
-  ! One row of the convergence table: the imbalance (absolute and as a
+  ! One row of the convergence table: the residual (absolute and as a
   ! drop from the initial one), the correction size (absolute and
   ! relative to the answer). Prints the header on the first pass.
   !===================================================================!
@@ -358,8 +359,8 @@ contains
   end subroutine monitor_step
 
   !===================================================================!
-  ! Auto-tuning hook (see the binding comment for the three-gate
-  ! contract). Default: this solver has no knobs to tune.
+  ! Parameter-selection hook (see the binding comment). Default: this
+  ! solver has no parameters to select.
   !===================================================================!
 
   impure subroutine tune(this, system, pass, rate)
@@ -373,7 +374,7 @@ contains
 
   !===================================================================!
   ! Largest eigenvalue size of the operator by power iteration - the
-  ! solver-level merit measurement, built from products and norms only.
+  ! solver-level objective measurement, built from products and norms only.
   !===================================================================!
 
   impure subroutine estimate_spectral_radius(this, system, mu, max_iter)

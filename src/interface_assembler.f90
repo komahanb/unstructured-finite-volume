@@ -40,27 +40,28 @@ module interface_assembler
      procedure(add_jacobian_vector_product_interface), deferred :: add_jacobian_vector_product
      procedure(add_initial_condition_interface)      , deferred :: add_initial_condition
 
-     ! The essentials a solver may ask of the system: the imbalance at a
-     ! given answer, the ONE product (jacobian on a residual-descended
-     ! vector; mode = traversal direction, part = subgraph), and the
-     ! inner product that gives the space its geometry (owned by the
-     ! system because distribution is the system's business - a
-     ! partitioned system reduces across images here).
+     ! The queries a solver makes of the system: the residual at a given
+     ! state, the jacobian-vector product (mode selects forward or
+     ! transpose, part selects the whole operator or a sub-part), and the
+     ! inner product (provided by the system because the data
+     ! distribution is the system's concern - a partitioned system
+     ! reduces across images here).
      procedure :: get_residual
      procedure :: get_jacobian_residual_product
      procedure :: inner_product
 
-     ! Machine-precision audits of the product (verify-before witnesses;
-     ! the finite-difference twin is only the coarse third witness)
+     ! Analytic consistency checks of the product, exact to machine
+     ! precision (finite differences remain only as a coarse
+     ! independent check)
      procedure :: verify_transpose_consistency
-     procedure :: verify_parts_honesty
+     procedure :: verify_parts_consistency
 
      ! steady transpose action behind the one product's REVERSE direction
      procedure, private :: transpose_product
 
-     ! The pieces the essentials are composed from. The base defaults are
-     ! trivial (zero); a spatial assembler overrides them. Solvers call
-     ! the essentials above, never these directly.
+     ! The pieces the queries above are composed from. The base defaults
+     ! are trivial (zero); a spatial assembler overrides them. Solvers
+     ! call the queries above, never these directly.
      procedure :: get_source
      procedure :: get_skew_source
      procedure :: get_jacobian_vector_product
@@ -364,11 +365,11 @@ contains
   end subroutine write_gmsh_series
 
   !===================================================================!
-  ! The imbalance at answer x:  r = R(x). For the linear system this is
+  ! The residual at state x:  r = R(x). For the linear system this is
   ! the constant source plus the solution-dependent correction, minus
-  ! the operator action - composed here so a solver never names the
-  ! pieces. Forward only: the adjoint's residual needs the functional
-  ! and stays on the linearized path until that unification lands.
+  ! the operator action - composed here so solvers depend only on this
+  ! query. Forward only: the adjoint right-hand side also needs the
+  ! functional, and remains on the linearized path for now.
   !===================================================================!
 
   pure subroutine get_residual(this, r, x)
@@ -390,10 +391,10 @@ contains
   end subroutine get_residual
 
   !===================================================================!
-  ! The ONE product: the jacobian's action on a residual-descended
-  ! vector. mode picks the traversal direction (FORWARD = J v,
-  ! REVERSE = J^T v); part picks the subgraph (WHOLE, DIAGONAL,
-  ! LOWER_TRIANGLE, UPPER_TRIANGLE). Defaults: FORWARD, WHOLE.
+  ! The unified jacobian-vector product. mode selects the direction
+  ! (FORWARD = J v, REVERSE = J^T v); part selects the operator part
+  ! (WHOLE, DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE). Defaults:
+  ! FORWARD, WHOLE.
   !
   ! The REVERSE direction currently inherits the symmetric default
   ! (J^T = J) of add_jacobian_vector_product_transpose; a system with a
@@ -469,10 +470,10 @@ contains
   end function inner_product
 
   !===================================================================!
-  ! Audit: <w, J v> = <J^T w, v> for deterministic pseudo-random v, w,
-  ! per part. Two products and two inner products - an analytic witness
-  ! at machine precision, no truncation error. Returns the largest
-  ! relative defect over the parts.
+  ! Consistency check: <w, J v> = <J^T w, v> for deterministic
+  ! pseudo-random v, w, per part. Two products and two inner products -
+  ! exact to machine precision, no truncation error. Returns the
+  ! largest relative defect over the parts.
   !===================================================================!
 
   impure real(dp) function verify_transpose_consistency(this) result(defect)
@@ -509,13 +510,13 @@ contains
   end function verify_transpose_consistency
 
   !===================================================================!
-  ! Audit: (diagonal + lower + upper) v = whole v for a deterministic
-  ! pseudo-random v. Three part-products against one whole-product;
-  ! catches every part-implementation bug at machine precision. Returns
-  ! the relative defect.
+  ! Consistency check: (diagonal + lower + upper) v = whole v for a
+  ! deterministic pseudo-random v. Three part-products against one
+  ! whole-product; catches part-implementation errors at machine
+  ! precision. Returns the relative defect.
   !===================================================================!
 
-  impure real(dp) function verify_parts_honesty(this) result(defect)
+  impure real(dp) function verify_parts_consistency(this) result(defect)
 
     class(assembler), intent(in) :: this
 
@@ -533,11 +534,11 @@ contains
 
     defect = norm2((wd + wl + wu) - wf)/max(norm2(wf), 1.0_dp)
 
-  end function verify_parts_honesty
+  end function verify_parts_consistency
 
   !===================================================================!
   ! Deterministic pseudo-random fill (linear congruential), so the
-  ! audits are reproducible run to run.
+  ! checks are reproducible run to run.
   !===================================================================!
 
   pure subroutine fill_deterministic(v, seed)

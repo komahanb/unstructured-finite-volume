@@ -1,5 +1,5 @@
 !=====================================================================!
-! The mesh tenant of the abstract graph: cells are vertices, a shared
+! The mesh subclass of the abstract graph: cells are vertices, a shared
 ! interior face is an edge. This class knows the mesh (its constructor
 ! takes one, and each edge remembers the interior face that made it);
 ! the ancestor knows only graph-shaped data - adjacency, traversals,

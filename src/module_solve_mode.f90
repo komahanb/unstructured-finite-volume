@@ -1,18 +1,16 @@
 !=====================================================================!
-! The tag vocabulary of the computation graph, in one home.
+! Named constants shared by the solvers, the integrator and the graph.
 !
-! mode - the direction an edge is traversed: FORWARD drives the primal
-! system, REVERSE the adjoint / transpose. A solver exposes ONE solve
-! (an integrator ONE integrate) that takes this mode - not a second
-! procedure.
+! mode - the direction of a solve or a product: FORWARD drives the
+! primal system, REVERSE the adjoint / transpose. A solver exposes one
+! solve (an integrator one integrate) that takes this mode - not a
+! second procedure.
 !
-! part - the subgraph a product acts on: the WHOLE operator, the
-! self-loops (DIAGONAL), or one triangle of the neighbour edges
-! (LOWER_TRIANGLE / UPPER_TRIANGLE). Stationary sweeps are traversals
-! restricted to these subgraphs.
+! part - the portion of the operator a product acts on: the WHOLE
+! operator, the DIAGONAL, or one triangle (LOWER_TRIANGLE /
+! UPPER_TRIANGLE). Stationary methods work on these parts.
 !
-! Declared enumerations, compiler-visible - never bare integers at a
-! call site.
+! Use the named constants at call sites, never their integer values.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -25,14 +23,14 @@ module module_solve_mode
   public :: FORWARD, REVERSE
   public :: WHOLE, DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE
 
-  ! direction of edge traversal
+  ! solve / product direction
   integer, parameter :: FORWARD = 1   ! primal:  A x = b
   integer, parameter :: REVERSE = 2   ! adjoint: A^T x = b
 
-  ! subgraph selector for the one product
+  ! operator-part selector for the jacobian-vector product
   integer, parameter :: WHOLE          =  2   ! the full operator
-  integer, parameter :: DIAGONAL       =  0   ! self-loops
-  integer, parameter :: LOWER_TRIANGLE = -1   ! one triangle of the neighbour edges
-  integer, parameter :: UPPER_TRIANGLE =  1   ! the other triangle
+  integer, parameter :: DIAGONAL       =  0   ! the diagonal
+  integer, parameter :: LOWER_TRIANGLE = -1   ! the strictly lower triangle
+  integer, parameter :: UPPER_TRIANGLE =  1   ! the strictly upper triangle
 
 end module module_solve_mode

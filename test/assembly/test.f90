@@ -74,17 +74,17 @@ program test_mesh
 
   end block assembly
 
-  ! machine-precision audits of the one product (verify-before
-  ! witnesses; the analytic checks the finite-difference twin is not)
-  audits: block
+  ! analytic consistency checks of the jacobian-vector product, exact
+  ! to machine precision
+  consistency_checks: block
 
     real(dp) :: defect
 
-    defect = FVMAssembler % verify_parts_honesty()
+    defect = FVMAssembler % verify_parts_consistency()
     if (defect .lt. 1.0d-13) then
-       write(*,'(1x,a,es10.3)') "PASS : parts honesty (D+L+U)v = Av, defect ", defect
+       write(*,'(1x,a,es10.3)') "PASS : parts consistency (D+L+U)v = Av, defect ", defect
     else
-       write(*,'(1x,a,es10.3)') "FAIL : parts honesty, defect ", defect
+       write(*,'(1x,a,es10.3)') "FAIL : parts consistency, defect ", defect
        error stop
     end if
 
@@ -96,7 +96,7 @@ program test_mesh
        error stop
     end if
 
-  end block audits
+  end block consistency_checks
 
   deallocate(grid)
   deallocate(FVMAssembler)

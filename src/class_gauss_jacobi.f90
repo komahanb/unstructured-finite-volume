@@ -1,7 +1,7 @@
 !=====================================================================!
 ! Diagonal-sweep linear solver (traditionally: Gauss-Jacobi): supplies
 ! only the sweep (`iterate`) - inverting the self-loop subgraph of the
-! operator - and inherits the residual-minimization march from
+! operator - and inherits the residual-minimization iteration from
 ! linear_solver.
 !=====================================================================!
 
@@ -25,7 +25,7 @@ module class_gauss_jacobi
 
    contains
 
-     ! the sweep consumed by the inherited march
+     ! the sweep consumed by the inherited outer iteration
      procedure :: iterate
 
   end type gauss_jacobi

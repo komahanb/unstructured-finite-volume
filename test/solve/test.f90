@@ -184,9 +184,9 @@ program test_mesh
 
   end block cg_solver
 
-  ! auto-tuned sor: the solver works its own knob out - measures the
+  ! auto-tuned sor: the solver works its own parameter out - measures the
   ! sweep's convergence factor at entry and sets the optimal omega, with
-  ! the rollback gate live during the march. must agree with cg.
+  ! the rollback gate live during the outer iteration. must agree with cg.
   auto_sor : block
 
     real(dp) , parameter   :: max_tol = 1.0d-10

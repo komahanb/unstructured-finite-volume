@@ -1,7 +1,7 @@
 !=====================================================================!
 ! Conjugate-gradient linear solver: supplies the sweep (`iterate`) -
 ! one preconditioned cg pass driving the correction equation A dx = r -
-! and inherits the residual-minimization march from linear_solver. Its
+! and inherits the residual-minimization iteration from linear_solver. Its
 ! optional preconditioner fills the inherited pre_conditioner slot
 ! (applied inside every cg iteration).
 !
@@ -38,7 +38,7 @@ module class_conjugate_gradient
      ! Newton/BDF linearized mode: when lin_coeff is set, solve drives the
      ! matrix-free system  J dq = rhs,  J v = add_jacobian_vector_product(.,.,
      ! lin_coeff) (transpose in REVERSE), with rhs the external rhs if set
-     ! else the system residual -R. Unset => the inherited march below.
+     ! else the system residual -R. Unset => the inherited iteration below.
      real(dp), allocatable :: lin_coeff(:)
      real(dp), allocatable :: rhs(:)
 
@@ -86,7 +86,7 @@ contains
   !===================================================================!
   ! Solve. Resets the iteration counter, takes the newton/bdf linearized
   ! path when lin_coeff is set (the documented override), and otherwise
-  ! runs the inherited residual-minimization march around the cg sweep.
+  ! runs the inherited residual-minimization iteration around the cg sweep.
   !===================================================================!
 
   impure subroutine solve(this, system, x, mode)
@@ -135,7 +135,7 @@ contains
 
     allocate(p, res, w, z, mold = dx)
 
-    ! the imbalance handed in is the right-hand side of the correction
+    ! the residual handed in is the right-hand side of the correction
     ! equation; at dx = 0 it is also the whole residual
     res   = r
     bnorm = sqrt(system % inner_product(res, res))

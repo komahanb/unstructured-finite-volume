@@ -1,15 +1,16 @@
 !=====================================================================!
-! The chain tenant of the abstract graph: vertices 1..n connected by
-! the neighbour rule i -> i+1. The iterate chain of a solver and the
-! step chain of a time integrator are this one concrete under two
-! labels.
+! The chain subclass of the abstract graph: vertices 1..n connected by
+! the neighbour rule i -> i+1. The iterate sequence of a solver and
+! the step sequence of a time integrator are both instances of this
+! class.
 !
 ! The adjacency is rule-generated, never materialized: neighbours and
 ! degree are answered by arithmetic, no edge list and no compressed
 ! adjacency are stored. Everything inherited from the ancestor
-! (traversal orders, partitioning, the queries) consumes only those
-! overridden neighbour queries, so it all works on the rule directly -
-! the forward traversal of a chain is 1..n, the reverse is n..1.
+! (traversal orders, partitioning, the queries) consumes only the
+! overridden neighbour queries, so it all operates on the rule
+! directly - the forward traversal of a chain is 1..n, the reverse is
+! n..1.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!

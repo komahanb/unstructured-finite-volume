@@ -2,8 +2,8 @@
 ! Relaxed-triangle-sweep linear solver (traditionally: successive
 ! over-relaxation, SOR): supplies only the sweep (`iterate`) - the
 ! relaxed lower-triangle solve (D+wL)y = R is itself done iteratively -
-! and inherits the residual-minimization march from linear_solver.
-! omega is the pseudo-time step size of the march.
+! and inherits the residual-minimization iteration from linear_solver.
+! omega is the pseudo-time step size of the outer iteration.
 !=====================================================================!
 
 module class_sor
@@ -26,18 +26,18 @@ module class_sor
 
      real(dp) :: omega
 
-     ! tuning state: the saved knob and the rate it achieved (the
-     ! rollback gate needs one saved scalar and one comparison)
+     ! parameter-selection state: the previous parameter value and the
+     ! rate it achieved, for reverting a change that worsens the rate
      real(dp) :: omega_saved = -1.0_dp
      real(dp) :: rate_saved  = huge(1.0_dp)
 
    contains
 
-     ! the sweep consumed by the inherited march
+     ! the sweep consumed by the inherited outer iteration
      procedure :: iterate
 
      ! auto-tuning: static optimal omega from the measured convergence
-     ! factor, dynamic rollback if a knob change worsens the rate
+     ! factor, dynamic rollback if a parameter change worsens the rate
      procedure :: tune
 
   end type sor
@@ -73,13 +73,13 @@ contains
   end function construct
 
   !===================================================================!
-  ! Auto-tuning. Static route (pass 0): measure the convergence factor
-  ! of the unrelaxed sweep - the spectral radius of D^-1 (L+U), by power
-  ! iteration composed from the parts - and set the classical optimum
-  !   omega = 2 / (1 + sqrt(1 - rho^2)).
-  ! Dynamic route (pass > 1): the rollback gate - if the rate measured
-  ! after a knob change is worse than the saved one, revert to the saved
-  ! knob; a rejected tune leaves no trace.
+  ! Parameter selection. At entry (pass 0): measure the convergence
+  ! factor of the unrelaxed sweep - the spectral radius of D^-1 (L+U),
+  ! by power iteration composed from the operator parts - and set the
+  ! classical optimum omega = 2 / (1 + sqrt(1 - rho^2)).
+  ! During the iteration (pass > 1): if the rate measured after a
+  ! parameter change is worse than before, revert to the previous
+  ! value.
   !===================================================================!
 
   impure subroutine tune(this, system, pass, rate)
@@ -132,7 +132,7 @@ contains
 
     else static
 
-       ! rollback: one saved scalar, one comparison
+       ! revert a change that worsened the measured rate
        if (rate .gt. this % rate_saved .and. &
             & abs(this % omega - this % omega_saved) .gt. tiny(1.0_dp)) then
           this % omega = this % omega_saved

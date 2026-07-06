@@ -81,7 +81,7 @@ module class_distributed_cg
      ! (the inherited pre_conditioner slot holds the optional per-image
      ! block preconditioner)
    contains
-     ! the sweep consumed by the inherited march
+     ! the sweep consumed by the inherited outer iteration
      procedure :: iterate
      procedure :: distributed_cg
   end type distributed_cg_solver
@@ -323,7 +323,7 @@ contains
   !===================================================================!
   ! The sweep: partition across images, build the halo, assemble, and
   ! run distributed CG on the correction equation A dx = r from dx = 0.
-  ! Interim tenancy - this class dissolves into plain cg on a
+  ! Interim subclassing - this class dissolves into plain cg on a
   ! partitioned system at stage 4.
   !===================================================================!
 

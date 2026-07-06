@@ -61,7 +61,7 @@ module class_normal_cg
 
    contains
 
-     ! the sweep consumed by the inherited march
+     ! the sweep consumed by the inherited outer iteration
      procedure :: iterate
      procedure :: cgnr
      procedure :: cgne

@@ -54,7 +54,8 @@ module class_gmres
 
    contains
 
-     ! the sweep consumed by the inherited march (the kernel below runs
+     ! the sweep consumed by the inherited outer iteration (the kernel
+     ! below runs
      ! on any operator it is handed)
      procedure :: iterate
      procedure :: gmres

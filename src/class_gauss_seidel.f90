@@ -2,7 +2,7 @@
 ! Forward-triangle-sweep linear solver (traditionally: Gauss-Seidel):
 ! supplies only the sweep (`iterate`) - the lower-triangle solve
 ! (D+L)y = R is itself done iteratively - and inherits the
-! residual-minimization march from linear_solver.
+! residual-minimization iteration from linear_solver.
 !=====================================================================!
 
 module class_gauss_seidel
@@ -25,7 +25,7 @@ module class_gauss_seidel
 
    contains
 
-     ! the sweep consumed by the inherited march
+     ! the sweep consumed by the inherited outer iteration
      procedure :: iterate
 
   end type gauss_seidel

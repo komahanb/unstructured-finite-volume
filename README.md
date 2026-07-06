@@ -19,15 +19,41 @@ every concrete class extends one abstract interface file (`interface_*.f90`):
 
 | interface | concrete classes |
 |---|---|
-| `interface_assembler` | `class_assembler` |
+| `interface_graph` | `class_graph` (mesh), `class_chain` (rule-generated) |
+| `interface_marcher` | ancestor of the three solver families below |
+| `interface_assembler` | `class_assembler`, `class_partitioned_assembler` |
 | `interface_flux` | `class_diffusion_flux`, `class_advection_flux` |
-| `interface_linear_solver` | `class_conjugate_gradient`, `class_gmres`, `class_normal_cg`, `class_sor`, `class_gauss_seidel`, `class_gauss_jacobi`, `class_distributed_cg` |
+| `interface_linear_solver` | `class_conjugate_gradient`, `class_gmres`, `class_normal_cg`, `class_sor`, `class_gauss_seidel`, `class_gauss_jacobi` |
 | `interface_nonlinear_solver` | `class_newton_solver` |
 | `interface_integrator` | `class_bdf` |
 | `interface_multigrid` | `class_algebraic_multigrid` |
 | `interface_physics` | user-supplied physics |
 
-**solver contract**: solvers are stateless — `linear_solver % solve(system, x, mode)` takes the assembler as an argument; `integrator % integrate(mode)` owns both primal and adjoint trajectories. the assembler is the system (residual + jacobian) and owns nothing else: no solve, no monitor, no flux state. convergence monitoring lives in `interface_linear_solver`; flux projections (`normal_diffusivity`, `normal_speed`) live in `interface_flux`. the graph owns partitioning (`graph % partition()`).
+**marcher contract**: linear solver, newton and the integrator are one
+concept — advance a deferred one-step map until termination — and share
+one ancestor (`interface_marcher`: tolerance, budget, verbosity). each
+family binds its context name through a generic (`solve => march`,
+`integrate => march`); the provided march is the residual-minimization
+iteration (linear: `converge` around the deferred `iterate`; time:
+`integrate` around the deferred `step`).
+
+**system contract**: the assembler is the system. a solver asks it three
+things only — `get_residual(r, x)`, the unified jacobian-vector product
+`get_jacobian_residual_product(w, v, mode, part)` (mode = forward/
+transpose, part = whole/diagonal/triangles), and `inner_product(a, b)`.
+discretization words (source, skew) never reach the solver; two analytic
+consistency checks (`verify_transpose_consistency`,
+`verify_parts_consistency`) audit the product at machine precision.
+solvers are stateless w.r.t. the system; `integrator % integrate(mode)`
+owns both primal and adjoint trajectories. flux projections
+(`normal_diffusivity`, `normal_speed`) live in `interface_flux`.
+
+**graph contract**: the graph owns the retained adjacency, traversal
+orders, partitioning (`graph % partition()`, `partition_rcb`) and the
+discrete adjoint's structure (`accumulate_adjoint` — reverse-mode
+accumulation with caller-supplied edge actions). the mesh graph and the
+chain (iterate/step sequences) are its concrete subclasses; test/graph
+exercises it standalone.
 
 ## Build
 
@@ -63,11 +89,16 @@ conjugate gradient, the default), `sor` / `gs` / `gj` (stationary), or
 h-independent iteration counts (src/class_algebraic_multigrid.f90, built on an
 assembled csr).
 
-distributed-memory CG (goal 3) lives in src/class_distributed_cg.f90: the mesh
-is partitioned by recursive coordinate bisection (`graph % partition_rcb`), each
-image owns its rows, the matvec exchanges only the halo over coarrays and the
-dot products reduce with co_sum; one image reduces exactly to the serial CG. a
-per-image AMG on the owned block is a restricted-additive-schwarz preconditioner.
+distributed-memory solves (goal 3) live on the SYSTEM side
+(src/class_partitioned_assembler.f90): the mesh is partitioned by
+recursive coordinate bisection (`graph % partition_rcb`), each image
+computes only its owned rows of the jacobian-vector product and its
+owned share of every inner product (reduced with co_sum) — and the
+solver is the ordinary `conjugate_gradient`, textually identical in
+serial and parallel; one image reduces exactly to the serial CG. a
+per-image AMG on the owned block (`block_preconditioner`) is an
+additive-schwarz preconditioner that plugs into the usual
+`pre_conditioner` slot.
 run it with:
 
 ```

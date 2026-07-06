@@ -38,7 +38,7 @@ program test_parallel
   use class_csr             , only : csr_matrix
   use class_graph           , only : mesh_graph
   use class_algebraic_multigrid, only : algebraic_multigrid
-  use class_conjugate_gradient, only : conjugate_gradient, cg_last_iters
+  use class_conjugate_gradient, only : conjugate_gradient
 
   implicit none
 
@@ -178,7 +178,7 @@ contains
     ! (a) unpreconditioned cg on the partitioned system
     allocate(cg, source = conjugate_gradient(20000, 1.0e-10_dp, plvl))
     call cg % solve(fvmp, x_dist)
-    it_unprec = cg_last_iters
+    it_unprec = cg % last_inner_iters
     deallocate(cg)
 
     ! (b) per-image block-AMG preconditioned cg: each image builds an AMG
@@ -188,7 +188,7 @@ contains
     allocate(cg, source = conjugate_gradient(20000, 1.0e-10_dp, 0, &
          & precond = block_preconditioner(M, fvmp % own)))
     call cg % solve(fvmp, x_pc)
-    it_pc = cg_last_iters
+    it_pc = cg % last_inner_iters
     deallocate(cg)
 
     ! serial reference: the same cg on the serial system, run replicated

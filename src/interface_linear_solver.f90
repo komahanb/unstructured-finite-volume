@@ -95,6 +95,11 @@ module interface_linear_solver
      ! MANUAL (default) or AUTO - see tune below
      integer :: tuning = MANUAL
 
+     ! inner iterations accumulated over the most recent march - the
+     ! diagnostic lives on the object (the caller owns the state; no
+     ! module-scope side channels)
+     integer :: last_inner_iters = 0
+
    contains
 
      ! march (the marcher contract): the residual-minimization iteration,
@@ -142,16 +147,17 @@ module interface_linear_solver
      ! One correction step: drive A dx = r starting from dx = 0, where
      ! A is the system's operator and r the residual handed in by the
      ! outer iteration. iter reports the kernel's iterations for the
-     ! monitor.
+     ! monitor. this is intent(inout): the honest signature for a
+     ! solver that keeps notes on itself.
      impure subroutine iterate_interface(this, system, r, dx, iter)
        import linear_solver
        import assembler
        import dp
-       class(linear_solver), intent(in)  :: this
-       class(assembler)    , intent(in)  :: system
-       real(dp)            , intent(in)  :: r(:)
-       real(dp)            , intent(out) :: dx(:)
-       integer             , intent(out) :: iter
+       class(linear_solver), intent(inout) :: this
+       class(assembler)    , intent(in)    :: system
+       real(dp)            , intent(in)    :: r(:)
+       real(dp)            , intent(out)   :: dx(:)
+       integer             , intent(out)   :: iter
      end subroutine iterate_interface
 
      ! z = M^-1 r  (the approximate-inverse action)
@@ -250,6 +256,8 @@ contains
     dxnorm = 0.0_dp
     inner  = 0
 
+    this % last_inner_iters = 0
+
     outer_iterations: do pass = 1, this % max_it + 1
 
        ! the residual at the state's current solution values
@@ -303,6 +311,7 @@ contains
 
        ! one correction step: A dx = r from dx = 0; the state applies it
        call this % iterate(system, r, dx, inner)
+       this % last_inner_iters = this % last_inner_iters + inner
 
        call s % update(dx)
        dxnorm = sqrt(system % inner_product(dx, dx))

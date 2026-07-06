@@ -29,9 +29,8 @@ program test_krylov
 
   use iso_fortran_env , only : dp => real64
   use class_csr       , only : csr_matrix
-  use class_normal_cg , only : normal_cg, CGNR_METHOD, CGNE_METHOD, &
-       & cgnr_last_iters, cgne_last_iters
-  use class_gmres     , only : gmres_solver, gmres_last_iters
+  use class_normal_cg , only : normal_cg, CGNR_METHOD, CGNE_METHOD
+  use class_gmres     , only : gmres_solver
   use class_algebraic_multigrid, only : algebraic_multigrid
 
   implicit none
@@ -132,6 +131,7 @@ contains
   !===================================================================!
   subroutine check_correctness(nf)
     integer, intent(inout) :: nf
+    integer :: it_nr, it_ne, it_gm
     type(csr_matrix) :: A
     real(dp), allocatable :: xex(:), b(:), x(:)
     real(dp) :: rr, se
@@ -148,19 +148,19 @@ contains
 
     write(*,'(a)') " ---- correctness (gamma = 0.6) ----"
 
-    call cgnr_solver % cgnr(A, b, x)
+    call cgnr_solver % cgnr(A, b, x, it_nr)
     rr = relresid(A, x, b); se = solerr(x, xex)
-    write(*,'(2x,a,es11.3,a,es11.3,a,i0)') "cgnr  resid=", rr, "  err=", se, "  iters=", cgnr_last_iters
+    write(*,'(2x,a,es11.3,a,es11.3,a,i0)') "cgnr  resid=", rr, "  err=", se, "  iters=", it_nr
     if (rr .gt. 1.0e-6_dp .or. se .gt. 1.0e-3_dp) nf = nf + 1
 
-    call cgne_solver % cgne(A, b, x)
+    call cgne_solver % cgne(A, b, x, it_ne)
     rr = relresid(A, x, b); se = solerr(x, xex)
-    write(*,'(2x,a,es11.3,a,es11.3,a,i0)') "cgne  resid=", rr, "  err=", se, "  iters=", cgne_last_iters
+    write(*,'(2x,a,es11.3,a,es11.3,a,i0)') "cgne  resid=", rr, "  err=", se, "  iters=", it_ne
     if (rr .gt. 1.0e-6_dp .or. se .gt. 1.0e-3_dp) nf = nf + 1
 
-    call gs % gmres(A, b, x)
+    call gs % gmres(A, b, x, it_gm)
     rr = relresid(A, x, b); se = solerr(x, xex)
-    write(*,'(2x,a,es11.3,a,es11.3,a,i0)') "gmres resid=", rr, "  err=", se, "  iters=", gmres_last_iters
+    write(*,'(2x,a,es11.3,a,es11.3,a,i0)') "gmres resid=", rr, "  err=", se, "  iters=", it_gm
     if (rr .gt. 1.0e-6_dp .or. se .gt. 1.0e-3_dp) nf = nf + 1
   end subroutine check_correctness
 
@@ -169,6 +169,7 @@ contains
   !===================================================================!
   subroutine check_peclet_sweep(nf)
     integer, intent(inout) :: nf
+    integer :: it_cgnr
     real(dp), parameter :: gammas(4) = [0.0_dp, 0.3_dp, 0.6_dp, 0.9_dp]
     type(csr_matrix) :: A
     real(dp), allocatable :: xex(:), b(:), x(:)
@@ -186,14 +187,12 @@ contains
        call make_problem(A, xex, b)
        if (allocated(x)) deallocate(x); allocate(x(A % ncols))
 
-       call cgnr_solver % cgnr(A, b, x)
+       call cgnr_solver % cgnr(A, b, x, it_cgnr)
        block
          real(dp) :: rr_c
-         integer  :: it_cgnr, it_gmres
+         integer  :: it_gmres
          rr_c = relresid(A, x, b)
-         it_cgnr = cgnr_last_iters
-         call gs % gmres(A, b, x)
-         it_gmres = gmres_last_iters
+         call gs % gmres(A, b, x, it_gmres)
          write(*,'(2x,f8.2,2x,i10,2x,i10,2x,f8.1)') gammas(t), it_cgnr, it_gmres, &
               & real(it_cgnr,dp)/real(max(it_gmres,1),dp)
          ! both must converge, and GMRES must take strictly fewer iterations
@@ -210,6 +209,7 @@ contains
   !===================================================================!
   subroutine check_restart(nf)
     integer, intent(inout) :: nf
+    integer :: it_gm
     type(csr_matrix) :: A
     real(dp), allocatable :: xex(:), b(:), x(:)
     real(dp) :: rr
@@ -220,9 +220,9 @@ contains
     allocate(x(A % ncols))
 
     gs = gmres_solver(max_it=50000, restart=20, max_tol=TOL, print_level=0)   ! restart every 20
-    call gs % gmres(A, b, x)
+    call gs % gmres(A, b, x, it_gm)
     rr = relresid(A, x, b)
-    write(*,'(a,es11.3,a,i0)') " ---- GMRES(20) restart: resid=", rr, "  iters=", gmres_last_iters
+    write(*,'(a,es11.3,a,i0)') " ---- GMRES(20) restart: resid=", rr, "  iters=", it_gm
     if (rr .gt. 1.0e-6_dp) nf = nf + 1
   end subroutine check_restart
 
@@ -245,12 +245,10 @@ contains
     allocate(x(A % ncols))
 
     gs = gmres_solver(max_it=50000, restart=400, max_tol=TOL, print_level=0)
-    call gs % gmres(A, b, x)
-    it_plain = gmres_last_iters
+    call gs % gmres(A, b, x, it_plain)
 
     gs_prec = gmres_solver(max_it=50000, restart=400, max_tol=TOL, print_level=0, precond=M)
-    call gs_prec % gmres(A, b, x)
-    it_prec = gmres_last_iters
+    call gs_prec % gmres(A, b, x, it_prec)
     rr = relresid(A, x, b)
 
     write(*,'(a,i0,a,i0,a,es11.3)') " ---- AMG-right-preconditioned GMRES: plain=", &

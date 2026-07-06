@@ -170,7 +170,7 @@ contains
 
   impure subroutine iterate(this, system, r, dx, iter)
 
-    class(sor)          , intent(in)  :: this
+    class(sor)          , intent(inout) :: this
     class(assembler)    , intent(in)  :: system
     real(dp)            , intent(in)  :: r(:)
     real(dp)            , intent(out) :: dx(:)

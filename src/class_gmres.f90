@@ -33,12 +33,6 @@ module class_gmres
 
   private
   public :: gmres_solver
-  public :: gmres_last_iters          ! total inner iterations of the last solve
-
-  ! Total inner iterations of the most recent solve. Written by the gmres
-  ! kernel (which takes `this` as intent(in), so this cannot live on the
-  ! object); read by tests comparing iteration counts across operators.
-  integer :: gmres_last_iters = 0
 
   !-------------------------------------------------------------------!
   ! linear_solver wrapper around restarted GMRES so the config-driven
@@ -102,18 +96,17 @@ contains
 
   impure subroutine iterate(this, system, r, dx, iter)
 
-    class(gmres_solver)  , intent(in)  :: this
-    class(assembler)     , intent(in)  :: system
-    real(dp)             , intent(in)  :: r(:)
-    real(dp)             , intent(out) :: dx(:)
-    integer              , intent(out) :: iter
+    class(gmres_solver)  , intent(inout) :: this
+    class(assembler)     , intent(in)    :: system
+    real(dp)             , intent(in)    :: r(:)
+    real(dp)             , intent(out)   :: dx(:)
+    integer              , intent(out)   :: iter
 
     type(csr_matrix) :: A
 
     call system % get_operator_csr(A)
 
-    call this % gmres(A, r, dx)
-    iter = gmres_last_iters
+    call this % gmres(A, r, dx, iter)
 
   end subroutine iterate
 
@@ -123,12 +116,13 @@ contains
   ! preconditioner member (if allocated) supplies z = M^-1 r.
   !===================================================================!
 
-  impure subroutine gmres(this, A, b, x)
+  impure subroutine gmres(this, A, b, x, iters)
 
     class(gmres_solver), intent(in)  :: this
     type(csr_matrix)   , intent(in)  :: A
     real(dp)           , intent(in)  :: b(:)
     real(dp)           , intent(out) :: x(:)
+    integer            , intent(out) :: iters
 
     real(dp), allocatable :: V(:,:), H(:,:), cs(:), sn(:), g(:), y(:)
     real(dp), allocatable :: w(:), z(:), r(:), u(:), du(:)
@@ -237,7 +231,7 @@ contains
 
     end do outer
 
-    gmres_last_iters = total
+    iters = total
     if (this % print_level .gt. 0) then
        write(*,'(1x,a,i0,a,i0,a,es12.5)') &
             & "gmres(", m, "): ", total, " iters, rel res ", tol

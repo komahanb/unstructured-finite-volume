@@ -34,14 +34,7 @@ module class_normal_cg
   implicit none
 
   private
-  public :: cgnr_last_iters, cgne_last_iters
   public :: normal_cg, CGNR_METHOD, CGNE_METHOD
-
-  ! Inner iterations of the most recent solve. Written by the kernels
-  ! (which take `this` as intent(in), so this cannot live on the object);
-  ! read by tests comparing iteration counts.
-  integer :: cgnr_last_iters = 0
-  integer :: cgne_last_iters = 0
 
   ! normal-equations method selector for the linear_solver wrapper
   integer, parameter :: CGNR_METHOD = 1   ! CG on A^T A  (residual-minimizing)
@@ -103,22 +96,20 @@ contains
 
   impure subroutine iterate(this, system, r, dx, iter)
 
-    class(normal_cg)     , intent(in)  :: this
-    class(assembler)     , intent(in)  :: system
-    real(dp)             , intent(in)  :: r(:)
-    real(dp)             , intent(out) :: dx(:)
-    integer              , intent(out) :: iter
+    class(normal_cg)     , intent(inout) :: this
+    class(assembler)     , intent(in)    :: system
+    real(dp)             , intent(in)    :: r(:)
+    real(dp)             , intent(out)   :: dx(:)
+    integer              , intent(out)   :: iter
 
     type(csr_matrix) :: A
 
     call system % get_operator_csr(A)
 
     if (this % method .eq. CGNE_METHOD) then
-       call this % cgne(A, r, dx)
-       iter = cgne_last_iters
+       call this % cgne(A, r, dx, iter)
     else
-       call this % cgnr(A, r, dx)
-       iter = cgnr_last_iters
+       call this % cgnr(A, r, dx, iter)
     end if
 
   end subroutine iterate
@@ -127,12 +118,13 @@ contains
   ! CGNR: CG on A^T A x = A^T b (residual-minimizing / LSQR).
   !===================================================================!
 
-  impure subroutine cgnr(this, A, b, x)
+  impure subroutine cgnr(this, A, b, x, iters)
 
     class(normal_cg), intent(in)  :: this
     type(csr_matrix), intent(in)  :: A
     real(dp)        , intent(in)  :: b(:)
     real(dp)        , intent(out) :: x(:)
+    integer         , intent(out) :: iters
 
     real(dp), allocatable :: r(:), z(:), p(:), w(:)
     real(dp)              :: alpha, beta, zz, zz_new, bnorm, tol
@@ -171,7 +163,7 @@ contains
 
     end do
 
-    cgnr_last_iters = iter
+    iters = iter
     if (this % print_level .gt. 0) write(*,'(1x,a,i0,a,es12.5)') &
          & "cgnr: ", iter, " iters, rel res ", tol
 
@@ -181,12 +173,13 @@ contains
   ! CGNE (Craig): CG on A A^T y = b, x = A^T y (error-minimizing).
   !===================================================================!
 
-  impure subroutine cgne(this, A, b, x)
+  impure subroutine cgne(this, A, b, x, iters)
 
     class(normal_cg), intent(in)  :: this
     type(csr_matrix), intent(in)  :: A
     real(dp)        , intent(in)  :: b(:)
     real(dp)        , intent(out) :: x(:)
+    integer         , intent(out) :: iters
 
     real(dp), allocatable :: r(:), p(:), w(:), atr(:)
     real(dp)              :: alpha, beta, rr, rr_new, bnorm, tol
@@ -224,7 +217,7 @@ contains
 
     end do
 
-    cgne_last_iters = iter
+    iters = iter
     if (this % print_level .gt. 0) write(*,'(1x,a,i0,a,es12.5)') &
          & "cgne: ", iter, " iters, rel res ", tol
 

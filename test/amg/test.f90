@@ -26,7 +26,7 @@ program test_amg
   use class_diffusion_flux  , only : diffusion_flux, constant_source
   use class_csr             , only : csr_matrix
   use class_algebraic_multigrid, only : algebraic_multigrid
-  use class_conjugate_gradient, only : conjugate_gradient, cg_last_iters
+  use class_conjugate_gradient, only : conjugate_gradient
 
   implicit none
 
@@ -177,7 +177,7 @@ contains
     ! plain CG
     allocate(cg, source = conjugate_gradient(5000, 1.0e-10_dp, 0))
     call cg % solve(fvm, x_cg)
-    iters_cg = cg_last_iters
+    iters_cg = cg % last_inner_iters
     deallocate(cg)
 
     ! PCG-AMG (same operator, same tolerance)
@@ -185,7 +185,7 @@ contains
     call M % setup(A)
     allocate(cg, source = conjugate_gradient(5000, 1.0e-10_dp, 0, precond = M))
     call cg % solve(fvm, x_amg)
-    iters_amg = cg_last_iters
+    iters_amg = cg % last_inner_iters
     deallocate(cg)
 
     e = maxval(abs(x_cg - x_amg))/max(maxval(abs(x_cg)), 1.0e-30_dp)
@@ -215,14 +215,14 @@ contains
 
        allocate(cg, source = conjugate_gradient(20000, 1.0e-8_dp, 0))
        call cg % solve(fvm, x)
-       ic(k) = cg_last_iters
+       ic(k) = cg % last_inner_iters
        deallocate(cg)
 
        call fvm % get_operator_csr(A)
        call M % setup(A)
        allocate(cg, source = conjugate_gradient(20000, 1.0e-8_dp, 0, precond = M))
        call cg % solve(fvm, x)
-       ia(k) = cg_last_iters
+       ia(k) = cg % last_inner_iters
        deallocate(cg)
 
        write(*,'(2x,i6,2x,i10,2x,i10)') ns(k), ic(k), ia(k)

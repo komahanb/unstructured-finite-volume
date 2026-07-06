@@ -206,6 +206,16 @@ program test_mesh
          & max_it = 100, print_level = 0))
     call solver % solve(FVMassembler, xref)
 
+    ! the iteration diagnostic lives on the object (no module-scope
+    ! side channels): a completed march must have populated it
+    if (solver % last_inner_iters .le. 0) then
+       write(*,'(1x,a)') "FAIL : last_inner_iters not populated by the march"
+       error stop
+    else
+       write(*,'(1x,a,i0,a)') "PASS : last_inner_iters populated (", &
+            & solver % last_inner_iters, " inner iterations)"
+    end if
+
     diff = norm2(x - xref)/norm2(xref)
     if (abs(tuned % omega - omega0) .gt. 0.0d0 .and. diff .lt. 1.0d-8) then
        write(*,'(1x,a,f8.5,a,es10.3)') &

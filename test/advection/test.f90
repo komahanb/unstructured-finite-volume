@@ -41,8 +41,8 @@ program test_advection
   use class_advection_flux   , only : advection_diffusion_flux
   use class_diffusion_flux   , only : constant_source
   use class_csr              , only : csr_matrix
-  use class_gmres            , only : gmres_solver, gmres_last_iters
-  use class_conjugate_gradient, only : conjugate_gradient, cg_last_iters
+  use class_gmres            , only : gmres_solver
+  use class_conjugate_gradient, only : conjugate_gradient
 
   implicit none
 
@@ -175,7 +175,7 @@ contains
     type(csr_matrix) :: A
     real(dp), allocatable :: b(:), x(:), qex(:)
     real(dp) :: xlo, xhi, a_pe, xc, err(3), order
-    integer  :: k, m, c
+    integer  :: k, m, c, it_k
     type(gmres_solver) :: gs
 
     gs = gmres_solver(max_it=20000, restart=200, max_tol=1.0e-12_dp, print_level=0)
@@ -188,7 +188,7 @@ contains
        m = A % nrows
        allocate(b(m), x(m), qex(m))
        call fvm % get_source(b)
-       call gs % gmres(A, b, x)
+       call gs % gmres(A, b, x, it_k)
 
        ! exact q(x) = (e^{a(x-xlo)} - 1)/(e^{a(xhi-xlo)} - 1),  a = vx/kappa
        call x_extent(fvm % grid, xlo, xhi)
@@ -226,6 +226,7 @@ contains
     real(dp) :: res_g, res_c, bnorm
     integer  :: m
     type(gmres_solver) :: gs
+    integer :: it_g
 
     call make_advdiff(20, VX, KAPPA, fvm)
     call fvm % get_operator_csr(A)
@@ -236,7 +237,7 @@ contains
 
     ! GMRES on the assembled operator
     gs = gmres_solver(max_it=20000, restart=200, max_tol=1.0e-10_dp, print_level=0)
-    call gs % gmres(A, b, x_g)
+    call gs % gmres(A, b, x_g, it_g)
     call A % matvec(x_g, r); res_g = norm2(r - b)/bnorm
 
     ! plain CG (matrix-free) on the same nonsymmetric operator
@@ -245,10 +246,10 @@ contains
     call A % matvec(x_c, r); res_c = norm2(r - b)/bnorm
 
     write(*,'(a)') " ---- GMRES vs CG efficiency on the nonsymmetric operator ----"
-    write(*,'(2x,a,es11.3,a,i0)') "gmres rel res = ", res_g, "   iters=", gmres_last_iters
-    write(*,'(2x,a,es11.3,a,i0)') "cg    rel res = ", res_c, "   iters=", cg_last_iters
+    write(*,'(2x,a,es11.3,a,i0)') "gmres rel res = ", res_g, "   iters=", it_g
+    write(*,'(2x,a,es11.3,a,i0)') "cg    rel res = ", res_c, "   iters=", cg % last_inner_iters
     if (res_g .gt. 1.0e-6_dp) nf = nf + 1                         ! GMRES must solve it
-    if (cg_last_iters .lt. 10*gmres_last_iters) nf = nf + 1       ! CG far less efficient
+    if (cg % last_inner_iters .lt. 10*it_g) nf = nf + 1           ! CG far less efficient
   end subroutine check_gmres_vs_cg
 
   !===================================================================!
@@ -261,7 +262,7 @@ contains
     type(csr_matrix) :: A
     real(dp), allocatable :: b(:), x(:)
     real(dp) :: minc, maxc, minu, maxu
-    integer  :: m
+    integer  :: m, it_k
     type(gmres_solver) :: gs
 
     gs = gmres_solver(max_it=50000, restart=300, max_tol=1.0e-9_dp, print_level=0)
@@ -274,14 +275,14 @@ contains
     m = A % nrows
     allocate(b(m), x(m))
     call fvm % get_source(b)
-    call gs % gmres(A, b, x)
+    call gs % gmres(A, b, x, it_k)
     minc = minval(x); maxc = maxval(x)
 
     ! upwind
     call fvm % set_convection_scheme(CONVECTION_UPWIND)
     call fvm % get_operator_csr(A)
     call fvm % get_source(b)
-    call gs % gmres(A, b, x)
+    call gs % gmres(A, b, x, it_k)
     minu = minval(x); maxu = maxval(x)
 
     write(*,'(a)') " ---- high-Peclet (cell-Pe~4): central vs upwind range ----"

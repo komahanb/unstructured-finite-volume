@@ -23,12 +23,6 @@ module class_conjugate_gradient
   ! Expose only the linear solver datatype
   private
   public :: conjugate_gradient
-  public :: cg_last_iters          ! inner CG iterations of the last solve (diagnostics)
-
-  ! Accumulated inner CG iterations of the most recent solve. Written by
-  ! solve/iterate (which take `this` as intent(in), so this cannot live on
-  ! the object); read by tests comparing plain-CG vs PCG-AMG iteration counts.
-  integer :: cg_last_iters = 0
 
   !===================================================================!
   ! Linear solver datatype
@@ -101,13 +95,13 @@ contains
     integer              , intent(in), optional :: mode  ! FORWARD (default) / REVERSE
 
     real(dp), allocatable :: dq(:)
+    integer               :: iters
 
-    ! reset the inner-iteration counter for this march
-    cg_last_iters = 0
-
-    ! Newton/BDF linearized inner solve (J dq = rhs) takes a separate path
+    ! Newton/BDF linearized inner solve (J dq = rhs) takes a separate
+    ! path; its inner count is kept on the object like every other march
     if (allocated(this % lin_coeff)) then
-       call this % solve_linearized(system, dq, mode)
+       call this % solve_linearized(system, dq, mode, iters)
+       this % last_inner_iters = iters
        call s % update(dq)
        return
     end if
@@ -123,11 +117,11 @@ contains
 
   impure subroutine iterate(this, system, r, dx, iter)
 
-    class(conjugate_gradient) , intent(in)  :: this
-    class(assembler)          , intent(in)  :: system
-    real(dp)                  , intent(in)  :: r(:)
-    real(dp)                  , intent(out) :: dx(:)
-    integer                   , intent(out) :: iter
+    class(conjugate_gradient) , intent(inout) :: this
+    class(assembler)          , intent(in)    :: system
+    real(dp)                  , intent(in)    :: r(:)
+    real(dp)                  , intent(out)   :: dx(:)
+    integer                   , intent(out)   :: iter
 
     ! Local data. z holds the preconditioned residual M^-1 res
     ! (z = res when no pre-operator is attached -> plain CG).
@@ -200,8 +194,9 @@ contains
 
     end do
 
-    ! record inner iterations done (iter starts at 1; iter-1 = CG steps)
-    cg_last_iters = cg_last_iters + (iter - 1)
+    ! report CG steps taken (iter starts at 1; iter-1 = steps); the
+    ! outer iteration accumulates this on the object
+    iter = iter - 1
 
     deallocate(res, p, w, z)
 
@@ -216,12 +211,13 @@ contains
   ! state update. This is the inner solve the nonlinear solver delegates.
   !===================================================================!
 
-  impure subroutine solve_linearized(this, system, x, mode)
+  impure subroutine solve_linearized(this, system, x, mode, iters)
 
     class(conjugate_gradient), intent(in)       :: this
     class(assembler)         , intent(in)       :: system
     real(dp), allocatable    , intent(out)      :: x(:)
     integer              , intent(in), optional :: mode
+    integer                  , intent(out)      :: iters
 
     real(dp), allocatable :: r(:), p(:), Jp(:), b(:), res(:)
     real(dp)              :: rs_old, rs_new, alpha, pJp
@@ -275,7 +271,7 @@ contains
 
     end do cg
 
-    cg_last_iters = it
+    iters = it
 
   end subroutine solve_linearized
 

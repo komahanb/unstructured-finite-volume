@@ -49,7 +49,7 @@ module class_newton_solver
 
    contains
 
-     procedure :: solve
+     procedure :: march => solve
      procedure, private :: prepare_inner_solver
 
      ! steady forward solve + adjoint total derivative dJ/dx (+ fd verify)

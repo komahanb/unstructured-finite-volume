@@ -30,7 +30,8 @@
 ! until then the override is the documented exception, and solve
 ! carries one meaning - drive the system's residual to zero.
 !
-! linear_solver extends the common algebraic_solver base.
+! linear_solver extends the common marcher base; its march is bound to
+! the context name solve through a generic.
 !
 ! Author : Komahan Boopathy
 !=====================================================================!
@@ -38,7 +39,7 @@
 module interface_linear_solver
 
   use iso_fortran_env           , only : dp => REAL64
-  use interface_algebraic_solver, only : algebraic_solver
+  use interface_marcher         , only : marcher
   use interface_assembler       , only : assembler
   use module_solve_mode         , only : FORWARD, REVERSE
 
@@ -70,11 +71,9 @@ module interface_linear_solver
   ! Linear solver datatype
   !===================================================================!
 
-  type, abstract, extends(algebraic_solver) :: linear_solver
+  type, abstract, extends(marcher) :: linear_solver
 
-     real(dp) :: max_tol
-     integer  :: max_it
-     integer  :: print_level = 0
+     ! max_tol, max_it and print_level are inherited from marcher
 
      ! iteration-history trace written when print_level == -1
      ! (machine-readable columns, not prose)
@@ -89,9 +88,12 @@ module interface_linear_solver
 
    contains
 
-     ! provided solve: the residual-minimization iteration. converge is also
-     ! bound by name so the one documented override can delegate to it.
-     procedure :: solve => converge
+     ! provided march: the residual-minimization iteration, bound to the
+     ! family's context name solve through the generic below. converge is
+     ! also bound by name so the one documented override can delegate to
+     ! it.
+     procedure :: march => converge
+     generic   :: solve => march
      procedure :: converge
 
      ! deferred: the one-step correction (the analogue of the

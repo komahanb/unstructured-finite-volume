@@ -44,8 +44,9 @@ module class_conjugate_gradient
 
    contains
 
-     ! type bound procedures
-     procedure :: solve
+     ! the documented march override (linearized path), bound over the
+     ! inherited generic solve
+     procedure :: march => solve
      procedure :: iterate
      procedure, private :: solve_linearized
 

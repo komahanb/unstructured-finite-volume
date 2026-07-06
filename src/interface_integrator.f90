@@ -13,7 +13,8 @@
 
 module interface_integrator
 
-  use iso_fortran_env   , only : dp => REAL64
+  use iso_fortran_env    , only : dp => REAL64
+  use interface_marcher  , only : marcher
   use interface_assembler, only : assembler
 
   implicit none
@@ -25,7 +26,7 @@ module interface_integrator
   ! Abstract integrator type
   !-------------------------------------------------------------------!
 
-  type, abstract :: integrator
+  type, abstract, extends(marcher) :: integrator
 
      class(assembler), allocatable :: system     ! the semi-discrete system
      real(dp)        , allocatable :: time(:)     ! time at each step
@@ -42,7 +43,11 @@ module interface_integrator
 
      procedure :: construct
      procedure :: destruct
-     procedure :: integrate
+
+     ! the provided march in physical time, bound to the family's
+     ! context name integrate through the generic
+     procedure :: march => integrate
+     generic   :: integrate => march
 
      ! Deferred to concrete schemes
      procedure(step_interface)            , deferred :: step

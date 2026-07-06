@@ -4,7 +4,7 @@ interface_graph.o \
 class_chain.o \
 module_verbosity.o \
 class_csr.o \
-interface_algebraic_solver.o \
+interface_marcher.o \
 interface_assembler.o \
 interface_function.o \
 class_state_energy.o \

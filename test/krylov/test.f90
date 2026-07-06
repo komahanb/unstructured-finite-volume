@@ -31,6 +31,7 @@ program test_krylov
   use class_csr       , only : csr_matrix
   use class_normal_cg , only : normal_cg, CGNR_METHOD, CGNE_METHOD
   use class_gmres     , only : gmres_solver
+  use class_csr_system, only : csr_system
   use class_algebraic_multigrid, only : algebraic_multigrid
 
   implicit none
@@ -132,6 +133,7 @@ contains
   subroutine check_correctness(nf)
     integer, intent(inout) :: nf
     integer :: it_nr, it_ne, it_gm
+    type(csr_system) :: sys
     type(csr_matrix) :: A
     real(dp), allocatable :: xex(:), b(:), x(:)
     real(dp) :: rr, se
@@ -142,23 +144,28 @@ contains
     call make_problem(A, xex, b)
     allocate(x(A % ncols))
 
+    ! the kernels run on the system contract, never on assembled
+    ! entries: wrap the manufactured operator as a system (its
+    ! transpose is genuine, so no symmetry claim is needed)
+    sys = csr_system(A)
+
     cgnr_solver = normal_cg(max_it=50000, max_tol=TOL, method=CGNR_METHOD, print_level=0)
     cgne_solver = normal_cg(max_it=50000, max_tol=TOL, method=CGNE_METHOD, print_level=0)
     gs          = gmres_solver(max_it=50000, restart=400, max_tol=TOL, print_level=0)
 
     write(*,'(a)') " ---- correctness (gamma = 0.6) ----"
 
-    call cgnr_solver % cgnr(A, b, x, it_nr)
+    call cgnr_solver % cgnr(sys, b, x, it_nr)
     rr = relresid(A, x, b); se = solerr(x, xex)
     write(*,'(2x,a,es11.3,a,es11.3,a,i0)') "cgnr  resid=", rr, "  err=", se, "  iters=", it_nr
     if (rr .gt. 1.0e-6_dp .or. se .gt. 1.0e-3_dp) nf = nf + 1
 
-    call cgne_solver % cgne(A, b, x, it_ne)
+    call cgne_solver % cgne(sys, b, x, it_ne)
     rr = relresid(A, x, b); se = solerr(x, xex)
     write(*,'(2x,a,es11.3,a,es11.3,a,i0)') "cgne  resid=", rr, "  err=", se, "  iters=", it_ne
     if (rr .gt. 1.0e-6_dp .or. se .gt. 1.0e-3_dp) nf = nf + 1
 
-    call gs % gmres(A, b, x, it_gm)
+    call gs % gmres(sys, b, x, it_gm)
     rr = relresid(A, x, b); se = solerr(x, xex)
     write(*,'(2x,a,es11.3,a,es11.3,a,i0)') "gmres resid=", rr, "  err=", se, "  iters=", it_gm
     if (rr .gt. 1.0e-6_dp .or. se .gt. 1.0e-3_dp) nf = nf + 1
@@ -170,6 +177,7 @@ contains
   subroutine check_peclet_sweep(nf)
     integer, intent(inout) :: nf
     integer :: it_cgnr
+    type(csr_system) :: sys
     real(dp), parameter :: gammas(4) = [0.0_dp, 0.3_dp, 0.6_dp, 0.9_dp]
     type(csr_matrix) :: A
     real(dp), allocatable :: xex(:), b(:), x(:)
@@ -186,13 +194,14 @@ contains
        A = advdiff_csr(gammas(t))
        call make_problem(A, xex, b)
        if (allocated(x)) deallocate(x); allocate(x(A % ncols))
+       sys = csr_system(A)
 
-       call cgnr_solver % cgnr(A, b, x, it_cgnr)
+       call cgnr_solver % cgnr(sys, b, x, it_cgnr)
        block
          real(dp) :: rr_c
          integer  :: it_gmres
          rr_c = relresid(A, x, b)
-         call gs % gmres(A, b, x, it_gmres)
+         call gs % gmres(sys, b, x, it_gmres)
          write(*,'(2x,f8.2,2x,i10,2x,i10,2x,f8.1)') gammas(t), it_cgnr, it_gmres, &
               & real(it_cgnr,dp)/real(max(it_gmres,1),dp)
          ! both must converge, and GMRES must take strictly fewer iterations
@@ -210,6 +219,7 @@ contains
   subroutine check_restart(nf)
     integer, intent(inout) :: nf
     integer :: it_gm
+    type(csr_system) :: sys
     type(csr_matrix) :: A
     real(dp), allocatable :: xex(:), b(:), x(:)
     real(dp) :: rr
@@ -220,7 +230,8 @@ contains
     allocate(x(A % ncols))
 
     gs = gmres_solver(max_it=50000, restart=20, max_tol=TOL, print_level=0)   ! restart every 20
-    call gs % gmres(A, b, x, it_gm)
+    sys = csr_system(A)
+    call gs % gmres(sys, b, x, it_gm)
     rr = relresid(A, x, b)
     write(*,'(a,es11.3,a,i0)') " ---- GMRES(20) restart: resid=", rr, "  iters=", it_gm
     if (rr .gt. 1.0e-6_dp) nf = nf + 1
@@ -237,6 +248,7 @@ contains
     integer :: it_plain, it_prec
     real(dp) :: rr
     type(gmres_solver) :: gs, gs_prec
+    type(csr_system) :: sys
 
     A    = advdiff_csr(0.6_dp)
     Asym = advdiff_csr(0.0_dp)        ! symmetric part = the SPD laplacian
@@ -244,11 +256,12 @@ contains
     call make_problem(A, xex, b)
     allocate(x(A % ncols))
 
+    sys = csr_system(A)
     gs = gmres_solver(max_it=50000, restart=400, max_tol=TOL, print_level=0)
-    call gs % gmres(A, b, x, it_plain)
+    call gs % gmres(sys, b, x, it_plain)
 
     gs_prec = gmres_solver(max_it=50000, restart=400, max_tol=TOL, print_level=0, precond=M)
-    call gs_prec % gmres(A, b, x, it_prec)
+    call gs_prec % gmres(sys, b, x, it_prec)
     rr = relresid(A, x, b)
 
     write(*,'(a,i0,a,i0,a,es11.3)') " ---- AMG-right-preconditioned GMRES: plain=", &

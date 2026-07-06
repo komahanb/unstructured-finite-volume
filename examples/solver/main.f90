@@ -72,6 +72,10 @@ program solver
   select case (trim(cfg % equation % str))
   case ("diffusion")
      call fvm % set_equation(diffusion_flux(cfg % kappa), constant_source(cfg % source))
+     ! the diffusion operator is symmetric: declare it on the configured
+     ! instance so transpose products (cgnr/cgne, adjoints) are an
+     ! explicit, verifiable claim
+     fvm % operator_is_symmetric = .true.
   case ("advection_diffusion")
      call fvm % set_equation(advection_diffusion_flux(cfg % velocity, cfg % kappa), &
           &                  constant_source(cfg % source))

@@ -184,11 +184,10 @@ contains
     write(*,'(2x,a6,2x,a12,2x,a8)') "n", "L2 error", "order"
     do k = 1, 3
        call make_advdiff(ns(k), VX, KAPPA, fvm)
-       call fvm % get_operator_csr(A)
-       m = A % nrows
+       m = fvm % num_state_vars
        allocate(b(m), x(m), qex(m))
        call fvm % get_source(b)
-       call gs % gmres(A, b, x, it_k)
+       call gs % gmres(fvm, b, x, it_k)
 
        ! exact q(x) = (e^{a(x-xlo)} - 1)/(e^{a(xhi-xlo)} - 1),  a = vx/kappa
        call x_extent(fvm % grid, xlo, xhi)
@@ -229,15 +228,15 @@ contains
     integer :: it_g
 
     call make_advdiff(20, VX, KAPPA, fvm)
-    call fvm % get_operator_csr(A)
+    call fvm % get_operator_csr(A)   ! assembled only to CHECK residuals below
     m = A % nrows
     allocate(b(m), x_g(m), x_c(m), r(m))
     call fvm % get_source(b)
     bnorm = max(norm2(b), tiny(1.0_dp))
 
-    ! GMRES on the assembled operator
+    ! GMRES on the system's product (never on assembled entries)
     gs = gmres_solver(max_it=20000, restart=200, max_tol=1.0e-10_dp, print_level=0)
-    call gs % gmres(A, b, x_g, it_g)
+    call gs % gmres(fvm, b, x_g, it_g)
     call A % matvec(x_g, r); res_g = norm2(r - b)/bnorm
 
     ! plain CG (matrix-free) on the same nonsymmetric operator
@@ -271,18 +270,16 @@ contains
     call make_advdiff(20, 80.0_dp, 1.0_dp, fvm)
 
     ! central (default)
-    call fvm % get_operator_csr(A)
-    m = A % nrows
+    m = fvm % num_state_vars
     allocate(b(m), x(m))
     call fvm % get_source(b)
-    call gs % gmres(A, b, x, it_k)
+    call gs % gmres(fvm, b, x, it_k)
     minc = minval(x); maxc = maxval(x)
 
     ! upwind
     call fvm % set_convection_scheme(CONVECTION_UPWIND)
-    call fvm % get_operator_csr(A)
     call fvm % get_source(b)
-    call gs % gmres(A, b, x, it_k)
+    call gs % gmres(fvm, b, x, it_k)
     minu = minval(x); maxu = maxval(x)
 
     write(*,'(a)') " ---- high-Peclet (cell-Pe~4): central vs upwind range ----"

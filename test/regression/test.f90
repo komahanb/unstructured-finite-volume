@@ -200,8 +200,11 @@ contains
     allocate(cg, source = conjugate_gradient(5000, tol, 0))
     call cg % solve(f1, xref)
 
-    ! normal_cg (cgnr): CG on the normal equations (kappa^2 -> looser tol)
+    ! normal_cg (cgnr): CG on the normal equations (kappa^2 -> looser tol).
+    ! its transpose products are live: declare the diffusion operator
+    ! symmetric so they run as an explicit claim
     call make("../box-3.msh", f2); call box_bc(f2)
+    f2 % operator_is_symmetric = .true.
     ncg = normal_cg(max_it=50000, max_tol=1.0e-10_dp, &
          & method=CGNR_METHOD, print_level=0)
     call ncg % solve(f2, xn)

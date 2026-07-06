@@ -25,7 +25,6 @@
 module class_gmres
 
   use iso_fortran_env         , only : dp => REAL64
-  use class_csr               , only : csr_matrix
   use interface_linear_solver , only : linear_solver, preconditioner
   use interface_assembler     , only : assembler
 
@@ -36,10 +35,11 @@ module class_gmres
 
   !-------------------------------------------------------------------!
   ! linear_solver wrapper around restarted GMRES so the config-driven
-  ! driver can pick "gmres" the way it picks "cg". The gmres kernel below
-  ! is a method that runs on any operator it is handed; solve assembles
-  ! the csv via get_operator_csr / get_source first. Use it for
-  ! nonsymmetric operators (advection) where CG does not apply.
+  ! driver can pick "gmres" the way it picks "cg". The kernel below runs
+  ! on the ONE product - system % get_jacobian_residual_product, forward
+  ! and whole, never assembled entries (assembled only to build
+  ! preconditioners, never to iterate). Use it for nonsymmetric
+  ! operators (advection) where CG does not apply.
   !-------------------------------------------------------------------!
 
   type, extends(linear_solver) :: gmres_solver
@@ -102,24 +102,23 @@ contains
     real(dp)             , intent(out)   :: dx(:)
     integer              , intent(out)   :: iter
 
-    type(csr_matrix) :: A
-
-    call system % get_operator_csr(A)
-
-    call this % gmres(A, r, dx, iter)
+    call this % gmres(system, r, dx, iter)
 
   end subroutine iterate
 
   !===================================================================!
-  ! Solve A x = b with restarted, optionally right-preconditioned GMRES.
-  ! Caps, Krylov dimension and verbosity are read from `this`; the
-  ! preconditioner member (if allocated) supplies z = M^-1 r.
+  ! Solve A x = b with restarted, optionally right-preconditioned GMRES,
+  ! where A acts only through the system's jacobian-vector product
+  ! (forward, whole - assembled entries are never touched here; they are
+  ! for building preconditioners). Caps, Krylov dimension and verbosity
+  ! are read from `this`; the post-conditioner slot (if allocated)
+  ! supplies z = M^-1 v per Krylov vector.
   !===================================================================!
 
-  impure subroutine gmres(this, A, b, x, iters)
+  impure subroutine gmres(this, system, b, x, iters)
 
     class(gmres_solver), intent(in)  :: this
-    type(csr_matrix)   , intent(in)  :: A
+    class(assembler)   , intent(in)  :: system
     real(dp)           , intent(in)  :: b(:)
     real(dp)           , intent(out) :: x(:)
     integer            , intent(out) :: iters
@@ -130,7 +129,7 @@ contains
     integer               :: n, m, i, j, kk, total
     logical               :: converged
 
-    n = A % ncols
+    n = system % num_state_vars
     m = min(this % restart, this % max_it)
 
     allocate(V(n, m+1), H(m+1, m), cs(m), sn(m), g(m+1), y(m))
@@ -147,7 +146,7 @@ contains
     outer: do while (total .lt. this % max_it .and. .not. converged)
 
        ! restart residual r = b - A x
-       call A % matvec(x, w)
+       call system % get_jacobian_residual_product(w, x)
        r    = b - w
        beta = norm2(r)
        tol  = beta/bnorm
@@ -169,9 +168,9 @@ contains
           ! w = A M^-1 v_j  (right preconditioning; w = A v_j if none)
           if (allocated(this % post_conditioner)) then
              call this % post_conditioner % apply(V(:,j), z)
-             call A % matvec(z, w)
+             call system % get_jacobian_residual_product(w, z)
           else
-             call A % matvec(V(:,j), w)
+             call system % get_jacobian_residual_product(w, V(:,j))
           end if
 
           ! modified Gram-Schmidt against the existing basis

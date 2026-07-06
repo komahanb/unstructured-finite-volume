@@ -8,6 +8,8 @@ program test_mesh
   use class_gmsh_loader        , only : gmsh_loader
   use class_mesh               , only : mesh
   use class_assembler          , only : assembler, DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE
+  use class_conjugate_gradient , only : conjugate_gradient
+  use module_solve_mode        , only : REVERSE
 
   implicit none
 
@@ -75,10 +77,14 @@ program test_mesh
   end block assembly
 
   ! analytic consistency checks of the jacobian-vector product, exact
-  ! to machine precision
+  ! to machine precision. the diffusion operator is symmetric: declare
+  ! it on the configured instance, so the REVERSE products inside the
+  ! checks run as verified claims rather than refusals.
   consistency_checks: block
 
     real(dp) :: defect
+
+    FVMAssembler % operator_is_symmetric = .true.
 
     defect = FVMAssembler % verify_parts_consistency()
     if (defect .lt. 1.0d-13) then
@@ -97,6 +103,25 @@ program test_mesh
     end if
 
   end block consistency_checks
+
+  ! the verify-before gate: the first REVERSE march on the declared-
+  ! symmetric system must verify the claim and cache the verdict
+  gate: block
+
+    type(conjugate_gradient) :: cg
+    real(dp), allocatable    :: x(:)
+
+    cg = conjugate_gradient(max_it = 500, max_tol = 1.0d-10, print_level = 0)
+    call cg % solve(FVMAssembler, x, REVERSE)
+
+    if (FVMAssembler % transpose_verified) then
+       write(*,'(1x,a)') "PASS : REVERSE entry gate verified the transpose claim"
+    else
+       write(*,'(1x,a)') "FAIL : REVERSE entry gate did not run"
+       error stop
+    end if
+
+  end block gate
 
   deallocate(grid)
   deallocate(FVMAssembler)

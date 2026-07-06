@@ -54,6 +54,11 @@ module interface_linear_solver
   public :: preconditioner
   public :: MANUAL, AUTO
 
+  ! Acceptance tolerance of the transpose-consistency gate. The verify
+  ! returns a relative defect (scaled by max(|lhs|, |rhs|, 1)), so this
+  ! is dimensionless and sits just above machine precision.
+  real(dp), parameter :: transpose_defect_tol = 1.0d-12
+
   ! tuning modes: MANUAL takes the parameters as given (default); AUTO lets
   ! the solver select its parameters itself (opt-in, never default)
   integer, parameter :: MANUAL = 0
@@ -192,6 +197,26 @@ contains
             &  allocated(this % post_conditioner))) then
           error stop "linear_solver: preconditioned REVERSE solve refused - " // &
                & "the swap-and-transpose contract is not implemented"
+       end if
+    end if
+
+    ! Verify-before: the first REVERSE march on a system checks the
+    ! transpose claim (a symmetry declaration or a genuine override)
+    ! against the analytic identity <w, J v> = <J^T w, v>, once, and
+    ! caches the verdict on the system. A handful of products, machine
+    ! precision, no truncation error.
+    if (present(mode)) then
+       if (mode .eq. REVERSE .and. .not. system % transpose_verified) then
+          verify_transpose: block
+            real(dp) :: defect
+            defect = system % verify_transpose_consistency()
+            if (defect .gt. transpose_defect_tol) then
+               write(*,'(1x,a,es12.5)') &
+                    & "converge: transpose-consistency defect ", defect
+               error stop "converge: the system's transpose claim failed verification"
+            end if
+            system % transpose_verified = .true.
+          end block verify_transpose
        end if
     end if
 

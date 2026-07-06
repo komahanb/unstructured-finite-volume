@@ -217,7 +217,15 @@ contains
        return
     end if
 
-    ! replicated serial fallback (correct on every image)
+    ! the REVERSE fallback routes through the one transpose seat, so a
+    ! genuine override, a declared-symmetric claim, and the refusal all
+    ! behave exactly as on the serial system (replicated on every image)
+    if (dir .eq. REVERSE) then
+       call this % transpose_product(w, v, sub)
+       return
+    end if
+
+    ! replicated serial forward fallback (correct on every image)
     if (sub .eq. WHOLE) then
        call this % get_jacobian_vector_product(w, v)
     else

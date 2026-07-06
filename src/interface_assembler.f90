@@ -31,6 +31,16 @@ module interface_assembler
      type(logical) :: approximate_jacobian
      type(integer) :: differential_order
 
+     ! The transpose claim and its verification. REVERSE products refuse
+     ! unless the configured instance either declares its operator
+     ! symmetric (an instance property, never a class property - one
+     ! class serves symmetric diffusion and non-symmetric advection
+     ! through its flux objects) or overrides transpose_product with a
+     ! genuine transpose. The entry gate (converge) verifies whichever
+     ! claim is made, once per system, and caches the verdict here.
+     logical :: operator_is_symmetric = .false.
+     logical :: transpose_verified    = .false.
+
      real(dp), allocatable :: S(:,:)
 
    contains  
@@ -56,8 +66,10 @@ module interface_assembler
      procedure :: verify_transpose_consistency
      procedure :: verify_parts_consistency
 
-     ! steady transpose action behind the one product's REVERSE direction
-     procedure, private :: transpose_product
+     ! steady transpose action behind the REVERSE direction; a public
+     ! binding so a system with a non-symmetric operator can override it
+     ! with a genuine transpose (the stated remedy of its refusal)
+     procedure :: transpose_product
 
      ! The pieces the queries above are composed from. The base defaults
      ! are trivial (zero); a spatial assembler overrides them. Solvers
@@ -396,10 +408,18 @@ contains
   ! (WHOLE, DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE). Defaults:
   ! FORWARD, WHOLE.
   !
-  ! The REVERSE direction currently inherits the symmetric default
-  ! (J^T = J) of add_jacobian_vector_product_transpose; a system with a
-  ! non-symmetric operator must override that transpose before REVERSE
-  ! products may be trusted - verify_transpose_consistency is the audit.
+  ! Law of the (mode, part) pair: part names the part of the operator
+  ! selected by mode - a part of J under FORWARD, a part of J^T under
+  ! REVERSE. Because the lower triangle of J^T is the transposed upper
+  ! triangle of J, the transpose of a forward triangle product is the
+  ! REVERSE product of the OPPOSITE triangle:
+  !     (forward LOWER_TRIANGLE)^T == reverse UPPER_TRIANGLE
+  ! - exactly the pairing verify_transpose_consistency checks.
+  !
+  ! The REVERSE direction refuses unless the instance declares its
+  ! operator symmetric or overrides transpose_product with a genuine
+  ! transpose; the entry gate verifies either claim before the first
+  ! REVERSE march.
   !===================================================================!
 
   impure subroutine get_jacobian_residual_product(this, w, v, mode, part)
@@ -432,9 +452,13 @@ contains
   end subroutine get_jacobian_residual_product
 
   !===================================================================!
-  ! Steady transpose action w = J^T v (helper for the one product).
-  ! Default: the symmetric assumption J^T = J, matching the default of
-  ! add_jacobian_vector_product_transpose.
+  ! Steady transpose action w = J^T v behind the REVERSE direction.
+  ! Law: names must not lie. The base refuses unless the configured
+  ! instance declares its operator symmetric - then J^T = J is an
+  ! explicit claim and the forward product serves it. A system with a
+  ! non-symmetric operator must override this with a genuine transpose.
+  ! Either claim is verified by the entry gate (converge) through
+  ! verify_transpose_consistency before the first REVERSE march.
   !===================================================================!
 
   impure subroutine transpose_product(this, w, v, sub)
@@ -444,6 +468,14 @@ contains
     real(dp)        , intent(in)  :: v(:)
     integer         , intent(in)  :: sub
 
+    if (.not. this % operator_is_symmetric) then
+       error stop "assembler % transpose_product: no transpose available - " // &
+            & "override transpose_product with a genuine transpose, or set " // &
+            & "operator_is_symmetric on the configured instance; the REVERSE " // &
+            & "entry gate verifies whichever claim is made"
+    end if
+
+    ! the symmetric identity J^T = J, an explicit per-instance claim
     if (sub .eq. WHOLE) then
        call this % get_jacobian_vector_product(w, v)
     else

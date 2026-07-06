@@ -32,8 +32,7 @@ module class_chain
 
    contains
 
-     ! rule-generated adjacency: override the queries, store nothing
-     procedure :: build_adjacency
+     ! the deferred contract, answered by the rule - nothing stored
      procedure :: neighbours
      procedure :: degree
 
@@ -70,19 +69,6 @@ contains
     end do
 
   end function create
-
-  !===================================================================!
-  ! Nothing to materialize: the adjacency is the rule i -> i+1. The
-  ! edge count restates the rule.
-  !===================================================================!
-
-  pure subroutine build_adjacency(this)
-
-    class(chain), intent(inout) :: this
-
-    this % num_edges = max(this % num_vertices - 1, 0)
-
-  end subroutine build_adjacency
 
   !===================================================================!
   ! Neighbours of vertex i by rule: i-1 and i+1, within 1..n.

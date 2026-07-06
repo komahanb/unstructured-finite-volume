@@ -77,11 +77,18 @@ module interface_graph
      procedure :: dof
      procedure :: num_dofs
 
-     ! adjacency: build once from the edge list, query many times.
-     ! A rule-generated subclass overrides the queries and builds nothing.
+     ! The contract: every graph answers its neighbour queries, and the
+     ! compiler enforces it. A stored subclass implements them as
+     ! one-line delegations to the stored_* helpers below; a
+     ! rule-generated subclass answers by arithmetic.
+     procedure(neighbours_interface), deferred :: neighbours
+     procedure(degree_interface)    , deferred :: degree
+
+     ! Shared stored-adjacency mechanism, written once: build the
+     ! compressed neighbour list from the edge list, then index it.
      procedure :: build_adjacency
-     procedure :: neighbours
-     procedure :: degree
+     procedure :: stored_neighbours
+     procedure :: stored_degree
 
      ! traversal order over the whole graph (FORWARD/REVERSE)
      procedure :: traversal_order
@@ -113,6 +120,29 @@ module interface_graph
      procedure, private :: gather_partition
 
   end type graph
+
+  !===================================================================!
+  ! Deferred interfaces
+  !===================================================================!
+
+  abstract interface
+
+     ! the neighbours of vertex v
+     pure function neighbours_interface(this, v) result(nbrs)
+       import :: graph
+       class(graph), intent(in) :: this
+       integer     , intent(in) :: v
+       integer, allocatable     :: nbrs(:)
+     end function neighbours_interface
+
+     ! the number of neighbours of vertex v
+     pure integer function degree_interface(this, v)
+       import :: graph
+       class(graph), intent(in) :: this
+       integer     , intent(in) :: v
+     end function degree_interface
+
+  end interface
 
 contains
 
@@ -194,12 +224,13 @@ contains
   end subroutine build_adjacency
 
   !===================================================================!
-  ! Neighbours of vertex v, from the retained adjacency. Precondition:
-  ! the adjacency exists (a subclass with stored edges builds it at creation; a
-  ! rule-generated subclass overrides this query instead).
+  ! Neighbours of vertex v from the retained adjacency: the shared
+  ! mechanism a stored subclass delegates its deferred neighbours to.
+  ! The stop below is a broken-invariant report, not an extension hook:
+  ! a stored graph's constructor must call build_adjacency.
   !===================================================================!
 
-  pure function neighbours(this, v) result(nbrs)
+  pure function stored_neighbours(this, v) result(nbrs)
 
     class(graph), intent(in) :: this
     integer     , intent(in) :: v
@@ -207,29 +238,32 @@ contains
     integer, allocatable :: nbrs(:)
 
     if (.not. allocated(this % xadj)) then
-       error stop "graph: adjacency not built - build_adjacency or override neighbours"
+       error stop "graph: stored graph constructed without adjacency - " // &
+            & "the constructor must call build_adjacency"
     end if
 
     nbrs = this % adj(this % xadj(v) : this % xadj(v+1)-1)
 
-  end function neighbours
+  end function stored_neighbours
 
   !===================================================================!
-  ! Degree of vertex v (the number of its neighbours)
+  ! Degree of vertex v from the retained adjacency (see
+  ! stored_neighbours for the invariant).
   !===================================================================!
 
-  pure integer function degree(this, v)
+  pure integer function stored_degree(this, v)
 
     class(graph), intent(in) :: this
     integer     , intent(in) :: v
 
     if (.not. allocated(this % xadj)) then
-       error stop "graph: adjacency not built - build_adjacency or override degree"
+       error stop "graph: stored graph constructed without adjacency - " // &
+            & "the constructor must call build_adjacency"
     end if
 
-    degree = this % xadj(v+1) - this % xadj(v)
+    stored_degree = this % xadj(v+1) - this % xadj(v)
 
-  end function degree
+  end function stored_degree
 
   !===================================================================!
   ! Traversal order over all vertices: breadth-first in dependency

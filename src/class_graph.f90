@@ -40,6 +40,12 @@ module class_graph
      ! provenance: edge_face(e) is the interior face that made edge e
      integer, allocatable :: edge_face(:)
 
+   contains
+
+     ! the deferred contract, delegated to the shared stored mechanism
+     procedure :: neighbours
+     procedure :: degree
+
   end type mesh_graph
 
   interface mesh_graph
@@ -89,5 +95,30 @@ contains
     call this % build_adjacency()
 
   end function create
+
+  !===================================================================!
+  ! The deferred neighbour queries: one-line delegations to the stored
+  ! adjacency the constructor built.
+  !===================================================================!
+
+  pure function neighbours(this, v) result(nbrs)
+
+    class(mesh_graph), intent(in) :: this
+    integer          , intent(in) :: v
+
+    integer, allocatable :: nbrs(:)
+
+    nbrs = this % stored_neighbours(v)
+
+  end function neighbours
+
+  pure integer function degree(this, v)
+
+    class(mesh_graph), intent(in) :: this
+    integer          , intent(in) :: v
+
+    degree = this % stored_degree(v)
+
+  end function degree
 
 end module class_graph

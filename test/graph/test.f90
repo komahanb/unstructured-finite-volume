@@ -23,6 +23,10 @@ module class_test_graph
   public :: test_graph
 
   type, extends(graph) :: test_graph
+   contains
+     ! the deferred contract, delegated to the stored mechanism
+     procedure :: neighbours => test_neighbours
+     procedure :: degree     => test_degree
   end type test_graph
 
   interface test_graph
@@ -56,6 +60,19 @@ contains
     call this % build_adjacency()
 
   end function create
+
+  pure function test_neighbours(this, v) result(nbrs)
+    class(test_graph), intent(in) :: this
+    integer          , intent(in) :: v
+    integer, allocatable :: nbrs(:)
+    nbrs = this % stored_neighbours(v)
+  end function test_neighbours
+
+  pure integer function test_degree(this, v)
+    class(test_graph), intent(in) :: this
+    integer          , intent(in) :: v
+    test_degree = this % stored_degree(v)
+  end function test_degree
 
 end module class_test_graph
 

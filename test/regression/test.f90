@@ -21,6 +21,10 @@ program regression
   use class_mesh               , only : mesh
   use class_assembler          , only : assembler, DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE
   use class_diffusion_flux  , only : diffusion_flux, constant_source
+  use class_advection_flux     , only : advection_diffusion_flux
+  use class_gmres              , only : gmres_solver
+  use class_csr                , only : csr_matrix
+  use class_csr_system         , only : csr_system
   use class_conjugate_gradient , only : conjugate_gradient
   use class_normal_cg          , only : normal_cg, CGNR_METHOD
   use class_partitioned_assembler, only : partitioned_assembler
@@ -40,6 +44,7 @@ program regression
   call check_operator_split(nfail)
   call check_neumann_insulated(nfail)
   call check_solver_wrappers(nfail)
+  call check_asymmetric_pathways(nfail)
 
   write(*,*) "============================================="
   if (nfail .eq. 0) then
@@ -305,6 +310,80 @@ contains
   !===================================================================!
   ! The box-3 dirichlet boundary values used by several checks
   !===================================================================!
+
+  !===================================================================!
+  ! The asymmetric pathways. Case 1: a FALSE symmetry claim on a
+  ! genuinely non-symmetric operator (advection-diffusion) must be
+  ! caught by the analytic identity <w, J v> = <J^T w, v> - the same
+  ! check the entry gate runs, asserted here in-suite without dying.
+  ! Case 2: the genuine-transpose commute - cgnr (both directions of
+  ! the product) must meet gmres (forward only) on the same
+  ! non-symmetric operator, served through the csr-backed system whose
+  ! transpose is genuine (no symmetry claim anywhere).
+  !===================================================================!
+
+  subroutine check_asymmetric_pathways(nfail)
+
+    integer, intent(inout) :: nfail
+
+    class(assembler), allocatable :: f1, f2
+    type(csr_matrix)      :: A
+    type(csr_system)      :: sys
+    type(normal_cg)       :: ncg
+    type(gmres_solver)    :: gm
+    real(dp), allocatable :: b(:), xg(:), xn(:)
+    real(dp)              :: defect
+
+    ! case 1: the lie is caught. the claim routes transpose products to
+    ! the forward operator, and advection makes that measurably wrong.
+    call make_advective("../box-3.msh", f1); call box_bc(f1)
+    f1 % operator_is_symmetric = .true.     ! a deliberate false claim
+    defect = f1 % verify_transpose_consistency()
+    write(*,'(1x,a,es10.3)') "          (false-claim defect measured: ", defect
+    call report("asymmetric: false symmetry claim caught", &
+         & defect .gt. 1.0e-6_dp, nfail)
+
+    ! case 2: the commute through a genuine transpose. assembled once,
+    ! to BUILD the wrapped test system - the kernels iterate on its
+    ! products only.
+    call make_advective("../box-3.msh", f2); call box_bc(f2)
+    call f2 % get_operator_csr(A)
+    allocate(b(f2 % num_state_vars))
+    call f2 % get_source(b)
+    sys = csr_system(A, b)
+
+    gm = gmres_solver(max_it=5000, max_tol=1.0e-12_dp, print_level=0)
+    call gm % solve(sys, xg)
+
+    ncg = normal_cg(max_it=50000, max_tol=1.0e-10_dp, &
+         & method=CGNR_METHOD, print_level=0)
+    call ncg % solve(sys, xn)
+
+    call report("asymmetric: cgnr matches gmres (genuine transpose)", &
+         & maxval(abs(xn - xg)) .lt. 1.0e-5_dp, nfail)
+
+  end subroutine check_asymmetric_pathways
+
+  !===================================================================!
+  ! Build a non-symmetric system: advection-diffusion on the given mesh
+  !===================================================================!
+
+  subroutine make_advective(meshfile, fvm)
+
+    character(len=*)             , intent(in)  :: meshfile
+    class(assembler), allocatable, intent(out) :: fvm
+
+    class(gmsh_loader), allocatable :: gl
+    class(mesh)       , allocatable :: grid
+
+    allocate(gl, source = gmsh_loader(meshfile))
+    allocate(grid, source = mesh(gl))
+    allocate(fvm, source = assembler(grid))
+    call fvm % set_equation( &
+         & advection_diffusion_flux([1.0_dp, 0.0_dp, 0.0_dp], 1.0_dp), &
+         & constant_source(1.0_dp))
+
+  end subroutine make_advective
 
   subroutine box_bc(fvm)
 

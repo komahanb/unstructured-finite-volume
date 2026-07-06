@@ -15,8 +15,9 @@ for m in sphere box-3 box-36 square-10; do
    bash "$root/meshgen/ensure.sh" "$root/test/$m.msh"
 done
 
-gfortran $flags -I "$root/lib/" -c test.f90 -o test.o
-gfortran test.o -o run "$root/lib/libufvm.a" -llapack -fcoarray=single
+gfortran $flags -I "$root/lib/" -I "$root/src/" -c "$root/test/fixtures/class_csr_system.f90" -o csr_system.o
+gfortran $flags -I "$root/lib/" -I . -c test.f90 -o test.o
+gfortran csr_system.o test.o -o run "$root/lib/libufvm.a" -llapack -fcoarray=single
 
 gfortran $flags -I "$root/lib/" -c test_2d.f90 -o test_2d.o
 gfortran test_2d.o -o run2d "$root/lib/libufvm.a" -llapack -fcoarray=single

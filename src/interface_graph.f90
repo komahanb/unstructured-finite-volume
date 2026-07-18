@@ -21,6 +21,12 @@
 ! adjoint's reverse-mode accumulation, whose direction is read from
 ! structure rather than recovered from a visit order.
 !
+! Orbit: orbit(start, successor, limit) follows a caller-supplied rule
+! giving every vertex one successor - one vertex, one arrow out,
+! repeated. The sequence ends when the rule leaves the vertex set (the
+! orbit escapes; its length is the escape time), when a vertex repeats
+! (a cycle has closed), or at the step limit.
+!
 ! Partition: stamped in place (partition / partition_rcb), then queried
 ! (part_of, owned, ghosts, balance, edge_cut). A partition of a graph is
 ! still graph-shaped data.
@@ -96,6 +102,9 @@ module interface_graph
 
      ! visit order (breadth-first) over the whole graph
      procedure :: traversal_order
+
+     ! orbit of a vertex under a caller-supplied successor rule
+     procedure :: orbit
 
      ! partitioners - stamp vertex % part and gather the csr, in place
      procedure :: partition
@@ -413,6 +422,68 @@ contains
     if (dir .eq. REVERSE) order = order(nv:1:-1)
 
   end function traversal_order
+
+  !===================================================================!
+  ! Orbit of a vertex under a successor rule: one vertex, one arrow
+  ! out, repeated. The rule gives every vertex its single successor; a
+  ! value outside 1..num_vertices means the arrow leaves the graph.
+  !
+  ! The returned sequence starts at start and ends when the rule
+  ! leaves the vertex set (the orbit escapes; the length is the escape
+  ! time), when a vertex reappears (a cycle has closed; the repeated
+  ! vertex is kept as the final entry, so the cycle is the slice
+  ! between its two appearances), or when limit entries have been
+  ! recorded (a capped sequence makes no claim about the fate beyond
+  ! it). The default limit num_vertices + 1 guarantees termination on
+  ! its own: a rule that never escapes a finite vertex set must repeat
+  ! a vertex by then. Consumes only the rule - the graph contributes
+  ! the vertex set the orbit may escape.
+  !===================================================================!
+
+  pure function orbit(this, start, successor, limit) result(visited)
+
+    class(graph), intent(in) :: this
+    integer     , intent(in) :: start
+    interface
+       ! the single successor of vertex v under the rule
+       pure integer function successor(v)
+         integer, intent(in) :: v
+       end function successor
+    end interface
+    integer, intent(in), optional :: limit
+
+    integer, allocatable :: visited(:)
+
+    integer, allocatable :: scratch(:)
+    logical, allocatable :: seen(:)
+    integer :: nv, cap, v, n
+
+    nv = this % num_vertices
+
+    if (start .lt. 1 .or. start .gt. nv) then
+       error stop "graph: orbit must start at a vertex of the graph"
+    end if
+
+    cap = nv + 1
+    if (present(limit)) cap = limit
+
+    allocate(scratch(cap), seen(nv))
+    seen = .false.
+
+    v = start
+    n = 0
+    do while (n .lt. cap)
+       n = n + 1
+       scratch(n) = v
+       if (seen(v)) exit                    ! a cycle has closed
+       seen(v) = .true.
+       v = successor(v)
+       if (v .lt. 1 .or. v .gt. nv) exit    ! the orbit escapes the graph
+    end do
+
+    visited = scratch(1:n)
+
+  end function orbit
 
   !===================================================================!
   ! Partition into nparts pieces by breadth-first ordering, in place

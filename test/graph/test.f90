@@ -11,6 +11,8 @@
 !   6. directed structure: dependency order on the diamond dag, cycle
 !      detection on a 3-cycle, and the adjoint walk certified through
 !      the type-bound witness (chain analytic + diamond nudge)
+!   7. orbits under a successor rule: escape time, cycle closure, the
+!      tail-into-cycle shape, and the step limit
 !=====================================================================!
 
 module class_test_graph
@@ -151,6 +153,7 @@ program test_graph_suite
   call check_partition_invariants(nfail)
   call check_dof_map(nfail)
   call check_directed_structure(nfail)
+  call check_orbit(nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
@@ -381,6 +384,72 @@ contains
          & "adjoint accumulation certified by the witness", nfail)
 
   end subroutine check_directed_structure
+
+  !===================================================================!
+  ! 7: orbits under a successor rule - one vertex, one arrow out,
+  ! repeated. Escape (the rule leaves the vertex set; the length is
+  ! the escape time), cycle closure (the repeated vertex is kept as
+  ! the final entry), the tail-into-cycle shape, and the step limit.
+  !===================================================================!
+
+  subroutine check_orbit(nfail)
+
+    integer, intent(inout) :: nfail
+    type(test_graph) :: g
+    integer, allocatable :: visited(:)
+
+    g = known_graph()
+
+    ! the rule v -> v+1 escapes past vertex 5: escape time 5
+    visited = g % orbit(1, next_vertex)
+    call report(all(visited .eq. [1,2,3,4,5]), &
+         & "orbit escapes; length is the escape time", nfail)
+
+    ! from an interior start the same rule escapes in two visits
+    visited = g % orbit(4, next_vertex)
+    call report(all(visited .eq. [4,5]), "orbit from an interior start", nfail)
+
+    ! a vertex that is its own successor closes the shortest cycle
+    visited = g % orbit(3, same_vertex)
+    call report(all(visited .eq. [3,3]), "fixed vertex closes a 1-cycle", nfail)
+
+    ! tail 1 -> 2 into the cycle 3 -> 4 -> 5 -> 3: the repeated vertex
+    ! ends the sequence, so the cycle is the slice between its two
+    ! appearances; the length is num_vertices + 1, the default limit
+    ! the pigeonhole argument promises is enough
+    visited = g % orbit(1, tail_then_cycle)
+    call report(all(visited .eq. [1,2,3,4,5,3]), &
+         & "tail into a cycle; repeated vertex ends the sequence", nfail)
+
+    ! the step limit caps the orbit before the cycle closes
+    visited = g % orbit(1, tail_then_cycle, limit=3)
+    call report(all(visited .eq. [1,2,3]), "the step limit caps the orbit", nfail)
+
+  end subroutine check_orbit
+
+  !===================================================================!
+  ! successor rules for the orbit checks: one arrow out of every vertex
+  !===================================================================!
+
+  pure integer function next_vertex(v)
+    integer, intent(in) :: v
+    next_vertex = v + 1
+  end function next_vertex
+
+  pure integer function same_vertex(v)
+    integer, intent(in) :: v
+    same_vertex = v
+  end function same_vertex
+
+  ! the tail 1 -> 2 feeding the cycle 3 -> 4 -> 5 -> 3
+  pure integer function tail_then_cycle(v)
+    integer, intent(in) :: v
+    if (v .lt. 5) then
+       tail_then_cycle = v + 1
+    else
+       tail_then_cycle = 3
+    end if
+  end function tail_then_cycle
 
   !===================================================================!
   ! dof interleaving on the ancestor (variable-fastest)

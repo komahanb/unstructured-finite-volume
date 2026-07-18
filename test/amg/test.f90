@@ -11,6 +11,10 @@
 !   5. h-independence    - on square-10/20/40/80, plain-CG iterations grow
 !                          with the mesh while AMG iterations stay ~flat
 !                          (the point of multigrid).
+!   6. geometric         - the geometric squint (rcb on the mesh graph,
+!                          quotients down the hierarchy) reaches the same
+!                          solution in markedly fewer iterations than
+!                          plain CG, staying ~flat over refinement.
 !
 ! A nonzero exit (error stop) means a check failed.
 !
@@ -26,6 +30,8 @@ program test_amg
   use class_diffusion_flux  , only : diffusion_flux, constant_source
   use class_csr             , only : csr_matrix
   use class_algebraic_multigrid, only : algebraic_multigrid
+  use class_geometric_multigrid, only : geometric_multigrid
+  use class_graph              , only : mesh_graph
   use class_conjugate_gradient, only : conjugate_gradient
 
   implicit none
@@ -37,6 +43,7 @@ program test_amg
   call check_amg_spd(nfail)
   call check_same_solution_and_iters(nfail)
   call check_h_independence(nfail)
+  call check_geometric(nfail)
 
   write(*,*) "============================================="
   if (nfail .eq. 0) then
@@ -236,5 +243,60 @@ contains
     if (ia(4) .ge. 2*ia(1))    nf = nf + 1   ! amg iterations stay ~flat
     if (maxval(ia) .ge. ic(4)) nf = nf + 1   ! amg beats cg at the finest mesh
   end subroutine check_h_independence
+
+  !===================================================================!
+  ! 6. geometric multigrid: the spatial squint. Same solution as plain
+  ! cg, markedly fewer iterations, ~flat over refinement - the matrix
+  ! never chose the aggregates, the coordinates did.
+  !===================================================================!
+
+  subroutine check_geometric(nf)
+    integer, intent(inout) :: nf
+    integer, parameter :: ns(4) = [10, 20, 40, 80]
+    class(assembler)         , allocatable :: fvm
+    class(conjugate_gradient), allocatable :: cg
+    type(csr_matrix)                       :: A
+    type(geometric_multigrid)              :: M
+    type(mesh_graph)                       :: g
+    real(dp), allocatable :: x_cg(:), x_geo(:)
+    integer  :: ic(4), ig(4), k
+    real(dp) :: e
+
+    write(*,'(a)') " geometric multigrid (2d poisson):"
+    write(*,'(2x,a6,2x,a10,2x,a10)') "n", "cg_iters", "geo_iters"
+    do k = 1, 4
+       call make_square(ns(k), fvm)
+
+       allocate(cg, source = conjugate_gradient(20000, 1.0e-8_dp, 0))
+       call cg % solve(fvm, x_cg)
+       ic(k) = cg % last_inner_iters
+       deallocate(cg)
+
+       g = mesh_graph(fvm % grid)
+       M = geometric_multigrid(g, fvm % grid % cell_centers)
+       call fvm % get_operator_csr(A)
+       call M % setup(A)
+       ! re-setup on the same built object must not die - the
+       ! re-entrancy contract the shared setup driver promises
+       if (k .eq. 1) call M % setup(A)
+       allocate(cg, source = conjugate_gradient(20000, 1.0e-8_dp, 0, precond = M))
+       call cg % solve(fvm, x_geo)
+       ig(k) = cg % last_inner_iters
+       deallocate(cg)
+
+       write(*,'(2x,i6,2x,i10,2x,i10)') ns(k), ic(k), ig(k)
+
+       if (k .eq. 3) then
+          e = maxval(abs(x_cg - x_geo))/max(maxval(abs(x_cg)), 1.0e-30_dp)
+          write(*,'(a,es12.4)') " pcg-geometric vs plain cg : ", e
+          if (e .gt. 1.0e-7_dp) nf = nf + 1
+       end if
+
+       deallocate(fvm)
+    end do
+
+    if (ig(4) .ge. 2*ig(1))    nf = nf + 1   ! geometric iterations stay ~flat
+    if (maxval(ig) .ge. ic(4)) nf = nf + 1   ! and beat cg at the finest mesh
+  end subroutine check_geometric
 
 end program test_amg

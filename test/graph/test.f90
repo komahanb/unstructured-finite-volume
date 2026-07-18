@@ -13,27 +13,25 @@
 !      the type-bound witness (chain analytic + diamond nudge)
 !   7. orbits under a successor rule: escape time, cycle closure, the
 !      tail-into-cycle shape, and the step limit
+!   8. the squint: the stamped partition read back as the quotient
+!      graph, and the aggregation partitioner discovering its own
+!      parts (the chain of 10 huddles into 4, deterministically)
+!   9. escape times resolved in one pass agree with orbit-by-orbit
+!      painting, capped and uncapped
 !=====================================================================!
 
 module class_test_graph
 
-  ! a minimal stored subclass: vertices and an edge list set directly,
-  ! exactly how a subclass consumes the ancestor
+  ! the undirected stored fixture is the library's own stored_graph -
+  ! the plainest citizen needs no test double. only the directed
+  ! fixture remains local.
 
   use interface_graph, only : graph, digraph, vertex, edge
 
   implicit none
 
   private
-  public :: test_graph
   public :: test_digraph
-
-  type, extends(graph) :: test_graph
-   contains
-     ! the deferred contract, delegated to the stored mechanism
-     procedure :: neighbours => test_neighbours
-     procedure :: degree     => test_degree
-  end type test_graph
 
   ! a minimal stored directed fixture for the structure checks
   type, extends(digraph) :: test_digraph
@@ -42,54 +40,11 @@ module class_test_graph
      procedure :: in_neighbours  => test_in_neighbours
   end type test_digraph
 
-  interface test_graph
-     module procedure create
-  end interface test_graph
-
   interface test_digraph
      module procedure create_directed
   end interface test_digraph
 
 contains
-
-  pure type(test_graph) function create(nv, tails, heads) result(this)
-
-    integer, intent(in) :: nv
-    integer, intent(in) :: tails(:), heads(:)
-
-    integer :: i
-
-    this % num_vertices = nv
-    this % num_edges    = size(tails)
-
-    allocate(this % vertices(nv))
-    do i = 1, nv
-       this % vertices(i) % number = i
-       this % vertices(i) % part   = 1
-    end do
-
-    allocate(this % edges(this % num_edges))
-    do i = 1, this % num_edges
-       this % edges(i) % tail = tails(i)
-       this % edges(i) % head = heads(i)
-    end do
-
-    call this % build_adjacency()
-
-  end function create
-
-  pure function test_neighbours(this, v) result(nbrs)
-    class(test_graph), intent(in) :: this
-    integer          , intent(in) :: v
-    integer, allocatable :: nbrs(:)
-    nbrs = this % stored_neighbours(v)
-  end function test_neighbours
-
-  pure integer function test_degree(this, v)
-    class(test_graph), intent(in) :: this
-    integer          , intent(in) :: v
-    test_degree = this % stored_degree(v)
-  end function test_degree
 
   pure type(test_digraph) function create_directed(nv, tails, heads) result(this)
 
@@ -137,7 +92,8 @@ program test_graph_suite
 
   use iso_fortran_env  , only : dp => REAL64
   use interface_graph  , only : graph
-  use class_test_graph , only : test_graph, test_digraph
+  use class_test_graph , only : test_digraph
+  use class_stored_graph, only : stored_graph
   use class_chain      , only : chain
   use module_solve_mode, only : FORWARD, REVERSE
 
@@ -154,6 +110,8 @@ program test_graph_suite
   call check_dof_map(nfail)
   call check_directed_structure(nfail)
   call check_orbit(nfail)
+  call check_quotient(nfail)
+  call check_escape_times(nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
@@ -182,8 +140,8 @@ contains
   ! V = {1..5}, E = {(1,2),(1,3),(1,4),(2,4),(3,4),(4,5)}
   !===================================================================!
 
-  type(test_graph) function known_graph() result(g)
-    g = test_graph(5, tails=[1,1,1,2,3,4], heads=[2,3,4,4,4,5])
+  type(stored_graph) function known_graph() result(g)
+    g = stored_graph(5, tails=[1,1,1,2,3,4], heads=[2,3,4,4,4,5])
   end function known_graph
 
   !===================================================================!
@@ -194,7 +152,7 @@ contains
   subroutine check_known_adjacency(nfail)
 
     integer, intent(inout) :: nfail
-    type(test_graph) :: g
+    type(stored_graph) :: g
 
     g = known_graph()
 
@@ -219,7 +177,7 @@ contains
   subroutine check_traversal_orders(nfail)
 
     integer, intent(inout) :: nfail
-    type(test_graph) :: g
+    type(stored_graph) :: g
     type(chain)      :: c
     integer :: i
 
@@ -267,7 +225,7 @@ contains
   subroutine check_partition_invariants(nfail)
 
     integer, intent(inout) :: nfail
-    type(test_graph) :: g
+    type(stored_graph) :: g
     type(chain)      :: c
 
     g = known_graph()
@@ -395,7 +353,7 @@ contains
   subroutine check_orbit(nfail)
 
     integer, intent(inout) :: nfail
-    type(test_graph) :: g
+    type(stored_graph) :: g
     integer, allocatable :: visited(:)
 
     g = known_graph()
@@ -426,6 +384,91 @@ contains
     call report(all(visited .eq. [1,2,3]), "the step limit caps the orbit", nfail)
 
   end subroutine check_orbit
+
+  !===================================================================!
+  ! 8: the squint. Partition the known graph in two and read it back
+  ! as the quotient - two coarse vertices, one coarse edge, however
+  ! many fine edges cross. Then the aggregation partitioner on the
+  ! chain of 10: no part count given, and Vanek's passes discover
+  ! exactly four huddles, deterministically.
+  !===================================================================!
+
+  subroutine check_quotient(nfail)
+
+    integer, intent(inout) :: nfail
+    type(stored_graph) :: g, coarse
+    type(chain)        :: c
+    integer :: v
+
+    ! bfs partition puts {1,2,3} and {4,5} apart; three fine edges
+    ! cross, and the squint sees one coarse edge
+    g = known_graph()
+    call g % partition(2)
+    coarse = stored_graph(g)
+
+    call report(coarse % num_vertices .eq. 2 .and. coarse % num_edges .eq. 1, &
+         & "quotient: two parts squint to two vertices, one edge", nfail)
+    call report(all(coarse % neighbours(1) .eq. [2]) .and. &
+         &      all(coarse % neighbours(2) .eq. [1]), &
+         & "quotient adjacency reads back", nfail)
+
+    ! the chain of 10 huddles into 4 parts: {1,2} {3,4,5} {6,7,8} {9,10}
+    c = chain(10)
+    call c % partition_aggregate()
+    call report(c % nparts .eq. 4, "aggregation discovers 4 parts on chain(10)", nfail)
+    call report(all([(c % part_of(v), v = 1, 10)] .eq. [1,1,2,2,2,3,3,3,4,4]), &
+         & "aggregation huddles the chain as expected", nfail)
+
+    ! the quotient of the aggregated chain is again a chain
+    coarse = stored_graph(c)
+    call report(coarse % num_vertices .eq. 4 .and. coarse % num_edges .eq. 3 .and. &
+         &      all(coarse % neighbours(2) .eq. [1,3]), &
+         & "the squinted chain is again a chain", nfail)
+
+  end subroutine check_quotient
+
+  !===================================================================!
+  ! 9: escape times in one pass. The same rules the orbit checks use,
+  ! resolved for every vertex at once, must agree with what orbit-by-
+  ! orbit painting gives: [5,4,3,2,1] for the escaping rule, all home
+  ! at the limit for the tail-into-cycle rule, and the cap biting.
+  !===================================================================!
+
+  subroutine check_escape_times(nfail)
+
+    integer, intent(inout) :: nfail
+    type(stored_graph) :: g
+    integer, allocatable :: times(:)
+
+    g = known_graph()
+
+    times = g % escape_times(next_vertex, 40)
+    call report(all(times .eq. [5,4,3,2,1]), &
+         & "escape times count down the escaping rule", nfail)
+
+    times = g % escape_times(next_vertex, 3)
+    call report(all(times .eq. [3,3,3,2,1]), &
+         & "the cap bites the long escapes", nfail)
+
+    times = g % escape_times(tail_then_cycle, 40)
+    call report(all(times .eq. 40), &
+         & "cycle and its tail are all home at the limit", nfail)
+
+    times = g % escape_times(same_vertex, 7)
+    call report(all(times .eq. 7), &
+         & "fixed vertices are home", nfail)
+
+    ! the cap may be huge(0) - "no cap" - without the unwind wrapping
+    ! negative: escapers keep their exact times, home is painted the cap
+    times = g % escape_times(next_vertex, huge(0))
+    call report(all(times .eq. [5,4,3,2,1]), &
+         & "an uncapped limit leaves escape times exact", nfail)
+
+    times = g % escape_times(tail_then_cycle, huge(0))
+    call report(all(times .eq. huge(0)), &
+         & "an uncapped limit paints home without overflowing", nfail)
+
+  end subroutine check_escape_times
 
   !===================================================================!
   ! successor rules for the orbit checks: one arrow out of every vertex

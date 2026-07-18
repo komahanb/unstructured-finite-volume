@@ -27,9 +27,23 @@
 ! orbit escapes; its length is the escape time), when a vertex repeats
 ! (a cycle has closed), or at the step limit.
 !
-! Partition: stamped in place (partition / partition_rcb), then queried
-! (part_of, owned, ghosts, balance, edge_cut). A partition of a graph is
-! still graph-shaped data.
+! Partition: stamped in place (partition / partition_rcb /
+! partition_aggregate), then queried (part_of, owned, ghosts, balance,
+! edge_cut). A partition of a graph is still graph-shaped data.
+!
+! Squint: quotient_edges reads the stamped partition back as a graph -
+! every part one coarse vertex, every pair of touching parts one
+! coarse edge. The quotient of a graph is the same kind of animal, so
+! a hierarchy is just repeated squinting (class_stored_graph gives the
+! quotient a constructor). partition_aggregate is the squint algebraic
+! multigrid coarsens by: no part count asked for - the graph discovers
+! its own aggregates by Vanek's three passes over the neighbour
+! queries, strength having already chosen the edges.
+!
+! Escape times: escape_times resolves every vertex's escape time under
+! a successor rule in one pass - orbits that merge share their tails
+! instead of re-walking them - one visit per vertex where orbit-by-
+! orbit painting spends one whole traversal per vertex.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -106,9 +120,16 @@ module interface_graph
      ! orbit of a vertex under a caller-supplied successor rule
      procedure :: orbit
 
+     ! every vertex's escape time under the rule, tails shared
+     procedure :: escape_times
+
      ! partitioners - stamp vertex % part and gather the csr, in place
      procedure :: partition
      procedure :: partition_rcb
+     procedure :: partition_aggregate
+
+     ! the squint: the stamped partition read back as a coarse edge list
+     procedure :: quotient_edges
 
      ! partition queries
      procedure :: part_of
@@ -125,6 +146,7 @@ module interface_graph
      ! internal: stamp vertex % part, then gather the owned/ghost csr
      procedure, private :: stamp_bfs
      procedure, private :: stamp_rcb
+     procedure, private :: stamp_aggregate
      procedure, private :: gather_partition
 
   end type graph
@@ -486,7 +508,87 @@ contains
   end function orbit
 
   !===================================================================!
-  ! Partition into nparts pieces by breadth-first ordering, in place
+  ! Every vertex's escape time under a successor rule, in one pass.
+  ! The trick: orbits overlap. Two orbits that merge share their whole
+  ! tail, so nothing is walked twice - follow the rule from an
+  ! unresolved vertex until it steps off the graph (that last vertex
+  ! escapes in 1, and the times count back up the path), reaches a
+  ! vertex already resolved (count from its time), or bites its own
+  ! path (a cycle: everyone on it is home). Times are capped at limit
+  ! and home is painted limit, exactly the picture the orbit method
+  ! paints one vertex at a time - but at one visit per vertex.
+  !===================================================================!
+
+  pure function escape_times(this, successor, limit) result(times)
+
+    class(graph), intent(in) :: this
+    interface
+       ! the single successor of vertex v under the rule
+       pure integer function successor(v)
+         integer, intent(in) :: v
+       end function successor
+    end interface
+    integer, intent(in) :: limit
+
+    integer, allocatable :: times(:)
+
+    integer, allocatable :: path(:), pos(:)
+    integer :: nv, start, v, depth, base, i
+
+    if (limit .lt. 1) then
+       error stop "graph: escape_times requires a positive limit"
+    end if
+
+    nv = this % num_vertices
+    allocate(times(nv), path(nv), pos(nv))
+    times = 0            ! 0 marks unresolved; every resolved time is >= 1
+    pos   = 0
+
+    do start = 1, nv
+
+       if (times(start) .ne. 0) cycle
+
+       depth = 0
+       v     = start
+
+       follow: do
+          if (v .lt. 1 .or. v .gt. nv) then
+             base = 0                    ! stepped off: the path's last vertex escapes in 1
+             exit follow
+          end if
+          if (times(v) .ne. 0) then
+             base = times(v)             ! already resolved: count on from its time
+             exit follow
+          end if
+          if (pos(v) .ne. 0) then
+             ! the path bit itself: a cycle - everyone on it is home
+             do i = pos(v), depth
+                times(path(i)) = limit
+             end do
+             base  = limit
+             depth = pos(v) - 1          ! the tail feeding the cycle remains
+             exit follow
+          end if
+          depth       = depth + 1
+          path(depth) = v
+          pos(v)      = depth
+          v = successor(v)
+       end do follow
+
+       ! stale pos marks need no clearing: every marked vertex leaves
+       ! this pass resolved, and the resolved check runs first. the cap
+       ! is applied to the step count before adding, so the sum never
+       ! exceeds limit - base + limit would overflow near huge(0)
+       do i = depth, 1, -1
+          times(path(i)) = base + min(depth - i + 1, limit - base)
+       end do
+
+    end do
+
+  end function escape_times
+
+  !===================================================================!
+  ! Partition into nparts parts by breadth-first ordering, in place
   ! (vertex % part stamped, owned/ghost csr gathered).
   !
   ! This is the serial placeholder: bfs keeps neighbours close so the
@@ -526,6 +628,82 @@ contains
   end subroutine partition_rcb
 
   !===================================================================!
+  ! Partition by greedy aggregation (Vanek's three passes), in place.
+  ! No part count is asked for: the graph discovers its own. A vertex
+  ! whose whole neighbourhood is still free seeds a part made of
+  ! itself and its neighbours; leftovers sweep into a neighbouring
+  ! part; whatever remains seeds its own. This is the squint algebraic
+  ! multigrid coarsens by - strength has already chosen the edges by
+  ! the time this graph exists, so the passes consume only the
+  ! neighbour queries. Sibling of partition (breadth-first) and
+  ! partition_rcb (geometric).
+  !===================================================================!
+
+  pure subroutine partition_aggregate(this)
+
+    class(graph), intent(inout) :: this
+
+    integer :: nparts
+
+    call this % stamp_aggregate(nparts)
+    call this % gather_partition(nparts)
+
+  end subroutine partition_aggregate
+
+  !===================================================================!
+  ! Stand back and squint: read the stamped partition back as a graph.
+  ! Every part becomes one coarse vertex; two parts joined by at least
+  ! one fine edge become coarse neighbours - one coarse edge, however
+  ! many fine edges cross between them. Returned as an edge list
+  ! because a partition of a graph is still graph-shaped data; the
+  ! stored_graph constructor turns it back into the same animal, ready
+  ! to be squinted again.
+  !===================================================================!
+
+  pure subroutine quotient_edges(this, tails, heads)
+
+    class(graph)        , intent(in)  :: this
+    integer, allocatable, intent(out) :: tails(:), heads(:)
+
+    integer, allocatable :: mark(:), nbrs(:)
+    integer :: k, i, v, w, kw, n_coarse, pass
+
+    if (.not. allocated(this % own_ptr)) then
+       error stop "graph: quotient requires a stamped partition"
+    end if
+
+    ! two passes over each part's owned vertices and their neighbours:
+    ! count the coarse edges, then fill them, deduped by stamping
+    ! mark(kw) = k (k is monotone, so an old stamp reads as unmarked).
+    ! each coarse edge is recorded once, from its smaller part.
+    allocate(mark(this % nparts))
+
+    do pass = 1, 2
+       mark     = 0
+       n_coarse = 0
+       do k = 1, this % nparts
+          do i = this % own_ptr(k), this % own_ptr(k+1)-1
+             v    = this % own_list(i)
+             nbrs = this % neighbours(v)
+             do w = 1, size(nbrs)
+                kw = this % vertices(nbrs(w)) % part
+                if (kw .gt. k .and. mark(kw) .ne. k) then
+                   mark(kw) = k
+                   n_coarse = n_coarse + 1
+                   if (pass .eq. 2) then
+                      tails(n_coarse) = k
+                      heads(n_coarse) = kw
+                   end if
+                end if
+             end do
+          end do
+       end do
+       if (pass .eq. 1) allocate(tails(n_coarse), heads(n_coarse))
+    end do
+
+  end subroutine quotient_edges
+
+  !===================================================================!
   ! Stamp vertex % part by cutting the forward traversal order into
   ! nparts balanced contiguous chunks.
   !===================================================================!
@@ -547,6 +725,73 @@ contains
     end do
 
   end subroutine stamp_bfs
+
+  !===================================================================!
+  ! Stamp vertex % part by Vanek's three greedy passes, discovering
+  ! the part count. Pass 1: a vertex whose whole neighbourhood is
+  ! still free seeds a part of itself and its neighbours. Pass 2: each
+  ! leftover sweeps into the first neighbouring part it sees. Pass 3:
+  ! anything still alone seeds its own singleton part.
+  !===================================================================!
+
+  pure subroutine stamp_aggregate(this, nparts)
+
+    class(graph), intent(inout) :: this
+    integer     , intent(out)   :: nparts
+
+    integer, allocatable :: part(:), nbrs(:)
+    integer :: nv, v, i
+    logical :: free
+
+    nv = this % num_vertices
+    allocate(part(nv))
+    part   = 0
+    nparts = 0
+
+    ! pass 1: seed where the whole neighbourhood is free
+    do v = 1, nv
+       if (part(v) .ne. 0) cycle
+       nbrs = this % neighbours(v)
+       free = .true.
+       do i = 1, size(nbrs)
+          if (part(nbrs(i)) .ne. 0) then
+             free = .false.
+             exit
+          end if
+       end do
+       if (.not. free) cycle
+       nparts  = nparts + 1
+       part(v) = nparts
+       do i = 1, size(nbrs)
+          part(nbrs(i)) = nparts
+       end do
+    end do
+
+    ! pass 2: sweep each leftover into a neighbouring part
+    do v = 1, nv
+       if (part(v) .ne. 0) cycle
+       nbrs = this % neighbours(v)
+       do i = 1, size(nbrs)
+          if (part(nbrs(i)) .ne. 0) then
+             part(v) = part(nbrs(i))
+             exit
+          end if
+       end do
+    end do
+
+    ! pass 3: whoever is still alone seeds a singleton
+    do v = 1, nv
+       if (part(v) .eq. 0) then
+          nparts  = nparts + 1
+          part(v) = nparts
+       end if
+    end do
+
+    do v = 1, nv
+       this % vertices(v) % part = part(v)
+    end do
+
+  end subroutine stamp_aggregate
 
   !===================================================================!
   ! Stamp vertex % part by recursive coordinate bisection of the

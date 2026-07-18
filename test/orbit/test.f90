@@ -1,29 +1,39 @@
 !=====================================================================!
-! The escape-time painting, on a CFD mesh, through the graph's orbit.
+! The escape-time painting, on a CFD mesh, through the graph's orbit -
+! now with both fast lanes the squint provides.
 !
-! The idea is simple. Every cell's centroid is a complex number once
-! the mesh is stretched over a window of the complex plane. One step
-! of the julia map z -> z**2 + c moves that number somewhere: either
-! off the window (the orbit escapes) or into some other cell. So the
-! map, quantized to the mesh, gives every cell one arrow out - a
-! stored successor array, built once. That array IS the functional
-! graph; after that there is no arithmetic left, only following
-! arrows: each cell's orbit is walked by the graph's orbit method,
-! and the cell is painted by how long its orbit lasted. Cells whose
-! orbits escape get their escape time; cells still home when patience
-! runs out (or trapped on a cycle) are painted the step limit - the
-! dark interior of the set. The painting goes out as a paraview file.
+! The idea is unchanged. Every cell's centroid is a complex number
+! once the mesh is stretched over a window of the complex plane. One
+! step of the julia map z -> z**2 + c moves that number somewhere:
+! either off the window (the orbit escapes) or into some other cell.
+! The map, quantized to the mesh, gives every cell one arrow out - a
+! stored successor array. After that the dynamics is pure graph, and
+! the cell is painted by how long its orbit lasts: escapers get their
+! escape time, cells still home at the limit get the full patience.
 !
-! The julia constant is the douady rabbit's, which sits inside the
-! mandelbrot set, so the painting is guaranteed both light (escapers
-! near the corners) and dark (the rabbit's body).
+! What is new is where the work went.
+!
+! Squint in space: finding which cell claims a landing point used to
+! scan every centroid - the whole painting cost cells x cells
+! distance checks. Now the mesh graph is partitioned into compact
+! parts, the parts squint into a quotient graph, and a landing point
+! is claimed by descending: nearest part first, then only that part's
+! cells and its quotient-neighbours' cells. Same arrows, a fraction
+! of the checks - and a check below proves the "same".
+!
+! Squint in time: orbits that merge share their tails, so the whole
+! painting is resolved by escape_times in one pass - one visit per
+! cell - instead of one orbit per cell. Two recounts prove it paints
+! the same picture: the orbit method cell by cell, and a plain loop
+! with no machinery at all.
 !
 ! Checks:
-!   1. the painting matches an independent recount of the arrows (a
-!      plain loop, no orbit machinery, repaints the same picture)
-!   2. the painting has light and dark (escaped and home both nonzero)
-!   3. the window's corner escapes at once (its first step leaves)
-!   4. the painting is on disk
+!   1. the squint finds the same arrows as the full scan
+!   2. the one-pass painting matches orbit-by-orbit painting
+!   3. and matches a plain-loop recount with no machinery at all
+!   4. the painting has light and dark (escaped and home both nonzero)
+!   5. the window's corner escapes at once (its first step leaves)
+!   6. the painting is on disk
 !=====================================================================!
 
 program test_orbit_painting
@@ -32,6 +42,7 @@ program test_orbit_painting
   use class_mesh           , only : mesh
   use class_gmsh_loader    , only : gmsh_loader
   use class_graph          , only : mesh_graph
+  use class_stored_graph   , only : stored_graph
   use class_paraview_writer, only : paraview_writer
   use class_string         , only : string
 
@@ -46,21 +57,34 @@ program test_orbit_painting
   real(dp)   , parameter :: window_half_width = 1.6_dp
   real(dp)   , parameter :: escape_radius     = 2.0_dp
   integer    , parameter :: step_limit        = 40   ! the patience
+  integer    , parameter :: cells_per_part    = 64   ! spatial squint factor
 
   class(gmsh_loader)    , allocatable :: loader
   class(mesh)           , allocatable :: grid
   class(paraview_writer), allocatable :: painter
-  type(mesh_graph) :: g
+  type(mesh_graph)   :: g
+  type(stored_graph) :: coarse
 
-  complex(dp), allocatable :: zc(:)     ! cell centroids on the complex plane
-  integer    , allocatable :: succ(:)   ! the one arrow out of each cell (0 = off the window)
+  complex(dp), allocatable :: zc(:)        ! cell centroids on the complex plane
+  complex(dp), allocatable :: zpart(:)     ! part centroids on the complex plane
+  integer    , allocatable :: succ(:)      ! the one arrow out of each cell (0 = off the window)
+  integer    , allocatable :: times(:)     ! the painting, resolved in one pass
   real(dp)   , allocatable :: escape_time(:,:)
-  integer    , allocatable :: visited(:)
   type(string) :: field_labels(1)
 
-  integer :: ncells, icell, n_escaped, n_home, nfail
+  integer  :: ncells, nparts, icell, n_home
+  integer  :: checks_by_descent, nfail
+  real(dp) :: t0, t1
 
   nfail = 0
+
+  ! a stale painting from a previous run would satisfy the on-disk
+  ! check without the writer doing anything - burn the old canvas first
+  fresh_canvas: block
+    integer :: unit, ierr
+    open(newunit = unit, file = paint_file, status = 'old', iostat = ierr)
+    if (ierr .eq. 0) close(unit, status = 'delete')
+  end block fresh_canvas
 
   meshing: block
 
@@ -97,77 +121,80 @@ program test_orbit_painting
   end block stretch_over_the_plane
 
   !===================================================================!
+  ! The spatial squint: partition the mesh graph into compact parts by
+  ! coordinate bisection, squint the parts into the quotient graph,
+  ! and place each part's centroid on the window - the coarse level a
+  ! landing point descends through.
+  !===================================================================!
+
+  squint_the_mesh: block
+
+    integer, allocatable :: members(:)
+    integer :: k
+
+    nparts = max(1, ncells/cells_per_part)
+    call g % partition_rcb(grid % cell_centers, nparts)
+    coarse = stored_graph(g)
+
+    allocate(zpart(nparts))
+    do k = 1, nparts
+       members  = g % owned(k)
+       zpart(k) = sum(zc(members))/real(size(members), dp)
+    end do
+
+  end block squint_the_mesh
+
+  !===================================================================!
   ! Quantize the julia map to the mesh: one step from each centroid,
-  ! then the nearest centroid claims the landing point. Past the
-  ! escape radius nobody claims it - the arrow leaves the window and
-  ! the successor is 0. Built once; the dynamics is now pure graph.
+  ! then the nearest centroid claims the landing point - found by
+  ! descending the squint: nearest part first, then only that part's
+  ! cells and its quotient-neighbours' cells. Past the escape radius
+  ! nobody claims it - the arrow leaves the window, successor 0.
   !===================================================================!
 
   build_the_arrows: block
 
     complex(dp) :: z
-    real(dp)    :: best, d2
-    integer     :: v, w, nearest
+    integer :: v
 
     allocate(succ(ncells))
+    checks_by_descent = 0
 
+    call cpu_time(t0)
     do v = 1, ncells
-
        z = zc(v)*zc(v) + julia_constant
-
        if (abs(z) .gt. escape_radius) then
           succ(v) = 0
-          cycle
+       else
+          succ(v) = nearest_cell_by_descent(z, checks_by_descent)
        end if
-
-       nearest = 1
-       best    = huge(1.0_dp)
-       do w = 1, ncells
-          d2 = (real(z, dp) - real(zc(w), dp))**2 + (aimag(z) - aimag(zc(w)))**2
-          if (d2 .lt. best) then
-             best    = d2
-             nearest = w
-          end if
-       end do
-       succ(v) = nearest
-
     end do
+    call cpu_time(t1)
 
   end block build_the_arrows
 
   !===================================================================!
-  ! Paint: walk every cell's orbit and colour by how long it lasted.
-  ! Escaped (the final cell's arrow points off the window): the escape
-  ! time. Still home at the limit, or trapped on a cycle: the full
-  ! step limit - the dark interior.
+  ! Paint in one pass: escape_times resolves every cell at once -
+  ! orbits that merge share their tails. Escapers carry their escape
+  ! time; cells still home at the limit carry the full patience - the
+  ! dark interior of the set.
   !===================================================================!
 
-  paint_by_patience: block
+  times = g % escape_times(successor, step_limit)
 
-    allocate(escape_time(ncells, 1))
-
-    n_escaped = 0
-    n_home    = 0
-
-    do icell = 1, ncells
-       visited = g % orbit(icell, successor, step_limit)
-       if (succ(visited(size(visited))) .eq. 0) then
-          escape_time(icell, 1) = real(size(visited), dp)
-          n_escaped = n_escaped + 1
-       else
-          escape_time(icell, 1) = real(step_limit, dp)
-          n_home = n_home + 1
-       end if
-    end do
-
-  end block paint_by_patience
+  allocate(escape_time(ncells, 1))
+  escape_time(:, 1) = real(times, dp)
+  n_home = count(times .eq. step_limit)
 
   field_labels(1) = string('escape_time')
   allocate(painter, source = paraview_writer(grid))
   call painter % write(paint_file, escape_time, field_labels)
 
   write(*,'(1x,a,i0,a,i0,a,i0,a)') "painted ", ncells, " cells: ", &
-       & n_escaped, " escaped, ", n_home, " home"
+       & ncells - n_home, " escaped, ", n_home, " home"
+  write(*,'(1x,a,i0,a,i0,a,f6.3,a)') "the squint claimed the arrows with ", &
+       & checks_by_descent, " distance checks where the full scan needs ", &
+       & ncells*ncells, " (", t1 - t0, " s)"
 
   call check_the_painting(nfail)
 
@@ -187,6 +214,49 @@ contains
     successor = succ(v)
   end function successor
 
+  ! which cell claims the landing point z: descend the squint - the
+  ! nearest part's cells and its quotient-neighbours' cells only
+  integer function nearest_cell_by_descent(z, checks) result(nearest)
+
+    complex(dp), intent(in)    :: z
+    integer    , intent(inout) :: checks
+
+    integer, allocatable :: parts(:)
+    real(dp) :: best, d2
+    integer  :: k, k0, i, j, v
+
+    ! nearest part centroid
+    k0   = 1
+    best = huge(1.0_dp)
+    do k = 1, nparts
+       d2 = abs(z - zpart(k))**2
+       checks = checks + 1
+       if (d2 .lt. best) then
+          best = d2
+          k0   = k
+       end if
+    end do
+
+    ! its cells and its quotient-neighbours' cells
+    parts = [k0, coarse % neighbours(k0)]
+    nearest = 0
+    best    = huge(1.0_dp)
+    do i = 1, size(parts)
+       associate(members => g % owned(parts(i)))
+         do j = 1, size(members)
+            v  = members(j)
+            d2 = abs(z - zc(v))**2
+            checks = checks + 1
+            if (d2 .lt. best) then
+               best    = d2
+               nearest = v
+            end if
+         end do
+       end associate
+    end do
+
+  end function nearest_cell_by_descent
+
   subroutine report(ok, label, nfail)
     logical         , intent(in)    :: ok
     character(len=*), intent(in)    :: label
@@ -204,33 +274,86 @@ contains
     integer, intent(inout) :: nfail
     logical :: on_disk
 
-    ! 1: repaint every cell by following the stored arrows in a plain
-    ! loop - no orbit machinery - and demand the same picture. A cycle
-    ! just spins here until the limit, which is the same "home" the
-    ! orbit's early cycle exit paints.
-    recount_the_painting: block
+    ! 1: the full scan - every centroid consulted for every landing
+    ! point - must claim exactly the arrows the descent claimed
+    full_scan_agrees: block
 
-      real(dp) :: repaint
-      logical  :: agrees
-      integer  :: v, steps
+      complex(dp) :: z
+      real(dp)    :: best, d2
+      logical     :: agrees
+      integer     :: v, w, nearest
 
       agrees = .true.
-      do icell = 1, ncells
-         v     = icell
+      do v = 1, ncells
+         z = zc(v)*zc(v) + julia_constant
+         if (abs(z) .gt. escape_radius) then
+            nearest = 0
+         else
+            nearest = 1
+            best    = huge(1.0_dp)
+            do w = 1, ncells
+               d2 = abs(z - zc(w))**2
+               if (d2 .lt. best) then
+                  best    = d2
+                  nearest = w
+               end if
+            end do
+         end if
+         if (nearest .ne. succ(v)) agrees = .false.
+      end do
+
+      call report(agrees, "the squint finds the same arrows", nfail)
+
+    end block full_scan_agrees
+
+    ! 2: orbit-by-orbit painting - the orbit method walked from every
+    ! cell, classified by whether its final arrow leaves - must paint
+    ! the same picture the one-pass resolution painted
+    orbit_recount: block
+
+      integer, allocatable :: visited(:)
+      logical :: agrees
+      integer :: v, painted
+
+      agrees = .true.
+      do v = 1, ncells
+         visited = g % orbit(v, successor, step_limit)
+         if (succ(visited(size(visited))) .eq. 0) then
+            painted = size(visited)
+         else
+            painted = step_limit
+         end if
+         if (painted .ne. times(v)) agrees = .false.
+      end do
+
+      call report(agrees, "one-pass painting matches orbit-by-orbit painting", nfail)
+
+    end block orbit_recount
+
+    ! 3: a plain loop with no machinery - follow the stored arrows,
+    ! count, cap - must repaint the same picture too
+    recount_the_painting: block
+
+      logical :: agrees
+      integer :: v, w, steps, repaint
+
+      agrees = .true.
+      do v = 1, ncells
+         w     = v
          steps = 0
          do
             steps = steps + 1
-            if (succ(v) .eq. 0) then
-               repaint = real(steps, dp)          ! escaped at this length
+            if (succ(w) .eq. 0) then
+               repaint = steps               ! escaped at this length
                exit
             end if
             if (steps .eq. step_limit) then
-               repaint = real(step_limit, dp)     ! still home
+               repaint = step_limit          ! still home
                exit
             end if
-            v = succ(v)
+            w = succ(w)
          end do
-         if (repaint .ne. escape_time(icell, 1)) agrees = .false.
+         if (repaint .ne. times(v)) agrees = .false.
       end do
 
       call report(agrees, &
@@ -238,10 +361,10 @@ contains
 
     end block recount_the_painting
 
-    call report(n_escaped .gt. 0 .and. n_home .gt. 0, &
+    call report(n_home .gt. 0 .and. n_home .lt. ncells, &
          & "the painting has light and dark", nfail)
 
-    ! 3: the cell nearest the window's corner sits far outside the
+    ! 5: the cell nearest the window's corner sits far outside the
     ! set - its very first step must leave, so it is painted 1
     corner_escapes: block
 
@@ -260,7 +383,7 @@ contains
          end if
       end do
 
-      call report(nint(escape_time(corner, 1)) .eq. 1, &
+      call report(times(corner) .eq. 1, &
            & "the window's corner escapes at once", nfail)
 
     end block corner_escapes

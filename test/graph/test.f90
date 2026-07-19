@@ -84,6 +84,7 @@ contains
 
     integer, intent(inout) :: nfail
     type(stored_graph) :: g
+    integer, allocatable :: xadj(:), adj(:)
 
     g = known_graph()
 
@@ -97,6 +98,13 @@ contains
     ! xadj = [1,4,6,8,12,13]; adj in edge insertion order
     call report(all(g % xadj .eq. [1,4,6,8,12,13]),    "retained xadj",             nfail)
     call report(all(g % adj  .eq. [2,3,4, 1,4, 1,4, 1,2,3,5, 4]), "retained adj",   nfail)
+
+    ! the same adjacency at dof granularity (one variable, so dof = v):
+    ! every row leads with its own dof, then its neighbours in order
+    call g % dof_adjacency(xadj, adj)
+    call report(all(xadj .eq. [1,5,8,11,16,18]), "dof xadj: rows are 1+degree wide", nfail)
+    call report(all(adj  .eq. [1,2,3,4, 2,1,4, 3,1,4, 4,1,2,3,5, 5,4]), &
+         & "dof adj: self-loop first, neighbours after", nfail)
 
   end subroutine check_known_adjacency
 
@@ -410,8 +418,8 @@ contains
     ! values ride the partition: part 2 owns vertices 3 and 4, so with
     ! two variables its dofs are 5..8; gather pulls those entries out,
     ! scatter pushes them back and touches nothing else
-    call report(all(c % owned_dofs(2) .eq. [5,6,7,8]), &
-         & "a part's owned dofs follow its vertices, variable-fastest", nfail)
+    call report(all(c % dofs_of(c % owned(2)) .eq. [5,6,7,8]), &
+         & "a vertex list expands to its dofs, variable-fastest", nfail)
     x = [(real(v, dp), v = 1, 12)]
     call report(all(c % gather(2, x) .eq. [5,6,7,8]), &
          & "gather pulls the values at a part's owned dofs", nfail)

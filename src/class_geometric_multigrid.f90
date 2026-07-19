@@ -22,6 +22,7 @@ module class_geometric_multigrid
   use interface_multigrid, only : multigrid
   use interface_graph    , only : graph
   use class_stored_graph , only : stored_graph
+  use class_mesh         , only : mesh
 
   implicit none
 
@@ -51,6 +52,7 @@ module class_geometric_multigrid
 
   interface geometric_multigrid
      module procedure create
+     module procedure create_from_mesh
   end interface geometric_multigrid
 
 contains
@@ -76,6 +78,19 @@ contains
     this % mesh_levels(1) % centroids = centroids
 
   end function create
+
+  !===================================================================!
+  ! From a mesh alone: a mesh is a graph that knows where its
+  ! vertices sit, so nothing else needs to be passed.
+  !===================================================================!
+
+  type(geometric_multigrid) function create_from_mesh(m) result(this)
+
+    class(mesh), intent(in) :: m
+
+    this = create(m, m % cell_centers)
+
+  end function create_from_mesh
 
   !===================================================================!
   ! The squint, by coordinates. Bisect the level's graph into compact

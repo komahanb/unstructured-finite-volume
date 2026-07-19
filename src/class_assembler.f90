@@ -42,8 +42,8 @@ module class_assembler
      ! num_state_vars, differential_order and the state S(nvars,order+1)
      ! are inherited from the abstract base_assembler.
 
-     ! Number of variables each cell
-     integer :: num_variables
+     ! (the number of variables per cell lives on the grid - the one
+     ! home - as grid % num_variables)
 
      ! Flux vector
      real(dp), allocatable :: phi(:)
@@ -138,12 +138,11 @@ contains
     ! Set mesh
     allocate(this % grid, source  = grid)
     if (verbosity .ge. 2) call this % grid % to_string()
-    ! One variable per cell by default ("T"); set_equation bumps this up
-    this % num_variables = 1
-
-    ! The grid IS the dof/connectivity graph now; size the system from
-    ! it. For a single field num_state_vars = num_cells, as before.
-    this % grid % num_variables = this % num_variables
+    ! One variable per cell by default ("T"); set_equation bumps this
+    ! up. The grid IS the dof/connectivity graph, so the count lives
+    ! there and the system is sized from it. For a single field
+    ! num_state_vars = num_cells, as before.
+    this % grid % num_variables = 1
     this % num_state_vars = this % grid % num_dofs()
 
     ! Semi-discrete in time: R(u,udot) = M*udot + A*u - b is first order,
@@ -160,13 +159,13 @@ contains
     ! Default every (boundary tag, variable) to homogeneous dirichlet
     ! (phi=0). The driver overrides by name. Interior faces never look
     ! this table up.
-    allocate(this % bcs(maxval(this % grid % tag_numbers), this % num_variables))
+    allocate(this % bcs(maxval(this % grid % tag_numbers), this % grid % num_variables))
 
     ! Default physics: isotropic unit diffusion, no source - recovers the
     ! old laplace operator. The driver overrides with set_equation.
-    allocate(this % fx , source = diffusion_flux(1.0_dp, this % num_variables))
-    allocate(this % src, source = constant_source(0.0_dp, this % num_variables))
-    allocate(this % fld, source = fvm_field(this % num_variables, this % num_state_vars))
+    allocate(this % fx , source = diffusion_flux(1.0_dp, this % grid % num_variables))
+    allocate(this % src, source = constant_source(0.0_dp, this % grid % num_variables))
+    allocate(this % fld, source = fvm_field(this % grid % num_variables, this % num_state_vars))
 
   end function construct
 
@@ -253,16 +252,15 @@ contains
     end if
 
     ! Resize the system for this many variables per cell
-    this % num_variables     = flux_op % num_components
-    this % grid % num_variables = this % num_variables
-    this % num_state_vars    = this % grid % num_dofs()
+    this % grid % num_variables = flux_op % num_components
+    this % num_state_vars       = this % grid % num_dofs()
 
     if (allocated(this % phi)) deallocate(this % phi)
     allocate(this % phi(this % num_state_vars))
     this % phi = 0
 
     if (allocated(this % bcs)) deallocate(this % bcs)
-    allocate(this % bcs(maxval(this % grid % tag_numbers), this % num_variables))
+    allocate(this % bcs(maxval(this % grid % tag_numbers), this % grid % num_variables))
 
     ! store the flux/source operators and the reconstruction field
     if (allocated(this % fx))  deallocate(this % fx)
@@ -270,7 +268,7 @@ contains
     if (allocated(this % fld)) deallocate(this % fld)
     allocate(this % fx , source = flux_op)
     allocate(this % src, source = source_op)
-    allocate(this % fld, source = fvm_field(this % num_variables, this % num_state_vars))
+    allocate(this % fld, source = fvm_field(this % grid % num_variables, this % num_state_vars))
 
   end subroutine set_equation
 
@@ -295,7 +293,7 @@ contains
     end if
 
     vlo = 1
-    vhi = this % num_variables
+    vhi = this % grid % num_variables
 
     if (present(var)) then
        vlo = var
@@ -552,8 +550,8 @@ contains
     class(assembler), intent(in)  :: this
     type(csr_matrix), intent(out) :: A
 
-    integer , allocatable :: nnz_row(:), row_ptr(:), col_idx(:), cursor(:), nbrs(:)
-    integer               :: ndof, icell, iface, ivar, p, n, ncell, fcells(2), gface, ftag, nfc, k
+    integer , allocatable :: row_ptr(:), col_idx(:)
+    integer               :: ndof, icell, iface, ivar, p, n, ncell, fcells(2), gface, ftag, nfc
     real(dp)              :: nf(3), keff, vn, wp, wn, alhs, arhs, farea, fdelta
     type(point_state)     :: st
 
@@ -562,42 +560,11 @@ contains
     ndof = this % grid % num_dofs()
 
     !---------------------------------------------------------------!
-    ! symbolic pass: the sparsity pattern is the cell graph. row
-    ! dof(icell,ivar) has its own diagonal plus one column for the
-    ! same variable of each neighbour cell - and the grid already
-    ! knows every cell's neighbours, so ask it instead of walking the
-    ! faces again.
+    ! symbolic pass: the sparsity pattern IS the graph's adjacency at
+    ! dof granularity - each row leads with its diagonal, then the
+    ! same variable on each neighbour. The grid builds it.
     !---------------------------------------------------------------!
-    allocate(nnz_row(ndof))
-    do icell = 1, this % grid % num_cells
-       do ivar = 1, nv
-          nnz_row(this % grid % dof(icell, ivar)) = 1 + this % grid % degree(icell)
-       end do
-    end do
-
-    allocate(row_ptr(ndof + 1))
-    row_ptr(1) = 1
-    do p = 1, ndof
-       row_ptr(p+1) = row_ptr(p) + nnz_row(p)
-    end do
-    allocate(col_idx(row_ptr(ndof+1) - 1))
-
-    ! seed each row's diagonal, then append its neighbours' columns
-    allocate(cursor(ndof))
-    do p = 1, ndof
-       col_idx(row_ptr(p)) = p
-       cursor(p) = row_ptr(p) + 1
-    end do
-    do icell = 1, this % grid % num_cells
-       nbrs = this % grid % neighbours(icell)
-       do k = 1, size(nbrs)
-          do ivar = 1, nv
-             p = this % grid % dof(icell, ivar)
-             col_idx(cursor(p)) = this % grid % dof(nbrs(k), ivar)
-             cursor(p) = cursor(p) + 1
-          end do
-       end do
-    end do
+    call this % grid % dof_adjacency(row_ptr, col_idx)
 
     A = csr_matrix(ndof, ndof, row_ptr, col_idx)   ! pattern, values zeroed
 

@@ -127,7 +127,7 @@ contains
     ! this image's owned dofs
     call this % grid % partition_rcb(this % grid % cell_centers, num_images())
 
-    this % own = this % grid % owned_dofs(this_image())
+    this % own = this % grid % dofs_of(this % grid % owned(this_image()))
 
     call this % get_operator_csr(this % A)
 

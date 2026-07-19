@@ -98,9 +98,11 @@ module interface_graph
 
    contains
 
-     ! dof indexing (variable-fastest over vertices)
+     ! dof indexing (variable-fastest over vertices), and the
+     ! adjacency read at dof granularity
      procedure :: dof
      procedure :: num_dofs
+     procedure :: dof_adjacency
 
      ! The contract: every graph answers its neighbour queries, and the
      ! compiler enforces it. A stored subclass implements them as
@@ -147,9 +149,10 @@ module interface_graph
      procedure :: balance
      procedure :: edge_cut
 
-     ! values riding the partition: a part's owned dofs, and the
-     ! gather/scatter pair that moves vector values through them
-     procedure :: owned_dofs
+     ! values riding the partition: any vertex list expands to its
+     ! dofs, and the gather/scatter pair moves vector values through
+     ! a part's owned dofs
+     procedure :: dofs_of
      procedure :: gather
      procedure :: scatter
 
@@ -304,6 +307,53 @@ contains
     num_dofs = this % num_vertices * this % num_variables
 
   end function num_dofs
+
+  !===================================================================!
+  ! The adjacency read at dof granularity: one row per dof, and each
+  ! row leads with its own dof (the self-loop), then the matching
+  ! variable's dof on every neighbour, in neighbour order. Emit the
+  ! self pairs, emit the neighbour pairs, and the counting kernel
+  ! groups them into rows. Consumes only the neighbour queries, so a
+  ! rule-generated graph answers as readily as a stored one.
+  !===================================================================!
+
+  pure subroutine dof_adjacency(this, xadj, adj)
+
+    class(graph)        , intent(in)  :: this
+    integer, allocatable, intent(out) :: xadj(:), adj(:)
+
+    integer, allocatable :: keys(:), values(:), nbrs(:)
+    integer :: v, k, ivar, p, n, ndof
+
+    ndof = this % num_dofs()
+
+    n = ndof
+    do v = 1, this % num_vertices
+       n = n + this % degree(v) * this % num_variables
+    end do
+    allocate(keys(n), values(n))
+
+    ! self pairs first - the kernel keeps arrival order within a row
+    do p = 1, ndof
+       keys(p)   = p
+       values(p) = p
+    end do
+
+    n = ndof
+    do v = 1, this % num_vertices
+       nbrs = this % neighbours(v)
+       do k = 1, size(nbrs)
+          do ivar = 1, this % num_variables
+             n = n + 1
+             keys(n)   = this % dof(v, ivar)
+             values(n) = this % dof(nbrs(k), ivar)
+          end do
+       end do
+    end do
+
+    call counting_sort(ndof, keys, values, xadj, adj)
+
+  end subroutine dof_adjacency
 
   !===================================================================!
   ! Build the retained adjacency from the undirected edge list: per-
@@ -1087,19 +1137,19 @@ contains
   end function owned
 
   !===================================================================!
-  ! The dofs of part k's owned vertices, variable-fastest - the same
-  ! interleaving dof(v, ivar) uses.
+  ! The dofs a list of vertices carries, variable-fastest - the same
+  ! interleaving dof(v, ivar) uses. Works for any list the graph
+  ! hands out: a part's owned vertices, its ghosts, an aggregate.
   !===================================================================!
 
-  pure function owned_dofs(this, k) result(dofs)
+  pure function dofs_of(this, verts) result(dofs)
 
     class(graph), intent(in) :: this
-    integer     , intent(in) :: k
+    integer     , intent(in) :: verts(:)
 
-    integer, allocatable :: verts(:), dofs(:)
+    integer, allocatable :: dofs(:)
     integer :: i, ivar, pos
 
-    verts = this % owned(k)
     allocate(dofs(size(verts) * this % num_variables))
 
     pos = 0
@@ -1110,7 +1160,7 @@ contains
        end do
     end do
 
-  end function owned_dofs
+  end function dofs_of
 
   !===================================================================!
   ! Gather: pull the values x carries at part k's owned dofs into a
@@ -1125,7 +1175,7 @@ contains
 
     real(dp), allocatable :: xk(:)
 
-    xk = x(this % owned_dofs(k))
+    xk = x(this % dofs_of(this % owned(k)))
 
   end function gather
 
@@ -1141,7 +1191,7 @@ contains
     real(dp)    , intent(in)    :: xk(:)
     real(dp)    , intent(inout) :: x(:)
 
-    x(this % owned_dofs(k)) = xk
+    x(this % dofs_of(this % owned(k))) = xk
 
   end subroutine scatter
 

@@ -8,6 +8,7 @@ module class_mesh
 
   use iso_fortran_env       , only : dp => REAL64, error_unit
   use interface_mesh_loader , only : mesh_loader
+  use class_array_mesh_loader, only : array_mesh_loader
   use class_string          , only : string
   use module_mesh_utils     , only : find, distance, elem_type_face_count, &
        & elem_type_dimension, cross_product, form_cell_faces, &
@@ -185,6 +186,14 @@ module class_mesh
 
      ! Tag lookup - address a physical group by its name
      procedure :: find_tag_by_name
+
+     ! The mesh's own ladder: refined splits every triangle into four
+     ! real sub-triangles (a full mesh, through the loader front
+     ! door); agglomerated fuses the cells of each part into one
+     ! polygon (geometry for a writer, not a discretization)
+     procedure :: refined
+     procedure :: agglomerated
+     procedure, private :: face_between
 
      ! Destructor
      final   :: destroy
@@ -1516,5 +1525,270 @@ contains
     end if
 
   end subroutine to_string
+
+  !===================================================================!
+  ! The mesh refined once: every triangle splits into four real
+  ! sub-triangles - three at the corners, one in the middle - with a
+  ! new vertex at every face midpoint. The arrays go through the
+  ! loader front door, so the refined mesh arrives with everything a
+  ! loaded mesh has: faces, centres, volumes, neighbours. Children of
+  ! cell v sit at positions (v-1)*4+1..(v-1)*4+4, corners first,
+  ! middle last - the same numbering the graph's refinement uses.
+  !===================================================================!
+
+  impure type(mesh) function refined(this) result(fine)
+
+    class(mesh), intent(in) :: this
+
+    type(array_mesh_loader) :: gen
+
+    integer :: nv, nc, nf, nb
+    integer :: iface, icell, i, k, a, b, c, mab, mbc, mca
+
+    if (any(this % num_cell_vertices .ne. 3)) then
+       error stop "mesh: refined splits triangles - this mesh has other cells"
+    end if
+
+    nv = this % num_vertices
+    nc = this % num_cells
+    nf = this % num_faces
+
+    ! vertices: the old ones, then one midpoint per face
+    gen % num_vertices = nv + nf
+    allocate(gen % vertices(3, nv + nf))
+    gen % vertices(:, 1:nv) = this % vertices(:, 1:nv)
+    do iface = 1, nf
+       gen % vertices(:, nv + iface) = 0.5_dp*( &
+            & this % vertices(:, this % face_vertices(1, iface)) + &
+            & this % vertices(:, this % face_vertices(2, iface)))
+    end do
+    gen % vertex_numbers = [(i, i = 1, nv + nf)]
+    allocate(gen % vertex_tags(nv + nf))
+    gen % vertex_tags = 0
+
+    ! cells: four children per triangle, corners first, middle last
+    gen % num_cells = 4*nc
+    allocate(gen % cell_vertices(3, 4*nc))
+    allocate(gen % num_cell_vertices(4*nc), gen % cell_tags(4*nc), gen % cell_types(4*nc))
+    gen % num_cell_vertices = 3
+    gen % cell_types        = 2   ! gmsh three-node triangle
+    gen % cell_numbers      = [(i, i = 1, 4*nc)]
+
+    do icell = 1, nc
+       a   = this % cell_vertices(1, icell)
+       b   = this % cell_vertices(2, icell)
+       c   = this % cell_vertices(3, icell)
+       mab = nv + this % face_between(icell, a, b)
+       mbc = nv + this % face_between(icell, b, c)
+       mca = nv + this % face_between(icell, c, a)
+       gen % cell_vertices(:, (icell-1)*4 + 1) = [a, mab, mca]
+       gen % cell_vertices(:, (icell-1)*4 + 2) = [b, mbc, mab]
+       gen % cell_vertices(:, (icell-1)*4 + 3) = [c, mca, mbc]
+       gen % cell_vertices(:, (icell-1)*4 + 4) = [mab, mbc, mca]
+       gen % cell_tags((icell-1)*4 + 1 : icell*4) = this % cell_tags(icell)
+    end do
+
+    ! boundary faces: each boundary edge splits in two, tag inherited
+    nb = count(this % num_face_cells(1:nf) .eq. 1)
+    gen % num_faces = 2*nb
+    allocate(gen % face_vertices(2, 2*nb))
+    allocate(gen % face_tags(2*nb), gen % face_types(2*nb), gen % num_face_vertices(2*nb))
+    gen % num_face_vertices = 2
+    gen % face_numbers      = [(i, i = 1, 2*nb)]
+
+    k = 0
+    do iface = 1, nf
+       if (this % num_face_cells(iface) .ne. 1) cycle
+       a = this % face_vertices(1, iface)
+       b = this % face_vertices(2, iface)
+       k = k + 1
+       gen % face_vertices(:, k) = [a, nv + iface]
+       gen % face_tags(k)  = this % face_tags(iface)
+       gen % face_types(k) = this % face_types(iface)
+       k = k + 1
+       gen % face_vertices(:, k) = [nv + iface, b]
+       gen % face_tags(k)  = this % face_tags(iface)
+       gen % face_types(k) = this % face_types(iface)
+    end do
+
+    ! no edge elements; the tag table carries over whole
+    allocate(gen % edge_numbers(0), gen % edge_tags(0), gen % edge_types(0))
+    allocate(gen % edge_vertices(2, 0), gen % num_edge_vertices(0))
+
+    gen % num_tags                = this % num_tags
+    gen % tag_numbers             = this % tag_numbers
+    gen % tag_physical_dimensions = this % tag_physical_dimensions
+    gen % tag_info                = this % tag_info
+
+    fine = mesh(gen)
+
+  end function refined
+
+  !===================================================================!
+  ! The face of a cell whose two endpoints are exactly the given pair
+  !===================================================================!
+
+  pure integer function face_between(this, icell, p, q) result(f)
+
+    class(mesh), intent(in) :: this
+    integer    , intent(in) :: icell, p, q
+
+    integer :: k, fa, fb
+
+    do k = 1, this % num_cell_faces(icell)
+       f  = this % cell_faces(k, icell)
+       fa = this % face_vertices(1, f)
+       fb = this % face_vertices(2, f)
+       if ((fa .eq. p .and. fb .eq. q) .or. (fa .eq. q .and. fb .eq. p)) return
+    end do
+
+    error stop "mesh: a cell edge without its face - the connectivity is broken"
+
+  end function face_between
+
+  !===================================================================!
+  ! The mesh agglomerated by a partition of its cells: one polygon
+  ! per part, its boundary traced from the faces that separate the
+  ! part from the rest of the world, wound counterclockwise. Only
+  ! what a writer needs is filled - vertices, the polygon loops,
+  ! volumes as the members' sums - because an agglomerate is the
+  ! picture of a coarse level, not a discretization to assemble on.
+  ! A part whose boundary edges do not close into loops stops with a
+  ! report.
+  !===================================================================!
+
+  impure type(mesh) function agglomerated(this, parts, nparts) result(coarse)
+
+    class(mesh), intent(in) :: this
+    integer    , intent(in) :: parts(:)
+    integer    , intent(in) :: nparts
+
+    integer, allocatable :: edge_tail(:), edge_head(:), loop(:)
+    integer, allocatable :: link(:,:), n_link(:)
+    logical, allocatable :: used(:)
+
+    real(dp) :: area
+    integer  :: p, iface, c1, c2, m, i, cur, nxt, longest, pass, n
+
+    ! two passes: size the widest polygon, then trace and fill
+    longest = 0
+    do pass = 1, 2
+
+       if (pass .eq. 2) then
+          coarse % num_vertices = this % num_vertices
+          coarse % vertices     = this % vertices
+          coarse % num_cells    = nparts
+          allocate(coarse % cell_vertices(longest, nparts))
+          allocate(coarse % num_cell_vertices(nparts))
+          allocate(coarse % cell_types(nparts), coarse % cell_tags(nparts))
+          allocate(coarse % cell_volumes(nparts))
+          coarse % cell_vertices = 0
+          coarse % cell_types    = -1   ! our agglomerated-polygon convention
+          coarse % cell_tags     = 0
+          coarse % cell_numbers  = [(p, p = 1, nparts)]
+          do p = 1, nparts
+             coarse % cell_volumes(p) = sum(this % cell_volumes, mask = parts .eq. p)
+          end do
+       end if
+
+       do p = 1, nparts
+
+          ! the part's boundary: faces with exactly one member cell
+          m = 0
+          do iface = 1, this % num_faces
+             c1 = this % face_cells(1, iface)
+             if (this % num_face_cells(iface) .eq. 1) then
+                if (parts(c1) .eq. p) m = m + 1
+             else
+                c2 = this % face_cells(2, iface)
+                if ((parts(c1) .eq. p) .neqv. (parts(c2) .eq. p)) m = m + 1
+             end if
+          end do
+
+          if (pass .eq. 1) then
+             longest = max(longest, m)
+             cycle
+          end if
+
+          ! collect the boundary edges, then chain them into a loop
+          if (allocated(edge_tail)) deallocate(edge_tail, edge_head)
+          allocate(edge_tail(m), edge_head(m))
+          m = 0
+          do iface = 1, this % num_faces
+             c1 = this % face_cells(1, iface)
+             if (this % num_face_cells(iface) .eq. 1) then
+                if (parts(c1) .ne. p) cycle
+             else
+                c2 = this % face_cells(2, iface)
+                if ((parts(c1) .eq. p) .eqv. (parts(c2) .eq. p)) cycle
+             end if
+             m = m + 1
+             edge_tail(m) = this % face_vertices(1, iface)
+             edge_head(m) = this % face_vertices(2, iface)
+          end do
+
+          ! chain the edges into one loop, consuming each exactly
+          ! once; where the part touches itself the polygon pinches,
+          ! and any unused edge continues the loop - the picture
+          ! survives a pinch, only an open boundary is refused
+          if (.not. allocated(link)) then
+             allocate(link(8, this % num_vertices), n_link(this % num_vertices))
+          end if
+          do i = 1, m
+             n_link(edge_tail(i)) = 0
+             n_link(edge_head(i)) = 0
+          end do
+          do i = 1, m
+             n_link(edge_tail(i)) = n_link(edge_tail(i)) + 1
+             link(n_link(edge_tail(i)), edge_tail(i)) = i
+             n_link(edge_head(i)) = n_link(edge_head(i)) + 1
+             link(n_link(edge_head(i)), edge_head(i)) = i
+          end do
+
+          if (allocated(loop)) deallocate(loop, used)
+          allocate(loop(m), used(m))
+          used = .false.
+          cur  = edge_tail(1)
+          do n = 1, m
+             loop(n) = cur
+             nxt = 0
+             do i = 1, n_link(cur)
+                if (.not. used(link(i, cur))) then
+                   nxt = link(i, cur)
+                   exit
+                end if
+             end do
+             if (nxt .eq. 0) then
+                error stop "mesh: an agglomerate's boundary does not close into one loop"
+             end if
+             used(nxt) = .true.
+             if (edge_tail(nxt) .eq. cur) then
+                cur = edge_head(nxt)
+             else
+                cur = edge_tail(nxt)
+             end if
+          end do
+          if (cur .ne. loop(1)) then
+             error stop "mesh: an agglomerate's boundary does not close into one loop"
+          end if
+
+          ! wind counterclockwise (shoelace on the loop)
+          area = 0.0_dp
+          do n = 1, m
+             i    = loop(n)
+             nxt  = loop(mod(n, m) + 1)
+             area = area + this % vertices(1, i)*this % vertices(2, nxt) &
+                  &      - this % vertices(1, nxt)*this % vertices(2, i)
+          end do
+          if (area .lt. 0.0_dp) loop = loop(m:1:-1)
+
+          coarse % num_cell_vertices(p)   = m
+          coarse % cell_vertices(1:m, p)  = loop
+
+       end do
+
+    end do
+
+  end function agglomerated
 
 end module class_mesh

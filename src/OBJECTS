@@ -23,6 +23,7 @@ interface_physics.o \
 interface_flux.o \
 module_mesh_utils.o \
 interface_mesh_loader.o \
+class_array_mesh_loader.o \
 class_gmsh_loader.o \
 class_mesh.o \
 class_graph.o \

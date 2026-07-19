@@ -34,6 +34,12 @@
 !   4. the painting has light and dark (escaped and home both nonzero)
 !   5. the window's corner escapes at once (its first step leaves)
 !   6. the painting is on disk
+!   7. the ladder painted, every level its own mesh derived from the
+!      base by the mesh's own machinery: julia-1 and julia-2 on real
+!      refinements (every triangle split into four, and again), and
+!      julia+1 and julia+2 on agglomerated meshes (each part of the
+!      quotient fused into one polygon); each file fresh on disk with
+!      light and dark, cell counts thinning as the squint deepens
 !=====================================================================!
 
 program test_orbit_painting
@@ -60,8 +66,8 @@ program test_orbit_painting
   integer    , parameter :: cells_per_part    = 64   ! spatial squint factor
 
   class(gmsh_loader)    , allocatable :: loader
-  class(mesh)           , allocatable :: grid
-  class(paraview_writer), allocatable :: painter
+  class(mesh)           , allocatable :: grid, base_grid
+  class(paraview_writer), allocatable :: writer
   type(mesh_graph)   :: g
   type(stored_graph) :: coarse
 
@@ -73,70 +79,125 @@ program test_orbit_painting
   real(dp)   , allocatable :: escape_time(:,:)
   type(string) :: field_labels(1)
 
-  integer  :: ncells, nparts, icell, n_home
+  ! arrows of the coarse levels' paintings, host-carried for the rules
+  integer, allocatable :: arrows_coarse1(:), arrows_coarse2(:)
+
+  integer  :: ncells, nparts, n_home
+  integer  :: ncells_base, ncells_fine1, ncells_fine2
+  integer  :: ncells_coarse1, ncells_coarse2
   integer  :: checks_by_descent, full_scans, nfail
   real(dp) :: t0, t1
+  real(dp) :: xlo, xhi, ylo, yhi   ! the window map, shared with the ladder
 
   nfail = 0
 
-  ! a stale painting from a previous run would satisfy the on-disk
-  ! check without the writer doing anything - burn the old canvas first
-  fresh_canvas: block
-    integer :: unit, ierr
-    open(newunit = unit, file = paint_file, status = 'old', iostat = ierr)
-    if (ierr .eq. 0) close(unit, status = 'delete')
-  end block fresh_canvas
+  field_labels(1) = string('escape_time')
 
-  meshing: block
-
+  ! the base canvas comes off disk once; every other level of the
+  ! ladder is derived from it by the mesh's own machinery
+  load_the_base: block
     allocate(loader, source = gmsh_loader(mesh_file))
-    allocate(grid  , source = mesh(loader))
+    allocate(base_grid, source = mesh(loader))
     deallocate(loader)
+  end block load_the_base
+
+  ! the base painting, with the deep check battery on its heels
+  call paint_mesh_level(base_grid, paint_file, nfail)
+  ncells_base = ncells
+  write(*,'(1x,a,i0,a,i0)') "the squint claimed the base arrows with ", &
+       & checks_by_descent, " distance checks where the full scan needs ", ncells*ncells
+  write(*,'(1x,a,i0,a)') "the certificate sent ", full_scans, &
+       & " landing(s) back to the full scan"
+  call check_the_painting(nfail)
+
+  ! the squint side: the base cells huddle into parts, the quotient
+  ! graph carries the coarse solution, and the agglomerated mesh -
+  ! every part fused into one polygon - carries it to paraview
+  call paint_coarse_levels(nfail)
+
+  ! the zoom side: the mesh refined by its own machinery, the whole
+  ! pipeline rerun on each refined mesh
+  zoom: block
+    type(mesh) :: refined_once, refined_twice
+    refined_once = base_grid % refined()
+    call paint_mesh_level(refined_once, 'julia-1.vtu', nfail)
+    ncells_fine1 = ncells
+    refined_twice = refined_once % refined()
+    call paint_mesh_level(refined_twice, 'julia-2.vtu', nfail)
+    ncells_fine2 = ncells
+  end block zoom
+
+  call report(ncells_coarse2 .lt. ncells_coarse1 .and. &
+       &      ncells_coarse1 .lt. ncells_base    .and. &
+       &      ncells_base    .lt. ncells_fine1   .and. &
+       &      ncells_fine1   .lt. ncells_fine2, &
+       & "the ladder thins as the squint deepens", nfail)
+
+  write(*,'(1x,a,i0,a,i0,a,i0,a,i0,a,i0,a)') "the ladder, finest to coarsest: ", &
+       & ncells_fine2, " / ", ncells_fine1, " / ", ncells_base, " / ", &
+       & ncells_coarse1, " / ", ncells_coarse2, " cells, each level its own mesh"
+
+  write(*,'(1x,a)') "============================================="
+  if (nfail .eq. 0) then
+     write(*,'(1x,a)') "all orbit painting checks passed"
+  else
+     write(*,'(1x,a,i0,a)') "FAILED: ", nfail, " orbit painting check(s)"
+     error stop
+  end if
+
+contains
+
+  ! the affine map from mesh coordinates onto the window
+  pure complex(dp) function to_window(x, y) result(zw)
+    real(dp), intent(in) :: x, y
+    zw = cmplx(window_half_width*(2.0_dp*(x - xlo)/(xhi - xlo) - 1.0_dp), &
+         &     window_half_width*(2.0_dp*(y - ylo)/(yhi - ylo) - 1.0_dp), kind = dp)
+  end function to_window
+
+  !===================================================================!
+  ! Paint one level of the ladder: take the mesh handed in - loaded
+  ! or derived - and run the whole pipeline on it: the window map,
+  ! the squint the descent reads, the arrows, the one-pass escape
+  ! times, the painting written on that mesh's own cells. Light
+  ! checks here; the deep battery runs once, on the base painting.
+  !===================================================================!
+
+  subroutine paint_mesh_level(level_grid, level_file, nfail)
+
+    class(mesh)     , intent(in)    :: level_grid
+    character(len=*), intent(in)    :: level_file
+    integer         , intent(inout) :: nfail
+
+    integer, allocatable :: members(:)
+
+    complex(dp) :: z
+    logical     :: on_disk
+    integer     :: v, k, unit, ierr
+
+    ! a stale painting would satisfy the on-disk check - burn it
+    open(newunit = unit, file = level_file, status = 'old', iostat = ierr)
+    if (ierr .eq. 0) close(unit, status = 'delete')
+
+    ! this level's mesh becomes the pipeline's canvas
+    if (allocated(grid))   deallocate(grid)
+    if (allocated(writer)) deallocate(writer)
+    allocate(grid, source = level_grid)
 
     g      = mesh_graph(grid)
     ncells = g % num_vertices
 
-  end block meshing
-
-  !===================================================================!
-  ! Stretch the mesh over the window: an affine map from the bounding
-  ! box of the centroids onto the square of half-width 1.6 centred at
-  ! the origin, where the rabbit lives.
-  !===================================================================!
-
-  stretch_over_the_plane: block
-
-    real(dp) :: xlo, xhi, ylo, yhi
-
+    ! stretch this mesh over the same window
     xlo = minval(grid % cell_centers(1, :)); xhi = maxval(grid % cell_centers(1, :))
     ylo = minval(grid % cell_centers(2, :)); yhi = maxval(grid % cell_centers(2, :))
+    zc  = [(to_window(grid % cell_centers(1, v), grid % cell_centers(2, v)), v = 1, ncells)]
 
-    allocate(zc(ncells))
-    do icell = 1, ncells
-       zc(icell) = cmplx( &
-            & window_half_width*(2.0_dp*(grid % cell_centers(1, icell) - xlo)/(xhi - xlo) - 1.0_dp), &
-            & window_half_width*(2.0_dp*(grid % cell_centers(2, icell) - ylo)/(yhi - ylo) - 1.0_dp), &
-            & kind = dp)
-    end do
-
-  end block stretch_over_the_plane
-
-  !===================================================================!
-  ! The spatial squint: partition the mesh graph into compact parts by
-  ! coordinate bisection, squint the parts into the quotient graph,
-  ! and place each part's centroid on the window - the coarse level a
-  ! landing point descends through.
-  !===================================================================!
-
-  squint_the_mesh: block
-
-    integer, allocatable :: members(:)
-    integer :: k
-
+    ! the squint the descent reads
     nparts = max(1, ncells/cells_per_part)
     call g % partition_rcb(grid % cell_centers, nparts)
     coarse = stored_graph(g)
 
+    if (allocated(zpart))       deallocate(zpart)
+    if (allocated(part_radius)) deallocate(part_radius)
     allocate(zpart(nparts), part_radius(nparts))
     do k = 1, nparts
        members        = g % owned(k)
@@ -144,21 +205,8 @@ program test_orbit_painting
        part_radius(k) = sqrt(maxval(abs(zc(members) - zpart(k))**2))
     end do
 
-  end block squint_the_mesh
-
-  !===================================================================!
-  ! Quantize the julia map to the mesh: one step from each centroid,
-  ! then the nearest centroid claims the landing point - found by
-  ! descending the squint: nearest part first, then only that part's
-  ! cells and its quotient-neighbours' cells. Past the escape radius
-  ! nobody claims it - the arrow leaves the window, successor 0.
-  !===================================================================!
-
-  build_the_arrows: block
-
-    complex(dp) :: z
-    integer :: v
-
+    ! the arrows, claimed by descent
+    if (allocated(succ)) deallocate(succ)
     allocate(succ(ncells))
     checks_by_descent = 0
     full_scans        = 0
@@ -172,52 +220,35 @@ program test_orbit_painting
           succ(v) = nearest_cell_by_descent(z, checks_by_descent)
        end if
     end do
+
+    ! paint in one pass and write on this mesh's own cells
+    times = g % escape_times(successor, step_limit)
+    if (allocated(escape_time)) deallocate(escape_time)
+    allocate(escape_time(ncells, 1))
+    escape_time(:, 1) = real(times, dp)
+    n_home = count(times .eq. step_limit)
     call cpu_time(t1)
 
-  end block build_the_arrows
+    allocate(writer, source = paraview_writer(grid))
+    call writer % write(level_file, escape_time, field_labels)
 
-  !===================================================================!
-  ! Paint in one pass: escape_times resolves every cell at once -
-  ! orbits that merge share their tails. Escapers carry their escape
-  ! time; cells still home at the limit carry the full patience - the
-  ! dark interior of the set.
-  !===================================================================!
+    write(*,'(1x,a,i0,a,i0,a,i0,a,f6.3,a,a)') "painted ", ncells, " cells: ", &
+         & ncells - n_home, " escaped, ", n_home, " home (", t1 - t0, " s) -> ", level_file
 
-  times = g % escape_times(successor, step_limit)
+    inquire(file = level_file, exist = on_disk)
+    call report(on_disk .and. n_home .gt. 0 .and. n_home .lt. ncells, &
+         & level_file // " on its own mesh, light and dark", nfail)
 
-  allocate(escape_time(ncells, 1))
-  escape_time(:, 1) = real(times, dp)
-  n_home = count(times .eq. step_limit)
-
-  field_labels(1) = string('escape_time')
-  allocate(painter, source = paraview_writer(grid))
-  call painter % write(paint_file, escape_time, field_labels)
-
-  write(*,'(1x,a,i0,a,i0,a,i0,a)') "painted ", ncells, " cells: ", &
-       & ncells - n_home, " escaped, ", n_home, " home"
-  write(*,'(1x,a,i0,a,i0,a,f6.3,a)') "the squint claimed the arrows with ", &
-       & checks_by_descent, " distance checks where the full scan needs ", &
-       & ncells*ncells, " (", t1 - t0, " s)"
-  write(*,'(1x,a,i0,a)') "the certificate sent ", full_scans, &
-       & " landing(s) back to the full scan"
-
-  call check_the_painting(nfail)
-
-  write(*,'(1x,a)') "============================================="
-  if (nfail .eq. 0) then
-     write(*,'(1x,a)') "all orbit painting checks passed"
-  else
-     write(*,'(1x,a,i0,a)') "FAILED: ", nfail, " orbit painting check(s)"
-     error stop
-  end if
-
-contains
+  end subroutine paint_mesh_level
 
   ! the single successor of cell v, read from the stored arrows
   pure integer function successor(v)
     integer, intent(in) :: v
     successor = succ(v)
   end function successor
+
+
+
 
   ! which cell claims the landing point z: descend the squint - the
   ! nearest part's cells and its quotient-neighbours' cells - then
@@ -299,6 +330,8 @@ contains
 
   end function nearest_cell_by_descent
 
+
+
   subroutine report(ok, label, nfail)
     logical         , intent(in)    :: ok
     character(len=*), intent(in)    :: label
@@ -310,6 +343,145 @@ contains
        nfail = nfail + 1
     end if
   end subroutine report
+
+
+  !===================================================================!
+  ! The squint side of the ladder. The base cells huddle into parts
+  ! (about four cells each), the quotient graph gets its own arrows
+  ! and escape times, and the agglomerated mesh - each part fused
+  ! into one polygon - carries the coarse solution to paraview.
+  ! Twice over for julia+2, squinting the quotient again.
+  !===================================================================!
+
+  subroutine paint_coarse_levels(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_graph) :: quotient1, quotient2
+    type(mesh)         :: agg1, agg2
+
+    complex(dp), allocatable :: zq1(:), zq2(:)
+    integer    , allocatable :: level_times(:), members(:)
+    integer    , allocatable :: anc1(:), anc2(:)
+
+    integer :: v, k, n1, n2
+
+    ! squint once, by aggregation - a seed huddles with its
+    ! neighbours, so every part is connected by construction and its
+    ! boundary traces into one loop (coordinate bisection cuts by
+    ! count and can scatter a part into disconnected islands)
+    call g % partition_aggregate()
+    quotient1 = stored_graph(g)
+    n1        = quotient1 % num_vertices
+    anc1      = [(g % part_of(v), v = 1, ncells)]
+
+    allocate(zq1(n1))
+    do k = 1, n1
+       members = g % owned(k)
+       zq1(k)  = sum(zc(members))/real(size(members), dp)
+    end do
+
+    arrows_coarse1 = quantized_arrows(zq1)
+    level_times    = quotient1 % escape_times(coarse1_successor, step_limit)
+
+    agg1 = grid % agglomerated(anc1, n1)
+    call write_coarse_painting(agg1, real(level_times, dp), 'julia+1.vtu', nfail)
+    ncells_coarse1 = n1
+
+    ! squint twice, the same way
+    call quotient1 % partition_aggregate()
+    quotient2 = stored_graph(quotient1)
+    n2        = quotient2 % num_vertices
+    anc2      = [(quotient1 % part_of(anc1(v)), v = 1, ncells)]
+
+    allocate(zq2(n2))
+    do k = 1, n2
+       members = quotient1 % owned(k)
+       zq2(k)  = sum(zq1(members))/real(size(members), dp)
+    end do
+
+    arrows_coarse2 = quantized_arrows(zq2)
+    level_times    = quotient2 % escape_times(coarse2_successor, step_limit)
+
+    agg2 = grid % agglomerated(anc2, n2)
+    call write_coarse_painting(agg2, real(level_times, dp), 'julia+2.vtu', nfail)
+    ncells_coarse2 = n2
+
+  end subroutine paint_coarse_levels
+
+  ! burn any stale copy, write the coarse painting on its own
+  ! agglomerated mesh, and demand it lands with light and dark
+  subroutine write_coarse_painting(agg, field, filename, nfail)
+
+    type(mesh)      , intent(in)    :: agg
+    real(dp)        , intent(in)    :: field(:)
+    character(len=*), intent(in)    :: filename
+    integer         , intent(inout) :: nfail
+
+    class(paraview_writer), allocatable :: coarse_writer
+
+    real(dp), allocatable :: sheet(:,:)
+    logical               :: on_disk
+    integer               :: unit, ierr
+
+    open(newunit = unit, file = filename, status = 'old', iostat = ierr)
+    if (ierr .eq. 0) close(unit, status = 'delete')
+
+    allocate(sheet(size(field), 1))
+    sheet(:, 1) = field
+    allocate(coarse_writer, source = paraview_writer(agg))
+    call coarse_writer % write(filename, sheet, field_labels)
+
+    inquire(file = filename, exist = on_disk)
+    call report(on_disk .and. any(field .ge. real(step_limit, dp)) .and. &
+         &      any(field .lt. real(step_limit, dp)), &
+         & filename // " on its own agglomerated mesh, light and dark", nfail)
+
+  end subroutine write_coarse_painting
+
+  ! the coarse levels' successors, reading the host-carried arrows
+  pure integer function coarse1_successor(v)
+    integer, intent(in) :: v
+    coarse1_successor = arrows_coarse1(v)
+  end function coarse1_successor
+
+  pure integer function coarse2_successor(v)
+    integer, intent(in) :: v
+    coarse2_successor = arrows_coarse2(v)
+  end function coarse2_successor
+
+  ! the arrows of a small centroid set, by full scan: one step of the
+  ! map from each centroid, the nearest centroid claims the landing
+  pure function quantized_arrows(zs) result(arrows)
+
+    complex(dp), intent(in) :: zs(:)
+
+    integer, allocatable :: arrows(:)
+
+    complex(dp) :: z
+    real(dp)    :: best, d2
+    integer     :: v, w, nearest
+
+    allocate(arrows(size(zs)))
+    do v = 1, size(zs)
+       z = zs(v)*zs(v) + julia_constant
+       if (abs(z) .gt. escape_radius) then
+          arrows(v) = 0
+          cycle
+       end if
+       nearest = 1
+       best    = huge(1.0_dp)
+       do w = 1, size(zs)
+          d2 = abs(z - zs(w))**2
+          if (d2 .lt. best) then
+             best    = d2
+             nearest = w
+          end if
+       end do
+       arrows(v) = nearest
+    end do
+
+  end function quantized_arrows
 
   subroutine check_the_painting(nfail)
 

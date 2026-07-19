@@ -103,6 +103,8 @@ contains
        paraview_type = this % VTK_WEDGE
     case (7) ! 5-node prism (pyramid)
        paraview_type = this % VTK_PYRAMID
+    case (-1) ! an agglomerated polygon - our own convention; gmsh has no such element
+       paraview_type = this % VTK_POLYGON
     case default
        paraview_type = this % VTK_POLYHEDRON
     end select

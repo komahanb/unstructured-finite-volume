@@ -7,7 +7,8 @@ here="$(cd "$(dirname "$0")" && pwd)"
 
 ( cd "$here/../.." && ./build.sh >/dev/null )
 
-# the canvas: the suite reads ../square-tri-40.msh, which is generated, not tracked
+# the canvas: the suite reads ../square-tri-40.msh, which is generated, not
+# tracked; every other level of the ladder is derived from it in memory
 bash "$here/../../meshgen/ensure.sh" "$here/../square-tri-40.msh"
 
 make -C "$here" clean >/dev/null 2>&1 || true

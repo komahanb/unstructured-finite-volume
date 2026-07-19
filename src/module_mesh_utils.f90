@@ -1,8 +1,6 @@
 module module_mesh_utils
 
-  use iso_fortran_env , only : dp => REAL64, error_unit
-  use class_set             , only : set
-  use class_list            , only : list
+  use iso_fortran_env , only : dp => REAL64
 
   implicit none
 
@@ -32,14 +30,6 @@ contains
   ! Geometric distance between two points
   !===================================================================!
 
-  pure real(dp) function distanceX(X)
-
-    real(dp), intent(in)  :: X(:,:) ! [[x,y,z], [1:2]]
-
-    distanceX = sqrt(sum((X(:,1)-X(:,2))**2))
-
-  end function distanceX
-
   pure real(dp) function distanceAB(x, y)
 
     real(dp), intent(in)  :: X(:), y(:) ! [[x,y,z], [1:2]]
@@ -47,39 +37,6 @@ contains
     distanceAB = sqrt(sum((x-y)**2))
 
   end function distanceAB
-
-  !===================================================================!
-  ! Find the intersection of two arrays (move elsewhere)?
-  !===================================================================!
-
-  pure subroutine intersection(a, b, c)
-
-    ! Arguments
-    integer, intent(in)  :: a(:)
-    integer, intent(in)  :: b(:)
-    integer, intent(out) :: c(:)
-
-    ! Locals
-    integer :: i, j
-    integer :: sizea, sizeb
-    integer :: ctr
-
-    sizea = size(a)
-    sizeb = size(b)
-
-    ctr = 0
-    do i = 1, sizea
-       do j = 1, sizeb
-          ! Copy entry to new list if equal
-          if (a(i) .eq. b(j)) then
-             ctr = ctr + 1
-             c(ctr) = a(i)
-             return
-          end if
-       end do
-    end do
-
-  end subroutine intersection
 
   !===================================================================!
   ! Index of a target value if present in the array
@@ -347,38 +304,6 @@ contains
 
   end subroutine sparse_transpose_matmul
 
-  !===================================================================!
-  ! Determine if the face is a boundary face based on how many
-  ! neighbouring cells it has.
-  !===================================================================!
-
-  pure subroutine get_boundary_faces(num_face_cells, boundary_faces)
-
-    integer, intent(in)               :: num_face_cells(:)
-    integer, intent(out), allocatable :: boundary_faces(:)
-    integer                           :: iface, nfaces, nbfaces, ctr
-
-    nfaces = size(num_face_cells, dim=1)
-
-    ! Boundary faces are the faces corresponding to just one cell
-    nbfaces = 0
-    do iface = 1, nfaces
-       if (num_face_cells(iface) .eq. 1) then
-          nbfaces = nbfaces + 1
-       end if
-    end do
-
-    allocate(boundary_faces(nbfaces))
-    ctr = 0
-    do iface = 1, nfaces
-       if (num_face_cells(iface) .eq. 1) then
-          ctr = ctr + 1
-          boundary_faces(ctr) = iface
-       end if
-    end do
-
-  end subroutine get_boundary_faces
-
   ! generalize the name to return the number of lower dimensional entities
   pure elemental integer function elem_type_face_count(cell_type) result (num_faces)
 
@@ -470,22 +395,6 @@ contains
     end select
 
   end function elem_type_vertex_count
-
-  pure type(logical) function same_entity(one, two)
-
-    integer, intent(in) :: one(:), two(:)
-    integer :: tmp(size(two))
-    integer :: i, n
-
-    n = size(two)
-    tmp = two
-    same_entity = .false.
-    loop: do i = 0, n - 1
-       same_entity = all(one .eq. cshift(tmp, i))
-       if (same_entity .eqv. .true.) exit loop
-    end do loop
-
-  end function same_entity
 
   impure subroutine order_face_vertices(cell_type, cell_vertices, face_vertices_unordered)
 

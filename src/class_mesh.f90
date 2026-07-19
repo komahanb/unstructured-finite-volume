@@ -11,7 +11,7 @@ module class_mesh
   use interface_mesh_loader , only : mesh_loader
   use class_array_mesh_loader, only : array_mesh_loader
   use class_string          , only : string
-  use module_mesh_utils     , only : find, distance, elem_type_face_count, &
+  use module_mesh_utils     , only : distance, elem_type_face_count, &
        & elem_type_dimension, cross_product, &
        & transpose_connectivities, order_face_vertices, sparse_transpose_matmul
   use module_verbosity      , only : verbosity

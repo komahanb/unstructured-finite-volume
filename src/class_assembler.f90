@@ -319,10 +319,6 @@ contains
     type(assembler), intent(inout) :: this
 
     if (allocated(this % grid)) deallocate(this % grid)
-!!$    if(associated(this % grid)) then
-!!$       deallocate(this % grid)
-!!$       nullify(this % grid)
-!!$    end if
 
     if (allocated(this % phi)) deallocate(this % phi)
 

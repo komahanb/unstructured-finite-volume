@@ -6,7 +6,7 @@
 
 module class_string
 
-  use iso_fortran_env, only : dp => REAL64, error_unit
+  use iso_fortran_env, only : dp => REAL64
 
   implicit none
   

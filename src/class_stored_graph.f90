@@ -22,7 +22,7 @@
 
 module class_stored_graph
 
-  use interface_graph, only : graph, digraph, vertex, edge
+  use interface_graph, only : graph, digraph
 
   implicit none
 

@@ -18,7 +18,7 @@
 
 module class_chain
 
-  use interface_graph, only : digraph, vertex
+  use interface_graph, only : digraph
 
   implicit none
 

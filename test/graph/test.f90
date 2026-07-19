@@ -352,7 +352,8 @@ contains
     integer, intent(inout) :: nfail
     type(stored_graph) :: g, coarse, refined
     type(chain)        :: c
-    integer :: v
+    integer  :: v
+    real(dp) :: x(12)
 
     ! bfs partition puts {1,2,3} and {4,5} apart; three fine edges
     ! cross, and the squint sees one coarse edge
@@ -400,11 +401,23 @@ contains
 
     ! a rule graph refines as readily as a stored one, and an adopted
     ! partition gathers like any other
-    c = chain(6)
+    c = chain(6, 2)
     call c % set_partition([1,1,2,2,3,3])
     call report(c % nparts .eq. 3 .and. size(c % owned(2)) .eq. 2 .and. &
          &      all(c % owned(2) .eq. [3,4]), &
          & "an adopted partition gathers like any other", nfail)
+
+    ! values ride the partition: part 2 owns vertices 3 and 4, so with
+    ! two variables its dofs are 5..8; gather pulls those entries out,
+    ! scatter pushes them back and touches nothing else
+    call report(all(c % owned_dofs(2) .eq. [5,6,7,8]), &
+         & "a part's owned dofs follow its vertices, variable-fastest", nfail)
+    x = [(real(v, dp), v = 1, 12)]
+    call report(all(c % gather(2, x) .eq. [5,6,7,8]), &
+         & "gather pulls the values at a part's owned dofs", nfail)
+    call c % scatter(2, [50.0_dp, 60.0_dp, 70.0_dp, 80.0_dp], x)
+    call report(all(x .eq. [1,2,3,4,50,60,70,80,9,10,11,12]), &
+         & "scatter pushes them back and leaves the rest alone", nfail)
     refined = stored_graph(c, 2)
     call report(refined % num_vertices .eq. 12 .and. refined % num_edges .eq. 11, &
          & "the rule-generated chain refines by its neighbour queries", nfail)

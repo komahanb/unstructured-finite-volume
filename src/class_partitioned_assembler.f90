@@ -35,6 +35,7 @@
 module class_partitioned_assembler
 
   use iso_fortran_env        , only : dp => REAL64
+  use interface_graph        , only : graph
   use class_csr              , only : csr_matrix
   use class_mesh             , only : mesh
   use class_assembler        , only : spatial_assembler => assembler
@@ -62,7 +63,6 @@ module class_partitioned_assembler
    contains
 
      procedure :: setup_partition
-     procedure :: owned_dofs
 
      ! the distributed system queries
      procedure :: inner_product
@@ -83,7 +83,8 @@ module class_partitioned_assembler
   type, extends(preconditioner) :: block_preconditioner
 
      class(preconditioner), allocatable :: block   ! per-image, owned-block sized
-     integer, allocatable :: own(:)
+     class(graph)         , allocatable :: g       ! the partitioned graph
+     integer                            :: part    ! this image's part in it
 
    contains
 
@@ -122,43 +123,17 @@ contains
 
     class(partitioned_assembler), intent(inout) :: this
 
-    ! the grid IS the graph - partition it in place (the part stamps
-    ! are replicated and consumed only by owned_dofs)
+    ! the grid IS the graph - partition it in place, then ask it for
+    ! this image's owned dofs
     call this % grid % partition_rcb(this % grid % cell_centers, num_images())
 
-    this % own = this % owned_dofs(this % grid, this_image())
+    this % own = this % grid % owned_dofs(this_image())
 
     call this % get_operator_csr(this % A)
 
     this % partitioned = .true.
 
   end subroutine setup_partition
-
-  !===================================================================!
-  ! The dofs of the cells part k owns (variable-fastest interleaving)
-  !===================================================================!
-
-  pure function owned_dofs(this, gp, k) result(dofs)
-
-    class(partitioned_assembler), intent(in) :: this
-    type(mesh)                  , intent(in) :: gp
-    integer                     , intent(in) :: k
-
-    integer, allocatable :: cells(:), dofs(:)
-    integer :: i, ivar, pos
-
-    cells = gp % owned(k)
-    allocate(dofs(size(cells) * gp % num_variables))
-
-    pos = 0
-    do i = 1, size(cells)
-       do ivar = 1, gp % num_variables
-          pos = pos + 1
-          dofs(pos) = gp % dof(cells(i), ivar)
-       end do
-    end do
-
-  end function owned_dofs
 
   !===================================================================!
   ! Distributed inner product: sum over this image's owned entries,
@@ -172,17 +147,17 @@ contains
     real(dp)                    , intent(in) :: a(:)
     real(dp)                    , intent(in) :: b(:)
 
-    integer :: i
+    integer :: me
 
     if (.not. this % partitioned) then
        inner_product = dot_product(a, b)
        return
     end if
 
-    inner_product = 0.0_dp
-    do i = 1, size(this % own)
-       inner_product = inner_product + a(this % own(i))*b(this % own(i))
-    end do
+    ! dot the gathered owned halves, then reduce
+    me = this_image()
+    inner_product = dot_product(this % grid % gather(me, a), &
+         &                      this % grid % gather(me, b))
     call co_sum(inner_product)
 
   end function inner_product
@@ -250,24 +225,27 @@ contains
 
   !===================================================================!
   ! Block preconditioner constructor: the per-image preconditioner
-  ! (sized to the owned block) and the owned dof list it applies to.
+  ! (sized to the owned block), the partitioned graph, and which part
+  ! of it is this image's.
   !===================================================================!
 
-  impure type(block_preconditioner) function construct_block_preconditioner(block, own) &
+  impure type(block_preconditioner) function construct_block_preconditioner(block, g, part) &
        & result(this)
 
     class(preconditioner), intent(in) :: block
-    integer              , intent(in) :: own(:)
+    class(graph)         , intent(in) :: g
+    integer              , intent(in) :: part
 
     allocate(this % block, source = block)
-    this % own = own
+    allocate(this % g    , source = g)
+    this % part = part
 
   end function construct_block_preconditioner
 
   !===================================================================!
-  ! z = M^-1 r, additive over the images: each image applies its block
-  ! preconditioner to its owned entries, the rest of z is zero, and the
-  ! assembled sum is the block-diagonal preconditioned residual -
+  ! z = M^-1 r, additive over the images: each image gathers its owned
+  ! entries, preconditions the block, and scatters the answer back;
+  ! the assembled sum is the block-diagonal preconditioned residual -
   ! identical on every image.
   !===================================================================!
 
@@ -278,21 +256,13 @@ contains
     real(dp)                   , intent(out) :: z(:)
 
     real(dp), allocatable :: r_loc(:), z_loc(:)
-    integer :: i, nown
 
-    nown = size(this % own)
-    allocate(r_loc(nown), z_loc(nown))
-
-    do i = 1, nown
-       r_loc(i) = r(this % own(i))
-    end do
-
+    r_loc = this % g % gather(this % part, r)
+    allocate(z_loc(size(r_loc)))
     call this % block % apply(r_loc, z_loc)
 
     z = 0.0_dp
-    do i = 1, nown
-       z(this % own(i)) = z_loc(i)
-    end do
+    call this % g % scatter(this % part, z_loc, z)
     call co_sum(z)
 
   end subroutine apply

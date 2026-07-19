@@ -185,7 +185,7 @@ contains
     Ablock = A % principal_submatrix(fvmp % own)
     call M % setup(Ablock)
     allocate(cg, source = conjugate_gradient(20000, 1.0e-10_dp, 0, &
-         & precond = block_preconditioner(M, fvmp % own)))
+         & precond = block_preconditioner(M, fvmp % grid, this_image())))
     call cg % solve(fvmp, x_pc)
     it_pc = cg % last_inner_iters
     deallocate(cg)

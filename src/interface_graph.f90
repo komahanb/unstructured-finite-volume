@@ -147,6 +147,12 @@ module interface_graph
      procedure :: balance
      procedure :: edge_cut
 
+     ! values riding the partition: a part's owned dofs, and the
+     ! gather/scatter pair that moves vector values through them
+     procedure :: owned_dofs
+     procedure :: gather
+     procedure :: scatter
+
      procedure :: print
      procedure :: print_partition
 
@@ -1066,32 +1072,91 @@ contains
   end function part_of
 
   !===================================================================!
-  ! Vertices owned by part k (its matrix rows)
+  ! Vertices owned by part k
   !===================================================================!
 
-  pure function owned(this, k) result(cells)
+  pure function owned(this, k) result(list)
 
     class(graph), intent(in) :: this
     integer     , intent(in) :: k
 
-    integer, allocatable :: cells(:)
+    integer, allocatable :: list(:)
 
-    cells = this % own_list(this % own_ptr(k) : this % own_ptr(k+1)-1)
+    list = this % own_list(this % own_ptr(k) : this % own_ptr(k+1)-1)
 
   end function owned
+
+  !===================================================================!
+  ! The dofs of part k's owned vertices, variable-fastest - the same
+  ! interleaving dof(v, ivar) uses.
+  !===================================================================!
+
+  pure function owned_dofs(this, k) result(dofs)
+
+    class(graph), intent(in) :: this
+    integer     , intent(in) :: k
+
+    integer, allocatable :: verts(:), dofs(:)
+    integer :: i, ivar, pos
+
+    verts = this % owned(k)
+    allocate(dofs(size(verts) * this % num_variables))
+
+    pos = 0
+    do i = 1, size(verts)
+       do ivar = 1, this % num_variables
+          pos = pos + 1
+          dofs(pos) = this % dof(verts(i), ivar)
+       end do
+    end do
+
+  end function owned_dofs
+
+  !===================================================================!
+  ! Gather: pull the values x carries at part k's owned dofs into a
+  ! dense local vector.
+  !===================================================================!
+
+  pure function gather(this, k, x) result(xk)
+
+    class(graph), intent(in) :: this
+    integer     , intent(in) :: k
+    real(dp)    , intent(in) :: x(:)
+
+    real(dp), allocatable :: xk(:)
+
+    xk = x(this % owned_dofs(k))
+
+  end function gather
+
+  !===================================================================!
+  ! Scatter: the same sentence read backwards - push a local vector
+  ! into x at part k's owned dofs, leaving every other entry alone.
+  !===================================================================!
+
+  pure subroutine scatter(this, k, xk, x)
+
+    class(graph), intent(in)    :: this
+    integer     , intent(in)    :: k
+    real(dp)    , intent(in)    :: xk(:)
+    real(dp)    , intent(inout) :: x(:)
+
+    x(this % owned_dofs(k)) = xk
+
+  end subroutine scatter
 
   !===================================================================!
   ! Halo (ghost) vertices part k needs from other parts
   !===================================================================!
 
-  pure function ghosts(this, k) result(cells)
+  pure function ghosts(this, k) result(list)
 
     class(graph), intent(in) :: this
     integer     , intent(in) :: k
 
-    integer, allocatable :: cells(:)
+    integer, allocatable :: list(:)
 
-    cells = this % gh_list(this % gh_ptr(k) : this % gh_ptr(k+1)-1)
+    list = this % gh_list(this % gh_ptr(k) : this % gh_ptr(k+1)-1)
 
   end function ghosts
 

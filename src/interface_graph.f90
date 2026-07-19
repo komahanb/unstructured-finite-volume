@@ -57,6 +57,7 @@ module interface_graph
 
   private
   public :: graph, digraph, vertex, edge
+  public :: transpose_adjacency
 
   type :: vertex
      integer :: number      ! vertex label
@@ -308,46 +309,108 @@ contains
 
     class(graph), intent(inout) :: this
 
-    integer, allocatable :: ptr(:)
-    integer :: nv, e, i
+    integer, allocatable :: keys(:), values(:)
+    integer :: e
 
-    nv = this % num_vertices
-
-    if (allocated(this % xadj)) deallocate(this % xadj)
-    if (allocated(this % adj))  deallocate(this % adj)
-
-    allocate(this % xadj(nv+1))
-    this % xadj = 0
-
+    ! every edge contributes both ways, in edge order - the same
+    ! interleaving the hand-rolled scatter always produced
+    allocate(keys(2*this % num_edges), values(2*this % num_edges))
     do e = 1, this % num_edges
-       this % xadj(this % edges(e) % tail + 1) = this % xadj(this % edges(e) % tail + 1) + 1
-       this % xadj(this % edges(e) % head + 1) = this % xadj(this % edges(e) % head + 1) + 1
+       keys(2*e-1)   = this % edges(e) % tail
+       values(2*e-1) = this % edges(e) % head
+       keys(2*e)     = this % edges(e) % head
+       values(2*e)   = this % edges(e) % tail
     end do
 
-    this % xadj(1) = 1
-    do i = 1, nv
-       this % xadj(i+1) = this % xadj(i+1) + this % xadj(i)
-    end do
-
-    allocate(this % adj(this % xadj(nv+1)-1))
-    allocate(ptr(nv))
-    ptr = this % xadj(1:nv)
-
-    do e = 1, this % num_edges
-
-       associate(t => this % edges(e) % tail, h => this % edges(e) % head)
-
-       this % adj(ptr(t)) = h
-       ptr(t)             = ptr(t) + 1
-
-       this % adj(ptr(h)) = t
-       ptr(h)             = ptr(h) + 1
-
-       end associate
-
-    end do
+    call counting_sort(this % num_vertices, keys, values, this % xadj, this % adj)
 
   end subroutine build_adjacency
+
+  !===================================================================!
+  ! Counting sort - the one counting trick every retained structure
+  ! in this module is built with. Given pairs (key, value) in order,
+  ! group the values by key: ptr(k) points at key k's first value in
+  ! sorted, and within a key the values keep their arrival order.
+  ! Count, prefix-sum, scatter - that is the whole algorithm.
+  !===================================================================!
+
+  pure subroutine counting_sort(nkeys, keys, values, ptr, sorted)
+
+    integer             , intent(in)  :: nkeys
+    integer             , intent(in)  :: keys(:)
+    integer             , intent(in)  :: values(:)
+    integer, allocatable, intent(out) :: ptr(:)
+    integer, allocatable, intent(out) :: sorted(:)
+
+    integer, allocatable :: cursor(:)
+    integer :: i, k
+
+    allocate(ptr(nkeys+1))
+    ptr = 0
+    do i = 1, size(keys)
+       ptr(keys(i)+1) = ptr(keys(i)+1) + 1
+    end do
+
+    ptr(1) = 1
+    do k = 1, nkeys
+       ptr(k+1) = ptr(k+1) + ptr(k)
+    end do
+
+    allocate(sorted(ptr(nkeys+1)-1))
+    allocate(cursor(nkeys))
+    cursor = ptr(1:nkeys)
+    do i = 1, size(keys)
+       sorted(cursor(keys(i))) = values(i)
+       cursor(keys(i)) = cursor(keys(i)) + 1
+    end do
+
+  end subroutine counting_sort
+
+  !===================================================================!
+  ! Transpose an adjacency. One side of a bipartite graph lists its
+  ! neighbours: for each key, the values it touches, as a padded
+  ! array with per-key counts. This returns the other side's lists -
+  ! for each value, the keys that touch it. The transpose is built on
+  ! counting_sort, like every retained structure in this module.
+  ! Values are numbered 1..n_values.
+  !===================================================================!
+
+  pure subroutine transpose_adjacency(forward, num_forward, n_values, reverse, num_reverse)
+
+    integer             , intent(in)  :: forward(:,:)
+    integer             , intent(in)  :: num_forward(:)
+    integer             , intent(in)  :: n_values
+    integer, allocatable, intent(out) :: reverse(:,:)
+    integer, allocatable, intent(out) :: num_reverse(:)
+
+    integer, allocatable :: keys(:), values(:), ptr(:), sorted(:)
+    integer :: key, k, n, v
+
+    ! flatten the padded lists into (value, key) pairs, in key order
+    allocate(keys(sum(num_forward)), values(sum(num_forward)))
+    n = 0
+    do key = 1, size(num_forward)
+       do k = 1, num_forward(key)
+          n = n + 1
+          keys(n)   = forward(k, key)
+          values(n) = key
+       end do
+    end do
+
+    call counting_sort(n_values, keys, values, ptr, sorted)
+
+    ! pad the grouped rows back into the rectangular shape
+    allocate(num_reverse(n_values))
+    do v = 1, n_values
+       num_reverse(v) = ptr(v+1) - ptr(v)
+    end do
+    allocate(reverse(maxval(num_reverse), n_values))
+    reverse = 0
+    do v = 1, n_values
+       reverse(1:num_reverse(v), v) = sorted(ptr(v) : ptr(v+1)-1)
+    end do
+
+  end subroutine transpose_adjacency
 
   !===================================================================!
   ! Neighbours of vertex v from the retained adjacency: the shared
@@ -928,32 +991,15 @@ contains
     class(graph), intent(inout) :: this
     integer     , intent(in)    :: nparts
 
-    integer, allocatable :: ptr(:), cnt(:), mark(:), nbrs(:)
+    integer, allocatable :: cnt(:), mark(:), nbrs(:)
     integer :: nv, v, w, i, k, kv, pos
 
     nv = this % num_vertices
     this % nparts = nparts
 
-    ! ---- owned vertices per part (counting sort by part) ----
-    if (allocated(this % own_ptr))  deallocate(this % own_ptr)
-    if (allocated(this % own_list)) deallocate(this % own_list)
-    allocate(this % own_ptr(nparts+1)); this % own_ptr = 0
-    do v = 1, nv
-       this % own_ptr(this % vertices(v) % part + 1) = &
-            & this % own_ptr(this % vertices(v) % part + 1) + 1
-    end do
-    this % own_ptr(1) = 1
-    do k = 1, nparts
-       this % own_ptr(k+1) = this % own_ptr(k+1) + this % own_ptr(k)
-    end do
-    allocate(this % own_list(nv))
-    allocate(ptr(nparts)); ptr = this % own_ptr(1:nparts)
-    do v = 1, nv
-       k = this % vertices(v) % part
-       this % own_list(ptr(k)) = v
-       ptr(k) = ptr(k) + 1
-    end do
-    deallocate(ptr)
+    ! ---- owned vertices per part: counting sort by part ----
+    call counting_sort(nparts, [(this % vertices(v) % part, v = 1, nv)], &
+         &             [(v, v = 1, nv)], this % own_ptr, this % own_list)
 
     ! ---- edge cut ----
     this % ncut = this % edge_cut()
@@ -1213,51 +1259,15 @@ contains
 
     class(digraph), intent(inout) :: this
 
-    integer, allocatable :: ptr(:)
-    integer :: nv, e, i
+    integer, allocatable :: tails(:), heads(:)
 
-    nv = this % num_vertices
+    ! the out-lists sort the heads by tail; the in-lists sort the
+    ! tails by head - counting sort both ways
+    tails = this % edges % tail
+    heads = this % edges % head
 
-    if (allocated(this % out_xadj)) deallocate(this % out_xadj)
-    if (allocated(this % out_adj))  deallocate(this % out_adj)
-    if (allocated(this % in_xadj))  deallocate(this % in_xadj)
-    if (allocated(this % in_adj))   deallocate(this % in_adj)
-
-    allocate(this % out_xadj(nv+1), this % in_xadj(nv+1))
-    this % out_xadj = 0
-    this % in_xadj  = 0
-
-    do e = 1, this % num_edges
-       this % out_xadj(this % edges(e) % tail + 1) = this % out_xadj(this % edges(e) % tail + 1) + 1
-       this % in_xadj(this % edges(e) % head + 1)  = this % in_xadj(this % edges(e) % head + 1)  + 1
-    end do
-
-    this % out_xadj(1) = 1
-    this % in_xadj(1)  = 1
-    do i = 1, nv
-       this % out_xadj(i+1) = this % out_xadj(i+1) + this % out_xadj(i)
-       this % in_xadj(i+1)  = this % in_xadj(i+1)  + this % in_xadj(i)
-    end do
-
-    allocate(this % out_adj(this % out_xadj(nv+1)-1))
-    allocate(this % in_adj(this % in_xadj(nv+1)-1))
-
-    allocate(ptr(nv))
-    ptr = this % out_xadj(1:nv)
-    do e = 1, this % num_edges
-       associate(t => this % edges(e) % tail, h => this % edges(e) % head)
-         this % out_adj(ptr(t)) = h
-         ptr(t) = ptr(t) + 1
-       end associate
-    end do
-
-    ptr = this % in_xadj(1:nv)
-    do e = 1, this % num_edges
-       associate(t => this % edges(e) % tail, h => this % edges(e) % head)
-         this % in_adj(ptr(h)) = t
-         ptr(h) = ptr(h) + 1
-       end associate
-    end do
+    call counting_sort(this % num_vertices, tails, heads, this % out_xadj, this % out_adj)
+    call counting_sort(this % num_vertices, heads, tails, this % in_xadj, this % in_adj)
 
   end subroutine build_directed_adjacency
 

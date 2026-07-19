@@ -7,13 +7,13 @@
 module class_mesh
 
   use iso_fortran_env       , only : dp => REAL64, error_unit
-  use interface_graph       , only : graph, vertex, edge
+  use interface_graph       , only : graph, vertex, edge, transpose_adjacency
   use interface_mesh_loader , only : mesh_loader
   use class_array_mesh_loader, only : array_mesh_loader
   use class_string          , only : string
   use module_mesh_utils     , only : distance, elem_type_face_count, &
        & elem_type_dimension, cross_product, &
-       & transpose_connectivities, order_face_vertices, sparse_transpose_matmul
+       & order_face_vertices
   use module_verbosity      , only : verbosity
 
   implicit none
@@ -639,11 +639,11 @@ contains
 
       if (verbosity .ge. 1) write(*,'(a)') "Inverting CellVertex Map..."
 
-      call transpose_connectivities( &
-           & this % cell_vertices, &
-           & this % num_cell_vertices, &
-           & this % vertex_cells, &
-           & this % num_vertex_cells)
+      ! vertex_cells is cell_vertices transposed - the graph transposes it
+      call transpose_adjacency( &
+           & this % cell_vertices, this % num_cell_vertices, &
+           & this % num_points, &
+           & this % vertex_cells, this % num_vertex_cells)
 
       if (verbosity .ge. 1) write(*,'(a)') "Inverting CellVertex Map complete ..."
 
@@ -692,15 +692,54 @@ contains
 
     cell_face_face_cell: block
 
-      integer :: icell, iface
+      integer :: icell, iface, k, iv
+      logical :: holds_all
 
       if (verbosity .ge. 1) write(*,*) "Forming CellFace and FaceCell connectivities..."
 
-      call sparse_transpose_matmul(&
-           & this % num_cell_vertices, this % cell_types, this % cell_tags, this % cell_vertices, &
-           & this % num_face_vertices, this % face_types, this % face_tags, this % face_vertices, &
-           & this % num_cell_faces, this % cell_faces, this % cell_faces_type, &
-           & this % num_face_cells, this % face_cells, this % face_cells_type)
+      ! face_cells: a face's cells are the cells that hold every one of
+      ! its vertices. Look only among the cells touching the face's
+      ! first vertex - the owners are there - not at every cell.
+      allocate(this % num_face_cells(this % num_faces))
+      allocate(this % face_cells(2, this % num_faces))
+      this % num_face_cells = 0
+      this % face_cells     = 0
+      do iface = 1, this % num_faces
+         do k = 1, this % num_vertex_cells(this % face_vertices(1, iface))
+            icell = this % vertex_cells(k, this % face_vertices(1, iface))
+            holds_all = .true.
+            do iv = 1, this % num_face_vertices(iface)
+               if (.not. any(this % cell_vertices(1:this % num_cell_vertices(icell), icell) &
+                    &        .eq. this % face_vertices(iv, iface))) then
+                  holds_all = .false.
+                  exit
+               end if
+            end do
+            if (.not. holds_all) cycle
+            this % num_face_cells(iface) = this % num_face_cells(iface) + 1
+            this % face_cells(this % num_face_cells(iface), iface) = icell
+         end do
+      end do
+
+      ! cell_faces is face_cells transposed - the graph transposes it
+      call transpose_adjacency(this % face_cells, this % num_face_cells, &
+           & this % num_cells, this % cell_faces, this % num_cell_faces)
+
+      ! the type arrays follow from the two index maps
+      allocate(this % face_cells_type(2, this % num_faces))
+      allocate(this % cell_faces_type(size(this % cell_faces, 1), this % num_cells))
+      this % face_cells_type = 0
+      this % cell_faces_type = 0
+      do iface = 1, this % num_faces
+         do k = 1, this % num_face_cells(iface)
+            this % face_cells_type(k, iface) = this % cell_types(this % face_cells(k, iface))
+         end do
+      end do
+      do icell = 1, this % num_cells
+         do k = 1, this % num_cell_faces(icell)
+            this % cell_faces_type(k, icell) = this % face_types(this % cell_faces(k, icell))
+         end do
+      end do
 
       if (verbosity .gt. 1) then
 

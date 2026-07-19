@@ -1,3 +1,2 @@
 objects=\
-class_test_mesh_loader.o \
 test.o

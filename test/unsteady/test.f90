@@ -40,12 +40,6 @@ program test_mesh
   call FVMAssembler % set_neumann  ("BoundaryTop"   , 0.0d0)
   call FVMAssembler % set_neumann  ("BoundaryBottom", 0.0d0)
 
-  ! Nonlinear Solution
-!!$  allocate(nonlinear, &
-!!$       & source = newton( &
-!!$       & FVMAssembler, max_tol, max_it, print_level) &
-!!$       & )
-  
   ! Linear Solution
   allocate(linear, &
        & source      = conjugate_gradient( &

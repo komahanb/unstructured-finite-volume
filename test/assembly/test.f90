@@ -140,10 +140,6 @@ program test_mesh
        write(*,'(100g15.1)') (matrix(i,j),j=1,min(10,n))
     end do
 
-!!$    do i = 1, m
-!!$       print *, sum(matrix(:,i))
-!!$    end do
-
   end subroutine print
 
 end program test_mesh

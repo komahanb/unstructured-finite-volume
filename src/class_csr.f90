@@ -18,6 +18,7 @@
 module class_csr
 
   use iso_fortran_env   , only : dp => REAL64
+  use interface_graph   , only : counting_sort
   use class_stored_graph, only : stored_graph
 
   implicit none
@@ -234,40 +235,31 @@ contains
   end subroutine to_dense
 
   !===================================================================!
-  ! A^T as a fresh CSR (count columns, prefix-sum, scatter)
+  ! A^T as a fresh CSR. Grouping the entries by column is the graph's
+  ! counting kernel; it returns the new row pointer and the entry
+  ! permutation, and the transpose is two gathers through it.
   !===================================================================!
 
   pure function transpose(A) result(At)
     class(csr_matrix), intent(in) :: A
     type(csr_matrix)              :: At
-    integer, allocatable :: next(:)
-    integer :: i, k, col, dest
+    integer, allocatable :: rows(:), perm(:)
+    integer :: i, k
 
-    At % nrows = A % ncols
-    At % ncols = A % nrows
-    At % nnz   = A % nnz
-    allocate(At % row_ptr(At % nrows + 1)); At % row_ptr = 0
-    allocate(At % col_idx(A % nnz), At % vals(A % nnz))
-
-    ! count entries per column of A (= per row of At)
-    do k = 1, A % nnz
-       At % row_ptr(A % col_idx(k) + 1) = At % row_ptr(A % col_idx(k) + 1) + 1
-    end do
-    At % row_ptr(1) = 1
-    do i = 1, At % nrows
-       At % row_ptr(i+1) = At % row_ptr(i+1) + At % row_ptr(i)
-    end do
-
-    allocate(next(At % nrows)); next = At % row_ptr(1:At % nrows)
+    ! the row of each stored entry, in storage order
+    allocate(rows(A % nnz))
     do i = 1, A % nrows
-       do k = A % row_ptr(i), A % row_ptr(i+1) - 1
-          col  = A % col_idx(k)
-          dest = next(col)
-          At % col_idx(dest) = i
-          At % vals(dest)    = A % vals(k)
-          next(col)          = dest + 1
-       end do
+       rows(A % row_ptr(i) : A % row_ptr(i+1) - 1) = i
     end do
+
+    call counting_sort(A % ncols, A % col_idx, [(k, k = 1, A % nnz)], &
+         & At % row_ptr, perm)
+
+    At % nrows   = A % ncols
+    At % ncols   = A % nrows
+    At % nnz     = A % nnz
+    At % col_idx = rows(perm)
+    At % vals    = A % vals(perm)
   end function transpose
 
   !===================================================================!

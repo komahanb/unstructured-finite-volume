@@ -57,7 +57,7 @@ module interface_graph
 
   private
   public :: graph, digraph, vertex, edge
-  public :: transpose_adjacency
+  public :: counting_sort, transpose_adjacency
 
   type :: vertex
      integer :: number      ! vertex label

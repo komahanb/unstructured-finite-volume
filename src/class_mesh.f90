@@ -113,28 +113,12 @@ module class_mesh
      integer  , allocatable :: vertex_cells(:,:)    ! [[c1,c2,c3],[1:nvertices]]
      integer  , allocatable :: num_vertex_cells(:)  ! [1:nvertices]
 
-     ! Inverse face information
-     integer  , allocatable :: vertex_faces(:,:)    ! [[f1,f2,f3],[1:nfaces]]
-     integer  , allocatable :: num_vertex_faces(:)  ! [1:nfaces]
-
-     ! Inverse edge information
-     integer  , allocatable :: vertex_edges(:,:)    ! [[e1,e2,e3],[1:nedges]]
-     integer  , allocatable :: num_vertex_edges(:)  ! [1:nedges]
-
      ! Intermidiate connectivities and their inverse
      integer  , allocatable :: num_cell_faces(:)         ! [1:ncells]
      integer  , allocatable :: cell_faces(:,:)           ! [[f1,f2,f3..],1:ncells]
-     integer  , allocatable :: cell_faces_type(:,:)      ! [[tri,qua,tri..],1:ncells]
 
      integer  , allocatable :: num_face_cells(:)         ! [1:nfaces]
      integer  , allocatable :: face_cells(:,:)           ! [[c1,c2...],1:nfaces]
-     integer  , allocatable :: face_cells_type(:,:)      ! [[hex,tet,..],1:nfaces]
-
-     ! Intermidiate connectivities and their inverse
-     integer  , allocatable :: num_face_edges(:)         ! [1:nfaces]
-     integer  , allocatable :: face_edges(:,:)           ! [[e1,e2,e3..],1:nfaces]
-     integer  , allocatable :: num_edge_faces(:)         ! [1:nedges]
-     integer  , allocatable :: edge_faces(:,:)           ! [[f1,f2...],1:nedges]
 
      ! (cell-to-cell adjacency is the inherited graph adjacency now:
      ! neighbours(icell)/degree(icell), built from the interior faces)
@@ -594,21 +578,10 @@ contains
     if (allocated(this % vertex_cells)) deallocate(this % vertex_cells)
     if (allocated(this % num_vertex_cells)) deallocate(this % num_vertex_cells)
 
-    if (allocated(this % vertex_faces)) deallocate(this % vertex_faces)
-    if (allocated(this % num_vertex_faces)) deallocate(this % num_vertex_faces)
-
-    if (allocated(this % vertex_edges)) deallocate(this % vertex_edges)
-    if (allocated(this % num_vertex_edges)) deallocate(this % num_vertex_edges)
-
     if (allocated(this % num_cell_faces)) deallocate(this % num_cell_faces)
     if (allocated(this % cell_faces)) deallocate(this % cell_faces)
     if (allocated(this % num_face_cells)) deallocate(this % num_face_cells)
     if (allocated(this % face_cells)) deallocate(this % face_cells)
-
-    if (allocated(this % num_face_edges)) deallocate(this % num_face_edges)
-    if (allocated(this % face_edges)) deallocate(this % face_edges)
-    if (allocated(this % num_edge_faces)) deallocate(this % num_edge_faces)
-    if (allocated(this % edge_faces)) deallocate(this % edge_faces)
 
     if (allocated(this % cell_centers)) deallocate(this % cell_centers)
     if (allocated(this % cell_volumes)) deallocate(this % cell_volumes)
@@ -724,22 +697,6 @@ contains
       ! cell_faces is face_cells transposed - the graph transposes it
       call transpose_adjacency(this % face_cells, this % num_face_cells, &
            & this % num_cells, this % cell_faces, this % num_cell_faces)
-
-      ! the type arrays follow from the two index maps
-      allocate(this % face_cells_type(2, this % num_faces))
-      allocate(this % cell_faces_type(size(this % cell_faces, 1), this % num_cells))
-      this % face_cells_type = 0
-      this % cell_faces_type = 0
-      do iface = 1, this % num_faces
-         do k = 1, this % num_face_cells(iface)
-            this % face_cells_type(k, iface) = this % cell_types(this % face_cells(k, iface))
-         end do
-      end do
-      do icell = 1, this % num_cells
-         do k = 1, this % num_cell_faces(icell)
-            this % cell_faces_type(k, icell) = this % face_types(this % cell_faces(k, icell))
-         end do
-      end do
 
       if (verbosity .gt. 1) then
 

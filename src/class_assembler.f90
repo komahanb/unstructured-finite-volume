@@ -14,7 +14,6 @@ module class_assembler
   use class_diffusion_flux    , only : diffusion_flux, constant_source
   use class_fvm_field         , only : fvm_field
   use class_csr               , only : csr_matrix
-  use class_graph             , only : mesh_graph
   use module_verbosity        , only : verbosity
 
   implicit none
@@ -45,9 +44,6 @@ module class_assembler
 
      ! Number of variables each cell
      integer :: num_variables
-
-     ! Dof / connectivity graph (cells = vertices, interior faces = edges)
-     type(mesh_graph) :: g
 
      ! Flux vector
      real(dp), allocatable :: phi(:)
@@ -145,10 +141,10 @@ contains
     ! One variable per cell by default ("T"); set_equation bumps this up
     this % num_variables = 1
 
-    ! Build the dof/connectivity graph and size the system from it. For a
-    ! single field num_state_vars = num_cells, as before.
-    this % g = mesh_graph(grid, this % num_variables)
-    this % num_state_vars = this % g % num_dofs()
+    ! The grid IS the dof/connectivity graph now; size the system from
+    ! it. For a single field num_state_vars = num_cells, as before.
+    this % grid % num_variables = this % num_variables
+    this % num_state_vars = this % grid % num_dofs()
 
     ! Semi-discrete in time: R(u,udot) = M*udot + A*u - b is first order,
     ! and the jacobian-vector product below is exact (not approximated).
@@ -258,8 +254,8 @@ contains
 
     ! Resize the system for this many variables per cell
     this % num_variables     = flux_op % num_components
-    this % g % num_variables = this % num_variables
-    this % num_state_vars    = this % g % num_dofs()
+    this % grid % num_variables = this % num_variables
+    this % num_state_vars    = this % grid % num_dofs()
 
     if (allocated(this % phi)) deallocate(this % phi)
     allocate(this % phi(this % num_state_vars))
@@ -452,7 +448,7 @@ contains
     real(dp)          :: nf(3), keff, vn, wp, wn, alhs, arhs, diag, neigh
     type(point_state) :: st
 
-    associate(nv => this % g % num_variables)
+    associate(nv => this % grid % num_variables)
 
     allocate(st % q(nv), st % gradq(3, nv))
     st % nv = nv
@@ -463,7 +459,7 @@ contains
        associate(faces => this % grid % cell_faces(1:this % grid % num_cell_faces(icell), icell))
 
          do ivar = 1, nv
-            Aq(this % g % dof(icell, ivar)) = 0.0d0
+            Aq(this % grid % dof(icell, ivar)) = 0.0d0
          end do
 
          loop_faces: do iface = 1, this % grid % num_cell_faces(icell)
@@ -490,8 +486,8 @@ contains
                  end if
 
                  do ivar = 1, nv
-                    p = this % g % dof(icell, ivar)
-                    n = this % g % dof(ncell, ivar)
+                    p = this % grid % dof(icell, ivar)
+                    n = this % grid % dof(ncell, ivar)
                     keff  = this % fx % normal_diffusivity(st, nf, ivar)
                     vn    = this % fx % normal_speed(st, nf, ivar)
                     call this % adv_weights(vn, wp, wn)
@@ -514,7 +510,7 @@ contains
               else
 
                  do ivar = 1, nv
-                    p    = this % g % dof(icell, ivar)
+                    p    = this % grid % dof(icell, ivar)
                     keff = this % fx % normal_diffusivity(st, nf, ivar)
                     vn   = this % fx % normal_speed(st, nf, ivar)
                     call this % adv_boundary(this % bcs(ftag,ivar), farea, fdelta, vn, &
@@ -563,9 +559,9 @@ contains
     real(dp)              :: nf(3), keff, vn, wp, wn, alhs, arhs, farea, fdelta
     type(point_state)     :: st
 
-    associate(nv => this % g % num_variables)
+    associate(nv => this % grid % num_variables)
 
-    ndof = this % g % num_dofs()
+    ndof = this % grid % num_dofs()
 
     !---------------------------------------------------------------!
     ! symbolic pass: row p has its diagonal + one column per interior
@@ -577,7 +573,7 @@ contains
           gface = this % grid % cell_faces(iface, icell)
           if (this % grid % num_face_cells(gface) .eq. 2) then
              do ivar = 1, nv
-                p = this % g % dof(icell, ivar)
+                p = this % grid % dof(icell, ivar)
                 nnz_row(p) = nnz_row(p) + 1
              end do
           end if
@@ -608,8 +604,8 @@ contains
                 ncell = fcells(1)
              end if
              do ivar = 1, nv
-                p = this % g % dof(icell, ivar)
-                col_idx(cursor(p)) = this % g % dof(ncell, ivar)
+                p = this % grid % dof(icell, ivar)
+                col_idx(cursor(p)) = this % grid % dof(ncell, ivar)
                 cursor(p) = cursor(p) + 1
              end do
           end if
@@ -645,8 +641,8 @@ contains
                 ncell = fcells(1)
              end if
              do ivar = 1, nv
-                p    = this % g % dof(icell, ivar)
-                n    = this % g % dof(ncell, ivar)
+                p    = this % grid % dof(icell, ivar)
+                n    = this % grid % dof(ncell, ivar)
                 keff = this % fx % normal_diffusivity(st, nf, ivar)
                 vn   = this % fx % normal_speed(st, nf, ivar)
                 call this % adv_weights(vn, wp, wn)
@@ -655,7 +651,7 @@ contains
              end do
           else
              do ivar = 1, nv
-                p    = this % g % dof(icell, ivar)
+                p    = this % grid % dof(icell, ivar)
                 keff = this % fx % normal_diffusivity(st, nf, ivar)
                 vn   = this % fx % normal_speed(st, nf, ivar)
                 call this % adv_boundary(this % bcs(ftag,ivar), farea, fdelta, vn, &
@@ -687,12 +683,12 @@ contains
     integer           :: icell, iface, ivar, p, gface
     real(dp)          :: nf(3), keff, vn, alhs, arhs
     type(point_state) :: st
-    type(scalar)      :: Sval(this % g % num_variables)
+    type(scalar)      :: Sval(this % grid % num_variables)
 
     bnd_only = .false.
     if (present(boundary_only)) bnd_only = boundary_only
 
-    associate(nv => this % g % num_variables)
+    associate(nv => this % grid % num_variables)
 
     allocate(st % q(nv), st % gradq(3, nv))
     st % nv = nv; st % q = 0.0d0; st % gradq = 0.0d0
@@ -701,7 +697,7 @@ contains
     do icell = 1, this % grid % num_cells
        associate(faces => this % grid % cell_faces(1:this % grid % num_cell_faces(icell), icell))
          do ivar = 1, nv
-            b(this % g % dof(icell, ivar)) = 0.0d0
+            b(this % grid % dof(icell, ivar)) = 0.0d0
          end do
          do iface = 1, this % grid % num_cell_faces(icell)
             gface = faces(iface)
@@ -713,7 +709,7 @@ contains
                  nf     = this % grid % cell_face_normals(1:3, iface, icell)
                  st % x = this % grid % face_centers(1:3, gface)
                  do ivar = 1, nv
-                    p    = this % g % dof(icell, ivar)
+                    p    = this % grid % dof(icell, ivar)
                     keff = this % fx % normal_diffusivity(st, nf, ivar)
                     vn   = this % fx % normal_speed(st, nf, ivar)
                     call this % adv_boundary(this % bcs(ftag,ivar), farea, fdelta, vn, &
@@ -732,7 +728,7 @@ contains
           st % x = this % grid % cell_centers(:, icell)
           Sval   = this % src % value(st)
           do ivar = 1, nv
-             p    = this % g % dof(icell, ivar)
+             p    = this % grid % dof(icell, ivar)
              b(p) = b(p) + real(Sval(ivar), dp)*this % grid % cell_volumes(icell)
           end do
        end do
@@ -814,8 +810,8 @@ contains
 
     ! Interpolate the supplied cell centered solution to form the
     ! nodal solution
-    allocate(phiv(this % grid % num_vertices)); phiv = 0
-    do concurrent (ivertex = 1: this % grid % num_vertices)
+    allocate(phiv(this % grid % num_points)); phiv = 0
+    do concurrent (ivertex = 1: this % grid % num_points)
        associate(&
             & w => this % grid % vertex_cell_weights(&
             & 1:this % grid % num_vertex_cells(ivertex), ivertex&
@@ -916,10 +912,10 @@ contains
 
     ! One field at a time - gather its cell values, interpolate to
     ! vertices, then add its non-orthogonal correction to its own dofs.
-    variables: do ivar = 1, this % g % num_variables
+    variables: do ivar = 1, this % grid % num_variables
 
     do jcell = 1, this % grid % num_cells
-       phic_v(jcell) = phic(this % g % dof(jcell, ivar))
+       phic_v(jcell) = phic(this % grid % dof(jcell, ivar))
     end do
     call this % evaluate_vertex_flux(phiv, phic_v)
 
@@ -973,7 +969,7 @@ contains
 
                  do iv = 1, nfv
                     gv = this % grid % face_vertices(iv, gface)
-                    rv = this % grid % vertices(1:3,gv) - fc
+                    rv = this % grid % coordinates(1:3,gv) - fc
                     av(iv) = dot_product(rv, t1)
                     bv(iv) = dot_product(rv, t2)
                     pv(iv) = phiv(gv)
@@ -1021,7 +1017,7 @@ contains
                  type is (diffusion_flux)
                     Kf = fxp % kmat
                  end select
-                 associate(p => this % g % dof(icell, ivar))
+                 associate(p => this % grid % dof(icell, ivar))
                  ss(p) = ss(p) &
                       & + this % grid % face_areas(gface)*dot_product(matmul(Kf, gradt), kvec)
                  end associate
@@ -1078,12 +1074,12 @@ contains
 
     ! Scatter the flat dof vector into per-variable cell fields and write
     ! them all (3d, any element type) through the paraview writer.
-    nv = this % g % num_variables
+    nv = this % grid % num_variables
     allocate(cellfields(this % grid % num_cells, nv))
     allocate(labels(nv))
     do ivar = 1, nv
        do icell = 1, this % grid % num_cells
-          cellfields(icell, ivar) = phic(this % g % dof(icell, ivar))
+          cellfields(icell, ivar) = phic(this % grid % dof(icell, ivar))
        end do
        write(vname,'(a,i0)') "phi", ivar
        labels(ivar) = string(trim(vname))
@@ -1116,7 +1112,7 @@ contains
     integer :: icell, ivar, nv, ifield, nfield, col
     character(len=64) :: cname
 
-    nv     = this % g % num_variables
+    nv     = this % grid % num_variables
     nfield = size(fields, 2)
 
     allocate(cellfields(this % grid % num_cells, nfield*nv))
@@ -1127,7 +1123,7 @@ contains
        do ivar = 1, nv
           col = col + 1
           do icell = 1, this % grid % num_cells
-             cellfields(icell, col) = fields(this % g % dof(icell, ivar), ifield)
+             cellfields(icell, col) = fields(this % grid % dof(icell, ivar), ifield)
           end do
           if (nv .eq. 1) then
              colnames(col) = string(trim(labels(ifield)))
@@ -1176,7 +1172,7 @@ contains
     do istep = 1, nstep
        do ifield = 1, nfield
           do icell = 1, ncell
-             cellvals(icell, ifield, istep) = fields(this % g % dof(icell, 1), ifield, istep)
+             cellvals(icell, ifield, istep) = fields(this % grid % dof(icell, 1), ifield, istep)
           end do
        end do
     end do
@@ -1238,8 +1234,8 @@ contains
     call this % get_source(b)
 
     do icell = 1, this % grid % num_cells
-       do ivar = 1, this % g % num_variables
-          p = this % g % dof(icell, ivar)
+       do ivar = 1, this % grid % num_variables
+          p = this % grid % dof(icell, ivar)
           residual(p) = residual(p) &
                & + this % grid % cell_volumes(icell)*this % S(p,2) &
                & - Au(p) + b(p)
@@ -1275,8 +1271,8 @@ contains
     call this % get_jacobian_vector_product(Av, vec, filter)
 
     do icell = 1, this % grid % num_cells
-       do ivar = 1, this % g % num_variables
-          p = this % g % dof(icell, ivar)
+       do ivar = 1, this % grid % num_variables
+          p = this % grid % dof(icell, ivar)
           pdt(p) = pdt(p) &
                & + scalars(2)*this % grid % cell_volumes(icell)*vec(p) &
                & - scalars(1)*Av(p)
@@ -1371,7 +1367,7 @@ contains
     allocate(kappa(ndv), dRdk(n))
     call this % get_design_vars(kappa)
 
-    associate(nv => this % g % num_variables)
+    associate(nv => this % grid % num_variables)
 
     design_vars: do k = 1, ndv
 
@@ -1388,7 +1384,7 @@ contains
                   & ftag   => this % grid % face_tags(gface))
 
                ! reconstruct (q, grad q) at the face from the (fixed) state
-               call this % fld % face_state(this % grid, this % g, &
+               call this % fld % face_state(this % grid, this % grid, &
                     & this % S(:,1), icell, iface, gface, st)
 
                interior: if (this % grid % num_face_cells(gface) .eq. 2) then
@@ -1401,7 +1397,7 @@ contains
                     nf  = this % grid % cell_face_normals(1:3, iface, icell)
                     dFk = this % fx % dflux_ddesign(st, k)
                     do ivar = 1, nv
-                       p = this % g % dof(icell, ivar)
+                       p = this % grid % dof(icell, ivar)
                        dRdk(p) = dRdk(p) + farea*real(dot_product(dFk(:,ivar), nf), dp)
                     end do
                   end block
@@ -1414,7 +1410,7 @@ contains
                     real(dp) :: nf(3), keff, lhs, rhs
                     nf = this % grid % cell_face_normals(1:3, iface, icell)
                     do ivar = 1, nv
-                       p    = this % g % dof(icell, ivar)
+                       p    = this % grid % dof(icell, ivar)
                        keff = this % fx % normal_diffusivity(st, nf, ivar)
                        lhs  = this % bcs(ftag,ivar) % lhs_coeff(farea, fdelta, keff)
                        rhs  = this % bcs(ftag,ivar) % rhs_coeff(farea, fdelta, keff)

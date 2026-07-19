@@ -47,7 +47,6 @@ program test_orbit_painting
   use iso_fortran_env      , only : dp => REAL64
   use class_mesh           , only : mesh
   use class_gmsh_loader    , only : gmsh_loader
-  use class_graph          , only : mesh_graph
   use class_stored_graph   , only : stored_graph
   use class_paraview_writer, only : paraview_writer
   use class_string         , only : string
@@ -68,7 +67,7 @@ program test_orbit_painting
   class(gmsh_loader)    , allocatable :: loader
   class(mesh)           , allocatable :: grid, base_grid
   class(paraview_writer), allocatable :: writer
-  type(mesh_graph)   :: g
+  type(mesh)   :: g
   type(stored_graph) :: coarse
 
   complex(dp), allocatable :: zc(:)          ! cell centroids on the complex plane
@@ -183,7 +182,7 @@ contains
     if (allocated(writer)) deallocate(writer)
     allocate(grid, source = level_grid)
 
-    g      = mesh_graph(grid)
+    g      = grid
     ncells = g % num_vertices
 
     ! stretch this mesh over the same window

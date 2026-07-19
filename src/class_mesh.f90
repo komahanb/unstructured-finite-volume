@@ -7,6 +7,7 @@
 module class_mesh
 
   use iso_fortran_env       , only : dp => REAL64, error_unit
+  use interface_graph       , only : graph, vertex, edge
   use interface_mesh_loader , only : mesh_loader
   use class_array_mesh_loader, only : array_mesh_loader
   use class_string          , only : string
@@ -52,7 +53,7 @@ module class_mesh
   ! Mesh datatype. A collection of vertices, cells and faces.
   !-------------------------------------------------------------------!
 
-  type :: mesh ! rename as topology?
+  type, extends(graph) :: mesh   ! the mesh IS the cell graph: cells are the graph's vertices, interior faces its edges
 
      integer :: max_print = 20
      integer :: num_spatial_dim   ! 2 or 3, from the top element dimension
@@ -71,15 +72,15 @@ module class_mesh
      ! Fundamental vertex info
      ! type(vertex_group), allocatable :: vertex_groups(:)
 
-     integer :: num_vertices
-     real(dp) , allocatable :: vertices(:,:)     ! [[x,y,z],1:num_vertices]
+     integer :: num_points
+     real(dp) , allocatable :: coordinates(:,:)  ! [[x,y,z],1:num_points]
      integer  , allocatable :: vertex_numbers(:) ! global
      integer  , allocatable :: vertex_tags(:)    ! not set
 
      ! Fundamental face info
      ! type(edge_group), allocatable :: face_groups(:)
 
-     integer :: num_edges
+     integer :: num_boundary_edges
      integer  , allocatable :: edge_numbers(:)
      integer  , allocatable :: edge_tags(:)
      integer  , allocatable :: edge_types(:)
@@ -135,8 +136,8 @@ module class_mesh
      integer  , allocatable :: num_edge_faces(:)         ! [1:nedges]
      integer  , allocatable :: edge_faces(:,:)           ! [[f1,f2...],1:nedges]
 
-     integer  , allocatable :: cell_neighbours(:,:)      ! [c1,c2,c3,c4,..., 1:ncells]
-     integer  , allocatable :: num_cell_neighbours(:)    ! [1:ncells] ! each interior face of cell has a nearby cell
+     ! (cell-to-cell adjacency is the inherited graph adjacency now:
+     ! neighbours(icell)/degree(icell), built from the interior faces)
 
      !================================================================!
      ! Derived Geometry information
@@ -186,6 +187,11 @@ module class_mesh
 
      ! Tag lookup - address a physical group by its name
      procedure :: find_tag_by_name
+
+     ! The deferred graph contract: the mesh answers neighbours/degree
+     ! from the retained adjacency built from the interior faces
+     procedure :: neighbours
+     procedure :: degree
 
      ! The mesh's own ladder: refined splits every triangle into four
      ! real sub-triangles (a full mesh, through the loader front
@@ -278,8 +284,8 @@ contains
     !-----------------------------------------------------------------!
 
     call loader % get_mesh_data( &
-         & me % num_vertices, me % vertex_numbers, me % vertex_tags , me % vertices ,  &
-         & me % num_edges   , me % edge_numbers  , me % edge_tags   , me % edge_vertices , me % num_edge_vertices , &
+         & me % num_points, me % vertex_numbers, me % vertex_tags , me % coordinates ,  &
+         & me % num_boundary_edges   , me % edge_numbers  , me % edge_tags   , me % edge_vertices , me % num_edge_vertices , &
          & bnum_faces       , bface_numbers      , bface_tags       , bface_vertices     , bnum_face_vertices , &
          & me % num_cells   , me % cell_numbers  , me % cell_tags   , me % cell_vertices , me % num_cell_vertices , &
          & me % cell_types  , bface_types        , me % edge_types  , &
@@ -413,7 +419,7 @@ contains
          print *, "numfaces don't match", num_faces, me % num_faces
       end if
 
-      if (maxval(me % face_vertices) .ne. me % num_vertices) then
+      if (maxval(me % face_vertices) .ne. me % num_points) then
          print *, "check face vertices"
          error stop
       end if
@@ -424,11 +430,11 @@ contains
     ! Sanity check (make sure numbering is continuous), although it
     ! may not start from one. Applicable only for unpartitioned mesh
 !!$    if (num_images() .eq. 1) then
-!!$       if (me % num_vertices .gt. 0 .and. &
-!!$            & maxval(me % vertex_numbers) -  minval(me % vertex_numbers) + 1 .ne. me % num_vertices) &
+!!$       if (me % num_points .gt. 0 .and. &
+!!$            & maxval(me % vertex_numbers) -  minval(me % vertex_numbers) + 1 .ne. me % num_points) &
 !!$            & error stop
-!!$       if (me % num_edges    .gt. 0 .and. &
-!!$            & maxval(me % edge_numbers  ) -  minval(me % edge_numbers  ) + 1 .ne. me % num_edges   ) &
+!!$       if (me % num_boundary_edges    .gt. 0 .and. &
+!!$            & maxval(me % edge_numbers  ) -  minval(me % edge_numbers  ) + 1 .ne. me % num_boundary_edges   ) &
 !!$            & error stop
 !!$       if (me % num_faces    .gt. 0 .and. &
 !!$            & maxval(me % face_numbers  ) -  minval(me % face_numbers  ) + 1 .ne. me % num_faces   ) &
@@ -442,74 +448,38 @@ contains
     me % initialized = me % initialize()
 
     !-----------------------------------------------------------------!
-    ! Cell neighbourhood determines the nonzero pattern in Jacobian
-    ! matrix apriori (regardless of the physics underlying the domain)
+    ! The mesh IS the cell graph: one vertex per cell, one edge per
+    ! interior face. This adjacency is also the nonzero pattern of the
+    ! Jacobian. Build the inherited edge list from the interior faces,
+    ! then the retained adjacency the base class builds for any stored
+    ! graph - neighbours(icell)/degree(icell) read it ever after.
     !-----------------------------------------------------------------!
 
-    cell_neighbours : block
+    graph_of_cells : block
 
-      integer :: icell, ncell
-      integer :: iface, gface
+      integer :: icell, iface, ctr
 
-      if (verbosity .ge. 1) write(*,*) "Forming cell neighbours for matrix setup..."
+      me % num_vertices = me % num_cells
+      allocate(me % vertices(me % num_cells))
+      do icell = 1, me % num_cells
+         me % vertices(icell) % number = me % cell_numbers(icell)
+         me % vertices(icell) % part   = 1
+      end do
 
-      allocate(me % num_cell_neighbours(me % num_cells))
-      me % num_cell_neighbours = 0
+      me % num_edges = count(me % num_face_cells .eq. 2)
+      allocate(me % edges(me % num_edges))
+      ctr = 0
+      do iface = 1, me % num_faces
+         if (me % num_face_cells(iface) .eq. 2) then
+            ctr = ctr + 1
+            me % edges(ctr) % tail = me % face_cells(1, iface)
+            me % edges(ctr) % head = me % face_cells(2, iface)
+         end if
+      end do
 
-      allocate(me % cell_neighbours(8, me % num_cells))
-      me % cell_neighbours = 0
+      call me % build_adjacency()
 
-      cell_loop: do icell = 1, me % num_cells
-
-         cell_face_loop: do iface = 1, me % num_cell_faces(icell)
-
-            ! global face index
-            gface = me % cell_faces(iface,icell)
-
-            ! filter out internal faces from boundary faces
-            if (me % num_face_cells(gface) .gt. 1) then
-
-               ! neighbour cell is the one that has a different index
-               if (icell .eq. me % face_cells(1, gface)) then
-
-                  ncell = me % face_cells(2, gface)
-
-               else
-
-                  ncell = me % face_cells(1, gface)
-
-               end if
-
-               ! increment neighbour count
-               me % num_cell_neighbours(icell) = me % num_cell_neighbours(icell) + 1
-
-               ! keep track of neighbour cell id
-               me % cell_neighbours(me % num_cell_neighbours(icell), icell) = ncell
-
-            end if
-
-         end do cell_face_loop
-
-      end do cell_loop
-
-      if (verbosity .ge. 1) write(*,*) "Finished forming cell neighbours for matrix setup"
-
-      if (verbosity .gt. 1) then
-
-         write(*,'(a,i8,a,i8)') &
-              & "Cell to cell info for", min(me % max_print,me % num_cells), &
-              & " cells out of ", me % num_cells
-
-         do icell = 1, min(me % max_print,me % num_cells)
-            write(*,*) &
-                 & 'cell [', icell, '] ', &
-                 & 'num neighs [', me % num_cell_neighbours(icell), '] ', &
-                 & 'neigh cells [', me % cell_neighbours(1:me % num_cell_neighbours(icell),icell), '] '
-         end do
-
-      end if
-
-    end block cell_neighbours
+    end block graph_of_cells
 
     if (me % initialized .eqv. .false.) then
        write(error_unit,*) "Mesh.Construct: failed"
@@ -618,7 +588,7 @@ contains
     if (allocated(this % tag_physical_dimensions)) deallocate(this % tag_physical_dimensions)
     if (allocated(this % tag_info)) deallocate(this % tag_info)
 
-    if (allocated(this % vertices)) deallocate(this % vertices)
+    if (allocated(this % coordinates)) deallocate(this % coordinates)
     if (allocated(this % vertex_numbers)) deallocate(this % vertex_numbers)
 
     if (allocated(this % vertex_tags)) deallocate(this % vertex_tags)
@@ -670,9 +640,6 @@ contains
     if (allocated(this % vertex_cell_weights)) deallocate(this % vertex_cell_weights)
     if (allocated(this % face_cell_weights)) deallocate(this % face_cell_weights)
 
-    if (allocated(this % cell_neighbours)) deallocate(this % cell_neighbours)
-    if (allocated(this % num_cell_neighbours)) deallocate(this % num_cell_neighbours)
-
   end subroutine destroy
 
   impure subroutine invert_connectivities(this)
@@ -702,10 +669,10 @@ contains
          if (allocated(this % vertex_cells) .and. size(this % vertex_cells, dim = 2) .gt. 0) then
 
             write(*,'(a,i8,a,i8)') &
-                 & "Vertex to cell info for", min(this % max_print,this % num_vertices), &
-                 & " vertices out of ", this % num_vertices
+                 & "Vertex to cell info for", min(this % max_print,this % num_points), &
+                 & " vertices out of ", this % num_points
 
-            do ivertex = 1, min(this % max_print,this % num_vertices)
+            do ivertex = 1, min(this % max_print,this % num_points)
                write(*,*) &
                     & 'vertex [', this % vertex_numbers(ivertex), ']', &
                     & 'num cells [', this % num_vertex_cells(ivertex), ']',&
@@ -749,10 +716,10 @@ contains
 !!$      if (allocated(this % vertex_faces) .and. size(this % vertex_faces, dim = 2) .gt. 0) then
 !!$
 !!$         write(*,'(a,i8,a,i8)') &
-!!$              & "Vertex to face info for", min(this % max_print,this % num_vertices), &
-!!$              & " vertices out of ", this % num_vertices
+!!$              & "Vertex to face info for", min(this % max_print,this % num_points), &
+!!$              & " vertices out of ", this % num_points
 !!$
-!!$         do ivertex = 1, min(this % max_print,this % num_vertices)
+!!$         do ivertex = 1, min(this % max_print,this % num_points)
 !!$            write(*,*) &
 !!$                 & 'vertex [', this % vertex_numbers(ivertex), ']',&
 !!$                 & 'num_vertex_faces [', this % num_vertex_faces(ivertex), ']',&
@@ -795,10 +762,10 @@ contains
 !!$      if (allocated(this % vertex_edges) .and. size(this % vertex_edges, dim = 2) .gt. 0) then
 !!$
 !!$         write(*,'(a,i8,a,i8)') &
-!!$              & "Vertex to edge info for", min(this % max_print,this % num_vertices), &
-!!$              & " vertices out of ", this % num_vertices
+!!$              & "Vertex to edge info for", min(this % max_print,this % num_points), &
+!!$              & " vertices out of ", this % num_points
 !!$
-!!$         do ivertex = 1, min(this % max_print,this % num_vertices)
+!!$         do ivertex = 1, min(this % max_print,this % num_points)
 !!$            write(*,*) &
 !!$                 & 'vertex [', this % vertex_numbers(ivertex), ']',&
 !!$                 & 'num_vertex_edges [', this % num_vertex_edges(ivertex) , ']',&
@@ -939,7 +906,7 @@ contains
          & )
     this % vertex_cell_weights = 0
 
-    do concurrent (ivertex = 1 : this % num_vertices)
+    do concurrent (ivertex = 1 : this % num_points)
 
        ! actual cells numbers
        cells(1:this % num_vertex_cells(ivertex)) = &
@@ -950,7 +917,7 @@ contains
 
        do icell = 1, this % num_vertex_cells(ivertex)
 
-          dcell = distance(this % cell_centers(:,cells(icell)), this % vertices(:,ivertex))
+          dcell = distance(this % cell_centers(:,cells(icell)), this % coordinates(:,ivertex))
 
           this % vertex_cell_weights(icell,ivertex) = real(1,dp)/dcell
 
@@ -964,7 +931,7 @@ contains
     end do
 
     if (verbosity .gt. 1) then
-       do ivertex = 1, min(this % max_print,this % num_vertices)
+       do ivertex = 1, min(this % max_print,this % num_points)
           write(*,*) &
                & "vertex [", this % vertex_numbers(ivertex), ']', &
                & "weights [", this % vertex_cell_weights(&
@@ -1181,13 +1148,13 @@ contains
 
          ! Compute the coordinates of face centers
          associate(num_vertices => real(this % num_face_vertices(iface), kind=dp))
-           this % face_centers(:,iface) = sum(this % vertices(:,facenodes),dim=2)/num_vertices
+           this % face_centers(:,iface) = sum(this % coordinates(:,facenodes),dim=2)/num_vertices
          end associate
 
          ! triangle
          associate(&
-              & t12 => this % vertices(:,facenodes(2)) - this % vertices(:,facenodes(1)), &
-              & t13 => this % vertices(:,facenodes(3)) - this % vertices(:,facenodes(1)) &
+              & t12 => this % coordinates(:,facenodes(2)) - this % coordinates(:,facenodes(1)), &
+              & t13 => this % coordinates(:,facenodes(3)) - this % coordinates(:,facenodes(1)) &
               & )
 
            call cross_product(t12,t13,n)
@@ -1197,7 +1164,7 @@ contains
            ! if quadrilateral add the second triangle
            if (this % num_face_vertices(iface) .gt. 3) then
 
-              associate (t14 => this % vertices(:,facenodes(4)) - this % vertices(:,facenodes(1)))
+              associate (t14 => this % coordinates(:,facenodes(4)) - this % coordinates(:,facenodes(1)))
 
                 call cross_product(t13,t14,n)
 
@@ -1244,12 +1211,12 @@ contains
 
          ! Compute the coordinates of face centers
          this % face_centers(1:3, iface) = &
-              & sum(this % vertices(1:3, facenodes),dim=2)/&
+              & sum(this % coordinates(1:3, facenodes),dim=2)/&
               & real(2,kind=dp) ! this face has 2 edges
 
          ! Compute face areas
-         associate(v1 => this % vertices(:,facenodes(1)), &
-              & v2 => this % vertices(:,facenodes(2))  )
+         associate(v1 => this % coordinates(:,facenodes(1)), &
+              & v2 => this % coordinates(:,facenodes(2))  )
            this % face_areas(iface) = distance(v1, v2)
          end associate
 
@@ -1281,7 +1248,7 @@ contains
             & num_vertices => real(this % num_cell_vertices(icell), kind=dp), &
             & vids => this % cell_vertices(1:this % num_cell_vertices(icell), icell) &
             & )
-         this % cell_centers(:, icell) = sum(this % vertices(:,vids),dim=2)/num_vertices
+         this % cell_centers(:, icell) = sum(this % coordinates(:,vids),dim=2)/num_vertices
        end associate
     end do
 
@@ -1319,8 +1286,8 @@ contains
                & )
 
             associate(&
-                 & t12 => this % vertices(:,ifv(2)) - this % vertices(:,ifv(1)), &
-                 & t13 => this % vertices(:,ifv(3)) - this % vertices(:,ifv(1))  &
+                 & t12 => this % coordinates(:,ifv(2)) - this % coordinates(:,ifv(1)), &
+                 & t13 => this % coordinates(:,ifv(3)) - this % coordinates(:,ifv(1))  &
                  & )
 
               call cross_product(t12, t13, normal)
@@ -1328,7 +1295,7 @@ contains
               ! if quadrilateral add the second triangle (may not need this at all)
               if (this % num_face_vertices(gface) .gt. 3) then
 
-                 associate(t14 => this % vertices(:,ifv(4)) - this % vertices(:,ifv(1)))
+                 associate(t14 => this % coordinates(:,ifv(4)) - this % coordinates(:,ifv(1)))
 
                    call cross_product(t13,t14,tmp)
 
@@ -1393,7 +1360,7 @@ contains
           fv2   = this % face_vertices(2, gface)
 
           ! tangent along the edge
-          t = this % vertices(:,fv2) - this % vertices(:,fv1)
+          t = this % coordinates(:,fv2) - this % coordinates(:,fv1)
           t = t/norm2(t)
 
           ! in-plane normal (rotate the tangent by -90 degrees)
@@ -1440,7 +1407,7 @@ contains
 
     integer :: icell, ivertex, iface, iedge, itag
 
-    write(*,*) 'Number of vertices :', this % num_vertices
+    write(*,*) 'Number of vertices :', this % num_points
     write(*,*) 'Number of cells    :', this % num_cells
     write(*,*) 'Number of faces    :', this % num_faces
 
@@ -1450,15 +1417,15 @@ contains
             & "info [", this % tag_info(itag) % str, "] "
     end do
 
-    if (this % num_vertices .gt. 0) then
-       write(*,'(a,i8,a,i8)') "Vertex info for ", min(this % max_print,this % num_vertices), &
-            & ' vertices out of ', this % num_vertices
+    if (this % num_points .gt. 0) then
+       write(*,'(a,i8,a,i8)') "Vertex info for ", min(this % max_print,this % num_points), &
+            & ' vertices out of ', this % num_points
        write(*,*) "number tag x y z"
-       do ivertex = 1, min(this % max_print,this % num_vertices)
+       do ivertex = 1, min(this % max_print,this % num_points)
           write(*,'(i8,i2,3ES15.3)') &
                & this % vertex_numbers(ivertex), &
                & this % vertex_tags(ivertex), &
-               & this % vertices(:, ivertex)
+               & this % coordinates(:, ivertex)
        end do
     end if
 
@@ -1488,11 +1455,11 @@ contains
        end do
     end if
 
-    if (this % num_edges .gt. 0) then
-       write(*,'(a,i8,a,i8)') "Edge info for ", min(this % max_print,this % num_edges), &
-            & ' edges out of ', this % num_edges
+    if (this % num_boundary_edges .gt. 0) then
+       write(*,'(a,i8,a,i8)') "Edge info for ", min(this % max_print,this % num_boundary_edges), &
+            & ' edges out of ', this % num_boundary_edges
        write(*,*) "eno etag nev iverts"
-       do iedge = 1, min(this % max_print,this % num_edges)
+       do iedge = 1, min(this % max_print,this % num_boundary_edges)
           write(*,'(i8,i2,i2,10i8)') &
                & this % edge_numbers(iedge), &
                & this % edge_tags(iedge), &
@@ -1549,18 +1516,18 @@ contains
        error stop "mesh: refined splits triangles - this mesh has other cells"
     end if
 
-    nv = this % num_vertices
+    nv = this % num_points
     nc = this % num_cells
     nf = this % num_faces
 
     ! vertices: the old ones, then one midpoint per face
     gen % num_vertices = nv + nf
     allocate(gen % vertices(3, nv + nf))
-    gen % vertices(:, 1:nv) = this % vertices(:, 1:nv)
+    gen % vertices(:, 1:nv) = this % coordinates(:, 1:nv)
     do iface = 1, nf
        gen % vertices(:, nv + iface) = 0.5_dp*( &
-            & this % vertices(:, this % face_vertices(1, iface)) + &
-            & this % vertices(:, this % face_vertices(2, iface)))
+            & this % coordinates(:, this % face_vertices(1, iface)) + &
+            & this % coordinates(:, this % face_vertices(2, iface)))
     end do
     gen % vertex_numbers = [(i, i = 1, nv + nf)]
     allocate(gen % vertex_tags(nv + nf))
@@ -1675,8 +1642,8 @@ contains
     do pass = 1, 2
 
        if (pass .eq. 2) then
-          coarse % num_vertices = this % num_vertices
-          coarse % vertices     = this % vertices
+          coarse % num_points = this % num_points
+          coarse % coordinates     = this % coordinates
           coarse % num_cells    = nparts
           allocate(coarse % cell_vertices(longest, nparts))
           allocate(coarse % num_cell_vertices(nparts))
@@ -1732,7 +1699,7 @@ contains
           ! and any unused edge continues the loop - the picture
           ! survives a pinch, only an open boundary is refused
           if (.not. allocated(link)) then
-             allocate(link(8, this % num_vertices), n_link(this % num_vertices))
+             allocate(link(8, this % num_points), n_link(this % num_points))
           end if
           do i = 1, m
              n_link(edge_tail(i)) = 0
@@ -1777,8 +1744,8 @@ contains
           do n = 1, m
              i    = loop(n)
              nxt  = loop(mod(n, m) + 1)
-             area = area + this % vertices(1, i)*this % vertices(2, nxt) &
-                  &      - this % vertices(1, nxt)*this % vertices(2, i)
+             area = area + this % coordinates(1, i)*this % coordinates(2, nxt) &
+                  &      - this % coordinates(1, nxt)*this % coordinates(2, i)
           end do
           if (area .lt. 0.0_dp) loop = loop(m:1:-1)
 
@@ -1790,5 +1757,23 @@ contains
     end do
 
   end function agglomerated
+
+  !===================================================================!
+  ! The deferred graph contract: one-line delegations to the retained
+  ! adjacency the constructor built from the interior faces.
+  !===================================================================!
+
+  pure function neighbours(this, v) result(nbrs)
+    class(mesh), intent(in) :: this
+    integer    , intent(in) :: v
+    integer, allocatable    :: nbrs(:)
+    nbrs = this % stored_neighbours(v)
+  end function neighbours
+
+  pure integer function degree(this, v)
+    class(mesh), intent(in) :: this
+    integer    , intent(in) :: v
+    degree = this % stored_degree(v)
+  end function degree
 
 end module class_mesh

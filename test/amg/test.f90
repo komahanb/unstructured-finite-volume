@@ -44,7 +44,6 @@ program test_amg
   use class_csr             , only : csr_matrix
   use class_algebraic_multigrid, only : algebraic_multigrid
   use class_geometric_multigrid, only : geometric_multigrid
-  use class_graph              , only : mesh_graph
   use class_stored_graph       , only : stored_digraph
   use class_conjugate_gradient, only : conjugate_gradient
   use class_paraview_writer   , only : paraview_writer
@@ -276,7 +275,7 @@ contains
     class(conjugate_gradient), allocatable :: cg
     type(csr_matrix)                       :: A
     type(geometric_multigrid)              :: M
-    type(mesh_graph)                       :: g
+    type(mesh)                       :: g
     real(dp), allocatable :: x_cg(:), x_geo(:)
     integer  :: ic(4), ig(4), k
     real(dp) :: e
@@ -291,7 +290,7 @@ contains
        ic(k) = cg % last_inner_iters
        deallocate(cg)
 
-       g = mesh_graph(fvm % grid)
+       g = fvm % grid
        M = geometric_multigrid(g, fvm % grid % cell_centers)
        call fvm % get_operator_csr(A)
        call M % setup(A)
@@ -496,7 +495,7 @@ contains
     type(csr_matrix)                       :: A
     type(algebraic_multigrid)              :: Ma
     type(geometric_multigrid)              :: Mg
-    type(mesh_graph)                       :: g
+    type(mesh)                       :: g
     real(dp), allocatable :: x_cg(:), x_a(:), x_g(:)
     integer  :: ic, ia, ig
     real(dp) :: ea, eg
@@ -516,7 +515,7 @@ contains
     ia = cg % last_inner_iters
     deallocate(cg)
 
-    g  = mesh_graph(fvm % grid)
+    g  = fvm % grid
     Mg = geometric_multigrid(g, fvm % grid % cell_centers)
     call Mg % setup(A)
     allocate(cg, source = conjugate_gradient(20000, 1.0e-8_dp, 0, precond = Mg))
@@ -554,7 +553,7 @@ contains
 
     type(csr_matrix)          :: A
     type(geometric_multigrid) :: M
-    type(mesh_graph)          :: g
+    type(mesh)          :: g
 
     type(algebraic_multigrid) :: M_unconfigured
 
@@ -566,7 +565,7 @@ contains
 
     call make_square_tri(fvm)
 
-    g = mesh_graph(fvm % grid)
+    g = fvm % grid
     M = geometric_multigrid(g, fvm % grid % cell_centers)
 
     call fvm % get_operator_csr(A)

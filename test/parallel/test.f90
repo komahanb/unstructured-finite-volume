@@ -36,7 +36,6 @@ program test_parallel
   use class_partitioned_assembler, only : partitioned_assembler, block_preconditioner
   use class_diffusion_flux  , only : diffusion_flux, constant_source
   use class_csr             , only : csr_matrix
-  use class_graph           , only : mesh_graph
   use class_algebraic_multigrid, only : algebraic_multigrid
   use class_conjugate_gradient, only : conjugate_gradient
 
@@ -153,7 +152,7 @@ contains
     integer     , intent(inout) :: nfail
 
     type(csr_matrix) :: A, Ablock
-    type(mesh_graph) :: gp
+    type(mesh) :: gp
     type(algebraic_multigrid)              :: M
     class(conjugate_gradient), allocatable :: cg
     real(dp), allocatable :: b(:), x_dist(:), x_pc(:), x_ref(:), r(:)
@@ -163,10 +162,10 @@ contains
     ! partition the graph: BFS (placeholder) vs RCB (geometric); compare the
     ! edge cut. both are deterministic, so every image computes the identical
     ! partition and agrees without communication.
-    gp      = fvmp % g
+    gp      = fvmp % grid
     call gp % partition(np)
     bfs_cut = gp % edge_cut()
-    gp      = fvmp % g
+    gp      = fvmp % grid
     call gp % partition_rcb(fvmp % grid % cell_centers, np)
     rcb_cut = gp % edge_cut()
 

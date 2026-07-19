@@ -153,7 +153,7 @@ contains
 
     write(fhandle, '(a)') '<VTKFile type="UnstructuredGrid" version="0.1" byte_order="LittleEndian">'
     write(fhandle, '(a)') '<UnstructuredGrid>'
-    write(fhandle, '(a,i0,a,i0,a)') '<Piece NumberOfPoints="', this % mesh % num_vertices, &
+    write(fhandle, '(a,i0,a,i0,a)') '<Piece NumberOfPoints="', this % mesh % num_points, &
          & '" NumberOfCells="', this % mesh % num_cells, '">'
 
     !-----------------------------------------------------------------!
@@ -166,8 +166,8 @@ contains
 
       write(fhandle, '(a)') '<Points>'
       write(fhandle, '(a)') '<DataArray type="Float64" NumberOfComponents="3" format="ascii">'
-      do ivertex = 1, this % mesh % num_vertices
-         write(fhandle, *) (this % mesh % vertices(jdim, ivertex), jdim = 1, 3)
+      do ivertex = 1, this % mesh % num_points
+         write(fhandle, *) (this % mesh % coordinates(jdim, ivertex), jdim = 1, 3)
       end do
       write(fhandle, '(a)') '</DataArray>'
       write(fhandle, '(a)') '</Points>'

@@ -37,7 +37,6 @@ module class_partitioned_assembler
   use iso_fortran_env        , only : dp => REAL64
   use class_csr              , only : csr_matrix
   use class_mesh             , only : mesh
-  use class_graph            , only : mesh_graph
   use class_assembler        , only : spatial_assembler => assembler
   use interface_linear_solver, only : preconditioner
   use module_solve_mode      , only : FORWARD, REVERSE, WHOLE, &
@@ -123,12 +122,11 @@ contains
 
     class(partitioned_assembler), intent(inout) :: this
 
-    type(mesh_graph) :: gp
+    ! the grid IS the graph - partition it in place (the part stamps
+    ! are replicated and consumed only by owned_dofs)
+    call this % grid % partition_rcb(this % grid % cell_centers, num_images())
 
-    gp = this % g
-    call gp % partition_rcb(this % grid % cell_centers, num_images())
-
-    this % own = this % owned_dofs(gp, this_image())
+    this % own = this % owned_dofs(this % grid, this_image())
 
     call this % get_operator_csr(this % A)
 
@@ -143,7 +141,7 @@ contains
   pure function owned_dofs(this, gp, k) result(dofs)
 
     class(partitioned_assembler), intent(in) :: this
-    type(mesh_graph)            , intent(in) :: gp
+    type(mesh)                  , intent(in) :: gp
     integer                     , intent(in) :: k
 
     integer, allocatable :: cells(:), dofs(:)

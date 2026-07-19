@@ -3,7 +3,7 @@
 ! orders, and the partition contract. This base class holds only
 ! graph-structured data - never a mesh, a face, or any payload.
 ! Dependencies point downward only: a subclass knows its own domain
-! (class_graph knows the mesh, class_chain knows its recurrence rule);
+! (class_mesh IS the mesh graph, class_chain knows its recurrence rule);
 ! the base class knows neither.
 !
 ! The adjacency is a compressed neighbour list (xadj/adj), retained and

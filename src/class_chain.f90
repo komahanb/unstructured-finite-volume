@@ -1,17 +1,27 @@
 !=====================================================================!
-! The chain subclass of the directed graph: vertices 1..n wired by the
-! rule i -> i+1. The iterate sequence of a solver and the step sequence
-! of a time integrator are both instances of this class; its dependency
-! order is 1..n by construction, and the discrete adjoint traverses it
-! in reverse through the inherited accumulation.
+! The chain subclass of the directed graph: vertices 1..n wired by
+! the rule i -> i+1, optionally raised to a power - the formal graph
+! power, an edge m -> k whenever k - m <= power:
+!
+!      .-----------.-----------.
+!      |           v           v
+!      1 --> 2 --> 3 --> 4 --> 5        chain(5, power = 2)
+!            |           ^
+!            '-----------'
+!
+! The iterate sequence of a solver and the step sequence of a time
+! integrator are both chains; a time stencil that reads deeper than
+! one step is the same chain at a higher power (class_bdf carries
+! one). Dependency order is 1..n by construction, and the discrete
+! adjoint traverses the chain in reverse through the inherited
+! accumulation.
 !
 ! The adjacency is rule-generated, never materialized: neighbours and
 ! degree are answered by arithmetic, no edge list and no compressed
 ! adjacency are stored. Everything inherited from the ancestor
 ! (traversal orders, partitioning, the queries) consumes only the
 ! overridden neighbour queries, so it all operates on the rule
-! directly - the forward traversal of a chain is 1..n, the reverse is
-! n..1.
+! directly.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -30,6 +40,8 @@ module class_chain
   !===================================================================!
 
   type, extends(digraph) :: chain
+
+     integer :: power = 1   ! edge m -> k whenever k - m <= power
 
    contains
 
@@ -50,21 +62,29 @@ module class_chain
 contains
 
   !===================================================================!
-  ! A chain of n vertices: n-1 edges by rule, no edge list stored.
+  ! A chain of n vertices at the given power (default 1, the plain
+  ! chain): edges by rule, none stored.
   !===================================================================!
 
-  pure type(chain) function create(n, num_variables) result(this)
+  pure type(chain) function create(n, num_variables, power) result(this)
 
     integer, intent(in)           :: n
     integer, intent(in), optional :: num_variables
+    integer, intent(in), optional :: power
 
     integer :: i
 
     this % num_variables = 1
     if (present(num_variables)) this % num_variables = num_variables
 
+    this % power = 1
+    if (present(power)) this % power = max(1, power)
+
     this % num_vertices = n
-    this % num_edges    = n - 1
+    this % num_edges    = 0
+    do i = 1, n
+       this % num_edges = this % num_edges + max(0, min(this % power, n - i))
+    end do
 
     ! vertex labels (and part stamps for the inherited partitioners)
     allocate(this % vertices(n))
@@ -76,8 +96,8 @@ contains
   end function create
 
   !===================================================================!
-  ! The directed rule: the one out-edge goes to i+1, the one in-edge
-  ! comes from i-1, within 1..n.
+  ! The directed rule: out-edges reach forward to the next power
+  ! vertices, in-edges reach back the same way, within 1..n.
   !===================================================================!
 
   pure function out_neighbours(this, v) result(nbrs)
@@ -86,12 +106,9 @@ contains
     integer     , intent(in) :: v
 
     integer, allocatable :: nbrs(:)
+    integer              :: k
 
-    if (v .lt. this % num_vertices) then
-       nbrs = [v+1]
-    else
-       allocate(nbrs(0))
-    end if
+    nbrs = [(k, k = v + 1, min(this % num_vertices, v + this % power))]
 
   end function out_neighbours
 
@@ -101,17 +118,14 @@ contains
     integer     , intent(in) :: v
 
     integer, allocatable :: nbrs(:)
+    integer              :: k
 
-    if (v .gt. 1) then
-       nbrs = [v-1]
-    else
-       allocate(nbrs(0))
-    end if
+    nbrs = [(k, k = max(1, v - this % power), v - 1)]
 
   end function in_neighbours
 
   !===================================================================!
-  ! Neighbours of vertex i by rule: i-1 and i+1, within 1..n.
+  ! Neighbours of vertex v by rule: everything within power of v.
   !===================================================================!
 
   pure function neighbours(this, v) result(nbrs)
@@ -120,21 +134,16 @@ contains
     integer     , intent(in) :: v
 
     integer, allocatable :: nbrs(:)
+    integer              :: k
 
-    if (v .gt. 1 .and. v .lt. this % num_vertices) then
-       nbrs = [v-1, v+1]
-    else if (this % num_vertices .le. 1) then
-       allocate(nbrs(0))
-    else if (v .eq. 1) then
-       nbrs = [2]
-    else
-       nbrs = [v-1]
-    end if
+    nbrs = [(k, k = max(1, v - this % power), v - 1), &
+         &  (k, k = v + 1, min(this % num_vertices, v + this % power))]
 
   end function neighbours
 
   !===================================================================!
-  ! Degree by rule: interior vertices 2, end vertices 1.
+  ! Degree by rule: how far the power reaches back plus how far it
+  ! reaches forward.
   !===================================================================!
 
   pure integer function degree(this, v)
@@ -142,13 +151,8 @@ contains
     class(chain), intent(in) :: this
     integer     , intent(in) :: v
 
-    if (this % num_vertices .le. 1) then
-       degree = 0
-    else if (v .eq. 1 .or. v .eq. this % num_vertices) then
-       degree = 1
-    else
-       degree = 2
-    end if
+    degree = min(v - 1, this % power) &
+         & + min(this % num_vertices - v, this % power)
 
   end function degree
 

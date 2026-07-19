@@ -1,12 +1,29 @@
 #include "scalar.fpp"
 
 !=====================================================================!
-! Backward Difference Formula time integrator (orders 1-6). Extends the
-! abstract integrator: get_bandwidth gives how many past steps the
-! formula uses at a step, step predicts the new state from the BDF
-! stencil and, when implicit, drives the residual to zero via newton.
-! The linearization coefficients coeff(n+1) = (A(p,1)/h)^n are the
-! [alpha, beta, gamma, ...] handed to the jacobian-vector product.
+! Backward Difference Formula time integrator (orders 1-6).
+!
+! The time steps form a chain; a stencil that reads p states back
+! raises that chain to its p-th power - and this integrator carries
+! the resulting step dag (a chain object, edges by rule):
+!
+!    power 1:    1 --> 2 --> 3 --> 4 --> 5        the plain chain
+!
+!                .-----------.-----------.
+!                |           v           v
+!    power 2:    1 --> 2 --> 3 --> 4 --> 5        edge m --> k
+!                      |           ^              whenever
+!                      '-----------'              k - m <= power
+!
+! One dag, two directions:
+!
+!    forward  (step):             backward  (march_backwards):
+!    the in-edges of k deliver    the out-edges of m hand back
+!    the past states; udot_k is   weighted mass actions; rhs_m is
+!    their weighted sum, then     their weighted sum, then one
+!    newton drives R to zero      transpose solve gives psi_m
+!
+! The same edge weights A(p,j+1)/h ride both ways.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -17,6 +34,7 @@ module class_bdf
   use interface_integrator    , only : integrator
   use interface_assembler     , only : assembler
   use interface_function      , only : functional
+  use class_chain             , only : chain
   use class_newton_solver     , only : newton
   use class_conjugate_gradient, only : conjugate_gradient
   use module_solve_mode       , only : REVERSE
@@ -34,6 +52,7 @@ module class_bdf
 
      integer                   :: max_order = 6
      type(scalar), allocatable :: A(:,:)        ! BDF coefficient table
+     type(chain)               :: steps         ! the step dag: chain(n) at power max_order
      ! the adjoint trajectory psi(step, nvars) lives on the integrator base
      ! alongside the primal trajectory U
 
@@ -146,8 +165,15 @@ contains
   end subroutine get_stencil_coeff
 
   !===================================================================!
-  ! Advance one step: predict the new state from the BDF stencil, then
-  ! (implicit) drive the residual to zero with a newton solve.
+  ! Advance one step: the in-edges of the new vertex deliver the past
+  ! states, and udot is their weighted sum -
+  !
+  !    k-p  ...  k-2   k-1                                  A(p,j+1)
+  !      \        |     |         udot_k = sum  w_j u_{k-j},  w_j = --------
+  !       \       v     v              in-edges                        h
+  !        '----> ( k )
+  !
+  ! then (implicit) newton drives R(u_k, udot_k) to zero at the vertex.
   !===================================================================!
 
   impure subroutine step(this, t, U, h, p, ierr)
@@ -199,10 +225,14 @@ contains
   end subroutine step
 
   !===================================================================!
-  ! Transient discrete adjoint: march forward, sweep psi backward over the
-  ! trajectory, accumulate the total derivative dJ/dx. J = h sum_{k>=2}
-  ! f(u_k). The step jacobian J_m^T and the mass M^T act matrix-free
-  ! through the assembler, so each step is a transpose CG (solve_transpose).
+  ! Transient discrete adjoint, J = h sum_{k>=2} f(u_k):
+  !
+  !    march forward  ============>  u_1 ... u_n     (integrate)
+  !    sweep backward <============  psi_n ... psi_2 (march_backwards)
+  !    gather dJ/dx over every vertex visited        (total derivative)
+  !
+  ! The step jacobian J_m^T and the mass M^T act matrix-free through
+  ! the assembler, so each backward vertex is one transpose CG solve.
   !===================================================================!
 
   impure subroutine integrate_adjoint(this, func, dJdx)
@@ -218,9 +248,22 @@ contains
   end subroutine integrate_adjoint
 
   !===================================================================!
-  ! Backward sweep filling psi(N..2). At step m:
-  !   J_m^T psi_m = -w_m df/du(u_m) - sum_{j>=1}(A(p_{m+j},j+1)/h) M^T psi_{m+j}
-  ! psi(1) (the given initial state) stays zero - it has no residual eqn.
+  ! Backward sweep: visit the step dag in reverse dependency order,
+  ! and at each vertex pull one weighted sum in over the out-edges -
+  ! the same inner-product primitive the linear solvers run on:
+  !
+  !               ( m ) ----> k = m+1 ... m+p      each out-edge hands
+  !                 ^          |                   back its mass action
+  !                 |          v                   M^T psi_k, scaled by
+  !                 |     A(p_k, k-m+1)            the edge weight
+  !                 |    --------------- M^T psi_k
+  !                 '---------- h
+  !
+  !    rhs_m = -w_m df/du(u_m) - sum ( weight * M^T psi_k )
+  !                         out-edges
+  !
+  ! then one transpose solve at the vertex: J_m^T psi_m = rhs_m.
+  ! psi(1) stays zero - the initial state has no residual equation.
   !===================================================================!
 
   impure subroutine march_backwards(this, func)
@@ -230,13 +273,21 @@ contains
 
     type(scalar), allocatable :: rhs(:), dfdu(:), Mpsi(:), scoeff(:)
     real(dp)    , allocatable :: psi_m(:)
+    integer     , allocatable :: order(:), nbrs(:)
     type(scalar)              :: mass_coeff(2), lin_coeff(2)
     type(conjugate_gradient)  :: lsolver
-    integer                   :: n, m, k, j, p_m, p_k, kmax, nvars
+    integer                   :: n, m, k, j, i, e, p_m, p_k, nvars
     real(dp)                  :: h, w
 
     n = this % num_steps
     h = this % h
+
+    ! the step dag: the chain of n steps raised to the stencil depth.
+    ! its edges ARE the couplings - edge m -> k exactly when step k's
+    ! stencil reads step m - so no reach/cutoff bookkeeping survives
+    ! here; the sweep just walks the structure.
+    this % steps = chain(n, power = this % max_order)
+    order = this % steps % dependency_order()
 
     ! mass action selector [alpha, beta] = [0, 1] -> M v
     mass_coeff = [0.0_dp, 1.0_dp]
@@ -250,7 +301,10 @@ contains
 
       allocate(rhs(nvars), dfdu(nvars), Mpsi(nvars))
 
-      backward: do m = n, 2, -1
+      backward: do i = n, 1, -1
+
+         m = order(i)
+         if (m .eq. 1) cycle backward   ! the initial state: no residual eqn
 
          ! forward step jacobian coefficients at m: [alpha, beta] = [1, A(p_m,1)/h]
          p_m = this % get_bandwidth(m)
@@ -266,13 +320,12 @@ contains
          call func % add_dfdu(system, dfdu)
          rhs  = -w*dfdu
 
-         ! future-step coupling: step k=m+j adds (A(p_k,j+1)/h) M psi_k while
-         ! its stencil still reaches back to m (j <= p_k)
-         kmax = min(n, m + this % get_bandwidth(n))
-         couple: do k = m+1, kmax
+         ! every out-edge hands back its weighted mass action
+         nbrs = this % steps % out_neighbours(m)
+         couple: do e = 1, size(nbrs)
+            k   = nbrs(e)
             j   = k - m
             p_k = this % get_bandwidth(k)
-            if (j .gt. p_k) cycle couple
             call this % get_stencil_coeff(p_k, h, scoeff)
             Mpsi = 0.0d0
             call system % add_jacobian_vector_product_transpose(Mpsi, this % psi(k,:), mass_coeff)

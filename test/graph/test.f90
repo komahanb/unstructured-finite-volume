@@ -154,6 +154,22 @@ contains
          & "chain materializes no adjacency and no edge list", nfail)
     call report(c % num_edges .eq. 5, "chain edge count n-1", nfail)
 
+    ! the chain raised to a power: edge m -> k whenever k - m <= 2,
+    ! still all by rule (this is the shape of a time stencil's dag)
+    c = chain(6, power = 2)
+    call report(all(c % out_neighbours(3) .eq. [4,5]) .and. &
+         &      all(c % out_neighbours(5) .eq. [6]), &
+         & "powered chain reaches forward to power", nfail)
+    call report(all(c % in_neighbours(3) .eq. [1,2]) .and. &
+         &      all(c % in_neighbours(2) .eq. [1]), &
+         & "powered chain reaches back to power", nfail)
+    call report(all(c % neighbours(3) .eq. [1,2,4,5]) .and. &
+         &      c % degree(1) .eq. 2 .and. c % degree(3) .eq. 4, &
+         & "powered chain unions both reaches", nfail)
+    call report(c % num_edges .eq. 9, "powered chain edge count", nfail)
+    call report(all(c % dependency_order() .eq. [1,2,3,4,5,6]), &
+         & "powered chain dependency order stays 1..n", nfail)
+
   end subroutine check_chain_rule
 
   !===================================================================!

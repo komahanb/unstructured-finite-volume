@@ -40,8 +40,8 @@ module class_geometric_multigrid
 
   type, extends(multigrid) :: geometric_multigrid
 
-     type(mesh_level), allocatable :: mesh_levels(:)   ! 1=finest, grown by coarsen
-     integer                 :: cells_per_part = 4   ! about this many fine cells huddle into one part
+     type(mesh_level), allocatable :: mesh_levels(:)       ! 1=finest, grown by coarsen
+     integer                       :: cells_per_part = 4   ! about this many fine cells huddle into one part
 
    contains
 

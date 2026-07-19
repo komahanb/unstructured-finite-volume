@@ -123,13 +123,19 @@ module interface_graph
      ! every vertex's escape time under the rule, tails shared
      procedure :: escape_times
 
-     ! partitioners - stamp vertex % part and gather the csr, in place
+     ! partitioners - stamp vertex % part and gather the csr, in place.
+     ! set_partition adopts parts computed elsewhere (a parent map, a
+     ! metis call) through the same gathering.
      procedure :: partition
      procedure :: partition_rcb
      procedure :: partition_aggregate
+     procedure :: set_partition
 
-     ! the squint: the stamped partition read back as a coarse edge list
+     ! the squint: the stamped partition read back as a coarse edge
+     ! list. the zoom runs the other way: every vertex splits into
+     ! children, and the refined edge list comes back.
      procedure :: quotient_edges
+     procedure :: refine_edges
 
      ! partition queries
      procedure :: part_of
@@ -208,6 +214,10 @@ module interface_graph
      ! dependency semantics - true only here
      procedure :: dependency_order
      procedure :: is_acyclic
+
+     ! the path from the single source, read as vertex numbers - the
+     ! cargo of a route-shaped digraph
+     procedure :: source_path
 
      ! reverse-mode accumulation of the discrete adjoint, direction
      ! read from structure
@@ -649,6 +659,87 @@ contains
     call this % gather_partition(nparts)
 
   end subroutine partition_aggregate
+
+  !===================================================================!
+  ! Adopt a partition computed elsewhere: parts(v) names each vertex's
+  ! part, numbered from 1. The same stamping and gathering the built-in
+  ! partitioners use - this is the doorway for a parent map from
+  ! refinement, or for an external partitioner like metis.
+  !===================================================================!
+
+  pure subroutine set_partition(this, parts)
+
+    class(graph), intent(inout) :: this
+    integer     , intent(in)    :: parts(:)
+
+    integer :: v
+
+    if (size(parts) .ne. this % num_vertices) then
+       error stop "graph: set_partition needs one part per vertex"
+    end if
+    if (minval(parts) .lt. 1) then
+       error stop "graph: parts are numbered from 1"
+    end if
+
+    do v = 1, this % num_vertices
+       this % vertices(v) % part = parts(v)
+    end do
+
+    call this % gather_partition(maxval(parts))
+
+  end subroutine set_partition
+
+  !===================================================================!
+  ! Zoom in: every vertex splits into the given number of children,
+  ! and the refined edge list comes back. Children of vertex v are
+  ! numbered (v-1)*children+1 .. v*children - the parent of any child
+  ! is arithmetic. Within a split vertex the children form a chain;
+  ! each original edge becomes one bridge between the first children
+  ! of its two ends. Consumes only the neighbour queries, so a
+  ! rule-generated graph refines as readily as a stored one. The
+  ! quotient of the refinement by the parent map is the original
+  ! graph - the zoom and the squint undo each other.
+  !===================================================================!
+
+  pure subroutine refine_edges(this, children, tails, heads)
+
+    class(graph)        , intent(in)  :: this
+    integer             , intent(in)  :: children
+    integer, allocatable, intent(out) :: tails(:), heads(:)
+
+    integer, allocatable :: nbrs(:)
+    integer              :: v, w, i, c, ne, n_refined
+
+    if (children .lt. 1) then
+       error stop "graph: refine_edges needs at least one child per vertex"
+    end if
+
+    ! chains within each split vertex, one bridge per original edge
+    n_refined = this % num_vertices*(children - 1) + this % num_edges
+    allocate(tails(n_refined), heads(n_refined))
+
+    ne = 0
+    do v = 1, this % num_vertices
+       do c = 1, children - 1
+          ne        = ne + 1
+          tails(ne) = (v-1)*children + c
+          heads(ne) = (v-1)*children + c + 1
+       end do
+       nbrs = this % neighbours(v)
+       do i = 1, size(nbrs)
+          w = nbrs(i)
+          if (w .gt. v) then
+             ne        = ne + 1
+             tails(ne) = (v-1)*children + 1
+             heads(ne) = (w-1)*children + 1
+          end if
+       end do
+    end do
+
+    tails = tails(1:ne)
+    heads = heads(1:ne)
+
+  end subroutine refine_edges
 
   !===================================================================!
   ! Stand back and squint: read the stamped partition back as a graph.
@@ -1289,6 +1380,67 @@ contains
     if (dir .eq. REVERSE) order = order(this % num_vertices : 1 : -1)
 
   end function dependency_order
+
+  !===================================================================!
+  ! The path from the source, read as numbers. Some digraphs are
+  ! shaped like a route: one vertex with no arrow in, at most one
+  ! arrow out of every vertex. Follow the arrows from the source and
+  ! return each vertex's number in the order visited. The numbers are
+  ! the cargo - a multigrid schedule names levels with them - but the
+  ! path neither knows nor cares what they mean. A digraph that is
+  ! not a route stops with a report: two sources or none, a fork, or
+  ! a vertex seen twice (with one arrow out of each, a second visit
+  ! means the path never ends).
+  !===================================================================!
+
+  pure function source_path(this) result(numbers)
+
+    class(digraph), intent(in) :: this
+
+    integer, allocatable :: numbers(:)
+
+    integer, allocatable :: visits(:), nbrs(:)
+    integer              :: v, s, n_source, n
+
+    ! the single source: the one vertex with no arrow in
+    n_source = 0
+    s        = 0
+    do v = 1, this % num_vertices
+       if (size(this % in_neighbours(v)) .eq. 0) then
+          n_source = n_source + 1
+          s        = v
+       end if
+    end do
+    if (n_source .ne. 1) then
+       error stop "digraph: source_path needs exactly one source"
+    end if
+
+    allocate(visits(this % num_vertices))
+    n = 0
+    do
+       n = n + 1
+       if (n .gt. this % num_vertices) then
+          error stop "digraph: source_path revisits a vertex - the path never ends"
+       end if
+       visits(n) = this % vertices(s) % number
+       nbrs = this % out_neighbours(s)
+       if (size(nbrs) .gt. 1) then
+          error stop "digraph: source_path hit a fork - one arrow out, not several"
+       end if
+       if (size(nbrs) .eq. 0) exit
+       s = nbrs(1)
+    end do
+
+    ! the path must cover the graph: vertices it never reached sit in
+    ! a detached component with no source of its own - a cycle the
+    ! single-source audit cannot see
+    if (n .lt. this % num_vertices) then
+       error stop "digraph: source_path left vertices unvisited - the route does not cover the graph"
+    end if
+
+    numbers = visits(1:n)
+
+  end function source_path
 
   !===================================================================!
   ! True when the directed wiring has no cycle (pure report, no stop) -

@@ -17,7 +17,8 @@
 
 module class_csr
 
-  use iso_fortran_env, only : dp => REAL64
+  use iso_fortran_env   , only : dp => REAL64
+  use class_stored_graph, only : stored_graph
 
   implicit none
 
@@ -50,6 +51,8 @@ module class_csr
      procedure :: add
      procedure :: matvec_rows
      procedure :: principal_submatrix
+     ! the matrix's own graph: rows are vertices, off-diagonals edges
+     procedure :: adjacency_graph
   end type csr_matrix
 
   interface csr_matrix
@@ -472,5 +475,67 @@ contains
     B = csr_matrix(n, n, row_ptr, col_idx, vals)
 
   end function principal_submatrix
+
+  !===================================================================!
+  ! The matrix's own graph: one vertex per row, one edge per coupled
+  ! pair of rows - whichever triangle carries the coupling. An entry
+  ! above the diagonal always records its edge; one below records it
+  ! only when its mirror is structurally absent, so an unsymmetric
+  ! pattern (an upwinded operator, say) loses nothing and a symmetric
+  ! one records nothing twice. The sparsity pattern is graph-shaped
+  ! data - whoever needs to traverse, partition, or refine the
+  ! matrix's structure asks for this instead of walking row_ptr by
+  ! hand.
+  !===================================================================!
+
+  pure type(stored_graph) function adjacency_graph(this) result(g)
+
+    class(csr_matrix), intent(in) :: this
+
+    integer, allocatable :: tails(:), heads(:)
+    integer              :: i, k, j, ne, pass
+
+    do pass = 1, 2
+       ne = 0
+       do i = 1, this % nrows
+          do k = this % row_ptr(i), this % row_ptr(i+1) - 1
+             j = this % col_idx(k)
+             if (j .gt. i .or. (j .lt. i .and. .not. has_entry(this, j, i))) then
+                ne = ne + 1
+                if (pass .eq. 2) then
+                   tails(ne) = min(i, j)
+                   heads(ne) = max(i, j)
+                end if
+             end if
+          end do
+       end do
+       if (pass .eq. 1) allocate(tails(ne), heads(ne))
+    end do
+
+    g = stored_graph(this % nrows, tails, heads)
+
+  end function adjacency_graph
+
+  !===================================================================!
+  ! Whether the pattern holds an entry at (row, col) - structure
+  ! only, the value may be anything
+  !===================================================================!
+
+  pure logical function has_entry(this, row, col)
+
+    class(csr_matrix), intent(in) :: this
+    integer          , intent(in) :: row, col
+
+    integer :: k
+
+    has_entry = .false.
+    do k = this % row_ptr(row), this % row_ptr(row+1) - 1
+       if (this % col_idx(k) .eq. col) then
+          has_entry = .true.
+          return
+       end if
+    end do
+
+  end function has_entry
 
 end module class_csr

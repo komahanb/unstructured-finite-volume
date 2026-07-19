@@ -14,11 +14,14 @@
 ! The cycle itself is not code - it is data, and the data is a graph.
 ! A schedule is a directed graph of stations and moves: each vertex
 ! numbered by the level it visits, each arrow the next leg of the
-! trip. apply_cycle follows whatever schedule it is handed - the V,
-! the W, a zigzag of your own - smoothing at every station, solving
-! exactly at the coarsest, restricting on the way down and correcting
-! on the way up. setup builds the classical V as one such schedule
-! and apply follows it; nothing about the V is wired in.
+! trip. The graph reads its own route (source_path); apply_cycle only
+! interprets the numbers, which count squints from the given mesh:
+! level 0 is the mesh itself, level +k is k squints coarser (the
+! deepest solved exactly), level -k is k zooms finer - refine(n)
+! builds those by splitting the mesh operator's own graph into
+! children, the operator lifted by interpolation alone. A repeated
+! station smooths again. setup builds the classical V as one such
+! schedule and apply follows it; nothing about the V is wired in.
 !
 ! A concrete kind answers exactly one deferred question: how does this
 ! level squint - which fine vertices huddle into which coarse part.
@@ -34,7 +37,7 @@ module interface_multigrid
   use iso_fortran_env        , only : dp => REAL64
   use class_csr              , only : csr_matrix
   use interface_graph        , only : digraph
-  use class_stored_graph     , only : stored_digraph
+  use class_stored_graph     , only : stored_graph, stored_digraph
   use interface_linear_solver, only : preconditioner
 
   implicit none
@@ -51,6 +54,7 @@ module interface_multigrid
      type(csr_matrix)      :: P           ! prolongation (fine x coarse)
      type(csr_matrix)      :: R           ! restriction  = P^T
      real(dp), allocatable :: Dinv(:)     ! 1/diag(A) (smoother)
+     integer , allocatable :: parts(:)    ! the squint's answer, kept: which coarse vertex each vertex joins
   end type multigrid_level
 
   !-------------------------------------------------------------------!
@@ -78,12 +82,22 @@ module interface_multigrid
      integer , allocatable :: ipiv(:)
      integer               :: ncoarse = 0
 
+     ! refined levels below the given mesh - the zoom side of the
+     ! ladder, built on request by refine; finer_levels(k) is level -k
+     type(multigrid_level), allocatable :: finer_levels(:)
+     integer                            :: n_finer = 0
+
      ! parameters of the mechanism
-     real(dp) :: jacobi_w    = 0.6667_dp   ! smoother weight (~2/3)
-     integer  :: max_levels  = 25
-     integer  :: coarse_size = 50
-     integer  :: npre        = 1
-     integer  :: npost       = 1
+     real(dp) :: jacobi_w            = 0.6667_dp   ! smoother weight (~2/3)
+     integer  :: max_levels          = 25
+     integer  :: coarse_size         = 50
+     integer  :: npre                = 1
+     integer  :: npost               = 1
+     integer  :: children_per_vertex = 4           ! how many children a refined vertex splits into
+
+     ! which levels keep their ancestry for export, configured before
+     ! setup - storage is on demand, nothing is kept unasked
+     integer, allocatable :: exported_levels(:)
 
      ! the classical V, built by setup as an ordinary schedule
      type(stored_digraph) :: v_cycle_schedule
@@ -95,12 +109,16 @@ module interface_multigrid
      procedure(coarsen_interface), deferred :: coarsen
 
      ! the mechanism, shared
-     procedure :: setup       ! build the hierarchy from A
+     procedure :: setup       ! build the coarse hierarchy from A
+     procedure :: refine      ! build n refined levels below the given mesh
      procedure :: apply       ! z = M^-1 r (one trip along the V)
      procedure :: apply_cycle ! z from one trip along any injected schedule
      procedure :: solve       ! A x = b, cycling to tol
-     procedure :: num_levels  ! levels in the hierarchy
+     procedure :: num_levels    ! levels in the coarse hierarchy
+     procedure :: export_levels ! configure which levels keep their ancestry
+     procedure :: ancestors     ! the ancestry map of a configured signed level
 
+     procedure, private :: keeps
      procedure, private :: smooth
      procedure, private :: spectral_radius
 
@@ -146,10 +164,13 @@ contains
     real(dp)              :: omega, rho
     type(csr_matrix)      :: P0, AP0
 
-    ! re-entrant: drop any previously-built hierarchy
-    if (allocated(this % levels))   deallocate(this % levels)
-    if (allocated(this % Ac_dense)) deallocate(this % Ac_dense)
-    if (allocated(this % ipiv))     deallocate(this % ipiv)
+    ! re-entrant: drop any previously-built hierarchy, refined levels
+    ! included - they hang off the old level-1 operator
+    if (allocated(this % levels))       deallocate(this % levels)
+    if (allocated(this % Ac_dense))     deallocate(this % Ac_dense)
+    if (allocated(this % ipiv))         deallocate(this % ipiv)
+    if (allocated(this % finer_levels)) deallocate(this % finer_levels)
+    this % n_finer = 0
 
     allocate(this % levels(this % max_levels))
     this % levels(1) % A = A
@@ -164,9 +185,12 @@ contains
        dinv = 1.0_dp/this % levels(lev) % A % get_diagonal()
        this % levels(lev) % Dinv = dinv
 
-       ! the concrete kind's squint, then the tentative prolongation
+       ! the concrete kind's squint, then the tentative prolongation.
+       ! the answer is kept only when a configured export needs it for
+       ! its composition - storage is on demand
        call this % coarsen(lev, agg, naggr)
        if (naggr .ge. n .or. naggr .le. 1) exit coarsening   ! no useful coarsening
+       if (this % keeps(lev)) this % levels(lev) % parts = agg
 
        P0 = tentative_prolongation(agg, naggr)
 
@@ -207,17 +231,17 @@ contains
     end if
 
     ! the classical V, as an ordinary schedule: down the levels and
-    ! back, stations numbered 1..nlevel..1, one arrow between each
+    ! back, stations numbered 0..nlevel-1..0, one arrow between each
     build_v_schedule: block
       integer, allocatable :: level_visits(:)
       integer :: ns
       ns = 2*this % nlevel - 1
       allocate(level_visits(ns))
       do i = 1, this % nlevel
-         level_visits(i) = i
+         level_visits(i) = i - 1
       end do
       do i = this % nlevel + 1, ns
-         level_visits(i) = 2*this % nlevel - i
+         level_visits(i) = 2*this % nlevel - i - 1
       end do
       this % v_cycle_schedule = stored_digraph(ns, &
            & tails = [(i, i = 1, ns-1)], heads = [(i+1, i = 1, ns-1)], &
@@ -225,6 +249,72 @@ contains
     end block build_v_schedule
 
   end subroutine setup
+
+  !===================================================================!
+  ! Build n refined levels below the given mesh - the zoom. The
+  ! level-1 operator hands over its own graph (adjacency_graph), the
+  ! graph splits into children (the stored_graph refinement, which
+  ! adopts the parent map as its partition), and the wheels already
+  ! on the shelf do the rest: tentative_prolongation over the parents
+  ! builds the interpolation, its transpose the restriction, and the
+  ! lifted operator is A_finer = P A P^T - interpolation alone, no
+  ! new discretization, said plainly: a refined level smooths the
+  ! same problem through a finer lens. Repeat n times, each level
+  ! refining the one before it.
+  !===================================================================!
+
+  impure subroutine refine(this, n_finer)
+
+    class(multigrid), intent(inout) :: this
+    integer         , intent(in)    :: n_finer
+
+    type(stored_graph)    :: coarser, refined
+    type(csr_matrix)      :: A_coarser, PA
+    integer , allocatable :: parent(:)
+    integer               :: k, v
+
+    if (n_finer .lt. 1) then
+       error stop "multigrid: refine needs at least one level"
+    end if
+    if (this % nlevel .lt. 1) then
+       error stop "multigrid: refine needs a built hierarchy - call setup first"
+    end if
+
+    if (allocated(this % finer_levels)) deallocate(this % finer_levels)
+    allocate(this % finer_levels(n_finer))
+    this % n_finer = n_finer
+
+    coarser   = this % levels(1) % A % adjacency_graph()
+    A_coarser = this % levels(1) % A
+
+    do k = 1, n_finer
+
+       refined = stored_graph(coarser, this % children_per_vertex)
+
+       ! the parent map came in as the refined graph's partition
+       allocate(parent(refined % num_vertices))
+       do v = 1, refined % num_vertices
+          parent(v) = refined % part_of(v)
+       end do
+
+       associate(L => this % finer_levels(k))
+         L % P    = tentative_prolongation(parent, coarser % num_vertices)
+         L % R    = L % P % transpose()
+         ! the lifted operator A_finer = P A P^T, and R already is P^T
+         PA       = L % P % matmat(A_coarser)
+         L % A    = PA % matmat(L % R)
+         L % Dinv = 1.0_dp/L % A % get_diagonal()
+         ! the parent map is kept only when a configured export needs it
+         if (this % keeps(-k)) L % parts = parent
+       end associate
+
+       deallocate(parent)
+       coarser   = refined
+       A_coarser = this % finer_levels(k) % A
+
+    end do
+
+  end subroutine refine
 
   !===================================================================!
   ! z = M^-1 r  (one trip along the classical V - which is just the
@@ -255,6 +345,10 @@ contains
     real(dp), allocatable :: r(:), z(:), Ax(:)
     real(dp)              :: bnorm
 
+    if (this % nlevel .lt. 1) then
+       error stop "multigrid: solve needs a built hierarchy - call setup first"
+    end if
+
     associate(A => this % levels(1) % A)
 
       allocate(r(A % nrows), z(A % nrows), Ax(A % nrows))
@@ -284,23 +378,29 @@ contains
 
   !===================================================================!
   ! Follow an injected cycle. The schedule is a directed graph of
-  ! stations and moves: each vertex is numbered by the level that
-  ! station visits, each arrow is the next leg of the trip - one
-  ! arrow out of every station, none out of the last. The rules of
-  ! the road, stated plainly:
+  ! stations and moves; the graph reads its own route (source_path,
+  ! which audits the shape: one source, one arrow out, no revisit,
+  ! full coverage) and hands back the vertex numbers in trip order.
+  ! This subroutine only interprets the numbers, which count squints
+  ! from the given mesh: level 0 is the mesh, +k is k squints coarser
+  ! (nlevel-1 the deepest, solved exactly), -k is k zooms finer.
   !
-  !   - the trip starts and ends at the finest level
-  !   - a move goes one level down (the residual is restricted and
-  !     the deeper correction zeroed) or one level up (the correction
-  !     is prolonged and added) - never skips a level
-  !   - at every station you smooth: npre sweeps when the next move
-  !     descends, npost sweeps otherwise. At the coarsest level of
-  !     the hierarchy you solve exactly instead.
+  !   - at a station, smooth: npre sweeps while the trip is heading
+  !     coarser or staying, npost once it is heading finer or ending.
+  !     At the deepest coarse level, solve exactly instead.
+  !   - a repeated station is the level visited again: two stations
+  !     in a row at the same level smooth twice.
+  !   - moving coarser inside the hierarchy restricts the residual
+  !     and zeroes the coarser correction; moving back toward the
+  !     mesh prolongs the correction and adds it.
+  !   - moving into refined territory lifts the problem through the
+  !     interpolation: b and x both ride up. Moving back projects the
+  !     improved iterate down. A refined station smooths the lifted
+  !     problem - the same equation through a finer lens.
   !
-  ! The classical V is the schedule 1,2,...,nlevel,...,2,1; the W
-  ! revisits the deep levels; any other trip that obeys the rules is
-  ! equally welcome. An ill-formed schedule stops with a report - the
-  ! structural audit, not an extension hook.
+  ! The trip must start and end at level 0, where the residual lives.
+  ! An ill-formed schedule stops with a report - the structural
+  ! audit, not an extension hook.
   !===================================================================!
 
   pure subroutine apply_cycle(this, schedule, r, z)
@@ -311,113 +411,223 @@ contains
     real(dp)        , intent(out) :: z(:)
 
     type(level_vectors), allocatable :: state(:)
-    integer , allocatable :: nbrs(:)
-    real(dp), allocatable :: res(:), correction(:)
-    integer :: s, v, l, m, n_start, n_visited
-    logical :: descending
+    logical            , allocatable :: wanted(:)
+    integer            , allocatable :: visits(:)
+    real(dp)           , allocatable :: res(:), correction(:)
+    integer                          :: i, n, l, l_next
 
-    ! the trip begins at the one station with no arrow in
-    n_start = 0
-    s       = 0
-    do v = 1, schedule % num_vertices
-       if (size(schedule % in_neighbours(v)) .eq. 0) then
-          n_start = n_start + 1
-          s       = v
-       end if
-    end do
-    if (n_start .ne. 1) then
-       error stop "multigrid: a schedule needs exactly one starting station"
-    end if
-    if (schedule % vertices(s) % number .ne. 1) then
-       error stop "multigrid: the trip must start at the finest level"
+    if (this % nlevel .lt. 1) then
+       error stop "multigrid: apply needs a built hierarchy - call setup first"
     end if
 
-    ! every level's travelling state, ready before the trip
-    allocate(state(this % nlevel))
-    do l = 1, this % nlevel
-       allocate(state(l) % b(this % levels(l) % A % nrows))
-       allocate(state(l) % x(this % levels(l) % A % nrows))
+    ! the graph reads the route; the numbers come back in trip order
+    visits = schedule % source_path()
+    n      = size(visits)
+
+    if (visits(1) .ne. 0 .or. visits(n) .ne. 0) then
+       error stop "multigrid: the trip must start and end at level 0 - the given mesh"
+    end if
+
+    ! audit every station against the ladder before anything is
+    ! touched, and note which levels the trip actually visits - only
+    ! those get travelling state, so a deep refined ladder does not
+    ! tax a trip that never goes there
+    allocate(wanted(-this % n_finer : this % nlevel - 1))
+    wanted = .false.
+    do i = 1, n
+       if (visits(i) .gt. this % nlevel - 1 .or. visits(i) .lt. -this % n_finer) then
+          error stop "multigrid: a station names a level outside the ladder"
+       end if
+       wanted(visits(i)) = .true.
     end do
-    state(1) % b = r
-    state(1) % x = 0.0_dp
 
-    n_visited = 0
+    allocate(state(-this % n_finer : this % nlevel - 1))
+    do l = -this % n_finer, this % nlevel - 1
+       if (.not. wanted(l)) cycle
+       allocate(state(l) % b(rows_at(this, l)))
+       allocate(state(l) % x(rows_at(this, l)))
+    end do
+    state(0) % b = r
+    state(0) % x = 0.0_dp
 
-    follow_schedule: do
+    do i = 1, n
 
-       ! with one arrow out of every station, a second visit anywhere
-       ! means the trip can never end - stop instead of spinning
-       n_visited = n_visited + 1
-       if (n_visited .gt. schedule % num_vertices) then
-          error stop "multigrid: a schedule revisits a station - the trip never ends"
-       end if
+       l = visits(i)
 
-       l = schedule % vertices(s) % number
-       if (l .lt. 1 .or. l .gt. this % nlevel) then
-          error stop "multigrid: a station names a level outside the hierarchy"
-       end if
+       l_next = l
+       if (i .lt. n) l_next = visits(i+1)
 
-       nbrs = schedule % out_neighbours(s)
-       if (size(nbrs) .gt. 1) then
-          error stop "multigrid: a station has one arrow out, not several"
-       end if
-
-       ! at the station: solve exactly at the coarsest level, smooth
-       ! anywhere else - npre sweeps if the next move descends, npost
-       ! sweeps otherwise
-       descending = .false.
-       if (size(nbrs) .eq. 1) then
-          descending = schedule % vertices(nbrs(1)) % number .gt. l
-       end if
-
-       if (l .eq. this % nlevel) then
+       ! at the station: solve exactly at the deepest coarse level,
+       ! smooth anywhere else
+       if (l .eq. this % nlevel - 1) then
           state(l) % x = state(l) % b
           call dense_lu_solve(this % Ac_dense, this % ncoarse, this % ipiv, state(l) % x)
-       else if (descending) then
+       else if (i .lt. n .and. l_next .ge. l) then
           call this % smooth(l, state(l) % b, state(l) % x, this % npre)
        else
           call this % smooth(l, state(l) % b, state(l) % x, this % npost)
        end if
 
-       if (size(nbrs) .eq. 0) exit follow_schedule
+       if (i .eq. n) exit
 
-       ! the move - the destination is audited before any machinery
-       ! runs, so a schedule that dives below the coarsest level stops
-       ! with a report instead of touching an operator that was never
-       ! built
-       m = schedule % vertices(nbrs(1)) % number
-       if (m .lt. 1 .or. m .gt. this % nlevel) then
-          error stop "multigrid: a station names a level outside the hierarchy"
+       ! the move (every destination was audited up front)
+       if (l_next .eq. l + 1) then
+
+          if (l .ge. 0) then
+             ! coarser inside the hierarchy: restrict the residual,
+             ! zero the coarser correction
+             if (allocated(res)) deallocate(res)
+             allocate(res(rows_at(this, l)))
+             call this % levels(l+1) % A % matvec(state(l) % x, res)
+             res = state(l) % b - res
+             call this % levels(l+1) % R % matvec(res, state(l_next) % b)
+             state(l_next) % x = 0.0_dp
+          else
+             ! leaving refined territory: project the improved
+             ! iterate back down (R is the interpolation's transpose)
+             call this % finer_levels(-l) % R % matvec(state(l) % x, state(l_next) % x)
+          end if
+
+       else if (l_next .eq. l - 1) then
+
+          if (l_next .ge. 0) then
+             ! back toward the mesh inside the hierarchy: prolong the
+             ! correction and add it
+             if (allocated(correction)) deallocate(correction)
+             allocate(correction(rows_at(this, l_next)))
+             call this % levels(l_next+1) % P % matvec(state(l) % x, correction)
+             state(l_next) % x = state(l_next) % x + correction
+          else
+             ! into refined territory: lift the whole problem through
+             ! the interpolation - b and x both ride up
+             call this % finer_levels(-l_next) % P % matvec(state(l) % b, state(l_next) % b)
+             call this % finer_levels(-l_next) % P % matvec(state(l) % x, state(l_next) % x)
+          end if
+
+       else if (l_next .ne. l) then
+          error stop "multigrid: a move goes one level along the ladder, or stays"
        end if
-       if (m .eq. l + 1) then
-          ! down: restrict the residual, zero the deeper correction
-          if (allocated(res)) deallocate(res)
-          allocate(res(this % levels(l) % A % nrows))
-          call this % levels(l) % A % matvec(state(l) % x, res)
-          res = state(l) % b - res
-          call this % levels(l) % R % matvec(res, state(m) % b)
-          state(m) % x = 0.0_dp
-       else if (m .eq. l - 1) then
-          ! up: prolong the correction and add it
-          if (allocated(correction)) deallocate(correction)
-          allocate(correction(this % levels(m) % A % nrows))
-          call this % levels(m) % P % matvec(state(l) % x, correction)
-          state(m) % x = state(m) % x + correction
-       else
-          error stop "multigrid: a move goes one level up or down, never skips"
-       end if
 
-       s = nbrs(1)
+    end do
 
-    end do follow_schedule
-
-    if (l .ne. 1) then
-       error stop "multigrid: the trip must end at the finest level"
-    end if
-
-    z = state(1) % x
+    z = state(0) % x
 
   end subroutine apply_cycle
+
+  !===================================================================!
+  ! Configure which levels keep their ancestry for export - call
+  ! before setup and refine, levels counted in squints from the mesh
+  ! (positive coarser, negative finer). Storage is on demand: a
+  ! step's map is kept only when some requested level needs it for
+  ! its composition, and an unconfigured hierarchy keeps nothing.
+  !===================================================================!
+
+  pure subroutine export_levels(this, levels)
+
+    class(multigrid), intent(inout) :: this
+    integer         , intent(in)    :: levels(:)
+
+    this % exported_levels = levels
+
+  end subroutine export_levels
+
+  !===================================================================!
+  ! Whether the coarsening (+k) or refinement (-k) answer at step k
+  ! is needed by any configured export
+  !===================================================================!
+
+  pure logical function keeps(this, k) result(kept)
+
+    class(multigrid), intent(in) :: this
+    integer         , intent(in) :: k
+
+    kept = .false.
+    if (.not. allocated(this % exported_levels)) return
+
+    if (k .gt. 0) then
+       kept = any(this % exported_levels .ge. k)
+    else
+       kept = any(this % exported_levels .le. k)
+    end if
+
+  end function keeps
+
+  !===================================================================!
+  ! The ancestry map of a configured level. Positive l: each mesh
+  ! cell's coarse vertex after l squints - a per-cell field on the
+  ! mesh, ready for the mesh writer, because a quotient IS a
+  ! partition of the mesh it came from. Negative l: each vertex of
+  ! the refined level's mesh-cell ancestor - the map sub-cell work
+  ! needs to find its way home. Level 0 is the mesh itself: every
+  ! cell its own ancestor. A level whose ancestry was not configured
+  ! for export stops with a report.
+  !===================================================================!
+
+  pure function ancestors(this, l) result(anc)
+
+    class(multigrid), intent(in) :: this
+    integer         , intent(in) :: l
+
+    integer, allocatable :: anc(:)
+    integer              :: k, i
+
+    if (this % nlevel .lt. 1) then
+       error stop "multigrid: ancestors needs a built hierarchy - call setup first"
+    end if
+
+    if (l .eq. 0) then
+       anc = [(i, i = 1, this % levels(1) % A % nrows)]
+       return
+    end if
+
+    if (l .gt. this % nlevel - 1 .or. l .lt. -this % n_finer) then
+       error stop "multigrid: ancestors of a level outside the ladder"
+    end if
+
+    if (l .gt. 0) then
+
+       do k = 1, l
+          if (.not. allocated(this % levels(k) % parts)) then
+             error stop "multigrid: ancestry was not kept - configure export_levels before setup"
+          end if
+       end do
+
+       anc = this % levels(1) % parts
+       do k = 2, l
+          anc = this % levels(k) % parts(anc)
+       end do
+
+    else
+
+       do k = 1, -l
+          if (.not. allocated(this % finer_levels(k) % parts)) then
+             error stop "multigrid: ancestry was not kept - configure export_levels before refine"
+          end if
+       end do
+
+       anc = this % finer_levels(-l) % parts
+       do k = -l - 1, 1, -1
+          anc = this % finer_levels(k) % parts(anc)
+       end do
+
+    end if
+
+  end function ancestors
+
+  !===================================================================!
+  ! Rows of the operator at a level counted in squints from the mesh
+  ! (0 the mesh, +k coarser via levels(k+1), -k finer)
+  !===================================================================!
+
+  pure integer function rows_at(this, l)
+    class(multigrid), intent(in) :: this
+    integer         , intent(in) :: l
+    if (l .ge. 0) then
+       rows_at = this % levels(l+1) % A % nrows
+    else
+       rows_at = this % finer_levels(-l) % A % nrows
+    end if
+  end function rows_at
 
   !===================================================================!
   ! Weighted-jacobi smoother on level lev (symmetric -> keeps M^-1 SPD):
@@ -426,20 +636,31 @@ contains
 
   pure subroutine smooth(this, lev, b, x, nsweep)
     class(multigrid), intent(in)    :: this
-    integer         , intent(in)    :: lev
+    integer         , intent(in)    :: lev   ! squints from the mesh: 0 the mesh, +k coarser, -k finer
     real(dp)        , intent(in)    :: b(:)
     real(dp)        , intent(inout) :: x(:)
     integer         , intent(in)    :: nsweep
+    if (lev .ge. 0) then
+       call jacobi_sweeps(this % levels(lev+1), this % jacobi_w, b, x, nsweep)
+    else
+       call jacobi_sweeps(this % finer_levels(-lev), this % jacobi_w, b, x, nsweep)
+    end if
+  end subroutine smooth
+
+  pure subroutine jacobi_sweeps(L, w, b, x, nsweep)
+    type(multigrid_level), intent(in)    :: L
+    real(dp)             , intent(in)    :: w
+    real(dp)             , intent(in)    :: b(:)
+    real(dp)             , intent(inout) :: x(:)
+    integer              , intent(in)    :: nsweep
     real(dp), allocatable :: Ax(:)
     integer :: s
-    associate(A => this % levels(lev) % A, Dinv => this % levels(lev) % Dinv, w => this % jacobi_w)
-      allocate(Ax(A % nrows))
-      do s = 1, nsweep
-         call A % matvec(x, Ax)
-         x = x + w*Dinv*(b - Ax)
-      end do
-    end associate
-  end subroutine smooth
+    allocate(Ax(L % A % nrows))
+    do s = 1, nsweep
+       call L % A % matvec(x, Ax)
+       x = x + w*L % Dinv*(b - Ax)
+    end do
+  end subroutine jacobi_sweeps
 
   !===================================================================!
   ! Spectral radius of (Dinv A) on level lev by bounded power iteration,

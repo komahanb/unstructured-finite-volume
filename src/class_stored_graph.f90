@@ -53,6 +53,7 @@ module class_stored_graph
   interface stored_graph
      module procedure create
      module procedure create_quotient
+     module procedure create_refined
   end interface stored_graph
 
   interface stored_digraph
@@ -111,6 +112,30 @@ contains
     this = create(fine % nparts, tails, heads, fine % num_variables)
 
   end function create_quotient
+
+  !===================================================================!
+  ! The zoom: the refinement of any graph. Every vertex splits into
+  ! the given number of children (refine_edges on the ancestor draws
+  ! the refined edges), and the parent map is adopted as the new
+  ! graph's partition - so the quotient of the refinement is the
+  ! original graph, and the squint undoes the zoom.
+  !===================================================================!
+
+  pure type(stored_graph) function create_refined(coarse, children) result(this)
+
+    class(graph), intent(in) :: coarse
+    integer     , intent(in) :: children
+
+    integer, allocatable :: tails(:), heads(:)
+    integer              :: i
+
+    call coarse % refine_edges(children, tails, heads)
+    this = create(coarse % num_vertices*children, tails, heads, coarse % num_variables)
+
+    ! the parent of child i is arithmetic: parts adopted as a partition
+    call this % set_partition([((i-1)/children + 1, i = 1, this % num_vertices)])
+
+  end function create_refined
 
   !===================================================================!
   ! The directed twin, from a tail -> head edge list. Vertices carry

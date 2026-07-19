@@ -13,7 +13,7 @@
 !      the type-bound witness (chain analytic + diamond nudge)
 !   7. orbits under a successor rule: escape time, cycle closure, the
 !      tail-into-cycle shape, and the step limit
-!   8. the squint: the stamped partition read back as the quotient
+!   8. the squint and the zoom: the partition read back as the quotient
 !      graph, and the aggregation partitioner discovering its own
 !      parts (the chain of 10 huddles into 4, deterministically)
 !   9. escape times resolved in one pass agree with orbit-by-orbit
@@ -288,6 +288,13 @@ contains
          &      size(schedule % out_neighbours(5)) .eq. 0, &
          & "stored digraph carries caller-given numbers", nfail)
 
+    ! and the graph reads its own route: follow the arrows from the
+    ! source, hand back the numbers in visit order (size checked
+    ! first - all() on an accidentally empty return says yes)
+    call report(size(schedule % source_path()) .eq. 5 .and. &
+         &      all(schedule % source_path() .eq. [9,8,7,6,4]), &
+         & "source path returns the numbers in trip order", nfail)
+
   end subroutine check_directed_structure
 
   !===================================================================!
@@ -343,7 +350,7 @@ contains
   subroutine check_quotient(nfail)
 
     integer, intent(inout) :: nfail
-    type(stored_graph) :: g, coarse
+    type(stored_graph) :: g, coarse, refined
     type(chain)        :: c
     integer :: v
 
@@ -371,6 +378,36 @@ contains
     call report(coarse % num_vertices .eq. 4 .and. coarse % num_edges .eq. 3 .and. &
          &      all(coarse % neighbours(2) .eq. [1,3]), &
          & "the squinted chain is again a chain", nfail)
+
+    ! the zoom: every vertex of the known graph splits into three
+    ! children - chains inside each split vertex, one bridge per
+    ! original edge - and the parent map arrives as the partition
+    g       = known_graph()
+    refined = stored_graph(g, 3)
+    call report(refined % num_vertices .eq. 15 .and. &
+         &      refined % num_edges .eq. 16, &
+         & "refinement: 5 vertices split into 15, 10 chain + 6 bridge edges", nfail)
+    call report(refined % part_of(4) .eq. 2 .and. refined % part_of(15) .eq. 5, &
+         & "refinement carries the parent map as its partition", nfail)
+
+    ! the squint undoes the zoom: the quotient of the refinement is
+    ! the original graph
+    coarse = stored_graph(refined)
+    call report(coarse % num_vertices .eq. 5 .and. coarse % num_edges .eq. 6 .and. &
+         &      size(coarse % neighbours(4)) .eq. 4 .and. &
+         &      all(coarse % neighbours(4) .eq. [1,2,3,5]), &
+         & "the squint undoes the zoom", nfail)
+
+    ! a rule graph refines as readily as a stored one, and an adopted
+    ! partition gathers like any other
+    c = chain(6)
+    call c % set_partition([1,1,2,2,3,3])
+    call report(c % nparts .eq. 3 .and. size(c % owned(2)) .eq. 2 .and. &
+         &      all(c % owned(2) .eq. [3,4]), &
+         & "an adopted partition gathers like any other", nfail)
+    refined = stored_graph(c, 2)
+    call report(refined % num_vertices .eq. 12 .and. refined % num_edges .eq. 11, &
+         & "the rule-generated chain refines by its neighbour queries", nfail)
 
   end subroutine check_quotient
 

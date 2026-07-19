@@ -16,11 +16,18 @@
 !                          solution in markedly fewer iterations than
 !                          plain CG, staying ~flat over refinement.
 !   7. injected cycle    - the cycle is a graph handed in: the W built
-!                          as stations and arrows, injected through
-!                          apply_cycle, converges to the same answer.
+!                          as stations and arrows converges; repeated
+!                          stations smooth again; a negative station
+!                          dips into a refined level below the mesh
+!                          (the zoom, built by refine). differential
+!                          probes prove each feature steers the trip.
 !   8. unstructured      - nothing assumes structure: the same problem
 !                          on a crooked triangle mesh, both squints
 !                          still beat plain CG to the same answer.
+!   9. hierarchy output  - every coarsening level painted onto the
+!                          mesh as a cell field through the existing
+!                          writer: a quotient is a partition of the
+!                          mesh, and a partition is a picture.
 !
 ! A nonzero exit (error stop) means a check failed.
 !
@@ -40,6 +47,8 @@ program test_amg
   use class_graph              , only : mesh_graph
   use class_stored_graph       , only : stored_digraph
   use class_conjugate_gradient, only : conjugate_gradient
+  use class_paraview_writer   , only : paraview_writer
+  use class_string            , only : string
 
   implicit none
 
@@ -53,6 +62,7 @@ program test_amg
   call check_geometric(nfail)
   call check_cycle_injection(nfail)
   call check_unstructured(nfail)
+  call check_hierarchy_output(nfail)
 
   write(*,*) "============================================="
   if (nfail .eq. 0) then
@@ -320,25 +330,25 @@ contains
     class(assembler), allocatable :: fvm
     type(csr_matrix)              :: A
     type(algebraic_multigrid)     :: M
-    type(stored_digraph)          :: w_cycle
+    type(stored_digraph)  :: w_cycle, doubled, refined_trip
     integer , allocatable :: level_visits(:)
-    real(dp), allocatable :: x_ref(:), b(:), x(:), r(:), z(:), Ax(:)
-    integer  :: n, i, it, ncycles
-    real(dp) :: bnorm, e, steer
+    real(dp), allocatable :: x_ref(:), b(:), r(:), z(:)
+    integer               :: n, i
+    real(dp)              :: bnorm, steer
 
     call make_square(40, fvm)
     call fvm % get_operator_csr(A)
     call M % setup(A)
 
     ! the W over the whole hierarchy, written as stations and arrows
-    level_visits = w_level_visits(1, M % num_levels())
+    level_visits = w_level_visits(0, M % num_levels() - 1)
     w_cycle = stored_digraph(size(level_visits), &
          & tails   = [(i, i = 1, size(level_visits)-1)], &
          & heads   = [(i+1, i = 1, size(level_visits)-1)], &
          & numbers = level_visits)
 
     n = A % nrows
-    allocate(x_ref(n), b(n), x(n), r(n), z(n), Ax(n))
+    allocate(x_ref(n), b(n), r(n), z(n))
     do i = 1, n
        x_ref(i) = sin(real(i,dp)*0.3_dp) + 0.2_dp
     end do
@@ -355,6 +365,69 @@ contains
     write(*,'(a,es12.4)') " injected w vs built-in v  : ", steer
     if (steer .le. 1.0e-12_dp) nf = nf + 1
 
+    call solve_by_schedule(M, A, w_cycle, b, x_ref, bnorm, &
+         & " injected w-cycle  ", nf)
+
+    ! repeated stations smooth again: [0,0,1,1,2,1,0] doubles the
+    ! smoothing on the way down and must still converge - and it must
+    ! differ from the plain v, which visits the same levels once, so
+    ! only the extra smoothing separates them (a bug that collapses
+    ! repeats degenerates this schedule to the v and converges anyway)
+    doubled = path_schedule(doubled_level_visits(0, M % num_levels() - 1))
+    call solve_by_schedule(M, A, doubled, b, x_ref, bnorm, &
+         & " doubled smoothing ", nf)
+    call M % apply(b, z)
+    call M % apply_cycle(doubled, b, r)
+    steer = norm2(r - z)/max(norm2(z), 1.0e-30_dp)
+    write(*,'(a,es12.4)') " doubled vs plain v        : ", steer
+    if (steer .le. 1.0e-12_dp) nf = nf + 1
+
+    ! negative stations are refined levels - the zoom. build one
+    ! level below the mesh, and take a trip that dips into it before
+    ! running the v: [1, -1, 1, 2, ..., 2, 1]
+    call M % refine(1)
+    refined_trip = path_schedule([0, -1, v_level_visits(M % num_levels() - 1)])
+    call solve_by_schedule(M, A, refined_trip, b, x_ref, bnorm, &
+         & " refined excursion ", nf)
+
+    ! and the excursion must matter for what happens AT the refined
+    ! level. the control is [0, 0, v...]: same trip, the dip replaced
+    ! by staying home - a dead zoom (lift, nothing, project undoes it,
+    ! since the interpolation's transpose is its inverse that way)
+    ! degenerates the excursion to exactly this control, so only live
+    ! refined smoothing separates them
+    call M % apply_cycle(path_schedule([0, 0, v_level_visits(M % num_levels() - 1)]), b, z)
+    call M % apply_cycle(refined_trip, b, r)
+    steer = norm2(r - z)/max(norm2(z), 1.0e-30_dp)
+    write(*,'(a,es12.4)') " refined vs stay-home ctrl : ", steer
+    if (steer .le. 1.0e-12_dp) nf = nf + 1
+
+  end subroutine check_cycle_injection
+
+  ! the levels the v visits: down the hierarchy and back (levels
+  ! count squints from the mesh, 0 the mesh itself)
+  pure function v_level_visits(deepest) result(st)
+    integer, intent(in)  :: deepest
+    integer, allocatable :: st(:)
+    integer :: l
+    st = [(l, l = 0, deepest), (l, l = deepest-1, 0, -1)]
+  end function v_level_visits
+
+  ! richardson iteration, one trip of the given schedule per step,
+  ! against a manufactured solution
+  subroutine solve_by_schedule(M, A, schedule, b, x_ref, bnorm, label, nf)
+    type(algebraic_multigrid), intent(in)    :: M
+    type(csr_matrix)         , intent(in)    :: A
+    type(stored_digraph)     , intent(in)    :: schedule
+    real(dp)                 , intent(in)    :: b(:), x_ref(:), bnorm
+    character(len=*)         , intent(in)    :: label
+    integer                  , intent(inout) :: nf
+
+    real(dp), allocatable :: x(:), r(:), z(:), Ax(:)
+    integer  :: it, ncycles
+    real(dp) :: e
+
+    allocate(x(size(b)), r(size(b)), z(size(b)), Ax(size(b)))
     x       = 0.0_dp
     ncycles = 0
     do it = 1, 100
@@ -362,16 +435,26 @@ contains
        r = b - Ax
        if (norm2(r)/bnorm .le. 1.0e-10_dp) exit
        ncycles = ncycles + 1
-       call M % apply_cycle(w_cycle, r, z)
+       call M % apply_cycle(schedule, r, z)
        x = x + z
     end do
 
     e = maxval(abs(x - x_ref))/maxval(abs(x_ref))
-    write(*,'(a,i0,a,i0,a,es12.4)') " injected w-cycle (", size(level_visits), &
-         & " stations): ", ncycles, " cycles, error ", e
-    if (e .gt. 1.0e-7_dp)   nf = nf + 1
-    if (ncycles .ge. 100)   nf = nf + 1
-  end subroutine check_cycle_injection
+    write(*,'(a,a,i0,a,i0,a,es12.4)') label, ": ", &
+         & schedule % num_vertices, " stations, ", ncycles, " cycles, error ", e
+    if (e .gt. 1.0e-7_dp) nf = nf + 1
+    if (ncycles .ge. 100) nf = nf + 1
+  end subroutine solve_by_schedule
+
+  ! a straight line of stations from a list of level numbers
+  pure function path_schedule(numbers) result(s)
+    integer, intent(in)  :: numbers(:)
+    type(stored_digraph) :: s
+    integer :: i, ns
+    ns = size(numbers)
+    s = stored_digraph(ns, tails = [(i, i = 1, ns-1)], &
+         &                 heads = [(i+1, i = 1, ns-1)], numbers = numbers)
+  end function path_schedule
 
   ! the levels the W visits, written recursively: visit the level, go
   ! deep, come back, go deep again, come back (the l >= nlevel base
@@ -386,6 +469,19 @@ contains
        st = [l, w_level_visits(l+1, nlevel), l, w_level_visits(l+1, nlevel), l]
     end if
   end function w_level_visits
+
+  ! a v with every downward station doubled - [1,1,2,2,3,2,1] on
+  ! three levels: smooth twice on the way down, once on the way up
+  pure recursive function doubled_level_visits(l, nlevel) result(st)
+    integer, intent(in) :: l, nlevel
+    integer, allocatable :: st(:)
+    if (l .ge. nlevel) then
+       st = [l]
+    else
+       st = [l, l, doubled_level_visits(l+1, nlevel), l]
+    end if
+  end function doubled_level_visits
+
 
   !===================================================================!
   ! 8. nothing assumes structure. The same poisson problem on a
@@ -437,6 +533,94 @@ contains
     if (ia .ge. ic)        nf = nf + 1
     if (ig .ge. ic)        nf = nf + 1
   end subroutine check_unstructured
+
+  !===================================================================!
+  ! 9. the hierarchy written out. Every coarsening level is a
+  ! partition of the mesh - each cell's ancestor after l squints -
+  ! so the existing writer paints all of them in one call, one field
+  ! per level. No coarse mesh file is invented. The painted part
+  ! count at each level must equal that level's operator rows: the
+  ! picture and the algebra must agree.
+  !===================================================================!
+
+  subroutine check_hierarchy_output(nf)
+
+    integer, intent(inout) :: nf
+
+    class(assembler)      , allocatable :: fvm
+    class(paraview_writer), allocatable :: painter
+    type(string)          , allocatable :: labels(:)
+    real(dp)              , allocatable :: fields(:,:)
+
+    type(csr_matrix)          :: A
+    type(geometric_multigrid) :: M
+    type(mesh_graph)          :: g
+
+    type(algebraic_multigrid) :: M_unconfigured
+
+    integer, allocatable :: fine_ancestors(:)
+
+    character(len=16) :: buf
+    logical           :: on_disk, agrees
+    integer           :: nl, l, unit, ierr
+
+    call make_square_tri(fvm)
+
+    g = mesh_graph(fvm % grid)
+    M = geometric_multigrid(g, fvm % grid % cell_centers)
+
+    call fvm % get_operator_csr(A)
+
+    ! export is configured at problem setup: name the levels wanted,
+    ! positive or negative, and only their ancestry is stored
+    call M % export_levels([(l, l = 1, 8), -1])
+    call M % setup(A)
+    call M % refine(1)
+
+    ! one field per coarsening level: each cell painted by its
+    ! ancestor, and the painted part count must equal that level's
+    ! operator rows - the picture and the algebra must agree
+    nl = M % num_levels() - 1
+    allocate(fields(A % nrows, nl), labels(nl))
+
+    agrees = .true.
+    do l = 1, nl
+       fields(:, l) = real(M % ancestors(l), dp)
+       write(buf, '(a,i0)') "level_", l
+       labels(l) = string(trim(buf))
+       if (nint(maxval(fields(:, l))) .ne. M % levels(l+1) % A % nrows) then
+          agrees = .false.
+       end if
+    end do
+
+    ! a stale picture would satisfy the on-disk check - burn it first
+    open(newunit = unit, file = 'hierarchy.vtu', status = 'old', iostat = ierr)
+    if (ierr .eq. 0) close(unit, status = 'delete')
+
+    allocate(painter, source = paraview_writer(fvm % grid))
+    call painter % write("hierarchy.vtu", fields, labels)
+
+    inquire(file = "hierarchy.vtu", exist = on_disk)
+
+    write(*,'(a,i0,a,i0,a)') " hierarchy painted: ", nl, &
+         & " coarsening levels onto ", A % nrows, " cells (hierarchy.vtu)"
+
+    if (.not. agrees)  nf = nf + 1
+    if (.not. on_disk) nf = nf + 1
+
+    ! the refined side: each vertex of level -1 knows its mesh cell,
+    ! and every cell has exactly its share of children
+    fine_ancestors = M % ancestors(-1)
+    if (size(fine_ancestors) .ne. M % children_per_vertex*A % nrows) nf = nf + 1
+    if (minval(fine_ancestors) .ne. 1 .or. &
+         & maxval(fine_ancestors) .ne. A % nrows)                    nf = nf + 1
+    if (count(fine_ancestors .eq. 1) .ne. M % children_per_vertex)   nf = nf + 1
+
+    ! storage is on demand: an unconfigured hierarchy keeps nothing
+    call M_unconfigured % setup(A)
+    if (allocated(M_unconfigured % levels(1) % parts)) nf = nf + 1
+
+  end subroutine check_hierarchy_output
 
   !===================================================================!
   ! 2d poisson on the unstructured triangle square (same boundary

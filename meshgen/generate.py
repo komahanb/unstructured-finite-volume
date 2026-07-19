@@ -104,6 +104,28 @@ def square(n):
     gmsh.model.mesh.generate(2)
 
 
+def square_tri(h):
+    """unit square, unstructured triangles of target edge h (2d); same
+    edge names as the structured square, so the same problems run on a
+    genuinely crooked mesh."""
+    gmsh.model.add("square-tri")
+    gmsh.model.occ.addRectangle(0, 0, 0, 1, 1)
+    gmsh.model.occ.synchronize()
+    gmsh.option.setNumber("Mesh.MeshSizeMax", h)
+
+    def edge(c):
+        x, y, _ = c
+        if abs(x)     < EPS: return "BoundaryLeft"
+        if abs(x - 1) < EPS: return "BoundaryRight"
+        if abs(y)     < EPS: return "BoundaryBottom"
+        if abs(y - 1) < EPS: return "BoundaryTop"
+        return None
+
+    name_entities(1, edge)
+    whole_group(2, "surface")
+    gmsh.model.mesh.generate(2)
+
+
 def rectangle(n):
     """2 x 1 rectangle, structured quad (2d); same edge names as the square."""
     gmsh.model.add("rectangle")
@@ -168,6 +190,8 @@ RECIPES = {
     "square-40":       lambda: square(40),
     "square-80":       lambda: square(80),
     "square-160":      lambda: square(160),
+    "square-tri-40":   lambda: square_tri(1.0/40),
+    "square-tri-80":   lambda: square_tri(1.0/80),
 }
 
 

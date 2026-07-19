@@ -20,80 +20,11 @@
 !      painting, capped and uncapped
 !=====================================================================!
 
-module class_test_graph
-
-  ! the undirected stored fixture is the library's own stored_graph -
-  ! the plainest citizen needs no test double. only the directed
-  ! fixture remains local.
-
-  use interface_graph, only : graph, digraph, vertex, edge
-
-  implicit none
-
-  private
-  public :: test_digraph
-
-  ! a minimal stored directed fixture for the structure checks
-  type, extends(digraph) :: test_digraph
-   contains
-     procedure :: out_neighbours => test_out_neighbours
-     procedure :: in_neighbours  => test_in_neighbours
-  end type test_digraph
-
-  interface test_digraph
-     module procedure create_directed
-  end interface test_digraph
-
-contains
-
-  pure type(test_digraph) function create_directed(nv, tails, heads) result(this)
-
-    integer, intent(in) :: nv
-    integer, intent(in) :: tails(:), heads(:)
-
-    integer :: i
-
-    this % num_vertices = nv
-    this % num_edges    = size(tails)
-
-    allocate(this % vertices(nv))
-    do i = 1, nv
-       this % vertices(i) % number = i
-       this % vertices(i) % part   = 1
-    end do
-
-    allocate(this % edges(this % num_edges))
-    do i = 1, this % num_edges
-       this % edges(i) % tail = tails(i)
-       this % edges(i) % head = heads(i)
-    end do
-
-    call this % build_directed_adjacency()
-
-  end function create_directed
-
-  pure function test_out_neighbours(this, v) result(nbrs)
-    class(test_digraph), intent(in) :: this
-    integer            , intent(in) :: v
-    integer, allocatable :: nbrs(:)
-    nbrs = this % stored_out_neighbours(v)
-  end function test_out_neighbours
-
-  pure function test_in_neighbours(this, v) result(nbrs)
-    class(test_digraph), intent(in) :: this
-    integer            , intent(in) :: v
-    integer, allocatable :: nbrs(:)
-    nbrs = this % stored_in_neighbours(v)
-  end function test_in_neighbours
-
-end module class_test_graph
-
 program test_graph_suite
 
   use iso_fortran_env  , only : dp => REAL64
   use interface_graph  , only : graph
-  use class_test_graph , only : test_digraph
-  use class_stored_graph, only : stored_graph
+  use class_stored_graph, only : stored_graph, stored_digraph
   use class_chain      , only : chain
   use module_solve_mode, only : FORWARD, REVERSE
 
@@ -307,13 +238,13 @@ contains
     ! tolerances (the witness normalizes each defect by its tolerance)
     real(dp), parameter :: certification_threshold = 1.0_dp
 
-    type(test_digraph) :: diamond, cycle3
+    type(stored_digraph) :: diamond, cycle3, schedule
     type(chain)        :: c
     integer, allocatable :: order(:)
     real(dp) :: certification
 
     ! the diamond dag: 1->2, 1->3, 2->4, 3->4
-    diamond = test_digraph(4, tails=[1,1,2,3], heads=[2,3,4,4])
+    diamond = stored_digraph(4, tails=[1,1,2,3], heads=[2,3,4,4])
 
     call report(diamond % is_acyclic(), "diamond dag is acyclic", nfail)
 
@@ -326,7 +257,7 @@ contains
          & "directed queries on the diamond", nfail)
 
     ! a 3-cycle must be detected without dying
-    cycle3 = test_digraph(3, tails=[1,2,3], heads=[2,3,1])
+    cycle3 = stored_digraph(3, tails=[1,2,3], heads=[2,3,1])
     call report(.not. cycle3 % is_acyclic(), &
          & "cycle detection refuses the 3-cycle", nfail)
 
@@ -340,6 +271,22 @@ contains
     certification = c % verify_adjoint_accumulation()
     call report(certification .lt. certification_threshold, &
          & "adjoint accumulation certified by the witness", nfail)
+
+    ! the directed citizen carries caller-given numbers, so a small
+    ! graph can name things beyond itself. The fixture avoids every
+    ! coincidence: no number equals its own vertex index and the list
+    ! reads differently reversed, so ignoring or reversing the given
+    ! numbers both fail. The neighbour comparisons check their sizes
+    ! first - all() on an accidentally empty return says yes to
+    ! anything.
+    schedule = stored_digraph(5, tails=[1,2,3,4], heads=[2,3,4,5], &
+         &                    numbers=[9,8,7,6,4])
+    call report(schedule % vertices(2) % number .eq. 8 .and. &
+         &      schedule % vertices(5) % number .eq. 4 .and. &
+         &      size(schedule % out_neighbours(2)) .eq. 1 .and. &
+         &      all(schedule % out_neighbours(2) .eq. [3]) .and. &
+         &      size(schedule % out_neighbours(5)) .eq. 0, &
+         & "stored digraph carries caller-given numbers", nfail)
 
   end subroutine check_directed_structure
 

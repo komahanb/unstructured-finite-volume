@@ -48,7 +48,7 @@ program test_orbit_painting
 
   implicit none
 
-  character(len=*), parameter :: mesh_file  = '../square-80.msh'
+  character(len=*), parameter :: mesh_file  = '../square-tri-40.msh'
   character(len=*), parameter :: paint_file = 'julia.vtu'
 
   ! the julia constant (douady rabbit) and the window of the complex
@@ -65,15 +65,16 @@ program test_orbit_painting
   type(mesh_graph)   :: g
   type(stored_graph) :: coarse
 
-  complex(dp), allocatable :: zc(:)        ! cell centroids on the complex plane
-  complex(dp), allocatable :: zpart(:)     ! part centroids on the complex plane
-  integer    , allocatable :: succ(:)      ! the one arrow out of each cell (0 = off the window)
-  integer    , allocatable :: times(:)     ! the painting, resolved in one pass
+  complex(dp), allocatable :: zc(:)          ! cell centroids on the complex plane
+  complex(dp), allocatable :: zpart(:)       ! part centroids on the complex plane
+  real(dp)   , allocatable :: part_radius(:) ! how far a part's cells stray from its centroid
+  integer    , allocatable :: succ(:)        ! the one arrow out of each cell (0 = off the window)
+  integer    , allocatable :: times(:)       ! the painting, resolved in one pass
   real(dp)   , allocatable :: escape_time(:,:)
   type(string) :: field_labels(1)
 
   integer  :: ncells, nparts, icell, n_home
-  integer  :: checks_by_descent, nfail
+  integer  :: checks_by_descent, full_scans, nfail
   real(dp) :: t0, t1
 
   nfail = 0
@@ -136,10 +137,11 @@ program test_orbit_painting
     call g % partition_rcb(grid % cell_centers, nparts)
     coarse = stored_graph(g)
 
-    allocate(zpart(nparts))
+    allocate(zpart(nparts), part_radius(nparts))
     do k = 1, nparts
-       members  = g % owned(k)
-       zpart(k) = sum(zc(members))/real(size(members), dp)
+       members        = g % owned(k)
+       zpart(k)       = sum(zc(members))/real(size(members), dp)
+       part_radius(k) = sqrt(maxval(abs(zc(members) - zpart(k))**2))
     end do
 
   end block squint_the_mesh
@@ -159,6 +161,7 @@ program test_orbit_painting
 
     allocate(succ(ncells))
     checks_by_descent = 0
+    full_scans        = 0
 
     call cpu_time(t0)
     do v = 1, ncells
@@ -195,6 +198,8 @@ program test_orbit_painting
   write(*,'(1x,a,i0,a,i0,a,f6.3,a)') "the squint claimed the arrows with ", &
        & checks_by_descent, " distance checks where the full scan needs ", &
        & ncells*ncells, " (", t1 - t0, " s)"
+  write(*,'(1x,a,i0,a)') "the certificate sent ", full_scans, &
+       & " landing(s) back to the full scan"
 
   call check_the_painting(nfail)
 
@@ -215,30 +220,44 @@ contains
   end function successor
 
   ! which cell claims the landing point z: descend the squint - the
-  ! nearest part's cells and its quotient-neighbours' cells only
+  ! nearest part's cells and its quotient-neighbours' cells - then
+  ! certify the answer by the triangle inequality: no cell of a far
+  ! part can beat what we hold, because every one of its cells sits
+  ! at least its centroid distance minus its radius away. On the rare
+  ! landing the certificate cannot vouch for, fall back to the full
+  ! scan - counted, so the suite reports how rare.
   integer function nearest_cell_by_descent(z, checks) result(nearest)
 
     complex(dp), intent(in)    :: z
     integer    , intent(inout) :: checks
 
     integer, allocatable :: parts(:)
+    logical, allocatable :: candidate(:)
+    real(dp), allocatable :: dpart(:)
     real(dp) :: best, d2
+    logical  :: certified
     integer  :: k, k0, i, j, v
 
-    ! nearest part centroid
+    ! nearest part centroid (every part's distance kept for the
+    ! certificate below)
+    allocate(dpart(nparts))
     k0   = 1
     best = huge(1.0_dp)
     do k = 1, nparts
-       d2 = abs(z - zpart(k))**2
-       checks = checks + 1
-       if (d2 .lt. best) then
-          best = d2
+       dpart(k) = abs(z - zpart(k))
+       checks   = checks + 1
+       if (dpart(k)**2 .lt. best) then
+          best = dpart(k)**2
           k0   = k
        end if
     end do
 
     ! its cells and its quotient-neighbours' cells
     parts = [k0, coarse % neighbours(k0)]
+    allocate(candidate(nparts))
+    candidate = .false.
+    candidate(parts) = .true.
+
     nearest = 0
     best    = huge(1.0_dp)
     do i = 1, size(parts)
@@ -254,6 +273,29 @@ contains
          end do
        end associate
     end do
+
+    ! the certificate: every unsearched part must sit entirely
+    ! farther away than the cell we hold
+    certified = .true.
+    do k = 1, nparts
+       if (candidate(k)) cycle
+       if (dpart(k) - part_radius(k) .lt. sqrt(best)) then
+          certified = .false.
+          exit
+       end if
+    end do
+
+    if (.not. certified) then
+       full_scans = full_scans + 1
+       do v = 1, ncells
+          d2 = abs(z - zc(v))**2
+          checks = checks + 1
+          if (d2 .lt. best) then
+             best    = d2
+             nearest = v
+          end if
+       end do
+    end if
 
   end function nearest_cell_by_descent
 

@@ -9,7 +9,7 @@ flags="-std=f2018 -fcoarray=single -cpp -fPIC -Wno-line-truncation"
 
 ( cd "$root" && ./build.sh >/dev/null )
 
-for m in box-36 sphere square-10 square-20 square-40 square-80; do
+for m in box-36 sphere square-10 square-20 square-40 square-80 square-tri-40; do
    bash "$root/meshgen/ensure.sh" "$here/$m.msh"
 done
 

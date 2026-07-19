@@ -8,9 +8,17 @@
 ! Everything mechanical lives here, written once: the level storage,
 ! the setup driver (coarsen - tentative prolongation over the parts -
 ! smoothed prolongation - galerkin coarse operator, recursing until the
-! coarsest level is small, then a dense LU there), the V-cycle
-! (pre-smooth with weighted jacobi, restrict the residual, recurse,
-! prolong and correct, post-smooth), and the coarse direct solve.
+! coarsest level is small, then a dense LU there), the cycle engine,
+! and the coarse direct solve.
+!
+! The cycle itself is not code - it is data, and the data is a graph.
+! A schedule is a directed graph of stations and moves: each vertex
+! numbered by the level it visits, each arrow the next leg of the
+! trip. apply_cycle follows whatever schedule it is handed - the V,
+! the W, a zigzag of your own - smoothing at every station, solving
+! exactly at the coarsest, restricting on the way down and correcting
+! on the way up. setup builds the classical V as one such schedule
+! and apply follows it; nothing about the V is wired in.
 !
 ! A concrete kind answers exactly one deferred question: how does this
 ! level squint - which fine vertices huddle into which coarse part.
@@ -25,6 +33,8 @@ module interface_multigrid
 
   use iso_fortran_env        , only : dp => REAL64
   use class_csr              , only : csr_matrix
+  use interface_graph        , only : digraph
+  use class_stored_graph     , only : stored_digraph
   use interface_linear_solver, only : preconditioner
 
   implicit none
@@ -42,6 +52,15 @@ module interface_multigrid
      type(csr_matrix)      :: R           ! restriction  = P^T
      real(dp), allocatable :: Dinv(:)     ! 1/diag(A) (smoother)
   end type multigrid_level
+
+  !-------------------------------------------------------------------!
+  ! The travelling state of a cycle: each level's right-hand side and
+  ! correction while the trip is underway
+  !-------------------------------------------------------------------!
+
+  type :: level_vectors
+     real(dp), allocatable :: b(:), x(:)
+  end type level_vectors
 
   !-------------------------------------------------------------------!
   ! A multigrid is a preconditioner (apply = one cycle) that can also
@@ -66,6 +85,9 @@ module interface_multigrid
      integer  :: npre        = 1
      integer  :: npost       = 1
 
+     ! the classical V, built by setup as an ordinary schedule
+     type(stored_digraph) :: v_cycle_schedule
+
    contains
 
      ! the one deferred question: which fine vertex huddles into which
@@ -74,11 +96,11 @@ module interface_multigrid
 
      ! the mechanism, shared
      procedure :: setup       ! build the hierarchy from A
-     procedure :: apply       ! z = M^-1 r (one V-cycle)
+     procedure :: apply       ! z = M^-1 r (one trip along the V)
+     procedure :: apply_cycle ! z from one trip along any injected schedule
      procedure :: solve       ! A x = b, cycling to tol
      procedure :: num_levels  ! levels in the hierarchy
 
-     procedure, private :: vcycle
      procedure, private :: smooth
      procedure, private :: spectral_radius
 
@@ -184,18 +206,36 @@ contains
        if (info .ne. 0) error stop "multigrid: coarse factorization failed"
     end if
 
+    ! the classical V, as an ordinary schedule: down the levels and
+    ! back, stations numbered 1..nlevel..1, one arrow between each
+    build_v_schedule: block
+      integer, allocatable :: level_visits(:)
+      integer :: ns
+      ns = 2*this % nlevel - 1
+      allocate(level_visits(ns))
+      do i = 1, this % nlevel
+         level_visits(i) = i
+      end do
+      do i = this % nlevel + 1, ns
+         level_visits(i) = 2*this % nlevel - i
+      end do
+      this % v_cycle_schedule = stored_digraph(ns, &
+           & tails = [(i, i = 1, ns-1)], heads = [(i+1, i = 1, ns-1)], &
+           & numbers = level_visits)
+    end block build_v_schedule
+
   end subroutine setup
 
   !===================================================================!
-  ! z = M^-1 r  (one V-cycle from the finest level)
+  ! z = M^-1 r  (one trip along the classical V - which is just the
+  ! schedule setup built; nothing about the V is wired in)
   !===================================================================!
 
   pure subroutine apply(this, r, z)
     class(multigrid), intent(in)  :: this
     real(dp)        , intent(in)  :: r(:)
     real(dp)        , intent(out) :: z(:)
-    z = 0.0_dp
-    call this % vcycle(1, r, z)
+    call this % apply_cycle(this % v_cycle_schedule, r, z)
   end subroutine apply
 
   !===================================================================!
@@ -243,52 +283,141 @@ contains
   end function num_levels
 
   !===================================================================!
-  ! Recursive V-cycle worker
+  ! Follow an injected cycle. The schedule is a directed graph of
+  ! stations and moves: each vertex is numbered by the level that
+  ! station visits, each arrow is the next leg of the trip - one
+  ! arrow out of every station, none out of the last. The rules of
+  ! the road, stated plainly:
+  !
+  !   - the trip starts and ends at the finest level
+  !   - a move goes one level down (the residual is restricted and
+  !     the deeper correction zeroed) or one level up (the correction
+  !     is prolonged and added) - never skips a level
+  !   - at every station you smooth: npre sweeps when the next move
+  !     descends, npost sweeps otherwise. At the coarsest level of
+  !     the hierarchy you solve exactly instead.
+  !
+  ! The classical V is the schedule 1,2,...,nlevel,...,2,1; the W
+  ! revisits the deep levels; any other trip that obeys the rules is
+  ! equally welcome. An ill-formed schedule stops with a report - the
+  ! structural audit, not an extension hook.
   !===================================================================!
 
-  pure recursive subroutine vcycle(this, lev, b, x)
+  pure subroutine apply_cycle(this, schedule, r, z)
 
-    class(multigrid), intent(in)    :: this
-    integer         , intent(in)    :: lev
-    real(dp)        , intent(in)    :: b(:)
-    real(dp)        , intent(inout) :: x(:)
+    class(multigrid), intent(in)  :: this
+    class(digraph)  , intent(in)  :: schedule
+    real(dp)        , intent(in)  :: r(:)
+    real(dp)        , intent(out) :: z(:)
 
-    real(dp), allocatable :: Ax(:), res(:), rc(:), ec(:), ef(:)
-    integer               :: n, nc
+    type(level_vectors), allocatable :: state(:)
+    integer , allocatable :: nbrs(:)
+    real(dp), allocatable :: res(:), correction(:)
+    integer :: s, v, l, m, n_start, n_visited
+    logical :: descending
 
-    if (lev .eq. this % nlevel) then
-       ! coarsest: direct solve  x = Ac^-1 b
-       x = b
-       call dense_lu_solve(this % Ac_dense, this % ncoarse, this % ipiv, x)
-       return
+    ! the trip begins at the one station with no arrow in
+    n_start = 0
+    s       = 0
+    do v = 1, schedule % num_vertices
+       if (size(schedule % in_neighbours(v)) .eq. 0) then
+          n_start = n_start + 1
+          s       = v
+       end if
+    end do
+    if (n_start .ne. 1) then
+       error stop "multigrid: a schedule needs exactly one starting station"
+    end if
+    if (schedule % vertices(s) % number .ne. 1) then
+       error stop "multigrid: the trip must start at the finest level"
     end if
 
-    associate(L => this % levels(lev))
+    ! every level's travelling state, ready before the trip
+    allocate(state(this % nlevel))
+    do l = 1, this % nlevel
+       allocate(state(l) % b(this % levels(l) % A % nrows))
+       allocate(state(l) % x(this % levels(l) % A % nrows))
+    end do
+    state(1) % b = r
+    state(1) % x = 0.0_dp
 
-      n  = L % A % nrows
-      nc = L % R % nrows
-      allocate(Ax(n), res(n), rc(nc), ec(nc), ef(n))
+    n_visited = 0
 
-      ! pre-smooth
-      call this % smooth(lev, b, x, this % npre)
+    follow_schedule: do
 
-      ! residual and restriction to the coarse level
-      call L % A % matvec(x, Ax)
-      res = b - Ax
-      call L % R % matvec(res, rc)
+       ! with one arrow out of every station, a second visit anywhere
+       ! means the trip can never end - stop instead of spinning
+       n_visited = n_visited + 1
+       if (n_visited .gt. schedule % num_vertices) then
+          error stop "multigrid: a schedule revisits a station - the trip never ends"
+       end if
 
-      ! coarse-grid correction (recurse)
-      ec = 0.0_dp
-      call this % vcycle(lev+1, rc, ec)
-      call L % P % matvec(ec, ef)
-      x = x + ef
+       l = schedule % vertices(s) % number
+       if (l .lt. 1 .or. l .gt. this % nlevel) then
+          error stop "multigrid: a station names a level outside the hierarchy"
+       end if
 
-      ! post-smooth
-      call this % smooth(lev, b, x, this % npost)
+       nbrs = schedule % out_neighbours(s)
+       if (size(nbrs) .gt. 1) then
+          error stop "multigrid: a station has one arrow out, not several"
+       end if
 
-    end associate
+       ! at the station: solve exactly at the coarsest level, smooth
+       ! anywhere else - npre sweeps if the next move descends, npost
+       ! sweeps otherwise
+       descending = .false.
+       if (size(nbrs) .eq. 1) then
+          descending = schedule % vertices(nbrs(1)) % number .gt. l
+       end if
 
-  end subroutine vcycle
+       if (l .eq. this % nlevel) then
+          state(l) % x = state(l) % b
+          call dense_lu_solve(this % Ac_dense, this % ncoarse, this % ipiv, state(l) % x)
+       else if (descending) then
+          call this % smooth(l, state(l) % b, state(l) % x, this % npre)
+       else
+          call this % smooth(l, state(l) % b, state(l) % x, this % npost)
+       end if
+
+       if (size(nbrs) .eq. 0) exit follow_schedule
+
+       ! the move - the destination is audited before any machinery
+       ! runs, so a schedule that dives below the coarsest level stops
+       ! with a report instead of touching an operator that was never
+       ! built
+       m = schedule % vertices(nbrs(1)) % number
+       if (m .lt. 1 .or. m .gt. this % nlevel) then
+          error stop "multigrid: a station names a level outside the hierarchy"
+       end if
+       if (m .eq. l + 1) then
+          ! down: restrict the residual, zero the deeper correction
+          if (allocated(res)) deallocate(res)
+          allocate(res(this % levels(l) % A % nrows))
+          call this % levels(l) % A % matvec(state(l) % x, res)
+          res = state(l) % b - res
+          call this % levels(l) % R % matvec(res, state(m) % b)
+          state(m) % x = 0.0_dp
+       else if (m .eq. l - 1) then
+          ! up: prolong the correction and add it
+          if (allocated(correction)) deallocate(correction)
+          allocate(correction(this % levels(m) % A % nrows))
+          call this % levels(m) % P % matvec(state(l) % x, correction)
+          state(m) % x = state(m) % x + correction
+       else
+          error stop "multigrid: a move goes one level up or down, never skips"
+       end if
+
+       s = nbrs(1)
+
+    end do follow_schedule
+
+    if (l .ne. 1) then
+       error stop "multigrid: the trip must end at the finest level"
+    end if
+
+    z = state(1) % x
+
+  end subroutine apply_cycle
 
   !===================================================================!
   ! Weighted-jacobi smoother on level lev (symmetric -> keeps M^-1 SPD):

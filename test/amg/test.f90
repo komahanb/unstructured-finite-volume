@@ -15,6 +15,12 @@
 !                          quotients down the hierarchy) reaches the same
 !                          solution in markedly fewer iterations than
 !                          plain CG, staying ~flat over refinement.
+!   7. injected cycle    - the cycle is a graph handed in: the W built
+!                          as stations and arrows, injected through
+!                          apply_cycle, converges to the same answer.
+!   8. unstructured      - nothing assumes structure: the same problem
+!                          on a crooked triangle mesh, both squints
+!                          still beat plain CG to the same answer.
 !
 ! A nonzero exit (error stop) means a check failed.
 !
@@ -32,6 +38,7 @@ program test_amg
   use class_algebraic_multigrid, only : algebraic_multigrid
   use class_geometric_multigrid, only : geometric_multigrid
   use class_graph              , only : mesh_graph
+  use class_stored_graph       , only : stored_digraph
   use class_conjugate_gradient, only : conjugate_gradient
 
   implicit none
@@ -44,6 +51,8 @@ program test_amg
   call check_same_solution_and_iters(nfail)
   call check_h_independence(nfail)
   call check_geometric(nfail)
+  call check_cycle_injection(nfail)
+  call check_unstructured(nfail)
 
   write(*,*) "============================================="
   if (nfail .eq. 0) then
@@ -298,5 +307,155 @@ contains
     if (ig(4) .ge. 2*ig(1))    nf = nf + 1   ! geometric iterations stay ~flat
     if (maxval(ig) .ge. ic(4)) nf = nf + 1   ! and beat cg at the finest mesh
   end subroutine check_geometric
+
+  !===================================================================!
+  ! 7. the cycle is a graph handed in. Build the W - the deep levels
+  ! revisited twice - as stations and arrows, inject it through
+  ! apply_cycle, and richardson iteration with one W-trip per step
+  ! must reach a manufactured solution.
+  !===================================================================!
+
+  subroutine check_cycle_injection(nf)
+    integer, intent(inout) :: nf
+    class(assembler), allocatable :: fvm
+    type(csr_matrix)              :: A
+    type(algebraic_multigrid)     :: M
+    type(stored_digraph)          :: w_cycle
+    integer , allocatable :: level_visits(:)
+    real(dp), allocatable :: x_ref(:), b(:), x(:), r(:), z(:), Ax(:)
+    integer  :: n, i, it, ncycles
+    real(dp) :: bnorm, e, steer
+
+    call make_square(40, fvm)
+    call fvm % get_operator_csr(A)
+    call M % setup(A)
+
+    ! the W over the whole hierarchy, written as stations and arrows
+    level_visits = w_level_visits(1, M % num_levels())
+    w_cycle = stored_digraph(size(level_visits), &
+         & tails   = [(i, i = 1, size(level_visits)-1)], &
+         & heads   = [(i+1, i = 1, size(level_visits)-1)], &
+         & numbers = level_visits)
+
+    n = A % nrows
+    allocate(x_ref(n), b(n), x(n), r(n), z(n), Ax(n))
+    do i = 1, n
+       x_ref(i) = sin(real(i,dp)*0.3_dp) + 0.2_dp
+    end do
+    call A % matvec(x_ref, b)
+    bnorm = norm2(b)
+
+    ! the injected schedule must steer the machinery: one W-trip and
+    ! one V-trip from the same residual give different corrections (a
+    ! bug that quietly walks the stored V passes every convergence
+    ! check, so convergence alone proves nothing about injection)
+    call M % apply(b, z)
+    call M % apply_cycle(w_cycle, b, r)
+    steer = norm2(r - z)/max(norm2(z), 1.0e-30_dp)
+    write(*,'(a,es12.4)') " injected w vs built-in v  : ", steer
+    if (steer .le. 1.0e-12_dp) nf = nf + 1
+
+    x       = 0.0_dp
+    ncycles = 0
+    do it = 1, 100
+       call A % matvec(x, Ax)
+       r = b - Ax
+       if (norm2(r)/bnorm .le. 1.0e-10_dp) exit
+       ncycles = ncycles + 1
+       call M % apply_cycle(w_cycle, r, z)
+       x = x + z
+    end do
+
+    e = maxval(abs(x - x_ref))/maxval(abs(x_ref))
+    write(*,'(a,i0,a,i0,a,es12.4)') " injected w-cycle (", size(level_visits), &
+         & " stations): ", ncycles, " cycles, error ", e
+    if (e .gt. 1.0e-7_dp)   nf = nf + 1
+    if (ncycles .ge. 100)   nf = nf + 1
+  end subroutine check_cycle_injection
+
+  ! the levels the W visits, written recursively: visit the level, go
+  ! deep, come back, go deep again, come back (the l >= nlevel base
+  ! case also refuses an unbuilt hierarchy rather than recursing off
+  ! the stack)
+  pure recursive function w_level_visits(l, nlevel) result(st)
+    integer, intent(in) :: l, nlevel
+    integer, allocatable :: st(:)
+    if (l .ge. nlevel) then
+       st = [l]
+    else
+       st = [l, w_level_visits(l+1, nlevel), l, w_level_visits(l+1, nlevel), l]
+    end if
+  end function w_level_visits
+
+  !===================================================================!
+  ! 8. nothing assumes structure. The same poisson problem on a
+  ! genuinely crooked mesh - unstructured triangles, no two alike -
+  ! and both squints still beat plain cg to the same answer.
+  !===================================================================!
+
+  subroutine check_unstructured(nf)
+    integer, intent(inout) :: nf
+    class(assembler)         , allocatable :: fvm
+    class(conjugate_gradient), allocatable :: cg
+    type(csr_matrix)                       :: A
+    type(algebraic_multigrid)              :: Ma
+    type(geometric_multigrid)              :: Mg
+    type(mesh_graph)                       :: g
+    real(dp), allocatable :: x_cg(:), x_a(:), x_g(:)
+    integer  :: ic, ia, ig
+    real(dp) :: ea, eg
+
+    call make_square_tri(fvm)
+
+    allocate(cg, source = conjugate_gradient(20000, 1.0e-8_dp, 0))
+    call cg % solve(fvm, x_cg)
+    ic = cg % last_inner_iters
+    deallocate(cg)
+
+    call fvm % get_operator_csr(A)
+
+    call Ma % setup(A)
+    allocate(cg, source = conjugate_gradient(20000, 1.0e-8_dp, 0, precond = Ma))
+    call cg % solve(fvm, x_a)
+    ia = cg % last_inner_iters
+    deallocate(cg)
+
+    g  = mesh_graph(fvm % grid)
+    Mg = geometric_multigrid(g, fvm % grid % cell_centers)
+    call Mg % setup(A)
+    allocate(cg, source = conjugate_gradient(20000, 1.0e-8_dp, 0, precond = Mg))
+    call cg % solve(fvm, x_g)
+    ig = cg % last_inner_iters
+    deallocate(cg)
+
+    ea = maxval(abs(x_cg - x_a))/max(maxval(abs(x_cg)), 1.0e-30_dp)
+    eg = maxval(abs(x_cg - x_g))/max(maxval(abs(x_cg)), 1.0e-30_dp)
+    write(*,'(a,i0,a,i0,a,i0)') " unstructured triangles: cg=", ic, &
+         & "  amg=", ia, "  geometric=", ig
+    if (ea .gt. 1.0e-7_dp) nf = nf + 1
+    if (eg .gt. 1.0e-7_dp) nf = nf + 1
+    if (ia .ge. ic)        nf = nf + 1
+    if (ig .ge. ic)        nf = nf + 1
+  end subroutine check_unstructured
+
+  !===================================================================!
+  ! 2d poisson on the unstructured triangle square (same boundary
+  ! names as the structured square, so the same problem runs on a
+  ! crooked mesh)
+  !===================================================================!
+
+  subroutine make_square_tri(fvm)
+    class(assembler), allocatable, intent(out) :: fvm
+    class(gmsh_loader), allocatable :: gl
+    class(mesh)       , allocatable :: grid
+    allocate(gl  , source = gmsh_loader("square-tri-40.msh"))
+    allocate(grid, source = mesh(gl))
+    allocate(fvm , source = assembler(grid))
+    call fvm % set_equation(diffusion_flux(1.0_dp), constant_source(-1.0_dp))
+    call fvm % set_dirichlet("BoundaryLeft"  , 0.0_dp)
+    call fvm % set_dirichlet("BoundaryRight" , 0.0_dp)
+    call fvm % set_dirichlet("BoundaryTop"   , 0.0_dp)
+    call fvm % set_dirichlet("BoundaryBottom", 0.0_dp)
+  end subroutine make_square_tri
 
 end program test_amg

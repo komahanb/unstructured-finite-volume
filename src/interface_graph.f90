@@ -120,6 +120,9 @@ module interface_graph
      ! visit order (breadth-first) over the whole graph
      procedure :: traversal_order
 
+     ! greedy vertex coloring: independent sets, no edge inside a color
+     procedure :: coloring
+
      ! orbit of a vertex under a caller-supplied successor rule
      procedure :: orbit
 
@@ -573,6 +576,43 @@ contains
     if (dir .eq. REVERSE) order = order(nv:1:-1)
 
   end function traversal_order
+
+  !===================================================================!
+  ! Greedy vertex coloring: visit the vertices in order and give each
+  ! the smallest color no neighbour already holds. The colors split
+  ! the vertices into independent sets - no edge stays inside a color
+  ! - so everything of one color can act at once. Consumes only the
+  ! neighbour queries.
+  !===================================================================!
+
+  pure function coloring(this) result(colors)
+
+    class(graph), intent(in) :: this
+
+    integer, allocatable :: colors(:), nbrs(:)
+    logical, allocatable :: used(:)
+    integer :: v, i, c
+
+    allocate(colors(this % num_vertices))
+    colors = 0
+
+    ! a vertex never needs more colors than neighbours plus one
+    allocate(used(this % num_vertices + 1))
+
+    do v = 1, this % num_vertices
+       nbrs = this % neighbours(v)
+       used = .false.
+       do i = 1, size(nbrs)
+          if (colors(nbrs(i)) .gt. 0) used(colors(nbrs(i))) = .true.
+       end do
+       c = 1
+       do while (used(c))
+          c = c + 1
+       end do
+       colors(v) = c
+    end do
+
+  end function coloring
 
   !===================================================================!
   ! Orbit of a vertex under a successor rule: one vertex, one arrow

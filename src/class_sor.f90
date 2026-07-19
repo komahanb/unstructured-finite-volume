@@ -1,14 +1,23 @@
 !=====================================================================!
 ! Relaxed-triangle-sweep linear solver (traditionally: successive
-! over-relaxation, SOR): supplies only the sweep (`iterate`) - the
-! relaxed lower-triangle solve (D+wL)y = R is itself done iteratively -
-! and inherits the residual-minimization iteration from linear_solver.
+! over-relaxation, SOR): supplies only the sweep (`iterate`) and
+! inherits the residual-minimization iteration from linear_solver.
 ! omega is the pseudo-time step size of the outer iteration.
+!
+! Two sweeps, chosen by what the solver carries:
+!
+!    no graph:  the relaxed lower-triangle solve (D+wL)y = R is
+!               itself done iteratively (products through the
+!               triangle filters)
+!
+!    carrying the system's graph:  the inherited colored sweep -
+!               exact, color by color, relaxed by omega
 !=====================================================================!
 
 module class_sor
 
   use iso_fortran_env         , only : dp => REAL64
+  use interface_graph         , only : graph
   use interface_linear_solver , only : linear_solver
   use interface_assembler     , only : assembler, DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE
 
@@ -57,18 +66,21 @@ contains
   !===================================================================!
 
   pure type(sor) function construct(omega, max_it, &
-       & max_tol, print_level) result (this)
+       & max_tol, print_level, g) result (this)
 
-    type(real(dp)) , intent(in) :: omega
-    type(integer)  , intent(in) :: max_it
-    type(real(dp)) , intent(in) :: max_tol
-    type(integer)  , intent(in) :: print_level
+    type(real(dp)) , intent(in)           :: omega
+    type(integer)  , intent(in)           :: max_it
+    type(real(dp)) , intent(in)           :: max_tol
+    type(integer)  , intent(in)           :: print_level
+    class(graph)   , intent(in), optional :: g
 
     this % max_it      = max_it
     this % max_tol     = max_tol
     this % print_level = print_level
     this % omega       = omega
     this % res_file    = 'sor.res'
+
+    if (present(g)) call this % carry(g)
 
   end function construct
 
@@ -180,6 +192,12 @@ contains
     real(dp) :: tol, bnorm
     real(dp) , allocatable :: Ux(:), D(:), Ddx(:), R2(:), xnew(:), identity(:)
     real(dp) , allocatable :: Ly(:), y(:), ynew(:)
+
+    ! carrying the system's graph buys the exact relaxed sweep
+    if (allocated(this % g)) then
+       call this % colored_sweep(system, r, dx, iter, this % omega)
+       return
+    end if
 
     dx = 0.0_dp
     allocate(Ux, D, Ddx, R2, xnew, identity, mold = dx)

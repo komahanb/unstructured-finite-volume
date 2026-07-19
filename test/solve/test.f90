@@ -142,6 +142,53 @@ program test_mesh
 
   end block auto_sor
 
+  ! colored sweeps: gs and sor carry the system's graph, whose coloring
+  ! makes the sweep exact (no inner triangle iteration). both must land
+  ! on the cg answer.
+  colored : block
+
+    real(dp) , parameter   :: max_tol = 1.0d-10
+    integer  , parameter   :: max_it  = 500
+    real(dp) , allocatable :: x_gs(:), x_sor(:), xref(:)
+    type(gauss_seidel), allocatable :: gs_colored
+    type(sor)         , allocatable :: sor_colored
+    real(dp)               :: diff_gs, diff_sor
+
+    allocate(gs_colored, source = gauss_seidel(max_it = max_it, &
+         & max_tol = max_tol, print_level = 0, g = FVMAssembler % grid))
+    call gs_colored % solve(FVMassembler, x_gs)
+
+    allocate(sor_colored, source = sor(omega = 1.2d0, max_it = max_it, &
+         & max_tol = max_tol, print_level = 0, g = FVMAssembler % grid))
+    call sor_colored % solve(FVMassembler, x_sor)
+
+    allocate(solver, source = conjugate_gradient(max_tol = max_tol, &
+         & max_it = 100, print_level = 0))
+    call solver % solve(FVMassembler, xref)
+
+    diff_gs  = norm2(x_gs  - xref)/norm2(xref)
+    diff_sor = norm2(x_sor - xref)/norm2(xref)
+
+    if (gs_colored % ncolors .gt. 1 .and. diff_gs .lt. 1.0d-8) then
+       write(*,'(1x,a,i0,a,es10.3)') &
+            & "PASS : colored gs (", gs_colored % ncolors, " colors) matches cg, diff ", diff_gs
+    else
+       write(*,'(1x,a,i0,a,es10.3)') &
+            & "FAIL : colored gs (", gs_colored % ncolors, " colors), diff vs cg ", diff_gs
+       error stop
+    end if
+
+    if (diff_sor .lt. 1.0d-8) then
+       write(*,'(1x,a,es10.3)') "PASS : colored sor matches cg, diff ", diff_sor
+    else
+       write(*,'(1x,a,es10.3)') "FAIL : colored sor, diff vs cg ", diff_sor
+       error stop
+    end if
+
+    deallocate(x_gs, x_sor, xref, gs_colored, sor_colored, solver)
+
+  end block colored
+
   deallocate(grid)
   deallocate(FVMAssembler)
 

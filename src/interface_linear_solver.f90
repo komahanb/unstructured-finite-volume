@@ -41,8 +41,9 @@
 module interface_linear_solver
 
   use iso_fortran_env           , only : dp => REAL64
+  use interface_graph           , only : graph, counting_sort
   use interface_marcher         , only : marcher
-  use interface_assembler       , only : assembler
+  use interface_assembler       , only : assembler, DIAGONAL
   use interface_state           , only : state
   use class_differential_state  , only : differential_state
   use module_solve_mode         , only : FORWARD, REVERSE, is_valid_mode
@@ -100,6 +101,15 @@ module interface_linear_solver
      ! module-scope side channels)
      integer :: last_inner_iters = 0
 
+     ! a carried graph and its coloring: when a stationary solver
+     ! carries the system's graph, its sweep goes color by color
+     ! (see colored_sweep). color_list holds the dofs grouped by
+     ! color; color c's dofs are color_list(color_ptr(c) : ptr(c+1)-1)
+     class(graph), allocatable :: g
+     integer                   :: ncolors = 0
+     integer     , allocatable :: color_ptr(:)
+     integer     , allocatable :: color_list(:)
+
    contains
 
      ! march (the marcher contract): the residual-minimization iteration,
@@ -117,6 +127,11 @@ module interface_linear_solver
      ! passthrough apply helpers for the two slots
      procedure :: apply_pre_conditioner
      procedure :: apply_post_conditioner
+
+     ! carry a graph (color it, group the dofs), and the exact
+     ! stationary sweep the coloring buys
+     procedure :: carry
+     procedure :: colored_sweep
 
      ! parameter-selection hook, called by converge when tuning == AUTO:
      ! once at entry (pass 0 - measure the convergence factor, set the
@@ -405,6 +420,104 @@ contains
     end if
 
   end subroutine apply_post_conditioner
+
+  !===================================================================!
+  ! Carry a graph: keep a copy, color it, and group the dofs color by
+  ! color (the counting kernel groups, dofs_of expands). Carry after
+  ! the system is fully configured - the dof layout is read from the
+  ! graph as handed in.
+  !===================================================================!
+
+  pure subroutine carry(this, g)
+
+    class(linear_solver), intent(inout) :: this
+    class(graph)        , intent(in)    :: g
+
+    integer, allocatable :: colors(:), vptr(:), vlist(:)
+    integer :: c, v, nv
+
+    allocate(this % g, source = g)
+
+    nv     = g % num_vertices
+    colors = g % coloring()
+    this % ncolors = 0
+    if (nv .gt. 0) this % ncolors = maxval(colors)
+
+    call counting_sort(this % ncolors, colors, [(v, v = 1, nv)], vptr, vlist)
+
+    allocate(this % color_ptr(this % ncolors + 1))
+    this % color_ptr(1) = 1
+    do c = 1, this % ncolors
+       this % color_ptr(c+1) = this % color_ptr(c) &
+            &                + (vptr(c+1) - vptr(c))*g % num_variables
+    end do
+    allocate(this % color_list(this % color_ptr(this % ncolors + 1) - 1))
+    do c = 1, this % ncolors
+       this % color_list(this % color_ptr(c) : this % color_ptr(c+1) - 1) = &
+            & g % dofs_of(vlist(vptr(c) : vptr(c+1) - 1))
+    end do
+
+  end subroutine carry
+
+  !===================================================================!
+  ! The colored sweep: the carried graph's coloring chops the
+  ! vertices into independent sets - no edge stays inside a color -
+  ! so a whole color updates at once, exactly:
+  !
+  !    1 - 2 - 1 - 2        for each color c:
+  !    |   |   |   |           dx(c) += omega * (r - A dx)(c) / D(c)
+  !    2 - 1 - 2 - 1
+  !    |   |   |   |        nothing inside c couples, so this IS the
+  !    1 - 2 - 1 - 2        triangular sweep in the color ordering -
+  !                         no inner iteration approximating it
+  !
+  ! omega = 1 is the gauss-seidel sweep; omega /= 1 relaxes it (sor).
+  !===================================================================!
+
+  impure subroutine colored_sweep(this, system, r, dx, iter, omega)
+
+    class(linear_solver), intent(inout) :: this
+    class(assembler)    , intent(in)    :: system
+    real(dp)            , intent(in)    :: r(:)
+    real(dp)            , intent(out)   :: dx(:)
+    integer             , intent(out)   :: iter
+    real(dp)            , intent(in)    :: omega
+
+    real(dp), allocatable :: Adx(:), D(:), dxold(:), identity(:)
+    real(dp) :: tol, bnorm
+    integer  :: c
+
+    dx = 0.0_dp
+    allocate(Adx, D, dxold, identity, mold = dx)
+
+    ! the diagonal (the self-loop weights)
+    identity = 1.0_dp
+    call system % get_jacobian_residual_product(D, identity, part = DIAGONAL)
+
+    bnorm = sqrt(system % inner_product(r, r))
+    if (bnorm .le. this % max_tol) then
+       iter = 0
+       return
+    end if
+
+    iter = 1; tol = huge(1.0_dp)
+    do while (tol .gt. this % max_tol .and. iter .lt. this % max_it)
+
+       dxold = dx
+       do c = 1, this % ncolors
+          associate(cd => this % color_list(this % color_ptr(c) : this % color_ptr(c+1) - 1))
+            call system % get_jacobian_residual_product(Adx, dx)
+            dx(cd) = dx(cd) + omega*(r(cd) - Adx(cd))/D(cd)
+          end associate
+       end do
+
+       tol = sqrt(system % inner_product(dx - dxold, dx - dxold))
+       if (this % print_level .gt. 1) write(*,*) "inner (colored)", iter, tol
+       iter = iter + 1
+
+    end do
+
+  end subroutine colored_sweep
 
   !===================================================================!
   ! Norm of the system's residual at x

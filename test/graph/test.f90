@@ -106,6 +106,10 @@ contains
     call report(all(adj  .eq. [1,2,3,4, 2,1,4, 3,1,4, 4,1,2,3,5, 5,4]), &
          & "dof adj: self-loop first, neighbours after", nfail)
 
+    ! greedy coloring, hand-computed: no edge inside a color
+    call report(all(g % coloring() .eq. [1,2,2,3,1]), &
+         & "greedy coloring leaves no edge inside a color", nfail)
+
   end subroutine check_known_adjacency
 
   !===================================================================!
@@ -169,6 +173,8 @@ contains
     call report(c % num_edges .eq. 9, "powered chain edge count", nfail)
     call report(all(c % dependency_order() .eq. [1,2,3,4,5,6]), &
          & "powered chain dependency order stays 1..n", nfail)
+    call report(all(c % coloring() .eq. [1,2,3,1,2,3]), &
+         & "a chain at power p colors with p+1 colors", nfail)
 
   end subroutine check_chain_rule
 

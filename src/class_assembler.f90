@@ -542,11 +542,13 @@ contains
   !===================================================================!
   ! Assemble the steady operator as a sparse CSR matrix - the same matrix
   ! the matrix-free get_jvp_via_flux applies, but with explicit entries so
-  ! algebraic multigrid can build a hierarchy on it. Mirrors that routine's
-  ! face loop: interior face contributes A(p,p) += -farea*keff/fdelta and
-  ! A(p,n) += +farea*keff/fdelta; a boundary face contributes the bc
-  ! lhs_coeff to the diagonal. Single-field-or-decoupled (the ivar loop is
-  ! the multi-field hook); steady only.
+  ! algebraic multigrid can build a hierarchy on it. The sparsity pattern
+  ! IS the cell graph the grid already carries, so the symbolic pass just
+  ! asks the grid for its neighbours. The numeric pass mirrors
+  ! get_jvp_via_flux's face loop: an interior face contributes
+  ! A(p,p) += -farea*keff/fdelta and A(p,n) += +farea*keff/fdelta, a
+  ! boundary face the bc lhs_coeff to the diagonal. Single-field-or-
+  ! decoupled (the ivar loop is the multi-field hook); steady only.
   !===================================================================!
 
   impure subroutine get_operator_csr(this, A)
@@ -554,8 +556,8 @@ contains
     class(assembler), intent(in)  :: this
     type(csr_matrix), intent(out) :: A
 
-    integer , allocatable :: nnz_row(:), row_ptr(:), col_idx(:), cursor(:)
-    integer               :: ndof, icell, iface, ivar, p, n, ncell, fcells(2), gface, ftag, nfc
+    integer , allocatable :: nnz_row(:), row_ptr(:), col_idx(:), cursor(:), nbrs(:)
+    integer               :: ndof, icell, iface, ivar, p, n, ncell, fcells(2), gface, ftag, nfc, k
     real(dp)              :: nf(3), keff, vn, wp, wn, alhs, arhs, farea, fdelta
     type(point_state)     :: st
 
@@ -564,19 +566,16 @@ contains
     ndof = this % grid % num_dofs()
 
     !---------------------------------------------------------------!
-    ! symbolic pass: row p has its diagonal + one column per interior
-    ! face neighbour (same variable)
+    ! symbolic pass: the sparsity pattern is the cell graph. row
+    ! dof(icell,ivar) has its own diagonal plus one column for the
+    ! same variable of each neighbour cell - and the grid already
+    ! knows every cell's neighbours, so ask it instead of walking the
+    ! faces again.
     !---------------------------------------------------------------!
-    allocate(nnz_row(ndof)); nnz_row = 1
+    allocate(nnz_row(ndof))
     do icell = 1, this % grid % num_cells
-       do iface = 1, this % grid % num_cell_faces(icell)
-          gface = this % grid % cell_faces(iface, icell)
-          if (this % grid % num_face_cells(gface) .eq. 2) then
-             do ivar = 1, nv
-                p = this % grid % dof(icell, ivar)
-                nnz_row(p) = nnz_row(p) + 1
-             end do
-          end if
+       do ivar = 1, nv
+          nnz_row(this % grid % dof(icell, ivar)) = 1 + this % grid % degree(icell)
        end do
     end do
 
@@ -587,28 +586,20 @@ contains
     end do
     allocate(col_idx(row_ptr(ndof+1) - 1))
 
-    ! seed each row's diagonal, then append neighbour columns
+    ! seed each row's diagonal, then append its neighbours' columns
     allocate(cursor(ndof))
     do p = 1, ndof
        col_idx(row_ptr(p)) = p
        cursor(p) = row_ptr(p) + 1
     end do
     do icell = 1, this % grid % num_cells
-       do iface = 1, this % grid % num_cell_faces(icell)
-          gface = this % grid % cell_faces(iface, icell)
-          if (this % grid % num_face_cells(gface) .eq. 2) then
-             fcells(1:2) = this % grid % face_cells(1:2, gface)
-             if (fcells(1) .eq. icell) then
-                ncell = fcells(2)
-             else
-                ncell = fcells(1)
-             end if
-             do ivar = 1, nv
-                p = this % grid % dof(icell, ivar)
-                col_idx(cursor(p)) = this % grid % dof(ncell, ivar)
-                cursor(p) = cursor(p) + 1
-             end do
-          end if
+       nbrs = this % grid % neighbours(icell)
+       do k = 1, size(nbrs)
+          do ivar = 1, nv
+             p = this % grid % dof(icell, ivar)
+             col_idx(cursor(p)) = this % grid % dof(nbrs(k), ivar)
+             cursor(p) = cursor(p) + 1
+          end do
        end do
     end do
 

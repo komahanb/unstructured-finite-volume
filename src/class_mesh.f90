@@ -12,7 +12,7 @@ module class_mesh
   use class_array_mesh_loader, only : array_mesh_loader
   use class_string          , only : string
   use module_mesh_utils     , only : find, distance, elem_type_face_count, &
-       & elem_type_dimension, cross_product, form_cell_faces, &
+       & elem_type_dimension, cross_product, &
        & transpose_connectivities, order_face_vertices, sparse_transpose_matmul
   use module_verbosity      , only : verbosity
 
@@ -427,23 +427,6 @@ contains
 
     end block form_internal_faces
 
-    ! Sanity check (make sure numbering is continuous), although it
-    ! may not start from one. Applicable only for unpartitioned mesh
-!!$    if (num_images() .eq. 1) then
-!!$       if (me % num_points .gt. 0 .and. &
-!!$            & maxval(me % vertex_numbers) -  minval(me % vertex_numbers) + 1 .ne. me % num_points) &
-!!$            & error stop
-!!$       if (me % num_boundary_edges    .gt. 0 .and. &
-!!$            & maxval(me % edge_numbers  ) -  minval(me % edge_numbers  ) + 1 .ne. me % num_boundary_edges   ) &
-!!$            & error stop
-!!$       if (me % num_faces    .gt. 0 .and. &
-!!$            & maxval(me % face_numbers  ) -  minval(me % face_numbers  ) + 1 .ne. me % num_faces   ) &
-!!$            & error stop
-!!$       if (me % num_cells    .gt. 0 .and. &
-!!$            & maxval(me % cell_numbers  ) -  minval(me % cell_numbers  ) + 1 .ne. me % num_cells   ) &
-!!$            & error stop
-!!$    end if
-
     ! Perform initialization tasks and store the resulting flag
     me % initialized = me % initialize()
 
@@ -695,98 +678,6 @@ contains
 
     end block vertex_cell
 
-    !-----------------------------------------------------------------!
-    ! Find VertexFace conn. by inverting FaceVertex conn.
-    !-----------------------------------------------------------------!
-!!$
-!!$    vertex_face: block
-!!$
-!!$      integer :: ivertex
-!!$
-!!$      write(*,'(a)') "Inverting FaceVertex Map..."
-!!$
-!!$      call transpose_connectivities( &
-!!$           & this % face_vertices, &
-!!$           & this % num_face_vertices, &
-!!$           & this % vertex_faces, &
-!!$           & this % num_vertex_faces)
-!!$
-!!$      write(*,'(a)') "Inverting FaceVertex Map complete..."
-!!$
-!!$      if (allocated(this % vertex_faces) .and. size(this % vertex_faces, dim = 2) .gt. 0) then
-!!$
-!!$         write(*,'(a,i8,a,i8)') &
-!!$              & "Vertex to face info for", min(this % max_print,this % num_points), &
-!!$              & " vertices out of ", this % num_points
-!!$
-!!$         do ivertex = 1, min(this % max_print,this % num_points)
-!!$            write(*,*) &
-!!$                 & 'vertex [', this % vertex_numbers(ivertex), ']',&
-!!$                 & 'num_vertex_faces [', this % num_vertex_faces(ivertex), ']',&
-!!$                 & 'faces [', this % vertex_faces( &
-!!$                 & 1:this % num_vertex_faces(ivertex),ivertex), ']'
-!!$         end do
-!!$
-!!$         ! Sanity check
-!!$         if (minval(this % num_vertex_faces) .lt. 1) then
-!!$            write(error_unit, *) 'Error: There are vertices not mapped to a face'
-!!$            error stop
-!!$         end if
-!!$
-!!$      else
-!!$
-!!$         write(*,'(a)') "Vertex to face info not computed"
-!!$
-!!$      end if
-!!$
-!!$    end block vertex_face
-
-    !-----------------------------------------------------------------!
-    ! Find VertexEdge conn. by inverting EdgeVertex conn.
-    !-----------------------------------------------------------------!
-
-!!$    vertex_edge: block
-!!$
-!!$      integer :: ivertex
-!!$
-!!$      write(*,'(a)') "Inverting EdgeVertex Map..."
-!!$
-!!$      call transpose_connectivities( &
-!!$           & this % edge_vertices, &
-!!$           & this % num_edge_vertices, &
-!!$           & this % vertex_edges, &
-!!$           & this % num_vertex_edges)
-!!$
-!!$      write(*,'(a)') "Inverting EdgeVertex Map complete..."
-!!$
-!!$      if (allocated(this % vertex_edges) .and. size(this % vertex_edges, dim = 2) .gt. 0) then
-!!$
-!!$         write(*,'(a,i8,a,i8)') &
-!!$              & "Vertex to edge info for", min(this % max_print,this % num_points), &
-!!$              & " vertices out of ", this % num_points
-!!$
-!!$         do ivertex = 1, min(this % max_print,this % num_points)
-!!$            write(*,*) &
-!!$                 & 'vertex [', this % vertex_numbers(ivertex), ']',&
-!!$                 & 'num_vertex_edges [', this % num_vertex_edges(ivertex) , ']',&
-!!$                 & 'edges [', this % vertex_edges(&
-!!$                 & 1:this % num_vertex_edges(ivertex),ivertex), ']'
-!!$         end do
-!!$
-!!$         ! Sanity check
-!!$         if (minval(this % num_vertex_edges) .lt. 1) then
-!!$            write(error_unit, *) 'Error: There are vertices not mapped to a edge'
-!!$            error stop
-!!$         end if
-!!$
-!!$      else
-!!$
-!!$         write(*,'(a)') "Vertex to edge info not computed"
-!!$
-!!$      end if
-!!$
-!!$    end block vertex_edge
-
   end subroutine invert_connectivities
 
   impure type(logical) function initialize(this)
@@ -989,48 +880,6 @@ contains
     end if
 
   end subroutine evaluate_face_weight
-
-!!$  subroutine evaluate_face_deltas(this)
-!!$
-!!$    class(mesh), intent(inout) :: this
-!!$    integer  :: gface, gcell, lface
-!!$    real(dp) :: fn(3)
-!!$
-!!$    write(*,*) "Evaluating face deltas"
-!!$    allocate(this % face_deltas(this % num_faces))
-!!$
-!!$    do concurrent (gface=1:this % num_faces)
-!!$
-!!$       ! First cell belonging to the face
-!!$       gcell = this % face_cells(1, gface)
-!!$
-!!$       ! Face number in local numbering
-!!$       ! avoid this??
-!!$       lface = find(this % cell_faces(:,gcell), gface)
-!!$
-!!$       ! Index into normal array
-!!$       fn =  this % cell_face_normals(:, lface, gcell)
-!!$
-!!$       ! Take absolute value of dot product
-!!$       this % face_deltas(gface) = abs(dot_product(this % lvec(1:3,gface), fn))
-!!$
-!!$       print *, "face [", gface, "] ",&
-!!$            & "delta [", this % face_deltas(gface), "] ",&
-!!$            & "skewness t.l [", &
-!!$            & dot_product(this % lvec(1:3,gface)                    , this % cell_face_tangents(:, lface, gcell)), "] ", &
-!!$            & "orthogonality t.n [", &
-!!$            & dot_product(this % cell_face_tangents(:, lface, gcell), this % cell_face_normals(:, lface, gcell)), "] ", &
-!!$            & this % cell_face_normals(:, lface, gcell)
-!!$
-!!$    end do
-!!$
-!!$    ! Check for negative volumes
-!!$    if (abs(minval(this % face_deltas)) < 1.0d-10) then
-!!$       print *, 'collinear faces/bad cell?'
-!!$       error stop
-!!$    end if
-!!$
-!!$  end subroutine evaluate_face_deltas
 
   impure subroutine evaluate_centroidal_vector(this)
 

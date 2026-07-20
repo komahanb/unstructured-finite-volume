@@ -51,8 +51,10 @@ module interface_multigrid
 
   type :: multigrid_level
      type(csr_matrix)      :: A           ! operator on this level
-     type(csr_matrix)      :: P           ! prolongation (fine x coarse)
-     type(csr_matrix)      :: R           ! restriction  = P^T
+     type(csr_matrix)      :: P           ! prolongation (fine x coarse);
+                                          ! the restriction is NOT stored -
+                                          ! it is P's edges walked against
+                                          ! their arrows (matvec_transpose)
      real(dp), allocatable :: Dinv(:)     ! 1/diag(A) (smoother)
      integer , allocatable :: parts(:)    ! the squint's answer, kept: which coarse vertex each vertex joins
   end type multigrid_level
@@ -162,7 +164,7 @@ contains
     integer , allocatable :: agg(:)
     real(dp), allocatable :: dinv(:)
     real(dp)              :: omega, rho
-    type(csr_matrix)      :: P0, AP0
+    type(csr_matrix)      :: P0, AP0, Pt
 
     ! re-entrant: drop any previously-built hierarchy, refined levels
     ! included - they hang off the old level-1 operator
@@ -202,10 +204,13 @@ contains
        AP0 = this % levels(lev) % A % matmat(P0)
        call AP0 % scale_rows(dinv)
        this % levels(lev) % P = P0 % add(1.0_dp, -omega, AP0)
-       this % levels(lev) % R = this % levels(lev) % P % transpose()
 
-       ! galerkin coarse operator  Ac = R A P
-       this % levels(lev+1) % A = this % levels(lev) % R % matmat( &
+       ! galerkin coarse operator  Ac = P^T (A P). the restriction is
+       ! not a thing we keep - the cycle walks P's edges backward via
+       ! matvec_transpose - so a scratch transpose serves this one
+       ! product and evaporates
+       Pt = this % levels(lev) % P % transpose()
+       this % levels(lev+1) % A = Pt % matmat( &
             & this % levels(lev) % A % matmat(this % levels(lev) % P))
 
        lev = lev + 1
@@ -256,7 +261,7 @@ contains
   ! graph splits into children (the stored_graph refinement, which
   ! adopts the parent map as its partition), and the wheels already
   ! on the shelf do the rest: tentative_prolongation over the parents
-  ! builds the interpolation, its transpose the restriction, and the
+  ! builds the interpolation (walked backward, it restricts), and the
   ! lifted operator is A_finer = P A P^T - interpolation alone, no
   ! new discretization, said plainly: a refined level smooths the
   ! same problem through a finer lens. Repeat n times, each level
@@ -269,7 +274,7 @@ contains
     integer         , intent(in)    :: n_finer
 
     type(stored_graph)    :: coarser, refined
-    type(csr_matrix)      :: A_coarser, PA
+    type(csr_matrix)      :: A_coarser, PA, Pt
     integer , allocatable :: parent(:)
     integer               :: k, v
 
@@ -299,10 +304,11 @@ contains
 
        associate(L => this % finer_levels(k))
          L % P    = tentative_prolongation(parent, coarser % num_vertices)
-         L % R    = L % P % transpose()
-         ! the lifted operator A_finer = P A P^T, and R already is P^T
+         ! the lifted operator A_finer = P A P^T - a scratch transpose
+         ! serves the one product and evaporates
          PA       = L % P % matmat(A_coarser)
-         L % A    = PA % matmat(L % R)
+         Pt       = L % P % transpose()
+         L % A    = PA % matmat(Pt)
          L % Dinv = 1.0_dp/L % A % get_diagonal()
          ! the parent map is kept only when a configured export needs it
          if (this % keeps(-k)) L % parts = parent
@@ -480,12 +486,13 @@ contains
              allocate(res(rows_at(this, l)))
              call this % levels(l+1) % A % matvec(state(l) % x, res)
              res = state(l) % b - res
-             call this % levels(l+1) % R % matvec(res, state(l_next) % b)
+             ! restrict = the prolongation's edges walked backward
+             call this % levels(l+1) % P % matvec_transpose(res, state(l_next) % b)
              state(l_next) % x = 0.0_dp
           else
-             ! leaving refined territory: project the improved
-             ! iterate back down (R is the interpolation's transpose)
-             call this % finer_levels(-l) % R % matvec(state(l) % x, state(l_next) % x)
+             ! leaving refined territory: project the improved iterate
+             ! back down through the interpolation, against its arrows
+             call this % finer_levels(-l) % P % matvec_transpose(state(l) % x, state(l_next) % x)
           end if
 
        else if (l_next .eq. l - 1) then

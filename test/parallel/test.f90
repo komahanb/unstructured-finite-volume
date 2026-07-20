@@ -78,6 +78,9 @@ program test_parallel
   ! product and the nonlinear residual both ride the face halo; the
   ! marched final state, replicated, must match a serial march.
   call run_transient(me, np, nfail)
+  ! the REVERSE halo: the genuine distributed transpose. the identity
+  ! <w, A v> = <Aᵀ w, v> is a real self-check of the reverse exchange.
+  call run_transpose(me, np, nfail)
 
   if (me .eq. 1) then
      write(*,'(a)') " -----------------------------------------------------"
@@ -206,6 +209,37 @@ contains
     call fvm % set_dirichlet("left"  , 0.0_dp)
     call fvm % set_dirichlet("right" , 0.0_dp)
   end subroutine trans_bc
+
+  !===================================================================!
+  ! The reverse halo, checked directly: the distributed transpose is
+  ! genuine (not a symmetry claim), so <w, A v> = <Aᵀ w, v> must hold
+  ! to machine precision across images - a real self-check of the
+  ! reverse exchange (owned-row values scattered into ghost columns,
+  ! pulled back and summed by their owners).
+  !===================================================================!
+  subroutine run_transpose(me, np, nfail)
+    integer, intent(in)    :: me, np
+    integer, intent(inout) :: nfail
+    type(partitioned_assembler), allocatable :: fvmp
+    class(gmsh_loader), allocatable :: gl
+    class(mesh)       , allocatable :: grid
+    real(dp) :: defect
+
+    allocate(gl  , source = gmsh_loader("square-40.msh"))
+    allocate(grid, source = mesh(gl))
+    allocate(fvmp, source = partitioned_assembler(grid))
+    call square_bc(fvmp)
+    call fvmp % setup_partition()
+
+    defect = fvmp % verify_transpose_consistency()
+
+    if (me .eq. 1) then
+       write(*,'(a)') " -----------------------------------------------------"
+       write(*,'(2x,a)')        "case: reverse-halo transpose (square-40)"
+       write(*,'(4x,a,es12.4)') "transpose defect <w,Av>-<Aᵀw,v> : ", defect
+    end if
+    if (defect .gt. 1.0e-12_dp) nfail = nfail + 1
+  end subroutine run_transpose
 
   !===================================================================!
   ! mixed-bc diffusion on box-36

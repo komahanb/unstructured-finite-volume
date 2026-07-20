@@ -51,12 +51,16 @@ module class_partitioned_assembler
   public :: partitioned_assembler
   public :: block_preconditioner
 
-  ! the exchange wire. a module variable, not object state: the
+  ! the exchange wires. module variables, not object state: the
   ! standard forbids a coarray component on an allocatable object,
   ! and every driver holds its assembler allocatable. nothing is
-  ! smuggled through it - it is written and read only inside
-  ! exchange_halo, between two syncs.
+  ! smuggled through them - each is written and read only inside its
+  ! exchange, between two syncs.
+  !   post  - owners post the owned slab, ghosts PULL   (forward)
+  !   gpost - ghosts post their contributions, owners PULL and sum
+  !                                                     (reverse)
   real(dp), allocatable :: post(:)[:]
+  real(dp), allocatable :: gpost(:)[:]
 
   !===================================================================!
   ! The partitioned system
@@ -75,6 +79,16 @@ module class_partitioned_assembler
      integer, allocatable :: own(:)         ! global dofs of the owned prefix
      integer, allocatable :: gh_owner(:)    ! ghost j's owning image
      integer, allocatable :: gh_slot(:)     ! ...and its slot in that owner's frame
+
+     ! the REVERSE book: the transpose scatters owned-row values into
+     ! frame columns, and the ghost columns belong to other images -
+     ! so each owned row COLLECTS contributions from the images that
+     ! ghost it. grouped by owned slot: contributor image + its ghost
+     ! index there. the transpose of the forward pull, zero messages
+     ! to build (the partition is replicated).
+     integer, allocatable :: rev_ptr(:)     ! (nown+1) owned slot -> its contributors
+     integer, allocatable :: rev_img(:)     ! contributor image
+     integer, allocatable :: rev_slot(:)    ! ...and its ghost index there
 
      ! the NODE frame:  [ owned dofs | node-ghost dofs ]
      !                    1 .. nown    nown+1 .. nwide
@@ -105,12 +119,19 @@ module class_partitioned_assembler
      ! global dof indexing - impossible on a slab, so we override)
      procedure :: add_residual
      procedure :: add_jacobian_vector_product
+     procedure :: add_jacobian_vector_product_transpose
+
+     ! the transpose is verified whole-only in parallel (operator
+     ! parts are a serial-only diagnostic; the reverse halo is genuine)
+     procedure :: verify_transpose_consistency
 
      ! the door between the frame and the world outside it
      procedure :: replicate
 
      procedure, private :: exchange_halo
+     procedure, private :: exchange_halo_reverse
      procedure, private :: spatial_local
+     procedure, private :: spatial_local_transpose
 
   end type partitioned_assembler
 
@@ -267,6 +288,53 @@ contains
     if (allocated(post)) deallocate(post)
     allocate(post(maxown)[*])
 
+    ! ---- the reverse book + its wire: for each of my owned rows, the
+    ! images that ghost it and their ghost index there. built by
+    ! walking every image's (replicated) face ghost list and keeping
+    ! the entries I own - the transpose of the forward pull ----
+    build_reverse: block
+      integer, allocatable :: gh_i(:), cnt(:), cursor(:)
+      integer :: img, jr, gr, vr, sr, maxgh, tot
+      allocate(cnt(this % nown)); cnt = 0
+      maxgh = 0
+      ! pass 1: count contributors per owned slot
+      do img = 1, num_images()
+         gh_i  = this % grid % dofs_of(this % grid % ghosts(img))
+         maxgh = max(maxgh, size(gh_i))
+         do jr = 1, size(gh_i)
+            gr = gh_i(jr)
+            vr = (gr - 1)/this % grid % num_variables + 1
+            if (this % grid % part_of(vr) .eq. me) cnt(floc(gr)) = cnt(floc(gr)) + 1
+         end do
+      end do
+      allocate(this % rev_ptr(this % nown + 1))
+      this % rev_ptr(1) = 1
+      do sr = 1, this % nown
+         this % rev_ptr(sr+1) = this % rev_ptr(sr) + cnt(sr)
+      end do
+      tot = this % rev_ptr(this % nown + 1) - 1
+      allocate(this % rev_img(tot), this % rev_slot(tot))
+      ! pass 2: fill at each slot's cursor
+      allocate(cursor(this % nown)); cursor = this % rev_ptr(1:this % nown)
+      do img = 1, num_images()
+         gh_i = this % grid % dofs_of(this % grid % ghosts(img))
+         do jr = 1, size(gh_i)
+            gr = gh_i(jr)
+            vr = (gr - 1)/this % grid % num_variables + 1
+            if (this % grid % part_of(vr) .eq. me) then
+               sr = floc(gr)
+               this % rev_img(cursor(sr))  = img
+               this % rev_slot(cursor(sr)) = jr
+               cursor(sr) = cursor(sr) + 1
+            end if
+         end do
+      end do
+      ! the reverse wire: sized to the largest face-ghost count (maxgh
+      ! is already global - every image walked the same replicated lists)
+      if (allocated(gpost)) deallocate(gpost)
+      allocate(gpost(max(maxgh, 1))[*])
+    end block build_reverse
+
     ! ---- the vectors shrink: the state length becomes the owned slab,
     ! and the initial-condition field follows it (a transient march
     ! seeds U(:,1) from phi, so phi must be the owned slab too) ----
@@ -372,25 +440,39 @@ contains
     end if
 
     if (this % partitioned) then
-       if (dir .eq. REVERSE) then
-          error stop "partitioned_assembler: a distributed transpose march is a tracked deferral"
-       end if
        if (sub .ne. WHOLE) then
           error stop "partitioned_assembler: distributed operator parts are a tracked deferral"
        end if
 
-       ! the frozen linearization J = beta*M - alpha*A rides the SAME
-       ! face halo as the steady operator - the mass term is diagonal,
-       ! so only the spatial term A crosses the wire:
-       !
-       !    J v = beta*(m_own * v_own)  -  alpha*(A_local * [exchange v])
-       !          └── diagonal, local ─┘     └──── halo, already have ───┘
-       if (allocated(this % lin_coeff)) then
-          w = real(this % lin_coeff(2), dp)*this % m_own*v(1:this % nown) &
-               & - real(this % lin_coeff(1), dp)*this % spatial_local(v)
-       else
-          w = this % spatial_local(v)
-       end if
+       ! do we need the spatial operator's TRANSPOSE? a plain REVERSE
+       ! asks for it; a frozen transpose freeze marched forward also
+       ! does - and a REVERSE of a transposed freeze is forward again
+       ! (the same XOR the serial seat composes).
+       spatial: block
+         logical :: trans
+         real(dp), allocatable :: Av(:)
+         trans = (dir .eq. REVERSE)
+         if (allocated(this % lin_coeff)) trans = this % lin_transpose .neqv. (dir .eq. REVERSE)
+
+         if (trans) then
+            Av = this % spatial_local_transpose(v)
+         else
+            Av = this % spatial_local(v)
+         end if
+
+         ! the frozen linearization J = beta*M - alpha*A rides the SAME
+         ! halo as the steady operator - the mass is diagonal (so M = Mᵀ,
+         ! no halo), only the spatial term crosses the wire:
+         !
+         !    J v = beta*(m_own * v_own)  -  alpha*(A[ᵀ] v)
+         !          └── diagonal, local ─┘     └─ halo (fwd or rev) ─┘
+         if (allocated(this % lin_coeff)) then
+            w = real(this % lin_coeff(2), dp)*this % m_own*v(1:this % nown) &
+                 & - real(this % lin_coeff(1), dp)*Av
+         else
+            w = Av
+         end if
+       end block spatial
        return
     end if
 
@@ -433,6 +515,66 @@ contains
     call this % A_local % matvec(buf, Av)
 
   end function spatial_local
+
+  !===================================================================!
+  ! The reverse exchange: the transpose scatters owned-row values
+  ! into frame columns, and the ghost tail belongs to other images.
+  ! So each owner PULLS the contributions aimed at its rows and sums
+  ! them - the mirror of the forward pull:
+  !
+  !    forward:   me  ◀──reads owned── owner        (owner → ghost)
+  !    reverse:   owner ◀──reads ghost── me          (ghost → owner)
+  !               and each owner SUMS what lands on its rows
+  !
+  !    ┌─ image 1 ──┐          ┌─ image 2 ──┐
+  !    │ own: +=g   │ ◀──g───  │ gh: g      │   image 2 posts its ghost
+  !    │            │          │            │   contribution; image 1
+  !    └────────────┘          └────────────┘   pulls and adds it in
+  !===================================================================!
+
+  subroutine exchange_halo_reverse(this, yframe)
+
+    class(partitioned_assembler), intent(in)    :: this
+    real(dp)                    , intent(inout) :: yframe(:)   ! frame length; own rows updated
+
+    integer :: s, k
+
+    ! post my ghost-column contributions, tagged by ghost index
+    gpost(1:this % ngh) = yframe(this % nown + 1 : this % nloc)
+    sync all
+    ! each owned row sums the contributions the ghosting images posted
+    do s = 1, this % nown
+       do k = this % rev_ptr(s), this % rev_ptr(s+1) - 1
+          yframe(s) = yframe(s) + gpost(this % rev_slot(k))[this % rev_img(k)]
+       end do
+    end do
+    sync all
+
+  end subroutine exchange_halo_reverse
+
+  !===================================================================!
+  ! The transpose spatial product on the owned rows: A_local walked
+  ! against its arrows (matvec_transpose) fills a frame vector, then
+  ! the reverse exchange sums the ghost-column contributions back to
+  ! their owners.
+  !
+  !    v (owned slab) ──A_localᵀ──▶ [ own | ghost contribs ]
+  !                                  ── reverse exchange ──▶ owned slab
+  !===================================================================!
+
+  impure function spatial_local_transpose(this, v) result(Atv)
+
+    class(partitioned_assembler), intent(in) :: this
+    real(dp)                    , intent(in) :: v(:)
+
+    real(dp), allocatable :: Atv(:), yframe(:)
+
+    allocate(yframe(this % nloc))
+    call this % A_local % matvec_transpose(v(1:this % nown), yframe)
+    call this % exchange_halo_reverse(yframe)
+    Atv = yframe(1:this % nown)
+
+  end function spatial_local_transpose
 
   !===================================================================!
   ! The semi-discrete residual on the owned rows, halo-aware:
@@ -496,6 +638,70 @@ contains
          & - real(scalars(1), dp)*this % spatial_local(real(vec(1:this % nown), dp))
 
   end subroutine add_jacobian_vector_product
+
+  !===================================================================!
+  ! The transpose jacobian-vector product on the owned rows:
+  !
+  !    pdt += [ beta*Mᵀ - alpha*Aᵀ ] vec = [ beta*M - alpha*Aᵀ ] vec
+  !            │           │
+  !            diagonal    spatial transpose (reverse halo)
+  !
+  ! The adjoint marches a transposed freeze FORWARD, so the linearized
+  ! residual b - Jᵀx routes its Jᵀ here. The mass is diagonal, so only
+  ! the spatial transpose crosses the (reverse) wire.
+  !===================================================================!
+
+  impure subroutine add_jacobian_vector_product_transpose(this, pdt, vec, scalars, filter)
+
+    class(partitioned_assembler), intent(in)           :: this
+    type(scalar)                , intent(inout)        :: pdt(:)
+    type(scalar)                , intent(in)           :: vec(:)
+    type(scalar)                , intent(in)           :: scalars(:)
+    integer                     , intent(in), optional :: filter
+
+    if (present(filter)) then
+       error stop "partitioned_assembler: a filtered transpose (an operator part) " // &
+            & "is a tracked deferral"
+    end if
+
+    pdt(1:this % nown) = pdt(1:this % nown) &
+         & + real(scalars(2), dp)*this % m_own*real(vec(1:this % nown), dp) &
+         & - real(scalars(1), dp)*this % spatial_local_transpose(real(vec(1:this % nown), dp))
+
+  end subroutine add_jacobian_vector_product_transpose
+
+  !===================================================================!
+  ! Verify the transpose whole-only: the reverse halo is a GENUINE
+  ! transpose, not a symmetry claim, so the identity <w, A v> =
+  ! <Aᵀ w, v> is a real self-check of the reverse exchange. Operator
+  ! parts (the triangles) are a serial-only diagnostic - the colored
+  ! smoothers replaced the triangle sweeps - so they are not checked
+  ! here. Returns the relative defect over the owned rows, reduced.
+  !===================================================================!
+
+  impure real(dp) function verify_transpose_consistency(this) result(defect)
+
+    class(partitioned_assembler), intent(in) :: this
+
+    real(dp), allocatable :: v(:), w(:), Av(:), Atw(:)
+    real(dp) :: lhs, rhs, scale
+    integer  :: i
+
+    allocate(v(this % nown), w(this % nown))
+    do i = 1, this % nown
+       v(i) = sin(real(this % own(i), dp)*0.7_dp) + 0.3_dp
+       w(i) = cos(real(this % own(i), dp)*0.5_dp) + 0.2_dp
+    end do
+
+    Av  = this % spatial_local(v)
+    Atw = this % spatial_local_transpose(w)
+
+    lhs   = this % inner_product(w, Av)
+    rhs   = this % inner_product(Atw, v)
+    scale = max(abs(lhs), abs(rhs), 1.0_dp)
+    defect = abs(lhs - rhs)/scale
+
+  end function verify_transpose_consistency
 
   !===================================================================!
   ! The steady residual, owned rows only:

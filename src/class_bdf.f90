@@ -7,23 +7,36 @@
 ! raises that chain to its p-th power - and this integrator carries
 ! the resulting step dag (a chain object, edges by rule):
 !
-!    power 1:    1 --> 2 --> 3 --> 4 --> 5        the plain chain
-!
 !                .-----------.-----------.
 !                |           v           v
-!    power 2:    1 --> 2 --> 3 --> 4 --> 5        edge m --> k
+!                1 --> 2 --> 3 --> 4 --> 5        edge m --> k
 !                      |           ^              whenever
 !                      '-----------'              k - m <= power
 !
-! One dag, two directions:
+! One dag, two directions: forward, the in-edges of a vertex deliver
+! the past states that form udot (step); backward, the out-edges
+! hand back weighted mass actions (march_backwards). The same edge
+! weights A(p,j+1)/h ride both ways.
 !
-!    forward  (step):             backward  (march_backwards):
-!    the in-edges of k deliver    the out-edges of m hand back
-!    the past states; udot_k is   weighted mass actions; rhs_m is
-!    their weighted sum, then     their weighted sum, then one
-!    newton drives R to zero      transpose solve gives psi_m
+! Now zoom into any vertex, and the picture repeats at a smaller
+! scale - this solver is a fractal of graphs:
 !
-! The same edge weights A(p,j+1)/h ride both ways.
+!    the step dag           1 --> 2 --> (m) --> ... --> n
+!                                        |
+!    inside vertex m:                    v
+!    one transpose solve       it1 --> it2 --> ... --> itj
+!    = a solver chain of                 |
+!    matvecs and dots                    v
+!                                    o---o---o      a matvec: at
+!    inside one matvec:              | \ | / |      every mesh
+!    the mesh graph                  o---o---o      vertex, a dot
+!                                        |          over its edges
+!    inside one dot:                     v
+!    the partition           (o o o)  +  (o o o)  +  (o o)
+!                             part 1      part 2      part 3
+!
+! Four rungs, one grammar: weighted sums over edges and sums over
+! vertex sets - inner products all the way down.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!

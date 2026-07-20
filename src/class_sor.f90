@@ -17,7 +17,7 @@
 module class_sor
 
   use iso_fortran_env         , only : dp => REAL64
-  use interface_graph         , only : graph
+  use interface_graph         , only : graph, power_iteration
   use interface_linear_solver , only : linear_solver
   use interface_assembler     , only : assembler, DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE
 
@@ -101,36 +101,22 @@ contains
     integer         , intent(in)    :: pass
     real(dp)        , intent(in)    :: rate
 
-    real(dp), allocatable :: v(:), w(:), D(:), identity(:)
-    real(dp) :: rho, wnorm
-    integer  :: it, n
+    real(dp), allocatable :: D(:), identity(:)
+    real(dp) :: rho
+    integer  :: n
 
     static: if (pass .eq. 0) then
 
        n = system % num_state_vars
-       allocate(v(n), w(n), D(n), identity(n))
+       allocate(D(n), identity(n))
 
        ! the diagonal (the self-loop subgraph on ones)
        identity = 1.0_dp
        call system % get_jacobian_residual_product(D, identity, part = DIAGONAL)
 
-       ! power iteration on the unrelaxed sweep map v -> D^-1 (L+U) v
-       call fill_unit(v)
-       rho = 0.0_dp
-       do it = 1, 50
-          call system % get_jacobian_residual_product(w, v, part = LOWER_TRIANGLE)
-          call system % get_jacobian_residual_product(D, identity, part = DIAGONAL)
-          block
-            real(dp), allocatable :: wu(:)
-            allocate(wu(n))
-            call system % get_jacobian_residual_product(wu, v, part = UPPER_TRIANGLE)
-            w = (w + wu)/D
-          end block
-          wnorm = sqrt(system % inner_product(w, w))
-          if (wnorm .le. tiny(1.0_dp)) exit
-          rho = wnorm/sqrt(system % inner_product(v, v))
-          v   = w/wnorm
-       end do
+       ! the growth rate of the unrelaxed sweep map v -> D^-1 (L+U) v,
+       ! measured by the graph module's power kernel
+       call power_iteration(sweep_map, n, 50, rho)
        rho = min(rho, 1.0_dp - epsilon(1.0_dp))
 
        this % omega_saved = this % omega
@@ -160,17 +146,16 @@ contains
 
   contains
 
-    ! deterministic unit start vector so the tune is reproducible
-    pure subroutine fill_unit(v)
-      real(dp), intent(out) :: v(:)
-      integer :: i, s
-      s = 13
-      do i = 1, size(v)
-         s    = mod(s*1103515245 + 12345, 2147483647)
-         v(i) = real(mod(s, 10000), dp)/10000.0_dp - 0.5_dp
-      end do
-      v = v/norm2(v)
-    end subroutine fill_unit
+    ! the unrelaxed sweep as a linear action (D and system captured)
+    subroutine sweep_map(v, w)
+      real(dp), intent(in)  :: v(:)
+      real(dp), intent(out) :: w(:)
+      real(dp), allocatable :: wu(:)
+      allocate(wu(size(w)))
+      call system % get_jacobian_residual_product(w , v, part = LOWER_TRIANGLE)
+      call system % get_jacobian_residual_product(wu, v, part = UPPER_TRIANGLE)
+      w = (w + wu)/D
+    end subroutine sweep_map
 
   end subroutine tune
 

@@ -36,7 +36,7 @@ module interface_multigrid
 
   use iso_fortran_env        , only : dp => REAL64
   use class_csr              , only : csr_matrix
-  use interface_graph        , only : digraph
+  use interface_graph        , only : digraph, power_iteration
   use class_stored_graph     , only : stored_graph, stored_digraph
   use interface_linear_solver, only : preconditioner
 
@@ -663,40 +663,31 @@ contains
   end subroutine jacobi_sweeps
 
   !===================================================================!
-  ! Spectral radius of (Dinv A) on level lev by bounded power iteration,
-  ! floored by the gershgorin bound max_i sum_j |Dinv A|_ij - used for the
-  ! smoothed-prolongation weight omega = (4/3)/rho
+  ! Spectral radius of (Dinv A) on level lev - the graph module's
+  ! power kernel iterates the damped action, and a gershgorin floor
+  ! guards the short iteration from underestimating. Used for the
+  ! smoothed-prolongation weight omega = (4/3)/rho.
   !===================================================================!
 
-  pure real(dp) function spectral_radius(this, lev) result(rho)
+  impure real(dp) function spectral_radius(this, lev) result(rho)
     class(multigrid), intent(in) :: this
     integer         , intent(in) :: lev
-    real(dp), allocatable :: v(:), w(:)
-    real(dp) :: nv, gers, rowsum
-    integer  :: n, it, i, k
+    real(dp), allocatable :: v(:)
+    real(dp) :: gers, rowsum
+    integer  :: n, i, k
 
+    n = this % levels(lev) % A % nrows
+
+    ! non-constant deterministic start (the constant is near-null)
+    allocate(v(n))
+    do i = 1, n
+       v(i) = sin(real(i,dp)*0.9_dp) + 0.1_dp
+    end do
+
+    call power_iteration(damped_action, n, 15, rho, v0 = v)
+
+    ! gershgorin floor
     associate(A => this % levels(lev) % A, Dinv => this % levels(lev) % Dinv)
-
-      n = A % nrows
-      allocate(v(n), w(n))
-
-      ! non-constant deterministic start (the constant is near-null)
-      do i = 1, n
-         v(i) = sin(real(i,dp)*0.9_dp) + 0.1_dp
-      end do
-      v = v/norm2(v)
-
-      rho = 0.0_dp
-      do it = 1, 15
-         call A % matvec(v, w)
-         w  = Dinv*w
-         nv = norm2(w)
-         if (nv .le. 0.0_dp) exit
-         rho = nv
-         v   = w/nv
-      end do
-
-      ! gershgorin floor
       gers = 0.0_dp
       do i = 1, n
          rowsum = 0.0_dp
@@ -705,10 +696,19 @@ contains
          end do
          gers = max(gers, rowsum)
       end do
-      rho = max(rho, gers)
-      if (rho .le. 0.0_dp) rho = 1.0_dp
-
     end associate
+    rho = max(rho, gers)
+    if (rho .le. 0.0_dp) rho = 1.0_dp
+
+  contains
+
+    ! the damped operator Dinv A as a linear action (level captured)
+    subroutine damped_action(x, y)
+      real(dp), intent(in)  :: x(:)
+      real(dp), intent(out) :: y(:)
+      call this % levels(lev) % A % matvec(x, y)
+      y = this % levels(lev) % Dinv * y
+    end subroutine damped_action
 
   end function spectral_radius
 

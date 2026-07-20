@@ -41,7 +41,7 @@
 module interface_linear_solver
 
   use iso_fortran_env           , only : dp => REAL64
-  use interface_graph           , only : graph, counting_sort
+  use interface_graph           , only : graph, counting_sort, power_iteration
   use interface_marcher         , only : marcher
   use interface_assembler       , only : assembler, DIAGONAL
   use interface_state           , only : state
@@ -589,8 +589,9 @@ contains
   end subroutine tune
 
   !===================================================================!
-  ! Largest eigenvalue size of the operator by power iteration - the
-  ! solver-level objective measurement, built from products and norms only.
+  ! Largest eigenvalue size of the operator - the graph module's
+  ! power kernel iterates the system's whole-operator action. The
+  ! kernel's fixed start makes the measurement reproducible.
   !===================================================================!
 
   impure subroutine estimate_spectral_radius(this, system, mu, max_iter)
@@ -600,25 +601,16 @@ contains
     real(dp)            , intent(out) :: mu
     integer             , intent(in)  :: max_iter
 
-    real(dp), allocatable :: v(:), w(:)
-    integer  :: iter
-    real(dp) :: wnorm
+    call power_iteration(whole_action, system % num_state_vars, max_iter, mu)
 
-    call system % create_vector(v)
-    call random_number(v)
-    v = v/sqrt(system % inner_product(v, v))
+  contains
 
-    call system % create_vector(w)
-
-    power_iteration: do iter = 1, max_iter
-       call system % get_jacobian_residual_product(w, v)
-       wnorm = sqrt(system % inner_product(w, w))
-       v  = w/wnorm
-       mu = system % inner_product(v, w)
-       if (this % print_level .gt. 1) write(*,*) iter, mu
-    end do power_iteration
-
-    deallocate(v, w)
+    ! the system's whole-operator action (system captured)
+    subroutine whole_action(v, w)
+      real(dp), intent(in)  :: v(:)
+      real(dp), intent(out) :: w(:)
+      call system % get_jacobian_residual_product(w, v)
+    end subroutine whole_action
 
   end subroutine estimate_spectral_radius
 

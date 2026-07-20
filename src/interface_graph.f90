@@ -58,6 +58,7 @@ module interface_graph
   private
   public :: graph, digraph, vertex, edge
   public :: counting_sort, transpose_adjacency
+  public :: power_iteration
 
   type :: vertex
      integer :: number      ! vertex label
@@ -191,6 +192,15 @@ module interface_graph
        class(graph), intent(in) :: this
        integer     , intent(in) :: v
      end function degree_interface
+
+     ! a linear action w = A v, however the caller assembles it -
+     ! stored entries, filtered products, a smoothing sweep. the
+     ! power kernel iterates it.
+     subroutine map_interface(v, w)
+       import :: dp
+       real(dp), intent(in)  :: v(:)
+       real(dp), intent(out) :: w(:)
+     end subroutine map_interface
 
   end interface
 
@@ -425,6 +435,59 @@ contains
     end do
 
   end subroutine counting_sort
+
+  !===================================================================!
+  ! The power kernel: iterated matvecs and dots, written once. Feed
+  ! it any linear action w = A v - stored entries, filtered
+  ! products, a smoothing sweep - and it measures the dominant
+  ! stretch. For a weighted adjacency action that is the graph's
+  ! spectral radius, the growth rate of path sums:
+  !
+  !    v --> Av --> A(Av) --> A(A(Av)) --> ...
+  !
+  !    per pass: one matvec, one measuring dot (mu = the stretch
+  !    ||Av|| of the unit v), and the unit vector rides on
+  !
+  ! The default start is a fixed pseudo-random unit vector, so a
+  ! measurement reproduces run to run; a caller with a reason
+  ! passes its own start (v0 need not be normalized).
+  !===================================================================!
+
+  subroutine power_iteration(map, n, iters, mu, v0)
+
+    procedure(map_interface)       :: map
+    integer , intent(in)           :: n
+    integer , intent(in)           :: iters
+    real(dp), intent(out)          :: mu
+    real(dp), intent(in), optional :: v0(:)
+
+    real(dp), allocatable :: v(:), w(:)
+    real(dp) :: wnorm
+    integer  :: it, i, s
+
+    allocate(v(n), w(n))
+
+    if (present(v0)) then
+       v = v0
+    else
+       s = 13
+       do i = 1, n
+          s    = mod(s*1103515245 + 12345, 2147483647)
+          v(i) = real(mod(s, 10000), dp)/10000.0_dp - 0.5_dp
+       end do
+    end if
+    v = v/norm2(v)
+
+    mu = 0.0_dp
+    do it = 1, iters
+       call map(v, w)
+       wnorm = norm2(w)
+       if (wnorm .le. tiny(1.0_dp)) return
+       mu = wnorm
+       v  = w/wnorm
+    end do
+
+  end subroutine power_iteration
 
   !===================================================================!
   ! Transpose an adjacency. One side of a bipartite graph lists its

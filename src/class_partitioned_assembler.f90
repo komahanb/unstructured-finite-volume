@@ -1,3 +1,5 @@
+#include "scalar.fpp"
+
 !=====================================================================!
 ! The partitioned system: a spatial assembler whose vectors are
 ! DISTRIBUTED across coarray images. The solver is untouched - it
@@ -83,10 +85,12 @@ module class_partitioned_assembler
      integer, allocatable :: wide_slot(:)   ! ...and its slot in that owner's frame
      integer, allocatable :: wide_dofs(:)   ! the wide frame's global dofs (own ++ node-ghosts)
 
-     ! the owned rows, read in the frame (columns 1..nloc), and the
-     ! source's owned slab (state-independent, cached once)
+     ! the owned rows, read in the frame (columns 1..nloc); the source's
+     ! owned slab (state-independent, cached); and the lumped mass -
+     ! diag(cell volume) - the owned slab of dR/dudot, purely local
      type(csr_matrix)      :: A_local
      real(dp), allocatable :: b_loc(:)
+     real(dp), allocatable :: m_own(:)
 
    contains
 
@@ -97,10 +101,16 @@ module class_partitioned_assembler
      procedure :: get_jacobian_residual_product
      procedure :: state_residual
 
+     ! the frozen seats, halo-aware (the base loops all cells with
+     ! global dof indexing - impossible on a slab, so we override)
+     procedure :: add_residual
+     procedure :: add_jacobian_vector_product
+
      ! the door between the frame and the world outside it
      procedure :: replicate
 
      procedure, private :: exchange_halo
+     procedure, private :: spatial_local
 
   end type partitioned_assembler
 
@@ -238,6 +248,15 @@ contains
     call this % get_source(bfull)
     this % b_loc = bfull(this % own)
 
+    ! ---- the lumped mass on the owned rows: each dof's cell volume.
+    ! the mass is diagonal, so dR/dudot needs no halo at all ----
+    allocate(this % m_own(this % nown))
+    do j = 1, this % nown
+       g = this % own(j)
+       v = (g - 1)/this % grid % num_variables + 1
+       this % m_own(j) = this % grid % cell_volumes(v)
+    end do
+
     ! ---- the wire: coarray allocation must agree across images, so
     ! size it to the largest owned slab of any part ----
     maxown = 0
@@ -248,7 +267,10 @@ contains
     if (allocated(post)) deallocate(post)
     allocate(post(maxown)[*])
 
-    ! ---- the vectors shrink ----
+    ! ---- the vectors shrink: the state length becomes the owned slab,
+    ! and the initial-condition field follows it (a transient march
+    ! seeds U(:,1) from phi, so phi must be the owned slab too) ----
+    this % phi = this % phi(this % own)
     this % num_state_vars = this % nown
 
     this % partitioned = .true.
@@ -331,7 +353,6 @@ contains
     integer                     , intent(in), optional :: mode
     integer                     , intent(in), optional :: part
 
-    real(dp), allocatable :: buf(:)
     integer :: dir, sub
 
     dir = FORWARD
@@ -350,12 +371,6 @@ contains
             & "LOWER_TRIANGLE or UPPER_TRIANGLE"
     end if
 
-    ! a frozen linearization has no distributed path yet - refuse
-    ! loudly rather than march the wrong operator
-    if (allocated(this % lin_coeff)) then
-       error stop "partitioned_assembler: a frozen linearization is a tracked deferral"
-    end if
-
     if (this % partitioned) then
        if (dir .eq. REVERSE) then
           error stop "partitioned_assembler: a distributed transpose march is a tracked deferral"
@@ -363,10 +378,26 @@ contains
        if (sub .ne. WHOLE) then
           error stop "partitioned_assembler: distributed operator parts are a tracked deferral"
        end if
-       allocate(buf(this % nloc))
-       call this % exchange_halo(v, buf, this % gh_owner, this % gh_slot)
-       call this % A_local % matvec(buf, w)
+
+       ! the frozen linearization J = beta*M - alpha*A rides the SAME
+       ! face halo as the steady operator - the mass term is diagonal,
+       ! so only the spatial term A crosses the wire:
+       !
+       !    J v = beta*(m_own * v_own)  -  alpha*(A_local * [exchange v])
+       !          └── diagonal, local ─┘     └──── halo, already have ───┘
+       if (allocated(this % lin_coeff)) then
+          w = real(this % lin_coeff(2), dp)*this % m_own*v(1:this % nown) &
+               & - real(this % lin_coeff(1), dp)*this % spatial_local(v)
+       else
+          w = this % spatial_local(v)
+       end if
        return
+    end if
+
+    ! a frozen linearization has no REPLICATED path either - refuse
+    ! loudly rather than march the wrong operator (before setup only)
+    if (allocated(this % lin_coeff)) then
+       error stop "partitioned_assembler: a frozen linearization needs setup_partition first"
     end if
 
     ! before setup: the plain replicated composition
@@ -379,6 +410,92 @@ contains
     end if
 
   end subroutine get_jacobian_residual_product
+
+  !===================================================================!
+  ! The steady spatial product on the owned rows: exchange the face
+  ! halo, then the local block dots its edges. The one place the
+  ! spatial operator crosses the wire - every frozen product and the
+  ! nonlinear residual route through it.
+  !
+  !    v (owned slab) ──exchange──▶ [ v | ghosts ] ──A_local──▶ Av
+  !                                                  (owned slab)
+  !===================================================================!
+
+  impure function spatial_local(this, v) result(Av)
+
+    class(partitioned_assembler), intent(in) :: this
+    real(dp)                    , intent(in) :: v(:)
+
+    real(dp), allocatable :: Av(:), buf(:)
+
+    allocate(Av(this % nown), buf(this % nloc))
+    call this % exchange_halo(v, buf, this % gh_owner, this % gh_slot)
+    call this % A_local % matvec(buf, Av)
+
+  end function spatial_local
+
+  !===================================================================!
+  ! The semi-discrete residual on the owned rows, halo-aware:
+  !
+  !    R = M*udot  -  A*u  +  b        (S(:,1)=u, S(:,2)=udot)
+  !        │           │        │
+  !        diagonal    spatial, halo  cached owned source
+  !        m_own*udot  spatial_local
+  !
+  ! The base loops every cell with global dof indexing - impossible
+  ! on a slab - so the frame answers it here. Newton reads its
+  ! convergence residual through this seat, and so does the frozen
+  ! linearized residual.
+  !===================================================================!
+
+  impure subroutine add_residual(this, residual, filter)
+
+    class(partitioned_assembler), intent(in)           :: this
+    type(scalar)                , intent(inout)        :: residual(:)
+    integer                     , intent(in), optional :: filter
+
+    if (present(filter)) then
+       error stop "partitioned_assembler: a filtered residual (an operator part) " // &
+            & "is a tracked deferral"
+    end if
+
+    residual(1:this % nown) = residual(1:this % nown) &
+         & + this % m_own * this % S(1:this % nown, 2) &
+         & - this % spatial_local(this % S(1:this % nown, 1)) &
+         & + this % b_loc
+
+  end subroutine add_residual
+
+  !===================================================================!
+  ! The jacobian-vector product on the owned rows, halo-aware:
+  !
+  !    pdt += [ beta*M - alpha*A ] vec        scalars = [alpha, beta]
+  !            │          │
+  !            diagonal   spatial, halo (spatial_local)
+  !
+  ! This is the frozen operator's action; the base loops all cells,
+  ! so the frame answers it. The linearized residual b - Jx routes
+  ! its J here.
+  !===================================================================!
+
+  impure subroutine add_jacobian_vector_product(this, pdt, vec, scalars, filter)
+
+    class(partitioned_assembler), intent(in)           :: this
+    type(scalar)                , intent(inout)        :: pdt(:)
+    type(scalar)                , intent(in)           :: vec(:)
+    type(scalar)                , intent(in)           :: scalars(:)
+    integer                     , intent(in), optional :: filter
+
+    if (present(filter)) then
+       error stop "partitioned_assembler: a filtered product (an operator part) " // &
+            & "is a tracked deferral"
+    end if
+
+    pdt(1:this % nown) = pdt(1:this % nown) &
+         & + real(scalars(2), dp)*this % m_own*real(vec(1:this % nown), dp) &
+         & - real(scalars(1), dp)*this % spatial_local(real(vec(1:this % nown), dp))
+
+  end subroutine add_jacobian_vector_product
 
   !===================================================================!
   ! The steady residual, owned rows only:

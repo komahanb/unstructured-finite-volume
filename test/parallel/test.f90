@@ -47,6 +47,7 @@ program test_parallel
   use class_conjugate_gradient, only : conjugate_gradient
   use class_paraview_writer , only : paraview_writer
   use class_string          , only : string
+  use class_bdf             , only : bdf
 
   implicit none
 
@@ -72,6 +73,11 @@ program test_parallel
   ! so the distributed residual truly rides the wider node halo - and
   ! must still match serial entrywise. this is the gate on the wide halo.
   call run_square_tri(me, np, nfail)
+  ! a TRANSIENT march: an implicit bdf step freezes the linearization
+  ! J = beta*M - alpha*A and drives it with newton+cg. the frozen
+  ! product and the nonlinear residual both ride the face halo; the
+  ! marched final state, replicated, must match a serial march.
+  call run_transient(me, np, nfail)
 
   if (me .eq. 1) then
      write(*,'(a)') " -----------------------------------------------------"
@@ -139,6 +145,67 @@ contains
     call fvmp % setup_partition()
     call solve_and_check(fvmp, fvms, "square-tri-40", 0, .false., .true., me, np, nfail)
   end subroutine run_square_tri
+
+  !===================================================================!
+  ! A transient implicit march on the partitioned system. Each bdf
+  ! step freezes J = beta*M - alpha*A and drives it with newton+cg -
+  ! so the frozen product AND the nonlinear residual ride the face
+  ! halo. The marched final state, replicated, must match a serial
+  ! march step for step.
+  !===================================================================!
+  subroutine run_transient(me, np, nfail)
+    integer, intent(in)    :: me, np
+    integer, intent(inout) :: nfail
+    type(partitioned_assembler), allocatable :: fvmp
+    class(assembler)           , allocatable :: fvms
+    class(gmsh_loader), allocatable :: gl
+    class(mesh)       , allocatable :: grid
+    type(bdf) :: tip, tis
+    real(dp), allocatable :: uf_full(:), uf_ref(:)
+    real(dp) :: e
+    integer  :: n, ns
+
+    allocate(gl  , source = gmsh_loader("box-36.msh"))
+    allocate(grid, source = mesh(gl))
+    n = grid % num_dofs()
+
+    ! the distributed march (bdf order 2, t in [0,1], dt = 0.1)
+    allocate(fvmp, source = partitioned_assembler(grid))
+    call trans_bc(fvmp)
+    call fvmp % setup_partition()
+    tip = bdf(fvmp, 0.0_dp, 1.0_dp, 0.1_dp, 2)
+    call tip % integrate()
+    ns = tip % num_steps
+    allocate(uf_full(n))
+    call fvmp % replicate(real(tip % U(ns, :, 1), dp), uf_full)
+
+    ! the serial reference march
+    allocate(fvms, source = assembler(grid))
+    call trans_bc(fvms)
+    tis = bdf(fvms, 0.0_dp, 1.0_dp, 0.1_dp, 2)
+    call tis % integrate()
+    uf_ref = real(tis % U(tis % num_steps, :, 1), dp)
+
+    e = maxval(abs(uf_full - uf_ref))/max(maxval(abs(uf_ref)), tiny(1.0_dp))
+    if (me .eq. 1) then
+       write(*,'(a)') " -----------------------------------------------------"
+       write(*,'(2x,a)')        "case: transient (bdf2, box-36)"
+       write(*,'(4x,a,i0,a)')   "steps            : ", ns, " implicit newton+cg per step"
+       write(*,'(4x,a,es12.4)') "transient vs serial: ", e
+    end if
+    if (e .gt. 1.0e-8_dp) nfail = nfail + 1
+  end subroutine run_transient
+
+  subroutine trans_bc(fvm)
+    class(assembler), intent(inout) :: fvm
+    call fvm % set_equation(diffusion_flux(2.0_dp), constant_source(1.0_dp))
+    call fvm % set_dirichlet("front" , 0.0_dp)
+    call fvm % set_dirichlet("back"  , 0.0_dp)
+    call fvm % set_dirichlet("top"   , 0.0_dp)
+    call fvm % set_dirichlet("bottom", 0.0_dp)
+    call fvm % set_dirichlet("left"  , 0.0_dp)
+    call fvm % set_dirichlet("right" , 0.0_dp)
+  end subroutine trans_bc
 
   !===================================================================!
   ! mixed-bc diffusion on box-36

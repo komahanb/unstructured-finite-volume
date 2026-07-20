@@ -1171,7 +1171,7 @@ contains
   ! beta*M - alpha*A symmetric positive definite (CG-friendly).
   !===================================================================!
 
-  pure subroutine add_residual(this, residual, filter)
+  impure subroutine add_residual(this, residual, filter)
 
     class(assembler), intent(in)           :: this
     type(scalar)    , intent(inout)        :: residual(:)
@@ -1208,7 +1208,7 @@ contains
   ! M*vec is the cell-volume mass term.
   !===================================================================!
 
-  pure subroutine add_jacobian_vector_product(this, pdt, vec, scalars, filter)
+  impure subroutine add_jacobian_vector_product(this, pdt, vec, scalars, filter)
 
     class(assembler), intent(in)           :: this
     type(scalar)    , intent(inout)        :: pdt(:)

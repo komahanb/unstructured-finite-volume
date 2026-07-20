@@ -47,7 +47,6 @@ module class_bdf
   use interface_integrator    , only : integrator
   use interface_assembler     , only : assembler
   use interface_function      , only : functional
-  use class_chain             , only : chain
   use class_newton_solver     , only : newton
   use class_conjugate_gradient, only : conjugate_gradient
   use module_solve_mode       , only : REVERSE
@@ -65,9 +64,8 @@ module class_bdf
 
      integer                   :: max_order = 6
      type(scalar), allocatable :: A(:,:)        ! BDF coefficient table
-     type(chain)               :: steps         ! the step dag: chain(n) at power max_order
-     ! the adjoint trajectory psi(step, nvars) lives on the integrator base
-     ! alongside the primal trajectory U
+     ! the step dag (steps), the adjoint trajectory psi and the primal
+     ! trajectory U all live on the integrator base
 
    contains
 
@@ -295,11 +293,10 @@ contains
     n = this % num_steps
     h = this % h
 
-    ! the step dag: the chain of n steps raised to the stencil depth.
-    ! its edges ARE the couplings - edge m -> k exactly when step k's
-    ! stencil reads step m - so no reach/cutoff bookkeeping survives
-    ! here; the sweep just walks the structure.
-    this % steps = chain(n, power = this % max_order)
+    ! the step dag the forward march built: its edges ARE the
+    ! couplings - edge m -> k exactly when step k's stencil reads
+    ! step m - so no reach/cutoff bookkeeping survives here; the
+    ! sweep walks the same structure backward.
     order = this % steps % dependency_order()
 
     ! mass action selector [alpha, beta] = [0, 1] -> M v

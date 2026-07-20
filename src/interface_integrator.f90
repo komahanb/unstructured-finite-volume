@@ -15,6 +15,7 @@ module interface_integrator
 
   use iso_fortran_env    , only : dp => REAL64
   use module_solve_mode  , only : is_valid_mode
+  use class_chain        , only : chain
   use interface_marcher  , only : marcher
   use interface_assembler, only : assembler
   use interface_state    , only : state
@@ -41,6 +42,11 @@ module interface_integrator
      real(dp) :: h
      logical  :: implicit
      integer  :: num_steps
+
+     ! the step dag: the chain of steps raised to the scheme's
+     ! stencil depth. march builds it and walks it forward; a
+     ! discrete adjoint walks the same dag backward.
+     type(chain) :: steps
 
    contains
 
@@ -200,7 +206,8 @@ contains
     class(state)     , intent(inout)        :: s
     integer          , intent(in), optional :: mode
 
-    integer :: k, p, ierr
+    integer, allocatable :: order(:), nbrs(:)
+    integer :: i, k, p, ierr
 
     ! a wrong tag dies at the door with its name
     if (present(mode)) then
@@ -242,12 +249,26 @@ contains
        error stop "integrator % march: requires a differential_state"
     end select
 
-    ! March one step at a time
-    stepping: do k = 2, this % num_steps
+    ! The step dag: the chain of steps raised to the scheme's stencil
+    ! depth. The march visits it in dependency order, and each vertex
+    ! reads its stencil through its in-edges:
+    !
+    !    k-p ... k-1 ---> (k)      the window handed to step is the
+    !                              closed in-neighbourhood [k-p .. k]
+    !
+    this % steps = chain(this % num_steps, &
+         &               power = this % get_bandwidth(this % num_steps))
+    order = this % steps % dependency_order()
 
-       p = this % get_bandwidth(k)
+    stepping: do i = 1, this % num_steps
 
-       call this % step(this % time(k-p:k), this % U(k-p:k,:,:), this % h, p, ierr)
+       k = order(i)
+       if (k .eq. 1) cycle stepping        ! the seed vertex is given
+
+       nbrs = this % steps % in_neighbours(k)
+       p    = size(nbrs)
+
+       call this % step(this % time(nbrs(1):k), this % U(nbrs(1):k,:,:), this % h, p, ierr)
 
     end do stepping
 

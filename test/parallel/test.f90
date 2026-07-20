@@ -1,25 +1,32 @@
 !=====================================================================!
-! Partitioned-system verification (coarray domain decomposition).
+! Partitioned-system verification (coarray domain decomposition,
+! DISTRIBUTED vectors - the dereplication stages 2 and 3).
 !
 ! The solver is the ordinary conjugate gradient - the SAME class the
-! serial reference uses. Parallelism lives on the system side: the
-! partitioned assembler sums inner products over its owned dofs and
-! reduces across images, and computes only its owned rows of each
-! jacobian-vector product before the result is assembled.
+! serial reference uses. Parallelism lives on the system side, and
+! after setup_partition a vector is this image's owned slab:
+!
+!    ┌─ image 1 ─┐   halo   ┌─ image 2 ─┐      inner products dot
+!    │ owned slab│ <------> │ owned slab│      the slabs + one scalar
+!    └───────────┘          └───────────┘      reduction; the product
+!                                              exchanges the halo then
+!                                              dots the owned rows
 !
 ! For several meshes we solve with cg on the partitioned system and
 ! with cg on an identical serial system (run replicated on every image)
 ! and check:
 !   1. coverage     - the owned sets partition every dof exactly once
-!                     (sum of owned counts across images == n)
-!   2. nontrivial   - with >1 image the partition actually cuts edges
-!   3. solves it    - ||A x - b|| / ||b|| is at the solver tolerance
-!   4. == serial    - the partitioned solution matches the serial one
-!   5. block-AMG    - a per-image AMG built on each owned block
-!                     (additive Schwarz preconditioner) gives the same
-!                     answer in fewer CG iterations than unpreconditioned
-!   6. RCB quality  - recursive coordinate bisection cuts fewer edges (a
-!                     smaller halo) than the BFS partitioner on the squares
+!   2. shrinkage    - the answer really is a slab (nown, not n)
+!   3. solves it    - the slabs, replicated through the trio
+!                     (scatter + sum), satisfy ||A x - b||/||b|| at tol
+!   4. == serial    - and match the serial answer entrywise
+!   5. block-AMG    - a per-image AMG on each owned block (additive
+!                     Schwarz) reaches the same answer in fewer
+!                     iterations than unpreconditioned
+!   6. RCB quality  - rcb cuts fewer edges (a smaller halo, which is
+!                     now literally less traffic) than bfs
+!   7. halo reach   - every dof an owned row touches is owned or ghost
+!                     (the exchange lists are exactly sufficient)
 !
 ! Run: /usr/bin/cafrun.openmpi -np {2,4} ./run   (and serial: ./run_serial).
 ! A nonzero exit (error stop) means a check failed.
@@ -156,6 +163,7 @@ contains
     type(algebraic_multigrid)              :: M
     class(conjugate_gradient), allocatable :: cg
     real(dp), allocatable :: b(:), x_dist(:), x_pc(:), x_ref(:), r(:)
+    real(dp), allocatable :: xd(:), xp(:)
     integer  :: n, nown_tot, it_unprec, it_pc, bfs_cut, rcb_cut
     real(dp) :: e, e_pc, relres, bnorm
 
@@ -174,18 +182,20 @@ contains
     n = A % num_vertices
     allocate(b(n)); call fvmp % get_source(b)
 
-    ! (a) unpreconditioned cg on the partitioned system
+    ! (a) unpreconditioned cg on the partitioned system: the answer
+    ! comes back as this image's owned slab
     allocate(cg, source = conjugate_gradient(20000, 1.0e-10_dp, plvl))
     call cg % solve(fvmp, x_dist)
     it_unprec = cg % last_inner_iters
     deallocate(cg)
 
     ! (b) per-image block-AMG preconditioned cg: each image builds an AMG
-    ! on its OWNED diagonal block (additive Schwarz preconditioner)
+    ! on its OWNED diagonal block (additive Schwarz preconditioner); the
+    ! preconditioner needs no lists - the frame did the plumbing
     Ablock = A % principal_submatrix(fvmp % own)
     call M % setup(Ablock)
     allocate(cg, source = conjugate_gradient(20000, 1.0e-10_dp, 0, &
-         & precond = block_preconditioner(M, fvmp % grid, this_image())))
+         & precond = block_preconditioner(M)))
     call cg % solve(fvmp, x_pc)
     it_pc = cg % last_inner_iters
     deallocate(cg)
@@ -195,24 +205,34 @@ contains
     call cg % solve(fvms, x_ref)
     deallocate(cg)
 
+    ! the trio replicates the slabs for the global comparisons below:
+    ! scatter my slab into a zeroed full vector, sum across images
+    allocate(xd(n), xp(n))
+    xd = 0.0_dp; xp = 0.0_dp
+    call fvmp % grid % scatter(me, x_dist, xd)
+    call fvmp % grid % scatter(me, x_pc  , xp)
+    call co_sum(xd)
+    call co_sum(xp)
+
     ! check 1: owned sets cover every dof exactly once
     nown_tot = size(fvmp % own)
     call co_sum(nown_tot)
 
     ! check 3: partitioned solution actually solves the system
-    allocate(r(n)); call A % matvec(x_dist, r); r = r - b
+    allocate(r(n)); call A % matvec(xd, r); r = r - b
     bnorm  = max(norm2(b), tiny(1.0_dp))
     relres = norm2(r)/bnorm
 
     ! checks 4 + 5: both partitioned solves match the serial answer
-    e    = maxval(abs(x_dist - x_ref))/max(maxval(abs(x_ref)), tiny(1.0_dp))
-    e_pc = maxval(abs(x_pc   - x_ref))/max(maxval(abs(x_ref)), tiny(1.0_dp))
+    e    = maxval(abs(xd - x_ref))/max(maxval(abs(x_ref)), tiny(1.0_dp))
+    e_pc = maxval(abs(xp - x_ref))/max(maxval(abs(x_ref)), tiny(1.0_dp))
 
     if (me .eq. 1) then
        write(*,'(a)') " -----------------------------------------------------"
        write(*,'(2x,a,a)') "case: ", label
        call gp % print_partition()
        write(*,'(4x,a,i0,a,i0)')      "dofs covered      : ", nown_tot, " / ", n
+       write(*,'(4x,a,i0,a,i0)')      "local length      : ", size(x_dist), " of ", n
        write(*,'(4x,a,i0,a,i0)')      "edge cut  bfs=", bfs_cut, "  rcb=", rcb_cut
        write(*,'(4x,a,es12.4)')       "dist residual rel : ", relres
        write(*,'(4x,a,es12.4)')       "dist vs serial    : ", e
@@ -244,6 +264,11 @@ contains
       if (miss .ne. 0) nfail = nfail + 1
     end block halo_reach
 
+    ! the vectors actually shrank: the answer is the owned slab, not
+    ! a photocopy of the whole
+    if (size(x_dist) .ne. size(fvmp % own))          nfail = nfail + 1
+    if (np .gt. 1 .and. size(x_dist) .ge. n)         nfail = nfail + 1
+
     if (nown_tot .ne. n)                 nfail = nfail + 1
     if (np .gt. 1 .and. gp % ncut .le. 0) nfail = nfail + 1
     if (relres .gt. 1.0e-6_dp)           nfail = nfail + 1
@@ -256,7 +281,7 @@ contains
     ! RCB should cut no more edges (smaller/equal halo) than BFS
     if (np .gt. 1 .and. assert_cut .and. rcb_cut .gt. bfs_cut) nfail = nfail + 1
 
-    deallocate(b, x_dist, x_pc, x_ref, r)
+    deallocate(b, x_dist, x_pc, x_ref, r, xd, xp)
   end subroutine solve_and_check
 
 end program test_parallel

@@ -8,6 +8,7 @@ module class_mesh
 
   use iso_fortran_env       , only : dp => REAL64, error_unit
   use interface_graph       , only : graph, vertex, edge, transpose_adjacency
+  use class_stored_graph    , only : stored_graph
   use interface_mesh_loader , only : mesh_loader
   use class_array_mesh_loader, only : array_mesh_loader
   use class_string          , only : string
@@ -183,6 +184,7 @@ module class_mesh
      ! polygon (geometry for a writer, not a discretization)
      procedure :: refined
      procedure :: agglomerated
+     procedure :: node_graph
      procedure, private :: face_between
 
      ! Destructor
@@ -1602,6 +1604,64 @@ contains
     end do
 
   end function agglomerated
+
+  !===================================================================!
+  ! The node-adjacency graph: a SECOND, wider cell graph. The mesh's
+  ! own graph joins cells across a shared FACE; this one joins cells
+  ! that share any mesh POINT - a strictly wider ring:
+  !
+  !     the mesh graph (faces)        the node graph (points)
+  !        o───o                         o───o
+  !        │   │      one edge per        │ X │   a corner touch is
+  !        o───o      shared face         o───o   an edge here too
+  !                                      (diagonal cells joined)
+  !
+  ! Each mesh point's ring of cells (vertex_cells, already built by
+  ! invert_connectivities) is a clique: every pair of cells on that
+  ! point is node-adjacent. Emit each undirected edge once (tail <
+  ! head, deduped by the same mark idiom the partitioner uses), then
+  ! hand the edge list to the stored graph - the inherited
+  ! build_adjacency does the rest. Under a partition this graph's
+  ! ghosts are the vertex-ring halo the skew correction needs.
+  !===================================================================!
+
+  pure type(stored_graph) function node_graph(this) result(g)
+
+    class(mesh), intent(in) :: this
+
+    integer, allocatable :: tails(:), heads(:), mark(:)
+    integer :: ci, cj, iv, kv, p, ne, pass
+
+    allocate(mark(this % num_cells))
+
+    ! two passes: count the edges, then fill (mark(cj)=ci dedups the
+    ! neighbours of ci - a cell reached through several shared points
+    ! is one edge). mark is reset each pass so both passes count alike.
+    do pass = 1, 2
+       mark = 0
+       ne   = 0
+       do ci = 1, this % num_cells
+          do iv = 1, this % num_cell_vertices(ci)
+             p = this % cell_vertices(iv, ci)
+             do kv = 1, this % num_vertex_cells(p)
+                cj = this % vertex_cells(kv, p)
+                if (cj .gt. ci .and. mark(cj) .ne. ci) then
+                   mark(cj) = ci
+                   ne = ne + 1
+                   if (pass .eq. 2) then
+                      tails(ne) = ci
+                      heads(ne) = cj
+                   end if
+                end if
+             end do
+          end do
+       end do
+       if (pass .eq. 1) allocate(tails(ne), heads(ne))
+    end do
+
+    g = stored_graph(this % num_cells, tails, heads)
+
+  end function node_graph
 
   !===================================================================!
   ! The deferred graph contract: one-line delegations to the retained

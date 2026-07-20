@@ -68,6 +68,10 @@ program test_parallel
   call run_square(20, 1, .false., .true., me, np, nfail)
   call run_square(40, 2, .true. , .true., me, np, nfail)   ! print_level 2: iteration trace
   call run_box(me, np, nfail)
+  ! a non-orthogonal triangle mesh: here the skew correction is NONZERO,
+  ! so the distributed residual truly rides the wider node halo - and
+  ! must still match serial entrywise. this is the gate on the wide halo.
+  call run_square_tri(me, np, nfail)
 
   if (me .eq. 1) then
      write(*,'(a)') " -----------------------------------------------------"
@@ -114,6 +118,27 @@ contains
     call fvm % set_dirichlet("BoundaryTop"   , 0.0_dp)
     call fvm % set_dirichlet("BoundaryBottom", 0.0_dp)
   end subroutine square_bc
+
+  !===================================================================!
+  ! 2d poisson on a NON-orthogonal triangle mesh. The crooked faces
+  ! make the skew correction nonzero, so the distributed residual
+  ! actually rides the wider node halo (not just runs its code path).
+  !===================================================================!
+  subroutine run_square_tri(me, np, nfail)
+    integer, intent(in)    :: me, np
+    integer, intent(inout) :: nfail
+    type(partitioned_assembler), allocatable :: fvmp
+    class(assembler)           , allocatable :: fvms
+    class(gmsh_loader), allocatable :: gl
+    class(mesh)       , allocatable :: grid
+    allocate(gl  , source = gmsh_loader("square-tri-40.msh"))
+    allocate(grid, source = mesh(gl))
+    allocate(fvmp, source = partitioned_assembler(grid))
+    allocate(fvms, source = assembler(grid))
+    call square_bc(fvmp); call square_bc(fvms)
+    call fvmp % setup_partition()
+    call solve_and_check(fvmp, fvms, "square-tri-40", 0, .false., .true., me, np, nfail)
+  end subroutine run_square_tri
 
   !===================================================================!
   ! mixed-bc diffusion on box-36
@@ -281,6 +306,18 @@ contains
            & "halo reach       : ", miss, " owned-row columns outside owned+ghost"
       if (miss .ne. 0) nfail = nfail + 1
     end block halo_reach
+
+    ! the node halo (the skew's ring) reaches wider than the face halo
+    ! (the product's ring): cells sharing a mesh POINT include the
+    ! face neighbours and more. on >1 image it must be strictly wider.
+    if (me .eq. 1) then
+       write(*,'(4x,a,i0,a,i0,a)') &
+            & "halo widths      : face ", fvmp % nloc - fvmp % nown, &
+            & "  node ", fvmp % nwide - fvmp % nown, "  (node >= face)"
+    end if
+    ! superset invariant: a face-ghost shares a face, hence 2+ points,
+    ! hence is a node-ghost too - so the node halo can never be smaller
+    if (fvmp % nwide .lt. fvmp % nloc) nfail = nfail + 1
 
     ! the vectors actually shrank: the answer is the owned slab, not
     ! a photocopy of the whole

@@ -37,6 +37,7 @@ module class_partitioned_assembler
   use iso_fortran_env        , only : dp => REAL64
   use class_csr              , only : csr_matrix
   use class_mesh             , only : mesh
+  use class_stored_graph     , only : stored_graph
   use class_assembler        , only : spatial_assembler => assembler
   use interface_linear_solver, only : preconditioner
   use module_solve_mode      , only : FORWARD, REVERSE, WHOLE, &
@@ -65,12 +66,22 @@ module class_partitioned_assembler
      ! from then on every solver-facing vector is the owned slab
      logical :: partitioned = .false.
 
-     ! the frame:  [ owned dofs | ghost dofs ]
-     !               1 .. nown    nown+1 .. nloc
+     ! the FACE frame:  [ owned dofs | face-ghost dofs ]
+     !                    1 .. nown    nown+1 .. nloc
+     ! the product's halo - one cell across each cut face
      integer              :: nown = 0, ngh = 0, nloc = 0
      integer, allocatable :: own(:)         ! global dofs of the owned prefix
      integer, allocatable :: gh_owner(:)    ! ghost j's owning image
      integer, allocatable :: gh_slot(:)     ! ...and its slot in that owner's frame
+
+     ! the NODE frame:  [ owned dofs | node-ghost dofs ]
+     !                    1 .. nown    nown+1 .. nwide
+     ! the skew's halo - cells sharing a mesh POINT reach wider than
+     ! the face halo (see node_graph on the mesh)
+     integer              :: nwide = 0
+     integer, allocatable :: wide_owner(:)  ! node-ghost j's owning image
+     integer, allocatable :: wide_slot(:)   ! ...and its slot in that owner's frame
+     integer, allocatable :: wide_dofs(:)   ! the wide frame's global dofs (own ++ node-ghosts)
 
      ! the owned rows, read in the frame (columns 1..nloc), and the
      ! source's owned slab (state-independent, cached once)
@@ -190,6 +201,34 @@ contains
        this % gh_slot(j)  = owner_inv(g)
     end do
 
+    ! ---- the WIDE (node-ring) halo: the same partition, read on the
+    ! mesh's node-adjacency graph (cells sharing a mesh point). its
+    ! ghosts reach wider than the face halo - exactly the cells the
+    ! skew correction interpolates through ----
+    build_wide: block
+      type(stored_graph)   :: ng
+      integer, allocatable :: wide_gh(:), wowner_inv(:)
+      integer :: jw, gw, vw, pw, prev_pw
+      ng = this % grid % node_graph()
+      call ng % set_partition([(this % grid % part_of(vw), vw = 1, this % grid % num_vertices)])
+      wide_gh       = this % grid % dofs_of(ng % ghosts(me))
+      this % nwide  = this % nown + size(wide_gh)
+      this % wide_dofs = [this % own, wide_gh]
+      allocate(this % wide_owner(size(wide_gh)), this % wide_slot(size(wide_gh)))
+      prev_pw = 0
+      do jw = 1, size(wide_gh)
+         gw = wide_gh(jw)
+         vw = (gw - 1)/this % grid % num_variables + 1
+         pw = this % grid % part_of(vw)
+         if (pw .ne. prev_pw) then
+            wowner_inv = this % grid % frame_inverse(pw)
+            prev_pw    = pw
+         end if
+         this % wide_owner(jw) = pw
+         this % wide_slot(jw)  = wowner_inv(gw)
+      end do
+    end block build_wide
+
     ! ---- the owned rows, in the frame ----
     call this % get_operator_csr(A_global)
     this % A_local = A_global % local_block(this % own, floc, this % nloc)
@@ -217,7 +256,10 @@ contains
   end subroutine setup_partition
 
   !===================================================================!
-  ! The halo exchange: one slab out, one slab in.
+  ! The halo exchange: one slab out, one frame in. Generic over WHICH
+  ! halo - hand it a book (owner list, slot list) and it fills that
+  ! ring. The wire always posts the owned slab, so the face halo and
+  ! the wider node halo share it; only the book differs.
   !
   !    post(1:nown) = my owned values          every image posts its
   !            sync                            slab, then pulls its
@@ -230,19 +272,21 @@ contains
   !    └────────────┘          └────────────┘    the traffic IS the cut
   !===================================================================!
 
-  subroutine exchange_halo(this, v, buf)
+  subroutine exchange_halo(this, v, buf, owner, slot)
 
     class(partitioned_assembler), intent(in)  :: this
-    real(dp)                    , intent(in)  :: v(:)     ! owned slab
-    real(dp)                    , intent(out) :: buf(:)   ! frame length
+    real(dp)                    , intent(in)  :: v(:)        ! owned slab
+    real(dp)                    , intent(out) :: buf(:)      ! frame length
+    integer                     , intent(in)  :: owner(:)    ! ghost -> its owner image
+    integer                     , intent(in)  :: slot(:)     ! ghost -> its slot there
 
     integer :: j
 
     buf(1:this % nown)  = v(1:this % nown)
     post(1:this % nown) = v(1:this % nown)
     sync all
-    do j = 1, this % ngh
-       buf(this % nown + j) = post(this % gh_slot(j))[this % gh_owner(j)]
+    do j = 1, size(owner)
+       buf(this % nown + j) = post(slot(j))[owner(j)]
     end do
     sync all
 
@@ -320,7 +364,7 @@ contains
           error stop "partitioned_assembler: distributed operator parts are a tracked deferral"
        end if
        allocate(buf(this % nloc))
-       call this % exchange_halo(v, buf)
+       call this % exchange_halo(v, buf, this % gh_owner, this % gh_slot)
        call this % A_local % matvec(buf, w)
        return
     end if
@@ -343,21 +387,26 @@ contains
   !          cached   skew       the local block's product,
   !          slab     term       halo exchanged inside
   !
-  ! The skew term keeps a whole-picture read, and here is exactly
-  ! why: its correction interpolates VERTEX values, and a vertex's
-  ! ring of cells is wider than the face-adjacency halo -
+  ! The skew interpolates VERTEX values, whose ring of cells reaches
+  ! wider than the face halo - so it rides the NODE halo, not the
+  ! face one. Exchange the wide ring, drop it into a scratch by its
+  ! global dofs, and let the skew read locally:
   !
-  !        face halo:   [own] - o          one cell across each
-  !                                        cut face
-  !        vertex ring: [own] - o          the cells around each
-  !                       \   / |          owned vertex - some sit
-  !                        o - o           OUTSIDE the face halo
+  !     x (own slab) ──wide exchange──▶ [ own | node-ghosts ]
+  !                                            │ scatter by global dof
+  !                                            ▼
+  !                          xwide = 0 everywhere except own+node-ghost
+  !                                            │ get_skew_source
+  !                                            ▼   (owned rows are exact:
+  !                          keep sfull(own)       every point an owned
+  !                                                cell touches has its
+  !                                                whole ring in the halo)
   !
-  ! restricting it honestly needs a second, wider ghost ring; until
-  ! a non-orthogonal parallel problem demands one (and can catch a
-  ! wrong restriction - on orthogonal meshes the skew is zero), one
-  ! whole-vector assembly survives here, per outer pass, off the
-  ! hot path.
+  ! No whole-vector co_sum: the wide exchange moves one value per node
+  ! cut, not the entire field. The scratch xwide is still full length
+  ! (get_skew_source loops all cells and indexes globally) - a memory
+  ! O(n), not a collective; making the skew loop itself frame-local is
+  ! a later refinement.
   !===================================================================!
 
   impure subroutine state_residual(this, r, x)
@@ -366,7 +415,7 @@ contains
     real(dp)                    , intent(out) :: r(:)
     real(dp)                    , intent(in)  :: x(:)
 
-    real(dp), allocatable :: Ax(:), xfull(:), sfull(:)
+    real(dp), allocatable :: Ax(:), xwide(:), buf(:), sfull(:)
     integer :: n
 
     if (.not. this % partitioned) then
@@ -377,10 +426,13 @@ contains
     allocate(Ax(this % nown))
     call this % get_jacobian_residual_product(Ax, x)
 
+    ! the node halo into a zeroed scratch, by global dof - no collective
     n = this % grid % num_dofs()
-    allocate(xfull(n), sfull(n))
-    call this % replicate(x, xfull)
-    call this % get_skew_source(sfull, xfull)
+    allocate(buf(this % nwide), xwide(n), sfull(n))
+    call this % exchange_halo(x, buf, this % wide_owner, this % wide_slot)
+    xwide = 0.0_dp
+    xwide(this % wide_dofs) = buf
+    call this % get_skew_source(sfull, xwide)
 
     r = this % b_loc + sfull(this % own) - Ax
 

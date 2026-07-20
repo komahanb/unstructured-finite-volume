@@ -17,8 +17,9 @@ CAFRUN="${CAFRUN:-/usr/bin/cafrun.openmpi}"
 ( cd "$root" && ./build.sh >/dev/null )
 ( cd "$root" && bash build_parallel.sh >/dev/null )
 
-# meshes the suite needs
-for m in box-36 square-20 square-40; do
+# meshes the suite needs (square-tri-40 is non-orthogonal: the skew term
+# is nonzero there, exercising the wide node halo)
+for m in box-36 square-20 square-40 square-tri-40; do
    bash "$root/meshgen/ensure.sh" "$here/$m.msh"
 done
 

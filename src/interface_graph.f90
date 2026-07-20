@@ -232,6 +232,7 @@ module interface_graph
 
      ! shared stored-directed mechanism (mirrors the base stored pattern)
      procedure :: build_directed_adjacency
+     procedure :: build_in_adjacency
      procedure :: stored_out_neighbours
      procedure :: stored_in_neighbours
 
@@ -1510,6 +1511,44 @@ contains
     call counting_sort(this % num_vertices, heads, tails, this % in_xadj, this % in_adj)
 
   end subroutine build_directed_adjacency
+
+  !===================================================================!
+  ! Build the in-lists from the stored out-lists: group every edge by
+  ! its head - one pass of the counting kernel:
+  !
+  !    out (stored):  v ---> heads          in (built here):
+  !                                         v <--- tails
+  !
+  ! A digraph that arrives knowing only its out-edges (a stored
+  ! matrix is one) calls this the day something walks against the
+  ! arrows: the union queries, a coloring, a partition.
+  !===================================================================!
+
+  pure subroutine build_in_adjacency(this)
+
+    class(digraph), intent(inout) :: this
+
+    integer, allocatable :: tails(:)
+    integer :: v
+
+    if (.not. allocated(this % out_xadj)) then
+       error stop "digraph: in-lists need stored out-lists to reverse"
+    end if
+    if (maxval(this % out_adj) .gt. this % num_vertices) then
+       error stop "digraph: heads outside the vertex set (a bipartite " // &
+            & "far side) have no in-lists here"
+    end if
+
+    ! the tail of each stored edge, in storage order
+    allocate(tails(size(this % out_adj)))
+    do v = 1, this % num_vertices
+       tails(this % out_xadj(v) : this % out_xadj(v+1) - 1) = v
+    end do
+
+    call counting_sort(this % num_vertices, this % out_adj, tails, &
+         &             this % in_xadj, this % in_adj)
+
+  end subroutine build_in_adjacency
 
   !===================================================================!
   ! Stored directed queries: the shared mechanism a stored directed

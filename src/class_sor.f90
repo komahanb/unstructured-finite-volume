@@ -10,8 +10,10 @@
 !               itself done iteratively (products through the
 !               triangle filters)
 !
-!    carrying the system's graph:  the inherited colored sweep -
-!               exact, color by color, relaxed by omega
+!    carrying a graph:  the inherited colored sweep - exact, color
+!               by color, relaxed by omega. the graph may be the
+!               system's mesh or the assembled operator itself
+!               (mesh-free smoothing; see gauss_seidel).
 !=====================================================================!
 
 module class_sor

@@ -8,6 +8,7 @@ program test_mesh
   use class_gmsh_loader        , only : gmsh_loader
   use class_mesh               , only : mesh
   use class_assembler          , only : assembler
+  use class_csr                , only : csr_matrix
   use interface_linear_solver  , only : linear_solver, AUTO
   use class_conjugate_gradient , only : conjugate_gradient
   use class_gauss_jacobi       , only : gauss_jacobi
@@ -184,6 +185,38 @@ program test_mesh
        write(*,'(1x,a,es10.3)') "FAIL : colored sor, diff vs cg ", diff_sor
        error stop
     end if
+
+    ! mesh-free smoothing: the smoother carries the OPERATOR itself -
+    ! the matrix is a digraph, so build its in-lists (one counting
+    ! pass) and its own coloring becomes the sweep order. no mesh in
+    ! sight.
+    mesh_free: block
+
+      type(csr_matrix)                :: A
+      type(gauss_seidel), allocatable :: gs_op
+      real(dp)          , allocatable :: x_op(:)
+      real(dp)                        :: diff_op
+
+      call FVMAssembler % get_operator_csr(A)
+      call A % build_in_adjacency()
+
+      allocate(gs_op, source = gauss_seidel(max_it = max_it, &
+           & max_tol = max_tol, print_level = 0, g = A))
+      call gs_op % solve(FVMassembler, x_op)
+
+      diff_op = norm2(x_op - xref)/norm2(xref)
+      if (gs_op % ncolors .gt. 1 .and. diff_op .lt. 1.0d-8) then
+         write(*,'(1x,a,i0,a,es10.3)') "PASS : operator-colored gs (", &
+              & gs_op % ncolors, " colors) matches cg, diff ", diff_op
+      else
+         write(*,'(1x,a,i0,a,es10.3)') "FAIL : operator-colored gs (", &
+              & gs_op % ncolors, " colors), diff vs cg ", diff_op
+         error stop
+      end if
+
+      deallocate(gs_op, x_op)
+
+    end block mesh_free
 
     deallocate(x_gs, x_sor, xref, gs_colored, sor_colored, solver)
 

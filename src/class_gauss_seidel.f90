@@ -9,8 +9,12 @@
 !               done iteratively (products through the triangle
 !               filters)
 !
-!    carrying the system's graph:  the inherited colored sweep -
-!               exact, color by color, no inner iteration
+!    carrying a graph:  the inherited colored sweep - exact, color
+!               by color, no inner iteration. the graph may be the
+!               system's mesh OR the assembled operator itself (a
+!               matrix IS a digraph; build its in-lists first so
+!               the coloring sees both directions) - mesh-free
+!               smoothing.
 !=====================================================================!
 
 module class_gauss_seidel

@@ -220,6 +220,30 @@ contains
        write(*,'(4x,a,i0,a,i0)')      "iters  unprec=", it_unprec, "  block-amg=", it_pc
     end if
 
+    ! rung-4 readiness: the halo is exact. every dof an owned row of
+    ! the operator reaches is either owned or in the ghost halo - so
+    ! the day vectors stop being replicated, the graph's ghost lists
+    ! ARE the exchange lists, nothing more and nothing less needed.
+    halo_reach: block
+      logical, allocatable :: known(:)
+      integer, allocatable :: gh(:)
+      integer :: i2, v2, e2, miss
+      allocate(known(n)); known = .false.
+      known(fvmp % own) = .true.
+      gh = fvmp % grid % dofs_of(fvmp % grid % ghosts(me))
+      if (size(gh) .gt. 0) known(gh) = .true.
+      miss = 0
+      do i2 = 1, size(fvmp % own)
+         v2 = fvmp % own(i2)
+         do e2 = A % out_xadj(v2), A % out_xadj(v2+1) - 1
+            if (.not. known(A % out_adj(e2))) miss = miss + 1
+         end do
+      end do
+      if (me .eq. 1) write(*,'(4x,a,i0,a)') &
+           & "halo reach       : ", miss, " owned-row columns outside owned+ghost"
+      if (miss .ne. 0) nfail = nfail + 1
+    end block halo_reach
+
     if (nown_tot .ne. n)                 nfail = nfail + 1
     if (np .gt. 1 .and. gp % ncut .le. 0) nfail = nfail + 1
     if (relres .gt. 1.0e-6_dp)           nfail = nfail + 1

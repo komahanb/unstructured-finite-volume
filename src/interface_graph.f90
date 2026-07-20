@@ -161,6 +161,11 @@ module interface_graph
      procedure :: scatter
      procedure :: dot
 
+     ! the local frame of a part - the order its distributed
+     ! vectors live in - and the frame read backwards
+     procedure :: frame
+     procedure :: frame_inverse
+
      procedure :: print
      procedure :: print_partition
 
@@ -1299,6 +1304,53 @@ contains
     x(this % dofs_of(this % owned(k))) = xk
 
   end subroutine scatter
+
+  !===================================================================!
+  ! The local frame of part k: its dofs in local order - owned
+  ! first, then the ghost halo:
+  !
+  !    [ owned dofs | ghost dofs ]     local l  <-->  global frame(l)
+  !      1 .. nown    nown+1 .. nloc
+  !
+  ! Every distributed vector of part k lives in this order; the
+  ! owned entries are a contiguous prefix, so the part's dot is a
+  ! prefix dot and its halo is a contiguous tail.
+  !===================================================================!
+
+  pure function frame(this, k) result(dofs)
+
+    class(graph), intent(in) :: this
+    integer     , intent(in) :: k
+
+    integer, allocatable :: dofs(:)
+
+    dofs = [this % dofs_of(this % owned(k)), &
+         &  this % dofs_of(this % ghosts(k))]
+
+  end function frame
+
+  !===================================================================!
+  ! The frame read backwards: global dof -> local position in part
+  ! k's frame, 0 where the part cannot see the dof.
+  !===================================================================!
+
+  pure function frame_inverse(this, k) result(loc)
+
+    class(graph), intent(in) :: this
+    integer     , intent(in) :: k
+
+    integer, allocatable :: loc(:), dofs(:)
+    integer :: l
+
+    dofs = this % frame(k)
+
+    allocate(loc(this % num_dofs()))
+    loc = 0
+    do l = 1, size(dofs)
+       loc(dofs(l)) = l
+    end do
+
+  end function frame_inverse
 
   !===================================================================!
   ! The partition-local inner product: dot the values two vectors

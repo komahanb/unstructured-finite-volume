@@ -76,6 +76,7 @@ module class_csr
      procedure :: add
      procedure :: matvec_rows
      procedure :: principal_submatrix
+     procedure :: local_block
      ! the underlying simple graph: self-loops dropped, direction
      ! forgotten, mirrored pairs recorded once
      procedure :: simple_graph
@@ -520,6 +521,66 @@ contains
     B = csr_matrix(n, n, row_ptr, col_idx, vals)
 
   end function principal_submatrix
+
+  !===================================================================!
+  ! The listed rows, read in a frame: the rows kept whole - every
+  ! out-edge survives - with every far end renumbered through loc,
+  ! the frame's global -> local map:
+  !
+  !    global:   r1 r2 ...  --edges--> anywhere the rows reach
+  !    local :   1  2  ...  --edges--> loc(far end), within 1..nloc
+  !
+  ! The rows arrive in their local order, so row l of the block IS
+  ! frame position l, and B % matvec on a frame-ordered vector
+  ! computes exactly the owned rows of the global product. A far
+  ! end the frame cannot see refuses loudly - the halo-reach
+  ! invariant (everything a row touches is owned or ghost) is the
+  ! caller's contract.
+  !
+  ! (principal_submatrix is the kin that DROPS foreign far ends;
+  ! this one insists the frame covers them.)
+  !===================================================================!
+
+  pure function local_block(this, rows, loc, nloc) result(B)
+
+    class(csr_matrix), intent(in) :: this
+    integer          , intent(in) :: rows(:)
+    integer          , intent(in) :: loc(:)
+    integer          , intent(in) :: nloc
+    type(csr_matrix)              :: B
+
+    integer :: nr, il, v, e, pos
+
+    nr = size(rows)
+
+    allocate(B % out_xadj(nr + 1))
+    B % out_xadj(1) = 1
+    do il = 1, nr
+       v = rows(il)
+       B % out_xadj(il+1) = B % out_xadj(il) &
+            &             + (this % out_xadj(v+1) - this % out_xadj(v))
+    end do
+
+    B % num_vertices = nr
+    B % ncols        = nloc
+    B % num_edges    = B % out_xadj(nr+1) - 1
+    allocate(B % out_adj(B % num_edges), B % vals(B % num_edges))
+
+    pos = 0
+    do il = 1, nr
+       v = rows(il)
+       do e = this % out_xadj(v), this % out_xadj(v+1) - 1
+          if (loc(this % out_adj(e)) .eq. 0) then
+             error stop "csr local_block: an edge leaves the frame - " // &
+                  & "the halo is not the reach"
+          end if
+          pos = pos + 1
+          B % out_adj(pos) = loc(this % out_adj(e))
+          B % vals(pos)    = this % vals(e)
+       end do
+    end do
+
+  end function local_block
 
   !===================================================================!
   ! The underlying simple graph: self-loops dropped, direction

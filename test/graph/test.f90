@@ -18,6 +18,9 @@
 !      parts (the chain of 10 huddles into 4, deterministically)
 !   9. escape times resolved in one pass agree with orbit-by-orbit
 !      painting, capped and uncapped
+!  10. the local frame: a part's dofs in local order (owned first,
+!      then the halo), the frame read backwards, and a matrix's rows
+!      re-expressed in it - the stage-1 gate of dereplication
 !=====================================================================!
 
 program test_graph_suite
@@ -26,6 +29,7 @@ program test_graph_suite
   use interface_graph  , only : graph
   use class_stored_graph, only : stored_graph, stored_digraph
   use class_chain      , only : chain
+  use class_csr        , only : csr_matrix
   use module_solve_mode, only : FORWARD, REVERSE
 
   implicit none
@@ -43,6 +47,7 @@ program test_graph_suite
   call check_orbit(nfail)
   call check_quotient(nfail)
   call check_escape_times(nfail)
+  call check_local_frame(nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
@@ -506,6 +511,53 @@ contains
          & "an uncapped limit paints home without overflowing", nfail)
 
   end subroutine check_escape_times
+
+  !===================================================================!
+  ! 10: the local frame. On the chain with two variables and parts
+  ! [1,1,2,2,3,3], part 2 owns vertices 3,4 (dofs 5..8) and its halo
+  ! is vertices 2,5 (dofs 3,4,9,10):
+  !
+  !    frame(2)  =  [ 5 6 7 8 | 3 4 9 10 ]
+  !                   owned     ghosts
+  !
+  ! and a hand matrix re-expressed in a hand frame computes exactly
+  ! its owned rows through the local block.
+  !===================================================================!
+
+  subroutine check_local_frame(nfail)
+
+    integer, intent(inout) :: nfail
+    type(chain)      :: c
+    type(csr_matrix) :: A, B
+    real(dp)         :: y(2)
+
+    c = chain(6, 2)
+    call c % set_partition([1,1,2,2,3,3])
+
+    call report(all(c % frame(2) .eq. [5,6,7,8, 3,4,9,10]), &
+         & "the frame lists owned dofs first, then the halo", nfail)
+    call report(all(c % frame_inverse(2) .eq. [0,0,5,6,1,2,3,4,7,8,0,0]), &
+         & "the frame reads backwards, 0 where the part is blind", nfail)
+
+    ! a 4x4 hand matrix; a part owning rows 2,3 reaches columns
+    ! 1..4, so its hand frame is [2,3 | 1,4] and loc = [3,1,2,4]
+    A = csr_matrix(4, 4, [1,3,6,9,11], [1,2, 1,2,3, 2,3,4, 3,4], &
+         & [10.0_dp,1.0_dp, 2.0_dp,20.0_dp,3.0_dp, 4.0_dp,30.0_dp,5.0_dp, 6.0_dp,40.0_dp])
+    B = A % local_block([2,3], [3,1,2,4], 4)
+
+    call report(B % num_vertices .eq. 2 .and. B % ncols .eq. 4 .and. &
+         &      all(B % out_xadj .eq. [1,4,7]) .and. &
+         &      all(B % out_adj  .eq. [3,1,2, 1,2,4]) .and. &
+         &      all(B % vals     .eq. [2.0_dp,20.0_dp,3.0_dp, 4.0_dp,30.0_dp,5.0_dp]), &
+         & "the local block keeps rows whole, far ends in the frame", nfail)
+
+    ! the block's matvec on a frame-ordered vector IS the owned rows
+    ! of the global product: x = [1,2,3,4] framed as [2,3,1,4]
+    call B % matvec([2.0_dp,3.0_dp,1.0_dp,4.0_dp], y)
+    call report(all(abs(y - [51.0_dp,118.0_dp]) .lt. 1.0e-14_dp), &
+         & "the local matvec computes exactly the owned rows", nfail)
+
+  end subroutine check_local_frame
 
   !===================================================================!
   ! successor rules for the orbit checks: one arrow out of every vertex

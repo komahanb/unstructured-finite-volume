@@ -45,6 +45,8 @@ program test_parallel
   use class_csr             , only : csr_matrix
   use class_algebraic_multigrid, only : algebraic_multigrid
   use class_conjugate_gradient, only : conjugate_gradient
+  use class_paraview_writer , only : paraview_writer
+  use class_string          , only : string
 
   implicit none
 
@@ -205,14 +207,30 @@ contains
     call cg % solve(fvms, x_ref)
     deallocate(cg)
 
-    ! the trio replicates the slabs for the global comparisons below:
-    ! scatter my slab into a zeroed full vector, sum across images
+    ! the door replicates the slabs for the global comparisons below
     allocate(xd(n), xp(n))
-    xd = 0.0_dp; xp = 0.0_dp
-    call fvmp % grid % scatter(me, x_dist, xd)
-    call fvmp % grid % scatter(me, x_pc  , xp)
-    call co_sum(xd)
-    call co_sum(xp)
+    call fvmp % replicate(x_dist, xd)
+    call fvmp % replicate(x_pc  , xp)
+
+    ! the writer at the door: image 1 paints the distributed answer
+    ! and the decomposition that produced it - the solve draws its
+    ! own partition
+    if (me .eq. 1) then
+       write_door: block
+         type(paraview_writer), allocatable :: pw
+         type(string)          :: names(2)
+         real(dp), allocatable :: fields(:,:)
+         integer :: v
+         allocate(fields(n, 2))
+         fields(:,1) = xd
+         fields(:,2) = [(real(fvmp % grid % part_of(v), dp), v = 1, n)]
+         names(1) = string("phi")
+         names(2) = string("part")
+         allocate(pw, source = paraview_writer(fvmp % grid))
+         call pw % write("dist-"//label//".vtu", fields, names)
+         deallocate(pw, fields)
+       end block write_door
+    end if
 
     ! check 1: owned sets cover every dof exactly once
     nown_tot = size(fvmp % own)

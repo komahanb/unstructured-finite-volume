@@ -86,6 +86,9 @@ module class_partitioned_assembler
      procedure :: get_jacobian_residual_product
      procedure :: state_residual
 
+     ! the door between the frame and the world outside it
+     procedure :: replicate
+
      procedure, private :: exchange_halo
 
   end type partitioned_assembler
@@ -340,10 +343,21 @@ contains
   !          cached   skew       the local block's product,
   !          slab     term       halo exchanged inside
   !
-  ! The skew correction still reads the whole solution (its flux
-  ! loops have not learned the frame yet), so ONE whole-vector
-  ! assembly survives here, per outer pass, off the hot path - the
-  ! stage-4 tail of the dereplication plan.
+  ! The skew term keeps a whole-picture read, and here is exactly
+  ! why: its correction interpolates VERTEX values, and a vertex's
+  ! ring of cells is wider than the face-adjacency halo -
+  !
+  !        face halo:   [own] - o          one cell across each
+  !                                        cut face
+  !        vertex ring: [own] - o          the cells around each
+  !                       \   / |          owned vertex - some sit
+  !                        o - o           OUTSIDE the face halo
+  !
+  ! restricting it honestly needs a second, wider ghost ring; until
+  ! a non-orthogonal parallel problem demands one (and can catch a
+  ! wrong restriction - on orthogonal meshes the skew is zero), one
+  ! whole-vector assembly survives here, per outer pass, off the
+  ! hot path.
   !===================================================================!
 
   impure subroutine state_residual(this, r, x)
@@ -365,14 +379,37 @@ contains
 
     n = this % grid % num_dofs()
     allocate(xfull(n), sfull(n))
-    xfull = 0.0_dp
-    call this % grid % scatter(this_image(), x, xfull)
-    call co_sum(xfull)
+    call this % replicate(x, xfull)
     call this % get_skew_source(sfull, xfull)
 
     r = this % b_loc + sfull(this % own) - Ax
 
   end subroutine state_residual
+
+  !===================================================================!
+  ! The door: replicate an owned slab into a full global vector -
+  ! scatter my slab into zeros, sum the images' contributions (each
+  ! dof owned exactly once, so the sum IS the assembly):
+  !
+  !    image 1:  [ a b . . . ]      +
+  !    image 2:  [ . . c d . ]      +      =   [ a b c d e ]
+  !    image 3:  [ . . . . e ]                  everywhere
+  !
+  ! For the world outside the frame - writers, comparisons, the
+  ! wide-reaching skew. The solve's hot path never calls it.
+  !===================================================================!
+
+  impure subroutine replicate(this, xloc, xfull)
+
+    class(partitioned_assembler), intent(in)  :: this
+    real(dp)                    , intent(in)  :: xloc(:)
+    real(dp)                    , intent(out) :: xfull(:)
+
+    xfull = 0.0_dp
+    call this % grid % scatter(this_image(), xloc, xfull)
+    call co_sum(xfull)
+
+  end subroutine replicate
 
   !===================================================================!
   ! Block preconditioner constructor: just the per-image block,

@@ -62,14 +62,14 @@ contains
     ! strength chooses the edges (matrix work): count, then collect
     associate(A => this % levels(lev) % A, theta => this % theta)
 
-      n = A % nrows
+      n = A % num_vertices
       d = A % get_diagonal()
 
       do pass = 1, 2
          nstrong = 0
          do i = 1, n
-            do k = A % row_ptr(i), A % row_ptr(i+1) - 1
-               j = A % col_idx(k)
+            do k = A % out_xadj(i), A % out_xadj(i+1) - 1
+               j = A % out_adj(k)
                if (j .ne. i .and. strong(A % vals(k), d(i), d(j), theta)) then
                   nstrong = nstrong + 1
                   if (pass .eq. 2) then

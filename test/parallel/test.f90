@@ -171,7 +171,7 @@ contains
 
     ! assembled operator + source (replicated on every image)
     call fvmp % get_operator_csr(A)
-    n = A % nrows
+    n = A % num_vertices
     allocate(b(n)); call fvmp % get_source(b)
 
     ! (a) unpreconditioned cg on the partitioned system

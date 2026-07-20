@@ -59,10 +59,10 @@ contains
     real(dp)        , intent(in), optional :: b(:)
 
     this % A = A
-    this % num_state_vars     = A % nrows
+    this % num_state_vars     = A % num_vertices
     this % differential_order = 0
 
-    allocate(this % b(A % nrows))
+    allocate(this % b(A % num_vertices))
     this % b = 0.0_dp
     if (present(b)) this % b = b
 

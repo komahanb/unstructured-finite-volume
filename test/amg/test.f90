@@ -126,7 +126,7 @@ contains
 
     call make_box(fvm)
     call fvm % get_operator_csr(A)
-    n = A % nrows
+    n = A % num_vertices
     allocate(q(n), y_csr(n), y_mf(n))
     do i = 1, n
        q(i) = sin(real(i,dp)*0.7_dp) + 0.3_dp*real(i,dp)
@@ -164,7 +164,7 @@ contains
     call make_square(40, fvm)
     call fvm % get_operator_csr(A)
     call M % setup(A)
-    n = A % nrows
+    n = A % num_vertices
     allocate(u(n), v(n), Mu(n), Mv(n))
     do i = 1, n
        u(i) = sin(real(i,dp)*0.3_dp)
@@ -344,7 +344,7 @@ contains
          & heads   = [(i+1, i = 1, size(level_visits)-1)], &
          & numbers = level_visits)
 
-    n = A % nrows
+    n = A % num_vertices
     allocate(x_ref(n), b(n), r(n), z(n))
     do i = 1, n
        x_ref(i) = sin(real(i,dp)*0.3_dp) + 0.2_dp
@@ -574,14 +574,14 @@ contains
     ! ancestor, and the painted part count must equal that level's
     ! operator rows - the picture and the algebra must agree
     nl = M % num_levels() - 1
-    allocate(fields(A % nrows, nl), labels(nl))
+    allocate(fields(A % num_vertices, nl), labels(nl))
 
     agrees = .true.
     do l = 1, nl
        fields(:, l) = real(M % ancestors(l), dp)
        write(buf, '(a,i0)') "level_", l
        labels(l) = string(trim(buf))
-       if (nint(maxval(fields(:, l))) .ne. M % levels(l+1) % A % nrows) then
+       if (nint(maxval(fields(:, l))) .ne. M % levels(l+1) % A % num_vertices) then
           agrees = .false.
        end if
     end do
@@ -596,7 +596,7 @@ contains
     inquire(file = "hierarchy.vtu", exist = on_disk)
 
     write(*,'(a,i0,a,i0,a)') " hierarchy painted: ", nl, &
-         & " coarsening levels onto ", A % nrows, " cells (hierarchy.vtu)"
+         & " coarsening levels onto ", A % num_vertices, " cells (hierarchy.vtu)"
 
     if (.not. agrees)  nf = nf + 1
     if (.not. on_disk) nf = nf + 1
@@ -604,9 +604,9 @@ contains
     ! the refined side: each vertex of level -1 knows its mesh cell,
     ! and every cell has exactly its share of children
     fine_ancestors = M % ancestors(-1)
-    if (size(fine_ancestors) .ne. M % children_per_vertex*A % nrows) nf = nf + 1
+    if (size(fine_ancestors) .ne. M % children_per_vertex*A % num_vertices) nf = nf + 1
     if (minval(fine_ancestors) .ne. 1 .or. &
-         & maxval(fine_ancestors) .ne. A % nrows)                    nf = nf + 1
+         & maxval(fine_ancestors) .ne. A % num_vertices)                    nf = nf + 1
     if (count(fine_ancestors .eq. 1) .ne. M % children_per_vertex)   nf = nf + 1
 
     ! storage is on demand: an unconfigured hierarchy keeps nothing

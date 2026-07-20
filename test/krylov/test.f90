@@ -104,7 +104,7 @@ contains
     type(csr_matrix), intent(in)  :: A
     real(dp), allocatable, intent(out) :: xex(:), b(:)
     integer :: k
-    allocate(xex(A % ncols), b(A % nrows))
+    allocate(xex(A % ncols), b(A % num_vertices))
     do k = 1, A % ncols
        xex(k) = sin(0.1_dp*real(k,dp)) + 0.5_dp
     end do
@@ -116,7 +116,7 @@ contains
     type(csr_matrix), intent(in) :: A
     real(dp)        , intent(in) :: x(:), b(:)
     real(dp), allocatable :: r(:)
-    allocate(r(A % nrows))
+    allocate(r(A % num_vertices))
     call A % matvec(x, r)
     relresid = norm2(r - b)/max(norm2(b), tiny(1.0_dp))
   end function relresid

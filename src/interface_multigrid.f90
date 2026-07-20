@@ -178,7 +178,7 @@ contains
     lev = 1
     coarsening: do
 
-       n = this % levels(lev) % A % nrows
+       n = this % levels(lev) % A % num_vertices
        if (n .le. this % coarse_size .or. lev .ge. this % max_levels) exit coarsening
 
        ! smoother data on this level
@@ -213,7 +213,7 @@ contains
     end do coarsening
 
     this % nlevel  = lev
-    this % ncoarse = this % levels(lev) % A % nrows
+    this % ncoarse = this % levels(lev) % A % num_vertices
 
     ! coarsest: dense LU (with a tiny diagonal shift if singular, e.g. a
     ! pure-neumann constant null space). self-contained LU so the library
@@ -252,7 +252,7 @@ contains
 
   !===================================================================!
   ! Build n refined levels below the given mesh - the zoom. The
-  ! level-1 operator hands over its own graph (adjacency_graph), the
+  ! level-1 operator hands over its own graph (simple_graph), the
   ! graph splits into children (the stored_graph refinement, which
   ! adopts the parent map as its partition), and the wheels already
   ! on the shelf do the rest: tentative_prolongation over the parents
@@ -284,7 +284,7 @@ contains
     allocate(this % finer_levels(n_finer))
     this % n_finer = n_finer
 
-    coarser   = this % levels(1) % A % adjacency_graph()
+    coarser   = this % levels(1) % A % simple_graph()
     A_coarser = this % levels(1) % A
 
     do k = 1, n_finer
@@ -351,7 +351,7 @@ contains
 
     associate(A => this % levels(1) % A)
 
-      allocate(r(A % nrows), z(A % nrows), Ax(A % nrows))
+      allocate(r(A % num_vertices), z(A % num_vertices), Ax(A % num_vertices))
 
       bnorm = norm2(b); if (bnorm .eq. 0.0_dp) bnorm = 1.0_dp
 
@@ -576,7 +576,7 @@ contains
     end if
 
     if (l .eq. 0) then
-       anc = [(i, i = 1, this % levels(1) % A % nrows)]
+       anc = [(i, i = 1, this % levels(1) % A % num_vertices)]
        return
     end if
 
@@ -623,9 +623,9 @@ contains
     class(multigrid), intent(in) :: this
     integer         , intent(in) :: l
     if (l .ge. 0) then
-       rows_at = this % levels(l+1) % A % nrows
+       rows_at = this % levels(l+1) % A % num_vertices
     else
-       rows_at = this % finer_levels(-l) % A % nrows
+       rows_at = this % finer_levels(-l) % A % num_vertices
     end if
   end function rows_at
 
@@ -655,7 +655,7 @@ contains
     integer              , intent(in)    :: nsweep
     real(dp), allocatable :: Ax(:)
     integer :: s
-    allocate(Ax(L % A % nrows))
+    allocate(Ax(L % A % num_vertices))
     do s = 1, nsweep
        call L % A % matvec(x, Ax)
        x = x + w*L % Dinv*(b - Ax)
@@ -676,7 +676,7 @@ contains
     real(dp) :: gers, rowsum
     integer  :: n, i, k
 
-    n = this % levels(lev) % A % nrows
+    n = this % levels(lev) % A % num_vertices
 
     ! non-constant deterministic start (the constant is near-null)
     allocate(v(n))
@@ -691,7 +691,7 @@ contains
       gers = 0.0_dp
       do i = 1, n
          rowsum = 0.0_dp
-         do k = A % row_ptr(i), A % row_ptr(i+1) - 1
+         do k = A % out_xadj(i), A % out_xadj(i+1) - 1
             rowsum = rowsum + abs(Dinv(i)*A % vals(k))
          end do
          gers = max(gers, rowsum)

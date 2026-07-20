@@ -1,16 +1,38 @@
 !=====================================================================!
-! Sparse matrix in compressed-sparse-row (CSR) form, plus the handful of
-! sparse operations the smoothed-aggregation AMG needs: matrix-vector
-! products, transpose, sparse matrix-matrix product (Gustavson), sparse
-! sum, the Galerkin triple product R*A*P, and the Jacobi-smoothed
-! prolongation (I - omega*Dinv*A)*P0.
+! Sparse matrix in compressed-sparse-row form - which IS a weighted
+! directed graph, stored. The compressed rows are the out-edge lists;
+! this class extends the digraph and keeps NO structure of its own,
+! only the weights. One object, two vocabularies, one storage:
 !
-! Everything operates on a CSR matrix + plain real(dp) vectors - no mesh,
-! no globals - so the AMG hierarchy built on it is reusable per-subdomain
-! when the solver goes parallel.
+!    matrix speak          graph speak
+!    --------------------  --------------------------------
+!    row i                 vertex v            num_vertices
+!    column index j        edge v --> j        out_adj
+!    row pointer           v's out-edge slice  out_xadj
+!    stored entry a_vj     the edge's weight   vals
+!    nnz                   num_edges (a diagonal entry is a
+!                          self-loop: an edge home to itself)
 !
-! Rectangular matrices are supported (nrows /= ncols) so prolongation P
-! (fine x coarse) and restriction R = P^T fit the same type.
+!    [ a b . ]         a          b
+!    [ . c . ]   ==   (1)<-.  (1)---->(2)<-.        the matrix,
+!    [ d . e ]         ^   |          |    | c      drawn as the
+!                      |   '----------'----'        graph it is
+!                      | d         e
+!                     (3)<--------------.
+!                      '----------------'
+!
+! matvec: every vertex dots its out-edge weights with the values at
+! the far ends - the per-vertex inner product the whole solver world
+! is built from. A rectangular matrix (prolongation P, fine x coarse)
+! is the bipartite case: the vertices are the rows, and their
+! out-edges point at column labels 1..ncols on the far side.
+!
+! Everything the graph interface owns is therefore available ON the
+! matrix - it does not carry a graph, it IS one.
+!
+! The handful of sparse operations the smoothed-aggregation AMG needs
+! ride on top: products, transpose, Gustavson matmat, sparse sum, and
+! the Galerkin triple product's ingredients.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -18,7 +40,7 @@
 module class_csr
 
   use iso_fortran_env   , only : dp => REAL64
-  use interface_graph   , only : counting_sort
+  use interface_graph   , only : digraph, counting_sort
   use class_stored_graph, only : stored_graph
 
   implicit none
@@ -27,17 +49,19 @@ module class_csr
   public :: csr_matrix
 
   !-------------------------------------------------------------------!
-  ! CSR matrix (1-based row_ptr/col_idx)
+  ! The weighted digraph: structure inherited (num_vertices, out_xadj,
+  ! out_adj, num_edges), weights and the bipartite far side here
   !-------------------------------------------------------------------!
 
-  type :: csr_matrix
-     integer               :: nrows = 0
-     integer               :: ncols = 0
-     integer               :: nnz   = 0
-     integer , allocatable :: row_ptr(:)   ! (nrows+1)
-     integer , allocatable :: col_idx(:)   ! (nnz)
-     real(dp), allocatable :: vals(:)      ! (nnz)
+  type, extends(digraph) :: csr_matrix
+     integer               :: ncols = 0    ! the far side's label count
+     real(dp), allocatable :: vals(:)      ! one weight per out-edge
    contains
+     ! the directed contract, answered by the stored out-lists (the
+     ! in-lists arrive the day a consumer needs them - via transpose)
+     procedure :: out_neighbours
+     procedure :: in_neighbours
+     ! weighted actions along the edges
      procedure :: matvec
      procedure :: matvec_transpose
      procedure :: get_diagonal
@@ -46,14 +70,15 @@ module class_csr
      procedure :: scale_rows
      procedure :: is_symmetric
      procedure :: to_dense
-     ! sparse algebra (was the free csr_* module functions)
+     ! sparse algebra
      procedure :: transpose
      procedure :: matmat
      procedure :: add
      procedure :: matvec_rows
      procedure :: principal_submatrix
-     ! the matrix's own graph: rows are vertices, off-diagonals edges
-     procedure :: adjacency_graph
+     ! the underlying simple graph: self-loops dropped, direction
+     ! forgotten, mirrored pairs recorded once
+     procedure :: simple_graph
   end type csr_matrix
 
   interface csr_matrix
@@ -64,122 +89,142 @@ module class_csr
 contains
 
   !===================================================================!
-  ! Construct from full (row_ptr, col_idx, vals) arrays
+  ! Construct from full (row_ptr, col_idx, vals) arrays - the caller
+  ! speaks matrix, the object stores graph
   !===================================================================!
 
   pure type(csr_matrix) function csr_from_arrays(nrows, ncols, row_ptr, col_idx, vals) result(A)
     integer , intent(in) :: nrows, ncols
     integer , intent(in) :: row_ptr(:), col_idx(:)
     real(dp), intent(in) :: vals(:)
-    A % nrows = nrows
-    A % ncols = ncols
-    A % nnz   = size(col_idx)
-    allocate(A % row_ptr(size(row_ptr)))
-    allocate(A % col_idx(size(col_idx)))
-    allocate(A % vals(size(vals)))
-    A % row_ptr = row_ptr
-    A % col_idx = col_idx
-    A % vals    = vals
+    A % num_vertices = nrows
+    A % ncols        = ncols
+    A % num_edges    = size(col_idx)
+    A % out_xadj     = row_ptr
+    A % out_adj      = col_idx
+    A % vals         = vals
   end function csr_from_arrays
 
   !===================================================================!
   ! Construct from a known sparsity pattern (row_ptr, col_idx) with the
-  ! values zeroed - then accumulate with add_entry (used by assembly)
+  ! weights zeroed - then accumulate with add_entry (used by assembly)
   !===================================================================!
 
   pure type(csr_matrix) function csr_from_pattern(nrows, ncols, row_ptr, col_idx) result(A)
     integer, intent(in) :: nrows, ncols
     integer, intent(in) :: row_ptr(:), col_idx(:)
-    A % nrows = nrows
-    A % ncols = ncols
-    A % nnz   = size(col_idx)
-    allocate(A % row_ptr(size(row_ptr)))
-    allocate(A % col_idx(size(col_idx)))
-    A % row_ptr = row_ptr
-    A % col_idx = col_idx
-    allocate(A % vals(A % nnz))
+    A % num_vertices = nrows
+    A % ncols        = ncols
+    A % num_edges    = size(col_idx)
+    A % out_xadj     = row_ptr
+    A % out_adj      = col_idx
+    allocate(A % vals(A % num_edges))
     A % vals = 0.0_dp
   end function csr_from_pattern
 
   !===================================================================!
-  ! y = A x
+  ! The directed contract, read off the stored out-lists
+  !===================================================================!
+
+  pure function out_neighbours(this, v) result(nbrs)
+    class(csr_matrix), intent(in) :: this
+    integer          , intent(in) :: v
+    integer, allocatable :: nbrs(:)
+    nbrs = this % stored_out_neighbours(v)
+  end function out_neighbours
+
+  pure function in_neighbours(this, v) result(nbrs)
+    class(csr_matrix), intent(in) :: this
+    integer          , intent(in) :: v
+    integer, allocatable :: nbrs(:)
+    nbrs = this % stored_in_neighbours(v)
+  end function in_neighbours
+
+  !===================================================================!
+  ! y = A x: every vertex dots its out-edges -
+  !
+  !            w1
+  !    (v) ---------> (j1)      y(v) = w1*x(j1) + w2*x(j2) + ...
+  !      \ ---------> (j2)      one inner product per vertex,
+  !            w2               over its out-edge weights
   !===================================================================!
 
   pure subroutine matvec(this, x, y)
     class(csr_matrix), intent(in)  :: this
     real(dp)         , intent(in)  :: x(:)
     real(dp)         , intent(out) :: y(:)
-    integer :: i, k
-    do i = 1, this % nrows
-       y(i) = 0.0_dp
-       do k = this % row_ptr(i), this % row_ptr(i+1) - 1
-          y(i) = y(i) + this % vals(k)*x(this % col_idx(k))
+    integer :: v, e
+    do v = 1, this % num_vertices
+       y(v) = 0.0_dp
+       do e = this % out_xadj(v), this % out_xadj(v+1) - 1
+          y(v) = y(v) + this % vals(e)*x(this % out_adj(e))
        end do
     end do
   end subroutine matvec
 
   !===================================================================!
-  ! y = A^T x
+  ! y = A^T x: the same edges walked against their arrows - every
+  ! vertex PUSHES its value out along its edges instead of pulling
   !===================================================================!
 
   pure subroutine matvec_transpose(this, x, y)
     class(csr_matrix), intent(in)  :: this
     real(dp)         , intent(in)  :: x(:)
     real(dp)         , intent(out) :: y(:)
-    integer :: i, k
+    integer :: v, e
     y(1:this % ncols) = 0.0_dp
-    do i = 1, this % nrows
-       do k = this % row_ptr(i), this % row_ptr(i+1) - 1
-          y(this % col_idx(k)) = y(this % col_idx(k)) + this % vals(k)*x(i)
+    do v = 1, this % num_vertices
+       do e = this % out_xadj(v), this % out_xadj(v+1) - 1
+          y(this % out_adj(e)) = y(this % out_adj(e)) + this % vals(e)*x(v)
        end do
     end do
   end subroutine matvec_transpose
 
   !===================================================================!
-  ! Extract the diagonal (square matrices)
+  ! The self-loop weights (square matrices): the diagonal
   !===================================================================!
 
   pure function get_diagonal(this) result(d)
     class(csr_matrix), intent(in) :: this
-    real(dp) :: d(this % nrows)
-    integer  :: i, k
+    real(dp) :: d(this % num_vertices)
+    integer  :: v, e
     d = 0.0_dp
-    do i = 1, this % nrows
-       do k = this % row_ptr(i), this % row_ptr(i+1) - 1
-          if (this % col_idx(k) .eq. i) d(i) = this % vals(k)
+    do v = 1, this % num_vertices
+       do e = this % out_xadj(v), this % out_xadj(v+1) - 1
+          if (this % out_adj(e) .eq. v) d(v) = this % vals(e)
        end do
     end do
   end function get_diagonal
 
   !===================================================================!
-  ! a_ij (linear scan within the row; 0 if absent)
+  ! a_ij: the weight of edge i --> j (0 if the edge is absent)
   !===================================================================!
 
   pure real(dp) function get_entry(this, i, j) result(aij)
     class(csr_matrix), intent(in) :: this
     integer          , intent(in) :: i, j
-    integer :: k
+    integer :: e
     aij = 0.0_dp
-    do k = this % row_ptr(i), this % row_ptr(i+1) - 1
-       if (this % col_idx(k) .eq. j) then
-          aij = this % vals(k)
+    do e = this % out_xadj(i), this % out_xadj(i+1) - 1
+       if (this % out_adj(e) .eq. j) then
+          aij = this % vals(e)
           return
        end if
     end do
   end function get_entry
 
   !===================================================================!
-  ! Accumulate v into entry (i,j); (i,j) must be in the pattern
+  ! Accumulate v into the weight of edge (i,j); the edge must exist
   !===================================================================!
 
   impure subroutine add_entry(this, i, j, v)
     class(csr_matrix), intent(inout) :: this
     integer          , intent(in)    :: i, j
     real(dp)         , intent(in)    :: v
-    integer :: k
-    do k = this % row_ptr(i), this % row_ptr(i+1) - 1
-       if (this % col_idx(k) .eq. j) then
-          this % vals(k) = this % vals(k) + v
+    integer :: e
+    do e = this % out_xadj(i), this % out_xadj(i+1) - 1
+       if (this % out_adj(e) .eq. j) then
+          this % vals(e) = this % vals(e) + v
           return
        end if
     end do
@@ -187,32 +232,33 @@ contains
   end subroutine add_entry
 
   !===================================================================!
-  ! Scale each row i by s(i) in place
+  ! Scale every out-edge of vertex i by s(i), in place
   !===================================================================!
 
   pure subroutine scale_rows(this, s)
     class(csr_matrix), intent(inout) :: this
     real(dp)         , intent(in)    :: s(:)
-    integer :: i, k
-    do i = 1, this % nrows
-       do k = this % row_ptr(i), this % row_ptr(i+1) - 1
-          this % vals(k) = this % vals(k)*s(i)
+    integer :: v, e
+    do v = 1, this % num_vertices
+       do e = this % out_xadj(v), this % out_xadj(v+1) - 1
+          this % vals(e) = this % vals(e)*s(v)
        end do
     end do
   end subroutine scale_rows
 
   !===================================================================!
-  ! max |a_ij - a_ji| (square matrices); diagnostic
+  ! max |a_ij - a_ji|: how far the weights are from riding both ways
+  ! equally (square matrices); diagnostic
   !===================================================================!
 
   pure real(dp) function is_symmetric(this) result(asym)
     class(csr_matrix), intent(in) :: this
-    integer :: i, k, j
+    integer :: v, e, j
     asym = 0.0_dp
-    do i = 1, this % nrows
-       do k = this % row_ptr(i), this % row_ptr(i+1) - 1
-          j = this % col_idx(k)
-          asym = max(asym, abs(this % vals(k) - this % get_entry(j, i)))
+    do v = 1, this % num_vertices
+       do e = this % out_xadj(v), this % out_xadj(v+1) - 1
+          j = this % out_adj(e)
+          asym = max(asym, abs(this % vals(e) - this % get_entry(j, v)))
        end do
     end do
   end function is_symmetric
@@ -224,46 +270,50 @@ contains
   pure subroutine to_dense(this, D)
     class(csr_matrix)    , intent(in)  :: this
     real(dp), allocatable, intent(out) :: D(:,:)
-    integer :: i, k
-    allocate(D(this % nrows, this % ncols))
+    integer :: v, e
+    allocate(D(this % num_vertices, this % ncols))
     D = 0.0_dp
-    do i = 1, this % nrows
-       do k = this % row_ptr(i), this % row_ptr(i+1) - 1
-          D(i, this % col_idx(k)) = this % vals(k)
+    do v = 1, this % num_vertices
+       do e = this % out_xadj(v), this % out_xadj(v+1) - 1
+          D(v, this % out_adj(e)) = this % vals(e)
        end do
     end do
   end subroutine to_dense
 
   !===================================================================!
-  ! A^T as a fresh CSR. Grouping the entries by column is the graph's
-  ! counting kernel; it returns the new row pointer and the entry
-  ! permutation, and the transpose is two gathers through it.
+  ! A^T as a fresh matrix: every arrow reversed. Grouping the edges
+  ! by their far end is the graph's counting kernel; it returns the
+  ! new out-lists and the edge permutation, and the transpose is two
+  ! gathers through it.
   !===================================================================!
 
   pure function transpose(A) result(At)
     class(csr_matrix), intent(in) :: A
     type(csr_matrix)              :: At
     integer, allocatable :: rows(:), perm(:)
-    integer :: i, k
+    integer :: v, e
 
-    ! the row of each stored entry, in storage order
-    allocate(rows(A % nnz))
-    do i = 1, A % nrows
-       rows(A % row_ptr(i) : A % row_ptr(i+1) - 1) = i
+    ! the tail of each stored edge, in storage order
+    allocate(rows(A % num_edges))
+    do v = 1, A % num_vertices
+       rows(A % out_xadj(v) : A % out_xadj(v+1) - 1) = v
     end do
 
-    call counting_sort(A % ncols, A % col_idx, [(k, k = 1, A % nnz)], &
-         & At % row_ptr, perm)
+    call counting_sort(A % ncols, A % out_adj, [(e, e = 1, A % num_edges)], &
+         & At % out_xadj, perm)
 
-    At % nrows   = A % ncols
-    At % ncols   = A % nrows
-    At % nnz     = A % nnz
-    At % col_idx = rows(perm)
-    At % vals    = A % vals(perm)
+    At % num_vertices = A % ncols
+    At % ncols        = A % num_vertices
+    At % num_edges    = A % num_edges
+    At % out_adj      = rows(perm)
+    At % vals         = A % vals(perm)
   end function transpose
 
   !===================================================================!
-  ! C = A B  (Gustavson: symbolic count, then numeric accumulate)
+  ! C = A B (Gustavson): C's edges are the two-step paths - vertex v
+  ! reaches j through any middle vertex - with path weights
+  ! multiplied and parallel paths summed. Symbolic count, then
+  ! numeric accumulate through a marker.
   !===================================================================!
 
   pure function matmat(A, B) result(C)
@@ -271,50 +321,50 @@ contains
     type(csr_matrix) , intent(in) :: B
     type(csr_matrix)              :: C
     integer, allocatable :: marker(:)
-    integer :: i, ka, kb, j, col, nnz, rstart, length
-    real(dp) :: v
+    integer :: v, ea, eb, j, col, ne, rstart, length
+    real(dp) :: w
 
-    C % nrows = A % nrows
-    C % ncols = B % ncols
-    allocate(C % row_ptr(C % nrows + 1))
+    C % num_vertices = A % num_vertices
+    C % ncols        = B % ncols
+    allocate(C % out_xadj(C % num_vertices + 1))
     allocate(marker(B % ncols)); marker = 0
 
-    ! symbolic: distinct columns per row
-    nnz = 0
-    do i = 1, A % nrows
-       C % row_ptr(i) = nnz + 1
-       do ka = A % row_ptr(i), A % row_ptr(i+1) - 1
-          j = A % col_idx(ka)
-          do kb = B % row_ptr(j), B % row_ptr(j+1) - 1
-             col = B % col_idx(kb)
-             if (marker(col) .ne. i) then
-                marker(col) = i
-                nnz = nnz + 1
+    ! symbolic: distinct two-step destinations per vertex
+    ne = 0
+    do v = 1, A % num_vertices
+       C % out_xadj(v) = ne + 1
+       do ea = A % out_xadj(v), A % out_xadj(v+1) - 1
+          j = A % out_adj(ea)
+          do eb = B % out_xadj(j), B % out_xadj(j+1) - 1
+             col = B % out_adj(eb)
+             if (marker(col) .ne. v) then
+                marker(col) = v
+                ne = ne + 1
              end if
           end do
        end do
     end do
-    C % row_ptr(C % nrows + 1) = nnz + 1
-    C % nnz = nnz
-    allocate(C % col_idx(nnz), C % vals(nnz))
+    C % out_xadj(C % num_vertices + 1) = ne + 1
+    C % num_edges = ne
+    allocate(C % out_adj(ne), C % vals(ne))
 
-    ! numeric: marker(col) holds the absolute fill slot for the current row
+    ! numeric: marker(col) holds the absolute fill slot for the vertex
     marker = 0
-    do i = 1, A % nrows
-       rstart = C % row_ptr(i)
+    do v = 1, A % num_vertices
+       rstart = C % out_xadj(v)
        length = 0
-       do ka = A % row_ptr(i), A % row_ptr(i+1) - 1
-          j = A % col_idx(ka)
-          v = A % vals(ka)
-          do kb = B % row_ptr(j), B % row_ptr(j+1) - 1
-             col = B % col_idx(kb)
+       do ea = A % out_xadj(v), A % out_xadj(v+1) - 1
+          j = A % out_adj(ea)
+          w = A % vals(ea)
+          do eb = B % out_xadj(j), B % out_xadj(j+1) - 1
+             col = B % out_adj(eb)
              if (marker(col) .lt. rstart) then
-                marker(col)          = rstart + length
-                C % col_idx(marker(col)) = col
-                C % vals(marker(col))    = v*B % vals(kb)
+                marker(col)              = rstart + length
+                C % out_adj(marker(col)) = col
+                C % vals(marker(col))    = w*B % vals(eb)
                 length = length + 1
              else
-                C % vals(marker(col)) = C % vals(marker(col)) + v*B % vals(kb)
+                C % vals(marker(col)) = C % vals(marker(col)) + w*B % vals(eb)
              end if
           end do
        end do
@@ -322,7 +372,8 @@ contains
   end function matmat
 
   !===================================================================!
-  ! C = alpha A + beta B  (same shape; union pattern)
+  ! C = alpha A + beta B (same shape): the union of the two edge
+  ! sets, weights summed where the edges coincide
   !===================================================================!
 
   pure function add(A, alpha, beta, B) result(C)
@@ -331,64 +382,65 @@ contains
     type(csr_matrix) , intent(in) :: B
     type(csr_matrix)              :: C
     integer, allocatable :: marker(:)
-    integer :: i, k, col, nnz, rstart, length
+    integer :: v, e, col, ne, rstart, length
 
-    C % nrows = A % nrows
-    C % ncols = A % ncols
-    allocate(C % row_ptr(C % nrows + 1))
+    C % num_vertices = A % num_vertices
+    C % ncols        = A % ncols
+    allocate(C % out_xadj(C % num_vertices + 1))
     allocate(marker(C % ncols)); marker = 0
 
     ! symbolic
-    nnz = 0
-    do i = 1, C % nrows
-       C % row_ptr(i) = nnz + 1
-       do k = A % row_ptr(i), A % row_ptr(i+1) - 1
-          col = A % col_idx(k)
-          if (marker(col) .ne. i) then; marker(col) = i; nnz = nnz + 1; end if
+    ne = 0
+    do v = 1, C % num_vertices
+       C % out_xadj(v) = ne + 1
+       do e = A % out_xadj(v), A % out_xadj(v+1) - 1
+          col = A % out_adj(e)
+          if (marker(col) .ne. v) then; marker(col) = v; ne = ne + 1; end if
        end do
-       do k = B % row_ptr(i), B % row_ptr(i+1) - 1
-          col = B % col_idx(k)
-          if (marker(col) .ne. i) then; marker(col) = i; nnz = nnz + 1; end if
+       do e = B % out_xadj(v), B % out_xadj(v+1) - 1
+          col = B % out_adj(e)
+          if (marker(col) .ne. v) then; marker(col) = v; ne = ne + 1; end if
        end do
     end do
-    C % row_ptr(C % nrows + 1) = nnz + 1
-    C % nnz = nnz
-    allocate(C % col_idx(nnz), C % vals(nnz))
+    C % out_xadj(C % num_vertices + 1) = ne + 1
+    C % num_edges = ne
+    allocate(C % out_adj(ne), C % vals(ne))
 
     ! numeric
     marker = 0
-    do i = 1, C % nrows
-       rstart = C % row_ptr(i)
+    do v = 1, C % num_vertices
+       rstart = C % out_xadj(v)
        length = 0
-       do k = A % row_ptr(i), A % row_ptr(i+1) - 1
-          col = A % col_idx(k)
+       do e = A % out_xadj(v), A % out_xadj(v+1) - 1
+          col = A % out_adj(e)
           if (marker(col) .lt. rstart) then
-             marker(col) = rstart + length
-             C % col_idx(marker(col)) = col
-             C % vals(marker(col))    = alpha*A % vals(k)
+             marker(col)              = rstart + length
+             C % out_adj(marker(col)) = col
+             C % vals(marker(col))    = alpha*A % vals(e)
              length = length + 1
           else
-             C % vals(marker(col)) = C % vals(marker(col)) + alpha*A % vals(k)
+             C % vals(marker(col)) = C % vals(marker(col)) + alpha*A % vals(e)
           end if
        end do
-       do k = B % row_ptr(i), B % row_ptr(i+1) - 1
-          col = B % col_idx(k)
+       do e = B % out_xadj(v), B % out_xadj(v+1) - 1
+          col = B % out_adj(e)
           if (marker(col) .lt. rstart) then
-             marker(col) = rstart + length
-             C % col_idx(marker(col)) = col
-             C % vals(marker(col))    = beta*B % vals(k)
+             marker(col)              = rstart + length
+             C % out_adj(marker(col)) = col
+             C % vals(marker(col))    = beta*B % vals(e)
              length = length + 1
           else
-             C % vals(marker(col)) = C % vals(marker(col)) + beta*B % vals(k)
+             C % vals(marker(col)) = C % vals(marker(col)) + beta*B % vals(e)
           end if
        end do
     end do
   end function add
 
   !===================================================================!
-  ! y(row) = sum_j A(row,j) x(j) for the listed rows only; other entries
-  ! of y are left untouched. x must already carry valid values on every
-  ! column those rows touch (e.g. owned + ghost after a halo exchange).
+  ! y(row) = the listed vertices' dots only; other entries of y are
+  ! left untouched. x must already carry valid values on every far
+  ! end those vertices reach (e.g. owned + ghost after a halo
+  ! exchange).
   !===================================================================!
 
   pure subroutine matvec_rows(this, x, y, rows)
@@ -398,25 +450,26 @@ contains
     real(dp)         , intent(inout) :: y(:)
     integer          , intent(in)    :: rows(:)
 
-    integer  :: i, row, k
+    integer  :: i, v, e
     real(dp) :: s
 
     do i = 1, size(rows)
-       row = rows(i)
+       v = rows(i)
        s = 0.0_dp
-       do k = this % row_ptr(row), this % row_ptr(row+1) - 1
-          s = s + this % vals(k) * x(this % col_idx(k))
+       do e = this % out_xadj(v), this % out_xadj(v+1) - 1
+          s = s + this % vals(e) * x(this % out_adj(e))
        end do
-       y(row) = s
+       y(v) = s
     end do
 
   end subroutine matvec_rows
 
   !===================================================================!
-  ! Principal submatrix on the index set idx, renumbered to 1..size(idx):
-  ! keep only rows and columns in idx (rows == cols), dropping the rest.
-  ! Used to extract a subdomain's owned-owned block from the global
-  ! operator (each image then builds a block preconditioner on it).
+  ! The induced subgraph on the index set idx, renumbered 1..size(idx):
+  ! keep only the vertices in idx and the edges between them, dropping
+  ! the rest. Used to extract a subdomain's owned-owned block from the
+  ! global operator (each image then builds a block preconditioner on
+  ! it).
   !===================================================================!
 
   pure function principal_submatrix(this, idx) result(B)
@@ -427,38 +480,38 @@ contains
 
     integer , allocatable :: loc(:), row_ptr(:), col_idx(:)
     real(dp), allocatable :: vals(:)
-    integer :: n, il, row, k, jl, pos, nnz
+    integer :: n, il, v, e, jl, pos, ne
 
     n = size(idx)
 
     ! global -> local map (0 = not in the set)
-    allocate(loc(this % nrows)); loc = 0
+    allocate(loc(this % num_vertices)); loc = 0
     do il = 1, n
        loc(idx(il)) = il
     end do
 
-    ! symbolic: count kept entries per local row
+    ! symbolic: count kept edges per local vertex
     allocate(row_ptr(n+1)); row_ptr(1) = 1
     do il = 1, n
-       row = idx(il)
+       v = idx(il)
        pos = 0
-       do k = this % row_ptr(row), this % row_ptr(row+1) - 1
-          if (loc(this % col_idx(k)) .gt. 0) pos = pos + 1
+       do e = this % out_xadj(v), this % out_xadj(v+1) - 1
+          if (loc(this % out_adj(e)) .gt. 0) pos = pos + 1
        end do
        row_ptr(il+1) = row_ptr(il) + pos
     end do
-    nnz = row_ptr(n+1) - 1
-    allocate(col_idx(nnz), vals(nnz))
+    ne = row_ptr(n+1) - 1
+    allocate(col_idx(ne), vals(ne))
 
-    ! numeric: copy entries, remapping global columns to local indices
+    ! numeric: copy edges, remapping far ends to local labels
     pos = 1
     do il = 1, n
-       row = idx(il)
-       do k = this % row_ptr(row), this % row_ptr(row+1) - 1
-          jl = loc(this % col_idx(k))
+       v = idx(il)
+       do e = this % out_xadj(v), this % out_xadj(v+1) - 1
+          jl = loc(this % out_adj(e))
           if (jl .gt. 0) then
              col_idx(pos) = jl
-             vals(pos)    = this % vals(k)
+             vals(pos)    = this % vals(e)
              pos = pos + 1
           end if
        end do
@@ -469,34 +522,32 @@ contains
   end function principal_submatrix
 
   !===================================================================!
-  ! The matrix's own graph: one vertex per row, one edge per coupled
-  ! pair of rows - whichever triangle carries the coupling. An entry
-  ! above the diagonal always records its edge; one below records it
-  ! only when its mirror is structurally absent, so an unsymmetric
-  ! pattern (an upwinded operator, say) loses nothing and a symmetric
-  ! one records nothing twice. The sparsity pattern is graph-shaped
-  ! data - whoever needs to traverse, partition, or refine the
-  ! matrix's structure asks for this instead of walking row_ptr by
-  ! hand.
+  ! The underlying simple graph: self-loops dropped, direction
+  ! forgotten, a mirrored pair of edges recorded once. An edge above
+  ! the diagonal always records; one below records only when its
+  ! mirror is structurally absent, so an unsymmetric pattern (an
+  ! upwinded operator, say) loses nothing and a symmetric one records
+  ! nothing twice. This is the view the coarsening and refinement
+  ! machinery traverses.
   !===================================================================!
 
-  pure type(stored_graph) function adjacency_graph(this) result(g)
+  pure type(stored_graph) function simple_graph(this) result(g)
 
     class(csr_matrix), intent(in) :: this
 
     integer, allocatable :: tails(:), heads(:)
-    integer              :: i, k, j, ne, pass
+    integer              :: v, e, j, ne, pass
 
     do pass = 1, 2
        ne = 0
-       do i = 1, this % nrows
-          do k = this % row_ptr(i), this % row_ptr(i+1) - 1
-             j = this % col_idx(k)
-             if (j .gt. i .or. (j .lt. i .and. .not. has_entry(this, j, i))) then
+       do v = 1, this % num_vertices
+          do e = this % out_xadj(v), this % out_xadj(v+1) - 1
+             j = this % out_adj(e)
+             if (j .gt. v .or. (j .lt. v .and. .not. has_entry(this, j, v))) then
                 ne = ne + 1
                 if (pass .eq. 2) then
-                   tails(ne) = min(i, j)
-                   heads(ne) = max(i, j)
+                   tails(ne) = min(v, j)
+                   heads(ne) = max(v, j)
                 end if
              end if
           end do
@@ -504,13 +555,13 @@ contains
        if (pass .eq. 1) allocate(tails(ne), heads(ne))
     end do
 
-    g = stored_graph(this % nrows, tails, heads)
+    g = stored_graph(this % num_vertices, tails, heads)
 
-  end function adjacency_graph
+  end function simple_graph
 
   !===================================================================!
-  ! Whether the pattern holds an entry at (row, col) - structure
-  ! only, the value may be anything
+  ! Whether the edge (row, col) exists - structure only, the weight
+  ! may be anything
   !===================================================================!
 
   pure logical function has_entry(this, row, col)
@@ -518,11 +569,11 @@ contains
     class(csr_matrix), intent(in) :: this
     integer          , intent(in) :: row, col
 
-    integer :: k
+    integer :: e
 
     has_entry = .false.
-    do k = this % row_ptr(row), this % row_ptr(row+1) - 1
-       if (this % col_idx(k) .eq. col) then
+    do e = this % out_xadj(row), this % out_xadj(row+1) - 1
+       if (this % out_adj(e) .eq. col) then
           has_entry = .true.
           return
        end if

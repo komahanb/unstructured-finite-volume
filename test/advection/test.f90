@@ -118,7 +118,7 @@ contains
     ! advection on
     call make_advdiff(20, VX, KAPPA, fvm)
     call fvm % get_operator_csr(A)
-    m = A % nrows
+    m = A % num_vertices
     allocate(w(m), Aw(m), Atw(m))
     do i = 1, m
        w(i) = sin(0.3_dp*real(i,dp)) + 0.2_dp
@@ -153,7 +153,7 @@ contains
 
     call make_advdiff(20, VX, KAPPA, fvm)
     call fvm % get_operator_csr(A)
-    m = A % nrows
+    m = A % num_vertices
     allocate(q(m), y_csr(m), y_mf(m))
     do i = 1, m
        q(i) = cos(0.5_dp*real(i,dp)) + 0.4_dp*real(i,dp)
@@ -229,7 +229,7 @@ contains
 
     call make_advdiff(20, VX, KAPPA, fvm)
     call fvm % get_operator_csr(A)   ! assembled only to CHECK residuals below
-    m = A % nrows
+    m = A % num_vertices
     allocate(b(m), x_g(m), x_c(m), r(m))
     call fvm % get_source(b)
     bnorm = max(norm2(b), tiny(1.0_dp))

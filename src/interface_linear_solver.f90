@@ -25,11 +25,11 @@
 ! that is implemented, converge rejects a preconditioned REVERSE solve
 ! with a clear error rather than silently mis-preconditioning.
 !
-! One march override exists in the family: cg's newton/bdf linearized
-! path, where the linearization (coefficients and an external
-! right-hand side) defines a different frozen operator. That state
-! belongs on the system and moves there in the linearization commit;
-! until then the override is the documented exception.
+! No march overrides exist in the family. The newton/bdf linearized
+! path once lived in cg as one; that state now lives on the system
+! (linearize / clear_linearization) - a frozen linear system answers
+! the same two questions every system answers, so every solver
+! marches it through the one shared iteration.
 !
 ! linear_solver extends the common marcher base: march (the marcher's
 ! deferred contract) is implemented by converge, and solve is the

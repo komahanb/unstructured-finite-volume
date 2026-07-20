@@ -195,6 +195,13 @@ contains
             & "LOWER_TRIANGLE or UPPER_TRIANGLE"
     end if
 
+    ! a frozen linearization has no distributed path yet, and the
+    ! assembled fast path below holds the steady operator - the wrong
+    ! matrix for a freeze. refuse loudly rather than march it.
+    if (allocated(this % lin_coeff)) then
+       error stop "partitioned_assembler: a frozen linearization is a tracked deferral"
+    end if
+
     if (this % partitioned .and. dir .eq. FORWARD .and. sub .eq. WHOLE) then
        w = 0.0_dp
        call this % A % matvec_rows(v, w, this % own)

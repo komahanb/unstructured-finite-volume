@@ -25,7 +25,7 @@ module class_decay_ode
 
    contains
 
-     procedure :: get_residual
+     procedure :: state_residual
      procedure :: add_residual
      procedure :: add_jacobian_vector_product
      procedure :: add_initial_condition
@@ -58,9 +58,10 @@ contains
 
   !===================================================================!
   ! The steady residual at state x (qdot = 0):  r = -lambda * x
+  ! (the deferred seat behind the provided get_residual)
   !===================================================================!
 
-  impure subroutine get_residual(this, r, x)
+  impure subroutine state_residual(this, r, x)
 
     class(decay_ode), intent(in)  :: this
     real(8)         , intent(out) :: r(:)
@@ -68,7 +69,7 @@ contains
 
     r = -this % lambda * x
 
-  end subroutine get_residual
+  end subroutine state_residual
 
   !===================================================================!
   ! Residual  R = qdot + lambda*q   (S(1,1) = q, S(1,2) = qdot)

@@ -46,23 +46,51 @@ module interface_assembler
 
      real(dp), allocatable :: S(:,:)
 
-   contains  
+     ! the frozen linearization (linearize / clear_linearization).
+     ! when the coefficients are set, the system answers the two
+     ! solver questions AS the linear system - no solver ever holds
+     ! linearization state:
+     !
+     !                        nonlinear self          frozen self
+     !                        ---------------         ------------------
+     !    get_residual   -->  R(x)                    b - J x
+     !    product        -->  dR/du v                 J v
+     !
+     !    J = sum_n lin_coeff(n) dR/dU(n)   (J^T when lin_transpose -
+     !        an adjoint solve is then a plain FORWARD march of the
+     !        transposed frozen system; no REVERSE tag travels)
+     !    b = lin_rhs when the equation brings its own (the adjoint's
+     !        -df/du), else -R at the current state
+     type(scalar), allocatable :: lin_coeff(:)
+     real(dp)    , allocatable :: lin_rhs(:)
+     logical                   :: lin_transpose = .false.
+
+   contains
 
      ! Deferred procedures
      procedure(add_residual_interface)               , deferred :: add_residual
      procedure(add_jacobian_vector_product_interface), deferred :: add_jacobian_vector_product
      procedure(add_initial_condition_interface)      , deferred :: add_initial_condition
 
-     ! The queries a solver makes of the system: the residual at a given
-     ! state (deferred - each system states its own; discretization
-     ! vocabulary stays on the discretization layer), the jacobian-vector
-     ! product (mode selects forward or transpose, part selects the whole
-     ! operator or a sub-part), and the inner product (provided by the
-     ! system because the data distribution is the system's concern - a
-     ! partitioned system reduces across images here).
-     procedure(get_residual_interface), deferred :: get_residual
+     ! The queries a solver makes of the system: the residual at a
+     ! given state, the jacobian-vector product (mode selects forward
+     ! or transpose, part selects the whole operator or a sub-part),
+     ! and the inner product (provided by the system because the data
+     ! distribution is the system's concern - a partitioned system
+     ! reduces across images here). get_residual is PROVIDED: it lets
+     ! the frozen linearization answer first, then asks the deferred
+     ! state_residual - so no implementor can forget the freeze, and
+     ! discretization vocabulary stays on the discretization layer.
+     procedure :: get_residual
+     procedure(state_residual_interface), deferred :: state_residual
      procedure :: get_jacobian_residual_product
      procedure :: inner_product
+
+     ! freeze / thaw the linearization the two queries answer for,
+     ! and the frozen residual get_residual asks first
+     procedure :: linearize
+     procedure :: clear_linearization
+     procedure :: linearized_residual
 
      ! Analytic consistency checks of the product, exact to machine
      ! precision (finite differences remain only as a coarse
@@ -168,7 +196,10 @@ module interface_assembler
      ! needs the functional, and remains on the linearized path.
      !================================================================!
 
-     impure subroutine get_residual_interface(this, r, x)
+     ! the discretization's own residual at state x - the seat each
+     ! system implements; solvers reach it only through the provided
+     ! get_residual, which lets a frozen linearization answer first
+     impure subroutine state_residual_interface(this, r, x)
 
        import :: assembler, dp
 
@@ -176,7 +207,7 @@ module interface_assembler
        real(dp)        , intent(out) :: r(:)
        real(dp)        , intent(in)  :: x(:)
 
-     end subroutine get_residual_interface
+     end subroutine state_residual_interface
 
   end interface
 
@@ -456,6 +487,42 @@ contains
             & "LOWER_TRIANGLE or UPPER_TRIANGLE"
     end if
 
+    ! the frozen linearization answers first: w = J v with the
+    ! declared coefficients. the freeze holds the direction, and a
+    ! REVERSE request composes with it - the transpose of a
+    ! transposed freeze is the forward action
+    if (allocated(this % lin_coeff)) then
+
+       frozen: block
+
+         type(scalar), allocatable :: Jv(:)
+         logical :: trans
+
+         allocate(Jv(size(w)))
+         Jv    = 0.0d0
+         trans = (this % lin_transpose .neqv. (dir .eq. REVERSE))
+
+         if (sub .eq. WHOLE) then
+            if (trans) then
+               call this % add_jacobian_vector_product_transpose(Jv, v, this % lin_coeff)
+            else
+               call this % add_jacobian_vector_product(Jv, v, this % lin_coeff)
+            end if
+         else
+            if (trans) then
+               call this % add_jacobian_vector_product_transpose(Jv, v, this % lin_coeff, filter = sub)
+            else
+               call this % add_jacobian_vector_product(Jv, v, this % lin_coeff, filter = sub)
+            end if
+         end if
+
+         w = real(Jv, dp)
+
+       end block frozen
+
+       return
+    end if
+
     if (dir .eq. REVERSE) then
        ! transpose action at the steady linearization: refused unless the
        ! instance declares symmetry or overrides the transpose seat
@@ -469,6 +536,107 @@ contains
     end if
 
   end subroutine get_jacobian_residual_product
+
+  !===================================================================!
+  ! The residual query, provided once for every system:
+  !
+  !    get_residual ──▶ frozen self answers?  b - J x   (linearized)
+  !                 └─▶ else the deferred     R(x)      (state_residual)
+  !
+  ! The freeze is structurally unforgettable - no implementor can
+  ! bypass it, because solvers only ever call this seat.
+  !===================================================================!
+
+  impure subroutine get_residual(this, r, x)
+
+    class(assembler), intent(in)  :: this
+    real(dp)        , intent(out) :: r(:)
+    real(dp)        , intent(in)  :: x(:)
+
+    if (this % linearized_residual(r, x)) return
+
+    call this % state_residual(r, x)
+
+  end subroutine get_residual
+
+  !===================================================================!
+  ! Freeze the linearization: declare the coefficients (and the
+  ! external right-hand side, when the equation brings its own).
+  ! transpose = .true. freezes J^T, so an adjoint solve is a plain
+  ! forward march of the transposed frozen system. Freezing declares
+  ! the weights, not a snapshot - the products still read the live
+  ! state.
+  !===================================================================!
+
+  pure subroutine linearize(this, coeff, rhs, transpose)
+
+    class(assembler), intent(inout)        :: this
+    type(scalar)    , intent(in)           :: coeff(:)
+    real(dp)        , intent(in), optional :: rhs(:)
+    logical         , intent(in), optional :: transpose
+
+    if (allocated(this % lin_coeff)) deallocate(this % lin_coeff)
+    if (allocated(this % lin_rhs))   deallocate(this % lin_rhs)
+
+    this % lin_coeff = coeff
+    if (present(rhs)) this % lin_rhs = rhs
+
+    this % lin_transpose = .false.
+    if (present(transpose)) this % lin_transpose = transpose
+
+  end subroutine linearize
+
+  !===================================================================!
+  ! Thaw: back to the nonlinear self
+  !===================================================================!
+
+  pure subroutine clear_linearization(this)
+
+    class(assembler), intent(inout) :: this
+
+    if (allocated(this % lin_coeff)) deallocate(this % lin_coeff)
+    if (allocated(this % lin_rhs))   deallocate(this % lin_rhs)
+    this % lin_transpose = .false.
+
+  end subroutine clear_linearization
+
+  !===================================================================!
+  ! The frozen system's residual r = b - J x, answered without
+  ! touching the state. Returns .true. when it answered - every
+  ! get_residual implementation asks this first, so the freeze works
+  ! for any discretization.
+  !===================================================================!
+
+  impure logical function linearized_residual(this, r, x) result(answered)
+
+    class(assembler), intent(in)  :: this
+    real(dp)        , intent(out) :: r(:)
+    real(dp)        , intent(in)  :: x(:)
+
+    type(scalar), allocatable :: res(:), Jx(:)
+
+    answered = allocated(this % lin_coeff)
+    if (.not. answered) return
+
+    if (allocated(this % lin_rhs)) then
+       r = this % lin_rhs
+    else
+       allocate(res(size(r)))
+       res = 0.0d0
+       call this % add_residual(res)
+       r = -real(res, dp)
+    end if
+
+    allocate(Jx(size(r)))
+    Jx = 0.0d0
+    if (this % lin_transpose) then
+       call this % add_jacobian_vector_product_transpose(Jx, x, this % lin_coeff)
+    else
+       call this % add_jacobian_vector_product(Jx, x, this % lin_coeff)
+    end if
+    r = r - real(Jx, dp)
+
+  end function linearized_residual
 
   !===================================================================!
   ! Steady transpose action w = J^T v behind the REVERSE direction.

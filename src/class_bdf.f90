@@ -49,7 +49,6 @@ module class_bdf
   use interface_function      , only : functional
   use class_newton_solver     , only : newton
   use class_conjugate_gradient, only : conjugate_gradient
-  use module_solve_mode       , only : REVERSE
 
   implicit none
 
@@ -293,6 +292,8 @@ contains
     n = this % num_steps
     h = this % h
 
+    lsolver = conjugate_gradient(10000, 1.0d-12, 0)
+
     ! the step dag the forward march built: its edges ARE the
     ! couplings - edge m -> k exactly when step k's stencil reads
     ! step m - so no reach/cutoff bookkeeping survives here; the
@@ -342,16 +343,18 @@ contains
             rhs = rhs - scoeff(j+1)*Mpsi
          end do couple
 
-         ! solve J_m^T psi_m = rhs via the linear solver in reverse (transpose)
-         if (allocated(lsolver % lin_coeff)) deallocate(lsolver % lin_coeff)
-         if (allocated(lsolver % rhs))       deallocate(lsolver % rhs)
-         allocate(lsolver % lin_coeff(2));      lsolver % lin_coeff = real(lin_coeff, dp)
-         allocate(lsolver % rhs(nvars));        lsolver % rhs       = real(rhs, dp)
-         call lsolver % solve(system, psi_m, REVERSE)
+         ! the system freezes the step's TRANSPOSED linearization with
+         ! this vertex's right-hand side, and the solver marches the
+         ! frozen system forward - J_m^T psi_m = rhs with no REVERSE
+         ! tag and no solver-side state
+         call system % linearize(lin_coeff, rhs = real(rhs, dp), transpose = .true.)
+         call lsolver % solve(system, psi_m)
          this % psi(m,:) = psi_m
          deallocate(psi_m)
 
       end do backward
+
+      call system % clear_linearization()
 
       deallocate(rhs, dfdu, Mpsi)
       if (allocated(scoeff)) deallocate(scoeff)

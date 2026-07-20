@@ -32,7 +32,7 @@ module class_csr_system
    contains
 
      ! the system contract on the stored operator
-     procedure :: get_residual                  => csr_residual
+     procedure :: state_residual                => csr_residual
      procedure :: get_jacobian_residual_product => csr_product
      procedure :: transpose_product             => csr_transpose_product
 

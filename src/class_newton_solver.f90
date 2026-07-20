@@ -27,7 +27,7 @@ module class_newton_solver
   use class_differential_state  , only : differential_state
   use interface_function        , only : functional
   use class_conjugate_gradient  , only : conjugate_gradient
-  use module_solve_mode         , only : FORWARD, REVERSE
+  use module_solve_mode         , only : FORWARD
 
   implicit none
 
@@ -79,8 +79,10 @@ contains
     real(dp)                  :: r0, rnorm
     integer                   :: iter
 
-    ! point the held linear solver at this linearization (J = sum coeff dR/dU)
-    call this % prepare_inner_solver(coeff)
+    ! the SYSTEM freezes its linearization (J = sum coeff dR/dU); the
+    ! held solver marches the frozen system like any other
+    call this % prepare_inner_solver()
+    call system % linearize(coeff)
 
     allocate(res(system % get_num_state_vars()))
 
@@ -112,6 +114,8 @@ contains
 
     end do newton_iters
 
+    call system % clear_linearization()
+
     U = s % U
 
     deallocate(res)
@@ -119,25 +123,16 @@ contains
   end subroutine solve
 
   !===================================================================!
-  ! Allocate (once) and configure the held inner linear solver to apply
-  ! the current Newton/BDF linearization J = sum_n coeff(n) dR/dU(n).
+  ! Allocate (once) the held inner linear solver. It carries no
+  ! linearization state - the system does (linearize).
   !===================================================================!
 
-  impure subroutine prepare_inner_solver(this, coeff)
+  impure subroutine prepare_inner_solver(this)
 
     class(newton), intent(inout) :: this
-    type(scalar) , intent(in)    :: coeff(:)
 
     if (.not. allocated(this % linear_solver)) &
-         & allocate(this % linear_solver, source = conjugate_gradient(1, 1.0d-14, 0))
-
-    select type (ls => this % linear_solver)
-    type is (conjugate_gradient)
-       if (allocated(ls % lin_coeff)) deallocate(ls % lin_coeff)
-       if (allocated(ls % rhs))       deallocate(ls % rhs)
-       allocate(ls % lin_coeff(size(coeff)))
-       ls % lin_coeff = real(coeff, dp)
-    end select
+         & allocate(this % linear_solver, source = conjugate_gradient(10000, 1.0d-14, 0))
 
   end subroutine prepare_inner_solver
 
@@ -173,14 +168,14 @@ contains
     dfdu = 0.0d0
     call func % add_dfdu(system, dfdu)
 
-    ! 3. adjoint solve  (dR/du)^T psi = -df/du, via the held solver in reverse
-    call this % prepare_inner_solver(steady_coeff)
-    select type (ls => this % linear_solver)
-    type is (conjugate_gradient)
-       allocate(ls % rhs(n))
-       ls % rhs = real(-dfdu, dp)
-    end select
-    call this % linear_solver % solve(system, psi, REVERSE)
+    ! 3. adjoint solve (dR/du)^T psi = -df/du: the system freezes its
+    ! TRANSPOSED linearization with the adjoint's own right-hand side,
+    ! and the solve is a plain forward march of that frozen system -
+    ! no REVERSE tag travels
+    call this % prepare_inner_solver()
+    call system % linearize(steady_coeff, rhs = real(-dfdu, dp), transpose = .true.)
+    call this % linear_solver % solve(system, psi)
+    call system % clear_linearization()
 
     ! 4. total derivative  dJ/dx = df/dx + psi^T dR/dx
     allocate(dJdx(ndv))

@@ -1,13 +1,19 @@
 !=====================================================================!
 ! Conjugate-gradient linear solver: supplies the sweep (`iterate`) -
-! one preconditioned cg pass driving the correction equation A dx = r -
-! and inherits the residual-minimization iteration from linear_solver. Its
-! optional preconditioner fills the inherited pre_conditioner slot
-! (applied inside every cg iteration).
+! one preconditioned cg pass driving the correction equation A dx = r
+! - and inherits the residual-minimization iteration from
+! linear_solver. Its optional preconditioner fills the inherited
+! pre_conditioner slot (applied inside every cg iteration).
 !
-! One documented override: the newton/bdf linearized path (lin_coeff
-! set) solves the different frozen system J dq = rhs; that state moves
-! to the system in the linearization commit.
+!    r --> z --> p --> A p --> alpha --> dx, res
+!          ^                              |
+!          '<------------ beta ----------'
+!
+! Matvecs and dots, nothing else. The newton/bdf linearized path that
+! once lived here as a march override now lives on the system
+! (linearize / clear_linearization): a frozen linear system answers
+! the same two questions every system answers, so this solver cannot
+! tell it apart from any other - and needs no override.
 !=====================================================================!
 
 module class_conjugate_gradient
@@ -15,8 +21,6 @@ module class_conjugate_gradient
   use iso_fortran_env         , only : dp => REAL64
   use interface_linear_solver , only : linear_solver, preconditioner
   use interface_assembler     , only : assembler
-  use interface_state         , only : state
-  use module_solve_mode       , only : FORWARD, REVERSE, is_valid_mode
 
   implicit none
 
@@ -30,20 +34,10 @@ module class_conjugate_gradient
 
   type, extends(linear_solver) :: conjugate_gradient
 
-     ! Newton/BDF linearized mode: when lin_coeff is set, solve drives the
-     ! matrix-free system  J dq = rhs,  J v = add_jacobian_vector_product(.,.,
-     ! lin_coeff) (transpose in REVERSE), with rhs the external rhs if set
-     ! else the system residual -R. Unset => the inherited iteration below.
-     real(dp), allocatable :: lin_coeff(:)
-     real(dp), allocatable :: rhs(:)
-
    contains
 
-     ! the documented march override: the newton/bdf linearized path
-     ! when lin_coeff is set, else the inherited converge
-     procedure :: march
+     ! the sweep consumed by the inherited outer iteration
      procedure :: iterate
-     procedure, private :: solve_linearized
 
   end type conjugate_gradient
 
@@ -78,62 +72,6 @@ contains
     if (present(precond)) allocate(this % pre_conditioner, source = precond)
 
   end function construct
-
-  !===================================================================!
-  ! March. Resets the iteration counter, takes the newton/bdf linearized
-  ! path when lin_coeff is set (the documented override), and otherwise
-  ! runs the inherited residual-minimization iteration around the cg
-  ! sweep. The linearized correction moves the state through its own
-  ! update rule.
-  !===================================================================!
-
-  impure subroutine march(this, system, s, mode)
-
-    class(conjugate_gradient), intent(inout)    :: this
-    class(assembler)         , intent(inout)    :: system
-    class(state)             , intent(inout)    :: s
-    integer              , intent(in), optional :: mode  ! FORWARD (default) / REVERSE
-
-    real(dp), allocatable :: dq(:)
-    integer               :: iters
-
-    ! a wrong tag dies at the door with its name (this override
-    ! short-circuits before converge's own door on the linearized path)
-    if (present(mode)) then
-       if (.not. is_valid_mode(mode)) then
-          write(*,'(1x,a,i0)') "conjugate_gradient % march: invalid mode tag ", mode
-          error stop "conjugate_gradient % march: mode must be FORWARD or REVERSE"
-       end if
-    end if
-
-    ! Newton/BDF linearized inner solve (J dq = rhs) takes a separate
-    ! path; its inner count is kept on the object like every other march.
-    ! a declared symmetry claim is verified before this path consumes
-    ! transpose products, exactly as converge verifies before its own
-    ! iteration.
-    if (allocated(this % lin_coeff)) then
-       if (system % operator_is_symmetric .and. .not. system % transpose_verified) then
-          verify_claim: block
-            real(dp) :: defect
-            defect = system % verify_transpose_consistency()
-            if (.not. (defect .le. 1.0d-12)) then
-               write(*,'(1x,a,es12.5)') &
-                    & "conjugate_gradient % march: transpose-consistency defect ", defect
-               error stop "conjugate_gradient % march: the system's transpose claim " // &
-                    & "failed verification"
-            end if
-            system % transpose_verified = .true.
-          end block verify_claim
-       end if
-       call this % solve_linearized(system, dq, mode, iters)
-       this % last_inner_iters = iters
-       call s % update(dq)
-       return
-    end if
-
-    call this % converge(system, s, mode)
-
-  end subroutine march
 
   !===================================================================!
   ! The sweep: one (preconditioned) conjugate-gradient pass driving the
@@ -226,78 +164,5 @@ contains
     deallocate(res, p, w, z)
 
   end subroutine iterate
-
-  !===================================================================!
-  ! Matrix-free CG for the linearized system  J dq = rhs, where
-  ! J v = add_jacobian_vector_product(., v, lin_coeff) (its transpose in
-  ! REVERSE for the adjoint). rhs is the external rhs member if set (the
-  ! adjoint's -df/du), else the system residual -R at the current state.
-  ! Drives the increment dq (x0 = 0); the Newton/BDF outer loop owns the
-  ! state update. This is the inner solve the nonlinear solver delegates.
-  !===================================================================!
-
-  impure subroutine solve_linearized(this, system, x, mode, iters)
-
-    class(conjugate_gradient), intent(in)       :: this
-    class(assembler)         , intent(in)       :: system
-    real(dp), allocatable    , intent(out)      :: x(:)
-    integer              , intent(in), optional :: mode
-    integer                  , intent(out)      :: iters
-
-    real(dp), allocatable :: r(:), p(:), Jp(:), b(:), res(:)
-    real(dp)              :: rs_old, rs_new, alpha, pJp
-    integer               :: nvars, it, max_it, dir
-
-    dir = FORWARD
-    if (present(mode)) dir = mode
-
-    nvars  = system % get_num_state_vars()
-    max_it = nvars + 100
-
-    allocate(x(nvars), r(nvars), p(nvars), Jp(nvars), b(nvars))
-
-    ! right-hand side: external (adjoint -df/du) if set, else -residual
-    if (allocated(this % rhs)) then
-       b = this % rhs
-    else
-       allocate(res(nvars))
-       res = 0.0_dp
-       call system % add_residual(res)
-       b = -res
-    end if
-
-    x = 0.0_dp
-    r = b
-    p = r
-    rs_old = system % inner_product(r, r)
-
-    cg: do it = 1, max_it
-
-       if (sqrt(system % inner_product(r, r)) .le. 1.0d-14) exit cg
-
-       Jp = 0.0_dp
-       if (dir .eq. REVERSE) then
-          call system % add_jacobian_vector_product_transpose(Jp, p, this % lin_coeff)
-       else
-          call system % add_jacobian_vector_product(Jp, p, this % lin_coeff)
-       end if
-
-       pJp = system % inner_product(p, Jp)
-       if (abs(pJp) .le. tiny(1.0_dp)) exit cg
-
-       alpha = rs_old/pJp
-
-       x = x + alpha*p
-       r = r - alpha*Jp
-
-       rs_new = system % inner_product(r, r)
-       p      = r + (rs_new/rs_old)*p
-       rs_old = rs_new
-
-    end do cg
-
-    iters = it
-
-  end subroutine solve_linearized
 
 end module class_conjugate_gradient

@@ -85,7 +85,7 @@ module class_assembler
      procedure :: evaluate_face_flux
 
      ! Assembly Routines
-     procedure :: get_residual
+     procedure :: state_residual
      procedure :: get_source
      procedure :: get_skew_source
      procedure :: get_jacobian
@@ -815,7 +815,7 @@ contains
   ! words, and seen by solvers only through the deferred query.
   !===================================================================!
 
-  impure subroutine get_residual(this, r, x)
+  impure subroutine state_residual(this, r, x)
 
     class(assembler), intent(in)  :: this
     real(dp)        , intent(out) :: r(:)
@@ -831,7 +831,7 @@ contains
 
     r = (b + s) - ax
 
-  end subroutine get_residual
+  end subroutine state_residual
 
   !===================================================================!
   ! Evaluate internal skew source based on the current cell states and

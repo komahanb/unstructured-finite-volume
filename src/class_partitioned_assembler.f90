@@ -147,17 +147,13 @@ contains
     real(dp)                    , intent(in) :: a(:)
     real(dp)                    , intent(in) :: b(:)
 
-    integer :: me
-
     if (.not. this % partitioned) then
        inner_product = dot_product(a, b)
        return
     end if
 
-    ! dot the gathered owned halves, then reduce
-    me = this_image()
-    inner_product = dot_product(this % grid % gather(me, a), &
-         &                      this % grid % gather(me, b))
+    ! the graph's partition-local dot, then one reduction
+    inner_product = this % grid % dot(this_image(), a, b)
     call co_sum(inner_product)
 
   end function inner_product

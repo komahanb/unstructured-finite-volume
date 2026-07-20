@@ -153,11 +153,12 @@ module interface_graph
      procedure :: edge_cut
 
      ! values riding the partition: any vertex list expands to its
-     ! dofs, and the gather/scatter pair moves vector values through
-     ! a part's owned dofs
+     ! dofs; gather/scatter move vector values through a part's
+     ! owned dofs, and dot measures them there
      procedure :: dofs_of
      procedure :: gather
      procedure :: scatter
+     procedure :: dot
 
      procedure :: print
      procedure :: print_partition
@@ -1234,6 +1235,27 @@ contains
     x(this % dofs_of(this % owned(k))) = xk
 
   end subroutine scatter
+
+  !===================================================================!
+  ! The partition-local inner product: dot the values two vectors
+  ! carry at part k's owned dofs. Every dof is owned exactly once,
+  ! so the parts' dots sum to the whole graph's dot - the parallel
+  ! inner product is this plus one reduction:
+  !
+  !    part 1        part 2        part 3
+  !    (o o o)       (o o o)       (o o)
+  !     x . y    +    x . y    +    x . y    =    x . y everywhere
+  !===================================================================!
+
+  pure real(dp) function dot(this, k, x, y)
+
+    class(graph), intent(in) :: this
+    integer     , intent(in) :: k
+    real(dp)    , intent(in) :: x(:), y(:)
+
+    dot = dot_product(this % gather(k, x), this % gather(k, y))
+
+  end function dot
 
   !===================================================================!
   ! Halo (ghost) vertices part k needs from other parts

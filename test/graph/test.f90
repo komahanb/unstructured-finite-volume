@@ -448,6 +448,16 @@ contains
     call c % scatter(2, [50.0_dp, 60.0_dp, 70.0_dp, 80.0_dp], x)
     call report(all(x .eq. [1,2,3,4,50,60,70,80,9,10,11,12]), &
          & "scatter pushes them back and leaves the rest alone", nfail)
+
+    ! dot measures where gather reaches: part 2's dofs are 5..8, so
+    ! its dot of x=(1..12) with itself is 5^2+..+8^2 = 174, and the
+    ! parts' dots sum to the whole graph's dot (each dof owned once)
+    x = [(real(v, dp), v = 1, 12)]
+    call report(abs(c % dot(2, x, x) - 174.0_dp) .lt. 1.0e-12_dp, &
+         & "dot measures a part's owned dofs", nfail)
+    call report(abs(c % dot(1, x, x) + c % dot(2, x, x) + c % dot(3, x, x) &
+         &          - dot_product(x, x)) .lt. 1.0e-12_dp, &
+         & "the parts' dots sum to the whole graph's dot", nfail)
     refined = stored_graph(c, 2)
     call report(refined % num_vertices .eq. 12 .and. refined % num_edges .eq. 11, &
          & "the rule-generated chain refines by its neighbour queries", nfail)

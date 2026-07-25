@@ -48,6 +48,7 @@ program test_parallel
   use class_paraview_writer , only : paraview_writer
   use class_string          , only : string
   use class_bdf             , only : bdf
+  use class_state_energy    , only : state_energy
 
   implicit none
 
@@ -81,6 +82,11 @@ program test_parallel
   ! the REVERSE halo: the genuine distributed transpose. the identity
   ! <w, A v> = <Aᵀ w, v> is a real self-check of the reverse exchange.
   call run_transpose(me, np, nfail)
+  ! the full circle: a transient ADJOINT GRADIENT computed on the
+  ! distributed system - forward march, backward sweep (transposed
+  ! freezes through the reverse halo), design accumulation on owned
+  ! cells - must match the serial gradient.
+  call run_adjoint(me, np, nfail)
 
   if (me .eq. 1) then
      write(*,'(a)') " -----------------------------------------------------"
@@ -240,6 +246,55 @@ contains
     end if
     if (defect .gt. 1.0e-12_dp) nfail = nfail + 1
   end subroutine run_transpose
+
+  !===================================================================!
+  ! The whole adjoint, distributed: forward bdf march, backward sweep
+  ! (each step a transposed freeze marched forward, its transpose
+  ! genuine through the reverse halo), then dJ/dkappa accumulated
+  ! over owned cells and summed - one number, compared against the
+  ! same computation run serially.
+  !===================================================================!
+  subroutine run_adjoint(me, np, nfail)
+    integer, intent(in)    :: me, np
+    integer, intent(inout) :: nfail
+    type(partitioned_assembler), allocatable :: fvmp
+    class(assembler)           , allocatable :: fvms
+    class(gmsh_loader), allocatable :: gl
+    class(mesh)       , allocatable :: grid
+    type(bdf)          :: tip, tis
+    type(state_energy) :: func
+    real(dp), allocatable :: g_par(:), g_ser(:)
+    real(dp) :: e
+
+    allocate(gl  , source = gmsh_loader("box-36.msh"))
+    allocate(grid, source = mesh(gl))
+    func = state_energy()
+
+    ! the distributed gradient
+    allocate(fvmp, source = partitioned_assembler(grid))
+    call trans_bc(fvmp)
+    call fvmp % setup_partition()
+    tip = bdf(fvmp, 0.0_dp, 1.0_dp, 0.1_dp, 2)
+    call tip % integrate_adjoint(func, g_par)
+
+    ! the serial reference (its transpose runs on the declared
+    ! symmetry claim, as the serial adjoint tests do)
+    allocate(fvms, source = assembler(grid))
+    call trans_bc(fvms)
+    fvms % operator_is_symmetric = .true.
+    tis = bdf(fvms, 0.0_dp, 1.0_dp, 0.1_dp, 2)
+    call tis % integrate_adjoint(func, g_ser)
+
+    e = abs(g_par(1) - g_ser(1))/max(abs(g_ser(1)), tiny(1.0_dp))
+    if (me .eq. 1) then
+       write(*,'(a)') " -----------------------------------------------------"
+       write(*,'(2x,a)')        "case: transient adjoint gradient (bdf2, box-36)"
+       write(*,'(4x,a,es16.8)') "dJ/dkappa parallel : ", g_par(1)
+       write(*,'(4x,a,es16.8)') "dJ/dkappa serial   : ", g_ser(1)
+       write(*,'(4x,a,es12.4)') "relative difference: ", e
+    end if
+    if (e .gt. 1.0e-8_dp) nfail = nfail + 1
+  end subroutine run_adjoint
 
   !===================================================================!
   ! mixed-bc diffusion on box-36

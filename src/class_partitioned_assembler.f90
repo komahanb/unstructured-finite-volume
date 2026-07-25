@@ -121,6 +121,9 @@ module class_partitioned_assembler
      procedure :: add_jacobian_vector_product
      procedure :: add_jacobian_vector_product_transpose
 
+     ! the adjoint's design accumulation, owned cells only
+     procedure :: add_design_residual_transpose_product
+
      ! the transpose is verified whole-only in parallel (operator
      ! parts are a serial-only diagnostic; the reverse halo is genuine)
      procedure :: verify_transpose_consistency
@@ -613,11 +616,65 @@ contains
             & "is a tracked deferral"
     end if
 
+    ! a pure mass action (alpha = 0, the bdf's step couplings) is
+    ! diagonal - no wire at all. every image holds the same scalars,
+    ! so every image takes the same branch and the syncs stay lined up.
+    if (real(scalars(1), dp) .eq. 0.0_dp) then
+       pdt(1:this % nown) = pdt(1:this % nown) &
+            & + real(scalars(2), dp)*this % m_own*real(vec(1:this % nown), dp)
+       return
+    end if
+
     pdt(1:this % nown) = pdt(1:this % nown) &
          & + real(scalars(2), dp)*this % m_own*real(vec(1:this % nown), dp) &
          & - real(scalars(1), dp)*this % spatial_local_transpose(real(vec(1:this % nown), dp))
 
   end subroutine add_jacobian_vector_product_transpose
+
+  !===================================================================!
+  ! The adjoint's design accumulation, on the slab:
+  !
+  !    state scratch:  S(:,1) slab ──face exchange──▶ [own | ghosts]
+  !                    ── dropped in at the frame's global dofs ──▶ x
+  !    psi scratch:    zeros everywhere except my owned rows
+  !
+  !    my owned cells ──design_residual_rows──▶ my rows' share of
+  !                                             psi' dR/dx
+  !    one small sum over the design space  ──▶ dfdx (identical on
+  !                                             every image)
+  !
+  ! Each row is owned exactly once, so the images' shares add up to
+  ! the serial answer. The reduction carries ndv numbers - the size
+  ! of the design space, not the mesh.
+  !===================================================================!
+
+  impure subroutine add_design_residual_transpose_product(this, dfdx, psi)
+
+    class(partitioned_assembler), intent(inout) :: this
+    real(dp)                    , intent(inout) :: dfdx(:)
+    type(scalar)                , intent(in)    :: psi(:)
+
+    real(dp)    , allocatable :: buf(:), xfull(:), delta(:)
+    type(scalar), allocatable :: psifull(:)
+    integer :: n
+
+    n = this % grid % num_dofs()
+    allocate(buf(this % nloc), xfull(n), psifull(n), delta(size(dfdx)))
+
+    call this % exchange_halo(this % S(:,1), buf, this % gh_owner, this % gh_slot)
+    xfull = 0.0_dp
+    xfull(this % grid % frame(this_image())) = buf
+
+    psifull = 0.0_dp
+    psifull(this % own) = psi(1:this % nown)
+
+    delta = 0.0_dp
+    call this % design_residual_rows(delta, psifull, xfull, &
+         & this % grid % owned(this_image()))
+    call co_sum(delta)
+    dfdx = dfdx + delta
+
+  end subroutine add_design_residual_transpose_product
 
   !===================================================================!
   ! Verify the transpose whole-only: the reverse halo is a GENUINE

@@ -113,6 +113,7 @@ module class_assembler
      procedure :: set_design_vars
      procedure :: get_design_vars
      procedure :: add_design_residual_transpose_product
+     procedure :: design_residual_rows
 
      ! Destructor
      final :: destroy
@@ -1304,20 +1305,44 @@ contains
   ! reproduces the exact (b_bc - A*u)/kappa.
   !===================================================================!
 
-  pure subroutine add_design_residual_transpose_product(this, dfdx, psi)
+  impure subroutine add_design_residual_transpose_product(this, dfdx, psi)
 
     class(assembler), intent(inout) :: this
     real(dp)        , intent(inout) :: dfdx(:)
     type(scalar)    , intent(in)    :: psi(:)
 
+    integer :: icell
+
+    call this % design_residual_rows(dfdx, psi, this % S(:,1), &
+         & [(icell, icell = 1, this % grid % num_cells)])
+
+  end subroutine add_design_residual_transpose_product
+
+  !===================================================================!
+  ! The same accumulation, over a GIVEN list of cells and a GIVEN
+  ! global state x - the seam a distributed system drives with its
+  ! owned cells and a halo-filled scratch, while the serial seat
+  ! above hands it every cell and the live state. dRdk rows are
+  ! written only at the listed cells' dofs, so psi entries elsewhere
+  ! simply never pair with anything.
+  !===================================================================!
+
+  pure subroutine design_residual_rows(this, dfdx, psi, x, cells)
+
+    class(assembler), intent(inout) :: this
+    real(dp)        , intent(inout) :: dfdx(:)
+    type(scalar)    , intent(in)    :: psi(:)
+    real(dp)        , intent(in)    :: x(:)
+    integer         , intent(in)    :: cells(:)
+
     real(dp), allocatable :: kappa(:), dRdk(:)
     type(point_state)     :: st
-    integer               :: ndv, n, k, icell, iface, ivar, p, gface
+    integer               :: ndv, n, k, ic, icell, iface, ivar, p, gface
 
     ndv = this % get_num_design_vars()
     if (ndv .eq. 0) return
 
-    n = this % num_state_vars
+    n = this % grid % num_dofs()
     allocate(kappa(ndv), dRdk(n))
     call this % get_design_vars(kappa)
 
@@ -1327,7 +1352,8 @@ contains
 
        dRdk = 0.0_dp
 
-       do icell = 1, this % grid % num_cells
+       do ic = 1, size(cells)
+          icell = cells(ic)
           associate(faces => this % grid % cell_faces(1:this % grid % num_cell_faces(icell), icell))
           do iface = 1, this % grid % num_cell_faces(icell)
 
@@ -1339,7 +1365,7 @@ contains
 
                ! reconstruct (q, grad q) at the face from the (fixed) state
                call this % fld % face_state(this % grid, this % grid, &
-                    & this % S(:,1), icell, iface, gface, st)
+                    & x, icell, iface, gface, st)
 
                interior: if (this % grid % num_face_cells(gface) .eq. 2) then
 
@@ -1368,7 +1394,7 @@ contains
                        keff = this % fx % normal_diffusivity(st, nf, ivar)
                        lhs  = this % bcs(ftag,ivar) % lhs_coeff(farea, fdelta, keff)
                        rhs  = this % bcs(ftag,ivar) % rhs_coeff(farea, fdelta, keff)
-                       dRdk(p) = dRdk(p) + (rhs - lhs*real(this % S(p,1), dp))/kappa(k)
+                       dRdk(p) = dRdk(p) + (rhs - lhs*x(p))/kappa(k)
                     end do
                   end block
 
@@ -1388,7 +1414,7 @@ contains
 
     deallocate(kappa, dRdk)
 
-  end subroutine add_design_residual_transpose_product
+  end subroutine design_residual_rows
 
 
 

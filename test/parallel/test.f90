@@ -169,10 +169,10 @@ contains
     class(assembler)           , allocatable :: fvms
     class(gmsh_loader), allocatable :: gl
     class(mesh)       , allocatable :: grid
-    type(bdf) :: tip, tis
+    type(bdf)             :: tip, tis
     real(dp), allocatable :: uf_full(:), uf_ref(:)
-    real(dp) :: e
-    integer  :: n, ns
+    real(dp)              :: e
+    integer               :: n, ns
 
     allocate(gl  , source = gmsh_loader("box-36.msh"))
     allocate(grid, source = mesh(gl))
@@ -261,10 +261,10 @@ contains
     class(assembler)           , allocatable :: fvms
     class(gmsh_loader), allocatable :: gl
     class(mesh)       , allocatable :: grid
-    type(bdf)          :: tip, tis
-    type(state_energy) :: func
+    type(bdf)             :: tip, tis
+    type(state_energy)    :: func
     real(dp), allocatable :: g_par(:), g_ser(:)
-    real(dp) :: e
+    real(dp)              :: e
 
     allocate(gl  , source = gmsh_loader("box-36.msh"))
     allocate(grid, source = mesh(gl))

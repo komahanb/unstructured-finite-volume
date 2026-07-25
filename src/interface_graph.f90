@@ -1346,7 +1346,7 @@ contains
     integer     , intent(in) :: k
 
     integer, allocatable :: loc(:), dofs(:)
-    integer :: l
+    integer              :: l
 
     dofs = this % frame(k)
 
@@ -1380,7 +1380,7 @@ contains
     integer, allocatable, intent(out) :: owner(:), slot(:)
 
     integer, allocatable :: gh(:), inv(:)
-    integer :: j, g, v, p, prev_p
+    integer              :: j, g, v, p, prev_p
 
     gh = this % dofs_of(this % ghosts(k))
     allocate(owner(size(gh)), slot(size(gh)))
@@ -1421,7 +1421,7 @@ contains
     integer, allocatable, intent(out) :: ptr(:), img(:), idx(:)
 
     integer, allocatable :: inv(:), gh(:), keys(:), raw_img(:), raw_idx(:), perm(:)
-    integer :: p, j, g, v, n, nown
+    integer              :: p, j, g, v, n, nown
 
     nown = size(this % dofs_of(this % owned(k)))
     inv  = this % frame_inverse(k)

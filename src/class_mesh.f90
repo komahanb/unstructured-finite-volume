@@ -1630,7 +1630,7 @@ contains
     class(mesh), intent(in) :: this
 
     integer, allocatable :: tails(:), heads(:), mark(:)
-    integer :: ci, cj, iv, kv, p, ne, pass
+    integer              :: ci, cj, iv, kv, p, ne, pass
 
     allocate(mark(this % num_cells))
 

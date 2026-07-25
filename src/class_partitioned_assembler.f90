@@ -203,7 +203,7 @@ contains
     type(csr_matrix)      :: A_global
     integer , allocatable :: gh_dofs(:), floc(:)
     real(dp), allocatable :: bfull(:)
-    integer :: me, j, g, v, p, maxown
+    integer               :: me, j, g, v, p, maxown
 
     me = this_image()
 
@@ -231,7 +231,7 @@ contains
     ! graphs sort the SAME part stamps into the SAME owned lists. ----
     build_wide: block
       type(stored_graph) :: ng
-      integer :: vw
+      integer            :: vw
       ng = this % grid % node_graph()
       ng % num_variables = this % grid % num_variables   ! same dof arithmetic
       call ng % set_partition([(this % grid % part_of(vw), vw = 1, this % grid % num_vertices)])
@@ -656,7 +656,7 @@ contains
 
     real(dp)    , allocatable :: buf(:), xfull(:), delta(:)
     type(scalar), allocatable :: psifull(:)
-    integer :: n
+    integer                   :: n
 
     n = this % grid % num_dofs()
     allocate(buf(this % nloc), xfull(n), psifull(n), delta(size(dfdx)))
@@ -690,8 +690,8 @@ contains
     class(partitioned_assembler), intent(in) :: this
 
     real(dp), allocatable :: v(:), w(:), Av(:), Atw(:)
-    real(dp) :: lhs, rhs, scale
-    integer  :: i
+    real(dp)              :: lhs, rhs, scale
+    integer               :: i
 
     allocate(v(this % nown), w(this % nown))
     do i = 1, this % nown
@@ -745,7 +745,7 @@ contains
     real(dp)                    , intent(in)  :: x(:)
 
     real(dp), allocatable :: Ax(:), xwide(:), buf(:), sfull(:)
-    integer :: n
+    integer               :: n
 
     if (.not. this % partitioned) then
        error stop "partitioned_assembler: a solve before setup_partition - " // &

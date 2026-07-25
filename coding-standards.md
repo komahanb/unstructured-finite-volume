@@ -5,6 +5,54 @@ comments, and the commit all get read by someone who was not there when you
 wrote them. explain the way feynman explained — simple words, a concrete
 picture, nothing invented.
 
+## how we use graphs
+
+see the problem as a graph first. a mesh is a graph (cells are vertices,
+shared faces are edges). a sparse matrix is a graph with a weight on every
+edge. the time steps of a march are a chain. the partition, the halo, the
+coloring, the frame — all of it is vertices, edges, and who is next to whom.
+when a new problem arrives, the first question is: what are the vertices,
+what are the edges?
+
+machinery lives on the graph, written once. every other class either IS a
+graph (it extends one — the mesh, the matrix, the chain) or CARRIES one and
+asks it questions (the assembler, the smoothers, the time integrator):
+
+```
+   solvers        ask: residual? product? dot?
+      │           (never look inside)
+   assemblers     answer on the whole field, or on one
+      │           processor's slice + fetched neighbours
+   graphs         know who is next to whom, who owns what,
+                  and do all the sorting, ordering, coloring
+```
+
+the division of labor, precisely: STRUCTURE belongs to the graph — who
+neighbours whom, who owns what, where each ghost value lives, in what order
+to visit. COMMUNICATION belongs to the system — the sending, the receiving,
+the syncs. a lookup table is structure even when only the parallel code
+reads it; the wire that moves the values is not.
+
+pass the graph, not its belongings. if a routine takes an index list, a
+coordinate array, or a dof list that some graph already owns, hand it the
+graph and let it ask. handing a class the graph's arrays one by one is how
+duplicate bookkeeping is born.
+
+two kernels do all the heavy lifting, and nobody re-rolls them:
+`counting_sort` (count, prefix-sum, scatter — every adjacency, table, and
+grouping is built through it) and `power_iteration` (iterated products and
+dots — every spread measurement). if you are writing a count-then-fill loop
+or a multiply-measure-normalize loop, stop: the kernel exists.
+
+the smell that finds hidden graphs: any do-loop whose bounds encode reach,
+cutoff, or window arithmetic (`k-p:k`, `if (j > p_k) cycle`, a hand-kept
+cursor) is a graph query in hiding. replace the arithmetic with
+`neighbours`, `in_neighbours`, an ordering, or a table the graph builds.
+
+absorbing work into the graph is judged by what it deletes from the
+callers. if the graph gains a method and the callers do not shrink, it was
+a rename, not machinery.
+
 ## spacing
 
 declarations stand in columns. inside one block, every `::` lines up:

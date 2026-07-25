@@ -288,9 +288,13 @@ contains
     end block reverse_wire
 
     ! ---- the vectors shrink: the state length becomes the owned slab,
-    ! and the initial-condition field follows it (a transient march
-    ! seeds U(:,1) from phi, so phi must be the owned slab too) ----
+    ! and the fields that were born full-length follow it - phi (a
+    ! transient march seeds U(:,1) from it) and the state S itself.
+    ! before this line S's length depended on who wrote to it last
+    ! (full-length from the constructor, owned-length from a marcher);
+    ! shrinking it here makes the length a promise, not a guess ----
     this % phi = this % phi(this % owned_dofs)
+    this % S   = this % S(this % owned_dofs, :)
     this % num_state_vars = this % num_owned
 
     this % partitioned = .true.
@@ -324,8 +328,8 @@ contains
 
     integer :: j
 
-    buffer(1:this % num_owned)  = v(1:this % num_owned)
-    post(1:this % num_owned) = v(1:this % num_owned)
+    buffer(1:this % num_owned) = v
+    post(1:this % num_owned)   = v
     sync all
     do j = 1, size(owner)
        buffer(this % num_owned + j) = post(slot(j))[owner(j)]
@@ -419,7 +423,7 @@ contains
          !    J v = beta*(mass_owned * v_own)  -  alpha*(A[ᵀ] v)
          !          └── diagonal, local ─┘     └─ halo (fwd or rev) ─┘
          if (allocated(this % lin_coeff)) then
-            w = real(this % lin_coeff(2), dp)*this % mass_owned*v(1:this % num_owned) &
+            w = real(this % lin_coeff(2), dp)*this % mass_owned*v &
                  & - real(this % lin_coeff(1), dp)*Av
          else
             w = Av
@@ -522,7 +526,7 @@ contains
     real(dp), allocatable :: Atv(:), yframe(:)
 
     allocate(yframe(this % num_local))
-    call this % A_local % matvec_transpose(v(1:this % num_owned), yframe)
+    call this % A_local % matvec_transpose(v, yframe)
     call this % exchange_halo_reverse(yframe)
     Atv = yframe(1:this % num_owned)
 
@@ -553,9 +557,9 @@ contains
             & "is a tracked deferral"
     end if
 
-    residual(1:this % num_owned) = residual(1:this % num_owned) &
-         & + this % mass_owned * this % S(1:this % num_owned, 2) &
-         & - this % spatial_local(this % S(1:this % num_owned, 1)) &
+    residual = residual &
+         & + this % mass_owned * this % S(:,2) &
+         & - this % spatial_local(this % S(:,1)) &
          & + this % b_owned
 
   end subroutine add_residual
@@ -585,9 +589,9 @@ contains
             & "is a tracked deferral"
     end if
 
-    pdt(1:this % num_owned) = pdt(1:this % num_owned) &
-         & + real(scalars(2), dp)*this % mass_owned*real(vec(1:this % num_owned), dp) &
-         & - real(scalars(1), dp)*this % spatial_local(real(vec(1:this % num_owned), dp))
+    pdt = pdt &
+         & + real(scalars(2), dp)*this % mass_owned*real(vec, dp) &
+         & - real(scalars(1), dp)*this % spatial_local(real(vec, dp))
 
   end subroutine add_jacobian_vector_product
 
@@ -620,14 +624,13 @@ contains
     ! diagonal - no wire at all. every image holds the same scalars,
     ! so every image takes the same branch and the syncs stay lined up.
     if (real(scalars(1), dp) .eq. 0.0_dp) then
-       pdt(1:this % num_owned) = pdt(1:this % num_owned) &
-            & + real(scalars(2), dp)*this % mass_owned*real(vec(1:this % num_owned), dp)
+       pdt = pdt + real(scalars(2), dp)*this % mass_owned*real(vec, dp)
        return
     end if
 
-    pdt(1:this % num_owned) = pdt(1:this % num_owned) &
-         & + real(scalars(2), dp)*this % mass_owned*real(vec(1:this % num_owned), dp) &
-         & - real(scalars(1), dp)*this % spatial_local_transpose(real(vec(1:this % num_owned), dp))
+    pdt = pdt &
+         & + real(scalars(2), dp)*this % mass_owned*real(vec, dp) &
+         & - real(scalars(1), dp)*this % spatial_local_transpose(real(vec, dp))
 
   end subroutine add_jacobian_vector_product_transpose
 
@@ -666,7 +669,7 @@ contains
     x_full(this % grid % frame(this_image())) = buffer
 
     psi_full = 0.0_dp
-    psi_full(this % owned_dofs) = psi(1:this % num_owned)
+    psi_full(this % owned_dofs) = psi
 
     delta = 0.0_dp
     call this % design_residual_rows(delta, psi_full, x_full, &

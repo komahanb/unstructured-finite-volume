@@ -39,7 +39,7 @@ program test_integrator
         ode = decay_ode(lambda)
         ti  = bdf(ode, 0.0_dp, tfinal, h, p)
         call ti % integrate()
-        err(lev) = abs(real(ti % U(ti % num_steps, 1, 1), dp) - uexact)
+        err(lev) = abs(real(ti % U(ti % num_vertices, 1, 1), dp) - uexact)
      end do
 
      order = log(err(1)/err(2))/log(2.0_dp)

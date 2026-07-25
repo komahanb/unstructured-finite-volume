@@ -15,7 +15,6 @@ module interface_integrator
 
   use iso_fortran_env    , only : dp => REAL64
   use module_solve_mode  , only : is_valid_mode
-  use class_chain        , only : chain
   use interface_marcher  , only : marcher
   use interface_assembler, only : assembler
   use interface_state    , only : state
@@ -41,12 +40,11 @@ module interface_integrator
      real(dp) :: tfinal
      real(dp) :: h
      logical  :: implicit
-     integer  :: num_steps
 
-     ! the step dag: the chain of steps raised to the scheme's
-     ! stencil depth. march builds it and walks it forward; a
-     ! discrete adjoint walks the same dag backward.
-     type(chain) :: steps
+     ! no step-count field and no carried dag: the integrator IS its
+     ! step chain. the count is the inherited num_vertices; march
+     ! forms the chain at the scheme's stencil depth and walks it
+     ! forward; a discrete adjoint walks the same chain backward.
 
    contains
 
@@ -142,7 +140,7 @@ contains
     this % tfinal    = tfinal
     this % h         = h
     this % implicit  = implicit
-    this % num_steps = floor((tfinal - tinit)/h) + 1
+    this % num_vertices = floor((tfinal - tinit)/h) + 1
 
   end subroutine construct
 
@@ -230,13 +228,13 @@ contains
     if (allocated(this % U))    deallocate(this % U)
 
     ! Time history
-    allocate(this % time(this % num_steps))
+    allocate(this % time(this % num_vertices))
     this % time    = 0.0_dp
     this % time(1) = this % tinit
 
     ! State history: (step, nvars, order+1) to match the assembler state
     allocate(this % U( &
-         & this % num_steps, &
+         & this % num_vertices, &
          & this % system % get_num_state_vars(), &
          & this % system % get_differential_order() + 1))
     this % U = 0.0d0
@@ -256,16 +254,16 @@ contains
     !    k-p ... k-1 ---> (k)      the window handed to step is the
     !                              closed in-neighbourhood [k-p .. k]
     !
-    this % steps = chain(this % num_steps, &
-         &               power = this % get_bandwidth(this % num_steps))
-    order = this % steps % dependency_order()
+    call this % form(this % num_vertices, &
+         &           power = this % get_bandwidth(this % num_vertices))
+    order = this % dependency_order()
 
-    stepping: do i = 1, this % num_steps
+    stepping: do i = 1, this % num_vertices
 
        k = order(i)
        if (k .eq. 1) cycle stepping        ! the seed vertex is given
 
-       nbrs = this % steps % in_neighbours(k)
+       nbrs = this % in_neighbours(k)
        p    = size(nbrs)
 
        call this % step(this % time(nbrs(1):k), this % U(nbrs(1):k,:,:), this % h, p, ierr)
@@ -275,7 +273,7 @@ contains
     ! The state exits as the final window
     select type (s)
     type is (differential_state)
-       s % U = this % U(this % num_steps,:,:)
+       s % U = this % U(this % num_vertices,:,:)
     end select
 
   end subroutine march

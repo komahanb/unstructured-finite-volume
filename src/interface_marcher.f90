@@ -30,11 +30,20 @@
 ! What also lives here: the shared attributes (tolerance, iteration
 ! budget, verbosity) previously duplicated across the families.
 !
-! In graph terms: a marcher traverses a chain - the iterate sequence in
-! solver iterations, the step sequence in physical time. The chain is a
-! directed graph (class_chain extends digraph), the states are its
-! vertex payloads, and the discrete adjoint traverses it in reverse
-! (digraph % accumulate_adjoint, direction read from structure).
+! In graph terms: a marcher IS a chain - not carries one, IS one.
+!
+!    marcher = ( 1 ) --> ( 2 ) --> ( 3 ) --> ... --> ( n )
+!               each vertex one pass of the iteration; the time
+!               integrator forms its chain at the step count and
+!               walks it in both directions; a solver's chain
+!               stands ready for the day something reads its
+!               iteration structure (an injected iteration plan,
+!               a restart quotient, a backward walk for
+!               sensitivities through the solve)
+!
+! The chain answers all its graph questions by arithmetic and stores
+! nothing, so every solver below inherits a complete graph identity
+! at zero cost.
 !
 ! Author : Komahan Boopathy
 !=====================================================================!
@@ -42,6 +51,7 @@
 module interface_marcher
 
   use iso_fortran_env    , only : dp => REAL64
+  use class_chain        , only : chain
   use interface_assembler, only : assembler
   use interface_state    , only : state
 
@@ -51,10 +61,10 @@ module interface_marcher
   public :: marcher
 
   !===================================================================!
-  ! The abstract marcher
+  ! The abstract marcher: a chain of passes
   !===================================================================!
 
-  type, abstract :: marcher
+  type, abstract, extends(chain) :: marcher
 
      ! termination tolerance, iteration budget, verbosity. defaults
      ! reproduce the nonlinear family's previous values; the linear

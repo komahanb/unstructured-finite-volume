@@ -289,7 +289,7 @@ contains
     integer                   :: n, m, k, j, i, e, p_m, p_k, nvars
     real(dp)                  :: h, w
 
-    n = this % num_steps
+    n = this % num_vertices
     h = this % h
 
     lsolver = conjugate_gradient(10000, 1.0d-12, 0)
@@ -298,7 +298,7 @@ contains
     ! couplings - edge m -> k exactly when step k's stencil reads
     ! step m - so no reach/cutoff bookkeeping survives here; the
     ! sweep walks the same structure backward.
-    order = this % steps % dependency_order()
+    order = this % dependency_order()
 
     ! mass action selector [alpha, beta] = [0, 1] -> M v
     mass_coeff = [0.0_dp, 1.0_dp]
@@ -332,7 +332,7 @@ contains
          rhs  = -w*dfdu
 
          ! every out-edge hands back its weighted mass action
-         nbrs = this % steps % out_neighbours(m)
+         nbrs = this % out_neighbours(m)
          couple: do e = 1, size(nbrs)
             k   = nbrs(e)
             j   = k - m
@@ -377,7 +377,7 @@ contains
     integer               :: n, m, ndv
     real(dp)              :: w
 
-    n = this % num_steps
+    n = this % num_vertices
 
     associate(system => this % system)
 
@@ -415,7 +415,7 @@ contains
     integer      :: n, m
     real(dp)     :: w
 
-    n    = this % num_steps
+    n    = this % num_vertices
     jval = 0.0_dp
 
     associate(system => this % system)
@@ -494,7 +494,7 @@ contains
     character(len=256)    :: fname
     integer               :: m, n, nvars
 
-    n = this % num_steps
+    n = this % num_vertices
 
     associate(system => this % system)
       nvars = system % get_num_state_vars()
@@ -524,7 +524,7 @@ contains
     real(dp), allocatable :: fields(:,:,:), times(:)
     integer               :: m, n, nvars
 
-    n = this % num_steps
+    n = this % num_vertices
 
     associate(system => this % system)
       nvars = system % get_num_state_vars()

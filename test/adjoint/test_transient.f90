@@ -75,7 +75,7 @@ program test_transient_adjoint
   write(*,'(2x,a,es16.8)') "adjoint        : ", g_adj(1)
   write(*,'(2x,a,es16.8)') "finite-diff    : ", g_fd(1)
   write(*,'(2x,a,es16.8)') "relative error : ", relerr
-  write(*,'(2x,a,i0,a)')   "wrote transient_adjoint_0000..", ti % num_steps-1, &
+  write(*,'(2x,a,i0,a)')   "wrote transient_adjoint_0000..", ti % num_vertices-1, &
        & ".vtu + transient_adjoint.msh (state + adjoint)"
 
   if (relerr .gt. 1.0e-5_dp) nfail = nfail + 1

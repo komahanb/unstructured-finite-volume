@@ -178,7 +178,7 @@ contains
     call box_bc(ftrans)
     ti = bdf(ftrans, 0.0_dp, 200.0_dp, 10.0_dp, max_order = 1)
     call ti % integrate()
-    xt = real(ti % U(ti % num_steps, :, 1), dp)
+    xt = real(ti % U(ti % num_vertices, :, 1), dp)
 
     call report("transient (t -> inf) -> steady", &
          & maxval(abs(xt - xs)) .lt. 1.0e-8_dp, nfail)

@@ -184,7 +184,7 @@ contains
     call fvmp % setup_partition()
     bdf_parallel = bdf(fvmp, 0.0_dp, 1.0_dp, 0.1_dp, 2)
     call bdf_parallel % integrate()
-    ns = bdf_parallel % num_steps
+    ns = bdf_parallel % num_vertices
     allocate(u_parallel(n))
     call fvmp % replicate(real(bdf_parallel % U(ns, :, 1), dp), u_parallel)
 
@@ -193,7 +193,7 @@ contains
     call trans_bc(fvms)
     bdf_serial = bdf(fvms, 0.0_dp, 1.0_dp, 0.1_dp, 2)
     call bdf_serial % integrate()
-    u_serial = real(bdf_serial % U(bdf_serial % num_steps, :, 1), dp)
+    u_serial = real(bdf_serial % U(bdf_serial % num_vertices, :, 1), dp)
 
     e = maxval(abs(u_parallel - u_serial))/max(maxval(abs(u_serial)), tiny(1.0_dp))
     if (me .eq. 1) then

@@ -53,6 +53,11 @@ module class_chain
      procedure :: neighbours
      procedure :: degree
 
+     ! set THIS object up as a chain of n links, in place - the seat
+     ! a type that IS a chain (a marcher, an integrator) uses to form
+     ! its own structure once its length is known
+     procedure :: form
+
   end type chain
 
   interface chain
@@ -72,6 +77,28 @@ contains
     integer, intent(in), optional :: num_variables
     integer, intent(in), optional :: power
 
+    call this % form(n, num_variables, power)
+
+  end function create
+
+  !===================================================================!
+  ! Form: become a chain of n links, in place.
+  !
+  !    before:  ( me )              an object with no structure yet
+  !    after :  ( me ) = 1 --> 2 --> ... --> n     at the given power
+  !
+  ! The constructor above builds a fresh chain through this; a type
+  ! that extends chain calls it on itself the moment it learns how
+  ! long its own sequence is.
+  !===================================================================!
+
+  pure subroutine form(this, n, num_variables, power)
+
+    class(chain), intent(inout)        :: this
+    integer     , intent(in)           :: n
+    integer     , intent(in), optional :: num_variables
+    integer     , intent(in), optional :: power
+
     integer :: i
 
     this % num_variables = 1
@@ -86,14 +113,16 @@ contains
        this % num_edges = this % num_edges + max(0, min(this % power, n - i))
     end do
 
-    ! vertex labels (and part stamps for the inherited partitioners)
+    ! vertex labels (and part stamps for the inherited partitioners);
+    ! re-entrant - forming again replaces the old labels
+    if (allocated(this % vertices)) deallocate(this % vertices)
     allocate(this % vertices(n))
     do i = 1, n
        this % vertices(i) % number = i
        this % vertices(i) % part   = 1
     end do
 
-  end function create
+  end subroutine form
 
   !===================================================================!
   ! The directed rule: out-edges reach forward to the next power

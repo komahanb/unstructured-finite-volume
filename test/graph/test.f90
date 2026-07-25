@@ -216,7 +216,7 @@ contains
     character(len=*), intent(in)    :: label
     integer         , intent(inout) :: nfail
 
-    integer, allocatable :: own(:), gh(:), nbrs(:), cover(:)
+    integer, allocatable :: own(:), ghost_dofs(:), nbrs(:), cover(:)
     integer :: k, i, j, v, w, cut
     logical :: ok
 
@@ -233,9 +233,9 @@ contains
     ! each ghost of k is not owned by k and touches an owned vertex of k
     ok = .true.
     do k = 1, nparts
-       gh = g % ghosts(k)
-       do i = 1, size(gh)
-          v = gh(i)
+       ghost_dofs = g % ghosts(k)
+       do i = 1, size(ghost_dofs)
+          v = ghost_dofs(i)
           if (g % part_of(v) .eq. k) ok = .false.
           nbrs = g % neighbours(v)
           if (.not. any([(g % part_of(nbrs(j)) .eq. k, j=1,size(nbrs))])) ok = .false.

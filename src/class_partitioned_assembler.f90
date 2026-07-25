@@ -8,12 +8,12 @@
 ! owned slab, living in the graph's local frame:
 !
 !    global picture                each image after setup
-!    ┌──────────────────┐          ┌───────────┐   halo   ┌───────────┐
-!    │  all n dofs,     │   ──▶    │ own | gh  │ <------> │ own | gh  │
-!    │  every image     │          └───────────┘          └───────────┘
-!    │  a photocopy     │          vectors are the owned prefix only;
-!    └──────────────────┘          the ghost tail exists just inside
-!                                  the product's exchange buffer
+!    ┌──────────────────┐       ┌─────────────┐  halo  ┌─────────────┐
+!    │  all n dofs,     │  ──▶  │ own | ghost │ <----> │ own | ghost │
+!    │  every image     │       └─────────────┘        └─────────────┘
+!    │  a photocopy     │       vectors are the owned prefix only;
+!    └──────────────────┘       the ghost tail exists just inside
+!                               the product's exchange buffer
 !
 ! The three distributed questions, and what crosses the wire:
 !
@@ -57,10 +57,10 @@ module class_partitioned_assembler
   ! smuggled through them - each is written and read only inside its
   ! exchange, between two syncs.
   !   post  - owners post the owned slab, ghosts PULL   (forward)
-  !   gpost - ghosts post their contributions, owners PULL and sum
+  !   ghost_post - ghosts post their contributions, owners PULL and sum
   !                                                     (reverse)
   real(dp), allocatable :: post(:)[:]
-  real(dp), allocatable :: gpost(:)[:]
+  real(dp), allocatable :: ghost_post(:)[:]
 
   !===================================================================!
   ! The partitioned system
@@ -75,10 +75,10 @@ module class_partitioned_assembler
      ! the FACE frame:  [ owned dofs | face-ghost dofs ]
      !                    1 .. nown    nown+1 .. nloc
      ! the product's halo - one cell across each cut face
-     integer              :: nown = 0, ngh = 0, nloc = 0
+     integer              :: nown = 0, nghost = 0, nloc = 0
      integer, allocatable :: own(:)         ! global dofs of the owned prefix
-     integer, allocatable :: gh_owner(:)    ! ghost j's owning image
-     integer, allocatable :: gh_slot(:)     ! ...and its slot in that owner's frame
+     integer, allocatable :: ghost_owner(:)    ! ghost j's owning image
+     integer, allocatable :: ghost_slot(:)     ! ...and its slot in that owner's frame
 
      ! the REVERSE book: the transpose scatters owned-row values into
      ! frame columns, and the ghost columns belong to other images -
@@ -201,7 +201,7 @@ contains
     class(partitioned_assembler), intent(inout) :: this
 
     type(csr_matrix)      :: A_global
-    integer , allocatable :: gh_dofs(:), floc(:)
+    integer , allocatable :: ghost_dofs(:), floc(:)
     real(dp), allocatable :: bfull(:)
     integer               :: me, j, g, v, p, maxown
 
@@ -212,16 +212,16 @@ contains
 
     ! ---- the frame ----
     this % own  = this % grid % dofs_of(this % grid % owned(me))
-    gh_dofs     = this % grid % dofs_of(this % grid % ghosts(me))
+    ghost_dofs     = this % grid % dofs_of(this % grid % ghosts(me))
     this % nown = size(this % own)
-    this % ngh  = size(gh_dofs)
-    this % nloc = this % nown + this % ngh
+    this % nghost  = size(ghost_dofs)
+    this % nloc = this % nown + this % nghost
     floc        = this % grid % frame_inverse(me)
 
     ! ---- the exchange tables come from the graph: it holds the
     ! replicated partition, so it can answer where every ghost lives
     ! with no communication. the assembler only keeps the wires. ----
-    call this % grid % ghost_owners(me, this % gh_owner, this % gh_slot)
+    call this % grid % ghost_owners(me, this % ghost_owner, this % ghost_slot)
 
     ! ---- the WIDE (node-ring) halo: the same partition, read on the
     ! mesh's node-adjacency graph (cells sharing a mesh point). its
@@ -280,11 +280,11 @@ contains
       maxgh = 0
       do img = 1, this % grid % nparts
          maxgh = max(maxgh, &
-              & (this % grid % gh_ptr(img+1) - this % grid % gh_ptr(img)) &
+              & (this % grid % ghost_ptr(img+1) - this % grid % ghost_ptr(img)) &
               & * this % grid % num_variables)
       end do
-      if (allocated(gpost)) deallocate(gpost)
-      allocate(gpost(max(maxgh, 1))[*])
+      if (allocated(ghost_post)) deallocate(ghost_post)
+      allocate(ghost_post(max(maxgh, 1))[*])
     end block reverse_wire
 
     ! ---- the vectors shrink: the state length becomes the owned slab,
@@ -308,10 +308,10 @@ contains
   !    buf(nown+j) = post(slot_j)[owner_j]     ghosts straight from
   !            sync                            the owners' frames
   !
-  !    ┌─ image 1 ──┐          ┌─ image 2 ──┐
-  !    │ own: a b c │ ──a───▶  │ gh:  a     │    each arrow is one
-  !    │ gh:  x     │ ◀───x──  │ own: x y z │    cut edge's value -
-  !    └────────────┘          └────────────┘    the traffic IS the cut
+  !    ┌─ image 1 ────┐          ┌─ image 2 ────┐
+  !    │ own:   a b c │ ──a───▶  │ ghost: a     │    each arrow is one
+  !    │ ghost: x     │ ◀───x──  │ own:   x y z │    cut edge's value -
+  !    └──────────────┘          └──────────────┘    the traffic IS the cut
   !===================================================================!
 
   subroutine exchange_halo(this, v, buf, owner, slot)
@@ -463,7 +463,7 @@ contains
     real(dp), allocatable :: Av(:), buf(:)
 
     allocate(Av(this % nown), buf(this % nloc))
-    call this % exchange_halo(v, buf, this % gh_owner, this % gh_slot)
+    call this % exchange_halo(v, buf, this % ghost_owner, this % ghost_slot)
     call this % A_local % matvec(buf, Av)
 
   end function spatial_local
@@ -479,7 +479,7 @@ contains
   !               and each owner SUMS what lands on its rows
   !
   !    ┌─ image 1 ──┐          ┌─ image 2 ──┐
-  !    │ own: +=g   │ ◀──g───  │ gh: g      │   image 2 posts its ghost
+  !    │ own: +=g   │ ◀──g───  │ ghost: g   │   image 2 posts its ghost
   !    │            │          │            │   contribution; image 1
   !    └────────────┘          └────────────┘   pulls and adds it in
   !===================================================================!
@@ -492,12 +492,12 @@ contains
     integer :: s, k
 
     ! post my ghost-column contributions, tagged by ghost index
-    gpost(1:this % ngh) = yframe(this % nown + 1 : this % nloc)
+    ghost_post(1:this % nghost) = yframe(this % nown + 1 : this % nloc)
     sync all
     ! each owned row sums the contributions the ghosting images posted
     do s = 1, this % nown
        do k = this % rev_ptr(s), this % rev_ptr(s+1) - 1
-          yframe(s) = yframe(s) + gpost(this % rev_slot(k))[this % rev_img(k)]
+          yframe(s) = yframe(s) + ghost_post(this % rev_slot(k))[this % rev_img(k)]
        end do
     end do
     sync all
@@ -661,7 +661,7 @@ contains
     n = this % grid % num_dofs()
     allocate(buf(this % nloc), xfull(n), psifull(n), delta(size(dfdx)))
 
-    call this % exchange_halo(this % S(:,1), buf, this % gh_owner, this % gh_slot)
+    call this % exchange_halo(this % S(:,1), buf, this % ghost_owner, this % ghost_slot)
     xfull = 0.0_dp
     xfull(this % grid % frame(this_image())) = buf
 

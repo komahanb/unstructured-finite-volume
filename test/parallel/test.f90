@@ -445,12 +445,12 @@ contains
     ! ARE the exchange lists, nothing more and nothing less needed.
     halo_reach: block
       logical, allocatable :: known(:)
-      integer, allocatable :: gh(:)
+      integer, allocatable :: ghost_dofs(:)
       integer :: i2, v2, e2, miss
       allocate(known(n)); known = .false.
       known(fvmp % own) = .true.
-      gh = fvmp % grid % dofs_of(fvmp % grid % ghosts(me))
-      if (size(gh) .gt. 0) known(gh) = .true.
+      ghost_dofs = fvmp % grid % dofs_of(fvmp % grid % ghosts(me))
+      if (size(ghost_dofs) .gt. 0) known(ghost_dofs) = .true.
       miss = 0
       do i2 = 1, size(fvmp % own)
          v2 = fvmp % own(i2)

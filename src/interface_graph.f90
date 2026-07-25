@@ -94,8 +94,8 @@ module interface_graph
      integer              :: ncut   = 0   ! edges crossing parts (cut quality)
      integer, allocatable :: own_ptr(:)   ! (nparts+1)
      integer, allocatable :: own_list(:)  ! (num_vertices)
-     integer, allocatable :: gh_ptr(:)    ! (nparts+1)
-     integer, allocatable :: gh_list(:)   ! deduped ghosts, by part
+     integer, allocatable :: ghost_ptr(:)    ! (nparts+1)
+     integer, allocatable :: ghost_list(:)   ! deduped ghosts, by part
 
    contains
 
@@ -1196,18 +1196,18 @@ contains
        end do
     end do
 
-    if (allocated(this % gh_ptr))  deallocate(this % gh_ptr)
-    if (allocated(this % gh_list)) deallocate(this % gh_list)
-    allocate(this % gh_ptr(nparts+1))
-    this % gh_ptr(1) = 1
+    if (allocated(this % ghost_ptr))  deallocate(this % ghost_ptr)
+    if (allocated(this % ghost_list)) deallocate(this % ghost_list)
+    allocate(this % ghost_ptr(nparts+1))
+    this % ghost_ptr(1) = 1
     do k = 1, nparts
-       this % gh_ptr(k+1) = this % gh_ptr(k) + cnt(k)
+       this % ghost_ptr(k+1) = this % ghost_ptr(k) + cnt(k)
     end do
-    allocate(this % gh_list(this % gh_ptr(nparts+1)-1))
+    allocate(this % ghost_list(this % ghost_ptr(nparts+1)-1))
 
     mark = 0
     do k = 1, nparts
-       pos = this % gh_ptr(k)
+       pos = this % ghost_ptr(k)
        do i = this % own_ptr(k), this % own_ptr(k+1)-1
           v    = this % own_list(i)
           nbrs = this % neighbours(v)
@@ -1215,7 +1215,7 @@ contains
              w = nbrs(kv)
              if (this % vertices(w) % part .ne. k .and. mark(w) .ne. k) then
                 mark(w) = k
-                this % gh_list(pos) = w
+                this % ghost_list(pos) = w
                 pos = pos + 1
              end if
           end do
@@ -1379,15 +1379,15 @@ contains
     integer             , intent(in)  :: k
     integer, allocatable, intent(out) :: owner(:), slot(:)
 
-    integer, allocatable :: gh(:), inv(:)
+    integer, allocatable :: ghost_dofs(:), inv(:)
     integer              :: j, g, v, p, prev_p
 
-    gh = this % dofs_of(this % ghosts(k))
-    allocate(owner(size(gh)), slot(size(gh)))
+    ghost_dofs = this % dofs_of(this % ghosts(k))
+    allocate(owner(size(ghost_dofs)), slot(size(ghost_dofs)))
 
     prev_p = 0
-    do j = 1, size(gh)
-       g = gh(j)
+    do j = 1, size(ghost_dofs)
+       g = ghost_dofs(j)
        v = (g - 1)/this % num_variables + 1
        p = this % part_of(v)
        if (p .ne. prev_p) then
@@ -1420,7 +1420,7 @@ contains
     integer             , intent(in)  :: k
     integer, allocatable, intent(out) :: ptr(:), img(:), idx(:)
 
-    integer, allocatable :: inv(:), gh(:), keys(:), raw_img(:), raw_idx(:), perm(:)
+    integer, allocatable :: inv(:), ghost_dofs(:), keys(:), raw_img(:), raw_idx(:), perm(:)
     integer              :: p, j, g, v, n, nown
 
     nown = size(this % dofs_of(this % owned(k)))
@@ -1433,9 +1433,9 @@ contains
       do pass = 1, 2
          n = 0
          do p = 1, this % nparts
-            gh = this % dofs_of(this % ghosts(p))
-            do j = 1, size(gh)
-               g = gh(j)
+            ghost_dofs = this % dofs_of(this % ghosts(p))
+            do j = 1, size(ghost_dofs)
+               g = ghost_dofs(j)
                v = (g - 1)/this % num_variables + 1
                if (this % part_of(v) .eq. k) then
                   n = n + 1
@@ -1494,7 +1494,7 @@ contains
 
     integer, allocatable :: list(:)
 
-    list = this % gh_list(this % gh_ptr(k) : this % gh_ptr(k+1)-1)
+    list = this % ghost_list(this % ghost_ptr(k) : this % ghost_ptr(k+1)-1)
 
   end function ghosts
 
@@ -1512,7 +1512,7 @@ contains
     class(graph), intent(in) :: this
     integer     , intent(in) :: k
 
-    n_ghosts = this % gh_ptr(k+1) - this % gh_ptr(k)
+    n_ghosts = this % ghost_ptr(k+1) - this % ghost_ptr(k)
 
   end function n_ghosts
 

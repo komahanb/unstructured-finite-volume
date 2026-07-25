@@ -16,7 +16,7 @@
 ! with cg on an identical serial system (run replicated on every image)
 ! and check:
 !   1. coverage     - the owned sets partition every dof exactly once
-!   2. shrinkage    - the answer really is a slab (nown, not n)
+!   2. shrinkage    - the answer really is a slab (num_owned, not n)
 !   3. solves it    - the slabs, replicated through the trio
 !                     (scatter + sum), satisfy ||A x - b||/||b|| at tol
 !   4. == serial    - and match the serial answer entrywise
@@ -169,8 +169,8 @@ contains
     class(assembler)           , allocatable :: fvms
     class(gmsh_loader), allocatable :: gl
     class(mesh)       , allocatable :: grid
-    type(bdf)             :: tip, tis
-    real(dp), allocatable :: uf_full(:), uf_ref(:)
+    type(bdf)             :: bdf_parallel, bdf_serial
+    real(dp), allocatable :: u_parallel(:), u_serial(:)
     real(dp)              :: e
     integer               :: n, ns
 
@@ -182,20 +182,20 @@ contains
     allocate(fvmp, source = partitioned_assembler(grid))
     call trans_bc(fvmp)
     call fvmp % setup_partition()
-    tip = bdf(fvmp, 0.0_dp, 1.0_dp, 0.1_dp, 2)
-    call tip % integrate()
-    ns = tip % num_steps
-    allocate(uf_full(n))
-    call fvmp % replicate(real(tip % U(ns, :, 1), dp), uf_full)
+    bdf_parallel = bdf(fvmp, 0.0_dp, 1.0_dp, 0.1_dp, 2)
+    call bdf_parallel % integrate()
+    ns = bdf_parallel % num_steps
+    allocate(u_parallel(n))
+    call fvmp % replicate(real(bdf_parallel % U(ns, :, 1), dp), u_parallel)
 
     ! the serial reference march
     allocate(fvms, source = assembler(grid))
     call trans_bc(fvms)
-    tis = bdf(fvms, 0.0_dp, 1.0_dp, 0.1_dp, 2)
-    call tis % integrate()
-    uf_ref = real(tis % U(tis % num_steps, :, 1), dp)
+    bdf_serial = bdf(fvms, 0.0_dp, 1.0_dp, 0.1_dp, 2)
+    call bdf_serial % integrate()
+    u_serial = real(bdf_serial % U(bdf_serial % num_steps, :, 1), dp)
 
-    e = maxval(abs(uf_full - uf_ref))/max(maxval(abs(uf_ref)), tiny(1.0_dp))
+    e = maxval(abs(u_parallel - u_serial))/max(maxval(abs(u_serial)), tiny(1.0_dp))
     if (me .eq. 1) then
        write(*,'(a)') " -----------------------------------------------------"
        write(*,'(2x,a)')        "case: transient (bdf2, box-36)"
@@ -261,9 +261,9 @@ contains
     class(assembler)           , allocatable :: fvms
     class(gmsh_loader), allocatable :: gl
     class(mesh)       , allocatable :: grid
-    type(bdf)             :: tip, tis
+    type(bdf)             :: bdf_parallel, bdf_serial
     type(state_energy)    :: func
-    real(dp), allocatable :: g_par(:), g_ser(:)
+    real(dp), allocatable :: grad_parallel(:), grad_serial(:)
     real(dp)              :: e
 
     allocate(gl  , source = gmsh_loader("box-36.msh"))
@@ -274,23 +274,23 @@ contains
     allocate(fvmp, source = partitioned_assembler(grid))
     call trans_bc(fvmp)
     call fvmp % setup_partition()
-    tip = bdf(fvmp, 0.0_dp, 1.0_dp, 0.1_dp, 2)
-    call tip % integrate_adjoint(func, g_par)
+    bdf_parallel = bdf(fvmp, 0.0_dp, 1.0_dp, 0.1_dp, 2)
+    call bdf_parallel % integrate_adjoint(func, grad_parallel)
 
     ! the serial reference (its transpose runs on the declared
     ! symmetry claim, as the serial adjoint tests do)
     allocate(fvms, source = assembler(grid))
     call trans_bc(fvms)
     fvms % operator_is_symmetric = .true.
-    tis = bdf(fvms, 0.0_dp, 1.0_dp, 0.1_dp, 2)
-    call tis % integrate_adjoint(func, g_ser)
+    bdf_serial = bdf(fvms, 0.0_dp, 1.0_dp, 0.1_dp, 2)
+    call bdf_serial % integrate_adjoint(func, grad_serial)
 
-    e = abs(g_par(1) - g_ser(1))/max(abs(g_ser(1)), tiny(1.0_dp))
+    e = abs(grad_parallel(1) - grad_serial(1))/max(abs(grad_serial(1)), tiny(1.0_dp))
     if (me .eq. 1) then
        write(*,'(a)') " -----------------------------------------------------"
        write(*,'(2x,a)')        "case: transient adjoint gradient (bdf2, box-36)"
-       write(*,'(4x,a,es16.8)') "dJ/dkappa parallel : ", g_par(1)
-       write(*,'(4x,a,es16.8)') "dJ/dkappa serial   : ", g_ser(1)
+       write(*,'(4x,a,es16.8)') "dJ/dkappa parallel : ", grad_parallel(1)
+       write(*,'(4x,a,es16.8)') "dJ/dkappa serial   : ", grad_serial(1)
        write(*,'(4x,a,es12.4)') "relative difference: ", e
     end if
     if (e .gt. 1.0e-8_dp) nfail = nfail + 1
@@ -346,7 +346,7 @@ contains
     type(algebraic_multigrid)              :: M
     class(conjugate_gradient), allocatable :: cg
     real(dp), allocatable :: b(:), x_dist(:), x_pc(:), x_ref(:), r(:)
-    real(dp), allocatable :: xd(:), xp(:)
+    real(dp), allocatable :: x_dist_full(:), x_pc_full(:)
     integer  :: n, nown_tot, it_unprec, it_pc, bfs_cut, rcb_cut
     real(dp) :: e, e_pc, relres, bnorm
 
@@ -375,7 +375,7 @@ contains
     ! (b) per-image block-AMG preconditioned cg: each image builds an AMG
     ! on its OWNED diagonal block (additive Schwarz preconditioner); the
     ! preconditioner needs no lists - the frame did the plumbing
-    Ablock = A % principal_submatrix(fvmp % own)
+    Ablock = A % principal_submatrix(fvmp % owned_dofs)
     call M % setup(Ablock)
     allocate(cg, source = conjugate_gradient(20000, 1.0e-10_dp, 0, &
          & precond = block_preconditioner(M)))
@@ -389,9 +389,9 @@ contains
     deallocate(cg)
 
     ! the door replicates the slabs for the global comparisons below
-    allocate(xd(n), xp(n))
-    call fvmp % replicate(x_dist, xd)
-    call fvmp % replicate(x_pc  , xp)
+    allocate(x_dist_full(n), x_pc_full(n))
+    call fvmp % replicate(x_dist, x_dist_full)
+    call fvmp % replicate(x_pc  , x_pc_full)
 
     ! the writer at the door: image 1 paints the distributed answer
     ! and the decomposition that produced it - the solve draws its
@@ -403,7 +403,7 @@ contains
          real(dp), allocatable :: fields(:,:)
          integer :: v
          allocate(fields(n, 2))
-         fields(:,1) = xd
+         fields(:,1) = x_dist_full
          fields(:,2) = [(real(fvmp % grid % part_of(v), dp), v = 1, n)]
          names(1) = string("phi")
          names(2) = string("part")
@@ -414,17 +414,17 @@ contains
     end if
 
     ! check 1: owned sets cover every dof exactly once
-    nown_tot = size(fvmp % own)
+    nown_tot = size(fvmp % owned_dofs)
     call co_sum(nown_tot)
 
     ! check 3: partitioned solution actually solves the system
-    allocate(r(n)); call A % matvec(xd, r); r = r - b
+    allocate(r(n)); call A % matvec(x_dist_full, r); r = r - b
     bnorm  = max(norm2(b), tiny(1.0_dp))
     relres = norm2(r)/bnorm
 
     ! checks 4 + 5: both partitioned solves match the serial answer
-    e    = maxval(abs(xd - x_ref))/max(maxval(abs(x_ref)), tiny(1.0_dp))
-    e_pc = maxval(abs(xp - x_ref))/max(maxval(abs(x_ref)), tiny(1.0_dp))
+    e    = maxval(abs(x_dist_full - x_ref))/max(maxval(abs(x_ref)), tiny(1.0_dp))
+    e_pc = maxval(abs(x_pc_full - x_ref))/max(maxval(abs(x_ref)), tiny(1.0_dp))
 
     if (me .eq. 1) then
        write(*,'(a)') " -----------------------------------------------------"
@@ -448,12 +448,12 @@ contains
       integer, allocatable :: ghost_dofs(:)
       integer :: i2, v2, e2, miss
       allocate(known(n)); known = .false.
-      known(fvmp % own) = .true.
+      known(fvmp % owned_dofs) = .true.
       ghost_dofs = fvmp % grid % dofs_of(fvmp % grid % ghosts(me))
       if (size(ghost_dofs) .gt. 0) known(ghost_dofs) = .true.
       miss = 0
-      do i2 = 1, size(fvmp % own)
-         v2 = fvmp % own(i2)
+      do i2 = 1, size(fvmp % owned_dofs)
+         v2 = fvmp % owned_dofs(i2)
          do e2 = A % out_xadj(v2), A % out_xadj(v2+1) - 1
             if (.not. known(A % out_adj(e2))) miss = miss + 1
          end do
@@ -468,16 +468,16 @@ contains
     ! face neighbours and more. on >1 image it must be strictly wider.
     if (me .eq. 1) then
        write(*,'(4x,a,i0,a,i0,a)') &
-            & "halo widths      : face ", fvmp % nloc - fvmp % nown, &
-            & "  node ", fvmp % nwide - fvmp % nown, "  (node >= face)"
+            & "halo widths      : face ", fvmp % num_local - fvmp % num_owned, &
+            & "  node ", fvmp % num_wide - fvmp % num_owned, "  (node >= face)"
     end if
     ! superset invariant: a face-ghost shares a face, hence 2+ points,
     ! hence is a node-ghost too - so the node halo can never be smaller
-    if (fvmp % nwide .lt. fvmp % nloc) nfail = nfail + 1
+    if (fvmp % num_wide .lt. fvmp % num_local) nfail = nfail + 1
 
     ! the vectors actually shrank: the answer is the owned slab, not
     ! a photocopy of the whole
-    if (size(x_dist) .ne. size(fvmp % own))          nfail = nfail + 1
+    if (size(x_dist) .ne. size(fvmp % owned_dofs))          nfail = nfail + 1
     if (np .gt. 1 .and. size(x_dist) .ge. n)         nfail = nfail + 1
 
     if (nown_tot .ne. n)                 nfail = nfail + 1
@@ -492,7 +492,7 @@ contains
     ! RCB should cut no more edges (smaller/equal halo) than BFS
     if (np .gt. 1 .and. assert_cut .and. rcb_cut .gt. bfs_cut) nfail = nfail + 1
 
-    deallocate(b, x_dist, x_pc, x_ref, r, xd, xp)
+    deallocate(b, x_dist, x_pc, x_ref, r, x_dist_full, x_pc_full)
   end subroutine solve_and_check
 
 end program test_parallel

@@ -1130,20 +1130,20 @@ contains
     real(dp)    , intent(in)    :: coords(:,:)
     integer     , intent(in)    :: nparts
 
-    integer, allocatable :: idx(:), part(:)
+    integer, allocatable :: ghost_index(:), part(:)
     integer :: nv, c
 
     nv = this % num_vertices
     if (nparts .lt. 1)  error stop "partition_rcb: nparts < 1"
     if (nparts .gt. nv) error stop "partition_rcb: more parts than vertices"
 
-    allocate(idx(nv), part(nv))
+    allocate(ghost_index(nv), part(nv))
     do c = 1, nv
-       idx(c) = c
+       ghost_index(c) = c
     end do
     part = 1
 
-    call rcb(idx, 1, nv, nparts, 1, coords, part)
+    call rcb(ghost_index, 1, nv, nparts, 1, coords, part)
 
     do c = 1, nv
        this % vertices(c) % part = part(c)
@@ -1163,7 +1163,7 @@ contains
     class(graph), intent(inout) :: this
     integer     , intent(in)    :: nparts
 
-    integer, allocatable :: cnt(:), mark(:), nbrs(:)
+    integer, allocatable :: counts(:), mark(:), nbrs(:)
     integer :: nv, v, w, i, k, kv, pos
 
     nv = this % num_vertices
@@ -1180,7 +1180,7 @@ contains
     ! Two passes over each part's owned vertices and their neighbours:
     ! count (size the csr) then fill, deduped by stamping mark(w)=k (k is
     ! monotone, so an old stamp from part k-1 reads as unmarked for k).
-    allocate(cnt(nparts)); cnt = 0
+    allocate(counts(nparts)); counts = 0
     allocate(mark(nv));    mark = 0
     do k = 1, nparts
        do i = this % own_ptr(k), this % own_ptr(k+1)-1
@@ -1190,7 +1190,7 @@ contains
              w = nbrs(kv)
              if (this % vertices(w) % part .ne. k .and. mark(w) .ne. k) then
                 mark(w) = k
-                cnt(k)  = cnt(k) + 1
+                counts(k)  = counts(k) + 1
              end if
           end do
        end do
@@ -1201,7 +1201,7 @@ contains
     allocate(this % ghost_ptr(nparts+1))
     this % ghost_ptr(1) = 1
     do k = 1, nparts
-       this % ghost_ptr(k+1) = this % ghost_ptr(k) + cnt(k)
+       this % ghost_ptr(k+1) = this % ghost_ptr(k) + counts(k)
     end do
     allocate(this % ghost_list(this % ghost_ptr(nparts+1)-1))
 
@@ -1316,7 +1316,7 @@ contains
   ! first, then the ghost halo:
   !
   !    [ owned dofs | ghost dofs ]     local l  <-->  global frame(l)
-  !      1 .. nown    nown+1 .. nloc
+  !      1 .. num_owned    num_owned+1 .. num_local
   !
   ! Every distributed vector of part k lives in this order; the
   ! owned entries are a contiguous prefix, so the part's dot is a
@@ -1379,7 +1379,7 @@ contains
     integer             , intent(in)  :: k
     integer, allocatable, intent(out) :: owner(:), slot(:)
 
-    integer, allocatable :: ghost_dofs(:), inv(:)
+    integer, allocatable :: ghost_dofs(:), inverse(:)
     integer              :: j, g, v, p, prev_p
 
     ghost_dofs = this % dofs_of(this % ghosts(k))
@@ -1391,21 +1391,21 @@ contains
        v = (g - 1)/this % num_variables + 1
        p = this % part_of(v)
        if (p .ne. prev_p) then
-          inv    = this % frame_inverse(p)
+          inverse    = this % frame_inverse(p)
           prev_p = p
        end if
        owner(j) = p
-       slot(j)  = inv(g)
+       slot(j)  = inverse(g)
     end do
 
   end subroutine ghost_owners
 
   !===================================================================!
   ! Who keeps copies of part k's owned dofs: the same table read the
-  ! other way. For each owned dof (by its position 1..nown), the
+  ! other way. For each owned dof (by its position 1..num_owned), the
   ! parts that hold it as a ghost and WHERE in their ghost list -
   !
-  !    my owned dof s  ──▶  img(ptr(s):ptr(s+1)-1), idx(...)
+  !    my owned dof s  ──▶  image(ptr(s):ptr(s+1)-1), ghost_index(...)
   !                          the parts holding      the ghost index
   !                          a copy of it           each gave it
   !
@@ -1414,17 +1414,17 @@ contains
   ! (part, index) pairs by owned dof is the counting kernel's job.
   !===================================================================!
 
-  pure subroutine ghost_copies(this, k, ptr, img, idx)
+  pure subroutine ghost_copies(this, k, ptr, image, ghost_index)
 
     class(graph)        , intent(in)  :: this
     integer             , intent(in)  :: k
-    integer, allocatable, intent(out) :: ptr(:), img(:), idx(:)
+    integer, allocatable, intent(out) :: ptr(:), image(:), ghost_index(:)
 
-    integer, allocatable :: inv(:), ghost_dofs(:), keys(:), raw_img(:), raw_idx(:), perm(:)
-    integer              :: p, j, g, v, n, nown
+    integer, allocatable :: inverse(:), ghost_dofs(:), keys(:), raw_image(:), raw_index(:), perm(:)
+    integer              :: p, j, g, v, n, num_owned
 
-    nown = size(this % dofs_of(this % owned(k)))
-    inv  = this % frame_inverse(k)
+    num_owned = size(this % dofs_of(this % owned(k)))
+    inverse  = this % frame_inverse(k)
 
     ! collect every (part, ghost index) pair that points at one of
     ! part k's dofs, keyed by the owned position it points at
@@ -1440,25 +1440,25 @@ contains
                if (this % part_of(v) .eq. k) then
                   n = n + 1
                   if (pass .eq. 2) then
-                     keys(n)    = inv(g)
-                     raw_img(n) = p
-                     raw_idx(n) = j
+                     keys(n)    = inverse(g)
+                     raw_image(n) = p
+                     raw_index(n) = j
                   end if
                end if
             end do
          end do
          if (pass .eq. 1) then
             total = n
-            allocate(keys(total), raw_img(total), raw_idx(total))
+            allocate(keys(total), raw_image(total), raw_index(total))
          end if
       end do
     end block do_count
 
     ! group by owned position: the counting kernel returns the row
     ! pointer and the pair permutation, and the table is two gathers
-    call counting_sort(nown, keys, [(j, j = 1, n)], ptr, perm)
-    img = raw_img(perm)
-    idx = raw_idx(perm)
+    call counting_sort(num_owned, keys, [(j, j = 1, n)], ptr, perm)
+    image = raw_image(perm)
+    ghost_index = raw_index(perm)
 
   end subroutine ghost_copies
 
@@ -2113,15 +2113,15 @@ contains
   end function make_witness_digraph
 
   !===================================================================!
-  ! RCB recursion: assign vertices idx(lo:hi) to k parts numbered
+  ! RCB recursion: assign vertices ghost_index(lo:hi) to k parts numbered
   ! base..base+k-1. Halve the part count, send a proportional share of
   ! the vertices (by count) to each side, split at the median along the
   ! axis of largest spread.
   !===================================================================!
 
-  pure recursive subroutine rcb(idx, lo, hi, k, base, coords, part)
+  pure recursive subroutine rcb(ghost_index, lo, hi, k, base, coords, part)
 
-    integer , intent(inout) :: idx(:)
+    integer , intent(inout) :: ghost_index(:)
     integer , intent(in)    :: lo, hi, k, base
     real(dp), intent(in)    :: coords(:,:)
     integer , intent(inout) :: part(:)
@@ -2131,7 +2131,7 @@ contains
 
     n = hi - lo + 1
     if (k .le. 1 .or. n .le. 0) then
-       if (n .gt. 0) part(idx(lo:hi)) = base
+       if (n .gt. 0) part(ghost_index(lo:hi)) = base
        return
     end if
 
@@ -2139,7 +2139,7 @@ contains
     ! e.g. z in 2d, are never chosen)
     axis = 1; best = -1.0_dp
     do d = 1, size(coords, 1)
-       spread = maxval(coords(d, idx(lo:hi))) - minval(coords(d, idx(lo:hi)))
+       spread = maxval(coords(d, ghost_index(lo:hi))) - minval(coords(d, ghost_index(lo:hi)))
        if (spread .gt. best) then
           best = spread; axis = d
        end if
@@ -2150,23 +2150,23 @@ contains
     nL = nint(real(n,dp)*real(kL,dp)/real(k,dp))
     nL = max(1, min(n-1, nL))
 
-    ! order idx(lo:hi) by the chosen axis so the nL smallest go left
-    call qsort_axis(idx, lo, hi, coords, axis)
+    ! order ghost_index(lo:hi) by the chosen axis so the nL smallest go left
+    call qsort_axis(ghost_index, lo, hi, coords, axis)
     mid = lo + nL - 1
 
-    call rcb(idx, lo,    mid, kL, base,      coords, part)
-    call rcb(idx, mid+1, hi,  kR, base + kL, coords, part)
+    call rcb(ghost_index, lo,    mid, kL, base,      coords, part)
+    call rcb(ghost_index, mid+1, hi,  kR, base + kL, coords, part)
 
   end subroutine rcb
 
   !===================================================================!
-  ! Quicksort idx(lo:hi) ascending by coords(axis, idx(:)). Middle pivot so
+  ! Quicksort ghost_index(lo:hi) ascending by coords(axis, ghost_index(:)). Middle pivot so
   ! structured (already-ordered) meshes don't hit the O(n^2) worst case.
   !===================================================================!
 
-  pure recursive subroutine qsort_axis(idx, lo, hi, coords, axis)
+  pure recursive subroutine qsort_axis(ghost_index, lo, hi, coords, axis)
 
-    integer , intent(inout) :: idx(:)
+    integer , intent(inout) :: ghost_index(:)
     integer , intent(in)    :: lo, hi, axis
     real(dp), intent(in)    :: coords(:,:)
 
@@ -2174,19 +2174,19 @@ contains
     real(dp) :: pivot
 
     if (lo .ge. hi) return
-    pivot = coords(axis, idx((lo+hi)/2))
+    pivot = coords(axis, ghost_index((lo+hi)/2))
     i = lo; j = hi
     do
-       do while (coords(axis, idx(i)) .lt. pivot); i = i + 1; end do
-       do while (coords(axis, idx(j)) .gt. pivot); j = j - 1; end do
+       do while (coords(axis, ghost_index(i)) .lt. pivot); i = i + 1; end do
+       do while (coords(axis, ghost_index(j)) .gt. pivot); j = j - 1; end do
        if (i .le. j) then
-          tmp = idx(i); idx(i) = idx(j); idx(j) = tmp
+          tmp = ghost_index(i); ghost_index(i) = ghost_index(j); ghost_index(j) = tmp
           i = i + 1; j = j - 1
        end if
        if (i .gt. j) exit
     end do
-    if (lo .lt. j) call qsort_axis(idx, lo, j, coords, axis)
-    if (i .lt. hi) call qsort_axis(idx, i, hi, coords, axis)
+    if (lo .lt. j) call qsort_axis(ghost_index, lo, j, coords, axis)
+    if (i .lt. hi) call qsort_axis(ghost_index, i, hi, coords, axis)
 
   end subroutine qsort_axis
 

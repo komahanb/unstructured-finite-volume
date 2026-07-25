@@ -433,7 +433,7 @@ contains
     class(linear_solver), intent(inout) :: this
     class(graph)        , intent(in)    :: g
 
-    integer, allocatable :: colors(:), vptr(:), vlist(:)
+    integer, allocatable :: colors(:), vertex_ptr(:), vertex_list(:)
     integer :: c, v, nv
 
     allocate(this % g, source = g)
@@ -443,18 +443,18 @@ contains
     this % ncolors = 0
     if (nv .gt. 0) this % ncolors = maxval(colors)
 
-    call counting_sort(this % ncolors, colors, [(v, v = 1, nv)], vptr, vlist)
+    call counting_sort(this % ncolors, colors, [(v, v = 1, nv)], vertex_ptr, vertex_list)
 
     allocate(this % color_ptr(this % ncolors + 1))
     this % color_ptr(1) = 1
     do c = 1, this % ncolors
        this % color_ptr(c+1) = this % color_ptr(c) &
-            &                + (vptr(c+1) - vptr(c))*g % num_variables
+            &                + (vertex_ptr(c+1) - vertex_ptr(c))*g % num_variables
     end do
     allocate(this % color_list(this % color_ptr(this % ncolors + 1) - 1))
     do c = 1, this % ncolors
        this % color_list(this % color_ptr(c) : this % color_ptr(c+1) - 1) = &
-            & g % dofs_of(vlist(vptr(c) : vptr(c+1) - 1))
+            & g % dofs_of(vertex_list(vertex_ptr(c) : vertex_ptr(c+1) - 1))
     end do
 
   end subroutine carry

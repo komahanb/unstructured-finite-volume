@@ -729,21 +729,21 @@ contains
   pure function tentative_prolongation(agg, naggr) result(P0)
     integer         , intent(in) :: agg(:), naggr
     type(csr_matrix)             :: P0
-    integer , allocatable :: cnt(:), row_ptr(:), col_idx(:)
+    integer , allocatable :: counts(:), row_ptr(:), col_idx(:)
     real(dp), allocatable :: vals(:)
     integer :: n, i
 
     n = size(agg)
-    allocate(cnt(naggr)); cnt = 0
+    allocate(counts(naggr)); counts = 0
     do i = 1, n
-       cnt(agg(i)) = cnt(agg(i)) + 1
+       counts(agg(i)) = counts(agg(i)) + 1
     end do
 
     allocate(row_ptr(n+1), col_idx(n), vals(n))
     do i = 1, n
        row_ptr(i) = i
        col_idx(i) = agg(i)
-       vals(i)    = 1.0_dp/sqrt(real(cnt(agg(i)), dp))
+       vals(i)    = 1.0_dp/sqrt(real(counts(agg(i)), dp))
     end do
     row_ptr(n+1) = n + 1
 

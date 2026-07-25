@@ -59,11 +59,11 @@ declarations stand in columns. inside one block, every `::` lines up:
 
 ```fortran
    ! wrong - the :: marks wander
-   integer, allocatable :: gh(:), inv(:)
+   integer, allocatable :: ghost_dofs(:), inverse(:)
    integer :: j, g, v, p
 
    ! right - one column
-   integer, allocatable :: gh(:), inv(:)
+   integer, allocatable :: ghost_dofs(:), inverse(:)
    integer              :: j, g, v, p
 ```
 
@@ -75,7 +75,7 @@ line, then locals. dummies carry their intent, aligned like everything else:
    integer             , intent(in)  :: k
    integer, allocatable, intent(out) :: owner(:), slot(:)
 
-   integer, allocatable :: gh(:), inv(:)
+   integer, allocatable :: ghost_dofs(:), inverse(:)
    integer              :: j, g, v, p
 ```
 
@@ -108,10 +108,10 @@ understands what the code below does WITHOUT reading it.
    !===================================================================!
    ! The halo exchange: one slab out, one frame in.
    !
-   !    ┌─ image 1 ──┐          ┌─ image 2 ──┐
-   !    │ own: a b c │ ──a───▶  │ gh:  a     │    each arrow is one
-   !    │ gh:  x     │ ◀───x──  │ own: x y z │    cut edge's value -
-   !    └────────────┘          └────────────┘    the traffic IS the cut
+   !    ┌─ image 1 ────┐          ┌─ image 2 ────┐
+   !    │ own:   a b c │ ──a───▶  │ ghost: a     │    each arrow is one
+   !    │ ghost: x     │ ◀───x──  │ own:   x y z │    cut edge's value -
+   !    └──────────────┘          └──────────────┘    the traffic IS the cut
    !===================================================================!
 ```
 
@@ -156,10 +156,53 @@ banned, from hard experience: invented compound jargon, nicknames coined
 mid-project, abbreviation chains, and stacked metaphors. one metaphor,
 carried carefully, beats three mixed ones.
 
-commit messages follow the same law, drawn as pictures: BEFORE and AFTER
-panels, the drawing first, the checks at the bottom. lowercase, plain
-english, no tool signatures. tell the next reader what changed and why
-they can trust it.
+## the commit
+
+a commit message is a graph of the change, not an essay. the code itself
+is a graph — classes, methods, tables, kernels are the NODES; who calls
+whom, who builds what, who asks whom are the EDGES. so draw exactly that:
+the before-graph with its flaw visible (a missing edge, a duplicated
+node), the after-graph with the change visible (the node added, the edge
+wired, the duplicate crossed out ✗). words appear only as labels on nodes
+and verbs on arrows.
+
+a real one:
+
+```
+   the exchange tables move to the graph
+
+   BEFORE ──────────────────────────────────────────────
+
+      (graph)                    (assembler)
+      partition lists,             │ hand loop ──▶ (face table)
+      never asked                  │ hand loop ──▶ (node table)
+         ▲                         │ hand loop ──▶ (reverse table)
+         ╳ no edge                 └─ re-rolled sort ✗
+                                      (the kernel exists!)
+
+   AFTER ────────────────────────────────────────────────
+
+      (graph) ──ghost_owners──▶ (face table)
+         │  └──ghost_owners──▶ (node table)      three new edges,
+         │ ────ghost_copies──▶ (reverse table)   one new node each
+         │            │
+         │            └──groups by──▶ (counting_sort)
+         │                             the one kernel
+      (assembler) ──reads tables, sends values──▶ (the wire)
+
+   CHECKED ──────────────────────────────────────────────
+      tables pinned entry-by-entry on the chain;
+      parallel 1/2/4 unchanged to machine precision
+```
+
+the reader should be able to answer, from the picture alone: which node
+was added? which missing edge got implemented? which duplicate died?
+if the message cannot be drawn this way, the commit is doing too many
+things — split it.
+
+rules: lowercase; plain english on every label (a name the textbook does
+not define gets its one-clause explanation right on the node); no tool
+signatures; CHECKED carries the numbers, never just the word "tested".
 
 ## before committing
 

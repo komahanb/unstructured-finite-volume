@@ -65,19 +65,19 @@ contains
     type(csr_matrix) :: A
     integer, allocatable :: row_ptr(:), col_idx(:)
     real(dp), allocatable :: vals(:)
-    integer :: nn, i, j, k, pos, cnt
+    integer :: nn, i, j, k, pos, counts
 
     nn = N*N
     allocate(row_ptr(nn+1)); row_ptr(1) = 1
     do j = 1, N
        do i = 1, N
           k = (j-1)*N + i
-          cnt = 1
-          if (j .gt. 1) cnt = cnt + 1
-          if (i .gt. 1) cnt = cnt + 1
-          if (i .lt. N) cnt = cnt + 1
-          if (j .lt. N) cnt = cnt + 1
-          row_ptr(k+1) = row_ptr(k) + cnt
+          counts = 1
+          if (j .gt. 1) counts = counts + 1
+          if (i .gt. 1) counts = counts + 1
+          if (i .lt. N) counts = counts + 1
+          if (j .lt. N) counts = counts + 1
+          row_ptr(k+1) = row_ptr(k) + counts
        end do
     end do
     allocate(col_idx(row_ptr(nn+1)-1), vals(row_ptr(nn+1)-1))

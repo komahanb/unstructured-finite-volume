@@ -73,10 +73,10 @@ module class_partitioned_assembler
      logical :: partitioned = .false.
 
      ! the FACE frame:  [ owned dofs | face-ghost dofs ]
-     !                    1 .. nown    nown+1 .. nloc
+     !                    1 .. num_owned    num_owned+1 .. num_local
      ! the product's halo - one cell across each cut face
-     integer              :: nown = 0, nghost = 0, nloc = 0
-     integer, allocatable :: own(:)         ! global dofs of the owned prefix
+     integer              :: num_owned = 0, num_ghost = 0, num_local = 0
+     integer, allocatable :: owned_dofs(:)         ! global dofs of the owned prefix
      integer, allocatable :: ghost_owner(:)    ! ghost j's owning image
      integer, allocatable :: ghost_slot(:)     ! ...and its slot in that owner's frame
 
@@ -86,25 +86,25 @@ module class_partitioned_assembler
      ! ghost it. grouped by owned slot: contributor image + its ghost
      ! index there. the transpose of the forward pull, zero messages
      ! to build (the partition is replicated).
-     integer, allocatable :: rev_ptr(:)     ! (nown+1) owned slot -> its contributors
-     integer, allocatable :: rev_img(:)     ! contributor image
-     integer, allocatable :: rev_slot(:)    ! ...and its ghost index there
+     integer, allocatable :: reverse_ptr(:)     ! (num_owned+1) owned slot -> its contributors
+     integer, allocatable :: reverse_image(:)     ! contributor image
+     integer, allocatable :: reverse_slot(:)    ! ...and its ghost index there
 
      ! the NODE frame:  [ owned dofs | node-ghost dofs ]
-     !                    1 .. nown    nown+1 .. nwide
+     !                    1 .. num_owned    num_owned+1 .. num_wide
      ! the skew's halo - cells sharing a mesh POINT reach wider than
      ! the face halo (see node_graph on the mesh)
-     integer              :: nwide = 0
+     integer              :: num_wide = 0
      integer, allocatable :: wide_owner(:)  ! node-ghost j's owning image
      integer, allocatable :: wide_slot(:)   ! ...and its slot in that owner's frame
      integer, allocatable :: wide_dofs(:)   ! the wide frame's global dofs (own ++ node-ghosts)
 
-     ! the owned rows, read in the frame (columns 1..nloc); the source's
+     ! the owned rows, read in the frame (columns 1..num_local); the source's
      ! owned slab (state-independent, cached); and the lumped mass -
      ! diag(cell volume) - the owned slab of dR/dudot, purely local
      type(csr_matrix)      :: A_local
-     real(dp), allocatable :: b_loc(:)
-     real(dp), allocatable :: m_own(:)
+     real(dp), allocatable :: b_owned(:)
+     real(dp), allocatable :: mass_owned(:)
 
    contains
 
@@ -201,8 +201,8 @@ contains
     class(partitioned_assembler), intent(inout) :: this
 
     type(csr_matrix)      :: A_global
-    integer , allocatable :: ghost_dofs(:), floc(:)
-    real(dp), allocatable :: bfull(:)
+    integer , allocatable :: ghost_dofs(:), frame_map(:)
+    real(dp), allocatable :: b_full(:)
     integer               :: me, j, g, v, p, maxown
 
     me = this_image()
@@ -211,12 +211,12 @@ contains
     call this % grid % partition_rcb(this % grid % cell_centers, num_images())
 
     ! ---- the frame ----
-    this % own  = this % grid % dofs_of(this % grid % owned(me))
+    this % owned_dofs  = this % grid % dofs_of(this % grid % owned(me))
     ghost_dofs     = this % grid % dofs_of(this % grid % ghosts(me))
-    this % nown = size(this % own)
-    this % nghost  = size(ghost_dofs)
-    this % nloc = this % nown + this % nghost
-    floc        = this % grid % frame_inverse(me)
+    this % num_owned = size(this % owned_dofs)
+    this % num_ghost  = size(ghost_dofs)
+    this % num_local = this % num_owned + this % num_ghost
+    frame_map        = this % grid % frame_inverse(me)
 
     ! ---- the exchange tables come from the graph: it holds the
     ! replicated partition, so it can answer where every ghost lives
@@ -235,27 +235,27 @@ contains
       ng = this % grid % node_graph()
       ng % num_variables = this % grid % num_variables   ! same dof arithmetic
       call ng % set_partition([(this % grid % part_of(vw), vw = 1, this % grid % num_vertices)])
-      this % wide_dofs = [this % own, this % grid % dofs_of(ng % ghosts(me))]
-      this % nwide     = size(this % wide_dofs)
+      this % wide_dofs = [this % owned_dofs, this % grid % dofs_of(ng % ghosts(me))]
+      this % num_wide     = size(this % wide_dofs)
       call ng % ghost_owners(me, this % wide_owner, this % wide_slot)
     end block build_wide
 
     ! ---- the owned rows, in the frame ----
     call this % get_operator_csr(A_global)
-    this % A_local = A_global % local_block(this % own, floc, this % nloc)
+    this % A_local = A_global % local_block(this % owned_dofs, frame_map, this % num_local)
 
     ! ---- the source's owned slab (state-independent) ----
-    allocate(bfull(this % grid % num_dofs()))
-    call this % get_source(bfull)
-    this % b_loc = bfull(this % own)
+    allocate(b_full(this % grid % num_dofs()))
+    call this % get_source(b_full)
+    this % b_owned = b_full(this % owned_dofs)
 
     ! ---- the lumped mass on the owned rows: each dof's cell volume.
     ! the mass is diagonal, so dR/dudot needs no halo at all ----
-    allocate(this % m_own(this % nown))
-    do j = 1, this % nown
-       g = this % own(j)
+    allocate(this % mass_owned(this % num_owned))
+    do j = 1, this % num_owned
+       g = this % owned_dofs(j)
        v = (g - 1)/this % grid % num_variables + 1
-       this % m_own(j) = this % grid % cell_volumes(v)
+       this % mass_owned(j) = this % grid % cell_volumes(v)
     end do
 
     ! ---- the wire: coarray allocation must agree across images, so
@@ -271,7 +271,7 @@ contains
     ! ---- the reverse table comes from the graph too: who keeps
     ! copies of my owned dofs, and where in their ghost lists - the
     ! transpose exchange sends along exactly these entries ----
-    call this % grid % ghost_copies(me, this % rev_ptr, this % rev_img, this % rev_slot)
+    call this % grid % ghost_copies(me, this % reverse_ptr, this % reverse_image, this % reverse_slot)
 
     ! ---- the reverse wire: sized to the largest ghost count of any
     ! part (computable locally - the lists are replicated) ----
@@ -290,8 +290,8 @@ contains
     ! ---- the vectors shrink: the state length becomes the owned slab,
     ! and the initial-condition field follows it (a transient march
     ! seeds U(:,1) from phi, so phi must be the owned slab too) ----
-    this % phi = this % phi(this % own)
-    this % num_state_vars = this % nown
+    this % phi = this % phi(this % owned_dofs)
+    this % num_state_vars = this % num_owned
 
     this % partitioned = .true.
 
@@ -303,9 +303,9 @@ contains
   ! ring. The wire always posts the owned slab, so the face halo and
   ! the wider node halo share it; only the book differs.
   !
-  !    post(1:nown) = my owned values          every image posts its
+  !    post(1:num_owned) = my owned values          every image posts its
   !            sync                            slab, then pulls its
-  !    buf(nown+j) = post(slot_j)[owner_j]     ghosts straight from
+  !    buffer(num_owned+j) = post(slot_j)[owner_j]     ghosts straight from
   !            sync                            the owners' frames
   !
   !    ┌─ image 1 ────┐          ┌─ image 2 ────┐
@@ -314,21 +314,21 @@ contains
   !    └──────────────┘          └──────────────┘    the traffic IS the cut
   !===================================================================!
 
-  subroutine exchange_halo(this, v, buf, owner, slot)
+  subroutine exchange_halo(this, v, buffer, owner, slot)
 
     class(partitioned_assembler), intent(in)  :: this
     real(dp)                    , intent(in)  :: v(:)        ! owned slab
-    real(dp)                    , intent(out) :: buf(:)      ! frame length
+    real(dp)                    , intent(out) :: buffer(:)      ! frame length
     integer                     , intent(in)  :: owner(:)    ! ghost -> its owner image
     integer                     , intent(in)  :: slot(:)     ! ghost -> its slot there
 
     integer :: j
 
-    buf(1:this % nown)  = v(1:this % nown)
-    post(1:this % nown) = v(1:this % nown)
+    buffer(1:this % num_owned)  = v(1:this % num_owned)
+    post(1:this % num_owned) = v(1:this % num_owned)
     sync all
     do j = 1, size(owner)
-       buf(this % nown + j) = post(slot(j))[owner(j)]
+       buffer(this % num_owned + j) = post(slot(j))[owner(j)]
     end do
     sync all
 
@@ -416,10 +416,10 @@ contains
          ! halo as the steady operator - the mass is diagonal (so M = Mᵀ,
          ! no halo), only the spatial term crosses the wire:
          !
-         !    J v = beta*(m_own * v_own)  -  alpha*(A[ᵀ] v)
+         !    J v = beta*(mass_owned * v_own)  -  alpha*(A[ᵀ] v)
          !          └── diagonal, local ─┘     └─ halo (fwd or rev) ─┘
          if (allocated(this % lin_coeff)) then
-            w = real(this % lin_coeff(2), dp)*this % m_own*v(1:this % nown) &
+            w = real(this % lin_coeff(2), dp)*this % mass_owned*v(1:this % num_owned) &
                  & - real(this % lin_coeff(1), dp)*Av
          else
             w = Av
@@ -460,11 +460,11 @@ contains
     class(partitioned_assembler), intent(in) :: this
     real(dp)                    , intent(in) :: v(:)
 
-    real(dp), allocatable :: Av(:), buf(:)
+    real(dp), allocatable :: Av(:), buffer(:)
 
-    allocate(Av(this % nown), buf(this % nloc))
-    call this % exchange_halo(v, buf, this % ghost_owner, this % ghost_slot)
-    call this % A_local % matvec(buf, Av)
+    allocate(Av(this % num_owned), buffer(this % num_local))
+    call this % exchange_halo(v, buffer, this % ghost_owner, this % ghost_slot)
+    call this % A_local % matvec(buffer, Av)
 
   end function spatial_local
 
@@ -492,12 +492,12 @@ contains
     integer :: s, k
 
     ! post my ghost-column contributions, tagged by ghost index
-    ghost_post(1:this % nghost) = yframe(this % nown + 1 : this % nloc)
+    ghost_post(1:this % num_ghost) = yframe(this % num_owned + 1 : this % num_local)
     sync all
     ! each owned row sums the contributions the ghosting images posted
-    do s = 1, this % nown
-       do k = this % rev_ptr(s), this % rev_ptr(s+1) - 1
-          yframe(s) = yframe(s) + ghost_post(this % rev_slot(k))[this % rev_img(k)]
+    do s = 1, this % num_owned
+       do k = this % reverse_ptr(s), this % reverse_ptr(s+1) - 1
+          yframe(s) = yframe(s) + ghost_post(this % reverse_slot(k))[this % reverse_image(k)]
        end do
     end do
     sync all
@@ -521,10 +521,10 @@ contains
 
     real(dp), allocatable :: Atv(:), yframe(:)
 
-    allocate(yframe(this % nloc))
-    call this % A_local % matvec_transpose(v(1:this % nown), yframe)
+    allocate(yframe(this % num_local))
+    call this % A_local % matvec_transpose(v(1:this % num_owned), yframe)
     call this % exchange_halo_reverse(yframe)
-    Atv = yframe(1:this % nown)
+    Atv = yframe(1:this % num_owned)
 
   end function spatial_local_transpose
 
@@ -534,7 +534,7 @@ contains
   !    R = M*udot  -  A*u  +  b        (S(:,1)=u, S(:,2)=udot)
   !        │           │        │
   !        diagonal    spatial, halo  cached owned source
-  !        m_own*udot  spatial_local
+  !        mass_owned*udot  spatial_local
   !
   ! The base loops every cell with global dof indexing - impossible
   ! on a slab - so the frame answers it here. Newton reads its
@@ -553,10 +553,10 @@ contains
             & "is a tracked deferral"
     end if
 
-    residual(1:this % nown) = residual(1:this % nown) &
-         & + this % m_own * this % S(1:this % nown, 2) &
-         & - this % spatial_local(this % S(1:this % nown, 1)) &
-         & + this % b_loc
+    residual(1:this % num_owned) = residual(1:this % num_owned) &
+         & + this % mass_owned * this % S(1:this % num_owned, 2) &
+         & - this % spatial_local(this % S(1:this % num_owned, 1)) &
+         & + this % b_owned
 
   end subroutine add_residual
 
@@ -585,9 +585,9 @@ contains
             & "is a tracked deferral"
     end if
 
-    pdt(1:this % nown) = pdt(1:this % nown) &
-         & + real(scalars(2), dp)*this % m_own*real(vec(1:this % nown), dp) &
-         & - real(scalars(1), dp)*this % spatial_local(real(vec(1:this % nown), dp))
+    pdt(1:this % num_owned) = pdt(1:this % num_owned) &
+         & + real(scalars(2), dp)*this % mass_owned*real(vec(1:this % num_owned), dp) &
+         & - real(scalars(1), dp)*this % spatial_local(real(vec(1:this % num_owned), dp))
 
   end subroutine add_jacobian_vector_product
 
@@ -620,14 +620,14 @@ contains
     ! diagonal - no wire at all. every image holds the same scalars,
     ! so every image takes the same branch and the syncs stay lined up.
     if (real(scalars(1), dp) .eq. 0.0_dp) then
-       pdt(1:this % nown) = pdt(1:this % nown) &
-            & + real(scalars(2), dp)*this % m_own*real(vec(1:this % nown), dp)
+       pdt(1:this % num_owned) = pdt(1:this % num_owned) &
+            & + real(scalars(2), dp)*this % mass_owned*real(vec(1:this % num_owned), dp)
        return
     end if
 
-    pdt(1:this % nown) = pdt(1:this % nown) &
-         & + real(scalars(2), dp)*this % m_own*real(vec(1:this % nown), dp) &
-         & - real(scalars(1), dp)*this % spatial_local_transpose(real(vec(1:this % nown), dp))
+    pdt(1:this % num_owned) = pdt(1:this % num_owned) &
+         & + real(scalars(2), dp)*this % mass_owned*real(vec(1:this % num_owned), dp) &
+         & - real(scalars(1), dp)*this % spatial_local_transpose(real(vec(1:this % num_owned), dp))
 
   end subroutine add_jacobian_vector_product_transpose
 
@@ -654,22 +654,22 @@ contains
     real(dp)                    , intent(inout) :: dfdx(:)
     type(scalar)                , intent(in)    :: psi(:)
 
-    real(dp)    , allocatable :: buf(:), xfull(:), delta(:)
-    type(scalar), allocatable :: psifull(:)
+    real(dp)    , allocatable :: buffer(:), x_full(:), delta(:)
+    type(scalar), allocatable :: psi_full(:)
     integer                   :: n
 
     n = this % grid % num_dofs()
-    allocate(buf(this % nloc), xfull(n), psifull(n), delta(size(dfdx)))
+    allocate(buffer(this % num_local), x_full(n), psi_full(n), delta(size(dfdx)))
 
-    call this % exchange_halo(this % S(:,1), buf, this % ghost_owner, this % ghost_slot)
-    xfull = 0.0_dp
-    xfull(this % grid % frame(this_image())) = buf
+    call this % exchange_halo(this % S(:,1), buffer, this % ghost_owner, this % ghost_slot)
+    x_full = 0.0_dp
+    x_full(this % grid % frame(this_image())) = buffer
 
-    psifull = 0.0_dp
-    psifull(this % own) = psi(1:this % nown)
+    psi_full = 0.0_dp
+    psi_full(this % owned_dofs) = psi(1:this % num_owned)
 
     delta = 0.0_dp
-    call this % design_residual_rows(delta, psifull, xfull, &
+    call this % design_residual_rows(delta, psi_full, x_full, &
          & this % grid % owned(this_image()))
     call co_sum(delta)
     dfdx = dfdx + delta
@@ -693,10 +693,10 @@ contains
     real(dp)              :: lhs, rhs, scale
     integer               :: i
 
-    allocate(v(this % nown), w(this % nown))
-    do i = 1, this % nown
-       v(i) = sin(real(this % own(i), dp)*0.7_dp) + 0.3_dp
-       w(i) = cos(real(this % own(i), dp)*0.5_dp) + 0.2_dp
+    allocate(v(this % num_owned), w(this % num_owned))
+    do i = 1, this % num_owned
+       v(i) = sin(real(this % owned_dofs(i), dp)*0.7_dp) + 0.3_dp
+       w(i) = cos(real(this % owned_dofs(i), dp)*0.5_dp) + 0.2_dp
     end do
 
     Av  = this % spatial_local(v)
@@ -724,15 +724,15 @@ contains
   !     x (own slab) ──wide exchange──▶ [ own | node-ghosts ]
   !                                            │ scatter by global dof
   !                                            ▼
-  !                          xwide = 0 everywhere except own+node-ghost
+  !                          x_wide = 0 everywhere except own+node-ghost
   !                                            │ get_skew_source
   !                                            ▼   (owned rows are exact:
-  !                          keep sfull(own)       every point an owned
+  !                          keep s_full(own)       every point an owned
   !                                                cell touches has its
   !                                                whole ring in the halo)
   !
   ! No whole-vector co_sum: the wide exchange moves one value per node
-  ! cut, not the entire field. The scratch xwide is still full length
+  ! cut, not the entire field. The scratch x_wide is still full length
   ! (get_skew_source loops all cells and indexes globally) - a memory
   ! O(n), not a collective; making the skew loop itself frame-local is
   ! a later refinement.
@@ -744,7 +744,7 @@ contains
     real(dp)                    , intent(out) :: r(:)
     real(dp)                    , intent(in)  :: x(:)
 
-    real(dp), allocatable :: Ax(:), xwide(:), buf(:), sfull(:)
+    real(dp), allocatable :: Ax(:), x_wide(:), buffer(:), s_full(:)
     integer               :: n
 
     if (.not. this % partitioned) then
@@ -752,18 +752,18 @@ contains
             & "the frame does not exist yet"
     end if
 
-    allocate(Ax(this % nown))
+    allocate(Ax(this % num_owned))
     call this % get_jacobian_residual_product(Ax, x)
 
     ! the node halo into a zeroed scratch, by global dof - no collective
     n = this % grid % num_dofs()
-    allocate(buf(this % nwide), xwide(n), sfull(n))
-    call this % exchange_halo(x, buf, this % wide_owner, this % wide_slot)
-    xwide = 0.0_dp
-    xwide(this % wide_dofs) = buf
-    call this % get_skew_source(sfull, xwide)
+    allocate(buffer(this % num_wide), x_wide(n), s_full(n))
+    call this % exchange_halo(x, buffer, this % wide_owner, this % wide_slot)
+    x_wide = 0.0_dp
+    x_wide(this % wide_dofs) = buffer
+    call this % get_skew_source(s_full, x_wide)
 
-    r = this % b_loc + sfull(this % own) - Ax
+    r = this % b_owned + s_full(this % owned_dofs) - Ax
 
   end subroutine state_residual
 
@@ -780,15 +780,15 @@ contains
   ! wide-reaching skew. The solve's hot path never calls it.
   !===================================================================!
 
-  impure subroutine replicate(this, xloc, xfull)
+  impure subroutine replicate(this, xloc, x_full)
 
     class(partitioned_assembler), intent(in)  :: this
     real(dp)                    , intent(in)  :: xloc(:)
-    real(dp)                    , intent(out) :: xfull(:)
+    real(dp)                    , intent(out) :: x_full(:)
 
-    xfull = 0.0_dp
-    call this % grid % scatter(this_image(), xloc, xfull)
-    call co_sum(xfull)
+    x_full = 0.0_dp
+    call this % grid % scatter(this_image(), xloc, x_full)
+    call co_sum(x_full)
 
   end subroutine replicate
 

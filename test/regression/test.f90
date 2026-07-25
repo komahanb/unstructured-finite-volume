@@ -198,7 +198,7 @@ contains
     class(assembler)           , allocatable :: f3
     class(conjugate_gradient)  , allocatable :: cg
     type(normal_cg)                          :: ncg
-    real(dp), allocatable :: xref(:), xn(:), xd(:)
+    real(dp), allocatable :: xref(:), x_normal(:), x_distributed(:)
 
     ! reference: plain CG
     call make("../box-3.msh", f1); call box_bc(f1)
@@ -212,7 +212,7 @@ contains
     f2 % operator_is_symmetric = .true.
     ncg = normal_cg(max_it=50000, max_tol=1.0e-10_dp, &
          & method=CGNR_METHOD, print_level=0)
-    call ncg % solve(f2, xn)
+    call ncg % solve(f2, x_normal)
 
     ! the same plain cg on a partitioned system (one image here, so the
     ! distributed queries reduce exactly to their serial forms)
@@ -223,12 +223,12 @@ contains
     end select
     deallocate(cg)
     allocate(cg, source = conjugate_gradient(5000, tol, 0))
-    call cg % solve(f3, xd)
+    call cg % solve(f3, x_distributed)
 
     call report("cgnr wrapper      -> matches cg", &
-         & maxval(abs(xn - xref)) .lt. 1.0e-5_dp, nfail)
+         & maxval(abs(x_normal - xref)) .lt. 1.0e-5_dp, nfail)
     call report("partitioned system -> matches cg", &
-         & maxval(abs(xd - xref)) .lt. 1.0e-8_dp, nfail)
+         & maxval(abs(x_distributed - xref)) .lt. 1.0e-8_dp, nfail)
 
   end subroutine check_solver_wrappers
 
@@ -331,7 +331,7 @@ contains
     type(csr_system)      :: sys
     type(normal_cg)       :: ncg
     type(gmres_solver)    :: gm
-    real(dp), allocatable :: b(:), xg(:), xn(:)
+    real(dp), allocatable :: b(:), xg(:), x_normal(:)
     real(dp)              :: defect
 
     ! case 1: the lie is caught. the claim routes transpose products to
@@ -357,10 +357,10 @@ contains
 
     ncg = normal_cg(max_it=50000, max_tol=1.0e-10_dp, &
          & method=CGNR_METHOD, print_level=0)
-    call ncg % solve(sys, xn)
+    call ncg % solve(sys, x_normal)
 
     call report("asymmetric: cgnr matches gmres (genuine transpose)", &
-         & maxval(abs(xn - xg)) .lt. 1.0e-5_dp, nfail)
+         & maxval(abs(x_normal - xg)) .lt. 1.0e-5_dp, nfail)
 
   end subroutine check_asymmetric_pathways
 

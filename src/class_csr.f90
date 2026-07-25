@@ -479,16 +479,16 @@ contains
     integer          , intent(in) :: idx(:)
     type(csr_matrix)              :: B
 
-    integer , allocatable :: loc(:), row_ptr(:), col_idx(:)
+    integer , allocatable :: local_map(:), row_ptr(:), col_idx(:)
     real(dp), allocatable :: vals(:)
     integer :: n, il, v, e, jl, pos, ne
 
     n = size(idx)
 
     ! global -> local map (0 = not in the set)
-    allocate(loc(this % num_vertices)); loc = 0
+    allocate(local_map(this % num_vertices)); local_map = 0
     do il = 1, n
-       loc(idx(il)) = il
+       local_map(idx(il)) = il
     end do
 
     ! symbolic: count kept edges per local vertex
@@ -497,7 +497,7 @@ contains
        v = idx(il)
        pos = 0
        do e = this % out_xadj(v), this % out_xadj(v+1) - 1
-          if (loc(this % out_adj(e)) .gt. 0) pos = pos + 1
+          if (local_map(this % out_adj(e)) .gt. 0) pos = pos + 1
        end do
        row_ptr(il+1) = row_ptr(il) + pos
     end do
@@ -509,7 +509,7 @@ contains
     do il = 1, n
        v = idx(il)
        do e = this % out_xadj(v), this % out_xadj(v+1) - 1
-          jl = loc(this % out_adj(e))
+          jl = local_map(this % out_adj(e))
           if (jl .gt. 0) then
              col_idx(pos) = jl
              vals(pos)    = this % vals(e)
@@ -524,11 +524,11 @@ contains
 
   !===================================================================!
   ! The listed rows, read in a frame: the rows kept whole - every
-  ! out-edge survives - with every far end renumbered through loc,
-  ! the frame's global -> local map:
+  ! out-edge survives - with every far end renumbered through
+  ! frame_map, the frame's global -> local map:
   !
   !    global:   r1 r2 ...  --edges--> anywhere the rows reach
-  !    local :   1  2  ...  --edges--> loc(far end), within 1..nloc
+  !    local :   1  2  ...  --edges--> frame_map(far end), within 1..num_local
   !
   ! The rows arrive in their local order, so row l of the block IS
   ! frame position l, and B % matvec on a frame-ordered vector
@@ -541,12 +541,12 @@ contains
   ! this one insists the frame covers them.)
   !===================================================================!
 
-  pure function local_block(this, rows, loc, nloc) result(B)
+  pure function local_block(this, rows, frame_map, num_local) result(B)
 
     class(csr_matrix), intent(in) :: this
     integer          , intent(in) :: rows(:)
-    integer          , intent(in) :: loc(:)
-    integer          , intent(in) :: nloc
+    integer          , intent(in) :: frame_map(:)
+    integer          , intent(in) :: num_local
     type(csr_matrix)              :: B
 
     integer :: nr, il, v, e, pos
@@ -562,7 +562,7 @@ contains
     end do
 
     B % num_vertices = nr
-    B % ncols        = nloc
+    B % ncols        = num_local
     B % num_edges    = B % out_xadj(nr+1) - 1
     allocate(B % out_adj(B % num_edges), B % vals(B % num_edges))
 
@@ -570,12 +570,12 @@ contains
     do il = 1, nr
        v = rows(il)
        do e = this % out_xadj(v), this % out_xadj(v+1) - 1
-          if (loc(this % out_adj(e)) .eq. 0) then
+          if (frame_map(this % out_adj(e)) .eq. 0) then
              error stop "csr local_block: an edge leaves the frame - " // &
                   & "the halo is not the reach"
           end if
           pos = pos + 1
-          B % out_adj(pos) = loc(this % out_adj(e))
+          B % out_adj(pos) = frame_map(this % out_adj(e))
           B % vals(pos)    = this % vals(e)
        end do
     end do

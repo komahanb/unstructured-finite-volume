@@ -198,9 +198,9 @@ contains
     class(partitioned_assembler), intent(inout) :: this
 
     type(csr_matrix)      :: A_global
-    integer , allocatable :: gh_dofs(:), floc(:), owner_inv(:)
+    integer , allocatable :: gh_dofs(:), floc(:)
     real(dp), allocatable :: bfull(:)
-    integer :: me, j, g, v, p, prev_p, maxown
+    integer :: me, j, g, v, p, maxown
 
     me = this_image()
 
@@ -215,49 +215,26 @@ contains
     this % nloc = this % nown + this % ngh
     floc        = this % grid % frame_inverse(me)
 
-    ! ---- the address book: owner and slot of every ghost, computed
-    ! locally - the partition bookkeeping is replicated, so no
-    ! communication at all ----
-    allocate(this % gh_owner(this % ngh), this % gh_slot(this % ngh))
-    prev_p = 0
-    do j = 1, this % ngh
-       g = gh_dofs(j)
-       v = (g - 1)/this % grid % num_variables + 1     ! the dof's vertex
-       p = this % grid % part_of(v)
-       if (p .ne. prev_p) then
-          owner_inv = this % grid % frame_inverse(p)
-          prev_p    = p
-       end if
-       this % gh_owner(j) = p
-       this % gh_slot(j)  = owner_inv(g)
-    end do
+    ! ---- the exchange tables come from the graph: it holds the
+    ! replicated partition, so it can answer where every ghost lives
+    ! with no communication. the assembler only keeps the wires. ----
+    call this % grid % ghost_owners(me, this % gh_owner, this % gh_slot)
 
     ! ---- the WIDE (node-ring) halo: the same partition, read on the
     ! mesh's node-adjacency graph (cells sharing a mesh point). its
     ! ghosts reach wider than the face halo - exactly the cells the
-    ! skew correction interpolates through ----
+    ! skew correction interpolates through. the node graph answers its
+    ! own table; the slots agree with the face frames because both
+    ! graphs sort the SAME part stamps into the SAME owned lists. ----
     build_wide: block
-      type(stored_graph)   :: ng
-      integer, allocatable :: wide_gh(:), wowner_inv(:)
-      integer :: jw, gw, vw, pw, prev_pw
+      type(stored_graph) :: ng
+      integer :: vw
       ng = this % grid % node_graph()
+      ng % num_variables = this % grid % num_variables   ! same dof arithmetic
       call ng % set_partition([(this % grid % part_of(vw), vw = 1, this % grid % num_vertices)])
-      wide_gh       = this % grid % dofs_of(ng % ghosts(me))
-      this % nwide  = this % nown + size(wide_gh)
-      this % wide_dofs = [this % own, wide_gh]
-      allocate(this % wide_owner(size(wide_gh)), this % wide_slot(size(wide_gh)))
-      prev_pw = 0
-      do jw = 1, size(wide_gh)
-         gw = wide_gh(jw)
-         vw = (gw - 1)/this % grid % num_variables + 1
-         pw = this % grid % part_of(vw)
-         if (pw .ne. prev_pw) then
-            wowner_inv = this % grid % frame_inverse(pw)
-            prev_pw    = pw
-         end if
-         this % wide_owner(jw) = pw
-         this % wide_slot(jw)  = wowner_inv(gw)
-      end do
+      this % wide_dofs = [this % own, this % grid % dofs_of(ng % ghosts(me))]
+      this % nwide     = size(this % wide_dofs)
+      call ng % ghost_owners(me, this % wide_owner, this % wide_slot)
     end block build_wide
 
     ! ---- the owned rows, in the frame ----
@@ -288,52 +265,24 @@ contains
     if (allocated(post)) deallocate(post)
     allocate(post(maxown)[*])
 
-    ! ---- the reverse book + its wire: for each of my owned rows, the
-    ! images that ghost it and their ghost index there. built by
-    ! walking every image's (replicated) face ghost list and keeping
-    ! the entries I own - the transpose of the forward pull ----
-    build_reverse: block
-      integer, allocatable :: gh_i(:), cnt(:), cursor(:)
-      integer :: img, jr, gr, vr, sr, maxgh, tot
-      allocate(cnt(this % nown)); cnt = 0
+    ! ---- the reverse table comes from the graph too: who keeps
+    ! copies of my owned dofs, and where in their ghost lists - the
+    ! transpose exchange sends along exactly these entries ----
+    call this % grid % ghost_copies(me, this % rev_ptr, this % rev_img, this % rev_slot)
+
+    ! ---- the reverse wire: sized to the largest ghost count of any
+    ! part (computable locally - the lists are replicated) ----
+    reverse_wire: block
+      integer :: img, maxgh
       maxgh = 0
-      ! pass 1: count contributors per owned slot
-      do img = 1, num_images()
-         gh_i  = this % grid % dofs_of(this % grid % ghosts(img))
-         maxgh = max(maxgh, size(gh_i))
-         do jr = 1, size(gh_i)
-            gr = gh_i(jr)
-            vr = (gr - 1)/this % grid % num_variables + 1
-            if (this % grid % part_of(vr) .eq. me) cnt(floc(gr)) = cnt(floc(gr)) + 1
-         end do
+      do img = 1, this % grid % nparts
+         maxgh = max(maxgh, &
+              & (this % grid % gh_ptr(img+1) - this % grid % gh_ptr(img)) &
+              & * this % grid % num_variables)
       end do
-      allocate(this % rev_ptr(this % nown + 1))
-      this % rev_ptr(1) = 1
-      do sr = 1, this % nown
-         this % rev_ptr(sr+1) = this % rev_ptr(sr) + cnt(sr)
-      end do
-      tot = this % rev_ptr(this % nown + 1) - 1
-      allocate(this % rev_img(tot), this % rev_slot(tot))
-      ! pass 2: fill at each slot's cursor
-      allocate(cursor(this % nown)); cursor = this % rev_ptr(1:this % nown)
-      do img = 1, num_images()
-         gh_i = this % grid % dofs_of(this % grid % ghosts(img))
-         do jr = 1, size(gh_i)
-            gr = gh_i(jr)
-            vr = (gr - 1)/this % grid % num_variables + 1
-            if (this % grid % part_of(vr) .eq. me) then
-               sr = floc(gr)
-               this % rev_img(cursor(sr))  = img
-               this % rev_slot(cursor(sr)) = jr
-               cursor(sr) = cursor(sr) + 1
-            end if
-         end do
-      end do
-      ! the reverse wire: sized to the largest face-ghost count (maxgh
-      ! is already global - every image walked the same replicated lists)
       if (allocated(gpost)) deallocate(gpost)
       allocate(gpost(max(maxgh, 1))[*])
-    end block build_reverse
+    end block reverse_wire
 
     ! ---- the vectors shrink: the state length becomes the owned slab,
     ! and the initial-condition field follows it (a transient march

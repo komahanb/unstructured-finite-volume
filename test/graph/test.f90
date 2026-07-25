@@ -557,6 +557,23 @@ contains
     call report(all(abs(y - [51.0_dp,118.0_dp]) .lt. 1.0e-14_dp), &
          & "the local matvec computes exactly the owned rows", nfail)
 
+    ! the exchange tables, hand-computed. part 2's ghosts are vertices
+    ! 2 and 5 (dofs 3,4,9,10): dof 3 sits at position 3 of part 1's
+    ! owned dofs [1,2,3,4]; dof 9 at position 1 of part 3's [9..12]
+    exchange_tables: block
+      integer, allocatable :: owner(:), slot(:), ptr(:), img(:), idx(:)
+      call c % ghost_owners(2, owner, slot)
+      call report(all(owner .eq. [1,1,3,3]) .and. all(slot .eq. [3,4,1,2]), &
+           & "ghost_owners: each ghost's owner and its slot there", nfail)
+      ! and the same table read the other way: part 1 ghosts vertex 3
+      ! (dofs 5,6 = part 2's owned positions 1,2) at ghost indices 1,2;
+      ! part 3 ghosts vertex 4 (positions 3,4) at indices 1,2
+      call c % ghost_copies(2, ptr, img, idx)
+      call report(all(ptr .eq. [1,2,3,4,5]) .and. &
+           &      all(img .eq. [1,1,3,3]) .and. all(idx .eq. [1,2,1,2]), &
+           & "ghost_copies: who holds a copy of each owned dof", nfail)
+    end block exchange_tables
+
   end subroutine check_local_frame
 
   !===================================================================!

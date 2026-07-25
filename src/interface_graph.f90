@@ -166,6 +166,12 @@ module interface_graph
      procedure :: frame
      procedure :: frame_inverse
 
+     ! the exchange tables, built from the replicated partition with
+     ! no communication: where a part's ghosts come from, and who
+     ! keeps copies of a part's owned dofs
+     procedure :: ghost_owners
+     procedure :: ghost_copies
+
      procedure :: print
      procedure :: print_partition
 
@@ -1351,6 +1357,110 @@ contains
     end do
 
   end function frame_inverse
+
+  !===================================================================!
+  ! Where part k's ghosts come from: for each ghost dof, the part
+  ! that owns the original and its position in that part's owned
+  ! dofs. This is the table a distributed fetch reads -
+  !
+  !    part k's ghost j  ──▶  owner(j), slot(j)
+  !                            │         │
+  !                            the part  the position in ITS
+  !                            it lives  owned prefix, where a
+  !                            on        posted slab holds it
+  !
+  ! Built from the replicated partition lists alone - every part
+  ! can compute every table with no messages at all.
+  !===================================================================!
+
+  pure subroutine ghost_owners(this, k, owner, slot)
+
+    class(graph)        , intent(in)  :: this
+    integer             , intent(in)  :: k
+    integer, allocatable, intent(out) :: owner(:), slot(:)
+
+    integer, allocatable :: gh(:), inv(:)
+    integer :: j, g, v, p, prev_p
+
+    gh = this % dofs_of(this % ghosts(k))
+    allocate(owner(size(gh)), slot(size(gh)))
+
+    prev_p = 0
+    do j = 1, size(gh)
+       g = gh(j)
+       v = (g - 1)/this % num_variables + 1
+       p = this % part_of(v)
+       if (p .ne. prev_p) then
+          inv    = this % frame_inverse(p)
+          prev_p = p
+       end if
+       owner(j) = p
+       slot(j)  = inv(g)
+    end do
+
+  end subroutine ghost_owners
+
+  !===================================================================!
+  ! Who keeps copies of part k's owned dofs: the same table read the
+  ! other way. For each owned dof (by its position 1..nown), the
+  ! parts that hold it as a ghost and WHERE in their ghost list -
+  !
+  !    my owned dof s  ──▶  img(ptr(s):ptr(s+1)-1), idx(...)
+  !                          the parts holding      the ghost index
+  !                          a copy of it           each gave it
+  !
+  ! A transpose product sends contributions along exactly these
+  ! entries, so this is the reverse exchange's table. Grouping the
+  ! (part, index) pairs by owned dof is the counting kernel's job.
+  !===================================================================!
+
+  pure subroutine ghost_copies(this, k, ptr, img, idx)
+
+    class(graph)        , intent(in)  :: this
+    integer             , intent(in)  :: k
+    integer, allocatable, intent(out) :: ptr(:), img(:), idx(:)
+
+    integer, allocatable :: inv(:), gh(:), keys(:), raw_img(:), raw_idx(:), perm(:)
+    integer :: p, j, g, v, n, nown
+
+    nown = size(this % dofs_of(this % owned(k)))
+    inv  = this % frame_inverse(k)
+
+    ! collect every (part, ghost index) pair that points at one of
+    ! part k's dofs, keyed by the owned position it points at
+    do_count: block
+      integer :: total, pass
+      do pass = 1, 2
+         n = 0
+         do p = 1, this % nparts
+            gh = this % dofs_of(this % ghosts(p))
+            do j = 1, size(gh)
+               g = gh(j)
+               v = (g - 1)/this % num_variables + 1
+               if (this % part_of(v) .eq. k) then
+                  n = n + 1
+                  if (pass .eq. 2) then
+                     keys(n)    = inv(g)
+                     raw_img(n) = p
+                     raw_idx(n) = j
+                  end if
+               end if
+            end do
+         end do
+         if (pass .eq. 1) then
+            total = n
+            allocate(keys(total), raw_img(total), raw_idx(total))
+         end if
+      end do
+    end block do_count
+
+    ! group by owned position: the counting kernel returns the row
+    ! pointer and the pair permutation, and the table is two gathers
+    call counting_sort(nown, keys, [(j, j = 1, n)], ptr, perm)
+    img = raw_img(perm)
+    idx = raw_idx(perm)
+
+  end subroutine ghost_copies
 
   !===================================================================!
   ! The partition-local inner product: dot the values two vectors

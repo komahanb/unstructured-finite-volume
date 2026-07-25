@@ -9,6 +9,7 @@ program test_mesh
   use class_mesh               , only : mesh
   use class_assembler          , only : assembler
   use class_csr                , only : csr_matrix
+  use class_diffusion_flux     , only : diffusion_flux
   use interface_linear_solver  , only : linear_solver, AUTO
   use class_conjugate_gradient , only : conjugate_gradient
   use class_gauss_jacobi       , only : gauss_jacobi
@@ -221,6 +222,25 @@ program test_mesh
     deallocate(x_gs, x_sor, xref, gs_colored, sor_colored, solver)
 
   end block colored
+
+  ! the physics IS a graph now: its vertices are the variables, its
+  ! edges the cross-variable couplings. diffusion couples nothing, so
+  ! its coupling graph is two lone vertices - and saying so IS the
+  ! decoupling, stated as structure.
+  coupling_graph : block
+
+    type(diffusion_flux) :: law
+
+    law = diffusion_flux(1.0_dp, 2)
+    if (law % num_vertices .eq. 2 .and. law % num_edges .eq. 0 .and. &
+         & law % degree(1) .eq. 0 .and. law % degree(2) .eq. 0) then
+       write(*,'(1x,a)') "PASS : a diffusion law is an edgeless coupling graph"
+    else
+       write(*,'(1x,a)') "FAIL : the coupling graph is wrong"
+       error stop
+    end if
+
+  end block coupling_graph
 
   deallocate(grid)
   deallocate(FVMAssembler)

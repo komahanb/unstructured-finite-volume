@@ -44,21 +44,21 @@ module interface_flux
        import :: flux, point_state
        class(flux)      , intent(in) :: this
        type(point_state), intent(in) :: st
-       type(scalar)                  :: F(3, this % num_components)
+       type(scalar)                  :: F(3, this % num_vertices)
      end function flux_value_interface
 
      pure function flux_dq_interface(this, st) result(dF)
        import :: flux, point_state
        class(flux)      , intent(in) :: this
        type(point_state), intent(in) :: st
-       type(scalar)                  :: dF(3, this % num_components, this % num_components)
+       type(scalar)                  :: dF(3, this % num_vertices, this % num_vertices)
      end function flux_dq_interface
 
      pure function flux_dgradq_interface(this, st) result(dF)
        import :: flux, point_state
        class(flux)      , intent(in) :: this
        type(point_state), intent(in) :: st
-       type(scalar)                  :: dF(3, this % num_components, 3, this % num_components)
+       type(scalar)                  :: dF(3, this % num_vertices, 3, this % num_vertices)
      end function flux_dgradq_interface
 
   end interface
@@ -74,7 +74,7 @@ contains
     class(flux)      , intent(in) :: this
     type(point_state), intent(in) :: st
     integer          , intent(in) :: k
-    type(scalar)                  :: dF(3, this % num_components)
+    type(scalar)                  :: dF(3, this % num_vertices)
     dF = 0.0_dp
   end function flux_ddesign_zero
 
@@ -90,7 +90,7 @@ contains
     real(dp)         , intent(in) :: nf(3)
     integer          , intent(in) :: ivar
 
-    type(scalar) :: dFg(3, this % num_components, 3, this % num_components)
+    type(scalar) :: dFg(3, this % num_vertices, 3, this % num_vertices)
 
     dFg = this % dflux_dgradq(st)
     normal_diffusivity = -real(dot_product(nf, matmul(dFg(:,ivar,:,ivar), nf)), dp)
@@ -109,7 +109,7 @@ contains
     real(dp)         , intent(in) :: nf(3)
     integer          , intent(in) :: ivar
 
-    type(scalar) :: dFq(3, this % num_components, this % num_components)
+    type(scalar) :: dFq(3, this % num_vertices, this % num_vertices)
 
     dFq = this % dflux_dq(st)
     normal_speed = real(dot_product(nf, dFq(:,ivar,ivar)), dp)

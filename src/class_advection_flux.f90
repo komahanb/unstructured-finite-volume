@@ -75,8 +75,12 @@ contains
   pure type(advection_flux) function create_advection(velocity, nvars) result(this)
     real(dp), intent(in)           :: velocity(3)
     integer , intent(in), optional :: nvars
-    this % num_components = 1
-    if (present(nvars)) this % num_components = nvars
+    ! one vertex per variable, no edges: today's laws couple nothing
+    if (present(nvars)) then
+       call this % form_coupling(nvars)
+    else
+       call this % form_coupling(1)
+    end if
     this % v = velocity
   end function create_advection
 
@@ -85,8 +89,12 @@ contains
     real(dp), intent(in)           :: kappa
     integer , intent(in), optional :: nvars
     integer :: i
-    this % num_components = 1
-    if (present(nvars)) this % num_components = nvars
+    ! one vertex per variable, no edges: today's laws couple nothing
+    if (present(nvars)) then
+       call this % form_coupling(nvars)
+    else
+       call this % form_coupling(1)
+    end if
     this % v    = velocity
     this % kmat = 0.0_dp
     do i = 1, 3
@@ -101,9 +109,9 @@ contains
   pure function advection_value(this, st) result(F)
     class(advection_flux), intent(in) :: this
     type(point_state)    , intent(in) :: st
-    type(scalar)                      :: F(3, this % num_components)
+    type(scalar)                      :: F(3, this % num_vertices)
     integer :: j
-    do j = 1, this % num_components
+    do j = 1, this % num_vertices
        F(:,j) = this % v * st % q(j)
     end do
   end function advection_value
@@ -111,10 +119,10 @@ contains
   pure function advection_dq(this, st) result(dF)
     class(advection_flux), intent(in) :: this
     type(point_state)    , intent(in) :: st
-    type(scalar)                      :: dF(3, this % num_components, this % num_components)
+    type(scalar)                      :: dF(3, this % num_vertices, this % num_vertices)
     integer :: i
     dF = 0.0_dp
-    do i = 1, this % num_components
+    do i = 1, this % num_vertices
        dF(:, i, i) = this % v
     end do
   end function advection_dq
@@ -122,7 +130,7 @@ contains
   pure function advection_dgradq(this, st) result(dF)
     class(advection_flux), intent(in) :: this
     type(point_state)    , intent(in) :: st
-    type(scalar)                      :: dF(3, this % num_components, 3, this % num_components)
+    type(scalar)                      :: dF(3, this % num_vertices, 3, this % num_vertices)
     dF = 0.0_dp
   end function advection_dgradq
 
@@ -134,9 +142,9 @@ contains
   pure function advdiff_value(this, st) result(F)
     class(advection_diffusion_flux), intent(in) :: this
     type(point_state)              , intent(in) :: st
-    type(scalar)                                :: F(3, this % num_components)
+    type(scalar)                                :: F(3, this % num_vertices)
     integer :: j
-    do j = 1, this % num_components
+    do j = 1, this % num_vertices
        F(:,j) = this % v * st % q(j) - matmul(this % kmat, st % gradq(:,j))
     end do
   end function advdiff_value
@@ -144,10 +152,10 @@ contains
   pure function advdiff_dq(this, st) result(dF)
     class(advection_diffusion_flux), intent(in) :: this
     type(point_state)              , intent(in) :: st
-    type(scalar)                                :: dF(3, this % num_components, this % num_components)
+    type(scalar)                                :: dF(3, this % num_vertices, this % num_vertices)
     integer :: i
     dF = 0.0_dp
-    do i = 1, this % num_components
+    do i = 1, this % num_vertices
        dF(:, i, i) = this % v
     end do
   end function advdiff_dq
@@ -155,10 +163,10 @@ contains
   pure function advdiff_dgradq(this, st) result(dF)
     class(advection_diffusion_flux), intent(in) :: this
     type(point_state)              , intent(in) :: st
-    type(scalar)                                :: dF(3, this % num_components, 3, this % num_components)
+    type(scalar)                                :: dF(3, this % num_vertices, 3, this % num_vertices)
     integer :: i
     dF = 0.0_dp
-    do i = 1, this % num_components
+    do i = 1, this % num_vertices
        dF(:, i, :, i) = -this % kmat
     end do
   end function advdiff_dgradq

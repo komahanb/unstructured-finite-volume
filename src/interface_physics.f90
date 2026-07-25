@@ -28,6 +28,7 @@
 module interface_physics
 
   use iso_fortran_env, only : dp => REAL64
+  use interface_graph, only : graph
 
   implicit none
 
@@ -49,12 +50,28 @@ module interface_physics
   end type point_state
 
   !-------------------------------------------------------------------!
-  ! Common base: number of components it acts on + design variables.
+  ! Common base: a physics IS a graph - the coupling graph of the law.
+  !
+  !    vertices = the physical variables (the inherited num_vertices
+  !               is the variable count - one fact, one home)
+  !    edges    = "variable i's equation involves variable j"
+  !
+  !    scalar law:            (q1)              no edges
+  !    two fields, decoupled: (q1)   (q2)       no edges - and that IS
+  !                                             the decoupling, stated
+  !                                             as structure
+  !    a coupled law:         (q1)───(q2)       the edge is the reason
+  !                                             the matrix will need
+  !                                             cross-variable entries
   !-------------------------------------------------------------------!
 
-  type, abstract :: physics
-     integer :: num_components = 1
+  type, abstract, extends(graph) :: physics
    contains
+     ! the graph contract, answered by the stored coupling adjacency
+     procedure :: neighbours
+     procedure :: degree
+     ! become the coupling graph (called by every law's constructor)
+     procedure :: form_coupling
      procedure :: num_design_vars => physics_num_design_vars  ! default 0
      procedure :: set_design_vars => physics_set_design_vars  ! default no-op
      procedure :: get_design_vars => physics_get_design_vars  ! default no-op
@@ -94,7 +111,7 @@ module interface_physics
        import :: source, point_state
        class(source)    , intent(in) :: this
        type(point_state), intent(in) :: st
-       type(scalar)                  :: S(this % num_components)
+       type(scalar)                  :: S(this % num_vertices)
      end function source_value_interface
 
      pure function objective_value_interface(this, st) result(f)
@@ -107,6 +124,64 @@ module interface_physics
   end interface
 
 contains
+
+  !===================================================================!
+  ! The graph contract: the coupling adjacency is stored by
+  ! form_coupling below, so both queries are one-line delegations to
+  ! the retained mechanism (the same shape the mesh uses).
+  !===================================================================!
+
+  pure function neighbours(this, v) result(nbrs)
+    class(physics), intent(in) :: this
+    integer       , intent(in) :: v
+    integer, allocatable       :: nbrs(:)
+    nbrs = this % stored_neighbours(v)
+  end function neighbours
+
+  pure integer function degree(this, v)
+    class(physics), intent(in) :: this
+    integer       , intent(in) :: v
+    degree = this % stored_degree(v)
+  end function degree
+
+  !===================================================================!
+  ! Become the coupling graph, in place: one vertex per variable, one
+  ! edge per coupled pair the law declares. No edges means the
+  ! variables are independent - which is every law we have today, and
+  ! exactly why the assembled same-variable sparsity is right. A
+  ! future coupled law hands its pairs here, and this graph becomes
+  ! the instruction sheet for the cross-variable pattern.
+  !===================================================================!
+
+  pure subroutine form_coupling(this, n, tails, heads)
+
+    class(physics), intent(inout)        :: this
+    integer       , intent(in)           :: n
+    integer       , intent(in), optional :: tails(:), heads(:)
+
+    integer :: i
+
+    this % num_vertices = n
+
+    this % num_edges = 0
+    if (present(tails)) this % num_edges = size(tails)
+    if (allocated(this % edges)) deallocate(this % edges)
+    allocate(this % edges(this % num_edges))
+    do i = 1, this % num_edges
+       this % edges(i) % tail = tails(i)
+       this % edges(i) % head = heads(i)
+    end do
+
+    if (allocated(this % vertices)) deallocate(this % vertices)
+    allocate(this % vertices(n))
+    do i = 1, n
+       this % vertices(i) % number = i
+       this % vertices(i) % part   = 1
+    end do
+
+    call this % build_adjacency()
+
+  end subroutine form_coupling
 
   !===================================================================!
   ! Design-variable defaults (no design dependence)
@@ -135,14 +210,14 @@ contains
   pure function source_dq_zero(this, st) result(dS)
     class(source)    , intent(in) :: this
     type(point_state), intent(in) :: st
-    type(scalar)                  :: dS(this % num_components, this % num_components)
+    type(scalar)                  :: dS(this % num_vertices, this % num_vertices)
     dS = 0.0_dp
   end function source_dq_zero
 
   pure function source_dgradq_zero(this, st) result(dS)
     class(source)    , intent(in) :: this
     type(point_state), intent(in) :: st
-    type(scalar)                  :: dS(this % num_components, 3, this % num_components)
+    type(scalar)                  :: dS(this % num_vertices, 3, this % num_vertices)
     dS = 0.0_dp
   end function source_dgradq_zero
 
@@ -150,21 +225,21 @@ contains
     class(source)    , intent(in) :: this
     type(point_state), intent(in) :: st
     integer          , intent(in) :: k
-    type(scalar)                  :: dS(this % num_components)
+    type(scalar)                  :: dS(this % num_vertices)
     dS = 0.0_dp
   end function source_ddesign_zero
 
   pure function objective_dq_zero(this, st) result(df)
     class(objective) , intent(in) :: this
     type(point_state), intent(in) :: st
-    type(scalar)                  :: df(this % num_components)
+    type(scalar)                  :: df(this % num_vertices)
     df = 0.0_dp
   end function objective_dq_zero
 
   pure function objective_dgradq_zero(this, st) result(df)
     class(objective) , intent(in) :: this
     type(point_state), intent(in) :: st
-    type(scalar)                  :: df(3, this % num_components)
+    type(scalar)                  :: df(3, this % num_vertices)
     df = 0.0_dp
   end function objective_dgradq_zero
 

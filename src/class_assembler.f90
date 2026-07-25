@@ -253,7 +253,9 @@ contains
     end if
 
     ! Resize the system for this many variables per cell
-    this % grid % num_variables = flux_op % num_components
+    ! two graphs meet here: the law's vertices ARE the variables each
+    ! mesh cell carries - the coupling graph sizes the mesh's dofs
+    this % grid % num_variables = flux_op % num_vertices
     this % num_state_vars       = this % grid % num_dofs()
 
     if (allocated(this % phi)) deallocate(this % phi)

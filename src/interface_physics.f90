@@ -1,7 +1,8 @@
 #include "scalar.fpp"
 
 !=====================================================================!
-! Continuous, pointwise, discretization-agnostic physics operators.
+! This module defines continuous, pointwise, discretization-agnostic
+! physics operators.
 !
 ! A conservation law is written as
 !
@@ -17,10 +18,10 @@
 ! the same operators differently. This is the seam that keeps the
 ! framework law-agnostic (and discretization-agnostic).
 !
-! flux, source and objective extend a common base `physics`. Fortran has
-! single inheritance, so a concrete law supplies a flux object and a
-! source object separately (composed at setup), not one type that is
-! both.
+! The flux, source and objective types extend a common base `physics`.
+! Fortran has single inheritance, so a concrete law supplies a flux
+! object and a source object separately (composed at setup), not one
+! type that is both.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -36,21 +37,21 @@ module interface_physics
   public :: physics, source, objective, point_state
 
   !-------------------------------------------------------------------!
-  ! Pointwise evaluation context: the state and its gradient at a point
-  ! (a face centroid for the flux, a cell centroid for the source). The
-  ! state is type(scalar) so complex-step partials drop in later; the
-  ! spatial point x is geometry (real).
+  ! The pointwise evaluation context carries the state and its gradient
+  ! at a point (a face centroid for the flux, a cell centroid for the
+  ! source). The state is type(scalar) so that complex-step partials
+  ! drop in later; the spatial point x is geometry (real).
   !-------------------------------------------------------------------!
 
   type :: point_state
-     integer                   :: nv = 1       ! number of variables
-     type(scalar), allocatable :: q(:)         ! q        (nv)
-     type(scalar), allocatable :: gradq(:,:)   ! grad q   (3, nv)
-     real(dp)                  :: x(3) = 0.0_dp ! spatial point
+     integer                   :: nv = 1       ! The number of variables.
+     type(scalar), allocatable :: q(:)         ! The state q (nv).
+     type(scalar), allocatable :: gradq(:,:)   ! The gradient grad q (3, nv).
+     real(dp)                  :: x(3) = 0.0_dp ! The spatial point.
   end type point_state
 
   !-------------------------------------------------------------------!
-  ! Common base: a physics IS a graph - the coupling graph of the law.
+  ! A physics IS a graph: the coupling graph of the law.
   !
   !    vertices = the physical variables (the inherited num_vertices
   !               is the variable count - one fact, one home)
@@ -67,45 +68,51 @@ module interface_physics
 
   type, abstract, extends(graph) :: physics
    contains
-     ! the graph contract, answered by the stored coupling adjacency
+     ! The graph contract is answered by the stored coupling adjacency.
      procedure :: neighbours
      procedure :: degree
-     ! become the coupling graph (called by every law's constructor)
+     ! Become the coupling graph; every law's constructor calls this.
      procedure :: form_coupling
-     procedure :: num_design_vars => physics_num_design_vars  ! default 0
-     procedure :: set_design_vars => physics_set_design_vars  ! default no-op
-     procedure :: get_design_vars => physics_get_design_vars  ! default no-op
+     procedure :: num_design_vars => physics_num_design_vars  ! The default is 0.
+     procedure :: set_design_vars => physics_set_design_vars  ! The default is a no-op.
+     procedure :: get_design_vars => physics_get_design_vars  ! The default is a no-op.
   end type physics
 
   !-------------------------------------------------------------------!
-  ! Volumetric source S(q, grad q): value -> S(nv) + partials.
+  ! The volumetric source S(q, grad q) returns its value S(nv) and its
+  ! partials.
   !-------------------------------------------------------------------!
 
   type, extends(physics), abstract :: source
    contains
      procedure(source_value_interface), deferred :: value
-     procedure :: dsource_dq      => source_dq_zero           ! (nv,nv)
-     procedure :: dsource_dgradq  => source_dgradq_zero       ! (nv,3,nv)
-     procedure :: dsource_ddesign => source_ddesign_zero      ! (nv) for design var k
+     procedure :: dsource_dq      => source_dq_zero           ! The shape is (nv,nv).
+     procedure :: dsource_dgradq  => source_dgradq_zero       ! The shape is (nv,3,nv).
+     procedure :: dsource_ddesign => source_ddesign_zero      ! The shape is (nv) for design variable k.
   end type source
 
   !-------------------------------------------------------------------!
-  ! Function-of-interest integrand f(q, grad q): value -> scalar + parts.
+  ! The function-of-interest integrand f(q, grad q) returns a scalar
+  ! value and its partials.
   !-------------------------------------------------------------------!
 
   type, extends(physics), abstract :: objective
    contains
      procedure(objective_value_interface), deferred :: value
-     procedure :: dobj_dq      => objective_dq_zero           ! (nv)
-     procedure :: dobj_dgradq  => objective_dgradq_zero       ! (3,nv)
-     procedure :: dobj_ddesign => objective_ddesign_zero      ! scalar for design var k
+     procedure :: dobj_dq      => objective_dq_zero           ! The shape is (nv).
+     procedure :: dobj_dgradq  => objective_dgradq_zero       ! The shape is (3,nv).
+     procedure :: dobj_ddesign => objective_ddesign_zero      ! This is a scalar for design variable k.
   end type objective
 
   !-------------------------------------------------------------------!
-  ! Deferred interfaces
+  ! These are the deferred value interfaces the concrete laws supply.
   !-------------------------------------------------------------------!
 
   abstract interface
+
+     !================================================================!
+     ! Return the source value S(nv) at the point state.
+     !================================================================!
 
      pure function source_value_interface(this, st) result(S)
        import :: source, point_state
@@ -113,6 +120,10 @@ module interface_physics
        type(point_state), intent(in) :: st
        type(scalar)                  :: S(this % num_vertices)
      end function source_value_interface
+
+     !================================================================!
+     ! Return the objective integrand value at the point state.
+     !================================================================!
 
      pure function objective_value_interface(this, st) result(f)
        import :: objective, point_state
@@ -127,7 +138,7 @@ contains
 
   !===================================================================!
   ! The graph contract: the coupling adjacency is stored by
-  ! form_coupling below, so both queries are one-line delegations to
+  ! form_coupling below, so this query is a one-line delegation to
   ! the retained mechanism (the same shape the mesh uses).
   !===================================================================!
 
@@ -137,6 +148,10 @@ contains
     integer, allocatable       :: nbrs(:)
     nbrs = this % stored_neighbours(v)
   end function neighbours
+
+  !===================================================================!
+  ! Report the degree of vertex v from the stored coupling adjacency.
+  !===================================================================!
 
   pure integer function degree(this, v)
     class(physics), intent(in) :: this
@@ -184,7 +199,7 @@ contains
   end subroutine form_coupling
 
   !===================================================================!
-  ! Design-variable defaults (no design dependence)
+  ! By default a physics has no design variables.
   !===================================================================!
 
   pure integer function physics_num_design_vars(this) result(n)
@@ -192,10 +207,18 @@ contains
     n = 0
   end function physics_num_design_vars
 
+  !===================================================================!
+  ! By default, setting design variables is a no-op.
+  !===================================================================!
+
   pure subroutine physics_set_design_vars(this, x)
     class(physics), intent(inout) :: this
     real(dp)      , intent(in)    :: x(:)
   end subroutine physics_set_design_vars
+
+  !===================================================================!
+  ! By default there are no design variables to report; return zero.
+  !===================================================================!
 
   pure subroutine physics_get_design_vars(this, x)
     class(physics), intent(in)  :: this
@@ -204,7 +227,8 @@ contains
   end subroutine physics_get_design_vars
 
   !===================================================================!
-  ! Default partials: zero (overridden by laws that depend on them)
+  ! The default source partial dS/dq is zero; laws that depend on it
+  ! override this.
   !===================================================================!
 
   pure function source_dq_zero(this, st) result(dS)
@@ -214,12 +238,20 @@ contains
     dS = 0.0_dp
   end function source_dq_zero
 
+  !===================================================================!
+  ! The default source partial dS/d(grad q) is zero.
+  !===================================================================!
+
   pure function source_dgradq_zero(this, st) result(dS)
     class(source)    , intent(in) :: this
     type(point_state), intent(in) :: st
     type(scalar)                  :: dS(this % num_vertices, 3, this % num_vertices)
     dS = 0.0_dp
   end function source_dgradq_zero
+
+  !===================================================================!
+  ! The default source design partial is zero.
+  !===================================================================!
 
   pure function source_ddesign_zero(this, st, k) result(dS)
     class(source)    , intent(in) :: this
@@ -229,6 +261,10 @@ contains
     dS = 0.0_dp
   end function source_ddesign_zero
 
+  !===================================================================!
+  ! The default objective partial df/dq is zero.
+  !===================================================================!
+
   pure function objective_dq_zero(this, st) result(df)
     class(objective) , intent(in) :: this
     type(point_state), intent(in) :: st
@@ -236,12 +272,20 @@ contains
     df = 0.0_dp
   end function objective_dq_zero
 
+  !===================================================================!
+  ! The default objective partial df/d(grad q) is zero.
+  !===================================================================!
+
   pure function objective_dgradq_zero(this, st) result(df)
     class(objective) , intent(in) :: this
     type(point_state), intent(in) :: st
     type(scalar)                  :: df(3, this % num_vertices)
     df = 0.0_dp
   end function objective_dgradq_zero
+
+  !===================================================================!
+  ! The default objective design partial is zero.
+  !===================================================================!
 
   pure function objective_ddesign_zero(this, st, k) result(df)
     class(objective) , intent(in) :: this

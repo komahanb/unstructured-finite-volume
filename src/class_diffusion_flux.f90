@@ -1,12 +1,12 @@
 #include "scalar.fpp"
 
 !=====================================================================!
-! Diffusion as the first concrete law, expressed pointwise:
+! Diffusion is the first concrete law, expressed pointwise:
 !
 !     flux   F(:,j) = -K . grad q(:,j)        (Fourier / Fick)
 !     source S(:,j) = s                        (constant volumetric)
 !
-! with a constant (here isotropic) conductivity tensor K. This is the
+! Both use a constant (here isotropic) conductivity tensor K. This is the
 ! law-agnostic restatement of the old class_diffusion: a finite-volume
 ! assembler dotting F with a face normal recovers exactly the normal
 ! diffusive flux keff = n^T K n, and dF/dgradq = -K gives that keff to
@@ -28,11 +28,11 @@ module class_diffusion_flux
   public :: diffusion_flux, constant_source
 
   !-------------------------------------------------------------------!
-  ! Diffusive flux  F = -K grad q
+  ! The diffusive flux is  F = -K grad q.
   !-------------------------------------------------------------------!
 
   type, extends(flux) :: diffusion_flux
-     real(dp) :: kmat(3,3) = 0.0_dp   ! conductivity tensor
+     real(dp) :: kmat(3,3) = 0.0_dp   ! The conductivity tensor.
    contains
      procedure :: value          => diffusion_flux_value
      procedure :: dflux_dq       => diffusion_flux_dq
@@ -48,7 +48,7 @@ module class_diffusion_flux
   end interface diffusion_flux
 
   !-------------------------------------------------------------------!
-  ! Constant volumetric source  S = s
+  ! The constant volumetric source is  S = s.
   !-------------------------------------------------------------------!
 
   type, extends(source) :: constant_source
@@ -64,14 +64,15 @@ module class_diffusion_flux
 contains
 
   !===================================================================!
-  ! Constructors
+  ! Construct a diffusion flux with isotropic conductivity kappa, so
+  ! that K = kappa I.
   !===================================================================!
 
   pure type(diffusion_flux) function create_diffusion_flux(kappa, nvars) result(this)
     real(dp), intent(in)           :: kappa
     integer , intent(in), optional :: nvars
     integer :: i
-    ! one vertex per variable, no edges: today's laws couple nothing
+    ! One vertex per variable and no edges: today's laws couple nothing.
     if (present(nvars)) then
        call this % form_coupling(nvars)
     else
@@ -83,10 +84,14 @@ contains
     end do
   end function create_diffusion_flux
 
+  !===================================================================!
+  ! Construct a constant volumetric source of strength s.
+  !===================================================================!
+
   pure type(constant_source) function create_constant_source(s, nvars) result(this)
     real(dp), intent(in)           :: s
     integer , intent(in), optional :: nvars
-    ! one vertex per variable, no edges: today's laws couple nothing
+    ! One vertex per variable and no edges: today's laws couple nothing.
     if (present(nvars)) then
        call this % form_coupling(nvars)
     else
@@ -96,7 +101,7 @@ contains
   end function create_constant_source
 
   !===================================================================!
-  ! Flux value  F(:,j) = -K grad q(:,j)
+  ! The flux value is  F(:,j) = -K grad q(:,j).
   !===================================================================!
 
   pure function diffusion_flux_value(this, st) result(F)
@@ -110,7 +115,7 @@ contains
   end function diffusion_flux_value
 
   !===================================================================!
-  ! dF/dq = 0 (the diffusive flux has no direct q dependence)
+  ! The partial dF/dq is zero: the flux has no direct q dependence.
   !===================================================================!
 
   pure function diffusion_flux_dq(this, st) result(dF)
@@ -121,7 +126,8 @@ contains
   end function diffusion_flux_dq
 
   !===================================================================!
-  ! dF(:,i)/d(grad q(:,j)) = -K delta_ij  (variables decoupled)
+  ! The gradient jacobian is  dF(:,i)/d(grad q(:,j)) = -K delta_ij;
+  ! the variables are decoupled.
   !===================================================================!
 
   pure function diffusion_flux_dgradq(this, st) result(dF)
@@ -136,7 +142,8 @@ contains
   end function diffusion_flux_dgradq
 
   !===================================================================!
-  ! dF/dkappa = -grad q = F/kappa  (isotropic conductivity design var)
+  ! The design partial is  dF/dkappa = -grad q = F/kappa  for the
+  ! isotropic conductivity design variable.
   !===================================================================!
 
   pure function diffusion_flux_ddesign(this, st, k) result(dF)
@@ -151,13 +158,18 @@ contains
   end function diffusion_flux_ddesign
 
   !===================================================================!
-  ! One design variable: the isotropic conductivity kappa (K = kappa I)
+  ! There is one design variable: the isotropic conductivity kappa,
+  ! with K = kappa I.
   !===================================================================!
 
   pure integer function diffusion_num_design_vars(this) result(n)
     class(diffusion_flux), intent(in) :: this
     n = 1
   end function diffusion_num_design_vars
+
+  !===================================================================!
+  ! Set the isotropic conductivity from the design vector x.
+  !===================================================================!
 
   pure subroutine diffusion_set_design_vars(this, x)
     class(diffusion_flux), intent(inout) :: this
@@ -169,6 +181,10 @@ contains
     end do
   end subroutine diffusion_set_design_vars
 
+  !===================================================================!
+  ! Report the isotropic conductivity into the design vector x.
+  !===================================================================!
+
   pure subroutine diffusion_get_design_vars(this, x)
     class(diffusion_flux), intent(in)  :: this
     real(dp)             , intent(out) :: x(:)
@@ -176,7 +192,7 @@ contains
   end subroutine diffusion_get_design_vars
 
   !===================================================================!
-  ! Constant source value
+  ! The constant source returns its stored strength s.
   !===================================================================!
 
   pure function constant_source_value(this, st) result(S)

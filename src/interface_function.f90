@@ -24,7 +24,7 @@ module interface_function
   public :: functional
 
   !-------------------------------------------------------------------!
-  ! Abstract function of interest
+  ! The abstract function of interest.
   !-------------------------------------------------------------------!
 
   type, abstract :: functional
@@ -33,23 +33,24 @@ module interface_function
 
    contains
 
-     ! Deferred: the value and its state derivative
+     ! Deferred: the value and its state derivative.
      procedure(eval_interface)   , deferred :: eval
      procedure(add_dfdu_interface), deferred :: add_dfdu
 
-     ! Provided: explicit design derivative (default: none)
+     ! Provided: the explicit design derivative, which defaults to none.
      procedure :: add_dfdx
 
   end type functional
 
   !-------------------------------------------------------------------!
-  ! Interfaces for the deferred procedures
+  ! Interfaces for the deferred procedures.
   !-------------------------------------------------------------------!
 
   abstract interface
 
      !================================================================!
-     ! Scalar value  J = f(u, x)  at the assembler's current state
+     ! Evaluate the scalar value  J = f(u, x)  at the assembler's
+     ! current state.
      !================================================================!
 
      impure subroutine eval_interface(this, system, fval)
@@ -63,7 +64,8 @@ module interface_function
      end subroutine eval_interface
 
      !================================================================!
-     ! Accumulate the state derivative  dfdu += df/du  (adjoint rhs)
+     ! Accumulate the state derivative  dfdu += df/du, the adjoint
+     ! right-hand side.
      !================================================================!
 
      impure subroutine add_dfdu_interface(this, system, dfdu)
@@ -81,9 +83,10 @@ module interface_function
 contains
 
   !===================================================================!
-  ! Explicit design derivative  dfdx += df/dx. Default: the functional
-  ! has no direct design dependence (it sees x only through u), so this
-  ! adds nothing. Functionals with an explicit x term override it.
+  ! Accumulate the explicit design derivative  dfdx += df/dx. By
+  ! default the functional has no direct design dependence (it sees x
+  ! only through u), so this adds nothing. Functionals with an
+  ! explicit x term override it.
   !===================================================================!
 
   pure subroutine add_dfdx(this, system, dfdx)

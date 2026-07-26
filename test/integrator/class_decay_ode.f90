@@ -1,11 +1,11 @@
 #include "scalar.fpp"
 
 !=====================================================================!
-! Toy first-order system  R = qdot + lambda*q = 0,  q(0) = 1, whose
-! exact solution is q(t) = exp(-lambda t). A minimal class(assembler)
-! used to verify the time integrator: it holds its state in the
-! inherited S(nvars, order+1) and supplies the residual, the
-! matrix-free jacobian-vector product and the initial condition.
+! A toy first-order system  R = qdot + lambda*q = 0,  q(0) = 1, whose
+! exact solution is q(t) = exp(-lambda t). This minimal
+! class(assembler) verifies the time integrator: it holds its state
+! in the inherited S(nvars, order+1) and supplies the residual, the
+! matrix-free jacobian-vector product, and the initial condition.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -39,7 +39,7 @@ module class_decay_ode
 contains
 
   !===================================================================!
-  ! Construct the decay system with the given rate lambda
+  ! Construct the decay system with the given rate lambda.
   !===================================================================!
 
   type(decay_ode) function create(lambda) result(this)
@@ -57,8 +57,8 @@ contains
   end function create
 
   !===================================================================!
-  ! The steady residual at state x (qdot = 0):  r = -lambda * x
-  ! (the deferred seat behind the provided get_residual)
+  ! The steady residual at state x (qdot = 0) is  r = -lambda * x.
+  ! This is the deferred seat behind the provided get_residual.
   !===================================================================!
 
   impure subroutine state_residual(this, r, x)
@@ -72,7 +72,8 @@ contains
   end subroutine state_residual
 
   !===================================================================!
-  ! Residual  R = qdot + lambda*q   (S(1,1) = q, S(1,2) = qdot)
+  ! The residual is  R = qdot + lambda*q,  where S(1,1) = q and
+  ! S(1,2) = qdot.
   !===================================================================!
 
   subroutine add_residual(this, residual, filter)
@@ -86,8 +87,10 @@ contains
   end subroutine add_residual
 
   !===================================================================!
-  ! pdt += [scalars(1) dR/dq + scalars(2) dR/dqdot] vec
-  !      =  [scalars(1)*lambda + scalars(2)] vec
+  ! The product accumulates as
+  !
+  !     pdt += [scalars(1) dR/dq + scalars(2) dR/dqdot] vec
+  !         =  [scalars(1)*lambda + scalars(2)] vec
   !===================================================================!
 
   subroutine add_jacobian_vector_product(this, pdt, vec, scalars, filter)
@@ -103,7 +106,7 @@ contains
   end subroutine add_jacobian_vector_product
 
   !===================================================================!
-  ! Initial condition  q(0) = 1,  qdot(0) = -lambda*q(0)
+  ! The initial condition is  q(0) = 1,  qdot(0) = -lambda*q(0).
   !===================================================================!
 
   subroutine add_initial_condition(this, U)

@@ -1,8 +1,8 @@
 !=====================================================================!
-! Diagonal-sweep linear solver (traditionally: Gauss-Jacobi): supplies
-! only the sweep (`iterate`) - inverting the self-loop subgraph of the
-! operator - and inherits the residual-minimization iteration from
-! linear_solver.
+! Diagonal-sweep linear solver (traditionally: Gauss-Jacobi). It
+! supplies only the sweep (`iterate`) - inverting the self-loop
+! subgraph of the operator - and inherits the residual-minimization
+! iteration from linear_solver.
 !=====================================================================!
 
 module class_gauss_jacobi
@@ -13,25 +13,25 @@ module class_gauss_jacobi
 
   implicit none
 
-  ! Expose only the linear solver datatype
+  ! Expose only the linear solver datatype.
   private
   public :: gauss_jacobi
 
   !===================================================================!
-  ! Linear solver datatype
+  ! The linear solver datatype.
   !===================================================================!
 
   type, extends(linear_solver) :: gauss_jacobi
 
    contains
 
-     ! the sweep consumed by the inherited outer iteration
+     ! The sweep consumed by the inherited outer iteration.
      procedure :: iterate
 
   end type gauss_jacobi
 
   !===================================================================!
-  ! Interface for multiple constructors
+  ! The interface for multiple constructors.
   !===================================================================!
 
   interface gauss_jacobi
@@ -41,7 +41,7 @@ module class_gauss_jacobi
 contains
 
   !===================================================================!
-  ! Constructor for linear solver
+  ! The constructor for the linear solver.
   !===================================================================!
 
   pure type(gauss_jacobi) function construct(max_it, &
@@ -71,40 +71,41 @@ contains
     real(dp)            , intent(out) :: dx(:)
     integer             , intent(out) :: iter
 
-    ! Locals
+    ! Local variables.
     real(dp) :: tol, bnorm
     real(dp) , allocatable :: Ux(:), Lx(:), D(:), R2(:), xnew(:), identity(:)
 
     dx = 0.0_dp
     allocate(Ux, Lx, D, R2, xnew, identity, mold = dx)
 
-    ! Extract the diagonal entries (the self-loop subgraph on ones)
+    ! Extract the diagonal entries (the self-loop subgraph on ones).
     identity = 1.0d0
     call system % get_jacobian_residual_product(D, identity, part = DIAGONAL)
 
     bnorm = sqrt(system % inner_product(r, r))
 
-    ! Homogeneous case (nothing to do)
+    ! The homogeneous case leaves nothing to do.
     if (bnorm .le. this % max_tol) then
        iter = 0
        return
     end if
 
     !-----------------------------------------------------------------!
-    ! Apply the jacobi sweep until tolerance is achieved
+    ! Apply the jacobi sweep until the tolerance is achieved.
     !-----------------------------------------------------------------!
 
-    iter = 1; tol  = huge(1.0d0)
+    iter = 1
+    tol  = huge(1.0d0)
     do while ((tol .gt. this % max_tol) .and. (iter .lt. this % max_it))
 
-       ! Form the residual (partial) after the split
+       ! Form the partial residual after the split.
        call system % get_jacobian_residual_product(Ux, dx, part = UPPER_TRIANGLE)
        call system % get_jacobian_residual_product(Lx, dx, part = LOWER_TRIANGLE)
 
        R2 = r - Lx - Ux
 
-       ! Invert the diagonal
-       xnew = R2/D ! D^{-1}(r - L dx - U dx)
+       ! Invert the diagonal.
+       xnew = R2/D ! This is D^{-1}(r - L dx - U dx).
        tol  = sqrt(system % inner_product(dx - xnew, dx - xnew))
 
        if (this % print_level .gt. 1) then

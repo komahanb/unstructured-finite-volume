@@ -2,12 +2,12 @@
 ! A boundary condition on a named physical group.
 !
 ! Everything is a robin condition  a*phi + b*dphi/dn = c  on the
-! boundary face. dirichlet and neumann just fall out:
+! boundary face. Dirichlet and neumann just fall out:
 !
 !   dirichlet (phi = g)        : a=1, b=0, c=g
 !   neumann   (dphi/dn = g)    : a=0, b=1, c=g
 !
-! With a one sided gradient  dphi/dn ~ (phi_b - phi_p)/delta  the face
+! With a one-sided gradient  dphi/dn ~ (phi_b - phi_p)/delta  the face
 ! contributes a diffusive flux  area*(phi_b - phi_p)/delta  to cell p.
 ! Eliminating the (unknown) face value phi_b leaves a piece that depends
 ! on phi_p (goes to the diagonal) and a constant (goes to the rhs):
@@ -29,30 +29,30 @@ module class_boundary_condition
   public :: BC_DIRICHLET, BC_NEUMANN, BC_ROBIN
   public :: dirichlet, neumann, robin
 
-  ! Kinds (for printing/identity; the maths is always robin)
+  ! The kinds exist for printing and identity; the maths is always robin.
   integer, parameter :: BC_DIRICHLET = 1
   integer, parameter :: BC_NEUMANN   = 2
   integer, parameter :: BC_ROBIN     = 3
 
   !-------------------------------------------------------------------!
-  ! Derived type for a single boundary condition
+  ! This derived type holds a single boundary condition.
   !-------------------------------------------------------------------!
 
   type :: boundary_condition
 
-     type(string) :: name             ! physical group name
-     integer      :: tag  = -1        ! resolved tag number
+     type(string) :: name             ! The physical group name.
+     integer      :: tag  = -1        ! The resolved tag number.
      integer      :: kind = BC_DIRICHLET
-     real(dp)     :: a = 1.0_dp        ! a*phi + b*dphi/dn = c
+     real(dp)     :: a = 1.0_dp        ! The robin coefficients: a*phi + b*dphi/dn = c.
      real(dp)     :: b = 0.0_dp
-     real(dp)     :: c = 0.0_dp        ! default: homogeneous dirichlet phi=0
+     real(dp)     :: c = 0.0_dp        ! The default is homogeneous dirichlet, phi = 0.
 
    contains
 
-     procedure :: lhs_coeff           ! diffusive diagonal contribution (multiplies phi_p)
-     procedure :: rhs_coeff           ! diffusive constant contribution to the rhs
-     procedure :: adv_lhs_coeff       ! advective diagonal contribution (multiplies phi_p)
-     procedure :: adv_rhs_coeff       ! advective constant contribution to the rhs
+     procedure :: lhs_coeff           ! The diffusive diagonal contribution; it multiplies phi_p.
+     procedure :: rhs_coeff           ! The diffusive constant contribution to the rhs.
+     procedure :: adv_lhs_coeff       ! The advective diagonal contribution; it multiplies phi_p.
+     procedure :: adv_rhs_coeff       ! The advective constant contribution to the rhs.
      procedure :: print
 
   end type boundary_condition
@@ -60,7 +60,7 @@ module class_boundary_condition
 contains
 
   !===================================================================!
-  ! Construct a dirichlet condition  phi = value
+  ! Construct a dirichlet condition  phi = value.
   !===================================================================!
 
   pure type(boundary_condition) function dirichlet(value) result(bc)
@@ -76,7 +76,7 @@ contains
   end function dirichlet
 
   !===================================================================!
-  ! Construct a neumann condition  dphi/dn = flux
+  ! Construct a neumann condition  dphi/dn = flux.
   !===================================================================!
 
   pure type(boundary_condition) function neumann(flux) result(bc)
@@ -92,7 +92,7 @@ contains
   end function neumann
 
   !===================================================================!
-  ! Construct a robin condition  a*phi + b*dphi/dn = c
+  ! Construct a robin condition  a*phi + b*dphi/dn = c.
   !===================================================================!
 
   pure type(boundary_condition) function robin(a, b, c) result(bc)
@@ -108,8 +108,9 @@ contains
   end function robin
 
   !===================================================================!
-  ! Coefficient on phi_p contributed to the diagonal of the operator.
-  ! kappa = n^T K n is the normal conductivity carried by the equation.
+  ! This is the coefficient on phi_p contributed to the diagonal of the
+  ! operator. Here kappa = n^T K n is the normal conductivity carried
+  ! by the equation.
   !===================================================================!
 
   pure real(dp) function lhs_coeff(this, area, delta, kappa)
@@ -126,8 +127,8 @@ contains
   end function lhs_coeff
 
   !===================================================================!
-  ! Constant the face contributes to the right hand side (already
-  ! carries the sign for moving it to the rhs).
+  ! This is the constant the face contributes to the right hand side;
+  ! it already carries the sign for moving it to the rhs.
   !===================================================================!
 
   pure real(dp) function rhs_coeff(this, area, delta, kappa)
@@ -144,7 +145,7 @@ contains
   end function rhs_coeff
 
   !===================================================================!
-  ! Advection at the boundary. With the SAME eliminated face value
+  ! Advection acts at the boundary. With the SAME eliminated face value
   ! phi_b = (c + (b/delta) phi_p)/denom, the advective face flux
   ! area*vn*phi_b (vn = v.n is the normal advection speed) splits into a
   ! phi_p coefficient (to the diagonal) and a constant (to the rhs). For
@@ -165,6 +166,11 @@ contains
 
   end function adv_lhs_coeff
 
+  !===================================================================!
+  ! This is the advective constant the face contributes to the right
+  ! hand side.
+  !===================================================================!
+
   pure real(dp) function adv_rhs_coeff(this, area, delta, vn)
 
     class(boundary_condition), intent(in) :: this
@@ -179,7 +185,7 @@ contains
   end function adv_rhs_coeff
 
   !===================================================================!
-  ! Print a one line summary of the boundary condition
+  ! Print a one-line summary of the boundary condition.
   !===================================================================!
 
   impure subroutine print(this)

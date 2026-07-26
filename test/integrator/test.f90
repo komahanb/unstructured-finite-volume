@@ -1,8 +1,9 @@
 !=====================================================================!
-! Order-of-accuracy check for the BDF time integrator on the decay
-! system  udot = -lambda*u, u(0) = 1, exact u(t) = exp(-lambda t).
-! For each BDF order p, halve the step and confirm the error at the
-! final time falls at ~p-th order (the integrator's design order).
+! An order-of-accuracy check for the BDF time integrator on the
+! decay system  udot = -lambda*u, u(0) = 1, whose exact solution is
+! u(t) = exp(-lambda t). For each BDF order p, halve the step and
+! confirm the error at the final time falls at ~p-th order (the
+! integrator's design order).
 !
 ! A nonzero exit (error stop) means an order is off.
 !
@@ -46,10 +47,14 @@ program test_integrator
 
      write(*,'(2x,i5,2x,es12.4,2x,es12.4,2x,f8.3)') p, err(2), err(1), order
 
-     ! the ramped low-order startup caps the global order at 2: bdf-1 and
-     ! bdf-2 reach their design order (their startup error is same-order),
-     ! while bdf-3+ need a high-order self-starting first step (a future
-     ! refinement). so only the orders the startup supports are asserted.
+     !----------------------------------------------------------------!
+     ! The ramped low-order startup caps the global order at 2: bdf-1
+     ! and bdf-2 reach their design order (their startup error is of
+     ! the same order), while bdf-3+ need a high-order self-starting
+     ! first step (a future refinement). Only the orders the startup
+     ! supports are asserted.
+     !----------------------------------------------------------------!
+
      if (p .le. 2 .and. abs(order - real(p,dp)) .gt. 0.35_dp) nfail = nfail + 1
 
   end do

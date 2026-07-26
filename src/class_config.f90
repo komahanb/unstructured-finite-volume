@@ -1,6 +1,6 @@
 !=====================================================================!
-! Read a run from a plain text file - the library stays problem free,
-! the config decides the problem. One keyword per line:
+! Read a run from a plain text file: the library stays problem free,
+! and the config decides the problem. Each line carries one keyword:
 !
 !   mesh      test/box-3.msh
 !   equation  diffusion
@@ -30,36 +30,36 @@ module class_config
 
   private
   public :: config
-  public :: split_words   ! the tokenizer, shared with any run reader
+  public :: split_words   ! The tokenizer is shared with any run reader.
 
   !-------------------------------------------------------------------!
-  ! Parsed run configuration
+  ! The parsed run configuration.
   !-------------------------------------------------------------------!
 
   type :: config
 
      type(string) :: meshfile
-     type(string) :: equation         ! "diffusion" | "advection_diffusion"
+     type(string) :: equation         ! Either "diffusion" or "advection_diffusion".
      real(dp)     :: kappa  = 1.0_dp
      real(dp)     :: source = 0.0_dp
-     real(dp)     :: velocity(3) = 0.0_dp  ! advection velocity (advection_diffusion)
-     type(string) :: convection           ! "central" | "upwind"
+     real(dp)     :: velocity(3) = 0.0_dp  ! The advection velocity (advection_diffusion).
+     type(string) :: convection           ! Either "central" or "upwind".
 
-     ! Boundary specs (parallel arrays, nbc entries)
+     ! The boundary specs are parallel arrays with nbc entries.
      integer                   :: nbc = 0
      type(string), allocatable :: bc_name(:)
-     type(string), allocatable :: bc_kind(:)   ! dirichlet|neumann|robin
+     type(string), allocatable :: bc_kind(:)   ! One of dirichlet, neumann, or robin.
      real(dp)    , allocatable :: bc_a(:), bc_b(:), bc_c(:)
 
-     type(string) :: solver           ! cg | sor | gs | gj
+     type(string) :: solver           ! One of cg, sor, gs, or gj.
      real(dp)     :: omega   = 1.5_dp
      real(dp)     :: max_tol = 1.0d-12
      integer      :: max_it  = 200
 
-     ! Diagnostics: 0 quiet, 1 progress, 2 debug dumps
+     ! Diagnostics: 0 stays quiet, 1 shows progress, and 2 dumps debug output.
      integer      :: verbosity = 0
 
-     ! Transient marching - dt > 0 turns it on (backward euler)
+     ! A positive dt turns on transient marching (backward euler).
      real(dp)     :: dt     = 0.0_dp
      real(dp)     :: tinit  = 0.0_dp
      real(dp)     :: tfinal = 0.0_dp
@@ -79,7 +79,7 @@ module class_config
 contains
 
   !===================================================================!
-  ! Read a config from a text file
+  ! Read a config from a text file.
   !===================================================================!
 
   impure type(config) function create(filename) result(this)
@@ -91,7 +91,7 @@ contains
     type(string), allocatable :: tok(:)
     integer                   :: iline, ntok, ib
 
-    ! Defaults
+    ! Set the defaults.
     this % equation   = string("diffusion")
     this % convection = string("central")
     this % solver     = string("cg")
@@ -100,7 +100,7 @@ contains
     cfile = file(filename, 256)
     call cfile % read_lines(lines)
 
-    ! First pass: count boundary lines so the bc arrays can be sized
+    ! The first pass counts boundary lines so that the bc arrays can be sized.
     this % nbc = 0
 
     do iline = 1, size(lines)
@@ -116,7 +116,7 @@ contains
     allocate(this % bc_name(this % nbc), this % bc_kind(this % nbc))
     allocate(this % bc_a(this % nbc), this % bc_b(this % nbc), this % bc_c(this % nbc))
 
-    ! Second pass: fill the fields
+    ! The second pass fills the fields.
     ib = 0
 
     do iline = 1, size(lines)
@@ -140,13 +140,13 @@ contains
        case ("source")
           this % source = tok(2) % asreal()
 
-       case ("velocity")        ! velocity vx [vy [vz]]
+       case ("velocity")        ! The form is velocity vx [vy [vz]].
           this % velocity = 0.0_dp
           if (ntok .ge. 2) this % velocity(1) = tok(2) % asreal()
           if (ntok .ge. 3) this % velocity(2) = tok(3) % asreal()
           if (ntok .ge. 4) this % velocity(3) = tok(4) % asreal()
 
-       case ("convection")      ! central | upwind
+       case ("convection")      ! Either central or upwind.
           this % convection = string(trim(tok(2) % str))
 
        case ("solver")
@@ -189,15 +189,15 @@ contains
 
           select case (trim(tok(3) % str))
 
-          case ("dirichlet")   ! a*phi = c
+          case ("dirichlet")   ! The form is a*phi = c.
              this % bc_a(ib) = 1.0_dp
              this % bc_c(ib) = tok(4) % asreal()
 
-          case ("neumann")     ! b*dphi/dn = c
+          case ("neumann")     ! The form is b*dphi/dn = c.
              this % bc_b(ib) = 1.0_dp
              this % bc_c(ib) = tok(4) % asreal()
 
-          case ("robin")       ! a*phi + b*dphi/dn = c
+          case ("robin")       ! The form is a*phi + b*dphi/dn = c.
              this % bc_a(ib) = tok(4) % asreal()
              this % bc_b(ib) = tok(5) % asreal()
              this % bc_c(ib) = tok(6) % asreal()
@@ -209,13 +209,13 @@ contains
           end select
 
        case default
-          ! ignore unknown keywords (comments handled above)
+          ! Ignore unknown keywords; comments are handled above.
 
        end select
 
     end do
 
-    ! Minimal validation
+    ! Run minimal validation.
     if (.not. allocated(this % meshfile % str)) then
        print *, "config: no 'mesh <file>' line in ", trim(filename)
        error stop
@@ -228,9 +228,10 @@ contains
   end function create
 
   !===================================================================!
-  ! Split a line into whitespace-delimited words. Runs of spaces/tabs
-  ! collapse (so alignment is harmless) and a double-quoted span is one
-  ! word with the quotes stripped (so names with spaces survive).
+  ! Split a line into whitespace-delimited words. Runs of spaces and
+  ! tabs collapse, so alignment is harmless, and a double-quoted span
+  ! becomes one word with the quotes stripped, so names with spaces
+  ! survive.
   !===================================================================!
 
   impure subroutine split_words(str, nw, words)
@@ -256,7 +257,7 @@ contains
 
        if (str(i:i) .eq. quote) then
 
-          ! Toggle a quoted span; on close, emit it as one word
+          ! Toggle a quoted span; on close, emit it as one word.
           if (.not. inquote) then
              inquote = .true.
              inword  = .true.
@@ -270,11 +271,11 @@ contains
 
        else if (inquote) then
 
-          cycle   ! inside quotes: keep accumulating
+          cycle   ! Inside quotes, keep accumulating.
 
        else if (str(i:i) .ne. ' ' .and. str(i:i) .ne. tab) then
 
-          ! a non-blank starts a word
+          ! A non-blank starts a word.
           if (.not. inword) then
              inword = .true.
              start  = i
@@ -282,7 +283,7 @@ contains
 
        else
 
-          ! a blank closes the current word
+          ! A blank closes the current word.
           if (inword) then
              inword = .false.
              nw = nw + 1
@@ -293,7 +294,7 @@ contains
 
     end do
 
-    ! flush a trailing unterminated word
+    ! Flush a trailing unterminated word.
     if (inword .and. .not. inquote) then
        nw = nw + 1
        tmp(nw) = string(str(start:n))
@@ -306,7 +307,7 @@ contains
   end subroutine split_words
 
   !===================================================================!
-  ! Print the parsed configuration
+  ! Print the parsed configuration.
   !===================================================================!
 
   impure subroutine print(this)

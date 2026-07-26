@@ -1,6 +1,6 @@
 !=====================================================================!
-! The escape-time painting, on a CFD mesh, through the graph's orbit -
-! now with both fast lanes the squint provides.
+! This is the escape-time painting on a CFD mesh, through the graph's
+! orbit - now with both fast lanes the squint provides.
 !
 ! The idea is unchanged. Every cell's centroid is a complex number
 ! once the mesh is stretched over a window of the complex plane. One
@@ -9,7 +9,8 @@
 ! The map, quantized to the mesh, gives every cell one arrow out - a
 ! stored successor array. After that the dynamics is pure graph, and
 ! the cell is painted by how long its orbit lasts: escapers get their
-! escape time, cells still home at the limit get the full patience.
+! escape time, and cells still home at the limit get the full
+! patience.
 !
 ! What is new is where the work went.
 !
@@ -18,8 +19,8 @@
 ! distance checks. Now the mesh graph is partitioned into compact
 ! parts, the parts squint into a quotient graph, and a landing point
 ! is claimed by descending: nearest part first, then only that part's
-! cells and its quotient-neighbours' cells. Same arrows, a fraction
-! of the checks - and a check below proves the "same".
+! cells and its quotient-neighbours' cells. The arrows are the same,
+! at a fraction of the checks - and a check below proves the "same".
 !
 ! Squint in time: orbits that merge share their tails, so the whole
 ! painting is resolved by escape_times in one pass - one visit per
@@ -28,18 +29,20 @@
 ! with no machinery at all.
 !
 ! Checks:
-!   1. the squint finds the same arrows as the full scan
-!   2. the one-pass painting matches orbit-by-orbit painting
-!   3. and matches a plain-loop recount with no machinery at all
-!   4. the painting has light and dark (escaped and home both nonzero)
-!   5. the window's corner escapes at once (its first step leaves)
-!   6. the painting is on disk
-!   7. the ladder painted, every level its own mesh derived from the
-!      base by the mesh's own machinery: julia-1 and julia-2 on real
-!      refinements (every triangle split into four, and again), and
-!      julia+1 and julia+2 on agglomerated meshes (each part of the
-!      quotient fused into one polygon); each file fresh on disk with
-!      light and dark, cell counts thinning as the squint deepens
+!   1. The squint finds the same arrows as the full scan.
+!   2. The one-pass painting matches orbit-by-orbit painting.
+!   3. It also matches a plain-loop recount with no machinery at all.
+!   4. The painting has light and dark (escaped and home both
+!      nonzero).
+!   5. The window's corner escapes at once (its first step leaves).
+!   6. The painting is on disk.
+!   7. The ladder is painted, every level its own mesh derived from
+!      the base by the mesh's own machinery: julia-1 and julia-2 on
+!      real refinements (every triangle split into four, and again),
+!      and julia+1 and julia+2 on agglomerated meshes (each part of
+!      the quotient fused into one polygon); each file lands fresh on
+!      disk with light and dark, and the cell counts thin as the
+!      squint deepens.
 !=====================================================================!
 
 program test_orbit_painting
@@ -56,13 +59,16 @@ program test_orbit_painting
   character(len=*), parameter :: mesh_file  = '../square-tri-40.msh'
   character(len=*), parameter :: paint_file = 'julia.vtu'
 
-  ! the julia constant (douady rabbit) and the window of the complex
-  ! plane the mesh is stretched over
+  !-------------------------------------------------------------------!
+  ! The julia constant (the douady rabbit) and the window of the
+  ! complex plane the mesh is stretched over.
+  !-------------------------------------------------------------------!
+
   complex(dp), parameter :: julia_constant    = (-0.123_dp, 0.745_dp)
   real(dp)   , parameter :: window_half_width = 1.6_dp
   real(dp)   , parameter :: escape_radius     = 2.0_dp
-  integer    , parameter :: step_limit        = 40   ! the patience
-  integer    , parameter :: cells_per_part    = 64   ! spatial squint factor
+  integer    , parameter :: step_limit        = 40   ! The patience.
+  integer    , parameter :: cells_per_part    = 64   ! The spatial squint factor.
 
   class(gmsh_loader)    , allocatable :: loader
   class(mesh)           , allocatable :: grid, base_grid
@@ -70,15 +76,15 @@ program test_orbit_painting
   type(mesh)   :: g
   type(stored_graph) :: coarse
 
-  complex(dp), allocatable :: zc(:)          ! cell centroids on the complex plane
-  complex(dp), allocatable :: zpart(:)       ! part centroids on the complex plane
-  real(dp)   , allocatable :: part_radius(:) ! how far a part's cells stray from its centroid
-  integer    , allocatable :: succ(:)        ! the one arrow out of each cell (0 = off the window)
-  integer    , allocatable :: times(:)       ! the painting, resolved in one pass
+  complex(dp), allocatable :: zc(:)          ! The cell centroids on the complex plane.
+  complex(dp), allocatable :: zpart(:)       ! The part centroids on the complex plane.
+  real(dp)   , allocatable :: part_radius(:) ! How far a part's cells stray from its centroid.
+  integer    , allocatable :: succ(:)        ! The one arrow out of each cell (0 = off the window).
+  integer    , allocatable :: times(:)       ! The painting, resolved in one pass.
   real(dp)   , allocatable :: escape_time(:,:)
   type(string) :: field_labels(1)
 
-  ! arrows of the coarse levels' paintings, host-carried for the rules
+  ! The arrows of the coarse levels' paintings, host-carried for the rules.
   integer, allocatable :: arrows_coarse1(:), arrows_coarse2(:)
 
   integer  :: ncells, nparts, n_home
@@ -86,21 +92,24 @@ program test_orbit_painting
   integer  :: ncells_coarse1, ncells_coarse2
   integer  :: checks_by_descent, full_scans, nfail
   real(dp) :: t0, t1
-  real(dp) :: xlo, xhi, ylo, yhi   ! the window map, shared with the ladder
+  real(dp) :: xlo, xhi, ylo, yhi   ! The window map, shared with the ladder.
 
   nfail = 0
 
   field_labels(1) = string('escape_time')
 
-  ! the base canvas comes off disk once; every other level of the
-  ! ladder is derived from it by the mesh's own machinery
+  !-------------------------------------------------------------------!
+  ! The base canvas comes off disk once; every other level of the
+  ! ladder is derived from it by the mesh's own machinery.
+  !-------------------------------------------------------------------!
+
   load_the_base: block
     allocate(loader, source = gmsh_loader(mesh_file))
     allocate(base_grid, source = mesh(loader))
     deallocate(loader)
   end block load_the_base
 
-  ! the base painting, with the deep check battery on its heels
+  ! The base painting runs first, with the deep check battery on its heels.
   call paint_mesh_level(base_grid, paint_file, nfail)
   ncells_base = ncells
   write(*,'(1x,a,i0,a,i0)') "the squint claimed the base arrows with ", &
@@ -109,13 +118,19 @@ program test_orbit_painting
        & " landing(s) back to the full scan"
   call check_the_painting(nfail)
 
-  ! the squint side: the base cells huddle into parts, the quotient
+  !-------------------------------------------------------------------!
+  ! The squint side: the base cells huddle into parts, the quotient
   ! graph carries the coarse solution, and the agglomerated mesh -
-  ! every part fused into one polygon - carries it to paraview
+  ! every part fused into one polygon - carries it to paraview.
+  !-------------------------------------------------------------------!
+
   call paint_coarse_levels(nfail)
 
-  ! the zoom side: the mesh refined by its own machinery, the whole
-  ! pipeline rerun on each refined mesh
+  !-------------------------------------------------------------------!
+  ! The zoom side: the mesh is refined by its own machinery, and the
+  ! whole pipeline reruns on each refined mesh.
+  !-------------------------------------------------------------------!
+
   zoom: block
     type(mesh) :: refined_once, refined_twice
     refined_once = base_grid % refined()
@@ -146,7 +161,10 @@ program test_orbit_painting
 
 contains
 
-  ! the affine map from mesh coordinates onto the window
+  !===================================================================!
+  ! The affine map carries mesh coordinates onto the window.
+  !===================================================================!
+
   pure complex(dp) function to_window(x, y) result(zw)
     real(dp), intent(in) :: x, y
     zw = cmplx(window_half_width*(2.0_dp*(x - xlo)/(xhi - xlo) - 1.0_dp), &
@@ -157,8 +175,8 @@ contains
   ! Paint one level of the ladder: take the mesh handed in - loaded
   ! or derived - and run the whole pipeline on it: the window map,
   ! the squint the descent reads, the arrows, the one-pass escape
-  ! times, the painting written on that mesh's own cells. Light
-  ! checks here; the deep battery runs once, on the base painting.
+  ! times, and the painting written on that mesh's own cells. Light
+  ! checks run here; the deep battery runs once, on the base painting.
   !===================================================================!
 
   subroutine paint_mesh_level(level_grid, level_file, nfail)
@@ -173,11 +191,11 @@ contains
     logical     :: on_disk
     integer     :: v, k, unit, ierr
 
-    ! a stale painting would satisfy the on-disk check - burn it
+    ! A stale painting would satisfy the on-disk check, so burn it.
     open(newunit = unit, file = level_file, status = 'old', iostat = ierr)
     if (ierr .eq. 0) close(unit, status = 'delete')
 
-    ! this level's mesh becomes the pipeline's canvas
+    ! This level's mesh becomes the pipeline's canvas.
     if (allocated(grid))   deallocate(grid)
     if (allocated(writer)) deallocate(writer)
     allocate(grid, source = level_grid)
@@ -185,12 +203,14 @@ contains
     g      = grid
     ncells = g % num_vertices
 
-    ! stretch this mesh over the same window
-    xlo = minval(grid % cell_centers(1, :)); xhi = maxval(grid % cell_centers(1, :))
-    ylo = minval(grid % cell_centers(2, :)); yhi = maxval(grid % cell_centers(2, :))
+    ! Stretch this mesh over the same window.
+    xlo = minval(grid % cell_centers(1, :))
+    xhi = maxval(grid % cell_centers(1, :))
+    ylo = minval(grid % cell_centers(2, :))
+    yhi = maxval(grid % cell_centers(2, :))
     zc  = [(to_window(grid % cell_centers(1, v), grid % cell_centers(2, v)), v = 1, ncells)]
 
-    ! the squint the descent reads
+    ! Build the squint the descent reads.
     nparts = max(1, ncells/cells_per_part)
     call g % partition_rcb(grid % cell_centers, nparts)
     coarse = stored_graph(g)
@@ -204,7 +224,7 @@ contains
        part_radius(k) = sqrt(maxval(abs(zc(members) - zpart(k))**2))
     end do
 
-    ! the arrows, claimed by descent
+    ! The arrows are claimed by descent.
     if (allocated(succ)) deallocate(succ)
     allocate(succ(ncells))
     checks_by_descent = 0
@@ -220,7 +240,7 @@ contains
        end if
     end do
 
-    ! paint in one pass and write on this mesh's own cells
+    ! Paint in one pass and write on this mesh's own cells.
     times = g % escape_times(successor, step_limit)
     if (allocated(escape_time)) deallocate(escape_time)
     allocate(escape_time(ncells, 1))
@@ -240,19 +260,25 @@ contains
 
   end subroutine paint_mesh_level
 
-  ! the single successor of cell v, read from the stored arrows
+  !===================================================================!
+  ! The single successor of cell v is read from the stored arrows.
+  !===================================================================!
+
   pure integer function successor(v)
     integer, intent(in) :: v
     successor = succ(v)
   end function successor
 
-  ! which cell claims the landing point z: descend the squint - the
-  ! nearest part's cells and its quotient-neighbours' cells - then
-  ! certify the answer by the triangle inequality: no cell of a far
-  ! part can beat what we hold, because every one of its cells sits
-  ! at least its centroid distance minus its radius away. On the rare
-  ! landing the certificate cannot vouch for, fall back to the full
-  ! scan - counted, so the suite reports how rare.
+  !===================================================================!
+  ! Find which cell claims the landing point z: descend the squint -
+  ! the nearest part's cells and its quotient-neighbours' cells -
+  ! then certify the answer by the triangle inequality: no cell of a
+  ! far part can beat what we hold, because every one of its cells
+  ! sits at least its centroid distance minus its radius away. On the
+  ! rare landing the certificate cannot vouch for, fall back to the
+  ! full scan - counted, so the suite reports how rare.
+  !===================================================================!
+
   integer function nearest_cell_by_descent(z, checks) result(nearest)
 
     complex(dp), intent(in)    :: z
@@ -265,8 +291,11 @@ contains
     logical  :: certified
     integer  :: k, k0, i, j, v
 
-    ! nearest part centroid (every part's distance kept for the
-    ! certificate below)
+    !-----------------------------------------------------------------!
+    ! Find the nearest part centroid; every part's distance is kept
+    ! for the certificate below.
+    !-----------------------------------------------------------------!
+
     allocate(dpart(nparts))
     k0   = 1
     best = huge(1.0_dp)
@@ -279,7 +308,7 @@ contains
        end if
     end do
 
-    ! its cells and its quotient-neighbours' cells
+    ! Search its cells and its quotient-neighbours' cells.
     parts = [k0, coarse % neighbours(k0)]
     allocate(candidate(nparts))
     candidate = .false.
@@ -301,8 +330,11 @@ contains
        end associate
     end do
 
-    ! the certificate: every unsearched part must sit entirely
-    ! farther away than the cell we hold
+    !-----------------------------------------------------------------!
+    ! The certificate: every unsearched part must sit entirely
+    ! farther away than the cell we hold.
+    !-----------------------------------------------------------------!
+
     certified = .true.
     do k = 1, nparts
        if (candidate(k)) cycle
@@ -312,6 +344,7 @@ contains
        end if
     end do
 
+    ! The certificate could not vouch for this landing, so fall back to the full scan.
     if (.not. certified) then
        full_scans = full_scans + 1
        do v = 1, ncells
@@ -327,8 +360,8 @@ contains
   end function nearest_cell_by_descent
 
   !===================================================================!
-  ! The teller: one PASS/FAIL line per claim, and a running count of
-  ! the broken ones.
+  ! The teller prints one PASS/FAIL line per claim and keeps a running
+  ! count of the broken ones.
   !===================================================================!
 
   subroutine report(ok, label, nfail)
@@ -344,11 +377,11 @@ contains
   end subroutine report
 
   !===================================================================!
-  ! The squint side of the ladder. The base cells huddle into parts
+  ! The squint side of the ladder: the base cells huddle into parts
   ! (about four cells each), the quotient graph gets its own arrows
   ! and escape times, and the agglomerated mesh - each part fused
-  ! into one polygon - carries the coarse solution to paraview.
-  ! Twice over for julia+2, squinting the quotient again.
+  ! into one polygon - carries the coarse solution to paraview. This
+  ! runs twice over for julia+2, squinting the quotient again.
   !===================================================================!
 
   subroutine paint_coarse_levels(nfail)
@@ -364,10 +397,13 @@ contains
 
     integer :: v, k, n1, n2
 
-    ! squint once, by aggregation - a seed huddles with its
+    !-----------------------------------------------------------------!
+    ! Squint once, by aggregation: a seed huddles with its
     ! neighbours, so every part is connected by construction and its
-    ! boundary traces into one loop (coordinate bisection cuts by
-    ! count and can scatter a part into disconnected islands)
+    ! boundary traces into one loop. Coordinate bisection cuts by
+    ! count and can scatter a part into disconnected islands.
+    !-----------------------------------------------------------------!
+
     call g % partition_aggregate()
     quotient1 = stored_graph(g)
     n1        = quotient1 % num_vertices
@@ -386,7 +422,7 @@ contains
     call write_coarse_painting(agg1, real(level_times, dp), 'julia+1.vtu', nfail)
     ncells_coarse1 = n1
 
-    ! squint twice, the same way
+    ! Squint twice, the same way.
     call quotient1 % partition_aggregate()
     quotient2 = stored_graph(quotient1)
     n2        = quotient2 % num_vertices
@@ -407,8 +443,11 @@ contains
 
   end subroutine paint_coarse_levels
 
-  ! burn any stale copy, write the coarse painting on its own
-  ! agglomerated mesh, and demand it lands with light and dark
+  !===================================================================!
+  ! Burn any stale copy, write the coarse painting on its own
+  ! agglomerated mesh, and demand that it lands with light and dark.
+  !===================================================================!
+
   subroutine write_coarse_painting(agg, field, filename, nfail)
 
     type(mesh)      , intent(in)    :: agg
@@ -437,19 +476,30 @@ contains
 
   end subroutine write_coarse_painting
 
-  ! the coarse levels' successors, reading the host-carried arrows
+  !===================================================================!
+  ! The first coarse level's successor reads the host-carried arrows.
+  !===================================================================!
+
   pure integer function coarse1_successor(v)
     integer, intent(in) :: v
     coarse1_successor = arrows_coarse1(v)
   end function coarse1_successor
+
+  !===================================================================!
+  ! The second coarse level's successor reads the host-carried arrows.
+  !===================================================================!
 
   pure integer function coarse2_successor(v)
     integer, intent(in) :: v
     coarse2_successor = arrows_coarse2(v)
   end function coarse2_successor
 
-  ! the arrows of a small centroid set, by full scan: one step of the
-  ! map from each centroid, the nearest centroid claims the landing
+  !===================================================================!
+  ! Compute the arrows of a small centroid set by full scan: one step
+  ! of the map from each centroid, and the nearest centroid claims
+  ! the landing.
+  !===================================================================!
+
   pure function quantized_arrows(zs) result(arrows)
 
     complex(dp), intent(in) :: zs(:)
@@ -494,8 +544,12 @@ contains
     integer, intent(inout) :: nfail
     logical :: on_disk
 
-    ! 1: the full scan - every centroid consulted for every landing
-    ! point - must claim exactly the arrows the descent claimed
+    !-----------------------------------------------------------------!
+    ! Check 1: the full scan - every centroid consulted for every
+    ! landing point - must claim exactly the arrows the descent
+    ! claimed.
+    !-----------------------------------------------------------------!
+
     full_scan_agrees: block
 
       complex(dp) :: z
@@ -526,9 +580,12 @@ contains
 
     end block full_scan_agrees
 
-    ! 2: orbit-by-orbit painting - the orbit method walked from every
-    ! cell, classified by whether its final arrow leaves - must paint
-    ! the same picture the one-pass resolution painted
+    !-----------------------------------------------------------------!
+    ! Check 2: orbit-by-orbit painting - the orbit method walked from
+    ! every cell, classified by whether its final arrow leaves - must
+    ! paint the same picture the one-pass resolution painted.
+    !-----------------------------------------------------------------!
+
     orbit_recount: block
 
       integer, allocatable :: visited(:)
@@ -550,8 +607,11 @@ contains
 
     end block orbit_recount
 
-    ! 3: a plain loop with no machinery - follow the stored arrows,
-    ! count, cap - must repaint the same picture too
+    !-----------------------------------------------------------------!
+    ! Check 3: a plain loop with no machinery - follow the stored
+    ! arrows, count, cap - must repaint the same picture too.
+    !-----------------------------------------------------------------!
+
     recount_the_painting: block
 
       logical :: agrees
@@ -564,11 +624,11 @@ contains
          do
             steps = steps + 1
             if (succ(w) .eq. 0) then
-               repaint = steps               ! escaped at this length
+               repaint = steps               ! Escaped at this length.
                exit
             end if
             if (steps .eq. step_limit) then
-               repaint = step_limit          ! still home
+               repaint = step_limit          ! Still home.
                exit
             end if
             w = succ(w)
@@ -581,11 +641,15 @@ contains
 
     end block recount_the_painting
 
+    ! Check 4: the painting must hold both light and dark.
     call report(n_home .gt. 0 .and. n_home .lt. ncells, &
          & "the painting has light and dark", nfail)
 
-    ! 5: the cell nearest the window's corner sits far outside the
-    ! set - its very first step must leave, so it is painted 1
+    !-----------------------------------------------------------------!
+    ! Check 5: the cell nearest the window's corner sits far outside
+    ! the set; its very first step must leave, so it is painted 1.
+    !-----------------------------------------------------------------!
+
     corner_escapes: block
 
       complex(dp) :: corner_z
@@ -608,6 +672,7 @@ contains
 
     end block corner_escapes
 
+    ! Check 6: the painting must be on disk.
     inquire(file = paint_file, exist = on_disk)
     call report(on_disk, "the painting is on disk", nfail)
 

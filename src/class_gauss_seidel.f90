@@ -1,16 +1,16 @@
 !=====================================================================!
-! Forward-triangle-sweep linear solver (traditionally: Gauss-Seidel):
-! supplies only the sweep (`iterate`) and inherits the
+! Forward-triangle-sweep linear solver (traditionally: Gauss-Seidel).
+! It supplies only the sweep (`iterate`) and inherits the
 ! residual-minimization iteration from linear_solver.
 !
 ! Two sweeps, chosen by what the solver carries:
 !
 !    no graph:  the lower-triangle solve (D+L)y = R is itself
 !               done iteratively (products through the triangle
-!               filters)
+!               filters).
 !
 !    carrying a graph:  the inherited colored sweep - exact, color
-!               by color, no inner iteration. the graph may be the
+!               by color, no inner iteration. The graph may be the
 !               system's mesh OR the assembled operator itself (a
 !               matrix IS a digraph; build its in-lists first so
 !               the coloring sees both directions) - mesh-free
@@ -26,25 +26,25 @@ module class_gauss_seidel
 
   implicit none
 
-  ! Expose only the linear solver datatype
+  ! Expose only the linear solver datatype.
   private
   public :: gauss_seidel
 
   !===================================================================!
-  ! Linear solver datatype
+  ! The linear solver datatype.
   !===================================================================!
 
   type, extends(linear_solver) :: gauss_seidel
 
    contains
 
-     ! the sweep consumed by the inherited outer iteration
+     ! The sweep consumed by the inherited outer iteration.
      procedure :: iterate
 
   end type gauss_seidel
 
   !===================================================================!
-  ! Interface for multiple constructors
+  ! The interface for multiple constructors.
   !===================================================================!
 
   interface gauss_seidel
@@ -54,7 +54,7 @@ module class_gauss_seidel
 contains
 
   !===================================================================!
-  ! Constructor for linear solver
+  ! The constructor for the linear solver.
   !===================================================================!
 
   pure type(gauss_seidel) function construct(max_it, &
@@ -87,12 +87,12 @@ contains
     real(dp)            , intent(out) :: dx(:)
     integer             , intent(out) :: iter
 
-    ! Locals
+    ! Local variables.
     real(dp) :: tol, bnorm
     real(dp) , allocatable :: Ux(:), D(:), R2(:), xnew(:), identity(:)
     real(dp) , allocatable :: Ly(:), y(:), ynew(:)
 
-    ! carrying the system's graph buys the exact sweep
+    ! Carrying the system's graph buys the exact sweep.
     if (allocated(this % g)) then
        call this % colored_sweep(system, r, dx, iter, 1.0_dp)
        return
@@ -102,32 +102,33 @@ contains
     allocate(Ux, D, R2, xnew, identity, mold = dx)
     allocate(y, ynew, Ly, mold = dx)
 
-    ! Extract the diagonal entries (the self-loop subgraph on ones)
+    ! Extract the diagonal entries (the self-loop subgraph on ones).
     identity = 1.0d0
     call system % get_jacobian_residual_product(D, identity, part = DIAGONAL)
 
     bnorm = sqrt(system % inner_product(r, r))
 
-    ! Homogeneous case (nothing to do)
+    ! The homogeneous case leaves nothing to do.
     if (bnorm .le. this % max_tol) then
        iter = 0
        return
     end if
 
     !-----------------------------------------------------------------!
-    ! Apply the gauss-seidel sweep until tolerance is achieved
+    ! Apply the gauss-seidel sweep until the tolerance is achieved.
     !-----------------------------------------------------------------!
 
-    iter = 1; tol  = huge(1.0d0)
+    iter = 1
+    tol  = huge(1.0d0)
     do while ((tol .gt. this % max_tol) .and. (iter .lt. this % max_it))
 
-       ! Form the residual (partial) after the split
+       ! Form the partial residual after the split.
        call system % get_jacobian_residual_product(Ux, dx, part = UPPER_TRIANGLE)
 
        R2 = r - Ux
 
        !--------------------------------------------------------------!
-       ! Solve the linear system: By=R ; (D+L)y=R ;  Dy=R-Ly
+       ! Solve the linear system: By=R ; (D+L)y=R ; Dy=R-Ly.
        !--------------------------------------------------------------!
 
        solve_lower_triangle: block
@@ -135,10 +136,11 @@ contains
          real(dp) :: tol2
          integer :: iter2
 
-         ! Initial guess is the current correction
+         ! The initial guess is the current correction.
          y = dx
 
-         iter2 = 1; tol2 = huge(1.0d0)
+         iter2 = 1
+         tol2 = huge(1.0d0)
          do while ((tol2 .gt. this % max_tol) .and. (iter2 .lt. this % max_it))
 
             call system % get_jacobian_residual_product(Ly, y, part = LOWER_TRIANGLE)

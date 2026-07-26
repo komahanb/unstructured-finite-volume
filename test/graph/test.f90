@@ -1,32 +1,35 @@
 !=====================================================================!
-! Standalone graph suite: exercises the abstract graph by itself - no
-! mesh, no solver. Checks, per the plan:
-!   1. adjacency queries against a small graph with known answers
-!   2. forward and reverse traversal orders (dag/chain + general graph)
-!   3. the chain subclass's rule-generated adjacency (nothing materialized)
-!   4. partition invariants: every vertex owned exactly once, ghosts
-!      consistent, edge cut as reported
-!   5. the retained adjacency matches the construction stamp_bfs used to
-!      scratch-build (hand-computed xadj/adj on the known graph)
-!   6. directed structure: dependency order on the diamond dag, cycle
-!      detection on a 3-cycle, and the adjoint walk certified through
-!      the type-bound witness (chain analytic + diamond nudge)
-!   7. orbits under a successor rule: escape time, cycle closure, the
-!      tail-into-cycle shape, and the step limit
-!   8. the squint and the zoom: the partition read back as the quotient
-!      graph, and the aggregation partitioner discovering its own
-!      parts (the chain of 10 huddles into 4, deterministically)
-!   9. escape times resolved in one pass agree with orbit-by-orbit
-!      painting, capped and uncapped
-!  10. the local frame: a part's dofs in local order (owned first,
+! The standalone graph suite exercises the abstract graph by itself -
+! no mesh and no solver. It checks, per the plan:
+!   1. Adjacency queries against a small graph with known answers.
+!   2. Forward and reverse traversal orders (dag/chain and the
+!      general graph).
+!   3. The chain subclass's rule-generated adjacency (nothing is
+!      materialized).
+!   4. Partition invariants: every vertex is owned exactly once, the
+!      ghosts are consistent, and the edge cut is as reported.
+!   5. The retained adjacency matches the construction stamp_bfs used
+!      to scratch-build (hand-computed xadj/adj on the known graph).
+!   6. Directed structure: the dependency order on the diamond dag,
+!      cycle detection on a 3-cycle, and the adjoint walk certified
+!      through the type-bound witness (chain analytic and diamond
+!      nudge).
+!   7. Orbits under a successor rule: escape time, cycle closure, the
+!      tail-into-cycle shape, and the step limit.
+!   8. The squint and the zoom: the partition read back as the
+!      quotient graph, and the aggregation partitioner discovering its
+!      own parts (the chain of 10 huddles into 4, deterministically).
+!   9. Escape times resolved in one pass agree with orbit-by-orbit
+!      painting, capped and uncapped.
+!  10. The local frame: a part's dofs in local order (owned first,
 !      then the halo), the frame read backwards, and a matrix's rows
-!      re-expressed in it - the stage-1 gate of dereplication
-!  11. knots and the condensation: strong components painted, knots
+!      re-expressed in it - the stage-1 gate of dereplication.
+!  11. Knots and the condensation: strong components painted, knots
 !      told from pass-throughs, the directed squint keeping its
 !      arrows - with the two promised properties pinned: component
 !      ids ARE a dependency order of the condensation, and however
 !      many edges cross a component pair, one directed edge records
-!      them, pointing the way the graph points
+!      them, pointing the way the graph points.
 !=====================================================================!
 
 program test_graph_suite
@@ -67,8 +70,8 @@ program test_graph_suite
 contains
 
   !===================================================================!
-  ! The teller: one PASS/FAIL line per claim, and a running count of
-  ! the broken ones.
+  ! The teller prints one PASS/FAIL line per claim and keeps a running
+  ! count of the broken ones.
   !===================================================================!
 
   subroutine report(ok, label, nfail)
@@ -84,8 +87,8 @@ contains
   end subroutine report
 
   !===================================================================!
-  ! The known graph (the chapter's formal-definition example, 1-based):
-  ! V = {1..5}, E = {(1,2),(1,3),(1,4),(2,4),(3,4),(4,5)}
+  ! The known graph is the chapter's formal-definition example,
+  ! 1-based: V = {1..5}, E = {(1,2),(1,3),(1,4),(2,4),(3,4),(4,5)}.
   !===================================================================!
 
   type(stored_graph) function known_graph() result(g)
@@ -93,8 +96,9 @@ contains
   end function known_graph
 
   !===================================================================!
-  ! 1 + 5: neighbours/degree with known answers, and the retained
-  ! adjacency (xadj/adj) exactly as the scratch construction built it.
+  ! Checks 1 and 5: neighbour and degree queries with known answers,
+  ! and the retained adjacency (xadj/adj) exactly as the scratch
+  ! construction built it.
   !===================================================================!
 
   subroutine check_known_adjacency(nfail)
@@ -111,27 +115,36 @@ contains
     call report(g % degree(1) .eq. 3 .and. g % degree(4) .eq. 4 .and. &
          &      g % degree(5) .eq. 1,                  "degrees 3/4/1",             nfail)
 
-    ! retained adjacency, hand-computed: degrees [3,2,2,4,1] ->
-    ! xadj = [1,4,6,8,12,13]; adj in edge insertion order
+    !-----------------------------------------------------------------!
+    ! The retained adjacency is hand-computed: the degrees [3,2,2,4,1]
+    ! give xadj = [1,4,6,8,12,13], and adj sits in edge insertion
+    ! order.
+    !-----------------------------------------------------------------!
+
     call report(all(g % xadj .eq. [1,4,6,8,12,13]),    "retained xadj",             nfail)
     call report(all(g % adj  .eq. [2,3,4, 1,4, 1,4, 1,2,3,5, 4]), "retained adj",   nfail)
 
-    ! the same adjacency at dof granularity (one variable, so dof = v):
-    ! every row leads with its own dof, then its neighbours in order
+    !-----------------------------------------------------------------!
+    ! The same adjacency appears at dof granularity (one variable, so
+    ! dof = v): every row leads with its own dof, then its neighbours
+    ! in order.
+    !-----------------------------------------------------------------!
+
     call g % dof_adjacency(xadj, adj)
     call report(all(xadj .eq. [1,5,8,11,16,18]), "dof xadj: rows are 1+degree wide", nfail)
     call report(all(adj  .eq. [1,2,3,4, 2,1,4, 3,1,4, 4,1,2,3,5, 5,4]), &
          & "dof adj: self-loop first, neighbours after", nfail)
 
-    ! greedy coloring, hand-computed: no edge inside a color
+    ! The greedy coloring, hand-computed, leaves no edge inside a color.
     call report(all(g % coloring() .eq. [1,2,2,3,1]), &
          & "greedy coloring leaves no edge inside a color", nfail)
 
   end subroutine check_known_adjacency
 
   !===================================================================!
-  ! 2: traversal orders. bfs on the known graph from vertex 1; the
-  ! chain's forward order is 1..n and reverse is n..1.
+  ! Check 2: traversal orders. The bfs on the known graph starts from
+  ! vertex 1; the chain's forward order is 1..n and its reverse order
+  ! is n..1.
   !===================================================================!
 
   subroutine check_traversal_orders(nfail)
@@ -156,7 +169,7 @@ contains
   end subroutine check_traversal_orders
 
   !===================================================================!
-  ! 3: the chain answers by rule and materializes nothing.
+  ! Check 3: the chain answers by rule and materializes nothing.
   !===================================================================!
 
   subroutine check_chain_rule(nfail)
@@ -175,8 +188,12 @@ contains
          & "chain materializes no adjacency and no edge list", nfail)
     call report(c % num_edges .eq. 5, "chain edge count n-1", nfail)
 
-    ! the chain raised to a power: edge m -> k whenever k - m <= 2,
-    ! still all by rule (this is the shape of a time stencil's dag)
+    !-----------------------------------------------------------------!
+    ! The chain raised to a power carries an edge m -> k whenever
+    ! k - m <= 2, still all by rule; this is the shape of a time
+    ! stencil's dag.
+    !-----------------------------------------------------------------!
+
     c = chain(6, power = 2)
     call report(all(c % out_neighbours(3) .eq. [4,5]) .and. &
          &      all(c % out_neighbours(5) .eq. [6]), &
@@ -196,8 +213,9 @@ contains
   end subroutine check_chain_rule
 
   !===================================================================!
-  ! 4: partition invariants, on the stored subclass and on the rule
-  ! subclass (the inherited partitioner runs on the rule directly).
+  ! Check 4: partition invariants, on the stored subclass and on the
+  ! rule subclass (the inherited partitioner runs on the rule
+  ! directly).
   !===================================================================!
 
   subroutine check_partition_invariants(nfail)
@@ -214,7 +232,7 @@ contains
     call c % partition(2)
     call assert_partition(c, 2, "chain", nfail)
 
-    ! the chain's 2-part cut is exactly one edge, ghosts one each side
+    ! The chain's 2-part cut is exactly one edge, with one ghost on each side.
     call report(c % edge_cut() .eq. 1, "chain 2-part cut = 1", nfail)
     call report(c % n_ghosts(1) .eq. 1 .and. c % n_ghosts(2) .eq. 1, &
          & "chain ghosts one per side", nfail)
@@ -222,8 +240,8 @@ contains
   end subroutine check_partition_invariants
 
   !===================================================================!
-  ! The partition laws, checked on any graph: every vertex owned
-  ! exactly once; every ghost genuinely borrowed - not owned by the
+  ! The partition laws are checked on any graph: every vertex is owned
+  ! exactly once; every ghost is genuinely borrowed - not owned by the
   ! part, yet touching a vertex that is; and the reported edge cut
   ! survives an independent recount over the neighbour lists.
   !===================================================================!
@@ -239,8 +257,9 @@ contains
     integer :: k, i, j, v, w, cut
     logical :: ok
 
-    ! every vertex owned exactly once
-    allocate(cover(g % num_vertices)); cover = 0
+    ! Every vertex must be owned exactly once.
+    allocate(cover(g % num_vertices))
+    cover = 0
     do k = 1, nparts
        own = g % owned(k)
        do i = 1, size(own)
@@ -249,7 +268,7 @@ contains
     end do
     call report(all(cover .eq. 1), label//": every vertex owned exactly once", nfail)
 
-    ! each ghost of k is not owned by k and touches an owned vertex of k
+    ! Each ghost of part k is not owned by k and touches an owned vertex of k.
     ok = .true.
     do k = 1, nparts
        ghost_dofs = g % ghosts(k)
@@ -262,7 +281,7 @@ contains
     end do
     call report(ok, label//": ghosts consistent", nfail)
 
-    ! edge cut as reported (independent recount over neighbours)
+    ! The edge cut must be as reported (an independent recount over the neighbours).
     cut = 0
     do v = 1, g % num_vertices
        nbrs = g % neighbours(v)
@@ -276,20 +295,24 @@ contains
   end subroutine assert_partition
 
   !===================================================================!
-  ! Directed structure: the dependency order on the diamond dag, cycle
-  ! detection on a 3-cycle (without dying), and the adjoint walk
-  ! certified through the type-bound witness - the chain fixture judged
-  ! against the analytic derivative and the diamond fixture against a
-  ! central-difference nudge, each at its own tolerance inside the
-  ! witness. A certification value below one passes both.
+  ! Check 6: directed structure. The suite checks the dependency order
+  ! on the diamond dag, cycle detection on a 3-cycle (without dying),
+  ! and the adjoint walk certified through the type-bound witness -
+  ! the chain fixture is judged against the analytic derivative and
+  ! the diamond fixture against a central-difference nudge, each at
+  ! its own tolerance inside the witness. A certification value below
+  ! one passes both.
   !===================================================================!
 
   subroutine check_directed_structure(nfail)
 
     integer, intent(inout) :: nfail
 
-    ! a witness value below this certifies both fixtures at their own
-    ! tolerances (the witness normalizes each defect by its tolerance)
+    !-----------------------------------------------------------------!
+    ! A witness value below this certifies both fixtures at their own
+    ! tolerances; the witness normalizes each defect by its tolerance.
+    !-----------------------------------------------------------------!
+
     real(dp), parameter :: certification_threshold = 1.0_dp
 
     type(stored_digraph) :: diamond, cycle3, schedule
@@ -297,7 +320,7 @@ contains
     integer, allocatable :: order(:)
     real(dp) :: certification
 
-    ! the diamond dag: 1->2, 1->3, 2->4, 3->4
+    ! The diamond dag reads 1->2, 1->3, 2->4, 3->4.
     diamond = stored_digraph(4, tails=[1,1,2,3], heads=[2,3,4,4])
 
     call report(diamond % is_acyclic(), "diamond dag is acyclic", nfail)
@@ -310,29 +333,32 @@ contains
          &      all(diamond % in_neighbours(4)  .eq. [2,3]), &
          & "directed queries on the diamond", nfail)
 
-    ! a 3-cycle must be detected without dying
+    ! A 3-cycle must be detected without dying.
     cycle3 = stored_digraph(3, tails=[1,2,3], heads=[2,3,1])
     call report(.not. cycle3 % is_acyclic(), &
          & "cycle detection refuses the 3-cycle", nfail)
 
-    ! the chain's dependency order is 1..n by construction
+    ! The chain's dependency order is 1..n by construction.
     c = chain(5)
     order = c % dependency_order()
     call report(all(order .eq. [1,2,3,4,5]), &
          & "chain dependency order is 1..n", nfail)
 
-    ! the walk's witness: chain analytic + diamond nudge, type-bound
+    ! The walk's witness combines the chain analytic and the diamond nudge, type-bound.
     certification = c % verify_adjoint_accumulation()
     call report(certification .lt. certification_threshold, &
          & "adjoint accumulation certified by the witness", nfail)
 
-    ! the directed citizen carries caller-given numbers, so a small
+    !-----------------------------------------------------------------!
+    ! The directed citizen carries caller-given numbers, so a small
     ! graph can name things beyond itself. The fixture avoids every
     ! coincidence: no number equals its own vertex index and the list
     ! reads differently reversed, so ignoring or reversing the given
     ! numbers both fail. The neighbour comparisons check their sizes
-    ! first - all() on an accidentally empty return says yes to
-    ! anything.
+    ! first, because all() on an accidentally empty return says yes
+    ! to anything.
+    !-----------------------------------------------------------------!
+
     schedule = stored_digraph(5, tails=[1,2,3,4], heads=[2,3,4,5], &
          &                    numbers=[9,8,7,6,4])
     call report(schedule % vertices(2) % number .eq. 8 .and. &
@@ -342,9 +368,13 @@ contains
          &      size(schedule % out_neighbours(5)) .eq. 0, &
          & "stored digraph carries caller-given numbers", nfail)
 
-    ! and the graph reads its own route: follow the arrows from the
-    ! source, hand back the numbers in visit order (size checked
-    ! first - all() on an accidentally empty return says yes)
+    !-----------------------------------------------------------------!
+    ! The graph reads its own route: it follows the arrows from the
+    ! source and hands back the numbers in visit order. The size is
+    ! checked first, because all() on an accidentally empty return
+    ! says yes.
+    !-----------------------------------------------------------------!
+
     call report(size(schedule % source_path()) .eq. 5 .and. &
          &      all(schedule % source_path() .eq. [9,8,7,6,4]), &
          & "source path returns the numbers in trip order", nfail)
@@ -352,7 +382,7 @@ contains
   end subroutine check_directed_structure
 
   !===================================================================!
-  ! 11: knots and the condensation.
+  ! Check 11: knots and the condensation.
   !
   !    (1)──▶(2)──▶(3)      strong components painted, the tangle
   !           ▲     │       {2,3,4} told from the pass-throughs,
@@ -361,11 +391,11 @@ contains
   !              ▼            [1] ──▶ [2 3 4] ──▶ [5]
   !             (5)
   !
-  ! plus the two promised properties, pinned on graphs built to break
-  ! shortcuts: ids renumbered by the condensation's dependency order
-  ! (arrows running AGAINST the vertex numbering), and crossing edges
-  ! deduped to one arrow that points the way the graph points, never
-  ! the way the part ids sort.
+  ! The two promised properties are pinned on graphs built to break
+  ! shortcuts: the ids are renumbered by the condensation's dependency
+  ! order (arrows running AGAINST the vertex numbering), and crossing
+  ! edges are deduped to one arrow that points the way the graph
+  ! points, never the way the part ids sort.
   !===================================================================!
 
   subroutine check_knots(nfail)
@@ -377,9 +407,12 @@ contains
     integer, allocatable :: parts(:), tails(:), heads(:)
     logical, allocatable :: is_knot(:)
 
-    ! the 3-cycle: one component, and it is a knot; its condensation
-    ! is a single point with no edges (the refusal's sequel: what
-    ! is_acyclic rejected above, the condensation makes walkable)
+    !-----------------------------------------------------------------!
+    ! The 3-cycle is one component, and it is a knot; its condensation
+    ! is a single point with no edges. This is the refusal's sequel:
+    ! what is_acyclic rejected above, the condensation makes walkable.
+    !-----------------------------------------------------------------!
+
     g       = stored_digraph(3, tails=[1,2,3], heads=[2,3,1])
     parts   = g % strong_components()
     is_knot = g % knotted_components(parts)
@@ -390,9 +423,12 @@ contains
     call report(c % num_vertices .eq. 1 .and. c % num_edges .eq. 0, &
          & "its condensation is a point", nfail)
 
-    ! a rule-generated chain answers with nothing stored: every link
-    ! its own trivial component, numbered in walk order, and the
-    ! condensation is the chain again
+    !-----------------------------------------------------------------!
+    ! A rule-generated chain answers with nothing stored: every link
+    ! is its own trivial component, numbered in walk order, and the
+    ! condensation is the chain again.
+    !-----------------------------------------------------------------!
+
     ch      = chain(5)
     parts   = ch % strong_components()
     is_knot = ch % knotted_components(parts)
@@ -404,8 +440,11 @@ contains
          &      c % is_acyclic() .and. all(c % dependency_order() .eq. [1,2,3,4,5]), &
          & "the condensation of a chain is the chain", nfail)
 
-    ! the drawing above: 2 -> 3 -> 4 -> 2 tangles, 1 feeds it, 5
-    ! drains it - three components, only the middle one a knot
+    !-----------------------------------------------------------------!
+    ! In the drawing above, 2 -> 3 -> 4 -> 2 tangles, 1 feeds it, and
+    ! 5 drains it: three components, only the middle one a knot.
+    !-----------------------------------------------------------------!
+
     g       = stored_digraph(5, tails=[1,2,3,4,4], heads=[2,3,4,2,5])
     parts   = g % strong_components()
     is_knot = g % knotted_components(parts)
@@ -420,7 +459,7 @@ contains
          &      all(c % out_neighbours(2) .eq. [3]), &
          & "the condensation is [1] -> [tangle] -> [5]", nfail)
 
-    ! a self-edge is a one-vertex knot; its neighbour is merely trivial
+    ! A self-edge is a one-vertex knot; its neighbour is merely trivial.
     g       = stored_digraph(2, tails=[1,1], heads=[1,2])
     parts   = g % strong_components()
     is_knot = g % knotted_components(parts)
@@ -428,8 +467,12 @@ contains
          &      .not. is_knot(parts(2)), &
          & "a self-edge is a one-vertex knot", nfail)
 
-    ! two knots over a bridge: found separately, condensed to a
-    ! two-point dag - the theorem (always acyclic) checked by experiment
+    !-----------------------------------------------------------------!
+    ! Two knots over a bridge are found separately and condensed to a
+    ! two-point dag; the theorem (always acyclic) is checked by
+    ! experiment.
+    !-----------------------------------------------------------------!
+
     g       = stored_digraph(4, tails=[1,2,2,3,4], heads=[2,1,3,4,3])
     parts   = g % strong_components()
     is_knot = g % knotted_components(parts)
@@ -441,11 +484,14 @@ contains
          &      c % is_acyclic(), &
          & "their condensation is a two-point dag", nfail)
 
-    ! promised property one: the arrows run AGAINST the vertex
-    ! numbering (the tangle 3 <-> 4 feeds 2 feeds 1), so any
-    ! shortcut that trusts vertex order fails - the source tangle
-    ! must come out part 1, the sink vertex part 3, and every
-    ! condensation edge must run lower id -> higher id
+    !-----------------------------------------------------------------!
+    ! Promised property one: the arrows run AGAINST the vertex
+    ! numbering (the tangle 3 <-> 4 feeds 2, which feeds 1), so any
+    ! shortcut that trusts vertex order fails. The source tangle must
+    ! come out part 1, the sink vertex part 3, and every condensation
+    ! edge must run lower id -> higher id.
+    !-----------------------------------------------------------------!
+
     g     = stored_digraph(4, tails=[3,4,4,2], heads=[4,3,2,1])
     parts = g % strong_components()
     call report(all(parts .eq. [3,2,1,1]), &
@@ -455,17 +501,23 @@ contains
          &      all(c % edges % tail .lt. c % edges % head), &
          & "every condensation edge runs lower id to higher id", nfail)
 
-    ! promised property two, first half: three original edges cross
-    ! the same pair of knots; ONE condensation edge records them
+    !-----------------------------------------------------------------!
+    ! Promised property two, first half: three original edges cross
+    ! the same pair of knots, and ONE condensation edge records them.
+    !-----------------------------------------------------------------!
+
     g = stored_digraph(4, tails=[1,2,3,4,1,2,1], heads=[2,1,4,3,3,4,4])
     c = stored_digraph(g)
     call report(c % num_vertices .eq. 2 .and. c % num_edges .eq. 1, &
          & "many crossing edges dedupe to one condensation edge", nfail)
 
-    ! promised property two, second half: handed an adversarial paint
+    !-----------------------------------------------------------------!
+    ! Promised property two, second half: handed an adversarial paint
     ! where the edge runs from the HIGHER part id to the lower, the
     ! squint must answer 2 -> 1 - the arrow of the graph, not the
-    ! sorted pair the undirected quotient would report
+    ! sorted pair the undirected quotient would report.
+    !-----------------------------------------------------------------!
+
     g = stored_digraph(2, tails=[1], heads=[2])
     call g % condensation_edges([2,1], tails, heads)
     call report(size(tails) .eq. 1 .and. tails(1) .eq. 2 .and. heads(1) .eq. 1, &
@@ -474,10 +526,11 @@ contains
   end subroutine check_knots
 
   !===================================================================!
-  ! 7: orbits under a successor rule - one vertex, one arrow out,
-  ! repeated. Escape (the rule leaves the vertex set; the length is
-  ! the escape time), cycle closure (the repeated vertex is kept as
-  ! the final entry), the tail-into-cycle shape, and the step limit.
+  ! Check 7: orbits under a successor rule - one vertex, one arrow
+  ! out, repeated. The suite checks escape (the rule leaves the vertex
+  ! set; the length is the escape time), cycle closure (the repeated
+  ! vertex is kept as the final entry), the tail-into-cycle shape, and
+  ! the step limit.
   !===================================================================!
 
   subroutine check_orbit(nfail)
@@ -488,39 +541,42 @@ contains
 
     g = known_graph()
 
-    ! the rule v -> v+1 escapes past vertex 5: escape time 5
+    ! The rule v -> v + 1 escapes past vertex 5: the escape time is 5.
     visited = g % orbit(1, next_vertex)
     call report(all(visited .eq. [1,2,3,4,5]), &
          & "orbit escapes; length is the escape time", nfail)
 
-    ! from an interior start the same rule escapes in two visits
+    ! From an interior start the same rule escapes in two visits.
     visited = g % orbit(4, next_vertex)
     call report(all(visited .eq. [4,5]), "orbit from an interior start", nfail)
 
-    ! a vertex that is its own successor closes the shortest cycle
+    ! A vertex that is its own successor closes the shortest cycle.
     visited = g % orbit(3, same_vertex)
     call report(all(visited .eq. [3,3]), "fixed vertex closes a 1-cycle", nfail)
 
-    ! tail 1 -> 2 into the cycle 3 -> 4 -> 5 -> 3: the repeated vertex
-    ! ends the sequence, so the cycle is the slice between its two
-    ! appearances; the length is num_vertices + 1, the default limit
-    ! the pigeonhole argument promises is enough
+    !-----------------------------------------------------------------!
+    ! The tail 1 -> 2 leads into the cycle 3 -> 4 -> 5 -> 3: the
+    ! repeated vertex ends the sequence, so the cycle is the slice
+    ! between its two appearances. The length is num_vertices + 1,
+    ! the default limit the pigeonhole argument promises is enough.
+    !-----------------------------------------------------------------!
+
     visited = g % orbit(1, tail_then_cycle)
     call report(all(visited .eq. [1,2,3,4,5,3]), &
          & "tail into a cycle; repeated vertex ends the sequence", nfail)
 
-    ! the step limit caps the orbit before the cycle closes
+    ! The step limit caps the orbit before the cycle closes.
     visited = g % orbit(1, tail_then_cycle, limit=3)
     call report(all(visited .eq. [1,2,3]), "the step limit caps the orbit", nfail)
 
   end subroutine check_orbit
 
   !===================================================================!
-  ! 8: the squint. Partition the known graph in two and read it back
-  ! as the quotient - two coarse vertices, one coarse edge, however
-  ! many fine edges cross. Then the aggregation partitioner on the
-  ! chain of 10: no part count given, and Vanek's passes discover
-  ! exactly four huddles, deterministically.
+  ! Check 8: the squint. The known graph is partitioned in two and
+  ! read back as the quotient - two coarse vertices and one coarse
+  ! edge, however many fine edges cross. Then the aggregation
+  ! partitioner runs on the chain of 10: no part count is given, and
+  ! Vanek's passes discover exactly four huddles, deterministically.
   !===================================================================!
 
   subroutine check_quotient(nfail)
@@ -531,8 +587,11 @@ contains
     integer  :: v
     real(dp) :: x(12)
 
-    ! bfs partition puts {1,2,3} and {4,5} apart; three fine edges
-    ! cross, and the squint sees one coarse edge
+    !-----------------------------------------------------------------!
+    ! The bfs partition puts {1,2,3} and {4,5} apart; three fine
+    ! edges cross, and the squint sees one coarse edge.
+    !-----------------------------------------------------------------!
+
     g = known_graph()
     call g % partition(2)
     coarse = stored_graph(g)
@@ -543,22 +602,25 @@ contains
          &      all(coarse % neighbours(2) .eq. [1]), &
          & "quotient adjacency reads back", nfail)
 
-    ! the chain of 10 huddles into 4 parts: {1,2} {3,4,5} {6,7,8} {9,10}
+    ! The chain of 10 huddles into 4 parts: {1,2} {3,4,5} {6,7,8} {9,10}.
     c = chain(10)
     call c % partition_aggregate()
     call report(c % nparts .eq. 4, "aggregation discovers 4 parts on chain(10)", nfail)
     call report(all([(c % part_of(v), v = 1, 10)] .eq. [1,1,2,2,2,3,3,3,4,4]), &
          & "aggregation huddles the chain as expected", nfail)
 
-    ! the quotient of the aggregated chain is again a chain
+    ! The quotient of the aggregated chain is again a chain.
     coarse = stored_graph(c)
     call report(coarse % num_vertices .eq. 4 .and. coarse % num_edges .eq. 3 .and. &
          &      all(coarse % neighbours(2) .eq. [1,3]), &
          & "the squinted chain is again a chain", nfail)
 
-    ! the zoom: every vertex of the known graph splits into three
+    !-----------------------------------------------------------------!
+    ! The zoom: every vertex of the known graph splits into three
     ! children - chains inside each split vertex, one bridge per
-    ! original edge - and the parent map arrives as the partition
+    ! original edge - and the parent map arrives as the partition.
+    !-----------------------------------------------------------------!
+
     g       = known_graph()
     refined = stored_graph(g, 3)
     call report(refined % num_vertices .eq. 15 .and. &
@@ -567,25 +629,34 @@ contains
     call report(refined % part_of(4) .eq. 2 .and. refined % part_of(15) .eq. 5, &
          & "refinement carries the parent map as its partition", nfail)
 
-    ! the squint undoes the zoom: the quotient of the refinement is
-    ! the original graph
+    !-----------------------------------------------------------------!
+    ! The squint undoes the zoom: the quotient of the refinement is
+    ! the original graph.
+    !-----------------------------------------------------------------!
+
     coarse = stored_graph(refined)
     call report(coarse % num_vertices .eq. 5 .and. coarse % num_edges .eq. 6 .and. &
          &      size(coarse % neighbours(4)) .eq. 4 .and. &
          &      all(coarse % neighbours(4) .eq. [1,2,3,5]), &
          & "the squint undoes the zoom", nfail)
 
-    ! a rule graph refines as readily as a stored one, and an adopted
-    ! partition gathers like any other
+    !-----------------------------------------------------------------!
+    ! A rule graph refines as readily as a stored one, and an adopted
+    ! partition gathers like any other.
+    !-----------------------------------------------------------------!
+
     c = chain(6, 2)
     call c % set_partition([1,1,2,2,3,3])
     call report(c % nparts .eq. 3 .and. size(c % owned(2)) .eq. 2 .and. &
          &      all(c % owned(2) .eq. [3,4]), &
          & "an adopted partition gathers like any other", nfail)
 
-    ! values ride the partition: part 2 owns vertices 3 and 4, so with
-    ! two variables its dofs are 5..8; gather pulls those entries out,
-    ! scatter pushes them back and touches nothing else
+    !-----------------------------------------------------------------!
+    ! Values ride the partition: part 2 owns vertices 3 and 4, so
+    ! with two variables its dofs are 5..8. Gather pulls those
+    ! entries out; scatter pushes them back and touches nothing else.
+    !-----------------------------------------------------------------!
+
     call report(all(c % dofs_of(c % owned(2)) .eq. [5,6,7,8]), &
          & "a vertex list expands to its dofs, variable-fastest", nfail)
     x = [(real(v, dp), v = 1, 12)]
@@ -595,9 +666,13 @@ contains
     call report(all(x .eq. [1,2,3,4,50,60,70,80,9,10,11,12]), &
          & "scatter pushes them back and leaves the rest alone", nfail)
 
-    ! dot measures where gather reaches: part 2's dofs are 5..8, so
-    ! its dot of x=(1..12) with itself is 5^2+..+8^2 = 174, and the
-    ! parts' dots sum to the whole graph's dot (each dof owned once)
+    !-----------------------------------------------------------------!
+    ! Dot measures where gather reaches: part 2's dofs are 5..8, so
+    ! its dot of x = (1..12) with itself is 5^2 + .. + 8^2 = 174, and
+    ! the parts' dots sum to the whole graph's dot (each dof is owned
+    ! once).
+    !-----------------------------------------------------------------!
+
     x = [(real(v, dp), v = 1, 12)]
     call report(abs(c % dot(2, x, x) - 174.0_dp) .lt. 1.0e-12_dp, &
          & "dot measures a part's owned dofs", nfail)
@@ -611,10 +686,11 @@ contains
   end subroutine check_quotient
 
   !===================================================================!
-  ! 9: escape times in one pass. The same rules the orbit checks use,
-  ! resolved for every vertex at once, must agree with what orbit-by-
-  ! orbit painting gives: [5,4,3,2,1] for the escaping rule, all home
-  ! at the limit for the tail-into-cycle rule, and the cap biting.
+  ! Check 9: escape times in one pass. The same rules the orbit checks
+  ! use, resolved for every vertex at once, must agree with what
+  ! orbit-by-orbit painting gives: [5,4,3,2,1] for the escaping rule,
+  ! all home at the limit for the tail-into-cycle rule, and the cap
+  ! biting.
   !===================================================================!
 
   subroutine check_escape_times(nfail)
@@ -641,8 +717,12 @@ contains
     call report(all(times .eq. 7), &
          & "fixed vertices are home", nfail)
 
-    ! the cap may be huge(0) - "no cap" - without the unwind wrapping
-    ! negative: escapers keep their exact times, home is painted the cap
+    !-----------------------------------------------------------------!
+    ! The cap may be huge(0) - "no cap" - without the unwind wrapping
+    ! negative: escapers keep their exact times, and home is painted
+    ! the cap.
+    !-----------------------------------------------------------------!
+
     times = g % escape_times(next_vertex, huge(0))
     call report(all(times .eq. [5,4,3,2,1]), &
          & "an uncapped limit leaves escape times exact", nfail)
@@ -654,15 +734,15 @@ contains
   end subroutine check_escape_times
 
   !===================================================================!
-  ! 10: the local frame. On the chain with two variables and parts
-  ! [1,1,2,2,3,3], part 2 owns vertices 3,4 (dofs 5..8) and its halo
-  ! is vertices 2,5 (dofs 3,4,9,10):
+  ! Check 10: the local frame. On the chain with two variables and
+  ! parts [1,1,2,2,3,3], part 2 owns vertices 3 and 4 (dofs 5..8) and
+  ! its halo is vertices 2 and 5 (dofs 3, 4, 9, 10):
   !
   !    frame(2)  =  [ 5 6 7 8 | 3 4 9 10 ]
   !                   owned     ghosts
   !
-  ! and a hand matrix re-expressed in a hand frame computes exactly
-  ! its owned rows through the local block.
+  ! A hand matrix re-expressed in a hand frame computes exactly its
+  ! owned rows through the local block.
   !===================================================================!
 
   subroutine check_local_frame(nfail)
@@ -680,8 +760,12 @@ contains
     call report(all(c % frame_inverse(2) .eq. [0,0,5,6,1,2,3,4,7,8,0,0]), &
          & "the frame reads backwards, 0 where the part is blind", nfail)
 
-    ! a 4x4 hand matrix; a part owning rows 2,3 reaches columns
-    ! 1..4, so its hand frame is [2,3 | 1,4] and loc = [3,1,2,4]
+    !-----------------------------------------------------------------!
+    ! A 4x4 hand matrix is built; a part owning rows 2 and 3 reaches
+    ! columns 1..4, so its hand frame is [2,3 | 1,4] and
+    ! loc = [3,1,2,4].
+    !-----------------------------------------------------------------!
+
     A = csr_matrix(4, 4, [1,3,6,9,11], [1,2, 1,2,3, 2,3,4, 3,4], &
          & [10.0_dp,1.0_dp, 2.0_dp,20.0_dp,3.0_dp, 4.0_dp,30.0_dp,5.0_dp, 6.0_dp,40.0_dp])
     B = A % local_block([2,3], [3,1,2,4], 4)
@@ -692,23 +776,35 @@ contains
          &      all(B % vals     .eq. [2.0_dp,20.0_dp,3.0_dp, 4.0_dp,30.0_dp,5.0_dp]), &
          & "the local block keeps rows whole, far ends in the frame", nfail)
 
-    ! the block's matvec on a frame-ordered vector IS the owned rows
-    ! of the global product: x = [1,2,3,4] framed as [2,3,1,4]
+    !-----------------------------------------------------------------!
+    ! The block's matvec on a frame-ordered vector IS the owned rows
+    ! of the global product: x = [1,2,3,4] is framed as [2,3,1,4].
+    !-----------------------------------------------------------------!
+
     call B % matvec([2.0_dp,3.0_dp,1.0_dp,4.0_dp], y)
     call report(all(abs(y - [51.0_dp,118.0_dp]) .lt. 1.0e-14_dp), &
          & "the local matvec computes exactly the owned rows", nfail)
 
-    ! the exchange tables, hand-computed. part 2's ghosts are vertices
-    ! 2 and 5 (dofs 3,4,9,10): dof 3 sits at position 3 of part 1's
-    ! owned dofs [1,2,3,4]; dof 9 at position 1 of part 3's [9..12]
+    !-----------------------------------------------------------------!
+    ! The exchange tables are hand-computed: part 2's ghosts are
+    ! vertices 2 and 5 (dofs 3, 4, 9, 10); dof 3 sits at position 3
+    ! of part 1's owned dofs [1,2,3,4], and dof 9 at position 1 of
+    ! part 3's [9..12].
+    !-----------------------------------------------------------------!
+
     exchange_tables: block
       integer, allocatable :: owner(:), slot(:), ptr(:), image(:), ghost_index(:)
       call c % ghost_owners(2, owner, slot)
       call report(all(owner .eq. [1,1,3,3]) .and. all(slot .eq. [3,4,1,2]), &
            & "ghost_owners: each ghost's owner and its slot there", nfail)
-      ! and the same table read the other way: part 1 ghosts vertex 3
-      ! (dofs 5,6 = part 2's owned positions 1,2) at ghost indices 1,2;
-      ! part 3 ghosts vertex 4 (positions 3,4) at indices 1,2
+
+      !---------------------------------------------------------------!
+      ! The same table is read the other way: part 1 ghosts vertex 3
+      ! (dofs 5 and 6, part 2's owned positions 1 and 2) at ghost
+      ! indices 1 and 2; part 3 ghosts vertex 4 (positions 3 and 4)
+      ! at indices 1 and 2.
+      !---------------------------------------------------------------!
+
       call c % ghost_copies(2, ptr, image, ghost_index)
       call report(all(ptr .eq. [1,2,3,4,5]) .and. &
            &      all(image .eq. [1,1,3,3]) .and. all(ghost_index .eq. [1,2,1,2]), &
@@ -718,7 +814,8 @@ contains
   end subroutine check_local_frame
 
   !===================================================================!
-  ! successor rules for the orbit checks: one arrow out of every vertex
+  ! The successor rule v -> v + 1: one arrow out of every vertex,
+  ! escaping past the last.
   !===================================================================!
 
   pure integer function next_vertex(v)
@@ -726,12 +823,20 @@ contains
     next_vertex = v + 1
   end function next_vertex
 
+  !===================================================================!
+  ! The successor rule v -> v: every vertex is its own successor.
+  !===================================================================!
+
   pure integer function same_vertex(v)
     integer, intent(in) :: v
     same_vertex = v
   end function same_vertex
 
-  ! the tail 1 -> 2 feeding the cycle 3 -> 4 -> 5 -> 3
+  !===================================================================!
+  ! The successor rule with the tail 1 -> 2 feeding the cycle
+  ! 3 -> 4 -> 5 -> 3.
+  !===================================================================!
+
   pure integer function tail_then_cycle(v)
     integer, intent(in) :: v
     if (v .lt. 5) then
@@ -742,7 +847,7 @@ contains
   end function tail_then_cycle
 
   !===================================================================!
-  ! dof interleaving on the ancestor (variable-fastest)
+  ! The dof interleaving on the ancestor is variable-fastest.
   !===================================================================!
 
   subroutine check_dof_map(nfail)

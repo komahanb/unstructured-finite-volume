@@ -1,33 +1,32 @@
 !=====================================================================!
-! AMG verification suite (phase 1: serial SA-AMG preconditioned CG).
+! The AMG verification suite (phase 1: serial SA-AMG preconditioned
+! CG).
 !
-!   1. CSR fidelity      - the assembled sparse operator equals the
-!                          matrix-free operator (matvec) and the dense
-!                          jacobian (entrywise). THE gate.
-!   2. M^-1 SPD          - one V-cycle is symmetric positive definite
-!                          (required for the CG preconditioner).
-!   3. same solution     - PCG-AMG and plain CG reach the same answer.
-!   4. fewer iterations  - PCG-AMG takes markedly fewer CG iterations.
-!   5. h-independence    - on square-10/20/40/80, plain-CG iterations grow
-!                          with the mesh while AMG iterations stay ~flat
-!                          (the point of multigrid).
-!   6. geometric         - the geometric squint (rcb on the mesh graph,
-!                          quotients down the hierarchy) reaches the same
-!                          solution in markedly fewer iterations than
-!                          plain CG, staying ~flat over refinement.
-!   7. injected cycle    - the cycle is a graph handed in: the W built
-!                          as stations and arrows converges; repeated
-!                          stations smooth again; a negative station
-!                          dips into a refined level below the mesh
-!                          (the zoom, built by refine). differential
-!                          probes prove each feature steers the trip.
-!   8. unstructured      - nothing assumes structure: the same problem
-!                          on a crooked triangle mesh, both squints
-!                          still beat plain CG to the same answer.
-!   9. hierarchy output  - every coarsening level painted onto the
-!                          mesh as a cell field through the existing
-!                          writer: a quotient is a partition of the
-!                          mesh, and a partition is a picture.
+!   1. CSR fidelity: the assembled sparse operator equals the
+!      matrix-free operator (matvec) and the dense jacobian
+!      (entrywise). This is THE gate.
+!   2. M^-1 SPD: one V-cycle is symmetric positive definite, as the
+!      CG preconditioner requires.
+!   3. Same solution: PCG-AMG and plain CG reach the same answer.
+!   4. Fewer iterations: PCG-AMG takes markedly fewer CG iterations.
+!   5. h-independence: on square-10/20/40/80, plain-CG iterations
+!      grow with the mesh while AMG iterations stay nearly flat.
+!      That is the point of multigrid.
+!   6. Geometric: the geometric squint (rcb on the mesh graph,
+!      quotients down the hierarchy) reaches the same solution in
+!      markedly fewer iterations than plain CG, staying nearly flat
+!      over refinement.
+!   7. Injected cycle: the cycle is a graph handed in. The W built
+!      as stations and arrows converges, repeated stations smooth
+!      again, and a negative station dips into a refined level below
+!      the mesh (the zoom, built by refine). Differential probes
+!      prove that each feature steers the trip.
+!   8. Unstructured: nothing assumes structure. The same problem on
+!      a crooked triangle mesh sees both squints still beat plain CG
+!      to the same answer.
+!   9. Hierarchy output: every coarsening level is painted onto the
+!      mesh as a cell field through the existing writer. A quotient
+!      is a partition of the mesh, and a partition is a picture.
 !
 ! A nonzero exit (error stop) means a check failed.
 !
@@ -74,8 +73,10 @@ program test_amg
 contains
 
   !===================================================================!
-  ! Mixed-bc diffusion assembler on box-36 (for the fidelity gate)
+  ! Build the mixed-bc diffusion assembler on box-36, for the
+  ! fidelity gate.
   !===================================================================!
+
   subroutine make_box(fvm)
     class(assembler), allocatable, intent(out) :: fvm
     class(gmsh_loader), allocatable :: gl
@@ -93,9 +94,11 @@ contains
   end subroutine make_box
 
   !===================================================================!
-  ! 2d poisson on square-n (homogeneous dirichlet, unit source) - the
-  ! canonical SPD elliptic problem for the AMG checks
+  ! Build the 2d poisson problem on square-n (homogeneous dirichlet,
+  ! unit source) - the canonical SPD elliptic problem for the AMG
+  ! checks.
   !===================================================================!
+
   subroutine make_square(n, fvm)
     integer, intent(in) :: n
     class(assembler), allocatable, intent(out) :: fvm
@@ -114,8 +117,10 @@ contains
   end subroutine make_square
 
   !===================================================================!
-  ! 1. CSR fidelity vs the matrix-free operator and the dense jacobian
+  ! Check 1: CSR fidelity against the matrix-free operator and the
+  ! dense jacobian.
   !===================================================================!
+
   subroutine check_csr_fidelity(nf)
     integer, intent(inout) :: nf
     class(assembler), allocatable :: fvm
@@ -150,8 +155,9 @@ contains
   end subroutine check_csr_fidelity
 
   !===================================================================!
-  ! 2. M^-1 (one V-cycle) is symmetric positive definite
+  ! Check 2: M^-1 (one V-cycle) is symmetric positive definite.
   !===================================================================!
+
   subroutine check_amg_spd(nf)
     integer, intent(inout) :: nf
     class(assembler), allocatable :: fvm
@@ -172,21 +178,28 @@ contains
     end do
     call M % apply(u, Mu)
     call M % apply(v, Mv)
-    ! M^-1 must be SYMMETRIC (so PCG is a valid CG) and DEFINITE with a
-    ! consistent sign. The diffusion operator A is negative definite
-    ! (Aq = + discrete laplacian), so M^-1 ~ A^-1 is negative definite -
-    ! that is correct, not a defect; only consistent definiteness matters.
+
+    !---------------------------------------------------------------!
+    ! M^-1 must be SYMMETRIC (so PCG is a valid CG) and DEFINITE
+    ! with a consistent sign. The diffusion operator A is negative
+    ! definite (Aq = + discrete laplacian), so M^-1 ~ A^-1 is
+    ! negative definite - that is correct, not a defect; only
+    ! consistent definiteness matters.
+    !---------------------------------------------------------------!
+
     sym  = abs(dot_product(v, Mu) - dot_product(u, Mv))/max(abs(dot_product(u, Mv)), 1.0e-30_dp)
     pd_u = dot_product(u, Mu)
     pd_v = dot_product(v, Mv)
     write(*,'(a,es12.4,a,es12.4)') " amg M^-1 symmetry rel err : ", sym, "   v^T M^-1 v = ", pd_v
-    if (sym .gt. 1.0e-8_dp)    nf = nf + 1   ! symmetric
-    if (pd_u*pd_v .le. 0.0_dp) nf = nf + 1   ! same sign => definite
+    if (sym .gt. 1.0e-8_dp)    nf = nf + 1   ! The inverse must be symmetric.
+    if (pd_u*pd_v .le. 0.0_dp) nf = nf + 1   ! The same sign means definite.
   end subroutine check_amg_spd
 
   !===================================================================!
-  ! 3 + 4. PCG-AMG reaches the same solution as plain CG, in fewer iters
+  ! Checks 3 and 4: PCG-AMG reaches the same solution as plain CG, in
+  ! fewer iterations.
   !===================================================================!
+
   subroutine check_same_solution_and_iters(nf)
     integer, intent(inout) :: nf
     class(assembler)         , allocatable :: fvm
@@ -199,13 +212,13 @@ contains
 
     call make_square(40, fvm)
 
-    ! plain CG
+    ! Plain CG solves first.
     allocate(cg, source = conjugate_gradient(5000, 1.0e-10_dp, 0))
     call cg % solve(fvm, x_cg)
     iters_cg = cg % last_inner_iters
     deallocate(cg)
 
-    ! PCG-AMG (same operator, same tolerance)
+    ! PCG-AMG solves next (same operator, same tolerance).
     call fvm % get_operator_csr(A)
     call M % setup(A)
     allocate(cg, source = conjugate_gradient(5000, 1.0e-10_dp, 0, precond = M))
@@ -221,8 +234,10 @@ contains
   end subroutine check_same_solution_and_iters
 
   !===================================================================!
-  ! 5. h-independence: cg iterations grow with the mesh, amg stays flat
+  ! Check 5: h-independence. CG iterations grow with the mesh while
+  ! AMG iterations stay flat.
   !===================================================================!
+
   subroutine check_h_independence(nf)
     integer, intent(inout) :: nf
     integer, parameter :: ns(4) = [10, 20, 40, 80]
@@ -254,18 +269,22 @@ contains
        deallocate(fvm)
     end do
 
-    ! h-independence: plain CG grows strongly with refinement while AMG
-    ! stays nearly flat (sub-doubling over an 8x mesh refinement) and
-    ! clearly beats CG at the finest mesh.
-    if (ic(4) .le. 3*ic(1))    nf = nf + 1   ! plain cg grows a lot
-    if (ia(4) .ge. 2*ia(1))    nf = nf + 1   ! amg iterations stay ~flat
-    if (maxval(ia) .ge. ic(4)) nf = nf + 1   ! amg beats cg at the finest mesh
+    !---------------------------------------------------------------!
+    ! h-independence means plain CG grows strongly with refinement
+    ! while AMG stays nearly flat (sub-doubling over an 8x mesh
+    ! refinement) and clearly beats CG at the finest mesh.
+    !---------------------------------------------------------------!
+
+    if (ic(4) .le. 3*ic(1))    nf = nf + 1   ! Plain cg grows a lot.
+    if (ia(4) .ge. 2*ia(1))    nf = nf + 1   ! The amg iterations stay nearly flat.
+    if (maxval(ia) .ge. ic(4)) nf = nf + 1   ! The amg beats cg at the finest mesh.
   end subroutine check_h_independence
 
   !===================================================================!
-  ! 6. geometric multigrid: the spatial squint. Same solution as plain
-  ! cg, markedly fewer iterations, ~flat over refinement - the matrix
-  ! never chose the aggregates, the coordinates did.
+  ! Check 6: geometric multigrid, the spatial squint. It reaches the
+  ! same solution as plain cg in markedly fewer iterations, staying
+  ! nearly flat over refinement - the matrix never chose the
+  ! aggregates; the coordinates did.
   !===================================================================!
 
   subroutine check_geometric(nf)
@@ -292,8 +311,12 @@ contains
        M = geometric_multigrid(fvm % grid)
        call fvm % get_operator_csr(A)
        call M % setup(A)
-       ! re-setup on the same built object must not die - the
-       ! re-entrancy contract the shared setup driver promises
+
+       !------------------------------------------------------------!
+       ! A re-setup on the same built object must not die - the
+       ! re-entrancy contract the shared setup driver promises.
+       !------------------------------------------------------------!
+
        if (k .eq. 1) call M % setup(A)
        allocate(cg, source = conjugate_gradient(20000, 1.0e-8_dp, 0, precond = M))
        call cg % solve(fvm, x_geo)
@@ -311,15 +334,15 @@ contains
        deallocate(fvm)
     end do
 
-    if (ig(4) .ge. 2*ig(1))    nf = nf + 1   ! geometric iterations stay ~flat
-    if (maxval(ig) .ge. ic(4)) nf = nf + 1   ! and beat cg at the finest mesh
+    if (ig(4) .ge. 2*ig(1))    nf = nf + 1   ! The geometric iterations stay nearly flat.
+    if (maxval(ig) .ge. ic(4)) nf = nf + 1   ! They beat cg at the finest mesh.
   end subroutine check_geometric
 
   !===================================================================!
-  ! 7. the cycle is a graph handed in. Build the W - the deep levels
-  ! revisited twice - as stations and arrows, inject it through
-  ! apply_cycle, and richardson iteration with one W-trip per step
-  ! must reach a manufactured solution.
+  ! Check 7: the cycle is a graph handed in. Build the W - the deep
+  ! levels revisited twice - as stations and arrows, inject it
+  ! through apply_cycle, and richardson iteration with one W-trip per
+  ! step must reach a manufactured solution.
   !===================================================================!
 
   subroutine check_cycle_injection(nf)
@@ -337,7 +360,7 @@ contains
     call fvm % get_operator_csr(A)
     call M % setup(A)
 
-    ! the W over the whole hierarchy, written as stations and arrows
+    ! The W spans the whole hierarchy, written as stations and arrows.
     level_visits = w_level_visits(0, M % num_levels() - 1)
     w_cycle = stored_digraph(size(level_visits), &
          & tails   = [(i, i = 1, size(level_visits)-1)], &
@@ -352,10 +375,13 @@ contains
     call A % matvec(x_ref, b)
     bnorm = norm2(b)
 
-    ! the injected schedule must steer the machinery: one W-trip and
-    ! one V-trip from the same residual give different corrections (a
-    ! bug that quietly walks the stored V passes every convergence
-    ! check, so convergence alone proves nothing about injection)
+    !---------------------------------------------------------------!
+    ! The injected schedule must steer the machinery: one W-trip and
+    ! one V-trip from the same residual give different corrections.
+    ! A bug that quietly walks the stored V passes every convergence
+    ! check, so convergence alone proves nothing about injection.
+    !---------------------------------------------------------------!
+
     call M % apply(b, z)
     call M % apply_cycle(w_cycle, b, r)
     steer = norm2(r - z)/max(norm2(z), 1.0e-30_dp)
@@ -365,11 +391,15 @@ contains
     call solve_by_schedule(M, A, w_cycle, b, x_ref, bnorm, &
          & " injected w-cycle  ", nf)
 
-    ! repeated stations smooth again: [0,0,1,1,2,1,0] doubles the
-    ! smoothing on the way down and must still converge - and it must
-    ! differ from the plain v, which visits the same levels once, so
-    ! only the extra smoothing separates them (a bug that collapses
-    ! repeats degenerates this schedule to the v and converges anyway)
+    !---------------------------------------------------------------!
+    ! Repeated stations smooth again: [0,0,1,1,2,1,0] doubles the
+    ! smoothing on the way down and must still converge. It must
+    ! also differ from the plain v, which visits the same levels
+    ! once, so only the extra smoothing separates them; a bug that
+    ! collapses repeats degenerates this schedule to the v and
+    ! converges anyway.
+    !---------------------------------------------------------------!
+
     doubled = path_schedule(doubled_level_visits(0, M % num_levels() - 1))
     call solve_by_schedule(M, A, doubled, b, x_ref, bnorm, &
          & " doubled smoothing ", nf)
@@ -379,20 +409,26 @@ contains
     write(*,'(a,es12.4)') " doubled vs plain v        : ", steer
     if (steer .le. 1.0e-12_dp) nf = nf + 1
 
-    ! negative stations are refined levels - the zoom. build one
+    !---------------------------------------------------------------!
+    ! Negative stations are refined levels - the zoom. Build one
     ! level below the mesh, and take a trip that dips into it before
-    ! running the v: [1, -1, 1, 2, ..., 2, 1]
+    ! running the v: [1, -1, 1, 2, ..., 2, 1].
+    !---------------------------------------------------------------!
+
     call M % refine(1)
     refined_trip = path_schedule([0, -1, v_level_visits(M % num_levels() - 1)])
     call solve_by_schedule(M, A, refined_trip, b, x_ref, bnorm, &
          & " refined excursion ", nf)
 
-    ! and the excursion must matter for what happens AT the refined
-    ! level. the control is [0, 0, v...]: same trip, the dip replaced
-    ! by staying home - a dead zoom (lift, nothing, project undoes it,
-    ! since the interpolation's transpose is its inverse that way)
-    ! degenerates the excursion to exactly this control, so only live
-    ! refined smoothing separates them
+    !---------------------------------------------------------------!
+    ! The excursion must matter for what happens AT the refined
+    ! level. The control is [0, 0, v...]: the same trip, with the
+    ! dip replaced by staying home. A dead zoom (lift, nothing,
+    ! project undoes it, since the interpolation's transpose is its
+    ! inverse that way) degenerates the excursion to exactly this
+    ! control, so only live refined smoothing separates them.
+    !---------------------------------------------------------------!
+
     call M % apply_cycle(path_schedule([0, 0, v_level_visits(M % num_levels() - 1)]), b, z)
     call M % apply_cycle(refined_trip, b, r)
     steer = norm2(r - z)/max(norm2(z), 1.0e-30_dp)
@@ -401,8 +437,11 @@ contains
 
   end subroutine check_cycle_injection
 
-  ! the levels the v visits: down the hierarchy and back (levels
-  ! count squints from the mesh, 0 the mesh itself)
+  !===================================================================!
+  ! Return the levels the v visits: down the hierarchy and back.
+  ! Levels count squints from the mesh, with 0 the mesh itself.
+  !===================================================================!
+
   pure function v_level_visits(deepest) result(st)
     integer, intent(in)  :: deepest
     integer, allocatable :: st(:)
@@ -410,8 +449,11 @@ contains
     st = [(l, l = 0, deepest), (l, l = deepest-1, 0, -1)]
   end function v_level_visits
 
-  ! richardson iteration, one trip of the given schedule per step,
-  ! against a manufactured solution
+  !===================================================================!
+  ! Run richardson iteration, one trip of the given schedule per
+  ! step, measured against a manufactured solution.
+  !===================================================================!
+
   subroutine solve_by_schedule(M, A, schedule, b, x_ref, bnorm, label, nf)
     type(algebraic_multigrid), intent(in)    :: M
     type(csr_matrix)         , intent(in)    :: A
@@ -443,7 +485,10 @@ contains
     if (ncycles .ge. 100) nf = nf + 1
   end subroutine solve_by_schedule
 
-  ! a straight line of stations from a list of level numbers
+  !===================================================================!
+  ! Build a straight line of stations from a list of level numbers.
+  !===================================================================!
+
   pure function path_schedule(numbers) result(s)
     integer, intent(in)  :: numbers(:)
     type(stored_digraph) :: s
@@ -453,10 +498,13 @@ contains
          &                 heads = [(i+1, i = 1, ns-1)], numbers = numbers)
   end function path_schedule
 
-  ! the levels the W visits, written recursively: visit the level, go
-  ! deep, come back, go deep again, come back (the l >= nlevel base
-  ! case also refuses an unbuilt hierarchy rather than recursing off
-  ! the stack)
+  !===================================================================!
+  ! Return the levels the W visits, written recursively: visit the
+  ! level, go deep, come back, go deep again, and come back. The
+  ! l >= nlevel base case also refuses an unbuilt hierarchy rather
+  ! than recursing off the stack.
+  !===================================================================!
+
   pure recursive function w_level_visits(l, nlevel) result(st)
     integer, intent(in) :: l, nlevel
     integer, allocatable :: st(:)
@@ -467,8 +515,12 @@ contains
     end if
   end function w_level_visits
 
-  ! a v with every downward station doubled - [1,1,2,2,3,2,1] on
-  ! three levels: smooth twice on the way down, once on the way up
+  !===================================================================!
+  ! Return a v with every downward station doubled - [1,1,2,2,3,2,1]
+  ! on three levels: smooth twice on the way down, once on the way
+  ! up.
+  !===================================================================!
+
   pure recursive function doubled_level_visits(l, nlevel) result(st)
     integer, intent(in) :: l, nlevel
     integer, allocatable :: st(:)
@@ -480,9 +532,9 @@ contains
   end function doubled_level_visits
 
   !===================================================================!
-  ! 8. nothing assumes structure. The same poisson problem on a
-  ! genuinely crooked mesh - unstructured triangles, no two alike -
-  ! and both squints still beat plain cg to the same answer.
+  ! Check 8: nothing assumes structure. The same poisson problem runs
+  ! on a genuinely crooked mesh - unstructured triangles, no two
+  ! alike - and both squints still beat plain cg to the same answer.
   !===================================================================!
 
   subroutine check_unstructured(nf)
@@ -529,8 +581,8 @@ contains
   end subroutine check_unstructured
 
   !===================================================================!
-  ! 9. the hierarchy written out. Every coarsening level is a
-  ! partition of the mesh - each cell's ancestor after l squints -
+  ! Check 9: the hierarchy is written out. Every coarsening level is
+  ! a partition of the mesh - each cell's ancestor after l squints -
   ! so the existing writer paints all of them in one call, one field
   ! per level. No coarse mesh file is invented. The painted part
   ! count at each level must equal that level's operator rows: the
@@ -563,15 +615,22 @@ contains
 
     call fvm % get_operator_csr(A)
 
-    ! export is configured at problem setup: name the levels wanted,
-    ! positive or negative, and only their ancestry is stored
+    !---------------------------------------------------------------!
+    ! Export is configured at problem setup: name the levels wanted,
+    ! positive or negative, and only their ancestry is stored.
+    !---------------------------------------------------------------!
+
     call M % export_levels([(l, l = 1, 8), -1])
     call M % setup(A)
     call M % refine(1)
 
-    ! one field per coarsening level: each cell painted by its
-    ! ancestor, and the painted part count must equal that level's
-    ! operator rows - the picture and the algebra must agree
+    !---------------------------------------------------------------!
+    ! One field paints each coarsening level: each cell is painted
+    ! by its ancestor, and the painted part count must equal that
+    ! level's operator rows - the picture and the algebra must
+    ! agree.
+    !---------------------------------------------------------------!
+
     nl = M % num_levels() - 1
     allocate(fields(A % num_vertices, nl), labels(nl))
 
@@ -585,7 +644,7 @@ contains
        end if
     end do
 
-    ! a stale picture would satisfy the on-disk check - burn it first
+    ! A stale picture would satisfy the on-disk check, so burn it first.
     open(newunit = unit, file = 'hierarchy.vtu', status = 'old', iostat = ierr)
     if (ierr .eq. 0) close(unit, status = 'delete')
 
@@ -600,24 +659,27 @@ contains
     if (.not. agrees)  nf = nf + 1
     if (.not. on_disk) nf = nf + 1
 
-    ! the refined side: each vertex of level -1 knows its mesh cell,
-    ! and every cell has exactly its share of children
+    !---------------------------------------------------------------!
+    ! The refined side: each vertex of level -1 knows its mesh cell,
+    ! and every cell has exactly its share of children.
+    !---------------------------------------------------------------!
+
     fine_ancestors = M % ancestors(-1)
     if (size(fine_ancestors) .ne. M % children_per_vertex*A % num_vertices) nf = nf + 1
     if (minval(fine_ancestors) .ne. 1 .or. &
          & maxval(fine_ancestors) .ne. A % num_vertices)                    nf = nf + 1
     if (count(fine_ancestors .eq. 1) .ne. M % children_per_vertex)   nf = nf + 1
 
-    ! storage is on demand: an unconfigured hierarchy keeps nothing
+    ! Storage is on demand: an unconfigured hierarchy keeps nothing.
     call M_unconfigured % setup(A)
     if (allocated(M_unconfigured % levels(1) % parts)) nf = nf + 1
 
   end subroutine check_hierarchy_output
 
   !===================================================================!
-  ! 2d poisson on the unstructured triangle square (same boundary
-  ! names as the structured square, so the same problem runs on a
-  ! crooked mesh)
+  ! Build the 2d poisson problem on the unstructured triangle square.
+  ! It uses the same boundary names as the structured square, so the
+  ! same problem runs on a crooked mesh.
   !===================================================================!
 
   subroutine make_square_tri(fvm)

@@ -1,23 +1,26 @@
 !=====================================================================!
 ! Nonsymmetric Krylov solvers: CGNR / CGNE (normal equations) vs GMRES.
 !
-! The test operator is a 2D advection-diffusion 5-point stencil on an NxN
-! interior grid (Dirichlet, so it is nonsingular): symmetric Laplacian
-! (diag 4, off-diag -1) plus a SKEW advection term of magnitude gamma
-! (east/north get -1+gamma, west/south -1-gamma). gamma = 0 is the
-! symmetric Laplacian; growing gamma makes it increasingly nonsymmetric and
-! non-normal - a tunable stand-in for the Peclet number.
+! The test operator is a 2D advection-diffusion 5-point stencil on an
+! NxN interior grid (Dirichlet, so it is nonsingular): the symmetric
+! Laplacian (diag 4, off-diag -1) plus a SKEW advection term of
+! magnitude gamma (east/north get -1+gamma, west/south -1-gamma).
+! gamma = 0 is the symmetric Laplacian; growing gamma makes it
+! increasingly nonsymmetric and non-normal - a tunable stand-in for
+! the Peclet number.
 !
 ! Checks:
-!   1. correctness  - cgnr, cgne and gmres all recover the known solution
-!                     (b is built as A x_exact) to the solver tolerance.
-!   2. kappa^2      - sweep gamma and tabulate CGNR vs GMRES iterations.
-!                     CGNR works on A^T A (condition number SQUARED), so it
-!                     needs far more iterations than GMRES (which works on A)
-!                     - and the gap is exactly why GMRES is needed. assert
+!   1. Correctness  - cgnr, cgne and gmres all recover the known
+!                     solution (b is built as A x_exact) to the solver
+!                     tolerance.
+!   2. kappa^2      - sweep gamma and tabulate CGNR vs GMRES
+!                     iterations. CGNR works on A^T A (the condition
+!                     number SQUARED), so it needs far more iterations
+!                     than GMRES (which works on A) - and the gap is
+!                     exactly why GMRES is needed. Assert
 !                     gmres_iters < cgnr_iters across the sweep.
-!   3. restart      - GMRES(m) with a small restart still converges.
-!   4. precond      - AMG (built on the symmetric part) as a right
+!   3. Restart      - GMRES(m) with a small restart still converges.
+!   4. Precond      - AMG (built on the symmetric part) as a right
 !                     preconditioner cuts GMRES iterations sharply.
 !
 ! A nonzero exit (error stop) means a check failed.
@@ -36,7 +39,7 @@ program test_krylov
 
   implicit none
 
-  integer, parameter :: N = 24                  ! NxN interior grid
+  integer, parameter :: N = 24                  ! The interior grid is N by N.
   real(dp), parameter :: TOL = 1.0e-8_dp
   integer :: nfail
 
@@ -58,8 +61,10 @@ program test_krylov
 contains
 
   !===================================================================!
-  ! 2d advection-diffusion 5-point operator, skewness gamma, as CSR
+  ! Build the 2D advection-diffusion 5-point operator with skewness
+  ! gamma as a CSR matrix.
   !===================================================================!
+
   function advdiff_csr(gamma) result(A)
     real(dp), intent(in) :: gamma
     type(csr_matrix) :: A
@@ -67,8 +72,10 @@ contains
     real(dp), allocatable :: vals(:)
     integer :: nn, i, j, k, pos, counts
 
+    ! Count the stencil entries of each row to size the CSR arrays.
     nn = N*N
-    allocate(row_ptr(nn+1)); row_ptr(1) = 1
+    allocate(row_ptr(nn+1))
+    row_ptr(1) = 1
     do j = 1, N
        do i = 1, N
           k = (j-1)*N + i
@@ -82,15 +89,34 @@ contains
     end do
     allocate(col_idx(row_ptr(nn+1)-1), vals(row_ptr(nn+1)-1))
 
+    ! Fill the columns and values of each row in stencil order.
     pos = 1
     do j = 1, N
        do i = 1, N
           k = (j-1)*N + i
-          if (j .gt. 1) then; col_idx(pos) = k-N; vals(pos) = -1.0_dp - gamma; pos = pos+1; end if ! south
-          if (i .gt. 1) then; col_idx(pos) = k-1; vals(pos) = -1.0_dp - gamma; pos = pos+1; end if ! west
-          col_idx(pos) = k; vals(pos) = 4.0_dp; pos = pos+1                                         ! diag
-          if (i .lt. N) then; col_idx(pos) = k+1; vals(pos) = -1.0_dp + gamma; pos = pos+1; end if ! east
-          if (j .lt. N) then; col_idx(pos) = k+N; vals(pos) = -1.0_dp + gamma; pos = pos+1; end if ! north
+          if (j .gt. 1) then ! South neighbour.
+             col_idx(pos) = k-N
+             vals(pos) = -1.0_dp - gamma
+             pos = pos+1
+          end if
+          if (i .gt. 1) then ! West neighbour.
+             col_idx(pos) = k-1
+             vals(pos) = -1.0_dp - gamma
+             pos = pos+1
+          end if
+          col_idx(pos) = k ! Diagonal.
+          vals(pos) = 4.0_dp
+          pos = pos+1
+          if (i .lt. N) then ! East neighbour.
+             col_idx(pos) = k+1
+             vals(pos) = -1.0_dp + gamma
+             pos = pos+1
+          end if
+          if (j .lt. N) then ! North neighbour.
+             col_idx(pos) = k+N
+             vals(pos) = -1.0_dp + gamma
+             pos = pos+1
+          end if
        end do
     end do
 
@@ -98,8 +124,10 @@ contains
   end function advdiff_csr
 
   !===================================================================!
-  ! known solution and matching rhs b = A x_exact
+  ! Build a known solution and the matching right-hand side
+  ! b = A x_exact.
   !===================================================================!
+
   subroutine make_problem(A, xex, b)
     type(csr_matrix), intent(in)  :: A
     real(dp), allocatable, intent(out) :: xex(:), b(:)
@@ -111,7 +139,10 @@ contains
     call A % matvec(xex, b)
   end subroutine make_problem
 
-  ! relative true residual ||A x - b|| / ||b||
+  !===================================================================!
+  ! Compute the relative true residual ||A x - b|| / ||b||.
+  !===================================================================!
+
   real(dp) function relresid(A, x, b)
     type(csr_matrix), intent(in) :: A
     real(dp)        , intent(in) :: x(:), b(:)
@@ -121,15 +152,20 @@ contains
     relresid = norm2(r - b)/max(norm2(b), tiny(1.0_dp))
   end function relresid
 
-  ! relative solution error ||x - xex|| / ||xex||
+  !===================================================================!
+  ! Compute the relative solution error ||x - xex|| / ||xex||.
+  !===================================================================!
+
   real(dp) function solerr(x, xex)
     real(dp), intent(in) :: x(:), xex(:)
     solerr = norm2(x - xex)/max(norm2(xex), tiny(1.0_dp))
   end function solerr
 
   !===================================================================!
-  ! 1. correctness: all three solvers recover x_exact at a moderate gamma
+  ! Check 1, correctness: all three solvers recover x_exact at a
+  ! moderate gamma.
   !===================================================================!
+
   subroutine check_correctness(nf)
     integer, intent(inout) :: nf
     integer :: it_nr, it_ne, it_gm
@@ -144,9 +180,12 @@ contains
     call make_problem(A, xex, b)
     allocate(x(A % ncols))
 
-    ! the kernels run on the system contract, never on assembled
-    ! entries: wrap the manufactured operator as a system (its
-    ! transpose is genuine, so no symmetry claim is needed)
+    !-----------------------------------------------------------------!
+    ! The kernels run on the system contract, never on assembled
+    ! entries: wrap the manufactured operator as a system. Its
+    ! transpose is genuine, so no symmetry claim is needed.
+    !-----------------------------------------------------------------!
+
     sys = csr_system(A)
 
     cgnr_solver = normal_cg(max_it=50000, max_tol=TOL, method=CGNR_METHOD, print_level=0)
@@ -156,24 +195,29 @@ contains
     write(*,'(a)') " ---- correctness (gamma = 0.6) ----"
 
     call cgnr_solver % cgnr(sys, b, x, it_nr)
-    rr = relresid(A, x, b); se = solerr(x, xex)
+    rr = relresid(A, x, b)
+    se = solerr(x, xex)
     write(*,'(2x,a,es11.3,a,es11.3,a,i0)') "cgnr  resid=", rr, "  err=", se, "  iters=", it_nr
     if (rr .gt. 1.0e-6_dp .or. se .gt. 1.0e-3_dp) nf = nf + 1
 
     call cgne_solver % cgne(sys, b, x, it_ne)
-    rr = relresid(A, x, b); se = solerr(x, xex)
+    rr = relresid(A, x, b)
+    se = solerr(x, xex)
     write(*,'(2x,a,es11.3,a,es11.3,a,i0)') "cgne  resid=", rr, "  err=", se, "  iters=", it_ne
     if (rr .gt. 1.0e-6_dp .or. se .gt. 1.0e-3_dp) nf = nf + 1
 
     call gs % gmres(sys, b, x, it_gm)
-    rr = relresid(A, x, b); se = solerr(x, xex)
+    rr = relresid(A, x, b)
+    se = solerr(x, xex)
     write(*,'(2x,a,es11.3,a,es11.3,a,i0)') "gmres resid=", rr, "  err=", se, "  iters=", it_gm
     if (rr .gt. 1.0e-6_dp .or. se .gt. 1.0e-3_dp) nf = nf + 1
   end subroutine check_correctness
 
   !===================================================================!
-  ! 2. the headline: CGNR (kappa^2) vs GMRES (kappa) iteration counts
+  ! Check 2, the headline: CGNR (kappa^2) versus GMRES (kappa)
+  ! iteration counts.
   !===================================================================!
+
   subroutine check_peclet_sweep(nf)
     integer, intent(inout) :: nf
     integer :: it_cgnr
@@ -193,7 +237,8 @@ contains
     do t = 1, size(gammas)
        A = advdiff_csr(gammas(t))
        call make_problem(A, xex, b)
-       if (allocated(x)) deallocate(x); allocate(x(A % ncols))
+       if (allocated(x)) deallocate(x)
+       allocate(x(A % ncols))
        sys = csr_system(A)
 
        call cgnr_solver % cgnr(sys, b, x, it_cgnr)
@@ -204,7 +249,7 @@ contains
          call gs % gmres(sys, b, x, it_gmres)
          write(*,'(2x,f8.2,2x,i10,2x,i10,2x,f8.1)') gammas(t), it_cgnr, it_gmres, &
               & real(it_cgnr,dp)/real(max(it_gmres,1),dp)
-         ! both must converge, and GMRES must take strictly fewer iterations
+         ! Both must converge, and GMRES must take strictly fewer iterations.
          if (rr_c .gt. 1.0e-6_dp)              nf = nf + 1
          if (relresid(A, x, b) .gt. 1.0e-6_dp) nf = nf + 1
          if (it_gmres .ge. it_cgnr)            nf = nf + 1
@@ -214,8 +259,9 @@ contains
   end subroutine check_peclet_sweep
 
   !===================================================================!
-  ! 3. restarted GMRES(m) with a small m still converges
+  ! Check 3: restarted GMRES(m) with a small m still converges.
   !===================================================================!
+
   subroutine check_restart(nf)
     integer, intent(inout) :: nf
     integer :: it_gm
@@ -229,7 +275,7 @@ contains
     call make_problem(A, xex, b)
     allocate(x(A % ncols))
 
-    gs = gmres_solver(max_it=50000, restart=20, max_tol=TOL, print_level=0)   ! restart every 20
+    gs = gmres_solver(max_it=50000, restart=20, max_tol=TOL, print_level=0)   ! Restart every 20 iterations.
     sys = csr_system(A)
     call gs % gmres(sys, b, x, it_gm)
     rr = relresid(A, x, b)
@@ -238,8 +284,10 @@ contains
   end subroutine check_restart
 
   !===================================================================!
-  ! 4. AMG (on the symmetric part) as a right preconditioner for GMRES
+  ! Check 4: AMG built on the symmetric part serves as a right
+  ! preconditioner for GMRES.
   !===================================================================!
+
   subroutine check_amg_precond(nf)
     integer, intent(inout) :: nf
     type(csr_matrix) :: A, Asym
@@ -251,7 +299,7 @@ contains
     type(csr_system) :: sys
 
     A    = advdiff_csr(0.6_dp)
-    Asym = advdiff_csr(0.0_dp)        ! symmetric part = the SPD laplacian
+    Asym = advdiff_csr(0.0_dp)        ! The symmetric part is the SPD laplacian.
     call M % setup(Asym)
     call make_problem(A, xex, b)
     allocate(x(A % ncols))
@@ -267,7 +315,7 @@ contains
     write(*,'(a,i0,a,i0,a,es11.3)') " ---- AMG-right-preconditioned GMRES: plain=", &
          & it_plain, "  amg=", it_prec, "  resid=", rr
     if (rr .gt. 1.0e-6_dp)       nf = nf + 1
-    if (it_prec .ge. it_plain)   nf = nf + 1     ! preconditioning must help
+    if (it_prec .ge. it_plain)   nf = nf + 1     ! Preconditioning must help.
   end subroutine check_amg_precond
 
 end program test_krylov

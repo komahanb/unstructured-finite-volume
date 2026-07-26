@@ -1,31 +1,37 @@
 !=====================================================================!
 ! Advection (and advection-diffusion) verification.
 !
-! The advective flux F = v q is integrated through the same flux seam as
-! diffusion, but it depends on the face VALUE of q (not its gradient), so
-! central differencing gives a skew-symmetric contribution and the operator
-! becomes NON-symmetric - the first such operator in the framework, and the
-! reason class_gmres exists.
+! The advective flux F = v q is integrated through the same flux seam
+! as diffusion, but it depends on the face VALUE of q (not on its
+! gradient), so central differencing gives a skew-symmetric
+! contribution and the operator becomes NON-symmetric - the first such
+! operator in the framework, and the reason class_gmres exists.
 !
 ! Checks:
-!   1. nonsymmetry  - the assembled operator is symmetric with v = 0 and
-!                     genuinely nonsymmetric with v /= 0 (A x /= A^T x).
-!   2. fidelity     - the assembled csr equals the matrix-free operator with
-!                     advection on (the get_operator_csr / get_jvp gate).
-!   3. exact 1D     - steady advection-diffusion  v q' - kappa q'' = 0 on the
-!                     unit square (q=0 left, q=1 right, zero-flux top/bottom)
-!                     has the exact boundary-layer solution
+!   1. Nonsymmetry  - the assembled operator is symmetric with v = 0
+!                     and genuinely nonsymmetric with v /= 0
+!                     (A x /= A^T x).
+!   2. Fidelity     - the assembled csr equals the matrix-free
+!                     operator with advection on (the get_operator_csr
+!                     / get_jvp gate).
+!   3. Exact 1D     - steady advection-diffusion  v q' - kappa q'' = 0
+!                     on the unit square (q=0 left, q=1 right,
+!                     zero-flux top/bottom) has the exact
+!                     boundary-layer solution
 !                       q(x) = (e^{a x} - 1)/(e^{a} - 1),  a = v/kappa.
-!                     solved with GMRES, it converges at 2nd order - which
-!                     validates the advection sign/magnitude AND the advective
-!                     boundary closure (the right wall has q=1, vn /= 0).
-!   4. gmres vs cg  - GMRES solves the nonsymmetric system in a handful of
-!                     iterations; plain CG (correct only for SPD) is wildly
-!                     inefficient here (and not guaranteed to converge at all
-!                     for stronger advection).
-!   5. upwinding    - at high cell-Peclet central differencing oscillates (the
-!                     solution overshoots the physical [0,1] range); the upwind
-!                     scheme stays monotone and bounded.
+!                     Solved with GMRES, it converges at 2nd order,
+!                     which validates the advection sign/magnitude AND
+!                     the advective boundary closure (the right wall
+!                     has q=1, vn /= 0).
+!   4. GMRES vs cg  - GMRES solves the nonsymmetric system in a
+!                     handful of iterations; plain CG (correct only
+!                     for SPD) is wildly inefficient here (and not
+!                     guaranteed to converge at all for stronger
+!                     advection).
+!   5. Upwinding    - at high cell-Peclet central differencing
+!                     oscillates (the solution overshoots the physical
+!                     [0,1] range); the upwind scheme stays monotone
+!                     and bounded.
 !
 ! A nonzero exit (error stop) means a check failed.
 !
@@ -46,7 +52,7 @@ program test_advection
 
   implicit none
 
-  real(dp), parameter :: VX = 2.0_dp, KAPPA = 1.0_dp   ! global Peclet = 2
+  real(dp), parameter :: VX = 2.0_dp, KAPPA = 1.0_dp   ! The global Peclet number is 2.
   integer :: nfail
   nfail = 0
 
@@ -67,10 +73,11 @@ program test_advection
 contains
 
   !===================================================================!
-  ! advection-diffusion assembler on square-n: v=(vx,0), kappa; q=0 on the
-  ! left wall, q=1 on the right, zero-flux (neumann) top/bottom -> the
-  ! solution is 1d in x.
+  ! Build the advection-diffusion assembler on square-n: v = (vx, 0)
+  ! and kappa; q = 0 on the left wall, q = 1 on the right, zero-flux
+  ! (Neumann) top and bottom, so the solution is 1D in x.
   !===================================================================!
+
   subroutine make_advdiff(n, vx, kappa, fvm)
     integer , intent(in) :: n
     real(dp), intent(in) :: vx, kappa
@@ -90,12 +97,17 @@ contains
     call fvm % set_neumann  ("BoundaryBottom", 0.0_dp)
   end subroutine make_advdiff
 
-  ! domain x-extent from the boundary face centres (robust to the mesh box)
+  !===================================================================!
+  ! Find the domain x-extent from the boundary face centres; this is
+  ! robust to the mesh box.
+  !===================================================================!
+
   subroutine x_extent(grid, xlo, xhi)
     class(mesh), intent(in)  :: grid
     real(dp)   , intent(out) :: xlo, xhi
     integer :: f
-    xlo = huge(1.0_dp); xhi = -huge(1.0_dp)
+    xlo = huge(1.0_dp)
+    xhi = -huge(1.0_dp)
     do f = 1, grid % num_faces
        if (grid % num_face_cells(f) .eq. 1) then
           xlo = min(xlo, grid % face_centers(1, f))
@@ -105,8 +117,10 @@ contains
   end subroutine x_extent
 
   !===================================================================!
-  ! 1. operator nonsymmetry (v/=0) vs symmetry (v=0)
+  ! Check 1: the operator is nonsymmetric with v /= 0 and symmetric
+  ! with v = 0.
   !===================================================================!
+
   subroutine check_nonsymmetry(nf)
     integer, intent(inout) :: nf
     class(assembler), allocatable :: fvm
@@ -115,7 +129,7 @@ contains
     real(dp) :: s_adv, s_diff
     integer  :: i, m
 
-    ! advection on
+    ! Assemble with advection on.
     call make_advdiff(20, VX, KAPPA, fvm)
     call fvm % get_operator_csr(A)
     m = A % num_vertices
@@ -123,26 +137,30 @@ contains
     do i = 1, m
        w(i) = sin(0.3_dp*real(i,dp)) + 0.2_dp
     end do
-    call A % matvec(w, Aw); call A % matvec_transpose(w, Atw)
+    call A % matvec(w, Aw)
+    call A % matvec_transpose(w, Atw)
     s_adv = maxval(abs(Aw - Atw))/max(maxval(abs(Aw)), tiny(1.0_dp))
     deallocate(fvm)
 
-    ! advection off (v=0) -> pure diffusion -> symmetric
+    ! Advection off (v = 0) gives pure diffusion, which is symmetric.
     call make_advdiff(20, 0.0_dp, KAPPA, fvm)
     call fvm % get_operator_csr(A)
-    call A % matvec(w, Aw); call A % matvec_transpose(w, Atw)
+    call A % matvec(w, Aw)
+    call A % matvec_transpose(w, Atw)
     s_diff = maxval(abs(Aw - Atw))/max(maxval(abs(Aw)), tiny(1.0_dp))
 
     write(*,'(a)') " ---- operator symmetry ----"
     write(*,'(2x,a,es11.3)') "||A w - A^T w||/||A w||,  v=0 : ", s_diff
     write(*,'(2x,a,es11.3)') "||A w - A^T w||/||A w||,  v/=0: ", s_adv
-    if (s_diff .gt. 1.0e-10_dp) nf = nf + 1   ! diffusion must be symmetric
-    if (s_adv  .lt. 1.0e-3_dp ) nf = nf + 1   ! advection must break symmetry
+    if (s_diff .gt. 1.0e-10_dp) nf = nf + 1   ! Diffusion must be symmetric.
+    if (s_adv  .lt. 1.0e-3_dp ) nf = nf + 1   ! Advection must break symmetry.
   end subroutine check_nonsymmetry
 
   !===================================================================!
-  ! 2. assembled csr == matrix-free operator, with advection on
+  ! Check 2: the assembled csr equals the matrix-free operator with
+  ! advection on.
   !===================================================================!
+
   subroutine check_fidelity(nf)
     integer, intent(inout) :: nf
     class(assembler), allocatable :: fvm
@@ -166,8 +184,10 @@ contains
   end subroutine check_fidelity
 
   !===================================================================!
-  ! 3. exact 1d advection-diffusion boundary layer, 2nd-order convergence
+  ! Check 3: the exact 1D advection-diffusion boundary layer is
+  ! recovered at second-order convergence.
   !===================================================================!
+
   subroutine check_exact_1d(nf)
     integer, intent(inout) :: nf
     integer, parameter :: ns(3) = [10, 20, 40]
@@ -189,7 +209,11 @@ contains
        call fvm % get_source(b)
        call gs % gmres(fvm, b, x, it_k)
 
-       ! exact q(x) = (e^{a(x-xlo)} - 1)/(e^{a(xhi-xlo)} - 1),  a = vx/kappa
+       !--------------------------------------------------------------!
+       ! The exact solution is
+       !   q(x) = (e^{a(x-xlo)} - 1)/(e^{a(xhi-xlo)} - 1),  a = vx/kappa.
+       !--------------------------------------------------------------!
+
        call x_extent(fvm % grid, xlo, xhi)
        a_pe = VX/KAPPA
        do c = 1, fvm % grid % num_cells
@@ -209,13 +233,14 @@ contains
     end do
 
     order = log(err(2)/err(3))/log(2.0_dp)
-    if (err(3) .gt. 5.0e-3_dp) nf = nf + 1            ! converged to the exact
-    if (order  .lt. 1.7_dp   ) nf = nf + 1            ! ~2nd order
+    if (err(3) .gt. 5.0e-3_dp) nf = nf + 1            ! It converged to the exact solution.
+    if (order  .lt. 1.7_dp   ) nf = nf + 1            ! The order is about two.
   end subroutine check_exact_1d
 
   !===================================================================!
-  ! 4. GMRES solves the nonsymmetric system; plain CG does not
+  ! Check 4: GMRES solves the nonsymmetric system; plain CG does not.
   !===================================================================!
+
   subroutine check_gmres_vs_cg(nf)
     integer, intent(inout) :: nf
     class(assembler)         , allocatable :: fvm
@@ -228,33 +253,37 @@ contains
     integer :: it_g
 
     call make_advdiff(20, VX, KAPPA, fvm)
-    call fvm % get_operator_csr(A)   ! assembled only to CHECK residuals below
+    call fvm % get_operator_csr(A)   ! Assembled only to CHECK the residuals below.
     m = A % num_vertices
     allocate(b(m), x_g(m), x_c(m), r(m))
     call fvm % get_source(b)
     bnorm = max(norm2(b), tiny(1.0_dp))
 
-    ! GMRES on the system's product (never on assembled entries)
+    ! Run GMRES on the system's product, never on assembled entries.
     gs = gmres_solver(max_it=20000, restart=200, max_tol=1.0e-10_dp, print_level=0)
     call gs % gmres(fvm, b, x_g, it_g)
-    call A % matvec(x_g, r); res_g = norm2(r - b)/bnorm
+    call A % matvec(x_g, r)
+    res_g = norm2(r - b)/bnorm
 
-    ! plain CG (matrix-free) on the same nonsymmetric operator
+    ! Run plain CG (matrix-free) on the same nonsymmetric operator.
     allocate(cg, source = conjugate_gradient(5000, 1.0e-10_dp, 0))
     call cg % solve(fvm, x_c)
-    call A % matvec(x_c, r); res_c = norm2(r - b)/bnorm
+    call A % matvec(x_c, r)
+    res_c = norm2(r - b)/bnorm
 
     write(*,'(a)') " ---- GMRES vs CG efficiency on the nonsymmetric operator ----"
     write(*,'(2x,a,es11.3,a,i0)') "gmres rel res = ", res_g, "   iters=", it_g
     write(*,'(2x,a,es11.3,a,i0)') "cg    rel res = ", res_c, "   iters=", cg % last_inner_iters
-    if (res_g .gt. 1.0e-6_dp) nf = nf + 1                         ! GMRES must solve it
-    if (cg % last_inner_iters .lt. 10*it_g) nf = nf + 1           ! CG far less efficient
+    if (res_g .gt. 1.0e-6_dp) nf = nf + 1                         ! GMRES must solve it.
+    if (cg % last_inner_iters .lt. 10*it_g) nf = nf + 1           ! CG is far less efficient.
   end subroutine check_gmres_vs_cg
 
   !===================================================================!
-  ! 5. upwinding: at high cell-Peclet central differencing oscillates out of
-  ! the physical [0,1] range; upwind stays monotone/bounded
+  ! Check 5: at high cell-Peclet central differencing oscillates out
+  ! of the physical [0,1] range; the upwind scheme stays monotone and
+  ! bounded.
   !===================================================================!
+
   subroutine check_upwind(nf)
     integer, intent(inout) :: nf
     class(assembler), allocatable :: fvm
@@ -266,27 +295,29 @@ contains
 
     gs = gmres_solver(max_it=50000, restart=300, max_tol=1.0e-9_dp, print_level=0)
 
-    ! cell-Peclet ~ vx*h/kappa = 80/20 = 4 on square-20 (central oscillates)
+    ! The cell-Peclet is ~ vx*h/kappa = 80/20 = 4 on square-20; central oscillates.
     call make_advdiff(20, 80.0_dp, 1.0_dp, fvm)
 
-    ! central (default)
+    ! Solve with the central scheme (the default).
     m = fvm % num_state_vars
     allocate(b(m), x(m))
     call fvm % get_source(b)
     call gs % gmres(fvm, b, x, it_k)
-    minc = minval(x); maxc = maxval(x)
+    minc = minval(x)
+    maxc = maxval(x)
 
-    ! upwind
+    ! Solve with the upwind scheme.
     call fvm % set_convection_scheme(CONVECTION_UPWIND)
     call fvm % get_source(b)
     call gs % gmres(fvm, b, x, it_k)
-    minu = minval(x); maxu = maxval(x)
+    minu = minval(x)
+    maxu = maxval(x)
 
     write(*,'(a)') " ---- high-Peclet (cell-Pe~4): central vs upwind range ----"
     write(*,'(2x,a,es11.3,a,es11.3)') "central  min=", minc, "  max=", maxc
     write(*,'(2x,a,es11.3,a,es11.3)') "upwind   min=", minu, "  max=", maxu
-    if (minc .gt. -1.0e-3_dp .and. maxc .lt. 1.0_dp + 1.0e-3_dp) nf = nf + 1  ! central must oscillate
-    if (minu .lt. -1.0e-6_dp .or.  maxu .gt. 1.0_dp + 1.0e-6_dp) nf = nf + 1  ! upwind must stay bounded
+    if (minc .gt. -1.0e-3_dp .and. maxc .lt. 1.0_dp + 1.0e-3_dp) nf = nf + 1  ! Central must oscillate.
+    if (minu .lt. -1.0e-6_dp .or.  maxu .gt. 1.0_dp + 1.0e-6_dp) nf = nf + 1  ! Upwind must stay bounded.
   end subroutine check_upwind
 
 end program test_advection

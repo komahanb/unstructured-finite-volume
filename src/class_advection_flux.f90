@@ -1,15 +1,15 @@
 #include "scalar.fpp"
 
 !=====================================================================!
-! Advection as a concrete law, expressed pointwise:
+! Advection is a concrete law, expressed pointwise:
 !
 !     advection_flux            F(:,j) = v q(j)
 !     advection_diffusion_flux  F(:,j) = v q(j) - K . grad q(:,j)
 !
-! with a constant velocity v (and, for the second, an isotropic
+! Both use a constant velocity v (and, for the second, an isotropic
 ! conductivity K = kappa I). The advective term lives in dF/dq = v -
 ! the part the assembler picks up as the normal advection speed
-! vn = v . n at a face (mirror of keff = n^T K n for diffusion). Unlike
+! vn = v . n at a face (the mirror of keff = n^T K n for diffusion). Unlike
 ! diffusion, the advective face flux uses the face VALUE of q, so the
 ! resulting operator is non-symmetric (central differencing gives a
 ! skew-symmetric contribution) - which is exactly why the nonsymmetric
@@ -34,11 +34,11 @@ module class_advection_flux
   public :: advection_flux, advection_diffusion_flux
 
   !-------------------------------------------------------------------!
-  ! Advective flux  F = v q
+  ! The advective flux is  F = v q.
   !-------------------------------------------------------------------!
 
   type, extends(flux) :: advection_flux
-     real(dp) :: v(3) = 0.0_dp        ! advection velocity
+     real(dp) :: v(3) = 0.0_dp        ! The advection velocity.
    contains
      procedure :: value        => advection_value
      procedure :: dflux_dq     => advection_dq
@@ -50,12 +50,12 @@ module class_advection_flux
   end interface advection_flux
 
   !-------------------------------------------------------------------!
-  ! Advection + diffusion  F = v q - K grad q
+  ! The advection-diffusion flux is  F = v q - K grad q.
   !-------------------------------------------------------------------!
 
   type, extends(flux) :: advection_diffusion_flux
-     real(dp) :: v(3)      = 0.0_dp   ! advection velocity
-     real(dp) :: kmat(3,3) = 0.0_dp   ! conductivity tensor (kappa I)
+     real(dp) :: v(3)      = 0.0_dp   ! The advection velocity.
+     real(dp) :: kmat(3,3) = 0.0_dp   ! The conductivity tensor (kappa I).
    contains
      procedure :: value        => advdiff_value
      procedure :: dflux_dq     => advdiff_dq
@@ -69,13 +69,13 @@ module class_advection_flux
 contains
 
   !===================================================================!
-  ! Constructors
+  ! Construct an advective flux with a constant velocity.
   !===================================================================!
 
   pure type(advection_flux) function create_advection(velocity, nvars) result(this)
     real(dp), intent(in)           :: velocity(3)
     integer , intent(in), optional :: nvars
-    ! one vertex per variable, no edges: today's laws couple nothing
+    ! One vertex per variable and no edges: today's laws couple nothing.
     if (present(nvars)) then
        call this % form_coupling(nvars)
     else
@@ -84,12 +84,17 @@ contains
     this % v = velocity
   end function create_advection
 
+  !===================================================================!
+  ! Construct an advection-diffusion flux with a constant velocity and
+  ! an isotropic conductivity kappa.
+  !===================================================================!
+
   pure type(advection_diffusion_flux) function create_advdiff(velocity, kappa, nvars) result(this)
     real(dp), intent(in)           :: velocity(3)
     real(dp), intent(in)           :: kappa
     integer , intent(in), optional :: nvars
     integer :: i
-    ! one vertex per variable, no edges: today's laws couple nothing
+    ! One vertex per variable and no edges: today's laws couple nothing.
     if (present(nvars)) then
        call this % form_coupling(nvars)
     else
@@ -103,7 +108,7 @@ contains
   end function create_advdiff
 
   !===================================================================!
-  ! advection_flux:  F(:,j) = v q(j);  dF/dq(:,i,i) = v;  dF/dgradq = 0
+  ! The advective flux value is  F(:,j) = v q(j).
   !===================================================================!
 
   pure function advection_value(this, st) result(F)
@@ -116,6 +121,10 @@ contains
     end do
   end function advection_value
 
+  !===================================================================!
+  ! The state jacobian of the advective flux is  dF/dq(:,i,i) = v.
+  !===================================================================!
+
   pure function advection_dq(this, st) result(dF)
     class(advection_flux), intent(in) :: this
     type(point_state)    , intent(in) :: st
@@ -127,6 +136,10 @@ contains
     end do
   end function advection_dq
 
+  !===================================================================!
+  ! The gradient jacobian of the advective flux is zero: dF/dgradq = 0.
+  !===================================================================!
+
   pure function advection_dgradq(this, st) result(dF)
     class(advection_flux), intent(in) :: this
     type(point_state)    , intent(in) :: st
@@ -135,8 +148,9 @@ contains
   end function advection_dgradq
 
   !===================================================================!
-  ! advection_diffusion_flux:  F(:,j) = v q(j) - K grad q(:,j)
-  !   dF/dq(:,i,i) = v ;  dF/d(grad q)(:,i,:,i) = -K
+  ! The advection-diffusion flux value is
+  !
+  !     F(:,j) = v q(j) - K grad q(:,j).
   !===================================================================!
 
   pure function advdiff_value(this, st) result(F)
@@ -149,6 +163,10 @@ contains
     end do
   end function advdiff_value
 
+  !===================================================================!
+  ! The state jacobian of the combined flux is  dF/dq(:,i,i) = v.
+  !===================================================================!
+
   pure function advdiff_dq(this, st) result(dF)
     class(advection_diffusion_flux), intent(in) :: this
     type(point_state)              , intent(in) :: st
@@ -159,6 +177,11 @@ contains
        dF(:, i, i) = this % v
     end do
   end function advdiff_dq
+
+  !===================================================================!
+  ! The gradient jacobian of the combined flux is
+  ! dF/d(grad q)(:,i,:,i) = -K.
+  !===================================================================!
 
   pure function advdiff_dgradq(this, st) result(dF)
     class(advection_diffusion_flux), intent(in) :: this

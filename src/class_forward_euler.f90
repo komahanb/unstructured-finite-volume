@@ -10,11 +10,11 @@
 !
 ! R is the residual at the old state with the time derivative set to
 ! zero, and m is the lumped mass, so -R/m is the state's velocity;
-! the step walks down it. Nothing implicit, nothing solved.
+! the step walks down it. Nothing is implicit and nothing is solved.
 !
 ! Why it exists here: at h = 1 on a pure reaction law (no flux) the
-! step IS the law's own map, exactly - march the mandelbrot source
-! this way and the trajectory is the textbook iteration z -> z^2 + c.
+! step IS the law's own map, exactly - marching the mandelbrot source
+! this way makes the trajectory the textbook iteration z -> z^2 + c.
 ! Other marchers on the same law paint different fractals (an
 ! implicit step is itself a newton solve - newton-fractal country);
 ! this one paints the classical set.
@@ -48,8 +48,8 @@ module class_forward_euler
 contains
 
   !===================================================================!
-  ! Construct over [tinit, tfinal] at step h - explicit, so no
-  ! solver rides along
+  ! Construct over [tinit, tfinal] at step h. The scheme is explicit,
+  ! so no solver rides along.
   !===================================================================!
 
   impure type(forward_euler) function create(system, tinit, tfinal, h) result(this)
@@ -62,8 +62,8 @@ contains
   end function create
 
   !===================================================================!
-  ! One step: the residual at the old state (time derivative zero)
-  ! is minus the mass times the velocity, so
+  ! Advance one step: the residual at the old state, with the time
+  ! derivative zero, is minus the mass times the velocity, so
   !
   !     u_new  =  u_old - h * R / m
   !===================================================================!
@@ -89,7 +89,7 @@ contains
 
     allocate(res(n), m(n))
 
-    ! the residual at the old state, no time derivative
+    ! Evaluate the residual at the old state with no time derivative.
     this % system % S(:,1) = U(kk-1,:,1)
     this % system % S(:,2) = 0.0_dp
     res = 0.0_dp
@@ -97,12 +97,12 @@ contains
     call this % system % get_lumped_mass(m)
 
     U(kk,:,1) = U(kk-1,:,1) - h*real(res, dp)/m
-    U(kk,:,2) = -real(res, dp)/m           ! the velocity, for the record
+    U(kk,:,2) = -real(res, dp)/m           ! The velocity, for the record.
 
   end subroutine step
 
   !===================================================================!
-  ! One step back is all this scheme ever reads
+  ! One step back is all this scheme ever reads.
   !===================================================================!
 
   pure integer function get_bandwidth(this, step_index) result(width)
@@ -115,8 +115,8 @@ contains
   end function get_bandwidth
 
   !===================================================================!
-  ! The two-point difference (u_k - u_{k-1})/h, for anything that
-  ! asks for the stencil
+  ! Return the two-point difference (u_k - u_{k-1})/h for anything
+  ! that asks for the stencil.
   !===================================================================!
 
   impure subroutine get_stencil_coeff(this, p, h, scoeff)

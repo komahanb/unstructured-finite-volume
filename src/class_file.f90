@@ -5,8 +5,8 @@
 !
 !     (line 1)──▶(line 2)──▶(line 3)──▶ ...
 !
-! open and close bracket the walk, read_line takes one step,
-! read_lines walks the whole chain into memory, get_num_lines
+! Open and close bracket the walk, read_line takes one step,
+! read_lines walks the whole chain into memory, and get_num_lines
 ! measures its length.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -22,18 +22,18 @@ module class_file
   public :: file
 
   !-------------------------------------------------------------------!
-  ! Derived type for file
+  ! A derived type for a file.
   !-------------------------------------------------------------------!
   
   type :: file
 
-     character(:), allocatable :: filename ! filename
-     type(integer) :: file_unit            ! file unit number
-     integer       :: buffer_size
+     character(:), allocatable :: filename ! The file name.
+     type(integer) :: file_unit            ! The file unit number.
+     integer       :: buffer_size          ! The line buffer width.
 
    contains
 
-     ! Override
+     ! Overridden procedures.
      procedure :: open
      procedure :: close
      procedure :: get_unit
@@ -41,13 +41,13 @@ module class_file
      procedure :: read_lines
      procedure :: get_num_lines
 
-     ! Destructor
+     ! The destructor.
      final :: destroy
 
   end type file
 
   !-------------------------------------------------------------------!
-  ! Interface to construct a file
+  ! The constructor interface for a file.
   !-------------------------------------------------------------------!
 
   interface file
@@ -57,7 +57,7 @@ module class_file
 contains
 
   !===================================================================!
-  ! Construct a file object with filename
+  ! Construct a file object with the given file name.
   !===================================================================!
   
   impure type(file) function create(filename, line_width) result (this)
@@ -67,17 +67,17 @@ contains
     logical :: ok
     integer :: i
 
-    ! Set the file name
+    ! Set the file name.
     allocate(this % filename, source=filename)
 
-    ! Line width
+    ! Set the line width.
     if (present(line_width)) then
        this % buffer_size = line_width
     else
        this % buffer_size = 100
     end if
 
-    ! Use an available handle for opening
+    ! Use an available handle for opening.
     i = 99
     check_unit: do 
        i = i + 1 
@@ -91,7 +91,7 @@ contains
   end function create
   
   !===================================================================!
-  ! Destructor for file object
+  ! The destructor for a file object.
   !===================================================================!
   
   pure subroutine destroy(this)
@@ -103,7 +103,7 @@ contains
   end subroutine destroy
 
   !===================================================================!
-  ! Open the file
+  ! Open the file.
   !===================================================================!
 
   impure subroutine open(this)
@@ -122,7 +122,7 @@ contains
   end subroutine open
 
   !===================================================================!
-  ! Close the file
+  ! Close the file.
   !===================================================================!
 
   impure subroutine close(this)
@@ -134,7 +134,7 @@ contains
   end subroutine close
 
   !===================================================================!
-  ! return the file unit number
+  ! Return the file unit number.
   !===================================================================!
 
   pure type(integer) function get_unit(this)
@@ -146,7 +146,7 @@ contains
   end function get_unit
 
   !===================================================================!
-  ! Utility function for get number of lines in mesh file
+  ! A utility function that counts the number of lines in the mesh file.
   !===================================================================!
 
   impure type(integer) function get_num_lines(this) result(nlines)
@@ -166,16 +166,16 @@ contains
   end function get_num_lines
 
   !=================================================================!
-  ! Read one line and return a string object
+  ! Read one line and return a string object.
   !=================================================================!
 
   impure subroutine read_line(this, line)
 
-    ! Arguments
+    ! Arguments.
     class(file)  , intent(in)  :: this
     type(string) , intent(out) :: line
 
-    ! Locals
+    ! Locals.
     character(len=this % buffer_size) :: buffer
 
     read(this % get_unit(), fmt = '(a)') buffer
@@ -184,25 +184,29 @@ contains
   end subroutine read_line
 
   !=================================================================!
-  ! Read all lines and return a string array
+  ! Read all lines and return a string array.
   !=================================================================!
 
   impure subroutine read_lines(this, lines)
 
-    ! Arguments
+    ! Arguments.
     class(file)  , intent(in)            :: this
     type(string) , allocatable, intent(out) :: lines(:)
 
-    ! Locals
+    ! Locals.
     integer :: num_lines
     integer :: iline
 
-    ! Get number of lines in file to allocate space (uses a separate
-    ! handle) fix!
+    !-----------------------------------------------------------------!
+    ! Count the lines in the file so that space can be allocated.
+    ! This measurement walks the chain on a separate handle, which
+    ! needs a fix.
+    !-----------------------------------------------------------------!
+
     num_lines = this % get_num_lines()
     allocate(lines(num_lines))
 
-    ! Loop through each line and read and store into lines
+    ! Walk the chain and store each line into the lines array.
     call this % open()
     do iline = 1, num_lines
        call this % read_line(lines(iline))

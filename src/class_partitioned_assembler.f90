@@ -27,9 +27,9 @@
 ! communication volume are the same number, and rcb has been
 ! minimizing both all along.
 !
-! block_preconditioner shrank to almost nothing here: the frame did
-! the plumbing, so additive Schwarz is just each image's local block
-! solve - no gather, no scatter, no collective.
+! The block_preconditioner shrank to almost nothing here: the frame
+! did the plumbing, so additive Schwarz is just each image's local
+! block solve, with no gather, no scatter, and no collective.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -52,14 +52,15 @@ module class_partitioned_assembler
   public :: partitioned_assembler
   public :: block_preconditioner
 
-  ! the exchange wires. module variables, not object state: the
-  ! standard forbids a coarray component on an allocatable object,
-  ! and every driver holds its assembler allocatable. nothing is
-  ! smuggled through them - each is written and read only inside its
-  ! exchange, between two syncs.
-  !   post  - owners post the owned slab, ghosts PULL   (forward)
-  !   ghost_post - ghosts post their contributions, owners PULL and sum
-  !                                                     (reverse)
+  ! These are the exchange wires. They are module variables, not
+  ! object state: the standard forbids a coarray component on an
+  ! allocatable object, and every driver holds its assembler
+  ! allocatable. Nothing is smuggled through them; each is written and
+  ! read only inside its exchange, between two syncs.
+  !
+  !   post       - owners post the owned slab, ghosts PULL  (forward)
+  !   ghost_post - ghosts post their contributions, owners
+  !                PULL and sum                             (reverse)
   real(dp), allocatable :: post(:)[:]
   real(dp), allocatable :: ghost_post(:)[:]
 
@@ -69,74 +70,79 @@ module class_partitioned_assembler
 
   type, extends(spatial_assembler) :: partitioned_assembler
 
-     ! set by setup_partition (after boundary conditions are applied);
-     ! from then on every solver-facing vector is the owned slab
+     ! This flag is set by setup_partition (after boundary conditions
+     ! are applied); from then on every solver-facing vector is the
+     ! owned slab.
      logical :: partitioned = .false.
 
-     ! the FACE frame:  [ owned dofs | face-ghost dofs ]
+     ! The FACE frame:  [ owned dofs | face-ghost dofs ]
      !                    1 .. num_owned    num_owned+1 .. num_local
-     ! the product's halo - one cell across each cut face
+     ! This frame is the product's halo: one cell across each cut face.
      integer              :: num_owned = 0, num_ghost = 0, num_local = 0
-     integer, allocatable :: owned_dofs(:)         ! global dofs of the owned prefix
-     integer, allocatable :: ghost_owner(:)    ! ghost j's owning image
-     integer, allocatable :: ghost_slot(:)     ! ...and its slot in that owner's frame
+     integer, allocatable :: owned_dofs(:)         ! The global dofs of the owned prefix.
+     integer, allocatable :: ghost_owner(:)    ! The ghost's owning image.
+     integer, allocatable :: ghost_slot(:)     ! The ghost's slot in that owner's frame.
 
-     ! the REVERSE book: the transpose scatters owned-row values into
-     ! frame columns, and the ghost columns belong to other images -
+     ! The REVERSE book: the transpose scatters owned-row values into
+     ! frame columns, and the ghost columns belong to other images,
      ! so each owned row COLLECTS contributions from the images that
-     ! ghost it. grouped by owned slot: contributor image + its ghost
-     ! index there. the transpose of the forward pull, zero messages
-     ! to build (the partition is replicated).
-     integer, allocatable :: reverse_ptr(:)     ! (num_owned+1) owned slot -> its contributors
-     integer, allocatable :: reverse_image(:)     ! contributor image
-     integer, allocatable :: reverse_slot(:)    ! ...and its ghost index there
+     ! ghost it. The book is grouped by owned slot: the contributor
+     ! image plus its ghost index there. It is the transpose of the
+     ! forward pull, and it costs zero messages to build (the
+     ! partition is replicated).
+     integer, allocatable :: reverse_ptr(:)     ! Maps each owned slot to its contributors (length num_owned+1).
+     integer, allocatable :: reverse_image(:)     ! The contributor image.
+     integer, allocatable :: reverse_slot(:)    ! The contributor's ghost index there.
 
-     ! the NODE frame:  [ owned dofs | node-ghost dofs ]
+     ! The NODE frame:  [ owned dofs | node-ghost dofs ]
      !                    1 .. num_owned    num_owned+1 .. num_wide
-     ! the skew's halo - cells sharing a mesh POINT reach wider than
-     ! the face halo (see node_graph on the mesh)
+     ! This frame is the skew's halo: cells sharing a mesh POINT reach
+     ! wider than the face halo (see node_graph on the mesh).
      integer              :: num_wide = 0
-     integer, allocatable :: wide_owner(:)  ! node-ghost j's owning image
-     integer, allocatable :: wide_slot(:)   ! ...and its slot in that owner's frame
-     integer, allocatable :: wide_dofs(:)   ! the wide frame's global dofs (own ++ node-ghosts)
+     integer, allocatable :: wide_owner(:)  ! The node-ghost's owning image.
+     integer, allocatable :: wide_slot(:)   ! The node-ghost's slot in that owner's frame.
+     integer, allocatable :: wide_dofs(:)   ! The wide frame's global dofs (own ++ node-ghosts).
 
-     ! the owned rows, read in the frame (columns 1..num_local); the
-     ! boundary closure's owned slab (state-blind by nature, cached);
-     ! and the lumped mass - diag(cell volume) - the owned slab of
-     ! dR/dudot, purely local. the VOLUMETRIC source is not cached:
-     ! it reads the state, so source_owned evaluates it fresh, in the
-     ! frame, on every residual.
+     ! These hold the owned rows, read in the frame (columns
+     ! 1..num_local); the boundary closure's owned slab (state-blind
+     ! by nature, so it is safe to cache); and the lumped mass -
+     ! diag(cell volume) - the owned slab of dR/dudot, purely local.
+     ! The VOLUMETRIC source is not cached: it reads the state, so
+     ! source_owned evaluates it fresh, in the frame, on every
+     ! residual.
      type(csr_matrix)      :: A_local
      real(dp), allocatable :: bc_owned(:)
      real(dp), allocatable :: mass_owned(:)
 
-     ! the frame read backwards: global dof -> local position, 0 where
-     ! this part cannot see it - how cell_state answers global walks
+     ! The frame read backwards: global dof -> local position, with 0
+     ! where this part cannot see it. This map is how cell_state
+     ! answers global walks.
      integer, allocatable :: frame_map(:)
 
    contains
 
      procedure :: setup_partition
 
-     ! the distributed system queries
+     ! The distributed system queries follow.
      procedure :: inner_product
      procedure :: get_jacobian_residual_product
      procedure :: state_residual
 
-     ! the frozen seats, halo-aware (the base loops all cells with
-     ! global dof indexing - impossible on a slab, so we override)
+     ! The frozen seats are halo-aware (the base loops all cells with
+     ! global dof indexing - impossible on a slab - so we override).
      procedure :: add_residual
      procedure :: add_jacobian_vector_product
      procedure :: add_jacobian_vector_product_transpose
 
-     ! the adjoint's design accumulation, owned cells only
+     ! The adjoint's design accumulation runs on owned cells only.
      procedure :: add_design_residual_transpose_product
 
-     ! the transpose is verified whole-only in parallel (operator
-     ! parts are a serial-only diagnostic; the reverse halo is genuine)
+     ! The transpose is verified whole-only in parallel (operator
+     ! parts are a serial-only diagnostic; the reverse halo is
+     ! genuine).
      procedure :: verify_transpose_consistency
 
-     ! the door between the frame and the world outside it
+     ! This is the door between the frame and the world outside it.
      procedure :: replicate
 
      procedure, private :: exchange_halo
@@ -161,7 +167,7 @@ module class_partitioned_assembler
 
   type, extends(preconditioner) :: block_preconditioner
 
-     class(preconditioner), allocatable :: block   ! per-image, owned-block sized
+     class(preconditioner), allocatable :: block   ! Per-image, sized to the owned block.
 
    contains
 
@@ -193,17 +199,18 @@ contains
   ! Partition the system's graph across the images and move into the
   ! local frame:
   !
-  !    1. rcb stamps the parts (deterministic, replicated - every
-  !       image computes the identical partition)
-  !    2. the frame: owned dofs, then ghosts; and the address book -
-  !       each ghost's owner and its slot in the owner's frame,
-  !       computed locally from the replicated lists, no messages
-  !    3. the owned rows of the assembled operator, far ends
-  !       renumbered into the frame (local_block)
-  !    4. the source's owned slab, cached
-  !    5. the exchange wire, sized to the largest owned slab
-  !    6. the system reports its OWNED length - from here on,
-  !       vectors are slabs
+  !    1. rcb stamps the parts (deterministic and replicated: every
+  !       image computes the identical partition).
+  !    2. The frame holds the owned dofs, then the ghosts; the
+  !       address book - each ghost's owner and its slot in the
+  !       owner's frame - is computed locally from the replicated
+  !       lists, with no messages.
+  !    3. The owned rows of the assembled operator have their far
+  !       ends renumbered into the frame (local_block).
+  !    4. The source's owned slab is cached.
+  !    5. The exchange wire is sized to the largest owned slab.
+  !    6. The system reports its OWNED length; from here on, vectors
+  !       are slabs.
   !===================================================================!
 
   impure subroutine setup_partition(this)
@@ -217,10 +224,10 @@ contains
 
     me = this_image()
 
-    ! the grid IS the graph - partition it in place
+    ! The grid IS the graph; partition it in place.
     call this % grid % partition_rcb(this % grid % cell_centers, num_images())
 
-    ! ---- the frame ----
+    ! Build the frame and its inverse map.
     this % owned_dofs  = this % grid % dofs_of(this % grid % owned(me))
     ghost_dofs     = this % grid % dofs_of(this % grid % ghosts(me))
     this % num_owned = size(this % owned_dofs)
@@ -229,40 +236,55 @@ contains
     frame_map        = this % grid % frame_inverse(me)
     this % frame_map = frame_map
 
-    ! ---- the exchange tables come from the graph: it holds the
+    !-----------------------------------------------------------------!
+    ! The exchange tables come from the graph: it holds the
     ! replicated partition, so it can answer where every ghost lives
-    ! with no communication. the assembler only keeps the wires. ----
+    ! with no communication. The assembler only keeps the wires.
+    !-----------------------------------------------------------------!
+
     call this % grid % ghost_owners(me, this % ghost_owner, this % ghost_slot)
 
-    ! ---- the WIDE (node-ring) halo: the same partition, read on the
-    ! mesh's node-adjacency graph (cells sharing a mesh point). its
+    !-----------------------------------------------------------------!
+    ! The WIDE (node-ring) halo is the same partition, read on the
+    ! mesh's node-adjacency graph (cells sharing a mesh point). Its
     ! ghosts reach wider than the face halo - exactly the cells the
-    ! skew correction interpolates through. the node graph answers its
-    ! own table; the slots agree with the face frames because both
-    ! graphs sort the SAME part stamps into the SAME owned lists. ----
+    ! skew correction interpolates through. The node graph answers
+    ! its own table; the slots agree with the face frames because
+    ! both graphs sort the SAME part stamps into the SAME owned
+    ! lists.
+    !-----------------------------------------------------------------!
+
     build_wide: block
       type(stored_graph) :: ng
       integer            :: vw
       ng = this % grid % node_graph()
-      ng % num_variables = this % grid % num_variables   ! same dof arithmetic
+      ng % num_variables = this % grid % num_variables   ! The same dof arithmetic applies.
       call ng % set_partition([(this % grid % part_of(vw), vw = 1, this % grid % num_vertices)])
       this % wide_dofs = [this % owned_dofs, this % grid % dofs_of(ng % ghosts(me))]
       this % num_wide     = size(this % wide_dofs)
       call ng % ghost_owners(me, this % wide_owner, this % wide_slot)
     end block build_wide
 
-    ! ---- the owned rows, in the frame ----
+    ! Extract the owned rows, read in the frame.
     call this % get_operator_csr(A_global)
     this % A_local = A_global % local_block(this % owned_dofs, frame_map, this % num_local)
 
-    ! ---- the boundary closure's owned slab (state-blind, safe to
-    ! cache); the volumetric source stays live - see source_owned ----
+    !-----------------------------------------------------------------!
+    ! Cache the boundary closure's owned slab (it is state-blind, so
+    ! caching is safe); the volumetric source stays live - see
+    ! source_owned.
+    !-----------------------------------------------------------------!
+
     allocate(b_full(this % grid % num_dofs()))
     call this % get_source(b_full, boundary_only = .true.)
     this % bc_owned = b_full(this % owned_dofs)
 
-    ! ---- the lumped mass on the owned rows: each dof's cell volume.
-    ! the mass is diagonal, so dR/dudot needs no halo at all ----
+    !-----------------------------------------------------------------!
+    ! Build the lumped mass on the owned rows: each dof carries its
+    ! cell volume. The mass is diagonal, so dR/dudot needs no halo
+    ! at all.
+    !-----------------------------------------------------------------!
+
     allocate(this % mass_owned(this % num_owned))
     do j = 1, this % num_owned
        g = this % owned_dofs(j)
@@ -270,8 +292,11 @@ contains
        this % mass_owned(j) = this % grid % cell_volumes(v)
     end do
 
-    ! ---- the wire: coarray allocation must agree across images, so
-    ! size it to the largest owned slab of any part ----
+    !-----------------------------------------------------------------!
+    ! Size the wire: coarray allocation must agree across images, so
+    ! the wire matches the largest owned slab of any part.
+    !-----------------------------------------------------------------!
+
     maxown = 0
     do p = 1, this % grid % nparts
        maxown = max(maxown, (this % grid % own_ptr(p+1) - this % grid % own_ptr(p)) &
@@ -280,13 +305,19 @@ contains
     if (allocated(post)) deallocate(post)
     allocate(post(maxown)[*])
 
-    ! ---- the reverse table comes from the graph too: who keeps
-    ! copies of my owned dofs, and where in their ghost lists - the
-    ! transpose exchange sends along exactly these entries ----
+    !-----------------------------------------------------------------!
+    ! The reverse table comes from the graph too: it says who keeps
+    ! copies of my owned dofs, and where in their ghost lists. The
+    ! transpose exchange sends along exactly these entries.
+    !-----------------------------------------------------------------!
+
     call this % grid % ghost_copies(me, this % reverse_ptr, this % reverse_image, this % reverse_slot)
 
-    ! ---- the reverse wire: sized to the largest ghost count of any
-    ! part (computable locally - the lists are replicated) ----
+    !-----------------------------------------------------------------!
+    ! Size the reverse wire to the largest ghost count of any part
+    ! (computable locally, because the lists are replicated).
+    !-----------------------------------------------------------------!
+
     reverse_wire: block
       integer :: img, maxgh
       maxgh = 0
@@ -299,12 +330,16 @@ contains
       allocate(ghost_post(max(maxgh, 1))[*])
     end block reverse_wire
 
-    ! ---- the vectors shrink: the state length becomes the owned slab,
+    !-----------------------------------------------------------------!
+    ! The vectors shrink: the state length becomes the owned slab,
     ! and the fields that were born full-length follow it - phi (a
     ! transient march seeds U(:,1) from it) and the state S itself.
-    ! before this line S's length depended on who wrote to it last
-    ! (full-length from the constructor, owned-length from a marcher);
-    ! shrinking it here makes the length a promise, not a guess ----
+    ! Before this line, S's length depended on who wrote to it last
+    ! (full-length from the constructor, owned-length from a
+    ! marcher); shrinking it here makes the length a promise, not a
+    ! guess.
+    !-----------------------------------------------------------------!
+
     this % phi = this % phi(this % owned_dofs)
     this % S   = this % S(this % owned_dofs, :)
     this % num_state_vars = this % num_owned
@@ -314,10 +349,11 @@ contains
   end subroutine setup_partition
 
   !===================================================================!
-  ! The halo exchange: one slab out, one frame in. Generic over WHICH
-  ! halo - hand it a book (owner list, slot list) and it fills that
-  ! ring. The wire always posts the owned slab, so the face halo and
-  ! the wider node halo share it; only the book differs.
+  ! The halo exchange: one slab goes out, one frame comes in. It is
+  ! generic over WHICH halo: hand it a book (an owner list and a slot
+  ! list) and it fills that ring. The wire always posts the owned
+  ! slab, so the face halo and the wider node halo share it; only the
+  ! book differs.
   !
   !    post(1:num_owned) = my owned values          every image posts its
   !            sync                            slab, then pulls its
@@ -333,10 +369,10 @@ contains
   subroutine exchange_halo(this, v, buffer, owner, slot)
 
     class(partitioned_assembler), intent(in)  :: this
-    real(dp)                    , intent(in)  :: v(:)        ! owned slab
-    real(dp)                    , intent(out) :: buffer(:)      ! frame length
-    integer                     , intent(in)  :: owner(:)    ! ghost -> its owner image
-    integer                     , intent(in)  :: slot(:)     ! ghost -> its slot there
+    real(dp)                    , intent(in)  :: v(:)        ! The owned slab.
+    real(dp)                    , intent(out) :: buffer(:)      ! The frame length.
+    integer                     , intent(in)  :: owner(:)    ! Each ghost's owner image.
+    integer                     , intent(in)  :: slot(:)     ! Each ghost's slot there.
 
     integer :: j
 
@@ -370,7 +406,7 @@ contains
 
   !===================================================================!
   ! Distributed product: exchange the halo, then the local block's
-  ! rows dot their edges -
+  ! rows dot their edges:
   !
   !    v (owned slab) ──exchange──▶ [ v | ghosts ] ──A_local──▶ w
   !                                                  (owned slab)
@@ -396,7 +432,7 @@ contains
     sub = WHOLE
     if (present(part)) sub = part
 
-    ! a wrong tag dies at the door with its name
+    ! A wrong tag dies at the door with its name.
     if (.not. is_valid_mode(dir)) then
        write(*,'(1x,a,i0)') "partitioned_assembler: invalid mode tag ", dir
        error stop "partitioned_assembler: mode must be FORWARD or REVERSE"
@@ -412,10 +448,13 @@ contains
           error stop "partitioned_assembler: distributed operator parts are a tracked deferral"
        end if
 
-       ! do we need the spatial operator's TRANSPOSE? a plain REVERSE
+       !--------------------------------------------------------------!
+       ! Do we need the spatial operator's TRANSPOSE? A plain REVERSE
        ! asks for it; a frozen transpose freeze marched forward also
        ! does - and a REVERSE of a transposed freeze is forward again
        ! (the same XOR the serial seat composes).
+       !--------------------------------------------------------------!
+
        spatial: block
          logical :: trans
          real(dp), allocatable :: Av(:)
@@ -428,12 +467,16 @@ contains
             Av = this % spatial_local(v)
          end if
 
-         ! the frozen linearization J = beta*M - alpha*A rides the SAME
-         ! halo as the steady operator - the mass is diagonal (so M = Mᵀ,
-         ! no halo), only the spatial term crosses the wire:
+         !------------------------------------------------------------!
+         ! The frozen linearization J = beta*M - alpha*A rides the
+         ! SAME halo as the steady operator. The mass is diagonal
+         ! (so M = Mᵀ, no halo); only the spatial term crosses the
+         ! wire:
          !
          !    J v = beta*(mass_owned * v_own)  -  alpha*(A[ᵀ] v)
          !          └── diagonal, local ─┘     └─ halo (fwd or rev) ─┘
+         !------------------------------------------------------------!
+
          if (allocated(this % lin_coeff)) then
             w = real(this % lin_coeff(2), dp)*this % mass_owned*v &
                  & - real(this % lin_coeff(1), dp)*Av
@@ -444,13 +487,17 @@ contains
        return
     end if
 
-    ! a frozen linearization has no REPLICATED path either - refuse
-    ! loudly rather than march the wrong operator (before setup only)
+    !-----------------------------------------------------------------!
+    ! A frozen linearization has no REPLICATED path either; refuse
+    ! loudly rather than march the wrong operator (this branch runs
+    ! before setup only).
+    !-----------------------------------------------------------------!
+
     if (allocated(this % lin_coeff)) then
        error stop "partitioned_assembler: a frozen linearization needs setup_partition first"
     end if
 
-    ! before setup: the plain replicated composition
+    ! Before setup, use the plain replicated composition.
     if (dir .eq. REVERSE) then
        call this % transpose_product(w, v, sub)
     else if (sub .eq. WHOLE) then
@@ -463,9 +510,9 @@ contains
 
   !===================================================================!
   ! The steady spatial product on the owned rows: exchange the face
-  ! halo, then the local block dots its edges. The one place the
-  ! spatial operator crosses the wire - every frozen product and the
-  ! nonlinear residual route through it.
+  ! halo, then the local block dots its edges. This is the one place
+  ! the spatial operator crosses the wire; every frozen product and
+  ! the nonlinear residual route through it.
   !
   !    v (owned slab) ──exchange──▶ [ v | ghosts ] ──A_local──▶ Av
   !                                                  (owned slab)
@@ -503,14 +550,14 @@ contains
   subroutine exchange_halo_reverse(this, yframe)
 
     class(partitioned_assembler), intent(in)    :: this
-    real(dp)                    , intent(inout) :: yframe(:)   ! frame length; own rows updated
+    real(dp)                    , intent(inout) :: yframe(:)   ! The frame length; owned rows are updated.
 
     integer :: s, k
 
-    ! post my ghost-column contributions, tagged by ghost index
+    ! Post my ghost-column contributions, tagged by the ghost index.
     ghost_post(1:this % num_ghost) = yframe(this % num_owned + 1 : this % num_local)
     sync all
-    ! each owned row sums the contributions the ghosting images posted
+    ! Each owned row sums the contributions the ghosting images posted.
     do s = 1, this % num_owned
        do k = this % reverse_ptr(s), this % reverse_ptr(s+1) - 1
           yframe(s) = yframe(s) + ghost_post(this % reverse_slot(k))[this % reverse_image(k)]
@@ -602,6 +649,7 @@ contains
       st % nv    = nv
       st % gradq = 0.0_dp
 
+      ! Walk the owned cells, one point state at a time.
       do j = 1, this % num_owned, nv
          v      = (this % owned_dofs(j) - 1)/nv + 1
          st % x = this % grid % cell_centers(:, v)
@@ -699,9 +747,13 @@ contains
             & "is a tracked deferral"
     end if
 
-    ! a pure mass action (alpha = 0, the bdf's step couplings) is
-    ! diagonal - no wire at all. every image holds the same scalars,
-    ! so every image takes the same branch and the syncs stay lined up.
+    !-----------------------------------------------------------------!
+    ! A pure mass action (alpha = 0, the bdf's step couplings) is
+    ! diagonal - no wire at all. Every image holds the same scalars,
+    ! so every image takes the same branch and the syncs stay lined
+    ! up.
+    !-----------------------------------------------------------------!
+
     if (real(scalars(1), dp) .eq. 0.0_dp) then
        pdt = pdt + real(scalars(2), dp)*this % mass_owned*real(vec, dp)
        return
@@ -743,13 +795,16 @@ contains
     n = this % grid % num_dofs()
     allocate(buffer(this % num_local), x_full(n), psi_full(n), delta(size(dfdx)))
 
+    ! Drop the exchanged state into the frame's global dofs.
     call this % exchange_halo(this % S(:,1), buffer, this % ghost_owner, this % ghost_slot)
     x_full = 0.0_dp
     x_full(this % grid % frame(this_image())) = buffer
 
+    ! The psi scratch is zero everywhere except my owned rows.
     psi_full = 0.0_dp
     psi_full(this % owned_dofs) = psi
 
+    ! Accumulate my rows' share, then reduce over the design space.
     delta = 0.0_dp
     call this % design_residual_rows(delta, psi_full, x_full, &
          & this % grid % owned(this_image()))
@@ -775,6 +830,7 @@ contains
     real(dp)              :: lhs, rhs, scale
     integer               :: i
 
+    ! Seed deterministic test vectors from the owned dofs.
     allocate(v(this % num_owned), w(this % num_owned))
     do i = 1, this % num_owned
        v(i) = sin(real(this % owned_dofs(i), dp)*0.7_dp) + 0.3_dp
@@ -813,11 +869,11 @@ contains
   !                                                cell touches has its
   !                                                whole ring in the halo)
   !
-  ! No whole-vector co_sum: the wide exchange moves one value per node
-  ! cut, not the entire field. The scratch x_wide is still full length
-  ! (get_skew_source loops all cells and indexes globally) - a memory
-  ! O(n), not a collective; making the skew loop itself frame-local is
-  ! a later refinement.
+  ! No whole-vector co_sum runs: the wide exchange moves one value
+  ! per node cut, not the entire field. The scratch x_wide is still
+  ! full length (get_skew_source loops all cells and indexes
+  ! globally) - a memory cost of O(n), not a collective; making the
+  ! skew loop itself frame-local is a later refinement.
   !===================================================================!
 
   impure subroutine state_residual(this, r, x)
@@ -837,7 +893,11 @@ contains
     allocate(Ax(this % num_owned))
     call this % get_jacobian_residual_product(Ax, x)
 
-    ! the node halo into a zeroed scratch, by global dof - no collective
+    !-----------------------------------------------------------------!
+    ! Exchange the node halo into a zeroed scratch, keyed by global
+    ! dof; no collective runs here.
+    !-----------------------------------------------------------------!
+
     n = this % grid % num_dofs()
     allocate(buffer(this % num_wide), x_wide(n), s_full(n))
     call this % exchange_halo(x, buffer, this % wide_owner, this % wide_slot)
@@ -850,16 +910,16 @@ contains
   end subroutine state_residual
 
   !===================================================================!
-  ! The door: replicate an owned slab into a full global vector -
-  ! scatter my slab into zeros, sum the images' contributions (each
-  ! dof owned exactly once, so the sum IS the assembly):
+  ! The door: replicate an owned slab into a full global vector.
+  ! Scatter my slab into zeros, then sum the images' contributions
+  ! (each dof is owned exactly once, so the sum IS the assembly):
   !
   !    image 1:  [ a b . . . ]      +
   !    image 2:  [ . . c d . ]      +      =   [ a b c d e ]
   !    image 3:  [ . . . . e ]                  everywhere
   !
-  ! For the world outside the frame - writers, comparisons, the
-  ! wide-reaching skew. The solve's hot path never calls it.
+  ! It serves the world outside the frame: writers, comparisons, and
+  ! the wide-reaching skew. The solve's hot path never calls it.
   !===================================================================!
 
   impure subroutine replicate(this, xloc, x_full)
@@ -875,9 +935,9 @@ contains
   end subroutine replicate
 
   !===================================================================!
-  ! Block preconditioner constructor: just the per-image block,
-  ! sized to the owned slab. No graph, no lists - the frame already
-  ! did the plumbing.
+  ! The block preconditioner constructor holds just the per-image
+  ! block, sized to the owned slab. It carries no graph and no lists;
+  ! the frame already did the plumbing.
   !===================================================================!
 
   impure type(block_preconditioner) function construct_block_preconditioner(block) &

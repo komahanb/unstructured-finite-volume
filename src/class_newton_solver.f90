@@ -8,13 +8,13 @@
 !     J dq = -R,     J v = sum_n coeff(n) dR/dU(n) v
 !
 ! supplied by the assembler's add_jacobian_vector_product, and solved
-! with a conjugate-gradient inner iteration. The single increment dq then
-! updates every derivative order via U(:,n) += coeff(n) dq.
+! with a conjugate-gradient inner iteration. The single increment dq
+! then updates every derivative order via U(:,n) += coeff(n) dq.
 !
-! Concrete newton extends the nonlinear_solver interface; the BDF marcher
-! (class_bdf) and the adjoint forward solve call its solve. Everything is
-! vector-level (no element indexing) so flat arrays can become distributed
-! vectors later.
+! The concrete newton extends the nonlinear_solver interface; the BDF
+! marcher (class_bdf) and the adjoint forward solve call its solve.
+! Everything is vector-level (no element indexing) so flat arrays can
+! become distributed vectors later.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -34,27 +34,30 @@ module class_newton_solver
   private
   public :: newton
 
-  ! steady linearization coefficients [alpha, beta] = [1, 0]: dR/du only
+  ! The steady linearization coefficients [alpha, beta] = [1, 0] select
+  ! dR/du only.
   real(dp), parameter :: steady_coeff(2) = [1.0_dp, 0.0_dp]
 
   !-------------------------------------------------------------------!
-  ! Concrete Newton solver. Stopping criteria are members (defaults
-  ! reproduce the previous nonlinear_marching constants).
+  ! The concrete Newton solver. Stopping criteria are members whose
+  ! defaults reproduce the previous nonlinear_marching constants.
   !-------------------------------------------------------------------!
 
   type, extends(nonlinear_solver) :: newton
 
      real(dp) :: abs_tol = 1.0d-12
      real(dp) :: rel_tol = 1.0d-11
-     ! max_it (default 25), max_tol, print_level inherited from nonlinear_solver
+     ! The members max_it (default 25), max_tol, and print_level are
+     ! inherited from nonlinear_solver.
 
    contains
 
      procedure :: solve
      procedure, private :: prepare_inner_solver
 
-     ! adjoint total derivative dJ/dx (+ fd verify); the steady forward
-     ! solve is the inherited march at the steady linearization
+     ! The adjoint total derivative dJ/dx (with a finite-difference
+     ! verify); the steady forward solve is the inherited march at the
+     ! steady linearization.
      procedure :: eval_func_grad
      procedure :: eval_fd_func_grad
 
@@ -63,7 +66,7 @@ module class_newton_solver
 contains
 
   !===================================================================!
-  ! Drive R(U) -> 0 for the newest state U = (nvars, order+1)
+  ! Drive R(U) -> 0 for the newest state U = (nvars, order+1).
   !===================================================================!
 
   impure subroutine solve(this, system, coeff, U)
@@ -79,15 +82,21 @@ contains
     real(dp)                  :: r0, rnorm
     integer                   :: iter
 
-    ! the SYSTEM freezes its linearization (J = sum coeff dR/dU); the
-    ! held solver marches the frozen system like any other
+    !-----------------------------------------------------------------!
+    ! The SYSTEM freezes its linearization (J = sum coeff dR/dU); the
+    ! held solver marches the frozen system like any other.
+    !-----------------------------------------------------------------!
+
     call this % prepare_inner_solver()
     call system % linearize(coeff)
 
     allocate(res(system % get_num_state_vars()))
 
-    ! the state owns the condensed update rule (one correction moves
-    ! every derivative order, weighted by the linearization)
+    !-----------------------------------------------------------------!
+    ! The state owns the condensed update rule: one correction moves
+    ! every derivative order, weighted by the linearization.
+    !-----------------------------------------------------------------!
+
     s = differential_state(size(U, 1), size(U, 2) - 1, coeff)
     s % U = U
 
@@ -95,7 +104,7 @@ contains
 
     newton_iters: do iter = 1, this % max_it
 
-       ! Evaluate the residual at the current state
+       ! Evaluate the residual at the current state.
        system % S = s % U
 
        res = 0.0d0
@@ -106,8 +115,12 @@ contains
 
        if (rnorm .le. this % abs_tol .or. rnorm .le. this % rel_tol*r0) exit newton_iters
 
-       ! Matrix-free linear solve  J dq = -res, delegated to the held solver
-       ! (rhs unset => it forms -residual itself at the current state).
+       !--------------------------------------------------------------!
+       ! The matrix-free linear solve J dq = -res is delegated to the
+       ! held solver; with the right-hand side unset, it forms the
+       ! negative residual itself at the current state.
+       !--------------------------------------------------------------!
+
        call this % linear_solver % solve(system, dq, FORWARD)
 
        call s % update(dq)
@@ -123,8 +136,8 @@ contains
   end subroutine solve
 
   !===================================================================!
-  ! Allocate (once) the held inner linear solver. It carries no
-  ! linearization state - the system does (linearize).
+  ! Allocate the held inner linear solver once. It carries no
+  ! linearization state; the system holds that through linearize.
   !===================================================================!
 
   impure subroutine prepare_inner_solver(this)
@@ -159,25 +172,32 @@ contains
     n   = system % get_num_state_vars()
     ndv = system % get_num_design_vars()
 
-    ! 1. forward steady solve R = 0 -> u (left in system % S): the
-    ! inherited march at the steady linearization
+    !-----------------------------------------------------------------!
+    ! Step 1: the forward steady solve drives R = 0 -> u (left in
+    ! system % S) through the inherited march at the steady
+    ! linearization.
+    !-----------------------------------------------------------------!
+
     call march_steady(this, system)
 
-    ! 2. adjoint right-hand side  -df/du
+    ! Step 2: form the adjoint right-hand side -df/du.
     allocate(dfdu(n))
     dfdu = 0.0d0
     call func % add_dfdu(system, dfdu)
 
-    ! 3. adjoint solve (dR/du)^T psi = -df/du: the system freezes its
-    ! TRANSPOSED linearization with the adjoint's own right-hand side,
-    ! and the solve is a plain forward march of that frozen system -
-    ! no REVERSE tag travels
+    !-----------------------------------------------------------------!
+    ! Step 3: the adjoint solve (dR/du)^T psi = -df/du. The system
+    ! freezes its TRANSPOSED linearization with the adjoint's own
+    ! right-hand side, and the solve is a plain forward march of that
+    ! frozen system; no REVERSE tag travels.
+    !-----------------------------------------------------------------!
+
     call this % prepare_inner_solver()
     call system % linearize(steady_coeff, rhs = real(-dfdu, dp), transpose = .true.)
     call this % linear_solver % solve(system, psi)
     call system % clear_linearization()
 
-    ! 4. total derivative  dJ/dx = df/dx + psi^T dR/dx
+    ! Step 4: accumulate the total derivative dJ/dx = df/dx + psi^T dR/dx.
     allocate(dJdx(ndv))
     dJdx = 0.0_dp
     call func % add_dfdx(system, dJdx)
@@ -191,7 +211,8 @@ contains
 
   !===================================================================!
   ! Verification gradient: central finite differences of J over each
-  ! design variable, re-solving the forward problem at each perturbation.
+  ! design variable, re-solving the forward problem at each
+  ! perturbation.
   !===================================================================!
 
   impure subroutine eval_fd_func_grad(this, system, func, dJdx)
@@ -215,12 +236,16 @@ contains
 
        delta = 1.0e-6_dp*max(1.0_dp, abs(x0(i)))
 
-       x = x0; x(i) = x0(i) + delta
+       ! Evaluate the functional at the plus perturbation.
+       x = x0
+       x(i) = x0(i) + delta
        call system % set_design_vars(x)
        call march_steady(this, system)
        call func % eval(system, jp)
 
-       x = x0; x(i) = x0(i) - delta
+       ! Evaluate the functional at the minus perturbation.
+       x = x0
+       x(i) = x0(i) - delta
        call system % set_design_vars(x)
        call march_steady(this, system)
        call func % eval(system, jm)
@@ -229,7 +254,7 @@ contains
 
     end do
 
-    ! restore the baseline design and state
+    ! Restore the baseline design and state.
     call system % set_design_vars(x0)
     call march_steady(this, system)
 
@@ -238,8 +263,9 @@ contains
   end subroutine eval_fd_func_grad
 
   !===================================================================!
-  ! Steady forward solve through the inherited march (fresh zero state
-  ! at the steady linearization; the solution is left in system % S)
+  ! Steady forward solve through the inherited march: a fresh zero
+  ! state at the steady linearization, with the solution left in
+  ! system % S.
   !===================================================================!
 
   impure subroutine march_steady(this, system)
@@ -259,7 +285,7 @@ contains
   end subroutine march_steady
 
   !===================================================================!
-  ! 2-norm of a state vector (real or complex-step safe)
+  ! Compute the 2-norm of a state vector (real or complex-step safe).
   !===================================================================!
 
   pure real(dp) function vector_norm(v)

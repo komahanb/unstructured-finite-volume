@@ -1,44 +1,48 @@
 !=====================================================================!
 ! The escape-time fractal, computed as PHYSICS: the julia set of the
-! douady rabbit painted by the ordinary solver stack -
+! douady rabbit is painted by the ordinary solver stack.
 !
 !    (mandelbrot law) ──▶ (assembler) ──▶ (forward euler) ──▶ (writer)
 !     z² + c - z as a       no flux,        h = 1: each step     one
 !     reacting source       source only     IS the map           picture
 !
-! and then refined by its own adjoint, cycle after cycle:
+! The painting is then refined by its own adjoint, cycle after cycle.
 !
 !    march ──▶ adjoint ──▶ flag ──▶ refine ──▶ march ──▶ ...
 !
-! The run is read from paint.cfg (keyword per line, the class_config
-! pattern); defaults reproduce the douady rabbit on square-tri-40.
+! The run is read from paint.cfg (one keyword per line, the
+! class_config pattern); the defaults reproduce the douady rabbit on
+! square-tri-40.
 !
-! Checks:
-!   1. the law's coupling graph is real: two variables, ONE edge
-!      (the complex square mixes them) - the first law with an edge
-!   2. the law's jacobian dS/dq matches finite differences - this is
-!      the matrix the adjoint will ride
-!   3. the marched escape counts agree with a plain z -> z² + c loop
-!      cell by cell (identical almost everywhere; the marched
-!      arithmetic may round differently at an escape tie, so a
-!      whisker of ±1 on a fraction of a percent of cells is honest)
-!   4. the adjoint rides the marcher's own chain: seed dJ/dz_T at the
+! The checks are as follows.
+!   1. The law's coupling graph is real: two variables share ONE
+!      edge, because the complex square mixes them. This is the first
+!      law with an edge.
+!   2. The law's jacobian dS/dq matches finite differences. This is
+!      the matrix the adjoint will ride.
+!   3. The marched escape counts agree with a plain z -> z² + c loop
+!      cell by cell. They are identical almost everywhere; the
+!      marched arithmetic may round differently at an escape tie, so
+!      a whisker of ±1 on a fraction of a percent of the cells is
+!      honest.
+!   4. The adjoint rides the marcher's own chain: seed dJ/dz_T at the
 !      last step, pull back through (I - dS/dq)^T edge by edge, and
 !      what lands on the first vertex is dJ/dz0 for every cell at
-!      once - certified against central differences of a re-marched J
-!   5. the adjoint chooses where the mesh deserves more cells: flag
+!      once. The result is certified against central differences of a
+!      re-marched J.
+!   5. The adjoint chooses where the mesh deserves more cells: flag
 !      the most sensitive fraction (the fractal's boundary lights
-!      up), refine once, march only the flagged cells' children,
-!      inherit the rest - and the flagged cells must hold at least
-!      twice their blind share of the energy error
-!   6. cycle the whole loop and the sensitivity recedes: each refined
+!      up), refine once, march only the flagged cells' children, and
+!      inherit the rest. The flagged cells must hold at least twice
+!      their blind share of the energy error.
+!   6. Cycle the whole loop and the sensitivity recedes: each refined
 !      canvas answers with a smaller bulk |dJ/dz0| and a smaller
-!      dual-weighted error estimate - while the peak may sharpen,
-!      because finer cells land nearer the chaotic boundary
+!      dual-weighted error estimate. The peak may sharpen, because
+!      finer cells land nearer the chaotic boundary.
 !
-! julia-physics.vtu holds the rabbit, julia-sensitivity-<k>.vtu the
-! adjoint's view of cycle k's canvas, julia-refined.vtu the sharpened
-! painting of cycle 1's selective march.
+! julia-physics.vtu holds the rabbit, julia-sensitivity-<k>.vtu holds
+! the adjoint's view of cycle k's canvas, and julia-refined.vtu holds
+! the sharpened painting of cycle 1's selective march.
 !
 ! A nonzero exit (error stop) means a check failed.
 !=====================================================================!
@@ -60,8 +64,11 @@ program test_mandelbrot
 
   implicit none
 
-  ! the run - paint.cfg overrides, these defaults ARE the douady
-  ! rabbit drawn with the same eyes as the orbit painting
+  !-----------------------------------------------------------------!
+  ! The run: paint.cfg overrides these values, and the defaults ARE
+  ! the douady rabbit drawn with the same eyes as the orbit painting.
+  !-----------------------------------------------------------------!
+
   character(len=256) :: mesh_file         = '../square-tri-40.msh'
   real(dp)           :: c(2)              = [-0.123_dp, 0.745_dp]
   real(dp)           :: window_half_width = 1.6_dp
@@ -77,8 +84,12 @@ program test_mandelbrot
   type(forward_euler)             :: ti
   type(mandelbrot_source)         :: law_g
 
-  ! shared by the checks, refreshed each cycle: the window map, every
-  ! cell's start, the painting, the adjoint and its sensitivity
+  !-----------------------------------------------------------------!
+  ! These are shared by the checks and refreshed each cycle: the
+  ! window map, every cell's start, the painting, the adjoint, and
+  ! its sensitivity.
+  !-----------------------------------------------------------------!
+
   real(dp), allocatable :: z0(:,:), eta(:), lam(:,:)
   integer , allocatable :: marched(:)
   real(dp), allocatable :: peak_eta(:), bulk_eta(:), est_error(:)
@@ -98,8 +109,11 @@ program test_mandelbrot
   allocate(loader, source = gmsh_loader(trim(mesh_file)))
   allocate(grid  , source = mesh(loader))
 
-  ! the loop the adjoint drives: march the canvas, ask it where it is
-  ! tender, refine, march again
+  !-----------------------------------------------------------------!
+  ! This is the loop the adjoint drives: march the canvas, ask it
+  ! where it is tender, refine, and march again.
+  !-----------------------------------------------------------------!
+
   cycles: do cycle = 1, num_refinement_cycles
 
      call march_and_paint(cycle, nfail)
@@ -128,8 +142,8 @@ program test_mandelbrot
 contains
 
   !===================================================================!
-  ! The run reader: keyword per line, the class_config pattern.
-  ! A missing file means the defaults paint.
+  ! The run reader works one keyword per line, the class_config
+  ! pattern. A missing file means the defaults paint.
   !===================================================================!
 
   subroutine read_config(filename)
@@ -156,7 +170,7 @@ contains
        select case (trim(tok(1) % str))
        case ("mesh")
           mesh_file = trim(tok(2) % str)
-       case ("constant")                       ! constant  c_re c_im
+       case ("constant")                       ! The line reads: constant c_re c_im.
           c = [tok(2) % asreal(), tok(3) % asreal()]
        case ("window")
           window_half_width = tok(2) % asreal()
@@ -179,7 +193,8 @@ contains
   end subroutine read_config
 
   !===================================================================!
-  ! 1: the law IS a graph, and its one edge is the complex square
+  ! Check 1: the law IS a graph, and its one edge is the complex
+  ! square.
   !===================================================================!
 
   subroutine check_coupling_graph(nfail)
@@ -200,8 +215,9 @@ contains
   end subroutine check_coupling_graph
 
   !===================================================================!
-  ! 2: dS/dq (the edge as numbers, the adjoint's engine) vs central
-  ! finite differences at a nowhere-special state
+  ! Check 2: dS/dq (the edge as numbers, the adjoint's engine) is
+  ! compared against central finite differences at a nowhere-special
+  ! state.
   !===================================================================!
 
   subroutine check_jacobian(nfail)
@@ -245,10 +261,10 @@ contains
   !===================================================================!
   ! March the current canvas: every cell starts at its own point of
   ! the window (the map is fixed on cycle 1 so every level paints the
-  ! SAME window), forty steps of size one, escape counts read off the
-  ! trajectory. On cycle 1 the counts are certified against a plain
-  ! z -> z² + c loop with no framework at all, and the rabbit lands
-  ! on disk.
+  ! SAME window), forty steps of size one are taken, and the escape
+  ! counts are read off the trajectory. On cycle 1 the counts are
+  ! certified against a plain z -> z² + c loop with no framework at
+  ! all, and the rabbit lands on disk.
   !===================================================================!
 
   subroutine march_and_paint(cycle, nfail)
@@ -266,7 +282,7 @@ contains
     if (allocated(fvm)) deallocate(fvm)
     allocate(fvm, source = assembler(grid))
 
-    ! no flux, only the reacting law; walls that ask nothing
+    ! There is no flux, only the reacting law; the walls ask nothing.
     call fvm % set_equation(diffusion_flux(0.0_dp, 2), mandelbrot_source(c))
     call fvm % set_neumann("BoundaryLeft"  , 0.0_dp)
     call fvm % set_neumann("BoundaryRight" , 0.0_dp)
@@ -275,10 +291,12 @@ contains
 
     ncells = fvm % grid % num_cells
 
-    ! the window map, fixed once on the first canvas
+    ! The window map is fixed once, on the first canvas.
     if (cycle .eq. 1) then
-       xlo = minval(fvm % grid % cell_centers(1, :)); xhi = maxval(fvm % grid % cell_centers(1, :))
-       ylo = minval(fvm % grid % cell_centers(2, :)); yhi = maxval(fvm % grid % cell_centers(2, :))
+       xlo = minval(fvm % grid % cell_centers(1, :))
+       xhi = maxval(fvm % grid % cell_centers(1, :))
+       ylo = minval(fvm % grid % cell_centers(2, :))
+       yhi = maxval(fvm % grid % cell_centers(2, :))
     end if
 
     if (allocated(z0)) deallocate(z0)
@@ -290,12 +308,16 @@ contains
        fvm % phi(fvm % grid % dof(icell, 2)) = z0(2, icell)
     end do
 
-    ! steps of size one: the map, marched
+    ! The steps have size one, so each step IS the map.
     ti = forward_euler(fvm, 0.0_dp, real(patience, dp), 1.0_dp)
     call ti % integrate()
 
-    ! escape counts from the trajectory (step k holds z after k-1
-    ! applications of the map; patient cells keep the full patience)
+    !----------------------------------------------------------------!
+    ! The escape counts come off the trajectory: step k holds z after
+    ! k - 1 applications of the map, and patient cells keep the full
+    ! patience.
+    !----------------------------------------------------------------!
+
     if (allocated(marched)) deallocate(marched)
     allocate(marched(ncells))
     do icell = 1, ncells
@@ -312,7 +334,7 @@ contains
 
     first_canvas_only: if (cycle .eq. 1) then
 
-       ! the plain map, no framework at all
+       ! The plain map runs with no framework at all.
        allocate(plain(ncells))
        do icell = 1, ncells
           call march_cell(z0(1, icell), z0(2, icell), zr, zi, nsteps)
@@ -331,7 +353,7 @@ contains
           nfail = nfail + 1
        end if
 
-       ! the picture: the rabbit, by simulation
+       ! The picture is the rabbit, painted by simulation.
        allocate(paint(ncells, 1))
        paint(:,1) = real(marched, dp)
        labels(1)  = string("escape")
@@ -350,8 +372,8 @@ contains
   ! back, and every edge pulls the adjoint through (I - dS/dq)^T -
   ! the law's matrix from check 2 doing the adjoint's work. What
   ! lands on the first vertex is dJ/dz0 for every cell at once; its
-  ! magnitude is the sensitivity the flags read, written to disk as
-  ! this cycle's julia-sensitivity-<k>.vtu.
+  ! magnitude is the sensitivity the flags read, and it is written to
+  ! disk as this cycle's julia-sensitivity-<k>.vtu.
   !===================================================================!
 
   subroutine compute_sensitivity(cycle)
@@ -378,7 +400,7 @@ contains
 
       call ti % accumulate_adjoint(seed, step_pullback, nt, lam)
 
-      ! how tender the painting is to where each cell starts
+      ! Measure how tender the painting is to where each cell starts.
       if (allocated(eta)) deallocate(eta)
       allocate(eta(ncells))
       do icell = 1, ncells
@@ -389,10 +411,14 @@ contains
       write(*,'(1x,a,i0,a,i0,a,es9.2,a,es9.2)') "cycle ", cycle, ": ", &
            & ncells, " cells, |dJ/dz0| spans ", minval(eta), " to ", maxval(eta)
 
-      ! the receding measures: the bulk sensitivity (geometric mean -
-      ! the log-average a 39-decade span calls for) and the dual-
-      ! weighted error estimate, each cell's sensitivity times its
-      ! reach (sum eta * sqrt(vol) - how far a cell's start can stray)
+      !-------------------------------------------------------------!
+      ! The receding measures: the bulk sensitivity is the geometric
+      ! mean (the log-average a 39-decade span calls for), and the
+      ! dual-weighted error estimate is each cell's sensitivity
+      ! times its reach, sum eta * sqrt(vol) - how far a cell's
+      ! start can stray.
+      !-------------------------------------------------------------!
+
       bulk_eta(cycle)  = exp(sum(log(max(eta, 1.0e-30_dp)))/real(ncells, dp))
       est_error(cycle) = sum(eta * sqrt(fvm % grid % cell_volumes))
 
@@ -408,12 +434,13 @@ contains
   end subroutine compute_sensitivity
 
   !===================================================================!
-  ! 4: the adjoint against central differences of a re-marched J, on
-  ! two probes chosen where a difference can breathe: a chaotic cell
-  ! (huge eta) leaves the linear regime within machine epsilon, a
-  ! dead cell (tiny eta) drowns in roundoff - so probe near eta ~ 1
-  ! and eta ~ 0.01, both clear of the freeze threshold, the one kink
-  ! a difference cannot straddle.
+  ! Check 4: the adjoint is measured against central differences of a
+  ! re-marched J, on two probes chosen where a difference can
+  ! breathe. A chaotic cell (huge eta) leaves the linear regime
+  ! within machine epsilon, and a dead cell (tiny eta) drowns in
+  ! roundoff, so the probes sit near eta ~ 1 and eta ~ 0.01, both
+  ! clear of the freeze threshold, the one kink a difference cannot
+  ! straddle.
   !===================================================================!
 
   subroutine check_adjoint_gradient(nfail)
@@ -457,9 +484,10 @@ contains
   end subroutine check_adjoint_gradient
 
   !===================================================================!
-  ! One edge of the step chain, pulled back: per cell, apply the
+  ! One edge of the step chain is pulled back: per cell, the
   ! transpose of the step's jacobian I - dS/dq - read at the TAIL's
-  ! state, the state the step left from - to the head's adjoint.
+  ! state, the state the step left from - is applied to the head's
+  ! adjoint.
   !===================================================================!
 
   subroutine step_pullback(tail, head, adjoint_head, contribution)
@@ -491,8 +519,9 @@ contains
   end subroutine step_pullback
 
   !===================================================================!
-  ! The closest any step of a cell's marched orbit comes to the
-  ! freeze threshold |z|² = 4 - the kink the probes must stay off.
+  ! Return the closest any step of a cell's marched orbit comes to
+  ! the freeze threshold |z|² = 4 - the kink the probes must stay
+  ! off.
   !===================================================================!
 
   pure real(dp) function margin_of(icell) result(margin)
@@ -513,9 +542,9 @@ contains
 
   !===================================================================!
   ! The map with the law's freeze, run to the full patience - the
-  ! same dynamics the framework marches. Hands back the final state
-  ! (for energies and difference probes) and the escape count (for
-  ! the painting), one walk for both.
+  ! same dynamics the framework marches. It hands back the final
+  ! state (for energies and difference probes) and the escape count
+  ! (for the painting), one walk for both.
   !===================================================================!
 
   pure subroutine march_cell(zr0, zi0, zr, zi, n)
@@ -527,7 +556,8 @@ contains
     real(dp) :: t
     integer  :: k
 
-    zr = zr0; zi = zi0
+    zr = zr0
+    zi = zi0
     n  = patience
     do k = 1, patience
        if (zr*zr + zi*zi .le. escape_radius_sq) then
@@ -535,17 +565,20 @@ contains
           zi = 2.0_dp*zr*zi  + c(2)
           zr = t
        end if
-       ! outside after this step - mapped there, or born there and
-       ! held - is escaped at this length, exactly as the framework's
-       ! frozen trajectory reads
+       !--------------------------------------------------------------!
+       ! A cell that sits outside after this step - mapped there, or
+       ! born there and held - has escaped at this length, exactly as
+       ! the framework's frozen trajectory reads.
+       !--------------------------------------------------------------!
+
        if (n .eq. patience .and. zr*zr + zi*zi .gt. escape_radius_sq) n = k
     end do
 
   end subroutine march_cell
 
   !===================================================================!
-  ! The margin-safe cell whose sensitivity sits closest to the given
-  ! target - how the difference probes are chosen.
+  ! Return the margin-safe cell whose sensitivity sits closest to the
+  ! given target - this is how the difference probes are chosen.
   !===================================================================!
 
   pure integer function pick_probe(target) result(best)
@@ -570,7 +603,7 @@ contains
 
   !===================================================================!
   ! The flag threshold: bisect tau until the configured fraction of
-  ! the cells carry more sensitivity than it.
+  ! the cells carries more sensitivity than it.
   !===================================================================!
 
   pure real(dp) function flag_threshold() result(tau)
@@ -579,7 +612,8 @@ contains
     integer  :: k, want
 
     want = int(flag_fraction*real(fvm % grid % num_cells, dp))
-    lo = minval(eta); hi = maxval(eta)
+    lo = minval(eta)
+    hi = maxval(eta)
     do k = 1, 60
        tau = 0.5_dp*(lo + hi)
        if (count(eta .ge. tau) .gt. want) then
@@ -592,20 +626,20 @@ contains
   end function flag_threshold
 
   !===================================================================!
-  ! 5: the adjoint chooses where the mesh deserves more cells. Flag
-  ! the most sensitive fraction of the cells - the fractal's boundary,
-  ! by the adjoint's numbers - refine the mesh once, march only the
-  ! flagged cells' children, and let every other child inherit its
-  ! parent's answer down the refinement tree (children of cell v sit
-  ! at 4(v-1)+1..4v). The fully marched fine level is the oracle, and
-  ! the verdict is measured in the functional the adjoint serves: the
-  ! flagged cells must hold at least TWICE their blind share of the
-  ! energy error inheritance would commit (a random fraction holds
-  ! its own share; the adjoint's here holds well over twice - what a
-  ! derivative cannot see is the jump across an escape ring, so total
-  ! capture is not on offer from any first-order indicator). The
-  ! paint mismatch count is reported alongside as the picture's own
-  ! tally.
+  ! Check 5: the adjoint chooses where the mesh deserves more cells.
+  ! Flag the most sensitive fraction of the cells - the fractal's
+  ! boundary, by the adjoint's numbers - refine the mesh once, march
+  ! only the flagged cells' children, and let every other child
+  ! inherit its parent's answer down the refinement tree (children of
+  ! cell v sit at 4(v-1)+1..4v). The fully marched fine level is the
+  ! oracle, and the verdict is measured in the functional the adjoint
+  ! serves: the flagged cells must hold at least TWICE their blind
+  ! share of the energy error inheritance would commit. A random
+  ! fraction holds its own share; the adjoint's here holds well over
+  ! twice. What a derivative cannot see is the jump across an escape
+  ! ring, so total capture is not on offer from any first-order
+  ! indicator. The paint mismatch count is reported alongside as the
+  ! picture's own tally.
   !===================================================================!
 
   subroutine check_adjoint_refinement(nfail)
@@ -626,8 +660,11 @@ contains
     allocate(flagged(fvm % grid % num_cells))
     flagged = eta .ge. tau
 
-    ! one refinement of the whole canvas; the adjoint decides which
-    ! children are worth marching
+    !----------------------------------------------------------------!
+    ! One refinement covers the whole canvas; the adjoint decides
+    ! which children are worth marching.
+    !----------------------------------------------------------------!
+
     fine  = fvm % grid % refined()
     nfine = fine % num_cells
 
@@ -639,26 +676,32 @@ contains
     miss_adaptive = 0
     do v = 1, fvm % grid % num_cells
 
-       ! the parent's final energy, read off the marched trajectory
+       ! The parent's final energy is read off the marched trajectory.
        e2_parent = real(ti % U(ti % num_vertices, fvm % grid % dof(v,1), 1), dp)**2 &
             &    + real(ti % U(ti % num_vertices, fvm % grid % dof(v,2), 1), dp)**2
 
        do child = 4*(v-1) + 1, 4*v
 
-          ! the child's own start, through the SAME window map, and
-          ! the oracle's answer for it
+          !---------------------------------------------------------!
+          ! The child's own start goes through the SAME window map,
+          ! and the oracle answers for it.
+          !---------------------------------------------------------!
+
           x0f = window_half_width*(2.0_dp*(fine % cell_centers(1, child) - xlo)/(xhi - xlo) - 1.0_dp)
           y0f = window_half_width*(2.0_dp*(fine % cell_centers(2, child) - ylo)/(yhi - ylo) - 1.0_dp)
           call march_cell(x0f, y0f, zr, zi, nfull)
           e2_child = zr*zr + zi*zi
 
-          ! what inheriting the parent's answer would cost, in the
-          ! functional's own currency
+          !---------------------------------------------------------!
+          ! This is what inheriting the parent's answer would cost,
+          ! in the functional's own currency.
+          !---------------------------------------------------------!
+
           err       = 0.5_dp*fine % cell_volumes(child)*abs(e2_child - e2_parent)
           e_inherit = e_inherit + err
           if (.not. flagged(v)) e_adaptive = e_adaptive + err
 
-          ! the adaptive painting marches only what the adjoint chose
+          ! The adaptive painting marches only what the adjoint chose.
           if (flagged(v)) then
              adaptive(child) = nfull
           else
@@ -694,7 +737,7 @@ contains
       end if
     end associate
 
-    ! the sharpened painting the flags bought
+    ! This is the sharpened painting the flags bought.
     allocate(paint(nfine, 1))
     paint(:,1) = real(adaptive, dp)
     labels(1)  = string("escape")
@@ -705,7 +748,7 @@ contains
   end subroutine check_adjoint_refinement
 
   !===================================================================!
-  ! Trade the canvas for its refinement: every triangle into four,
+  ! Trade the canvas for its refinement: every triangle becomes four,
   ! by the mesh's own machinery. The next cycle marches this one.
   !===================================================================!
 
@@ -720,14 +763,15 @@ contains
   end subroutine refine_canvas
 
   !===================================================================!
-  ! 6: run the loop and the sensitivity recedes - in the measures
-  ! that ought to recede. The bulk sensitivity falls (a finer cell
-  ! claims less of the objective) and so does the dual-weighted error
-  ! estimate sum eta*sqrt(vol) (less error left to buy). The PEAK is
-  ! deliberately not asserted: a finer canvas lands centroids nearer
-  ! the chaotic boundary, and chaos amplifies faster than volume
-  ! shrinks - the sensitivity ridge SHARPENS as it localizes. That is
-  ! the fractal being a fractal, and the run reports it honestly.
+  ! Check 6: run the loop and the sensitivity recedes - in the
+  ! measures that ought to recede. The bulk sensitivity falls (a
+  ! finer cell claims less of the objective) and so does the
+  ! dual-weighted error estimate sum eta*sqrt(vol) (less error left
+  ! to buy). The PEAK is deliberately not asserted: a finer canvas
+  ! lands centroids nearer the chaotic boundary, and chaos amplifies
+  ! faster than volume shrinks - the sensitivity ridge SHARPENS as it
+  ! localizes. That is the fractal being a fractal, and the run
+  ! reports it honestly.
   !===================================================================!
 
   subroutine check_receding_sensitivity(nfail)

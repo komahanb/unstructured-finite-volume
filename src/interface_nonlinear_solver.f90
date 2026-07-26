@@ -1,11 +1,11 @@
 #include "scalar.fpp"
 
 !=====================================================================!
-! Abstract interface for nonlinear solvers. A nonlinear solver drives a
-! system's residual R(U) = 0 by repeatedly linearising and solving with
-! an (inner) linear solver. It extends the common marcher base and
-! carries the linear solver used for those linearised steps; its march
-! is bound to the context name solve through a generic.
+! The abstract interface for nonlinear solvers. A nonlinear solver
+! drives a system's residual R(U) = 0 by repeatedly linearising and
+! solving with an (inner) linear solver. It extends the common marcher
+! base and carries the linear solver used for those linearised steps;
+! its march is bound to the context name solve through a generic.
 !
 ! The deferred solve takes the assembler (the system), the integrator's
 ! linearisation coefficients coeff, and the multi-order state U it
@@ -31,25 +31,25 @@ module interface_nonlinear_solver
   public :: nonlinear_solver
 
   !===================================================================!
-  ! Abstract nonlinear solver datatype
+  ! The abstract nonlinear solver datatype.
   !===================================================================!
 
   type, abstract, extends(marcher) :: nonlinear_solver
 
-     ! the inner linear solver for each linearised step (optional; a
-     ! matrix-free inner iteration may be used instead)
+     ! The inner linear solver for each linearised step. It is
+     ! optional; a matrix-free inner iteration may be used instead.
      class(linear_solver), allocatable :: linear_solver
 
-     ! max_tol (1.0d-12), max_it (25) and print_level are inherited
-     ! from marcher with the same defaults
+     ! The fields max_tol (1.0d-12), max_it (25) and print_level are
+     ! inherited from marcher with the same defaults.
 
    contains
 
-     ! the family's per-step deferred entry (bdf drives this directly)
+     ! The family's per-step deferred entry; bdf drives this directly.
      procedure(nonlinear_solve_interface), deferred :: solve
 
-     ! the marcher contract, provided once for the family: drive the
-     ! deferred solve at the state's linearization
+     ! The marcher contract, provided once for the family: drive the
+     ! deferred solve at the state's linearization.
      procedure :: march
 
   end type nonlinear_solver
@@ -64,7 +64,7 @@ module interface_nonlinear_solver
      subroutine nonlinear_solve_interface(this, system, coeff, U)
        import nonlinear_solver
        import assembler
-       class(nonlinear_solver), intent(inout) :: this   ! configures its held linear solver
+       class(nonlinear_solver), intent(inout) :: this   ! It configures its held linear solver.
        class(assembler)       , intent(inout) :: system
        type(scalar)           , intent(in)    :: coeff(:)
        type(scalar)           , intent(inout) :: U(:,:)
@@ -90,7 +90,7 @@ contains
     integer                , intent(in), optional :: mode
 
     if (present(mode)) then
-       ! a wrong tag dies at the door with its name
+       ! A wrong tag dies at the door with its name.
        if (.not. is_valid_mode(mode)) then
           write(*,'(1x,a,i0)') "nonlinear_solver % march: invalid mode tag ", mode
           error stop "nonlinear_solver % march: mode must be FORWARD or REVERSE"

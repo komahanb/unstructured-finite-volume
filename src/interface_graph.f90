@@ -1,7 +1,7 @@
 !=====================================================================!
-! Abstract graph: vertices, edges, the retained adjacency, traversal
-! orders, and the partition contract. This base class holds only
-! graph-structured data - never a mesh, a face, or any payload.
+! The abstract graph carries vertices, edges, the retained adjacency,
+! traversal orders, and the partition contract. This base class holds
+! only graph-structured data - never a mesh, a face, or any payload.
 ! Dependencies point downward only: a subclass knows its own domain
 ! (class_mesh IS the mesh graph, class_chain knows its recurrence rule);
 ! the base class knows neither.
@@ -27,18 +27,19 @@
 ! orbit escapes; its length is the escape time), when a vertex repeats
 ! (a cycle has closed), or at the step limit.
 !
-! Partition: stamped in place (partition / partition_rcb /
-! partition_aggregate), then queried (part_of, owned, ghosts, balance,
-! edge_cut). A partition of a graph is still graph-shaped data.
+! Partition: a partition is stamped in place (partition /
+! partition_rcb / partition_aggregate), then queried (part_of, owned,
+! ghosts, balance, edge_cut). A partition of a graph is still
+! graph-shaped data.
 !
 ! Squint: quotient_edges reads the stamped partition back as a graph -
 ! every part one coarse vertex, every pair of touching parts one
 ! coarse edge. The quotient of a graph is the same kind of animal, so
 ! a hierarchy is just repeated squinting (class_stored_graph gives the
 ! quotient a constructor). partition_aggregate is the squint algebraic
-! multigrid coarsens by: no part count asked for - the graph discovers
-! its own aggregates by Vanek's three passes over the neighbour
-! queries, strength having already chosen the edges.
+! multigrid coarsens by: no part count is asked for - the graph
+! discovers its own aggregates by Vanek's three passes over the
+! neighbour queries, strength having already chosen the edges.
 !
 ! Knots: strong_components paints every vertex with its strong
 ! component - the maximal set in which every vertex reaches every
@@ -72,12 +73,12 @@ module interface_graph
   public :: power_iteration
 
   type :: vertex
-     integer :: number      ! vertex label
-     integer :: part = 1    ! owning part (image) after partitioning
+     integer :: number      ! The vertex label.
+     integer :: part = 1    ! The owning part (image) after partitioning.
   end type vertex
 
   type :: edge
-     integer :: tail, head  ! the two vertices the edge connects
+     integer :: tail, head  ! The two vertices the edge connects.
   end type edge
 
   !===================================================================!
@@ -88,30 +89,31 @@ module interface_graph
 
      integer :: num_vertices  = 0
      integer :: num_edges     = 0
-     integer :: num_variables = 1   ! fields per vertex (dof interleaving)
+     integer :: num_variables = 1   ! Fields per vertex (dof interleaving).
 
      type(vertex), allocatable :: vertices(:)
      type(edge)  , allocatable :: edges(:)
 
-     ! Retained adjacency: compressed neighbour list. Vertex v's
-     ! neighbours are adj(xadj(v) : xadj(v+1)-1).
+     ! The retained adjacency is a compressed neighbour list; vertex
+     ! v's neighbours are adj(xadj(v) : xadj(v+1)-1).
      integer, allocatable :: xadj(:)
      integer, allocatable :: adj(:)
 
-     ! Partition bookkeeping, populated by partition / partition_rcb.
-     ! part_of(v) = vertices(v) % part; owned/ghost vertices are stored
-     ! csr-style: part k owns own_list(own_ptr(k):own_ptr(k+1)-1).
+     ! Partition bookkeeping is populated by partition / partition_rcb.
+     ! The part map is part_of(v) = vertices(v) % part; owned and ghost
+     ! vertices are stored csr-style, so part k owns
+     ! own_list(own_ptr(k):own_ptr(k+1)-1).
      integer              :: nparts = 1
-     integer              :: ncut   = 0   ! edges crossing parts (cut quality)
-     integer, allocatable :: own_ptr(:)   ! (nparts+1)
-     integer, allocatable :: own_list(:)  ! (num_vertices)
-     integer, allocatable :: ghost_ptr(:)    ! (nparts+1)
-     integer, allocatable :: ghost_list(:)   ! deduped ghosts, by part
+     integer              :: ncut   = 0   ! Edges crossing parts (the cut quality).
+     integer, allocatable :: own_ptr(:)   ! Shape (nparts+1).
+     integer, allocatable :: own_list(:)  ! Shape (num_vertices).
+     integer, allocatable :: ghost_ptr(:)    ! Shape (nparts+1).
+     integer, allocatable :: ghost_list(:)   ! Deduplicated ghosts, grouped by part.
 
    contains
 
-     ! dof indexing (variable-fastest over vertices), and the
-     ! adjacency read at dof granularity
+     ! Dof indexing runs variable-fastest over the vertices, and the
+     ! adjacency can be read at dof granularity.
      procedure :: dof
      procedure :: num_dofs
      procedure :: dof_adjacency
@@ -123,45 +125,48 @@ module interface_graph
      procedure(neighbours_interface), deferred :: neighbours
      procedure(degree_interface)    , deferred :: degree
 
-     ! Shared stored-adjacency mechanism, written once: build the
+     ! The shared stored-adjacency mechanism, written once: build the
      ! compressed neighbour list from the edge list, then index it.
      procedure :: build_adjacency
      procedure :: stored_neighbours
      procedure :: stored_degree
 
-     ! visit order (breadth-first) over the whole graph
+     ! The visit order (breadth-first) runs over the whole graph.
      procedure :: traversal_order
 
-     ! greedy vertex coloring: independent sets, no edge inside a color
+     ! Greedy vertex coloring yields independent sets: no edge stays
+     ! inside a color.
      procedure :: coloring
 
-     ! orbit of a vertex under a caller-supplied successor rule
+     ! The orbit follows a vertex under a caller-supplied successor
+     ! rule.
      procedure :: orbit
 
-     ! every vertex's escape time under the rule, tails shared
+     ! The escape_times method resolves every vertex's escape time
+     ! under the rule, sharing merged tails.
      procedure :: escape_times
 
-     ! partitioners - stamp vertex % part and gather the csr, in place.
-     ! set_partition adopts parts computed elsewhere (a parent map, a
-     ! metis call) through the same gathering.
+     ! The partitioners stamp vertex % part and gather the csr, in
+     ! place. The set_partition method adopts parts computed elsewhere
+     ! (a parent map, a metis call) through the same gathering.
      procedure :: partition
      procedure :: partition_rcb
      procedure :: partition_aggregate
      procedure :: set_partition
 
-     ! the edge harvest, written once: walk the vertices, ask the
-     ! caller's rule who each one touches, keep what is fresh. the
+     ! The edge harvest, written once: walk the vertices, ask the
+     ! caller's rule who each one touches, and keep what is fresh. The
      ! squints and the subclasses' graph builders pass their rules
      ! through here.
      procedure :: harvest_edges
 
-     ! the squint: the stamped partition read back as a coarse edge
-     ! list. the zoom runs the other way: every vertex splits into
+     ! The squint reads the stamped partition back as a coarse edge
+     ! list. The zoom runs the other way: every vertex splits into
      ! children, and the refined edge list comes back.
      procedure :: quotient_edges
      procedure :: refine_edges
 
-     ! partition queries
+     ! These queries read the stamped partition.
      procedure :: part_of
      procedure :: owned
      procedure :: ghosts
@@ -170,29 +175,29 @@ module interface_graph
      procedure :: balance
      procedure :: edge_cut
 
-     ! values riding the partition: any vertex list expands to its
+     ! Values ride the partition: any vertex list expands to its
      ! dofs; gather/scatter move vector values through a part's
-     ! owned dofs, and dot measures them there
+     ! owned dofs, and dot measures them there.
      procedure :: dofs_of
      procedure :: gather
      procedure :: scatter
      procedure :: dot
 
-     ! the local frame of a part - the order its distributed
-     ! vectors live in - and the frame read backwards
+     ! The frame gives the local order a part's distributed vectors
+     ! live in, and frame_inverse reads the frame backwards.
      procedure :: frame
      procedure :: frame_inverse
 
-     ! the exchange tables, built from the replicated partition with
-     ! no communication: where a part's ghosts come from, and who
-     ! keeps copies of a part's owned dofs
+     ! The exchange tables are built from the replicated partition
+     ! with no communication: where a part's ghosts come from, and who
+     ! keeps copies of a part's owned dofs.
      procedure :: ghost_owners
      procedure :: ghost_copies
 
      procedure :: print
      procedure :: print_partition
 
-     ! internal: stamp vertex % part, then gather the owned/ghost csr
+     ! Internal: stamp vertex % part, then gather the owned/ghost csr.
      procedure, private :: stamp_bfs
      procedure, private :: stamp_rcb
      procedure, private :: stamp_aggregate
@@ -206,7 +211,7 @@ module interface_graph
 
   abstract interface
 
-     ! the neighbours of vertex v
+     ! Return the neighbours of vertex v.
      pure function neighbours_interface(this, v) result(nbrs)
        import :: graph
        class(graph), intent(in) :: this
@@ -214,15 +219,15 @@ module interface_graph
        integer, allocatable     :: nbrs(:)
      end function neighbours_interface
 
-     ! the number of neighbours of vertex v
+     ! Return the number of neighbours of vertex v.
      pure integer function degree_interface(this, v)
        import :: graph
        class(graph), intent(in) :: this
        integer     , intent(in) :: v
      end function degree_interface
 
-     ! a linear action w = A v, however the caller assembles it -
-     ! stored entries, filtered products, a smoothing sweep. the
+     ! Apply a linear action w = A v, however the caller assembles it
+     ! - stored entries, filtered products, a smoothing sweep. The
      ! power kernel iterates it.
      subroutine map_interface(v, w)
        import :: dp
@@ -242,47 +247,49 @@ module interface_graph
 
   type, abstract, extends(graph) :: digraph
 
-     ! stored directed adjacency: two compressed lists built from the
-     ! tail -> head edge list (a rule-generated subclass stores nothing)
+     ! The stored directed adjacency holds two compressed lists built
+     ! from the tail -> head edge list (a rule-generated subclass
+     ! stores nothing).
      integer, allocatable :: out_xadj(:), out_adj(:)
      integer, allocatable :: in_xadj(:),  in_adj(:)
 
    contains
 
-     ! the directed contract, compiler-enforced
+     ! The directed contract is enforced by the compiler.
      procedure(directed_neighbours_interface), deferred :: out_neighbours
      procedure(directed_neighbours_interface), deferred :: in_neighbours
 
-     ! the base contract, provided: the deduplicated union of out and
-     ! in, so partitioners and the visit order keep working
+     ! The base contract is provided as the deduplicated union of out
+     ! and in, so the partitioners and the visit order keep working.
      procedure :: neighbours => union_neighbours
      procedure :: degree     => union_degree
 
-     ! shared stored-directed mechanism (mirrors the base stored pattern)
+     ! The shared stored-directed mechanism mirrors the base stored
+     ! pattern.
      procedure :: build_directed_adjacency
      procedure :: build_in_adjacency
      procedure :: stored_out_neighbours
      procedure :: stored_in_neighbours
 
-     ! dependency semantics - true only here
+     ! Dependency semantics are true only here.
      procedure :: dependency_order
      procedure :: is_acyclic
 
-     ! knots: strong components, which of them the walk must solve,
-     ! and the directed squint that shrinks them to points
+     ! Knots live here: strong components, which of them the walk must
+     ! solve, and the directed squint that shrinks them to points.
      procedure :: strong_components
      procedure :: knotted_components
      procedure :: condensation_edges
 
-     ! the path from the single source, read as vertex numbers - the
-     ! cargo of a route-shaped digraph
+     ! The path from the single source is read as vertex numbers - the
+     ! cargo of a route-shaped digraph.
      procedure :: source_path
 
-     ! reverse-mode accumulation of the discrete adjoint, direction
-     ! read from structure
+     ! Reverse-mode accumulation of the discrete adjoint reads its
+     ! direction from structure.
      procedure :: accumulate_adjoint
 
-     ! the walk's witness, a contract method
+     ! The walk's witness is a contract method.
      procedure, nopass :: verify_adjoint_accumulation
 
   end type digraph
@@ -293,7 +300,7 @@ module interface_graph
 
   abstract interface
 
-     ! the out- (or in-) neighbours of vertex v
+     ! Return the out- (or in-) neighbours of vertex v.
      pure function directed_neighbours_interface(this, v) result(nbrs)
        import :: digraph
        class(digraph), intent(in) :: this
@@ -315,10 +322,10 @@ module interface_graph
      procedure :: in_neighbours  => witness_in_neighbours
   end type witness_digraph
 
-  ! witness fixture constants: the canonical recurrence chain and the
-  ! diamond dag, each judged against its own named tolerance; the
+  ! Witness fixture constants: the canonical recurrence chain and the
+  ! diamond dag are each judged against their own named tolerance; the
   ! witness returns the worst defect normalized by these, so a value
-  ! below one certifies both claims
+  ! below one certifies both claims.
   integer , parameter :: witness_chain_length      = 8
   real(dp), parameter :: witness_recurrence_factor = 0.7_dp
   real(dp), parameter :: witness_start_value       = 1.3_dp
@@ -332,8 +339,8 @@ module interface_graph
 contains
 
   !===================================================================!
-  ! Global dof for a (vertex, variable) pair. Variable-fastest so a
-  ! single field maps dof(v,1) = v.
+  ! Return the global dof of a (vertex, variable) pair. The ordering
+  ! runs variable-fastest, so a single field maps dof(v,1) = v.
   !===================================================================!
 
   pure type(integer) function dof(this, v, ivar)
@@ -346,7 +353,7 @@ contains
   end function dof
 
   !===================================================================!
-  ! Total number of degrees of freedom in the graph
+  ! Return the total number of degrees of freedom in the graph.
   !===================================================================!
 
   pure type(integer) function num_dofs(this)
@@ -358,12 +365,12 @@ contains
   end function num_dofs
 
   !===================================================================!
-  ! The adjacency read at dof granularity: one row per dof, and each
+  ! Read the adjacency at dof granularity: one row per dof, and each
   ! row leads with its own dof (the self-loop), then the matching
   ! variable's dof on every neighbour, in neighbour order. Emit the
   ! self pairs, emit the neighbour pairs, and the counting kernel
-  ! groups them into rows. Consumes only the neighbour queries, so a
-  ! rule-generated graph answers as readily as a stored one.
+  ! groups them into rows. This consumes only the neighbour queries,
+  ! so a rule-generated graph answers as readily as a stored one.
   !===================================================================!
 
   pure subroutine dof_adjacency(this, xadj, adj)
@@ -376,18 +383,20 @@ contains
 
     ndof = this % num_dofs()
 
+    ! Size the pair buffers: one self pair per dof plus every neighbour pair.
     n = ndof
     do v = 1, this % num_vertices
        n = n + this % degree(v) * this % num_variables
     end do
     allocate(keys(n), values(n))
 
-    ! self pairs first - the kernel keeps arrival order within a row
+    ! Self pairs go first; the kernel keeps arrival order within a row.
     do p = 1, ndof
        keys(p)   = p
        values(p) = p
     end do
 
+    ! The neighbour pairs follow, variable-fastest within each vertex.
     n = ndof
     do v = 1, this % num_vertices
        nbrs = this % neighbours(v)
@@ -417,8 +426,11 @@ contains
     integer, allocatable :: keys(:), values(:)
     integer :: e
 
-    ! every edge contributes both ways, in edge order - the same
-    ! interleaving the hand-rolled scatter always produced
+    !-----------------------------------------------------------------!
+    ! Every edge contributes both ways, in edge order - the same
+    ! interleaving the hand-rolled scatter always produced.
+    !-----------------------------------------------------------------!
+
     allocate(keys(2*this % num_edges), values(2*this % num_edges))
     do e = 1, this % num_edges
        keys(2*e-1)   = this % edges(e) % tail
@@ -432,7 +444,7 @@ contains
   end subroutine build_adjacency
 
   !===================================================================!
-  ! Counting sort - the one counting trick every retained structure
+  ! Counting sort is the one counting trick every retained structure
   ! in this module is built with. Given pairs (key, value) in order,
   ! group the values by key: ptr(k) points at key k's first value in
   ! sorted, and within a key the values keep their arrival order.
@@ -450,17 +462,20 @@ contains
     integer, allocatable :: cursor(:)
     integer :: i, k
 
+    ! Count the arrivals per key.
     allocate(ptr(nkeys+1))
     ptr = 0
     do i = 1, size(keys)
        ptr(keys(i)+1) = ptr(keys(i)+1) + 1
     end do
 
+    ! Prefix-sum the counts into the row pointer.
     ptr(1) = 1
     do k = 1, nkeys
        ptr(k+1) = ptr(k+1) + ptr(k)
     end do
 
+    ! Scatter the values, keeping arrival order within each key.
     allocate(sorted(ptr(nkeys+1)-1))
     allocate(cursor(nkeys))
     cursor = ptr(1:nkeys)
@@ -480,8 +495,8 @@ contains
   !
   !    v --> Av --> A(Av) --> A(A(Av)) --> ...
   !
-  !    per pass: one matvec, one measuring dot (mu = the stretch
-  !    ||Av|| of the unit v), and the unit vector rides on
+  !    Per pass: one matvec, one measuring dot (mu = the stretch
+  !    ||Av|| of the unit v), and the unit vector rides on.
   !
   ! The default start is a fixed pseudo-random unit vector, so a
   ! measurement reproduces run to run; a caller with a reason
@@ -502,6 +517,7 @@ contains
 
     allocate(v(n), w(n))
 
+    ! A fixed pseudo-random start reproduces run to run unless v0 is given.
     if (present(v0)) then
        v = v0
     else
@@ -513,6 +529,7 @@ contains
     end if
     v = v/norm2(v)
 
+    ! Iterate: apply the map, measure the stretch, and renormalize.
     mu = 0.0_dp
     do it = 1, iters
        call map(v, w)
@@ -544,7 +561,7 @@ contains
     integer, allocatable :: keys(:), values(:), ptr(:), sorted(:)
     integer :: key, k, n, v
 
-    ! flatten the padded lists into (value, key) pairs, in key order
+    ! Flatten the padded lists into (value, key) pairs, in key order.
     allocate(keys(sum(num_forward)), values(sum(num_forward)))
     n = 0
     do key = 1, size(num_forward)
@@ -557,7 +574,7 @@ contains
 
     call counting_sort(n_values, keys, values, ptr, sorted)
 
-    ! pad the grouped rows back into the rectangular shape
+    ! Pad the grouped rows back into the rectangular shape.
     allocate(num_reverse(n_values))
     do v = 1, n_values
        num_reverse(v) = ptr(v+1) - ptr(v)
@@ -613,17 +630,17 @@ contains
   end function stored_degree
 
   !===================================================================!
-  ! Visit order over all vertices: breadth-first, restarting for
-  ! disconnected components (FORWARD); the same order reversed
+  ! Return a visit order over all vertices: breadth-first, restarting
+  ! for disconnected components (FORWARD); the same order reversed
   ! (REVERSE). This is locality for the partitioner, not a dependency
-  ! claim - dependency semantics live on digraph. Consumes only the
+  ! claim - dependency semantics live on digraph. It consumes only the
   ! neighbour queries.
   !===================================================================!
 
   pure function traversal_order(this, direction) result(order)
 
     class(graph), intent(in)           :: this
-    integer     , intent(in), optional :: direction   ! FORWARD (default) / REVERSE
+    integer     , intent(in), optional :: direction   ! FORWARD (default) or REVERSE.
 
     integer, allocatable :: order(:)
 
@@ -642,6 +659,7 @@ contains
     qh  = 1
     qt  = 0
 
+    ! Restart from every unseen vertex so disconnected components appear.
     do start = 1, nv
 
        if (seen(start)) cycle
@@ -680,7 +698,7 @@ contains
   ! Greedy vertex coloring: visit the vertices in order and give each
   ! the smallest color no neighbour already holds. The colors split
   ! the vertices into independent sets - no edge stays inside a color
-  ! - so everything of one color can act at once. Consumes only the
+  ! - so everything of one color can act at once. It consumes only the
   ! neighbour queries.
   !===================================================================!
 
@@ -695,7 +713,7 @@ contains
     allocate(colors(this % num_vertices))
     colors = 0
 
-    ! a vertex never needs more colors than neighbours plus one
+    ! A vertex never needs more colors than neighbours plus one.
     allocate(used(this % num_vertices + 1))
 
     do v = 1, this % num_vertices
@@ -726,7 +744,7 @@ contains
   ! recorded (a capped sequence makes no claim about the fate beyond
   ! it). The default limit num_vertices + 1 guarantees termination on
   ! its own: a rule that never escapes a finite vertex set must repeat
-  ! a vertex by then. Consumes only the rule - the graph contributes
+  ! a vertex by then. It consumes only the rule - the graph contributes
   ! the vertex set the orbit may escape.
   !===================================================================!
 
@@ -735,7 +753,7 @@ contains
     class(graph), intent(in) :: this
     integer     , intent(in) :: start
     interface
-       ! the single successor of vertex v under the rule
+       ! Return the single successor of vertex v under the rule.
        pure integer function successor(v)
          integer, intent(in) :: v
        end function successor
@@ -760,15 +778,16 @@ contains
     allocate(scratch(cap), seen(nv))
     seen = .false.
 
+    ! Walk the rule, recording vertices until escape, repeat, or cap.
     v = start
     n = 0
     do while (n .lt. cap)
        n = n + 1
        scratch(n) = v
-       if (seen(v)) exit                    ! a cycle has closed
+       if (seen(v)) exit                    ! A cycle has closed.
        seen(v) = .true.
        v = successor(v)
-       if (v .lt. 1 .or. v .gt. nv) exit    ! the orbit escapes the graph
+       if (v .lt. 1 .or. v .gt. nv) exit    ! The orbit escapes the graph.
     end do
 
     visited = scratch(1:n)
@@ -791,7 +810,7 @@ contains
 
     class(graph), intent(in) :: this
     interface
-       ! the single successor of vertex v under the rule
+       ! Return the single successor of vertex v under the rule.
        pure integer function successor(v)
          integer, intent(in) :: v
        end function successor
@@ -809,7 +828,7 @@ contains
 
     nv = this % num_vertices
     allocate(times(nv), path(nv), pos(nv))
-    times = 0            ! 0 marks unresolved; every resolved time is >= 1
+    times = 0            ! Zero marks unresolved; every resolved time is >= 1.
     pos   = 0
 
     do start = 1, nv
@@ -821,20 +840,20 @@ contains
 
        follow: do
           if (v .lt. 1 .or. v .gt. nv) then
-             base = 0                    ! stepped off: the path's last vertex escapes in 1
+             base = 0                    ! The rule stepped off; the path's last vertex escapes in 1.
              exit follow
           end if
           if (times(v) .ne. 0) then
-             base = times(v)             ! already resolved: count on from its time
+             base = times(v)             ! The vertex is resolved; count on from its time.
              exit follow
           end if
           if (pos(v) .ne. 0) then
-             ! the path bit itself: a cycle - everyone on it is home
+             ! The path bit itself: a cycle has closed, and everyone on it is home.
              do i = pos(v), depth
                 times(path(i)) = limit
              end do
              base  = limit
-             depth = pos(v) - 1          ! the tail feeding the cycle remains
+             depth = pos(v) - 1          ! The tail feeding the cycle remains.
              exit follow
           end if
           depth       = depth + 1
@@ -843,10 +862,14 @@ contains
           v = successor(v)
        end do follow
 
-       ! stale pos marks need no clearing: every marked vertex leaves
-       ! this pass resolved, and the resolved check runs first. the cap
-       ! is applied to the step count before adding, so the sum never
-       ! exceeds limit - base + limit would overflow near huge(0)
+       !--------------------------------------------------------------!
+       ! Stale pos marks need no clearing: every marked vertex leaves
+       ! this pass resolved, and the resolved check runs first. The
+       ! cap is applied to the step count before adding, so the sum
+       ! never exceeds limit - base + limit would overflow near
+       ! huge(0).
+       !--------------------------------------------------------------!
+
        do i = depth, 1, -1
           times(path(i)) = base + min(depth - i + 1, limit - base)
        end do
@@ -860,9 +883,9 @@ contains
   ! (vertex % part stamped, owned/ghost csr gathered).
   !
   ! This is the serial placeholder: bfs keeps neighbours close so the
-  ! chunks stay mostly connected and the cut is reasonable. (KB: swap the
-  ! stamp_bfs body for a parmetis call - same contract.) Sibling to
-  ! partition_rcb (geometric).
+  ! chunks stay mostly connected and the cut is reasonable. Swapping
+  ! the stamp_bfs body for a parmetis call preserves the contract. It
+  ! is a sibling of partition_rcb (geometric).
   !===================================================================!
 
   pure subroutine partition(this, nparts)
@@ -876,18 +899,18 @@ contains
   end subroutine partition
 
   !===================================================================!
-  ! Geometric partitioner: recursive coordinate bisection (RCB), in
-  ! place. Uses the vertex coordinates coords(:,v) (e.g. cell centroids)
-  ! to recursively split by the median coordinate along the longest-
-  ! spread axis - balanced, COMPACT subdomains (small edge cut / halo)
-  ! where the BFS chunks would go stringy. (KB: METIS could still slot
-  ! in behind this same contract.)
+  ! The geometric partitioner: recursive coordinate bisection (RCB),
+  ! in place. It uses the vertex coordinates coords(:,v) (e.g. cell
+  ! centroids) to recursively split by the median coordinate along the
+  ! longest-spread axis, giving balanced, COMPACT subdomains (small
+  ! edge cut / halo) where the BFS chunks would go stringy. METIS
+  ! could still slot in behind this same contract.
   !===================================================================!
 
   impure subroutine partition_rcb(this, coords, nparts)
 
     class(graph), intent(inout) :: this
-    real(dp)    , intent(in)    :: coords(:,:)   ! (ndim, num_vertices)
+    real(dp)    , intent(in)    :: coords(:,:)   ! Shape (ndim, num_vertices).
     integer     , intent(in)    :: nparts
 
     call this % stamp_rcb(coords, nparts)
@@ -903,8 +926,8 @@ contains
   ! part; whatever remains seeds its own. This is the squint algebraic
   ! multigrid coarsens by - strength has already chosen the edges by
   ! the time this graph exists, so the passes consume only the
-  ! neighbour queries. Sibling of partition (breadth-first) and
-  ! partition_rcb (geometric).
+  ! neighbour queries. It is a sibling of partition (breadth-first)
+  ! and partition_rcb (geometric).
   !===================================================================!
 
   pure subroutine partition_aggregate(this)
@@ -939,6 +962,7 @@ contains
        error stop "graph: parts are numbered from 1"
     end if
 
+    ! Stamp the adopted parts onto the vertices.
     do v = 1, this % num_vertices
        this % vertices(v) % part = parts(v)
     end do
@@ -953,7 +977,7 @@ contains
   ! numbered (v-1)*children+1 .. v*children - the parent of any child
   ! is arithmetic. Within a split vertex the children form a chain;
   ! each original edge becomes one bridge between the first children
-  ! of its two ends. Consumes only the neighbour queries, so a
+  ! of its two ends. It consumes only the neighbour queries, so a
   ! rule-generated graph refines as readily as a stored one. The
   ! quotient of the refinement by the parent map is the original
   ! graph - the zoom and the squint undo each other.
@@ -972,7 +996,7 @@ contains
        error stop "graph: refine_edges needs at least one child per vertex"
     end if
 
-    ! chains within each split vertex, one bridge per original edge
+    ! Chains run within each split vertex, one bridge per original edge.
     n_refined = this % num_vertices*(children - 1) + this % num_edges
     allocate(tails(n_refined), heads(n_refined))
 
@@ -1000,16 +1024,17 @@ contains
   end subroutine refine_edges
 
   !===================================================================!
-  ! The edge harvest, written once. Walk the vertices, ask the
+  ! The edge harvest is written once. Walk the vertices, ask the
   ! caller's rule who each one touches, keep what is fresh: two
   ! passes (count, then fill), duplicates skipped by a mark stamp
   ! whose tail id only grows, so a stale stamp reads as unmarked.
   !
   ! With `group` the harvest records edges between groups instead of
   ! vertices - the walk visits members grouped by one counting sort,
-  ! while the rule still answers in fine vertices. `directed` keeps
-  ! an edge once per direction discovered; otherwise once per pair,
-  ! smaller tail first. Self edges never survive. The rule rides in
+  ! while the rule still answers in fine vertices. The `directed` flag
+  ! keeps an edge once per direction discovered; otherwise an edge is
+  ! kept once per pair, smaller tail first. Self edges never survive.
+  ! The rule rides in
   ! the way orbit's successor and the adjoint's edge_apply already
   ! do: a caller-supplied procedure, usually contained, reading its
   ! host's state.
@@ -1019,6 +1044,7 @@ contains
 
     class(graph), intent(in) :: this
     interface
+       ! Return the candidate vertices the rule says v touches.
        pure function rule(v) result(cands)
          integer, intent(in)  :: v
          integer, allocatable :: cands(:)
@@ -1036,7 +1062,7 @@ contains
     keep_both = .false.
     if (present(directed)) keep_both = directed
 
-    ! the walk: grouped members, or every vertex its own group
+    ! The walk visits grouped members, or every vertex as its own group.
     if (present(group)) then
        ntails = 0
        if (nv .gt. 0) ntails = maxval(group)
@@ -1059,9 +1085,9 @@ contains
              do j = 1, size(cands)
                 kw = cands(j)
                 if (present(group)) kw = group(cands(j))
-                if (kw .eq. k) cycle                        ! no self edges
-                if (.not. keep_both .and. kw .lt. k) cycle  ! once per pair
-                if (mark(kw) .eq. k) cycle                  ! seen from this tail
+                if (kw .eq. k) cycle                        ! No self edges survive.
+                if (.not. keep_both .and. kw .lt. k) cycle  ! Keep once per pair.
+                if (mark(kw) .eq. k) cycle                  ! Already seen from this tail.
                 mark(kw) = k
                 ne = ne + 1
                 if (pass .eq. 2) then
@@ -1103,6 +1129,10 @@ contains
 
   contains
 
+    !=================================================================!
+    ! The rule is the graph's own neighbour query.
+    !=================================================================!
+
     pure function fine_neighbours(v) result(nbrs)
       integer, intent(in)  :: v
       integer, allocatable :: nbrs(:)
@@ -1128,6 +1158,7 @@ contains
     allocate(order(nv))
     order = this % traversal_order(FORWARD)
 
+    ! Cut the breadth-first order into nparts balanced, contiguous chunks.
     do pos = 1, nv
        this % vertices(order(pos)) % part = (pos-1)*nparts/nv + 1
     end do
@@ -1156,7 +1187,7 @@ contains
     part   = 0
     nparts = 0
 
-    ! pass 1: seed where the whole neighbourhood is free
+    ! Pass 1: seed where the whole neighbourhood is free.
     do v = 1, nv
        if (part(v) .ne. 0) cycle
        nbrs = this % neighbours(v)
@@ -1175,7 +1206,7 @@ contains
        end do
     end do
 
-    ! pass 2: sweep each leftover into a neighbouring part
+    ! Pass 2: sweep each leftover into a neighbouring part.
     do v = 1, nv
        if (part(v) .ne. 0) cycle
        nbrs = this % neighbours(v)
@@ -1187,7 +1218,7 @@ contains
        end do
     end do
 
-    ! pass 3: whoever is still alone seeds a singleton
+    ! Pass 3: whoever is still alone seeds a singleton.
     do v = 1, nv
        if (part(v) .eq. 0) then
           nparts  = nparts + 1
@@ -1195,6 +1226,7 @@ contains
        end if
     end do
 
+    ! Stamp the discovered parts onto the vertices.
     do v = 1, nv
        this % vertices(v) % part = part(v)
     end do
@@ -1219,6 +1251,7 @@ contains
     if (nparts .lt. 1)  error stop "partition_rcb: nparts < 1"
     if (nparts .gt. nv) error stop "partition_rcb: more parts than vertices"
 
+    ! Every vertex starts in part 1 with its own slot in the index.
     allocate(ghost_index(nv), part(nv))
     do c = 1, nv
        ghost_index(c) = c
@@ -1227,6 +1260,7 @@ contains
 
     call rcb(ghost_index, 1, nv, nparts, 1, coords, part)
 
+    ! Stamp the bisected parts onto the vertices.
     do c = 1, nv
        this % vertices(c) % part = part(c)
     end do
@@ -1235,9 +1269,9 @@ contains
 
   !===================================================================!
   ! Gather the owned/ghost csr from the already-stamped vertex % part.
-  ! ghost(k) = vertices not in k but adjacent to a k-owned vertex - the
-  ! halo part k must pull from the vertices' owners. Consumes only the
-  ! neighbour queries.
+  ! The set ghost(k) holds vertices not in k but adjacent to a k-owned
+  ! vertex - the halo part k must pull from the vertices' owners. It
+  ! consumes only the neighbour queries.
   !===================================================================!
 
   pure subroutine gather_partition(this, nparts)
@@ -1251,19 +1285,24 @@ contains
     nv = this % num_vertices
     this % nparts = nparts
 
-    ! ---- owned vertices per part: counting sort by part ----
+    ! Owned vertices per part: one counting sort keyed by part.
     call counting_sort(nparts, [(this % vertices(v) % part, v = 1, nv)], &
          &             [(v, v = 1, nv)], this % own_ptr, this % own_list)
 
-    ! ---- edge cut ----
+    ! Record the edge cut.
     this % ncut = this % edge_cut()
 
-    ! ---- ghost vertices per part ----
-    ! Two passes over each part's owned vertices and their neighbours:
-    ! count (size the csr) then fill, deduped by stamping mark(w)=k (k is
-    ! monotone, so an old stamp from part k-1 reads as unmarked for k).
-    allocate(counts(nparts)); counts = 0
-    allocate(mark(nv));    mark = 0
+    !-----------------------------------------------------------------!
+    ! Ghost vertices per part: two passes run over each part's owned
+    ! vertices and their neighbours - count (to size the csr), then
+    ! fill, deduplicated by stamping mark(w) = k (k is monotone, so an
+    ! old stamp from part k-1 reads as unmarked for k).
+    !-----------------------------------------------------------------!
+
+    allocate(counts(nparts))
+    counts = 0
+    allocate(mark(nv))
+    mark = 0
     do k = 1, nparts
        do i = this % own_ptr(k), this % own_ptr(k+1)-1
           v    = this % own_list(i)
@@ -1307,7 +1346,7 @@ contains
   end subroutine gather_partition
 
   !===================================================================!
-  ! Owning part of a vertex
+  ! Return the owning part of a vertex.
   !===================================================================!
 
   pure integer function part_of(this, v)
@@ -1320,7 +1359,7 @@ contains
   end function part_of
 
   !===================================================================!
-  ! Vertices owned by part k
+  ! Return the vertices owned by part k.
   !===================================================================!
 
   pure function owned(this, k) result(list)
@@ -1335,9 +1374,10 @@ contains
   end function owned
 
   !===================================================================!
-  ! The dofs a list of vertices carries, variable-fastest - the same
-  ! interleaving dof(v, ivar) uses. Works for any list the graph
-  ! hands out: a part's owned vertices, its ghosts, an aggregate.
+  ! Return the dofs a list of vertices carries, variable-fastest -
+  ! the same interleaving dof(v, ivar) uses. It works for any list
+  ! the graph hands out: a part's owned vertices, its ghosts, an
+  ! aggregate.
   !===================================================================!
 
   pure function dofs_of(this, verts) result(dofs)
@@ -1418,8 +1458,8 @@ contains
   end function frame
 
   !===================================================================!
-  ! The frame read backwards: global dof -> local position in part
-  ! k's frame, 0 where the part cannot see the dof.
+  ! Read the frame backwards: global dof -> local position in part
+  ! k's frame, with 0 where the part cannot see the dof.
   !===================================================================!
 
   pure function frame_inverse(this, k) result(loc)
@@ -1441,8 +1481,8 @@ contains
   end function frame_inverse
 
   !===================================================================!
-  ! Where part k's ghosts come from: for each ghost dof, the part
-  ! that owns the original and its position in that part's owned
+  ! Report where part k's ghosts come from: for each ghost dof, the
+  ! part that owns the original and its position in that part's owned
   ! dofs. This is the table a distributed fetch reads -
   !
   !    part k's ghost j  ──▶  owner(j), slot(j)
@@ -1451,8 +1491,8 @@ contains
   !                            it lives  owned prefix, where a
   !                            on        posted slab holds it
   !
-  ! Built from the replicated partition lists alone - every part
-  ! can compute every table with no messages at all.
+  ! It is built from the replicated partition lists alone - every
+  ! part can compute every table with no messages at all.
   !===================================================================!
 
   pure subroutine ghost_owners(this, k, owner, slot)
@@ -1467,6 +1507,7 @@ contains
     ghost_dofs = this % dofs_of(this % ghosts(k))
     allocate(owner(size(ghost_dofs)), slot(size(ghost_dofs)))
 
+    ! Consecutive ghosts often share an owner, so cache its inverse frame.
     prev_p = 0
     do j = 1, size(ghost_dofs)
        g = ghost_dofs(j)
@@ -1483,9 +1524,10 @@ contains
   end subroutine ghost_owners
 
   !===================================================================!
-  ! Who keeps copies of part k's owned dofs: the same table read the
-  ! other way. For each owned dof (by its position 1..num_owned), the
-  ! parts that hold it as a ghost and WHERE in their ghost list -
+  ! Report who keeps copies of part k's owned dofs: the same table
+  ! read the other way. For each owned dof (by its position
+  ! 1..num_owned), it lists the parts that hold it as a ghost and
+  ! WHERE in their ghost list -
   !
   !    my owned dof s  ──▶  image(ptr(s):ptr(s+1)-1), ghost_index(...)
   !                          the parts holding      the ghost index
@@ -1508,8 +1550,11 @@ contains
     num_owned = size(this % dofs_of(this % owned(k)))
     inverse  = this % frame_inverse(k)
 
-    ! collect every (part, ghost index) pair that points at one of
-    ! part k's dofs, keyed by the owned position it points at
+    !-----------------------------------------------------------------!
+    ! Collect every (part, ghost index) pair that points at one of
+    ! part k's dofs, keyed by the owned position it points at.
+    !-----------------------------------------------------------------!
+
     do_count: block
       integer :: total, pass
       do pass = 1, 2
@@ -1536,8 +1581,11 @@ contains
       end do
     end block do_count
 
-    ! group by owned position: the counting kernel returns the row
-    ! pointer and the pair permutation, and the table is two gathers
+    !-----------------------------------------------------------------!
+    ! Group by owned position: the counting kernel returns the row
+    ! pointer and the pair permutation, and the table is two gathers.
+    !-----------------------------------------------------------------!
+
     call counting_sort(num_owned, keys, [(j, j = 1, n)], ptr, perm)
     image = raw_image(perm)
     ghost_index = raw_index(perm)
@@ -1566,7 +1614,7 @@ contains
   end function dot
 
   !===================================================================!
-  ! Halo (ghost) vertices part k needs from other parts
+  ! Return the halo (ghost) vertices part k needs from other parts.
   !===================================================================!
 
   pure function ghosts(this, k) result(list)
@@ -1581,8 +1629,8 @@ contains
   end function ghosts
 
   !===================================================================!
-  ! Part sizes, read straight off the csr pointers: how many vertices
-  ! part k owns, and how many it borrows from across the cut.
+  ! Part sizes are read straight off the csr pointers: how many
+  ! vertices part k owns, and how many it borrows from across the cut.
   !===================================================================!
 
   pure integer function n_owned(this, k)
@@ -1594,6 +1642,10 @@ contains
 
   end function n_owned
 
+  !===================================================================!
+  ! Return the number of ghost vertices part k borrows across the cut.
+  !===================================================================!
+
   pure integer function n_ghosts(this, k)
 
     class(graph), intent(in) :: this
@@ -1604,7 +1656,8 @@ contains
   end function n_ghosts
 
   !===================================================================!
-  ! Load-balance ratio max(owned)/min(owned) over the parts (1.0 = perfect)
+  ! Return the load-balance ratio max(owned)/min(owned) over the
+  ! parts (1.0 is perfect).
   !===================================================================!
 
   pure real(dp) function balance(this)
@@ -1613,10 +1666,13 @@ contains
 
     integer :: k, lo, hi, m
 
-    lo = huge(1); hi = 0
+    ! Scan the parts for the smallest and largest ownership.
+    lo = huge(1)
+    hi = 0
     do k = 1, this % nparts
        m = this % n_owned(k)
-       lo = min(lo, m); hi = max(hi, m)
+       lo = min(lo, m)
+       hi = max(hi, m)
     end do
 
     if (lo .le. 0) then
@@ -1628,9 +1684,9 @@ contains
   end function balance
 
   !===================================================================!
-  ! Number of edges whose endpoints lie in different parts. Counted over
-  ! the neighbour queries (each undirected edge visited from both ends;
-  ! the w > v guard counts it once).
+  ! Count the edges whose endpoints lie in different parts. The count
+  ! runs over the neighbour queries (each undirected edge is visited
+  ! from both ends; the w > v guard counts it once).
   !===================================================================!
 
   pure type(integer) function edge_cut(this)
@@ -1656,7 +1712,7 @@ contains
   end function edge_cut
 
   !===================================================================!
-  ! Print a one line summary of the graph
+  ! Print a one-line summary of the graph.
   !===================================================================!
 
   impure subroutine print(this)
@@ -1706,8 +1762,11 @@ contains
     outn = this % out_neighbours(v)
     inn  = this % in_neighbours(v)
 
-    ! deduplicate within each list as well as across them (a multigraph
-    ! may carry repeated edges)
+    !-----------------------------------------------------------------!
+    ! Deduplicate within each list as well as across them; a
+    ! multigraph may carry repeated edges.
+    !-----------------------------------------------------------------!
+
     allocate(nbrs(size(outn) + size(inn)))
     n = 0
     do i = 1, size(outn)
@@ -1726,6 +1785,11 @@ contains
     nbrs = nbrs(1:n)
 
   end function union_neighbours
+
+  !===================================================================!
+  ! Return the degree of vertex v as the size of the deduplicated
+  ! union of out- and in-neighbours.
+  !===================================================================!
 
   pure integer function union_degree(this, v)
 
@@ -1751,8 +1815,11 @@ contains
 
     integer, allocatable :: tails(:), heads(:)
 
-    ! the out-lists sort the heads by tail; the in-lists sort the
-    ! tails by head - counting sort both ways
+    !-----------------------------------------------------------------!
+    ! The out-lists sort the heads by tail; the in-lists sort the
+    ! tails by head. Counting sort runs both ways.
+    !-----------------------------------------------------------------!
+
     tails = this % edges % tail
     heads = this % edges % head
 
@@ -1788,7 +1855,7 @@ contains
             & "far side) have no in-lists here"
     end if
 
-    ! the tail of each stored edge, in storage order
+    ! Record the tail of each stored edge, in storage order.
     allocate(tails(size(this % out_adj)))
     do v = 1, this % num_vertices
        tails(this % out_xadj(v) : this % out_xadj(v+1) - 1) = v
@@ -1822,6 +1889,11 @@ contains
 
   end function stored_out_neighbours
 
+  !===================================================================!
+  ! Return the stored in-neighbours of vertex v (see
+  ! stored_out_neighbours for the invariant).
+  !===================================================================!
+
   pure function stored_in_neighbours(this, v) result(nbrs)
 
     class(digraph), intent(in) :: this
@@ -1839,11 +1911,12 @@ contains
   end function stored_in_neighbours
 
   !===================================================================!
-  ! Topological order over the out-edges (Kahn's construction): vertices
-  ! with no incoming edges enter first, in ascending vertex order for
-  ! determinism. n_ordered < num_vertices signals a directed cycle.
-  ! Shared by dependency_order (which refuses on a cycle) and is_acyclic
-  ! (which reports without dying).
+  ! Order the vertices topologically over the out-edges (Kahn's
+  ! construction): vertices with no incoming edges enter first, in
+  ! ascending vertex order for determinism. A count n_ordered <
+  ! num_vertices signals a directed cycle. The routine is shared by
+  ! dependency_order (which refuses on a cycle) and is_acyclic (which
+  ! reports without dying).
   !===================================================================!
 
   pure subroutine topological_order(this, order, n_ordered)
@@ -1858,12 +1931,15 @@ contains
     nv = this % num_vertices
     allocate(order(nv), indeg(nv), queue(nv))
 
+    ! Count every vertex's incoming edges.
     do v = 1, nv
        nbrs = this % in_neighbours(v)
        indeg(v) = size(nbrs)
     end do
 
-    qh = 1; qt = 0
+    ! Seed the queue with every vertex that has no incoming edge.
+    qh = 1
+    qt = 0
     do v = 1, nv
        if (indeg(v) .eq. 0) then
           qt = qt + 1
@@ -1871,6 +1947,7 @@ contains
        end if
     end do
 
+    ! Pop a vertex, record it, and release its successors.
     n_ordered = 0
     do while (qh .le. qt)
        v  = queue(qh)
@@ -1901,7 +1978,7 @@ contains
   pure function dependency_order(this, direction) result(order)
 
     class(digraph), intent(in)           :: this
-    integer       , intent(in), optional :: direction   ! FORWARD (default) / REVERSE
+    integer       , intent(in), optional :: direction   ! FORWARD (default) or REVERSE.
 
     integer, allocatable :: order(:)
     integer :: n_ordered, dir
@@ -1940,7 +2017,7 @@ contains
     integer, allocatable :: visits(:), nbrs(:)
     integer              :: v, s, n_source, n
 
-    ! the single source: the one vertex with no arrow in
+    ! Find the single source: the one vertex with no arrow in.
     n_source = 0
     s        = 0
     do v = 1, this % num_vertices
@@ -1953,6 +2030,7 @@ contains
        error stop "digraph: source_path needs exactly one source"
     end if
 
+    ! Follow the arrows from the source, recording each vertex's number.
     allocate(visits(this % num_vertices))
     n = 0
     do
@@ -1969,9 +2047,12 @@ contains
        s = nbrs(1)
     end do
 
-    ! the path must cover the graph: vertices it never reached sit in
+    !-----------------------------------------------------------------!
+    ! The path must cover the graph: vertices it never reached sit in
     ! a detached component with no source of its own - a cycle the
-    ! single-source audit cannot see
+    ! single-source audit cannot see.
+    !-----------------------------------------------------------------!
+
     if (n .lt. this % num_vertices) then
        error stop "digraph: source_path left vertices unvisited - the route does not cover the graph"
     end if
@@ -1981,8 +2062,8 @@ contains
   end function source_path
 
   !===================================================================!
-  ! True when the directed wiring has no cycle (pure report, no stop) -
-  ! for constructors and tests to assert without dying.
+  ! Return true when the directed wiring has no cycle (a pure report,
+  ! no stop) - constructors and tests assert with it without dying.
   !===================================================================!
 
   pure logical function is_acyclic(this)
@@ -2037,9 +2118,13 @@ contains
     allocate(parts(nv))
     if (nv .eq. 0) return
 
-    ! sweep one: down the out-edges, iterative depth-first with a
-    ! marker stack (+v enters a vertex, -v leaves it and records the
-    ! finish); raw doubles as the visited flag for this sweep
+    !-----------------------------------------------------------------!
+    ! Sweep one runs down the out-edges: an iterative depth-first walk
+    ! with a marker stack (+v enters a vertex, -v leaves it and
+    ! records the finish); raw doubles as the visited flag for this
+    ! sweep.
+    !-----------------------------------------------------------------!
+
     allocate(raw(nv), finish(nv))
     allocate(stack(2*nv + this % num_edges))
     raw        = 0
@@ -2059,9 +2144,9 @@ contains
           if (raw(v) .ne. 0) cycle
           raw(v)     = 1
           top        = top + 1
-          stack(top) = -v                  ! the leave marker, under the children
+          stack(top) = -v                  ! The leave marker sits under the children.
           nbrs = this % out_neighbours(v)
-          do i = size(nbrs), 1, -1         ! pushed reversed: visited ascending
+          do i = size(nbrs), 1, -1         ! Pushed reversed, so children are visited ascending.
              w = nbrs(i)
              if (raw(w) .eq. 0) then
                 top        = top + 1
@@ -2071,8 +2156,12 @@ contains
        end do
     end do
 
-    ! sweep two: up the in-edges from the latest finisher - each
-    ! climb floods exactly one strong component; raw becomes the paint
+    !-----------------------------------------------------------------!
+    ! Sweep two climbs up the in-edges from the latest finisher; each
+    ! climb floods exactly one strong component, and raw becomes the
+    ! paint.
+    !-----------------------------------------------------------------!
+
     raw          = 0
     n_components = 0
     do i = n_finished, 1, -1
@@ -2097,9 +2186,12 @@ contains
        end do
     end do
 
-    ! renumber by the condensation's own dependency order (kahn over
+    !-----------------------------------------------------------------!
+    ! Renumber by the condensation's own dependency order (Kahn over
     ! the component graph, initial queue ascending for determinism) -
-    ! the promised property, made true by construction
+    ! the promised property, made true by construction.
+    !-----------------------------------------------------------------!
+
     call this % condensation_edges(raw, tails, heads)
     call counting_sort(n_components, tails, heads, ptr, successors)
 
@@ -2148,7 +2240,8 @@ contains
   !       (2)◀───▶(3)                          (1)◀─╮
   !        tangled together                      ╰──╯  names itself
   !
-  ! everything else is a trivial component: pass straight through.
+  ! Everything else is a trivial component: the walk passes straight
+  ! through.
   !===================================================================!
 
   pure function knotted_components(this, parts) result(is_knot)
@@ -2164,7 +2257,7 @@ contains
     n_components = 0
     if (this % num_vertices .gt. 0) n_components = maxval(parts)
 
-    ! more than one member tangles
+    ! More than one member tangles.
     allocate(population(n_components))
     population = 0
     do v = 1, this % num_vertices
@@ -2172,7 +2265,7 @@ contains
     end do
     is_knot = population .gt. 1
 
-    ! and so does a vertex that names itself
+    ! So does a vertex that names itself.
     do v = 1, this % num_vertices
        nbrs = this % out_neighbours(v)
        do i = 1, size(nbrs)
@@ -2214,6 +2307,10 @@ contains
 
   contains
 
+    !=================================================================!
+    ! The rule is the directed out-neighbour query.
+    !=================================================================!
+
     pure function forward_neighbours(v) result(nbrs)
       integer, intent(in)  :: v
       integer, allocatable :: nbrs(:)
@@ -2252,7 +2349,7 @@ contains
          real(dp), intent(out) :: contribution(:)
        end subroutine edge_apply
     end interface
-    integer       , intent(in)  :: at          ! the objective vertex
+    integer       , intent(in)  :: at          ! The objective vertex.
     real(dp)      , intent(out) :: adjoint(:,:)
 
     integer , allocatable :: order(:), pos(:), nbrs(:)
@@ -2263,6 +2360,7 @@ contains
     allocate(order(nv))
     order = this % dependency_order(FORWARD)
 
+    ! Invert the order: pos(v) is v's position in the dependency order.
     allocate(pos(nv))
     do i = 1, nv
        pos(order(i)) = i
@@ -2273,7 +2371,7 @@ contains
     adjoint = 0.0_dp
     adjoint(:, at) = seed
 
-    ! against the dependency order, from just before the objective
+    ! Walk against the dependency order, from just before the objective.
     do i = pos(at) - 1, 1, -1
        v    = order(i)
        nbrs = this % out_neighbours(v)
@@ -2305,7 +2403,7 @@ contains
     real(dp) :: defect_chain, defect_diamond
     integer  :: k, n
 
-    ! ---- fixture 1: the recurrence chain, analytic at machine tolerance
+    ! Fixture 1 is the recurrence chain, analytic at machine tolerance.
     n = witness_chain_length
     g = make_witness_digraph(n, [(k, k = 1, n-1)], [(k+1, k = 1, n-1)])
 
@@ -2322,7 +2420,7 @@ contains
 
     deallocate(adjoint)
 
-    ! ---- fixture 2: the diamond dag, central-difference nudge
+    ! Fixture 2 is the diamond dag, judged by a central-difference nudge.
     g = make_witness_digraph(4, [1, 1, 2, 3], [2, 3, 4, 4])
 
     allocate(adjoint(1, 4))
@@ -2341,7 +2439,10 @@ contains
 
   contains
 
-    ! every chain edge carries the recurrence factor
+    !=================================================================!
+    ! Every chain edge carries the recurrence factor.
+    !=================================================================!
+
     subroutine chain_edge_apply(tail, head, adjoint_head, contribution)
       integer , intent(in)  :: tail, head
       real(dp), intent(in)  :: adjoint_head(:)
@@ -2349,7 +2450,10 @@ contains
       contribution = witness_recurrence_factor*adjoint_head
     end subroutine chain_edge_apply
 
-    ! the diamond's per-edge factors
+    !=================================================================!
+    ! Apply the diamond's per-edge factor to the head adjoint.
+    !=================================================================!
+
     subroutine diamond_edge_apply(tail, head, adjoint_head, contribution)
       integer , intent(in)  :: tail, head
       real(dp), intent(in)  :: adjoint_head(:)
@@ -2357,7 +2461,10 @@ contains
       contribution = diamond_factor(tail, head)*adjoint_head
     end subroutine diamond_edge_apply
 
-    ! which arrow of the diamond carries which factor
+    !=================================================================!
+    ! Report which arrow of the diamond carries which factor.
+    !=================================================================!
+
     pure real(dp) function diamond_factor(tail, head)
       integer, intent(in) :: tail, head
       if (tail .eq. 1 .and. head .eq. 2) then
@@ -2371,7 +2478,10 @@ contains
       end if
     end function diamond_factor
 
-    ! the diamond's terminal value x4 as a function of the start value
+    !=================================================================!
+    ! Evaluate the diamond's terminal value x4 from the start value.
+    !=================================================================!
+
     pure real(dp) function diamond_terminal(start)
       real(dp), intent(in) :: start
       diamond_terminal = witness_factor_24*(witness_factor_12*start) &
@@ -2382,6 +2492,7 @@ contains
 
   !===================================================================!
   ! Witness apparatus: stored directed queries and the fixture builder.
+  ! The witness answers its out-neighbour query from storage.
   !===================================================================!
 
   pure function witness_out_neighbours(this, v) result(nbrs)
@@ -2391,12 +2502,20 @@ contains
     nbrs = this % stored_out_neighbours(v)
   end function witness_out_neighbours
 
+  !===================================================================!
+  ! The witness answers its in-neighbour query from storage.
+  !===================================================================!
+
   pure function witness_in_neighbours(this, v) result(nbrs)
     class(witness_digraph), intent(in) :: this
     integer               , intent(in) :: v
     integer, allocatable :: nbrs(:)
     nbrs = this % stored_in_neighbours(v)
   end function witness_in_neighbours
+
+  !===================================================================!
+  ! Build a witness digraph from an edge list of tails and heads.
+  !===================================================================!
 
   pure function make_witness_digraph(nv, tails, heads) result(g)
 
@@ -2426,10 +2545,10 @@ contains
   end function make_witness_digraph
 
   !===================================================================!
-  ! RCB recursion: assign vertices ghost_index(lo:hi) to k parts numbered
-  ! base..base+k-1. Halve the part count, send a proportional share of
-  ! the vertices (by count) to each side, split at the median along the
-  ! axis of largest spread.
+  ! The RCB recursion assigns vertices ghost_index(lo:hi) to k parts
+  ! numbered base..base+k-1. Halve the part count, send a proportional
+  ! share of the vertices (by count) to each side, and split at the
+  ! median along the axis of largest spread.
   !===================================================================!
 
   pure recursive subroutine rcb(ghost_index, lo, hi, k, base, coords, part)
@@ -2442,28 +2561,35 @@ contains
     integer  :: n, d, axis, kL, kR, nL, mid
     real(dp) :: spread, best
 
+    ! A single part, or an empty range, ends the recursion.
     n = hi - lo + 1
     if (k .le. 1 .or. n .le. 0) then
        if (n .gt. 0) part(ghost_index(lo:hi)) = base
        return
     end if
 
-    ! axis of largest coordinate spread over this subset (zero-spread axes,
-    ! e.g. z in 2d, are never chosen)
-    axis = 1; best = -1.0_dp
+    !-----------------------------------------------------------------!
+    ! Choose the axis of largest coordinate spread over this subset;
+    ! zero-spread axes (z in 2d, for example) are never chosen.
+    !-----------------------------------------------------------------!
+
+    axis = 1
+    best = -1.0_dp
     do d = 1, size(coords, 1)
        spread = maxval(coords(d, ghost_index(lo:hi))) - minval(coords(d, ghost_index(lo:hi)))
        if (spread .gt. best) then
-          best = spread; axis = d
+          best = spread
+          axis = d
        end if
     end do
 
-    ! split the part count, and the vertices proportionally (both sides nonempty)
-    kL = k/2; kR = k - kL
+    ! Split the part count, and the vertices proportionally (both sides stay nonempty).
+    kL = k/2
+    kR = k - kL
     nL = nint(real(n,dp)*real(kL,dp)/real(k,dp))
     nL = max(1, min(n-1, nL))
 
-    ! order ghost_index(lo:hi) by the chosen axis so the nL smallest go left
+    ! Order ghost_index(lo:hi) by the chosen axis so that the nL smallest go left.
     call qsort_axis(ghost_index, lo, hi, coords, axis)
     mid = lo + nL - 1
 
@@ -2473,8 +2599,9 @@ contains
   end subroutine rcb
 
   !===================================================================!
-  ! Quicksort ghost_index(lo:hi) ascending by coords(axis, ghost_index(:)). Middle pivot so
-  ! structured (already-ordered) meshes don't hit the O(n^2) worst case.
+  ! Quicksort ghost_index(lo:hi) ascending by
+  ! coords(axis, ghost_index(:)). The middle pivot keeps structured
+  ! (already-ordered) meshes off the O(n^2) worst case.
   !===================================================================!
 
   pure recursive subroutine qsort_axis(ghost_index, lo, hi, coords, axis)
@@ -2488,13 +2615,23 @@ contains
 
     if (lo .ge. hi) return
     pivot = coords(axis, ghost_index((lo+hi)/2))
-    i = lo; j = hi
+
+    ! Sweep the two cursors together, swapping out-of-place entries.
+    i = lo
+    j = hi
     do
-       do while (coords(axis, ghost_index(i)) .lt. pivot); i = i + 1; end do
-       do while (coords(axis, ghost_index(j)) .gt. pivot); j = j - 1; end do
+       do while (coords(axis, ghost_index(i)) .lt. pivot)
+          i = i + 1
+       end do
+       do while (coords(axis, ghost_index(j)) .gt. pivot)
+          j = j - 1
+       end do
        if (i .le. j) then
-          tmp = ghost_index(i); ghost_index(i) = ghost_index(j); ghost_index(j) = tmp
-          i = i + 1; j = j - 1
+          tmp = ghost_index(i)
+          ghost_index(i) = ghost_index(j)
+          ghost_index(j) = tmp
+          i = i + 1
+          j = j - 1
        end if
        if (i .gt. j) exit
     end do

@@ -57,7 +57,7 @@ program regression
 contains
 
   !===================================================================!
-  ! Build a fresh assembler on a mesh file
+  ! Build a fresh assembler on a mesh file.
   !===================================================================!
 
   subroutine make(meshfile, fvm)
@@ -75,7 +75,7 @@ contains
   end subroutine make
 
   !===================================================================!
-  ! Report the outcome of one check
+  ! Report the outcome of one check.
   !===================================================================!
 
   subroutine report(name, ok, nfail)
@@ -136,7 +136,11 @@ contains
 
   end subroutine check_kappa_scaling
 
-  ! Helper: homogeneous-dirichlet poisson with unit source and given kappa
+  !===================================================================!
+  ! Solve the homogeneous-dirichlet poisson problem with a unit source
+  ! and the given kappa.
+  !===================================================================!
+
   subroutine poisson(meshfile, kappa, x)
 
     character(len=*)     , intent(in)  :: meshfile
@@ -155,7 +159,8 @@ contains
   end subroutine poisson
 
   !===================================================================!
-  ! Backward-euler marched to large time must reach the steady solution
+  ! Backward-euler marched to a large time must reach the steady
+  ! solution.
   !===================================================================!
 
   subroutine check_transient_steady(nfail)
@@ -167,13 +172,13 @@ contains
     type(bdf)                              :: ti
     real(dp), allocatable :: xs(:), xt(:)
 
-    ! steady
+    ! Solve the steady problem.
     call make("../box-3.msh", fsteady)
     call box_bc(fsteady)
     allocate(cg, source = conjugate_gradient(500, tol, 0))
     call cg % solve(fsteady, xs)
 
-    ! transient from zero, marched far (bdf order 1 = backward euler)
+    ! March the transient problem from zero, far in time (bdf order 1 = backward euler).
     call make("../box-3.msh", ftrans)
     call box_bc(ftrans)
     ti = bdf(ftrans, 0.0_dp, 200.0_dp, 10.0_dp, max_order = 1)
@@ -200,23 +205,34 @@ contains
     type(normal_cg)                          :: ncg
     real(dp), allocatable :: xref(:), x_normal(:), x_distributed(:)
 
-    ! reference: plain CG
-    call make("../box-3.msh", f1); call box_bc(f1)
+    ! The reference is plain CG.
+    call make("../box-3.msh", f1)
+    call box_bc(f1)
     allocate(cg, source = conjugate_gradient(5000, tol, 0))
     call cg % solve(f1, xref)
 
-    ! normal_cg (cgnr): CG on the normal equations (kappa^2 -> looser tol).
-    ! its transpose products are live: declare the diffusion operator
-    ! symmetric so they run as an explicit claim
-    call make("../box-3.msh", f2); call box_bc(f2)
+    !-----------------------------------------------------------------!
+    ! The normal_cg (cgnr) solver is CG on the normal equations
+    ! (kappa^2 -> a looser tolerance). Its transpose products are
+    ! live: declare the diffusion operator symmetric so they run as
+    ! an explicit claim.
+    !-----------------------------------------------------------------!
+
+    call make("../box-3.msh", f2)
+    call box_bc(f2)
     f2 % operator_is_symmetric = .true.
     ncg = normal_cg(max_it=50000, max_tol=1.0e-10_dp, &
          & method=CGNR_METHOD, print_level=0)
     call ncg % solve(f2, x_normal)
 
-    ! the same plain cg on a partitioned system (one image here, so the
-    ! distributed queries reduce exactly to their serial forms)
-    call make_partitioned("../box-3.msh", f3); call box_bc(f3)
+    !-----------------------------------------------------------------!
+    ! Run the same plain cg on a partitioned system. With one image
+    ! here, the distributed queries reduce exactly to their serial
+    ! forms.
+    !-----------------------------------------------------------------!
+
+    call make_partitioned("../box-3.msh", f3)
+    call box_bc(f3)
     select type (f3)
     type is (partitioned_assembler)
        call f3 % setup_partition()
@@ -233,7 +249,7 @@ contains
   end subroutine check_solver_wrappers
 
   !===================================================================!
-  ! Build a partitioned assembler from a mesh file
+  ! Build a partitioned assembler from a mesh file.
   !===================================================================!
 
   subroutine make_partitioned(meshfile, fvm)
@@ -251,7 +267,7 @@ contains
   end subroutine make_partitioned
 
   !===================================================================!
-  ! The assembled operator must split as A = L + U + D
+  ! The assembled operator must split as A = L + U + D.
   !===================================================================!
 
   subroutine check_operator_split(nfail)
@@ -308,10 +324,6 @@ contains
   end subroutine check_neumann_insulated
 
   !===================================================================!
-  ! The box-3 dirichlet boundary values used by several checks
-  !===================================================================!
-
-  !===================================================================!
   ! The asymmetric pathways. Case 1: a FALSE symmetry claim on a
   ! genuinely non-symmetric operator (advection-diffusion) must be
   ! caught by the analytic identity <w, J v> = <J^T w, v> - the same
@@ -334,19 +346,28 @@ contains
     real(dp), allocatable :: b(:), xg(:), x_normal(:)
     real(dp)              :: defect
 
-    ! case 1: the lie is caught. the claim routes transpose products to
-    ! the forward operator, and advection makes that measurably wrong.
-    call make_advective("../box-3.msh", f1); call box_bc(f1)
-    f1 % operator_is_symmetric = .true.     ! a deliberate false claim
+    !-----------------------------------------------------------------!
+    ! Case 1: the lie is caught. The claim routes transpose products
+    ! to the forward operator, and advection makes that measurably
+    ! wrong.
+    !-----------------------------------------------------------------!
+
+    call make_advective("../box-3.msh", f1)
+    call box_bc(f1)
+    f1 % operator_is_symmetric = .true.     ! This is a deliberate false claim.
     defect = f1 % verify_transpose_consistency()
     write(*,'(1x,a,es10.3)') "          (false-claim defect measured: ", defect
     call report("asymmetric: false symmetry claim caught", &
          & defect .gt. 1.0e-6_dp, nfail)
 
-    ! case 2: the commute through a genuine transpose. assembled once,
-    ! to BUILD the wrapped test system - the kernels iterate on its
-    ! products only.
-    call make_advective("../box-3.msh", f2); call box_bc(f2)
+    !-----------------------------------------------------------------!
+    ! Case 2: the commute through a genuine transpose. The operator
+    ! is assembled once, to BUILD the wrapped test system - the
+    ! kernels iterate on its products only.
+    !-----------------------------------------------------------------!
+
+    call make_advective("../box-3.msh", f2)
+    call box_bc(f2)
     call f2 % get_operator_csr(A)
     allocate(b(f2 % num_state_vars))
     call f2 % get_source(b)
@@ -365,7 +386,8 @@ contains
   end subroutine check_asymmetric_pathways
 
   !===================================================================!
-  ! Build a non-symmetric system: advection-diffusion on the given mesh
+  ! Build a non-symmetric system: advection-diffusion on the given
+  ! mesh.
   !===================================================================!
 
   subroutine make_advective(meshfile, fvm)

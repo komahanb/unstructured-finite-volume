@@ -1,5 +1,6 @@
 !=====================================================================!
-! Test loading of mesh and mesh pre-processing
+! Drive the assembled system through the linear solver and write the
+! solution - the unsteady-solve driver.
 !=====================================================================!
 
 program test_mesh
@@ -28,33 +29,33 @@ program test_mesh
   real(dp) , allocatable :: x(:)
   integer :: i
 
-  ! Create a mesh object
+  ! Create a mesh object.
   allocate(grid, source = mesh(gmsh_loader(filename)))
 
-  ! Assembler Object coordinating geometry and physics
+  ! Create the assembler object coordinating the geometry and the physics.
   allocate(FVMAssembler, source = assembler(grid))!, physics))
 
-  ! Boundary conditions by physical group name (rectangle.msh, 2D)
+  ! Set the boundary conditions by physical group name (rectangle.msh, 2D).
   call FVMAssembler % set_dirichlet("BoundaryLeft"  , 1.0d0)
   call FVMAssembler % set_dirichlet("BoundaryRight" , 0.0d0)
   call FVMAssembler % set_neumann  ("BoundaryTop"   , 0.0d0)
   call FVMAssembler % set_neumann  ("BoundaryBottom", 0.0d0)
 
-  ! Linear Solution
+  ! Set up the linear solver.
   allocate(linear, &
        & source      = conjugate_gradient( &
        & max_tol     = max_tol, &
        & max_it      = max_it, &
        & print_level = print_level))
 
-  ! Solve using solver method
+  ! Solve using the solver method.
   call linear % solve(FVMassembler, x)
   print *, 'cg solution = '
   do i = 1, min(10, size(x))
      print *, i,  x(i)
   end do
 
-  ! Writes the mesh for tecplot
+  ! Write the solution in Tecplot format.
   call FVMassembler % write_solution("mesh-cg.dat", x)
 
   deallocate(x)

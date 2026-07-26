@@ -22,20 +22,26 @@ module interface_mesh_loader
   public :: mesh_loader
 
   !-------------------------------------------------------------------!
-  ! Abstract type for mesh loading
+  ! Every mesh loader extends this abstract type.
   !-------------------------------------------------------------------!
-  
+
   type, abstract :: mesh_loader
 
    contains
 
-     ! Type bound procedure that returns all information needed for
-     ! mesh creation
+     ! This deferred procedure returns all the information needed for
+     ! mesh creation.
      procedure(get_mesh_data_interface), deferred :: get_mesh_data
 
   end type mesh_loader
 
   interface
+
+     !================================================================!
+     ! This is the one deferred procedure of the contract: hand over
+     ! the raw incidence lists, the type codes, and the tag table that
+     ! describe the mesh graph.
+     !================================================================!
 
      subroutine get_mesh_data_interface(this, &
           & num_vertices, vertex_numbers, vertex_tags , vertices ,  & 
@@ -49,16 +55,16 @@ module interface_mesh_loader
        import dp
        import string
        
-       ! Arguments
+       ! This is the loader being asked.
        class(mesh_loader)  , intent(in)   :: this
 
-       ! Vertices
+       ! These arguments carry the vertices.
        integer , intent(out)              :: num_vertices
        integer , intent(out), allocatable :: vertex_numbers(:)
        integer , intent(out), allocatable :: vertex_tags(:)
        real(dp), intent(out), allocatable :: vertices(:,:)
 
-       ! Edges
+       ! These arguments carry the edges.
        integer, intent(out)              :: num_edges
        integer, intent(out), allocatable :: edge_numbers(:)
        integer, intent(out), allocatable :: edge_tags(:)
@@ -66,7 +72,7 @@ module interface_mesh_loader
        integer, intent(out), allocatable :: num_edge_vertices(:)
        integer, intent(out), allocatable :: edge_types(:)
 
-       ! Faces    
+       ! These arguments carry the faces.
        integer, intent(out)              :: num_faces
        integer, intent(out), allocatable :: face_numbers(:)
        integer, intent(out), allocatable :: face_tags(:)
@@ -74,7 +80,7 @@ module interface_mesh_loader
        integer, intent(out), allocatable :: num_face_vertices(:)
        integer, intent(out), allocatable :: face_types(:)
 
-       ! Cells
+       ! These arguments carry the cells.
        integer, intent(out)              :: num_cells
        integer, intent(out), allocatable :: cell_numbers(:)
        integer, intent(out), allocatable :: cell_tags(:)
@@ -82,8 +88,9 @@ module interface_mesh_loader
        integer, intent(out), allocatable :: num_cell_vertices(:)
        integer, intent(out), allocatable :: cell_types(:)
 
-       ! Tagging boundaries and domain with integers/strings
-       integer     , intent(out)              :: num_tags              
+       ! These arguments tag the boundaries and the domain with
+       ! integers and strings.
+       integer     , intent(out)              :: num_tags
        integer     , allocatable, intent(out) :: tag_numbers(:)
        integer     , allocatable, intent(out) :: tag_physical_dimensions(:)
        type(string), allocatable, intent(out) :: tag_info(:)

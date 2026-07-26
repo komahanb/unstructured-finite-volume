@@ -1,6 +1,7 @@
 !=====================================================================!
-! Abstract multigrid method: the squint made mechanical. Build a coarse
-! hierarchy from a fine operator (setup), then use it either as a
+! This module is the abstract multigrid method: the squint made
+! mechanical. Build a coarse hierarchy from a fine operator (setup),
+! then use it either as a
 ! preconditioner (apply: one V-cycle, z = M^-1 r - the deferred apply
 ! inherited from preconditioner) or as a standalone solver (solve:
 ! cycle until converged).
@@ -46,22 +47,22 @@ module interface_multigrid
   public :: multigrid
 
   !-------------------------------------------------------------------!
-  ! One multigrid level
+  ! This type holds one multigrid level.
   !-------------------------------------------------------------------!
 
   type :: multigrid_level
-     type(csr_matrix)      :: A           ! operator on this level
-     type(csr_matrix)      :: P           ! prolongation (fine x coarse);
+     type(csr_matrix)      :: A           ! This is the operator on this level.
+     type(csr_matrix)      :: P           ! This is the prolongation (fine x coarse);
                                           ! the restriction is NOT stored -
                                           ! it is P's edges walked against
-                                          ! their arrows (matvec_transpose)
-     real(dp), allocatable :: Dinv(:)     ! 1/diag(A) (smoother)
-     integer , allocatable :: parts(:)    ! the squint's answer, kept: which coarse vertex each vertex joins
+                                          ! their arrows (matvec_transpose).
+     real(dp), allocatable :: Dinv(:)     ! This is the smoother diagonal 1/diag(A).
+     integer , allocatable :: parts(:)    ! The squint's answer is kept: which coarse vertex each vertex joins.
   end type multigrid_level
 
   !-------------------------------------------------------------------!
-  ! The travelling state of a cycle: each level's right-hand side and
-  ! correction while the trip is underway
+  ! This type carries the travelling state of a cycle: each level's
+  ! right-hand side and correction while the trip is underway.
   !-------------------------------------------------------------------!
 
   type :: level_vectors
@@ -76,49 +77,50 @@ module interface_multigrid
 
   type, abstract, extends(preconditioner) :: multigrid
 
-     type(multigrid_level), allocatable :: levels(:)   ! 1=finest .. nlevel=coarsest
+     type(multigrid_level), allocatable :: levels(:)   ! Level 1 is the finest; nlevel is the coarsest.
      integer                            :: nlevel = 0
 
-     ! coarsest level: dense LU factor
+     ! The coarsest level holds a dense LU factor.
      real(dp), allocatable :: Ac_dense(:,:)
      integer , allocatable :: ipiv(:)
      integer               :: ncoarse = 0
 
-     ! refined levels below the given mesh - the zoom side of the
-     ! ladder, built on request by refine; finer_levels(k) is level -k
+     ! The refined levels below the given mesh are the zoom side of
+     ! the ladder, built on request by refine; finer_levels(k) is
+     ! level -k.
      type(multigrid_level), allocatable :: finer_levels(:)
      integer                            :: n_finer = 0
 
-     ! parameters of the mechanism
-     real(dp) :: jacobi_w            = 0.6667_dp   ! smoother weight (~2/3)
+     ! These are the parameters of the mechanism.
+     real(dp) :: jacobi_w            = 0.6667_dp   ! This is the smoother weight (~2/3).
      integer  :: max_levels          = 25
      integer  :: coarse_size         = 50
      integer  :: npre                = 1
      integer  :: npost               = 1
-     integer  :: children_per_vertex = 4           ! how many children a refined vertex splits into
+     integer  :: children_per_vertex = 4           ! This counts the children a refined vertex splits into.
 
-     ! which levels keep their ancestry for export, configured before
-     ! setup - storage is on demand, nothing is kept unasked
+     ! These levels keep their ancestry for export, configured before
+     ! setup; storage is on demand, and nothing is kept unasked.
      integer, allocatable :: exported_levels(:)
 
-     ! the classical V, built by setup as an ordinary schedule
+     ! The classical V is built by setup as an ordinary schedule.
      type(stored_digraph) :: v_cycle_schedule
 
    contains
 
-     ! the one deferred question: which fine vertex huddles into which
-     ! coarse part on level lev
+     ! The one deferred question asks which fine vertex huddles into
+     ! which coarse part on level lev.
      procedure(coarsen_interface), deferred :: coarsen
 
-     ! the mechanism, shared
-     procedure :: setup       ! build the coarse hierarchy from A
-     procedure :: refine      ! build n refined levels below the given mesh
-     procedure :: apply       ! z = M^-1 r (one trip along the V)
-     procedure :: apply_cycle ! z from one trip along any injected schedule
-     procedure :: solve       ! A x = b, cycling to tol
-     procedure :: num_levels    ! levels in the coarse hierarchy
-     procedure :: export_levels ! configure which levels keep their ancestry
-     procedure :: ancestors     ! the ancestry map of a configured signed level
+     ! The mechanism is shared.
+     procedure :: setup       ! Build the coarse hierarchy from A.
+     procedure :: refine      ! Build n refined levels below the given mesh.
+     procedure :: apply       ! Apply z = M^-1 r, one trip along the V.
+     procedure :: apply_cycle ! Produce z from one trip along any injected schedule.
+     procedure :: solve       ! Solve A x = b, cycling to the tolerance.
+     procedure :: num_levels    ! Count the levels in the coarse hierarchy.
+     procedure :: export_levels ! Configure which levels keep their ancestry.
+     procedure :: ancestors     ! Report the ancestry map of a configured signed level.
 
      procedure, private :: keeps
      procedure, private :: smooth
@@ -127,14 +129,17 @@ module interface_multigrid
   end type multigrid
 
   !-------------------------------------------------------------------!
-  ! Deferred interface of the squint
+  ! This is the deferred interface of the squint.
   !-------------------------------------------------------------------!
 
   abstract interface
 
+     !================================================================!
      ! Stamp each fine vertex of level lev with its coarse part
      ! (agg(v) in 1..naggr). The level's operator is available as
      ! this % levels(lev) % A.
+     !================================================================!
+
      subroutine coarsen_interface(this, lev, agg, naggr)
        import :: multigrid
        class(multigrid)    , intent(inout) :: this
@@ -166,8 +171,12 @@ contains
     real(dp)              :: omega, rho
     type(csr_matrix)      :: P0, AP0, Pt
 
-    ! re-entrant: drop any previously-built hierarchy, refined levels
-    ! included - they hang off the old level-1 operator
+    !-----------------------------------------------------------------!
+    ! Setup is re-entrant: drop any previously-built hierarchy,
+    ! refined levels included - they hang off the old level-1
+    ! operator.
+    !-----------------------------------------------------------------!
+
     if (allocated(this % levels))       deallocate(this % levels)
     if (allocated(this % Ac_dense))     deallocate(this % Ac_dense)
     if (allocated(this % ipiv))         deallocate(this % ipiv)
@@ -183,15 +192,19 @@ contains
        n = this % levels(lev) % A % num_vertices
        if (n .le. this % coarse_size .or. lev .ge. this % max_levels) exit coarsening
 
-       ! smoother data on this level
+       ! Build the smoother data on this level.
        dinv = 1.0_dp/this % levels(lev) % A % get_diagonal()
        this % levels(lev) % Dinv = dinv
 
-       ! the concrete kind's squint, then the tentative prolongation.
-       ! the answer is kept only when a configured export needs it for
-       ! its composition - storage is on demand
+       !--------------------------------------------------------------!
+       ! Ask the concrete kind for its squint, then build the
+       ! tentative prolongation. The answer is kept only when a
+       ! configured export needs it for its composition - storage is
+       ! on demand.
+       !--------------------------------------------------------------!
+
        call this % coarsen(lev, agg, naggr)
-       if (naggr .ge. n .or. naggr .le. 1) exit coarsening   ! no useful coarsening
+       if (naggr .ge. n .or. naggr .le. 1) exit coarsening   ! There is no useful coarsening.
        if (this % keeps(lev)) this % levels(lev) % parts = agg
 
        P0 = tentative_prolongation(agg, naggr)
@@ -199,16 +212,26 @@ contains
        rho   = this % spectral_radius(lev)
        omega = (4.0_dp/3.0_dp)/rho
 
-       ! smoothed prolongation  P = (I - omega Dinv A) P0 = P0 - omega Dinv (A P0).
-       ! the recipe is multigrid's; it is composed from the general csr operations.
+       !--------------------------------------------------------------!
+       ! Build the smoothed prolongation
+       !
+       !    P = (I - omega Dinv A) P0 = P0 - omega Dinv (A P0).
+       !
+       ! The recipe is multigrid's; it is composed from the general
+       ! csr operations.
+       !--------------------------------------------------------------!
+
        AP0 = this % levels(lev) % A % matmat(P0)
        call AP0 % scale_rows(dinv)
        this % levels(lev) % P = P0 % add(1.0_dp, -omega, AP0)
 
-       ! galerkin coarse operator  Ac = P^T (A P). the restriction is
-       ! not a thing we keep - the cycle walks P's edges backward via
-       ! matvec_transpose - so a scratch transpose serves this one
-       ! product and evaporates
+       !--------------------------------------------------------------!
+       ! Form the galerkin coarse operator  Ac = P^T (A P). The
+       ! restriction is not a thing we keep - the cycle walks P's
+       ! edges backward via matvec_transpose - so a scratch transpose
+       ! serves this one product and evaporates.
+       !--------------------------------------------------------------!
+
        Pt = this % levels(lev) % P % transpose()
        this % levels(lev+1) % A = Pt % matmat( &
             & this % levels(lev) % A % matmat(this % levels(lev) % P))
@@ -220,9 +243,13 @@ contains
     this % nlevel  = lev
     this % ncoarse = this % levels(lev) % A % num_vertices
 
-    ! coarsest: dense LU (with a tiny diagonal shift if singular, e.g. a
-    ! pure-neumann constant null space). self-contained LU so the library
-    ! carries no LAPACK dependency.
+    !-----------------------------------------------------------------!
+    ! Factor the coarsest level with a dense LU, applying a tiny
+    ! diagonal shift when singular (e.g. a pure-neumann constant null
+    ! space). The LU is self-contained, so the library carries no
+    ! LAPACK dependency.
+    !-----------------------------------------------------------------!
+
     call this % levels(lev) % A % to_dense(this % Ac_dense)
     allocate(this % ipiv(this % ncoarse))
     call dense_lu_factor(this % Ac_dense, this % ncoarse, this % ipiv, info)
@@ -235,8 +262,14 @@ contains
        if (info .ne. 0) error stop "multigrid: coarse factorization failed"
     end if
 
-    ! the classical V, as an ordinary schedule: down the levels and
-    ! back, stations numbered 0..nlevel-1..0, one arrow between each
+    !-----------------------------------------------------------------!
+    ! Record the classical V as an ordinary schedule: down the levels
+    ! and back, stations numbered 0..nlevel-1..0, with one arrow
+    ! between each.
+    !
+    !    (0) --> (1) --> ... --> (nlevel-1) --> ... --> (1) --> (0)
+    !-----------------------------------------------------------------!
+
     build_v_schedule: block
       integer, allocatable :: level_visits(:)
       integer :: ns
@@ -296,7 +329,7 @@ contains
 
        refined = stored_graph(coarser, this % children_per_vertex)
 
-       ! the parent map came in as the refined graph's partition
+       ! The parent map came in as the refined graph's partition.
        allocate(parent(refined % num_vertices))
        do v = 1, refined % num_vertices
           parent(v) = refined % part_of(v)
@@ -304,13 +337,17 @@ contains
 
        associate(L => this % finer_levels(k))
          L % P    = tentative_prolongation(parent, coarser % num_vertices)
-         ! the lifted operator A_finer = P A P^T - a scratch transpose
-         ! serves the one product and evaporates
+
+         !-----------------------------------------------------------!
+         ! The lifted operator is A_finer = P A P^T - a scratch
+         ! transpose serves the one product and evaporates.
+         !-----------------------------------------------------------!
+
          PA       = L % P % matmat(A_coarser)
          Pt       = L % P % transpose()
          L % A    = PA % matmat(Pt)
          L % Dinv = 1.0_dp/L % A % get_diagonal()
-         ! the parent map is kept only when a configured export needs it
+         ! The parent map is kept only when a configured export needs it.
          if (this % keeps(-k)) L % parts = parent
        end associate
 
@@ -323,8 +360,8 @@ contains
   end subroutine refine
 
   !===================================================================!
-  ! z = M^-1 r  (one trip along the classical V - which is just the
-  ! schedule setup built; nothing about the V is wired in)
+  ! Apply z = M^-1 r: one trip along the classical V, which is just
+  ! the schedule setup built; nothing about the V is wired in.
   !===================================================================!
 
   pure subroutine apply(this, r, z)
@@ -335,8 +372,9 @@ contains
   end subroutine apply
 
   !===================================================================!
-  ! Standalone solve A x = b by cycling until ||b - A x||/||b|| < max_tol
-  ! or max_it cycles. iters returns the cycles taken.
+  ! Solve A x = b standalone by cycling until ||b - A x||/||b|| falls
+  ! below max_tol or max_it cycles pass. iters returns the cycles
+  ! taken.
   !===================================================================!
 
   pure subroutine solve(this, b, x, max_tol, max_it, iters)
@@ -359,7 +397,8 @@ contains
 
       allocate(r(A % num_vertices), z(A % num_vertices), Ax(A % num_vertices))
 
-      bnorm = norm2(b); if (bnorm .eq. 0.0_dp) bnorm = 1.0_dp
+      bnorm = norm2(b)
+      if (bnorm .eq. 0.0_dp) bnorm = 1.0_dp
 
       do iters = 1, max_it
          call A % matvec(x, Ax)
@@ -374,7 +413,8 @@ contains
   end subroutine solve
 
   !===================================================================!
-  ! Number of levels in the hierarchy (1 = a single grid)
+  ! Return the number of levels in the hierarchy; one means a single
+  ! grid.
   !===================================================================!
 
   pure integer function num_levels(this)
@@ -391,15 +431,15 @@ contains
   ! from the given mesh: level 0 is the mesh, +k is k squints coarser
   ! (nlevel-1 the deepest, solved exactly), -k is k zooms finer.
   !
-  !   - at a station, smooth: npre sweeps while the trip is heading
+  !   - At a station, smooth: npre sweeps while the trip is heading
   !     coarser or staying, npost once it is heading finer or ending.
   !     At the deepest coarse level, solve exactly instead.
-  !   - a repeated station is the level visited again: two stations
+  !   - A repeated station is the level visited again: two stations
   !     in a row at the same level smooth twice.
-  !   - moving coarser inside the hierarchy restricts the residual
+  !   - Moving coarser inside the hierarchy restricts the residual
   !     and zeroes the coarser correction; moving back toward the
   !     mesh prolongs the correction and adds it.
-  !   - moving into refined territory lifts the problem through the
+  !   - Moving into refined territory lifts the problem through the
   !     interpolation: b and x both ride up. Moving back projects the
   !     improved iterate down. A refined station smooths the lifted
   !     problem - the same equation through a finer lens.
@@ -426,7 +466,7 @@ contains
        error stop "multigrid: apply needs a built hierarchy - call setup first"
     end if
 
-    ! the graph reads the route; the numbers come back in trip order
+    ! The graph reads the route; the numbers come back in trip order.
     visits = schedule % source_path()
     n      = size(visits)
 
@@ -434,10 +474,13 @@ contains
        error stop "multigrid: the trip must start and end at level 0 - the given mesh"
     end if
 
-    ! audit every station against the ladder before anything is
+    !-----------------------------------------------------------------!
+    ! Audit every station against the ladder before anything is
     ! touched, and note which levels the trip actually visits - only
     ! those get travelling state, so a deep refined ladder does not
-    ! tax a trip that never goes there
+    ! tax a trip that never goes there.
+    !-----------------------------------------------------------------!
+
     allocate(wanted(-this % n_finer : this % nlevel - 1))
     wanted = .false.
     do i = 1, n
@@ -463,8 +506,11 @@ contains
        l_next = l
        if (i .lt. n) l_next = visits(i+1)
 
-       ! at the station: solve exactly at the deepest coarse level,
-       ! smooth anywhere else
+       !--------------------------------------------------------------!
+       ! At the station, solve exactly at the deepest coarse level
+       ! and smooth anywhere else.
+       !--------------------------------------------------------------!
+
        if (l .eq. this % nlevel - 1) then
           state(l) % x = state(l) % b
           call dense_lu_solve(this % Ac_dense, this % ncoarse, this % ipiv, state(l) % x)
@@ -476,37 +522,50 @@ contains
 
        if (i .eq. n) exit
 
-       ! the move (every destination was audited up front)
+       ! Make the move; every destination was audited up front.
        if (l_next .eq. l + 1) then
 
           if (l .ge. 0) then
-             ! coarser inside the hierarchy: restrict the residual,
-             ! zero the coarser correction
+             !--------------------------------------------------------!
+             ! Heading coarser inside the hierarchy, restrict the
+             ! residual and zero the coarser correction.
+             !--------------------------------------------------------!
+
              if (allocated(res)) deallocate(res)
              allocate(res(rows_at(this, l)))
              call this % levels(l+1) % A % matvec(state(l) % x, res)
              res = state(l) % b - res
-             ! restrict = the prolongation's edges walked backward
+             ! To restrict is to walk the prolongation's edges backward.
              call this % levels(l+1) % P % matvec_transpose(res, state(l_next) % b)
              state(l_next) % x = 0.0_dp
           else
-             ! leaving refined territory: project the improved iterate
-             ! back down through the interpolation, against its arrows
+             !--------------------------------------------------------!
+             ! Leaving refined territory, project the improved iterate
+             ! back down through the interpolation, against its
+             ! arrows.
+             !--------------------------------------------------------!
+
              call this % finer_levels(-l) % P % matvec_transpose(state(l) % x, state(l_next) % x)
           end if
 
        else if (l_next .eq. l - 1) then
 
           if (l_next .ge. 0) then
-             ! back toward the mesh inside the hierarchy: prolong the
-             ! correction and add it
+             !--------------------------------------------------------!
+             ! Heading back toward the mesh inside the hierarchy,
+             ! prolong the correction and add it.
+             !--------------------------------------------------------!
+
              if (allocated(correction)) deallocate(correction)
              allocate(correction(rows_at(this, l_next)))
              call this % levels(l_next+1) % P % matvec(state(l) % x, correction)
              state(l_next) % x = state(l_next) % x + correction
           else
-             ! into refined territory: lift the whole problem through
-             ! the interpolation - b and x both ride up
+             !--------------------------------------------------------!
+             ! Heading into refined territory, lift the whole problem
+             ! through the interpolation - b and x both ride up.
+             !--------------------------------------------------------!
+
              call this % finer_levels(-l_next) % P % matvec(state(l) % b, state(l_next) % b)
              call this % finer_levels(-l_next) % P % matvec(state(l) % x, state(l_next) % x)
           end if
@@ -522,9 +581,9 @@ contains
   end subroutine apply_cycle
 
   !===================================================================!
-  ! Configure which levels keep their ancestry for export - call
-  ! before setup and refine, levels counted in squints from the mesh
-  ! (positive coarser, negative finer). Storage is on demand: a
+  ! Configure which levels keep their ancestry for export; call this
+  ! before setup and refine, with levels counted in squints from the
+  ! mesh (positive coarser, negative finer). Storage is on demand: a
   ! step's map is kept only when some requested level needs it for
   ! its composition, and an unconfigured hierarchy keeps nothing.
   !===================================================================!
@@ -539,8 +598,8 @@ contains
   end subroutine export_levels
 
   !===================================================================!
-  ! Whether the coarsening (+k) or refinement (-k) answer at step k
-  ! is needed by any configured export
+  ! Report whether the coarsening (+k) or refinement (-k) answer at
+  ! step k is needed by any configured export.
   !===================================================================!
 
   pure logical function keeps(this, k) result(kept)
@@ -560,14 +619,14 @@ contains
   end function keeps
 
   !===================================================================!
-  ! The ancestry map of a configured level. Positive l: each mesh
-  ! cell's coarse vertex after l squints - a per-cell field on the
-  ! mesh, ready for the mesh writer, because a quotient IS a
-  ! partition of the mesh it came from. Negative l: each vertex of
-  ! the refined level's mesh-cell ancestor - the map sub-cell work
-  ! needs to find its way home. Level 0 is the mesh itself: every
-  ! cell its own ancestor. A level whose ancestry was not configured
-  ! for export stops with a report.
+  ! Return the ancestry map of a configured level. Positive l gives
+  ! each mesh cell's coarse vertex after l squints - a per-cell field
+  ! on the mesh, ready for the mesh writer, because a quotient IS a
+  ! partition of the mesh it came from. Negative l gives each vertex
+  ! of the refined level its mesh-cell ancestor - the map sub-cell
+  ! work needs to find its way home. Level 0 is the mesh itself:
+  ! every cell is its own ancestor. A level whose ancestry was not
+  ! configured for export stops with a report.
   !===================================================================!
 
   pure function ancestors(this, l) result(anc)
@@ -622,8 +681,9 @@ contains
   end function ancestors
 
   !===================================================================!
-  ! Rows of the operator at a level counted in squints from the mesh
-  ! (0 the mesh, +k coarser via levels(k+1), -k finer)
+  ! Return the rows of the operator at a level counted in squints
+  ! from the mesh: 0 is the mesh, +k is coarser via levels(k+1), and
+  ! -k is finer.
   !===================================================================!
 
   pure integer function rows_at(this, l)
@@ -637,13 +697,15 @@ contains
   end function rows_at
 
   !===================================================================!
-  ! Weighted-jacobi smoother on level lev (symmetric -> keeps M^-1 SPD):
+  ! Apply the weighted-jacobi smoother on level lev; it is symmetric,
+  ! so it keeps M^-1 SPD:
+  !
   !   x <- x + w Dinv (b - A x)
   !===================================================================!
 
   pure subroutine smooth(this, lev, b, x, nsweep)
     class(multigrid), intent(in)    :: this
-    integer         , intent(in)    :: lev   ! squints from the mesh: 0 the mesh, +k coarser, -k finer
+    integer         , intent(in)    :: lev   ! Squints from the mesh: 0 is the mesh, +k coarser, -k finer.
     real(dp)        , intent(in)    :: b(:)
     real(dp)        , intent(inout) :: x(:)
     integer         , intent(in)    :: nsweep
@@ -655,7 +717,7 @@ contains
   end subroutine smooth
 
   !===================================================================!
-  ! The sweep kernel both level directions share: nsweep damped
+  ! This is the sweep kernel both level directions share: nsweep damped
   ! passes of x <- x + w Dinv (b - A x), each one a matvec over the
   ! level's edges followed by a pointwise (per-vertex) correction.
   !===================================================================!
@@ -676,10 +738,10 @@ contains
   end subroutine jacobi_sweeps
 
   !===================================================================!
-  ! Spectral radius of (Dinv A) on level lev - the graph module's
-  ! power kernel iterates the damped action, and a gershgorin floor
-  ! guards the short iteration from underestimating. Used for the
-  ! smoothed-prolongation weight omega = (4/3)/rho.
+  ! Estimate the spectral radius of (Dinv A) on level lev - the graph
+  ! module's power kernel iterates the damped action, and a
+  ! gershgorin floor guards the short iteration from underestimating.
+  ! It serves the smoothed-prolongation weight omega = (4/3)/rho.
   !===================================================================!
 
   impure real(dp) function spectral_radius(this, lev) result(rho)
@@ -691,7 +753,7 @@ contains
 
     n = this % levels(lev) % A % num_vertices
 
-    ! non-constant deterministic start (the constant is near-null)
+    ! Start non-constant and deterministic; the constant is near-null.
     allocate(v(n))
     do i = 1, n
        v(i) = sin(real(i,dp)*0.9_dp) + 0.1_dp
@@ -699,7 +761,7 @@ contains
 
     call power_iteration(damped_action, n, 15, rho, v0 = v)
 
-    ! gershgorin floor
+    ! Apply the gershgorin floor.
     associate(A => this % levels(lev) % A, Dinv => this % levels(lev) % Dinv)
       gers = 0.0_dp
       do i = 1, n
@@ -715,7 +777,11 @@ contains
 
   contains
 
-    ! the damped operator Dinv A as a linear action (level captured)
+    !=================================================================!
+    ! This action applies the damped operator Dinv A; the level is
+    ! captured from the host.
+    !=================================================================!
+
     subroutine damped_action(x, y)
       real(dp), intent(in)  :: x(:)
       real(dp), intent(out) :: y(:)
@@ -726,10 +792,11 @@ contains
   end function spectral_radius
 
   !===================================================================!
-  ! Tentative prolongation P0 (n x naggr): piecewise constant over the
-  ! parts, column-normalized so the constant near-null space is
-  ! represented exactly (orthonormal columns). Built from the stamped
-  ! parts alone - no input matrix - so it is a plain builder.
+  ! Build the tentative prolongation P0 (n x naggr): piecewise
+  ! constant over the parts, and column-normalized so the constant
+  ! near-null space is represented exactly (orthonormal columns). It
+  ! is built from the stamped parts alone - no input matrix - so it
+  ! is a plain builder.
   !===================================================================!
 
   pure function tentative_prolongation(agg, naggr) result(P0)
@@ -740,11 +807,15 @@ contains
     integer :: n, i
 
     n = size(agg)
-    allocate(counts(naggr)); counts = 0
+
+    ! Count the members of each part.
+    allocate(counts(naggr))
+    counts = 0
     do i = 1, n
        counts(agg(i)) = counts(agg(i)) + 1
     end do
 
+    ! Each row carries one entry: its part's normalized column.
     allocate(row_ptr(n+1), col_idx(n), vals(n))
     do i = 1, n
        row_ptr(i) = i
@@ -758,9 +829,10 @@ contains
   end function tentative_prolongation
 
   !===================================================================!
-  ! Self-contained dense LU with partial pivoting (coarse direct solve;
-  ! the coarsest level is small, so a plain O(n^3) factor is fine and
-  ! keeps the library free of any LAPACK dependency).
+  ! Factor a dense matrix with a self-contained LU with partial
+  ! pivoting for the coarse direct solve; the coarsest level is small,
+  ! so a plain O(n^3) factor is fine and keeps the library free of
+  ! any LAPACK dependency.
   !===================================================================!
 
   pure subroutine dense_lu_factor(A, n, ipiv, info)
@@ -772,6 +844,7 @@ contains
     real(dp) :: amax, t
     info = 0
     do k = 1, n
+       ! Pick the pivot row: the largest magnitude in the column.
        p    = k
        amax = abs(A(k,k))
        do i = k+1, n
@@ -785,11 +858,15 @@ contains
           info = k
           return
        end if
+       ! Swap the pivot row into place.
        if (p .ne. k) then
           do j = 1, n
-             t = A(k,j); A(k,j) = A(p,j); A(p,j) = t
+             t = A(k,j)
+             A(k,j) = A(p,j)
+             A(p,j) = t
           end do
        end if
+       ! Eliminate below the pivot.
        do i = k+1, n
           A(i,k) = A(i,k)/A(k,k)
           do j = k+1, n
@@ -799,6 +876,10 @@ contains
     end do
   end subroutine dense_lu_factor
 
+  !===================================================================!
+  ! Solve with the dense LU factor and its recorded pivots.
+  !===================================================================!
+
   pure subroutine dense_lu_solve(A, n, ipiv, b)
     integer , intent(in)    :: n
     real(dp), intent(in)    :: A(n,n)
@@ -806,20 +887,22 @@ contains
     real(dp), intent(inout) :: b(n)
     integer  :: i, k, p
     real(dp) :: t
-    ! apply the recorded row swaps
+    ! Apply the recorded row swaps.
     do k = 1, n
        p = ipiv(k)
        if (p .ne. k) then
-          t = b(k); b(k) = b(p); b(p) = t
+          t = b(k)
+          b(k) = b(p)
+          b(p) = t
        end if
     end do
-    ! forward solve (unit lower triangle)
+    ! Solve forward with the unit lower triangle.
     do i = 2, n
        do k = 1, i-1
           b(i) = b(i) - A(i,k)*b(k)
        end do
     end do
-    ! back solve (upper triangle)
+    ! Solve backward with the upper triangle.
     do i = n, 1, -1
        do k = i+1, n
           b(i) = b(i) - A(i,k)*b(k)

@@ -30,7 +30,8 @@
 ! What also lives here: the shared attributes (tolerance, iteration
 ! budget, verbosity) previously duplicated across the families.
 !
-! In graph terms: a marcher IS a chain - not carries one, IS one.
+! In graph terms, a marcher IS a chain - it does not carry one, it IS
+! one.
 !
 !    marcher = ( 1 ) --> ( 2 ) --> ( 3 ) --> ... --> ( n )
 !               each vertex one pass of the iteration; the time
@@ -61,37 +62,43 @@ module interface_marcher
   public :: marcher
 
   !===================================================================!
-  ! The abstract marcher: a chain of passes
+  ! The abstract marcher: a chain of passes.
   !===================================================================!
 
   type, abstract, extends(chain) :: marcher
 
-     ! termination tolerance, iteration budget, verbosity. defaults
-     ! reproduce the nonlinear family's previous values; the linear
-     ! solvers and the integrator always set their own.
+     ! The termination tolerance, the iteration budget and the
+     ! verbosity. The defaults reproduce the nonlinear family's
+     ! previous values; the linear solvers and the integrator always
+     ! set their own.
      real(dp) :: max_tol     = 1.0d-12
      integer  :: max_it      = 25
      integer  :: print_level = 0
 
    contains
 
-     ! the contract: advance the state until termination
+     ! The contract: advance the state until termination.
      procedure(march_interface), deferred :: march
 
   end type marcher
 
   !===================================================================!
-  ! Deferred interface
+  ! The deferred interface.
   !===================================================================!
 
   abstract interface
+
+     !================================================================!
+     ! Advance the state s on the system until termination, in the
+     ! direction the mode selects.
+     !================================================================!
 
      impure subroutine march_interface(this, system, s, mode)
        import :: marcher, assembler, state
        class(marcher)  , intent(inout) :: this
        class(assembler), intent(inout) :: system
        class(state)    , intent(inout) :: s
-       integer         , intent(in), optional :: mode  ! FORWARD (default) / REVERSE
+       integer         , intent(in), optional :: mode  ! FORWARD (default) or REVERSE.
      end subroutine march_interface
 
   end interface

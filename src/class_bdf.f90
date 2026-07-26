@@ -1,11 +1,11 @@
 #include "scalar.fpp"
 
 !=====================================================================!
-! Backward Difference Formula time integrator (orders 1-6).
+! The Backward Difference Formula time integrator covers orders 1-6.
 !
 ! The time steps form a chain; a stencil that reads p states back
-! raises that chain to its p-th power - and this integrator carries
-! the resulting step dag (a chain object, edges by rule):
+! raises that chain to its p-th power, and this integrator carries
+! the resulting step dag (a chain object with edges by rule):
 !
 !                .-----------.-----------.
 !                |           v           v
@@ -13,13 +13,13 @@
 !                      |           ^              whenever
 !                      '-----------'              k - m <= power
 !
-! One dag, two directions: forward, the in-edges of a vertex deliver
-! the past states that form udot (step); backward, the out-edges
-! hand back weighted mass actions (march_backwards). The same edge
-! weights A(p,j+1)/h ride both ways.
+! One dag serves two directions: forward, the in-edges of a vertex
+! deliver the past states that form udot (step); backward, the
+! out-edges hand back weighted mass actions (march_backwards). The
+! same edge weights A(p,j+1)/h ride both ways.
 !
-! Now zoom into any vertex, and the picture repeats at a smaller
-! scale - this solver is a fractal of graphs:
+! Zoom into any vertex, and the picture repeats at a smaller scale;
+! this solver is a fractal of graphs:
 !
 !    the step dag           1 --> 2 --> (m) --> ... --> n
 !                                        |
@@ -35,8 +35,8 @@
 !    the partition           (o o o)  +  (o o o)  +  (o o)
 !                             part 1      part 2      part 3
 !
-! Four rungs, one grammar: weighted sums over edges and sums over
-! vertex sets - inner products all the way down.
+! Four rungs share one grammar: weighted sums over edges and sums
+! over vertex sets - inner products all the way down.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -56,15 +56,15 @@ module class_bdf
   public :: bdf
 
   !-------------------------------------------------------------------!
-  ! BDF integrator type
+  ! The BDF integrator type.
   !-------------------------------------------------------------------!
 
   type, extends(integrator) :: bdf
 
      integer                   :: max_order = 6
-     type(scalar), allocatable :: A(:,:)        ! BDF coefficient table
-     ! the step dag (steps), the adjoint trajectory psi and the primal
-     ! trajectory U all live on the integrator base
+     type(scalar), allocatable :: A(:,:)        ! The BDF coefficient table.
+     ! The step dag (steps), the adjoint trajectory psi, and the
+     ! primal trajectory U all live on the integrator base.
 
    contains
 
@@ -73,7 +73,8 @@ module class_bdf
      procedure :: get_linearization_coeff
      procedure :: get_stencil_coeff
 
-     ! transient discrete adjoint (backward sweep over the trajectory)
+     ! The transient discrete adjoint runs a backward sweep over the
+     ! trajectory.
      procedure :: integrate_adjoint
      procedure :: integrate_adjoint_fd
      procedure :: write_adjoint_solution
@@ -91,7 +92,7 @@ module class_bdf
 contains
 
   !===================================================================!
-  ! Construct a BDF integrator of the requested accuracy order
+  ! Construct a BDF integrator of the requested accuracy order.
   !===================================================================!
 
   pure type(bdf) function create(system, tinit, tfinal, h, max_order) result(this)
@@ -104,7 +105,7 @@ contains
 
     this % max_order = min(max_order, 6)
 
-    ! Coefficient table - http://www.scholarpedia.org/article/Backward_differentiation_formulas
+    ! The coefficient table follows http://www.scholarpedia.org/article/Backward_differentiation_formulas.
     allocate(this % A(this % max_order, this % max_order + 1))
     this % A = 0.0d0
 
@@ -118,7 +119,8 @@ contains
   end function create
 
   !===================================================================!
-  ! Number of past steps the formula uses (ramps up to max_order)
+  ! Return the number of past steps the formula uses; the count ramps
+  ! up to max_order.
   !===================================================================!
 
   pure integer function get_bandwidth(this, step_index) result(width)
@@ -133,7 +135,8 @@ contains
   end function get_bandwidth
 
   !===================================================================!
-  ! Linearization coefficients  coeff(n+1) = (A(p,1)/h)^n,  n = 0..order
+  ! Compute the linearization coefficients
+  ! coeff(n+1) = (A(p,1)/h)^n for n = 0..order.
   !===================================================================!
 
   pure subroutine get_linearization_coeff(this, p, h, coeff)
@@ -152,9 +155,10 @@ contains
   end subroutine get_linearization_coeff
 
   !===================================================================!
-  ! First-derivative stencil at bandwidth p:  scoeff(i+1) = A(p,i+1)/h,
-  ! i = 0..p - the same coefficients that form udot from past states in
-  ! step(). The adjoint backward sweep uses the whole stencil.
+  ! Compute the first-derivative stencil at bandwidth p:
+  ! scoeff(i+1) = A(p,i+1)/h for i = 0..p. These are the same
+  ! coefficients that form udot from past states in step(). The
+  ! adjoint backward sweep uses the whole stencil.
   !===================================================================!
 
   pure subroutine get_stencil_coeff(this, p, h, scoeff)
@@ -175,22 +179,23 @@ contains
   end subroutine get_stencil_coeff
 
   !===================================================================!
-  ! Advance one step: the in-edges of the new vertex deliver the past
-  ! states, and udot is their weighted sum -
+  ! Advance one step. The in-edges of the new vertex deliver the past
+  ! states, and udot is their weighted sum:
   !
   !    k-p  ...  k-2   k-1                                  A(p,j+1)
   !      \        |     |         udot_k = sum  w_j u_{k-j},  w_j = --------
   !       \       v     v              in-edges                        h
   !        '----> ( k )
   !
-  ! then (implicit) newton drives R(u_k, udot_k) to zero at the vertex.
+  ! When the scheme is implicit, Newton then drives R(u_k, udot_k) to
+  ! zero at the vertex.
   !===================================================================!
 
   impure subroutine step(this, t, U, h, p, ierr)
 
     class(bdf)  , intent(inout) :: this
     real(dp)    , intent(inout) :: t(:)
-    type(scalar), intent(inout) :: U(:,:,:)       ! (window, nvars, order+1)
+    type(scalar), intent(inout) :: U(:,:,:)       ! The shape is (window, nvars, order+1).
     integer     , intent(in)    :: p
     real(dp)    , intent(in)    :: h
     integer     , intent(out)   :: ierr
@@ -200,16 +205,16 @@ contains
     integer                   :: kk, torder, n, i
 
     ierr   = 0
-    kk     = size(U, dim=1)                       ! newest state at window end
+    kk     = size(U, dim=1)                       ! The newest state sits at the window end.
     torder = this % system % get_differential_order()
 
-    ! Advance the time
+    ! Advance the time.
     t(kk) = t(kk-1) + h
 
-    ! Predictor: carry the last value for the lowest order
+    ! The predictor carries the last value for the lowest order.
     U(kk,:,1) = U(kk-1,:,1)
 
-    ! Higher-order states from the BDF stencil
+    ! The higher-order states come from the BDF stencil.
     do n = 1, torder
 
        U(kk,:,n+1) = 0.0d0
@@ -220,7 +225,7 @@ contains
 
     end do
 
-    ! Implicit correction driving the residual to zero
+    ! The implicit correction drives the residual to zero.
     if (this % implicit) then
 
        allocate(coeff(torder+1))
@@ -235,7 +240,7 @@ contains
   end subroutine step
 
   !===================================================================!
-  ! Transient discrete adjoint, J = h sum_{k>=2} f(u_k):
+  ! Compute the transient discrete adjoint of J = h sum_{k>=2} f(u_k):
   !
   !    march forward  ============>  u_1 ... u_n     (integrate)
   !    sweep backward <============  psi_n ... psi_2 (march_backwards)
@@ -251,16 +256,17 @@ contains
     class(functional), intent(in)               :: func
     real(dp)         , intent(out), allocatable :: dJdx(:)
 
-    call this % integrate()                         ! forward march -> this % U
-    call this % march_backwards(func)           ! fill this % psi (N..2)
+    call this % integrate()                         ! The forward march fills this % U.
+    call this % march_backwards(func)           ! The backward sweep fills this % psi (N..2).
     call this % compute_total_derivative(func, dJdx)
 
   end subroutine integrate_adjoint
 
   !===================================================================!
-  ! Backward sweep: visit the step dag in reverse dependency order,
-  ! and at each vertex pull one weighted sum in over the out-edges -
-  ! the same inner-product primitive the linear solvers run on:
+  ! Run the backward sweep: visit the step dag in reverse dependency
+  ! order, and at each vertex pull one weighted sum in over the
+  ! out-edges - the same inner-product primitive the linear solvers
+  ! run on:
   !
   !               ( m ) ----> k = m+1 ... m+p      each out-edge hands
   !                 ^          |                   back its mass action
@@ -272,8 +278,9 @@ contains
   !    rhs_m = -w_m df/du(u_m) - sum ( weight * M^T psi_k )
   !                         out-edges
   !
-  ! then one transpose solve at the vertex: J_m^T psi_m = rhs_m.
-  ! psi(1) stays zero - the initial state has no residual equation.
+  ! One transpose solve at the vertex then gives J_m^T psi_m = rhs_m.
+  ! The entry psi(1) stays zero because the initial state has no
+  ! residual equation.
   !===================================================================!
 
   impure subroutine march_backwards(this, func)
@@ -294,13 +301,16 @@ contains
 
     lsolver = conjugate_gradient(10000, 1.0d-12, 0)
 
-    ! the step dag the forward march built: its edges ARE the
-    ! couplings - edge m -> k exactly when step k's stencil reads
-    ! step m - so no reach/cutoff bookkeeping survives here; the
+    !-----------------------------------------------------------------!
+    ! The forward march built the step dag, and its edges ARE the
+    ! couplings: edge m -> k exists exactly when step k's stencil
+    ! reads step m. No reach or cutoff bookkeeping survives here; the
     ! sweep walks the same structure backward.
+    !-----------------------------------------------------------------!
+
     order = this % dependency_order()
 
-    ! mass action selector [alpha, beta] = [0, 1] -> M v
+    ! The mass action selector [alpha, beta] = [0, 1] picks M v.
     mass_coeff = [0.0_dp, 1.0_dp]
 
     associate(system => this % system)
@@ -308,30 +318,31 @@ contains
       nvars = system % get_num_state_vars()
 
       if (allocated(this % psi)) deallocate(this % psi)
-      allocate(this % psi(n, nvars)); this % psi = 0.0d0
+      allocate(this % psi(n, nvars))
+      this % psi = 0.0d0
 
       allocate(rhs(nvars), dfdu(nvars), Mpsi(nvars))
 
       backward: do i = n, 1, -1
 
          m = order(i)
-         if (m .eq. 1) cycle backward   ! the initial state: no residual eqn
+         if (m .eq. 1) cycle backward   ! The initial state has no residual equation.
 
-         ! forward step jacobian coefficients at m: [alpha, beta] = [1, A(p_m,1)/h]
+         ! The forward step jacobian coefficients at m are [alpha, beta] = [1, A(p_m,1)/h].
          p_m = this % get_bandwidth(m)
          call this % get_stencil_coeff(p_m, h, scoeff)
          lin_coeff = [1.0d0, scoeff(1)]
 
-         ! position the assembler at step m (state u_m, udot_m)
+         ! Position the assembler at step m (state u_m, udot_m).
          system % S = this % U(m,:,:)
 
-         ! functional contribution -w_m df/du(u_m)
+         ! The functional contributes -w_m df/du(u_m).
          w    = merge(h, 0.0_dp, m >= 2)
          dfdu = 0.0d0
          call func % add_dfdu(system, dfdu)
          rhs  = -w*dfdu
 
-         ! every out-edge hands back its weighted mass action
+         ! Every out-edge hands back its weighted mass action.
          nbrs = this % out_neighbours(m)
          couple: do e = 1, size(nbrs)
             k   = nbrs(e)
@@ -343,10 +354,13 @@ contains
             rhs = rhs - scoeff(j+1)*Mpsi
          end do couple
 
-         ! the system freezes the step's TRANSPOSED linearization with
+         !------------------------------------------------------------!
+         ! The system freezes the step's TRANSPOSED linearization with
          ! this vertex's right-hand side, and the solver marches the
-         ! frozen system forward - J_m^T psi_m = rhs with no REVERSE
-         ! tag and no solver-side state
+         ! frozen system forward: J_m^T psi_m = rhs, with no REVERSE
+         ! tag and no solver-side state.
+         !------------------------------------------------------------!
+
          call system % linearize(lin_coeff, rhs = real(rhs, dp), transpose = .true.)
          call lsolver % solve(system, psi_m)
          this % psi(m,:) = psi_m
@@ -364,7 +378,8 @@ contains
   end subroutine march_backwards
 
   !===================================================================!
-  ! Total derivative  dJ/dx = sum_m w_m df/dx + sum_m psi_m^T dR_m/dx
+  ! Accumulate the total derivative
+  ! dJ/dx = sum_m w_m df/dx + sum_m psi_m^T dR_m/dx.
   !===================================================================!
 
   impure subroutine compute_total_derivative(this, func, dJdx)
@@ -382,8 +397,14 @@ contains
     associate(system => this % system)
 
       ndv = system % get_num_design_vars()
-      allocate(dJdx(ndv)); dJdx = 0.0_dp
+      allocate(dJdx(ndv))
+      dJdx = 0.0_dp
       allocate(dfdx_m(ndv))
+
+      !---------------------------------------------------------------!
+      ! Every visited vertex adds its functional piece and its
+      ! residual piece.
+      !---------------------------------------------------------------!
 
       do m = 2, n
          system % S = this % U(m,:,:)
@@ -403,7 +424,8 @@ contains
   end subroutine compute_total_derivative
 
   !===================================================================!
-  ! Time-integrated functional  J = sum_k w_k f(u_k) over the trajectory
+  ! Evaluate the time-integrated functional J = sum_k w_k f(u_k) over
+  ! the trajectory.
   !===================================================================!
 
   impure real(dp) function integrate_functional(this, func) result(jval)
@@ -430,8 +452,9 @@ contains
   end function integrate_functional
 
   !===================================================================!
-  ! Verification gradient: central differences of the time-integrated
-  ! functional, re-marching the forward problem at each perturbation.
+  ! Compute a verification gradient with central differences of the
+  ! time-integrated functional, re-marching the forward problem at
+  ! each perturbation.
   !===================================================================!
 
   impure subroutine integrate_adjoint_fd(this, func, dJdx)
@@ -455,12 +478,16 @@ contains
 
          delta = 1.0e-6_dp*max(1.0_dp, abs(x0(i)))
 
-         x = x0; x(i) = x0(i) + delta
+         ! March with the positive perturbation.
+         x = x0
+         x(i) = x0(i) + delta
          call system % set_design_vars(x)
          call this % integrate()
          jp = this % integrate_functional(func)
 
-         x = x0; x(i) = x0(i) - delta
+         ! March with the negative perturbation.
+         x = x0
+         x(i) = x0(i) - delta
          call system % set_design_vars(x)
          call this % integrate()
          jm = this % integrate_functional(func)
@@ -469,7 +496,7 @@ contains
 
       end do
 
-      ! restore the baseline design and trajectory
+      ! Restore the baseline design and trajectory.
       call system % set_design_vars(x0)
       call this % integrate()
 
@@ -480,9 +507,10 @@ contains
   end subroutine integrate_adjoint_fd
 
   !===================================================================!
-  ! Export the state + adjoint-state trajectories: one .vtu per step,
-  ! "<basename>_NNNN.vtu", each with cell fields "state" (u_k) and
-  ! "adjoint" (psi_k). (psi_1 = 0 - the initial state has no adjoint eqn.)
+  ! Export the state and adjoint-state trajectories: one .vtu file per
+  ! step, named "<basename>_NNNN.vtu", each with the cell fields
+  ! "state" (u_k) and "adjoint" (psi_k). The entry psi_1 is zero
+  ! because the initial state has no adjoint equation.
   !===================================================================!
 
   impure subroutine write_adjoint_solution(this, basename)
@@ -512,8 +540,8 @@ contains
   end subroutine write_adjoint_solution
 
   !===================================================================!
-  ! Export the state + adjoint-state trajectories to one gmsh post file
-  ! (two animated views over the time steps).
+  ! Export the state and adjoint-state trajectories to one gmsh post
+  ! file with two animated views over the time steps.
   !===================================================================!
 
   impure subroutine write_adjoint_gmsh(this, meshfile, filename)

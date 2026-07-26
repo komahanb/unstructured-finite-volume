@@ -36,26 +36,26 @@ module class_chain
   public :: chain
 
   !===================================================================!
-  ! Concrete chain graph
+  ! The concrete chain graph.
   !===================================================================!
 
   type, extends(digraph) :: chain
 
-     integer :: power = 1   ! edge m -> k whenever k - m <= power
+     integer :: power = 1   ! An edge m -> k exists whenever k - m <= power.
 
    contains
 
-     ! the directed contract, answered by the rule - nothing stored
+     ! The directed contract is answered by the rule; nothing is stored.
      procedure :: out_neighbours
      procedure :: in_neighbours
 
-     ! cheap rule overrides of the provided union queries
+     ! These are cheap rule overrides of the provided union queries.
      procedure :: neighbours
      procedure :: degree
 
-     ! set THIS object up as a chain of n links, in place - the seat
-     ! a type that IS a chain (a marcher, an integrator) uses to form
-     ! its own structure once its length is known
+     ! Form sets THIS object up as a chain of n links, in place - the
+     ! seat a type that IS a chain (a marcher, an integrator) uses to
+     ! form its own structure once its length is known.
      procedure :: form
 
   end type chain
@@ -67,8 +67,8 @@ module class_chain
 contains
 
   !===================================================================!
-  ! A chain of n vertices at the given power (default 1, the plain
-  ! chain): edges by rule, none stored.
+  ! Create a chain of n vertices at the given power (default 1, the
+  ! plain chain): the edges follow the rule, and none are stored.
   !===================================================================!
 
   pure type(chain) function create(n, num_variables, power) result(this)
@@ -113,8 +113,12 @@ contains
        this % num_edges = this % num_edges + max(0, min(this % power, n - i))
     end do
 
-    ! vertex labels (and part stamps for the inherited partitioners);
-    ! re-entrant - forming again replaces the old labels
+    !----------------------------------------------------------------!
+    ! The vertex labels carry part stamps for the inherited
+    ! partitioners. Form is re-entrant: forming again replaces the
+    ! old labels.
+    !----------------------------------------------------------------!
+
     if (allocated(this % vertices)) deallocate(this % vertices)
     allocate(this % vertices(n))
     do i = 1, n
@@ -125,8 +129,8 @@ contains
   end subroutine form
 
   !===================================================================!
-  ! The directed rule: out-edges reach forward to the next power
-  ! vertices, in-edges reach back the same way, within 1..n.
+  ! The directed rule, forward: out-edges reach forward to the next
+  ! power vertices, within 1..n.
   !===================================================================!
 
   pure function out_neighbours(this, v) result(nbrs)
@@ -141,6 +145,11 @@ contains
 
   end function out_neighbours
 
+  !===================================================================!
+  ! The directed rule, backward: in-edges reach back to the previous
+  ! power vertices, within 1..n.
+  !===================================================================!
+
   pure function in_neighbours(this, v) result(nbrs)
 
     class(chain), intent(in) :: this
@@ -154,7 +163,8 @@ contains
   end function in_neighbours
 
   !===================================================================!
-  ! Neighbours of vertex v by rule: everything within power of v.
+  ! Return the neighbours of vertex v by rule: everything within
+  ! power of v.
   !===================================================================!
 
   pure function neighbours(this, v) result(nbrs)
@@ -171,8 +181,8 @@ contains
   end function neighbours
 
   !===================================================================!
-  ! Degree by rule: how far the power reaches back plus how far it
-  ! reaches forward.
+  ! Return the degree by rule: how far the power reaches back plus
+  ! how far it reaches forward.
   !===================================================================!
 
   pure integer function degree(this, v)

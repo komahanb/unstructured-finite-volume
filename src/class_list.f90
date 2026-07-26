@@ -1,12 +1,12 @@
 !=====================================================================!
-! Basic implementation of an unordered list tuple
+! A basic implementation of an unordered list of tuples.
 !=====================================================================!
 
 module class_list
 
   implicit none
 
-  ! Datatype
+  ! The datatype.
   type :: list
      integer, allocatable :: table(:,:)
      integer              :: num_entries
@@ -16,12 +16,12 @@ module class_list
      procedure :: add_entry
      procedure :: get_entries
 
-     ! Destructor
+     ! The destructor.
      final :: destroy
 
   end type list
 
-  ! Constructor interface for list
+  ! The constructor interface for a list.
   interface list
      module procedure create
   end interface list
@@ -29,7 +29,7 @@ module class_list
 contains
 
   !===================================================================!
-  ! Constructor implementaion of list
+  ! The constructor implementation of a list.
   !===================================================================!
 
   pure type(list) function create(num_tuples, max_entries) result(this)
@@ -46,7 +46,7 @@ contains
   end function create
 
   !===================================================================!
-  ! Destructor for list object
+  ! The destructor for a list object.
   !===================================================================!
   
   pure subroutine destroy(this)
@@ -58,7 +58,7 @@ contains
   end subroutine destroy
 
   !===================================================================!
-  ! Add an entry into the list
+  ! Append a tuple to the list and report success.
   !===================================================================!
 
   impure type(logical) function insert(this, tuple)
@@ -66,7 +66,7 @@ contains
     class(list), intent(inout) :: this
     integer   , intent(in)    :: tuple(:)
 
-    ! Check if tuple is in table   
+    ! Append the tuple to the table without a membership check.
     this % num_entries = this % num_entries + 1
     this % table(:, this % num_entries) = tuple(:)
     insert = .true.
@@ -74,7 +74,7 @@ contains
   end function insert
 
   !===================================================================!
-  ! Add an entry into the list
+  ! Add an entry into the list.
   !===================================================================!
 
   pure subroutine add_entry(this, tuple)
@@ -82,14 +82,14 @@ contains
     class(list), intent(inout) :: this
     integer   , intent(in)    :: tuple(:)
 
-    ! Check if tuple is in table    
+    ! Append the tuple to the table without a membership check.
     this % num_entries = this % num_entries + 1
     this % table(:, this % num_entries) = tuple(:)
 
   end subroutine add_entry
   
   !===================================================================!
-  ! Get all the entries in the list as an array
+  ! Get all the entries in the list as an array.
   !===================================================================!
   
   pure subroutine get_entries(this, entries)

@@ -1,5 +1,5 @@
 !=====================================================================!
-! Test loading of mesh and mesh pre-processing
+! Test the loading of the mesh and the mesh pre-processing.
 !=====================================================================!
 
 program test_mesh
@@ -13,7 +13,7 @@ program test_mesh
   implicit none
 
   !===================================================================!
-  ! Test the functionalities of Class GMSH_LOADER
+  ! Test the functionalities of the gmsh_loader class.
   !===================================================================!
 
   test_gmsh: block
@@ -39,7 +39,7 @@ program test_mesh
   end block test_gmsh
 
   !===================================================================!
-  ! Test the functionalities of Class String and Class File
+  ! Test the functionalities of the string and file classes.
   !===================================================================!
 
   test_file_string : block
@@ -49,10 +49,10 @@ program test_mesh
     type(file)                :: file_obj
     integer                   :: iline, num_lines
 
-    ! Create a file object
+    ! Create a file object.
     file_obj = file(filename)
 
-    ! Do a line by line read and print contents
+    ! Do a line-by-line read and print the contents.
     num_lines = file_obj % get_num_lines()
     allocate(lines(num_lines))
     call file_obj % open()
@@ -63,7 +63,7 @@ program test_mesh
     call lines % print()
     deallocate(lines)
 
-    ! Read everything and print content
+    ! Read everything and print the content.
     call file_obj % read_lines(lines)
     call lines % print()
 
@@ -84,7 +84,7 @@ contains
     class(mesh)       , allocatable :: mesh_obj
     class(paraview_writer), allocatable :: pwriter
 
-    ! Create a mesh loader for mesh file
+    ! Create a mesh loader for the mesh file.
     allocate(gmsh_loader_obj, source =  gmsh_loader(filename))
 
     allocate(mesh_obj, source = mesh(gmsh_loader_obj))

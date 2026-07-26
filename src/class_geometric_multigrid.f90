@@ -1,8 +1,8 @@
 !=====================================================================!
-! Geometric multigrid. A concrete multigrid whose entire contribution
-! is its squint: which fine vertices huddle into which coarse part.
-! The answer here is by coordinates - nearby cells belong together,
-! and the matrix is never consulted.
+! This module implements geometric multigrid, a concrete multigrid
+! whose entire contribution is its squint: which fine vertices huddle
+! into which coarse part. The answer here comes from coordinates -
+! nearby cells belong together, and the matrix is never consulted.
 !
 ! Each level keeps a graph and the centroids of its vertices. To
 ! coarsen, the level's graph is partitioned by recursive coordinate
@@ -12,6 +12,8 @@
 ! composes all the way down. Everything after the squint - smoothed
 ! prolongation, galerkin coarse operators, the V-cycle, the coarse
 ! LU - is the multigrid mechanism, inherited untouched.
+!
+!     (fine graph) --squint--> (parts) --quotient--> (coarse graph)
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -30,8 +32,8 @@ module class_geometric_multigrid
   public :: geometric_multigrid
 
   !-------------------------------------------------------------------!
-  ! One rung of the geometric hierarchy: a graph and where its
-  ! vertices sit
+  ! One rung of the geometric hierarchy holds a graph and the
+  ! coordinates where its vertices sit.
   !-------------------------------------------------------------------!
 
   type :: mesh_level
@@ -41,8 +43,8 @@ module class_geometric_multigrid
 
   type, extends(multigrid) :: geometric_multigrid
 
-     type(mesh_level), allocatable :: mesh_levels(:)       ! 1=finest, grown by coarsen
-     integer                       :: cells_per_part = 4   ! about this many fine cells huddle into one part
+     type(mesh_level), allocatable :: mesh_levels(:)       ! Level 1 is the finest; coarsen grows the rest.
+     integer                       :: cells_per_part = 4   ! About this many fine cells huddle into one part.
 
    contains
 
@@ -58,9 +60,9 @@ module class_geometric_multigrid
 contains
 
   !===================================================================!
-  ! Constructor: the finest rung is the given graph (its edge list
-  ! copied into a stored graph) and the centroids of its vertices -
-  ! for a mesh graph, the cell centres.
+  ! Constructor: the finest rung is the given graph (its edge list is
+  ! copied into a stored graph) together with the centroids of its
+  ! vertices - for a mesh graph these are the cell centres.
   !===================================================================!
 
   type(geometric_multigrid) function create(g, centroids) result(this)
@@ -80,8 +82,8 @@ contains
   end function create
 
   !===================================================================!
-  ! From a mesh alone: a mesh is a graph that knows where its
-  ! vertices sit, so nothing else needs to be passed.
+  ! Construct from a mesh alone: a mesh is a graph that knows where
+  ! its vertices sit, so nothing else needs to be passed.
   !===================================================================!
 
   type(geometric_multigrid) function create_from_mesh(m) result(this)
@@ -93,9 +95,9 @@ contains
   end function create_from_mesh
 
   !===================================================================!
-  ! The squint, by coordinates. Bisect the level's graph into compact
-  ! parts of about cells_per_part vertices each; the parts are the
-  ! aggregates. Then build the next rung - the quotient graph with
+  ! This is the squint, by coordinates: bisect the level's graph into
+  ! compact parts of about cells_per_part vertices each; the parts are
+  ! the aggregates. Then build the next rung - the quotient graph with
   ! part-averaged centroids - so the level below can squint the same
   ! way.
   !===================================================================!
@@ -122,10 +124,14 @@ contains
          agg(v) = fine % g % part_of(v)
       end do
 
-      ! the next rung: the quotient, centred at its part averages.
-      ! a second setup on the same object rebuilds the hierarchy, so a
-      ! rung from the previous one may still hold centroids - drop them
-      ! (the re-entrancy contract the shared setup driver promises)
+      !---------------------------------------------------------------!
+      ! The next rung is the quotient, centred at its part averages.
+      ! A second setup on the same object rebuilds the hierarchy, so a
+      ! rung from the previous one may still hold centroids - drop
+      ! them. This is the re-entrancy contract the shared setup driver
+      ! promises.
+      !---------------------------------------------------------------!
+
       ndim = size(fine % centroids, 1)
       this % mesh_levels(lev+1) % g = stored_graph(fine % g)
       if (allocated(this % mesh_levels(lev+1) % centroids)) then

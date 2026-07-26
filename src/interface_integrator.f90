@@ -1,12 +1,13 @@
 #include "scalar.fpp"
 
 !=====================================================================!
-! Abstract time integrator. Marches the semi-discrete system
+! The abstract time integrator marches the semi-discrete system
 ! R(t, U) = 0 supplied by a class(assembler), where the per-step state
 ! U = [q, qdot, qddot, ...] is stored as (num_state_vars, order+1).
-! Concrete schemes (bdf, ...) implement `step` (advance one step,
-! solving the nonlinear system when implicit) and `get_bandwidth` (how
-! many past steps the multistep scheme needs).
+! Concrete schemes (bdf, ...) implement `step`, which advances one
+! step and solves the nonlinear system when implicit, and
+! `get_bandwidth`, which reports how many past steps the multistep
+! scheme needs.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -26,38 +27,38 @@ module interface_integrator
   public :: integrator
 
   !-------------------------------------------------------------------!
-  ! Abstract integrator type
+  ! The abstract integrator type.
   !-------------------------------------------------------------------!
 
   type, abstract, extends(marcher) :: integrator
 
-     class(assembler), allocatable :: system     ! the semi-discrete system
-     real(dp)        , allocatable :: time(:)     ! time at each step
-     type(scalar)    , allocatable :: U(:,:,:)    ! primal trajectory (step, nvars, order+1)
-     type(scalar)    , allocatable :: psi(:,:)    ! adjoint trajectory (step, nvars)
+     class(assembler), allocatable :: system     ! The semi-discrete system.
+     real(dp)        , allocatable :: time(:)     ! The time at each step.
+     type(scalar)    , allocatable :: U(:,:,:)    ! The primal trajectory (step, nvars, order+1).
+     type(scalar)    , allocatable :: psi(:,:)    ! The adjoint trajectory (step, nvars).
 
      real(dp) :: tinit
      real(dp) :: tfinal
      real(dp) :: h
      logical  :: implicit
 
-     ! no step-count field and no carried dag: the integrator IS its
-     ! step chain. the count is the inherited num_vertices; march
+     ! No step-count field and no carried dag live here: the integrator
+     ! IS its step chain. The count is the inherited num_vertices; march
      ! forms the chain at the scheme's stencil depth and walks it
-     ! forward; a discrete adjoint walks the same chain backward.
+     ! forward, and a discrete adjoint walks the same chain backward.
 
    contains
 
      procedure :: construct
      procedure :: destruct
 
-     ! the marcher contract: advance the state window along the step
-     ! chain, recording the trajectory. integrate is the family wrapper
-     ! (it seeds the window from the initial condition).
+     ! The marcher contract: advance the state window along the step
+     ! chain, recording the trajectory. Integrate is the family wrapper;
+     ! it seeds the window from the initial condition.
      procedure :: march
      procedure :: integrate
 
-     ! Deferred to concrete schemes
+     ! These are deferred to the concrete schemes.
      procedure(step_interface)            , deferred :: step
      procedure(get_bandwidth_interface)   , deferred :: get_bandwidth
      procedure(get_stencil_coeff_interface), deferred :: get_stencil_coeff
@@ -65,14 +66,14 @@ module interface_integrator
   end type integrator
 
   !-------------------------------------------------------------------!
-  ! Interfaces to the deferred procedures
+  ! Interfaces to the deferred procedures.
   !-------------------------------------------------------------------!
 
   abstract interface
 
      !================================================================!
-     ! Advance one step: given the window of the last p+1 times/states,
-     ! fill the newest state (solving R = 0 when implicit).
+     ! Advance one step: given the window of the last p+1 times and
+     ! states, fill the newest state, solving R = 0 when implicit.
      !================================================================!
 
      impure subroutine step_interface(this, t, U, h, p, ierr)
@@ -89,7 +90,8 @@ module interface_integrator
      end subroutine step_interface
 
      !================================================================!
-     ! Number of past steps the scheme uses at the given step index
+     ! Report the number of past steps the scheme uses at the given
+     ! step index.
      !================================================================!
 
      pure integer function get_bandwidth_interface(this, step_index) result(width)
@@ -102,10 +104,11 @@ module interface_integrator
      end function get_bandwidth_interface
 
      !================================================================!
-     ! The first-derivative stencil at bandwidth p: scoeff(i+1), i=0..p,
-     ! is the coefficient multiplying U(k-i) when forming udot_k (for bdf,
-     ! A(p,i+1)/h). The adjoint needs the whole stencil for the backward
-     ! sweep's future-step coupling, not just the leading coefficient.
+     ! Return the first-derivative stencil at bandwidth p: scoeff(i+1),
+     ! i = 0..p, is the coefficient multiplying U(k-i) when forming
+     ! udot_k (for bdf, A(p,i+1)/h). The adjoint needs the whole
+     ! stencil for the backward sweep's future-step coupling, not just
+     ! the leading coefficient.
      !================================================================!
 
      impure subroutine get_stencil_coeff_interface(this, p, h, scoeff)
@@ -124,7 +127,7 @@ module interface_integrator
 contains
 
   !===================================================================!
-  ! Base class constructor
+  ! The base class constructor.
   !===================================================================!
 
   pure subroutine construct(this, system, tinit, tfinal, h, implicit)
@@ -145,7 +148,7 @@ contains
   end subroutine construct
 
   !===================================================================!
-  ! Base class destructor
+  ! The base class destructor.
   !===================================================================!
 
   pure subroutine destruct(this)
@@ -171,7 +174,7 @@ contains
 
     type(differential_state) :: s
 
-    ! a wrong tag dies at the door with its name
+    ! A wrong tag dies at the door with its name.
     if (present(mode)) then
        if (.not. is_valid_mode(mode)) then
           write(*,'(1x,a,i0)') "integrate: invalid mode tag ", mode
@@ -207,7 +210,7 @@ contains
     integer, allocatable :: order(:), nbrs(:)
     integer :: i, k, p, ierr
 
-    ! a wrong tag dies at the door with its name
+    ! A wrong tag dies at the door with its name.
     if (present(mode)) then
        if (.not. is_valid_mode(mode)) then
           write(*,'(1x,a,i0)') "integrator % march: invalid mode tag ", mode
@@ -215,31 +218,38 @@ contains
        end if
     end if
 
-    ! the deferred step advances the system this integrator was
-    ! constructed with; a different system of the same size would march
-    ! the wrong equations
+    !----------------------------------------------------------------!
+    ! The deferred step advances the system this integrator was
+    ! constructed with; a different system of the same size would
+    ! march the wrong equations.
+    !----------------------------------------------------------------!
+
     if (system % get_num_state_vars() .ne. this % system % get_num_state_vars()) then
        error stop "integrator % march: the system does not match the constructed one"
     end if
 
-    ! Re-entrant: a fresh march each call (the adjoint re-solves at
-    ! perturbed designs), so drop any previous history first.
+    !----------------------------------------------------------------!
+    ! The march is re-entrant: each call starts fresh (the adjoint
+    ! re-solves at perturbed designs), so drop any previous history
+    ! first.
+    !----------------------------------------------------------------!
+
     if (allocated(this % time)) deallocate(this % time)
     if (allocated(this % U))    deallocate(this % U)
 
-    ! Time history
+    ! Allocate the time history.
     allocate(this % time(this % num_vertices))
     this % time    = 0.0_dp
     this % time(1) = this % tinit
 
-    ! State history: (step, nvars, order+1) to match the assembler state
+    ! Allocate the state history as (step, nvars, order+1) to match the assembler state.
     allocate(this % U( &
          & this % num_vertices, &
          & this % system % get_num_state_vars(), &
          & this % system % get_differential_order() + 1))
     this % U = 0.0d0
 
-    ! The seed window enters the record
+    ! The seed window enters the record.
     select type (s)
     type is (differential_state)
        this % U(1,:,:) = s % U
@@ -247,13 +257,15 @@ contains
        error stop "integrator % march: requires a differential_state"
     end select
 
-    ! The step dag: the chain of steps raised to the scheme's stencil
-    ! depth. The march visits it in dependency order, and each vertex
-    ! reads its stencil through its in-edges:
+    !----------------------------------------------------------------!
+    ! The step dag is the chain of steps raised to the scheme's
+    ! stencil depth. The march visits it in dependency order, and
+    ! each vertex reads its stencil through its in-edges:
     !
     !    k-p ... k-1 ---> (k)      the window handed to step is the
     !                              closed in-neighbourhood [k-p .. k]
-    !
+    !----------------------------------------------------------------!
+
     call this % form(this % num_vertices, &
          &           power = this % get_bandwidth(this % num_vertices))
     order = this % dependency_order()
@@ -261,7 +273,7 @@ contains
     stepping: do i = 1, this % num_vertices
 
        k = order(i)
-       if (k .eq. 1) cycle stepping        ! the seed vertex is given
+       if (k .eq. 1) cycle stepping        ! The seed vertex is given.
 
        nbrs = this % in_neighbours(k)
        p    = size(nbrs)
@@ -270,7 +282,7 @@ contains
 
     end do stepping
 
-    ! The state exits as the final window
+    ! The state exits as the final window.
     select type (s)
     type is (differential_state)
        s % U = this % U(this % num_vertices,:,:)

@@ -1,5 +1,6 @@
 !=====================================================================!
-! Test loading of mesh and mesh pre-processing
+! Exercise the linear solvers on the assembled diffusion system: cg,
+! the auto-tuned sor, and the colored gs/sor sweeps.
 !=====================================================================!
 
 program test_mesh
@@ -29,7 +30,7 @@ program test_mesh
 
   meshing : block
 
-    ! Create a mesh object
+    ! Create a mesh object.
     allocate(gmsh, source = gmsh_loader(filename))
     allocate(grid, source = mesh(gmsh))
     deallocate(gmsh)
@@ -38,11 +39,14 @@ program test_mesh
 
   assembly : block
 
-    ! Create an assembler object for assembling the linear system
-    ! Geometry and meshing
+    !-----------------------------------------------------------------!
+    ! Create an assembler object that assembles the linear system
+    ! from the geometry and the mesh.
+    !-----------------------------------------------------------------!
+
     allocate(FVMAssembler, source = assembler(grid))
 
-    ! Boundary conditions, by physical group name (box-3.msh)
+    ! Set the boundary conditions by physical group name (box-3.msh).
     call FVMAssembler % set_dirichlet("front" , 5.0d0)
     call FVMAssembler % set_dirichlet("bottom", 10.0d0)
     call FVMAssembler % set_dirichlet("right" , 15.0d0)
@@ -50,10 +54,18 @@ program test_mesh
     call FVMAssembler % set_dirichlet("left"  , 0.0d0)
     call FVMAssembler % set_dirichlet("back"  , 0.0d0)
 
-    ! Also supply
+    !-----------------------------------------------------------------!
+    ! A physics list may also be supplied:
+    !
     ! allocate(FVMAssembler, source = assembler(grid,physics_list))
-    ! physics with tags Assembler combines Geometry and Physics ( EQNS
-    ! + BC) to provide linear/nonlinear systems
+    !
+    ! The assembler combines the geometry and the physics (equations
+    ! and boundary conditions) to provide linear and nonlinear
+    ! systems:
+    !
+    !   (geometry) --> (assembler) <-- (physics: equations + bc)
+    !
+    !-----------------------------------------------------------------!
 
   end block assembly
 
@@ -73,14 +85,14 @@ program test_mesh
          & max_it      = max_it, &
          & print_level = print_level))
 
-    ! Solve using solver method
+    ! Solve using the solver method.
     call solver % solve(FVMassembler, x)
     print *, 'cg solution = '
     do i = 1, min(10, size(x))
        print *, i,  x(i)
     end do
 
-    ! Writes the mesh for tecplot
+    ! A Tecplot write of the solution is kept below for reference.
     ! call FVMassembler % write_solution("mesh-cg.dat", x)
 
     allocate(field_names(1))
@@ -98,9 +110,13 @@ program test_mesh
 
   end block cg_solver
 
-  ! auto-tuned sor: the solver works its own parameter out - measures the
-  ! sweep's convergence factor at entry and sets the optimal omega, with
-  ! the rollback gate live during the outer iteration. must agree with cg.
+  !-------------------------------------------------------------------!
+  ! Auto-tuned sor: the solver works its own parameter out. It
+  ! measures the sweep's convergence factor at entry and sets the
+  ! optimal omega, with the rollback gate live during the outer
+  ! iteration. It must agree with cg.
+  !-------------------------------------------------------------------!
+
   auto_sor : block
 
     real(dp) , parameter   :: max_tol = 1.0d-10
@@ -120,8 +136,11 @@ program test_mesh
          & max_it = 100, print_level = 0))
     call solver % solve(FVMassembler, xref)
 
-    ! the iteration diagnostic lives on the object (no module-scope
-    ! side channels): a completed march must have populated it
+    !-----------------------------------------------------------------!
+    ! The iteration diagnostic lives on the object (no module-scope
+    ! side channels): a completed march must have populated it.
+    !-----------------------------------------------------------------!
+
     if (solver % last_inner_iters .le. 0) then
        write(*,'(1x,a)') "FAIL : last_inner_iters not populated by the march"
        error stop
@@ -144,9 +163,12 @@ program test_mesh
 
   end block auto_sor
 
-  ! colored sweeps: gs and sor carry the system's graph, whose coloring
-  ! makes the sweep exact (no inner triangle iteration). both must land
-  ! on the cg answer.
+  !-------------------------------------------------------------------!
+  ! Colored sweeps: gs and sor carry the system's graph, whose
+  ! coloring makes the sweep exact (no inner triangle iteration).
+  ! Both must land on the cg answer.
+  !-------------------------------------------------------------------!
+
   colored : block
 
     real(dp) , parameter   :: max_tol = 1.0d-10
@@ -187,10 +209,13 @@ program test_mesh
        error stop
     end if
 
-    ! mesh-free smoothing: the smoother carries the OPERATOR itself -
-    ! the matrix is a digraph, so build its in-lists (one counting
-    ! pass) and its own coloring becomes the sweep order. no mesh in
-    ! sight.
+    !-----------------------------------------------------------------!
+    ! Mesh-free smoothing: the smoother carries the OPERATOR itself.
+    ! The matrix is a digraph, so build its in-lists (one counting
+    ! pass) and its own coloring becomes the sweep order. No mesh is
+    ! in sight.
+    !-----------------------------------------------------------------!
+
     mesh_free: block
 
       type(csr_matrix)                :: A
@@ -223,10 +248,16 @@ program test_mesh
 
   end block colored
 
-  ! the physics IS a graph now: its vertices are the variables, its
-  ! edges the cross-variable couplings. diffusion couples nothing, so
-  ! its coupling graph is two lone vertices - and saying so IS the
-  ! decoupling, stated as structure.
+  !-------------------------------------------------------------------!
+  ! The physics IS a graph now: its vertices are the variables, its
+  ! edges the cross-variable couplings. Diffusion couples nothing, so
+  ! its coupling graph is two lone vertices:
+  !
+  !   (u1)    (u2)
+  !
+  ! Saying so IS the decoupling, stated as structure.
+  !-------------------------------------------------------------------!
+
   coupling_graph : block
 
     type(diffusion_flux) :: law

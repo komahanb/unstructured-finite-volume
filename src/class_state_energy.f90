@@ -1,11 +1,12 @@
 #include "scalar.fpp"
 
 !=====================================================================!
-! State-energy functional  J = 1/2 sum_i u_i^2 = 1/2 ||u||^2. A simple
-! differentiable objective for verifying the adjoint: its state
-! derivative df/du = u is a non-trivial vector, and it has no explicit
-! design dependence (df/dx = 0, inherited default). Everything is
-! vector-level, so it stays valid as flat arrays become distributed.
+! The state-energy functional  J = 1/2 sum_i u_i^2 = 1/2 ||u||^2. It
+! is a simple differentiable objective for verifying the adjoint: its
+! state derivative df/du = u is a non-trivial vector, and it has no
+! explicit design dependence (df/dx = 0, the inherited default).
+! Everything is vector-level, so it stays valid as flat arrays become
+! distributed.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -37,7 +38,7 @@ module class_state_energy
 contains
 
   !===================================================================!
-  ! Construct the state-energy functional
+  ! Construct the state-energy functional.
   !===================================================================!
 
   pure type(state_energy) function create() result(this)
@@ -47,7 +48,7 @@ contains
   end function create
 
   !===================================================================!
-  ! Value  J = 1/2 ||u||^2,  u = S(:,1)
+  ! Evaluate the value  J = 1/2 ||u||^2,  where u = S(:,1).
   !===================================================================!
 
   pure subroutine eval(this, system, fval)
@@ -61,7 +62,7 @@ contains
   end subroutine eval
 
   !===================================================================!
-  ! State derivative  df/du = u
+  ! Accumulate the state derivative  df/du = u.
   !===================================================================!
 
   pure subroutine add_dfdu(this, system, dfdu)

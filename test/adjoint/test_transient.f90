@@ -35,17 +35,20 @@ program test_transient_adjoint
 
   nfail = 0
 
-  ! build the assembler on a small box
+  ! Build the assembler on a small box.
   allocate(gl  , source = gmsh_loader("box-36.msh"))
   allocate(grid, source = mesh(gl))
   allocate(fvm , source = assembler(grid))
 
-  ! transient diffusion: isotropic kappa = 2, unit source, faces at zero
+  ! Transient diffusion: isotropic kappa = 2, a unit source, and faces at zero.
   call fvm % set_equation(diffusion_flux(2.0_dp), constant_source(1.0_dp))
 
-  ! the diffusion operator is symmetric: declare it on the configured
+  !-------------------------------------------------------------------!
+  ! The diffusion operator is symmetric: declare it on the configured
   ! instance so the adjoint's transpose products run as an explicit,
-  ! gate-verifiable claim rather than a refusal
+  ! gate-verifiable claim rather than a refusal.
+  !-------------------------------------------------------------------!
+
   fvm % operator_is_symmetric = .true.
   call fvm % set_dirichlet("front" , 0.0_dp)
   call fvm % set_dirichlet("back"  , 0.0_dp)
@@ -56,16 +59,24 @@ program test_transient_adjoint
 
   func = state_energy()
 
-  ! march with bdf order 2 over t in [0,1], dt = 0.1 (the bandwidth ramps
-  ! 1 -> 2, exercising the variable-bandwidth future-step coupling)
+  !-------------------------------------------------------------------!
+  ! March with bdf order 2 over t in [0,1], dt = 0.1. The bandwidth
+  ! ramps 1 -> 2, exercising the variable-bandwidth future-step
+  ! coupling.
+  !-------------------------------------------------------------------!
+
   ti  = bdf(fvm, 0.0_dp, 1.0_dp, 0.1_dp, 2)
 
-  ! transient adjoint gradient and the finite-difference reference
+  ! Compute the transient adjoint gradient and the finite-difference reference.
   call ti % integrate_adjoint   (func, g_adj)
   call ti % integrate_adjoint_fd(func, g_fd)
 
-  ! export the state and adjoint-state trajectories: paraview (one .vtu
-  ! per step) and gmsh (one .msh, two animated views over the time steps)
+  !-------------------------------------------------------------------!
+  ! Export the state and adjoint-state trajectories: paraview (one
+  ! .vtu per step) and gmsh (one .msh, two animated views over the
+  ! time steps).
+  !-------------------------------------------------------------------!
+
   call ti % write_adjoint_solution("transient_adjoint")
   call ti % write_adjoint_gmsh("box-36.msh", "transient_adjoint.msh")
 

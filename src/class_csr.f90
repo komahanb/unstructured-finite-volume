@@ -1,5 +1,5 @@
 !=====================================================================!
-! Sparse matrix in compressed-sparse-row form - which IS a weighted
+! A sparse matrix in compressed-sparse-row form IS a weighted
 ! directed graph, stored. The compressed rows are the out-edge lists;
 ! this class extends the digraph and keeps NO structure of its own,
 ! only the weights. One object, two vocabularies, one storage:
@@ -21,11 +21,11 @@
 !                     (3)<--------------.
 !                      '----------------'
 !
-! matvec: every vertex dots its out-edge weights with the values at
-! the far ends - the per-vertex inner product the whole solver world
-! is built from. A rectangular matrix (prolongation P, fine x coarse)
-! is the bipartite case: the vertices are the rows, and their
-! out-edges point at column labels 1..ncols on the far side.
+! In matvec, every vertex dots its out-edge weights with the values
+! at the far ends: the per-vertex inner product the whole solver
+! world is built from. A rectangular matrix (prolongation P, fine x
+! coarse) is the bipartite case: the vertices are the rows, and
+! their out-edges point at column labels 1..ncols on the far side.
 !
 ! Everything the graph interface owns is therefore available ON the
 ! matrix - it does not carry a graph, it IS one.
@@ -49,19 +49,20 @@ module class_csr
   public :: csr_matrix
 
   !-------------------------------------------------------------------!
-  ! The weighted digraph: structure inherited (num_vertices, out_xadj,
-  ! out_adj, num_edges), weights and the bipartite far side here
+  ! The weighted digraph: the structure is inherited (num_vertices,
+  ! out_xadj, out_adj, num_edges); the weights and the bipartite far
+  ! side live here.
   !-------------------------------------------------------------------!
 
   type, extends(digraph) :: csr_matrix
-     integer               :: ncols = 0    ! the far side's label count
-     real(dp), allocatable :: vals(:)      ! one weight per out-edge
+     integer               :: ncols = 0    ! The far side's label count.
+     real(dp), allocatable :: vals(:)      ! One weight per out-edge.
    contains
-     ! the directed contract, answered by the stored out-lists (the
-     ! in-lists arrive the day a consumer needs them - via transpose)
+     ! The directed contract is answered by the stored out-lists (the
+     ! in-lists arrive the day a consumer needs them, via transpose).
      procedure :: out_neighbours
      procedure :: in_neighbours
-     ! weighted actions along the edges
+     ! The weighted actions ride along the edges.
      procedure :: matvec
      procedure :: matvec_transpose
      procedure :: get_diagonal
@@ -70,15 +71,15 @@ module class_csr
      procedure :: scale_rows
      procedure :: is_symmetric
      procedure :: to_dense
-     ! sparse algebra
+     ! The sparse algebra follows.
      procedure :: transpose
      procedure :: matmat
      procedure :: add
      procedure :: matvec_rows
      procedure :: principal_submatrix
      procedure :: local_block
-     ! the underlying simple graph: self-loops dropped, direction
-     ! forgotten, mirrored pairs recorded once
+     ! The underlying simple graph: self-loops are dropped, direction
+     ! is forgotten, and mirrored pairs are recorded once.
      procedure :: simple_graph
   end type csr_matrix
 
@@ -90,8 +91,8 @@ module class_csr
 contains
 
   !===================================================================!
-  ! Construct from full (row_ptr, col_idx, vals) arrays - the caller
-  ! speaks matrix, the object stores graph
+  ! Construct from full (row_ptr, col_idx, vals) arrays: the caller
+  ! speaks matrix, and the object stores graph.
   !===================================================================!
 
   pure type(csr_matrix) function csr_from_arrays(nrows, ncols, row_ptr, col_idx, vals) result(A)
@@ -107,8 +108,9 @@ contains
   end function csr_from_arrays
 
   !===================================================================!
-  ! Construct from a known sparsity pattern (row_ptr, col_idx) with the
-  ! weights zeroed - then accumulate with add_entry (used by assembly)
+  ! Construct from a known sparsity pattern (row_ptr, col_idx) with
+  ! the weights zeroed; accumulate afterwards with add_entry (the
+  ! assembly uses this).
   !===================================================================!
 
   pure type(csr_matrix) function csr_from_pattern(nrows, ncols, row_ptr, col_idx) result(A)
@@ -124,7 +126,8 @@ contains
   end function csr_from_pattern
 
   !===================================================================!
-  ! The directed contract, read off the stored out-lists
+  ! The directed contract's out-side: a vertex's out-neighbours, read
+  ! off the stored out-lists.
   !===================================================================!
 
   pure function out_neighbours(this, v) result(nbrs)
@@ -134,6 +137,11 @@ contains
     nbrs = this % stored_out_neighbours(v)
   end function out_neighbours
 
+  !===================================================================!
+  ! The directed contract's in-side: a vertex's in-neighbours,
+  ! answered by the stored lists.
+  !===================================================================!
+
   pure function in_neighbours(this, v) result(nbrs)
     class(csr_matrix), intent(in) :: this
     integer          , intent(in) :: v
@@ -142,7 +150,7 @@ contains
   end function in_neighbours
 
   !===================================================================!
-  ! y = A x: every vertex dots its out-edges -
+  ! y = A x: every vertex dots its out-edges.
   !
   !            w1
   !    (v) ---------> (j1)      y(v) = w1*x(j1) + w2*x(j2) + ...
@@ -164,8 +172,8 @@ contains
   end subroutine matvec
 
   !===================================================================!
-  ! y = A^T x: the same edges walked against their arrows - every
-  ! vertex PUSHES its value out along its edges instead of pulling
+  ! y = A^T x: the same edges are walked against their arrows; every
+  ! vertex PUSHES its value out along its edges instead of pulling.
   !===================================================================!
 
   pure subroutine matvec_transpose(this, x, y)
@@ -182,7 +190,8 @@ contains
   end subroutine matvec_transpose
 
   !===================================================================!
-  ! The self-loop weights (square matrices): the diagonal
+  ! Gather the self-loop weights, which form the diagonal (square
+  ! matrices only).
   !===================================================================!
 
   pure function get_diagonal(this) result(d)
@@ -198,7 +207,8 @@ contains
   end function get_diagonal
 
   !===================================================================!
-  ! a_ij: the weight of edge i --> j (0 if the edge is absent)
+  ! Return a_ij, the weight of edge i --> j (zero when the edge is
+  ! absent).
   !===================================================================!
 
   pure real(dp) function get_entry(this, i, j) result(aij)
@@ -215,7 +225,7 @@ contains
   end function get_entry
 
   !===================================================================!
-  ! Accumulate v into the weight of edge (i,j); the edge must exist
+  ! Accumulate v into the weight of edge (i,j); the edge must exist.
   !===================================================================!
 
   impure subroutine add_entry(this, i, j, v)
@@ -233,7 +243,7 @@ contains
   end subroutine add_entry
 
   !===================================================================!
-  ! Scale every out-edge of vertex i by s(i), in place
+  ! Scale every out-edge of vertex i by s(i), in place.
   !===================================================================!
 
   pure subroutine scale_rows(this, s)
@@ -248,8 +258,8 @@ contains
   end subroutine scale_rows
 
   !===================================================================!
-  ! max |a_ij - a_ji|: how far the weights are from riding both ways
-  ! equally (square matrices); diagnostic
+  ! Return max |a_ij - a_ji|: how far the weights are from riding
+  ! both ways equally (square matrices only). This is a diagnostic.
   !===================================================================!
 
   pure real(dp) function is_symmetric(this) result(asym)
@@ -265,7 +275,7 @@ contains
   end function is_symmetric
 
   !===================================================================!
-  ! Dense copy (small coarse operators only)
+  ! Produce a dense copy (small coarse operators only).
   !===================================================================!
 
   pure subroutine to_dense(this, D)
@@ -282,7 +292,7 @@ contains
   end subroutine to_dense
 
   !===================================================================!
-  ! A^T as a fresh matrix: every arrow reversed. Grouping the edges
+  ! A^T as a fresh matrix: every arrow is reversed. Grouping the edges
   ! by their far end is the graph's counting kernel; it returns the
   ! new out-lists and the edge permutation, and the transpose is two
   ! gathers through it.
@@ -294,7 +304,7 @@ contains
     integer, allocatable :: rows(:), perm(:)
     integer :: v, e
 
-    ! the tail of each stored edge, in storage order
+    ! Record the tail of each stored edge, in storage order.
     allocate(rows(A % num_edges))
     do v = 1, A % num_vertices
        rows(A % out_xadj(v) : A % out_xadj(v+1) - 1) = v
@@ -313,8 +323,8 @@ contains
   !===================================================================!
   ! C = A B (Gustavson): C's edges are the two-step paths - vertex v
   ! reaches j through any middle vertex - with path weights
-  ! multiplied and parallel paths summed. Symbolic count, then
-  ! numeric accumulate through a marker.
+  ! multiplied and parallel paths summed. A symbolic count runs
+  ! first, then a numeric accumulation through a marker.
   !===================================================================!
 
   pure function matmat(A, B) result(C)
@@ -328,9 +338,10 @@ contains
     C % num_vertices = A % num_vertices
     C % ncols        = B % ncols
     allocate(C % out_xadj(C % num_vertices + 1))
-    allocate(marker(B % ncols)); marker = 0
+    allocate(marker(B % ncols))
+    marker = 0
 
-    ! symbolic: distinct two-step destinations per vertex
+    ! The symbolic pass counts the distinct two-step destinations per vertex.
     ne = 0
     do v = 1, A % num_vertices
        C % out_xadj(v) = ne + 1
@@ -349,7 +360,7 @@ contains
     C % num_edges = ne
     allocate(C % out_adj(ne), C % vals(ne))
 
-    ! numeric: marker(col) holds the absolute fill slot for the vertex
+    ! The numeric pass: marker(col) holds the vertex's absolute fill slot.
     marker = 0
     do v = 1, A % num_vertices
        rstart = C % out_xadj(v)
@@ -374,7 +385,7 @@ contains
 
   !===================================================================!
   ! C = alpha A + beta B (same shape): the union of the two edge
-  ! sets, weights summed where the edges coincide
+  ! sets, with the weights summed where the edges coincide.
   !===================================================================!
 
   pure function add(A, alpha, beta, B) result(C)
@@ -388,26 +399,33 @@ contains
     C % num_vertices = A % num_vertices
     C % ncols        = A % ncols
     allocate(C % out_xadj(C % num_vertices + 1))
-    allocate(marker(C % ncols)); marker = 0
+    allocate(marker(C % ncols))
+    marker = 0
 
-    ! symbolic
+    ! The symbolic pass counts the union's edges.
     ne = 0
     do v = 1, C % num_vertices
        C % out_xadj(v) = ne + 1
        do e = A % out_xadj(v), A % out_xadj(v+1) - 1
           col = A % out_adj(e)
-          if (marker(col) .ne. v) then; marker(col) = v; ne = ne + 1; end if
+          if (marker(col) .ne. v) then
+             marker(col) = v
+             ne = ne + 1
+          end if
        end do
        do e = B % out_xadj(v), B % out_xadj(v+1) - 1
           col = B % out_adj(e)
-          if (marker(col) .ne. v) then; marker(col) = v; ne = ne + 1; end if
+          if (marker(col) .ne. v) then
+             marker(col) = v
+             ne = ne + 1
+          end if
        end do
     end do
     C % out_xadj(C % num_vertices + 1) = ne + 1
     C % num_edges = ne
     allocate(C % out_adj(ne), C % vals(ne))
 
-    ! numeric
+    ! The numeric pass fills the weights.
     marker = 0
     do v = 1, C % num_vertices
        rstart = C % out_xadj(v)
@@ -438,10 +456,10 @@ contains
   end function add
 
   !===================================================================!
-  ! y(row) = the listed vertices' dots only; other entries of y are
-  ! left untouched. x must already carry valid values on every far
-  ! end those vertices reach (e.g. owned + ghost after a halo
-  ! exchange).
+  ! Compute y(row) for the listed vertices only; the other entries
+  ! of y are left untouched. The vector x must already carry valid
+  ! values on every far end those vertices reach (for example, owned
+  ! plus ghost after a halo exchange).
   !===================================================================!
 
   pure subroutine matvec_rows(this, x, y, rows)
@@ -468,9 +486,9 @@ contains
   !===================================================================!
   ! The induced subgraph on the index set idx, renumbered 1..size(idx):
   ! keep only the vertices in idx and the edges between them, dropping
-  ! the rest. Used to extract a subdomain's owned-owned block from the
-  ! global operator (each image then builds a block preconditioner on
-  ! it).
+  ! the rest. It is used to extract a subdomain's owned-owned block
+  ! from the global operator (each image then builds a block
+  ! preconditioner on it).
   !===================================================================!
 
   pure function principal_submatrix(this, idx) result(B)
@@ -485,14 +503,16 @@ contains
 
     n = size(idx)
 
-    ! global -> local map (0 = not in the set)
-    allocate(local_map(this % num_vertices)); local_map = 0
+    ! Build the global -> local map (0 marks vertices outside the set).
+    allocate(local_map(this % num_vertices))
+    local_map = 0
     do il = 1, n
        local_map(idx(il)) = il
     end do
 
-    ! symbolic: count kept edges per local vertex
-    allocate(row_ptr(n+1)); row_ptr(1) = 1
+    ! The symbolic pass counts the kept edges per local vertex.
+    allocate(row_ptr(n+1))
+    row_ptr(1) = 1
     do il = 1, n
        v = idx(il)
        pos = 0
@@ -504,7 +524,7 @@ contains
     ne = row_ptr(n+1) - 1
     allocate(col_idx(ne), vals(ne))
 
-    ! numeric: copy edges, remapping far ends to local labels
+    ! The numeric pass copies the edges, remapping far ends to local labels.
     pos = 1
     do il = 1, n
        v = idx(il)
@@ -523,7 +543,7 @@ contains
   end function principal_submatrix
 
   !===================================================================!
-  ! The listed rows, read in a frame: the rows kept whole - every
+  ! The listed rows, read in a frame: the rows are kept whole - every
   ! out-edge survives - with every far end renumbered through
   ! frame_map, the frame's global -> local map:
   !
@@ -553,6 +573,7 @@ contains
 
     nr = size(rows)
 
+    ! Count each row's edges; every out-edge survives.
     allocate(B % out_xadj(nr + 1))
     B % out_xadj(1) = 1
     do il = 1, nr
@@ -566,6 +587,7 @@ contains
     B % num_edges    = B % out_xadj(nr+1) - 1
     allocate(B % out_adj(B % num_edges), B % vals(B % num_edges))
 
+    ! Renumber every far end through the frame.
     pos = 0
     do il = 1, nr
        v = rows(il)
@@ -583,10 +605,10 @@ contains
   end function local_block
 
   !===================================================================!
-  ! The underlying simple graph: self-loops dropped, direction
-  ! forgotten, a mirrored pair of edges recorded once. An edge above
-  ! the diagonal always records; one below records only when its
-  ! mirror is structurally absent, so an unsymmetric pattern (an
+  ! The underlying simple graph: self-loops are dropped, direction is
+  ! forgotten, and a mirrored pair of edges is recorded once. An edge
+  ! above the diagonal always records; one below records only when
+  ! its mirror is structurally absent, so an unsymmetric pattern (an
   ! upwinded operator, say) loses nothing and a symmetric one records
   ! nothing twice. This is the view the coarsening and refinement
   ! machinery traverses.
@@ -603,8 +625,11 @@ contains
 
   contains
 
-    ! row v's entries, kept once per unordered pair: the smaller row
-    ! records it, unless only the larger row knows the pair
+    !=================================================================!
+    ! Row v's entries, kept once per unordered pair: the smaller row
+    ! records the pair, unless only the larger row knows it.
+    !=================================================================!
+
     pure function once_per_pair(v) result(cands)
       integer, intent(in)  :: v
       integer, allocatable :: cands(:)
@@ -624,8 +649,8 @@ contains
   end function simple_graph
 
   !===================================================================!
-  ! Whether the edge (row, col) exists - structure only, the weight
-  ! may be anything
+  ! Report whether the edge (row, col) exists; this checks structure
+  ! only, and the weight may be anything.
   !===================================================================!
 
   pure logical function has_entry(this, row, col)

@@ -1,8 +1,9 @@
 #include "scalar.fpp"
 
 !=====================================================================!
-! Module that contains class that assembles residual and performs
-! matrix vector products on all elements in mesh
+! This module holds the abstract assembler, the system every solver
+! questions: it assembles the residual and performs matrix-vector
+! products on all elements in the mesh.
 !
 ! Author: Komahan Boopathy
 !=====================================================================!
@@ -18,10 +19,10 @@ module interface_assembler
 
   private
   public :: assembler
-  public :: WHOLE, DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE   ! re-exported tags
+  public :: WHOLE, DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE   ! These tags are re-exported.
 
   !===================================================================!
-  ! Assembler for the physical system
+  ! This type is the assembler for the physical system.
   !===================================================================!
   
   type, abstract :: assembler
@@ -32,7 +33,8 @@ module interface_assembler
      type(logical) :: approximate_jacobian
      type(integer) :: differential_order
 
-     ! The transpose claim and its verification. Every REVERSE seat -
+     ! These flags hold the transpose claim and its verification.
+     ! Every REVERSE seat -
      ! transpose_product behind the unified product AND the linearized
      ! adjoint seat add_jacobian_vector_product_transpose - refuses
      ! unless the configured instance either declares its operator
@@ -46,10 +48,10 @@ module interface_assembler
 
      real(dp), allocatable :: S(:,:)
 
-     ! the frozen linearization (linearize / clear_linearization).
-     ! when the coefficients are set, the system answers the two
-     ! solver questions AS the linear system - no solver ever holds
-     ! linearization state:
+     ! The frozen linearization is set by linearize and cleared by
+     ! clear_linearization. When the coefficients are set, the system
+     ! answers the two solver questions AS the linear system - no
+     ! solver ever holds linearization state:
      !
      !                        nonlinear self          frozen self
      !                        ---------------         ------------------
@@ -60,19 +62,19 @@ module interface_assembler
      !        an adjoint solve is then a plain FORWARD march of the
      !        transposed frozen system; no REVERSE tag travels)
      !    b = lin_rhs when the equation brings its own (the adjoint's
-     !        -df/du), else -R at the current state
+     !        -df/du), else -R at the current state.
      type(scalar), allocatable :: lin_coeff(:)
      real(dp)    , allocatable :: lin_rhs(:)
      logical                   :: lin_transpose = .false.
 
    contains
 
-     ! Deferred procedures
+     ! The concrete assembler must provide these deferred procedures.
      procedure(add_residual_interface)               , deferred :: add_residual
      procedure(add_jacobian_vector_product_interface), deferred :: add_jacobian_vector_product
      procedure(add_initial_condition_interface)      , deferred :: add_initial_condition
 
-     ! The queries a solver makes of the system: the residual at a
+     ! These are the queries a solver makes of the system: the residual at a
      ! given state, the jacobian-vector product (mode selects forward
      ! or transpose, part selects the whole operator or a sub-part),
      ! and the inner product (provided by the system because the data
@@ -86,71 +88,75 @@ module interface_assembler
      procedure :: get_jacobian_residual_product
      procedure :: inner_product
 
-     ! freeze / thaw the linearization the two queries answer for,
-     ! and the frozen residual get_residual asks first
+     ! These bindings freeze and thaw the linearization the two
+     ! queries answer for, and provide the frozen residual that
+     ! get_residual asks first.
      procedure :: linearize
      procedure :: clear_linearization
      procedure :: linearized_residual
 
-     ! Analytic consistency checks of the product, exact to machine
-     ! precision (finite differences remain only as a coarse
-     ! independent check)
+     ! These are analytic consistency checks of the product, exact to
+     ! machine precision; finite differences remain only as a coarse
+     ! independent check.
      procedure :: verify_transpose_consistency
      procedure :: verify_parts_consistency
 
-     ! steady transpose action behind the REVERSE direction; a public
-     ! binding so a system with a non-symmetric operator can override it
-     ! with a genuine transpose (the stated remedy of its refusal)
+     ! The steady transpose action sits behind the REVERSE direction;
+     ! the binding is public so a system with a non-symmetric operator
+     ! can override it with a genuine transpose, the stated remedy of
+     ! its refusal.
      procedure :: transpose_product
 
-     ! The forward routing of the deferred add_ mechanism. Public
-     ! because system-layer concretes (the partitioned assembler's
-     ! replicated fallback) and matrix-free checks consume it; its
-     ! consolidation into the one product is a tracked deferral
+     ! This is the forward routing of the deferred add_ mechanism. It
+     ! is public because system-layer concretes (the partitioned
+     ! assembler's replicated fallback) and matrix-free checks consume
+     ! it; its consolidation into the one product is a tracked
+     ! deferral
      ! (ROADMAP: tracked deferrals). The base default is trivial (zero);
      ! a spatial assembler overrides it.
      procedure :: get_jacobian_vector_product
-     procedure :: get_operator_csr   ! assembled entries - ONLY for building
-                                     ! algebraic preconditioners, never to iterate
+     procedure :: get_operator_csr   ! Assembled entries serve ONLY to build
+                                     ! algebraic preconditioners, never to iterate.
      
-     ! Assembler knows the size of state array
+     ! The assembler knows the size of the state array.
      procedure :: create_vector
      procedure :: create_state
 
-     ! Provided procedures
+     ! These accessors read and write the state count and the label.
      procedure :: get_num_state_vars, set_num_state_vars
      procedure :: get_description   , set_description
-  
-     ! Defined procedures
+
+     ! These accessors read and write the differential order.
      procedure :: get_differential_order
      procedure :: set_differential_order
 
-     ! The lumped mass of the semi-discrete residual (provided default:
-     ! refuse; a system that owns a mass overrides it)
+     ! The lumped mass of the semi-discrete residual is provided with
+     ! a refusing default; a system that owns a mass overrides it.
      procedure :: get_lumped_mass
 
-     ! Adjoint support (provided defaults; physics overrides as needed)
+     ! Adjoint support carries provided defaults; the physics
+     ! overrides them as needed.
      procedure :: add_jacobian_vector_product_transpose
      procedure :: get_num_design_vars
      procedure :: set_design_vars
      procedure :: get_design_vars
      procedure :: add_design_residual_transpose_product
 
-     ! Post-processing (provided default: no-op; an assembler that owns a
-     ! mesh overrides these to export the named fields)
+     ! Post-processing defaults to a no-op; an assembler that owns a
+     ! mesh overrides these to export the named fields.
      procedure :: write_solution_fields
      procedure :: write_gmsh_series
 
   end type assembler
 
   !===================================================================!
-  ! Interfaces for deferred procedures
+  ! This block declares the interfaces for the deferred procedures.
   !===================================================================!
 
   abstract interface
 
      !================================================================!
-     ! Interface for residual assembly R(U,xi)
+     ! This is the interface for residual assembly R(U,xi).
      !================================================================!
 
      impure subroutine add_residual_interface(this, residual, filter)
@@ -164,8 +170,10 @@ module interface_assembler
      end subroutine add_residual_interface
 
      !================================================================!
-     ! Routine to return the product of jacobian matrix with a compati-
-     ! ble vector pdt <---- [scalar(i)*dR(U,X)/dU(i)]*vec
+     ! This routine returns the product of the jacobian matrix with a
+     ! compatible vector:
+     !
+     !    pdt <---- [scalar(i)*dR(U,X)/dU(i)]*vec
      !================================================================!
      
      impure subroutine add_jacobian_vector_product_interface(this, pdt, vec, scalars, filter)
@@ -181,7 +189,7 @@ module interface_assembler
      end subroutine add_jacobian_vector_product_interface
 
      !================================================================!
-     ! Supplying the initial condition to march in time
+     ! This interface supplies the initial condition to march in time.
      !================================================================!
 
      impure subroutine add_initial_condition_interface(this, U)
@@ -194,15 +202,17 @@ module interface_assembler
      end subroutine add_initial_condition_interface
 
      !================================================================!
-     ! The residual at state x: r = R(x). Deferred - each system states
-     ! its own residual in its own vocabulary; the solver layer sees
-     ! only this query. Forward only: the adjoint right-hand side also
-     ! needs the functional, and remains on the linearized path.
+     ! The residual at state x is r = R(x). It is deferred: each
+     ! system states its own residual in its own vocabulary, and the
+     ! solver layer sees only this query. It is forward only: the
+     ! adjoint right-hand side also needs the functional, and remains
+     ! on the linearized path.
      !================================================================!
 
-     ! the discretization's own residual at state x - the seat each
-     ! system implements; solvers reach it only through the provided
-     ! get_residual, which lets a frozen linearization answer first
+     ! This is the discretization's own residual at state x - the seat
+     ! each system implements. Solvers reach it only through the
+     ! provided get_residual, which lets a frozen linearization answer
+     ! first.
      impure subroutine state_residual_interface(this, r, x)
 
        import :: assembler, dp
@@ -218,7 +228,7 @@ module interface_assembler
 contains
   
   !===================================================================!
-  ! Returns the number of state variables in the physical system
+  ! Return the number of state variables in the physical system.
   !===================================================================!
   
   pure type(integer) function get_num_state_vars(this)
@@ -230,7 +240,7 @@ contains
   end function get_num_state_vars
 
   !===================================================================!
-  ! Sets the number of state variables in the physical system
+  ! Set the number of state variables in the physical system.
   !===================================================================!
   
   pure subroutine set_num_state_vars(this, num_state_vars)
@@ -243,7 +253,7 @@ contains
   end subroutine set_num_state_vars
   
   !===================================================================!
-  ! Returns the description set for the physical system
+  ! Return the description set for the physical system.
   !===================================================================!
   
   pure type(character) function get_description(this)
@@ -255,7 +265,7 @@ contains
   end function get_description
 
   !===================================================================!
-  ! Sets the description for physical system
+  ! Set the description for the physical system.
   !===================================================================!
 
   pure subroutine set_description(this, description)
@@ -268,7 +278,7 @@ contains
   end subroutine set_description
 
   !===================================================================!
-  ! Returns the highest order of time derivative in the assembler
+  ! Return the highest order of the time derivative in the assembler.
   !===================================================================!
   
   pure type(integer) function get_differential_order(this)
@@ -280,7 +290,7 @@ contains
   end function get_differential_order
 
   !===================================================================!
-  ! Sets the highest order of time derivative in the assembler
+  ! Set the highest order of the time derivative in the assembler.
   !===================================================================!
 
   pure subroutine set_differential_order(this, order)
@@ -293,7 +303,8 @@ contains
   end subroutine set_differential_order
 
   !===================================================================!
-  ! Create a state vector and sets values if a scalar is supplied
+  ! Create a state-sized vector and set its values when a scalar is
+  ! supplied.
   !===================================================================!
 
   impure subroutine create_vector(this, x, val)
@@ -309,7 +320,8 @@ contains
   end subroutine create_vector
 
   !===================================================================!
-  ! Create a state vector and sets values if a scalar is supplied
+  ! Create the state array over the differential order and set its
+  ! values when a scalar is supplied.
   !===================================================================!
 
   impure subroutine create_state(this, S, val)
@@ -329,13 +341,16 @@ contains
   end subroutine create_state
 
   !===================================================================!
-  ! Transpose jacobian-vector product  pdt += [scalar(i) dR/dU(i)]^T vec
-  ! - the seat the linearized adjoint route (newton, bdf) drives.
-  ! Law: names must not lie, on every REVERSE seat. Refused unless the
-  ! configured instance declares its operator symmetric (then the
-  ! forward product serves the transpose as an explicit claim) or a
-  ! subclass overrides this with a genuine transpose. The genuine
-  ! non-symmetric transpose inside the spatial assembler is a reserved
+  ! The transpose jacobian-vector product
+  !
+  !    pdt += [scalar(i) dR/dU(i)]^T vec
+  !
+  ! is the seat the linearized adjoint route (newton, bdf) drives.
+  ! The law: names must not lie, on every REVERSE seat. It is refused
+  ! unless the configured instance declares its operator symmetric
+  ! (then the forward product serves the transpose as an explicit
+  ! claim) or a subclass overrides this with a genuine transpose. The
+  ! genuine non-symmetric transpose inside the spatial assembler is a reserved
   ! decision, tracked in the register.
   !===================================================================!
 
@@ -353,16 +368,17 @@ contains
             & "operator_is_symmetric on the configured instance"
     end if
 
-    ! the symmetric identity J^T = J, an explicit per-instance claim
+    ! The symmetric identity J^T = J is an explicit per-instance claim.
     call this % add_jacobian_vector_product(pdt, vec, scalars, filter)
 
   end subroutine add_jacobian_vector_product_transpose
 
   !===================================================================!
-  ! The lumped mass of the semi-discrete residual, one entry per dof -
-  ! the M in R = M*udot - A*u + b, handed out whole so an explicit
-  ! step can divide by it. Default: refuse loudly; a system that owns
-  ! a mass (the fvm assembler's cell volumes) overrides this.
+  ! The lumped mass of the semi-discrete residual carries one entry
+  ! per dof - the M in R = M*udot - A*u + b - handed out whole so an
+  ! explicit step can divide by it. The default refuses loudly; a
+  ! system that owns a mass (the fvm assembler's cell volumes)
+  ! overrides this.
   !===================================================================!
 
   pure subroutine get_lumped_mass(this, m)
@@ -376,9 +392,10 @@ contains
   end subroutine get_lumped_mass
 
   !===================================================================!
-  ! Number of design variables x the residual depends on. Default: none
-  ! (no design dependence), so the adjoint total derivative is just the
-  ! function's explicit df/dx. Physics with design variables overrides.
+  ! Return the number of design variables x the residual depends on.
+  ! The default is none (no design dependence), so the adjoint total
+  ! derivative is just the function's explicit df/dx. Physics with
+  ! design variables overrides this.
   !===================================================================!
 
   pure type(integer) function get_num_design_vars(this)
@@ -390,8 +407,9 @@ contains
   end function get_num_design_vars
 
   !===================================================================!
-  ! Set / get the design variables. Default: no design dependence, so
-  ! these are no-ops. Physics carrying design variables overrides them.
+  ! Set the design variables. The default assumes no design
+  ! dependence, so this is a no-op. Physics carrying design variables
+  ! overrides it.
   !===================================================================!
 
   pure subroutine set_design_vars(this, x)
@@ -400,6 +418,12 @@ contains
     real(dp)        , intent(in)    :: x(:)
 
   end subroutine set_design_vars
+
+  !===================================================================!
+  ! Get the design variables. The default assumes no design
+  ! dependence, so this returns zeros. Physics carrying design
+  ! variables overrides it.
+  !===================================================================!
 
   pure subroutine get_design_vars(this, x)
 
@@ -413,9 +437,9 @@ contains
   !===================================================================!
   ! Accumulate the adjoint design contribution  dfdx += psi^T dR/dx,
   ! the product of the adjoint variables with the residual's design
-  ! jacobian. Default: no design dependence, so this adds nothing.
-  ! Physics with design variables overrides it (analytic, or finite
-  ! differenced as a temporary stand-in).
+  ! jacobian. The default assumes no design dependence, so this adds
+  ! nothing. Physics with design variables overrides it, analytically
+  ! or finite differenced as a temporary stand-in.
   !===================================================================!
 
   impure subroutine add_design_residual_transpose_product(this, dfdx, psi)
@@ -429,9 +453,10 @@ contains
 
   !===================================================================!
   ! Export named flat-dof fields (state, adjoint state, ...) for post-
-  ! processing. fields is (num_state_vars, nfield), labels names each.
-  ! Default: no-op (an abstract / mesh-less system has nothing to write);
-  ! a mesh-backed assembler overrides this to write a real file.
+  ! processing. fields is (num_state_vars, nfield), and labels names
+  ! each field. The default is a no-op, because an abstract, mesh-less
+  ! system has nothing to write; a mesh-backed assembler overrides
+  ! this to write a real file.
   !===================================================================!
 
   impure subroutine write_solution_fields(this, filename, fields, labels)
@@ -446,9 +471,10 @@ contains
   !===================================================================!
   ! Export named flat-dof fields over a time series as a gmsh post file.
   ! fields is (num_state_vars, nfield, nstep); names labels each field
-  ! (a gmsh view), times gives the time of each step. meshfile is the
-  ! source mesh copied verbatim and keyed by its element tags. Default:
-  ! no-op; a mesh-backed assembler overrides it. (Steady = nstep 1.)
+  ! (a gmsh view), and times gives the time of each step. meshfile is
+  ! the source mesh copied verbatim and keyed by its element tags. The
+  ! default is a no-op; a mesh-backed assembler overrides it. A steady
+  ! export uses an nstep of one.
   !===================================================================!
 
   impure subroutine write_gmsh_series(this, meshfile, filename, fields, names, times)
@@ -462,12 +488,12 @@ contains
   end subroutine write_gmsh_series
 
   !===================================================================!
-  ! The unified jacobian-vector product. mode selects the direction
-  ! (FORWARD = J v, REVERSE = J^T v); part selects the operator part
-  ! (WHOLE, DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE). Defaults:
-  ! FORWARD, WHOLE.
+  ! This is the unified jacobian-vector product. mode selects the
+  ! direction (FORWARD = J v, REVERSE = J^T v); part selects the
+  ! operator part (WHOLE, DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE).
+  ! The defaults are FORWARD and WHOLE.
   !
-  ! Law of the (mode, part) pair: part names the part of the operator
+  ! The law of the (mode, part) pair: part names the part of the operator
   ! selected by mode - a part of J under FORWARD, a part of J^T under
   ! REVERSE. Because the lower triangle of J^T is the transposed upper
   ! triangle of J, the transpose of a forward triangle product is the
@@ -496,8 +522,11 @@ contains
     sub = WHOLE
     if (present(part)) sub = part
 
-    ! a wrong tag dies at the door with its name, never silently
-    ! reinterpreted (the mode and part ranges are disjoint)
+    !-----------------------------------------------------------------!
+    ! A wrong tag dies at the door with its name and is never silently
+    ! reinterpreted; the mode and part ranges are disjoint.
+    !-----------------------------------------------------------------!
+
     if (.not. is_valid_mode(dir)) then
        write(*,'(1x,a,i0)') "get_jacobian_residual_product: invalid mode tag ", dir
        error stop "get_jacobian_residual_product: mode must be FORWARD or REVERSE"
@@ -508,10 +537,13 @@ contains
             & "LOWER_TRIANGLE or UPPER_TRIANGLE"
     end if
 
-    ! the frozen linearization answers first: w = J v with the
-    ! declared coefficients. the freeze holds the direction, and a
+    !-----------------------------------------------------------------!
+    ! The frozen linearization answers first: w = J v with the
+    ! declared coefficients. The freeze holds the direction, and a
     ! REVERSE request composes with it - the transpose of a
-    ! transposed freeze is the forward action
+    ! transposed freeze is the forward action.
+    !-----------------------------------------------------------------!
+
     if (allocated(this % lin_coeff)) then
 
        frozen: block
@@ -545,8 +577,12 @@ contains
     end if
 
     if (dir .eq. REVERSE) then
-       ! transpose action at the steady linearization: refused unless the
-       ! instance declares symmetry or overrides the transpose seat
+       !--------------------------------------------------------------!
+       ! The transpose action at the steady linearization is refused
+       ! unless the instance declares symmetry or overrides the
+       ! transpose seat.
+       !--------------------------------------------------------------!
+
        call this % transpose_product(w, v, sub)
     else
        if (sub .eq. WHOLE) then
@@ -559,7 +595,7 @@ contains
   end subroutine get_jacobian_residual_product
 
   !===================================================================!
-  ! The residual query, provided once for every system:
+  ! The residual query is provided once for every system:
   !
   !    get_residual ──▶ frozen self answers?  b - J x   (linearized)
   !                 └─▶ else the deferred     R(x)      (state_residual)
@@ -608,7 +644,7 @@ contains
   end subroutine linearize
 
   !===================================================================!
-  ! Thaw: back to the nonlinear self
+  ! Thaw: return to the nonlinear self.
   !===================================================================!
 
   pure subroutine clear_linearization(this)
@@ -622,8 +658,8 @@ contains
   end subroutine clear_linearization
 
   !===================================================================!
-  ! The frozen system's residual r = b - J x, answered without
-  ! touching the state. Returns .true. when it answered - every
+  ! The frozen system's residual r = b - J x is answered without
+  ! touching the state. It returns .true. when it answered; every
   ! get_residual implementation asks this first, so the freeze works
   ! for any discretization.
   !===================================================================!
@@ -660,10 +696,11 @@ contains
   end function linearized_residual
 
   !===================================================================!
-  ! Steady transpose action w = J^T v behind the REVERSE direction.
-  ! Law: names must not lie. The base refuses unless the configured
-  ! instance declares its operator symmetric - then J^T = J is an
-  ! explicit claim and the forward product serves it. A system with a
+  ! The steady transpose action w = J^T v sits behind the REVERSE
+  ! direction. The law: names must not lie. The base refuses unless
+  ! the configured instance declares its operator symmetric - then
+  ! J^T = J is an explicit claim and the forward product serves it.
+  ! A system with a
   ! non-symmetric operator must override this with a genuine transpose.
   ! Either claim is verified by the entry gate (converge) through
   ! verify_transpose_consistency before the first REVERSE march.
@@ -689,7 +726,7 @@ contains
             & "entry gate verifies whichever claim is made"
     end if
 
-    ! the symmetric identity J^T = J, an explicit per-instance claim
+    ! The symmetric identity J^T = J is an explicit per-instance claim.
     if (sub .eq. WHOLE) then
        call this % get_jacobian_vector_product(w, v)
     else
@@ -699,9 +736,9 @@ contains
   end subroutine transpose_product
 
   !===================================================================!
-  ! The inner product of two vectors of this system's space. The system
-  ! owns it because distribution is the system's business: this serial
-  ! default is the plain dot; a partitioned system sums its own rows and
+  ! The system owns the inner product of two vectors of its space,
+  ! because distribution is the system's business: this serial default
+  ! is the plain dot; a partitioned system sums its own rows and
   ! reduces across images. The volume weighting attaches here later.
   !===================================================================!
 
@@ -716,10 +753,11 @@ contains
   end function inner_product
 
   !===================================================================!
-  ! Consistency check: <w, J v> = <J^T w, v> for deterministic
-  ! pseudo-random v, w, per part. Two products and two inner products -
-  ! exact to machine precision, no truncation error. Returns the
-  ! largest relative defect over the parts.
+  ! This consistency check tests <w, J v> = <J^T w, v> for
+  ! deterministic pseudo-random v and w, per part. Two products and
+  ! two inner products suffice - exact to machine precision, with no
+  ! truncation error. It returns the largest relative defect over the
+  ! parts.
   !===================================================================!
 
   impure real(dp) function verify_transpose_consistency(this) result(defect)
@@ -741,7 +779,7 @@ contains
     do i = 1, size(parts)
        call this % get_jacobian_residual_product(jv,  v, mode = FORWARD, part = parts(i))
        call this % get_jacobian_residual_product(jtw, w, mode = REVERSE, part = parts(i))
-       ! transpose of the lower triangle is the upper triangle: pair them
+       ! The transpose of the lower triangle is the upper triangle, so pair them.
        if (parts(i) .eq. LOWER_TRIANGLE) then
           call this % get_jacobian_residual_product(jtw, w, mode = REVERSE, part = UPPER_TRIANGLE)
        else if (parts(i) .eq. UPPER_TRIANGLE) then
@@ -756,10 +794,10 @@ contains
   end function verify_transpose_consistency
 
   !===================================================================!
-  ! Consistency check: (diagonal + lower + upper) v = whole v for a
-  ! deterministic pseudo-random v. Three part-products against one
-  ! whole-product; catches part-implementation errors at machine
-  ! precision. Returns the relative defect.
+  ! This consistency check tests (diagonal + lower + upper) v = whole
+  ! v for a deterministic pseudo-random v. Three part-products stand
+  ! against one whole-product, catching part-implementation errors at
+  ! machine precision. It returns the relative defect.
   !===================================================================!
 
   impure real(dp) function verify_parts_consistency(this) result(defect)
@@ -783,8 +821,8 @@ contains
   end function verify_parts_consistency
 
   !===================================================================!
-  ! Deterministic pseudo-random fill (linear congruential), so the
-  ! checks are reproducible run to run.
+  ! Fill deterministically with a linear congruential pseudo-random
+  ! sequence, so the checks are reproducible run to run.
   !===================================================================!
 
   pure subroutine fill_deterministic(v, seed)
@@ -803,8 +841,8 @@ contains
   end subroutine fill_deterministic
 
   !===================================================================!
-  ! Default operator action Aq = A q via the deferred jacobian-vector
-  ! product at the steady linearization (dR/du only).
+  ! The default operator action Aq = A q goes through the deferred
+  ! jacobian-vector product at the steady linearization (dR/du only).
   !===================================================================!
 
   pure subroutine get_jacobian_vector_product(this, Aq, q, filter)
@@ -819,8 +857,9 @@ contains
   end subroutine get_jacobian_vector_product
 
   !===================================================================!
-  ! Default: this assembler does not assemble a sparse operator. A
-  ! spatial assembler (class_assembler) overrides this with the real csr.
+  ! By default, this assembler does not assemble a sparse operator. A
+  ! spatial assembler (class_assembler) overrides this with the real
+  ! csr.
   !===================================================================!
 
   impure subroutine get_operator_csr(this, A)

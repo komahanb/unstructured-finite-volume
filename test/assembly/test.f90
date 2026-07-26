@@ -1,5 +1,5 @@
 !=====================================================================!
-! Test loading of mesh and mesh pre-processing
+! Test the loading of the mesh and the mesh pre-processing.
 !=====================================================================!
 
 program test_mesh
@@ -20,7 +20,7 @@ program test_mesh
 
   meshing : block
 
-    ! Create a mesh object
+    ! Create a mesh object.
     allocate(gmsh, source =  gmsh_loader(filename))
     allocate(grid, source = mesh(gmsh))
     deallocate(gmsh)
@@ -36,12 +36,15 @@ program test_mesh
 
     real(dp), allocatable :: AT(:,:)
 
-    ! Create an assembler object for assembling the linear system
-    ! Geometry and meshing
+    !-----------------------------------------------------------------!
+    ! Create an assembler object that assembles the linear system
+    ! from the geometry and the mesh.
+    !-----------------------------------------------------------------!
+
     allocate(FVMAssembler, source = assembler(grid))
 
     !-----------------------------------------------------------------!
-    ! Assemble parts of the jacobian and test
+    ! Assemble the parts of the jacobian and test them.
     !-----------------------------------------------------------------!
 
     print *, 'getting upper triangle'
@@ -60,7 +63,7 @@ program test_mesh
     call FVMAssembler % get_jacobian(A)
     call print (A)
 
-    ! Check consistency of matrix assembly
+    ! Check the consistency of the matrix assembly.
     if (maxval(abs(A-L-U-D)) .gt. tiny(1.0d0)) then
        error stop "error in assembly"
     else
@@ -76,10 +79,13 @@ program test_mesh
 
   end block assembly
 
-  ! analytic consistency checks of the jacobian-vector product, exact
-  ! to machine precision. the diffusion operator is symmetric: declare
-  ! it on the configured instance, so the REVERSE products inside the
-  ! checks run as verified claims rather than refusals.
+  !-------------------------------------------------------------------!
+  ! Run analytic consistency checks of the jacobian-vector product,
+  ! exact to machine precision. The diffusion operator is symmetric:
+  ! declare it on the configured instance, so the REVERSE products
+  ! inside the checks run as verified claims rather than refusals.
+  !-------------------------------------------------------------------!
+
   consistency_checks: block
 
     real(dp) :: defect
@@ -104,8 +110,11 @@ program test_mesh
 
   end block consistency_checks
 
-  ! the verify-before gate: the first REVERSE march on the declared-
-  ! symmetric system must verify the claim and cache the verdict
+  !-------------------------------------------------------------------!
+  ! The verify-before gate: the first REVERSE march on the declared-
+  ! symmetric system must verify the claim and cache the verdict.
+  !-------------------------------------------------------------------!
+
   gate: block
 
     type(conjugate_gradient) :: cg

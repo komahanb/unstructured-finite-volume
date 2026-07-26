@@ -9,15 +9,16 @@
 !     F_f = D (q_j - q_i)/d_ij          (centred diffusive flux)
 !     S   = C q,  C = [[-alpha, alpha], [beta, -beta]]
 !
-! design p = [D, alpha, beta]; dirichlet on the two ends, no-flux else
-! (1D -> only the two ends are boundaries). Tracking objective
+! The design is p = [D, alpha, beta]; Dirichlet holds on the two ends
+! and no-flux elsewhere (1D, so only the two ends are boundaries).
+! The tracking objective is
 !
 !     J = integral_Omega [ 1/2 (q-q_d)^T W (q-q_d)
 !                          + 1/2 sum_k gamma_k (p_k - p0_k)^2 ] dOmega.
 !
-! Adjoint:  R_q^T lambda = -J_q ,  dJ/dp = J_p + R_p^T lambda,
-! verified against central finite differences (re-solving the primal at
-! each perturbed design). Local physics/function partials are also
+! The adjoint is  R_q^T lambda = -J_q ,  dJ/dp = J_p + R_p^T lambda,
+! verified against central finite differences (re-solving the primal
+! at each perturbed design). Local physics/function partials are also
 ! checked against the spec's acceptance values (sections 23.1-23.8).
 !
 ! A nonzero exit (error stop) means a check failed.
@@ -33,28 +34,37 @@ program coupled_diffusion_adjoint
 
   external :: dgesv
 
-  ! ---- discretisation / problem sizes -----------------------------!
-  integer , parameter :: nc = 50          ! cells
-  integer , parameter :: ns = 2           ! state components (u, v)
-  integer , parameter :: npar = 3         ! design parameters (D, alpha, beta)
+  !-------------------------------------------------------------------!
+  ! The discretisation and the problem sizes.
+  !-------------------------------------------------------------------!
+
+  integer , parameter :: nc = 50          ! The number of cells.
+  integer , parameter :: ns = 2           ! The state components (u, v).
+  integer , parameter :: npar = 3         ! The design parameters (D, alpha, beta).
   integer , parameter :: ndof = nc*ns
 
   real(dp), parameter :: Lx = 1.0_dp
   real(dp), parameter :: dx   = Lx/real(nc, dp)
-  real(dp), parameter :: vol  = dx          ! 1D cell volume (unit cross-section)
-  real(dp), parameter :: area = 1.0_dp      ! face area
-  real(dp), parameter :: dint = dx          ! interior cell-centre distance
-  real(dp), parameter :: dbnd = 0.5_dp*dx   ! cell-centre to boundary distance
+  real(dp), parameter :: vol  = dx          ! The 1D cell volume (unit cross-section).
+  real(dp), parameter :: area = 1.0_dp      ! The face area.
+  real(dp), parameter :: dint = dx          ! The interior cell-centre distance.
+  real(dp), parameter :: dbnd = 0.5_dp*dx   ! The cell-centre-to-boundary distance.
 
-  ! ---- problem data (spec section 22) -----------------------------!
-  real(dp), parameter :: qL(ns) = [1.0_dp, 0.0_dp]   ! left dirichlet
-  real(dp), parameter :: qR(ns) = [0.0_dp, 1.0_dp]   ! right dirichlet
-  real(dp), parameter :: qd(ns) = [0.5_dp, 0.5_dp]   ! tracking target
-  real(dp), parameter :: Wm(ns) = [1.0_dp, 1.0_dp]   ! diag state weights (W = I)
-  real(dp), parameter :: p0(npar)  = [0.05_dp, 1.0_dp, 0.5_dp]   ! design reference
+  !-------------------------------------------------------------------!
+  ! The problem data (spec section 22).
+  !-------------------------------------------------------------------!
+
+  real(dp), parameter :: qL(ns) = [1.0_dp, 0.0_dp]   ! The left Dirichlet value.
+  real(dp), parameter :: qR(ns) = [0.0_dp, 1.0_dp]   ! The right Dirichlet value.
+  real(dp), parameter :: qd(ns) = [0.5_dp, 0.5_dp]   ! The tracking target.
+  real(dp), parameter :: Wm(ns) = [1.0_dp, 1.0_dp]   ! The diagonal state weights (W = I).
+  real(dp), parameter :: p0(npar)  = [0.05_dp, 1.0_dp, 0.5_dp]   ! The design reference.
   real(dp), parameter :: gam(npar) = [1.0e-4_dp, 1.0e-4_dp, 1.0e-4_dp]
 
-  ! ---- working storage --------------------------------------------!
+  !-------------------------------------------------------------------!
+  ! The working storage.
+  !-------------------------------------------------------------------!
+
   real(dp) :: p(npar)
   real(dp) :: q(ndof), Rq(ndof,ndof), Rp(ndof,npar)
   real(dp) :: Jval, Jq(ndof), Jp(npar), lambda(ndof)
@@ -65,19 +75,19 @@ program coupled_diffusion_adjoint
 
   call local_law_checks(nfail)
 
-  ! design at which the gradient is evaluated
+  ! Set the design at which the gradient is evaluated.
   p = [0.05_dp, 1.0_dp, 0.5_dp]
 
-  ! primal solve, functional + all partials at the converged state
+  ! Run the primal solve, then the functional and all partials at the converged state.
   call primal_solve(p, q)
   call assemble_state_jacobian(q, p, Rq)
   call assemble_design_partials(q, p, Rp)
   call eval_functional(q, p, Jval, Jq, Jp)
 
-  ! adjoint:  R_q^T lambda = -J_q
+  ! Solve the adjoint system  R_q^T lambda = -J_q.
   call solve_transpose(Rq, -Jq, lambda)
 
-  ! total gradient  dJ/dp = J_p + R_p^T lambda
+  ! Accumulate the total gradient  dJ/dp = J_p + R_p^T lambda.
   block
     integer :: k
     do k = 1, npar
@@ -85,10 +95,13 @@ program coupled_diffusion_adjoint
     end do
   end block
 
-  ! finite-difference reference (re-solve the primal at each perturbation)
+  ! The finite-difference reference re-solves the primal at each perturbation.
   call fd_gradient(p, gfd)
 
-  ! ---- report ------------------------------------------------------!
+  !-------------------------------------------------------------------!
+  ! Report the gradients and the relative errors.
+  !-------------------------------------------------------------------!
+
   write(*,'(a)')        " coupled-diffusion adjoint gradient dJ/dp,  p = [D, alpha, beta]"
   write(*,'(a,es14.6)') "   J            = ", Jval
   write(*,'(a,3es14.6)')"   adjoint  g   = ", g
@@ -114,18 +127,24 @@ program coupled_diffusion_adjoint
 contains
 
   !===================================================================!
-  ! Flat dof index for component c (1..ns) of cell i (1..nc)
+  ! Compute the flat dof index for component c (1..ns) of cell i
+  ! (1..nc).
   !===================================================================!
+
   pure integer function idx(i, c)
     integer, intent(in) :: i, c
     idx = (i-1)*ns + c
   end function idx
 
   !===================================================================!
-  ! Local physics laws (spec section 15.1) - pointwise, no mesh
+  ! The local physics laws (spec section 15.1) are pointwise and need
+  ! no mesh.
   !===================================================================!
 
-  ! source  S = C q :  S_u = alpha(v-u),  S_v = beta(u-v)
+  !===================================================================!
+  ! Evaluate the source  S = C q :  S_u = alpha(v-u),  S_v = beta(u-v).
+  !===================================================================!
+
   pure function source(qi, pp) result(S)
     real(dp), intent(in) :: qi(ns), pp(npar)
     real(dp)             :: S(ns)
@@ -133,21 +152,31 @@ contains
     S(2) = pp(3)*(qi(1) - qi(2))
   end function source
 
-  ! diffusive normal flux  F = D (qr - ql)/d  (area applied by caller)
+  !===================================================================!
+  ! Evaluate the diffusive normal flux  F = D (qr - ql)/d ; the caller
+  ! applies the area.
+  !===================================================================!
+
   pure function flux(ql, qr, dd, pp) result(F)
     real(dp), intent(in) :: ql(ns), qr(ns), dd, pp(npar)
     real(dp)             :: F(ns)
     F = pp(1)*(qr - ql)/dd
   end function flux
 
-  ! functional state partial  phi_q = W (q - q_d)
+  !===================================================================!
+  ! Evaluate the functional state partial  phi_q = W (q - q_d).
+  !===================================================================!
+
   pure function dphi_dq(qi) result(dq)
     real(dp), intent(in) :: qi(ns)
     real(dp)             :: dq(ns)
     dq = Wm*(qi - qd)
   end function dphi_dq
 
-  ! functional design partial  phi_p = gamma_k (p_k - p0_k)
+  !===================================================================!
+  ! Evaluate the functional design partial  phi_p = gamma_k (p_k - p0_k).
+  !===================================================================!
+
   pure function dphi_dp(pp) result(dpd)
     real(dp), intent(in) :: pp(npar)
     real(dp)             :: dpd(npar)
@@ -155,8 +184,10 @@ contains
   end function dphi_dp
 
   !===================================================================!
-  ! Steady residual  R(q, p)  (spec sign convention, section 24)
+  ! Assemble the steady residual  R(q, p)  (spec sign convention,
+  ! section 24).
   !===================================================================!
+
   subroutine assemble_residual(qin, pp, R)
     real(dp), intent(in)  :: qin(ndof), pp(npar)
     real(dp), intent(out) :: R(ndof)
@@ -165,7 +196,7 @@ contains
 
     R = 0.0_dp
 
-    ! cell source:  R_i -= V S(q_i)
+    ! The cell source:  R_i -= V S(q_i).
     do i = 1, nc
        qi = qin(idx(i,1):idx(i,ns))
        S  = source(qi, pp)
@@ -174,7 +205,7 @@ contains
        end do
     end do
 
-    ! interior faces (i, i+1):  R_i -= A F,  R_{i+1} += A F
+    ! The interior faces (i, i+1):  R_i -= A F,  R_{i+1} += A F.
     do i = 1, nc-1
        qi = qin(idx(i  ,1):idx(i  ,ns))
        qj = qin(idx(i+1,1):idx(i+1,ns))
@@ -185,7 +216,7 @@ contains
        end do
     end do
 
-    ! dirichlet ends:  R_i -= A F,  ghost = qL / qR, distance dbnd
+    ! The Dirichlet ends:  R_i -= A F, with ghost = qL / qR at distance dbnd.
     block
       real(dp) :: Fb(ns)
       Fb = flux(qin(idx(1,1):idx(1,ns)), qL, dbnd, pp)
@@ -197,13 +228,14 @@ contains
          R(idx(nc,c)) = R(idx(nc,c)) - area*Fb(c)
       end do
     end block
-    ! (the other 1D "faces" are no-flux: zero contribution)
+    ! The other 1D "faces" are no-flux and contribute zero.
 
   end subroutine assemble_residual
 
   !===================================================================!
-  ! State Jacobian  R_q = dR/dq  (dense)
+  ! Assemble the dense state Jacobian  R_q = dR/dq.
   !===================================================================!
+
   subroutine assemble_state_jacobian(qin, pp, A)
     real(dp), intent(in)  :: qin(ndof), pp(npar)
     real(dp), intent(out) :: A(ndof,ndof)
@@ -211,10 +243,10 @@ contains
     integer  :: i, c
 
     A  = 0.0_dp
-    kf = pp(1)/dint          ! D/d interior
-    kb = pp(1)/dbnd          ! D/d boundary
+    kf = pp(1)/dint          ! D/d on the interior faces.
+    kb = pp(1)/dbnd          ! D/d at the boundary.
 
-    ! source:  R_{q,ii} -= V C
+    ! The source:  R_{q,ii} -= V C.
     do i = 1, nc
        A(idx(i,1),idx(i,1)) = A(idx(i,1),idx(i,1)) - vol*(-pp(2))
        A(idx(i,1),idx(i,2)) = A(idx(i,1),idx(i,2)) - vol*( pp(2))
@@ -222,7 +254,7 @@ contains
        A(idx(i,2),idx(i,2)) = A(idx(i,2),idx(i,2)) - vol*(-pp(3))
     end do
 
-    ! interior faces: F_qi = -D/d I, F_qj = +D/d I; assembler applies signs
+    ! The interior faces: F_qi = -D/d I and F_qj = +D/d I; the assembler applies the signs.
     do i = 1, nc-1
        do c = 1, ns
           A(idx(i  ,c),idx(i  ,c)) = A(idx(i  ,c),idx(i  ,c)) + area*kf
@@ -232,7 +264,7 @@ contains
        end do
     end do
 
-    ! dirichlet ends: only the owner diagonal (ghost value is fixed)
+    ! The Dirichlet ends touch only the owner diagonal (the ghost value is fixed).
     do c = 1, ns
        A(idx(1 ,c),idx(1 ,c)) = A(idx(1 ,c),idx(1 ,c)) + area*kb
        A(idx(nc,c),idx(nc,c)) = A(idx(nc,c),idx(nc,c)) + area*kb
@@ -241,8 +273,10 @@ contains
   end subroutine assemble_state_jacobian
 
   !===================================================================!
-  ! Residual design partials  R_p = dR/dp,  columns [D, alpha, beta]
+  ! Assemble the residual design partials  R_p = dR/dp, with the
+  ! columns ordered [D, alpha, beta].
   !===================================================================!
+
   subroutine assemble_design_partials(qin, pp, Rpout)
     real(dp), intent(in)  :: qin(ndof), pp(npar)
     real(dp), intent(out) :: Rpout(ndof,npar)
@@ -251,7 +285,7 @@ contains
 
     Rpout = 0.0_dp
 
-    ! --- D column (face flux):  F_D = (qr - ql)/d ; R_i -= A F_D, R_j += ---
+    ! The D column (face flux):  F_D = (qr - ql)/d ; R_i -= A F_D and R_j += A F_D.
     do i = 1, nc-1
        qi  = qin(idx(i  ,1):idx(i  ,ns))
        qj  = qin(idx(i+1,1):idx(i+1,ns))
@@ -261,17 +295,22 @@ contains
           Rpout(idx(i+1,c),1) = Rpout(idx(i+1,c),1) + area*FpD(c)
        end do
     end do
-    qi  = qin(idx(1,1):idx(1,ns)); FpD = (qL - qi)/dbnd
+    qi  = qin(idx(1,1):idx(1,ns))
+    FpD = (qL - qi)/dbnd
     do c = 1, ns
        Rpout(idx(1,c),1) = Rpout(idx(1,c),1) - area*FpD(c)
     end do
-    qi  = qin(idx(nc,1):idx(nc,ns)); FpD = (qR - qi)/dbnd
+    qi  = qin(idx(nc,1):idx(nc,ns))
+    FpD = (qR - qi)/dbnd
     do c = 1, ns
        Rpout(idx(nc,c),1) = Rpout(idx(nc,c),1) - area*FpD(c)
     end do
 
-    ! --- alpha, beta columns (source):  R_p -= V S_p ----------------!
-    ! S_alpha = [v-u, 0],  S_beta = [0, u-v]
+    !-----------------------------------------------------------------!
+    ! The alpha and beta columns (source):  R_p -= V S_p, where
+    ! S_alpha = [v-u, 0] and S_beta = [0, u-v].
+    !-----------------------------------------------------------------!
+
     do i = 1, nc
        qi = qin(idx(i,1):idx(i,ns))
        Rpout(idx(i,1),2) = Rpout(idx(i,1),2) - vol*(qi(2) - qi(1))
@@ -281,8 +320,9 @@ contains
   end subroutine assemble_design_partials
 
   !===================================================================!
-  ! Functional value + partials  J, J_q, J_p
+  ! Evaluate the functional value and its partials  J, J_q, J_p.
   !===================================================================!
+
   subroutine eval_functional(qin, pp, J, Jqout, Jpout)
     real(dp), intent(in)  :: qin(ndof), pp(npar)
     real(dp), intent(out) :: J, Jqout(ndof), Jpout(npar)
@@ -298,21 +338,23 @@ contains
     do i = 1, nc
        qi = qin(idx(i,1):idx(i,ns))
        dq = qi - qd
-       ! J += V (1/2 (q-qd)^T W (q-qd) + phi_design)
+       ! Accumulate  J += V (1/2 (q-qd)^T W (q-qd) + phi_design).
        J = J + vol*(0.5_dp*sum(Wm*dq**2) + phi_design)
-       ! J_q += V phi_q
+       ! Accumulate  J_q += V phi_q.
        do c = 1, ns
           Jqout(idx(i,c)) = Jqout(idx(i,c)) + vol*Wm(c)*dq(c)
        end do
-       ! J_p += V phi_p
+       ! Accumulate  J_p += V phi_p.
        Jpout = Jpout + vol*dphi_dp(pp)
     end do
 
   end subroutine eval_functional
 
   !===================================================================!
-  ! Primal Newton solve:  R(q, p) = 0  (linear here -> one step)
+  ! Solve the primal with Newton:  R(q, p) = 0  (linear here, so one
+  ! step suffices).
   !===================================================================!
+
   subroutine primal_solve(pp, qout)
     real(dp), intent(in)  :: pp(npar)
     real(dp), intent(out) :: qout(ndof)
@@ -333,8 +375,9 @@ contains
   end subroutine primal_solve
 
   !===================================================================!
-  ! Solve the transpose system  A^T x = b
+  ! Solve the transpose system  A^T x = b.
   !===================================================================!
+
   subroutine solve_transpose(A, b, x)
     real(dp), intent(in)  :: A(ndof,ndof), b(ndof)
     real(dp), intent(out) :: x(ndof)
@@ -349,8 +392,10 @@ contains
   end subroutine solve_transpose
 
   !===================================================================!
-  ! Central finite-difference total gradient (re-solve the primal)
+  ! Compute the central finite-difference total gradient; the primal
+  ! is re-solved at each perturbed design.
   !===================================================================!
+
   subroutine fd_gradient(pp, gout)
     real(dp), intent(in)  :: pp(npar)
     real(dp), intent(out) :: gout(npar)
@@ -360,11 +405,13 @@ contains
     do k = 1, npar
        eps = 1.0e-6_dp*max(1.0_dp, abs(pp(k)))
 
-       pm = pp; pm(k) = pp(k) + eps
+       pm = pp
+       pm(k) = pp(k) + eps
        call primal_solve(pm, qm)
        call eval_functional(qm, pm, jp, dummy_jq, dummy_jp)
 
-       pm = pp; pm(k) = pp(k) - eps
+       pm = pp
+       pm(k) = pp(k) - eps
        call primal_solve(pm, qm)
        call eval_functional(qm, pm, jm, dummy_jq, dummy_jp)
 
@@ -374,34 +421,36 @@ contains
   end subroutine fd_gradient
 
   !===================================================================!
-  ! Local-law unit checks against the spec's acceptance values
-  ! (sections 23.1, 23.4, 23.7, 23.8)
+  ! Run the local-law unit checks against the spec's acceptance
+  ! values (sections 23.1, 23.4, 23.7, 23.8).
   !===================================================================!
+
   subroutine local_law_checks(nf)
     integer, intent(inout) :: nf
     real(dp) :: S(ns), F(ns), dq(ns), dpd(npar)
 
-    ! 23.1 source:  q=[2,5], p=[0.1,3,4] -> S=[9,-12]
+    ! Section 23.1, the source:  q=[2,5], p=[0.1,3,4] -> S=[9,-12].
     S = source([2.0_dp, 5.0_dp], [0.1_dp, 3.0_dp, 4.0_dp])
     call check_close("source", S, [9.0_dp, -12.0_dp], nf)
 
-    ! 23.4 flux:  qL=[1,2], qR=[3,5], D=0.1, d=0.5 -> [0.4,0.6]
+    ! Section 23.4, the flux:  qL=[1,2], qR=[3,5], D=0.1, d=0.5 -> [0.4,0.6].
     F = flux([1.0_dp,2.0_dp], [3.0_dp,5.0_dp], 0.5_dp, [0.1_dp,3.0_dp,4.0_dp])
     call check_close("flux", F, [0.4_dp, 0.6_dp], nf)
 
-    ! 23.7 functional state partial: phi_q = W(q-qd); q=[2,5], qd=[.5,.5]
+    ! Section 23.7, the functional state partial:  phi_q = W(q-qd); q=[2,5], qd=[.5,.5].
     dq = dphi_dq([2.0_dp, 5.0_dp])
     call check_close("phi_q", dq, [1.5_dp, 4.5_dp], nf)
 
-    ! 23.8 functional design partial: phi_p = gamma (p-p0), offset [.01,.1,-.1]
+    ! Section 23.8, the functional design partial:  phi_p = gamma (p-p0), offset [.01,.1,-.1].
     dpd = dphi_dp(p0 + [0.01_dp, 0.1_dp, -0.1_dp])
     call check_close("phi_p", dpd, gam*[0.01_dp, 0.1_dp, -0.1_dp], nf)
 
   end subroutine local_law_checks
 
   !===================================================================!
-  ! Assert two vectors agree (local-law unit checks)
+  ! Assert that two vectors agree (the local-law unit checks).
   !===================================================================!
+
   subroutine check_close(name, got, want, nf)
     character(*), intent(in)    :: name
     real(dp)    , intent(in)    :: got(:), want(:)

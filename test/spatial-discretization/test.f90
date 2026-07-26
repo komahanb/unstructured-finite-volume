@@ -4,7 +4,7 @@
 ! Solve the 2d poisson problem  -div(grad u) = 1  on the unit square
 ! with u = 0 on all four sides, on a sequence of structured quad meshes
 ! (square-10/20/40/80, h = 1/n), and measure the discrete L2 error at
-! the cell centres against the exact fourier-series solution. the
+! the cell centres against the exact fourier-series solution. The
 ! observed order  p = log(e_coarse/e_fine)/log(h_coarse/h_fine) must
 ! approach 2 - the cell-centred laplacian's design order.
 !
@@ -38,12 +38,12 @@ program spatial_discretization
   integer  :: k
   logical  :: ok
 
-  ! Refinement sequence
+  ! Run the refinement sequence.
   do k = 1, nlevel
      call solve_poisson(levels(k), h(k), ncell(k), err(k))
   end do
 
-  ! Convergence table
+  ! Print the convergence table.
   write(*,'(a)') " spatial order of accuracy - 2d poisson on the unit square"
   write(*,'(2x,a6,2x,a8,2x,a14,2x,a8)') "n", "ncells", "L2 error", "order"
   write(*,'(2x,a6,2x,a8,2x,a14,2x,a8)') "------", "--------", "--------------", "--------"
@@ -57,7 +57,7 @@ program spatial_discretization
      end if
   end do
 
-  ! The finest observed order must approach 2
+  ! The finest observed order must approach 2.
   order = log(err(nlevel-1)/err(nlevel)) / log(h(nlevel-1)/h(nlevel))
   ok    = (order .gt. 1.7_dp) .and. (order .lt. 2.3_dp)
 
@@ -97,8 +97,12 @@ contains
     allocate(grid, source = mesh(gl))
     allocate(fvm , source = assembler(grid))
 
-    ! Poisson: unit source (source=-1 is the assembler's sign convention
-    ! matching the +1 fourier rhs), homogeneous dirichlet on all sides
+    !-----------------------------------------------------------------!
+    ! Poisson: a unit source (source=-1 is the assembler's sign
+    ! convention matching the +1 fourier rhs) with homogeneous
+    ! dirichlet on all sides.
+    !-----------------------------------------------------------------!
+
     call fvm % set_equation(diffusion_flux(1.0_dp), constant_source(-1.0_dp))
     call fvm % set_dirichlet("BoundaryLeft"  , 0.0_dp)
     call fvm % set_dirichlet("BoundaryRight" , 0.0_dp)
@@ -119,7 +123,7 @@ contains
 
   !===================================================================!
   ! Exact fourier-series solution of -div(grad u) = 1, u = 0 on the
-  ! unit square (as in examples/poisson)
+  ! unit square (as in examples/poisson).
   !===================================================================!
 
   subroutine get_exact_solution(fexact, x)

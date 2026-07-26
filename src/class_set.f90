@@ -1,12 +1,12 @@
 !=====================================================================!
-! Basic implementation of an unordered set tuple
+! A basic implementation of an unordered set of tuples.
 !=====================================================================!
 
 module class_set
 
   implicit none
   
-  ! Datatype
+  ! The datatype.
   type :: set
 
      integer, allocatable :: table(:,:)
@@ -20,12 +20,12 @@ module class_set
      procedure :: get_entries
      procedure :: contains
 
-     ! Destructor
+     ! The destructor.
      final :: destroy
 
   end type set
 
-  ! Constructor interface for set
+  ! The constructor interface for a set.
   interface set
      module procedure create
   end interface set
@@ -33,7 +33,7 @@ module class_set
 contains
 
   !===================================================================!
-  ! Constructor implementaion of set
+  ! The constructor implementation of a set.
   !===================================================================!
 
   pure type(set) function create(num_tuples, max_entries) result(this)
@@ -50,7 +50,7 @@ contains
   end function create
 
   !===================================================================!
-  ! Destructor for set object
+  ! The destructor for a set object.
   !===================================================================!
   
   pure subroutine destroy(this)
@@ -62,7 +62,7 @@ contains
   end subroutine destroy
 
   !===================================================================!
-  ! Add an entry into the set
+  ! Insert a tuple into the set and report whether it was added.
   !===================================================================!
 
   impure type(logical) function insert(this, tuple)
@@ -70,7 +70,7 @@ contains
     class(set), intent(inout) :: this
     integer   , intent(in)    :: tuple(:)
 
-    ! Check if tuple is in table   
+    ! Check whether the tuple is already in the table.
     if (this % contains(tuple) .eqv. .false.) then
        this % num_entries = this % num_entries + 1
        this % table(:, this % num_entries) = tuple(:)
@@ -82,7 +82,7 @@ contains
   end function insert
 
   !===================================================================!
-  ! Add an entry into the set
+  ! Add an entry into the set.
   !===================================================================!
 
   pure subroutine add_entry(this, tuple)
@@ -90,7 +90,7 @@ contains
     class(set), intent(inout) :: this
     integer   , intent(in)    :: tuple(:)
 
-    ! Check if tuple is in table
+    ! Check whether the tuple is already in the table.
 
     if (this % contains(tuple) .eqv. .false.) then
        this % num_entries = this % num_entries + 1
@@ -99,9 +99,9 @@ contains
 
   end subroutine add_entry
 
-   !===================================================================!
-  ! Checks if the first argument is a subset of the second argument
-  ! (move elsewhere?)
+  !===================================================================!
+  ! Check whether the first argument is a subset of the second
+  ! argument. (Should this move elsewhere?)
   !===================================================================!
   
   pure type(logical) function is_subset(small, big)
@@ -118,17 +118,20 @@ contains
 
     if (size(small) .gt. size(big)) return
 
-    ! Create local copy of arrays
+    ! Create local copies of the arrays.
     allocate(sub, source = small)
     allocate(set, source = big)
 
-    ! Sort two arrays
+    ! Sort the two arrays.
     call isort(sub)
     call isort(set)    
     lensub = size(sub)
 
-    ! Check if all entries are equal upto the length of the smallest
-    ! array
+    !-----------------------------------------------------------------!
+    ! Check whether all entries match up to the length of the
+    ! smaller array.
+    !-----------------------------------------------------------------!
+
     is_subset = .true.
     check : do i = 1, lensub
        if (any(set .eq. sub(i)) .eqv. .false.) then
@@ -142,7 +145,8 @@ contains
   end function is_subset
   
   !===================================================================!
-  ! Sort an integer array ! move elsewhere?
+  ! Sort an integer array in ascending order. (Should this move
+  ! elsewhere?)
   !===================================================================!
   
   pure subroutine isort(array)
@@ -166,7 +170,7 @@ contains
   end subroutine isort
 
   !===================================================================!
-  ! Check if an entry is contains in the set
+  ! Check whether an entry is contained in the set.
   !===================================================================!
 
   pure type(logical) function contains(this, tuple)
@@ -177,9 +181,9 @@ contains
 
     contains = .false.
 
-    ! loop through existing tuples and find if it exists
+    ! Walk the existing tuples and check whether the entry exists.
    check: do i = this % num_entries, 1, -1
-       ! Improve logic. This is expensive and unnnecessary
+       ! Improve this logic; it is expensive and unnecessary.
        if (is_subset(tuple, this % table(:,i)) .eqv. .true.) then
           contains = .true.
           return
@@ -189,7 +193,7 @@ contains
   end function contains
 
   !===================================================================!
-  ! Get all the entries in the set as an array
+  ! Get all the entries in the set as an array.
   !===================================================================!
   
   pure subroutine get_entries(this, entries)

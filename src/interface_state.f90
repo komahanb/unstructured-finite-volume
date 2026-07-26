@@ -1,10 +1,10 @@
 #include "scalar.fpp"
 
 !=====================================================================!
-! Abstract state: the object a marcher advances. interface_field draws
-! the picture - discretising the field turns it into its state, the
-! finite vector of coefficients U - and this interface is that state,
-! as a type.
+! The abstract state: the object a marcher advances. interface_field
+! draws the picture - discretising the field turns it into its state,
+! the finite vector of coefficients U - and this interface is that
+! state, as a type.
 !
 ! The contract has two parts. update is where the families genuinely
 ! differ: each concrete state knows how a correction moves it (a plain
@@ -33,21 +33,30 @@ module interface_state
 
    contains
 
-     ! this <- this + correction; the concrete knows its rule
+     ! Apply this <- this + correction; the concrete knows its rule.
      procedure(update_interface), deferred :: update
 
-     ! the dof array (nvars, order+1) the system evaluates
+     ! Return the dof array (nvars, order+1) the system evaluates.
      procedure(values_interface), deferred :: values
 
   end type state
 
   abstract interface
 
+     !================================================================!
+     ! Move the state by the correction under the concrete rule.
+     !================================================================!
+
      pure subroutine update_interface(this, correction)
        import :: state, dp
        class(state), intent(inout) :: this
        real(dp)    , intent(in)    :: correction(:)
      end subroutine update_interface
+
+     !================================================================!
+     ! Present the state as the (nvars, order+1) array the system
+     ! evaluates.
+     !================================================================!
 
      pure function values_interface(this) result(v)
        import :: state

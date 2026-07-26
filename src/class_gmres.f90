@@ -1,23 +1,25 @@
 !=====================================================================!
 ! Restarted GMRES(m) - the general-purpose nonsymmetric Krylov solver.
 !
-! Unlike the normal-equations solvers (class_normal_cg) GMRES works on A
-! directly, so its convergence is governed by kappa(A) rather than
-! kappa(A)^2 - decisive on advection-dominated (non-normal) operators. It
-! is also TRANSPOSE-FREE (only A*v), and preconditions naturally. The cost
-! is memory/orthogonalization that grow with the Krylov dimension, hence
-! the restart parameter m: build an m-dimensional Krylov space, form the
-! minimum-residual solution there, restart from it until converged.
+! Unlike the normal-equations solvers (class_normal_cg), GMRES works on
+! A directly, so its convergence is governed by kappa(A) rather than
+! kappa(A)^2 - decisive on advection-dominated (non-normal) operators.
+! It is also TRANSPOSE-FREE (only A*v), and preconditions naturally.
+! The cost is memory and orthogonalization work that grow with the
+! Krylov dimension, hence the restart parameter m: build an
+! m-dimensional Krylov space, form the minimum-residual solution there,
+! and restart from it until converged.
 !
-! Right preconditioning (solve A M^-1 u = b, x = M^-1 u): keeps the Arnoldi
-! residual equal to the TRUE residual ||b - A x||, so the Givens estimate
-! drives the stopping test directly, and class_algebraic_multigrid (or any
-! preconditioner) plugs in through the optional member.
+! Right preconditioning (solve A M^-1 u = b, then x = M^-1 u) keeps the
+! Arnoldi residual equal to the TRUE residual ||b - A x||, so the Givens
+! estimate drives the stopping test directly, and
+! class_algebraic_multigrid (or any preconditioner) plugs in through the
+! optional member.
 !
-! Method: modified Gram-Schmidt Arnoldi -> upper Hessenberg H, reduced to
-! upper triangular by Givens rotations as columns arrive (so the residual
-! norm |g(j+1)| is available every step), then back-substitution for y and
-! x <- x + M^-1 (V y).
+! Method: modified Gram-Schmidt Arnoldi -> upper Hessenberg H, reduced
+! to upper triangular by Givens rotations as columns arrive (so the
+! residual norm |g(j+1)| is available every step), then
+! back-substitution for y and x <- x + M^-1 (V y).
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -34,10 +36,11 @@ module class_gmres
   public :: gmres_solver
 
   !-------------------------------------------------------------------!
-  ! linear_solver wrapper around restarted GMRES so the config-driven
-  ! driver can pick "gmres" the way it picks "cg". The kernel below runs
-  ! on the ONE product - system % get_jacobian_residual_product, forward
-  ! and whole, never assembled entries (assembled only to build
+  ! A linear_solver wrapper around restarted GMRES so that the
+  ! config-driven driver can pick "gmres" the way it picks "cg". The
+  ! kernel below runs on the ONE product -
+  ! system % get_jacobian_residual_product, forward and whole - and
+  ! never on assembled entries (entries are assembled only to build
   ! preconditioners, never to iterate). Use it for nonsymmetric
   ! operators (advection) where CG does not apply.
   !-------------------------------------------------------------------!
@@ -48,9 +51,8 @@ module class_gmres
 
    contains
 
-     ! the sweep consumed by the inherited outer iteration (the kernel
-     ! below runs
-     ! on any operator it is handed)
+     ! The sweep consumed by the inherited outer iteration; the kernel
+     ! below runs on any operator it is handed.
      procedure :: iterate
      procedure :: gmres
 
@@ -63,8 +65,9 @@ module class_gmres
 contains
 
   !===================================================================!
-  ! Constructor for the gmres_solver linear-solver wrapper. FVAssembler is
-  ! optional: omit it to drive the gmres kernel on a raw csr operator.
+  ! The constructor for the gmres_solver linear-solver wrapper. The
+  ! FVAssembler is optional: omit it to drive the gmres kernel on a raw
+  ! csr operator.
   !===================================================================!
 
   pure type(gmres_solver) function construct(max_it, max_tol, restart, &
@@ -83,8 +86,12 @@ contains
 
     if (present(restart))     this % restart     = restart
     if (present(print_level)) this % print_level = print_level
-    ! the right preconditioner fills the post-operator slot (applied per
-    ! arnoldi vector, back-mapped inside the kernel)
+
+    !-----------------------------------------------------------------!
+    ! The right preconditioner fills the post-operator slot; it is
+    ! applied per Arnoldi vector and back-mapped inside the kernel.
+    !-----------------------------------------------------------------!
+
     if (present(precond))     allocate(this % post_conditioner, source = precond)
 
   end function construct
@@ -107,12 +114,12 @@ contains
   end subroutine iterate
 
   !===================================================================!
-  ! Solve A x = b with restarted, optionally right-preconditioned GMRES,
-  ! where A acts only through the system's jacobian-vector product
-  ! (forward, whole - assembled entries are never touched here; they are
-  ! for building preconditioners). Caps, Krylov dimension and verbosity
-  ! are read from `this`; the post-conditioner slot (if allocated)
-  ! supplies z = M^-1 v per Krylov vector.
+  ! Solve A x = b with restarted, optionally right-preconditioned
+  ! GMRES, where A acts only through the system's jacobian-vector
+  ! product (forward, whole - assembled entries are never touched here;
+  ! they are for building preconditioners). Caps, the Krylov dimension,
+  ! and verbosity are read from `this`; the post-conditioner slot (if
+  ! allocated) supplies z = M^-1 v per Krylov vector.
   !===================================================================!
 
   impure subroutine gmres(this, system, b, x, iters)
@@ -145,7 +152,7 @@ contains
 
     outer: do while (total .lt. this % max_it .and. .not. converged)
 
-       ! restart residual r = b - A x
+       ! Form the restart residual r = b - A x.
        call system % get_jacobian_residual_product(w, x)
        r    = b - w
        beta = norm2(r)
@@ -165,7 +172,7 @@ contains
           j     = j + 1
           total = total + 1
 
-          ! w = A M^-1 v_j  (right preconditioning; w = A v_j if none)
+          ! Form w = A M^-1 v_j (right preconditioning); w = A v_j if none.
           if (allocated(this % post_conditioner)) then
              call this % post_conditioner % apply(V(:,j), z)
              call system % get_jacobian_residual_product(w, z)
@@ -173,7 +180,7 @@ contains
              call system % get_jacobian_residual_product(w, V(:,j))
           end if
 
-          ! modified Gram-Schmidt against the existing basis
+          ! Orthogonalize by modified Gram-Schmidt against the existing basis.
           do i = 1, j
              H(i,j) = dot_product(w, V(:,i))
              w = w - H(i,j)*V(:,i)
@@ -181,14 +188,14 @@ contains
           H(j+1,j) = norm2(w)
           if (H(j+1,j) .gt. 0.0_dp) V(:,j+1) = w / H(j+1,j)
 
-          ! apply the previous Givens rotations to the new column
+          ! Apply the previous Givens rotations to the new column.
           do i = 1, j-1
              tmp      =  cs(i)*H(i,j) + sn(i)*H(i+1,j)
              H(i+1,j) = -sn(i)*H(i,j) + cs(i)*H(i+1,j)
              H(i,j)   = tmp
           end do
 
-          ! new rotation that zeros H(j+1,j), then apply it to H and g
+          ! Form the new rotation that zeros H(j+1,j), then apply it to H and g.
           call givens(H(j,j), H(j+1,j), cs(j), sn(j))
           H(j,j)   = cs(j)*H(j,j) + sn(j)*H(j+1,j)
           H(j+1,j) = 0.0_dp
@@ -207,7 +214,7 @@ contains
 
        end do inner
 
-       ! back-substitution: H(1:j,1:j) y = g(1:j)
+       ! Back-substitute the triangular system H(1:j,1:j) y = g(1:j).
        do i = j, 1, -1
           y(i) = g(i)
           do kk = i+1, j
@@ -216,7 +223,7 @@ contains
           y(i) = y(i) / H(i,i)
        end do
 
-       ! correction u = V(:,1:j) y, then x <- x + M^-1 u
+       ! Form the correction u = V(:,1:j) y, then update x <- x + M^-1 u.
        u = 0.0_dp
        do i = 1, j
           u = u + y(i)*V(:,i)
@@ -239,7 +246,8 @@ contains
   end subroutine gmres
 
   !===================================================================!
-  ! Givens rotation [c s; -s c] [a; b] = [r; 0]  (drotg-style, robust)
+  ! The Givens rotation [c s; -s c] [a; b] = [r; 0] (drotg-style,
+  ! robust).
   !===================================================================!
 
   elemental subroutine givens(a, b, c, s)

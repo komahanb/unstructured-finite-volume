@@ -1,5 +1,5 @@
 !=====================================================================!
-! Abstract interface for a field u(t, x, y, z).
+! This is the abstract interface for a field u(t, x, y, z).
 !
 ! A field is the continuous solution over the spatial domain x; time t
 ! evolves it, the random vector y makes it a random field, and the
@@ -31,38 +31,40 @@ module interface_field
   public :: field
 
   !-------------------------------------------------------------------!
-  ! Abstract field type
+  ! The abstract field type carries the domain sizes and the deferred
+  ! operator contract.
   !-------------------------------------------------------------------!
 
   type, abstract :: field
 
-     ! Codomain: m = 1 scalar field, m > 1 vector field
+     ! The codomain: m = 1 is a scalar field, m > 1 a vector field.
      integer :: num_components
 
-     ! Sizes of the (discretised) domains
-     integer :: num_state_vars    ! N : spatial dofs of the state U
-     integer :: num_random_dim    ! dim(y) : stochastic domain
-     integer :: num_design_dim    ! dim(z) : design domain
+     ! These are the sizes of the (discretised) domains.
+     integer :: num_state_vars    ! N : the spatial dofs of the state U.
+     integer :: num_random_dim    ! dim(y) : the stochastic domain.
+     integer :: num_design_dim    ! dim(z) : the design domain.
 
    contains
 
-     ! u(t, x, y, z) - the field as a function of its arguments
+     ! Evaluate the field u(t, x, y, z) as a function of its arguments.
      procedure(evaluate_interface)     , deferred :: evaluate
 
-     ! Field <-> state
+     ! These operators map between the field and its state.
      procedure(discretize_interface)   , deferred :: discretize   ! Delta : u -> U
      procedure(reconstruct_interface)  , deferred :: reconstruct  ! R     : U -> u
      procedure(project_interface)      , deferred :: project      ! Pi    : u -> Pi u
      procedure(remainder_interface)    , deferred :: remainder    ! e = (I - Pi) u
      procedure(basis_interface)        , deferred :: basis        ! phi_i(x)
 
-     ! Differentiation with respect to each argument
+     ! These operators differentiate with respect to each argument.
      procedure(gradient_interface)     , deferred :: grad         ! d u / d x_idim (spatial)
      procedure(time_deriv_interface)   , deferred :: ddt          ! d u / d t      (temporal)
      procedure(sensitivity_interface)  , deferred :: drandom      ! d u / d y_k    (stochastic)
      procedure(sensitivity_interface)  , deferred :: ddesign      ! d u / d z_k    (design)
 
-     ! L2 structure (gives the norm and Galerkin orthogonality e _|_ V_h)
+     ! The L2 structure gives the norm and the Galerkin orthogonality
+     ! e _|_ V_h.
      procedure(inner_product_interface), deferred :: inner_product
      procedure(norm_interface)         , deferred :: norm
 
@@ -71,21 +73,21 @@ module interface_field
   abstract interface
 
      !================================================================!
-     ! Evaluate u(t, x, y, z); returns the m components of the field
+     ! Evaluate u(t, x, y, z) and return the m components of the field.
      !================================================================!
 
      pure function evaluate_interface(this, t, x, y, z) result(u)
        import :: field, dp
        class(field), intent(in) :: this
        real(dp)    , intent(in) :: t
-       real(dp)    , intent(in) :: x(:)    ! spatial
-       real(dp)    , intent(in) :: y(:)    ! stochastic
-       real(dp)    , intent(in) :: z(:)    ! design
+       real(dp)    , intent(in) :: x(:)    ! The spatial argument.
+       real(dp)    , intent(in) :: y(:)    ! The stochastic argument.
+       real(dp)    , intent(in) :: z(:)    ! The design argument.
        real(dp)                 :: u(this % num_components)
      end function evaluate_interface
 
      !================================================================!
-     ! Delta : restrict the field to its state coefficients U in R^N
+     ! Delta : restrict the field to its state coefficients U in R^N.
      !================================================================!
 
      subroutine discretize_interface(this, U)
@@ -95,7 +97,7 @@ module interface_field
      end subroutine discretize_interface
 
      !================================================================!
-     ! R : reconstruct the field from a state, u_h = sum_i U_i phi_i
+     ! R : reconstruct the field from a state, u_h = sum_i U_i phi_i.
      !================================================================!
 
      subroutine reconstruct_interface(this, U)
@@ -105,7 +107,7 @@ module interface_field
      end subroutine reconstruct_interface
 
      !================================================================!
-     ! Pi : orthogonal projection of the field onto V_h (resolved state)
+     ! Pi : project the field orthogonally onto V_h (the resolved state).
      !================================================================!
 
      subroutine project_interface(this, U)
@@ -115,7 +117,7 @@ module interface_field
      end subroutine project_interface
 
      !================================================================!
-     ! e = (I - Pi) u : the unresolved remainder for the state U
+     ! Form e = (I - Pi) u, the unresolved remainder for the state U.
      !================================================================!
 
      subroutine remainder_interface(this, U, e)
@@ -126,7 +128,8 @@ module interface_field
      end subroutine remainder_interface
 
      !================================================================!
-     ! phi_i : the i-th basis function of V_h at a spatial point
+     ! Evaluate phi_i, the i-th basis function of V_h, at a spatial
+     ! point.
      !================================================================!
 
      pure function basis_interface(this, i, x) result(phi)
@@ -138,7 +141,7 @@ module interface_field
      end function basis_interface
 
      !================================================================!
-     ! d u / d x_idim : spatial gradient component (a field)
+     ! Form d u / d x_idim, the spatial gradient component (a field).
      !================================================================!
 
      subroutine gradient_interface(this, idim, du)
@@ -149,7 +152,7 @@ module interface_field
      end subroutine gradient_interface
 
      !================================================================!
-     ! d u / d t : temporal rate (a field)
+     ! Form d u / d t, the temporal rate (a field).
      !================================================================!
 
      subroutine time_deriv_interface(this, du)
@@ -159,7 +162,8 @@ module interface_field
      end subroutine time_deriv_interface
 
      !================================================================!
-     ! Sensitivity to the k-th random (y_k) or design (z_k) variable
+     ! Form the sensitivity to the k-th random (y_k) or design (z_k)
+     ! variable.
      !================================================================!
 
      subroutine sensitivity_interface(this, k, du)
@@ -170,7 +174,7 @@ module interface_field
      end subroutine sensitivity_interface
 
      !================================================================!
-     ! L2 inner product <this, other>; norm follows as sqrt(<u,u>)
+     ! Form the L2 inner product <this, other>.
      !================================================================!
 
      pure function inner_product_interface(this, other) result(ip)
@@ -179,6 +183,10 @@ module interface_field
        class(field), intent(in) :: other
        real(dp)                 :: ip
      end function inner_product_interface
+
+     !================================================================!
+     ! Form the norm; it follows as sqrt(<u, u>).
+     !================================================================!
 
      pure function norm_interface(this) result(nrm)
        import :: field, dp

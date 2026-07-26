@@ -1,15 +1,15 @@
 !=====================================================================!
-! Module that implements output capabilities for Paraview
+! This module implements output capabilities for Paraview
 ! visualization.
 !
-! UnstructuredGrid ( .vtu ) is the supported format
+! UnstructuredGrid (.vtu) is the supported format.
 !
 ! Author: Komahan Boopathy (komibuddy@gmail.com)
 !=====================================================================!
 
 module class_paraview_writer
 
-  ! import dependencies
+  ! Import the dependencies.
   use iso_fortran_env, only : dp => real64, int32
   use class_mesh     , only : mesh_t => mesh
   use class_string   , only : string
@@ -17,7 +17,7 @@ module class_paraview_writer
   implicit none
 
   !===================================================================!
-  ! Paraview cell types datatype (enum)
+  ! This datatype enumerates the Paraview cell types.
   !===================================================================!
 
   type :: linear_cell_type
@@ -48,28 +48,28 @@ module class_paraview_writer
   end type linear_cell_type
 
   !===================================================================!
-  ! Paraview writer datatype
+  ! This datatype writes a mesh and its cell fields to Paraview.
   !===================================================================!
 
   type :: paraview_writer
 
-     ! attributes
+     ! These are the attributes.
      class(mesh_t), allocatable :: mesh
 
      type(linear_cell_type)     :: cell_type
 
-     ! support binary and ascii
-     ! write cell and point data
+     ! Support binary and ascii forms.
+     ! Write cell and point data.
 
    contains
 
-     ! type bound procedures
+     ! These are the type-bound procedures.
      procedure :: write
 
   end type paraview_writer
 
   !===================================================================!
-  ! Interface for multiple constructors
+  ! This interface admits multiple constructors.
   !===================================================================!
 
   interface paraview_writer
@@ -79,7 +79,7 @@ module class_paraview_writer
 contains
 
   !===================================================================!
-  ! Function to map gmsh element numbers to paraview types
+  ! This function maps gmsh element numbers to paraview cell types.
   !===================================================================!
 
   pure elemental type(integer) function get_element_type(this, gmsh_type) &
@@ -89,21 +89,21 @@ contains
     integer                , intent(in) :: gmsh_type
 
     select case (gmsh_type)
-    case (1) ! 2-node line.
+    case (1) ! A 2-node line.
        paraview_type = this % VTK_LINE
-    case (2) ! 3-node triangle
+    case (2) ! A 3-node triangle.
        paraview_type = this % VTK_TRIANGLE
-    case (3) ! 4-node quadrangle
+    case (3) ! A 4-node quadrangle.
        paraview_type = this % VTK_QUAD
-    case (4) ! 4-node tetrahedron
+    case (4) ! A 4-node tetrahedron.
        paraview_type = this % VTK_TETRA
-    case (5) ! 8-node hexahedron
+    case (5) ! An 8-node hexahedron.
        paraview_type = this % VTK_HEXAHEDRON
-    case (6) ! 6-node prism
+    case (6) ! A 6-node prism.
        paraview_type = this % VTK_WEDGE
-    case (7) ! 5-node prism (pyramid)
+    case (7) ! A 5-node prism (a pyramid).
        paraview_type = this % VTK_PYRAMID
-    case (-1) ! an agglomerated polygon - our own convention; gmsh has no such element
+    case (-1) ! An agglomerated polygon - our own convention; gmsh has no such element.
        paraview_type = this % VTK_POLYGON
     case default
        paraview_type = this % VTK_POLYHEDRON
@@ -112,7 +112,7 @@ contains
   end function get_element_type
 
   !===================================================================!
-  ! Constructor for paraview wrtier
+  ! This is the constructor for the paraview writer.
   !===================================================================!
 
   pure type(paraview_writer) function construct(mesh) result (this)
@@ -124,23 +124,25 @@ contains
   end function construct
 
   !===================================================================!
-  ! Constructor for paraview wrtier
+  ! Write the mesh and the optional cell fields to a .vtu file in the
+  ! UnstructuredGrid format.
   !===================================================================!
 
   impure subroutine write(this, filename, phic, solution_labels)
 
-    ! arguments
+    ! These are the arguments.
     class(paraview_writer) , intent(in)           :: this
     character(len=*)       , intent(in)           :: filename
     real(dp)               , intent(in), optional :: phic(:,:) ! (icell, ivar)
     type(string)           , optional             :: solution_labels(:)
     type(linear_cell_type) :: paraview_type
 
-    ! locals
+    ! These are the locals.
     integer                       :: ierr
     integer, parameter            :: fhandle = 90
     integer                       :: iresult
 
+    ! Open the output file for formatted writing.
     open(unit=fhandle, file=trim(filename), iostat= ierr, action = 'write', form = 'formatted')
     if (ierr .ne. 0) then
        write(*,'("  >> Opening file ", 39A, " failed")') trim(filename)
@@ -148,7 +150,7 @@ contains
     end if
 
     !-----------------------------------------------------------------!
-    ! Basic header information
+    ! Write the basic header information.
     !-----------------------------------------------------------------!
 
     write(fhandle, '(a)') '<VTKFile type="UnstructuredGrid" version="0.1" byte_order="LittleEndian">'
@@ -157,7 +159,7 @@ contains
          & '" NumberOfCells="', this % mesh % num_cells, '">'
 
     !-----------------------------------------------------------------!
-    ! Write the vertices
+    ! Write the vertices.
     !-----------------------------------------------------------------!
 
     write_points: block
@@ -183,21 +185,20 @@ contains
       write(fhandle, '(a)') '<Cells>'
 
       !---------------------------------------------------------------!
-      ! write cell vertex connectivities
+      ! Write the cell-to-vertex connectivities.
       !---------------------------------------------------------------!
 
       write(fhandle, '(a)') '<DataArray type="Int32" Name="connectivity" format="ascii">'
       do icell = 1, this % mesh % num_cells
-         ! correct for paraview's 0 based numbering
+         ! Correct for paraview's 0-based numbering.
          write(fhandle, *) (this % mesh % cell_vertices(jvertex, icell) - 1, &
               & jvertex = 1, this % mesh % num_cell_vertices(icell))
       end do
       write(fhandle, '(a)') '</DataArray>'
 
       !---------------------------------------------------------------!
-      ! write cell to vertex connectivity offsets
+      ! Write the cell-to-vertex connectivity offsets.
       !---------------------------------------------------------------!
-
 
       write(fhandle, '(a)') '<DataArray type="Int32" Name="offsets" format="ascii">'
       offset = 0
@@ -208,7 +209,7 @@ contains
       write(fhandle, '(a)') '</DataArray>'
 
       !---------------------------------------------------------------!
-      ! write cell types
+      ! Write the cell types.
       !---------------------------------------------------------------!
 
       write(fhandle, *) '<DataArray type="UInt8" Name="types" format="ascii">'
@@ -222,12 +223,12 @@ contains
       write(fhandle, '(a)') '<PointData></PointData>'
 
       !---------------------------------------------------------------!
-      ! write cell data
+      ! Write the cell data.
       !---------------------------------------------------------------!
 
       write(fhandle, '(a)') '<CellData>'
 
-      ! export cell volumes
+      ! Export the cell volumes.
       write(fhandle, *) '<DataArray type="Float32" Name="volume" format="ascii">'
       do icell = 1, this % mesh % num_cells
          write(fhandle, *)  this % mesh % cell_volumes(icell)
@@ -248,7 +249,7 @@ contains
 
     end block write_cells
 
-    ! close the opened tags
+    ! Close the opened tags.
     write(fhandle, '(a)') '</Piece>'
     write(fhandle, '(a)') '</UnstructuredGrid>'
     write(fhandle, '(a)') '</VTKFile>'

@@ -22,7 +22,7 @@
 
 module class_assembler
 
-  ! import dependencies
+  ! Import the dependencies.
   use iso_fortran_env         , only : dp => REAL64
   use interface_assembler     , only : base_assembler => assembler, &
        & DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE
@@ -41,107 +41,108 @@ module class_assembler
   private
   public :: assembler
   public :: CONVECTION_CENTRAL, CONVECTION_UPWIND
-  public :: DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE   ! re-exported filter codes
+  public :: DIAGONAL, LOWER_TRIANGLE, UPPER_TRIANGLE   ! Re-exported filter codes.
 
-  ! Convection scheme for the advective face flux
-  integer, parameter :: CONVECTION_CENTRAL = 1   ! 2nd-order central differencing
-  integer, parameter :: CONVECTION_UPWIND  = 2   ! 1st-order upwind (stable, high Peclet)
+  ! These constants select the convection scheme for the advective face flux.
+  integer, parameter :: CONVECTION_CENTRAL = 1   ! Second-order central differencing.
+  integer, parameter :: CONVECTION_UPWIND  = 2   ! First-order upwind (stable at high Peclet).
 
   !===================================================================!
-  ! Class responsible for matrix, right hand side assembly and boundary
-  ! conditions
+  ! This class assembles the matrix and the right-hand side and applies
+  ! the boundary conditions.
   !===================================================================!
 
   type, extends(base_assembler) :: assembler
 
-     ! Mesh object
+     ! The mesh object.
      ! type(mesh), pointer :: grid
      class(mesh)   , allocatable :: grid
      !class(physics), allocatable :: system(:) ! poisson on \Omega, dirichlet on dOmega1 , dirchlet dOmega3 , dirichlet, Neumann dOmega4
 
-     ! num_state_vars, differential_order and the state S(nvars,order+1)
-     ! are inherited from the abstract base_assembler.
+     ! The counts num_state_vars and differential_order and the state
+     ! S(nvars,order+1) are inherited from the abstract base_assembler.
 
-     ! (the number of variables per cell lives on the grid - the one
-     ! home - as grid % num_variables)
+     ! The number of variables per cell lives on the grid - the one
+     ! home - as grid % num_variables.
 
-     ! Flux vector
+     ! The flux vector.
      real(dp), allocatable :: phi(:)
 
-     ! Boundary conditions - one per (face tag, variable), addressed by name
+     ! The boundary conditions: one per (face tag, variable), addressed by name.
      type(boundary_condition), allocatable :: bcs(:,:)
 
-     ! The law-agnostic seam: the flux operator, the source operator, and
-     ! the cell-centred reconstruction field. A concrete law (diffusion,
-     ! advection, ...) is set by providing its flux and source.
-     class(flux)        , allocatable :: fx     ! flux operator F(q, grad q)
-     class(source)      , allocatable :: src    ! source operator S(q, grad q)
-     type(fvm_field)    , allocatable :: fld    ! cell-centred reconstruction
+     ! This is the law-agnostic seam: the flux operator, the source
+     ! operator, and the cell-centred reconstruction field. A concrete
+     ! law (diffusion, advection, ...) is set by providing its flux and
+     ! source.
+     class(flux)        , allocatable :: fx     ! The flux operator F(q, grad q).
+     class(source)      , allocatable :: src    ! The source operator S(q, grad q).
+     type(fvm_field)    , allocatable :: fld    ! The cell-centred reconstruction.
 
-     ! Convective face-flux scheme (central by default; upwind for stability)
+     ! The convective face-flux scheme is central by default; upwind adds stability.
      integer :: convection_scheme = CONVECTION_CENTRAL
 
    contains
 
      procedure :: create_vector
 
-     ! Boundary conditions - addressed by physical group name
+     ! Boundary conditions are addressed by physical group name.
      procedure :: set_dirichlet
      procedure :: set_neumann
      procedure :: set_robin
      procedure :: set_dirichlet_tag
      procedure, private :: set_bc
 
-     ! The pde
+     ! Set the PDE being solved.
      procedure :: set_equation
      procedure :: set_convection_scheme
 
-     ! convection-scheme-dependent advective face closures (central/upwind)
+     ! These advective face closures depend on the convection scheme (central or upwind).
      procedure, private :: adv_weights
      procedure, private :: adv_boundary
 
-     ! Evaluation routines
+     ! These routines interpolate cell values to vertices and faces.
      procedure :: evaluate_vertex_flux
      procedure :: evaluate_face_flux
 
-     ! Assembly Routines
+     ! These are the assembly routines.
      procedure :: state_residual
      procedure :: get_source
      procedure :: get_skew_source
      procedure :: get_jacobian
      procedure :: get_transpose_jacobian
      procedure :: get_jacobian_vector_product
-     ! law-agnostic flux/source assembly (the operator + rhs)
+     ! The law-agnostic flux and source assembly forms the operator and the rhs.
      procedure :: get_jvp_via_flux
      procedure :: get_source_via_flux
-     procedure :: get_operator_csr       ! assemble the operator as sparse CSR (for AMG)
+     procedure :: get_operator_csr       ! Assemble the operator as sparse CSR (for AMG).
      procedure :: write_solution
      procedure :: write_solution_fields
      procedure :: write_gmsh_series
 
-     ! Semi-discrete contract driven by the time integrator: the residual
-     ! R = M*udot + A*u - b, its jacobian-vector product and the initial
-     ! condition (deferred in base_assembler).
+     ! The semi-discrete contract is driven by the time integrator: the
+     ! residual R = M*udot + A*u - b, its jacobian-vector product, and
+     ! the initial condition (deferred in base_assembler).
      procedure :: add_residual
      procedure :: add_jacobian_vector_product
      procedure :: add_initial_condition
      procedure :: get_lumped_mass
 
-     ! the state a cell stands at, answered wherever the state lives -
-     ! the seam a partitioned frame overrides so whole-mesh walks
-     ! never index a slab they cannot see
+     ! The state a cell stands at is answered wherever the state lives.
+     ! This is the seam a partitioned frame overrides so whole-mesh
+     ! walks never index a slab they cannot see.
      procedure :: cell_state
 
      ! Design-variable sensitivity support: the design variables live on
      ! the equation (kappa); the residual design partial dR/dx is finite
-     ! differenced for now (a stand-in for analytic / complex-step).
+     ! differenced for now (a stand-in for analytic or complex-step).
      procedure :: get_num_design_vars
      procedure :: set_design_vars
      procedure :: get_design_vars
      procedure :: add_design_residual_transpose_product
      procedure :: design_residual_rows
 
-     ! Destructor
+     ! The destructor releases owned storage.
      final :: destroy
 
   end type assembler
@@ -153,7 +154,7 @@ module class_assembler
 contains
 
   !===================================================================!
-  ! Constructor for physics
+  ! Construct the assembler on the given mesh.
   !===================================================================!
 
   impure type(assembler) function construct(grid) result (this)
@@ -162,34 +163,48 @@ contains
 
     if (verbosity .ge. 1) print *, "constructing assembler"
 
-    ! Set mesh
+    ! Set the mesh.
     allocate(this % grid, source  = grid)
     if (verbosity .ge. 2) call this % grid % to_string()
-    ! One variable per cell by default ("T"); set_equation bumps this
-    ! up. The grid IS the dof/connectivity graph, so the count lives
-    ! there and the system is sized from it. For a single field
+    !---------------------------------------------------------------!
+    ! One variable per cell is the default ("T"); set_equation bumps
+    ! this up. The grid IS the dof/connectivity graph, so the count
+    ! lives there and the system is sized from it. For a single field
     ! num_state_vars = num_cells, as before.
+    !---------------------------------------------------------------!
+
     this % grid % num_variables = 1
     this % num_state_vars = this % grid % num_dofs()
 
-    ! Semi-discrete in time: R(u,udot) = M*udot + A*u - b is first order,
-    ! and the jacobian-vector product below is exact (not approximated).
-    ! Allocate the integrator state S(num_state_vars, order+1).
+    !---------------------------------------------------------------!
+    ! The system is semi-discrete in time: R(u,udot) = M*udot + A*u -
+    ! b is first order, and the jacobian-vector product below is
+    ! exact (not approximated). Allocate the integrator state
+    ! S(num_state_vars, order+1).
+    !---------------------------------------------------------------!
+
     call this % set_differential_order(1)
     this % approximate_jacobian = .false.
     call this % create_state(this % S, 0.0_dp)
 
-    ! Allocate the flux vector
+    ! Allocate the flux vector.
     allocate(this % phi(this % num_state_vars))
     this % phi = 0
 
+    !---------------------------------------------------------------!
     ! Default every (boundary tag, variable) to homogeneous dirichlet
-    ! (phi=0). The driver overrides by name. Interior faces never look
-    ! this table up.
+    ! (phi=0). The driver overrides by name. Interior faces never
+    ! look this table up.
+    !---------------------------------------------------------------!
+
     allocate(this % bcs(maxval(this % grid % tag_numbers), this % grid % num_variables))
 
-    ! Default physics: isotropic unit diffusion, no source - recovers the
-    ! old laplace operator. The driver overrides with set_equation.
+    !---------------------------------------------------------------!
+    ! The default physics is isotropic unit diffusion with no source,
+    ! which recovers the old laplace operator. The driver overrides
+    ! with set_equation.
+    !---------------------------------------------------------------!
+
     allocate(this % fx , source = diffusion_flux(1.0_dp, this % grid % num_variables))
     allocate(this % src, source = constant_source(0.0_dp, this % grid % num_variables))
     allocate(this % fld, source = fvm_field(this % grid % num_variables, this % num_state_vars))
@@ -198,7 +213,8 @@ contains
 
   !===================================================================!
   ! Set a dirichlet condition on a named physical group. The optional
-  ! var targets a single variable; omitted, it applies to all variables.
+  ! var targets a single variable; when omitted, the condition applies
+  ! to all variables.
   !===================================================================!
 
   impure subroutine set_dirichlet(this, name, value, var)
@@ -213,7 +229,7 @@ contains
   end subroutine set_dirichlet
 
   !===================================================================!
-  ! Set a neumann condition on a named physical group
+  ! Set a neumann condition on a named physical group.
   !===================================================================!
 
   impure subroutine set_neumann(this, name, flux, var)
@@ -228,7 +244,7 @@ contains
   end subroutine set_neumann
 
   !===================================================================!
-  ! Set a robin condition  a*phi + b*dphi/dn = c  on a named group
+  ! Set a robin condition  a*phi + b*dphi/dn = c  on a named group.
   !===================================================================!
 
   impure subroutine set_robin(this, name, a, b, c, var)
@@ -243,7 +259,7 @@ contains
   end subroutine set_robin
 
   !===================================================================!
-  ! Convenience for replicating tag-keyed setups without names
+  ! This convenience replicates tag-keyed setups without names.
   !===================================================================!
 
   impure subroutine set_dirichlet_tag(this, tag, value, var)
@@ -269,8 +285,12 @@ contains
     class(flux)     , intent(in)    :: flux_op    ! F(q, grad q)
     class(source)   , intent(in)    :: source_op  ! S(q, grad q)
 
-    ! Guard the ordering footgun: set_equation rebuilds the (tag,variable)
-    ! bc table, so any boundary conditions set earlier would be lost.
+    !---------------------------------------------------------------!
+    ! Guard the ordering footgun: set_equation rebuilds the
+    ! (tag,variable) bc table, so any boundary conditions set earlier
+    ! would be lost.
+    !---------------------------------------------------------------!
+
     if (allocated(this % bcs)) then
        if (any(this % bcs % tag .ne. -1)) then
           write(*,*) "warning: set_equation called after boundary conditions; ", &
@@ -278,14 +298,23 @@ contains
        end if
     end if
 
-    ! Resize the system for this many variables per cell
-    ! two graphs meet here: the law's vertices ARE the variables each
-    ! mesh cell carries - the coupling graph sizes the mesh's dofs
+    !---------------------------------------------------------------!
+    ! Resize the system for this many variables per cell. Two graphs
+    ! meet here: the law's vertices ARE the variables each mesh cell
+    ! carries - the coupling graph sizes the mesh's dofs.
+    !
+    !   (law's coupling graph) --sizes--> (mesh's dof graph)
+    !---------------------------------------------------------------!
+
     this % grid % num_variables = flux_op % num_vertices
     this % num_state_vars       = this % grid % num_dofs()
 
-    ! the integrator state S rides num_state_vars too - resize it with
-    ! the system or a multi-variable march reads a one-variable window
+    !---------------------------------------------------------------!
+    ! The integrator state S rides num_state_vars too; resize it with
+    ! the system, or a multi-variable march reads a one-variable
+    ! window.
+    !---------------------------------------------------------------!
+
     if (allocated(this % S)) deallocate(this % S)
     call this % create_state(this % S, 0.0_dp)
 
@@ -296,7 +325,7 @@ contains
     if (allocated(this % bcs)) deallocate(this % bcs)
     allocate(this % bcs(maxval(this % grid % tag_numbers), this % grid % num_variables))
 
-    ! store the flux/source operators and the reconstruction field
+    ! Store the flux and source operators and the reconstruction field.
     if (allocated(this % fx))  deallocate(this % fx)
     if (allocated(this % src)) deallocate(this % src)
     if (allocated(this % fld)) deallocate(this % fld)
@@ -343,7 +372,7 @@ contains
   end subroutine set_bc
 
   !===================================================================!
-  ! Destructor for file object
+  ! The destructor releases the assembler's storage.
   !===================================================================!
 
   pure subroutine destroy(this)
@@ -357,27 +386,32 @@ contains
   end subroutine destroy
 
   !===================================================================!
-  ! Assemble and return the full jacobian matrix
+  ! Assemble and return the full jacobian matrix.
   !===================================================================!
 
   pure subroutine get_jacobian(this, A, filter)
 
-    ! Arguments
+    ! Arguments.
     class(assembler)      , intent(in)    :: this
     real(dp), allocatable , intent(out)   :: A(:,:)
     integer , optional    , intent(in)    :: filter
 
-    ! Locals
+    ! Local variables.
     real(dp), allocatable :: ex(:)
     integer :: icol
 
     allocate(A(this % num_state_vars, this % num_state_vars))
-    allocate(ex(this % num_state_vars)); ex = 0
+    allocate(ex(this % num_state_vars))
+    ex = 0
 
     if (present(filter)) then
 
-       ! okay for nonlinear case? the state vectors are required for linearization
-       ! Assemble only a part of the matrix (lower(-1), upper(1), or diagonal (0))
+       !------------------------------------------------------------!
+       ! Is this okay for the nonlinear case? The state vectors are
+       ! required for linearization. Assemble only a part of the
+       ! matrix: lower (-1), upper (1), or diagonal (0).
+       !------------------------------------------------------------!
+
        do icol = 1, this % num_state_vars
           ex(icol) = 1.0d0
           call this % get_jacobian_vector_product(A(:,icol), ex, filter)
@@ -386,7 +420,7 @@ contains
 
     else
 
-       ! Assemble Full Matrix A = L + D + U
+       ! Assemble the full matrix A = L + D + U.
        do icol = 1, this % num_state_vars
           ex(icol) = 1.0d0
           call this % get_jacobian_vector_product(A(:,icol),ex)
@@ -400,27 +434,32 @@ contains
   end subroutine get_jacobian
 
   !===================================================================!
-  ! Assemble and return the full transpose jacobian matrix
+  ! Assemble and return the full transpose jacobian matrix.
   !===================================================================!
 
   pure subroutine get_transpose_jacobian(this, A, filter)
 
-    ! Arguments
+    ! Arguments.
     class(assembler)      , intent(in)    :: this
     real(dp), allocatable , intent(out)   :: A(:,:)
     integer , optional    , intent(in)    :: filter
 
-    ! Locals
+    ! Local variables.
     real(dp), allocatable :: ex(:)
     integer :: irow
 
     allocate(A(this % num_state_vars, this % num_state_vars))
-    allocate(ex(this % num_state_vars)); ex = 0
+    allocate(ex(this % num_state_vars))
+    ex = 0
 
     if (present(filter)) then
 
-       ! okay for nonlinear case? the state vectors are required for linearization
-       ! Assemble only a part of the matrix (lower(-1), upper(1), or diagonal (0))
+       !------------------------------------------------------------!
+       ! Is this okay for the nonlinear case? The state vectors are
+       ! required for linearization. Assemble only a part of the
+       ! matrix: lower (-1), upper (1), or diagonal (0).
+       !------------------------------------------------------------!
+
        do irow = 1, this % num_state_vars
           ex(irow) = 1.0d0
           call this % get_jacobian_vector_product(A(irow,:), ex, filter)
@@ -429,7 +468,7 @@ contains
 
     else
 
-       ! Assemble Full Matrix A = L + D + U
+       ! Assemble the full matrix A = L + D + U.
        do irow = 1, this % num_state_vars
           ex(irow) = 1.0d0
           call this % get_jacobian_vector_product(A(irow,:),ex)
@@ -442,6 +481,11 @@ contains
 
   end subroutine get_transpose_jacobian
 
+  !===================================================================!
+  ! Apply the steady operator to a vector: the matrix-free action A*q,
+  ! delivered through the law-agnostic flux seam.
+  !===================================================================!
+
   pure subroutine get_jacobian_vector_product(this, Aq, q, filter)
 
     class(assembler) , intent(in)    :: this
@@ -449,20 +493,24 @@ contains
     real(dp)         , intent(out)   :: Aq(:)
     integer, optional, intent(in)    :: filter
 
-    ! The diffusion operator is assembled law-agnostically through the
-    ! flux seam: F = -K grad q, reconstructed at faces and dotted with
-    ! the face normals. (Was the hard-coded laplace_normal block.)
+    !---------------------------------------------------------------!
+    ! The diffusion operator is assembled law-agnostically through
+    ! the flux seam: F = -K grad q, reconstructed at faces and dotted
+    ! with the face normals. (This was the hard-coded laplace_normal
+    ! block.)
+    !---------------------------------------------------------------!
+
     call this % get_jvp_via_flux(Aq, q, filter)
 
   end subroutine get_jacobian_vector_product
 
   !===================================================================!
-  ! Jacobian-vector product via the flux seam (parallel to the legacy
-  ! get_jacobian_vector_product, used to pin the new path against the
-  ! old before the switch). The normal diffusivity keff = n^T K n comes
-  ! from the flux's dF/d(grad q); the diagonal (own) and neighbour face-
-  ! jacobian contributions are formed as separate sub-expressions so the
-  ! L/U/D split stays bit-exact.
+  ! This is the jacobian-vector product via the flux seam, parallel to
+  ! the legacy get_jacobian_vector_product and used to pin the new path
+  ! against the old before the switch. The normal diffusivity
+  ! keff = n^T K n comes from the flux's dF/d(grad q); the diagonal
+  ! (own) and neighbour face-jacobian contributions are formed as
+  ! separate sub-expressions so the L/U/D split stays bit-exact.
   !===================================================================!
 
   pure subroutine get_jvp_via_flux(this, Aq, q, filter)
@@ -514,7 +562,7 @@ contains
                     keff  = this % fx % normal_diffusivity(st, nf, ivar)
                     vn    = this % fx % normal_speed(st, nf, ivar)
                     call this % adv_weights(vn, wp, wn)
-                    ! d(F.n)/dq_p and /dq_n: diffusion (keff/fdelta) + advection
+                    ! The partials d(F.n)/dq_p and d(F.n)/dq_n mix diffusion (keff/fdelta) and advection.
                     diag  = -farea*( keff/fdelta + wp)*q(p)
                     neigh = -farea*(-keff/fdelta + wn)*q(n)
                     if (present(filter)) then
@@ -569,9 +617,10 @@ contains
   ! IS the cell graph the grid already carries, so the symbolic pass just
   ! asks the grid for its neighbours. The numeric pass mirrors
   ! get_jvp_via_flux's face loop: an interior face contributes
-  ! A(p,p) += -farea*keff/fdelta and A(p,n) += +farea*keff/fdelta, a
-  ! boundary face the bc lhs_coeff to the diagonal. Single-field-or-
-  ! decoupled (the ivar loop is the multi-field hook); steady only.
+  ! A(p,p) += -farea*keff/fdelta and A(p,n) += +farea*keff/fdelta, and
+  ! a boundary face contributes the bc lhs_coeff to the diagonal. It is
+  ! single-field-or-decoupled (the ivar loop is the multi-field hook)
+  ! and steady only.
   !===================================================================!
 
   impure subroutine get_operator_csr(this, A)
@@ -589,17 +638,20 @@ contains
     ndof = this % grid % num_dofs()
 
     !---------------------------------------------------------------!
-    ! symbolic pass: the sparsity pattern IS the graph's adjacency at
-    ! dof granularity - each row leads with its diagonal, then the
-    ! same variable on each neighbour. The grid builds it.
+    ! The symbolic pass: the sparsity pattern IS the graph's
+    ! adjacency at dof granularity - each row leads with its
+    ! diagonal, then the same variable on each neighbour. The grid
+    ! builds it.
     !---------------------------------------------------------------!
+
     call this % grid % dof_adjacency(row_ptr, col_idx)
 
-    A = csr_matrix(ndof, ndof, row_ptr, col_idx)   ! pattern, values zeroed
+    A = csr_matrix(ndof, ndof, row_ptr, col_idx)   ! The pattern is set; the values are zeroed.
 
     !---------------------------------------------------------------!
-    ! numeric pass: identical entries to get_jvp_via_flux
+    ! The numeric pass writes entries identical to get_jvp_via_flux.
     !---------------------------------------------------------------!
+
     allocate(st % q(nv), st % gradq(3, nv))
     st % nv = nv
     st % q  = 0.0d0
@@ -646,9 +698,9 @@ contains
   end subroutine get_operator_csr
 
   !===================================================================!
-  ! Source via the flux seam (parallel to get_source): boundary-condition
-  ! constants (keff from the flux) + volumetric source from the source
-  ! operator + the transient rhs.
+  ! The source via the flux seam (parallel to get_source) gathers the
+  ! boundary-condition constants (keff from the flux), the volumetric
+  ! source from the source operator, and the transient rhs.
   !===================================================================!
 
   pure subroutine get_source_via_flux(this, b, boundary_only)
@@ -669,9 +721,11 @@ contains
     associate(nv => this % grid % num_variables)
 
     allocate(st % q(nv), st % gradq(3, nv))
-    st % nv = nv; st % q = 0.0d0; st % gradq = 0.0d0
+    st % nv = nv
+    st % q = 0.0d0
+    st % gradq = 0.0d0
 
-    ! boundary-condition constants
+    ! Add the boundary-condition constants.
     do icell = 1, this % grid % num_cells
        associate(faces => this % grid % cell_faces(1:this % grid % num_cell_faces(icell), icell))
          do ivar = 1, nv
@@ -700,11 +754,14 @@ contains
        end associate
     end do
 
-    ! volumetric source, evaluated at the cell's CURRENT state - a
-    ! constant source never notices, a reacting law lives on it:
-    ! S(q) must read the state the march is standing at. The state
-    ! comes through cell_state, so a partitioned frame answers for
-    ! the cells it holds instead of this walk indexing its slab.
+    !---------------------------------------------------------------!
+    ! The volumetric source is evaluated at the cell's CURRENT state;
+    ! a constant source never notices, but a reacting law lives on
+    ! it: S(q) must read the state the march is standing at. The
+    ! state comes through cell_state, so a partitioned frame answers
+    ! for the cells it holds instead of this walk indexing its slab.
+    !---------------------------------------------------------------!
+
     if (.not. bnd_only) then
        do icell = 1, this % grid % num_cells
           st % x = this % grid % cell_centers(:, icell)
@@ -722,7 +779,8 @@ contains
   end subroutine get_source_via_flux
 
   !===================================================================!
-  ! Select the convective face-flux scheme (CONVECTION_CENTRAL / _UPWIND)
+  ! Select the convective face-flux scheme (CONVECTION_CENTRAL or
+  ! CONVECTION_UPWIND).
   !===================================================================!
 
   pure subroutine set_convection_scheme(this, scheme)
@@ -732,11 +790,14 @@ contains
   end subroutine set_convection_scheme
 
   !===================================================================!
-  ! Interior advective face weights: the face flux is
+  ! Compute the interior advective face weights, where the face flux is
+  !
   !   Phi_adv = farea * (wp*q_p + wn*q_n).
-  ! central -> wp = wn = vn/2 (2nd order, skew-symmetric); upwind -> the
-  ! upstream cell carries it (wp = max(vn,0), wn = min(vn,0); 1st order,
-  ! unconditionally stable - adds |vn|/2 numerical diffusion).
+  !
+  ! The central scheme gives wp = wn = vn/2 (second order,
+  ! skew-symmetric); the upwind scheme lets the upstream cell carry it,
+  ! wp = max(vn,0) and wn = min(vn,0) (first order, unconditionally
+  ! stable, adding |vn|/2 numerical diffusion).
   !===================================================================!
 
   pure subroutine adv_weights(this, vn, wp, wn)
@@ -756,10 +817,11 @@ contains
   end subroutine adv_weights
 
   !===================================================================!
-  ! Boundary advective contribution: diagonal coefficient (on q_p) and the
-  ! rhs constant. central and upwind-inflow use the bc face value (the same
-  ! robin elimination as the diffusive closure); upwind-outflow (vn >= 0)
-  ! upwinds the interior value q_p, so the flux farea*vn*q_p is all diagonal.
+  ! Compute the boundary advective contribution: the diagonal
+  ! coefficient (on q_p) and the rhs constant. Central and
+  ! upwind-inflow use the bc face value (the same robin elimination as
+  ! the diffusive closure); upwind-outflow (vn >= 0) upwinds the
+  ! interior value q_p, so the flux farea*vn*q_p is all diagonal.
   !===================================================================!
 
   pure subroutine adv_boundary(this, bc, farea, fdelta, vn, alhs, arhs)
@@ -780,7 +842,7 @@ contains
   end subroutine adv_boundary
 
   !===================================================================!
-  ! Compute vertex values by interpolating cell center values
+  ! Compute vertex values by interpolating cell center values.
   !===================================================================!
 
   pure subroutine evaluate_vertex_flux(this, phiv, phic)
@@ -791,9 +853,13 @@ contains
 
     integer :: ivertex
 
+    !---------------------------------------------------------------!
     ! Interpolate the supplied cell centered solution to form the
-    ! nodal solution
-    allocate(phiv(this % grid % num_points)); phiv = 0
+    ! nodal solution.
+    !---------------------------------------------------------------!
+
+    allocate(phiv(this % grid % num_points))
+    phiv = 0
     do concurrent (ivertex = 1: this % grid % num_points)
        associate(&
             & w => this % grid % vertex_cell_weights(&
@@ -809,7 +875,7 @@ contains
   end subroutine evaluate_vertex_flux
 
   !===================================================================!
-  ! Compute face center values by interpolating cell center values
+  ! Compute face center values by interpolating cell center values.
   !===================================================================!
 
   pure subroutine evaluate_face_flux(this, phif, phic)
@@ -820,9 +886,13 @@ contains
 
     integer :: iface
 
+    !---------------------------------------------------------------!
     ! Interpolate the supplied cell centered solution to form the
-    ! face center solution
-    allocate(phif(this % grid % num_faces)); phif = 0
+    ! face center solution.
+    !---------------------------------------------------------------!
+
+    allocate(phif(this % grid % num_faces))
+    phif = 0
     do concurrent (iface = 1: this % grid % num_faces)
        associate(&
             & w => this % grid % face_cell_weights(&
@@ -838,10 +908,10 @@ contains
   end subroutine evaluate_face_flux
 
   !===================================================================!
-  ! The residual at state x, in this discretization's vocabulary: the
-  ! constant source plus the solution-dependent skew correction, minus
-  ! the operator action - composed here, on the layer that owns the
-  ! words, and seen by solvers only through the deferred query.
+  ! The residual at state x, in this discretization's vocabulary, is
+  ! the constant source plus the solution-dependent skew correction,
+  ! minus the operator action. It is composed here, on the layer that
+  ! owns the words, and solvers see it only through the deferred query.
   !===================================================================!
 
   impure subroutine state_residual(this, r, x)
@@ -862,39 +932,44 @@ contains
 
   end subroutine state_residual
 
+  !subroutine get_tangential_flux(this, ss, phic)
+
   !===================================================================!
-  ! Evaluate internal skew source based on the current cell states and
-  ! return
+  ! Evaluate the internal skew source from the current cell states and
+  ! return it.
   !===================================================================!
 
-  !subroutine get_tangential_flux(this, ss, phic)
   pure subroutine get_skew_source(this, ss, phic)
 
     class(assembler), intent(in)  :: this
     type(real(dp))  , intent(in)  :: phic(:)
     type(real(dp))  , intent(out) :: ss(:)
 
-    ! Evaluation procedure
+    ! The evaluation runs inside this block.
     evaluate: block
 
-    ! Local variables
+    ! Local variables.
     integer  :: icell, iface, gface, ivar, jcell
     integer  :: iv, gv, nfv
     real(dp) :: nf(3), dunit(3), kvec(3), gradt(3)
     real(dp) :: t1(3), t2(3), fc(3), rv(3), Kf(3,3)
     real(dp) :: cosang, dnorm
-    real(dp) :: av(8), bv(8), pv(8)             ! in-face coords (a,b) and phi per vertex
+    real(dp) :: av(8), bv(8), pv(8)             ! In-face coordinates (a,b) and phi per vertex.
     real(dp) :: abar, bbar, pbar, da, db, dphi
     real(dp) :: Saa, Sab, Sbb, Sap, Sbp, det, ca, cb
     type(real(dp)) , allocatable :: phiv(:), phic_v(:)
 
-    ! Make space for skew source terms
+    ! Make space for the skew source terms.
     ss = real(0,dp)
 
     allocate(phic_v(this % grid % num_cells))
 
-    ! One field at a time - gather its cell values, interpolate to
-    ! vertices, then add its non-orthogonal correction to its own dofs.
+    !---------------------------------------------------------------!
+    ! Work one field at a time: gather its cell values, interpolate
+    ! them to vertices, then add its non-orthogonal correction to its
+    ! own dofs.
+    !---------------------------------------------------------------!
+
     variables: do ivar = 1, this % grid % num_variables
 
     do jcell = 1, this % grid % num_cells
@@ -904,7 +979,7 @@ contains
 
     loop_cells: do icell = 1, this % grid % num_cells
 
-       ! Get the faces corresponding to this cell
+       ! Get the faces corresponding to this cell.
        associate( &
             & faces => this % grid % cell_faces &
             & (1:this % grid % num_cell_faces(icell),icell) &
@@ -912,35 +987,46 @@ contains
 
            loop_faces : do iface = 1, this % grid % num_cell_faces(icell)
 
-              ! Global face number
+              ! The global face number.
               gface = faces(iface)
 
-              ! Skew (non-orthogonal) correction applies to interior faces only
+              ! The skew (non-orthogonal) correction applies to interior faces only.
               domain: if (this % grid % num_face_cells(gface) .eq. 2) then
 
-                 ! Unit face normal as seen from this cell
+                 ! The unit face normal as seen from this cell.
                  nf = this % grid % cell_face_normals(1:3,iface,icell)
 
-                 ! Unit centroid-to-centroid vector
+                 ! The unit centroid-to-centroid vector.
                  dnorm  = norm2(this % grid % lvec(1:3,gface))
                  dunit  = this % grid % lvec(1:3,gface)/dnorm
                  cosang = dot_product(dunit, nf)
 
-                 ! Minimum-correction vector: the component of the face
-                 ! normal orthogonal to the centroid vector. It is bounded
-                 ! (|kvec| = |sin(angle)| <= 1), so the explicit correction
-                 ! stays finite on highly skewed/non-orthogonal cells where
-                 ! the old (lvec.t)/delta form blew up (delta -> 0).
+                 !--------------------------------------------------!
+                 ! The minimum-correction vector is the component of
+                 ! the face normal orthogonal to the centroid vector.
+                 ! It is bounded (|kvec| = |sin(angle)| <= 1), so the
+                 ! explicit correction stays finite on highly
+                 ! skewed/non-orthogonal cells where the old
+                 ! (lvec.t)/delta form blew up (delta -> 0).
+                 !--------------------------------------------------!
+
                  kvec = nf - cosang*dunit
 
-                 ! Least-squares tangential gradient over ALL face vertices.
-                 ! Work in the in-face coordinates (a,b) spanned by the
-                 ! orthonormal face-tangent pair (t1,t2), fitting
+                 !--------------------------------------------------!
+                 ! Fit a least-squares tangential gradient over ALL
+                 ! face vertices. Work in the in-face coordinates
+                 ! (a,b) spanned by the orthonormal face-tangent pair
+                 ! (t1,t2), fitting
+                 !
                  !   phi ~ phi0 + ca*a + cb*b
-                 ! so grad_t = ca*t1 + cb*t2 lies in the face plane. For a
-                 ! triangle (3 pts, 3 unknowns) this is exact; for a quad it
-                 ! is a least-squares plane. More accurate than a single-edge
-                 ! difference on stretched/warped faces.
+                 !
+                 ! so grad_t = ca*t1 + cb*t2 lies in the face plane.
+                 ! For a triangle (3 points, 3 unknowns) this is
+                 ! exact; for a quad it is a least-squares plane. It
+                 ! is more accurate than a single-edge difference on
+                 ! stretched or warped faces.
+                 !--------------------------------------------------!
+
                  t1  = this % grid % cell_face_tangents(1:3,1,iface,icell)
                  t2  = this % grid % cell_face_tangents(1:3,2,iface,icell)
                  fc  = this % grid % face_centers(1:3,gface)
@@ -981,20 +1067,24 @@ contains
                     Sbp  = Sbp + db*dphi
                  end do
 
-                 ! Solve the 2x2 normal equations for the in-plane slopes
+                 ! Solve the 2x2 normal equations for the in-plane slopes.
                  det = Saa*Sbb - Sab*Sab
                  if (abs(det) .gt. tiny(1.0_dp)) then
                     ca    = (Sbb*Sap - Sab*Sbp)/det
                     cb    = (Saa*Sbp - Sab*Sap)/det
                     gradt = ca*t1 + cb*t2
                  else
-                    gradt = 0.0_dp     ! degenerate face: skip correction
+                    gradt = 0.0_dp     ! Degenerate face: skip the correction.
                  end if
 
-                 ! Deferred non-orthogonal correction flux, projected
-                 ! through the diffusion tensor: Area*((K grad_t) . kvec).
-                 ! (Diffusion-specific correction; reads the tensor from the
-                 ! diffusion flux.)
+                 !--------------------------------------------------!
+                 ! The deferred non-orthogonal correction flux is
+                 ! projected through the diffusion tensor:
+                 ! Area*((K grad_t) . kvec). This correction is
+                 ! diffusion-specific; it reads the tensor from the
+                 ! diffusion flux.
+                 !--------------------------------------------------!
+
                  Kf = 0.0_dp
                  select type (fxp => this % fx)
                  type is (diffusion_flux)
@@ -1015,7 +1105,7 @@ contains
 
       end do variables
 
-      ! Deallocate the vertex flux values
+      ! Deallocate the vertex flux values.
       deallocate(phiv)
       deallocate(phic_v)
 
@@ -1023,22 +1113,30 @@ contains
 
   end subroutine get_skew_source
 
+  !===================================================================!
+  ! Assemble the right-hand-side source vector b for the system.
+  !===================================================================!
+
   pure subroutine get_source(this, b, boundary_only)
 
     class(assembler), intent(in)           :: this
     real(dp)        , intent(out)          :: b(:)
     logical         , intent(in), optional :: boundary_only
 
-    ! The source (boundary-condition constants + volumetric source + the
-    ! transient rhs) is assembled law-agnostically through the flux seam.
-    ! boundary_only drops the volumetric source (used by the adjoint
-    ! design partial). (Was the add_boundary_terms / cell_source blocks.)
+    !---------------------------------------------------------------!
+    ! The source (boundary-condition constants, the volumetric
+    ! source, and the transient rhs) is assembled law-agnostically
+    ! through the flux seam. boundary_only drops the volumetric
+    ! source (used by the adjoint design partial). (This was the
+    ! add_boundary_terms / cell_source blocks.)
+    !---------------------------------------------------------------!
+
     call this % get_source_via_flux(b, boundary_only)
 
   end subroutine get_source
 
   !===================================================================!
-  ! Write solution to file
+  ! Write the solution to a file.
   !===================================================================!
 
   impure subroutine write_solution(this, filename, phic)
@@ -1055,8 +1153,12 @@ contains
     integer :: icell, ivar, nv
     character(len=16) :: vname
 
-    ! Scatter the flat dof vector into per-variable cell fields and write
-    ! them all (3d, any element type) through the paraview writer.
+    !---------------------------------------------------------------!
+    ! Scatter the flat dof vector into per-variable cell fields and
+    ! write them all (3d, any element type) through the paraview
+    ! writer.
+    !---------------------------------------------------------------!
+
     nv = this % grid % num_variables
     allocate(cellfields(this % grid % num_cells, nv))
     allocate(labels(nv))
@@ -1075,9 +1177,9 @@ contains
 
   !===================================================================!
   ! Write several named flat-dof fields (e.g. the state and the adjoint
-  ! state) as cell data in one paraview file. fields is (ndof, nfield)
-  ! and labels names each. For multi-variable systems each field expands
-  ! to one column per variable (suffixed _vN).
+  ! state) as cell data in one paraview file. fields is (ndof, nfield),
+  ! and labels names each field. For multi-variable systems each field
+  ! expands to one column per variable (suffixed _vN).
   !===================================================================!
 
   impure subroutine write_solution_fields(this, filename, fields, labels)
@@ -1124,9 +1226,9 @@ contains
 
   !===================================================================!
   ! Export named flat-dof fields over a time series to a gmsh post file
-  ! (overrides base_assembler % write_gmsh_series). Scatters each field
-  ! to its cells (first variable), keys by the gmsh element tags and
-  ! writes through the gmsh writer. fields is (ndof, nfield, nstep).
+  ! (overrides base_assembler % write_gmsh_series). It scatters each
+  ! field to its cells (first variable), keys by the gmsh element tags,
+  ! and writes through the gmsh writer. fields is (ndof, nfield, nstep).
   !===================================================================!
 
   impure subroutine write_gmsh_series(this, meshfile, filename, fields, names, times)
@@ -1150,8 +1252,11 @@ contains
 
     allocate(cellvals(ncell, nfield, nstep), cell_numbers(ncell))
 
-    ! scatter the flat dof fields to cell values (first variable) and
-    ! collect the gmsh element tags the loader read
+    !---------------------------------------------------------------!
+    ! Scatter the flat dof fields to cell values (first variable) and
+    ! collect the gmsh element tags the loader read.
+    !---------------------------------------------------------------!
+
     do istep = 1, nstep
        do ifield = 1, nfield
           do icell = 1, ncell
@@ -1171,8 +1276,8 @@ contains
   end subroutine write_gmsh_series
 
   !===================================================================!
-  ! Create a state vector and sets values if a value is supplied
-  ! (overrides base_assembler % create_vector)
+  ! Create a state vector and set its values when a value is supplied
+  ! (overrides base_assembler % create_vector).
   !===================================================================!
 
   impure subroutine create_vector(this, x, val)
@@ -1188,16 +1293,17 @@ contains
   end subroutine create_vector
 
   !===================================================================!
-  ! Semi-discrete residual  R = M*udot + A*u - b, assembled from the
-  ! inherited state S (S(:,1) = u, S(:,2) = udot). The spatial operator
-  ! A*u and the source b are the steady FVM pieces
+  ! The semi-discrete residual  R = M*udot + A*u - b  is assembled from
+  ! the inherited state S (S(:,1) = u, S(:,2) = udot). The spatial
+  ! operator A*u and the source b are the steady FVM pieces
   ! (get_jacobian_vector_product and get_source with the legacy transient
   ! flag off); M = cell volume is the mass term. The time integrator owns
   ! the marching, so the assembler's own transient flag stays off here.
   !
-  ! Sign: R = M*udot - A*u + b, so the steady root (udot = 0) recovers the
-  ! laplace solve A*u = b, and dR/du = -A makes the newton operator
-  ! beta*M - alpha*A symmetric positive definite (CG-friendly).
+  ! The sign convention is R = M*udot - A*u + b, so the steady root
+  ! (udot = 0) recovers the laplace solve A*u = b, and dR/du = -A makes
+  ! the newton operator beta*M - alpha*A symmetric positive definite
+  ! (CG-friendly).
   !===================================================================!
 
   impure subroutine add_residual(this, residual, filter)
@@ -1212,7 +1318,7 @@ contains
     allocate(Au(this % num_state_vars))
     allocate(b (this % num_state_vars))
 
-    ! Steady spatial operator A*u and source b
+    ! Form the steady spatial operator action A*u and the source b.
     call this % get_jacobian_vector_product(Au, this % S(:,1), filter)
     call this % get_source(b)
 
@@ -1271,8 +1377,10 @@ contains
   end subroutine get_lumped_mass
 
   !===================================================================!
-  ! Jacobian-vector product for the integrator
+  ! The jacobian-vector product for the integrator accumulates
+  !
   !   pdt += [alpha dR/du + beta dR/dudot] vec = [beta*M - alpha*A] vec
+  !
   ! with scalars = [alpha, beta] (the linearization coefficients). The
   ! spatial operator action A*vec is the steady jacobian-vector product;
   ! M*vec is the cell-volume mass term.
@@ -1291,7 +1399,7 @@ contains
 
     allocate(Av(this % num_state_vars))
 
-    ! Steady spatial operator action A*vec
+    ! Form the steady spatial operator action A*vec.
     call this % get_jacobian_vector_product(Av, vec, filter)
 
     do icell = 1, this % grid % num_cells
@@ -1308,9 +1416,9 @@ contains
   end subroutine add_jacobian_vector_product
 
   !===================================================================!
-  ! Initial condition: u(0) from the stored field phi (a driver may prime
-  ! it; defaults to zero); udot(0) = 0, since the first BDF step recovers
-  ! the time derivative from the stencil.
+  ! The initial condition takes u(0) from the stored field phi (a driver
+  ! may prime it; it defaults to zero) and sets udot(0) = 0, since the
+  ! first BDF step recovers the time derivative from the stencil.
   !===================================================================!
 
   pure subroutine add_initial_condition(this, U)
@@ -1324,10 +1432,11 @@ contains
   end subroutine add_initial_condition
 
   !===================================================================!
-  ! Design variables live on the flux operator (the isotropic
+  ! The design variables live on the flux operator (the isotropic
   ! conductivity kappa); the assembler forwards to it. The operator now
   ! reads kappa from fx, so perturbing a design variable must update fx
-  ! (not the legacy model) for the forward solve to respond.
+  ! (not the legacy model) for the forward solve to respond. This
+  ! function reports how many design variables the flux carries.
   !===================================================================!
 
   pure integer function get_num_design_vars(this)
@@ -1338,6 +1447,10 @@ contains
 
   end function get_num_design_vars
 
+  !===================================================================!
+  ! Forward the design variables to the flux operator.
+  !===================================================================!
+
   pure subroutine set_design_vars(this, x)
 
     class(assembler), intent(inout) :: this
@@ -1346,6 +1459,10 @@ contains
     call this % fx % set_design_vars(x)
 
   end subroutine set_design_vars
+
+  !===================================================================!
+  ! Read the design variables back from the flux operator.
+  !===================================================================!
 
   pure subroutine get_design_vars(this, x)
 
@@ -1357,8 +1474,8 @@ contains
   end subroutine get_design_vars
 
   !===================================================================!
-  ! Adjoint design contribution  dfdx(k) += psi^T dR/dx_k, assembled
-  ! through the flux seam (state S held fixed):
+  ! The adjoint design contribution  dfdx(k) += psi^T dR/dx_k  is
+  ! assembled through the flux seam (state S held fixed):
   !
   !   dR/dx_k = ( + integral_faces (dF/dx_k . n)        )   interior flux
   !             ( + integral_volume (dS/dx_k)           )   source
@@ -1388,8 +1505,8 @@ contains
   end subroutine add_design_residual_transpose_product
 
   !===================================================================!
-  ! The same accumulation, over a GIVEN list of cells and a GIVEN
-  ! global state x - the seam a distributed system drives with its
+  ! This is the same accumulation over a GIVEN list of cells and a
+  ! GIVEN global state x - the seam a distributed system drives with its
   ! owned cells and a halo-filled scratch, while the serial seat
   ! above hands it every cell and the live state. dRdk rows are
   ! written only at the listed cells' dofs, so psi entries elsewhere
@@ -1432,14 +1549,18 @@ contains
                   & fdelta => this % grid % face_deltas(gface), &
                   & ftag   => this % grid % face_tags(gface))
 
-               ! reconstruct (q, grad q) at the face from the (fixed) state
+               ! Reconstruct (q, grad q) at the face from the (fixed) state.
                call this % fld % face_state(this % grid, this % grid, &
                     & x, icell, iface, gface, st)
 
                interior: if (this % grid % num_face_cells(gface) .eq. 2) then
 
-                  ! integral of (dF/dx_k . n) over the face - the flux's own
-                  ! design partial, integrated (law-agnostic)
+                  !-------------------------------------------------!
+                  ! Integrate (dF/dx_k . n) over the face: the
+                  ! flux's own design partial, integrated
+                  ! law-agnostically.
+                  !-------------------------------------------------!
+
                   block
                     type(scalar) :: dFk(3, nv)
                     real(dp)     :: nf(3)
@@ -1453,8 +1574,12 @@ contains
 
                else
 
-                  ! boundary: Robin closure scales with keff ~ kappa, so the
-                  ! design derivative is the boundary residual over kappa
+                  !-------------------------------------------------!
+                  ! On the boundary the Robin closure scales with
+                  ! keff ~ kappa, so the design derivative is the
+                  ! boundary residual over kappa.
+                  !-------------------------------------------------!
+
                   block
                     real(dp) :: nf(3), keff, lhs, rhs
                     nf = this % grid % cell_face_normals(1:3, iface, icell)

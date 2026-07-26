@@ -1,10 +1,13 @@
 !=====================================================================!
-! A mesh loader whose data is arrays, filled in memory by whoever
-! builds them - no file behind it. This is the front door for meshes
-! the code derives itself (a refinement of a loaded mesh, say): fill
-! the components, hand the loader to the mesh constructor, and the
-! derived mesh arrives with everything a loaded mesh has - faces,
-! centres, volumes, neighbours - built by the same machinery.
+! This is a mesh loader whose data is arrays, filled in memory by
+! whoever builds them - no file stands behind it. It is the front
+! door for meshes the code derives itself (a refinement of a loaded
+! mesh, say): fill the components, hand the loader to the mesh
+! constructor, and the derived mesh arrives with everything a loaded
+! mesh has - faces, centres, volumes, neighbours - built by the same
+! machinery.
+!
+!     (arrays) --> (array_mesh_loader) --> (mesh constructor)
 !
 ! The components mirror the loader contract's outputs one for one;
 ! get_mesh_data does nothing but copy them out.
@@ -25,13 +28,13 @@ module class_array_mesh_loader
 
   type, extends(mesh_loader) :: array_mesh_loader
 
-     ! vertices
+     ! These arrays describe the vertices.
      integer               :: num_vertices = 0
      integer , allocatable :: vertex_numbers(:)
      integer , allocatable :: vertex_tags(:)
      real(dp), allocatable :: vertices(:,:)
 
-     ! edges
+     ! These arrays describe the edges.
      integer              :: num_edges = 0
      integer, allocatable :: edge_numbers(:)
      integer, allocatable :: edge_tags(:)
@@ -39,7 +42,8 @@ module class_array_mesh_loader
      integer, allocatable :: num_edge_vertices(:)
      integer, allocatable :: edge_types(:)
 
-     ! faces (the boundary faces; interior faces are derived)
+     ! These arrays describe the boundary faces; interior faces are
+     ! derived.
      integer              :: num_faces = 0
      integer, allocatable :: face_numbers(:)
      integer, allocatable :: face_tags(:)
@@ -47,7 +51,7 @@ module class_array_mesh_loader
      integer, allocatable :: num_face_vertices(:)
      integer, allocatable :: face_types(:)
 
-     ! cells
+     ! These arrays describe the cells.
      integer              :: num_cells = 0
      integer, allocatable :: cell_numbers(:)
      integer, allocatable :: cell_tags(:)
@@ -55,7 +59,7 @@ module class_array_mesh_loader
      integer, allocatable :: num_cell_vertices(:)
      integer, allocatable :: cell_types(:)
 
-     ! the tag table
+     ! This is the tag table.
      integer                   :: num_tags = 0
      integer     , allocatable :: tag_numbers(:)
      integer     , allocatable :: tag_physical_dimensions(:)
@@ -70,7 +74,7 @@ module class_array_mesh_loader
 contains
 
   !===================================================================!
-  ! The contract, honoured by copying the stored arrays out
+  ! The contract is honoured by copying the stored arrays out.
   !===================================================================!
 
   subroutine get_mesh_data(this, &
@@ -113,6 +117,11 @@ contains
     integer     , allocatable, intent(out) :: tag_numbers(:)
     integer     , allocatable, intent(out) :: tag_physical_dimensions(:)
     type(string), allocatable, intent(out) :: tag_info(:)
+
+    !-----------------------------------------------------------------!
+    ! Copy every stored component straight out to the contract's
+    ! arguments, group by group.
+    !-----------------------------------------------------------------!
 
     num_vertices   = this % num_vertices
     vertex_numbers = this % vertex_numbers

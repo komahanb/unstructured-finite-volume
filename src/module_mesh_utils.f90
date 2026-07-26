@@ -1,8 +1,8 @@
 !=====================================================================!
-! The toolbox the mesh wires its graph with: cross products and
-! distances (the tape measure), find and is_subset (membership tests
-! on vertex lists), and the per-element tables that say, for each
-! cell shape, which corners bound which face - the local wiring
+! This is the toolbox the mesh wires its graph with: cross products
+! and distances (the tape measure), find and is_subset (membership
+! tests on vertex lists), and the per-element tables that say, for
+! each cell shape, which corners bound which face - the local wiring
 ! diagram every cell contributes its edges by.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -14,6 +14,7 @@ module module_mesh_utils
 
   implicit none
 
+  ! The distance interface exposes the two-point form.
   interface distance
      module procedure distanceAB
   end interface distance
@@ -21,15 +22,15 @@ module module_mesh_utils
 contains
 
   !===================================================================!
-  ! Cross product for area computations
-  ! ===================================================================!
+  ! Compute the cross product for area computations.
+  !===================================================================!
 
   pure subroutine cross_product(a, b, pdt)
 
     real(dp), intent(in)  :: a(3), b(3)
     real(dp), intent(out) :: pdt(3)
 
-    ! use skew form and generalize to n-dimensions?
+    ! The skew-symmetric form would generalize this product to n dimensions.
     pdt(1) = a(2) * b(3) - a(3) * b(2)
     pdt(2) = a(3) * b(1) - a(1) * b(3)
     pdt(3) = a(1) * b(2) - a(2) * b(1)
@@ -37,19 +38,20 @@ contains
   end subroutine cross_product
 
   !===================================================================!
-  ! Geometric distance between two points
+  ! Compute the geometric distance between two points.
   !===================================================================!
 
   pure real(dp) function distanceAB(x, y)
 
-    real(dp), intent(in)  :: X(:), y(:) ! [[x,y,z], [1:2]]
+    real(dp), intent(in)  :: X(:), y(:) ! The shape is [[x,y,z], [1:2]].
 
     distanceAB = sqrt(sum((x-y)**2))
 
   end function distanceAB
 
   !===================================================================!
-  ! Index of a target value if present in the array
+  ! Return the index of a target value if it is present in the array;
+  ! return -1 otherwise.
   !===================================================================!
 
   pure type(integer) function find(array, target_value)
@@ -72,8 +74,8 @@ contains
   end function find
 
   !===================================================================!
-  ! Checks if the first smaller array is a subset of the second larger
-  ! array
+  ! Check whether the first smaller array is a subset of the second
+  ! larger array.
   !===================================================================!
 
   pure type(logical) function is_subset(small, big)
@@ -90,17 +92,20 @@ contains
 
     if (size(small) .gt. size(big)) return
 
-    ! Create local copy of arrays
+    ! Create local copies of the arrays.
     allocate(sub, source = small)
     allocate(set, source = big)
 
-    ! Sort two arrays
+    ! Sort the two arrays.
     call isort(sub)
     call isort(set)
     lensub = size(sub)
 
-    ! Check if all entries are equal upto the length of the smallest
-    ! array
+    !-----------------------------------------------------------------!
+    ! Check that every entry of the smaller array appears in the
+    ! larger array.
+    !-----------------------------------------------------------------!
+
     is_subset = .true.
     do i = 1, lensub
        if (any(set .eq. sub(i)) .eqv. .false.) then
@@ -114,7 +119,7 @@ contains
   end function is_subset
 
   !===================================================================!
-  ! Sort an integer array ! move elsewhere?
+  ! Sort an integer array in increasing order.
   !===================================================================!
 
   pure subroutine isort(array)
@@ -125,6 +130,7 @@ contains
 
     n = ubound(array,1)
 
+    ! An exchange sort sweeps and swaps out-of-order pairs.
     do j = 1 , n
        do k = j + 1 , n
           if(array(j) > array(k)) then
@@ -137,32 +143,36 @@ contains
 
   end subroutine isort
 
-  ! generalize the name to return the number of lower dimensional entities
+  !===================================================================!
+  ! Return the number of faces a gmsh cell type owns. The name could
+  ! generalize to the number of lower dimensional entities.
+  !===================================================================!
+
   pure elemental integer function elem_type_face_count(cell_type) result (num_faces)
 
     integer, intent(in) :: cell_type
 
     select case (cell_type)
     case (1)
-       ! 2-node line.
-       num_faces = 2 ! vertex
+       ! A 2-node line.
+       num_faces = 2 ! The faces are its two vertices.
     case (2)
-       ! 3-node triangle
-       num_faces = 3  ! 3 edges
+       ! A 3-node triangle.
+       num_faces = 3  ! The faces are its three edges.
     case (3)
-       ! 4-node quadrangle
-       num_faces = 4 ! 4 edges
+       ! A 4-node quadrangle.
+       num_faces = 4 ! The faces are its four edges.
     case (4)
-       ! 4-node tetrahedron
+       ! A 4-node tetrahedron.
        num_faces = 4
     case (5)
-       ! 8-node hexahedron
+       ! An 8-node hexahedron.
        num_faces = 6
     case (6)
-       !  6-node prism
+       ! A 6-node prism.
        num_faces = 5
     case(7)
-       ! 5-node prism (pyramid)
+       ! A 5-node prism (a pyramid).
        num_faces = 5
     case default
        num_faces = 0
@@ -170,25 +180,29 @@ contains
 
   end function elem_type_face_count
 
-  ! Spatial dimension of a gmsh element type (point=0, line=1,
-  ! tri/quad=2, tet/hex/prism/pyramid=3). Used to classify elements into
-  ! cells / faces / edges by dimension rather than by type.
+  !===================================================================!
+  ! Return the spatial dimension of a gmsh element type: a point is
+  ! 0, a line is 1, a triangle or quadrangle is 2, and a tet, hex,
+  ! prism, or pyramid is 3. The mesh classifies elements into cells,
+  ! faces, and edges by dimension rather than by type.
+  !===================================================================!
+
   pure elemental integer function elem_type_dimension(elem_type) result (dim)
 
     integer, intent(in) :: elem_type
 
     select case (elem_type)
     case (15)
-       ! 1-node point
+       ! A 1-node point.
        dim = 0
     case (1)
-       ! 2-node line
+       ! A 2-node line.
        dim = 1
     case (2:3)
-       ! triangle, quadrangle
+       ! A triangle or a quadrangle.
        dim = 2
     case (4:7)
-       ! tet, hex, prism, pyramid
+       ! A tet, hex, prism, or pyramid.
        dim = 3
     case default
        dim = -1
@@ -196,32 +210,36 @@ contains
 
   end function elem_type_dimension
 
-  ! generalize the name to return the number of lower dimensional entities
+  !===================================================================!
+  ! Return the number of vertices a gmsh element type owns. The name
+  ! could generalize to the number of lower dimensional entities.
+  !===================================================================!
+
   pure elemental integer function elem_type_vertex_count(elem_type) result (num_vertices)
 
     integer, intent(in) :: elem_type
 
     select case (elem_type)
     case (1)
-       ! 2-node line.
+       ! A 2-node line.
        num_vertices = 2
     case (2)
-       ! 3-node triangle
+       ! A 3-node triangle.
        num_vertices = 3
     case (3)
-       ! 4-node quadrangle
+       ! A 4-node quadrangle.
        num_vertices = 4
     case (4)
-       ! 4-node tetrahedron
+       ! A 4-node tetrahedron.
        num_vertices = 4
     case (5)
-       ! 8-node hexahedron
+       ! An 8-node hexahedron.
        num_vertices = 8
     case (6)
-       !  6-node prism
+       ! A 6-node prism.
        num_vertices = 6
     case(7)
-       ! 5-node prism (pyramid)
+       ! A 5-node prism (a pyramid).
        num_vertices = 5
     case default
        num_vertices = 0
@@ -231,9 +249,10 @@ contains
 
   !===================================================================!
   ! Put a face's vertices into the cell's own winding order. Each
-  ! cell type carries a wiring table - which corners bound which
-  ! face, wound so the normal points outward. Match the unordered
-  ! face against the table and hand it back in the table's order.
+  ! cell type carries a wiring table that says which corners bound
+  ! which face, wound so that the normal points outward. Match the
+  ! unordered face against the table and hand it back in the table's
+  ! order.
   !===================================================================!
 
   impure subroutine order_face_vertices(cell_type, cell_vertices, face_vertices_unordered)
@@ -249,7 +268,7 @@ contains
 
     select case (cell_type)
     case (2)
-       ! 3-node triangle (2d cell) - faces are its 3 edges
+       ! A 3-node triangle (a 2d cell); its faces are its three edges.
        num_face_vertices = 2
        num_cell_faces = 3
 
@@ -264,7 +283,7 @@ contains
        face_vertices(:,3) = [cell_vertices(3), cell_vertices(1)]
 
     case (3)
-       ! 4-node quadrangle (2d cell) - faces are its 4 edges
+       ! A 4-node quadrangle (a 2d cell); its faces are its four edges.
        num_face_vertices = 2
        num_cell_faces = 4
 
@@ -280,7 +299,7 @@ contains
        face_vertices(:,4) = [cell_vertices(4), cell_vertices(1)]
 
     case (4)
-       ! 4-node tetrahedron
+       ! A 4-node tetrahedron.
        num_face_vertices = 3
        num_cell_faces = 4
 
@@ -290,14 +309,14 @@ contains
        allocate(face_vertices(num_face_vertices, num_cell_faces))
        face_vertices = 0
 
-       ! normals must point outward
+       ! The normals must point outward.
        face_vertices(:,1) = [cell_vertices(1), cell_vertices(2), cell_vertices(3)]
        face_vertices(:,2) = [cell_vertices(3), cell_vertices(2), cell_vertices(4)]
        face_vertices(:,3) = [cell_vertices(1), cell_vertices(3), cell_vertices(4)]
        face_vertices(:,4) = [cell_vertices(1), cell_vertices(4), cell_vertices(2)]
 
     case (5)
-       ! 8-node hexahedron
+       ! An 8-node hexahedron.
        num_face_vertices = 4
        num_cell_faces = 6
 
@@ -315,9 +334,9 @@ contains
        face_vertices(:,6) = [cell_vertices(1), cell_vertices(2), cell_vertices(6), cell_vertices(5)]
 
     case (6)
-       !  6-node prism (5 faces)
+       ! A 6-node prism with five faces.
        num_cell_faces = 5
-       num_face_vertices = 4 ! take the max
+       num_face_vertices = 4 ! Take the maximum.
 
        allocate(face_vertices(num_face_vertices, num_cell_faces))
        face_vertices = 0
@@ -329,9 +348,9 @@ contains
        face_vertices(:,5) = [cell_vertices(4), cell_vertices(6), cell_vertices(5)]
 
     case(7)
-       ! 5-node prism (pyramid) 5 faces
+       ! A 5-node prism (a pyramid) with five faces.
        num_cell_faces = 5
-       num_face_vertices = 4 ! take the max
+       num_face_vertices = 4 ! Take the maximum.
 
        allocate(face_vertices(num_face_vertices, num_cell_faces))
        face_vertices = 0
@@ -347,8 +366,10 @@ contains
        error stop
     end select
 
-    ! compare the input with face 1,2,3,4 and see which has the
-    ! matching count equal to input vertex count
+    !-----------------------------------------------------------------!
+    ! Compare the input with every candidate face and find the face
+    ! whose matching count equals the input vertex count.
+    !-----------------------------------------------------------------!
 
     match_face: do iface = 1, num_cell_faces
 
@@ -361,7 +382,7 @@ contains
           end if
        end do match_vertex
 
-       ! found the face with correct ordering of vertices
+       ! This is the face with the correct ordering of vertices.
        if (match_count .eq. num_face_vertices) then
           face_vertices_unordered = face_vertices(:, iface)
           exit match_face

@@ -13,20 +13,21 @@
 !                                              dots the owned rows
 !
 ! For several meshes we solve with cg on the partitioned system and
-! with cg on an identical serial system (run replicated on every image)
-! and check:
-!   1. coverage     - the owned sets partition every dof exactly once
-!   2. shrinkage    - the answer really is a slab (num_owned, not n)
-!   3. solves it    - the slabs, replicated through the trio
-!                     (scatter + sum), satisfy ||A x - b||/||b|| at tol
-!   4. == serial    - and match the serial answer entrywise
-!   5. block-AMG    - a per-image AMG on each owned block (additive
+! with cg on an identical serial system (run replicated on every
+! image), and we check:
+!   1. Coverage     - the owned sets partition every dof exactly once.
+!   2. Shrinkage    - the answer really is a slab (num_owned, not n).
+!   3. Solves it    - the slabs, replicated through the trio
+!                     (scatter + sum), satisfy ||A x - b||/||b|| at
+!                     the tolerance.
+!   4. == serial    - the slabs also match the serial answer entrywise.
+!   5. Block-AMG    - a per-image AMG on each owned block (additive
 !                     Schwarz) reaches the same answer in fewer
-!                     iterations than unpreconditioned
+!                     iterations than the unpreconditioned solve.
 !   6. RCB quality  - rcb cuts fewer edges (a smaller halo, which is
-!                     now literally less traffic) than bfs
-!   7. halo reach   - every dof an owned row touches is owned or ghost
-!                     (the exchange lists are exactly sufficient)
+!                     now literally less traffic) than bfs.
+!   7. Halo reach   - every dof an owned row touches is owned or ghost
+!                     (the exchange lists are exactly sufficient).
 !
 ! Run: /usr/bin/cafrun.openmpi -np {2,4} ./run   (and serial: ./run_serial).
 ! A nonzero exit (error stop) means a check failed.
@@ -64,28 +65,49 @@ program test_parallel
      write(*,'(a)')        " ====================================================="
   end if
 
-  ! square-20: correctness (one-level block-jacobi's gain is subdomain-count
-  ! dependent at this size - ties unpreconditioned at 4 images).
-  ! square-40: large enough that per-subdomain AMG always cuts iterations.
+  !-------------------------------------------------------------------!
+  ! The square-20 case checks correctness; one-level block-jacobi's
+  ! gain is subdomain-count dependent at this size and ties the
+  ! unpreconditioned solve at 4 images. The square-40 case is large
+  ! enough that a per-subdomain AMG always cuts iterations.
+  !-------------------------------------------------------------------!
+
   call run_square(20, 1, .false., .true., me, np, nfail)
-  call run_square(40, 2, .true. , .true., me, np, nfail)   ! print_level 2: iteration trace
+  call run_square(40, 2, .true. , .true., me, np, nfail)   ! Print level 2 traces the iterations.
   call run_box(me, np, nfail)
-  ! a non-orthogonal triangle mesh: here the skew correction is NONZERO,
-  ! so the distributed residual truly rides the wider node halo - and
-  ! must still match serial entrywise. this is the gate on the wide halo.
+
+  !-------------------------------------------------------------------!
+  ! A non-orthogonal triangle mesh: here the skew correction is
+  ! NONZERO, so the distributed residual truly rides the wider node
+  ! halo - and it must still match serial entrywise. This is the gate
+  ! on the wide halo.
+  !-------------------------------------------------------------------!
+
   call run_square_tri(me, np, nfail)
-  ! a TRANSIENT march: an implicit bdf step freezes the linearization
-  ! J = beta*M - alpha*A and drives it with newton+cg. the frozen
+
+  !-------------------------------------------------------------------!
+  ! A TRANSIENT march: an implicit bdf step freezes the linearization
+  ! J = beta*M - alpha*A and drives it with newton+cg. The frozen
   ! product and the nonlinear residual both ride the face halo; the
   ! marched final state, replicated, must match a serial march.
+  !-------------------------------------------------------------------!
+
   call run_transient(me, np, nfail)
-  ! the REVERSE halo: the genuine distributed transpose. the identity
+
+  !-------------------------------------------------------------------!
+  ! The REVERSE halo: the genuine distributed transpose. The identity
   ! <w, A v> = <Aᵀ w, v> is a real self-check of the reverse exchange.
+  !-------------------------------------------------------------------!
+
   call run_transpose(me, np, nfail)
-  ! the full circle: a transient ADJOINT GRADIENT computed on the
-  ! distributed system - forward march, backward sweep (transposed
-  ! freezes through the reverse halo), design accumulation on owned
-  ! cells - must match the serial gradient.
+
+  !-------------------------------------------------------------------!
+  ! The full circle: a transient ADJOINT GRADIENT computed on the
+  ! distributed system - a forward march, a backward sweep (transposed
+  ! freezes through the reverse halo), and design accumulation on
+  ! owned cells - must match the serial gradient.
+  !-------------------------------------------------------------------!
+
   call run_adjoint(me, np, nfail)
 
   if (me .eq. 1) then
@@ -103,8 +125,10 @@ program test_parallel
 contains
 
   !===================================================================!
-  ! 2d poisson on square-n (homogeneous dirichlet, unit source)
+  ! Solve the 2D Poisson problem on square-n (homogeneous Dirichlet
+  ! boundaries, a unit source).
   !===================================================================!
+
   subroutine run_square(n, plvl, assert_speedup, assert_cut, me, np, nfail)
     integer, intent(in)    :: n, plvl, me, np
     logical, intent(in)    :: assert_speedup, assert_cut
@@ -116,19 +140,22 @@ contains
     character(len=64) :: meshfile, label
     write(meshfile, '(a,i0,a)') "square-", n, ".msh"
     write(label,    '(a,i0)')   "square-", n
+    ! Build the grid once; the partitioned system and its serial twin share it.
     allocate(gl  , source = gmsh_loader(trim(meshfile)))
     allocate(grid, source = mesh(gl))
     allocate(fvmp, source = partitioned_assembler(grid))
     allocate(fvms, source = assembler(grid))
-    call square_bc(fvmp); call square_bc(fvms)
+    call square_bc(fvmp)
+    call square_bc(fvms)
     call fvmp % setup_partition()
     call solve_and_check(fvmp, fvms, trim(label), plvl, assert_speedup, assert_cut, me, np, nfail)
   end subroutine run_square
 
   !===================================================================!
-  ! Close the square's boundary: poisson with unit conductance, all
-  ! four bundles of half-edges pinned to zero.
+  ! Close the square's boundary: Poisson with a unit conductance and
+  ! all four bundles of half-edges pinned to zero.
   !===================================================================!
+
   subroutine square_bc(fvm)
     class(assembler), intent(inout) :: fvm
     call fvm % set_equation(diffusion_flux(1.0_dp), constant_source(-1.0_dp))
@@ -139,10 +166,12 @@ contains
   end subroutine square_bc
 
   !===================================================================!
-  ! 2d poisson on a NON-orthogonal triangle mesh. The crooked faces
-  ! make the skew correction nonzero, so the distributed residual
-  ! actually rides the wider node halo (not just runs its code path).
+  ! Solve the 2D Poisson problem on a NON-orthogonal triangle mesh.
+  ! The crooked faces make the skew correction nonzero, so the
+  ! distributed residual actually rides the wider node halo instead
+  ! of merely running its code path.
   !===================================================================!
+
   subroutine run_square_tri(me, np, nfail)
     integer, intent(in)    :: me, np
     integer, intent(inout) :: nfail
@@ -150,22 +179,25 @@ contains
     class(assembler)           , allocatable :: fvms
     class(gmsh_loader), allocatable :: gl
     class(mesh)       , allocatable :: grid
+    ! Build the grid once; the partitioned system and its serial twin share it.
     allocate(gl  , source = gmsh_loader("square-tri-40.msh"))
     allocate(grid, source = mesh(gl))
     allocate(fvmp, source = partitioned_assembler(grid))
     allocate(fvms, source = assembler(grid))
-    call square_bc(fvmp); call square_bc(fvms)
+    call square_bc(fvmp)
+    call square_bc(fvms)
     call fvmp % setup_partition()
     call solve_and_check(fvmp, fvms, "square-tri-40", 0, .false., .true., me, np, nfail)
   end subroutine run_square_tri
 
   !===================================================================!
-  ! A transient implicit march on the partitioned system. Each bdf
-  ! step freezes J = beta*M - alpha*A and drives it with newton+cg -
-  ! so the frozen product AND the nonlinear residual ride the face
-  ! halo. The marched final state, replicated, must match a serial
-  ! march step for step.
+  ! March a transient implicit problem on the partitioned system.
+  ! Each bdf step freezes J = beta*M - alpha*A and drives it with
+  ! newton+cg, so the frozen product AND the nonlinear residual ride
+  ! the face halo. The marched final state, replicated, must match a
+  ! serial march step for step.
   !===================================================================!
+
   subroutine run_transient(me, np, nfail)
     integer, intent(in)    :: me, np
     integer, intent(inout) :: nfail
@@ -182,7 +214,7 @@ contains
     allocate(grid, source = mesh(gl))
     n = grid % num_dofs()
 
-    ! the distributed march (bdf order 2, t in [0,1], dt = 0.1)
+    ! March the distributed system (bdf order 2, t in [0,1], dt = 0.1).
     allocate(fvmp, source = partitioned_assembler(grid))
     call trans_bc(fvmp)
     call fvmp % setup_partition()
@@ -192,7 +224,7 @@ contains
     allocate(u_parallel(n))
     call fvmp % replicate(real(bdf_parallel % U(ns, :, 1), dp), u_parallel)
 
-    ! the serial reference march
+    ! March the serial reference.
     allocate(fvms, source = assembler(grid))
     call trans_bc(fvms)
     bdf_serial = bdf(fvms, 0.0_dp, 1.0_dp, 0.1_dp, 2)
@@ -210,9 +242,10 @@ contains
   end subroutine run_transient
 
   !===================================================================!
-  ! Close the box for the transient case: all six sides pinned to
-  ! zero - every boundary half-edge is dirichlet.
+  ! Close the box for the transient case: all six sides are pinned to
+  ! zero, so every boundary half-edge is Dirichlet.
   !===================================================================!
+
   subroutine trans_bc(fvm)
     class(assembler), intent(inout) :: fvm
     call fvm % set_equation(diffusion_flux(2.0_dp), constant_source(1.0_dp))
@@ -225,12 +258,13 @@ contains
   end subroutine trans_bc
 
   !===================================================================!
-  ! The reverse halo, checked directly: the distributed transpose is
+  ! Check the reverse halo directly: the distributed transpose is
   ! genuine (not a symmetry claim), so <w, A v> = <Aᵀ w, v> must hold
   ! to machine precision across images - a real self-check of the
   ! reverse exchange (owned-row values scattered into ghost columns,
   ! pulled back and summed by their owners).
   !===================================================================!
+
   subroutine run_transpose(me, np, nfail)
     integer, intent(in)    :: me, np
     integer, intent(inout) :: nfail
@@ -256,12 +290,13 @@ contains
   end subroutine run_transpose
 
   !===================================================================!
-  ! The whole adjoint, distributed: forward bdf march, backward sweep
-  ! (each step a transposed freeze marched forward, its transpose
-  ! genuine through the reverse halo), then dJ/dkappa accumulated
-  ! over owned cells and summed - one number, compared against the
-  ! same computation run serially.
+  ! Run the whole adjoint distributed: a forward bdf march, then a
+  ! backward sweep (each step a transposed freeze marched forward,
+  ! its transpose genuine through the reverse halo), then dJ/dkappa
+  ! accumulated over owned cells and summed - one number, compared
+  ! against the same computation run serially.
   !===================================================================!
+
   subroutine run_adjoint(me, np, nfail)
     integer, intent(in)    :: me, np
     integer, intent(inout) :: nfail
@@ -278,15 +313,18 @@ contains
     allocate(grid, source = mesh(gl))
     func = state_energy()
 
-    ! the distributed gradient
+    ! Compute the distributed gradient.
     allocate(fvmp, source = partitioned_assembler(grid))
     call trans_bc(fvmp)
     call fvmp % setup_partition()
     bdf_parallel = bdf(fvmp, 0.0_dp, 1.0_dp, 0.1_dp, 2)
     call bdf_parallel % integrate_adjoint(func, grad_parallel)
 
-    ! the serial reference (its transpose runs on the declared
-    ! symmetry claim, as the serial adjoint tests do)
+    !-----------------------------------------------------------------!
+    ! Compute the serial reference; its transpose runs on the
+    ! declared symmetry claim, as the serial adjoint tests do.
+    !-----------------------------------------------------------------!
+
     allocate(fvms, source = assembler(grid))
     call trans_bc(fvms)
     fvms % operator_is_symmetric = .true.
@@ -305,8 +343,9 @@ contains
   end subroutine run_adjoint
 
   !===================================================================!
-  ! mixed-bc diffusion on box-36
+  ! Solve mixed-boundary-condition diffusion on box-36.
   !===================================================================!
+
   subroutine run_box(me, np, nfail)
     integer, intent(in)    :: me, np
     integer, intent(inout) :: nfail
@@ -314,22 +353,30 @@ contains
     class(assembler)           , allocatable :: fvms
     class(gmsh_loader), allocatable :: gl
     class(mesh)       , allocatable :: grid
+    ! Build the grid once; the partitioned system and its serial twin share it.
     allocate(gl  , source = gmsh_loader("box-36.msh"))
     allocate(grid, source = mesh(gl))
     allocate(fvmp, source = partitioned_assembler(grid))
     allocate(fvms, source = assembler(grid))
-    call box_bc(fvmp); call box_bc(fvms)
+    call box_bc(fvmp)
+    call box_bc(fvms)
     call fvmp % setup_partition()
-    ! box-36 is too small for block-jacobi to help or for a reliable cut win,
-    ! so don't assert speedup or the edge-cut comparison - just correctness
+
+    !-----------------------------------------------------------------!
+    ! The box-36 mesh is too small for block-jacobi to help or for a
+    ! reliable cut win, so do not assert the speedup or the edge-cut
+    ! comparison; check correctness only.
+    !-----------------------------------------------------------------!
+
     call solve_and_check(fvmp, fvms, "box-36", 0, .false., .false., me, np, nfail)
   end subroutine run_box
 
   !===================================================================!
-  ! Close the box with mixed ends: four sides pinned at different
-  ! values, while top and bottom get neumann - half-edges that fix
-  ! the flux instead of the value.
+  ! Close the box with mixed ends: four sides are pinned at different
+  ! values, while the top and the bottom get Neumann half-edges that
+  ! fix the flux instead of the value.
   !===================================================================!
+
   subroutine box_bc(fvm)
     class(assembler), intent(inout) :: fvm
     call fvm % set_equation(diffusion_flux(2.0_dp), constant_source(1.0_dp))
@@ -342,16 +389,17 @@ contains
   end subroutine box_bc
 
   !===================================================================!
-  ! solve on the partitioned system, solve on the serial reference,
-  ! and run the six checks
+  ! Solve on the partitioned system, solve on the serial reference,
+  ! and run the six checks.
   !===================================================================!
+
   subroutine solve_and_check(fvmp, fvms, label, plvl, assert_speedup, assert_cut, me, np, nfail)
     type(partitioned_assembler), allocatable, intent(inout) :: fvmp
     class(assembler)           , allocatable, intent(inout) :: fvms
     character(*), intent(in)    :: label
     integer     , intent(in)    :: plvl, me, np
-    logical     , intent(in)    :: assert_speedup   ! require block-amg to cut iters
-    logical     , intent(in)    :: assert_cut       ! require RCB cut <= BFS cut
+    logical     , intent(in)    :: assert_speedup   ! Require block-amg to cut the iterations.
+    logical     , intent(in)    :: assert_cut       ! Require that the rcb cut not exceed the bfs cut.
     integer     , intent(inout) :: nfail
 
     type(csr_matrix) :: A, Ablock
@@ -363,9 +411,13 @@ contains
     integer  :: n, nown_tot, it_unprec, it_pc, bfs_cut, rcb_cut
     real(dp) :: e, e_pc, relres, bnorm
 
-    ! partition the graph: BFS (placeholder) vs RCB (geometric); compare the
-    ! edge cut. both are deterministic, so every image computes the identical
-    ! partition and agrees without communication.
+    !-----------------------------------------------------------------!
+    ! Partition the graph, BFS (a placeholder) versus RCB (geometric),
+    ! and compare the edge cut. Both are deterministic, so every image
+    ! computes the identical partition and agrees without
+    ! communication.
+    !-----------------------------------------------------------------!
+
     gp      = fvmp % grid
     call gp % partition(np)
     bfs_cut = gp % edge_cut()
@@ -373,21 +425,29 @@ contains
     call gp % partition_rcb(fvmp % grid % cell_centers, np)
     rcb_cut = gp % edge_cut()
 
-    ! assembled operator + source (replicated on every image)
+    ! Assemble the operator and the source, replicated on every image.
     call fvmp % get_operator_csr(A)
     n = A % num_vertices
-    allocate(b(n)); call fvmp % get_source(b)
+    allocate(b(n))
+    call fvmp % get_source(b)
 
-    ! (a) unpreconditioned cg on the partitioned system: the answer
-    ! comes back as this image's owned slab
+    !-----------------------------------------------------------------!
+    ! (a) Unpreconditioned cg runs on the partitioned system; the
+    ! answer comes back as this image's owned slab.
+    !-----------------------------------------------------------------!
+
     allocate(cg, source = conjugate_gradient(20000, 1.0e-10_dp, plvl))
     call cg % solve(fvmp, x_dist)
     it_unprec = cg % last_inner_iters
     deallocate(cg)
 
-    ! (b) per-image block-AMG preconditioned cg: each image builds an AMG
-    ! on its OWNED diagonal block (additive Schwarz preconditioner); the
-    ! preconditioner needs no lists - the frame did the plumbing
+    !-----------------------------------------------------------------!
+    ! (b) Per-image block-AMG preconditioned cg: each image builds an
+    ! AMG on its OWNED diagonal block (an additive Schwarz
+    ! preconditioner). The preconditioner needs no lists; the frame
+    ! did the plumbing.
+    !-----------------------------------------------------------------!
+
     Ablock = A % principal_submatrix(fvmp % owned_dofs)
     call M % setup(Ablock)
     allocate(cg, source = conjugate_gradient(20000, 1.0e-10_dp, 0, &
@@ -396,19 +456,22 @@ contains
     it_pc = cg % last_inner_iters
     deallocate(cg)
 
-    ! serial reference: the same cg on the serial system, run replicated
+    ! Run the same cg on the serial system, replicated, as the reference.
     allocate(cg, source = conjugate_gradient(20000, 1.0e-10_dp, 0))
     call cg % solve(fvms, x_ref)
     deallocate(cg)
 
-    ! the door replicates the slabs for the global comparisons below
+    ! The door replicates the slabs for the global comparisons below.
     allocate(x_dist_full(n), x_pc_full(n))
     call fvmp % replicate(x_dist, x_dist_full)
     call fvmp % replicate(x_pc  , x_pc_full)
 
-    ! the writer at the door: image 1 paints the distributed answer
-    ! and the decomposition that produced it - the solve draws its
-    ! own partition
+    !-----------------------------------------------------------------!
+    ! The writer waits at the door: image 1 paints the distributed
+    ! answer and the decomposition that produced it, so the solve
+    ! draws its own partition.
+    !-----------------------------------------------------------------!
+
     if (me .eq. 1) then
        write_door: block
          type(paraview_writer), allocatable :: pw
@@ -426,16 +489,18 @@ contains
        end block write_door
     end if
 
-    ! check 1: owned sets cover every dof exactly once
+    ! Check 1: the owned sets cover every dof exactly once.
     nown_tot = size(fvmp % owned_dofs)
     call co_sum(nown_tot)
 
-    ! check 3: partitioned solution actually solves the system
-    allocate(r(n)); call A % matvec(x_dist_full, r); r = r - b
+    ! Check 3: the partitioned solution actually solves the system.
+    allocate(r(n))
+    call A % matvec(x_dist_full, r)
+    r = r - b
     bnorm  = max(norm2(b), tiny(1.0_dp))
     relres = norm2(r)/bnorm
 
-    ! checks 4 + 5: both partitioned solves match the serial answer
+    ! Checks 4 and 5: both partitioned solves match the serial answer.
     e    = maxval(abs(x_dist_full - x_ref))/max(maxval(abs(x_ref)), tiny(1.0_dp))
     e_pc = maxval(abs(x_pc_full - x_ref))/max(maxval(abs(x_ref)), tiny(1.0_dp))
 
@@ -452,15 +517,20 @@ contains
        write(*,'(4x,a,i0,a,i0)')      "iters  unprec=", it_unprec, "  block-amg=", it_pc
     end if
 
-    ! rung-4 readiness: the halo is exact. every dof an owned row of
+    !-----------------------------------------------------------------!
+    ! Rung-4 readiness: the halo is exact. Every dof an owned row of
     ! the operator reaches is either owned or in the ghost halo - so
-    ! the day vectors stop being replicated, the graph's ghost lists
-    ! ARE the exchange lists, nothing more and nothing less needed.
+    ! the day the vectors stop being replicated, the graph's ghost
+    ! lists ARE the exchange lists; nothing more and nothing less is
+    ! needed.
+    !-----------------------------------------------------------------!
+
     halo_reach: block
       logical, allocatable :: known(:)
       integer, allocatable :: ghost_dofs(:)
       integer :: i2, v2, e2, miss
-      allocate(known(n)); known = .false.
+      allocate(known(n))
+      known = .false.
       known(fvmp % owned_dofs) = .true.
       ghost_dofs = fvmp % grid % dofs_of(fvmp % grid % ghosts(me))
       if (size(ghost_dofs) .gt. 0) known(ghost_dofs) = .true.
@@ -476,33 +546,52 @@ contains
       if (miss .ne. 0) nfail = nfail + 1
     end block halo_reach
 
-    ! the node halo (the skew's ring) reaches wider than the face halo
-    ! (the product's ring): cells sharing a mesh POINT include the
-    ! face neighbours and more. on >1 image it must be strictly wider.
+    !-----------------------------------------------------------------!
+    ! The node halo (the skew's ring) reaches wider than the face
+    ! halo (the product's ring): cells sharing a mesh POINT include
+    ! the face neighbours and more. On more than one image it must be
+    ! strictly wider.
+    !-----------------------------------------------------------------!
+
     if (me .eq. 1) then
        write(*,'(4x,a,i0,a,i0,a)') &
             & "halo widths      : face ", fvmp % num_local - fvmp % num_owned, &
             & "  node ", fvmp % num_wide - fvmp % num_owned, "  (node >= face)"
     end if
-    ! superset invariant: a face-ghost shares a face, hence 2+ points,
-    ! hence is a node-ghost too - so the node halo can never be smaller
+
+    !-----------------------------------------------------------------!
+    ! Superset invariant: a face-ghost shares a face, hence two or
+    ! more points, hence is a node-ghost too - so the node halo can
+    ! never be smaller than the face halo.
+    !-----------------------------------------------------------------!
+
     if (fvmp % num_wide .lt. fvmp % num_local) nfail = nfail + 1
 
-    ! the vectors actually shrank: the answer is the owned slab, not
-    ! a photocopy of the whole
+    !-----------------------------------------------------------------!
+    ! The vectors actually shrank: the answer is the owned slab, not
+    ! a photocopy of the whole.
+    !-----------------------------------------------------------------!
+
     if (size(x_dist) .ne. size(fvmp % owned_dofs))          nfail = nfail + 1
     if (np .gt. 1 .and. size(x_dist) .ge. n)         nfail = nfail + 1
 
+    ! The scalar gates: full coverage, a real cut, and the tolerances.
     if (nown_tot .ne. n)                 nfail = nfail + 1
     if (np .gt. 1 .and. gp % ncut .le. 0) nfail = nfail + 1
     if (relres .gt. 1.0e-6_dp)           nfail = nfail + 1
     if (e .gt. 1.0e-6_dp)                nfail = nfail + 1
     if (e_pc .gt. 1.0e-6_dp)             nfail = nfail + 1
-    ! block-AMG cuts iterations on the well-resolved elliptic problems; on a
-    ! trivially small mesh (box-36, ~7 cells/block) unpreconditioned CG already
-    ! converges in a handful of iters and block-jacobi cannot beat it.
+
+    !-----------------------------------------------------------------!
+    ! Block-AMG cuts iterations on the well-resolved elliptic
+    ! problems; on a trivially small mesh (box-36, ~7 cells/block)
+    ! unpreconditioned CG already converges in a handful of
+    ! iterations and block-jacobi cannot beat it.
+    !-----------------------------------------------------------------!
+
     if (assert_speedup .and. it_pc .ge. it_unprec) nfail = nfail + 1
-    ! RCB should cut no more edges (smaller/equal halo) than BFS
+
+    ! RCB should cut no more edges (a smaller or equal halo) than BFS.
     if (np .gt. 1 .and. assert_cut .and. rcb_cut .gt. bfs_cut) nfail = nfail + 1
 
     deallocate(b, x_dist, x_pc, x_ref, r, x_dist_full, x_pc_full)

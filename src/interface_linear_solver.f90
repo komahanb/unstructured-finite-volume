@@ -31,9 +31,9 @@
 ! the same two questions every system answers, so every solver
 ! marches it through the one shared iteration.
 !
-! linear_solver extends the common marcher base: march (the marcher's
-! deferred contract) is implemented by converge, and solve is the
-! family's provided wrapper over a plain solution vector.
+! The type linear_solver extends the common marcher base: march (the
+! marcher's deferred contract) is implemented by converge, and solve
+! is the family's provided wrapper over a plain solution vector.
 !
 ! Author : Komahan Boopathy
 !=====================================================================!
@@ -55,21 +55,23 @@ module interface_linear_solver
   public :: preconditioner
   public :: MANUAL, AUTO
 
-  ! Acceptance tolerance of the transpose-consistency gate. The verify
-  ! returns a relative defect (scaled by max(|lhs|, |rhs|, 1)), so this
-  ! is dimensionless and sits just above machine precision.
+  ! The acceptance tolerance of the transpose-consistency gate. The
+  ! verification returns a relative defect (scaled by max(|lhs|, |rhs|, 1)),
+  ! so the tolerance is dimensionless and sits just above machine precision.
   real(dp), parameter :: transpose_defect_tol = 1.0d-12
 
-  ! tuning modes: MANUAL takes the parameters as given (default); AUTO lets
-  ! the solver select its parameters itself (opt-in, never default)
+  ! The tuning modes: MANUAL takes the parameters as given (the default);
+  ! AUTO lets the solver select its parameters itself (opt-in, never the
+  ! default).
   integer, parameter :: MANUAL = 0
   integer, parameter :: AUTO   = 1
 
   !===================================================================!
-  ! Abstract preconditioner: applies an approximate inverse z = M^-1 r -
-  ! a cheap approximation of the residual -> correction map. A solver's
-  ! kernel calls apply where its algorithm requires; concrete
-  ! preconditioners (algebraic multigrid, jacobi, ...) extend this.
+  ! The abstract preconditioner applies an approximate inverse
+  ! z = M^-1 r - a cheap approximation of the residual -> correction
+  ! map. A solver's kernel calls apply where its algorithm requires;
+  ! concrete preconditioners (algebraic multigrid, jacobi, ...) extend
+  ! this contract.
   !===================================================================!
 
   type, abstract :: preconditioner
@@ -78,33 +80,34 @@ module interface_linear_solver
   end type preconditioner
 
   !===================================================================!
-  ! Linear solver datatype
+  ! The linear solver datatype.
   !===================================================================!
 
   type, abstract, extends(marcher) :: linear_solver
 
-     ! max_tol, max_it and print_level are inherited from marcher
+     ! The marcher base supplies max_tol, max_it and print_level.
 
-     ! iteration-history trace written when print_level == -1
-     ! (machine-readable columns, not prose)
+     ! The iteration-history trace is written when print_level == -1
+     ! (machine-readable columns, not prose).
      character(len=:), allocatable :: res_file
 
-     ! the two operator slots (storage; kernels apply them)
+     ! The two operator slots are storage; the kernels apply them.
      class(preconditioner), allocatable :: pre_conditioner
      class(preconditioner), allocatable :: post_conditioner
 
-     ! MANUAL (default) or AUTO - see tune below
+     ! MANUAL (the default) or AUTO; see tune below.
      integer :: tuning = MANUAL
 
-     ! inner iterations accumulated over the most recent march - the
-     ! diagnostic lives on the object (the caller owns the state; no
-     ! module-scope side channels)
+     ! The count of inner iterations accumulated over the most recent
+     ! march lives on the object: the caller owns the state, and there
+     ! are no module-scope side channels.
      integer :: last_inner_iters = 0
 
-     ! a carried graph and its coloring: when a stationary solver
+     ! A carried graph and its coloring: when a stationary solver
      ! carries the system's graph, its sweep goes color by color
-     ! (see colored_sweep). color_list holds the dofs grouped by
-     ! color; color c's dofs are color_list(color_ptr(c) : ptr(c+1)-1)
+     ! (see colored_sweep). The array color_list holds the dofs grouped
+     ! by color; color c's dofs sit in
+     ! color_list(color_ptr(c) : color_ptr(c+1) - 1).
      class(graph), allocatable :: g
      integer                   :: ncolors = 0
      integer     , allocatable :: color_ptr(:)
@@ -112,58 +115,60 @@ module interface_linear_solver
 
    contains
 
-     ! march (the marcher contract): the residual-minimization iteration,
-     ! generic over the state. converge is also bound by name so the one
-     ! documented override can delegate to it; solve is the family
-     ! wrapper over a plain solution vector.
+     ! The binding march (the marcher contract) is the residual-minimization
+     ! iteration, generic over the state. The name converge is also bound
+     ! so the one documented override can delegate to it; solve is the
+     ! family wrapper over a plain solution vector.
      procedure :: march => converge
      procedure :: converge
      procedure :: solve
 
-     ! deferred: the one-step correction (the analogue of the
-     ! integrator's step)
+     ! Deferred: the one-step correction (the analogue of the
+     ! integrator's step).
      procedure(iterate_interface), deferred :: iterate
 
-     ! passthrough apply helpers for the two slots
+     ! These helpers apply the two slots, passing through when a slot
+     ! is empty.
      procedure :: apply_pre_conditioner
      procedure :: apply_post_conditioner
 
-     ! carry a graph (color it, group the dofs), and the exact
-     ! stationary sweep the coloring buys
+     ! The binding carry holds a graph (colors it, groups the dofs);
+     ! colored_sweep is the exact stationary sweep the coloring buys.
      procedure :: carry
      procedure :: colored_sweep
 
-     ! parameter-selection hook, called by converge when tuning == AUTO:
-     ! once at entry (pass 0 - measure the convergence factor, set the
-     ! parameter) and once per pass with the measured rate (analogous to
-     ! adaptive time-step control). three requirements: AUTO is opt-in,
-     ! the residual rate is the progress measurement, and a parameter
-     ! change that worsens the rate is reverted and discarded. default:
-     ! no parameters to select - a solver with a selection rule
-     ! overrides.
+     ! The parameter-selection hook is called by converge when
+     ! tuning == AUTO: once at entry (pass 0 - measure the convergence
+     ! factor, set the parameter) and once per pass with the measured
+     ! rate (analogous to adaptive time-step control). Three
+     ! requirements hold: AUTO is opt-in, the residual rate is the
+     ! progress measurement, and a parameter change that worsens the
+     ! rate is reverted and discarded. By default there are no
+     ! parameters to select; a solver with a selection rule overrides.
      procedure :: tune
 
-     ! the solver's objective measurement: largest eigenvalue size of the
-     ! operator by power iteration (products and norms only)
+     ! The solver's objective measurement is the largest eigenvalue
+     ! size of the operator by power iteration (products and norms
+     ! only).
      procedure :: estimate_spectral_radius
 
-     ! shared reporting, residual-based
+     ! These bindings provide the shared, residual-based reporting.
      procedure :: residual_norm
      procedure :: monitor_step
 
   end type linear_solver
 
   !===================================================================!
-  ! Deferred interfaces
+  ! The deferred interfaces.
   !===================================================================!
 
   abstract interface
 
      ! One correction step: drive A dx = r starting from dx = 0, where
-     ! A is the system's operator and r the residual handed in by the
-     ! outer iteration. iter reports the kernel's iterations for the
-     ! monitor. this is intent(inout): the honest signature for a
-     ! solver that keeps notes on itself.
+     ! A is the system's operator and r is the residual handed in by
+     ! the outer iteration. The argument iter reports the kernel's
+     ! iterations for the monitor. The passed object is intent(inout):
+     ! the honest signature for a solver that keeps notes on itself.
      impure subroutine iterate_interface(this, system, r, dx, iter)
        import linear_solver
        import assembler
@@ -175,7 +180,7 @@ module interface_linear_solver
        integer             , intent(out)   :: iter
      end subroutine iterate_interface
 
-     ! z = M^-1 r  (the approximate-inverse action)
+     ! Apply z = M^-1 r (the approximate-inverse action).
      subroutine apply_interface(this, r, z)
        import preconditioner
        import dp
@@ -189,7 +194,7 @@ module interface_linear_solver
 contains
 
   !===================================================================!
-  ! The provided solve: evaluate the residual, stop when it has dropped
+  ! The provided march: evaluate the residual, stop when it has dropped
   ! below the tolerance relative to its initial value, otherwise apply
   ! the correction step and update the solution. When the residual does
   ! not depend on the solution this reduces to a single solve plus a
@@ -202,16 +207,19 @@ contains
     class(linear_solver)  , intent(inout)        :: this
     class(assembler)      , intent(inout)        :: system
     class(state)          , intent(inout)        :: s
-    integer               , intent(in), optional :: mode  ! FORWARD (default) / REVERSE
+    integer               , intent(in), optional :: mode  ! FORWARD (the default) or REVERSE.
 
     real(dp), allocatable :: r(:), dx(:), x(:)
     real(dp) :: rnorm, rnorm0, rnorm_prev, dxnorm
     integer  :: pass, inner
 
-    ! Reject a preconditioned REVERSE solve: under the transpose the two
-    ! slots swap roles and must apply their transposes, and that is not
-    ! implemented yet. Failing loudly here prevents a silently
+    !-----------------------------------------------------------------!
+    ! Reject a preconditioned REVERSE solve: under the transpose the
+    ! two slots swap roles and must apply their transposes, and that
+    ! is not implemented yet. Failing loudly here prevents a silently
     ! mis-preconditioned adjoint solve.
+    !-----------------------------------------------------------------!
+
     if (present(mode)) then
        if (mode .eq. REVERSE .and. &
             & (allocated(this % pre_conditioner) .or. &
@@ -221,7 +229,7 @@ contains
        end if
     end if
 
-    ! a wrong tag dies at the door with its name
+    ! A wrong tag dies at the door with its name.
     if (present(mode)) then
        if (.not. is_valid_mode(mode)) then
           write(*,'(1x,a,i0)') "converge: invalid mode tag ", mode
@@ -229,13 +237,16 @@ contains
        end if
     end if
 
-    ! A REVERSE march through this shared iteration is valid only on a
-    ! declared-symmetric operator: the loop below evaluates the forward
-    ! residual and forward sweeps, which IS the adjoint solve exactly
-    ! when J^T = J. A genuinely non-symmetric REVERSE solve needs the
-    ! direction threaded through the residual and the sweep - deferred
-    ! and tracked in the register; refusing here prevents certifying a
-    ! claim the iteration would then ignore.
+    !-----------------------------------------------------------------!
+    ! A REVERSE march through this shared iteration is valid only on
+    ! a declared-symmetric operator: the loop below evaluates the
+    ! forward residual and forward sweeps, which IS the adjoint solve
+    ! exactly when J^T = J. A genuinely non-symmetric REVERSE solve
+    ! needs the direction threaded through the residual and the sweep;
+    ! that work is deferred and tracked in the register. Refusing here
+    ! prevents certifying a claim the iteration would then ignore.
+    !-----------------------------------------------------------------!
+
     if (present(mode)) then
        if (mode .eq. REVERSE .and. .not. system % operator_is_symmetric) then
           error stop "converge: a REVERSE march through the shared iteration requires " // &
@@ -244,13 +255,17 @@ contains
        end if
     end if
 
-    ! Verify-before: a declared symmetry claim is checked against the
-    ! analytic identity <w, J v> = <J^T w, v> before the FIRST march of
-    ! any direction - forward marches consume the claim too (the
-    ! normal-equation sweeps issue transpose products from inside a
-    ! forward march). Once per system, a handful of products, machine
-    ! precision, no truncation error. The comparison is written so a NaN
-    ! defect also refuses (NaN fails every ordered comparison).
+    !-----------------------------------------------------------------!
+    ! Verify before use: a declared symmetry claim is checked against
+    ! the analytic identity <w, J v> = <J^T w, v> before the FIRST
+    ! march of any direction - forward marches consume the claim too
+    ! (the normal-equation sweeps issue transpose products from inside
+    ! a forward march). The check runs once per system, costs a
+    ! handful of products, and carries no truncation error beyond
+    ! machine precision. The comparison is written so a NaN defect
+    ! also refuses (NaN fails every ordered comparison).
+    !-----------------------------------------------------------------!
+
     if (system % operator_is_symmetric .and. .not. system % transpose_verified) then
        verify_transpose: block
          real(dp) :: defect
@@ -264,7 +279,7 @@ contains
        end block verify_transpose
     end if
 
-    ! parameter selection at entry (AUTO only)
+    ! Parameter selection runs at entry (AUTO only).
     if (this % tuning .eq. AUTO) call this % tune(system, 0, 1.0_dp)
 
     allocate(x(system % num_state_vars))
@@ -283,7 +298,7 @@ contains
 
     outer_iterations: do pass = 1, this % max_it + 1
 
-       ! the residual at the state's current solution values
+       ! Evaluate the residual at the state's current solution values.
        x = current_solution(s)
        call system % get_residual(r, x)
        rnorm = sqrt(system % inner_product(r, r))
@@ -304,17 +319,20 @@ contains
                & sqrt(system % inner_product(x, x)))
        end if
 
-       ! termination on the true residual
+       ! Terminate on the true residual.
        if (rnorm .le. this % max_tol * rnorm0) exit outer_iterations
 
-       ! parameter adaptation from the measured rate (AUTO only)
+       ! Adapt the parameters from the measured rate (AUTO only).
        if (this % tuning .eq. AUTO .and. pass .gt. 1) then
           call this % tune(system, pass, rnorm/rnorm_prev)
        end if
 
-       ! stagnation: the sweep can no longer reduce the residual (its
-       ! floor - typically machine precision). this is the criterion the
-       ! old update-norm loop applied implicitly.
+       !--------------------------------------------------------------!
+       ! Stagnation: the sweep can no longer reduce the residual (its
+       ! floor, typically machine precision). This is the criterion
+       ! the old update-norm loop applied implicitly.
+       !--------------------------------------------------------------!
+
        if (pass .gt. 1) then
           if (rnorm .ge. 0.999_dp*rnorm_prev) then
              if (this % print_level .gt. 0) then
@@ -332,7 +350,7 @@ contains
           exit outer_iterations
        end if
 
-       ! one correction step: A dx = r from dx = 0; the state applies it
+       ! Take one correction step, A dx = r from dx = 0; the state applies it.
        call this % iterate(system, r, dx, inner)
        this % last_inner_iters = this % last_inner_iters + inner
 
@@ -346,8 +364,8 @@ contains
   end subroutine converge
 
   !===================================================================!
-  ! The family wrapper: solve for a plain solution vector. Wraps x in
-  ! an order-0 state (its update rule is u <- u + du), marches, and
+  ! The family wrapper: solve for a plain solution vector. It wraps x
+  ! in an order-0 state (its update rule is u <- u + du), marches, and
   ! copies the values back out. Every existing call site keeps this
   ! signature.
   !===================================================================!
@@ -357,7 +375,7 @@ contains
     class(linear_solver)  , intent(inout)        :: this
     class(assembler)      , intent(inout)        :: system
     real(dp), allocatable , intent(out)          :: x(:)
-    integer               , intent(in), optional :: mode  ! FORWARD (default) / REVERSE
+    integer               , intent(in), optional :: mode  ! FORWARD (the default) or REVERSE.
 
     type(differential_state) :: s
 
@@ -370,7 +388,8 @@ contains
   end subroutine solve
 
   !===================================================================!
-  ! The solution values of a state (its zeroth derivative order)
+  ! Return the solution values of a state (its zeroth derivative
+  ! order).
   !===================================================================!
 
   function current_solution(s) result(x)
@@ -386,7 +405,8 @@ contains
   end function current_solution
 
   !===================================================================!
-  ! Apply the pre-operator z = M^-1 r, or pass through if none attached
+  ! Apply the pre-operator z = M^-1 r, or pass through if none is
+  ! attached.
   !===================================================================!
 
   impure subroutine apply_pre_conditioner(this, r, z)
@@ -404,7 +424,8 @@ contains
   end subroutine apply_pre_conditioner
 
   !===================================================================!
-  ! Apply the post-operator z = M^-1 r, or pass through if none attached
+  ! Apply the post-operator z = M^-1 r, or pass through if none is
+  ! attached.
   !===================================================================!
 
   impure subroutine apply_post_conditioner(this, r, z)
@@ -436,6 +457,7 @@ contains
     integer, allocatable :: colors(:), vertex_ptr(:), vertex_list(:)
     integer :: c, v, nv
 
+    ! Keep a copy of the graph and color it.
     allocate(this % g, source = g)
 
     nv     = g % num_vertices
@@ -443,8 +465,10 @@ contains
     this % ncolors = 0
     if (nv .gt. 0) this % ncolors = maxval(colors)
 
+    ! Group the vertices by color with the counting kernel.
     call counting_sort(this % ncolors, colors, [(v, v = 1, nv)], vertex_ptr, vertex_list)
 
+    ! Expand each color's vertices into their dofs behind a prefix pointer.
     allocate(this % color_ptr(this % ncolors + 1))
     this % color_ptr(1) = 1
     do c = 1, this % ncolors
@@ -490,7 +514,7 @@ contains
     dx = 0.0_dp
     allocate(Adx, D, dxold, identity, mold = dx)
 
-    ! the diagonal (the self-loop weights)
+    ! Extract the diagonal (the self-loop weights).
     identity = 1.0_dp
     call system % get_jacobian_residual_product(D, identity, part = DIAGONAL)
 
@@ -500,7 +524,9 @@ contains
        return
     end if
 
-    iter = 1; tol = huge(1.0_dp)
+    ! Sweep until the correction stalls below tolerance or the iteration budget runs out.
+    iter = 1
+    tol = huge(1.0_dp)
     do while (tol .gt. this % max_tol .and. iter .lt. this % max_it)
 
        dxold = dx
@@ -520,7 +546,7 @@ contains
   end subroutine colored_sweep
 
   !===================================================================!
-  ! Norm of the system's residual at x
+  ! Compute the norm of the system's residual at x.
   !===================================================================!
 
   impure function residual_norm(this, sys, x) result(rnorm)
@@ -539,9 +565,9 @@ contains
   end function residual_norm
 
   !===================================================================!
-  ! One row of the convergence table: the residual (absolute and as a
-  ! drop from the initial one), the correction size (absolute and
-  ! relative to the answer). Prints the header on the first pass.
+  ! Print one row of the convergence table: the residual (absolute and
+  ! as a drop from the initial one) and the correction size (absolute
+  ! and relative to the answer). The header prints on the first pass.
   !===================================================================!
 
   impure subroutine monitor_step(this, pass, inner, rnorm, rnorm0, dxnorm, xnorm)
@@ -575,23 +601,23 @@ contains
   end subroutine monitor_step
 
   !===================================================================!
-  ! Parameter-selection hook (see the binding comment). Default: this
-  ! solver has no parameters to select.
+  ! This is the parameter-selection hook (see the binding comment).
+  ! By default this solver has no parameters to select.
   !===================================================================!
 
   impure subroutine tune(this, system, pass, rate)
 
     class(linear_solver), intent(inout) :: this
     class(assembler)    , intent(in)    :: system
-    integer             , intent(in)    :: pass   ! 0 = at entry (static)
-    real(dp)            , intent(in)    :: rate   ! ||r_k||/||r_{k-1}|| when pass > 1
+    integer             , intent(in)    :: pass   ! Pass 0 means at entry (static).
+    real(dp)            , intent(in)    :: rate   ! The rate is ||r_k||/||r_{k-1}|| when pass > 1.
 
   end subroutine tune
 
   !===================================================================!
-  ! Largest eigenvalue size of the operator - the graph module's
-  ! power kernel iterates the system's whole-operator action. The
-  ! kernel's fixed start makes the measurement reproducible.
+  ! Measure the largest eigenvalue size of the operator: the graph
+  ! module's power kernel iterates the system's whole-operator action.
+  ! The kernel's fixed start makes the measurement reproducible.
   !===================================================================!
 
   impure subroutine estimate_spectral_radius(this, system, mu, max_iter)
@@ -605,7 +631,11 @@ contains
 
   contains
 
-    ! the system's whole-operator action (system captured)
+    !=================================================================!
+    ! The system's whole-operator action (the system is captured from
+    ! the host).
+    !=================================================================!
+
     subroutine whole_action(v, w)
       real(dp), intent(in)  :: v(:)
       real(dp), intent(out) :: w(:)
@@ -615,7 +645,8 @@ contains
   end subroutine estimate_spectral_radius
 
   !===================================================================!
-  ! Name of the iteration-history trace file (print_level == -1)
+  ! Return the name of the iteration-history trace file
+  ! (print_level == -1).
   !===================================================================!
 
   pure function history_file(this) result(fname)

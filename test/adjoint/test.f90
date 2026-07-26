@@ -37,18 +37,24 @@ program test_adjoint
 
   nfail = 0
 
-  ! build the assembler on a small box
+  ! Build the assembler on a small box.
   allocate(gl  , source = gmsh_loader("box-36.msh"))
   allocate(grid, source = mesh(gl))
   allocate(fvm , source = assembler(grid))
 
-  ! steady poisson: isotropic kappa = 2, unit volumetric source, all six
-  ! faces held at zero (homogeneous dirichlet)
+  !-------------------------------------------------------------------!
+  ! Steady poisson: isotropic kappa = 2, a unit volumetric source,
+  ! and all six faces held at zero (homogeneous dirichlet).
+  !-------------------------------------------------------------------!
+
   call fvm % set_equation(diffusion_flux(2.0_dp), constant_source(1.0_dp))
 
-  ! the diffusion operator is symmetric: declare it on the configured
+  !-------------------------------------------------------------------!
+  ! The diffusion operator is symmetric: declare it on the configured
   ! instance so the adjoint's transpose products run as an explicit,
-  ! gate-verifiable claim rather than a refusal
+  ! gate-verifiable claim rather than a refusal.
+  !-------------------------------------------------------------------!
+
   fvm % operator_is_symmetric = .true.
   call fvm % set_dirichlet("front" , 0.0_dp)
   call fvm % set_dirichlet("back"  , 0.0_dp)
@@ -59,15 +65,18 @@ program test_adjoint
 
   func = state_energy()
 
-  ! adjoint gradient (also hand back the adjoint state) and the fd reference
+  ! Compute the adjoint gradient (also hand back the adjoint state) and the fd reference.
   call nl % eval_func_grad   (fvm, func, g_adj, psi)
   call nl % eval_fd_func_grad(fvm, func, g_fd)
 
-  ! export the state and adjoint state for post-processing (paraview .vtu
-  ! and gmsh .msh)
+  !-------------------------------------------------------------------!
+  ! Export the state and the adjoint state for post-processing
+  ! (paraview .vtu and gmsh .msh).
+  !-------------------------------------------------------------------!
+
   allocate(fields(fvm % num_state_vars, 2))
-  fields(:,1) = real(fvm % S(:,1), dp)   ! state u
-  fields(:,2) = real(psi         , dp)   ! adjoint state psi
+  fields(:,1) = real(fvm % S(:,1), dp)   ! The state u.
+  fields(:,2) = real(psi         , dp)   ! The adjoint state psi.
   call fvm % write_solution_fields("steady_adjoint.vtu", fields, &
        & [character(len=7) :: "state", "adjoint"])
   call fvm % write_gmsh_series("box-36.msh", "steady_adjoint.msh", &

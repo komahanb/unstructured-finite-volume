@@ -1,31 +1,31 @@
 #include "scalar.fpp"
 
 !=====================================================================!
-! The mandelbrot law: the escape-time fractal recast as physics.
+! The mandelbrot law is the escape-time fractal recast as physics.
 !
 ! The iteration z -> z^2 + c is forward euler with step one on
 !
 !     dz/dt = z^2 + c - z
 !
-! (write euler's step z + h*(z^2 + c - z) and set h = 1: the z
-! cancels and the map remains - an identity, not an approximation).
-! split z = (u, v) and c = (c1, c2): a two-variable REACTING source
-! with no flux, and the first law in this codebase whose coupling
-! graph has an edge -
+! (Write euler's step z + h*(z^2 + c - z) and set h = 1: the z
+! cancels and the map remains - an identity, not an approximation.)
+! Split z = (u, v) and c = (c1, c2): the law is a two-variable
+! REACTING source with no flux, and the first law in this codebase
+! whose coupling graph has an edge -
 !
 !     (u) ───────── (v)         the complex square mixes the two
 !                               parts, both ways:
 !     dS_u/dv = -2v             the edge, written as numbers,
 !     dS_v/du =  2v             lives in dsource_dq below
 !
-! Two laws in one type: julia (c held fixed, the cell is z0) and
+! Two laws live in one type: julia (c held fixed, the cell is z0) and
 ! mandelbrot proper (the cell IS c, z0 = 0) - the c this source
 ! reads either comes from its stored constant or from the point
 ! st % x it is asked at.
 !
-! One sign to know about: the assembler's semi-discrete residual is
-! M*udot - A*u + b = 0, so a fluxless law marches du/dt = -S. This
-! source therefore returns MINUS the map's velocity,
+! There is one sign to know about: the assembler's semi-discrete
+! residual is M*udot - A*u + b = 0, so a fluxless law marches
+! du/dt = -S. This source therefore returns MINUS the map's velocity,
 !
 !     S = z - z^2 - c
 !
@@ -44,8 +44,8 @@ module class_mandelbrot
 
   type, extends(source) :: mandelbrot_source
 
-     real(dp) :: c(2)   = 0.0_dp    ! the constant (julia mode)
-     logical  :: c_is_x = .false.   ! mandelbrot mode: c = the point
+     real(dp) :: c(2)   = 0.0_dp    ! The constant (julia mode).
+     logical  :: c_is_x = .false.   ! In mandelbrot mode, c is the point.
 
    contains
 
@@ -61,8 +61,10 @@ module class_mandelbrot
 contains
 
   !===================================================================!
-  ! julia:       mandelbrot_source(c)   z0 = the cell (prime phi)
-  ! mandelbrot:  mandelbrot_source()    c  = the cell, z0 = 0
+  ! Construct the source in either of two modes:
+  !
+  !     julia:       mandelbrot_source(c)   z0 = the cell (prime phi)
+  !     mandelbrot:  mandelbrot_source()    c  = the cell, z0 = 0
   !===================================================================!
 
   pure type(mandelbrot_source) function create(c) result(this)
@@ -76,20 +78,24 @@ contains
        this % c_is_x = .true.
     end if
 
-    ! two variables (Re z, Im z), one coupling edge: the square
-    ! mixes them - the first non-empty coupling graph in the house
+    !-----------------------------------------------------------------!
+    ! Two variables (Re z, Im z) and one coupling edge: the square
+    ! mixes them. This is the first non-empty coupling graph in the
+    ! house.
+    !-----------------------------------------------------------------!
+
     call this % form_coupling(2, tails = [1], heads = [2])
 
   end function create
 
   !===================================================================!
-  ! S = z - z^2 - c  (minus the map's velocity; see the banner) -
-  ! and ZERO outside the circle of no return:
+  ! The source is  S = z - z^2 - c  (minus the map's velocity; see
+  ! the module banner) - and ZERO outside the circle of no return:
   !
   !        │z│ <= 2 :  the map runs
   !        │z│ >  2 :  S = 0, the point holds still
   !
-  ! once │z│ passes 2 the orbit provably never comes back (the
+  ! Once │z│ passes 2 the orbit provably never comes back (the
   ! classical escape bound, │c│ <= 2), so freezing it changes no
   ! escape count - and it keeps the arithmetic finite: an escaped
   ! orbit squares its way to overflow in a handful of steps if the
@@ -118,7 +124,7 @@ contains
   end function value
 
   !===================================================================!
-  ! The coupling edge as numbers (the jacobian of S):
+  ! The coupling edge, written as numbers, is the jacobian of S:
   !
   !     dS/dq = [ 1 - 2u     2v   ]      and ZERO in the frozen
   !             [  -2v     1 - 2u ]      zone, like S itself - which

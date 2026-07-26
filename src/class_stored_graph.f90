@@ -39,7 +39,7 @@ module class_stored_graph
 
    contains
 
-     ! the deferred contract, delegated to the shared stored mechanism
+     ! The deferred contract is delegated to the shared stored mechanism.
      procedure :: neighbours
      procedure :: degree
 
@@ -49,7 +49,7 @@ module class_stored_graph
 
    contains
 
-     ! the directed contract, delegated to the stored mechanism
+     ! The directed contract is delegated to the stored mechanism.
      procedure :: out_neighbours
      procedure :: in_neighbours
 
@@ -69,8 +69,9 @@ module class_stored_graph
 contains
 
   !===================================================================!
-  ! Build from an edge list: vertices numbered 1..nv, one edge per
-  ! (tail, head) pair, the retained adjacency built once.
+  ! Build from an edge list: the vertices are numbered 1..nv, one
+  ! edge is stored per (tail, head) pair, and the retained adjacency
+  ! is built once.
   !===================================================================!
 
   pure type(stored_graph) function create(nv, tails, heads, num_variables) result(this)
@@ -138,7 +139,7 @@ contains
     call coarse % refine_edges(children, tails, heads)
     this = create(coarse % num_vertices*children, tails, heads, coarse % num_variables)
 
-    ! the parent of child i is arithmetic: parts adopted as a partition
+    ! The parent of child i is arithmetic; the parts are adopted as a partition.
     call this % set_partition([((i-1)/children + 1, i = 1, this % num_vertices)])
 
   end function create_refined
@@ -184,8 +185,8 @@ contains
   !
   !    (1)──▶(2)◀──▶(3)      squints to      [1] ──▶ [2 3]
   !
-  ! acyclic by theorem, ready for dependency_order - the directed
-  ! twin of the quotient constructor above.
+  ! The result is acyclic by theorem, ready for dependency_order -
+  ! the directed twin of the quotient constructor above.
   !===================================================================!
 
   pure type(stored_digraph) function create_condensation(fine) result(this)
@@ -205,8 +206,8 @@ contains
   end function create_condensation
 
   !===================================================================!
-  ! The deferred neighbour queries: one-line delegations to the stored
-  ! adjacency the constructor built.
+  ! Return the neighbours of vertex v: a one-line delegation to the
+  ! stored adjacency the constructor built.
   !===================================================================!
 
   pure function neighbours(this, v) result(nbrs)
@@ -220,6 +221,10 @@ contains
 
   end function neighbours
 
+  !===================================================================!
+  ! Return the degree of vertex v from the stored adjacency.
+  !===================================================================!
+
   pure integer function degree(this, v)
 
     class(stored_graph), intent(in) :: this
@@ -228,6 +233,11 @@ contains
     degree = this % stored_degree(v)
 
   end function degree
+
+  !===================================================================!
+  ! Return the out-neighbours of vertex v from the stored directed
+  ! adjacency.
+  !===================================================================!
 
   pure function out_neighbours(this, v) result(nbrs)
 
@@ -239,6 +249,11 @@ contains
     nbrs = this % stored_out_neighbours(v)
 
   end function out_neighbours
+
+  !===================================================================!
+  ! Return the in-neighbours of vertex v from the stored directed
+  ! adjacency.
+  !===================================================================!
 
   pure function in_neighbours(this, v) result(nbrs)
 

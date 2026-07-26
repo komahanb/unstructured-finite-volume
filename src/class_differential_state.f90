@@ -7,9 +7,9 @@
 !
 !     U(:,k) <- U(:,k) + coeff(k) * correction
 !
-! the condensed newton update, owned by the state. Order 0 with
-! coefficient [1] is the plain solution vector u <- u + du - the linear
-! solver's state is the degenerate instance of this one class.
+! This is the condensed newton update, owned by the state. Order 0 with
+! coefficient [1] is the plain solution vector u <- u + du, so the
+! linear solver's state is the degenerate instance of this one class.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -26,8 +26,8 @@ module class_differential_state
 
   type, extends(state) :: differential_state
 
-     type(scalar), allocatable :: U(:,:)      ! (nvars, order+1)
-     type(scalar), allocatable :: coeff(:)    ! (order+1) update weights
+     type(scalar), allocatable :: U(:,:)      ! The state, laid out as (nvars, order+1).
+     type(scalar), allocatable :: coeff(:)    ! The (order+1) update weights.
 
    contains
 
@@ -43,9 +43,10 @@ module class_differential_state
 contains
 
   !===================================================================!
-  ! A zero state of the given size and differential order. The default
-  ! coefficients are [1, 0, ...] (a correction moves the solution
-  ! only); a linearization supplies its own, one weight per order.
+  ! Create a zero state of the given size and differential order. The
+  ! default coefficients are [1, 0, ...] (a correction moves the
+  ! solution only); a linearization supplies its own, one weight per
+  ! order.
   !===================================================================!
 
   pure type(differential_state) function create(nvars, order, coeff) result(this)
@@ -89,7 +90,7 @@ contains
   end subroutine update
 
   !===================================================================!
-  ! The dof array the system evaluates
+  ! Return the dof array the system evaluates.
   !===================================================================!
 
   pure function values(this) result(v)

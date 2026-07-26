@@ -42,7 +42,7 @@ program test_2d
 contains
 
   !===================================================================!
-  ! Build a fresh assembler on a mesh file
+  ! Build a fresh assembler on a mesh file.
   !===================================================================!
 
   subroutine make(meshfile, fvm)
@@ -60,7 +60,7 @@ contains
   end subroutine make
 
   !===================================================================!
-  ! Report the outcome of one check
+  ! Report the outcome of one check.
   !===================================================================!
 
   subroutine report(name, ok, nfail)
@@ -79,7 +79,7 @@ contains
   end subroutine report
 
   !===================================================================!
-  ! Constant dirichlet on every side must give a uniform field
+  ! Constant dirichlet on every side must give a uniform field.
   !===================================================================!
 
   subroutine check_constant(nfail)
@@ -135,8 +135,12 @@ contains
        err = max(err, abs(x(icell) - fvm % grid % cell_centers(1, icell)))
     end do
 
-    ! u = x is the exact discrete field; the residual is the iterative
-    ! solve tolerance, so check it reproduces the linear field to ~1e-6
+    !-----------------------------------------------------------------!
+    ! The field u = x is the exact discrete field; the residual is
+    ! the iterative solve tolerance, so check that it reproduces the
+    ! linear field to ~1e-6.
+    !-----------------------------------------------------------------!
+
     call report("2d linear conduction -> u = x", err .lt. 1.0e-6_dp, nfail)
 
   end subroutine check_linear

@@ -1,11 +1,12 @@
 #include "scalar.fpp"
 
 !=====================================================================!
-! Cell-centred finite-volume field: the discretization that turns a
-! flat state vector U (one cell-average per variable per cell) into the
-! pointwise (q, grad q) the physics needs. Implements interface_field;
-! the only method on the FV solve path is face_state, which reconstructs
-! the face value and the FACE-NORMAL gradient between two cells:
+! The cell-centred finite-volume field is the discretization that turns
+! a flat state vector U (one cell-average per variable per cell) into
+! the pointwise (q, grad q) the physics needs. It implements
+! interface_field; the only method on the FV solve path is face_state,
+! which reconstructs the face value and the FACE-NORMAL gradient
+! between two cells:
 !
 !     grad q(:,j) = ((q_n - q_p)/fdelta) * n
 !
@@ -38,10 +39,10 @@ module class_fvm_field
 
   type, extends(field) :: fvm_field
    contains
-     ! the FV reconstruction the assembler uses
+     ! This is the FV reconstruction the assembler uses.
      procedure :: face_state
 
-     ! interface_field deferred set (stubbed except where trivial)
+     ! The interface_field deferred set is stubbed except where trivial.
      procedure :: evaluate
      procedure :: discretize
      procedure :: reconstruct
@@ -63,7 +64,7 @@ module class_fvm_field
 contains
 
   !===================================================================!
-  ! Construct an FV field of m components over n state dofs
+  ! Construct an FV field of m components over n state dofs.
   !===================================================================!
 
   pure type(fvm_field) function create(num_components, num_state_vars) result(this)
@@ -77,10 +78,11 @@ contains
 
   !===================================================================!
   ! Reconstruct (q, grad q) at a face from the cell-average state U.
-  ! grid/graph are passed in (the assembler owns them) to avoid any
-  ! aliasing when the assembler is cloned into integrators/adjoints.
-  ! iface is the LOCAL face index of icell (for the normal); gface is
-  ! the GLOBAL face id (for area/delta/centre/neighbour).
+  ! The grid and the graph are passed in (the assembler owns them) to
+  ! avoid any aliasing when the assembler is cloned into integrators
+  ! and adjoints. Here iface is the LOCAL face index of icell (for the
+  ! normal); gface is the GLOBAL face id (for area/delta/centre/
+  ! neighbour).
   !===================================================================!
 
   pure subroutine face_state(this, grid, g, U, icell, iface, gface, st)
@@ -114,14 +116,18 @@ contains
           p = g % dof(icell, j)
           n = g % dof(ncell, j)
           dphidn         = (U(n) - U(p))/fdelta
-          st % gradq(:,j) = dphidn*nf            ! normal-component gradient
-          st % q(j)       = 0.5_dp*(U(p) + U(n)) ! face value (midpoint)
+          st % gradq(:,j) = dphidn*nf            ! The normal-component gradient.
+          st % q(j)       = 0.5_dp*(U(p) + U(n)) ! The face value (midpoint).
        end do
 
     else
 
-       ! boundary face: the bc closure (lhs/rhs_coeff) supplies the flux;
-       ! return the owner value with no reconstructed normal gradient.
+       !--------------------------------------------------------------!
+       ! At a boundary face the bc closure (lhs/rhs_coeff) supplies
+       ! the flux; return the owner value with no reconstructed
+       ! normal gradient.
+       !--------------------------------------------------------------!
+
        do j = 1, nv
           st % q(j)       = U(g % dof(icell, j))
           st % gradq(:,j) = 0.0_dp
@@ -132,8 +138,13 @@ contains
   end subroutine face_state
 
   !===================================================================!
-  ! interface_field deferred procedures - FEM/UQ extensions, not on the
-  ! FV solve path. Stubbed (pure ones return zero; the rest error stop).
+  ! The remaining interface_field deferred procedures are FEM/UQ
+  ! extensions, not on the FV solve path. They are stubbed: the pure
+  ! ones return zero and the rest error stop.
+  !===================================================================!
+
+  !===================================================================!
+  ! The evaluate stub returns zero.
   !===================================================================!
 
   pure function evaluate(this, t, x, y, z) result(u)
@@ -143,11 +154,19 @@ contains
     u = 0.0_dp
   end function evaluate
 
+  !===================================================================!
+  ! The discretize stub stops; it is not used by the FV solve.
+  !===================================================================!
+
   impure subroutine discretize(this, U)
     class(fvm_field)     , intent(in)  :: this
     real(dp), allocatable, intent(out) :: U(:)
     error stop "fvm_field % discretize: not used by the fv solve"
   end subroutine discretize
+
+  !===================================================================!
+  ! The reconstruct stub stops; it is not used by the FV solve.
+  !===================================================================!
 
   impure subroutine reconstruct(this, U)
     class(fvm_field), intent(inout) :: this
@@ -155,11 +174,19 @@ contains
     error stop "fvm_field % reconstruct: not used by the fv solve"
   end subroutine reconstruct
 
+  !===================================================================!
+  ! The project stub stops; it is not used by the FV solve.
+  !===================================================================!
+
   impure subroutine project(this, U)
     class(fvm_field)     , intent(in)  :: this
     real(dp), allocatable, intent(out) :: U(:)
     error stop "fvm_field % project: not used by the fv solve"
   end subroutine project
+
+  !===================================================================!
+  ! The remainder stub stops; it is not used by the FV solve.
+  !===================================================================!
 
   impure subroutine remainder(this, U, e)
     class(fvm_field)         , intent(in)  :: this
@@ -167,6 +194,10 @@ contains
     class(field), allocatable, intent(out) :: e
     error stop "fvm_field % remainder: not used by the fv solve"
   end subroutine remainder
+
+  !===================================================================!
+  ! The basis stub returns zero.
+  !===================================================================!
 
   pure function basis(this, i, x) result(phi)
     class(fvm_field), intent(in) :: this
@@ -176,6 +207,10 @@ contains
     phi = 0.0_dp
   end function basis
 
+  !===================================================================!
+  ! The grad stub stops; it is not used by the FV solve.
+  !===================================================================!
+
   impure subroutine grad(this, idim, du)
     class(fvm_field)         , intent(in)  :: this
     integer                  , intent(in)  :: idim
@@ -183,11 +218,19 @@ contains
     error stop "fvm_field % grad: not used by the fv solve"
   end subroutine grad
 
+  !===================================================================!
+  ! The ddt stub stops; it is not used by the FV solve.
+  !===================================================================!
+
   impure subroutine ddt(this, du)
     class(fvm_field)         , intent(in)  :: this
     class(field), allocatable, intent(out) :: du
     error stop "fvm_field % ddt: not used by the fv solve"
   end subroutine ddt
+
+  !===================================================================!
+  ! The drandom stub stops; it is not used by the FV solve.
+  !===================================================================!
 
   impure subroutine drandom(this, k, du)
     class(fvm_field)         , intent(in)  :: this
@@ -196,6 +239,10 @@ contains
     error stop "fvm_field % drandom: not used by the fv solve"
   end subroutine drandom
 
+  !===================================================================!
+  ! The ddesign stub stops; it is not used by the FV solve.
+  !===================================================================!
+
   impure subroutine ddesign(this, k, du)
     class(fvm_field)         , intent(in)  :: this
     integer                  , intent(in)  :: k
@@ -203,12 +250,20 @@ contains
     error stop "fvm_field % ddesign: not used by the fv solve"
   end subroutine ddesign
 
+  !===================================================================!
+  ! The inner_product stub returns zero.
+  !===================================================================!
+
   pure function inner_product(this, other) result(ip)
     class(fvm_field), intent(in) :: this
     class(field)    , intent(in) :: other
     real(dp)                     :: ip
     ip = 0.0_dp
   end function inner_product
+
+  !===================================================================!
+  ! The norm stub returns zero.
+  !===================================================================!
 
   pure function norm(this) result(nrm)
     class(fvm_field), intent(in) :: this

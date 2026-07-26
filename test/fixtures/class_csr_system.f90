@@ -1,12 +1,13 @@
 #include "scalar.fpp"
 
 !=====================================================================!
-! Test fixture: an assembled operator wrapped as a system, so kernel-
-! level suites (krylov, advection) can drive solvers through the same
-! contract production code uses - the residual, the jacobian-vector
-! product, and the inner product. The transpose is genuine
-! (matvec_transpose on the stored operator), so REVERSE products are
-! legitimate on non-symmetric operators without a symmetry claim.
+! This test fixture wraps an assembled operator as a system, so that
+! kernel-level suites (krylov, advection) can drive solvers through
+! the same contract production code uses - the residual, the
+! jacobian-vector product, and the inner product. The transpose is
+! genuine (matvec_transpose on the stored operator), so REVERSE
+! products are legitimate on non-symmetric operators without a
+! symmetry claim.
 !
 ! Operator parts (diagonal/triangles) are refused with a clear error:
 ! the kernels this fixture serves run on whole-operator products only.
@@ -31,12 +32,12 @@ module class_csr_system
 
    contains
 
-     ! the system contract on the stored operator
+     ! The system contract on the stored operator.
      procedure :: state_residual                => csr_residual
      procedure :: get_jacobian_residual_product => csr_product
      procedure :: transpose_product             => csr_transpose_product
 
-     ! the deferred assembler contract
+     ! The deferred assembler contract.
      procedure :: add_residual                => csr_add_residual
      procedure :: add_jacobian_vector_product => csr_add_product
      procedure :: add_initial_condition       => csr_add_initial_condition
@@ -50,7 +51,7 @@ module class_csr_system
 contains
 
   !===================================================================!
-  ! Wrap an assembled operator (and optionally its right-hand side)
+  ! Wrap an assembled operator (and optionally its right-hand side).
   !===================================================================!
 
   impure type(csr_system) function create(A, b) result(this)
@@ -69,7 +70,7 @@ contains
   end function create
 
   !===================================================================!
-  ! The residual of the stored system at x: r = b - A x
+  ! The residual of the stored system at x is  r = b - A x.
   !===================================================================!
 
   impure subroutine csr_residual(this, r, x)
@@ -107,8 +108,11 @@ contains
     sub = WHOLE
     if (present(part)) sub = part
 
-    ! a wrong tag dies at the door - dynamic dispatch bypasses the base
-    ! door, so this override carries its own
+    !-----------------------------------------------------------------!
+    ! A wrong tag dies at the door. Dynamic dispatch bypasses the
+    ! base door, so this override carries its own.
+    !-----------------------------------------------------------------!
+
     if (.not. is_valid_mode(dir)) then
        write(*,'(1x,a,i0)') "csr_system: invalid mode tag ", dir
        error stop "csr_system: mode must be FORWARD or REVERSE"
@@ -128,7 +132,7 @@ contains
   end subroutine csr_product
 
   !===================================================================!
-  ! The genuine transpose on the stored operator (no symmetry claim)
+  ! The genuine transpose on the stored operator (no symmetry claim).
   !===================================================================!
 
   impure subroutine csr_transpose_product(this, w, v, sub)
@@ -148,7 +152,7 @@ contains
   end subroutine csr_transpose_product
 
   !===================================================================!
-  ! The steady residual of the stored system: res += A S(:,1) - b
+  ! The steady residual of the stored system is  res += A S(:,1) - b.
   !===================================================================!
 
   impure subroutine csr_add_residual(this, residual, filter)
@@ -167,7 +171,7 @@ contains
   end subroutine csr_add_residual
 
   !===================================================================!
-  ! pdt += scalars(1) * A vec on the stored operator
+  ! The product  pdt += scalars(1) * A vec  on the stored operator.
   !===================================================================!
 
   impure subroutine csr_add_product(this, pdt, vec, scalars, filter)
@@ -188,7 +192,7 @@ contains
   end subroutine csr_add_product
 
   !===================================================================!
-  ! The stored system starts from rest
+  ! The stored system starts from rest.
   !===================================================================!
 
   impure subroutine csr_add_initial_condition(this, U)

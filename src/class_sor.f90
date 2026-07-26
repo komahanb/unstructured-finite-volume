@@ -1,17 +1,17 @@
 !=====================================================================!
 ! Relaxed-triangle-sweep linear solver (traditionally: successive
-! over-relaxation, SOR): supplies only the sweep (`iterate`) and
+! over-relaxation, SOR). It supplies only the sweep (`iterate`) and
 ! inherits the residual-minimization iteration from linear_solver.
-! omega is the pseudo-time step size of the outer iteration.
+! Omega is the pseudo-time step size of the outer iteration.
 !
 ! Two sweeps, chosen by what the solver carries:
 !
 !    no graph:  the relaxed lower-triangle solve (D+wL)y = R is
 !               itself done iteratively (products through the
-!               triangle filters)
+!               triangle filters).
 !
 !    carrying a graph:  the inherited colored sweep - exact, color
-!               by color, relaxed by omega. the graph may be the
+!               by color, relaxed by omega. The graph may be the
 !               system's mesh or the assembled operator itself
 !               (mesh-free smoothing; see gauss_seidel).
 !=====================================================================!
@@ -25,36 +25,38 @@ module class_sor
 
   implicit none
 
-  ! Expose only the linear solver datatype
+  ! Expose only the linear solver datatype.
   private
   public :: sor
 
   !===================================================================!
-  ! Linear solver datatype
+  ! The linear solver datatype.
   !===================================================================!
 
   type, extends(linear_solver) :: sor
 
      real(dp) :: omega
 
-     ! parameter-selection state: the previous parameter value and the
-     ! rate it achieved, for reverting a change that worsens the rate
+     ! Parameter-selection state: the previous parameter value and the
+     ! rate it achieved, kept for reverting a change that worsens the
+     ! rate.
      real(dp) :: omega_saved = -1.0_dp
      real(dp) :: rate_saved  = huge(1.0_dp)
 
    contains
 
-     ! the sweep consumed by the inherited outer iteration
+     ! The sweep consumed by the inherited outer iteration.
      procedure :: iterate
 
-     ! auto-tuning: static optimal omega from the measured convergence
-     ! factor, dynamic rollback if a parameter change worsens the rate
+     ! Auto-tuning: a static optimal omega from the measured
+     ! convergence factor, and a dynamic rollback if a parameter change
+     ! worsens the rate.
      procedure :: tune
 
   end type sor
 
   !===================================================================!
-  ! Interface for multiple constructors
+  ! The interface for multiple constructors.
   !===================================================================!
 
   interface sor
@@ -64,7 +66,7 @@ module class_sor
 contains
 
   !===================================================================!
-  ! Constructor for linear solver
+  ! The constructor for the linear solver.
   !===================================================================!
 
   pure type(sor) function construct(omega, max_it, &
@@ -87,13 +89,12 @@ contains
   end function construct
 
   !===================================================================!
-  ! Parameter selection. At entry (pass 0): measure the convergence
+  ! Parameter selection. At entry (pass 0), measure the convergence
   ! factor of the unrelaxed sweep - the spectral radius of D^-1 (L+U),
   ! by power iteration composed from the operator parts - and set the
-  ! classical optimum omega = 2 / (1 + sqrt(1 - rho^2)).
-  ! During the iteration (pass > 1): if the rate measured after a
-  ! parameter change is worse than before, revert to the previous
-  ! value.
+  ! classical optimum omega = 2 / (1 + sqrt(1 - rho^2)). During the
+  ! iteration (pass > 1), if the rate measured after a parameter change
+  ! is worse than before, revert to the previous value.
   !===================================================================!
 
   impure subroutine tune(this, system, pass, rate)
@@ -112,12 +113,15 @@ contains
        n = system % num_state_vars
        allocate(D(n), identity(n))
 
-       ! the diagonal (the self-loop subgraph on ones)
+       ! Extract the diagonal (the self-loop subgraph on ones).
        identity = 1.0_dp
        call system % get_jacobian_residual_product(D, identity, part = DIAGONAL)
 
-       ! the growth rate of the unrelaxed sweep map v -> D^-1 (L+U) v,
-       ! measured by the graph module's power kernel
+       !--------------------------------------------------------------!
+       ! The growth rate of the unrelaxed sweep map v -> D^-1 (L+U) v
+       ! is measured by the graph module's power kernel.
+       !--------------------------------------------------------------!
+
        call power_iteration(sweep_map, n, 50, rho)
        rho = min(rho, 1.0_dp - epsilon(1.0_dp))
 
@@ -132,7 +136,7 @@ contains
 
     else static
 
-       ! revert a change that worsened the measured rate
+       ! Revert a change that worsened the measured rate.
        if (rate .gt. this % rate_saved .and. &
             & abs(this % omega - this % omega_saved) .gt. tiny(1.0_dp)) then
           this % omega = this % omega_saved
@@ -148,7 +152,11 @@ contains
 
   contains
 
-    ! the unrelaxed sweep as a linear action (D and system captured)
+    !=================================================================!
+    ! The unrelaxed sweep as a linear action (D and the system are
+    ! captured from the host).
+    !=================================================================!
+
     subroutine sweep_map(v, w)
       real(dp), intent(in)  :: v(:)
       real(dp), intent(out) :: w(:)
@@ -175,12 +183,12 @@ contains
     real(dp)            , intent(out) :: dx(:)
     integer             , intent(out) :: iter
 
-    ! Locals
+    ! Local variables.
     real(dp) :: tol, bnorm
     real(dp) , allocatable :: Ux(:), D(:), Ddx(:), R2(:), xnew(:), identity(:)
     real(dp) , allocatable :: Ly(:), y(:), ynew(:)
 
-    ! carrying the system's graph buys the exact relaxed sweep
+    ! Carrying the system's graph buys the exact relaxed sweep.
     if (allocated(this % g)) then
        call this % colored_sweep(system, r, dx, iter, this % omega)
        return
@@ -190,34 +198,35 @@ contains
     allocate(Ux, D, Ddx, R2, xnew, identity, mold = dx)
     allocate(y, ynew, Ly, mold = dx)
 
-    ! Extract the diagonal entries (the self-loop subgraph on ones)
+    ! Extract the diagonal entries (the self-loop subgraph on ones).
     identity = 1.0d0
     call system % get_jacobian_residual_product(D, identity, part = DIAGONAL)
 
     bnorm = sqrt(system % inner_product(r, r))
 
-    ! Homogeneous case (nothing to do)
+    ! The homogeneous case leaves nothing to do.
     if (bnorm .le. this % max_tol) then
        iter = 0
        return
     end if
 
     !-----------------------------------------------------------------!
-    ! Apply the relaxed sweep until tolerance is achieved
+    ! Apply the relaxed sweep until the tolerance is achieved.
     !-----------------------------------------------------------------!
 
-    iter = 1; tol  = huge(1.0d0)
+    iter = 1
+    tol  = huge(1.0d0)
     do while ((tol .gt. this % max_tol) .and. (iter .lt. this % max_it))
 
-       ! Form Ux and Dx
+       ! Form the products Ux and Ddx.
        call system % get_jacobian_residual_product(Ux, dx, part = UPPER_TRIANGLE)
        call system % get_jacobian_residual_product(Ddx, dx, part = DIAGONAL)
 
-       ! R = w(r-Ux_k)+(1-w)Dx_k
+       ! Form the relaxed right-hand side R = w(r-Ux_k)+(1-w)Dx_k.
        R2 = this % omega * (r - Ux) + (1.0_dp-this % omega)*Ddx
 
        !--------------------------------------------------------------!
-       ! Solve the linear system: By=R ; (D+wL)y=R ;  Dy=R-wLy
+       ! Solve the linear system: By=R ; (D+wL)y=R ; Dy=R-wLy.
        !--------------------------------------------------------------!
 
        solve_lower_triangle: block
@@ -225,10 +234,11 @@ contains
          real(dp) :: tol2
          integer :: iter2
 
-         ! Initial guess is the current correction
+         ! The initial guess is the current correction.
          y = dx
 
-         iter2 = 1; tol2 = huge(1.0d0)
+         iter2 = 1
+         tol2 = huge(1.0d0)
          do while ((tol2 .gt. this % max_tol) .and. (iter2 .lt. this % max_it))
 
             call system % get_jacobian_residual_product(Ly, y, part = LOWER_TRIANGLE)

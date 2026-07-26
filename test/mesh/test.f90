@@ -30,14 +30,14 @@ program test_mesh
     files(5) = string('../box-36.msh')
     files(6) = string('../cylinder-coarse.msh')
     !files(6) = string('../box-part.msh_000001')
-    
+
     do ifile = 5, 6 ! size(files)
        write(*,*) "Testing GMSH Loader with file ", files(ifile) % str
        call test_gmsh_loader(files(ifile) % str)
     end do
 
   end block test_gmsh
-  
+
   !===================================================================!
   ! Test the functionalities of Class String and Class File
   !===================================================================!
@@ -65,24 +65,30 @@ program test_mesh
 
     ! Read everything and print content
     call file_obj % read_lines(lines)
-    call lines % print()  
+    call lines % print()
 
   end block test_file_string
 
 contains
-  
+
+  !===================================================================!
+  ! The full round trip for one mesh file: load the incidence lists,
+  ! wire and measure the graph, say what was built, and write the
+  ! picture out as a .vtu for eyes to check.
+  !===================================================================!
+
   subroutine test_gmsh_loader(filename)
 
     character(len=*)  , intent(in)   :: filename
     class(gmsh_loader), allocatable :: gmsh_loader_obj
     class(mesh)       , allocatable :: mesh_obj
     class(paraview_writer), allocatable :: pwriter
-    
+
     ! Create a mesh loader for mesh file
     allocate(gmsh_loader_obj, source =  gmsh_loader(filename))
-    
+
     allocate(mesh_obj, source = mesh(gmsh_loader_obj))
-    
+
     call mesh_obj % to_string()
 
     allocate(pwriter, source = paraview_writer(mesh_obj))
@@ -90,9 +96,9 @@ contains
     call pwriter % write(filename(1:index(filename,".msh")-1)//".vtu")
 
     deallocate(pwriter)
-    
+
     deallocate(mesh_obj)
-    
+
     deallocate(gmsh_loader_obj)
 
   end subroutine test_gmsh_loader

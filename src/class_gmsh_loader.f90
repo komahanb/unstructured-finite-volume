@@ -59,6 +59,10 @@ module class_gmsh_loader
 
 contains
 
+  !===================================================================!
+  ! Constructor: point at the .msh file and size the line buffer.
+  !===================================================================!
+
   impure type(gmsh_loader) function create(filename) result (this)
 
     type(character(*)), intent(in) :: filename

@@ -66,6 +66,11 @@ program test_graph_suite
 
 contains
 
+  !===================================================================!
+  ! The teller: one PASS/FAIL line per claim, and a running count of
+  ! the broken ones.
+  !===================================================================!
+
   subroutine report(ok, label, nfail)
     logical         , intent(in)    :: ok
     character(len=*), intent(in)    :: label
@@ -215,6 +220,13 @@ contains
          & "chain ghosts one per side", nfail)
 
   end subroutine check_partition_invariants
+
+  !===================================================================!
+  ! The partition laws, checked on any graph: every vertex owned
+  ! exactly once; every ghost genuinely borrowed - not owned by the
+  ! part, yet touching a vertex that is; and the reported edge cut
+  ! survives an independent recount over the neighbour lists.
+  !===================================================================!
 
   subroutine assert_partition(g, nparts, label, nfail)
 

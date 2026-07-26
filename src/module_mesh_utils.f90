@@ -1,3 +1,13 @@
+!=====================================================================!
+! The toolbox the mesh wires its graph with: cross products and
+! distances (the tape measure), find and is_subset (membership tests
+! on vertex lists), and the per-element tables that say, for each
+! cell shape, which corners bound which face - the local wiring
+! diagram every cell contributes its edges by.
+!
+! Author: Komahan Boopathy (komahan@gatech.edu)
+!=====================================================================!
+
 module module_mesh_utils
 
   use iso_fortran_env , only : dp => REAL64
@@ -218,6 +228,13 @@ contains
     end select
 
   end function elem_type_vertex_count
+
+  !===================================================================!
+  ! Put a face's vertices into the cell's own winding order. Each
+  ! cell type carries a wiring table - which corners bound which
+  ! face, wound so the normal points outward. Match the unordered
+  ! face against the table and hand it back in the table's order.
+  !===================================================================!
 
   impure subroutine order_face_vertices(cell_type, cell_vertices, face_vertices_unordered)
 

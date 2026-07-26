@@ -479,7 +479,6 @@ contains
     end if
   end function doubled_level_visits
 
-
   !===================================================================!
   ! 8. nothing assumes structure. The same poisson problem on a
   ! genuinely crooked mesh - unstructured triangles, no two alike -

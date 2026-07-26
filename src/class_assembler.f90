@@ -1,5 +1,25 @@
 #include "scalar.fpp"
 
+!=====================================================================!
+! The assembler IS the system: it walks the mesh graph and turns a
+! pointwise law (a flux F(q, grad q), a source S) into algebra. Every
+! interior face is an edge (P)---(N); the face state dotted with the
+! normal gives that edge a conductance, and the conductance lands
+! twice - once in each endpoint's row, opposite signs - so what one
+! cell loses its neighbour gains, edge by edge, and the operator
+! inherits the graph's sparsity: A(i,j) is nonzero exactly where i
+! and j share a face. Boundary half-edges are closed by the bc
+! coefficients; sources sit on their own vertex.
+!
+! What it offers: the residual R(u), matrix-free jacobian actions and
+! their transposes for the adjoint, the operator gathered as CSR for
+! multigrid, and the semi-discrete pieces (M udot + A u - b) the time
+! integrators drive. It solves nothing - solvers consume it through
+! interface_assembler, and that seam stays clean.
+!
+! Author: Komahan Boopathy (komahan@gatech.edu)
+!=====================================================================!
+
 module class_assembler
 
   ! import dependencies

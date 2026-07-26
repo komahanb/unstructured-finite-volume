@@ -385,6 +385,11 @@ contains
 
   end subroutine make_advective
 
+  !===================================================================!
+  ! Close the box's six sides with six different pins - an asymmetric
+  ! pattern, so a regression in any one face group moves the answer.
+  !===================================================================!
+
   subroutine box_bc(fvm)
 
     class(assembler), intent(inout) :: fvm

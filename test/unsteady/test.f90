@@ -13,7 +13,7 @@ program test_mesh
   use class_conjugate_gradient   , only : conjugate_gradient
 
   implicit none
-  
+
   character(len=*)        , parameter   :: filename = "../rectangle.msh"
   !class(gmsh_loader)      , allocatable :: gmsh
   !class(physics)          , allocatable :: heat
@@ -21,16 +21,16 @@ program test_mesh
   class(assembler)        , allocatable :: FVMAssembler
   class(linear_solver)    , allocatable :: linear
   !class(nonlinear_solver) , allocatable :: nonlinear
- 
+
   real(dp) , parameter   :: max_tol     = 100.0d0*epsilon(1.0d0)
   integer  , parameter   :: max_it      = 100
   integer  , parameter   :: print_level = 1
   real(dp) , allocatable :: x(:)
   integer :: i
-  
+
   ! Create a mesh object
   allocate(grid, source = mesh(gmsh_loader(filename)))
-  
+
   ! Assembler Object coordinating geometry and physics
   allocate(FVMAssembler, source = assembler(grid))!, physics))
 
@@ -46,20 +46,18 @@ program test_mesh
        & max_tol     = max_tol, &
        & max_it      = max_it, &
        & print_level = print_level))
-  
+
   ! Solve using solver method
   call linear % solve(FVMassembler, x)
   print *, 'cg solution = '
   do i = 1, min(10, size(x))
      print *, i,  x(i)
   end do
-  
+
   ! Writes the mesh for tecplot
   call FVMassembler % write_solution("mesh-cg.dat", x)
-  
+
   deallocate(x)
   !deallocate(linear,nonlinear, FVMAssembler, physics, grid)
-  
-  contains
 
 end program test_mesh

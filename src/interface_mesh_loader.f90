@@ -1,3 +1,16 @@
+!=====================================================================!
+! The loader contract: whoever claims to be a mesh source must hand
+! over the raw incidence lists - vertices with coordinates, then the
+! edge -> vertex, face -> vertex and cell -> vertex tables, plus the
+! physical tags. That is a graph described by its edges, delivered
+! before any geometry is measured; class_mesh does the wiring and
+! the measuring. One deferred procedure, get_mesh_data, carries it
+! all - a gmsh file on disk and an in-memory array satisfy the same
+! contract.
+!
+! Author: Komahan Boopathy (komahan@gatech.edu)
+!=====================================================================!
+
 module interface_mesh_loader
 
   use iso_fortran_env , only : dp => real64

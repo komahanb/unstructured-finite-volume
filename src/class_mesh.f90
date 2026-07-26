@@ -1,5 +1,25 @@
 !=====================================================================!
-! Unstructured mesh handler.
+! The mesh IS a graph that happens to live in space. Cells are the
+! vertices; every interior face, shared by exactly two cells, is an
+! edge; a boundary face is a half-edge - one end in a cell, the other
+! open, waiting for a boundary condition to close it:
+!
+!     +-----+-----+
+!     |  1  |  2  |            (1)---(2)
+!     +-----+-----+             |     |        the same mesh, seen
+!     |  3  |  4  |            (3)---(4)       as its graph
+!     +-----+-----+
+!
+! Everything else this class computes is measurement hung on that
+! graph: volumes and centres sit on the vertices; areas, normals,
+! deltas and interpolation weights ride on the edges. A loader hands
+! over raw incidence lists (cell -> vertex, face -> vertex); the
+! connectivity routines turn arrows around and compose maps until
+! face -> cell and cell -> face emerge; the geometry routines then
+! walk the pieces with a tape measure. The inherited graph contract
+! (neighbours, degree) answers from the interior faces, so the
+! partitioners, orderings and solvers built on interface_graph
+! consume the mesh unchanged.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -26,6 +46,12 @@ module class_mesh
   interface mesh
      module procedure create_mesh
   end interface mesh
+
+  !===================================================================!
+  ! A face group: the half-edges that share one physical tag, bundled
+  ! under a name - so "inlet" or "wall" points at a whole side of the
+  ! graph, and a boundary condition can grab it in one word.
+  !===================================================================!
 
   type :: face_group
 
@@ -194,6 +220,11 @@ module class_mesh
 
 contains
 
+  !===================================================================!
+  ! Constructor: bundle the given faces under one tag and name, and
+  ! refuse inconsistent lists at the door.
+  !===================================================================!
+
   impure type(face_group) function create_face_group( &
        & group_name, group_number, &
        & num_faces, face_numbers, face_vertices, &
@@ -229,6 +260,10 @@ contains
 
   end function create_face_group
 
+  !===================================================================!
+  ! Destructor: hand back every list the group holds.
+  !===================================================================!
+
   pure subroutine destroy_face_group(this)
 
     type(face_group), intent(inout) :: this
@@ -240,6 +275,10 @@ contains
     if (allocated(this % group_face_types))        deallocate(this % group_face_types)
 
   end subroutine destroy_face_group
+
+  !===================================================================!
+  ! Say who this group is: its number, its size, its name.
+  !===================================================================!
 
   impure elemental subroutine print(this)
 
@@ -480,6 +519,13 @@ contains
 
   end function find_tag_by_name
 
+  !===================================================================!
+  ! Sort the tagged faces into their named groups, one group per
+  ! physical tag: gather up the open edge-ends of the graph that
+  ! belong to each side of the domain, so boundary conditions later
+  ! find them by name instead of hunting through geometry.
+  !===================================================================!
+
   impure elemental subroutine create_face_groups(this)
 
     class(mesh), intent(inout) :: this
@@ -546,7 +592,8 @@ contains
   end subroutine create_face_groups
 
   !===================================================================!
-  ! Destructor for file object
+  ! Destructor: hand back every array the mesh carries - the graph's
+  ! wiring and all the measurements hung on it.
   !===================================================================!
 
   pure subroutine destroy(this)
@@ -599,6 +646,13 @@ contains
     if (allocated(this % face_cell_weights)) deallocate(this % face_cell_weights)
 
   end subroutine destroy
+
+  !===================================================================!
+  ! Turn the arrows around: the loader speaks cell -> vertex, but
+  ! assembly also needs vertex -> cell. Cells and vertices form a
+  ! bipartite graph, and reading it from the other side is just its
+  ! transpose - transpose_adjacency does the turning.
+  !===================================================================!
 
   impure subroutine invert_connectivities(this)
 
@@ -654,6 +708,16 @@ contains
     end block vertex_cell
 
   end subroutine invert_connectivities
+
+  !===================================================================!
+  ! Wire the graph, then measure it. First connectivity: invert
+  ! cell -> vertex, then compose maps until face -> cell and its
+  ! transpose cell -> face appear - each interior face now knows the
+  ! two cells it joins, which is the edge list of the mesh graph.
+  ! Then geometry: centres, areas, normals, volumes, deltas, weights
+  ! - the numbers assembly will read off every vertex and edge.
+  ! Returns true once the mesh is ready to be walked.
+  !===================================================================!
 
   impure type(logical) function initialize(this)
 
@@ -777,6 +841,19 @@ contains
 
   end function initialize
 
+  !===================================================================!
+  ! Every mesh point sits in a star of cells - its neighbours across
+  ! the bipartite cell-vertex graph:
+  !
+  !        (c1)   (c2)
+  !           \   /
+  !            (p)          weight each arm by 1/distance,
+  !           /   \         normalized to sum to one
+  !        (c3)   (c4)
+  !
+  ! so a cell-centred field can ride the arms out to the points.
+  !===================================================================!
+
   impure subroutine evaluate_vertex_weight(this)
 
     class(mesh), intent(inout) :: this
@@ -832,6 +909,13 @@ contains
 
   end subroutine evaluate_vertex_weight
 
+  !===================================================================!
+  ! An interior face is an edge (P)---(N). Split the face's value
+  ! between its two ends by inverse distance to the face centre,
+  ! stored as the pair (w, 1-w) on the edge. A boundary half-edge
+  ! has only one end, so that cell takes the whole weight.
+  !===================================================================!
+
   impure subroutine evaluate_face_weight(this)
 
     class(mesh), intent(inout) :: this
@@ -879,6 +963,13 @@ contains
 
   end subroutine evaluate_face_weight
 
+  !===================================================================!
+  ! Draw each edge as an actual arrow in space: lvec runs centroid to
+  ! centroid across an interior face, and centroid to face centre on
+  ! a boundary half-edge. This is the line the two-point gradient
+  ! differences along - the edge, given a length and a direction.
+  !===================================================================!
+
   impure subroutine evaluate_centroidal_vector(this)
 
     class(mesh), intent(inout) :: this
@@ -907,6 +998,13 @@ contains
     end do
 
   end subroutine evaluate_centroidal_vector
+
+  !===================================================================!
+  ! How much space does each vertex of the graph claim? Walk a cell's
+  ! faces and add up (x_f . n_f) A_f - the divergence theorem, summed
+  ! over the cell's edges. A negative volume is an inside-out cell,
+  ! refused loudly.
+  !===================================================================!
 
   impure subroutine evaluate_cell_volumes(this)
 
@@ -946,6 +1044,14 @@ contains
 
   end subroutine evaluate_cell_volumes
 
+  !===================================================================!
+  ! The length of an edge as the diffusion operator feels it: project
+  ! the centroidal arrow onto the face normal. On a skewed mesh the
+  ! arrow crosses its face at a slant, so the normal distance is
+  ! shorter than the arrow - this delta is the denominator in every
+  ! two-point face gradient.
+  !===================================================================!
+
   impure subroutine evaluate_face_deltas(this)
 
     class(mesh), intent(inout) :: this
@@ -972,6 +1078,13 @@ contains
     end do
 
   end subroutine evaluate_face_deltas
+
+  !===================================================================!
+  ! Measure each 3d face: the centre is the mean of its corners; the
+  ! area comes from fanning the polygon into triangles and summing
+  ! half cross-products. The area is the width of the edge - how much
+  ! window two cells share to trade flux through.
+  !===================================================================!
 
   impure subroutine evaluate_face_centers_areas(this)
 
@@ -1038,6 +1151,12 @@ contains
 
   end subroutine evaluate_face_centers_areas
 
+  !===================================================================!
+  ! In 2d a face is a line segment: the centre is the midpoint of its
+  ! two vertices, the "area" is its length. Zero length means two
+  ! coincident points - a broken edge - and the mesh stops.
+  !===================================================================!
+
   impure subroutine evaluate_face_centers_areas_2d(this)
 
     class(mesh), intent(inout) :: this
@@ -1079,6 +1198,11 @@ contains
 
   end subroutine evaluate_face_centers_areas_2d
 
+  !===================================================================!
+  ! Give every vertex of the graph a place to stand: the cell centre
+  ! is the mean of the cell's corner coordinates.
+  !===================================================================!
+
   impure subroutine evaluate_cell_centers(this)
 
     class(mesh), intent(inout) :: this
@@ -1100,6 +1224,15 @@ contains
     end do
 
   end subroutine evaluate_cell_centers
+
+  !===================================================================!
+  ! Give every edge its direction frame, one per (cell, face) pair: a
+  ! unit normal from the face's corner fans, flipped if needed so it
+  ! points OUT of the cell, plus two tangents to complete the triad.
+  ! The same interior face carries opposite normals seen from its two
+  ! ends - each cell watches flux leave through its own side of the
+  ! edge, which is what makes the assembled operator conservative.
+  !===================================================================!
 
   impure subroutine evaluate_face_tangents_normals(this)
 
@@ -1181,6 +1314,13 @@ contains
 
   end subroutine evaluate_face_tangents_normals
 
+  !===================================================================!
+  ! The same frame in 2d: the tangent runs along the face segment,
+  ! the normal is that tangent turned a quarter turn in plane, then
+  ! flipped to point out of the cell - both ends of an edge agree on
+  ! the geometry, but each sees the normal leaving itself.
+  !===================================================================!
+
   impure subroutine evaluate_face_tangents_normals_2d(this)
 
     class(mesh), intent(inout) :: this
@@ -1245,7 +1385,7 @@ contains
   end function get_num_elems
 
   !===================================================================!
-  ! Constructor for mesh creation
+  ! Print the mesh: counts, tags, and the first few of everything.
   !===================================================================!
 
   impure subroutine to_string(this)

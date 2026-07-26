@@ -654,6 +654,12 @@ contains
     end if
   end subroutine smooth
 
+  !===================================================================!
+  ! The sweep kernel both level directions share: nsweep damped
+  ! passes of x <- x + w Dinv (b - A x), each one a matvec over the
+  ! level's edges followed by a pointwise (per-vertex) correction.
+  !===================================================================!
+
   pure subroutine jacobi_sweeps(L, w, b, x, nsweep)
     type(multigrid_level), intent(in)    :: L
     real(dp)             , intent(in)    :: w

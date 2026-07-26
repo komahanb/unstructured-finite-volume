@@ -246,9 +246,6 @@ contains
     successor = succ(v)
   end function successor
 
-
-
-
   ! which cell claims the landing point z: descend the squint - the
   ! nearest part's cells and its quotient-neighbours' cells - then
   ! certify the answer by the triangle inequality: no cell of a far
@@ -329,7 +326,10 @@ contains
 
   end function nearest_cell_by_descent
 
-
+  !===================================================================!
+  ! The teller: one PASS/FAIL line per claim, and a running count of
+  ! the broken ones.
+  !===================================================================!
 
   subroutine report(ok, label, nfail)
     logical         , intent(in)    :: ok
@@ -342,7 +342,6 @@ contains
        nfail = nfail + 1
     end if
   end subroutine report
-
 
   !===================================================================!
   ! The squint side of the ladder. The base cells huddle into parts
@@ -481,6 +480,14 @@ contains
     end do
 
   end function quantized_arrows
+
+  !===================================================================!
+  ! Judge the painting itself, several independent ways: a brute-force
+  ! scan must find the same arrows the descent found; orbit-by-orbit
+  ! walking and a plain counting loop must both repaint the one-pass
+  ! escape times; the picture must hold both light and dark; and the
+  ! cell nearest the window's corner must escape on its first step.
+  !===================================================================!
 
   subroutine check_the_painting(nfail)
 

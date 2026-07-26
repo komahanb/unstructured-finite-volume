@@ -42,6 +42,10 @@ module class_gmsh_writer
 
 contains
 
+  !===================================================================!
+  ! Constructor: remember which mesh file the fields belong to.
+  !===================================================================!
+
   pure type(gmsh_writer) function create(meshfile) result(this)
 
     character(len=*), intent(in) :: meshfile

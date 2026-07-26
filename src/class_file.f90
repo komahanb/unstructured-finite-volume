@@ -1,3 +1,17 @@
+!=====================================================================!
+! A file, seen the way we see everything here: a chain. Lines are the
+! vertices, "next line" is the only edge, and the reader can do just
+! one thing - take the edge forward:
+!
+!     (line 1)──▶(line 2)──▶(line 3)──▶ ...
+!
+! open and close bracket the walk, read_line takes one step,
+! read_lines walks the whole chain into memory, get_num_lines
+! measures its length.
+!
+! Author: Komahan Boopathy (komahan@gatech.edu)
+!=====================================================================!
+
 module class_file
 
   use class_string, only : string

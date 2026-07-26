@@ -1515,6 +1515,11 @@ contains
 
   end function ghosts
 
+  !===================================================================!
+  ! Part sizes, read straight off the csr pointers: how many vertices
+  ! part k owns, and how many it borrows from across the cut.
+  !===================================================================!
+
   pure integer function n_owned(this, k)
 
     class(graph), intent(in) :: this
@@ -2312,6 +2317,7 @@ contains
       contribution = diamond_factor(tail, head)*adjoint_head
     end subroutine diamond_edge_apply
 
+    ! which arrow of the diamond carries which factor
     pure real(dp) function diamond_factor(tail, head)
       integer, intent(in) :: tail, head
       if (tail .eq. 1 .and. head .eq. 2) then

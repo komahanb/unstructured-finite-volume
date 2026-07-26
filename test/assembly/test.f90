@@ -126,7 +126,12 @@ program test_mesh
   deallocate(grid)
   deallocate(FVMAssembler)
 
-  contains
+contains
+
+  !===================================================================!
+  ! Peek at the operator: print the top-left 10x10 corner - enough to
+  ! see the diagonal and its edge couplings without drowning in rows.
+  !===================================================================!
 
   subroutine print(matrix)
 

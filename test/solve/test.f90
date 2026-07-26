@@ -245,6 +245,4 @@ program test_mesh
   deallocate(grid)
   deallocate(FVMAssembler)
 
-  contains
-
 end program test_mesh

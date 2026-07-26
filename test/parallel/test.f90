@@ -125,6 +125,10 @@ contains
     call solve_and_check(fvmp, fvms, trim(label), plvl, assert_speedup, assert_cut, me, np, nfail)
   end subroutine run_square
 
+  !===================================================================!
+  ! Close the square's boundary: poisson with unit conductance, all
+  ! four bundles of half-edges pinned to zero.
+  !===================================================================!
   subroutine square_bc(fvm)
     class(assembler), intent(inout) :: fvm
     call fvm % set_equation(diffusion_flux(1.0_dp), constant_source(-1.0_dp))
@@ -205,6 +209,10 @@ contains
     if (e .gt. 1.0e-8_dp) nfail = nfail + 1
   end subroutine run_transient
 
+  !===================================================================!
+  ! Close the box for the transient case: all six sides pinned to
+  ! zero - every boundary half-edge is dirichlet.
+  !===================================================================!
   subroutine trans_bc(fvm)
     class(assembler), intent(inout) :: fvm
     call fvm % set_equation(diffusion_flux(2.0_dp), constant_source(1.0_dp))
@@ -317,6 +325,11 @@ contains
     call solve_and_check(fvmp, fvms, "box-36", 0, .false., .false., me, np, nfail)
   end subroutine run_box
 
+  !===================================================================!
+  ! Close the box with mixed ends: four sides pinned at different
+  ! values, while top and bottom get neumann - half-edges that fix
+  ! the flux instead of the value.
+  !===================================================================!
   subroutine box_bc(fvm)
     class(assembler), intent(inout) :: fvm
     call fvm % set_equation(diffusion_flux(2.0_dp), constant_source(1.0_dp))

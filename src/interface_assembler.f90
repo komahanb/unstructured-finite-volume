@@ -125,6 +125,10 @@ module interface_assembler
      procedure :: get_differential_order
      procedure :: set_differential_order
 
+     ! The lumped mass of the semi-discrete residual (provided default:
+     ! refuse; a system that owns a mass overrides it)
+     procedure :: get_lumped_mass
+
      ! Adjoint support (provided defaults; physics overrides as needed)
      procedure :: add_jacobian_vector_product_transpose
      procedure :: get_num_design_vars
@@ -353,6 +357,23 @@ contains
     call this % add_jacobian_vector_product(pdt, vec, scalars, filter)
 
   end subroutine add_jacobian_vector_product_transpose
+
+  !===================================================================!
+  ! The lumped mass of the semi-discrete residual, one entry per dof -
+  ! the M in R = M*udot - A*u + b, handed out whole so an explicit
+  ! step can divide by it. Default: refuse loudly; a system that owns
+  ! a mass (the fvm assembler's cell volumes) overrides this.
+  !===================================================================!
+
+  pure subroutine get_lumped_mass(this, m)
+
+    class(assembler), intent(in)  :: this
+    real(dp)        , intent(out) :: m(:)
+
+    m = 0.0_dp
+    error stop "assembler: this system provides no lumped mass"
+
+  end subroutine get_lumped_mass
 
   !===================================================================!
   ! Number of design variables x the residual depends on. Default: none

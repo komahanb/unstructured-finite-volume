@@ -125,6 +125,7 @@ module class_assembler
      procedure :: add_residual
      procedure :: add_jacobian_vector_product
      procedure :: add_initial_condition
+     procedure :: get_lumped_mass
 
      ! Design-variable sensitivity support: the design variables live on
      ! the equation (kappa); the residual design partial dR/dx is finite
@@ -277,6 +278,11 @@ contains
     ! mesh cell carries - the coupling graph sizes the mesh's dofs
     this % grid % num_variables = flux_op % num_vertices
     this % num_state_vars       = this % grid % num_dofs()
+
+    ! the integrator state S rides num_state_vars too - resize it with
+    ! the system or a multi-variable march reads a one-variable window
+    if (allocated(this % S)) deallocate(this % S)
+    call this % create_state(this % S, 0.0_dp)
 
     if (allocated(this % phi)) deallocate(this % phi)
     allocate(this % phi(this % num_state_vars))
@@ -689,16 +695,29 @@ contains
        end associate
     end do
 
-    ! volumetric source
+    ! volumetric source, evaluated at the cell's CURRENT state - a
+    ! constant source never notices, a reacting law (mandelbrot) lives
+    ! on it: S(q) must read the state the march is standing at. The
+    ! state is read only when S spans the whole mesh; the partitioned
+    ! system keeps its state in the part's own frame, and its sources
+    ! are state-blind today - a distributed reacting law would need
+    ! this walk redone in that frame.
     if (.not. bnd_only) then
+       associate(whole_frame => size(this % S, dim = 1) .eq. this % grid % num_dofs())
        do icell = 1, this % grid % num_cells
           st % x = this % grid % cell_centers(:, icell)
+          if (whole_frame) then
+             do ivar = 1, nv
+                st % q(ivar) = this % S(this % grid % dof(icell, ivar), 1)
+             end do
+          end if
           Sval   = this % src % value(st)
           do ivar = 1, nv
              p    = this % grid % dof(icell, ivar)
              b(p) = b(p) + real(Sval(ivar), dp)*this % grid % cell_volumes(icell)
           end do
        end do
+       end associate
     end if
 
     end associate
@@ -1212,6 +1231,27 @@ contains
     deallocate(Au, b)
 
   end subroutine add_residual
+
+  !===================================================================!
+  ! The lumped mass, one entry per dof: the volume of the dof's cell.
+  ! This is the M in R = M*udot - A*u + b, handed out whole so an
+  ! explicit step can divide the residual by it.
+  !===================================================================!
+
+  pure subroutine get_lumped_mass(this, m)
+
+    class(assembler), intent(in)  :: this
+    real(dp)        , intent(out) :: m(:)
+
+    integer :: icell, ivar
+
+    do icell = 1, this % grid % num_cells
+       do ivar = 1, this % grid % num_variables
+          m(this % grid % dof(icell, ivar)) = this % grid % cell_volumes(icell)
+       end do
+    end do
+
+  end subroutine get_lumped_mass
 
   !===================================================================!
   ! Jacobian-vector product for the integrator

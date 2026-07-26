@@ -32,6 +32,7 @@ class_gmsh_writer.o \
 class_boundary_condition.o \
 class_diffusion_flux.o \
 class_advection_flux.o \
+class_mandelbrot.o \
 class_assembler.o \
 class_partitioned_assembler.o \
 class_normal_cg.o \
@@ -42,6 +43,7 @@ class_geometric_multigrid.o \
 class_conjugate_gradient.o \
 class_newton_solver.o \
 class_bdf.o \
+class_forward_euler.o \
 class_gauss_jacobi.o \
 class_gauss_seidel.o \
 class_sor.o \

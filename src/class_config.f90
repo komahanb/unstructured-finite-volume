@@ -30,6 +30,7 @@ module class_config
 
   private
   public :: config
+  public :: split_words   ! the tokenizer, shared with any run reader
 
   !-------------------------------------------------------------------!
   ! Parsed run configuration

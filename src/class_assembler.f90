@@ -461,7 +461,7 @@ contains
     real(dp)         , intent(out)   :: Aq(:)
     integer, optional, intent(in)    :: filter
 
-    integer           :: icell, iface, ivar, p, n, ncell, fcells(2), gface
+    integer           :: icell, iface, ivar, p, n, ncell, gface
     real(dp)          :: nf(3), keff, vn, wp, wn, alhs, arhs, diag, neigh
     type(point_state) :: st
 
@@ -495,12 +495,7 @@ contains
 
               domain: if (nfc .eq. 2) then
 
-                 fcells(1:nfc) = this % grid % face_cells(1:nfc, gface)
-                 if (fcells(1) .eq. icell) then
-                    ncell = fcells(2)
-                 else
-                    ncell = fcells(1)
-                 end if
+                 ncell = this % grid % across(icell, gface)
 
                  do ivar = 1, nv
                     p = this % grid % dof(icell, ivar)
@@ -574,7 +569,7 @@ contains
     type(csr_matrix), intent(out) :: A
 
     integer , allocatable :: row_ptr(:), col_idx(:)
-    integer               :: ndof, icell, iface, ivar, p, n, ncell, fcells(2), gface, ftag, nfc
+    integer               :: ndof, icell, iface, ivar, p, n, ncell, gface, ftag, nfc
     real(dp)              :: nf(3), keff, vn, wp, wn, alhs, arhs, farea, fdelta
     type(point_state)     :: st
 
@@ -611,12 +606,7 @@ contains
           nfc    = this % grid % num_face_cells(gface)
 
           if (nfc .eq. 2) then
-             fcells(1:2) = this % grid % face_cells(1:2, gface)
-             if (fcells(1) .eq. icell) then
-                ncell = fcells(2)
-             else
-                ncell = fcells(1)
-             end if
+             ncell = this % grid % across(icell, gface)
              do ivar = 1, nv
                 p    = this % grid % dof(icell, ivar)
                 n    = this % grid % dof(ncell, ivar)

@@ -213,6 +213,9 @@ module class_mesh
      procedure :: node_graph
      procedure, private :: face_between
 
+     ! the other end of the edge: the cell across a face
+     procedure :: across
+
      ! Destructor
      final   :: destroy
 
@@ -1601,6 +1604,22 @@ contains
   end function face_between
 
   !===================================================================!
+  ! The other end of the edge: a face and one of its two cells name
+  ! the cell across. Interior faces only - a boundary half-edge has
+  ! no other side to name.
+  !===================================================================!
+
+  pure integer function across(this, icell, gface) result(ncell)
+
+    class(mesh), intent(in) :: this
+    integer    , intent(in) :: icell, gface
+
+    ncell = this % face_cells(1, gface)
+    if (ncell .eq. icell) ncell = this % face_cells(2, gface)
+
+  end function across
+
+  !===================================================================!
   ! The mesh agglomerated by a partition of its cells: one polygon
   ! per part, its boundary traced from the faces that separate the
   ! part from the rest of the world, wound counterclockwise. Only
@@ -1758,48 +1777,34 @@ contains
   !
   ! Each mesh point's ring of cells (vertex_cells, already built by
   ! invert_connectivities) is a clique: every pair of cells on that
-  ! point is node-adjacent. Emit each undirected edge once (tail <
-  ! head, deduped by the same mark idiom the partitioner uses), then
-  ! hand the edge list to the stored graph - the inherited
-  ! build_adjacency does the rest. Under a partition this graph's
-  ! ghosts are the vertex-ring halo the skew correction needs.
+  ! point is node-adjacent. The rule names every cell on one of my
+  ! points, repeats and all; the inherited harvest keeps each pair
+  ! once, smaller cell first, and build_adjacency does the rest.
+  ! Under a partition this graph's ghosts are the vertex-ring halo
+  ! the skew correction needs.
   !===================================================================!
 
   pure type(stored_graph) function node_graph(this) result(g)
 
     class(mesh), intent(in) :: this
 
-    integer, allocatable :: tails(:), heads(:), mark(:)
-    integer              :: ci, cj, iv, kv, p, ne, pass
+    integer, allocatable :: tails(:), heads(:)
 
-    allocate(mark(this % num_cells))
-
-    ! two passes: count the edges, then fill (mark(cj)=ci dedups the
-    ! neighbours of ci - a cell reached through several shared points
-    ! is one edge). mark is reset each pass so both passes count alike.
-    do pass = 1, 2
-       mark = 0
-       ne   = 0
-       do ci = 1, this % num_cells
-          do iv = 1, this % num_cell_vertices(ci)
-             p = this % cell_vertices(iv, ci)
-             do kv = 1, this % num_vertex_cells(p)
-                cj = this % vertex_cells(kv, p)
-                if (cj .gt. ci .and. mark(cj) .ne. ci) then
-                   mark(cj) = ci
-                   ne = ne + 1
-                   if (pass .eq. 2) then
-                      tails(ne) = ci
-                      heads(ne) = cj
-                   end if
-                end if
-             end do
-          end do
-       end do
-       if (pass .eq. 1) allocate(tails(ne), heads(ne))
-    end do
-
+    call this % harvest_edges(point_ring, tails, heads)
     g = stored_graph(this % num_cells, tails, heads)
+
+  contains
+
+    pure function point_ring(ci) result(cands)
+      integer, intent(in)  :: ci
+      integer, allocatable :: cands(:)
+      integer :: iv, p
+      allocate(cands(0))
+      do iv = 1, this % num_cell_vertices(ci)
+         p = this % cell_vertices(iv, ci)
+         cands = [cands, this % vertex_cells(1:this % num_vertex_cells(p), p)]
+      end do
+    end function point_ring
 
   end function node_graph
 

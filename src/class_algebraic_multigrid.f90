@@ -57,31 +57,14 @@ contains
     type(stored_graph)    :: strength_graph
     real(dp), allocatable :: d(:)
     integer , allocatable :: tails(:), heads(:)
-    integer :: n, i, k, j, nstrong, pass
+    integer :: n, i
 
-    ! strength chooses the edges (matrix work): count, then collect
-    associate(A => this % levels(lev) % A, theta => this % theta)
-
+    ! strength chooses the edges (matrix work); the inherited harvest
+    ! walks the rows and collects them
+    associate(A => this % levels(lev) % A)
       n = A % num_vertices
       d = A % get_diagonal()
-
-      do pass = 1, 2
-         nstrong = 0
-         do i = 1, n
-            do k = A % out_xadj(i), A % out_xadj(i+1) - 1
-               j = A % out_adj(k)
-               if (j .ne. i .and. strong(A % vals(k), d(i), d(j), theta)) then
-                  nstrong = nstrong + 1
-                  if (pass .eq. 2) then
-                     tails(nstrong) = i
-                     heads(nstrong) = j
-                  end if
-               end if
-            end do
-         end do
-         if (pass .eq. 1) allocate(tails(nstrong), heads(nstrong))
-      end do
-
+      call A % harvest_edges(strong_row, tails, heads, directed = .true.)
     end associate
 
     ! the graph does the clustering (graph work, delegated)
@@ -93,6 +76,28 @@ contains
     do i = 1, n
        agg(i) = strength_graph % part_of(i)
     end do
+
+  contains
+
+    ! the strong entries of row i - both directions recorded, and the
+    ! stored adjacency tolerates the repeat when the two rows agree
+    pure function strong_row(i) result(cands)
+      integer, intent(in)  :: i
+      integer, allocatable :: cands(:)
+      integer :: e, j, m
+      associate(A => this % levels(lev) % A)
+        allocate(cands(A % out_xadj(i+1) - A % out_xadj(i)))
+        m = 0
+        do e = A % out_xadj(i), A % out_xadj(i+1) - 1
+           j = A % out_adj(e)
+           if (j .ne. i .and. strong(A % vals(e), d(i), d(j), this % theta)) then
+              m = m + 1
+              cands(m) = j
+           end if
+        end do
+        cands = cands(1:m)
+      end associate
+    end function strong_row
 
   end subroutine coarsen
 

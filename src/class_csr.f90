@@ -597,26 +597,29 @@ contains
     class(csr_matrix), intent(in) :: this
 
     integer, allocatable :: tails(:), heads(:)
-    integer              :: v, e, j, ne, pass
 
-    do pass = 1, 2
-       ne = 0
-       do v = 1, this % num_vertices
-          do e = this % out_xadj(v), this % out_xadj(v+1) - 1
-             j = this % out_adj(e)
-             if (j .gt. v .or. (j .lt. v .and. .not. has_entry(this, j, v))) then
-                ne = ne + 1
-                if (pass .eq. 2) then
-                   tails(ne) = min(v, j)
-                   heads(ne) = max(v, j)
-                end if
-             end if
-          end do
-       end do
-       if (pass .eq. 1) allocate(tails(ne), heads(ne))
-    end do
-
+    call this % harvest_edges(once_per_pair, tails, heads, directed = .true.)
     g = stored_graph(this % num_vertices, tails, heads)
+
+  contains
+
+    ! row v's entries, kept once per unordered pair: the smaller row
+    ! records it, unless only the larger row knows the pair
+    pure function once_per_pair(v) result(cands)
+      integer, intent(in)  :: v
+      integer, allocatable :: cands(:)
+      integer :: e, j, n
+      allocate(cands(this % out_xadj(v+1) - this % out_xadj(v)))
+      n = 0
+      do e = this % out_xadj(v), this % out_xadj(v+1) - 1
+         j = this % out_adj(e)
+         if (j .gt. v .or. (j .lt. v .and. .not. has_entry(this, j, v))) then
+            n = n + 1
+            cands(n) = j
+         end if
+      end do
+      cands = cands(1:n)
+    end function once_per_pair
 
   end function simple_graph
 

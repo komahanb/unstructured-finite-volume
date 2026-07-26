@@ -149,6 +149,12 @@ module interface_graph
      procedure :: partition_aggregate
      procedure :: set_partition
 
+     ! the edge harvest, written once: walk the vertices, ask the
+     ! caller's rule who each one touches, keep what is fresh. the
+     ! squints and the subclasses' graph builders pass their rules
+     ! through here.
+     procedure :: harvest_edges
+
      ! the squint: the stamped partition read back as a coarse edge
      ! list. the zoom runs the other way: every vertex splits into
      ! children, and the refined edge list comes back.
@@ -994,13 +1000,91 @@ contains
   end subroutine refine_edges
 
   !===================================================================!
+  ! The edge harvest, written once. Walk the vertices, ask the
+  ! caller's rule who each one touches, keep what is fresh: two
+  ! passes (count, then fill), duplicates skipped by a mark stamp
+  ! whose tail id only grows, so a stale stamp reads as unmarked.
+  !
+  ! With `group` the harvest records edges between groups instead of
+  ! vertices - the walk visits members grouped by one counting sort,
+  ! while the rule still answers in fine vertices. `directed` keeps
+  ! an edge once per direction discovered; otherwise once per pair,
+  ! smaller tail first. Self edges never survive. The rule rides in
+  ! the way orbit's successor and the adjoint's edge_apply already
+  ! do: a caller-supplied procedure, usually contained, reading its
+  ! host's state.
+  !===================================================================!
+
+  pure subroutine harvest_edges(this, rule, tails, heads, group, directed)
+
+    class(graph), intent(in) :: this
+    interface
+       pure function rule(v) result(cands)
+         integer, intent(in)  :: v
+         integer, allocatable :: cands(:)
+       end function rule
+    end interface
+    integer, allocatable, intent(out)          :: tails(:), heads(:)
+    integer             , intent(in), optional :: group(:)
+    logical             , intent(in), optional :: directed
+
+    integer, allocatable :: mark(:), ptr(:), order(:), cands(:)
+    integer :: ntails, nv, pass, ne, k, kw, i, j, v
+    logical :: keep_both
+
+    nv = this % num_vertices
+    keep_both = .false.
+    if (present(directed)) keep_both = directed
+
+    ! the walk: grouped members, or every vertex its own group
+    if (present(group)) then
+       ntails = 0
+       if (nv .gt. 0) ntails = maxval(group)
+       call counting_sort(ntails, group, [(v, v = 1, nv)], ptr, order)
+    else
+       ntails = nv
+       ptr    = [(v, v = 1, nv + 1)]
+       order  = [(v, v = 1, nv)]
+    end if
+
+    allocate(mark(ntails))
+
+    do pass = 1, 2
+       mark = 0
+       ne   = 0
+       do k = 1, ntails
+          do i = ptr(k), ptr(k+1) - 1
+             v     = order(i)
+             cands = rule(v)
+             do j = 1, size(cands)
+                kw = cands(j)
+                if (present(group)) kw = group(cands(j))
+                if (kw .eq. k) cycle                        ! no self edges
+                if (.not. keep_both .and. kw .lt. k) cycle  ! once per pair
+                if (mark(kw) .eq. k) cycle                  ! seen from this tail
+                mark(kw) = k
+                ne = ne + 1
+                if (pass .eq. 2) then
+                   tails(ne) = k
+                   heads(ne) = kw
+                end if
+             end do
+          end do
+       end do
+       if (pass .eq. 1) allocate(tails(ne), heads(ne))
+    end do
+
+  end subroutine harvest_edges
+
+  !===================================================================!
   ! Stand back and squint: read the stamped partition back as a graph.
   ! Every part becomes one coarse vertex; two parts joined by at least
   ! one fine edge become coarse neighbours - one coarse edge, however
   ! many fine edges cross between them. Returned as an edge list
   ! because a partition of a graph is still graph-shaped data; the
   ! stored_graph constructor turns it back into the same animal, ready
-  ! to be squinted again.
+  ! to be squinted again. The harvest does the walking; the rule here
+  ! is just the graph's own neighbour query.
   !===================================================================!
 
   pure subroutine quotient_edges(this, tails, heads)
@@ -1008,41 +1092,22 @@ contains
     class(graph)        , intent(in)  :: this
     integer, allocatable, intent(out) :: tails(:), heads(:)
 
-    integer, allocatable :: mark(:), nbrs(:)
-    integer :: k, i, v, w, kw, n_coarse, pass
+    integer :: v
 
     if (.not. allocated(this % own_ptr)) then
        error stop "graph: quotient requires a stamped partition"
     end if
 
-    ! two passes over each part's owned vertices and their neighbours:
-    ! count the coarse edges, then fill them, deduped by stamping
-    ! mark(kw) = k (k is monotone, so an old stamp reads as unmarked).
-    ! each coarse edge is recorded once, from its smaller part.
-    allocate(mark(this % nparts))
+    call this % harvest_edges(fine_neighbours, tails, heads, &
+         & group = [(this % vertices(v) % part, v = 1, this % num_vertices)])
 
-    do pass = 1, 2
-       mark     = 0
-       n_coarse = 0
-       do k = 1, this % nparts
-          do i = this % own_ptr(k), this % own_ptr(k+1)-1
-             v    = this % own_list(i)
-             nbrs = this % neighbours(v)
-             do w = 1, size(nbrs)
-                kw = this % vertices(nbrs(w)) % part
-                if (kw .gt. k .and. mark(kw) .ne. k) then
-                   mark(kw) = k
-                   n_coarse = n_coarse + 1
-                   if (pass .eq. 2) then
-                      tails(n_coarse) = k
-                      heads(n_coarse) = kw
-                   end if
-                end if
-             end do
-          end do
-       end do
-       if (pass .eq. 1) allocate(tails(n_coarse), heads(n_coarse))
-    end do
+  contains
+
+    pure function fine_neighbours(v) result(nbrs)
+      integer, intent(in)  :: v
+      integer, allocatable :: nbrs(:)
+      nbrs = this % neighbours(v)
+    end function fine_neighbours
 
   end subroutine quotient_edges
 
@@ -2133,9 +2198,9 @@ contains
   !             (5)           with strong_components' paint the
   !                           result is acyclic by theorem
   !
-  ! Members are grouped per component by one counting sort, so the
-  ! mark stamp (mark(kw) = k, k monotone) dedupes exactly as the
-  ! undirected quotient does.
+  ! The harvest does the walking, grouped by the paint; the rule here
+  ! is the directed out-neighbour query, and `directed` keeps the
+  ! arrow.
   !===================================================================!
 
   pure subroutine condensation_edges(this, parts, tails, heads)
@@ -2144,41 +2209,16 @@ contains
     integer             , intent(in)  :: parts(:)
     integer, allocatable, intent(out) :: tails(:), heads(:)
 
-    integer, allocatable :: member_ptr(:), member_list(:), mark(:), nbrs(:)
-    integer              :: n_components, k, kw, i, j, v, ne, pass
+    call this % harvest_edges(forward_neighbours, tails, heads, &
+         &                    group = parts, directed = .true.)
 
-    n_components = 0
-    if (this % num_vertices .gt. 0) n_components = maxval(parts)
+  contains
 
-    ! each component's members, gathered by one counting sort
-    call counting_sort(n_components, parts, [(v, v = 1, this % num_vertices)], &
-         &             member_ptr, member_list)
-
-    ! two passes over each component's members and their out-edges:
-    ! count the crossing pairs, then fill them, deduped by stamping
-    allocate(mark(n_components))
-    do pass = 1, 2
-       mark = 0
-       ne   = 0
-       do k = 1, n_components
-          do i = member_ptr(k), member_ptr(k+1)-1
-             v    = member_list(i)
-             nbrs = this % out_neighbours(v)
-             do j = 1, size(nbrs)
-                kw = parts(nbrs(j))
-                if (kw .ne. k .and. mark(kw) .ne. k) then
-                   mark(kw) = k
-                   ne       = ne + 1
-                   if (pass .eq. 2) then
-                      tails(ne) = k
-                      heads(ne) = kw
-                   end if
-                end if
-             end do
-          end do
-       end do
-       if (pass .eq. 1) allocate(tails(ne), heads(ne))
-    end do
+    pure function forward_neighbours(v) result(nbrs)
+      integer, intent(in)  :: v
+      integer, allocatable :: nbrs(:)
+      nbrs = this % out_neighbours(v)
+    end function forward_neighbours
 
   end subroutine condensation_edges
 

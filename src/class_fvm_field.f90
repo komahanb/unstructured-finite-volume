@@ -92,7 +92,7 @@ contains
     integer          , intent(in)  :: icell, iface, gface
     type(point_state), intent(out) :: st
 
-    integer  :: nv, j, ncell, fcells(2), p, n
+    integer  :: nv, j, ncell, p, n
     real(dp) :: nf(3), fdelta, dphidn
 
     nv = this % num_components
@@ -108,12 +108,7 @@ contains
 
     interior: if (grid % num_face_cells(gface) .eq. 2) then
 
-       fcells(1:2) = grid % face_cells(1:2, gface)
-       if (fcells(1) .eq. icell) then
-          ncell = fcells(2)
-       else
-          ncell = fcells(1)
-       end if
+       ncell = grid % across(icell, gface)
 
        do j = 1, nv
           p = g % dof(icell, j)

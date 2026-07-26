@@ -127,6 +127,11 @@ module class_assembler
      procedure :: add_initial_condition
      procedure :: get_lumped_mass
 
+     ! the state a cell stands at, answered wherever the state lives -
+     ! the seam a partitioned frame overrides so whole-mesh walks
+     ! never index a slab they cannot see
+     procedure :: cell_state
+
      ! Design-variable sensitivity support: the design variables live on
      ! the equation (kappa); the residual design partial dR/dx is finite
      ! differenced for now (a stand-in for analytic / complex-step).
@@ -696,28 +701,20 @@ contains
     end do
 
     ! volumetric source, evaluated at the cell's CURRENT state - a
-    ! constant source never notices, a reacting law (mandelbrot) lives
-    ! on it: S(q) must read the state the march is standing at. The
-    ! state is read only when S spans the whole mesh; the partitioned
-    ! system keeps its state in the part's own frame, and its sources
-    ! are state-blind today - a distributed reacting law would need
-    ! this walk redone in that frame.
+    ! constant source never notices, a reacting law lives on it:
+    ! S(q) must read the state the march is standing at. The state
+    ! comes through cell_state, so a partitioned frame answers for
+    ! the cells it holds instead of this walk indexing its slab.
     if (.not. bnd_only) then
-       associate(whole_frame => size(this % S, dim = 1) .eq. this % grid % num_dofs())
        do icell = 1, this % grid % num_cells
           st % x = this % grid % cell_centers(:, icell)
-          if (whole_frame) then
-             do ivar = 1, nv
-                st % q(ivar) = this % S(this % grid % dof(icell, ivar), 1)
-             end do
-          end if
+          st % q = this % cell_state(icell)
           Sval   = this % src % value(st)
           do ivar = 1, nv
              p    = this % grid % dof(icell, ivar)
              b(p) = b(p) + real(Sval(ivar), dp)*this % grid % cell_volumes(icell)
           end do
        end do
-       end associate
     end if
 
     end associate
@@ -1231,6 +1228,26 @@ contains
     deallocate(Au, b)
 
   end subroutine add_residual
+
+  !===================================================================!
+  ! The state a cell stands at: its variables read off the integrator
+  ! window S(:,1). A partitioned frame overrides this - it holds only
+  ! a slab of the state, and answers zero for cells it cannot see.
+  !===================================================================!
+
+  pure function cell_state(this, icell) result(q)
+
+    class(assembler), intent(in) :: this
+    integer         , intent(in) :: icell
+
+    real(dp) :: q(this % grid % num_variables)
+    integer  :: ivar
+
+    do ivar = 1, this % grid % num_variables
+       q(ivar) = this % S(this % grid % dof(icell, ivar), 1)
+    end do
+
+  end function cell_state
 
   !===================================================================!
   ! The lumped mass, one entry per dof: the volume of the dof's cell.

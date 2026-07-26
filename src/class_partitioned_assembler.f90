@@ -41,6 +41,7 @@ module class_partitioned_assembler
   use class_mesh             , only : mesh
   use class_stored_graph     , only : stored_graph
   use class_assembler        , only : spatial_assembler => assembler
+  use interface_physics      , only : point_state
   use interface_linear_solver, only : preconditioner
   use module_solve_mode      , only : FORWARD, REVERSE, WHOLE, &
        &                              is_valid_mode, is_valid_part
@@ -99,12 +100,19 @@ module class_partitioned_assembler
      integer, allocatable :: wide_slot(:)   ! ...and its slot in that owner's frame
      integer, allocatable :: wide_dofs(:)   ! the wide frame's global dofs (own ++ node-ghosts)
 
-     ! the owned rows, read in the frame (columns 1..num_local); the source's
-     ! owned slab (state-independent, cached); and the lumped mass -
-     ! diag(cell volume) - the owned slab of dR/dudot, purely local
+     ! the owned rows, read in the frame (columns 1..num_local); the
+     ! boundary closure's owned slab (state-blind by nature, cached);
+     ! and the lumped mass - diag(cell volume) - the owned slab of
+     ! dR/dudot, purely local. the VOLUMETRIC source is not cached:
+     ! it reads the state, so source_owned evaluates it fresh, in the
+     ! frame, on every residual.
      type(csr_matrix)      :: A_local
-     real(dp), allocatable :: b_owned(:)
+     real(dp), allocatable :: bc_owned(:)
      real(dp), allocatable :: mass_owned(:)
+
+     ! the frame read backwards: global dof -> local position, 0 where
+     ! this part cannot see it - how cell_state answers global walks
+     integer, allocatable :: frame_map(:)
 
    contains
 
@@ -135,6 +143,8 @@ module class_partitioned_assembler
      procedure, private :: exchange_halo_reverse
      procedure, private :: spatial_local
      procedure, private :: spatial_local_transpose
+     procedure, private :: source_owned
+     procedure :: cell_state
 
   end type partitioned_assembler
 
@@ -217,6 +227,7 @@ contains
     this % num_ghost  = size(ghost_dofs)
     this % num_local = this % num_owned + this % num_ghost
     frame_map        = this % grid % frame_inverse(me)
+    this % frame_map = frame_map
 
     ! ---- the exchange tables come from the graph: it holds the
     ! replicated partition, so it can answer where every ghost lives
@@ -244,10 +255,11 @@ contains
     call this % get_operator_csr(A_global)
     this % A_local = A_global % local_block(this % owned_dofs, frame_map, this % num_local)
 
-    ! ---- the source's owned slab (state-independent) ----
+    ! ---- the boundary closure's owned slab (state-blind, safe to
+    ! cache); the volumetric source stays live - see source_owned ----
     allocate(b_full(this % grid % num_dofs()))
-    call this % get_source(b_full)
-    this % b_owned = b_full(this % owned_dofs)
+    call this % get_source(b_full, boundary_only = .true.)
+    this % bc_owned = b_full(this % owned_dofs)
 
     ! ---- the lumped mass on the owned rows: each dof's cell volume.
     ! the mass is diagonal, so dR/dudot needs no halo at all ----
@@ -560,9 +572,76 @@ contains
     residual = residual &
          & + this % mass_owned * this % S(:,2) &
          & - this % spatial_local(this % S(:,1)) &
-         & + this % b_owned
+         & + this % bc_owned &
+         & + this % source_owned(real(this % S(:,1), dp))
 
   end subroutine add_residual
+
+  !===================================================================!
+  ! The volumetric source on the owned rows, evaluated at the CURRENT
+  ! local state - the frame's answer to the base class's whole-mesh
+  ! source walk (which indexes global dofs and cannot run on a slab).
+  ! A cell's variables sit consecutively in the frame, so the point
+  ! state is read straight off the local slab, and the result rides
+  ! the residual exactly where the cached slab used to.
+  !===================================================================!
+
+  impure function source_owned(this, u) result(b)
+
+    class(partitioned_assembler), intent(in) :: this
+    real(dp)                    , intent(in) :: u(:)
+    real(dp)                                 :: b(this % num_owned)
+
+    type(point_state)         :: st
+    type(scalar), allocatable :: Sval(:)
+    integer                   :: j, ivar, v
+
+    associate(nv => this % grid % num_variables)
+
+      allocate(st % q(nv), st % gradq(3, nv), Sval(nv))
+      st % nv    = nv
+      st % gradq = 0.0_dp
+
+      do j = 1, this % num_owned, nv
+         v      = (this % owned_dofs(j) - 1)/nv + 1
+         st % x = this % grid % cell_centers(:, v)
+         do ivar = 1, nv
+            st % q(ivar) = u(j + ivar - 1)
+         end do
+         Sval = this % src % value(st)
+         do ivar = 1, nv
+            b(j + ivar - 1) = this % grid % cell_volumes(v)*real(Sval(ivar), dp)
+         end do
+      end do
+
+    end associate
+
+  end function source_owned
+
+  !===================================================================!
+  ! The state a cell stands at, answered from the slab: cells this
+  ! part owns read the local state; cells it cannot see answer zero.
+  ! A whole-mesh walk on a partitioned instance is exact on the owned
+  ! cells - replicate is the door for whole answers.
+  !===================================================================!
+
+  pure function cell_state(this, icell) result(q)
+
+    class(partitioned_assembler), intent(in) :: this
+    integer                     , intent(in) :: icell
+
+    real(dp) :: q(this % grid % num_variables)
+    integer  :: ivar, j
+
+    q = 0.0_dp
+    if (.not. allocated(this % frame_map)) return
+
+    do ivar = 1, this % grid % num_variables
+       j = this % frame_map(this % grid % dof(icell, ivar))
+       if (j .ge. 1 .and. j .le. this % num_owned) q(ivar) = this % S(j, 1)
+    end do
+
+  end function cell_state
 
   !===================================================================!
   ! The jacobian-vector product on the owned rows, halo-aware:
@@ -766,7 +845,7 @@ contains
     x_wide(this % wide_dofs) = buffer
     call this % get_skew_source(s_full, x_wide)
 
-    r = this % b_owned + s_full(this % owned_dofs) - Ax
+    r = this % bc_owned + this % source_owned(x) + s_full(this % owned_dofs) - Ax
 
   end subroutine state_residual
 

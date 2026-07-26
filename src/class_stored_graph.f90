@@ -17,6 +17,11 @@
 ! numbered by the level it visits, each arrow the next leg of the
 ! trip. Build the graph, hand it in, and the machinery follows it.
 !
+! Its second constructor is the directed squint: hand it any digraph
+! and it becomes the condensation - strong components as vertices,
+! crossing arrows kept, every knot shrunk to a point - acyclic by
+! theorem, so what a cycle refused, its condensation walks.
+!
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
@@ -58,6 +63,7 @@ module class_stored_graph
 
   interface stored_digraph
      module procedure create_directed
+     module procedure create_condensation
   end interface stored_digraph
 
 contains
@@ -169,6 +175,34 @@ contains
     call this % build_directed_adjacency()
 
   end function create_directed
+
+  !===================================================================!
+  ! The directed squint: the condensation of any digraph. Strong
+  ! components become vertices - numbered in dependency order,
+  ! sources first - crossing edges keep their arrows, and every knot
+  ! shrinks to a point:
+  !
+  !    (1)──▶(2)◀──▶(3)      squints to      [1] ──▶ [2 3]
+  !
+  ! acyclic by theorem, ready for dependency_order - the directed
+  ! twin of the quotient constructor above.
+  !===================================================================!
+
+  pure type(stored_digraph) function create_condensation(fine) result(this)
+
+    class(digraph), intent(in) :: fine
+
+    integer, allocatable :: parts(:), tails(:), heads(:)
+    integer              :: n_components
+
+    parts = fine % strong_components()
+    call fine % condensation_edges(parts, tails, heads)
+
+    n_components = 0
+    if (fine % num_vertices .gt. 0) n_components = maxval(parts)
+    this = create_directed(n_components, tails, heads)
+
+  end function create_condensation
 
   !===================================================================!
   ! The deferred neighbour queries: one-line delegations to the stored

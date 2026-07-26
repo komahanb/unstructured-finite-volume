@@ -40,6 +40,17 @@
 ! its own aggregates by Vanek's three passes over the neighbour
 ! queries, strength having already chosen the edges.
 !
+! Knots: strong_components paints every vertex with its strong
+! component - the maximal set in which every vertex reaches every
+! other along the arrows. A component with more than one vertex, or
+! with a self-edge, is a KNOT (knotted_components): something a walk
+! must solve at, not walk through. The directed squint
+! (condensation_edges) reads the paint back keeping the arrows, and
+! shrinking every knot to a point leaves a graph that is acyclic by
+! theorem - so the refusal in dependency_order gains a sequel:
+! condense, then walk. Components are numbered so that walking ids
+! 1, 2, 3, ... IS a dependency order of the condensation.
+!
 ! Escape times: escape_times resolves every vertex's escape time under
 ! a successor rule in one pass - orbits that merge share their tails
 ! instead of re-walking them - one visit per vertex where orbit-by-
@@ -250,6 +261,12 @@ module interface_graph
      ! dependency semantics - true only here
      procedure :: dependency_order
      procedure :: is_acyclic
+
+     ! knots: strong components, which of them the walk must solve,
+     ! and the directed squint that shrinks them to points
+     procedure :: strong_components
+     procedure :: knotted_components
+     procedure :: condensation_edges
 
      ! the path from the single source, read as vertex numbers - the
      ! cargo of a route-shaped digraph
@@ -1909,6 +1926,256 @@ contains
     is_acyclic = (n_ordered .eq. this % num_vertices)
 
   end function is_acyclic
+
+  !===================================================================!
+  ! Paint every vertex with its strong component - the maximal set in
+  ! which every vertex reaches every other along the arrows:
+  !
+  !    (1)──▶(2)──▶(3)
+  !           ▲     │            parts:  1  2  2  2  3
+  !           └─(4)◀┘
+  !              │               2 -> 3 -> 4 -> 2 tangles into ONE
+  !              ▼               component; 1 and 5 stand alone
+  !             (5)
+  !
+  ! Components are numbered by a dependency order of their own graph
+  ! (the condensation), sources first - so every condensation edge
+  ! runs lower id -> higher id and walking ids 1, 2, 3, ... IS a
+  ! dependency order. The numbering is renumbered explicitly against
+  ! the condensation, never trusted to a discovery-order accident.
+  !
+  ! Two depth-first sweeps find the components (Kosaraju): down the
+  ! out-edges recording who finishes when, then up the in-edges from
+  ! the latest finisher - each climb floods exactly one component.
+  ! Both sweeps consume only the neighbour queries, so a
+  ! rule-generated digraph answers as readily as a stored one.
+  !===================================================================!
+
+  pure function strong_components(this) result(parts)
+
+    class(digraph), intent(in) :: this
+
+    integer, allocatable :: parts(:)
+
+    integer, allocatable :: raw(:), finish(:), stack(:), nbrs(:)
+    integer, allocatable :: tails(:), heads(:), ptr(:), successors(:)
+    integer, allocatable :: indeg(:), queue(:), renumber(:)
+    integer              :: nv, v, w, s, i, e, top, qh, qt
+    integer              :: n_finished, n_components, n_ordered
+
+    nv = this % num_vertices
+    allocate(parts(nv))
+    if (nv .eq. 0) return
+
+    ! sweep one: down the out-edges, iterative depth-first with a
+    ! marker stack (+v enters a vertex, -v leaves it and records the
+    ! finish); raw doubles as the visited flag for this sweep
+    allocate(raw(nv), finish(nv))
+    allocate(stack(2*nv + this % num_edges))
+    raw        = 0
+    n_finished = 0
+    do s = 1, nv
+       if (raw(s) .ne. 0) cycle
+       top      = 1
+       stack(1) = s
+       do while (top .gt. 0)
+          v   = stack(top)
+          top = top - 1
+          if (v .lt. 0) then
+             n_finished         = n_finished + 1
+             finish(n_finished) = -v
+             cycle
+          end if
+          if (raw(v) .ne. 0) cycle
+          raw(v)     = 1
+          top        = top + 1
+          stack(top) = -v                  ! the leave marker, under the children
+          nbrs = this % out_neighbours(v)
+          do i = size(nbrs), 1, -1         ! pushed reversed: visited ascending
+             w = nbrs(i)
+             if (raw(w) .eq. 0) then
+                top        = top + 1
+                stack(top) = w
+             end if
+          end do
+       end do
+    end do
+
+    ! sweep two: up the in-edges from the latest finisher - each
+    ! climb floods exactly one strong component; raw becomes the paint
+    raw          = 0
+    n_components = 0
+    do i = n_finished, 1, -1
+       s = finish(i)
+       if (raw(s) .ne. 0) cycle
+       n_components = n_components + 1
+       raw(s)       = n_components
+       top          = 1
+       stack(1)     = s
+       do while (top .gt. 0)
+          v   = stack(top)
+          top = top - 1
+          nbrs = this % in_neighbours(v)
+          do e = 1, size(nbrs)
+             w = nbrs(e)
+             if (raw(w) .eq. 0) then
+                raw(w)     = n_components
+                top        = top + 1
+                stack(top) = w
+             end if
+          end do
+       end do
+    end do
+
+    ! renumber by the condensation's own dependency order (kahn over
+    ! the component graph, initial queue ascending for determinism) -
+    ! the promised property, made true by construction
+    call this % condensation_edges(raw, tails, heads)
+    call counting_sort(n_components, tails, heads, ptr, successors)
+
+    allocate(indeg(n_components), queue(n_components), renumber(n_components))
+    indeg = 0
+    do e = 1, size(heads)
+       indeg(heads(e)) = indeg(heads(e)) + 1
+    end do
+    qh = 1
+    qt = 0
+    do v = 1, n_components
+       if (indeg(v) .eq. 0) then
+          qt        = qt + 1
+          queue(qt) = v
+       end if
+    end do
+    n_ordered = 0
+    do while (qh .le. qt)
+       v  = queue(qh)
+       qh = qh + 1
+       n_ordered   = n_ordered + 1
+       renumber(v) = n_ordered
+       do e = ptr(v), ptr(v+1)-1
+          w = successors(e)
+          indeg(w) = indeg(w) - 1
+          if (indeg(w) .eq. 0) then
+             qt        = qt + 1
+             queue(qt) = w
+          end if
+       end do
+    end do
+    if (n_ordered .lt. n_components) then
+       error stop "digraph: the condensation of strong components must be acyclic"
+    end if
+
+    parts = renumber(raw)
+
+  end function strong_components
+
+  !===================================================================!
+  ! Which components are knots - the ones a walk must SOLVE at, not
+  ! walk through:
+  !
+  !    more than one vertex          or        a self-edge
+  !
+  !       (2)◀───▶(3)                          (1)◀─╮
+  !        tangled together                      ╰──╯  names itself
+  !
+  ! everything else is a trivial component: pass straight through.
+  !===================================================================!
+
+  pure function knotted_components(this, parts) result(is_knot)
+
+    class(digraph), intent(in) :: this
+    integer       , intent(in) :: parts(:)
+
+    logical, allocatable :: is_knot(:)
+
+    integer, allocatable :: population(:), nbrs(:)
+    integer              :: n_components, v, i
+
+    n_components = 0
+    if (this % num_vertices .gt. 0) n_components = maxval(parts)
+
+    ! more than one member tangles
+    allocate(population(n_components))
+    population = 0
+    do v = 1, this % num_vertices
+       population(parts(v)) = population(parts(v)) + 1
+    end do
+    is_knot = population .gt. 1
+
+    ! and so does a vertex that names itself
+    do v = 1, this % num_vertices
+       nbrs = this % out_neighbours(v)
+       do i = 1, size(nbrs)
+          if (nbrs(i) .eq. v) is_knot(parts(v)) = .true.
+       end do
+    end do
+
+  end function knotted_components
+
+  !===================================================================!
+  ! The directed squint: read a component paint back as a directed
+  ! edge list. Inner edges vanish, and however many original edges
+  ! cross the same component pair, ONE condensation edge records them
+  ! - pointing the way the graph points, never the way the ids sort
+  ! (the undirected quotient orients small part -> large part; here
+  ! the arrow is the information and it survives):
+  !
+  !    (1)──▶(2)──▶(3)
+  !           ▲     │         squint at the tangle {2,3,4}:
+  !           └─(4)◀┘
+  !              │              [1] ────▶ [2 3 4] ────▶ [5]
+  !              ▼
+  !             (5)           with strong_components' paint the
+  !                           result is acyclic by theorem
+  !
+  ! Members are grouped per component by one counting sort, so the
+  ! mark stamp (mark(kw) = k, k monotone) dedupes exactly as the
+  ! undirected quotient does.
+  !===================================================================!
+
+  pure subroutine condensation_edges(this, parts, tails, heads)
+
+    class(digraph)      , intent(in)  :: this
+    integer             , intent(in)  :: parts(:)
+    integer, allocatable, intent(out) :: tails(:), heads(:)
+
+    integer, allocatable :: member_ptr(:), member_list(:), mark(:), nbrs(:)
+    integer              :: n_components, k, kw, i, j, v, ne, pass
+
+    n_components = 0
+    if (this % num_vertices .gt. 0) n_components = maxval(parts)
+
+    ! each component's members, gathered by one counting sort
+    call counting_sort(n_components, parts, [(v, v = 1, this % num_vertices)], &
+         &             member_ptr, member_list)
+
+    ! two passes over each component's members and their out-edges:
+    ! count the crossing pairs, then fill them, deduped by stamping
+    allocate(mark(n_components))
+    do pass = 1, 2
+       mark = 0
+       ne   = 0
+       do k = 1, n_components
+          do i = member_ptr(k), member_ptr(k+1)-1
+             v    = member_list(i)
+             nbrs = this % out_neighbours(v)
+             do j = 1, size(nbrs)
+                kw = parts(nbrs(j))
+                if (kw .ne. k .and. mark(kw) .ne. k) then
+                   mark(kw) = k
+                   ne       = ne + 1
+                   if (pass .eq. 2) then
+                      tails(ne) = k
+                      heads(ne) = kw
+                   end if
+                end if
+             end do
+          end do
+       end do
+       if (pass .eq. 1) allocate(tails(ne), heads(ne))
+    end do
+
+  end subroutine condensation_edges
 
   !===================================================================!
   ! Reverse-mode accumulation - the structure of the discrete adjoint,

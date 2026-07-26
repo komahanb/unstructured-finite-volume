@@ -21,6 +21,12 @@
 !  10. the local frame: a part's dofs in local order (owned first,
 !      then the halo), the frame read backwards, and a matrix's rows
 !      re-expressed in it - the stage-1 gate of dereplication
+!  11. knots and the condensation: strong components painted, knots
+!      told from pass-throughs, the directed squint keeping its
+!      arrows - with the two promised properties pinned: component
+!      ids ARE a dependency order of the condensation, and however
+!      many edges cross a component pair, one directed edge records
+!      them, pointing the way the graph points
 !=====================================================================!
 
 program test_graph_suite
@@ -44,6 +50,7 @@ program test_graph_suite
   call check_partition_invariants(nfail)
   call check_dof_map(nfail)
   call check_directed_structure(nfail)
+  call check_knots(nfail)
   call check_orbit(nfail)
   call check_quotient(nfail)
   call check_escape_times(nfail)
@@ -331,6 +338,128 @@ contains
          & "source path returns the numbers in trip order", nfail)
 
   end subroutine check_directed_structure
+
+  !===================================================================!
+  ! 11: knots and the condensation.
+  !
+  !    (1)──▶(2)──▶(3)      strong components painted, the tangle
+  !           ▲     │       {2,3,4} told from the pass-throughs,
+  !           └─(4)◀┘       and the directed squint:
+  !              │
+  !              ▼            [1] ──▶ [2 3 4] ──▶ [5]
+  !             (5)
+  !
+  ! plus the two promised properties, pinned on graphs built to break
+  ! shortcuts: ids renumbered by the condensation's dependency order
+  ! (arrows running AGAINST the vertex numbering), and crossing edges
+  ! deduped to one arrow that points the way the graph points, never
+  ! the way the part ids sort.
+  !===================================================================!
+
+  subroutine check_knots(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_digraph) :: g, c
+    type(chain)          :: ch
+    integer, allocatable :: parts(:), tails(:), heads(:)
+    logical, allocatable :: is_knot(:)
+
+    ! the 3-cycle: one component, and it is a knot; its condensation
+    ! is a single point with no edges (the refusal's sequel: what
+    ! is_acyclic rejected above, the condensation makes walkable)
+    g       = stored_digraph(3, tails=[1,2,3], heads=[2,3,1])
+    parts   = g % strong_components()
+    is_knot = g % knotted_components(parts)
+    call report(all(parts .eq. 1), "the 3-cycle is one strong component", nfail)
+    call report(size(is_knot) .eq. 1 .and. is_knot(1), &
+         & "and it is a knot", nfail)
+    c = stored_digraph(g)
+    call report(c % num_vertices .eq. 1 .and. c % num_edges .eq. 0, &
+         & "its condensation is a point", nfail)
+
+    ! a rule-generated chain answers with nothing stored: every link
+    ! its own trivial component, numbered in walk order, and the
+    ! condensation is the chain again
+    ch      = chain(5)
+    parts   = ch % strong_components()
+    is_knot = ch % knotted_components(parts)
+    call report(all(parts .eq. [1,2,3,4,5]), &
+         & "a chain's components are its links, in walk order", nfail)
+    call report(.not. any(is_knot), "a chain has no knots", nfail)
+    c = stored_digraph(ch)
+    call report(c % num_vertices .eq. 5 .and. c % num_edges .eq. 4 .and. &
+         &      c % is_acyclic() .and. all(c % dependency_order() .eq. [1,2,3,4,5]), &
+         & "the condensation of a chain is the chain", nfail)
+
+    ! the drawing above: 2 -> 3 -> 4 -> 2 tangles, 1 feeds it, 5
+    ! drains it - three components, only the middle one a knot
+    g       = stored_digraph(5, tails=[1,2,3,4,4], heads=[2,3,4,2,5])
+    parts   = g % strong_components()
+    is_knot = g % knotted_components(parts)
+    call report(parts(1) .eq. 1 .and. all(parts(2:4) .eq. 2) .and. parts(5) .eq. 3, &
+         & "the middle tangle is one component between two", nfail)
+    call report(size(is_knot) .eq. 3 .and. &
+         &      all(is_knot .eqv. [.false., .true., .false.]), &
+         & "only the tangle is a knot", nfail)
+    c = stored_digraph(g)
+    call report(c % num_vertices .eq. 3 .and. c % num_edges .eq. 2 .and. &
+         &      all(c % out_neighbours(1) .eq. [2]) .and. &
+         &      all(c % out_neighbours(2) .eq. [3]), &
+         & "the condensation is [1] -> [tangle] -> [5]", nfail)
+
+    ! a self-edge is a one-vertex knot; its neighbour is merely trivial
+    g       = stored_digraph(2, tails=[1,1], heads=[1,2])
+    parts   = g % strong_components()
+    is_knot = g % knotted_components(parts)
+    call report(parts(1) .ne. parts(2) .and. is_knot(parts(1)) .and. &
+         &      .not. is_knot(parts(2)), &
+         & "a self-edge is a one-vertex knot", nfail)
+
+    ! two knots over a bridge: found separately, condensed to a
+    ! two-point dag - the theorem (always acyclic) checked by experiment
+    g       = stored_digraph(4, tails=[1,2,2,3,4], heads=[2,1,3,4,3])
+    parts   = g % strong_components()
+    is_knot = g % knotted_components(parts)
+    call report(parts(1) .eq. parts(2) .and. parts(3) .eq. parts(4) .and. &
+         &      parts(1) .ne. parts(3) .and. all(is_knot), &
+         & "two knots over a bridge are found separately", nfail)
+    c = stored_digraph(g)
+    call report(c % num_vertices .eq. 2 .and. c % num_edges .eq. 1 .and. &
+         &      c % is_acyclic(), &
+         & "their condensation is a two-point dag", nfail)
+
+    ! promised property one: the arrows run AGAINST the vertex
+    ! numbering (the tangle 3 <-> 4 feeds 2 feeds 1), so any
+    ! shortcut that trusts vertex order fails - the source tangle
+    ! must come out part 1, the sink vertex part 3, and every
+    ! condensation edge must run lower id -> higher id
+    g     = stored_digraph(4, tails=[3,4,4,2], heads=[4,3,2,1])
+    parts = g % strong_components()
+    call report(all(parts .eq. [3,2,1,1]), &
+         & "ids renumbered by the condensation's order, not the vertices'", nfail)
+    c = stored_digraph(g)
+    call report(size(c % edges) .eq. 2 .and. &
+         &      all(c % edges % tail .lt. c % edges % head), &
+         & "every condensation edge runs lower id to higher id", nfail)
+
+    ! promised property two, first half: three original edges cross
+    ! the same pair of knots; ONE condensation edge records them
+    g = stored_digraph(4, tails=[1,2,3,4,1,2,1], heads=[2,1,4,3,3,4,4])
+    c = stored_digraph(g)
+    call report(c % num_vertices .eq. 2 .and. c % num_edges .eq. 1, &
+         & "many crossing edges dedupe to one condensation edge", nfail)
+
+    ! promised property two, second half: handed an adversarial paint
+    ! where the edge runs from the HIGHER part id to the lower, the
+    ! squint must answer 2 -> 1 - the arrow of the graph, not the
+    ! sorted pair the undirected quotient would report
+    g = stored_digraph(2, tails=[1], heads=[2])
+    call g % condensation_edges([2,1], tails, heads)
+    call report(size(tails) .eq. 1 .and. tails(1) .eq. 2 .and. heads(1) .eq. 1, &
+         & "the squinted arrow points the way the graph points", nfail)
+
+  end subroutine check_knots
 
   !===================================================================!
   ! 7: orbits under a successor rule - one vertex, one arrow out,

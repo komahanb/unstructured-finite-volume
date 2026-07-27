@@ -1,4 +1,5 @@
 objects= \
+abstract_graph.o \
 module_solve_mode.o \
 interface_graph.o \
 class_chain.o \

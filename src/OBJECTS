@@ -7,6 +7,10 @@ class_graph.o \
 class_graph_reduction.o \
 class_graph_partitioner.o \
 class_graph_assembler.o \
+class_graph_coarsener.o \
+class_graph_refiner.o \
+class_graph_flux.o \
+class_graph_balance.o \
 module_solve_mode.o \
 interface_graph.o \
 class_chain.o \

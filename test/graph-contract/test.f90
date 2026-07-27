@@ -66,6 +66,18 @@
 !  18. The third law: a sum worked out on the whole graph agrees with
 !      the same sum worked out piecewise and joined, provided only the
 !      owned cells of each piece are folded in.
+!  19. Coarsening and refinement: six cells glued in pairs make three
+!      blocks, faces inside a block vanish, values average onto the
+!      blocks or add when told to, and refinement carries them back
+!      down to every child.
+!  20. Edge contributions reduced through incidence exactly once. On a
+!      closed ring with no walls the balance must sum to zero, however
+!      lopsided the state and however many face terms there are.
+!      Fold a face twice and the sum is wrong by that face; miss one
+!      and it is wrong the other way. Neither crashes. Open the ring
+!      and the sum stops cancelling, which is the negative control -
+!      without it the check would also pass on a balance that returned
+!      nothing but zeros.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -90,7 +102,11 @@ program test_graph_contract
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
   use class_graph_partitioner, only : PARTITION_BREADTH_FIRST, PARTITION_ADOPTED
   use class_graph_assembler , only : assembler
-  use abstract_graph_types  , only : graph
+  use abstract_graph_types  , only : graph, graph_vertex_field
+  use class_graph_coarsener , only : coarsener, COARSEN_PAIRWISE, COARSEN_ADOPTED
+  use class_graph_refiner   , only : refiner
+  use class_graph_flux      , only : flux, FLUX_DIFFUSION, FLUX_ADVECTION
+  use class_graph_balance   , only : balance
 
   implicit none
 
@@ -118,6 +134,8 @@ program test_graph_contract
   call check_partition_covers_once(nfail)
   call check_assembly_rebuilds_data(nfail)
   call check_operation_consistency(nfail)
+  call check_coarsen_and_refine(nfail)
+  call check_balance_conserves(nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
@@ -1169,5 +1187,191 @@ contains
          & "working it out piecewise gives the same answer as on the whole", nfail)
 
   end subroutine check_operation_consistency
+
+  !===================================================================!
+  ! Coarsening and refinement: the transforms that change how much
+  ! detail a graph holds, rather than how it is split up.
+  !
+  !      (1)--(2)--(3)--(4)--(5)--(6)      six cells
+  !       \___/     \___/     \___/
+  !         O    --    O   --    O         three blocks
+  !
+  ! Values averaged onto the blocks, then carried back down.
+  !===================================================================!
+
+  subroutine check_coarsen_and_refine(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_graph)             :: g
+    type(coarsener)                :: c
+    type(refiner)                  :: r
+    class(graph), allocatable      :: coarse, fine
+    class(graph_data), allocatable :: cd, fd
+    type(vertex_support)           :: on
+    type(vertex_field)             :: d
+    real(dp), allocatable          :: v(:)
+
+    g = chain_of_six()
+    c = coarsener(COARSEN_PAIRWISE)
+
+    call report(c % defined_on_graph(g), "a coarsener accepts a graph with room to shrink", nfail)
+
+    call c % coarsen_graph(g, coarse)
+    call report(coarse % num_vertices() .eq. 3, &
+         & "six cells glued in pairs make three blocks", nfail)
+    call report(coarse % num_edges() .lt. g % num_edges(), &
+         & "and some faces vanish inside the blocks", nfail)
+
+    ! Averaging onto the blocks. Cells 1 and 2 hold 10 and 20, so
+    ! their block holds 15.
+    on = vertex_support([1, 2, 3, 4, 5, 6])
+    d  = vertex_field('q', on)
+    call d % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp])
+
+    call c % coarsen_data(g, d, coarse, cd)
+    select type (cd)
+    class is (vertex_field)
+       call cd % get_real_vector(v)
+       call report(size(v) .eq. 3, "the coarse field has one value per block", nfail)
+       call report(abs(v(1) - 15.0_dp) < 1.0d-13, &
+            & "and each block holds the average of its cells", nfail)
+    class default
+       call report(.false., "and each block holds the average of its cells", nfail)
+    end select
+
+    ! Adding instead of averaging. A residual is a total, so its
+    ! block holds 30, not 15. Choosing wrong here is quiet - a
+    ! multigrid cycle just converges more slowly than it should.
+    c = coarsener(COARSEN_PAIRWISE, average=.false.)
+    call c % coarsen_data(g, d, coarse, cd)
+    select type (cd)
+    class is (vertex_field)
+       call cd % get_real_vector(v)
+       call report(abs(v(1) - 30.0_dp) < 1.0d-13, &
+            & "told to add rather than average, a block holds the total", nfail)
+    end select
+
+    ! And back down. Every child starts from its parent's value.
+    r = refiner(2)
+    call r % refine_graph(coarse, fine)
+    call report(fine % num_vertices() .eq. 6, &
+         & "splitting three blocks in two gives six cells back", nfail)
+
+    call c % coarsen_data(g, d, coarse, cd)
+    call r % refine_data(coarse, cd, fine, fd)
+    select type (fd)
+    class is (vertex_field)
+       call fd % get_real_vector(v)
+       call report(size(v) .eq. 6, "the fine field has one value per cell", nfail)
+       call report(abs(v(1) - v(2)) < 1.0d-13, &
+            & "and both children start from the same parent value", nfail)
+    class default
+       call report(.false., "and both children start from the same parent value", nfail)
+    end select
+
+  end subroutine check_coarsen_and_refine
+
+  !===================================================================!
+  ! EDGE CONTRIBUTIONS REDUCED THROUGH INCIDENCE EXACTLY ONCE.
+  !
+  ! A ring of four cells with no walls anywhere:
+  !
+  !            (1) ---> (2)
+  !             ^        |
+  !             |        v
+  !            (4) <--- (3)
+  !
+  ! Every face gives its number to the cell it leaves and takes the
+  ! same number from the cell it enters. So however the numbers come
+  ! out, they must cancel:
+  !
+  !            sum over all cells of the balance  ==  0
+  !
+  ! That is not an approximation and it does not depend on the
+  ! physics. Walk one face twice and the sum is wrong by that face;
+  ! miss one and it is wrong the other way. Neither crashes - both
+  ! just make the answer quietly not the answer.
+  !
+  ! Checked with several different states, because a single state
+  ! could cancel by luck.
+  !===================================================================!
+
+  subroutine check_balance_conserves(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_graph)                       :: ring, open_chain
+    type(flux)                               :: face_term
+    type(balance)                            :: bal
+    class(graph_vertex_field), allocatable   :: y
+    type(vertex_support)                     :: on
+    type(vertex_field)                       :: q
+    real(dp), allocatable                    :: v(:)
+    real(dp)                                 :: total
+    logical                                  :: ok
+
+    ! A closed ring: four cells, four faces, not a wall in sight.
+    ring = stored_graph(4, tails=[1, 2, 3, 4], heads=[2, 3, 4, 1])
+
+    face_term = flux(FLUX_DIFFUSION, coefficient=1.0_dp)
+    bal       = balance(face_terms=[face_term])
+
+    on = vertex_support([1, 2, 3, 4])
+    q  = vertex_field('q', on)
+
+    ok = .true.
+
+    call q % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
+    call bal % apply(ring, [q], y)
+    call y % get_real_vector(v)
+    total = sum(v)
+    ok = ok .and. abs(total) < 1.0d-12
+    call report(size(v) .eq. 4, "a balance answers one value per cell", nfail)
+
+    ! A lopsided state, so nothing cancels by symmetry.
+    call q % set_real_vector([0.0_dp, 7.0_dp, -3.0_dp, 11.5_dp])
+    call bal % apply(ring, [q], y)
+    call y % get_real_vector(v)
+    ok = ok .and. abs(sum(v)) < 1.0d-12
+
+    ! And one more, with the values in a different order again.
+    call q % set_real_vector([100.0_dp, -0.25_dp, 4.0_dp, 0.0_dp])
+    call bal % apply(ring, [q], y)
+    call y % get_real_vector(v)
+    ok = ok .and. abs(sum(v)) < 1.0d-12
+
+    call report(ok, &
+         & "on a closed ring the balance sums to zero - every face folded once", nfail)
+
+    ! Two face terms, not one. Each is folded through incidence in its
+    ! turn, so the sum still has to cancel.
+    bal = balance(face_terms=[flux(FLUX_DIFFUSION, coefficient=1.0_dp), &
+         &                    flux(FLUX_ADVECTION, coefficient=0.5_dp)])
+    call q % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
+    call bal % apply(ring, [q], y)
+    call y % get_real_vector(v)
+    call report(abs(sum(v)) < 1.0d-12, &
+         & "two face terms fold once each, and still cancel", nfail)
+
+    ! Lend the same buffer twice. By the overwrite law the second call
+    ! replaces the answer rather than adding to it, so the sum is
+    ! still zero rather than double.
+    call bal % apply(ring, [q], y)
+    call y % get_real_vector(v)
+    call report(abs(sum(v)) < 1.0d-12, &
+         & "applying twice into one buffer overwrites, it does not accumulate", nfail)
+
+    ! Open the ring and the balance stops cancelling, because now two
+    ! faces are walls and their numbers leave the mesh. If the closed
+    ! case passed only because the balance was returning zeros, this
+    ! catches it.
+    open_chain = stored_graph(4, tails=[1, 2, 3, 4], heads=[2, 3, 4, 0])
+    call bal % apply(open_chain, [q], y)
+    call y % get_real_vector(v)
+    call report(abs(sum(v)) > 1.0d-12, &
+         & "open the ring and it stops cancelling - the check has teeth", nfail)
+
+  end subroutine check_balance_conserves
 
 end program test_graph_contract

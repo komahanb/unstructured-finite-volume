@@ -45,6 +45,14 @@
 !  12. Geometry rides on the graph and is fetched by name, which is
 !      how a flux reaches a face normal without anyone threading it
 !      down through every call.
+!  13. Every reduction rule on numbers whose answer is obvious by
+!      hand, including a measure turning a bare sum into an integral,
+!      a predicate staying a predicate, and a complex sum keeping the
+!      imaginary part a complex-step derivative lives in.
+!  14. The case the four steps exist for: two parts averaging 2 and 7
+!      combine to 4, not 4.5, whichever order they arrive in. If that
+!      ever reads 4.5, a reduction has finished early on each part and
+!      a parallel run has stopped agreeing with a serial one.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -56,12 +64,16 @@ program test_graph_contract
   use abstract_graph_types  , only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
   use abstract_graph_types  , only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
   use abstract_graph_types  , only : GRAPH_FIELD_CHARACTER
-  use abstract_graph_types  , only : graph_data
+  use abstract_graph_types  , only : graph_data, graph_functional
   use abstract_graph_types  , only : graph_vertex_support, graph_edge_support
   use class_graph_support   , only : vertex_support, edge_support
   use class_graph           , only : stored_graph
   use class_graph_field     , only : vertex_field, edge_field
   use class_graph_functional, only : functional
+  use class_graph_reduction , only : reduction
+  use class_graph_reduction , only : REDUCE_SUM, REDUCE_AVERAGE, REDUCE_MINIMUM
+  use class_graph_reduction , only : REDUCE_MAXIMUM, REDUCE_NORM, REDUCE_COUNT
+  use class_graph_reduction , only : REDUCE_ALL, REDUCE_ANY
 
   implicit none
 
@@ -83,6 +95,8 @@ program test_graph_contract
   call check_graph_walking(nfail)
   call check_graph_uncut(nfail)
   call check_graph_data(nfail)
+  call check_reductions(nfail)
+  call check_average_across_parts(nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
@@ -635,5 +649,167 @@ contains
     end select
 
   end subroutine check_graph_data
+
+  !===================================================================!
+  ! The reduction rules, each on numbers whose answer is obvious by
+  ! hand. A measure turns a bare sum into an integral.
+  !===================================================================!
+
+  subroutine check_reductions(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_graph)                   :: g
+    type(vertex_support)                 :: on
+    type(vertex_field)                   :: f, vol
+    type(reduction)                      :: rule
+    class(graph_functional), allocatable :: j
+    real(dp)                             :: r
+    complex(dp)                          :: c
+    logical                              :: l
+    integer                              :: i
+
+    g  = diamond()
+    on = vertex_support([1, 2, 3, 4])
+
+    f = vertex_field('q', on)
+    call f % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
+
+    rule = reduction(REDUCE_SUM)
+    call rule % reduce(g, f, on, j)
+    call j % get_real_value(r)
+    call report(abs(r - 10.0_dp) < 1.0d-13, "sum adds the values up", nfail)
+
+    ! With a measure the same rule becomes an integral. Each cell is
+    ! weighted by its volume, so the answer stops depending on how
+    ! finely the mesh was cut.
+    vol = vertex_field('cell_volume', on)
+    call vol % set_real_vector([2.0_dp, 2.0_dp, 2.0_dp, 2.0_dp])
+    call rule % reduce(g, f, on, j, measure=vol)
+    call j % get_real_value(r)
+    call report(abs(r - 20.0_dp) < 1.0d-13, &
+         & "a measure turns the sum into an integral", nfail)
+
+    rule = reduction(REDUCE_MINIMUM)
+    call rule % reduce(g, f, on, j)
+    call j % get_real_value(r)
+    call report(abs(r - 1.0_dp) < 1.0d-13, "minimum finds the smallest", nfail)
+
+    rule = reduction(REDUCE_MAXIMUM)
+    call rule % reduce(g, f, on, j)
+    call j % get_real_value(r)
+    call report(abs(r - 4.0_dp) < 1.0d-13, "maximum finds the largest", nfail)
+
+    ! Three-four-five, so the root is exact.
+    call f % set_real_vector([3.0_dp, 4.0_dp])
+    rule = reduction(REDUCE_NORM)
+    call rule % reduce(g, f, on, j)
+    call j % get_real_value(r)
+    call report(abs(r - 5.0_dp) < 1.0d-13, "the two-norm takes its root once", nfail)
+
+    call f % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
+    rule = reduction(REDUCE_COUNT)
+    call rule % reduce(g, f, on, j)
+    call j % get_integer_value(i)
+    call report(i .eq. 4, "count counts, and answers as an integer", nfail)
+    call report(j % value_kind() .eq. GRAPH_FIELD_INTEGER, &
+         & "and says so", nfail)
+
+    ! A predicate over a logical field. This is the shape a question
+    ! like "is this graph acyclic" comes back in.
+    call f % set_logical_vector([.true., .true., .false., .true.])
+    rule = reduction(REDUCE_ALL)
+    call rule % reduce(g, f, on, j)
+    call j % get_logical_value(l)
+    call report(.not. l, "all is false when one of them is", nfail)
+
+    rule = reduction(REDUCE_ANY)
+    call rule % reduce(g, f, on, j)
+    call j % get_logical_value(l)
+    call report(l, "any is true when one of them is", nfail)
+    call report(j % value_kind() .eq. GRAPH_FIELD_LOGICAL, &
+         & "and a predicate stays a predicate, not a one or a zero", nfail)
+
+    ! The complex-step road. The imaginary parts are tiny on purpose:
+    ! a reduction that rounded through a real would return zero.
+    call f % set_complex_vector([(1.0_dp, 1.0d-20), (2.0_dp, 3.0d-20)])
+    rule = reduction(REDUCE_SUM)
+    call rule % reduce(g, f, on, j)
+    call j % get_complex_value(c)
+    call report(abs(real(c) - 3.0_dp) < 1.0d-13, &
+         & "summing a complex field keeps the real part", nfail)
+    call report(abs(aimag(c) - 4.0d-20) < 1.0d-33, &
+         & "and the imaginary part - a complex-step objective survives", nfail)
+
+  end subroutine check_reductions
+
+  !===================================================================!
+  ! THE CASE THE FOUR STEPS EXIST FOR.
+  !
+  ! Two parts, averaged separately, would give
+  !
+  !      part 1  [2 2 2]  ->  mean 2
+  !      part 2  [5 9]    ->  mean 7          (2 + 7) / 2 = 4.5   WRONG
+  !
+  ! but the answer is twenty divided by five, which is 4. The running
+  ! sum and the running count have to travel together and the division
+  ! has to happen once, at the very end.
+  !
+  ! If this check ever reads 4.5, a reduction has finished early on
+  ! each part - and a parallel run has quietly stopped agreeing with a
+  ! serial one.
+  !===================================================================!
+
+  subroutine check_average_across_parts(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_graph)                   :: g
+    type(vertex_support)                 :: s1, s2
+    type(vertex_field)                   :: f1, f2
+    type(reduction)                      :: rule
+    class(graph_functional), allocatable :: a, b, both, j
+    real(dp)                             :: r
+
+    g    = diamond()
+    rule = reduction(REDUCE_AVERAGE)
+
+    s1 = vertex_support([1, 2, 3])
+    f1 = vertex_field('q', s1)
+    call f1 % set_real_vector([2.0_dp, 2.0_dp, 2.0_dp])
+
+    s2 = vertex_support([1, 2])
+    f2 = vertex_field('q', s2)
+    call f2 % set_real_vector([5.0_dp, 9.0_dp])
+
+    ! Each part folds on its own, and neither one divides.
+    call rule % identity(a)
+    call rule % accumulate(g, f1, s1, a)
+
+    call rule % identity(b)
+    call rule % accumulate(g, f2, s2, b)
+
+    call rule % combine(a, b, both)
+    call rule % finalize(both, j)
+
+    call j % get_real_value(r)
+    call report(abs(r - 4.0_dp) < 1.0d-13, &
+         & "two parts average to 4, not 4.5 - the division waits", nfail)
+
+    ! Joining the parts the other way round must give the same answer,
+    ! or a parallel run would depend on which image finished first.
+    call rule % combine(b, a, both)
+    call rule % finalize(both, j)
+    call j % get_real_value(r)
+    call report(abs(r - 4.0_dp) < 1.0d-13, &
+         & "and the order the parts arrive in makes no difference", nfail)
+
+    ! One part alone still has to come out right.
+    call rule % finalize(a, j)
+    call j % get_real_value(r)
+    call report(abs(r - 2.0_dp) < 1.0d-13, &
+         & "one part on its own averages to its own mean", nfail)
+
+  end subroutine check_average_across_parts
 
 end program test_graph_contract

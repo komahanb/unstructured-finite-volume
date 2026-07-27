@@ -107,6 +107,8 @@ program test_graph_contract
   use class_graph_refiner   , only : refiner
   use class_graph_flux      , only : flux, FLUX_DIFFUSION, FLUX_ADVECTION
   use class_graph_balance   , only : balance
+  use class_graph_walk      , only : walk, WALK_COLOURING, WALK_VISIT_ORDER
+  use class_graph_walk      , only : WALK_COMPONENT, WALK_DEPTH
 
   implicit none
 
@@ -136,6 +138,7 @@ program test_graph_contract
   call check_operation_consistency(nfail)
   call check_coarsen_and_refine(nfail)
   call check_balance_conserves(nfail)
+  call check_walks(nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
@@ -1373,5 +1376,94 @@ contains
          & "open the ring and it stops cancelling - the check has teeth", nfail)
 
   end subroutine check_balance_conserves
+
+  !===================================================================!
+  ! The walks that used to be procedures on the graph itself.
+  !
+  ! Each reads the shape of the graph and hands back a whole number
+  ! per cell, which is exactly why none of them belonged on the graph.
+  !===================================================================!
+
+  subroutine check_walks(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_graph)                     :: g, split_mesh
+    type(walk)                             :: w
+    class(graph_vertex_field), allocatable :: f
+    integer, allocatable                   :: c(:)
+    integer                                :: e, t, h
+    logical                                :: ok
+
+    g = chain_of_six()
+
+    ! COLOURING. The promise is not "few colours" - it is that no face
+    ! has the same colour at both ends. That is what makes a colour
+    ! safe to sweep in parallel, so that is what gets checked.
+    w = walk(WALK_COLOURING)
+    call w % apply(g, output=f)
+    call f % get_integer_vector(c)
+
+    call report(size(c) .eq. 6, "a colouring gives one colour per cell", nfail)
+    call report(all(c >= 1), "and every cell gets one", nfail)
+
+    ok = .true.
+    do e = 1, g % num_edges()
+       t = g % edge_tail(e)
+       if (.not. g % edge_has_head(e)) cycle
+       h = g % edge_head(e)
+       ok = ok .and. c(t) /= c(h)
+    end do
+    call report(ok, "no face has the same colour at both ends", nfail)
+
+    ! The same must hold on a ring, where a naive alternating colouring
+    ! would fail at the join if the count is odd.
+    split_mesh = stored_graph(5, tails=[1, 2, 3, 4, 5], heads=[2, 3, 4, 5, 1])
+    call w % apply(split_mesh, output=f)
+    call f % get_integer_vector(c)
+    ok = .true.
+    do e = 1, split_mesh % num_edges()
+       t = split_mesh % edge_tail(e)
+       h = split_mesh % edge_head(e)
+       ok = ok .and. c(t) /= c(h)
+    end do
+    call report(ok, "and still not on an odd ring, where two colours cannot do", nfail)
+
+    ! DEPTH. On a row of six starting at one, the distances are simply
+    ! how far along each cell is.
+    w = walk(WALK_DEPTH, seed=1)
+    call w % apply(g, output=f)
+    call f % get_integer_vector(c)
+    call report(all(c .eq. [0, 1, 2, 3, 4, 5]), &
+         & "depth counts the faces crossed to reach each cell", nfail)
+
+    ! VISIT ORDER. Reached in order along the row.
+    w = walk(WALK_VISIT_ORDER, seed=1)
+    call w % apply(g, output=f)
+    call f % get_integer_vector(c)
+    call report(all(c .eq. [1, 2, 3, 4, 5, 6]), &
+         & "visit order numbers the cells as the walk reaches them", nfail)
+
+    ! COMPONENT. One connected row is one piece.
+    w = walk(WALK_COMPONENT)
+    call w % apply(g, output=f)
+    call f % get_integer_vector(c)
+    call report(all(c .eq. 1), "a connected mesh is one piece", nfail)
+
+    ! A mesh in two halves says so, and the unreachable half is not
+    ! given a distance it does not have.
+    split_mesh = stored_graph(4, tails=[1, 3], heads=[2, 4])
+    call w % apply(split_mesh, output=f)
+    call f % get_integer_vector(c)
+    call report(c(1) .eq. c(2) .and. c(3) .eq. c(4) .and. c(1) /= c(3), &
+         & "a mesh in two halves comes back as two pieces", nfail)
+
+    w = walk(WALK_DEPTH, seed=1)
+    call w % apply(split_mesh, output=f)
+    call f % get_integer_vector(c)
+    call report(c(3) .eq. -1 .and. c(4) .eq. -1, &
+         & "and what the seed cannot reach is marked unreachable, not zero", nfail)
+
+  end subroutine check_walks
 
 end program test_graph_contract

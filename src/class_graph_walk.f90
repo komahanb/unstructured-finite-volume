@@ -1,0 +1,327 @@
+!=====================================================================!
+! Walks over a graph, as operations.
+!
+! The old graph did these itself: colouring, visit order, connected
+! components, distance from a seed. They were type-bound procedures on
+! the graph, which is why anything wanting to be a graph inherited a
+! partitioner and a colouring whether it needed them or not.
+!
+! They are operations. Each one reads a graph's structure and hands
+! back a whole number per cell, so each is a vertex field operation
+! like any other, and the graph itself keeps none of them.
+!
+!      graph structure  ---> walk --->  an integer per cell
+!
+! One type carrying a rule, so a caller can hold several in a plain
+! array and a new walk costs a case rather than a class.
+!
+!=====================================================================!
+!
+!                        WHAT EACH ONE ANSWERS
+!
+! COLOURING gives every cell a colour such that no face has the same
+! colour at both ends:
+!
+!            (1)---(2)---(3)---(4)
+!             1     2     1     2
+!
+! That is what makes a Gauss-Seidel sweep safe to run in parallel:
+! every cell of one colour can be updated at the same time, because
+! none of them is anybody else's neighbour.
+!
+! VISIT ORDER numbers the cells in the order a breadth-first walk
+! reaches them, starting from cell one. Solvers that want to march
+! through a mesh in a sensible order read this.
+!
+! COMPONENT gives all the cells that can reach each other the same
+! number. Two cells share a number exactly when a path joins them, so
+! a mesh that fell into two pieces says so.
+!
+! DEPTH counts faces from the seed cell. Cells the seed cannot reach
+! are marked minus one, which is honest - there is no distance to
+! something you cannot get to.
+!
+! Author: Komahan Boopathy (komahan@gatech.edu)
+!=====================================================================!
+
+module class_graph_walk
+
+  use abstract_graph_types, only : graph_vertex_field_operation, graph
+  use abstract_graph_types, only : graph_data, graph_vertex_field
+  use abstract_graph_types, only : graph_vertex_support
+  use class_graph_support , only : vertex_support
+  use class_graph_field   , only : vertex_field
+
+  implicit none
+
+  private
+  public :: walk
+  public :: WALK_COLOURING, WALK_VISIT_ORDER, WALK_COMPONENT, WALK_DEPTH
+
+  integer, parameter :: WALK_COLOURING   = 1
+  integer, parameter :: WALK_VISIT_ORDER = 2
+  integer, parameter :: WALK_COMPONENT   = 3
+  integer, parameter :: WALK_DEPTH       = 4
+
+  !===================================================================!
+  ! One walk, carrying which question it answers and where it starts.
+  !===================================================================!
+
+  type, extends(graph_vertex_field_operation) :: walk
+
+     integer :: rule = WALK_COLOURING
+     integer :: seed = 1
+
+   contains
+
+     procedure :: name    => w_name
+     procedure :: support => w_support
+     procedure :: apply   => w_apply
+
+  end type walk
+
+  interface walk
+     module procedure create
+  end interface walk
+
+contains
+
+  pure type(walk) function create(rule, seed) result(this)
+
+    integer, intent(in)           :: rule
+    integer, intent(in), optional :: seed
+
+    this % rule = rule
+
+    if (present(seed)) this % seed = seed
+
+  end function create
+
+  pure function w_name(this) result(name)
+
+    class(walk), intent(in)       :: this
+    character(len=:), allocatable :: name
+
+    select case (this % rule)
+    case (WALK_VISIT_ORDER)
+       name = 'visit order'
+    case (WALK_COMPONENT)
+       name = 'component'
+    case (WALK_DEPTH)
+       name = 'depth'
+    case default
+       name = 'colouring'
+    end select
+
+  end function w_name
+
+  subroutine w_support(this, input_graph, support)
+
+    class(walk) , intent(in)                              :: this
+    class(graph), intent(in)                              :: input_graph
+    class(graph_vertex_support), allocatable, intent(out) :: support
+
+    call input_graph % all_vertices(support)
+
+  end subroutine w_support
+
+  !===================================================================!
+  ! Walk the graph and hand back a whole number per cell.
+  !
+  ! Nothing here reads input_data. These answers come from the shape
+  ! of the graph alone - which is exactly why they had no business
+  ! living on the graph.
+  !===================================================================!
+
+  subroutine w_apply(this, input_graph, input_data, output)
+
+    class(walk)      , intent(in)                         :: this
+    class(graph)     , intent(in)                         :: input_graph
+    class(graph_data), intent(in), optional               :: input_data(:)
+    class(graph_vertex_field), allocatable, intent(inout) :: output
+
+    type(vertex_field)    :: out
+    type(vertex_support)  :: on
+    integer , allocatable :: mark(:), ids(:)
+    integer :: nv, v
+
+    nv = input_graph % num_vertices()
+
+    allocate(ids(nv))
+    do v = 1, nv
+       ids(v) = v
+    end do
+
+    on  = vertex_support(ids)
+    out = vertex_field(this % name(), on)
+
+    select case (this % rule)
+    case (WALK_VISIT_ORDER)
+       call breadth_first(input_graph, this % seed, mark, want_depth=.false.)
+    case (WALK_DEPTH)
+       call breadth_first(input_graph, this % seed, mark, want_depth=.true.)
+    case (WALK_COMPONENT)
+       call components(input_graph, mark)
+    case default
+       call colour(input_graph, mark)
+    end select
+
+    call out % set_integer_vector(mark)
+
+    ! Overwrite, by the law.
+    if (allocated(output)) deallocate(output)
+    allocate(output, source=out)
+
+  end subroutine w_apply
+
+  !===================================================================!
+  ! Give every cell the lowest colour none of its neighbours has taken.
+  !
+  ! Greedy, so it does not promise the fewest possible colours. It does
+  ! promise the thing that matters: no face has one colour at both
+  ! ends, which is what makes a colour safe to sweep in parallel.
+  !===================================================================!
+
+  subroutine colour(input_graph, mark)
+
+    class(graph)        , intent(in)  :: input_graph
+    integer, allocatable, intent(out) :: mark(:)
+
+    integer, allocatable :: nbrs(:)
+    logical, allocatable :: taken(:)
+    integer :: nv, v, i, c
+
+    nv = input_graph % num_vertices()
+    allocate(mark(nv))
+    mark = 0
+
+    allocate(taken(nv + 1))
+
+    do v = 1, nv
+
+       taken = .false.
+       call input_graph % adjacent_vertices(v, nbrs)
+       do i = 1, size(nbrs)
+          if (mark(nbrs(i)) >= 1) taken(mark(nbrs(i))) = .true.
+       end do
+
+       ! The lowest colour nobody next door is wearing.
+       c = 1
+       do while (c <= nv .and. taken(c))
+          c = c + 1
+       end do
+       mark(v) = c
+
+    end do
+
+  end subroutine colour
+
+  !===================================================================!
+  ! Walk outward from the seed, one ring at a time. Either number the
+  ! cells in the order they are reached, or count the faces crossed to
+  ! reach them.
+  !
+  ! A cell the seed cannot reach gets minus one either way. Saying
+  ! "not reachable" beats reporting a distance of zero, which would be
+  ! indistinguishable from being the seed.
+  !===================================================================!
+
+  subroutine breadth_first(input_graph, seed, mark, want_depth)
+
+    class(graph)        , intent(in)  :: input_graph
+    integer             , intent(in)  :: seed
+    integer, allocatable, intent(out) :: mark(:)
+    logical             , intent(in)  :: want_depth
+
+    integer, allocatable :: queue(:), depth(:), nbrs(:)
+    integer :: nv, head_of_queue, tail_of_queue, v, i, rank
+
+    nv = input_graph % num_vertices()
+    allocate(mark(nv), queue(nv), depth(nv))
+    mark  = -1
+    depth = -1
+
+    if (seed < 1 .or. seed > nv) return
+
+    queue(1)      = seed
+    head_of_queue = 1
+    tail_of_queue = 1
+    depth(seed)   = 0
+    rank          = 1
+    if (want_depth) then
+       mark(seed) = 0
+    else
+       mark(seed) = rank
+    end if
+
+    do while (head_of_queue <= tail_of_queue)
+
+       v = queue(head_of_queue)
+       head_of_queue = head_of_queue + 1
+
+       call input_graph % adjacent_vertices(v, nbrs)
+       do i = 1, size(nbrs)
+          if (depth(nbrs(i)) >= 0) cycle
+          depth(nbrs(i))       = depth(v) + 1
+          rank                 = rank + 1
+          tail_of_queue        = tail_of_queue + 1
+          queue(tail_of_queue) = nbrs(i)
+          if (want_depth) then
+             mark(nbrs(i)) = depth(nbrs(i))
+          else
+             mark(nbrs(i)) = rank
+          end if
+       end do
+
+    end do
+
+  end subroutine breadth_first
+
+  !===================================================================!
+  ! Give the same number to every cell that can reach every other.
+  !
+  ! Start a fresh number at the first unmarked cell, flood as far as
+  ! it goes, and repeat. Two cells share a number exactly when a path
+  ! joins them.
+  !===================================================================!
+
+  subroutine components(input_graph, mark)
+
+    class(graph)        , intent(in)  :: input_graph
+    integer, allocatable, intent(out) :: mark(:)
+
+    integer, allocatable :: queue(:), nbrs(:)
+    integer :: nv, v, i, which, head_of_queue, tail_of_queue, u
+
+    nv = input_graph % num_vertices()
+    allocate(mark(nv), queue(nv))
+    mark  = 0
+    which = 0
+
+    do v = 1, nv
+
+       if (mark(v) /= 0) cycle
+
+       which         = which + 1
+       mark(v)       = which
+       queue(1)      = v
+       head_of_queue = 1
+       tail_of_queue = 1
+
+       do while (head_of_queue <= tail_of_queue)
+          u = queue(head_of_queue)
+          head_of_queue = head_of_queue + 1
+          call input_graph % adjacent_vertices(u, nbrs)
+          do i = 1, size(nbrs)
+             if (mark(nbrs(i)) /= 0) cycle
+             mark(nbrs(i))        = which
+             tail_of_queue        = tail_of_queue + 1
+             queue(tail_of_queue) = nbrs(i)
+          end do
+       end do
+
+    end do
+
+  end subroutine components
+
+end module class_graph_walk

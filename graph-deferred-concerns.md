@@ -105,6 +105,65 @@ none - it is an operation like any other, and the design note says so -
 but nobody has written it. Until then a partitioned run cannot refresh
 its borrowed values.
 
+## what gutting the old graph actually involves
+
+This is the one piece of the plan that is not done, and it is not done
+because it is not a sequence of small green steps. Measured rather
+than guessed:
+
+Eleven modules use `interface_graph`:
+
+    class_chain        class_fvm_field     class_csr
+    class_gauss_seidel class_geometric_multigrid
+    class_mesh         class_stored_graph  class_sor
+    interface_linear_solver  interface_physics  interface_multigrid
+
+And six types *are* graphs by inheritance:
+
+    mesh          extends graph      73 KB, the whole geometry layer
+    csr_matrix    extends digraph    24 KB, held by every solver
+    physics       extends graph      so every flux and source is a graph
+    chain         extends digraph
+    marcher       extends chain      so every solver and integrator too
+    stored_graph  extends graph
+
+The architecture note says data, transforms and operations should
+*hold* a graph rather than *be* one. Every line above is that
+relationship the wrong way round. Inverting it touches
+`interface_physics`, `interface_flux`, `interface_marcher`,
+`class_chain` and everything below them - which is what
+`class_assembler` (62 KB) and `class_partitioned_assembler` (41 KB)
+are built on, which in turn is what all five solver interfaces hold.
+
+So it is one large change where the suites go red in the middle and
+only come back at the end. It also touches the adjoint and
+complex-step machinery, which the new contract was widened to support
+but which nothing has yet exercised end to end - nothing in the repo
+extracts `aimag` anywhere.
+
+Three decisions come before the work, not during it:
+
+**Does the new graph carry the old algorithm surface while migrating?**
+Carrying it keeps every suite green throughout and leaves the graph
+temporarily fat, against the whole point of the rewrite. Not carrying
+it is cleaner and goes red for a while. `class_graph_walk.f90` now
+gives colouring, visit order, components and depth a home as
+operations, so the algorithms at least have somewhere to land either
+way.
+
+**Does `physics` invert to hold a graph, or collapse?** The fluxes
+already collapsed into one concrete type with a rule, and
+`class_graph_flux.f90` shows that shape working. The same could be
+done to `physics` wholesale, or it could keep its hierarchy and simply
+stop being a graph.
+
+**Is complex step exercised before or after?** It is provisioned
+across 19 files and opt-in behind `COMPLEX=yes`, and the new
+reduction's complex road is tested only in the contract suite. Proving
+it against real physics before the gutting would mean the rewrite has
+a working reference; after means the rewrite is judged on the real
+tests but with a longer red stretch.
+
 ## build
 
 **The tree carries 209 warnings from before this work.** A clean build

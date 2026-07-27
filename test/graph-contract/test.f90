@@ -53,6 +53,19 @@
 !      combine to 4, not 4.5, whichever order they arrive in. If that
 !      ever reads 4.5, a reduction has finished early on each part and
 !      a parallel run has stopped agreeing with a serial one.
+!  15. The first law where it holds exactly: cut into one piece, the
+!      round trip gives back the same cells, the same faces, the same
+!      ends and the same values.
+!  16. Every cell owned exactly once, under every cut rule and several
+!      part counts. Own one twice and mass appears from nowhere; own
+!      it never and it vanishes. Both only show up in parallel, near
+!      a cut.
+!  17. The pieces added together rebuild the whole field exactly. This
+!      is the only form the first law can take when the contract hands
+!      the assembler one part at a time.
+!  18. The third law: a sum worked out on the whole graph agrees with
+!      the same sum worked out piecewise and joined, provided only the
+!      owned cells of each piece are folded in.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -74,6 +87,10 @@ program test_graph_contract
   use class_graph_reduction , only : REDUCE_SUM, REDUCE_AVERAGE, REDUCE_MINIMUM
   use class_graph_reduction , only : REDUCE_MAXIMUM, REDUCE_NORM, REDUCE_COUNT
   use class_graph_reduction , only : REDUCE_ALL, REDUCE_ANY
+  use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
+  use class_graph_partitioner, only : PARTITION_BREADTH_FIRST, PARTITION_ADOPTED
+  use class_graph_assembler , only : assembler
+  use abstract_graph_types  , only : graph
 
   implicit none
 
@@ -97,6 +114,10 @@ program test_graph_contract
   call check_graph_data(nfail)
   call check_reductions(nfail)
   call check_average_across_parts(nfail)
+  call check_identity_law_one_part(nfail)
+  call check_partition_covers_once(nfail)
+  call check_assembly_rebuilds_data(nfail)
+  call check_operation_consistency(nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
@@ -811,5 +832,342 @@ contains
          & "one part on its own averages to its own mean", nfail)
 
   end subroutine check_average_across_parts
+
+  !===================================================================!
+  ! The chain the partition checks run on. Six cells in a row:
+  !
+  !      (1)--(2)--(3)--(4)--(5)--(6)
+  !
+  ! Simple enough that the right answer can be worked out by hand, and
+  ! long enough that a cut has somewhere to fall.
+  !===================================================================!
+
+  type(stored_graph) function chain_of_six() result(g)
+
+    g = stored_graph(6, tails=[1, 2, 3, 4, 5], heads=[2, 3, 4, 5, 6])
+
+  end function chain_of_six
+
+  !===================================================================!
+  ! THE FIRST LAW, where it holds exactly.
+  !
+  !      assemble( partition( G ) )     ==  G
+  !      assemble( partition( G, D ) )  ==  ( G, D )
+  !
+  ! Cut into one piece, that piece is the whole graph, and the round
+  ! trip has to give back exactly what went in - same cells, same
+  ! faces, same ends, same values.
+  !
+  ! This is the weakest case and the one worth checking first: if the
+  ! maps are wrong here they are wrong everywhere, and nothing further
+  ! along is worth reading.
+  !===================================================================!
+
+  subroutine check_identity_law_one_part(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_graph)             :: g
+    type(partitioner)              :: p
+    type(assembler)                :: a
+    class(graph), allocatable      :: part, back
+    class(graph_data), allocatable :: pd, fd
+    type(vertex_support)           :: on
+    type(vertex_field)             :: d
+    real(dp), allocatable          :: v(:)
+    integer                        :: e
+    logical                        :: same
+
+    g = chain_of_six()
+    p = partitioner(PARTITION_LINEAR, nparts=1, part=1)
+    a = assembler()
+
+    call report(p % defined_on_graph(g), "a partitioner accepts a real graph", nfail)
+
+    call p % partition_graph(g, part)
+    call report(part % num_vertices() .eq. 6, &
+         & "cut into one, the piece has every cell", nfail)
+    call report(part % num_edges() .eq. 5, "and every face", nfail)
+
+    call report(a % defined_on_graph(part), &
+         & "the piece remembers where home was", nfail)
+
+    call a % assemble_graph(part, back)
+    call report(back % num_vertices() .eq. g % num_vertices(), &
+         & "assemble(partition(G)) has G's cells", nfail)
+    call report(back % num_edges() .eq. g % num_edges(), &
+         & "and G's faces", nfail)
+
+    same = .true.
+    do e = 1, g % num_edges()
+       same = same .and. back % edge_tail(e) .eq. g % edge_tail(e)
+       same = same .and. back % edge_head(e) .eq. g % edge_head(e)
+    end do
+    call report(same, "and every face runs between the same two cells", nfail)
+
+    ! Now the same round trip with values riding along.
+    on = vertex_support([1, 2, 3, 4, 5, 6])
+    d  = vertex_field('q', on)
+    call d % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp])
+
+    call p % partition_data(g, d, part, pd)
+    call a % assemble_data(part, pd, g, fd)
+
+    select type (fd)
+    class is (vertex_field)
+       call fd % get_real_vector(v)
+       call report(size(v) .eq. 6, "the data comes home the right size", nfail)
+       call report(all(abs(v - [10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp]) < 1.0d-13), &
+            & "assemble(partition(G,D)) gives back D unchanged", nfail)
+    class default
+       call report(.false., "assemble(partition(G,D)) gives back D unchanged", nfail)
+    end select
+
+  end subroutine check_identity_law_one_part
+
+  !===================================================================!
+  ! Cut into two, every cell must be owned by exactly one part.
+  !
+  !      (1)--(2)--(3) : (4)--(5)--(6)
+  !                  \___/
+  !             each side borrows one cell from the other,
+  !             and neither side owns it twice
+  !
+  ! Owned once is what makes the sum in the next check right. Own a
+  ! cell twice and mass appears from nowhere; own it never and it
+  ! vanishes. Both only happen in parallel, and only near a cut.
+  !===================================================================!
+
+  subroutine check_partition_covers_once(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_graph)                       :: g
+    type(partitioner)                        :: p
+    class(graph), allocatable                :: part
+    class(graph_vertex_support), allocatable :: vs
+    integer, allocatable                     :: ids(:)
+    integer                                  :: k, l, f, times(6)
+
+    g     = chain_of_six()
+    times = 0
+
+    do k = 1, 2
+       p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
+       call p % partition_graph(g, part)
+
+       call report(part % has_part_relation(), &
+            & "a piece cut from a whole says it is a piece", nfail)
+       call report(part % num_parts() .eq. 2, "and how many pieces there are", nfail)
+
+       ! Count how often each whole-graph cell is owned.
+       call part % owned_vertices(k, vs)
+       call vs % vertex_ids(ids)
+       do l = 1, size(ids)
+          f = part % full_vertex_id(ids(l))
+          times(f) = times(f) + 1
+       end do
+
+       ! Each piece should also have borrowed the one cell across the
+       ! cut, so a face term there has a value on both sides.
+       call part % borrowed_vertices(k, vs)
+       call vs % vertex_ids(ids)
+       call report(size(ids) .eq. 1, &
+            & "each piece borrows exactly one cell across the cut", nfail)
+    end do
+
+    call report(all(times .eq. 1), &
+         & "every cell is owned exactly once, by exactly one piece", nfail)
+
+    ! The same must hold however the cut was chosen. A rule that
+    ! leaves a cell unclaimed, or claims one twice, breaks the sum in
+    ! the next check - and it would only show up in parallel.
+    call report(covers_once(g, PARTITION_BREADTH_FIRST, 2), &
+         & "growing the pieces outward also covers every cell once", nfail)
+    call report(covers_once(g, PARTITION_BREADTH_FIRST, 3), &
+         & "and still does when cut three ways", nfail)
+    call report(covers_once(g, PARTITION_LINEAR, 4), &
+         & "and so does an uneven split, four ways into six cells", nfail)
+
+  end subroutine check_partition_covers_once
+
+  !===================================================================!
+  ! Cut the graph every way the rule allows and count how often each
+  ! cell comes out owned. The answer must be once, always.
+  !===================================================================!
+
+  logical function covers_once(g, rule, nparts) result(ok)
+
+    type(stored_graph), intent(in) :: g
+    integer           , intent(in) :: rule
+    integer           , intent(in) :: nparts
+
+    type(partitioner)                        :: p
+    class(graph), allocatable                :: part
+    class(graph_vertex_support), allocatable :: vs
+    integer, allocatable                     :: ids(:)
+    integer                                  :: times(g % num_vertices())
+    integer                                  :: k, l, f
+
+    times = 0
+
+    do k = 1, nparts
+       p = partitioner(rule, nparts=nparts, part=k)
+       call p % partition_graph(g, part)
+       call part % owned_vertices(k, vs)
+       call vs % vertex_ids(ids)
+       do l = 1, size(ids)
+          f = part % full_vertex_id(ids(l))
+          times(f) = times(f) + 1
+       end do
+    end do
+
+    ok = all(times .eq. 1)
+
+  end function covers_once
+
+  !===================================================================!
+  ! THE FIRST LAW AGAIN, in the only form one part can satisfy.
+  !
+  ! The contract hands the assembler a single piece, so no one call
+  ! can rebuild a whole that was cut in two. What each call does is
+  ! fill in its own share and leave the rest at zero. Add the shares
+  ! and the whole comes back:
+  !
+  !      part 1  ->  [10 20 30  0  0  0]
+  !      part 2  ->  [ 0  0  0 40 50 60]
+  !                  ------------------
+  !      sum         [10 20 30 40 50 60]   ==  D
+  !
+  ! That sum is only right because the owned sets do not overlap,
+  ! which the previous check pins down.
+  !===================================================================!
+
+  subroutine check_assembly_rebuilds_data(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_graph)             :: g
+    type(partitioner)              :: p
+    type(assembler)                :: a
+    class(graph), allocatable      :: part
+    class(graph_data), allocatable :: pd, fd
+    type(vertex_support)           :: on
+    type(vertex_field)             :: d
+    real(dp), allocatable          :: v(:)
+    real(dp)                       :: total(6)
+    integer                        :: k
+
+    g = chain_of_six()
+    a = assembler()
+
+    on = vertex_support([1, 2, 3, 4, 5, 6])
+    d  = vertex_field('q', on)
+    call d % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp])
+
+    total = 0.0_dp
+
+    do k = 1, 2
+       p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
+       call p % partition_graph(g, part)
+       call p % partition_data(g, d, part, pd)
+       call a % assemble_data(part, pd, g, fd)
+
+       select type (fd)
+       class is (vertex_field)
+          call fd % get_real_vector(v)
+          total = total + v(1:6)
+       end select
+    end do
+
+    call report(all(abs(total - [10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp]) < 1.0d-13), &
+         & "the pieces added together rebuild the whole field exactly", nfail)
+
+  end subroutine check_assembly_rebuilds_data
+
+  !===================================================================!
+  ! THE THIRD LAW.
+  !
+  !      full_A( G, D )  ==  assemble( A( partition( G, D ) ) )
+  !
+  ! Working something out on the whole must give the same answer as
+  ! working it out on each piece and putting the pieces together. Here
+  ! A is a sum, which is the smallest honest operation available, and
+  ! the pieces are joined by the reduction's own combine.
+  !
+  ! Only the owned cells of each piece are folded in. Fold the
+  ! borrowed ones too and the shared cell is counted twice - which is
+  ! the whole reason a reduction has to know about ownership.
+  !===================================================================!
+
+  subroutine check_operation_consistency(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_graph)                       :: g
+    type(partitioner)                        :: p
+    type(reduction)                          :: rule
+    class(graph), allocatable                :: part
+    class(graph_data), allocatable           :: pd
+    class(graph_vertex_support), allocatable :: vs
+    class(graph_functional), allocatable     :: whole, piece, running, joined
+    type(vertex_support)                     :: on, owned_only
+    type(vertex_field)                       :: d, owned_values
+    real(dp), allocatable                    :: v(:), pick(:)
+    integer, allocatable                     :: ids(:)
+    real(dp)                                 :: a_whole, a_parts
+    integer                                  :: k, l
+
+    g    = chain_of_six()
+    rule = reduction(REDUCE_SUM)
+
+    on = vertex_support([1, 2, 3, 4, 5, 6])
+    d  = vertex_field('q', on)
+    call d % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp])
+
+    ! A on the whole.
+    call rule % reduce(g, d, on, whole)
+    call whole % get_real_value(a_whole)
+    call report(abs(a_whole - 210.0_dp) < 1.0d-13, &
+         & "the sum over the whole graph is 210", nfail)
+
+    ! A on each piece, then joined.
+    call rule % identity(running)
+
+    do k = 1, 2
+       p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
+       call p % partition_graph(g, part)
+       call p % partition_data(g, d, part, pd)
+
+       ! Fold in this piece's owned cells only.
+       call part % owned_vertices(k, vs)
+       call vs % vertex_ids(ids)
+
+       select type (pd)
+       class is (vertex_field)
+          call pd % get_real_vector(v)
+          allocate(pick(size(ids)))
+          do l = 1, size(ids)
+             pick(l) = v(ids(l))
+          end do
+       end select
+
+       owned_only   = vertex_support(ids)
+       owned_values = vertex_field('q', owned_only)
+       call owned_values % set_real_vector(pick)
+       deallocate(pick)
+
+       call rule % identity(piece)
+       call rule % accumulate(g, owned_values, owned_only, piece)
+       call rule % combine(running, piece, joined)
+       call rule % identity(running)
+       call rule % combine(joined, running, running)
+    end do
+
+    call running % get_real_value(a_parts)
+    call report(abs(a_parts - a_whole) < 1.0d-13, &
+         & "working it out piecewise gives the same answer as on the whole", nfail)
+
+  end subroutine check_operation_consistency
 
 end program test_graph_contract

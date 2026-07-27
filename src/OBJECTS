@@ -5,6 +5,8 @@ class_graph_field.o \
 class_graph_functional.o \
 class_graph.o \
 class_graph_reduction.o \
+class_graph_partitioner.o \
+class_graph_assembler.o \
 module_solve_mode.o \
 interface_graph.o \
 class_chain.o \

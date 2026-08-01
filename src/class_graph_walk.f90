@@ -142,17 +142,17 @@ contains
 
     type(vertex_field)    :: out
     type(vertex_support)  :: on
-    integer , allocatable :: mark(:), ids(:)
+    integer , allocatable :: mark(:), indices(:)
     integer :: nv, v
 
     nv = input_graph % num_vertices()
 
-    allocate(ids(nv))
+    allocate(indices(nv))
     do v = 1, nv
-       ids(v) = v
+       indices(v) = v
     end do
 
-    on  = vertex_support(ids)
+    on  = vertex_support(indices)
     out = vertex_field(this % name(), on)
 
     select case (this % rule)

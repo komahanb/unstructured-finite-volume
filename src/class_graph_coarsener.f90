@@ -107,9 +107,17 @@ contains
   end function create
 
   !===================================================================!
-  ! There has to be something to glue, and more than one cell to glue
-  ! it to. A graph already down to one cell cannot be coarsened, and
-  ! saying so beats returning something degenerate.
+  ! Can this coarsener say anything about that graph?
+  !
+  ! A graph already down to one cell is not refused. It is as coarse
+  ! as a graph gets, so coarsening it hands the same graph back, and
+  ! doing nothing is a perfectly good answer. Refusing would push the
+  ! decision onto every caller, who would then have to special-case
+  ! the smallest level of a multigrid hierarchy - which is exactly the
+  ! place nobody wants a special case.
+  !
+  ! What is refused is a coarsening that was handed a map and cannot
+  ! read it, because then it genuinely does not know what to do.
   !===================================================================!
 
   pure logical function c_defined_on_graph(this, input_graph)
@@ -117,7 +125,7 @@ contains
     class(coarsener), intent(in) :: this
     class(graph)    , intent(in) :: input_graph
 
-    c_defined_on_graph = input_graph % num_vertices() > 1
+    c_defined_on_graph = input_graph % num_vertices() > 0
 
     if (this % rule == COARSEN_ADOPTED) then
        if (.not. allocated(this % block_of)) then
@@ -270,7 +278,7 @@ contains
 
     type(vertex_field)    :: out
     type(vertex_support)  :: on
-    integer , allocatable :: blk(:), ids(:), tally(:)
+    integer , allocatable :: blk(:), indices(:), tally(:)
     real(dp), allocatable :: fv(:), cv(:)
     integer :: nb, nv, ncomp, v, c, b
 
@@ -282,12 +290,12 @@ contains
        nv    = fine_graph % num_vertices()
        ncomp = fine_data % num_components()
 
-       allocate(ids(nb))
+       allocate(indices(nb))
        do b = 1, nb
-          ids(b) = b
+          indices(b) = b
        end do
 
-       on  = vertex_support(ids)
+       on  = vertex_support(indices)
        out = vertex_field(fine_data % name(), on, ncomp=ncomp, &
             &             unit_name=fine_data % units())
 

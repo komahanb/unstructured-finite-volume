@@ -181,7 +181,7 @@ contains
 
     type(vertex_field)    :: out
     type(vertex_support)  :: on
-    integer , allocatable :: ids(:)
+    integer , allocatable :: indices(:)
     real(dp), allocatable :: cv(:), fv(:)
     integer :: nfine, ncomp, v, i, c, child
 
@@ -191,12 +191,12 @@ contains
        nfine = fine_graph % num_vertices()
        ncomp = coarse_data % num_components()
 
-       allocate(ids(nfine))
+       allocate(indices(nfine))
        do v = 1, nfine
-          ids(v) = v
+          indices(v) = v
        end do
 
-       on  = vertex_support(ids)
+       on  = vertex_support(indices)
        out = vertex_field(coarse_data % name(), on, ncomp=ncomp, &
             &             unit_name=coarse_data % units())
 

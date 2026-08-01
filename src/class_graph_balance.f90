@@ -140,18 +140,18 @@ contains
     type(vertex_field)    :: out
     type(vertex_support)  :: on
     real(dp), allocatable :: y(:), z(:)
-    integer , allocatable :: ids(:)
+    integer , allocatable :: indices(:)
     integer               :: nv, ne, v, e, t, h, k
 
     nv = input_graph % num_vertices()
     ne = input_graph % num_edges()
 
-    allocate(ids(nv))
+    allocate(indices(nv))
     do v = 1, nv
-       ids(v) = v
+       indices(v) = v
     end do
 
-    on  = vertex_support(ids)
+    on  = vertex_support(indices)
     out = vertex_field('balance', on)
 
     allocate(y(nv))

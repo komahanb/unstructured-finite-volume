@@ -133,18 +133,18 @@ contains
     type(edge_field)      :: out
     type(edge_support)    :: on
     real(dp), allocatable :: q(:), fv(:)
-    integer , allocatable :: ids(:)
+    integer , allocatable :: indices(:)
     real(dp)              :: qt, qh
     integer               :: ne, e, t, h
 
     ne = input_graph % num_edges()
 
-    allocate(ids(ne))
+    allocate(indices(ne))
     do e = 1, ne
-       ids(e) = e
+       indices(e) = e
     end do
 
-    on  = edge_support(ids)
+    on  = edge_support(indices)
     out = edge_field(this % name(), on)
 
     allocate(fv(ne))

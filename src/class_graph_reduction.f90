@@ -110,7 +110,7 @@ module class_graph_reduction
      ! Start empty, fold values in, join two parts, finish once.
      !----------------------------------------------------------------!
 
-     procedure :: identity   => r_identity
+     procedure :: initialize   => r_initialize
      procedure :: accumulate => r_accumulate
      procedure :: combine    => r_combine
      procedure :: finalize   => r_finalize
@@ -157,7 +157,7 @@ contains
   ! same number, so nothing is lost by starting either way.
   !===================================================================!
 
-  pure subroutine r_identity(this, state)
+  pure subroutine r_initialize(this, state)
 
     class(reduction), intent(in)                            :: this
     class(graph_functional), allocatable, intent(inout)     :: state
@@ -186,7 +186,7 @@ contains
 
     end select
 
-  end subroutine r_identity
+  end subroutine r_initialize
 
   !===================================================================!
   ! Fold one part's values into the running answer.
@@ -475,7 +475,7 @@ contains
 
     class(graph_functional), allocatable :: state
 
-    call this % identity(state)
+    call this % initialize(state)
     call this % accumulate(input_graph, field, support, state, measure)
     call this % finalize(state, functional)
 

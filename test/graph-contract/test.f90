@@ -3,7 +3,7 @@
 ! behind abstract_graph_types, with no mesh and no solver in sight.
 !
 ! It checks:
-!   1. Supports: a set of ids goes in and the same set comes back, the
+!   1. Supports: a set of indices goes in and the same set comes back, the
 !      size agrees, each kind names itself, and an empty support
 !      answers with a zero-length array rather than nothing at all.
 !   2. The field ordering law: values run in support order with
@@ -139,6 +139,7 @@ program test_graph_contract
   call check_coarsen_and_refine(nfail)
   call check_balance_conserves(nfail)
   call check_walks(nfail)
+  call check_doing_nothing_is_an_answer(nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
@@ -171,8 +172,8 @@ contains
   end subroutine report
 
   !===================================================================!
-  ! A support is a set of ids. It gives back what it was given, it
-  ! knows how many it holds, and it says which kind of id it carries.
+  ! A support is a set of indices. It gives back what it was given, it
+  ! knows how many it holds, and it says which kind of index it carries.
   !===================================================================!
 
   subroutine check_supports(nfail)
@@ -186,23 +187,23 @@ contains
     vs = vertex_support([7, 3, 11])
     es = edge_support([2, 5])
 
-    call vs % vertex_ids(got)
+    call vs % vertex_indices(got)
     call report(size(got) .eq. 3, "vertex support keeps its count", nfail)
     call report(all(got .eq. [7, 3, 11]), &
-         & "vertex support keeps its ids, in order", nfail)
+         & "vertex support keeps its indices, in order", nfail)
     call report(vs % size() .eq. 3, "vertex support reports its size", nfail)
     call report(vs % kind() .eq. GRAPH_SUPPORT_VERTEX, &
          & "a vertex support names itself a vertex support", nfail)
 
-    call es % edge_ids(got)
-    call report(all(got .eq. [2, 5]), "edge support keeps its ids", nfail)
+    call es % edge_indices(got)
+    call report(all(got .eq. [2, 5]), "edge support keeps its indices", nfail)
     call report(es % kind() .eq. GRAPH_SUPPORT_EDGE, &
          & "an edge support names itself an edge support", nfail)
 
     ! An untouched support has nothing in it, and must still answer a
     ! caller who wants to loop over it without asking first.
     call report(empty % size() .eq. 0, "an empty support has size zero", nfail)
-    call empty % vertex_ids(got)
+    call empty % vertex_indices(got)
     call report(allocated(got) .and. size(got) .eq. 0, &
          & "an empty support answers with a zero-length array", nfail)
 
@@ -214,7 +215,7 @@ contains
   ! Three cells, two components each. The law says the values lie
   ! down like this:
   !
-  !      support ids     7        7        3        3       11      11
+  !      support indices     7        7        3        3       11      11
   !      component       1        2        1        2        1       2
   !                   +-------+-------+-------+-------+-------+-------+
   !      values       | 71.0  | 72.0  | 31.0  | 32.0  | 111.0 | 112.0 |
@@ -255,8 +256,8 @@ contains
     call report(size(got) .eq. f % num_entries() * f % num_components(), &
          & "the flat vector is entries times components long", nfail)
 
-    ! Walk the law itself. Entry 1 is id 7, entry 2 is id 3, entry 3
-    ! is id 11; the tens digit records the cell and the units digit
+    ! Walk the law itself. Entry 1 is index 7, entry 2 is index 3, entry 3
+    ! is index 11; the tens digit records the cell and the units digit
     ! the component, so a scrambled layout cannot pass by accident.
     ok = .true.
     do entry_position = 1, 3
@@ -488,53 +489,53 @@ contains
     type(stored_graph)                       :: g
     class(graph_vertex_support), allocatable :: vs
     class(graph_edge_support)  , allocatable :: es
-    integer, allocatable                     :: ids(:)
+    integer, allocatable                     :: indices(:)
 
     g = diamond()
 
     call g % all_vertices(vs)
-    call vs % vertex_ids(ids)
-    call report(size(ids) .eq. 4 .and. all(ids .eq. [1, 2, 3, 4]), &
+    call vs % vertex_indices(indices)
+    call report(size(indices) .eq. 4 .and. all(indices .eq. [1, 2, 3, 4]), &
          & "all_vertices is every cell", nfail)
 
     call g % boundary_vertices(vs)
-    call vs % vertex_ids(ids)
-    call report(size(ids) .eq. 1 .and. ids(1) .eq. 4, &
+    call vs % vertex_indices(indices)
+    call report(size(indices) .eq. 1 .and. indices(1) .eq. 4, &
          & "only the cell behind the wall is a boundary cell", nfail)
 
     call g % interior_vertices(vs)
-    call vs % vertex_ids(ids)
-    call report(size(ids) .eq. 3 .and. all(ids .eq. [1, 2, 3]), &
+    call vs % vertex_indices(indices)
+    call report(size(indices) .eq. 3 .and. all(indices .eq. [1, 2, 3]), &
          & "the other three are interior", nfail)
 
     call g % all_edges(es)
-    call es % edge_ids(ids)
-    call report(size(ids) .eq. 5, "all_edges is every face", nfail)
+    call es % edge_indices(indices)
+    call report(size(indices) .eq. 5, "all_edges is every face", nfail)
 
     call g % boundary_edges(es)
-    call es % edge_ids(ids)
-    call report(size(ids) .eq. 1 .and. ids(1) .eq. 5, &
+    call es % edge_indices(indices)
+    call report(size(indices) .eq. 1 .and. indices(1) .eq. 5, &
          & "the headless face is the boundary face", nfail)
 
     call g % interior_edges(es)
-    call es % edge_ids(ids)
-    call report(size(ids) .eq. 4, "the other four are interior faces", nfail)
+    call es % edge_indices(indices)
+    call report(size(indices) .eq. 4, "the other four are interior faces", nfail)
 
     call g % tagged_edges('wall', es)
-    call es % edge_ids(ids)
-    call report(size(ids) .eq. 1 .and. ids(1) .eq. 5, &
+    call es % edge_indices(indices)
+    call report(size(indices) .eq. 1 .and. indices(1) .eq. 5, &
          & "the wall answers to its name", nfail)
 
     call g % tagged_edges('inlet', es)
-    call es % edge_ids(ids)
-    call report(size(ids) .eq. 0, &
+    call es % edge_indices(indices)
+    call report(size(indices) .eq. 0, &
          & "a name nothing carries returns an empty set, not a failure", nfail)
 
     ! Nothing was tagged on the vertices, so every vertex query by
     ! name must come back empty rather than reaching into thin air.
     call g % tagged_vertices('heater', vs)
-    call vs % vertex_ids(ids)
-    call report(size(ids) .eq. 0, &
+    call vs % vertex_indices(indices)
+    call report(size(indices) .eq. 0, &
          & "an untagged graph answers no to every vertex name", nfail)
 
   end subroutine check_graph_named_sets
@@ -548,48 +549,48 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)   :: g
-    integer, allocatable :: ids(:)
+    integer, allocatable :: indices(:)
 
     g = diamond()
 
-    call g % incident_edges(1, ids)
-    call report(size(ids) .eq. 2 .and. all(ids .eq. [1, 2]), &
+    call g % incident_edges(1, indices)
+    call report(size(indices) .eq. 2 .and. all(indices .eq. [1, 2]), &
          & "two faces touch the top cell", nfail)
 
-    call g % incident_edges(4, ids)
-    call report(size(ids) .eq. 3 .and. all(ids .eq. [3, 4, 5]), &
+    call g % incident_edges(4, indices)
+    call report(size(indices) .eq. 3 .and. all(indices .eq. [3, 4, 5]), &
          & "three touch the bottom cell, the wall among them", nfail)
 
-    call g % adjacent_vertices(1, ids)
-    call report(size(ids) .eq. 2 .and. all(ids .eq. [2, 3]), &
+    call g % adjacent_vertices(1, indices)
+    call report(size(indices) .eq. 2 .and. all(indices .eq. [2, 3]), &
          & "the top cell has two neighbours", nfail)
 
-    call g % adjacent_vertices(4, ids)
-    call report(size(ids) .eq. 2 .and. all(ids .eq. [2, 3]), &
+    call g % adjacent_vertices(4, indices)
+    call report(size(indices) .eq. 2 .and. all(indices .eq. [2, 3]), &
          & "the wall leads nowhere, so it adds no neighbour", nfail)
 
     ! Direction. The old library needed a second kind of graph for
     ! this; here it is four more questions the same graph answers.
-    call g % outgoing_edges(1, ids)
-    call report(size(ids) .eq. 2, "two faces lead out of the top cell", nfail)
+    call g % outgoing_edges(1, indices)
+    call report(size(indices) .eq. 2, "two faces lead out of the top cell", nfail)
 
-    call g % incoming_edges(1, ids)
-    call report(size(ids) .eq. 0, "and none lead into it", nfail)
+    call g % incoming_edges(1, indices)
+    call report(size(indices) .eq. 0, "and none lead into it", nfail)
 
-    call g % incoming_edges(4, ids)
-    call report(size(ids) .eq. 2 .and. all(ids .eq. [3, 4]), &
+    call g % incoming_edges(4, indices)
+    call report(size(indices) .eq. 2 .and. all(indices .eq. [3, 4]), &
          & "two lead into the bottom cell", nfail)
 
-    call g % outgoing_vertices(1, ids)
-    call report(size(ids) .eq. 2 .and. all(ids .eq. [2, 3]), &
+    call g % outgoing_vertices(1, indices)
+    call report(size(indices) .eq. 2 .and. all(indices .eq. [2, 3]), &
          & "following them out lands on the two middle cells", nfail)
 
-    call g % incoming_vertices(4, ids)
-    call report(size(ids) .eq. 2 .and. all(ids .eq. [2, 3]), &
+    call g % incoming_vertices(4, indices)
+    call report(size(indices) .eq. 2 .and. all(indices .eq. [2, 3]), &
          & "and they came from those same two", nfail)
 
-    call g % outgoing_vertices(4, ids)
-    call report(size(ids) .eq. 0, &
+    call g % outgoing_vertices(4, indices)
+    call report(size(indices) .eq. 0, &
          & "the wall goes out but arrives nowhere", nfail)
 
   end subroutine check_graph_walking
@@ -606,7 +607,7 @@ contains
 
     type(stored_graph)                       :: g
     class(graph_vertex_support), allocatable :: vs
-    integer, allocatable                     :: ids(:)
+    integer, allocatable                     :: indices(:)
 
     g = diamond()
 
@@ -615,18 +616,18 @@ contains
     call report(g % num_parts() .eq. 1, "an uncut graph is one part", nfail)
 
     call g % owned_vertices(1, vs)
-    call vs % vertex_ids(ids)
-    call report(size(ids) .eq. 4, "and it owns every cell in it", nfail)
+    call vs % vertex_indices(indices)
+    call report(size(indices) .eq. 4, "and it owns every cell in it", nfail)
 
     call g % borrowed_vertices(1, vs)
-    call vs % vertex_ids(ids)
-    call report(size(ids) .eq. 0, "and borrows none", nfail)
+    call vs % vertex_indices(indices)
+    call report(size(indices) .eq. 0, "and borrows none", nfail)
 
     call report(g % vertex_owner_part(3) .eq. 1, &
          & "every cell belongs to the one part", nfail)
-    call report(g % full_vertex_id(3) .eq. 3, &
+    call report(g % full_vertex_index(3) .eq. 3, &
          & "local numbering is whole-graph numbering", nfail)
-    call report(g % part_vertex_id(3, 1) .eq. 3, &
+    call report(g % part_vertex_index(3, 1) .eq. 3, &
          & "and the map reads the same backwards", nfail)
 
   end subroutine check_graph_uncut
@@ -825,10 +826,10 @@ contains
     call f2 % set_real_vector([5.0_dp, 9.0_dp])
 
     ! Each part folds on its own, and neither one divides.
-    call rule % identity(a)
+    call rule % initialize(a)
     call rule % accumulate(g, f1, s1, a)
 
-    call rule % identity(b)
+    call rule % initialize(b)
     call rule % accumulate(g, f2, s2, b)
 
     call rule % combine(a, b, both)
@@ -967,7 +968,7 @@ contains
     type(partitioner)                        :: p
     class(graph), allocatable                :: part
     class(graph_vertex_support), allocatable :: vs
-    integer, allocatable                     :: ids(:)
+    integer, allocatable                     :: indices(:)
     integer                                  :: k, l, f, times(6)
 
     g     = chain_of_six()
@@ -983,17 +984,17 @@ contains
 
        ! Count how often each whole-graph cell is owned.
        call part % owned_vertices(k, vs)
-       call vs % vertex_ids(ids)
-       do l = 1, size(ids)
-          f = part % full_vertex_id(ids(l))
+       call vs % vertex_indices(indices)
+       do l = 1, size(indices)
+          f = part % full_vertex_index(indices(l))
           times(f) = times(f) + 1
        end do
 
        ! Each piece should also have borrowed the one cell across the
        ! cut, so a face term there has a value on both sides.
        call part % borrowed_vertices(k, vs)
-       call vs % vertex_ids(ids)
-       call report(size(ids) .eq. 1, &
+       call vs % vertex_indices(indices)
+       call report(size(indices) .eq. 1, &
             & "each piece borrows exactly one cell across the cut", nfail)
     end do
 
@@ -1026,7 +1027,7 @@ contains
     type(partitioner)                        :: p
     class(graph), allocatable                :: part
     class(graph_vertex_support), allocatable :: vs
-    integer, allocatable                     :: ids(:)
+    integer, allocatable                     :: indices(:)
     integer                                  :: times(g % num_vertices())
     integer                                  :: k, l, f
 
@@ -1036,9 +1037,9 @@ contains
        p = partitioner(rule, nparts=nparts, part=k)
        call p % partition_graph(g, part)
        call part % owned_vertices(k, vs)
-       call vs % vertex_ids(ids)
-       do l = 1, size(ids)
-          f = part % full_vertex_id(ids(l))
+       call vs % vertex_indices(indices)
+       do l = 1, size(indices)
+          f = part % full_vertex_index(indices(l))
           times(f) = times(f) + 1
        end do
     end do
@@ -1135,7 +1136,7 @@ contains
     type(vertex_support)                     :: on, owned_only
     type(vertex_field)                       :: d, owned_values
     real(dp), allocatable                    :: v(:), pick(:)
-    integer, allocatable                     :: ids(:)
+    integer, allocatable                     :: indices(:)
     real(dp)                                 :: a_whole, a_parts
     integer                                  :: k, l
 
@@ -1153,7 +1154,7 @@ contains
          & "the sum over the whole graph is 210", nfail)
 
     ! A on each piece, then joined.
-    call rule % identity(running)
+    call rule % initialize(running)
 
     do k = 1, 2
        p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
@@ -1162,26 +1163,26 @@ contains
 
        ! Fold in this piece's owned cells only.
        call part % owned_vertices(k, vs)
-       call vs % vertex_ids(ids)
+       call vs % vertex_indices(indices)
 
        select type (pd)
        class is (vertex_field)
           call pd % get_real_vector(v)
-          allocate(pick(size(ids)))
-          do l = 1, size(ids)
-             pick(l) = v(ids(l))
+          allocate(pick(size(indices)))
+          do l = 1, size(indices)
+             pick(l) = v(indices(l))
           end do
        end select
 
-       owned_only   = vertex_support(ids)
+       owned_only   = vertex_support(indices)
        owned_values = vertex_field('q', owned_only)
        call owned_values % set_real_vector(pick)
        deallocate(pick)
 
-       call rule % identity(piece)
+       call rule % initialize(piece)
        call rule % accumulate(g, owned_values, owned_only, piece)
        call rule % combine(running, piece, joined)
-       call rule % identity(running)
+       call rule % initialize(running)
        call rule % combine(joined, running, running)
     end do
 
@@ -1274,6 +1275,57 @@ contains
     end select
 
   end subroutine check_coarsen_and_refine
+
+  !===================================================================!
+  ! DOING NOTHING IS AN ANSWER.
+  !
+  ! A transform handed work that is already done should hand the same
+  ! graph back, not refuse. Refusing would push the decision onto
+  ! every caller, and the callers that would trip over it are exactly
+  ! the ones you least want special cases in - the smallest level of a
+  ! multigrid hierarchy, and a serial run of code written for parts.
+  !===================================================================!
+
+  subroutine check_doing_nothing_is_an_answer(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_graph)             :: one_cell, g
+    type(coarsener)                :: c
+    type(assembler)                :: a
+    type(partitioner)              :: p
+    class(graph), allocatable      :: out, part, back
+    integer, allocatable           :: no_edges(:)
+
+    allocate(no_edges(0))
+    one_cell = stored_graph(1, tails=no_edges, heads=no_edges)
+
+    ! A single cell is as coarse as a graph gets.
+    c = coarsener(COARSEN_PAIRWISE)
+    call report(c % defined_on_graph(one_cell), &
+         & "a coarsener does not refuse a graph already at one cell", nfail)
+
+    call c % coarsen_graph(one_cell, out)
+    call report(out % num_vertices() .eq. 1, &
+         & "it hands the same single cell back", nfail)
+
+    ! A graph that was never cut is already assembled.
+    g = chain_of_six()
+    a = assembler()
+    call report(a % defined_on_graph(g), &
+         & "an assembler does not refuse a graph that was never cut", nfail)
+
+    call a % assemble_graph(g, back)
+    call report(back % num_vertices() .eq. 6 .and. back % num_edges() .eq. 5, &
+         & "it hands the same graph back rather than complaining", nfail)
+
+    ! And cutting into one piece is the same story from the other end.
+    p = partitioner(PARTITION_LINEAR, nparts=1, part=1)
+    call p % partition_graph(g, part)
+    call report(part % num_vertices() .eq. 6, &
+         & "cutting into one piece hands the whole thing back", nfail)
+
+  end subroutine check_doing_nothing_is_an_answer
 
   !===================================================================!
   ! EDGE CONTRIBUTIONS REDUCED THROUGH INCIDENCE EXACTLY ONCE.

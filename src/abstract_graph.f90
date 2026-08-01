@@ -55,7 +55,7 @@
 ! Six families, and each answers a different question.
 !
 !    graph .............. what is joined to what
-!    graph_support ...... which ones we are talking about
+!    graph_support ...... which ones we are talking about (vertex or edge)
 !    graph_data ......... what values they carry
 !    graph_reduction .... how many values become one
 !    graph_transform .... how one graph becomes another
@@ -65,7 +65,7 @@
 !
 !    graph
 !
-!    graph_support                     a chosen set of ids
+!    graph_support                     a chosen set of indices
 !      graph_vertex_support            ... of vertices
 !      graph_edge_support              ... of edges
 !
@@ -107,6 +107,25 @@
 ! A sequence of operations is itself an operation, which is why there
 ! is nothing here that schedules them.
 !
+! THREE NAMES THAT SOUND ALIKE AND ARE NOT. It is worth separating
+! them here, because the resemblance is the easiest way to get lost:
+!
+!    graph_functional
+!         a NUMBER. It has no support and no cells. It is the answer,
+!         and once it exists nothing remembers where it came from.
+!
+!    graph_vertex_functional_operation
+!         a WAY OF GETTING one, by looking at cells. It owns the cells
+!         it looks at and the rule it folds them by.
+!
+!    graph_edge_functional_operation
+!         the same, by looking at faces.
+!
+! So the two operations differ in where they look; the functional they
+! both hand back is the same kind of thing. That is why the functional
+! does not split into vertex and edge halves - a number reduced from
+! cells and a number reduced from faces are both just numbers.
+!
 !=====================================================================!
 !
 !                     HOW FINITE VOLUME SITS ON IT
@@ -117,20 +136,51 @@
 !    cell volume, cell centre ..... vertex field
 !    face area, normal, centroid .. edge field
 !    boundary group name .......... character edge field
-!    the unknown q ................ vertex field
-!    a flux F ..................... edge field
-!    a residual ................... vertex field, from a balance
-!    an objective J ............... functional
 !
-! A balance is cell terms plus face terms folded onto the cells they
-! touch. Incidence does the folding, and it does it exactly once:
+! The unknown lives on the cells:
+!
+!    q_v = the state in cell v
+!
+! Interior fluxes live on the faces between cells:
+!
+!    F_e = the flux through face e, between cells i and j
+!
+! Boundary conditions live on the faces that have only one cell:
+!
+!    B_b = what boundary face b contributes to the cell i it hangs off
+!
+! An objective is a number, so it is a functional - and it can be
+! reached either way round. Drag adds up what every wall FACE pushes,
+! so it comes from an edge functional operation. Total energy adds up
+! what every CELL holds, so it comes from a vertex functional
+! operation. Both hand back the same kind of thing, a single number,
+! which is why the functional itself does not care which way it was
+! reached.
+!
+! A balance is cell terms plus face terms folded onto the cells those
+! faces touch:
+!
+!    balance = vertex_field_terms + incidence(edge_field_terms)
+!
+! Read the folding off the picture. z_e is the number the face term
+! worked out for face e - one value per face, an edge field:
 !
 !                          z_e
 !                   i ------------> j        y_i = y_i - z_e
 !                                            y_j = y_j + z_e
 !
-! The word residual is what a solver calls the balance after it has
-! been worked out. It does not name anything here.
+! The face gives z_e to the cell it leaves and takes the same z_e from
+! the cell it enters, which is why the two signs are opposite and why
+! nothing is created by the folding. It happens exactly once per face.
+!
+! A boundary face has only one cell, so its contribution lands there
+! and stops:
+!
+!                   i ------------o  b       y_i = y_i - z_b
+!
+! In solver language the evaluated balance is called the residual.
+! That word names a stage in a solve, not a thing in this library, so
+! it does not appear below.
 !
 !=====================================================================!
 !
@@ -149,7 +199,7 @@
 !                       the overlap of part 1
 !
 ! A part graph is still a graph. It carries the relation back to the
-! whole - how many parts, which part owns what, and the id maps both
+! whole - how many parts, which part owns what, and the index maps both
 ! ways - because the assembler must read that relation rather than
 ! invent one.
 !
@@ -160,12 +210,12 @@
 ! These replace procedures rather than accompany them.
 !
 ! THE FIELD ORDERING LAW. A field stores its values in the order its
-! support lists its ids, and stores components fastest within each
+! support lists its indices, and stores components fastest within each
 ! entry. So a value sits at
 !
 !        (entry_position - 1) * num_components + component
 !
-!        support ids     7        7        3        3
+!        support indices     7        7        3        3
 !        component       1        2        1        2
 !                     +--------+--------+--------+--------+
 !        values       |  v(1)  |  v(2)  |  v(3)  |  v(4)  |
@@ -236,7 +286,7 @@ module abstract_graph_types
   public :: GRAPH_FIELD_LOGICAL
   public :: GRAPH_FIELD_CHARACTER
 
-  ! A support holds vertex ids or edge ids, never a mixture.
+  ! A support holds vertex indices or edge indices, never a mixture.
   integer, parameter :: GRAPH_SUPPORT_VERTEX = 1
   integer, parameter :: GRAPH_SUPPORT_EDGE   = 2
 
@@ -248,7 +298,7 @@ module abstract_graph_types
   integer, parameter :: GRAPH_FIELD_CHARACTER = 5
 
   !===================================================================!
-  ! SUPPORTS. A chosen set of vertex ids, or a chosen set of edge ids.
+  ! SUPPORTS. A chosen set of vertex indices, or a chosen set of edge indices.
   ! It owns no values and no algorithms.
   !
   !      all_vertices             boundary_edges('wall')
@@ -266,7 +316,7 @@ module abstract_graph_types
    contains
 
      !----------------------------------------------------------------!
-     ! Which kind of id is in here, and how many of them.
+     ! Which kind of index is in here, and how many of them.
      !----------------------------------------------------------------!
 
      procedure(support_kind_interface), deferred :: kind
@@ -281,7 +331,7 @@ module abstract_graph_types
      ! Hand over the vertex numbers.
      !----------------------------------------------------------------!
 
-     procedure(vertex_support_ids_interface), deferred :: vertex_ids
+     procedure(vertex_support_ids_interface), deferred :: vertex_indices
 
   end type graph_vertex_support
 
@@ -292,7 +342,7 @@ module abstract_graph_types
      ! Hand over the edge numbers.
      !----------------------------------------------------------------!
 
-     procedure(edge_support_ids_interface), deferred :: edge_ids
+     procedure(edge_support_ids_interface), deferred :: edge_indices
 
   end type graph_edge_support
 
@@ -310,7 +360,7 @@ module abstract_graph_types
   !
   !   walking          asked once per vertex, inside a loop, a billion
   !                    times over a run
-  !                    ---> hand back plain ids, nothing to allocate
+  !                    ---> hand back plain indices, nothing to allocate
   !===================================================================!
 
   type, abstract :: graph
@@ -430,6 +480,24 @@ module abstract_graph_types
      ! These four replace the separate directed graph type entirely.
      ! Direction stops being a different kind of graph and becomes
      ! something any graph can be asked about.
+     !
+     ! WHAT IF THE EDGES HAVE NO DIRECTION? Every edge here is stored
+     ! tail-to-head, so a direction always exists in the storage even
+     ! when it means nothing to the caller. A graph whose edges are
+     ! genuinely two-way answers these four by ignoring the stored
+     ! direction and giving the same list both times:
+     !
+     !      outgoing_edges(v)  ==  incoming_edges(v)  ==  incident_edges(v)
+     !
+     ! which is consistent, cheap, and true - in an undirected graph
+     ! every neighbour is reachable both ways.
+     !
+     ! A caller who does not care about direction should ask
+     ! incident_edges and adjacent_vertices instead. Those two are the
+     ! undirected questions, and they are the ones a finite-volume
+     ! sweep wants: a face joins two cells, and which way it was
+     ! written down is bookkeeping, not physics. Direction matters for
+     ! a matrix, a dependency order, or an adjoint walk.
      !----------------------------------------------------------------!
 
      procedure(graph_from_vertex_interface), deferred :: outgoing_edges
@@ -440,12 +508,32 @@ module abstract_graph_types
      !----------------------------------------------------------------!
      ! How a part relates to the whole.
      !
-     !      whole graph        1   2   3   4   5   6   7   8
-     !                             |   |           |
-     !      part 2                 1   2           3
+     ! Take a row of eight cells cut down the middle:
      !
-     !      full_vertex_id(2) = 4        vertex_owner_part(4) = 2
-     !      part_vertex_id(4, 2) = 2
+     !      whole graph    (1)(2)(3)(4) : (5)(6)(7)(8)
+     !                       part 1          part 2
+     !
+     ! Part 2 owns cells 5, 6, 7 and 8. It also has to SEE cell 4,
+     ! because the face between 4 and 5 needs a value on both sides -
+     ! so part 2 borrows it. Part 2 therefore holds five cells, and
+     ! numbers them from one, owned first:
+     !
+     !      part 2 local     1   2   3   4   5
+     !      was called in    5   6   7   8   4
+     !      the whole                        ^
+     !                                       borrowed, owned by part 1
+     !
+     ! Reading that table both ways:
+     !
+     !      full_vertex_index(1) = 5     local 1 was called 5
+     !      full_vertex_index(5) = 4     local 5 was called 4
+     !      part_vertex_index(7, 2) = 3  cell 7 sits at local 3 in part 2
+     !      vertex_owner_part(5) = 1  local 5 is borrowed - part 1 owns
+     !                                the cell it came from
+     !
+     ! Owned first is not cosmetic. It puts a part's owned values at
+     ! the front of every vector, so the piece a solver reduces over is
+     ! one contiguous slice rather than a scatter.
      !
      ! This lives on the graph rather than on the partitioner, because
      ! the partitioner has finished by the time anyone asks, and the
@@ -454,10 +542,10 @@ module abstract_graph_types
 
      procedure(graph_num_parts_interface)        , deferred :: num_parts
      procedure(graph_has_part_relation_interface), deferred :: has_part_relation
-     procedure(graph_full_id_interface)          , deferred :: full_vertex_id
-     procedure(graph_full_id_interface)          , deferred :: full_edge_id
-     procedure(graph_part_id_interface)          , deferred :: part_vertex_id
-     procedure(graph_part_id_interface)          , deferred :: part_edge_id
+     procedure(graph_full_id_interface)          , deferred :: full_vertex_index
+     procedure(graph_full_id_interface)          , deferred :: full_edge_index
+     procedure(graph_part_id_interface)          , deferred :: part_vertex_index
+     procedure(graph_part_id_interface)          , deferred :: part_edge_index
      procedure(graph_owner_part_interface)       , deferred :: vertex_owner_part
      procedure(graph_owner_part_interface)       , deferred :: edge_owner_part
 
@@ -602,11 +690,43 @@ module abstract_graph_types
   !===================================================================!
   ! A REDUCTION turns a field on a support into a functional.
   !
+  ! IS IT AN EDGE BETWEEN THE TWO? In the sense that matters, yes -
+  ! it is the arrow:
+  !
+  !      graph_field  ----- graph_reduction ----->  graph_functional
+  !         many                                        one
+  !
+  ! But it is not an edge in the sense this file means by edge. An
+  ! edge joins two vertices of one graph and is a piece of structure.
+  ! A reduction joins two KINDS of data and is a piece of arithmetic.
+  ! It also has an inside - four steps - where an edge has none.
+  !
+  ! Read the arrow as: a reduction is what a field must pass through
+  ! to become a number, and the only thing that can make that journey.
+  !
+  ! WHAT initialize IS FOR. It makes the answer that exists before
+  ! anything has been counted, and there is exactly one right choice
+  ! per rule:
+  !
+  !      sum        starts at 0        adding 0 changes nothing
+  !      product    starts at 1        multiplying by 1 changes nothing
+  !      minimum    starts at +huge    everything is smaller
+  !      maximum    starts at -huge    everything is larger
+  !      all        starts at .true.
+  !
+  ! In every line the starting value is the one that leaves the answer
+  ! alone when it is folded in. That is the test, and it is why a sum
+  ! does not start at 1 and a minimum does not start at 0. Getting it
+  ! wrong does not crash - it shifts every answer by a constant.
+  !
+  ! It sits opposite finalize: this one makes the empty answer, that
+  ! one turns the gathered answer into the final one.
+  !
   ! Four steps, so that it still works when the graph is in pieces:
   !
-  !      part 1 -> identity -> accumulate ---+
+  !      part 1 -> initialize -> accumulate ---+
   !                                          +--> combine -> finalize
-  !      part 2 -> identity -> accumulate ---+
+  !      part 2 -> initialize -> accumulate ---+
   !
   ! The four steps are what keeps an average honest. Two parts with
   ! means 2 and 7 do not average to 4.5; they average to 4, because
@@ -636,7 +756,7 @@ module abstract_graph_types
      ! Start empty, fold values in, join two parts, finish once.
      !----------------------------------------------------------------!
 
-     procedure(reduction_identity_interface)  , deferred :: identity
+     procedure(reduction_initialize_interface)  , deferred :: initialize
      procedure(reduction_accumulate_interface), deferred :: accumulate
      procedure(reduction_combine_interface)   , deferred :: combine
      procedure(reduction_finalize_interface)  , deferred :: finalize
@@ -855,16 +975,16 @@ module abstract_graph_types
        class(graph_support), intent(in) :: this
      end function support_size_interface
 
-     pure subroutine vertex_support_ids_interface(this, ids)
+     pure subroutine vertex_support_ids_interface(this, indices)
        import :: graph_vertex_support
        class(graph_vertex_support), intent(in) :: this
-       integer, allocatable, intent(out) :: ids(:)
+       integer, allocatable, intent(out) :: indices(:)
      end subroutine vertex_support_ids_interface
 
-     pure subroutine edge_support_ids_interface(this, ids)
+     pure subroutine edge_support_ids_interface(this, indices)
        import :: graph_edge_support
        class(graph_edge_support), intent(in) :: this
-       integer, allocatable, intent(out) :: ids(:)
+       integer, allocatable, intent(out) :: indices(:)
      end subroutine edge_support_ids_interface
 
      !===============================================================!
@@ -886,22 +1006,22 @@ module abstract_graph_types
        class(graph), intent(in) :: this
      end function graph_num_edges_interface
 
-     pure integer function graph_edge_tail_interface(this, edge_id)
+     pure integer function graph_edge_tail_interface(this, edge_index)
        import :: graph
        class(graph), intent(in) :: this
-       integer, intent(in) :: edge_id
+       integer, intent(in) :: edge_index
      end function graph_edge_tail_interface
 
-     pure integer function graph_edge_head_interface(this, edge_id)
+     pure integer function graph_edge_head_interface(this, edge_index)
        import :: graph
        class(graph), intent(in) :: this
-       integer, intent(in) :: edge_id
+       integer, intent(in) :: edge_index
      end function graph_edge_head_interface
 
-     pure logical function graph_edge_has_head_interface(this, edge_id)
+     pure logical function graph_edge_has_head_interface(this, edge_index)
        import :: graph
        class(graph), intent(in) :: this
-       integer, intent(in) :: edge_id
+       integer, intent(in) :: edge_index
      end function graph_edge_has_head_interface
 
      !===============================================================!
@@ -951,15 +1071,15 @@ module abstract_graph_types
 
      !===============================================================!
      ! Walking the graph. Asked once per vertex, inside loops, so the
-     ! answer is bare ids and the procedure is pure. Handing back a
+     ! answer is bare indices and the procedure is pure. Handing back a
      ! support here would allocate three times per neighbour query.
      !===============================================================!
 
-     pure subroutine graph_from_vertex_interface(this, vertex_id, ids)
+     pure subroutine graph_from_vertex_interface(this, vertex_index, indices)
        import :: graph
        class(graph), intent(in) :: this
-       integer, intent(in) :: vertex_id
-       integer, allocatable, intent(out) :: ids(:)
+       integer, intent(in) :: vertex_index
+       integer, allocatable, intent(out) :: indices(:)
      end subroutine graph_from_vertex_interface
 
      !===============================================================!
@@ -993,40 +1113,51 @@ module abstract_graph_types
      end function graph_has_part_relation_interface
 
      !---------------------------------------------------------------!
-     ! Part numbering out to whole-graph numbering.
+     ! What was this cell called in the whole graph?
+     !
+     ! There is only one numbering to ask about, so the argument needs
+     ! no qualifier. A part graph numbers its own cells from one, the
+     ! same way every graph does - being a part is not a second
+     ! numbering laid over a first, it IS the numbering. So `index`
+     ! here means exactly what it means everywhere else in this file:
+     ! a cell of the graph you are holding.
      !
      !      whole    1   2   3   4   5   6   7   8
      !                       |   |           |
      !      part 2           1   2           3
      !
-     !      full_vertex_id(2) = 4
+     !      full_vertex_index(2) = 4
      !
-     ! An assembler walks a part's own numbering and uses this to find
-     ! where each value belongs in the whole. A file writer uses it to
-     ! print cell numbers a person will recognise.
+     ! Read that as: the graph in your hand calls this cell 2; the
+     ! whole graph it was cut from called it 4. Ask an uncut graph and
+     ! you get back what you gave it, because it is its own whole.
+     !
+     ! An assembler walks the cells of the part it was handed and uses
+     ! this to find where each value belongs in the whole. A file
+     ! writer uses it to print cell numbers a person will recognise.
      !---------------------------------------------------------------!
 
-     pure integer function graph_full_id_interface(this, part_local_id)
+     pure integer function graph_full_id_interface(this, index)
        import :: graph
        class(graph), intent(in) :: this
-       integer, intent(in) :: part_local_id
+       integer, intent(in) :: index
      end function graph_full_id_interface
 
      !---------------------------------------------------------------!
      ! The same map read backwards: where does whole-graph vertex 4
      ! sit inside part 2?
      !
-     !      part_vertex_id(4, 2) = 2
+     !      part_vertex_index(4, 2) = 2
      !
      ! The part is named because the partition here is replicated -
      ! every image builds every part, so one image regularly asks
      ! about a part it does not own.
      !---------------------------------------------------------------!
 
-     pure integer function graph_part_id_interface(this, full_id, part_id)
+     pure integer function graph_part_id_interface(this, full_index, part_id)
        import :: graph
        class(graph), intent(in) :: this
-       integer, intent(in) :: full_id
+       integer, intent(in) :: full_index
        integer, intent(in) :: part_id
      end function graph_part_id_interface
 
@@ -1040,10 +1171,10 @@ module abstract_graph_types
      ! parts are added back together.
      !---------------------------------------------------------------!
 
-     pure integer function graph_owner_part_interface(this, id)
+     pure integer function graph_owner_part_interface(this, index)
        import :: graph
        class(graph), intent(in) :: this
-       integer, intent(in) :: id
+       integer, intent(in) :: index
      end function graph_owner_part_interface
 
      !===============================================================!
@@ -1317,11 +1448,11 @@ module abstract_graph_types
      ! minimum the largest number there is.
      !---------------------------------------------------------------!
 
-     pure subroutine reduction_identity_interface(this, state)
+     pure subroutine reduction_initialize_interface(this, state)
        import :: graph_reduction, graph_functional
        class(graph_reduction), intent(in) :: this
        class(graph_functional), allocatable, intent(inout) :: state
-     end subroutine reduction_identity_interface
+     end subroutine reduction_initialize_interface
 
      !---------------------------------------------------------------!
      ! Fold one part's values into the running state.
@@ -1402,14 +1533,25 @@ module abstract_graph_types
      !===============================================================!
 
      !---------------------------------------------------------------!
-     ! A gate, asked before anything is attempted.
+     ! Can this transform say anything about that graph?
      !
-     !      an assembler refuses a graph with no part relation on it
-     !      a coarsener refuses a graph already down to one vertex
-     !      a geometric partitioner refuses a graph with no coordinates
+     ! Note what it is NOT for. It is not for refusing work that has
+     ! an obvious answer. A graph already in one piece is already
+     ! assembled, so assembling it hands the same graph back. A graph
+     ! down to a single cell is as coarse as it gets, so coarsening it
+     ! hands the same graph back. Doing nothing is a perfectly good
+     ! answer and needs no permission.
      !
-     ! Better to answer no here than to fail halfway through and leave
-     ! a half-built graph behind.
+     ! What is left is the case where the transform genuinely cannot
+     ! speak: it needs something the graph does not carry. A cut on
+     ! cell positions needs positions, and a graph is only vertices
+     ! and edges - positions ride on it as data, by name, and may
+     ! simply be absent.
+     !
+     !      has_data('cell_centre')  ->  .false.  ->  cannot cut on
+     !                                                where things are
+     !
+     ! So this answers "do I have what I need", not "will I bother".
      !---------------------------------------------------------------!
 
      pure logical function transform_on_graph_interface(this, input_graph)

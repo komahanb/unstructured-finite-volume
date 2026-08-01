@@ -183,10 +183,10 @@ module class_graph
 
      procedure :: num_parts         => g_num_parts
      procedure :: has_part_relation => g_has_part_relation
-     procedure :: full_vertex_id    => g_full_vertex_id
-     procedure :: full_edge_id      => g_full_edge_id
-     procedure :: part_vertex_id    => g_part_vertex_id
-     procedure :: part_edge_id      => g_part_edge_id
+     procedure :: full_vertex_index    => g_full_vertex_index
+     procedure :: full_edge_index      => g_full_edge_index
+     procedure :: part_vertex_index    => g_part_vertex_index
+     procedure :: part_edge_index      => g_part_edge_index
      procedure :: vertex_owner_part => g_vertex_owner_part
      procedure :: edge_owner_part   => g_edge_owner_part
 
@@ -469,30 +469,30 @@ contains
   ! Where an edge goes.
   !===================================================================!
 
-  pure integer function g_edge_tail(this, edge_id)
+  pure integer function g_edge_tail(this, edge_index)
 
     class(stored_graph), intent(in) :: this
-    integer            , intent(in) :: edge_id
+    integer            , intent(in) :: edge_index
 
-    g_edge_tail = this % tail(edge_id)
+    g_edge_tail = this % tail(edge_index)
 
   end function g_edge_tail
 
-  pure integer function g_edge_head(this, edge_id)
+  pure integer function g_edge_head(this, edge_index)
 
     class(stored_graph), intent(in) :: this
-    integer            , intent(in) :: edge_id
+    integer            , intent(in) :: edge_index
 
-    g_edge_head = this % head(edge_id)
+    g_edge_head = this % head(edge_index)
 
   end function g_edge_head
 
-  pure logical function g_edge_has_head(this, edge_id)
+  pure logical function g_edge_has_head(this, edge_index)
 
     class(stored_graph), intent(in) :: this
-    integer            , intent(in) :: edge_id
+    integer            , intent(in) :: edge_index
 
-    g_edge_has_head = this % head(edge_id) >= 1
+    g_edge_has_head = this % head(edge_index) >= 1
 
   end function g_edge_has_head
 
@@ -765,7 +765,7 @@ contains
   end subroutine g_overlap_edges
 
   !===================================================================!
-  ! Collect the ids a part owns, or the ones it does not.
+  ! Collect the indices a part owns, or the ones it does not.
   !
   ! An uncut graph has no owner stamps to read. It answers that it
   ! owns everything and borrows nothing, which is the truthful answer
@@ -810,43 +810,43 @@ contains
   ! call per vertex.
   !===================================================================!
 
-  pure subroutine g_incident_edges(this, vertex_id, ids)
+  pure subroutine g_incident_edges(this, vertex_index, indices)
 
     class(stored_graph), intent(in)   :: this
-    integer            , intent(in)   :: vertex_id
-    integer, allocatable, intent(out) :: ids(:)
+    integer            , intent(in)   :: vertex_index
+    integer, allocatable, intent(out) :: indices(:)
 
-    ids = this % einc(this % xinc(vertex_id) : this % xinc(vertex_id + 1) - 1)
+    indices = this % einc(this % xinc(vertex_index) : this % xinc(vertex_index + 1) - 1)
 
   end subroutine g_incident_edges
 
-  pure subroutine g_adjacent_vertices(this, vertex_id, ids)
+  pure subroutine g_adjacent_vertices(this, vertex_index, indices)
 
     class(stored_graph), intent(in)   :: this
-    integer            , intent(in)   :: vertex_id
-    integer, allocatable, intent(out) :: ids(:)
+    integer            , intent(in)   :: vertex_index
+    integer, allocatable, intent(out) :: indices(:)
 
-    ids = this % vadj(this % xadj(vertex_id) : this % xadj(vertex_id + 1) - 1)
+    indices = this % vadj(this % xadj(vertex_index) : this % xadj(vertex_index + 1) - 1)
 
   end subroutine g_adjacent_vertices
 
-  pure subroutine g_outgoing_edges(this, vertex_id, ids)
+  pure subroutine g_outgoing_edges(this, vertex_index, indices)
 
     class(stored_graph), intent(in)   :: this
-    integer            , intent(in)   :: vertex_id
-    integer, allocatable, intent(out) :: ids(:)
+    integer            , intent(in)   :: vertex_index
+    integer, allocatable, intent(out) :: indices(:)
 
-    ids = this % eout(this % xout(vertex_id) : this % xout(vertex_id + 1) - 1)
+    indices = this % eout(this % xout(vertex_index) : this % xout(vertex_index + 1) - 1)
 
   end subroutine g_outgoing_edges
 
-  pure subroutine g_incoming_edges(this, vertex_id, ids)
+  pure subroutine g_incoming_edges(this, vertex_index, indices)
 
     class(stored_graph), intent(in)   :: this
-    integer            , intent(in)   :: vertex_id
-    integer, allocatable, intent(out) :: ids(:)
+    integer            , intent(in)   :: vertex_index
+    integer, allocatable, intent(out) :: indices(:)
 
-    ids = this % ein(this % xin(vertex_id) : this % xin(vertex_id + 1) - 1)
+    indices = this % ein(this % xin(vertex_index) : this % xin(vertex_index + 1) - 1)
 
   end subroutine g_incoming_edges
 
@@ -855,47 +855,47 @@ contains
   ! from. An edge with no head leads nowhere and is left out.
   !===================================================================!
 
-  pure subroutine g_outgoing_vertices(this, vertex_id, ids)
+  pure subroutine g_outgoing_vertices(this, vertex_index, indices)
 
     class(stored_graph), intent(in)   :: this
-    integer            , intent(in)   :: vertex_id
-    integer, allocatable, intent(out) :: ids(:)
+    integer            , intent(in)   :: vertex_index
+    integer, allocatable, intent(out) :: indices(:)
 
     integer :: k, n, lo, hi
 
-    lo = this % xout(vertex_id)
-    hi = this % xout(vertex_id + 1) - 1
+    lo = this % xout(vertex_index)
+    hi = this % xout(vertex_index + 1) - 1
 
-    allocate(ids(max(hi - lo + 1, 0)))
+    allocate(indices(max(hi - lo + 1, 0)))
     n = 0
     do k = lo, hi
        if (this % head(this % eout(k)) >= 1) then
           n = n + 1
-          ids(n) = this % head(this % eout(k))
+          indices(n) = this % head(this % eout(k))
        end if
     end do
-    ids = ids(1:n)
+    indices = indices(1:n)
 
   end subroutine g_outgoing_vertices
 
-  pure subroutine g_incoming_vertices(this, vertex_id, ids)
+  pure subroutine g_incoming_vertices(this, vertex_index, indices)
 
     class(stored_graph), intent(in)   :: this
-    integer            , intent(in)   :: vertex_id
-    integer, allocatable, intent(out) :: ids(:)
+    integer            , intent(in)   :: vertex_index
+    integer, allocatable, intent(out) :: indices(:)
 
     integer :: k, n, lo, hi
 
-    lo = this % xin(vertex_id)
-    hi = this % xin(vertex_id + 1) - 1
+    lo = this % xin(vertex_index)
+    hi = this % xin(vertex_index + 1) - 1
 
-    allocate(ids(max(hi - lo + 1, 0)))
+    allocate(indices(max(hi - lo + 1, 0)))
     n = 0
     do k = lo, hi
        n = n + 1
-       ids(n) = this % tail(this % ein(k))
+       indices(n) = this % tail(this % ein(k))
     end do
-    ids = ids(1:n)
+    indices = indices(1:n)
 
   end subroutine g_incoming_vertices
 
@@ -920,85 +920,85 @@ contains
 
   end function g_has_part_relation
 
-  pure integer function g_full_vertex_id(this, part_local_id)
+  pure integer function g_full_vertex_index(this, index)
 
     class(stored_graph), intent(in) :: this
-    integer            , intent(in) :: part_local_id
+    integer            , intent(in) :: index
 
     if (this % cut .and. allocated(this % vfull)) then
-       g_full_vertex_id = this % vfull(part_local_id)
+       g_full_vertex_index = this % vfull(index)
     else
-       g_full_vertex_id = part_local_id
+       g_full_vertex_index = index
     end if
 
-  end function g_full_vertex_id
+  end function g_full_vertex_index
 
-  pure integer function g_full_edge_id(this, part_local_id)
+  pure integer function g_full_edge_index(this, index)
 
     class(stored_graph), intent(in) :: this
-    integer            , intent(in) :: part_local_id
+    integer            , intent(in) :: index
 
     if (this % cut .and. allocated(this % efull)) then
-       g_full_edge_id = this % efull(part_local_id)
+       g_full_edge_index = this % efull(index)
     else
-       g_full_edge_id = part_local_id
+       g_full_edge_index = index
     end if
 
-  end function g_full_edge_id
+  end function g_full_edge_index
 
   !===================================================================!
-  ! The map read backwards. Zero means the whole-graph id does not
+  ! The map read backwards. Zero means the whole-graph index does not
   ! appear in that part at all.
   !===================================================================!
 
-  pure integer function g_part_vertex_id(this, full_id, part_id)
+  pure integer function g_part_vertex_index(this, full_index, part_id)
 
     class(stored_graph), intent(in) :: this
-    integer            , intent(in) :: full_id
+    integer            , intent(in) :: full_index
     integer            , intent(in) :: part_id
 
     if (this % cut .and. part_id /= this % me) then
-       g_part_vertex_id = 0
+       g_part_vertex_index = 0
     else
-       g_part_vertex_id = reverse_lookup(this % vfull, full_id, this % cut)
+       g_part_vertex_index = reverse_lookup(this % vfull, full_index, this % cut)
     end if
 
-  end function g_part_vertex_id
+  end function g_part_vertex_index
 
-  pure integer function g_part_edge_id(this, full_id, part_id)
+  pure integer function g_part_edge_index(this, full_index, part_id)
 
     class(stored_graph), intent(in) :: this
-    integer            , intent(in) :: full_id
+    integer            , intent(in) :: full_index
     integer            , intent(in) :: part_id
 
     if (this % cut .and. part_id /= this % me) then
-       g_part_edge_id = 0
+       g_part_edge_index = 0
     else
-       g_part_edge_id = reverse_lookup(this % efull, full_id, this % cut)
+       g_part_edge_index = reverse_lookup(this % efull, full_index, this % cut)
     end if
 
-  end function g_part_edge_id
+  end function g_part_edge_index
 
   !===================================================================!
-  ! Find which local id carries a given whole-graph id.
+  ! Find which local index carries a given whole-graph index.
   !===================================================================!
 
-  pure integer function reverse_lookup(full, full_id, cut)
+  pure integer function reverse_lookup(full, full_index, cut)
 
     integer, allocatable, intent(in) :: full(:)
-    integer             , intent(in) :: full_id
+    integer             , intent(in) :: full_index
     logical             , intent(in) :: cut
 
     integer :: i
 
     if (.not. cut .or. .not. allocated(full)) then
-       reverse_lookup = full_id
+       reverse_lookup = full_index
        return
     end if
 
     reverse_lookup = 0
     do i = 1, size(full)
-       if (full(i) == full_id) then
+       if (full(i) == full_index) then
           reverse_lookup = i
           return
        end if
@@ -1006,26 +1006,26 @@ contains
 
   end function reverse_lookup
 
-  pure integer function g_vertex_owner_part(this, id)
+  pure integer function g_vertex_owner_part(this, index)
 
     class(stored_graph), intent(in) :: this
-    integer            , intent(in) :: id
+    integer            , intent(in) :: index
 
     if (this % cut .and. allocated(this % vowner)) then
-       g_vertex_owner_part = this % vowner(id)
+       g_vertex_owner_part = this % vowner(index)
     else
        g_vertex_owner_part = 1
     end if
 
   end function g_vertex_owner_part
 
-  pure integer function g_edge_owner_part(this, id)
+  pure integer function g_edge_owner_part(this, index)
 
     class(stored_graph), intent(in) :: this
-    integer            , intent(in) :: id
+    integer            , intent(in) :: index
 
     if (this % cut .and. allocated(this % eowner)) then
-       g_edge_owner_part = this % eowner(id)
+       g_edge_owner_part = this % eowner(index)
     else
        g_edge_owner_part = 1
     end if

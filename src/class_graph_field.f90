@@ -44,10 +44,10 @@
 !
 !                       THE FIELD ORDERING LAW
 !
-! Values run in the order the support lists its ids, and components
+! Values run in the order the support lists its indices, and components
 ! run fastest within each entry:
 !
-!      support ids     7        7        3        3
+!      support indices     7        7        3        3
 !      component       1        2        1        2
 !                   +--------+--------+--------+--------+
 !      values       |  v(1)  |  v(2)  |  v(3)  |  v(4)  |

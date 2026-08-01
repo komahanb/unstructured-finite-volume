@@ -158,15 +158,15 @@ contains
     ! name this part knows.
     biggest = 0
     do l = 1, part_graph % num_vertices()
-       biggest = max(biggest, part_graph % full_vertex_id(l))
+       biggest = max(biggest, part_graph % full_vertex_index(l))
     end do
     nv_full = biggest
 
     allocate(tails(ne), heads(ne))
     do e = 1, ne
-       tails(e) = part_graph % full_vertex_id(part_graph % edge_tail(e))
+       tails(e) = part_graph % full_vertex_index(part_graph % edge_tail(e))
        if (part_graph % edge_has_head(e)) then
-          heads(e) = part_graph % full_vertex_id(part_graph % edge_head(e))
+          heads(e) = part_graph % full_vertex_index(part_graph % edge_head(e))
        else
           heads(e) = 0
        end if
@@ -220,19 +220,19 @@ contains
     type(vertex_field)    :: out
     type(vertex_support)  :: on
     real(dp), allocatable :: lv(:), fv(:)
-    integer , allocatable :: ids(:)
+    integer , allocatable :: indices(:)
     integer :: nfull, ncomp, l, c, f, me
 
     nfull = full_graph % num_vertices()
     ncomp = part_data % num_components()
     me    = part_graph % id()
 
-    allocate(ids(nfull))
+    allocate(indices(nfull))
     do f = 1, nfull
-       ids(f) = f
+       indices(f) = f
     end do
 
-    on  = vertex_support(ids)
+    on  = vertex_support(indices)
     out = vertex_field(part_data % name(), on, ncomp=ncomp, unit_name=part_data % units())
 
     call part_data % get_real_vector(lv)
@@ -247,7 +247,7 @@ contains
           if (part_graph % vertex_owner_part(l) /= me) cycle
        end if
 
-       f = part_graph % full_vertex_id(l)
+       f = part_graph % full_vertex_index(l)
        do c = 1, ncomp
           associate (to => (f - 1) * ncomp + c, from => (l - 1) * ncomp + c)
             if (to >= 1 .and. to <= size(fv) .and. from <= size(lv)) fv(to) = lv(from)
@@ -275,19 +275,19 @@ contains
     type(edge_field)      :: out
     type(edge_support)    :: on
     real(dp), allocatable :: lv(:), fv(:)
-    integer , allocatable :: ids(:)
+    integer , allocatable :: indices(:)
     integer :: nfull, ncomp, l, c, f, me
 
     nfull = full_graph % num_edges()
     ncomp = part_data % num_components()
     me    = part_graph % id()
 
-    allocate(ids(nfull))
+    allocate(indices(nfull))
     do f = 1, nfull
-       ids(f) = f
+       indices(f) = f
     end do
 
-    on  = edge_support(ids)
+    on  = edge_support(indices)
     out = edge_field(part_data % name(), on, ncomp=ncomp, unit_name=part_data % units())
 
     call part_data % get_real_vector(lv)
@@ -300,7 +300,7 @@ contains
           if (part_graph % edge_owner_part(l) /= me) cycle
        end if
 
-       f = part_graph % full_edge_id(l)
+       f = part_graph % full_edge_index(l)
        do c = 1, ncomp
           associate (to => (f - 1) * ncomp + c, from => (l - 1) * ncomp + c)
             if (to >= 1 .and. to <= size(fv) .and. from <= size(lv)) fv(to) = lv(from)

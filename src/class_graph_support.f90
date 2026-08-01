@@ -1,9 +1,9 @@
 !=====================================================================!
 ! Concrete graph supports.
 !
-! A support is a chosen set of ids and nothing more. These two types
+! A support is a chosen set of indices and nothing more. These two types
 ! hold that set as a plain integer array, because that is all a set of
-! ids has ever been.
+! indices has ever been.
 !
 !      all_vertices              tagged_edges('wall')
 !      +-------------------+     +--------------+
@@ -37,7 +37,7 @@ module class_graph_support
 
   type, extends(graph_vertex_support) :: vertex_support
 
-     integer, allocatable :: ids(:)
+     integer, allocatable :: indices(:)
 
    contains
 
@@ -47,7 +47,7 @@ module class_graph_support
 
      procedure :: kind       => vertex_support_kind
      procedure :: size       => vertex_support_size
-     procedure :: vertex_ids => vertex_support_ids
+     procedure :: vertex_indices => vertex_support_indices
 
   end type vertex_support
 
@@ -57,7 +57,7 @@ module class_graph_support
 
   type, extends(graph_edge_support) :: edge_support
 
-     integer, allocatable :: ids(:)
+     integer, allocatable :: indices(:)
 
    contains
 
@@ -67,12 +67,12 @@ module class_graph_support
 
      procedure :: kind     => edge_support_kind
      procedure :: size     => edge_support_size
-     procedure :: edge_ids => edge_support_ids
+     procedure :: edge_indices => edge_support_indices
 
   end type edge_support
 
   !===================================================================!
-  ! Constructors. Hand in the ids; the support keeps a copy.
+  ! Constructors. Hand in the indices; the support keeps a copy.
   !===================================================================!
 
   interface vertex_support
@@ -89,11 +89,11 @@ contains
   ! Build a vertex support from a list of vertex numbers.
   !===================================================================!
 
-  pure type(vertex_support) function create_vertex_support(ids) result(this)
+  pure type(vertex_support) function create_vertex_support(indices) result(this)
 
-    integer, intent(in) :: ids(:)
+    integer, intent(in) :: indices(:)
 
-    allocate(this % ids, source=ids)
+    allocate(this % indices, source=indices)
 
   end function create_vertex_support
 
@@ -101,16 +101,16 @@ contains
   ! Build an edge support from a list of edge numbers.
   !===================================================================!
 
-  pure type(edge_support) function create_edge_support(ids) result(this)
+  pure type(edge_support) function create_edge_support(indices) result(this)
 
-    integer, intent(in) :: ids(:)
+    integer, intent(in) :: indices(:)
 
-    allocate(this % ids, source=ids)
+    allocate(this % indices, source=indices)
 
   end function create_edge_support
 
   !===================================================================!
-  ! A vertex support holds vertex ids. It says so.
+  ! A vertex support holds vertex indices. It says so.
   !===================================================================!
 
   pure integer function vertex_support_kind(this)
@@ -129,8 +129,8 @@ contains
 
     class(vertex_support), intent(in) :: this
 
-    if (allocated(this % ids)) then
-       vertex_support_size = size(this % ids)
+    if (allocated(this % indices)) then
+       vertex_support_size = size(this % indices)
     else
        vertex_support_size = 0
     end if
@@ -143,21 +143,21 @@ contains
   ! can loop without asking first.
   !===================================================================!
 
-  pure subroutine vertex_support_ids(this, ids)
+  pure subroutine vertex_support_indices(this, indices)
 
     class(vertex_support), intent(in)  :: this
-    integer, allocatable, intent(out)  :: ids(:)
+    integer, allocatable, intent(out)  :: indices(:)
 
-    if (allocated(this % ids)) then
-       ids = this % ids
+    if (allocated(this % indices)) then
+       indices = this % indices
     else
-       allocate(ids(0))
+       allocate(indices(0))
     end if
 
-  end subroutine vertex_support_ids
+  end subroutine vertex_support_indices
 
   !===================================================================!
-  ! An edge support holds edge ids. It says so.
+  ! An edge support holds edge indices. It says so.
   !===================================================================!
 
   pure integer function edge_support_kind(this)
@@ -176,8 +176,8 @@ contains
 
     class(edge_support), intent(in) :: this
 
-    if (allocated(this % ids)) then
-       edge_support_size = size(this % ids)
+    if (allocated(this % indices)) then
+       edge_support_size = size(this % indices)
     else
        edge_support_size = 0
     end if
@@ -188,17 +188,17 @@ contains
   ! Hand over the edge numbers, with the same empty-set promise.
   !===================================================================!
 
-  pure subroutine edge_support_ids(this, ids)
+  pure subroutine edge_support_indices(this, indices)
 
     class(edge_support), intent(in)   :: this
-    integer, allocatable, intent(out) :: ids(:)
+    integer, allocatable, intent(out) :: indices(:)
 
-    if (allocated(this % ids)) then
-       ids = this % ids
+    if (allocated(this % indices)) then
+       indices = this % indices
     else
-       allocate(ids(0))
+       allocate(indices(0))
     end if
 
-  end subroutine edge_support_ids
+  end subroutine edge_support_indices
 
 end module class_graph_support

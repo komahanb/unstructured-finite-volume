@@ -18,7 +18,7 @@
 !                                   |   |   |
 !         part 2                    1   2   3
 !
-!                       full_vertex_id(2) = 4
+!                       full_vertex_index(2) = 4
 !
 !=====================================================================!
 !
@@ -470,7 +470,7 @@ contains
 
   !===================================================================!
   ! A cell field follows the vertex map: local cell l was called
-  ! full_vertex_id(l) in the whole graph, so its values come from
+  ! full_vertex_index(l) in the whole graph, so its values come from
   ! there.
   !===================================================================!
 
@@ -503,7 +503,7 @@ contains
 
     do l = 1, nlocal
        do c = 1, ncomp
-          associate (from => (part_graph % full_vertex_id(l) - 1) * ncomp + c)
+          associate (from => (part_graph % full_vertex_index(l) - 1) * ncomp + c)
             if (from >= 1 .and. from <= size(fv)) lv((l - 1) * ncomp + c) = fv(from)
           end associate
        end do
@@ -547,7 +547,7 @@ contains
 
     do l = 1, nlocal
        do c = 1, ncomp
-          associate (from => (part_graph % full_edge_id(l) - 1) * ncomp + c)
+          associate (from => (part_graph % full_edge_index(l) - 1) * ncomp + c)
             if (from >= 1 .and. from <= size(fv)) lv((l - 1) * ncomp + c) = fv(from)
           end associate
        end do

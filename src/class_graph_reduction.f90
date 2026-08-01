@@ -333,8 +333,9 @@ contains
   end subroutine weights_of
 
   !===================================================================!
-  ! Join two part answers. This must not care which order the parts
-  ! arrive in, or a parallel run would depend on the weather.
+  ! Join two part answers. The result must not depend on the order
+  ! the parts arrive in; otherwise a parallel run would depend on
+  ! which image finishes first.
   !===================================================================!
 
   pure subroutine r_combine(this, left, right, combined)
@@ -459,7 +460,7 @@ contains
   !===================================================================!
   ! All four steps for a caller holding the whole graph.
   !
-  ! Not pure, deliberately. This is the one place a reduction spread
+  ! Not pure. This is the one place a reduction spread
   ! across images is allowed to talk to the other images, and a
   ! distributed reduction would sum here before finalizing.
   !===================================================================!

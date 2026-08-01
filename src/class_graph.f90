@@ -34,8 +34,8 @@
 ! It holds no geometry, no physics, no solver state, and no algorithm.
 ! Colouring, traversal order, partitioning and the rest are operations
 ! and transforms that read a graph; they are not things a graph does.
-! That separation is the whole point of the rewrite, and the easiest
-! way to lose it is to add "just one" convenience procedure here.
+! Each convenience procedure added here erodes that separation, one
+! procedure at a time.
 !
 ! FETCH GRAPH DATA ONCE. get_data hands back a copy, because the
 ! contract says the answer is allocatable and freshly made. On a
@@ -43,10 +43,10 @@
 ! needs at the top of apply, before it starts looping - never inside a
 ! loop over faces.
 !
-! READ ONLY. There is no way to put data on a graph after it is built.
-! Anything computed leaves as an operation's output. Without that rule
-! a graph slowly becomes a bag of state, which is what happened to the
-! one this replaces.
+! READ ONLY. No procedure puts data on a graph after construction.
+! Anything computed leaves as an operation's output. Without this rule
+! the graph accumulates state, and its answers come to depend on the
+! order of past calls rather than on the mesh it was built from.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!

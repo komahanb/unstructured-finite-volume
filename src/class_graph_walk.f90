@@ -1,19 +1,20 @@
 !=====================================================================!
-! Walks over a graph, as operations.
+! Walks over a graph, written as operations.
 !
-! The old graph did these itself: colouring, visit order, connected
-! components, distance from a seed. They were type-bound procedures on
-! the graph, which is why anything wanting to be a graph inherited a
-! partitioner and a colouring whether it needed them or not.
-!
-! They are operations. Each one reads a graph's structure and hands
-! back a whole number per cell, so each is a vertex field operation
-! like any other, and the graph itself keeps none of them.
+! A walk reads the structure of a graph and assigns a whole number to
+! every cell. That makes every walk a vertex field operation: the
+! graph supplies the structure, the walk supplies the rule, and an
+! integer field comes back.
 !
 !      graph structure  ---> walk --->  an integer per cell
 !
-! One type carrying a rule, so a caller can hold several in a plain
-! array and a new walk costs a case rather than a class.
+! The graph carries no algorithms. It answers structural queries;
+! algorithms act on it from outside. This separation keeps the graph
+! contract small, and a new algorithm arrives without touching the
+! graph.
+!
+! One type carries the rule, so a caller can hold several walks in a
+! plain array and a new walk costs a case rather than a class.
 !
 !=====================================================================!
 !
@@ -25,9 +26,9 @@
 !            (1)---(2)---(3)---(4)
 !             1     2     1     2
 !
-! That is what makes a Gauss-Seidel sweep safe to run in parallel:
-! every cell of one colour can be updated at the same time, because
-! none of them is anybody else's neighbour.
+! This property makes a Gauss-Seidel sweep safe to run in parallel:
+! all cells of one colour update at the same time, because no two of
+! them are neighbours.
 !
 ! VISIT ORDER numbers the cells in the order a breadth-first walk
 ! reaches them, starting from cell one. Solvers that want to march
@@ -35,11 +36,10 @@
 !
 ! COMPONENT gives all the cells that can reach each other the same
 ! number. Two cells share a number exactly when a path joins them, so
-! a mesh that fell into two pieces says so.
+! a mesh in two pieces reports itself as two pieces.
 !
 ! DEPTH counts faces from the seed cell. Cells the seed cannot reach
-! are marked minus one, which is honest - there is no distance to
-! something you cannot get to.
+! are marked minus one, because no distance to them exists.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -128,9 +128,8 @@ contains
   !===================================================================!
   ! Walk the graph and hand back a whole number per cell.
   !
-  ! Nothing here reads input_data. These answers come from the shape
-  ! of the graph alone - which is exactly why they had no business
-  ! living on the graph.
+  ! Nothing here reads input_data. Every answer comes from the shape
+  ! of the graph alone: structure in, rule applied, integers out.
   !===================================================================!
 
   subroutine w_apply(this, input_graph, input_data, output)

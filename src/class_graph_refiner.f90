@@ -10,11 +10,11 @@
 !      four blocks             twelve cells
 !
 ! Every child of one parent is joined to its siblings, and a face
-! between two parents becomes a face between one child of each. That
-! second rule is a choice: a real mesh refiner would know the geometry
-! and join the children that actually touch. This one keeps the shape
-! and the connectivity honest without pretending to know where
-! anything is.
+! between two parents becomes a face between one child of each. The
+! second rule is the strongest statement the connectivity supports: a
+! geometric refiner knows which children touch and joins exactly
+! those, but this refiner has no coordinates, so it preserves the
+! shape and asserts nothing beyond it.
 !
 ! What it is for: sharpening a mesh where an error measure says it is
 ! needed, and carrying a coarse multigrid correction back down.
@@ -165,10 +165,10 @@ contains
   !===================================================================!
   ! Carry the values down. Every child starts from its parent's value.
   !
-  ! This is injection, the simplest honest choice: a child of a cell
-  ! holding 3.0 holds 3.0. A geometric refiner would interpolate so
-  ! the result stayed smooth across the new faces, but that needs to
-  ! know where the children are, and this one does not.
+  ! This is injection: a child of a cell holding 3.0 holds 3.0. A
+  ! geometric refiner interpolates so the result stays smooth across
+  ! the new faces, but interpolation needs the children's positions,
+  ! and this refiner has none.
   !===================================================================!
 
   subroutine r_refine_data(this, coarse_graph, coarse_data, fine_graph, fine_data)

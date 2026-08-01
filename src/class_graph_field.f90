@@ -3,15 +3,13 @@
 !
 ! A field is one value for every entry of a support. There is exactly
 ! one concrete vertex field here and exactly one concrete edge field,
-! and each carries every kind of value the contract allows. That is
-! deliberate: because there is only one of each, a graph can hold its
-! data in a plain array
+! and each carries every kind of value the contract allows. Because
+! there is only one of each, a graph holds its data in a plain array:
 !
 !      type(vertex_field), allocatable :: vdata(:)
 !
-! which a polymorphic array could not be, since a Fortran array holds
-! one dynamic type. The alternative was a wrapper type per item, and
-! this is cheaper.
+! A Fortran array holds a single dynamic type, so a plain array of
+! fields requires a single concrete field type.
 !
 !=====================================================================!
 !

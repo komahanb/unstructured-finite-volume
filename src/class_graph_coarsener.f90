@@ -48,7 +48,7 @@ module class_graph_coarsener
   integer, parameter :: COARSEN_PAIRWISE = 1
 
   !-------------------------------------------------------------------!
-  ! Take a map somebody else worked out: which block each cell goes to.
+  ! Take a map computed elsewhere: which block each cell goes to.
   !-------------------------------------------------------------------!
 
   integer, parameter :: COARSEN_ADOPTED = 2

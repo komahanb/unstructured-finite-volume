@@ -21,10 +21,10 @@
 !                   ONLY OWNED VALUES ARE COLLECTED
 !
 ! A part borrows the cells around its edge so it can work out its own
-! answers. Those borrowed values are somebody else's copy. Collect
-! them too and a conserved quantity is counted twice - mass appears
-! from nowhere, and it appears only in parallel, only near a partition
-! boundary, which is about the worst place to go looking for it.
+! answers. A borrowed value is a copy of a value another part owns.
+! Collecting both copies counts a conserved quantity twice - mass
+! appears from nowhere, and it appears only in parallel, only near a
+! partition boundary, where such an error is hardest to locate.
 !
 !            part 1                        part 2
 !       +---------------+            +---------------+
@@ -51,8 +51,8 @@
 !
 ! ASSEMBLER MEANS THIS AND NOTHING ELSE. No physics, no boundary
 ! conditions, no residual, no matrix, no file, no solver behaviour.
-! The moment any of those move in here, the one-line law stops being
-! readable and this becomes the old assembler again under a new name.
+! Any of those added here obscures the one-line law the type exists
+! to keep visible.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -241,8 +241,8 @@ contains
 
     do l = 1, part_graph % num_vertices()
 
-       ! Borrowed cells belong to somebody else. Skip them, or the
-       ! same value lands in the answer twice.
+       ! Borrowed cells belong to another part. Skipping them keeps
+       ! each value out of the answer exactly once.
        if (part_graph % has_part_relation()) then
           if (part_graph % vertex_owner_part(l) /= me) cycle
        end if

@@ -1,9 +1,9 @@
 !=====================================================================!
 ! Concrete graph supports.
 !
-! A support is a chosen set of indices and nothing more. These two types
-! hold that set as a plain integer array, because that is all a set of
-! indices has ever been.
+! A support is a chosen set of indices and nothing more. Each of
+! these two types holds its set as a plain integer array, which is
+! exactly what a set of indices is.
 !
 !      all_vertices              tagged_edges('wall')
 !      +-------------------+     +--------------+
@@ -11,9 +11,9 @@
 !      +-------------------+     +--------------+
 !         a vertex_support          an edge_support
 !
-! The two are separate types rather than one type carrying a flag,
-! because that separation is what tells a vertex field from an edge
-! field everywhere else in the library. The compiler does the checking.
+! The two are separate types rather than one type carrying a flag.
+! This separation distinguishes a vertex field from an edge field
+! everywhere else in the library, and the compiler enforces it.
 !
 ! A support is asked for once, when an operation begins, and then
 ! looped over. It is never built inside a loop over cells or faces.

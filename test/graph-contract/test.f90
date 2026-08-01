@@ -36,8 +36,8 @@
 !      such an edge. A name nothing carries returns an empty set
 !      rather than failing.
 !  10. Walking the graph, with and without regard to direction. The
-!      four direction queries are what replace the separate directed
-!      graph type: the same graph answers them.
+!      same graph answers the four direction queries; no separate
+!      directed graph type exists.
 !  11. An uncut graph admits it carries no partition, and then answers
 !      every partition question as the whole of itself - one part,
 !      everything owned, nothing borrowed, identity maps - rather than
@@ -375,8 +375,10 @@ contains
   end subroutine check_field_round_trips
 
   !===================================================================!
-  ! A functional is one value. The two that matter most here are
-  ! complex and logical, because the old contract could carry neither.
+  ! A functional is one value, of any kind a field can hold. The two
+  ! that matter most here are complex and logical: complex carries a
+  ! complex-step derivative, and logical carries a true-or-false
+  ! answer without encoding it as a number.
   !===================================================================!
 
   subroutine check_functional_round_trips(nfail)
@@ -569,8 +571,8 @@ contains
     call report(size(indices) .eq. 2 .and. all(indices .eq. [2, 3]), &
          & "the wall leads nowhere, so it adds no neighbour", nfail)
 
-    ! Direction. The old library needed a second kind of graph for
-    ! this; here it is four more questions the same graph answers.
+    ! Direction: four more questions the same graph answers. No
+    ! separate directed graph type exists.
     call g % outgoing_edges(1, indices)
     call report(size(indices) .eq. 2, "two faces lead out of the top cell", nfail)
 
@@ -1114,7 +1116,7 @@ contains
   !
   ! Working something out on the whole must give the same answer as
   ! working it out on each piece and putting the pieces together. Here
-  ! A is a sum, which is the smallest honest operation available, and
+  ! A is a sum - the smallest operation that exercises the law - and
   ! the pieces are joined by the reduction's own combine.
   !
   ! Only the owned cells of each piece are folded in. Fold the
@@ -1430,10 +1432,11 @@ contains
   end subroutine check_balance_conserves
 
   !===================================================================!
-  ! The walks that used to be procedures on the graph itself.
+  ! The walks: colouring, visit order, components, depth.
   !
   ! Each reads the shape of the graph and hands back a whole number
-  ! per cell, which is exactly why none of them belonged on the graph.
+  ! per cell, so each is an operation over a graph rather than a
+  ! procedure of one.
   !===================================================================!
 
   subroutine check_walks(nfail)

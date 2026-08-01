@@ -58,12 +58,12 @@ module class_graph_balance
   public :: balance
 
   !===================================================================!
-  ! A balance holds its face term and, if it has one, a number added
+  ! A balance holds its face terms and, if it has one, a number added
   ! to every cell.
   !
-  ! The face terms are one concrete type carrying a rule, so several
-  ! of them fit in a plain array. That was the price of not having a
-  ! wrapper type, and it is what makes this list possible at all.
+  ! The face terms are one concrete type carrying a rule. A Fortran
+  ! array holds a single dynamic type, so one concrete flux type is
+  ! what lets the balance keep its terms in a plain array.
   !===================================================================!
 
   type, extends(graph_vertex_field_operation) :: balance

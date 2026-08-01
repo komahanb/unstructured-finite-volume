@@ -1,8 +1,9 @@
 !=====================================================================!
 ! Concrete graph partitioners.
 !
-! P cuts a graph into parts. One concrete type carrying a rule, not a
-! class per rule, for the reason the fields and the reductions give.
+! P cuts a graph into parts. One concrete type carries the rule, so a
+! caller can hold partitioners in a plain array and a new rule costs a
+! case rather than a class.
 !
 !         o---o---o---o---o---o
 !                     :                cut where few edges cross, so
@@ -25,8 +26,8 @@
 !                      OWNED, BORROWED, OVERLAP
 !
 ! A part owns the cells it must produce answers for. It borrows the
-! cells next to them that somebody else owns, because a face term
-! needs the value on both sides. Together those are the overlap - what
+! neighbouring cells that other parts own, because a face term needs
+! the value on both sides. Together those are the overlap - what
 ! this part must be able to see to finish what it owns.
 !
 !            part 1                        part 2
@@ -83,8 +84,8 @@ module class_graph_partitioner
   integer, parameter :: PARTITION_BREADTH_FIRST = 2
 
   !-------------------------------------------------------------------!
-  ! Take a map somebody else computed - a mesh file, an outside
-  ! library, a previous run.
+  ! Take a map computed elsewhere - a mesh file, an outside library,
+  ! a previous run.
   !-------------------------------------------------------------------!
 
   integer, parameter :: PARTITION_ADOPTED = 3
@@ -208,9 +209,9 @@ contains
     call gather_part(full_graph, owner, this % part, mine, whereis)
 
     ! Keep an edge when both its ends are in this part and at least one
-    ! of them is owned here. An edge with neither end owned belongs to
-    ! somebody else entirely; counting it twice is how a flux gets
-    ! added to the balance twice.
+    ! of them is owned here. An edge with neither end owned belongs
+    ! entirely to another part; keeping it here would add its flux to
+    ! the balance twice.
     allocate(ltail(ne), lhead(ne), efull(ne), eowner(ne))
     nkeep = 0
     do e = 1, ne

@@ -230,8 +230,9 @@
 ! Whatever a graph carries was fixed when it was built - geometry,
 ! tags, and the relation between a part and the whole. Everything
 ! computed travels as an operation's output and is never stored back.
-! Without this law a graph slowly becomes a bag of state, which is
-! what happened to the one this file replaces.
+! Without this law the graph accumulates state, and its answers come
+! to depend on the order of past calls rather than on the mesh it was
+! built from.
 !
 ! THE OVERWRITE LAW. An operation writes its result, it never adds to
 ! it. The output argument is intent(inout) only so a caller can lend a
@@ -477,9 +478,8 @@ module abstract_graph_types
      !         incoming_vertices(i) = a, b     incoming_edges(i) = 2
      !         outgoing_vertices(i) = c, d     outgoing_edges(i) = 2
      !
-     ! These four replace the separate directed graph type entirely.
-     ! Direction stops being a different kind of graph and becomes
-     ! something any graph can be asked about.
+     ! Direction is a question any graph answers, not a separate kind
+     ! of graph. One type serves directed and undirected use alike.
      !
      ! WHAT IF THE EDGES HAVE NO DIRECTION? Every edge here is stored
      ! tail-to-head, so a direction always exists in the storage even
@@ -728,7 +728,7 @@ module abstract_graph_types
   !                                          +--> combine -> finalize
   !      part 2 -> initialize -> accumulate ---+
   !
-  ! The four steps are what keeps an average honest. Two parts with
+  ! The four steps keep a partitioned average exact. Two parts with
   ! means 2 and 7 do not average to 4.5; they average to 4, because
   ! the running sum and the running count travel together and the
   ! division happens once, at the end.
@@ -740,8 +740,7 @@ module abstract_graph_types
   ! work state, never in this contract.
   !
   ! The four building steps are pure. The convenience that runs them
-  ! all is not, deliberately, because a reduction across images sums
-  ! there.
+  ! all is not pure, because a reduction across images sums there.
   !
   ! The three that hand back a state are intent(inout) rather than
   ! intent(out) because Fortran forbids a polymorphic intent(out)
@@ -782,9 +781,9 @@ module abstract_graph_types
   ! detail without changing the frame. Both are transforms; they are
   ! not the same family.
   !
-  ! All four stay this thin deliberately. Everything about how the
-  ! pieces relate rides on the graph that comes out, which is why the
-  ! graph above answers for the part relation.
+  ! All four stay this thin. Everything about how the pieces relate
+  ! rides on the graph that comes out, which is why the graph above
+  ! answers for the part relation.
   !===================================================================!
 
   type, abstract :: graph_transform
@@ -1513,9 +1512,9 @@ module abstract_graph_types
      !---------------------------------------------------------------!
      ! All four in one call, for a caller holding the whole thing.
      !
-     ! Not pure, and that is deliberate: a reduction spread across
-     ! images has to talk to the other images somewhere, and this is
-     ! the one place in the file where that is allowed.
+     ! Not pure: a reduction spread across images must communicate
+     ! somewhere, and this is the one place in the file where that is
+     ! allowed.
      !---------------------------------------------------------------!
      subroutine reduction_reduce_interface(this, input_graph, field, support, functional, measure)
        import :: graph_reduction, graph, graph_field
@@ -1586,7 +1585,7 @@ module abstract_graph_types
      !      breadth first    grow each part outward from a seed cell
      !      geometric        cut on cell coordinates, recursively
      !      aggregate        glue small clusters together
-     !      adopted          take a map somebody else already computed
+     !      adopted          take a map computed elsewhere
      !
      ! What comes out is still a graph. It simply also knows how it
      ! relates back to the whole.
@@ -1638,9 +1637,9 @@ module abstract_graph_types
      !
      !      assemble( partition( G, D ) )  ==  ( G, D )
      !
-     ! Only owned values are collected. A borrowed value is somebody
-     ! else's copy, and counting it too is how a conserved quantity
-     ! quietly stops being conserved.
+     ! Only owned values are collected. A borrowed value is a copy of
+     ! a value another part owns; counting both copies violates
+     ! conservation.
      !---------------------------------------------------------------!
 
      subroutine assemble_data_interface(this, part_graph, part_data, full_graph, full_data)

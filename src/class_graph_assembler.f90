@@ -72,8 +72,8 @@ module class_graph_assembler
   public :: assembler
 
   !===================================================================!
-  ! The assembler holds nothing. Everything it needs to find the way
-  ! home is already stamped on the part it is handed.
+  ! The assembler holds nothing. Everything it needs - the index maps
+  ! and the ownership - is already stamped on the part it is handed.
   !===================================================================!
 
   type, extends(graph_assembler) :: assembler
@@ -95,16 +95,16 @@ contains
 
   pure type(assembler) function create() result(this)
 
-    ! Nothing to set up. Everything the assembler needs to find the
-    ! way home is stamped on the part it will be handed.
+    ! Nothing to set up. Everything the assembler needs is stamped on
+    ! the part it will be handed.
 
   end function create
 
   !===================================================================!
-  ! A part can go home only if it remembers where home was. A graph
-  ! that came straight off a mesh file carries no relation, and this
-  ! says so rather than guessing an identity map and being wrong in
-  ! silence.
+  ! A part can be assembled back only if it carries its relation to
+  ! the whole. A graph straight off a mesh file carries no relation,
+  ! and this says so rather than guessing an identity map and being
+  ! wrong in silence.
   !===================================================================!
 
   pure logical function a_defined_on_graph(this, input_graph)
@@ -137,8 +137,8 @@ contains
   !===================================================================!
   ! Put the piece back in whole-graph order.
   !
-  ! Every local cell is renamed to what it was called in the whole
-  ! graph, and every edge with it. What comes out is a graph again,
+  ! Every cell of the part is renamed to what the whole graph called
+  ! it, and every edge with it. What comes out is a graph again,
   ! with no partition stamped on it - because a whole graph is not a
   ! part of anything.
   !===================================================================!
@@ -178,7 +178,7 @@ contains
   end subroutine a_assemble_graph
 
   !===================================================================!
-  ! Bring the data home.
+  ! Assemble the data back onto the whole graph.
   !
   ! The answer is laid out on the whole graph. Only the entries this
   ! part owns are written; everything else is left at zero, so adding
@@ -196,10 +196,10 @@ contains
     select type (part_data)
 
     class is (vertex_field)
-       call bring_vertex_field_home(part_data, part_graph, full_graph, full_data)
+       call assemble_vertex_field(part_data, part_graph, full_graph, full_data)
 
     class is (edge_field)
-       call bring_edge_field_home(part_data, part_graph, full_graph, full_data)
+       call assemble_edge_field(part_data, part_graph, full_graph, full_data)
 
     end select
 
@@ -210,7 +210,7 @@ contains
   ! only.
   !===================================================================!
 
-  subroutine bring_vertex_field_home(part_data, part_graph, full_graph, full_data)
+  subroutine assemble_vertex_field(part_data, part_graph, full_graph, full_data)
 
     type(vertex_field), intent(in)               :: part_data
     class(graph)      , intent(in)               :: part_graph
@@ -259,13 +259,13 @@ contains
     call out % set_real_vector(fv)
     allocate(full_data, source=out)
 
-  end subroutine bring_vertex_field_home
+  end subroutine assemble_vertex_field
 
   !===================================================================!
   ! Face values, the same way, by the edge map.
   !===================================================================!
 
-  subroutine bring_edge_field_home(part_data, part_graph, full_graph, full_data)
+  subroutine assemble_edge_field(part_data, part_graph, full_graph, full_data)
 
     type(edge_field), intent(in)                :: part_data
     class(graph)    , intent(in)                :: part_graph
@@ -312,6 +312,6 @@ contains
     call out % set_real_vector(fv)
     allocate(full_data, source=out)
 
-  end subroutine bring_edge_field_home
+  end subroutine assemble_edge_field
 
 end module class_graph_assembler

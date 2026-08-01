@@ -980,7 +980,8 @@ contains
   end function g_part_edge_index
 
   !===================================================================!
-  ! Find which local index carries a given whole-graph index.
+  ! Find which of the part's own indices carries a given whole-graph
+  ! index.
   !===================================================================!
 
   pure integer function reverse_lookup(full, full_index, cut)

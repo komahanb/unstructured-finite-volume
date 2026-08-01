@@ -11,8 +11,8 @@
 !
 !                          THE CENTRAL LAW
 !
-! Everything here serves one sentence. Split a graph into parts, work
-! on the parts, put the answer back together.
+! One sentence organizes everything in this file: split a graph into
+! parts, work on the parts, put the answer back together.
 !
 !        G'  =  P^-1 ( A ( P ( G ) ) )
 !
@@ -205,42 +205,55 @@
 !
 !=====================================================================!
 !
-!                        THREE LAWS, NOT PROCEDURES
+!                            THREE RULES
 !
-! These replace procedures rather than accompany them.
+! Three questions come up over and over in the procedures below:
+! where does a value sit in a field, can a graph change after it is
+! built, and what does apply do to a buffer it is handed? Each has
+! one answer, fixed here, and the whole file is written assuming it.
 !
-! THE FIELD ORDERING LAW. A field stores its values in the order its
-! support lists its indices, and stores components fastest within each
-! entry. So a value sits at
+! WHERE A VALUE SITS. Suppose a support lists three cells in the
+! order 7, 3, 11, and a field on that support carries two components
+! per cell. The field keeps its values in that same order, with the
+! components of each cell side by side:
 !
-!        (entry_position - 1) * num_components + component
-!
-!        support indices     7        7        3        3
+!        cell            7        7        3        3      ...
 !        component       1        2        1        2
-!                     +--------+--------+--------+--------+
+!                     +--------+--------+--------+--------+--
 !        values       |  v(1)  |  v(2)  |  v(3)  |  v(4)  |
-!                     +--------+--------+--------+--------+
+!                     +--------+--------+--------+--------+--
 !
-! Because that law holds, degree-of-freedom counting, the local
-! numbering of a part's vector, and its inverse are all arithmetic on
-! a known layout. None of them are graph structure and none of them
-! appear below.
+! So if a cell is the p-th entry of the support, its component c is
+! the number at position
 !
-! THE READ-ONLY LAW. A graph answers for data but never accepts any.
-! Whatever a graph carries was fixed when it was built - geometry,
-! tags, and the relation between a part and the whole. Everything
-! computed travels as an operation's output and is never stored back.
-! Without this law the graph accumulates state, and its answers come
-! to depend on the order of past calls rather than on the mesh it was
-! built from.
+!        (p - 1) * num_components + c
 !
-! THE OVERWRITE LAW. An operation writes its result, it never adds to
-! it. The output argument is intent(inout) only so a caller can lend a
-! buffer instead of forcing a fresh allocation every call:
+! and anyone holding the flat vector finds any value by this formula
+! alone. This is why the file declares no procedures for counting
+! degrees of freedom or numbering a part's vector: once the layout is
+! fixed, those are one-line formulas, and a formula needs no
+! procedure.
 !
-!        call term % apply(g, data, y)      y is written, not summed
+! CAN A GRAPH CHANGE? No. Everything a graph carries - structure,
+! geometry, tags, its relation to the whole it came from - goes in at
+! construction, and no procedure below accepts data afterwards. When
+! an operation computes something new, the result leaves through that
+! operation's output argument. The reason is repeatability: ask a
+! graph the same question twice and it gives the same answer twice,
+! no matter what ran in between. A graph that could be written to
+! would answer according to its history, and every caller would then
+! need to know that history.
 !
-! A balance that sums many terms does its own summing.
+! WHAT apply DOES TO A LENT BUFFER. It writes the result into it and
+! never adds to what was there. The output argument is intent(inout)
+! for one reason only: a caller that already holds a buffer of the
+! right size can lend it and save an allocation. Lending changes the
+! cost of the call, not its meaning:
+!
+!        call term % apply(g, data, y)      ! y becomes the result
+!
+! A balance that sums several terms therefore does its own summing,
+! in its own loop, where a reader can see it happen.
 !
 !=====================================================================!
 
@@ -354,7 +367,8 @@ module abstract_graph_types
   !
   ! It owns no geometry, no physics, no solver behaviour, no storage.
   !
-  ! Two speeds live here, and they answer differently.
+  ! The queries below fall into two kinds, by how often a caller asks
+  ! them, and the answers are shaped to match:
   !
   !   named sets       asked once, when an operation begins
   !                    ---> hand back a support
@@ -518,22 +532,27 @@ module abstract_graph_types
      ! so part 2 borrows it. Part 2 therefore holds five cells, and
      ! numbers them from one, owned first:
      !
-     !      part 2 local     1   2   3   4   5
-     !      was called in    5   6   7   8   4
-     !      the whole                        ^
-     !                                       borrowed, owned by part 1
+     !      part 2 calls it     1   2   3   4   5
+     !      the whole called    5   6   7   8   4
+     !      it                                  ^
+     !                                          borrowed, owned by
+     !                                          part 1
      !
      ! Reading that table both ways:
      !
-     !      full_vertex_index(1) = 5     local 1 was called 5
-     !      full_vertex_index(5) = 4     local 5 was called 4
-     !      part_vertex_index(7, 2) = 3  cell 7 sits at local 3 in part 2
-     !      vertex_owner_part(5) = 1  local 5 is borrowed - part 1 owns
-     !                                the cell it came from
+     !      full_vertex_index(1) = 5     part 2's cell 1 was 5 in the
+     !                                   whole
+     !      full_vertex_index(5) = 4     part 2's cell 5 was 4
+     !      part_vertex_index(7, 2) = 3  the whole's cell 7 sits at 3
+     !                                   in part 2
+     !      vertex_owner_part(5) = 1     part 2's cell 5 is borrowed;
+     !                                   part 1 owns the cell it came
+     !                                   from
      !
-     ! Owned first is not cosmetic. It puts a part's owned values at
-     ! the front of every vector, so the piece a solver reduces over is
-     ! one contiguous slice rather than a scatter.
+     ! The owned-first order has a practical consequence: a part's
+     ! owned values sit at the front of every vector, so the piece a
+     ! solver reduces over is one contiguous slice rather than a
+     ! scatter.
      !
      ! This lives on the graph rather than on the partitioner, because
      ! the partitioner has finished by the time anyone asks, and the

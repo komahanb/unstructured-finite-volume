@@ -12,7 +12,7 @@
 !
 ! What comes out is one part, in its own numbering, and it is still a
 ! graph. It also remembers how it relates to the whole - which cells
-! it owns, which it only borrows, and what each of its local numbers
+! it owns, which it only borrows, and what each of its own numbers
 ! was called in the full graph.
 !
 !         full graph    1   2   3   4   5   6   7   8
@@ -255,8 +255,8 @@ contains
          &              number=this % part))
 
     ! Stamp the relation back to the whole onto the piece. Without it
-    ! there is no way home, and the assembler says so rather than
-    ! guessing.
+    ! the assembler cannot restore whole-graph order, and says so
+    ! rather than guessing.
     select type (part_graph)
     type is (stored_graph)
        part_graph % cut    = .true.
@@ -396,9 +396,9 @@ contains
   ! Collect one part's cells: the ones it owns first, then the ones it
   ! must borrow to work out its own answers.
   !
-  ! Owned first is not cosmetic. It means a part's owned values sit at
-  ! the front of every vector, so the piece a solver reduces over is a
-  ! contiguous slice.
+  ! The owned-first order has a practical consequence: a part's owned
+  ! values sit at the front of every vector, so the piece a solver
+  ! reduces over is a contiguous slice.
   !===================================================================!
 
   subroutine gather_part(full_graph, owner, part, mine, whereis)
@@ -470,7 +470,7 @@ contains
   end subroutine p_partition_data
 
   !===================================================================!
-  ! A cell field follows the vertex map: local cell l was called
+  ! A cell field follows the vertex map: the part's cell l was called
   ! full_vertex_index(l) in the whole graph, so its values come from
   ! there.
   !===================================================================!

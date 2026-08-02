@@ -50,7 +50,7 @@ module class_graph_balance
   use abstract_graph_types, only : graph_vertex_support, graph_edge_field
   use class_graph_support , only : vertex_support
   use class_graph_field   , only : vertex_field
-  use class_graph_derivative, only : derivative
+  use class_graph_differential_operator, only : edge_differential_operator
 
   implicit none
 
@@ -68,7 +68,7 @@ module class_graph_balance
 
   type, extends(graph_vertex_field_operation) :: balance
 
-     type(derivative), allocatable :: edge_terms(:)
+     type(edge_differential_operator), allocatable :: edge_terms(:)
 
      real(dp) :: source = 0.0_dp
 
@@ -88,7 +88,7 @@ contains
 
   pure type(balance) function create(edge_terms, source) result(this)
 
-    type(derivative), intent(in), optional :: edge_terms(:)
+    type(edge_differential_operator), intent(in), optional :: edge_terms(:)
     real(dp)  , intent(in), optional :: source
 
     if (present(edge_terms)) allocate(this % edge_terms, source=edge_terms)
@@ -135,7 +135,7 @@ contains
     class(graph_data), intent(in), optional             :: input_data(:)
     class(graph_vertex_field), allocatable, intent(inout) :: output
 
-    class(graph_edge_field), allocatable :: face_values
+    class(graph_edge_field), allocatable :: edge_values
 
     type(vertex_field)    :: out
     type(vertex_support)  :: on
@@ -162,8 +162,8 @@ contains
 
           ! One edge term, computed for every edge at once. This is
           ! the only place the edge values are computed.
-          call this % edge_terms(k) % apply(input_graph, input_data, face_values)
-          call face_values % get_real_vector(z)
+          call this % edge_terms(k) % apply(input_graph, input_data, edge_values)
+          call edge_values % get_real_vector(z)
 
           ! And folded onto the vertices, each edge touching its two
           ! ends exactly one time.

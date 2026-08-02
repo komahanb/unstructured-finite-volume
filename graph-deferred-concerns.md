@@ -85,6 +85,14 @@ neither has a use here. The state would have to carry a deferred
 length, which makes combine reconcile two lengths and finalize pick
 one.
 
+**Curl is available through a second graph, not yet through the mesh.**
+Which edge borders which face is itself a graph, and the fold step on
+that graph is the curl - demonstrated in the suite on a hand-built
+square, zero for a difference field and nonzero for a circulating
+one. What does not exist yet is the construction of that border graph
+FROM a mesh; that is geometry work and arrives with the mesh
+migration.
+
 ## still missing, by plan rather than oversight
 
 **Nothing declares what data an operation needs.** The input argument

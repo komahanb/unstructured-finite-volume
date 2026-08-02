@@ -195,8 +195,9 @@ $n$ & one more step     & reaches $n$ rings of neighbours & $n$-th \\
 
 The recipes on the edge side read the same way: order $0$ is $S\,q$,
 order $1$ is $G\,q$, and order $n$ applies $G$ to the vertex result
-of order $n-1$. The coefficient $c$ is applied once, at the outermost
-step. (The order-$2$ recipe is what the literature calls the graph
+of order $n-1$. The coefficient $c$ is applied once, at the innermost step -- the
+first moment the values land on the edges -- which is what lets a
+coefficient vary edge by edge. (The order-$2$ recipe is what the literature calls the graph
 Laplacian; the name is not needed to use it.)
 
 Each step consults only an edge's two ends, so each step widens the

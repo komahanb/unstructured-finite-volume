@@ -105,7 +105,10 @@ program test_graph_contract
   use abstract_graph_types  , only : graph, graph_vertex_field
   use class_graph_coarsener , only : coarsener, COARSEN_PAIRWISE, COARSEN_ADOPTED
   use class_graph_refiner   , only : refiner
-  use class_graph_derivative, only : derivative
+  use class_graph_differential_operator, only : edge_differential_operator
+  use class_graph_differential_operator, only : vertex_differential_operator
+  use class_graph_differential_operator, only : gradient, interpolation
+  use class_graph_differential_operator, only : divergence, laplacian
   use class_graph_balance   , only : balance
   use class_graph_walk      , only : walk, WALK_COLOURING, WALK_VISIT_ORDER
   use class_graph_walk      , only : WALK_COMPONENT, WALK_DEPTH
@@ -140,6 +143,9 @@ program test_graph_contract
   call check_balance_conserves(nfail)
   call check_walks(nfail)
   call check_doing_nothing_is_an_answer(nfail)
+  call check_differential_operators(nfail)
+  call check_adjoints(nfail)
+  call check_curl_on_border_graph(nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
@@ -1357,7 +1363,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                       :: ring, open_chain
-    type(derivative)                         :: edge_term
+    type(edge_differential_operator)         :: edge_term
     type(balance)                            :: bal
     class(graph_vertex_field), allocatable   :: y
     type(vertex_support)                     :: on
@@ -1369,7 +1375,7 @@ contains
     ! A closed ring: four cells, four faces, not a wall in sight.
     ring = stored_graph(4, tails=[1, 2, 3, 4], heads=[2, 3, 4, 1])
 
-    edge_term = derivative(order=2, coefficient=1.0_dp)
+    edge_term = gradient(coefficient=1.0_dp)
     bal       = balance(edge_terms=[edge_term])
 
     on = vertex_support([1, 2, 3, 4])
@@ -1401,8 +1407,8 @@ contains
 
     ! Two edge terms, not one. Each is folded through incidence in
     ! its turn, so the sum still has to cancel.
-    bal = balance(edge_terms=[derivative(order=2, coefficient=1.0_dp), &
-         &                    derivative(order=1, coefficient=0.5_dp)])
+    bal = balance(edge_terms=[gradient(coefficient=1.0_dp), &
+         &                    interpolation(coefficient=0.5_dp)])
     call q % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
     call bal % apply(ring, [q], y)
     call y % get_real_vector(v)
@@ -1518,5 +1524,267 @@ contains
          & "and what the seed cannot reach is marked unreachable, not zero", nfail)
 
   end subroutine check_walks
+
+  !===================================================================!
+  ! The differential operators, checked against the numbers the
+  ! theory guide proves.
+  !
+  !      (1)--(2)--(3)--(4)--(5)--(6)--(7)      spacing 1, measure 1
+  !===================================================================!
+
+  subroutine check_differential_operators(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_graph)                     :: g7, g3, ring
+    type(vertex_differential_operator)     :: op
+    class(graph_vertex_field), allocatable :: yf
+    type(vertex_support)                   :: on
+    type(vertex_field)                     :: q
+    type(edge_support)                     :: eon
+    type(edge_field)                       :: zf
+    real(dp), allocatable                  :: y(:)
+    real(dp)                               :: qv(7)
+    integer                                :: v
+    logical                                :: ok
+
+    g7 = stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
+    on = vertex_support([(v, v = 1, 7)])
+    q  = vertex_field('q', on)
+
+    ! Order 0 is the term itself, coefficient and all.
+    do v = 1, 7
+       qv(v) = real(v, dp)
+    end do
+    call q % set_real_vector(qv)
+    op = vertex_differential_operator(order=0, coefficient=3.0_dp)
+    call op % apply(g7, [q], yf)
+    call yf % get_real_vector(y)
+    call report(all(abs(y - 3.0_dp * qv) < 1.0d-12), &
+         & "order 0 returns c q at every vertex", nfail)
+
+    ! Order 1 of a straight line is c times the slope, both signs.
+    call q % set_real_vector(10.0_dp * qv)
+    op = vertex_differential_operator(order=1, coefficient=1.0_dp)
+    call op % apply(g7, [q], yf)
+    call yf % get_real_vector(y)
+    ok = .true.
+    do v = 2, 6
+       ok = ok .and. abs(y(v) - 10.0_dp) < 1.0d-12
+    end do
+    call report(ok, "order 1 of a straight line is the slope, inside", nfail)
+
+    op = vertex_differential_operator(order=1, coefficient=-1.0_dp)
+    call op % apply(g7, [q], yf)
+    call yf % get_real_vector(y)
+    ok = .true.
+    do v = 2, 6
+       ok = ok .and. abs(y(v) + 10.0_dp) < 1.0d-12
+    end do
+    call report(ok, "and with c negative, minus the slope - the other end", nfail)
+
+    ! Order 2: zero on the line, two on the parabola. The guide's
+    ! first claim, with its numbers.
+    op = laplacian()
+    call op % apply(g7, [q], yf)
+    call yf % get_real_vector(y)
+    ok = .true.
+    do v = 2, 6
+       ok = ok .and. abs(y(v)) < 1.0d-12
+    end do
+    call report(ok, "the second derivative of a straight line is zero", nfail)
+
+    do v = 1, 7
+       qv(v) = real(v, dp)**2
+    end do
+    call q % set_real_vector(qv)
+    call op % apply(g7, [q], yf)
+    call yf % get_real_vector(y)
+    ok = .true.
+    do v = 2, 6
+       ok = ok .and. abs(y(v) - 2.0_dp) < 1.0d-12
+    end do
+    call report(ok, "and of a parabola, exactly two", nfail)
+
+    ! The first vertex has one edge only, so its value is one-sided:
+    ! the slope of the first edge, q(2) - q(1) = 3.
+    call report(abs(y(1) - 3.0_dp) < 1.0d-12, &
+         & "the chain's first vertex holds the one-sided value", nfail)
+
+    ! Order 4: zero on the parabola, twenty-four on the fourth power,
+    ! two rings inside. The guide's second claim.
+    op = vertex_differential_operator(order=4)
+    call op % apply(g7, [q], yf)
+    call yf % get_real_vector(y)
+    ok = .true.
+    do v = 3, 5
+       ok = ok .and. abs(y(v)) < 1.0d-12
+    end do
+    call report(ok, "the fourth derivative of a parabola is zero", nfail)
+
+    do v = 1, 7
+       qv(v) = real(v, dp)**4
+    end do
+    call q % set_real_vector(qv)
+    call op % apply(g7, [q], yf)
+    call yf % get_real_vector(y)
+    ok = .true.
+    do v = 3, 5
+       ok = ok .and. abs(y(v) - 24.0_dp) < 1.0d-12
+    end do
+    call report(ok, "and of the fourth power, exactly twenty-four", nfail)
+
+    ! Per-edge coefficients: three cells, weights 2 and 5, values
+    ! 1, 2, 4. At the middle: 5*(4-2) - 2*(2-1) = 10 - 2 = 8.
+    g3 = stored_graph(3, tails=[1, 2], heads=[2, 3])
+    on = vertex_support([1, 2, 3])
+    q  = vertex_field('q', on)
+    call q % set_real_vector([1.0_dp, 2.0_dp, 4.0_dp])
+    op = laplacian(coefficients=[2.0_dp, 5.0_dp])
+    call op % apply(g3, [q], yf)
+    call yf % get_real_vector(y)
+    call report(abs(y(2) - 8.0_dp) < 1.0d-12, &
+         & "per-edge coefficients: the middle cell folds to eight", nfail)
+
+    ! Divergence of a given edge field: a ring with samples 1,2,3,4.
+    ! Out minus in at each vertex: -3, 1, 1, 1.
+    ring = stored_graph(4, tails=[1,2,3,4], heads=[2,3,4,1])
+    eon  = edge_support([1, 2, 3, 4])
+    zf   = edge_field('z', eon)
+    call zf % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
+    op = divergence()
+    call op % apply(ring, [zf], yf)
+    call yf % get_real_vector(y)
+    call report(abs(y(1) + 3.0_dp) < 1.0d-12 .and. &
+         &      all(abs(y(2:4) - 1.0_dp) < 1.0d-12), &
+         & "divergence of an edge field is its fold, hand-checked", nfail)
+
+  end subroutine check_differential_operators
+
+  !===================================================================!
+  ! The adjoint is the reverse walk. For any q and p the pairing
+  ! must balance:
+  !
+  !      sum of (A q) p  =  sum of q (A* p)
+  !
+  ! and for the order-2 operator with the same coefficients on both
+  ! steps, A* is A itself.
+  !===================================================================!
+
+  subroutine check_adjoints(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_graph)                     :: g7
+    type(vertex_differential_operator)     :: fwd, rev
+    class(graph_vertex_field), allocatable :: yf
+    type(vertex_support)                   :: on
+    type(vertex_field)                     :: qf, pf
+    real(dp), allocatable                  :: aq(:), ap(:)
+    real(dp)                               :: q(7), p(7), left, right
+    integer                                :: v
+
+    g7 = stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
+    on = vertex_support([(v, v = 1, 7)])
+    qf = vertex_field('q', on)
+    pf = vertex_field('p', on)
+
+    ! Two fields with nothing special about them.
+    do v = 1, 7
+       q(v) = real(v, dp)**2 - 3.0_dp * v
+       p(v) = 2.0_dp * v + real(7 - v, dp)**2
+    end do
+    call qf % set_real_vector(q)
+    call pf % set_real_vector(p)
+
+    ! The order-1 operator against its reverse walk.
+    fwd = vertex_differential_operator(order=1, coefficient=1.5_dp)
+    rev = vertex_differential_operator(order=1, coefficient=1.5_dp, adjoint=.true.)
+
+    call fwd % apply(g7, [qf], yf)
+    call yf % get_real_vector(aq)
+    call rev % apply(g7, [pf], yf)
+    call yf % get_real_vector(ap)
+
+    left  = sum(aq * p)
+    right = sum(q * ap)
+    call report(abs(left - right) < 1.0d-10, &
+         & "order 1 pairs with its reverse walk exactly", nfail)
+
+    ! The same identity read backwards: the reverse of the reverse
+    ! acts as the original.
+    call rev % apply(g7, [qf], yf)
+    call yf % get_real_vector(aq)
+    call fwd % apply(g7, [pf], yf)
+    call yf % get_real_vector(ap)
+    call report(abs(sum(aq * p) - sum(q * ap)) < 1.0d-10, &
+         & "and the reverse of the reverse acts as the original", nfail)
+
+    ! Order 2 with per-edge coefficients on its steps is its own
+    ! adjoint: the two sign flips cancel in pairs.
+    fwd = laplacian(coefficients=[2.0_dp, 5.0_dp, 1.0_dp, 4.0_dp, 3.0_dp, 6.0_dp])
+    call fwd % apply(g7, [qf], yf)
+    call yf % get_real_vector(aq)
+    call fwd % apply(g7, [pf], yf)
+    call yf % get_real_vector(ap)
+    call report(abs(sum(aq * p) - sum(q * ap)) < 1.0d-9, &
+         & "the weighted order-2 operator is its own adjoint", nfail)
+
+  end subroutine check_adjoints
+
+  !===================================================================!
+  ! Curl, with nothing new. The square and its border graph:
+  !
+  !        (4) <--c-- (3)          a . . . +1 . .
+  !         |          ^           b . . . +1 . . \
+  !         d          b                            (f)
+  !         v          |           c . . . +1 . . /
+  !        (1) --a--> (2)          d . . . +1 . .
+  !
+  ! Walk the loop and add what the edges hold. A difference field
+  ! cancels term against term; a circulating field does not.
+  !===================================================================!
+
+  subroutine check_curl_on_border_graph(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_graph)                     :: border
+    type(vertex_differential_operator)     :: fold
+    class(graph_vertex_field), allocatable :: yf
+    type(edge_support)                     :: eon
+    type(edge_field)                       :: zf
+    real(dp), allocatable                  :: y(:)
+    real(dp)                               :: qsq(4)
+
+    ! The border graph: vertices 1..4 stand for the square's edges
+    ! a..d, vertex 5 for the face; every border edge points at the
+    ! face, and every square edge agrees with the walk, so every
+    ! orientation coefficient is one.
+    border = stored_graph(5, tails=[1, 2, 3, 4], heads=[5, 5, 5, 5])
+    eon    = edge_support([1, 2, 3, 4])
+    zf     = edge_field('z', eon)
+    fold   = divergence()
+
+    ! A difference field around the square: values q at the corners,
+    ! each edge holding the difference of its ends.
+    qsq = [3.0_dp, 7.0_dp, -2.0_dp, 5.0_dp]
+    call zf % set_real_vector([qsq(2) - qsq(1), qsq(3) - qsq(2), &
+         &                     qsq(4) - qsq(3), qsq(1) - qsq(4)])
+    call fold % apply(border, [zf], yf)
+    call yf % get_real_vector(y)
+    call report(abs(y(5)) < 1.0d-12, &
+         & "the curl of a difference field is exactly zero", nfail)
+
+    ! A circulating field: the same value all the way around. The
+    ! walk collects it four times, and the answer must not be zero -
+    ! a check that cannot fail proves nothing.
+    call zf % set_real_vector([1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp])
+    call fold % apply(border, [zf], yf)
+    call yf % get_real_vector(y)
+    call report(abs(y(5)) > 1.0d-12, &
+         & "and a circulating field does not cancel", nfail)
+
+  end subroutine check_curl_on_border_graph
 
 end program test_graph_contract

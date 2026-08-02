@@ -9,7 +9,7 @@ class_graph_partitioner.o \
 class_graph_assembler.o \
 class_graph_coarsener.o \
 class_graph_refiner.o \
-class_graph_derivative.o \
+class_graph_differential_operator.o \
 class_graph_balance.o \
 class_graph_walk.o \
 module_solve_mode.o \

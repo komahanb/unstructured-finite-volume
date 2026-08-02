@@ -146,6 +146,7 @@ program test_graph_contract
   call check_differential_operators(nfail)
   call check_adjoints(nfail)
   call check_curl_on_border_graph(nfail)
+  call check_components(nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
@@ -1786,5 +1787,79 @@ contains
          & "and a circulating field does not cancel", nfail)
 
   end subroutine check_curl_on_border_graph
+
+  !===================================================================!
+  ! Components. One field, two values per vertex - a straight line in
+  ! the first slot, a parabola in the second, interleaved by the
+  ! ordering rule:
+  !
+  !      vertex          1        1        2        2
+  !      component       1        2        1        2
+  !                   +--------+--------+--------+--------+--
+  !      flat vector  |  line  |  v^2   |  line  |  v^2   |
+  !                   +--------+--------+--------+--------+--
+  !
+  ! One application of the operator must answer for both at once:
+  ! zero for the line, two for the parabola, each in its own slot.
+  !===================================================================!
+
+  subroutine check_components(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_graph)                     :: g7
+    type(vertex_differential_operator)     :: op, fwd, rev
+    class(graph_vertex_field), allocatable :: yf
+    type(vertex_support)                   :: on
+    type(vertex_field)                     :: qf, pf
+    real(dp), allocatable                  :: y(:), aq(:), ap(:)
+    real(dp)                               :: q(14), p(14)
+    integer                                :: v
+    logical                                :: ok
+
+    g7 = stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
+    on = vertex_support([(v, v = 1, 7)])
+    qf = vertex_field('q', on, ncomp=2)
+
+    do v = 1, 7
+       q(2*v - 1) = 10.0_dp * v          ! component one: a line
+       q(2*v)     = real(v, dp)**2       ! component two: a parabola
+    end do
+    call qf % set_real_vector(q)
+
+    op = laplacian()
+    call op % apply(g7, [qf], yf)
+
+    call report(yf % num_components() .eq. 2, &
+         & "the answer carries as many components as the question", nfail)
+
+    call yf % get_real_vector(y)
+    ok = .true.
+    do v = 2, 6
+       ok = ok .and. abs(y(2*v - 1)) < 1.0d-12          ! the line: zero
+       ok = ok .and. abs(y(2*v) - 2.0_dp) < 1.0d-12     ! the parabola: two
+    end do
+    call report(ok, &
+         & "one walk answers both components, each in its own slot", nfail)
+
+    ! The adjoint pairing on the whole interleaved vector: with two
+    ! components aboard, the sums must still balance.
+    pf = vertex_field('p', on, ncomp=2)
+    do v = 1, 14
+       p(v) = real(v, dp)**2 - 5.0_dp * v
+    end do
+    call pf % set_real_vector(p)
+
+    fwd = vertex_differential_operator(order=1, coefficient=2.0_dp)
+    rev = vertex_differential_operator(order=1, coefficient=2.0_dp, adjoint=.true.)
+
+    call fwd % apply(g7, [qf], yf)
+    call yf % get_real_vector(aq)
+    call rev % apply(g7, [pf], yf)
+    call yf % get_real_vector(ap)
+    call report(abs(sum(aq * p) - sum(q * ap)) < 1.0d-9, &
+         & "the reverse walk pairs exactly with two components aboard", nfail)
+
+  end subroutine check_components
 
 end program test_graph_contract

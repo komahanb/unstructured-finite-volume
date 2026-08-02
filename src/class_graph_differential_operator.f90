@@ -692,6 +692,53 @@ contains
   end subroutine fold_step_reversed
 
   !===================================================================!
+  ! COMPONENTS. A field may carry several values per entry - the
+  ! three parts of a velocity, the five of a conserved state. The
+  ! ordering rule interleaves them:
+  !
+  !      entry           1        1        2        2
+  !      component       1        2        1        2
+  !                   +--------+--------+--------+--------+--
+  !      flat vector  |  v(1)  |  v(2)  |  v(3)  |  v(4)  |
+  !                   +--------+--------+--------+--------+--
+  !
+  ! The kernels stay scalar. The walk gathers one component into a
+  ! contiguous work array, runs the chain, and scatters the result
+  ! back into its slot - one pass of the graph per component. The
+  ! coefficients, spacings, measures and boundary values are shared
+  ! by all components; a component that needs its own gets its own
+  ! operator instance.
+  !===================================================================!
+
+  pure subroutine gather_component(flat, ncomp, c, comp)
+
+    real(dp), intent(in)  :: flat(:)
+    integer , intent(in)  :: ncomp, c
+    real(dp), intent(out) :: comp(:)
+
+    integer :: i
+
+    do i = 1, size(comp)
+       comp(i) = flat((i - 1) * ncomp + c)
+    end do
+
+  end subroutine gather_component
+
+  pure subroutine scatter_component(comp, ncomp, c, flat)
+
+    real(dp), intent(in)    :: comp(:)
+    integer , intent(in)    :: ncomp, c
+    real(dp), intent(inout) :: flat(:)
+
+    integer :: i
+
+    do i = 1, size(comp)
+       flat((i - 1) * ncomp + c) = comp(i)
+    end do
+
+  end subroutine scatter_component
+
+  !===================================================================!
   ! THE EDGE OPERATOR. Order 0 is the average step; order 1 is the
   ! difference step; order n is the difference step applied to the
   ! vertex result of n - 1.
@@ -712,52 +759,59 @@ contains
 
     type(edge_field)      :: out
     type(edge_support)    :: on
-    real(dp), allocatable :: q(:), y(:), z(:)
+    real(dp), allocatable :: q(:), z(:), qc(:), zc(:), yc(:)
     integer , allocatable :: indices(:)
-    integer               :: nv, ne, e
+    integer               :: nv, ne, e, nc, c
 
     nv = input_graph % num_vertices()
     ne = input_graph % num_edges()
+
+    call fetch_vertex_values(input_data, nv, q, nc)
 
     allocate(indices(ne))
     do e = 1, ne
        indices(e) = e
     end do
     on  = edge_support(indices)
-    out = edge_field(this % name(), on)
+    out = edge_field(this % name(), on, ncomp=max(nc, 1))
 
-    allocate(z(ne))
+    allocate(z(ne * max(nc, 1)))
     z = 0.0_dp
 
-    call fetch_vertex_values(input_data, nv, q)
+    if (nc >= 1) then
 
-    if (size(q) == nv) then
+       allocate(qc(nv), zc(ne))
 
-       if (this % order <= 0) then
-          ! One step: the average, coefficient aboard, one-sided when
-          ! the caller's sign asks for it (sign of c with the
-          ! one-sided marker set by the vertex chain; alone, centred).
-          call average_step(input_graph, 0.0_dp, .true., &
-               & this % coefficient, this % coefficients, &
-               & this % boundary_value, this % boundary_values, q, z)
-       else if (this % order == 1) then
-          call difference_step(input_graph, .true., &
-               & this % coefficient, this % coefficients, &
-               & this % spacing, this % spacings, &
-               & this % boundary_value, this % boundary_values, q, z)
-       else
-          ! The chain: the vertex result of order n - 1, then one
-          ! difference step on top, coefficient already aboard below.
-          call run_vertex_chain(this % order - 1, input_graph, q, &
-               & this % coefficient, this % coefficients, &
-               & this % spacing, this % spacings, &
-               & this % measure, this % measures, &
-               & this % boundary_value, this % boundary_values, y)
-          call difference_step(input_graph, .false., &
-               & this % coefficient, this % coefficients, &
-               & this % spacing, this % spacings, &
-               & this % boundary_value, this % boundary_values, y, z)
-       end if
+       do c = 1, nc
+
+          call gather_component(q, nc, c, qc)
+
+          if (this % order <= 0) then
+             call average_step(input_graph, 0.0_dp, .true., &
+                  & this % coefficient, this % coefficients, &
+                  & this % boundary_value, this % boundary_values, qc, zc)
+          else if (this % order == 1) then
+             call difference_step(input_graph, .true., &
+                  & this % coefficient, this % coefficients, &
+                  & this % spacing, this % spacings, &
+                  & this % boundary_value, this % boundary_values, qc, zc)
+          else
+             ! The chain: the vertex result of order n - 1, then one
+             ! difference step on top, coefficient already aboard.
+             call run_vertex_chain(this % order - 1, input_graph, qc, &
+                  & this % coefficient, this % coefficients, &
+                  & this % spacing, this % spacings, &
+                  & this % measure, this % measures, &
+                  & this % boundary_value, this % boundary_values, yc)
+             call difference_step(input_graph, .false., &
+                  & this % coefficient, this % coefficients, &
+                  & this % spacing, this % spacings, &
+                  & this % boundary_value, this % boundary_values, yc, zc)
+          end if
+
+          call scatter_component(zc, nc, c, z)
+
+       end do
 
     end if
 
@@ -774,7 +828,8 @@ contains
   ! true - the same chain transposed and walked backwards.
   !
   ! Handed an edge field, the chain enters at the fold: order 1 is
-  ! then the divergence of the given field.
+  ! then the divergence of the given field. Each component of the
+  ! input makes the walk once.
   !===================================================================!
 
   subroutine vertex_differential_operator_apply(this, input_graph, input_data, output)
@@ -786,77 +841,88 @@ contains
 
     type(vertex_field)    :: out
     type(vertex_support)  :: on
-    real(dp), allocatable :: q(:), z(:), y(:)
+    real(dp), allocatable :: q(:), z(:), y(:), qc(:), zc(:), yc(:), y2(:)
     integer , allocatable :: indices(:)
-    integer               :: nv, ne, v
+    integer               :: nv, ne, v, e, nc, c
 
     nv = input_graph % num_vertices()
     ne = input_graph % num_edges()
+
+    call fetch_vertex_values(input_data, nv, q, nc)
+    if (nc == 0) call fetch_edge_values(input_data, ne, z, nc)
 
     allocate(indices(nv))
     do v = 1, nv
        indices(v) = v
     end do
     on  = vertex_support(indices)
-    out = vertex_field(this % name(), on)
+    out = vertex_field(this % name(), on, ncomp=max(nc, 1))
 
-    allocate(y(nv))
+    allocate(y(nv * max(nc, 1)))
     y = 0.0_dp
 
-    call fetch_vertex_values(input_data, nv, q)
+    if (allocated(q) .and. size(q) > 0) then
 
-    if (size(q) == nv) then
+       ! A vertex field: the full chain per component, forward or
+       ! reversed.
+       allocate(qc(nv))
 
-       ! A vertex field: the full chain, forward or reversed.
-       if (this % adjoint) then
-          call run_vertex_chain_reversed(this % order, input_graph, q, &
-               & this % coefficient, this % coefficients, &
-               & this % spacing, this % spacings, &
-               & this % measure, this % measures, y)
-       else
-          call run_vertex_chain(this % order, input_graph, q, &
-               & this % coefficient, this % coefficients, &
-               & this % spacing, this % spacings, &
-               & this % measure, this % measures, &
-               & this % boundary_value, this % boundary_values, y)
-       end if
+       do c = 1, nc
 
-    else
+          call gather_component(q, nc, c, qc)
 
-       ! An edge field: enter at the fold. Order 1 is the divergence
-       ! of the given samples; a higher order keeps walking.
-       call fetch_edge_values(input_data, ne, z)
-       if (size(z) == ne) then
-          block
-            real(dp), allocatable :: zc(:)
-            integer :: e
-            allocate(zc(ne))
-            do e = 1, ne
-               zc(e) = coefficient_at(this % coefficient, this % coefficients, e) * z(e)
-            end do
-            call fold_step(input_graph, this % measure, this % measures, zc, y)
-          end block
-          if (this % order > 1) then
-             block
-               real(dp), allocatable :: y2(:)
-               call run_vertex_chain(this % order - 1, input_graph, y, &
-                    & 1.0_dp, this % coefficients, &   ! coefficient already spent
-                    & this % spacing, this % spacings, &
-                    & this % measure, this % measures, &
-                    & this % boundary_value, this % boundary_values, y2)
-               y = y2
-             end block
+          if (this % order <= 0 .and. .not. this % adjoint) then
+             allocate(yc(nv))
+             do v = 1, nv
+                yc(v) = coefficient_at(this % coefficient, this % coefficients, v) * qc(v)
+             end do
+          else if (this % adjoint) then
+             call run_vertex_chain_reversed(this % order, input_graph, qc, &
+                  & this % coefficient, this % coefficients, &
+                  & this % spacing, this % spacings, &
+                  & this % measure, this % measures, yc)
+          else
+             call run_vertex_chain(this % order, input_graph, qc, &
+                  & this % coefficient, this % coefficients, &
+                  & this % spacing, this % spacings, &
+                  & this % measure, this % measures, &
+                  & this % boundary_value, this % boundary_values, yc)
           end if
-       end if
 
-    end if
+          call scatter_component(yc, nc, c, y)
+          deallocate(yc)
 
-    ! Order 0 on a vertex field never touches an edge: it is the
-    ! term itself, coefficient per vertex when an array is given.
-    if (this % order <= 0 .and. size(q) == nv .and. .not. this % adjoint) then
-       do v = 1, nv
-          y(v) = coefficient_at(this % coefficient, this % coefficients, v) * q(v)
        end do
+
+    else if (allocated(z) .and. size(z) > 0) then
+
+       ! An edge field: enter at the fold, per component. Order 1 is
+       ! the divergence of the given samples; a higher order keeps
+       ! walking.
+       allocate(zc(ne), yc(nv))
+
+       do c = 1, nc
+
+          call gather_component(z, nc, c, zc)
+
+          do e = 1, ne
+             zc(e) = coefficient_at(this % coefficient, this % coefficients, e) * zc(e)
+          end do
+          call fold_step(input_graph, this % measure, this % measures, zc, yc)
+
+          if (this % order > 1) then
+             call run_vertex_chain(this % order - 1, input_graph, yc, &
+                  & 1.0_dp, this % coefficients, &   ! coefficient already spent
+                  & this % spacing, this % spacings, &
+                  & this % measure, this % measures, &
+                  & this % boundary_value, this % boundary_values, y2)
+             yc = y2
+          end if
+
+          call scatter_component(yc, nc, c, y)
+
+       end do
+
     end if
 
     call out % set_real_vector(y)
@@ -992,21 +1058,29 @@ contains
 
   !===================================================================!
   ! Fetch the values once, before any loop. A wrong or missing field
-  ! leaves a zero-length array, and the operator returns zeros rather
-  ! than reading memory it was never given.
+  !===================================================================!
+  ! Fetch the values once, before any loop, and report how many
+  ! components ride in each entry. A wrong or missing field leaves a
+  ! zero-length array and zero components, and the operator returns
+  ! zeros rather than reading memory it was never given.
   !===================================================================!
 
-  subroutine fetch_vertex_values(input_data, nv, q)
+  subroutine fetch_vertex_values(input_data, nv, q, ncomp)
 
     class(graph_data), intent(in), optional :: input_data(:)
     integer          , intent(in)           :: nv
     real(dp), allocatable, intent(out)      :: q(:)
+    integer          , intent(out)          :: ncomp
+
+    ncomp = 0
 
     if (present(input_data)) then
        select type (state => input_data(1))
        class is (vertex_field)
+          ncomp = max(state % num_components(), 1)
           call state % get_real_vector(q)
-          if (size(q) == nv) return
+          if (size(q) == nv * ncomp) return
+          ncomp = 0
        end select
     end if
 
@@ -1014,22 +1088,28 @@ contains
 
   end subroutine fetch_vertex_values
 
-  subroutine fetch_edge_values(input_data, ne, z)
+  subroutine fetch_edge_values(input_data, ne, z, ncomp)
 
     class(graph_data), intent(in), optional :: input_data(:)
     integer          , intent(in)           :: ne
     real(dp), allocatable, intent(out)      :: z(:)
+    integer          , intent(out)          :: ncomp
+
+    ncomp = 0
 
     if (present(input_data)) then
        select type (state => input_data(1))
        class is (edge_field)
+          ncomp = max(state % num_components(), 1)
           call state % get_real_vector(z)
-          if (size(z) == ne) return
+          if (size(z) == ne * ncomp) return
+          ncomp = 0
        end select
     end if
 
     allocate(z(0))
 
   end subroutine fetch_edge_values
+
 
 end module class_graph_differential_operator

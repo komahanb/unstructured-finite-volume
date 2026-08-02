@@ -8,12 +8,12 @@
 !
 !      graph structure  ---> walk --->  an integer per cell
 !
-! The graph carries no algorithms. It answers structural queries;
+! The graph holds no algorithms. It answers structural queries;
 ! algorithms act on it from outside. This separation keeps the graph
 ! contract small, and a new algorithm arrives without touching the
 ! graph.
 !
-! One type carries the rule, so a caller can hold several walks in a
+! One type holds the rule, so a caller can hold several walks in a
 ! plain array and a new walk costs a case rather than a class.
 !
 !=====================================================================!
@@ -64,7 +64,7 @@ module class_graph_walk
   integer, parameter :: WALK_DEPTH       = 4
 
   !===================================================================!
-  ! One walk, carrying which question it answers and where it starts.
+  ! One walk, holding which question it answers and where it starts.
   !===================================================================!
 
   type, extends(graph_vertex_field_operation) :: walk
@@ -74,9 +74,9 @@ module class_graph_walk
 
    contains
 
-     procedure :: name    => w_name
-     procedure :: support => w_support
-     procedure :: apply   => w_apply
+     procedure :: name    => walk_name
+     procedure :: support => walk_support
+     procedure :: apply   => walk_apply
 
   end type walk
 
@@ -97,7 +97,7 @@ contains
 
   end function create
 
-  pure function w_name(this) result(name)
+  pure function walk_name(this) result(name)
 
     class(walk), intent(in)       :: this
     character(len=:), allocatable :: name
@@ -113,9 +113,9 @@ contains
        name = 'colouring'
     end select
 
-  end function w_name
+  end function walk_name
 
-  subroutine w_support(this, input_graph, support)
+  subroutine walk_support(this, input_graph, support)
 
     class(walk) , intent(in)                              :: this
     class(graph), intent(in)                              :: input_graph
@@ -123,16 +123,16 @@ contains
 
     call input_graph % all_vertices(support)
 
-  end subroutine w_support
+  end subroutine walk_support
 
   !===================================================================!
-  ! Walk the graph and hand back a whole number per cell.
+  ! Walk the graph and return a whole number per cell.
   !
   ! Nothing here reads input_data. Every answer comes from the shape
   ! of the graph alone: structure in, rule applied, integers out.
   !===================================================================!
 
-  subroutine w_apply(this, input_graph, input_data, output)
+  subroutine walk_apply(this, input_graph, input_data, output)
 
     class(walk)      , intent(in)                         :: this
     class(graph)     , intent(in)                         :: input_graph
@@ -167,18 +167,18 @@ contains
 
     call out % set_integer_vector(mark)
 
-    ! Overwrite, by the law.
+    ! A supplied buffer is overwritten, never added to.
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
 
-  end subroutine w_apply
+  end subroutine walk_apply
 
   !===================================================================!
   ! Give every cell the lowest colour none of its neighbours has taken.
   !
-  ! Greedy, so it does not promise the fewest possible colours. It does
-  ! promise the thing that matters: no face has one colour at both
-  ! ends, which is what makes a colour safe to sweep in parallel.
+  ! Greedy, so the colour count is not minimal. The guarantee that
+  ! matters holds: no face has one colour at both ends, which is what
+  ! makes a colour safe to sweep in parallel.
   !===================================================================!
 
   subroutine colour(input_graph, mark)

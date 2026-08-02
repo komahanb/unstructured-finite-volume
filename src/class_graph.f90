@@ -18,7 +18,7 @@
 !                        (4)
 !
 ! An edge whose head is not a real vertex has no head at all. That is
-! a boundary face: it hangs off one cell and stops, and no imaginary
+! a boundary face: it is attached to one cell alone, and no imaginary
 ! cell is invented on the far side of the wall.
 !
 ! Four compressed lists are built at construction and never rebuilt -
@@ -37,8 +37,8 @@
 ! Each convenience procedure added here erodes that separation, one
 ! procedure at a time.
 !
-! FETCH GRAPH DATA ONCE. get_data hands back a copy, because the
-! contract says the answer is allocatable and freshly made. On a
+! FETCH GRAPH DATA ONCE. get_data returns a copy, because the
+! contract declares the result allocatable and freshly made. On a
 ! million cells that copy is megabytes. An operation fetches what it
 ! needs at the top of apply, before it starts looping - never inside a
 ! loop over faces.
@@ -122,80 +122,80 @@ module class_graph
    contains
 
      !----------------------------------------------------------------!
-     ! Who am I and how big am I.
+     ! Identity and size.
      !----------------------------------------------------------------!
 
-     procedure :: id           => g_id
-     procedure :: num_vertices => g_num_vertices
-     procedure :: num_edges    => g_num_edges
+     procedure :: id
+     procedure :: num_vertices
+     procedure :: num_edges
 
      !----------------------------------------------------------------!
      ! Where an edge goes.
      !----------------------------------------------------------------!
 
-     procedure :: edge_tail     => g_edge_tail
-     procedure :: edge_head     => g_edge_head
-     procedure :: edge_has_head => g_edge_has_head
+     procedure :: edge_tail
+     procedure :: edge_head
+     procedure :: edge_has_head
 
      !----------------------------------------------------------------!
      ! The named vertex sets.
      !----------------------------------------------------------------!
 
-     procedure :: all_vertices      => g_all_vertices
-     procedure :: interior_vertices => g_interior_vertices
-     procedure :: boundary_vertices => g_boundary_vertices
-     procedure :: tagged_vertices   => g_tagged_vertices
+     procedure :: all_vertices
+     procedure :: interior_vertices
+     procedure :: boundary_vertices
+     procedure :: tagged_vertices
 
      !----------------------------------------------------------------!
      ! The named edge sets.
      !----------------------------------------------------------------!
 
-     procedure :: all_edges      => g_all_edges
-     procedure :: interior_edges => g_interior_edges
-     procedure :: boundary_edges => g_boundary_edges
-     procedure :: tagged_edges   => g_tagged_edges
+     procedure :: all_edges
+     procedure :: interior_edges
+     procedure :: boundary_edges
+     procedure :: tagged_edges
 
      !----------------------------------------------------------------!
      ! The named sets of one part.
      !----------------------------------------------------------------!
 
-     procedure :: owned_vertices    => g_owned_vertices
-     procedure :: borrowed_vertices => g_borrowed_vertices
-     procedure :: overlap_vertices  => g_overlap_vertices
-     procedure :: owned_edges       => g_owned_edges
-     procedure :: borrowed_edges    => g_borrowed_edges
-     procedure :: overlap_edges     => g_overlap_edges
+     procedure :: owned_vertices
+     procedure :: borrowed_vertices
+     procedure :: overlap_vertices
+     procedure :: owned_edges
+     procedure :: borrowed_edges
+     procedure :: overlap_edges
 
      !----------------------------------------------------------------!
      ! Walking, without regard to direction and with it.
      !----------------------------------------------------------------!
 
-     procedure :: incident_edges    => g_incident_edges
-     procedure :: adjacent_vertices => g_adjacent_vertices
-     procedure :: outgoing_edges    => g_outgoing_edges
-     procedure :: incoming_edges    => g_incoming_edges
-     procedure :: outgoing_vertices => g_outgoing_vertices
-     procedure :: incoming_vertices => g_incoming_vertices
+     procedure :: incident_edges
+     procedure :: adjacent_vertices
+     procedure :: outgoing_edges
+     procedure :: incoming_edges
+     procedure :: outgoing_vertices
+     procedure :: incoming_vertices
 
      !----------------------------------------------------------------!
      ! How a part relates to the whole.
      !----------------------------------------------------------------!
 
-     procedure :: num_parts         => g_num_parts
-     procedure :: has_part_relation => g_has_part_relation
-     procedure :: full_vertex_index    => g_full_vertex_index
-     procedure :: full_edge_index      => g_full_edge_index
-     procedure :: part_vertex_index    => g_part_vertex_index
-     procedure :: part_edge_index      => g_part_edge_index
-     procedure :: vertex_owner_part => g_vertex_owner_part
-     procedure :: edge_owner_part   => g_edge_owner_part
+     procedure :: num_parts
+     procedure :: has_part_relation
+     procedure :: full_vertex_index
+     procedure :: full_edge_index
+     procedure :: part_vertex_index
+     procedure :: part_edge_index
+     procedure :: vertex_owner_part
+     procedure :: edge_owner_part
 
      !----------------------------------------------------------------!
      ! The data the graph came with.
      !----------------------------------------------------------------!
 
-     procedure :: has_data => g_has_data
-     procedure :: get_data => g_get_data
+     procedure :: has_data
+     procedure :: get_data
 
   end type stored_graph
 
@@ -214,7 +214,7 @@ contains
   !
   ! A head of zero (or anything outside 1..nv) means the edge has no
   ! head - a boundary face. Tags are optional; an untagged graph
-  ! simply answers no to every tagged query.
+  ! returns an empty set for every tagged query.
   !===================================================================!
 
   type(stored_graph) function create(nv, tails, heads, vtags, etags, &
@@ -441,67 +441,67 @@ contains
   ! Identity and size.
   !===================================================================!
 
-  pure integer function g_id(this)
+  pure integer function id(this)
 
     class(stored_graph), intent(in) :: this
 
-    g_id = this % number
+    id = this % number
 
-  end function g_id
+  end function id
 
-  pure integer function g_num_vertices(this)
-
-    class(stored_graph), intent(in) :: this
-
-    g_num_vertices = this % nv
-
-  end function g_num_vertices
-
-  pure integer function g_num_edges(this)
+  pure integer function num_vertices(this)
 
     class(stored_graph), intent(in) :: this
 
-    g_num_edges = this % ne
+    num_vertices = this % nv
 
-  end function g_num_edges
+  end function num_vertices
+
+  pure integer function num_edges(this)
+
+    class(stored_graph), intent(in) :: this
+
+    num_edges = this % ne
+
+  end function num_edges
 
   !===================================================================!
   ! Where an edge goes.
   !===================================================================!
 
-  pure integer function g_edge_tail(this, edge_index)
+  pure integer function edge_tail(this, edge_index)
 
     class(stored_graph), intent(in) :: this
     integer            , intent(in) :: edge_index
 
-    g_edge_tail = this % tail(edge_index)
+    edge_tail = this % tail(edge_index)
 
-  end function g_edge_tail
+  end function edge_tail
 
-  pure integer function g_edge_head(this, edge_index)
-
-    class(stored_graph), intent(in) :: this
-    integer            , intent(in) :: edge_index
-
-    g_edge_head = this % head(edge_index)
-
-  end function g_edge_head
-
-  pure logical function g_edge_has_head(this, edge_index)
+  pure integer function edge_head(this, edge_index)
 
     class(stored_graph), intent(in) :: this
     integer            , intent(in) :: edge_index
 
-    g_edge_has_head = this % head(edge_index) >= 1
+    edge_head = this % head(edge_index)
 
-  end function g_edge_has_head
+  end function edge_head
+
+  pure logical function edge_has_head(this, edge_index)
+
+    class(stored_graph), intent(in) :: this
+    integer            , intent(in) :: edge_index
+
+    edge_has_head = this % head(edge_index) >= 1
+
+  end function edge_has_head
 
   !===================================================================!
   ! The named vertex sets. A boundary vertex is one that touches a
   ! boundary edge; an interior vertex is one that does not.
   !===================================================================!
 
-  subroutine g_all_vertices(this, support)
+  subroutine all_vertices(this, support)
 
     class(stored_graph), intent(in)                       :: this
     class(graph_vertex_support), allocatable, intent(out) :: support
@@ -510,9 +510,9 @@ contains
 
     allocate(support, source=vertex_support([(v, v = 1, this % nv)]))
 
-  end subroutine g_all_vertices
+  end subroutine all_vertices
 
-  subroutine g_interior_vertices(this, support)
+  subroutine interior_vertices(this, support)
 
     class(stored_graph), intent(in)                       :: this
     class(graph_vertex_support), allocatable, intent(out) :: support
@@ -531,9 +531,9 @@ contains
 
     allocate(support, source=vertex_support(pick(1:n)))
 
-  end subroutine g_interior_vertices
+  end subroutine interior_vertices
 
-  subroutine g_boundary_vertices(this, support)
+  subroutine boundary_vertices(this, support)
 
     class(stored_graph), intent(in)                       :: this
     class(graph_vertex_support), allocatable, intent(out) :: support
@@ -552,9 +552,9 @@ contains
 
     allocate(support, source=vertex_support(pick(1:n)))
 
-  end subroutine g_boundary_vertices
+  end subroutine boundary_vertices
 
-  subroutine g_tagged_vertices(this, tag, support)
+  subroutine tagged_vertices(this, tag, support)
 
     class(stored_graph), intent(in)                       :: this
     character(len=*), intent(in)                          :: tag
@@ -576,10 +576,10 @@ contains
 
     allocate(support, source=vertex_support(pick(1:n)))
 
-  end subroutine g_tagged_vertices
+  end subroutine tagged_vertices
 
   !===================================================================!
-  ! Does any edge touching this vertex stop here rather than carrying
+  ! Does any edge touching this vertex stop here rather than holding
   ! on to another vertex?
   !===================================================================!
 
@@ -604,7 +604,7 @@ contains
   ! The named edge sets. A boundary edge is one with no head.
   !===================================================================!
 
-  subroutine g_all_edges(this, support)
+  subroutine all_edges(this, support)
 
     class(stored_graph), intent(in)                     :: this
     class(graph_edge_support), allocatable, intent(out) :: support
@@ -613,9 +613,9 @@ contains
 
     allocate(support, source=edge_support([(e, e = 1, this % ne)]))
 
-  end subroutine g_all_edges
+  end subroutine all_edges
 
-  subroutine g_interior_edges(this, support)
+  subroutine interior_edges(this, support)
 
     class(stored_graph), intent(in)                     :: this
     class(graph_edge_support), allocatable, intent(out) :: support
@@ -634,9 +634,9 @@ contains
 
     allocate(support, source=edge_support(pick(1:n)))
 
-  end subroutine g_interior_edges
+  end subroutine interior_edges
 
-  subroutine g_boundary_edges(this, support)
+  subroutine boundary_edges(this, support)
 
     class(stored_graph), intent(in)                     :: this
     class(graph_edge_support), allocatable, intent(out) :: support
@@ -655,9 +655,9 @@ contains
 
     allocate(support, source=edge_support(pick(1:n)))
 
-  end subroutine g_boundary_edges
+  end subroutine boundary_edges
 
-  subroutine g_tagged_edges(this, tag, support)
+  subroutine tagged_edges(this, tag, support)
 
     class(stored_graph), intent(in)                     :: this
     character(len=*), intent(in)                        :: tag
@@ -679,17 +679,17 @@ contains
 
     allocate(support, source=edge_support(pick(1:n)))
 
-  end subroutine g_tagged_edges
+  end subroutine tagged_edges
 
   !===================================================================!
   ! The named sets of one part.
   !
   ! A graph that was never cut owns everything and borrows nothing,
-  ! whichever part is asked about. A partitioner fills in the owner
+  ! whichever part the query names. A partitioner fills in the owner
   ! arrays and these answers become real.
   !===================================================================!
 
-  subroutine g_owned_vertices(this, part_id, support)
+  subroutine owned_vertices(this, part_id, support)
 
     class(stored_graph), intent(in)                       :: this
     integer, intent(in)                                   :: part_id
@@ -697,9 +697,9 @@ contains
 
     allocate(support, source=vertex_support(owner_matches(this % vowner, this % nv, part_id, this % cut, .true.)))
 
-  end subroutine g_owned_vertices
+  end subroutine owned_vertices
 
-  subroutine g_borrowed_vertices(this, part_id, support)
+  subroutine borrowed_vertices(this, part_id, support)
 
     class(stored_graph), intent(in)                       :: this
     integer, intent(in)                                   :: part_id
@@ -707,14 +707,14 @@ contains
 
     allocate(support, source=vertex_support(owner_matches(this % vowner, this % nv, part_id, this % cut, .false.)))
 
-  end subroutine g_borrowed_vertices
+  end subroutine borrowed_vertices
 
   !===================================================================!
   ! The overlap is everything this part must see to finish what it
   ! owns: what it owns, plus what it borrows.
   !===================================================================!
 
-  subroutine g_overlap_vertices(this, part_id, support)
+  subroutine overlap_vertices(this, part_id, support)
 
     class(stored_graph), intent(in)                       :: this
     integer, intent(in)                                   :: part_id
@@ -727,9 +727,9 @@ contains
 
     allocate(support, source=vertex_support([owned, borrowed]))
 
-  end subroutine g_overlap_vertices
+  end subroutine overlap_vertices
 
-  subroutine g_owned_edges(this, part_id, support)
+  subroutine owned_edges(this, part_id, support)
 
     class(stored_graph), intent(in)                     :: this
     integer, intent(in)                                 :: part_id
@@ -737,9 +737,9 @@ contains
 
     allocate(support, source=edge_support(owner_matches(this % eowner, this % ne, part_id, this % cut, .true.)))
 
-  end subroutine g_owned_edges
+  end subroutine owned_edges
 
-  subroutine g_borrowed_edges(this, part_id, support)
+  subroutine borrowed_edges(this, part_id, support)
 
     class(stored_graph), intent(in)                     :: this
     integer, intent(in)                                 :: part_id
@@ -747,9 +747,9 @@ contains
 
     allocate(support, source=edge_support(owner_matches(this % eowner, this % ne, part_id, this % cut, .false.)))
 
-  end subroutine g_borrowed_edges
+  end subroutine borrowed_edges
 
-  subroutine g_overlap_edges(this, part_id, support)
+  subroutine overlap_edges(this, part_id, support)
 
     class(stored_graph), intent(in)                     :: this
     integer, intent(in)                                 :: part_id
@@ -762,14 +762,14 @@ contains
 
     allocate(support, source=edge_support([owned, borrowed]))
 
-  end subroutine g_overlap_edges
+  end subroutine overlap_edges
 
   !===================================================================!
   ! Collect the indices a part owns, or the ones it does not.
   !
-  ! An uncut graph has no owner stamps to read. It answers that it
-  ! owns everything and borrows nothing, which is the truthful answer
-  ! for a graph that is the whole of itself.
+  ! An uncut graph has no ownership record to read. The result: everything
+  ! owned, nothing borrowed - correct for a graph that is the whole
+  ! of itself.
   !===================================================================!
 
   pure function owner_matches(owner, n, part_id, cut, want_owned) result(pick)
@@ -810,7 +810,7 @@ contains
   ! call per vertex.
   !===================================================================!
 
-  pure subroutine g_incident_edges(this, vertex_index, indices)
+  pure subroutine incident_edges(this, vertex_index, indices)
 
     class(stored_graph), intent(in)   :: this
     integer            , intent(in)   :: vertex_index
@@ -818,9 +818,9 @@ contains
 
     indices = this % einc(this % xinc(vertex_index) : this % xinc(vertex_index + 1) - 1)
 
-  end subroutine g_incident_edges
+  end subroutine incident_edges
 
-  pure subroutine g_adjacent_vertices(this, vertex_index, indices)
+  pure subroutine adjacent_vertices(this, vertex_index, indices)
 
     class(stored_graph), intent(in)   :: this
     integer            , intent(in)   :: vertex_index
@@ -828,9 +828,9 @@ contains
 
     indices = this % vadj(this % xadj(vertex_index) : this % xadj(vertex_index + 1) - 1)
 
-  end subroutine g_adjacent_vertices
+  end subroutine adjacent_vertices
 
-  pure subroutine g_outgoing_edges(this, vertex_index, indices)
+  pure subroutine outgoing_edges(this, vertex_index, indices)
 
     class(stored_graph), intent(in)   :: this
     integer            , intent(in)   :: vertex_index
@@ -838,9 +838,9 @@ contains
 
     indices = this % eout(this % xout(vertex_index) : this % xout(vertex_index + 1) - 1)
 
-  end subroutine g_outgoing_edges
+  end subroutine outgoing_edges
 
-  pure subroutine g_incoming_edges(this, vertex_index, indices)
+  pure subroutine incoming_edges(this, vertex_index, indices)
 
     class(stored_graph), intent(in)   :: this
     integer            , intent(in)   :: vertex_index
@@ -848,14 +848,14 @@ contains
 
     indices = this % ein(this % xin(vertex_index) : this % xin(vertex_index + 1) - 1)
 
-  end subroutine g_incoming_edges
+  end subroutine incoming_edges
 
   !===================================================================!
   ! Where the outgoing edges land, and where the incoming ones came
   ! from. An edge with no head leads nowhere and is left out.
   !===================================================================!
 
-  pure subroutine g_outgoing_vertices(this, vertex_index, indices)
+  pure subroutine outgoing_vertices(this, vertex_index, indices)
 
     class(stored_graph), intent(in)   :: this
     integer            , intent(in)   :: vertex_index
@@ -876,9 +876,9 @@ contains
     end do
     indices = indices(1:n)
 
-  end subroutine g_outgoing_vertices
+  end subroutine outgoing_vertices
 
-  pure subroutine g_incoming_vertices(this, vertex_index, indices)
+  pure subroutine incoming_vertices(this, vertex_index, indices)
 
     class(stored_graph), intent(in)   :: this
     integer            , intent(in)   :: vertex_index
@@ -897,90 +897,90 @@ contains
     end do
     indices = indices(1:n)
 
-  end subroutine g_incoming_vertices
+  end subroutine incoming_vertices
 
   !===================================================================!
   ! How a part relates to the whole. An uncut graph is the whole of
   ! itself: one part, identity maps, everything owned by part one.
   !===================================================================!
 
-  pure integer function g_num_parts(this)
+  pure integer function num_parts(this)
 
     class(stored_graph), intent(in) :: this
 
-    g_num_parts = this % nparts
+    num_parts = this % nparts
 
-  end function g_num_parts
+  end function num_parts
 
-  pure logical function g_has_part_relation(this)
+  pure logical function has_part_relation(this)
 
     class(stored_graph), intent(in) :: this
 
-    g_has_part_relation = this % cut
+    has_part_relation = this % cut
 
-  end function g_has_part_relation
+  end function has_part_relation
 
-  pure integer function g_full_vertex_index(this, index)
+  pure integer function full_vertex_index(this, index)
 
     class(stored_graph), intent(in) :: this
     integer            , intent(in) :: index
 
     if (this % cut .and. allocated(this % vfull)) then
-       g_full_vertex_index = this % vfull(index)
+       full_vertex_index = this % vfull(index)
     else
-       g_full_vertex_index = index
+       full_vertex_index = index
     end if
 
-  end function g_full_vertex_index
+  end function full_vertex_index
 
-  pure integer function g_full_edge_index(this, index)
+  pure integer function full_edge_index(this, index)
 
     class(stored_graph), intent(in) :: this
     integer            , intent(in) :: index
 
     if (this % cut .and. allocated(this % efull)) then
-       g_full_edge_index = this % efull(index)
+       full_edge_index = this % efull(index)
     else
-       g_full_edge_index = index
+       full_edge_index = index
     end if
 
-  end function g_full_edge_index
+  end function full_edge_index
 
   !===================================================================!
   ! The map read backwards. Zero means the whole-graph index does not
   ! appear in that part at all.
   !===================================================================!
 
-  pure integer function g_part_vertex_index(this, full_index, part_id)
+  pure integer function part_vertex_index(this, full_index, part_id)
 
     class(stored_graph), intent(in) :: this
     integer            , intent(in) :: full_index
     integer            , intent(in) :: part_id
 
     if (this % cut .and. part_id /= this % me) then
-       g_part_vertex_index = 0
+       part_vertex_index = 0
     else
-       g_part_vertex_index = reverse_lookup(this % vfull, full_index, this % cut)
+       part_vertex_index = reverse_lookup(this % vfull, full_index, this % cut)
     end if
 
-  end function g_part_vertex_index
+  end function part_vertex_index
 
-  pure integer function g_part_edge_index(this, full_index, part_id)
+  pure integer function part_edge_index(this, full_index, part_id)
 
     class(stored_graph), intent(in) :: this
     integer            , intent(in) :: full_index
     integer            , intent(in) :: part_id
 
     if (this % cut .and. part_id /= this % me) then
-       g_part_edge_index = 0
+       part_edge_index = 0
     else
-       g_part_edge_index = reverse_lookup(this % efull, full_index, this % cut)
+       part_edge_index = reverse_lookup(this % efull, full_index, this % cut)
     end if
 
-  end function g_part_edge_index
+  end function part_edge_index
 
   !===================================================================!
-  ! Find which of the part's own indices carries a given whole-graph
+  ! Find which of the part's own indices holds a given whole-graph
   ! index.
   !===================================================================!
 
@@ -1007,49 +1007,49 @@ contains
 
   end function reverse_lookup
 
-  pure integer function g_vertex_owner_part(this, index)
+  pure integer function vertex_owner_part(this, index)
 
     class(stored_graph), intent(in) :: this
     integer            , intent(in) :: index
 
     if (this % cut .and. allocated(this % vowner)) then
-       g_vertex_owner_part = this % vowner(index)
+       vertex_owner_part = this % vowner(index)
     else
-       g_vertex_owner_part = 1
+       vertex_owner_part = 1
     end if
 
-  end function g_vertex_owner_part
+  end function vertex_owner_part
 
-  pure integer function g_edge_owner_part(this, index)
+  pure integer function edge_owner_part(this, index)
 
     class(stored_graph), intent(in) :: this
     integer            , intent(in) :: index
 
     if (this % cut .and. allocated(this % eowner)) then
-       g_edge_owner_part = this % eowner(index)
+       edge_owner_part = this % eowner(index)
     else
-       g_edge_owner_part = 1
+       edge_owner_part = 1
     end if
 
-  end function g_edge_owner_part
+  end function edge_owner_part
 
   !===================================================================!
   ! The data the graph came with, fetched by name.
   !
-  ! get_data hands back a copy. Fetch what an operation needs once, at
+  ! get_data returns a copy. Fetch what an operation needs once, at
   ! the top of apply, never inside a loop over faces.
   !===================================================================!
 
-  pure logical function g_has_data(this, name)
+  pure logical function has_data(this, name)
 
     class(stored_graph), intent(in) :: this
     character(len=*)   , intent(in) :: name
 
-    g_has_data = find_vertex_data(this, name) > 0 .or. find_edge_data(this, name) > 0
+    has_data = find_vertex_data(this, name) > 0 .or. find_edge_data(this, name) > 0
 
-  end function g_has_data
+  end function has_data
 
-  subroutine g_get_data(this, name, data)
+  subroutine get_data(this, name, data)
 
     class(stored_graph), intent(in)             :: this
     character(len=*)   , intent(in)             :: name
@@ -1066,10 +1066,10 @@ contains
     k = find_edge_data(this, name)
     if (k > 0) allocate(data, source=this % edata(k))
 
-  end subroutine g_get_data
+  end subroutine get_data
 
   !===================================================================!
-  ! Which slot carries that name, or zero if none does.
+  ! Which slot holds that name, or zero if none does.
   !===================================================================!
 
   pure integer function find_vertex_data(this, name)

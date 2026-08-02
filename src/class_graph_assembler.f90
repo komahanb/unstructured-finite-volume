@@ -7,7 +7,7 @@
 !         part 2   1   2   3
 !                  |   |   |
 !         whole    3   4   5           by the map the part already
-!                                      carries - the assembler reads
+!                                      holds - the assembler reads
 !                                      the relation, it never invents
 !                                      one
 !
@@ -73,17 +73,17 @@ module class_graph_assembler
 
   !===================================================================!
   ! The assembler holds nothing. Everything it needs - the index maps
-  ! and the ownership - is already stamped on the part it is handed.
+  ! and the ownership - is already recorded on the part it is handed.
   !===================================================================!
 
   type, extends(graph_assembler) :: assembler
 
    contains
 
-     procedure :: defined_on_graph => a_defined_on_graph
-     procedure :: defined_on_data  => a_defined_on_data
-     procedure :: assemble_graph   => a_assemble_graph
-     procedure :: assemble_data    => a_assemble_data
+     procedure :: defined_on_graph
+     procedure :: defined_on_data
+     procedure :: assemble_graph
+     procedure :: assemble_data
 
   end type assembler
 
@@ -95,55 +95,55 @@ contains
 
   pure type(assembler) function create() result(this)
 
-    ! Nothing to set up. Everything the assembler needs is stamped on
+    ! Nothing to set up. Everything the assembler needs is recorded on
     ! the part it will be handed.
 
   end function create
 
   !===================================================================!
-  ! A part can be assembled back only if it carries its relation to
-  ! the whole. A graph straight off a mesh file carries no relation,
-  ! and this says so rather than guessing an identity map and being
-  ! wrong in silence.
+  ! A part can be assembled back only if it holds its relation to
+  ! the whole. A graph straight off a mesh file holds no relation,
+  ! and this check returns .false. rather than assuming an identity
+  ! map and being wrong in silence.
   !===================================================================!
 
-  pure logical function a_defined_on_graph(this, input_graph)
+  pure logical function defined_on_graph(this, input_graph)
 
     class(assembler), intent(in) :: this
     class(graph)    , intent(in) :: input_graph
 
-    a_defined_on_graph = input_graph % has_part_relation() .or. &
+    defined_on_graph = input_graph % has_part_relation() .or. &
          &               input_graph % num_parts() == 1
 
-  end function a_defined_on_graph
+  end function defined_on_graph
 
-  pure logical function a_defined_on_data(this, input_graph, input_data)
+  pure logical function defined_on_data(this, input_graph, input_data)
 
     class(assembler) , intent(in) :: this
     class(graph)     , intent(in) :: input_graph
     class(graph_data), intent(in) :: input_data
 
-    a_defined_on_data = this % defined_on_graph(input_graph)
+    defined_on_data = this % defined_on_graph(input_graph)
 
     select type (input_data)
     class is (graph_field)
-       a_defined_on_data = a_defined_on_data .and. input_data % num_entries() >= 0
+       defined_on_data = defined_on_data .and. input_data % num_entries() >= 0
     class default
-       a_defined_on_data = .false.
+       defined_on_data = .false.
     end select
 
-  end function a_defined_on_data
+  end function defined_on_data
 
   !===================================================================!
   ! Put the piece back in whole-graph order.
   !
   ! Every cell of the part is renamed to what the whole graph called
   ! it, and every edge with it. What comes out is a graph again,
-  ! with no partition stamped on it - because a whole graph is not a
+  ! and holds no partition record - because a whole graph is not a
   ! part of anything.
   !===================================================================!
 
-  subroutine a_assemble_graph(this, part_graph, full_graph)
+  subroutine assemble_graph(this, part_graph, full_graph)
 
     class(assembler), intent(in)               :: this
     class(graph)    , intent(in)               :: part_graph
@@ -155,7 +155,7 @@ contains
     ne = part_graph % num_edges()
 
     ! The whole graph is at least as big as the largest whole-graph
-    ! name this part knows.
+    ! index recorded on this part.
     biggest = 0
     do l = 1, part_graph % num_vertices()
        biggest = max(biggest, part_graph % full_vertex_index(l))
@@ -175,7 +175,7 @@ contains
     allocate(full_graph, source = &
          & stored_graph(nv_full, tails=tails, heads=heads, number=part_graph % id()))
 
-  end subroutine a_assemble_graph
+  end subroutine assemble_graph
 
   !===================================================================!
   ! Assemble the data back onto the whole graph.
@@ -185,7 +185,7 @@ contains
   ! the answers from every part rebuilds the whole field exactly once.
   !===================================================================!
 
-  subroutine a_assemble_data(this, part_graph, part_data, full_graph, full_data)
+  subroutine assemble_data(this, part_graph, part_data, full_graph, full_data)
 
     class(assembler) , intent(in)               :: this
     class(graph)     , intent(in)               :: part_graph
@@ -203,7 +203,7 @@ contains
 
     end select
 
-  end subroutine a_assemble_data
+  end subroutine assemble_data
 
   !===================================================================!
   ! Cell values go back to the cells they came from - the owned ones

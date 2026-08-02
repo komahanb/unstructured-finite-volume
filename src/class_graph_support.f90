@@ -11,11 +11,11 @@
 !      +-------------------+     +--------------+
 !         a vertex_support          an edge_support
 !
-! The two are separate types rather than one type carrying a flag.
+! The two are separate types rather than one type holding a flag.
 ! This separation distinguishes a vertex field from an edge field
 ! everywhere else in the library, and the compiler enforces it.
 !
-! A support is asked for once, when an operation begins, and then
+! A support is requested once, when an operation begins, and then
 ! looped over. It is never built inside a loop over cells or faces.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -138,7 +138,7 @@ contains
   end function vertex_support_size
 
   !===================================================================!
-  ! Hand over the vertex numbers. An empty set answers with a
+  ! Hand over the vertex numbers. An empty set returns a
   ! zero-length array, never with something unallocated, so a caller
   ! can loop without asking first.
   !===================================================================!

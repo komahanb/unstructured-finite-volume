@@ -10,7 +10,7 @@ Written as the concretions landed, in the order they came up.
 
 ## performance
 
-**get_data hands back a copy.** The contract says the answer is
+**get_data returns a copy.** The contract declares the result
 `class(graph_data), allocatable, intent(out)`, so `get_data` has to
 allocate a fresh object and source-copy the whole field, values
 included. On a million cells that is eight megabytes for cell volumes
@@ -20,7 +20,7 @@ The convention that keeps it harmless is written into the header of
 `class_graph.f90`: an operation fetches what it needs once, at the top
 of `apply`, never inside a loop over faces. That is a convention and
 nothing enforces it. If profiling later shows this dominating, the
-honest fix is a signature change, not a workaround.
+correct fix is a signature change, not a workaround.
 
 **reverse_lookup is a linear scan.** `part_vertex_id(full_id, part_id)`
 walks the part's `vfull` array looking for a whole-graph id. That is
@@ -30,8 +30,8 @@ something later needs full-to-local in a loop, the part graph should
 carry the inverse map rather than searching for it each time.
 
 **The named sets allocate on every call.** `boundary_edges` and its
-siblings build a fresh support each time they are asked. That is by
-design: they are meant to be asked once when an operation begins, and
+siblings build a fresh support each time they are called. That is by
+design: they are meant to be called once when an operation begins, and
 the split between these and the bare-id walking queries exists exactly
 so the per-cell path allocates nothing. Worth a note only because the
 cost is invisible at the call site.
@@ -40,9 +40,9 @@ cost is invisible at the call site.
 grows each part outward from the first unclaimed cell until it has its
 share. It does not balance by cell volume or by work, and it does not
 try to minimise the cut beyond following the connections. It is
-honest and deterministic, which is what the identity checks need; it
+simple and deterministic, which is what the identity checks need; it
 is not a serious partitioner. The old `partition_rcb` weighted by
-coordinates, and that path has not been carried across yet.
+coordinates, and that path has not been ported yet.
 
 ## where the contract makes something awkward
 
@@ -59,15 +59,15 @@ is exact only when the graph was cut into one piece. For more pieces
 the tested statement is the weaker, true one: the owned sets do not
 overlap, their union is everything, and the pieces sum to the whole.
 
-Worth revisiting if the assembler ever needs to hand back a genuinely
+Worth revisiting if the assembler ever needs to return a genuinely
 whole graph from a genuinely cut one. That would need a signature that
 takes all the parts, which the contract does not have.
 
-**A part graph answers only for its own part.** `part_vertex_id` returns
-zero when asked about a part this graph is not. That falls out of
+**A part graph resolves queries only for its own part.** `part_vertex_id`
+returns zero for a part this graph is not. That falls out of
 `full_vertex_id` taking no part argument - a part graph must therefore
-know which part it is, and can only speak for that one. It means a
-replicated partitioner has to hand each image its own part graph
+record which part it is, and resolve queries only for that one. So a
+replicated partitioner has to give each image its own part graph
 rather than one object answering for every part, which is a change
 from how the old code worked. Nothing depends on the old behaviour
 yet.
@@ -95,13 +95,13 @@ the stated direction, because a config file has no way to connect an
 operation to its inputs by name. The right shape will be clearer once
 several real operations exist.
 
-**Geometric partitioning is not carried across.** `partition_rcb` cut
+**Geometric partitioning is not ported.** `partition_rcb` cut
 on cell coordinates. The new partitioner has linear, breadth-first and
 adopted. Geometric needs coordinates off the graph by name, which is
 easy, but the recursive bisection has not been rewritten.
 
 **Data exchange between parts has no concrete class yet.** It needs
-none - it is an operation like any other, and the design note says so -
+none - it is an operation like any other, and the design note states this -
 but nobody has written it. Until then a partitioned run cannot refresh
 its borrowed values.
 
@@ -109,7 +109,7 @@ its borrowed values.
 
 This is the one piece of the plan that is not done, and it is not done
 because it is not a sequence of small green steps. Measured rather
-than guessed:
+than estimated:
 
 Eleven modules use `interface_graph`:
 
@@ -127,7 +127,7 @@ And six types *are* graphs by inheritance:
     marcher       extends chain      so every solver and integrator too
     stored_graph  extends graph
 
-The architecture note says data, transforms and operations should
+The architecture note specifies that data, transforms and operations
 *hold* a graph rather than *be* one. Every line above is that
 relationship the wrong way round. Inverting it touches
 `interface_physics`, `interface_flux`, `interface_marcher`,
@@ -145,15 +145,15 @@ Three decisions come before the work, not during it:
 
 **Does the new graph carry the old algorithm surface while migrating?**
 Carrying it keeps every suite green throughout and leaves the graph
-temporarily fat, against the whole point of the rewrite. Not carrying
+temporarily fat, against the whole point of the rewrite. Not holding
 it is cleaner and goes red for a while. `class_graph_walk.f90` now
 gives colouring, visit order, components and depth a home as
 operations, so the algorithms at least have somewhere to land either
 way.
 
-**Does `physics` invert to hold a graph, or collapse?** The fluxes
-already collapsed into one concrete type with a rule, and
-`class_graph_flux.f90` shows that shape working. The same could be
+**Does `physics` invert to hold a graph, or collapse?** The edge terms
+already collapsed into one concrete type of a given order, and
+`class_graph_derivative.f90` shows that shape working. The same could be
 done to `physics` wholesale, or it could keep its hierarchy and simply
 stop being a graph.
 
@@ -166,9 +166,8 @@ tests but with a longer red stretch.
 
 ## build
 
-**The tree carries 209 warnings from before this work.** A clean build
-of the whole library emits them; `interface_graph.f90` alone accounts
-for 31. The new files add two, both unused-dummy on procedures that
-answer with a constant, which matches what `interface_physics.f90`
-already does. Worth a pass of its own some day, but not mixed into
-this rewrite.
+**A clean build of the library emits 209 warnings that predate this
+branch.** `interface_graph.f90` alone accounts for 31. The new files
+add two, both unused-dummy warnings on procedures that return a
+constant; `interface_physics.f90` contains the same pattern. A
+cleanup pass belongs in its own change, not in this rewrite.

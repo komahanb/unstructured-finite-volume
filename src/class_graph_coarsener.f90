@@ -19,7 +19,7 @@
 ! detail. Coarsening changes the detail: fine to coarse, same whole.
 !
 ! What it is for: a multigrid level, where the slow smooth part of an
-! error is cheap to kill; a first guess to start a fine solve from;
+! error is cheap to damp; a first guess to start a fine solve from;
 ! and a quick look at a mesh too big to draw.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -54,7 +54,7 @@ module class_graph_coarsener
   integer, parameter :: COARSEN_ADOPTED = 2
 
   !===================================================================!
-  ! One coarsener, carrying how it glues and the map it ends up with.
+  ! One coarsener, holding how it glues and the map it ends up with.
   !===================================================================!
 
   type, extends(graph_coarsener) :: coarsener
@@ -78,10 +78,10 @@ module class_graph_coarsener
 
    contains
 
-     procedure :: defined_on_graph => c_defined_on_graph
-     procedure :: defined_on_data  => c_defined_on_data
-     procedure :: coarsen_graph    => c_coarsen_graph
-     procedure :: coarsen_data     => c_coarsen_data
+     procedure :: defined_on_graph
+     procedure :: defined_on_data
+     procedure :: coarsen_graph
+     procedure :: coarsen_data
 
   end type coarsener
 
@@ -109,57 +109,56 @@ contains
   !===================================================================!
   ! Can this coarsener say anything about that graph?
   !
-  ! A graph already down to one cell is not refused. It is as coarse
-  ! as a graph gets, so coarsening it hands the same graph back, and
-  ! doing nothing is a perfectly good answer. Refusing would push the
-  ! decision onto every caller, who would then have to special-case
-  ! the smallest level of a multigrid hierarchy - which is exactly the
-  ! place nobody wants a special case.
+  ! A graph already down to one cell is accepted: it is as coarse as
+  ! a graph gets, so coarsening returns it unchanged, and returning
+  ! the input unchanged is a valid result. Rejecting it would push a
+  ! special case onto every caller - including the smallest level of
+  ! a multigrid hierarchy, the worst place for one.
   !
-  ! What is refused is a coarsening that was handed a map and cannot
-  ! read it, because then it genuinely does not know what to do.
+  ! What is rejected is an adopted map that does not cover the graph,
+  ! because no valid block assignment exists then.
   !===================================================================!
 
-  pure logical function c_defined_on_graph(this, input_graph)
+  pure logical function defined_on_graph(this, input_graph)
 
     class(coarsener), intent(in) :: this
     class(graph)    , intent(in) :: input_graph
 
-    c_defined_on_graph = input_graph % num_vertices() > 0
+    defined_on_graph = input_graph % num_vertices() > 0
 
     if (this % rule == COARSEN_ADOPTED) then
        if (.not. allocated(this % block_of)) then
-          c_defined_on_graph = .false.
+          defined_on_graph = .false.
        else if (size(this % block_of) < input_graph % num_vertices()) then
-          c_defined_on_graph = .false.
+          defined_on_graph = .false.
        end if
     end if
 
-  end function c_defined_on_graph
+  end function defined_on_graph
 
-  pure logical function c_defined_on_data(this, input_graph, input_data)
+  pure logical function defined_on_data(this, input_graph, input_data)
 
     class(coarsener) , intent(in) :: this
     class(graph)     , intent(in) :: input_graph
     class(graph_data), intent(in) :: input_data
 
-    c_defined_on_data = this % defined_on_graph(input_graph)
+    defined_on_data = this % defined_on_graph(input_graph)
 
     select type (input_data)
     class is (vertex_field)
-       c_defined_on_data = c_defined_on_data .and. input_data % num_entries() >= 0
+       defined_on_data = defined_on_data .and. input_data % num_entries() >= 0
     class default
-       c_defined_on_data = .false.
+       defined_on_data = .false.
     end select
 
-  end function c_defined_on_data
+  end function defined_on_data
 
   !===================================================================!
   ! C. Work out the blocks, then draw a face between two blocks
   ! wherever a fine face ran between them.
   !===================================================================!
 
-  subroutine c_coarsen_graph(this, fine_graph, coarse_graph)
+  subroutine coarsen_graph(this, fine_graph, coarse_graph)
 
     class(coarsener), intent(in)               :: this
     class(graph)    , intent(in)               :: fine_graph
@@ -210,7 +209,7 @@ contains
          & stored_graph(nb, tails=tails(1:n), heads=heads(1:n), &
          &              number=fine_graph % id()))
 
-  end subroutine c_coarsen_graph
+  end subroutine coarsen_graph
 
   !===================================================================!
   ! Which block each fine cell belongs to.
@@ -268,7 +267,7 @@ contains
   ! multigrid cycle simply converges more slowly than it should.
   !===================================================================!
 
-  subroutine c_coarsen_data(this, fine_graph, fine_data, coarse_graph, coarse_data)
+  subroutine coarsen_data(this, fine_graph, fine_data, coarse_graph, coarse_data)
 
     class(coarsener) , intent(in)               :: this
     class(graph)     , intent(in)               :: fine_graph
@@ -329,6 +328,6 @@ contains
 
     end select
 
-  end subroutine c_coarsen_data
+  end subroutine coarsen_data
 
 end module class_graph_coarsener

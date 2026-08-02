@@ -1,7 +1,7 @@
 !=====================================================================!
 ! Concrete graph partitioners.
 !
-! P cuts a graph into parts. One concrete type carries the rule, so a
+! P cuts a graph into parts. One concrete type holds the rule, so a
 ! caller can hold partitioners in a plain array and a new rule costs a
 ! case rather than a class.
 !
@@ -11,7 +11,7 @@
 !                part 1     part 2     to each other
 !
 ! What comes out is one part, in its own numbering, and it is still a
-! graph. It also remembers how it relates to the whole - which cells
+! graph. It also records how it relates to the whole - which cells
 ! it owns, which it only borrows, and what each of its own numbers
 ! was called in the full graph.
 !
@@ -47,7 +47,7 @@
 !                        WHAT IS NOT HERE
 !
 ! No physics, no geometry, no solver behaviour. A partitioner works
-! out which cells go where and carries the data across the same cut.
+! out which cells go where and holds the data across the same cut.
 ! It does not evaluate anything.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -110,10 +110,10 @@ module class_graph_partitioner
 
    contains
 
-     procedure :: defined_on_graph => p_defined_on_graph
-     procedure :: defined_on_data  => p_defined_on_data
-     procedure :: partition_graph  => p_partition_graph
-     procedure :: partition_data   => p_partition_data
+     procedure :: defined_on_graph
+     procedure :: defined_on_data
+     procedure :: partition_graph
+     procedure :: partition_data
 
   end type partitioner
 
@@ -148,51 +148,51 @@ contains
   ! adopted map - if that is the rule - actually covers them.
   !===================================================================!
 
-  pure logical function p_defined_on_graph(this, input_graph)
+  pure logical function defined_on_graph(this, input_graph)
 
     class(partitioner), intent(in) :: this
     class(graph)      , intent(in) :: input_graph
 
-    p_defined_on_graph = input_graph % num_vertices() > 0 .and. this % nparts >= 1
+    defined_on_graph = input_graph % num_vertices() > 0 .and. this % nparts >= 1
 
     if (this % rule == PARTITION_ADOPTED) then
        if (.not. allocated(this % adopted)) then
-          p_defined_on_graph = .false.
+          defined_on_graph = .false.
        else if (size(this % adopted) < input_graph % num_vertices()) then
-          p_defined_on_graph = .false.
+          defined_on_graph = .false.
        end if
     end if
 
-  end function p_defined_on_graph
+  end function defined_on_graph
 
   !===================================================================!
   ! Data can be carried across when the graph can be cut and the data
   ! sits on that graph.
   !===================================================================!
 
-  pure logical function p_defined_on_data(this, input_graph, input_data)
+  pure logical function defined_on_data(this, input_graph, input_data)
 
     class(partitioner), intent(in) :: this
     class(graph)      , intent(in) :: input_graph
     class(graph_data) , intent(in) :: input_data
 
-    p_defined_on_data = this % defined_on_graph(input_graph)
+    defined_on_data = this % defined_on_graph(input_graph)
 
     select type (input_data)
     class is (graph_field)
-       p_defined_on_data = p_defined_on_data .and. input_data % num_entries() >= 0
+       defined_on_data = defined_on_data .and. input_data % num_entries() >= 0
     class default
-       p_defined_on_data = .false.
+       defined_on_data = .false.
     end select
 
-  end function p_defined_on_data
+  end function defined_on_data
 
   !===================================================================!
   ! P. Work out who owns what, gather this part's cells, and rebuild
   ! the piece as a graph in its own numbering.
   !===================================================================!
 
-  subroutine p_partition_graph(this, full_graph, part_graph)
+  subroutine partition_graph(this, full_graph, part_graph)
 
     class(partitioner), intent(in)              :: this
     class(graph)      , intent(in)              :: full_graph
@@ -205,7 +205,7 @@ contains
     nv = full_graph % num_vertices()
     ne = full_graph % num_edges()
 
-    call stamp_owners(this, full_graph, owner)
+    call assign_owners(this, full_graph, owner)
     call gather_part(full_graph, owner, this % part, mine, whereis)
 
     ! Keep an edge when both its ends are in this part and at least one
@@ -254,9 +254,9 @@ contains
          & stored_graph(size(mine), tails=ltail(1:nkeep), heads=lhead(1:nkeep), &
          &              number=this % part))
 
-    ! Stamp the relation back to the whole onto the piece. Without it
-    ! the assembler cannot restore whole-graph order, and says so
-    ! rather than guessing.
+    ! Record on the piece how it relates to the whole. Without this
+    ! record the assembler cannot restore whole-graph order, and
+    ! defined_on_graph returns .false. rather than assuming a map.
     select type (part_graph)
     type is (stored_graph)
        part_graph % cut    = .true.
@@ -268,13 +268,13 @@ contains
        allocate(part_graph % eowner, source=eowner(1:nkeep))
     end select
 
-  end subroutine p_partition_graph
+  end subroutine partition_graph
 
   !===================================================================!
   ! Decide which part owns each cell of the whole graph.
   !===================================================================!
 
-  subroutine stamp_owners(this, full_graph, owner)
+  subroutine assign_owners(this, full_graph, owner)
 
     class(partitioner)  , intent(in)  :: this
     class(graph)        , intent(in)  :: full_graph
@@ -291,21 +291,21 @@ contains
        owner = this % adopted(1:nv)
 
     case (PARTITION_BREADTH_FIRST)
-       call stamp_breadth_first(full_graph, this % nparts, owner)
+       call assign_owners_breadth_first(full_graph, this % nparts, owner)
 
     case default
-       call stamp_linear(nv, this % nparts, owner)
+       call assign_owners_linear(nv, this % nparts, owner)
 
     end select
 
-  end subroutine stamp_owners
+  end subroutine assign_owners
 
   !===================================================================!
   ! Equal blocks of the numbering. The first few parts take one extra
   ! cell when the count does not divide evenly.
   !===================================================================!
 
-  pure subroutine stamp_linear(nv, nparts, owner)
+  pure subroutine assign_owners_linear(nv, nparts, owner)
 
     integer, intent(in)    :: nv, nparts
     integer, intent(inout) :: owner(:)
@@ -325,14 +325,14 @@ contains
        end do
     end do
 
-  end subroutine stamp_linear
+  end subroutine assign_owners_linear
 
   !===================================================================!
   ! Grow every part outward from a seed, one ring at a time, so each
   ! part comes out connected and few edges are left crossing.
   !===================================================================!
 
-  subroutine stamp_breadth_first(full_graph, nparts, owner)
+  subroutine assign_owners_breadth_first(full_graph, nparts, owner)
 
     class(graph), intent(in)    :: full_graph
     integer     , intent(in)    :: nparts
@@ -390,7 +390,7 @@ contains
        if (owner(v) == 0) owner(v) = nparts
     end do
 
-  end subroutine stamp_breadth_first
+  end subroutine assign_owners_breadth_first
 
   !===================================================================!
   ! Collect one part's cells: the ones it owns first, then the ones it
@@ -449,7 +449,7 @@ contains
   ! cannot drift out of step with the structure.
   !===================================================================!
 
-  subroutine p_partition_data(this, full_graph, full_data, part_graph, part_data)
+  subroutine partition_data(this, full_graph, full_data, part_graph, part_data)
 
     class(partitioner), intent(in)               :: this
     class(graph)      , intent(in)               :: full_graph
@@ -467,7 +467,7 @@ contains
 
     end select
 
-  end subroutine p_partition_data
+  end subroutine partition_data
 
   !===================================================================!
   ! A cell field follows the vertex map: the part's cell l was called

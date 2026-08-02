@@ -5,9 +5,10 @@
 ! It checks:
 !   1. Supports: a set of indices goes in and the same set comes back, the
 !      size agrees, each kind names itself, and an empty support
-!      answers with a zero-length array rather than nothing at all.
-!   2. The field ordering law: values run in support order with
-!      components fastest inside each entry, so a value sits at
+!      returns a zero-length array rather than nothing at all.
+!   2. Where a value sits: a field stores its values in the order the
+!      support lists its cells, with the components of one cell next
+!      to each other, so a value sits at
 !      (entry - 1) * num_components + component. Nothing else in the
 !      library can catch a mistake here - a round trip through
 !      partition and assembly would carry a wrong layout out and back
@@ -16,8 +17,8 @@
 !      three-cell field two components wide has three entries and six
 !      values.
 !   4. The value-kind rule: a field holds one kind at a time, a getter
-!      for the wrong kind answers with a zero-length array instead of
-!      converting or guessing, and any setter replaces the values and
+!      for the wrong kind returns a zero-length array instead of
+!      converting or inferring, and any setter replaces the values and
 !      the kind together.
 !   5. Every kind survives a round trip through a field - integer,
 !      real, complex, logical and character.
@@ -28,23 +29,22 @@
 !   7. A functional answers a yes-or-no question as true or false
 !      rather than as a one or a zero.
 !   8. Graph structure: the counts, and where each edge runs. A wall
-!      face has no head at all, and still knows which cell it hangs
-!      off.
+!      face has no head, and the cell it is attached to is still
+!      recorded.
 !   9. The named sets. Interior and boundary are worked out from the
-!      structure rather than stamped on by hand - a boundary edge is
+!      structure rather than listed by hand - a boundary edge is
 !      one with no head, and a boundary vertex is one that touches
-!      such an edge. A name nothing carries returns an empty set
-!      rather than failing.
+!      such an edge. A tag present nowhere returns an empty set
+!      rather than an error.
 !  10. Walking the graph, with and without regard to direction. The
-!      same graph answers the four direction queries; no separate
+!      four direction queries act on the same graph; no separate
 !      directed graph type exists.
-!  11. An uncut graph admits it carries no partition, and then answers
-!      every partition question as the whole of itself - one part,
-!      everything owned, nothing borrowed, identity maps - rather than
-!      pretending or refusing.
+!  11. An uncut graph reports no partition record, and every
+!      partition query treats it as the whole of itself - one part,
+!      everything owned, nothing borrowed, identity maps.
 !  12. Geometry rides on the graph and is fetched by name, which is
-!      how a flux reaches a face normal without anyone threading it
-!      down through every call.
+!      how an edge operation reaches a face normal without any caller
+!      threading it down through every call.
 !  13. Every reduction rule on numbers whose answer is obvious by
 !      hand, including a measure turning a bare sum into an integral,
 !      a predicate staying a predicate, and a complex sum keeping the
@@ -68,7 +68,7 @@
 !      owned cells of each piece are folded in.
 !  19. Coarsening and refinement: six cells glued in pairs make three
 !      blocks, faces inside a block vanish, values average onto the
-!      blocks or add when told to, and refinement carries them back
+!      blocks or add when told to, and refinement holds them back
 !      down to every child.
 !  20. Edge contributions reduced through incidence exactly once. On a
 !      closed ring with no walls the balance must sum to zero, however
@@ -105,7 +105,7 @@ program test_graph_contract
   use abstract_graph_types  , only : graph, graph_vertex_field
   use class_graph_coarsener , only : coarsener, COARSEN_PAIRWISE, COARSEN_ADOPTED
   use class_graph_refiner   , only : refiner
-  use class_graph_flux      , only : flux, FLUX_DIFFUSION, FLUX_ADVECTION
+  use class_graph_derivative, only : derivative
   use class_graph_balance   , only : balance
   use class_graph_walk      , only : walk, WALK_COLOURING, WALK_VISIT_ORDER
   use class_graph_walk      , only : WALK_COMPONENT, WALK_DEPTH
@@ -152,8 +152,8 @@ program test_graph_contract
 contains
 
   !===================================================================!
-  ! The teller prints one PASS/FAIL line per claim and keeps a running
-  ! count of the broken ones.
+  ! report prints one PASS/FAIL line per claim and counts the
+  ! failures.
   !===================================================================!
 
   subroutine report(ok, label, nfail)
@@ -172,8 +172,8 @@ contains
   end subroutine report
 
   !===================================================================!
-  ! A support is a set of indices. It gives back what it was given, it
-  ! knows how many it holds, and it says which kind of index it carries.
+  ! A support is a set of indices. It returns what it was given,
+  ! reports its size, and reports which kind of index it holds.
   !===================================================================!
 
   subroutine check_supports(nfail)
@@ -193,27 +193,27 @@ contains
          & "vertex support keeps its indices, in order", nfail)
     call report(vs % size() .eq. 3, "vertex support reports its size", nfail)
     call report(vs % kind() .eq. GRAPH_SUPPORT_VERTEX, &
-         & "a vertex support names itself a vertex support", nfail)
+         & "a vertex support reports the vertex kind", nfail)
 
     call es % edge_indices(got)
     call report(all(got .eq. [2, 5]), "edge support keeps its indices", nfail)
     call report(es % kind() .eq. GRAPH_SUPPORT_EDGE, &
-         & "an edge support names itself an edge support", nfail)
+         & "an edge support reports the edge kind", nfail)
 
-    ! An untouched support has nothing in it, and must still answer a
-    ! caller who wants to loop over it without asking first.
+    ! An untouched support has nothing in it, and must still return a
+    ! zero-length array, so a loop over it requires no prior check.
     call report(empty % size() .eq. 0, "an empty support has size zero", nfail)
     call empty % vertex_indices(got)
     call report(allocated(got) .and. size(got) .eq. 0, &
-         & "an empty support answers with a zero-length array", nfail)
+         & "an empty support returns a zero-length array", nfail)
 
   end subroutine check_supports
 
   !===================================================================!
   ! THE FIELD ORDERING LAW.
   !
-  ! Three cells, two components each. The law says the values lie
-  ! down like this:
+  ! Three cells, two components each. The rule: the values are
+  ! stored in this order:
   !
   !      support indices     7        7        3        3       11      11
   !      component       1        2        1        2        1       2
@@ -309,7 +309,7 @@ contains
 
     call f % get_integer_vector(i)
     call report(size(i) .eq. 0, &
-         & "the wrong getter answers empty, it does not convert", nfail)
+         & "the wrong getter returns empty, not a conversion", nfail)
 
     ! Setting a different kind replaces both the values and the kind.
     call f % set_integer_vector([4, 5])
@@ -349,35 +349,35 @@ contains
 
     call f % set_integer_vector([3, 4])
     call f % get_integer_vector(i)
-    call report(all(i .eq. [3, 4]), "an edge field carries integers", nfail)
+    call report(all(i .eq. [3, 4]), "an edge field holds integers", nfail)
 
     call f % set_real_vector([0.5_dp, 1.5_dp])
     call f % get_real_vector(r)
     call report(all(abs(r - [0.5_dp, 1.5_dp]) < 1.0d-13), &
-         & "an edge field carries reals", nfail)
+         & "an edge field holds reals", nfail)
 
     call f % set_complex_vector([(1.0_dp, 2.0_dp), (3.0_dp, 4.0_dp)])
     call f % get_complex_vector(c)
     call report(abs(aimag(c(2)) - 4.0_dp) < 1.0d-13, &
-         & "an edge field carries the imaginary part too", nfail)
+         & "an edge field holds the imaginary part too", nfail)
 
     call f % set_logical_vector([.true., .false.])
     call f % get_logical_vector(l)
-    call report(l(1) .and. .not. l(2), "an edge field carries logicals", nfail)
+    call report(l(1) .and. .not. l(2), "an edge field holds logicals", nfail)
 
     call f % set_character_vector(['wall', 'duct'])
     call f % get_character_vector(s)
     call report(s(1) .eq. 'wall' .and. s(2) .eq. 'duct', &
-         & "an edge field carries boundary names", nfail)
+         & "an edge field holds boundary names", nfail)
     call report(f % value_kind() .eq. GRAPH_FIELD_CHARACTER, &
-         & "and knows it is holding names, not numbers", nfail)
+         & "and reports character kind, not numeric", nfail)
 
   end subroutine check_field_round_trips
 
   !===================================================================!
   ! A functional is one value, of any kind a field can hold. The two
-  ! that matter most here are complex and logical: complex carries a
-  ! complex-step derivative, and logical carries a true-or-false
+  ! that matter most here are complex and logical: complex holds a
+  ! complex-step derivative, and logical holds a true-or-false
   ! answer without encoding it as a number.
   !===================================================================!
 
@@ -396,11 +396,11 @@ contains
 
     call j % set_integer_value(7)
     call j % get_integer_value(i)
-    call report(i .eq. 7, "a functional carries an integer", nfail)
+    call report(i .eq. 7, "a functional holds an integer", nfail)
 
     call j % set_real_value(2.5_dp)
     call j % get_real_value(r)
-    call report(abs(r - 2.5_dp) < 1.0d-13, "a functional carries a real", nfail)
+    call report(abs(r - 2.5_dp) < 1.0d-13, "a functional holds a real", nfail)
 
     ! The complex-step case. The derivative is the imaginary part, and
     ! it is tiny on purpose: a functional that quietly rounded through
@@ -408,22 +408,22 @@ contains
     call j % set_complex_value((5.0_dp, 4.0d-20))
     call j % get_complex_value(c)
     call report(abs(real(c) - 5.0_dp) < 1.0d-13, &
-         & "a functional carries the real part", nfail)
+         & "a functional holds the real part", nfail)
     call report(abs(aimag(c) - 4.0d-20) < 1.0d-33, &
-         & "a functional carries the imaginary part - complex step lives", nfail)
+         & "a functional holds the imaginary part - complex step lives", nfail)
     call report(j % value_kind() .eq. GRAPH_FIELD_COMPLEX, &
          & "and reports itself complex", nfail)
 
     ! A predicate answers true or false, not one or zero.
     call j % set_logical_value(.false.)
     call j % get_logical_value(l)
-    call report(.not. l, "a functional answers a yes-or-no question", nfail)
+    call report(.not. l, "a functional holds a true-or-false value", nfail)
     call report(j % value_kind() .eq. GRAPH_FIELD_LOGICAL, &
          & "and reports itself logical, not numeric", nfail)
 
     call j % set_character_value('converged')
     call j % get_character_value(s)
-    call report(s .eq. 'converged', "a functional carries a word", nfail)
+    call report(s .eq. 'converged', "a functional holds a word", nfail)
 
   end subroutine check_functional_round_trips
 
@@ -474,13 +474,13 @@ contains
     call report(.not. g % edge_has_head(5), &
          & "a wall face has no head - nothing on the far side", nfail)
     call report(g % edge_tail(5) .eq. 4, &
-         & "and it still knows which cell it hangs off", nfail)
+         & "and its one cell is still recorded", nfail)
 
   end subroutine check_graph_structure
 
   !===================================================================!
   ! The named sets. Interior and boundary are worked out from the
-  ! structure, not stamped on by hand: a boundary edge is one with no
+  ! structure, not listed by hand: a boundary edge is one with no
   ! head, and a boundary vertex is one that touches such an edge.
   !===================================================================!
 
@@ -526,19 +526,19 @@ contains
     call g % tagged_edges('wall', es)
     call es % edge_indices(indices)
     call report(size(indices) .eq. 1 .and. indices(1) .eq. 5, &
-         & "the wall answers to its name", nfail)
+         & "tagged_edges of wall returns the wall face", nfail)
 
     call g % tagged_edges('inlet', es)
     call es % edge_indices(indices)
     call report(size(indices) .eq. 0, &
-         & "a name nothing carries returns an empty set, not a failure", nfail)
+         & "an unknown tag returns an empty set, not a failure", nfail)
 
     ! Nothing was tagged on the vertices, so every vertex query by
     ! name must come back empty rather than reaching into thin air.
     call g % tagged_vertices('heater', vs)
     call vs % vertex_indices(indices)
     call report(size(indices) .eq. 0, &
-         & "an untagged graph answers no to every vertex name", nfail)
+         & "an untagged graph returns an empty set for every vertex tag", nfail)
 
   end subroutine check_graph_named_sets
 
@@ -571,8 +571,8 @@ contains
     call report(size(indices) .eq. 2 .and. all(indices .eq. [2, 3]), &
          & "the wall leads nowhere, so it adds no neighbour", nfail)
 
-    ! Direction: four more questions the same graph answers. No
-    ! separate directed graph type exists.
+    ! Direction: four more queries on the same graph. No separate
+    ! directed graph type exists.
     call g % outgoing_edges(1, indices)
     call report(size(indices) .eq. 2, "two faces lead out of the top cell", nfail)
 
@@ -598,9 +598,8 @@ contains
   end subroutine check_graph_walking
 
   !===================================================================!
-  ! A graph straight off a mesh file was never cut. It should say so,
-  ! and then answer every partition question as the whole of itself
-  ! rather than pretending or refusing.
+  ! A graph straight off a mesh file holds no partition record, and
+  ! every partition query treats it as the whole of itself.
   !===================================================================!
 
   subroutine check_graph_uncut(nfail)
@@ -614,7 +613,7 @@ contains
     g = diamond()
 
     call report(.not. g % has_part_relation(), &
-         & "an uncut graph admits it carries no partition", nfail)
+         & "an uncut graph reports no partition record", nfail)
     call report(g % num_parts() .eq. 1, "an uncut graph is one part", nfail)
 
     call g % owned_vertices(1, vs)
@@ -628,7 +627,7 @@ contains
     call report(g % vertex_owner_part(3) .eq. 1, &
          & "every cell belongs to the one part", nfail)
     call report(g % full_vertex_index(3) .eq. 3, &
-         & "local numbering is whole-graph numbering", nfail)
+         & "its own numbering is the whole-graph numbering", nfail)
     call report(g % part_vertex_index(3, 1) .eq. 3, &
          & "and the map reads the same backwards", nfail)
 
@@ -636,8 +635,8 @@ contains
 
   !===================================================================!
   ! Geometry rides on the graph and is fetched by name. This is how a
-  ! flux reaches a face normal without anyone threading it down
-  ! through every call.
+  ! edge operation reaches a face normal without any caller threading
+  ! it down through every call.
   !===================================================================!
 
   subroutine check_graph_data(nfail)
@@ -664,15 +663,15 @@ contains
     g = stored_graph(4, tails=[1, 1, 2, 3, 4], heads=[2, 3, 4, 4, 0], &
          &           vdata=[volume], edata=[area])
 
-    call report(g % has_data('cell_volume'), "the graph carries cell volumes", nfail)
+    call report(g % has_data('cell_volume'), "the graph holds cell volumes", nfail)
     call report(g % has_data('face_area'), "and face areas", nfail)
     call report(.not. g % has_data('face_normal'), &
-         & "and says no to what it was never given", nfail)
+         & "and has_data is false for absent names", nfail)
 
     call g % get_data('cell_volume', got)
-    call report(allocated(got), "a named fetch hands something back", nfail)
+    call report(allocated(got), "get_data returns an allocated object", nfail)
     call report(got % name() .eq. 'cell_volume', "and it is the right one", nfail)
-    call report(got % units() .eq. 'm3', "carrying its units", nfail)
+    call report(got % units() .eq. 'm3', "holding its units", nfail)
 
     select type (got)
     class is (vertex_field)
@@ -758,7 +757,7 @@ contains
     call j % get_integer_value(i)
     call report(i .eq. 4, "count counts, and answers as an integer", nfail)
     call report(j % value_kind() .eq. GRAPH_FIELD_INTEGER, &
-         & "and says so", nfail)
+         & "and reports integer kind", nfail)
 
     ! A predicate over a logical field. This is the shape a question
     ! like "is this graph acyclic" comes back in.
@@ -914,7 +913,7 @@ contains
     call report(part % num_edges() .eq. 5, "and every face", nfail)
 
     call report(a % defined_on_graph(part), &
-         & "the piece remembers where home was", nfail)
+         & "the piece holds its relation to the whole", nfail)
 
     call a % assemble_graph(part, back)
     call report(back % num_vertices() .eq. g % num_vertices(), &
@@ -940,7 +939,7 @@ contains
     select type (fd)
     class is (vertex_field)
        call fd % get_real_vector(v)
-       call report(size(v) .eq. 6, "the data comes home the right size", nfail)
+       call report(size(v) .eq. 6, "the data returns at the right size", nfail)
        call report(all(abs(v - [10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp]) < 1.0d-13), &
             & "assemble(partition(G,D)) gives back D unchanged", nfail)
     class default
@@ -981,7 +980,7 @@ contains
        call p % partition_graph(g, part)
 
        call report(part % has_part_relation(), &
-            & "a piece cut from a whole says it is a piece", nfail)
+            & "has_part_relation is true on a cut piece", nfail)
        call report(part % num_parts() .eq. 2, "and how many pieces there are", nfail)
 
        ! Count how often each whole-graph cell is owned.
@@ -1281,11 +1280,10 @@ contains
   !===================================================================!
   ! DOING NOTHING IS AN ANSWER.
   !
-  ! A transform handed work that is already done should hand the same
-  ! graph back, not refuse. Refusing would push the decision onto
-  ! every caller, and the callers that would trip over it are exactly
-  ! the ones you least want special cases in - the smallest level of a
-  ! multigrid hierarchy, and a serial run of code written for parts.
+  ! A transform given work that is already done returns the same
+  ! graph; it does not reject it. Rejecting would push a special case
+  ! onto every caller - including the smallest level of a multigrid
+  ! hierarchy, and a serial run of code written for parts.
   !===================================================================!
 
   subroutine check_doing_nothing_is_an_answer(nfail)
@@ -1305,27 +1303,27 @@ contains
     ! A single cell is as coarse as a graph gets.
     c = coarsener(COARSEN_PAIRWISE)
     call report(c % defined_on_graph(one_cell), &
-         & "a coarsener does not refuse a graph already at one cell", nfail)
+         & "a coarsener accepts a graph already at one cell", nfail)
 
     call c % coarsen_graph(one_cell, out)
     call report(out % num_vertices() .eq. 1, &
-         & "it hands the same single cell back", nfail)
+         & "it returns the same single cell", nfail)
 
     ! A graph that was never cut is already assembled.
     g = chain_of_six()
     a = assembler()
     call report(a % defined_on_graph(g), &
-         & "an assembler does not refuse a graph that was never cut", nfail)
+         & "an assembler accepts a graph that was never cut", nfail)
 
     call a % assemble_graph(g, back)
     call report(back % num_vertices() .eq. 6 .and. back % num_edges() .eq. 5, &
-         & "it hands the same graph back rather than complaining", nfail)
+         & "it returns the same graph", nfail)
 
     ! And cutting into one piece is the same story from the other end.
     p = partitioner(PARTITION_LINEAR, nparts=1, part=1)
     call p % partition_graph(g, part)
     call report(part % num_vertices() .eq. 6, &
-         & "cutting into one piece hands the whole thing back", nfail)
+         & "cutting into one piece returns the whole graph", nfail)
 
   end subroutine check_doing_nothing_is_an_answer
 
@@ -1359,7 +1357,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                       :: ring, open_chain
-    type(flux)                               :: face_term
+    type(derivative)                         :: edge_term
     type(balance)                            :: bal
     class(graph_vertex_field), allocatable   :: y
     type(vertex_support)                     :: on
@@ -1371,8 +1369,8 @@ contains
     ! A closed ring: four cells, four faces, not a wall in sight.
     ring = stored_graph(4, tails=[1, 2, 3, 4], heads=[2, 3, 4, 1])
 
-    face_term = flux(FLUX_DIFFUSION, coefficient=1.0_dp)
-    bal       = balance(face_terms=[face_term])
+    edge_term = derivative(order=2, coefficient=1.0_dp)
+    bal       = balance(edge_terms=[edge_term])
 
     on = vertex_support([1, 2, 3, 4])
     q  = vertex_field('q', on)
@@ -1401,19 +1399,19 @@ contains
     call report(ok, &
          & "on a closed ring the balance sums to zero - every face folded once", nfail)
 
-    ! Two face terms, not one. Each is folded through incidence in its
-    ! turn, so the sum still has to cancel.
-    bal = balance(face_terms=[flux(FLUX_DIFFUSION, coefficient=1.0_dp), &
-         &                    flux(FLUX_ADVECTION, coefficient=0.5_dp)])
+    ! Two edge terms, not one. Each is folded through incidence in
+    ! its turn, so the sum still has to cancel.
+    bal = balance(edge_terms=[derivative(order=2, coefficient=1.0_dp), &
+         &                    derivative(order=1, coefficient=0.5_dp)])
     call q % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
     call bal % apply(ring, [q], y)
     call y % get_real_vector(v)
     call report(abs(sum(v)) < 1.0d-12, &
-         & "two face terms fold once each, and still cancel", nfail)
+         & "two edge terms fold once each, and still cancel", nfail)
 
-    ! Lend the same buffer twice. By the overwrite law the second call
-    ! replaces the answer rather than adding to it, so the sum is
-    ! still zero rather than double.
+    ! Pass the same buffer twice. The second call replaces the result
+    ! rather than adding to it, so the sum is still zero rather than
+    ! double.
     call bal % apply(ring, [q], y)
     call y % get_real_vector(v)
     call report(abs(sum(v)) < 1.0d-12, &
@@ -1427,14 +1425,14 @@ contains
     call bal % apply(open_chain, [q], y)
     call y % get_real_vector(v)
     call report(abs(sum(v)) > 1.0d-12, &
-         & "open the ring and it stops cancelling - the check has teeth", nfail)
+         & "open the ring and the sum stops cancelling", nfail)
 
   end subroutine check_balance_conserves
 
   !===================================================================!
   ! The walks: colouring, visit order, components, depth.
   !
-  ! Each reads the shape of the graph and hands back a whole number
+  ! Each reads the shape of the graph and returns a whole number
   ! per cell, so each is an operation over a graph rather than a
   ! procedure of one.
   !===================================================================!

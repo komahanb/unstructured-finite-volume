@@ -8,9 +8,9 @@
 !      | q1 | q2 | q3 | q4 |  ---- reduce ---->        |  J  |
 !      +----+----+----+----+                          +-----+
 !
-! It carries every kind of value a field can, under the same rule
+! It holds every kind of value a field can, under the same rule
 ! stated in class_graph_field: only the matching store is live, a
-! getter for the wrong kind answers with the zero of that kind, and
+! getter for the wrong kind returns the zero of that kind, and
 ! any setter replaces the value and the kind together.
 !
 ! Complex is here so a complex-step derivative survives the fold. The
@@ -78,29 +78,29 @@ module class_graph_functional
      ! Identity.
      !----------------------------------------------------------------!
 
-     procedure :: name  => fn_name
-     procedure :: units => fn_units
+     procedure :: name
+     procedure :: units
 
      !----------------------------------------------------------------!
      ! Which kind of value is in here.
      !----------------------------------------------------------------!
 
-     procedure :: value_kind => fn_value_kind
+     procedure :: value_kind
 
      !----------------------------------------------------------------!
      ! One value in and out, per kind.
      !----------------------------------------------------------------!
 
-     procedure :: get_integer_value   => fn_get_integer
-     procedure :: set_integer_value   => fn_set_integer
-     procedure :: get_real_value      => fn_get_real
-     procedure :: set_real_value      => fn_set_real
-     procedure :: get_complex_value   => fn_get_complex
-     procedure :: set_complex_value   => fn_set_complex
-     procedure :: get_logical_value   => fn_get_logical
-     procedure :: set_logical_value   => fn_set_logical
-     procedure :: get_character_value => fn_get_character
-     procedure :: set_character_value => fn_set_character
+     procedure :: get_integer_value
+     procedure :: set_integer_value
+     procedure :: get_real_value
+     procedure :: set_real_value
+     procedure :: get_complex_value
+     procedure :: set_complex_value
+     procedure :: get_logical_value
+     procedure :: set_logical_value
+     procedure :: get_character_value
+     procedure :: set_character_value
 
   end type functional
 
@@ -138,47 +138,47 @@ contains
   ! Identity.
   !===================================================================!
 
-  pure function fn_name(this) result(name)
+  pure function name(this) result(label)
 
     class(functional), intent(in) :: this
-    character(len=:), allocatable :: name
+    character(len=:), allocatable :: label
 
     if (allocated(this % label)) then
-       name = this % label
+       label = this % label
     else
-       name = ''
+       label = ''
     end if
 
-  end function fn_name
+  end function name
 
-  pure function fn_units(this) result(units)
+  pure function units(this) result(unit_name)
 
     class(functional), intent(in) :: this
-    character(len=:), allocatable :: units
+    character(len=:), allocatable :: unit_name
 
     if (allocated(this % unit_name)) then
-       units = this % unit_name
+       unit_name = this % unit_name
     else
-       units = '-'
+       unit_name = '-'
     end if
 
-  end function fn_units
+  end function units
 
-  pure integer function fn_value_kind(this)
+  pure integer function value_kind(this)
 
     class(functional), intent(in) :: this
 
-    fn_value_kind = this % vkind
+    value_kind = this % vkind
 
-  end function fn_value_kind
+  end function value_kind
 
   !===================================================================!
-  ! The accessors. A getter for the wrong kind answers with the zero
-  ! of that kind rather than converting or guessing; it is pure and
-  ! has no way to complain. A caller checks value_kind() first.
+  ! The accessors. A getter for the wrong kind returns the zero of
+  ! that kind; no conversion and no inference happens, and a pure
+  ! procedure has no error path. A caller checks value_kind() first.
   !===================================================================!
 
-  pure subroutine fn_get_integer(this, value)
+  pure subroutine get_integer_value(this, value)
 
     class(functional), intent(in) :: this
     integer          , intent(out) :: value
@@ -189,9 +189,9 @@ contains
        value = 0
     end if
 
-  end subroutine fn_get_integer
+  end subroutine get_integer_value
 
-  pure subroutine fn_set_integer(this, value)
+  pure subroutine set_integer_value(this, value)
 
     class(functional), intent(inout) :: this
     integer          , intent(in)    :: value
@@ -199,9 +199,9 @@ contains
     this % ival  = value
     this % vkind = GRAPH_FIELD_INTEGER
 
-  end subroutine fn_set_integer
+  end subroutine set_integer_value
 
-  pure subroutine fn_get_real(this, value)
+  pure subroutine get_real_value(this, value)
 
     class(functional), intent(in)  :: this
     real(dp)         , intent(out) :: value
@@ -212,9 +212,9 @@ contains
        value = 0.0_dp
     end if
 
-  end subroutine fn_get_real
+  end subroutine get_real_value
 
-  pure subroutine fn_set_real(this, value)
+  pure subroutine set_real_value(this, value)
 
     class(functional), intent(inout) :: this
     real(dp)         , intent(in)    :: value
@@ -222,9 +222,9 @@ contains
     this % rval  = value
     this % vkind = GRAPH_FIELD_REAL
 
-  end subroutine fn_set_real
+  end subroutine set_real_value
 
-  pure subroutine fn_get_complex(this, value)
+  pure subroutine get_complex_value(this, value)
 
     class(functional), intent(in)  :: this
     complex(dp)      , intent(out) :: value
@@ -235,9 +235,9 @@ contains
        value = (0.0_dp, 0.0_dp)
     end if
 
-  end subroutine fn_get_complex
+  end subroutine get_complex_value
 
-  pure subroutine fn_set_complex(this, value)
+  pure subroutine set_complex_value(this, value)
 
     class(functional), intent(inout) :: this
     complex(dp)      , intent(in)    :: value
@@ -245,9 +245,9 @@ contains
     this % cval  = value
     this % vkind = GRAPH_FIELD_COMPLEX
 
-  end subroutine fn_set_complex
+  end subroutine set_complex_value
 
-  pure subroutine fn_get_logical(this, value)
+  pure subroutine get_logical_value(this, value)
 
     class(functional), intent(in)  :: this
     logical          , intent(out) :: value
@@ -258,9 +258,9 @@ contains
        value = .false.
     end if
 
-  end subroutine fn_get_logical
+  end subroutine get_logical_value
 
-  pure subroutine fn_set_logical(this, value)
+  pure subroutine set_logical_value(this, value)
 
     class(functional), intent(inout) :: this
     logical          , intent(in)    :: value
@@ -268,9 +268,9 @@ contains
     this % lval  = value
     this % vkind = GRAPH_FIELD_LOGICAL
 
-  end subroutine fn_set_logical
+  end subroutine set_logical_value
 
-  pure subroutine fn_get_character(this, value)
+  pure subroutine get_character_value(this, value)
 
     class(functional), intent(in)              :: this
     character(len=:), allocatable, intent(out) :: value
@@ -281,9 +281,9 @@ contains
        value = ''
     end if
 
-  end subroutine fn_get_character
+  end subroutine get_character_value
 
-  pure subroutine fn_set_character(this, value)
+  pure subroutine set_character_value(this, value)
 
     class(functional), intent(inout) :: this
     character(len=*) , intent(in)    :: value
@@ -291,6 +291,6 @@ contains
     this % sval  = value
     this % vkind = GRAPH_FIELD_CHARACTER
 
-  end subroutine fn_set_character
+  end subroutine set_character_value
 
 end module class_graph_functional

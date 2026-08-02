@@ -12,12 +12,12 @@
 ! Every child of one parent is joined to its siblings, and a face
 ! between two parents becomes a face between one child of each. The
 ! second rule is the strongest statement the connectivity supports: a
-! geometric refiner knows which children touch and joins exactly
-! those, but this refiner has no coordinates, so it preserves the
-! shape and asserts nothing beyond it.
+! geometric refiner, with positions available, joins exactly the
+! children that touch; this refiner has no positions, so it
+! preserves the shape and asserts nothing beyond it.
 !
-! What it is for: sharpening a mesh where an error measure says it is
-! needed, and carrying a coarse multigrid correction back down.
+! What it is for: sharpening a mesh where an error measure requires
+! it, and holding a coarse multigrid correction back down.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -52,10 +52,10 @@ module class_graph_refiner
 
    contains
 
-     procedure :: defined_on_graph => r_defined_on_graph
-     procedure :: defined_on_data  => r_defined_on_data
-     procedure :: refine_graph     => r_refine_graph
-     procedure :: refine_data      => r_refine_data
+     procedure :: defined_on_graph
+     procedure :: defined_on_data
+     procedure :: refine_graph
+     procedure :: refine_data
 
   end type refiner
 
@@ -73,38 +73,38 @@ contains
 
   end function create
 
-  pure logical function r_defined_on_graph(this, input_graph)
+  pure logical function defined_on_graph(this, input_graph)
 
     class(refiner), intent(in) :: this
     class(graph)  , intent(in) :: input_graph
 
-    r_defined_on_graph = input_graph % num_vertices() > 0 .and. this % split >= 1
+    defined_on_graph = input_graph % num_vertices() > 0 .and. this % split >= 1
 
-  end function r_defined_on_graph
+  end function defined_on_graph
 
-  pure logical function r_defined_on_data(this, input_graph, input_data)
+  pure logical function defined_on_data(this, input_graph, input_data)
 
     class(refiner)   , intent(in) :: this
     class(graph)     , intent(in) :: input_graph
     class(graph_data), intent(in) :: input_data
 
-    r_defined_on_data = this % defined_on_graph(input_graph)
+    defined_on_data = this % defined_on_graph(input_graph)
 
     select type (input_data)
     class is (vertex_field)
-       r_defined_on_data = r_defined_on_data .and. input_data % num_entries() >= 0
+       defined_on_data = defined_on_data .and. input_data % num_entries() >= 0
     class default
-       r_defined_on_data = .false.
+       defined_on_data = .false.
     end select
 
-  end function r_defined_on_data
+  end function defined_on_data
 
   !===================================================================!
   ! R. Split every cell, join each family together, and carry every
   ! face down to one child on each side.
   !===================================================================!
 
-  subroutine r_refine_graph(this, coarse_graph, fine_graph)
+  subroutine refine_graph(this, coarse_graph, fine_graph)
 
     class(refiner), intent(in)               :: this
     class(graph)  , intent(in)               :: coarse_graph
@@ -148,7 +148,7 @@ contains
          & stored_graph(nv * this % split, tails=tails(1:n), heads=heads(1:n), &
          &              number=coarse_graph % id()))
 
-  end subroutine r_refine_graph
+  end subroutine refine_graph
 
   !===================================================================!
   ! The i-th child of coarse cell v.
@@ -171,7 +171,7 @@ contains
   ! and this refiner has none.
   !===================================================================!
 
-  subroutine r_refine_data(this, coarse_graph, coarse_data, fine_graph, fine_data)
+  subroutine refine_data(this, coarse_graph, coarse_data, fine_graph, fine_data)
 
     class(refiner)   , intent(in)               :: this
     class(graph)     , intent(in)               :: coarse_graph
@@ -220,6 +220,6 @@ contains
 
     end select
 
-  end subroutine r_refine_data
+  end subroutine refine_data
 
 end module class_graph_refiner

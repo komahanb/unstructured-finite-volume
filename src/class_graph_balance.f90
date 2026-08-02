@@ -18,8 +18,8 @@
 ! one time. Walk a face twice and the balance is wrong by that face;
 ! miss one and it is wrong by that face the other way. Neither shows
 ! up as a crash - it shows up as a solution that is quietly not the
-! solution, which is why the count is checked in the suite rather than
-! trusted.
+! solution, so the fold count is verified in the test suite rather
+! than assumed.
 !
 ! A wall face has no far cell, so its number lands on the one cell it
 ! touches and stops there:
@@ -33,8 +33,8 @@
 !                   WHY THIS IS NOT A NEW KIND OF THING
 !
 ! A balance is a vertex field operation like any other. It happens to
-! drive an edge operation on the way, but what it hands back is a
-! value per cell, and that is all its type promises.
+! drive an edge operation on the way, but what it returns is a
+! value per cell, which is exactly what its type declares.
 !
 ! A solver calls the result a residual. That word names a stage in a
 ! solve, not a thing in this library, so it does not appear here.
@@ -50,7 +50,7 @@ module class_graph_balance
   use abstract_graph_types, only : graph_vertex_support, graph_edge_field
   use class_graph_support , only : vertex_support
   use class_graph_field   , only : vertex_field
-  use class_graph_flux    , only : flux
+  use class_graph_derivative, only : derivative
 
   implicit none
 
@@ -61,22 +61,22 @@ module class_graph_balance
   ! A balance holds its face terms and, if it has one, a number added
   ! to every cell.
   !
-  ! The face terms are one concrete type carrying a rule. A Fortran
-  ! array holds a single dynamic type, so one concrete flux type is
-  ! what lets the balance keep its terms in a plain array.
+  ! The face terms are one concrete type holding a rule. A Fortran
+  ! array holds a single dynamic type, so one concrete edge-derivative
+  ! type is what lets the balance keep its terms in a plain array.
   !===================================================================!
 
   type, extends(graph_vertex_field_operation) :: balance
 
-     type(flux), allocatable :: face_terms(:)
+     type(derivative), allocatable :: edge_terms(:)
 
      real(dp) :: source = 0.0_dp
 
    contains
 
-     procedure :: name    => b_name
-     procedure :: support => b_support
-     procedure :: apply   => b_apply
+     procedure :: name    => balance_name
+     procedure :: support => balance_support
+     procedure :: apply   => balance_apply
 
   end type balance
 
@@ -86,31 +86,31 @@ module class_graph_balance
 
 contains
 
-  pure type(balance) function create(face_terms, source) result(this)
+  pure type(balance) function create(edge_terms, source) result(this)
 
-    type(flux), intent(in), optional :: face_terms(:)
+    type(derivative), intent(in), optional :: edge_terms(:)
     real(dp)  , intent(in), optional :: source
 
-    if (present(face_terms)) allocate(this % face_terms, source=face_terms)
+    if (present(edge_terms)) allocate(this % edge_terms, source=edge_terms)
     if (present(source))     this % source = source
 
   end function create
 
-  pure function b_name(this) result(name)
+  pure function balance_name(this) result(name)
 
     class(balance), intent(in)    :: this
     character(len=:), allocatable :: name
 
     name = 'balance'
 
-  end function b_name
+  end function balance_name
 
   !===================================================================!
   ! Every cell. A balance answers for the whole graph it is given; a
   ! caller wanting only part of one hands it only part of one.
   !===================================================================!
 
-  subroutine b_support(this, input_graph, support)
+  subroutine balance_support(this, input_graph, support)
 
     class(balance), intent(in)                            :: this
     class(graph)  , intent(in)                            :: input_graph
@@ -118,7 +118,7 @@ contains
 
     call input_graph % all_vertices(support)
 
-  end subroutine b_support
+  end subroutine balance_support
 
   !===================================================================!
   ! Work the balance out.
@@ -128,7 +128,7 @@ contains
   !    3. fold each face onto the two cells it touches, once
   !===================================================================!
 
-  subroutine b_apply(this, input_graph, input_data, output)
+  subroutine balance_apply(this, input_graph, input_data, output)
 
     class(balance)   , intent(in)                       :: this
     class(graph)     , intent(in)                       :: input_graph
@@ -157,16 +157,16 @@ contains
     allocate(y(nv))
     y = this % source
 
-    if (allocated(this % face_terms)) then
-       do k = 1, size(this % face_terms)
+    if (allocated(this % edge_terms)) then
+       do k = 1, size(this % edge_terms)
 
-          ! One face term, worked out for every face at once. This is
-          ! the only place the face values are computed.
-          call this % face_terms(k) % apply(input_graph, input_data, face_values)
+          ! One edge term, computed for every edge at once. This is
+          ! the only place the edge values are computed.
+          call this % edge_terms(k) % apply(input_graph, input_data, face_values)
           call face_values % get_real_vector(z)
 
-          ! And folded onto the cells, each face touching its cells
-          ! exactly one time.
+          ! And folded onto the vertices, each edge touching its two
+          ! ends exactly one time.
           do e = 1, ne
              if (e > size(z)) exit
 
@@ -185,10 +185,10 @@ contains
 
     call out % set_real_vector(y)
 
-    ! Overwrite, by the law. The buffer may be lent; it is not added to.
+    ! A supplied buffer is overwritten, never added to.
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
 
-  end subroutine b_apply
+  end subroutine balance_apply
 
 end module class_graph_balance

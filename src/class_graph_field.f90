@@ -3,7 +3,7 @@
 !
 ! A field is one value for every entry of a support. There is exactly
 ! one concrete vertex field here and exactly one concrete edge field,
-! and each carries every kind of value the contract allows. Because
+! and each holds every kind of value the contract allows. Because
 ! there is only one of each, a graph holds its data in a plain array:
 !
 !      type(vertex_field), allocatable :: vdata(:)
@@ -26,10 +26,10 @@
 !      ask first     a caller checks value_kind() before reaching for
 !                    a vector
 !
-!      wrong getter  returns a zero-length array. It does not convert,
-!                    it does not guess, and it cannot complain -
-!                    these procedures are pure and have no way to
-!                    report. A zero-length answer is the signal
+!      wrong getter  returns a zero-length array. No conversion and
+!                    no inference happens, and a pure procedure has
+!                    no error path. The zero-length result is the
+!                    signal
 !
 !      any setter    replaces both the values and the kind. Setting
 !                    reals onto a field that held integers makes it a
@@ -40,10 +40,10 @@
 !
 !=====================================================================!
 !
-!                       THE FIELD ORDERING LAW
+!                        WHERE A VALUE SITS
 !
-! Values run in the order the support lists its indices, and components
-! run fastest within each entry:
+! A field stores its values in the order the support lists its cells,
+! and keeps the components of one cell next to each other:
 !
 !      support indices     7        7        3        3
 !      component       1        2        1        2
@@ -102,33 +102,33 @@ module class_graph_field
      ! Identity, and where the values sit.
      !----------------------------------------------------------------!
 
-     procedure :: name           => vf_name
-     procedure :: units          => vf_units
-     procedure :: support        => vf_support
-     procedure :: vertex_support => vf_vertex_support
+     procedure :: name           => vertex_field_name
+     procedure :: units          => vertex_field_units
+     procedure :: support        => vertex_field_support
+     procedure :: vertex_support => vertex_field_vertex_support
 
      !----------------------------------------------------------------!
      ! Shape and kind.
      !----------------------------------------------------------------!
 
-     procedure :: num_components => vf_num_components
-     procedure :: num_entries    => vf_num_entries
-     procedure :: value_kind     => vf_value_kind
+     procedure :: num_components => vertex_field_num_components
+     procedure :: num_entries    => vertex_field_num_entries
+     procedure :: value_kind     => vertex_field_value_kind
 
      !----------------------------------------------------------------!
      ! The plain-vector adapters, one pair per kind.
      !----------------------------------------------------------------!
 
-     procedure :: get_integer_vector   => vf_get_integer
-     procedure :: set_integer_vector   => vf_set_integer
-     procedure :: get_real_vector      => vf_get_real
-     procedure :: set_real_vector      => vf_set_real
-     procedure :: get_complex_vector   => vf_get_complex
-     procedure :: set_complex_vector   => vf_set_complex
-     procedure :: get_logical_vector   => vf_get_logical
-     procedure :: set_logical_vector   => vf_set_logical
-     procedure :: get_character_vector => vf_get_character
-     procedure :: set_character_vector => vf_set_character
+     procedure :: get_integer_vector   => vertex_field_get_integer_vector
+     procedure :: set_integer_vector   => vertex_field_set_integer_vector
+     procedure :: get_real_vector      => vertex_field_get_real_vector
+     procedure :: set_real_vector      => vertex_field_set_real_vector
+     procedure :: get_complex_vector   => vertex_field_get_complex_vector
+     procedure :: set_complex_vector   => vertex_field_set_complex_vector
+     procedure :: get_logical_vector   => vertex_field_get_logical_vector
+     procedure :: set_logical_vector   => vertex_field_set_logical_vector
+     procedure :: get_character_vector => vertex_field_get_character_vector
+     procedure :: set_character_vector => vertex_field_set_character_vector
 
   end type vertex_field
 
@@ -158,33 +158,33 @@ module class_graph_field
      ! Identity, and where the values sit.
      !----------------------------------------------------------------!
 
-     procedure :: name         => ef_name
-     procedure :: units        => ef_units
-     procedure :: support      => ef_support
-     procedure :: edge_support => ef_edge_support
+     procedure :: name         => edge_field_name
+     procedure :: units        => edge_field_units
+     procedure :: support      => edge_field_support
+     procedure :: edge_support => edge_field_edge_support
 
      !----------------------------------------------------------------!
      ! Shape and kind.
      !----------------------------------------------------------------!
 
-     procedure :: num_components => ef_num_components
-     procedure :: num_entries    => ef_num_entries
-     procedure :: value_kind     => ef_value_kind
+     procedure :: num_components => edge_field_num_components
+     procedure :: num_entries    => edge_field_num_entries
+     procedure :: value_kind     => edge_field_value_kind
 
      !----------------------------------------------------------------!
      ! The plain-vector adapters, one pair per kind.
      !----------------------------------------------------------------!
 
-     procedure :: get_integer_vector   => ef_get_integer
-     procedure :: set_integer_vector   => ef_set_integer
-     procedure :: get_real_vector      => ef_get_real
-     procedure :: set_real_vector      => ef_set_real
-     procedure :: get_complex_vector   => ef_get_complex
-     procedure :: set_complex_vector   => ef_set_complex
-     procedure :: get_logical_vector   => ef_get_logical
-     procedure :: set_logical_vector   => ef_set_logical
-     procedure :: get_character_vector => ef_get_character
-     procedure :: set_character_vector => ef_set_character
+     procedure :: get_integer_vector   => edge_field_get_integer_vector
+     procedure :: set_integer_vector   => edge_field_set_integer_vector
+     procedure :: get_real_vector      => edge_field_get_real_vector
+     procedure :: set_real_vector      => edge_field_set_real_vector
+     procedure :: get_complex_vector   => edge_field_get_complex_vector
+     procedure :: set_complex_vector   => edge_field_set_complex_vector
+     procedure :: get_logical_vector   => edge_field_get_logical_vector
+     procedure :: set_logical_vector   => edge_field_set_logical_vector
+     procedure :: get_character_vector => edge_field_get_character_vector
+     procedure :: set_character_vector => edge_field_set_character_vector
 
   end type edge_field
 
@@ -264,7 +264,7 @@ contains
   ! Vertex field: identity and support.
   !===================================================================!
 
-  pure function vf_name(this) result(name)
+  pure function vertex_field_name(this) result(name)
 
     class(vertex_field), intent(in) :: this
     character(len=:), allocatable   :: name
@@ -275,9 +275,9 @@ contains
        name = ''
     end if
 
-  end function vf_name
+  end function vertex_field_name
 
-  pure function vf_units(this) result(units)
+  pure function vertex_field_units(this) result(units)
 
     class(vertex_field), intent(in) :: this
     character(len=:), allocatable   :: units
@@ -288,54 +288,54 @@ contains
        units = '-'
     end if
 
-  end function vf_units
+  end function vertex_field_units
 
-  subroutine vf_support(this, support)
+  subroutine vertex_field_support(this, support)
 
     class(vertex_field), intent(in)                :: this
     class(graph_support), allocatable, intent(out) :: support
 
     allocate(support, source=this % on)
 
-  end subroutine vf_support
+  end subroutine vertex_field_support
 
-  subroutine vf_vertex_support(this, support)
+  subroutine vertex_field_vertex_support(this, support)
 
     class(vertex_field), intent(in)                       :: this
     class(graph_vertex_support), allocatable, intent(out) :: support
 
     allocate(support, source=this % on)
 
-  end subroutine vf_vertex_support
+  end subroutine vertex_field_vertex_support
 
   !===================================================================!
   ! Vertex field: shape and kind. The entry count comes from the
   ! support, so a field cannot disagree with the set it lives on.
   !===================================================================!
 
-  pure integer function vf_num_components(this)
+  pure integer function vertex_field_num_components(this)
 
     class(vertex_field), intent(in) :: this
 
-    vf_num_components = this % ncomp
+    vertex_field_num_components = this % ncomp
 
-  end function vf_num_components
+  end function vertex_field_num_components
 
-  pure integer function vf_num_entries(this)
-
-    class(vertex_field), intent(in) :: this
-
-    vf_num_entries = this % on % size()
-
-  end function vf_num_entries
-
-  pure integer function vf_value_kind(this)
+  pure integer function vertex_field_num_entries(this)
 
     class(vertex_field), intent(in) :: this
 
-    vf_value_kind = this % vkind
+    vertex_field_num_entries = this % on % size()
 
-  end function vf_value_kind
+  end function vertex_field_num_entries
+
+  pure integer function vertex_field_value_kind(this)
+
+    class(vertex_field), intent(in) :: this
+
+    vertex_field_value_kind = this % vkind
+
+  end function vertex_field_value_kind
 
   !===================================================================!
   ! Vertex field: the adapters. A getter for the wrong kind answers
@@ -343,7 +343,7 @@ contains
   ! kind together.
   !===================================================================!
 
-  pure subroutine vf_get_integer(this, values)
+  pure subroutine vertex_field_get_integer_vector(this, values)
 
     class(vertex_field), intent(in)   :: this
     integer, allocatable, intent(out) :: values(:)
@@ -354,9 +354,9 @@ contains
        allocate(values(0))
     end if
 
-  end subroutine vf_get_integer
+  end subroutine vertex_field_get_integer_vector
 
-  pure subroutine vf_set_integer(this, values)
+  pure subroutine vertex_field_set_integer_vector(this, values)
 
     class(vertex_field), intent(inout) :: this
     integer             , intent(in)   :: values(:)
@@ -364,9 +364,9 @@ contains
     this % ivals = values
     this % vkind = GRAPH_FIELD_INTEGER
 
-  end subroutine vf_set_integer
+  end subroutine vertex_field_set_integer_vector
 
-  pure subroutine vf_get_real(this, values)
+  pure subroutine vertex_field_get_real_vector(this, values)
 
     class(vertex_field), intent(in)    :: this
     real(dp), allocatable, intent(out) :: values(:)
@@ -377,9 +377,9 @@ contains
        allocate(values(0))
     end if
 
-  end subroutine vf_get_real
+  end subroutine vertex_field_get_real_vector
 
-  pure subroutine vf_set_real(this, values)
+  pure subroutine vertex_field_set_real_vector(this, values)
 
     class(vertex_field), intent(inout) :: this
     real(dp)           , intent(in)    :: values(:)
@@ -387,9 +387,9 @@ contains
     this % rvals = values
     this % vkind = GRAPH_FIELD_REAL
 
-  end subroutine vf_set_real
+  end subroutine vertex_field_set_real_vector
 
-  pure subroutine vf_get_complex(this, values)
+  pure subroutine vertex_field_get_complex_vector(this, values)
 
     class(vertex_field), intent(in)       :: this
     complex(dp), allocatable, intent(out) :: values(:)
@@ -400,9 +400,9 @@ contains
        allocate(values(0))
     end if
 
-  end subroutine vf_get_complex
+  end subroutine vertex_field_get_complex_vector
 
-  pure subroutine vf_set_complex(this, values)
+  pure subroutine vertex_field_set_complex_vector(this, values)
 
     class(vertex_field), intent(inout) :: this
     complex(dp)        , intent(in)    :: values(:)
@@ -410,9 +410,9 @@ contains
     this % cvals = values
     this % vkind = GRAPH_FIELD_COMPLEX
 
-  end subroutine vf_set_complex
+  end subroutine vertex_field_set_complex_vector
 
-  pure subroutine vf_get_logical(this, values)
+  pure subroutine vertex_field_get_logical_vector(this, values)
 
     class(vertex_field), intent(in)   :: this
     logical, allocatable, intent(out) :: values(:)
@@ -423,9 +423,9 @@ contains
        allocate(values(0))
     end if
 
-  end subroutine vf_get_logical
+  end subroutine vertex_field_get_logical_vector
 
-  pure subroutine vf_set_logical(this, values)
+  pure subroutine vertex_field_set_logical_vector(this, values)
 
     class(vertex_field), intent(inout) :: this
     logical            , intent(in)    :: values(:)
@@ -433,9 +433,9 @@ contains
     this % lvals = values
     this % vkind = GRAPH_FIELD_LOGICAL
 
-  end subroutine vf_set_logical
+  end subroutine vertex_field_set_logical_vector
 
-  pure subroutine vf_get_character(this, values)
+  pure subroutine vertex_field_get_character_vector(this, values)
 
     class(vertex_field), intent(in)                :: this
     character(len=:), allocatable, intent(out)     :: values(:)
@@ -446,9 +446,9 @@ contains
        allocate(character(len=1) :: values(0))
     end if
 
-  end subroutine vf_get_character
+  end subroutine vertex_field_get_character_vector
 
-  pure subroutine vf_set_character(this, values)
+  pure subroutine vertex_field_set_character_vector(this, values)
 
     class(vertex_field), intent(inout) :: this
     character(len=*)   , intent(in)    :: values(:)
@@ -456,13 +456,13 @@ contains
     this % svals = values
     this % vkind = GRAPH_FIELD_CHARACTER
 
-  end subroutine vf_set_character
+  end subroutine vertex_field_set_character_vector
 
   !===================================================================!
   ! Edge field: identity and support.
   !===================================================================!
 
-  pure function ef_name(this) result(name)
+  pure function edge_field_name(this) result(name)
 
     class(edge_field), intent(in)  :: this
     character(len=:), allocatable  :: name
@@ -473,9 +473,9 @@ contains
        name = ''
     end if
 
-  end function ef_name
+  end function edge_field_name
 
-  pure function ef_units(this) result(units)
+  pure function edge_field_units(this) result(units)
 
     class(edge_field), intent(in)  :: this
     character(len=:), allocatable  :: units
@@ -486,59 +486,59 @@ contains
        units = '-'
     end if
 
-  end function ef_units
+  end function edge_field_units
 
-  subroutine ef_support(this, support)
+  subroutine edge_field_support(this, support)
 
     class(edge_field), intent(in)                  :: this
     class(graph_support), allocatable, intent(out) :: support
 
     allocate(support, source=this % on)
 
-  end subroutine ef_support
+  end subroutine edge_field_support
 
-  subroutine ef_edge_support(this, support)
+  subroutine edge_field_edge_support(this, support)
 
     class(edge_field), intent(in)                       :: this
     class(graph_edge_support), allocatable, intent(out) :: support
 
     allocate(support, source=this % on)
 
-  end subroutine ef_edge_support
+  end subroutine edge_field_edge_support
 
   !===================================================================!
   ! Edge field: shape and kind.
   !===================================================================!
 
-  pure integer function ef_num_components(this)
+  pure integer function edge_field_num_components(this)
 
     class(edge_field), intent(in) :: this
 
-    ef_num_components = this % ncomp
+    edge_field_num_components = this % ncomp
 
-  end function ef_num_components
+  end function edge_field_num_components
 
-  pure integer function ef_num_entries(this)
-
-    class(edge_field), intent(in) :: this
-
-    ef_num_entries = this % on % size()
-
-  end function ef_num_entries
-
-  pure integer function ef_value_kind(this)
+  pure integer function edge_field_num_entries(this)
 
     class(edge_field), intent(in) :: this
 
-    ef_value_kind = this % vkind
+    edge_field_num_entries = this % on % size()
 
-  end function ef_value_kind
+  end function edge_field_num_entries
+
+  pure integer function edge_field_value_kind(this)
+
+    class(edge_field), intent(in) :: this
+
+    edge_field_value_kind = this % vkind
+
+  end function edge_field_value_kind
 
   !===================================================================!
   ! Edge field: the adapters, under the same rule.
   !===================================================================!
 
-  pure subroutine ef_get_integer(this, values)
+  pure subroutine edge_field_get_integer_vector(this, values)
 
     class(edge_field), intent(in)     :: this
     integer, allocatable, intent(out) :: values(:)
@@ -549,9 +549,9 @@ contains
        allocate(values(0))
     end if
 
-  end subroutine ef_get_integer
+  end subroutine edge_field_get_integer_vector
 
-  pure subroutine ef_set_integer(this, values)
+  pure subroutine edge_field_set_integer_vector(this, values)
 
     class(edge_field), intent(inout) :: this
     integer          , intent(in)    :: values(:)
@@ -559,9 +559,9 @@ contains
     this % ivals = values
     this % vkind = GRAPH_FIELD_INTEGER
 
-  end subroutine ef_set_integer
+  end subroutine edge_field_set_integer_vector
 
-  pure subroutine ef_get_real(this, values)
+  pure subroutine edge_field_get_real_vector(this, values)
 
     class(edge_field), intent(in)      :: this
     real(dp), allocatable, intent(out) :: values(:)
@@ -572,9 +572,9 @@ contains
        allocate(values(0))
     end if
 
-  end subroutine ef_get_real
+  end subroutine edge_field_get_real_vector
 
-  pure subroutine ef_set_real(this, values)
+  pure subroutine edge_field_set_real_vector(this, values)
 
     class(edge_field), intent(inout) :: this
     real(dp)         , intent(in)    :: values(:)
@@ -582,9 +582,9 @@ contains
     this % rvals = values
     this % vkind = GRAPH_FIELD_REAL
 
-  end subroutine ef_set_real
+  end subroutine edge_field_set_real_vector
 
-  pure subroutine ef_get_complex(this, values)
+  pure subroutine edge_field_get_complex_vector(this, values)
 
     class(edge_field), intent(in)         :: this
     complex(dp), allocatable, intent(out) :: values(:)
@@ -595,9 +595,9 @@ contains
        allocate(values(0))
     end if
 
-  end subroutine ef_get_complex
+  end subroutine edge_field_get_complex_vector
 
-  pure subroutine ef_set_complex(this, values)
+  pure subroutine edge_field_set_complex_vector(this, values)
 
     class(edge_field), intent(inout) :: this
     complex(dp)      , intent(in)    :: values(:)
@@ -605,9 +605,9 @@ contains
     this % cvals = values
     this % vkind = GRAPH_FIELD_COMPLEX
 
-  end subroutine ef_set_complex
+  end subroutine edge_field_set_complex_vector
 
-  pure subroutine ef_get_logical(this, values)
+  pure subroutine edge_field_get_logical_vector(this, values)
 
     class(edge_field), intent(in)     :: this
     logical, allocatable, intent(out) :: values(:)
@@ -618,9 +618,9 @@ contains
        allocate(values(0))
     end if
 
-  end subroutine ef_get_logical
+  end subroutine edge_field_get_logical_vector
 
-  pure subroutine ef_set_logical(this, values)
+  pure subroutine edge_field_set_logical_vector(this, values)
 
     class(edge_field), intent(inout) :: this
     logical          , intent(in)    :: values(:)
@@ -628,9 +628,9 @@ contains
     this % lvals = values
     this % vkind = GRAPH_FIELD_LOGICAL
 
-  end subroutine ef_set_logical
+  end subroutine edge_field_set_logical_vector
 
-  pure subroutine ef_get_character(this, values)
+  pure subroutine edge_field_get_character_vector(this, values)
 
     class(edge_field), intent(in)              :: this
     character(len=:), allocatable, intent(out) :: values(:)
@@ -641,9 +641,9 @@ contains
        allocate(character(len=1) :: values(0))
     end if
 
-  end subroutine ef_get_character
+  end subroutine edge_field_get_character_vector
 
-  pure subroutine ef_set_character(this, values)
+  pure subroutine edge_field_set_character_vector(this, values)
 
     class(edge_field), intent(inout) :: this
     character(len=*) , intent(in)    :: values(:)
@@ -651,6 +651,6 @@ contains
     this % svals = values
     this % vkind = GRAPH_FIELD_CHARACTER
 
-  end subroutine ef_set_character
+  end subroutine edge_field_set_character_vector
 
 end module class_graph_field

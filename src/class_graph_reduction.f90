@@ -110,16 +110,16 @@ module class_graph_reduction
      ! Start empty, fold values in, join two parts, finish once.
      !----------------------------------------------------------------!
 
-     procedure :: initialize   => r_initialize
-     procedure :: accumulate => r_accumulate
-     procedure :: combine    => r_combine
-     procedure :: finalize   => r_finalize
+     procedure :: initialize
+     procedure :: accumulate
+     procedure :: combine
+     procedure :: finalize
 
      !----------------------------------------------------------------!
      ! All four at once, for a caller holding the whole thing.
      !----------------------------------------------------------------!
 
-     procedure :: reduce => r_reduce
+     procedure :: reduce
 
   end type reduction
 
@@ -157,7 +157,7 @@ contains
   ! same number, so nothing is lost by starting either way.
   !===================================================================!
 
-  pure subroutine r_initialize(this, state)
+  pure subroutine initialize(this, state)
 
     class(reduction), intent(in)                            :: this
     class(graph_functional), allocatable, intent(inout)     :: state
@@ -186,13 +186,13 @@ contains
 
     end select
 
-  end subroutine r_initialize
+  end subroutine initialize
 
   !===================================================================!
   ! Fold one part's values into the running answer.
   !===================================================================!
 
-  pure subroutine r_accumulate(this, input_graph, field, support, state, measure)
+  pure subroutine accumulate(this, input_graph, field, support, state, measure)
 
     class(reduction)       , intent(in)    :: this
     class(graph)           , intent(in)    :: input_graph
@@ -308,7 +308,7 @@ contains
 
     end select
 
-  end subroutine r_accumulate
+  end subroutine accumulate
 
   !===================================================================!
   ! One weight per entry: the measure if there is one, otherwise one.
@@ -338,7 +338,7 @@ contains
   ! which image finishes first.
   !===================================================================!
 
-  pure subroutine r_combine(this, left, right, combined)
+  pure subroutine combine(this, left, right, combined)
 
     class(reduction)       , intent(in)    :: this
     class(graph_functional), intent(in)    :: left
@@ -405,7 +405,7 @@ contains
 
     end select
 
-  end subroutine r_combine
+  end subroutine combine
 
   !===================================================================!
   ! Finish, once, after every part has been folded in. This is where
@@ -413,7 +413,7 @@ contains
   ! any earlier is exactly the bug the four steps exist to prevent.
   !===================================================================!
 
-  pure subroutine r_finalize(this, state, functional)
+  pure subroutine finalize(this, state, functional)
 
     class(reduction)       , intent(in) :: this
     class(graph_functional), intent(in) :: state
@@ -455,7 +455,7 @@ contains
 
     end select
 
-  end subroutine r_finalize
+  end subroutine finalize
 
   !===================================================================!
   ! All four steps for a caller holding the whole graph.
@@ -465,7 +465,7 @@ contains
   ! distributed reduction would sum here before finalizing.
   !===================================================================!
 
-  subroutine r_reduce(this, input_graph, field, support, functional, measure)
+  subroutine reduce(this, input_graph, field, support, functional, measure)
 
     class(reduction)    , intent(in) :: this
     class(graph)        , intent(in) :: input_graph
@@ -480,6 +480,6 @@ contains
     call this % accumulate(input_graph, field, support, state, measure)
     call this % finalize(state, functional)
 
-  end subroutine r_reduce
+  end subroutine reduce
 
 end module class_graph_reduction

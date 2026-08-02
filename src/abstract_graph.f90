@@ -44,7 +44,7 @@
 !                     i ----------o         edge_tail(b) = i
 !                                           edge_has_head(b) = .false.
 !
-! The second one hangs off vertex i and stops. That is a boundary
+! The second edge is attached to vertex i alone. That is a boundary
 ! face, and this is how it is written without inventing an imaginary
 ! cell on the far side of the wall.
 !
@@ -92,7 +92,7 @@
 !        graph_edge_functional_operation
 !
 ! An operation is placed by two questions and no others. Where does it
-! live, and what does it hand back?
+! live, and what does it return?
 !
 !                        gives back a field    gives back one value
 !                        ------------------    --------------------
@@ -112,7 +112,7 @@
 !
 !    graph_functional
 !         a NUMBER. It has no support and no cells. It is the answer,
-!         and once it exists nothing remembers where it came from.
+!         and once it exists no record of its origin remains.
 !
 !    graph_vertex_functional_operation
 !         a WAY OF GETTING one, by looking at cells. It owns the cells
@@ -122,7 +122,7 @@
 !         the same, by looking at faces.
 !
 ! So the two operations differ in where they look; the functional they
-! both hand back is the same kind of thing. That is why the functional
+! both return is the same kind of thing. That is why the functional
 ! does not split into vertex and edge halves - a number reduced from
 ! cells and a number reduced from faces are both just numbers.
 !
@@ -147,13 +147,13 @@
 !
 ! Boundary conditions live on the faces that have only one cell:
 !
-!    B_b = what boundary face b contributes to the cell i it hangs off
+!    B_b = what boundary face b contributes to its one cell i
 !
 ! An objective is a number, so it is a functional - and it can be
 ! reached either way round. Drag adds up what every wall FACE pushes,
 ! so it comes from an edge functional operation. Total energy adds up
 ! what every CELL holds, so it comes from a vertex functional
-! operation. Both hand back the same kind of thing, a single number,
+! operation. Both return the same kind of thing, a single number,
 ! which is why the functional itself does not care which way it was
 ! reached.
 !
@@ -198,7 +198,7 @@
 !                    \______________/
 !                       the overlap of part 1
 !
-! A part graph is still a graph. It carries the relation back to the
+! A part graph is still a graph. It holds the relation back to the
 ! whole - how many parts, which part owns what, and the index maps both
 ! ways - because the assembler must read that relation rather than
 ! invent one.
@@ -213,7 +213,7 @@
 ! one answer, fixed here, and the whole file is written assuming it.
 !
 ! WHERE A VALUE SITS. Suppose a support lists three cells in the
-! order 7, 3, 11, and a field on that support carries two components
+! order 7, 3, 11, and a field on that support holds two components
 ! per cell. The field keeps its values in that same order, with the
 ! components of each cell side by side:
 !
@@ -234,7 +234,7 @@
 ! fixed, those are one-line formulas, and a formula needs no
 ! procedure.
 !
-! CAN A GRAPH CHANGE? No. Everything a graph carries - structure,
+! CAN A GRAPH CHANGE? No. Everything a graph holds - structure,
 ! geometry, tags, its relation to the whole it came from - goes in at
 ! construction, and no procedure below accepts data afterwards. When
 ! an operation computes something new, the result leaves through that
@@ -242,7 +242,7 @@
 ! graph the same question twice and it gives the same answer twice,
 ! no matter what ran in between. A graph that could be written to
 ! would answer according to its history, and every caller would then
-! need to know that history.
+! depend on that history.
 !
 ! WHAT apply DOES TO A LENT BUFFER. It writes the result into it and
 ! never adds to what was there. The output argument is intent(inout)
@@ -304,7 +304,7 @@ module abstract_graph_types
   integer, parameter :: GRAPH_SUPPORT_VERTEX = 1
   integer, parameter :: GRAPH_SUPPORT_EDGE   = 2
 
-  ! The kind of value a field or a functional carries.
+  ! The kind of value a field or a functional holds.
   integer, parameter :: GRAPH_FIELD_INTEGER   = 1
   integer, parameter :: GRAPH_FIELD_REAL      = 2
   integer, parameter :: GRAPH_FIELD_COMPLEX   = 3
@@ -320,8 +320,8 @@ module abstract_graph_types
   !      | 1 2 3 4 5 6 |          |  11  14  19 |
   !      +-------------+          +-------------+
   !
-  ! These three types carry the only thing that tells a vertex from an
-  ! edge anywhere else in this file. Take them away and the vertex and
+  ! These three types hold the only distinction between a vertex and an
+  ! edge visible to the rest of this file. Take them away and the vertex and
   ! edge fields, and the vertex and edge operations, have nothing left
   ! to declare.
   !===================================================================!
@@ -367,22 +367,22 @@ module abstract_graph_types
   !
   ! It owns no geometry, no physics, no solver behaviour, no storage.
   !
-  ! The queries below fall into two kinds, by how often a caller asks
-  ! them, and the answers are shaped to match:
+  ! The queries below fall into two kinds, by how often they are
+  ! called, and the results are shaped to match:
   !
-  !   named sets       asked once, when an operation begins
-  !                    ---> hand back a support
+  !   named sets       called once, when an operation begins
+  !                    ---> return a support
   !
-  !   walking          asked once per vertex, inside a loop, a billion
+  !   walking          called once per vertex, inside a loop, a billion
   !                    times over a run
-  !                    ---> hand back plain indices, nothing to allocate
+  !                    ---> return plain indices, nothing to allocate
   !===================================================================!
 
   type, abstract :: graph
    contains
 
      !----------------------------------------------------------------!
-     ! Who am I and how big am I.
+     ! Identity and size.
      !----------------------------------------------------------------!
 
      procedure(graph_id_interface)          , deferred :: id
@@ -398,7 +398,7 @@ module abstract_graph_types
      !     tail i, head j             tail i, no head
      !     an interior face           a boundary face
      !
-     ! An edge without a head lets a wall hang off one cell without
+     ! An edge without a head attaches a wall to one cell without
      ! inventing an imaginary cell on the far side of it.
      !----------------------------------------------------------------!
 
@@ -415,7 +415,7 @@ module abstract_graph_types
      !      tagged    .. whichever ones carry the name you ask for
      !
      ! These are named rather than chosen by a number, so that the
-     ! compiler checks the promise. With a selector integer every
+     ! compiler checks each query. With a selector integer every
      ! implementation could read "boundary" its own way and nothing
      ! would catch it.
      !----------------------------------------------------------------!
@@ -451,7 +451,7 @@ module abstract_graph_types
      !
      ! The part is named rather than assumed, because a partition here
      ! is replicated: every image builds every part, so one image
-     ! routinely asks about a part it does not own.
+     ! routinely queries a part it does not own.
      !----------------------------------------------------------------!
 
      procedure(graph_part_vertices_interface), deferred :: owned_vertices
@@ -508,8 +508,8 @@ module abstract_graph_types
      !
      ! A caller who does not care about direction should ask
      ! incident_edges and adjacent_vertices instead. Those two are the
-     ! undirected questions, and they are the ones a finite-volume
-     ! sweep wants: a face joins two cells, and which way it was
+     ! undirected questions, and they are the two a finite-volume
+     ! sweep needs: a face joins two cells, and which way it was
      ! written down is bookkeeping, not physics. Direction matters for
      ! a matrix, a dependency order, or an adjoint walk.
      !----------------------------------------------------------------!
@@ -555,8 +555,8 @@ module abstract_graph_types
      ! scatter.
      !
      ! This lives on the graph rather than on the partitioner, because
-     ! the partitioner has finished by the time anyone asks, and the
-     ! assembler must read the relation rather than invent one.
+     ! the partitioner has finished before these queries run, and the
+     ! assembler reads the relation; it does not construct one.
      !----------------------------------------------------------------!
 
      procedure(graph_num_parts_interface)        , deferred :: num_parts
@@ -579,8 +579,8 @@ module abstract_graph_types
   end type graph
 
   !===================================================================!
-  ! DATA. A field carries a value for every entry of a support. A
-  ! functional carries one value, reduced from a field.
+  ! DATA. A field holds a value for every entry of a support. A
+  ! functional holds one value, reduced from a field.
   !
   !      field on a support              reduction        functional
   !
@@ -622,7 +622,7 @@ module abstract_graph_types
      !
      ! Character fields are real data, not a curiosity: boundary group
      ! names, material names, region labels. A numeric operation may
-     ! refuse one, but the contract must not assume every field is a
+     ! reject one, but the contract must not assume every field is a
      ! number.
      !----------------------------------------------------------------!
 
@@ -754,14 +754,14 @@ module abstract_graph_types
   !
   ! The work state is a functional that is not finished yet, which is
   ! what keeps every procedure here free of any numeric type. A
-  ! running average carries a sum and a count; an argument minimum
-  ! carries a value and a location. Those live inside the concrete
+  ! running average holds a sum and a count; an argument minimum
+  ! holds a value and a location. Those live inside the concrete
   ! work state, never in this contract.
   !
   ! The four building steps are pure. The convenience that runs them
   ! all is not pure, because a reduction across images sums there.
   !
-  ! The three that hand back a state are intent(inout) rather than
+  ! The three that return a state are intent(inout) rather than
   ! intent(out) because Fortran forbids a polymorphic intent(out)
   ! argument in a pure procedure. Each must therefore clear a live
   ! state before allocating, which also lets a caller lend one.
@@ -879,7 +879,7 @@ module abstract_graph_types
 
   !===================================================================!
   ! OPERATIONS. The whole taxonomy is two questions: does it live on
-  ! vertices or on edges, and does it hand back a field or one value.
+  ! vertices or on edges, and does it return a field or one value.
   !
   !                        gives back a field    gives back one value
   !                        ------------------    --------------------
@@ -888,7 +888,7 @@ module abstract_graph_types
   !
   ! Interior, boundary, tagged, owned, borrowed and overlap are not
   ! kinds of operation. They are the sets an operation is pointed at.
-  ! The type says what is being worked out; the support says where.
+  ! The type determines what is computed; the support determines where.
   !
   ! A sequence of operations is itself an operation, which is why
   ! there is nothing here that schedules them.
@@ -909,7 +909,7 @@ module abstract_graph_types
    contains
 
      !----------------------------------------------------------------!
-     ! Which vertices it works on. Asked once, not per vertex.
+     ! Which vertices it works on. Called once, not per vertex.
      !----------------------------------------------------------------!
 
      procedure(vertex_operation_support_interface), deferred :: support
@@ -920,7 +920,7 @@ module abstract_graph_types
    contains
 
      !----------------------------------------------------------------!
-     ! Which edges it works on. Asked once, not per edge.
+     ! Which edges it works on. Called once, not per edge.
      !----------------------------------------------------------------!
 
      procedure(edge_operation_support_interface), deferred :: support
@@ -1043,7 +1043,7 @@ module abstract_graph_types
      end function graph_edge_has_head_interface
 
      !===============================================================!
-     ! The named sets. Asked once, when an operation begins, so the
+     ! The named sets. Called once, when an operation begins, so the
      ! answer is a support and the cost is spread over a whole sweep.
      !===============================================================!
 
@@ -1088,7 +1088,7 @@ module abstract_graph_types
      end subroutine graph_part_edges_interface
 
      !===============================================================!
-     ! Walking the graph. Asked once per vertex, inside loops, so the
+     ! Walking the graph. Called once per vertex, inside loops, so the
      ! answer is bare indices and the procedure is pure. Handing back a
      ! support here would allocate three times per neighbour query.
      !===============================================================!
@@ -1115,14 +1115,14 @@ module abstract_graph_types
      end function graph_num_parts_interface
 
      !---------------------------------------------------------------!
-     ! Does this graph remember where it came from?
+     ! Does this graph hold a partition record?
      !
      !      straight off a mesh file  ->  no
      !      out of a partitioner      ->  yes
      !
-     ! An assembler asks this first. Without the relation there is no
-     ! way back to whole-graph order, and it should say so rather than
-     ! guess.
+     ! An assembler checks this first. Without the relation there is no
+     ! way back to whole-graph order, and this check reports that
+     ! rather than assuming a map.
      !---------------------------------------------------------------!
 
      pure logical function graph_has_part_relation_interface(this)
@@ -1146,9 +1146,9 @@ module abstract_graph_types
      !
      !      full_vertex_index(2) = 4
      !
-     ! Read that as: the graph in your hand calls this cell 2; the
-     ! whole graph it was cut from called it 4. Ask an uncut graph and
-     ! you get back what you gave it, because it is its own whole.
+     ! Read that as: the part numbers this cell 2; the whole graph it
+     ! was cut from numbered it 4. For an uncut graph the result
+     ! equals the argument, because the graph is its own whole.
      !
      ! An assembler walks the cells of the part it was handed and uses
      ! this to find where each value belongs in the whole. A file
@@ -1168,8 +1168,8 @@ module abstract_graph_types
      !      part_vertex_index(4, 2) = 2
      !
      ! The part is named because the partition here is replicated -
-     ! every image builds every part, so one image regularly asks
-     ! about a part it does not own.
+     ! every image builds every part, so one image regularly
+     ! queries a part it does not own.
      !---------------------------------------------------------------!
 
      pure integer function graph_part_id_interface(this, full_index, part_id)
@@ -1200,9 +1200,9 @@ module abstract_graph_types
      !===============================================================!
 
      !---------------------------------------------------------------!
-     ! Does this graph carry something by that name? An operation asks
-     ! before it reaches, so a mesh without face normals says no
-     ! rather than crashing.
+     ! Does data with that name exist on this graph? An operation
+     ! checks before it fetches, so a mesh without face normals
+     ! produces .false. rather than a crash.
      !---------------------------------------------------------------!
 
      pure logical function graph_has_data_interface(this, name)
@@ -1221,8 +1221,8 @@ module abstract_graph_types
      !      get_data('boundary_name')   -> a character edge field
      !
      ! This is how geometry reaches an operation without being passed
-     ! down through every call. A flux asks the graph for the normal
-     ! and the distance; nobody has to hand them over.
+     ! down through every call. A flux queries the graph for the
+     ! normal and the distance; no caller passes them down.
      !
      ! Read only. Whatever gets computed leaves as an operation's
      ! output and never comes back here to be stored.
@@ -1289,8 +1289,8 @@ module abstract_graph_types
      end function field_value_kind_interface
 
      !---------------------------------------------------------------!
-     ! THE PLAIN-VECTOR ADAPTERS. A way in and out for code that does
-     ! not speak graph.
+     ! THE PLAIN-VECTOR ADAPTERS. A way in and out for code that
+     ! does not use these types.
      !
      !      field  ---get--->  [ v1 v2 v3 v4 ]  ---> a Krylov solver,
      !                                                a file writer,
@@ -1306,7 +1306,7 @@ module abstract_graph_types
      ! number, a visit order. Real for the ordinary state. Complex for
      ! a complex-step derivative. Logical for a mask. Character for
      ! boundary group names and material names - those are real data
-     ! too, and a numeric operation is free to refuse them.
+     ! too, and a numeric operation may reject them.
      !---------------------------------------------------------------!
 
      pure subroutine field_get_integer_interface(this, values)
@@ -1551,25 +1551,24 @@ module abstract_graph_types
      !===============================================================!
 
      !---------------------------------------------------------------!
-     ! Can this transform say anything about that graph?
+     ! Does this transform have the data it needs for that graph?
      !
-     ! Note what it is NOT for. It is not for refusing work that has
-     ! an obvious answer. A graph already in one piece is already
-     ! assembled, so assembling it hands the same graph back. A graph
-     ! down to a single cell is as coarse as it gets, so coarsening it
-     ! hands the same graph back. Doing nothing is a perfectly good
-     ! answer and needs no permission.
+     ! This test does not exist to reject work with an obvious
+     ! result. A graph already in one piece is already assembled, so
+     ! assembling it returns the same graph. A graph at one cell is
+     ! as coarse as a graph gets, so coarsening returns it unchanged.
+     ! Returning the input unchanged is a valid result and requires
+     ! no test.
      !
-     ! What is left is the case where the transform genuinely cannot
-     ! speak: it needs something the graph does not carry. A cut on
-     ! cell positions needs positions, and a graph is only vertices
-     ! and edges - positions ride on it as data, by name, and may
-     ! simply be absent.
+     ! The test covers the remaining case: the transform requires
+     ! data the graph does not hold. A cut on cell positions requires
+     ! positions, and a graph is only vertices and edges - positions
+     ! arrive as data, by name, and may be absent.
      !
      !      has_data('cell_centre')  ->  .false.  ->  cannot cut on
      !                                                where things are
      !
-     ! So this answers "do I have what I need", not "will I bother".
+     ! So the test is data availability, nothing else.
      !---------------------------------------------------------------!
 
      pure logical function transform_on_graph_interface(this, input_graph)
@@ -1606,8 +1605,8 @@ module abstract_graph_types
      !      aggregate        glue small clusters together
      !      adopted          take a map computed elsewhere
      !
-     ! What comes out is still a graph. It simply also knows how it
-     ! relates back to the whole.
+     ! What comes out is still a graph. It also holds the record of how
+     ! it relates back to the whole.
      !---------------------------------------------------------------!
 
      subroutine partition_graph_interface(this, full_graph, part_graph)
@@ -1710,8 +1709,8 @@ module abstract_graph_types
      !
      !         O   O                  o o o o
      !                   ------>      o o o o     more detail where an
-     !         O   O                  o o o o     error measure says it
-     !                                            is needed
+     !         O   O                  o o o o     error measure requires
+     !                                            it
      !
      ! Used to sharpen a mesh around a shock or a boundary layer, and
      ! to carry a coarse multigrid correction back down.
@@ -1726,7 +1725,7 @@ module abstract_graph_types
 
      !---------------------------------------------------------------!
      ! Carry the data down. One coarse value feeds several fine ones,
-     ! so this says how it spreads - copied straight down, or
+     ! so a choice is required: copied straight down, or
      ! interpolated so the result stays smooth across the new cells.
      !---------------------------------------------------------------!
 
@@ -1747,7 +1746,7 @@ module abstract_graph_types
 
      !---------------------------------------------------------------!
      ! What to call this operation in a log line, a configuration
-     ! file, or the message when it refuses to run.
+     ! file, or the message when it rejects its input.
      !
      !      'diffusion flux'   'wall condition'   'cell source'
      !---------------------------------------------------------------!
@@ -1759,14 +1758,15 @@ module abstract_graph_types
      end function operation_name_interface
 
      !---------------------------------------------------------------!
-     ! Which cells am I responsible for? Asked once; everything after
-     ! it is a loop. The type says what is worked out, this says where.
+     ! Which cells does this operation cover? Called once; everything
+     ! after it is a loop. The type determines what is computed; the
+     ! support determines where.
      !
      !      a source everywhere   -> all_vertices
      !          o  o  o  o  o  o      every cell
      !
      !      a heater in a patch   -> tagged_vertices('heater')
-     !          .  .  o  o  .  .      only the ones carrying the name
+     !          .  .  o  o  .  .      only the ones holding the name
      !
      !      my share of the work  -> owned_vertices(me)
      !          o  o  o  .  .  .      the rest belong to someone else
@@ -1808,7 +1808,7 @@ module abstract_graph_types
      !            o   o   o     --apply-->      +   +   +
      !            o   o   o                     +   +   +
      !
-     ! Who asks for this:
+     ! Typical uses:
      !
      !      a source or reaction     S(q) added to every cell
      !      a mass or storage term   how much a cell can hold
@@ -1840,7 +1840,7 @@ module abstract_graph_types
      !            o  o  o  o    --apply-->    J
      !            o  o  o  o
      !
-     ! Who asks for this:
+     ! Typical uses:
      !
      !      total energy in the field
      !      an objective a design optimiser is trying to move
@@ -1871,7 +1871,7 @@ module abstract_graph_types
      ! At a wall there is no cell on the far side:
      !
      !            (i) ----------------o
-     !            q_i                  the tag says what is out there
+     !            q_i                  the tag identifies the condition there
      !
      ! Either way the balance then folds F onto the cells it touches,
      ! once and only once:
@@ -1898,7 +1898,7 @@ module abstract_graph_types
      !      tagged_edges('wall')
      !           |  |  |  |  |      --apply-->    J
      !
-     ! Who asks for this:
+     ! Typical uses:
      !
      !      drag and lift, by adding up what every wall face pushes
      !      the heat passing through a named surface

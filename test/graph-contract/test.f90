@@ -169,15 +169,15 @@ end module nonlinear_sample_support
 !      the assembler one part at a time.
 !  18. The third law: a sum worked out on the whole graph agrees with
 !      the same sum worked out piecewise and joined, provided only the
-!      owned cells of each piece are folded in.
+!      owned cells of each piece are counted in.
 !  19. Coarsening and refinement: six cells glued in pairs make three
 !      blocks, faces inside a block vanish, values average onto the
 !      blocks or add when told to, and refinement holds them back
 !      down to every child.
 !  20. Edge contributions reduced through incidence exactly once. On a
 !      closed ring with no walls the balance must sum to zero, however
-!      lopsided the state and however many face terms there are.
-!      Fold a face twice and the sum is wrong by that face; miss one
+!      lopsided the state and however many edge terms there are.
+!      Count an edge twice and the sum is wrong by that edge; miss one
 !      and it is wrong the other way. Neither crashes. Open the ring
 !      and the sum stops cancelling, which is the negative control -
 !      without it the check would also pass on a balance that returned
@@ -941,7 +941,7 @@ contains
     f2 = vertex_field('q', s2)
     call f2 % set_real_vector([5.0_dp, 9.0_dp])
 
-    ! Each part folds on its own, and neither one divides.
+    ! Each part accumulates on its own, and neither one divides.
     call rule % initialize(a)
     call rule % accumulate(g, f1, s1, a)
 
@@ -1233,8 +1233,8 @@ contains
   ! A is a sum - the smallest operation that exercises the law - and
   ! the pieces are joined by the reduction's own combine.
   !
-  ! Only the owned cells of each piece are folded in. Fold the
-  ! borrowed ones too and the shared cell is counted twice - which is
+  ! Only the owned cells of each piece are counted in. Count the
+  ! borrowed ones too and the shared cell appears twice - which is
   ! the whole reason a reduction has to know about ownership.
   !===================================================================!
 
@@ -1277,7 +1277,7 @@ contains
        call p % partition_graph(g, part)
        call p % partition_data(g, d, part, pd)
 
-       ! Fold in this piece's owned cells only.
+       ! Accumulate this piece's owned cells only.
        call part % owned_vertices(k, vs)
        call vs % vertex_indices(indices)
 
@@ -1512,9 +1512,9 @@ contains
     ok = ok .and. abs(sum(v)) < 1.0d-12
 
     call report(ok, &
-         & "on a closed ring the balance sums to zero - every face folded once", nfail)
+         & "on a closed ring the balance sums to zero - every edge once", nfail)
 
-    ! Two edge terms, not one. Each is folded through incidence in
+    ! Two edge terms, not one. Each is reduced through incidence in
     ! its turn, so the sum still has to cancel.
     bal = balance(edge_terms=[gradient(coefficient=1.0_dp), &
          &                    interpolation(coefficient=0.5_dp)])
@@ -1522,7 +1522,7 @@ contains
     call bal % apply(ring, [q], y)
     call y % get_real_vector(v)
     call report(abs(sum(v)) < 1.0d-12, &
-         & "two edge terms fold once each, and still cancel", nfail)
+         & "two edge terms reduce once each, and still cancel", nfail)
 
     ! Pass the same buffer twice. The second call replaces the result
     ! rather than adding to it, so the sum is still zero rather than
@@ -1753,7 +1753,7 @@ contains
     call op % apply(g3, [q], yf)
     call yf % get_real_vector(y)
     call report(abs(y(2) - 8.0_dp) < 1.0d-12, &
-         & "per-edge coefficients: the middle cell folds to eight", nfail)
+         & "per-edge coefficients: the middle vertex sums to eight", nfail)
 
     ! Divergence of a given edge field: a ring with samples 1,2,3,4.
     ! Out minus in at each vertex: -3, 1, 1, 1.
@@ -1766,13 +1766,14 @@ contains
     call yf % get_real_vector(y)
     call report(abs(y(1) + 3.0_dp) < 1.0d-12 .and. &
          &      all(abs(y(2:4) - 1.0_dp) < 1.0d-12), &
-         & "divergence of an edge field is its fold, hand-checked", nfail)
+         & "an edge field at order one is its incidence sum, hand-checked", nfail)
 
     ! An edge field at order two, with per-edge coefficients: the
     ! coefficient scales the given samples once, before the first
-    ! fold, and never again in the deeper chain. By hand, with
+    ! incidence step, and never again in the deeper chain. By hand,
+    ! with
     ! samples 1,2,3,4 and coefficients 2,1,1,1 around the ring:
-    ! scaled samples 2,2,3,4; first fold -2,0,1,1; then the order-1
+    ! scaled samples 2,2,3,4; first reduction -2,0,1,1; then the order-1
     ! chain on that: -3, 2, 1, 0.
     op = vertex_differential_operator(order=2, &
          & coefficients=[2.0_dp, 1.0_dp, 1.0_dp, 1.0_dp])
@@ -1875,7 +1876,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                     :: border
-    type(vertex_differential_operator)     :: fold
+    type(vertex_differential_operator)     :: reduce_edges
     class(graph_vertex_field), allocatable :: yf
     type(edge_support)                     :: eon
     type(edge_field)                       :: zf
@@ -1889,14 +1890,14 @@ contains
     border = stored_graph(5, tails=[1, 2, 3, 4], heads=[5, 5, 5, 5])
     eon    = edge_support([1, 2, 3, 4])
     zf     = edge_field('z', eon)
-    fold   = divergence()
+    reduce_edges = divergence()
 
     ! A difference field around the square: values q at the corners,
     ! each edge holding the difference of its ends.
     qsq = [3.0_dp, 7.0_dp, -2.0_dp, 5.0_dp]
     call zf % set_real_vector([qsq(2) - qsq(1), qsq(3) - qsq(2), &
          &                     qsq(4) - qsq(3), qsq(1) - qsq(4)])
-    call fold % apply(border, [zf], yf)
+    call reduce_edges % apply(border, [zf], yf)
     call yf % get_real_vector(y)
     call report(abs(y(5)) < 1.0d-12, &
          & "the curl of a difference field is exactly zero", nfail)
@@ -1905,7 +1906,7 @@ contains
     ! walk collects it four times, and the answer must not be zero -
     ! a check that cannot fail proves nothing.
     call zf % set_real_vector([1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp])
-    call fold % apply(border, [zf], yf)
+    call reduce_edges % apply(border, [zf], yf)
     call yf % get_real_vector(y)
     call report(abs(y(5)) > 1.0d-12, &
          & "and a circulating field does not cancel", nfail)
@@ -2065,14 +2066,14 @@ contains
   ! contract rather than about any formula:
   !
   ! First, the edge leaf accepts any per-edge function of the two end
-  ! values - nothing assumes linearity - and its output feeds the
-  ! fold like any other edge field.
+  ! values - nothing assumes linearity - and its output reduces
+  ! through incidence like any other edge field.
   !
-  ! Second, conservation belongs to the fold, not to the formula.
-  ! Whatever an edge holds, the fold gives it to one cell and takes
+  ! Second, conservation belongs to incidence, not to the formula.
+  ! Whatever an edge holds, incidence gives it to one vertex and takes
   ! it from the other, so around a closed ring the total is zero for
-  ! ANY formula. This is the property that lets a wave-speed flux be
-  ! as nonlinear as it likes without breaking conservation.
+  ! ANY formula. This is the property that lets a wave-speed formula
+  ! be as nonlinear as it likes without breaking conservation.
   !
   ! Third, the lagged-coefficient path: coefficients computed FROM
   ! the state, loaded into a linear operator, applied - the loop a
@@ -2085,7 +2086,7 @@ contains
 
     type(stored_graph)                     :: ring
     type(nonlinear_sample)                 :: formula
-    type(vertex_differential_operator)     :: fold
+    type(vertex_differential_operator)     :: reduce_edges
     class(graph_edge_field), allocatable   :: zf
     class(graph_vertex_field), allocatable :: yf
     type(vertex_support)                   :: on
@@ -2109,18 +2110,18 @@ contains
     call report(abs(z(1) - 0.5_dp * (q(1) + q(2)) * abs(q(2) - q(1))) < 1.0d-12, &
          & "an edge formula nonlinear in both ends runs on the leaf", nfail)
 
-    ! Conservation belongs to the fold: the fold of ANY edge field
+    ! Conservation belongs to incidence: the sum of ANY edge field
     ! over a closed ring sums to zero, this formula included. (The
     ! samples ride in a concrete field; gfortran 11 cannot build an
     ! array constructor from a polymorphic item.)
     eon     = edge_support([1, 2, 3, 4])
     samples = edge_field('z', eon)
     call samples % set_real_vector(z)
-    fold = divergence()
-    call fold % apply(ring, [samples], yf)
+    reduce_edges = divergence()
+    call reduce_edges % apply(ring, [samples], yf)
     call yf % get_real_vector(y)
     call report(abs(sum(y)) < 1.0d-12, &
-         & "the fold of any nonlinear formula conserves on a ring", nfail)
+         & "incidence conserves any nonlinear formula on a ring", nfail)
 
     ! The lagged-coefficient loop: compute per-edge numbers from the
     ! state - here the larger end magnitude, the shape of a wave
@@ -2131,8 +2132,8 @@ contains
        c(e) = max(abs(q(t)), abs(q(h)))
     end do
 
-    fold = vertex_differential_operator(order=2, coefficients=c)
-    call fold % apply(ring, [qf], yf)
+    reduce_edges = vertex_differential_operator(order=2, coefficients=c)
+    call reduce_edges % apply(ring, [qf], yf)
     call yf % get_real_vector(y)
 
     ! By hand at vertex 2: c2 (q3 - q2) - c1 (q2 - q1), with
@@ -2140,7 +2141,7 @@ contains
     call report(abs(y(2) - 32.0_dp) < 1.0d-12, &
          & "coefficients computed from the state drive the operator", nfail)
 
-    ! And the sum still vanishes: the weighted fold conserves too.
+    ! And the sum still vanishes: weighted incidence conserves too.
     call report(abs(sum(y)) < 1.0d-12, &
          & "and the state-dependent weights still conserve", nfail)
 

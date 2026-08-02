@@ -7,12 +7,12 @@ can go. Written 2026-08-02, as a proposal. Nothing here is built yet.
 ## the idea in one picture
 
 Every evaluation the engine performs is already a walk over a graph.
-A residual walks edges and folds; a time march walks a chain of
+A residual samples edges and reduces them; a time march walks a chain of
 instants; a functional walks a support and reduces. Draw what fed
 what and the evaluation IS a graph:
 
-    q ---> edge samples ---> folded balance ---> J
-              (operator)         (fold)        (reduction)
+    q ---> edge samples ---> reduced balance ---> J
+              (operator)      (incidence)      (reduction)
 
 Differentiation is then not a new kind of mathematics. It is a
 direction of travel on that graph, and there are exactly two:
@@ -70,11 +70,13 @@ built-in operators. That is the whole obligation, and it is the
 obligation the freeze-and-thaw pattern in the old assembler already
 imposed. Physics delegates; the walks are engine.
 
-## the evaluation graph, as an object
+## the pipeline, as an object
 
 The one new concrete thing: a type that records what fed what.
+The reviewer named it better than this plan first did: a pipeline,
+in module `class_graph_pipeline`.
 
-    type :: evaluation_graph
+    type :: graph_pipeline
        type(stored_graph)                              :: stages
        type(edge_differential_operator),   allocatable :: edge_stages(:)
        type(vertex_differential_operator), allocatable :: vertex_stages(:)
@@ -82,7 +84,7 @@ The one new concrete thing: a type that records what fed what.
     end type
 
 Its vertices are the stages of an evaluation - state in, samples,
-folds, functional out. Its edges say "computed from". A model builds
+reductions, functional out. Its edges say "computed from". A model builds
 it from what it already declares: the balance's term lists, the
 integrator's stencil, the reduction at the end. And because it is a
 stored_graph underneath, everything the engine does to graphs applies
@@ -91,11 +93,11 @@ order, and its reversal is the adjoint's itinerary.
 
 The two walks over it:
 
-    tangent(eg, x, dx)  ->  dJ      visit stages in order, each
+    tangent(p, x, dx)  ->  dJ      visit stages in order, each
                                     applying its operator to the
                                     incoming tangent
 
-    adjoint(eg, x, dJ)  ->  dx      visit stages in reverse, each
+    adjoint(p, x, dJ)  ->  dx      visit stages in reverse, each
                                     applying its operator with the
                                     adjoint flag raised
 
@@ -104,7 +106,7 @@ engine. Neither allocates per stage.
 
 ## any order, by walks over walks
 
-A walk is itself an evaluation, so it has its own evaluation graph,
+A walk is itself an evaluation, so it has its own pipeline,
 and the two walks apply to it again. Order grows by composition,
 exactly as operator order grew by repeating steps:
 
@@ -135,19 +137,31 @@ machinery for it exists end to end, checked at 4e-20. A physics
 class that provides nothing beyond its linearization still gets
 exact Hessians.
 
+## walks need not run end to end
+
+Transposes factor stage by stage - (C B A) transposed is A* B* C* -
+so any contiguous segment of a walk is itself a valid walk, and the
+pipeline treats a segment as an ordinary itinerary. Three uses fall
+out at once: checkpointed marches, which store a few instants and
+re-walk the segments between them; sensitivities with respect to an
+intermediate stage, read off mid-walk; and partial transposes as
+building blocks. This is a requirement of the design, not an
+afterthought: nothing in the pipeline may assume a walk starts at
+the first stage or ends at the last.
+
 ## time is the same structure, nested
 
-The unsteady case adds nothing new. The march is an evaluation graph
+The unsteady case adds nothing new. The march is a pipeline
 whose stages are instants and whose edges are the stencil - the
 time-integrator chain, verbatim. Each instant's stage operator is
-itself an evaluation graph over space. The unsteady adjoint is then
+itself a pipeline over space. The unsteady adjoint is then
 the reverse walk of the march, where visiting a stage means reverse
 walking its spatial graph:
 
     forward:   instant 1 ---> instant 2 ---> ... ---> instant N ---> J
     adjoint:   instant N <--- ... <--- instant 2 <--- instant 1
 
-    each box, opened, is a spatial evaluation graph
+    each box, opened, is a spatial pipeline
     walked in the matching direction
 
 Graphs whose stages hold graphs - the same move as the border graph
@@ -172,7 +186,7 @@ graph.
 
     a time scheme          its stencil, which it already exposes.
 
-    the engine             the evaluation graph type, the two walks,
+    the engine             the pipeline type, the two walks,
                            and the composition of letters.
 
 ## the checks that would pin it
@@ -180,7 +194,7 @@ graph.
 Every claim above has a machine-checkable form, in the style the
 suite already speaks:
 
-    pairing        tangent and adjoint walks of one evaluation graph
+    pairing        tangent and adjoint walks of one pipeline
                    pair as transposes - the matrix test, one level up
     cross-check    the adjoint-walk gradient equals the complex-step
                    gradient, entry for entry
@@ -193,7 +207,7 @@ suite already speaks:
 
 ## order of work
 
-1. The evaluation graph type and the two first-order walks, with the
+1. The pipeline type and the two first-order walks, with the
    pairing and cross-check tests. Small: the walks are loops, the
    operators exist.
 2. The reduction seats (two one-line procedures on the reduction).

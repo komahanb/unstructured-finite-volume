@@ -103,9 +103,11 @@ back.
 \end{tikzpicture}
 \end{center}
 
-\paragraph{The average step $S$} puts on each edge the average of its
-two end values, or -- when a direction matters -- the value at one
-end, chosen by the sign of the coefficient the operator carries:
+\paragraph{The edge average step $S$} puts on each edge the mean of $q$
+along the edge -- its integral over the edge divided by the edge's
+length, which for a straight-line $q$ is exactly the average of the
+two end values -- or, when a direction matters, the same integral
+read at one end, chosen by the sign of the coefficient:
 \[
 (Sq)_e = \tfrac{1}{2}(q_i + q_j)
 \qquad\text{or}\qquad
@@ -119,7 +121,7 @@ of its two end values over the spacing:
 \]
 This is the slope of $q$ along the edge.
 
-\paragraph{The fold step $D$} brings edge values back to the
+\paragraph{The incidence step $D$} brings edge values back to the
 vertices. Each vertex adds up the values on edges leaving it, minus
 the values on edges entering it, and divides by its measure:
 \[
@@ -151,11 +153,12 @@ At a boundary the missing end needs a value. The operator stores one
 in place of the value that is not there. This is where a boundary
 condition's \emph{data} enters; the operator itself does not change.
 
-One convention to fix now, because two are in use. The fold above is
+One convention to fix now, because two are in use. The incidence
+step above is
 \emph{out minus in}; it makes the derivative formulas of the next
 section come out with their textbook signs. The balance operation in
-the engine folds the other way -- in minus out -- because a balance
-counts what a vertex \emph{gains}. The two folds differ by a sign and
+the engine counts the other way -- in minus out -- because a balance
+counts what a vertex \emph{gains}. The two directions differ by a sign and
 both are stated where they appear. Nothing deeper is going on.
 
 \section{Any order, by repeating the steps}\label{sec:orders}
@@ -215,7 +218,7 @@ two edges at $i$,
 \qquad
 (Gq)_{(i,i+1)} = \frac{(i+1)^2 - i^2}{h} = \frac{2i+1}{h},
 \]
-and the fold step subtracts them and divides by $m=h$:
+and the incidence step subtracts them and divides by $m=h$:
 \[
 (DGq)_i = \frac{1}{h}\Bigl(\frac{2i+1}{h} - \frac{2i-1}{h}\Bigr)
         = \frac{2}{h^2}.
@@ -267,7 +270,7 @@ mesh quantity & graph home & used by \\
 cell               & vertex            & everything \\
 interior face      & edge with a head  & $S$, $G$, $D$ \\
 boundary face      & edge, no head     & boundary values \\
-cell volume $V_v$  & vertex measure $m_v$ & the fold step \\
+cell volume $V_v$  & vertex measure $m_v$ & the incidence step \\
 face area $A_e$ and conductivity $k_e$
                    & edge coefficient $c_e = k_e A_e$ & the difference step \\
 centre-to-centre distance $d_e$
@@ -357,9 +360,9 @@ of the walk around the face and $-1$ if it opposes it.
 
 \noindent
 On this second graph, the edge values of the original become a vertex
-field, and the fold step -- the same $D$ as everywhere in this note,
+field, and the incidence step -- the same $D$ as everywhere in this note,
 with the $\pm 1$ as its per-edge coefficients -- collects the walk
-around each face. The curl is the fold step on the border graph.
+around each face. The curl is the incidence step on the border graph.
 Nothing new is built.
 
 \begin{claim}[The curl of a difference field is zero]
@@ -405,8 +408,8 @@ edge reversed.
 \end{center}
 
 To see it, take the plain sums ($h = m = 1$ keeps the arithmetic
-bare; weights ride along unchanged). Pair a vertex field $p$ with a
-fold:
+bare; weights ride along unchanged). Pair a vertex field $p$ with an
+incidence step:
 \[
 \sum_v p_v\,(Dz)_v
  = \sum_e z_e\,\bigl(p_{\text{tail}(e)} - p_{\text{head}(e)}\bigr)
@@ -419,7 +422,7 @@ tail's row and $-z_e$ to its head's row. So
 \[
 D^{\!*} = -\,G, \qquad G^{\!*} = -\,D,
 \]
-and the one-sided average step's adjoint folds, unsigned, onto the
+and the one-sided average step's adjoint returns each value, unsigned, to the
 end it sampled. Reversing every edge swaps tail with head, which
 swaps out with in, which is exactly these transposes: the reverse
 walk.
@@ -431,7 +434,7 @@ Two consequences follow immediately:
 \]
 so the second-derivative operator is its own adjoint whenever the
 same per-edge coefficients sit on both steps -- and the order-1
-operator's adjoint samples from the \emph{other} end and folds the
+operator's adjoint samples from the \emph{other} end and counts the
 other way, which is precisely the reversed-flow operator a
 sensitivity solve requires. The engine gets both by a flag: run the
 walk backwards. No second implementation exists to drift out of
@@ -454,7 +457,7 @@ computes its owned share exactly; assembly collects owned values
 only; the pieces sum to the whole.
 
 One reduction subtlety travels with partitioning and is worth
-restating. A quantity like an average must be folded across parts
+restating. A quantity like an average must be combined across parts
 \emph{unfinished}: two parts averaging $2$ and $7$ combine to $4$ --
 twenty over five -- not $4.5$. The engine's reductions carry their
 running sums and counts together and divide once, at the end.
@@ -503,9 +506,9 @@ in this note & in the engine & kind \\
 \midrule
 vertex field $q$      & \texttt{vertex\_field}                & type \\
 edge field $z$        & \texttt{edge\_field}                  & type \\
-average step $S$      & \texttt{average\_step}                & kernel \\
+edge average step $S$ & \texttt{average\_step}                & kernel \\
 difference step $G$   & \texttt{difference\_step}             & kernel \\
-fold step $D$         & \texttt{fold\_step}                   & kernel \\
+incidence step $D$    & \texttt{incidence\_step}              & kernel \\
 operator, edge side   & \texttt{edge\_differential\_operator} & type \\
 operator, vertex side & \texttt{vertex\_differential\_operator} & type \\
 order $n$             & \texttt{order}                        & component \\

@@ -14,12 +14,12 @@ programming word I imported; the operation it names - the signed sum
 over the edges at a vertex, divided by the measure - has a familiar
 mathematical name, and the named layer already uses it: divergence.
 
-Action: the D step becomes **the divergence step** everywhere. Kernel
-names (`fold_step` becomes `divergence_step`, likewise the reversed
-one), every comment in the operator and balance files, the test
-labels that say "fold", the theory guide (recompiled), and the two
-planning documents. The letter D finally abbreviates what it always
-suggested.
+Action: the D step becomes **the incidence step** - resolved purer than
+this plan first proposed. Divergence is calculus's word and stays on
+the named constructor; incidence is the graph's own word, already in
+the architecture note ("incidence reduces z_e onto vertices"), and
+names the step in the engine's register. `fold_step` becomes
+`incidence_step`, with every comment, label and document following.
 
 ### 2. the division by two is systematic, and the comment will say why
 

@@ -12,14 +12,14 @@
 !
 ! Every face gives its number to the cell it leaves and takes it from
 ! the cell it enters. That is incidence, and it is the whole of the
-! folding.
+! reduction through incidence.
 !
 ! EXACTLY ONCE. Each face is walked one time and touches its two cells
 ! one time. Walk a face twice and the balance is wrong by that face;
 ! miss one and it is wrong by that face the other way. Neither shows
 ! up as a crash - it shows up as a solution that is quietly not the
-! solution, so the fold count is verified in the test suite rather
-! than assumed.
+! solution, so the incidence count is verified in the test suite
+! rather than assumed.
 !
 ! A wall face has no far cell, so its number lands on the one cell it
 ! touches and stops there:
@@ -125,7 +125,8 @@ contains
   !
   !    1. start every cell at its own source term
   !    2. for each face term, work out every face
-  !    3. fold each face onto the two cells it touches, once
+  !    3. reduce each edge onto the two vertices it touches, once,
+  !       through incidence
   !===================================================================!
 
   subroutine balance_apply(this, input_graph, input_data, output)
@@ -165,7 +166,8 @@ contains
           call this % edge_terms(k) % apply(input_graph, input_data, edge_values)
           call edge_values % get_real_vector(z)
 
-          ! And folded onto the vertices, each edge touching its two
+          ! And reduced onto the vertices through incidence, each
+          ! edge touching its two
           ! ends exactly one time.
           do e = 1, ne
              if (e > size(z)) exit

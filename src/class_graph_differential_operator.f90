@@ -15,16 +15,21 @@
 !                (i) ---------------------> (j)
 !                            z_e
 !
-!    S   the average step        vertices -> edges
+!    S   the edge average step   vertices -> edges
 !
 !        z_e = (q_i + q_j) / 2,  or one end, chosen by the
 !                                sign of the coefficient
+!
+!        The half is not arbitrary: the mean of a straight-line q
+!        along the edge - its integral over the edge divided by the
+!        edge's length - is exactly (q_i + q_j)/2. The one-sided
+!        variant reads the same integral at one end.
 !
 !    G   the difference step     vertices -> edges
 !
 !        z_e = (q_j - q_i) / h_e
 !
-!    D   the fold step           edges -> vertices
+!    D   the incidence step      edges -> vertices
 !
 !             \    |    /
 !              v   v   v                    out - in
@@ -39,31 +44,55 @@
 !
 !                    ANY ORDER, BY REPEATING THEM
 !
-!    order 0        c q                the term itself
-!    order 1        D S q             first derivative
-!    order 2        D G q             second derivative
-!    order 3        D G D S q         third
-!    order 4        D G D G q         fourth
-!    order n        one more step     reaches n rings of neighbours
+! With q the vertex field and c the coefficient the operator carries:
 !
-! On the edge side, order 0 is S q, order 1 is G q (the slope along
-! each edge), and order n applies G to the vertex result of n - 1.
+!    vertex side                        edge side
+!
+!    order 0    c q                     order 0    S q
+!    order 1    D S q                   order 1    G q
+!    order 2    D G q                   order 2    G D S q
+!    order 3    D G D S q               order 3    G D G q
+!    order 4    D G D G q               order 4    G D G D S q
+!
+! The recurrence, stated once:
+!
+!    vertex(0) = c q          vertex(n) = D of edge(n - 1)
+!    edge(0)   = S q          edge(n)   = G of vertex(n - 1)
+!
+! which closes by parity on the vertex side:
+!
+!    vertex(2k)     = (D G)^k
+!    vertex(2k + 1) = (D G)^k D S
+!
 ! The coefficient is applied once, at the innermost step - the first
 ! moment the values land on edges - so a per-edge coefficient makes
 ! order 2 the operator div(k grad q) with k varying edge to edge.
 !
-! Exact where the formulas are exact: on a uniform chain a straight
-! line has zero second derivative, x squared has second derivative
-! two, and x to the fourth has fourth derivative twenty-four. The
-! test suite checks those numbers.
+! Each step consults an edge's two ends, so order n reaches exactly
+! n RINGS of neighbours. Ring r of a vertex is the set a walk of
+! exactly r edges reaches and no shorter walk does - the level sets
+! of the depth walk, which the engine already computes:
+!
+!             2   2   2
+!           2   1   1   2         ring 1: the neighbours
+!           2   1 (v) 1   2       ring 2: the neighbours' neighbours,
+!           2   1   1   2                 minus what ring 1 took
+!             2   2   2
+!
+! The operators are defined on any graph - every parameter is
+! per-entity. The UNIFORM CHAIN is not an assumption; it is where
+! exactness is claimed, because there the discrete formulas coincide
+! with the calculus ones: a straight line has zero second derivative,
+! x squared has second derivative two, x to the fourth has fourth
+! derivative twenty-four. The test suite checks those numbers.
 !
 !
-!                       TWO FOLD DIRECTIONS
+!                    TWO INCIDENCE DIRECTIONS
 !
-! The fold above is out minus in, which gives the derivatives their
-! textbook signs. The balance folds in minus out, because a balance
-! counts what a vertex gains. One sign apart; each is stated where
-! it is used.
+! The incidence step above counts out minus in, which gives the
+! derivatives their textbook signs. The balance counts in minus out,
+! because a balance measures what a vertex gains. One sign apart;
+! each is stated where it is used.
 !
 !
 !                  THE ADJOINT IS THE REVERSE WALK
@@ -72,15 +101,32 @@
 !
 !    (o)-->(o)-->(o)                (o)<--(o)<--(o)
 !
-! Reversing every edge swaps tail with head, so out becomes in:
-! the transposed fold is a difference, the transposed difference is
-! a fold, each with one sign flipped, and the transposed average
-! folds - unsigned - onto the end it sampled. An adjoint runs the
-! transposed steps in reverse order. Consequences, proved in the
-! guide and checked in the suite: the order-2 operator is its own
-! adjoint when the same per-edge coefficients sit on its steps, and
-! the adjoint of the order-1 operator samples from the other end -
-! the reversed-flow operator a sensitivity solve consumes.
+! Reversing every edge swaps tail with head, so out becomes in: the
+! transposed incidence step is a difference, the transposed
+! difference an incidence step, each with one sign flipped, and the
+! transposed edge average returns each value - unsigned - to the end
+! it was read from. An adjoint runs the transposed steps in reverse
+! order.
+!
+! Parity decides the adjoint's character:
+!
+!    even orders    vertex(2k) = (D G)^k is its own adjoint whenever
+!                   the same weights sit on its steps - the transpose
+!                   of a power is the power of the transpose
+!
+!    odd orders     the adjoint reverses the sampled end: a one-sided
+!                   operator's adjoint is one-sided the other way,
+!                   the downstream walk of an upstream sample
+!
+! And no walk must run end to end. Transposes factor stage by stage,
+!
+!    (C B A) transposed = A* B* C*
+!
+! so any contiguous segment of a reverse walk is itself a valid
+! adjoint - the sensitivity of the answer with respect to that
+! segment's input. Checkpointed time marches and mid-chain
+! sensitivities are segment walks; they belong to the pipeline,
+! which walks stages by construction.
 !
 !
 !                     CURL, WITH NOTHING NEW
@@ -89,17 +135,27 @@
 ! values as the loop is walked. Which edge borders which face is
 ! itself a graph - one vertex per edge, one per face, a connection
 ! where an edge borders a face, coefficient +1 or -1 by direction -
-! and the fold step on that graph is the curl. The suite walks a
+! and the incidence step on that graph is the curl. The suite walks a
 ! square: a difference field sums to zero around it, a circulating
 ! field does not.
 !
 !
 !                        WHAT IS NOT HERE
 !
-! No physical names and no physical signs. A transport model uses
-! order 1 with its velocity and order 2 with its conductivity, and
-! writes its own sign conventions in its own class. This layer
-! computes derivatives.
+! No physical names and no physical signs. This layer computes
+! derivatives; models name them, each order carrying its own physics
+! in its own class:
+!
+!    order 0    storage, reaction, mass
+!    order 1    transport along a flow
+!    order 2    diffusion, conduction, viscosity, pressure fields
+!    order 3    dispersion - waves whose speed depends on length
+!    order 4    bending - beams, plates, and the interfaces of
+!               phase separation
+!    order 6    pattern-forming films and crystals
+!
+! The signs those models require - a flux running down its gradient -
+! are theirs to state, in their own classes.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -178,7 +234,7 @@ module class_graph_differential_operator
   !    order n    keep going
   !
   ! Handed an EDGE field instead of a vertex field, the chain enters
-  ! at the fold: order 1 on an edge field is the divergence of that
+  ! at the incidence step: order 1 on an edge field is the divergence of that
   ! field.
   !
   ! With `adjoint` true the operator runs the reverse walk: the
@@ -291,7 +347,7 @@ contains
   !
   !    gradient(...)        the slope along each edge
   !    interpolation(...)   the average onto each edge
-  !    divergence(...)      the fold of an edge field onto vertices
+  !    divergence(...)      the incidence step on an edge field
   !    laplacian(...)       the second derivative at each vertex
   !===================================================================!
 
@@ -624,7 +680,7 @@ contains
   end subroutine difference_step_reversed
 
   !===================================================================!
-  ! THE FOLD STEP, forward and reversed.
+  ! THE INCIDENCE STEP, forward and reversed.
   !
   !    forward                              reversed
   !
@@ -633,11 +689,11 @@ contains
   !            m_v                          m_tail   m_head
   !
   ! Out minus in gives the derivatives their textbook signs; the
-  ! balance folds in minus out because it counts what a vertex
+  ! balance counts in minus out because it measures what a vertex
   ! gains. An edge with no head contributes to its tail alone.
   !===================================================================!
 
-  pure subroutine fold_step(g, op_m, op_ms, z, y)
+  pure subroutine incidence_step(g, op_m, op_ms, z, y)
 
     class(graph), intent(in)          :: g
     real(dp)    , intent(in)          :: op_m
@@ -665,9 +721,9 @@ contains
        y(v) = y(v) / coefficient_at(op_m, op_ms, v)
     end do
 
-  end subroutine fold_step
+  end subroutine incidence_step
 
-  pure subroutine fold_step_reversed(g, op_m, op_ms, q, z)
+  pure subroutine incidence_step_reversed(g, op_m, op_ms, q, z)
 
     class(graph), intent(in)          :: g
     real(dp)    , intent(in)          :: op_m
@@ -689,7 +745,7 @@ contains
 
     end do
 
-  end subroutine fold_step_reversed
+  end subroutine incidence_step_reversed
 
   !===================================================================!
   ! COMPONENTS. A field may carry several values per entry - the
@@ -827,7 +883,7 @@ contains
   ! THE VERTEX OPERATOR. The chain of steps, or - with `adjoint`
   ! true - the same chain transposed and walked backwards.
   !
-  ! Handed an edge field, the chain enters at the fold: order 1 is
+  ! Handed an edge field, the chain enters at the incidence step: order 1 is
   ! then the divergence of the given field. Each component of the
   ! input makes the walk once.
   !===================================================================!
@@ -844,7 +900,7 @@ contains
     real(dp), allocatable :: q(:), z(:), y(:), qc(:), zc(:), yc(:), y2(:)
     real(dp), allocatable :: spent(:)   ! never allocated: the
                                         ! coefficient is applied once,
-                                        ! before the fold, and this
+                                        ! before the incidence step, and
                                         ! empty array keeps the deeper
                                         ! chain from applying it again
     integer , allocatable :: indices(:)
@@ -901,7 +957,8 @@ contains
 
     else if (allocated(z) .and. size(z) > 0) then
 
-       ! An edge field: enter at the fold, per component. Order 1 is
+       ! An edge field: enter at the incidence step, per component.
+       ! Order 1 is
        ! the divergence of the given samples; a higher order keeps
        ! walking.
        allocate(zc(ne), yc(nv))
@@ -913,7 +970,7 @@ contains
           do e = 1, ne
              zc(e) = coefficient_at(this % coefficient, this % coefficients, e) * zc(e)
           end do
-          call fold_step(input_graph, this % measure, this % measures, zc, yc)
+          call incidence_step(input_graph, this % measure, this % measures, zc, yc)
 
           if (this % order > 1) then
              call run_vertex_chain(this % order - 1, input_graph, yc, &
@@ -992,7 +1049,7 @@ contains
           k = k - 2
        end if
 
-       call fold_step(g, m, ms, z, y)
+       call incidence_step(g, m, ms, z, y)
        innermost = .false.
 
     end do
@@ -1005,8 +1062,9 @@ contains
   !    forward, order 2:   q --G--> --D--> y
   !    adjoint, order 2:   q --D'--> --G'--> y
   !
-  ! where D' is the transposed fold (a difference, sign flipped) and
-  ! G' the transposed difference (a fold, sign flipped). The two sign
+  ! where D' is the transposed incidence step (a difference, sign
+  ! flipped) and G' the transposed difference (an incidence step,
+  ! sign flipped). The two sign
   ! flips cancel in pairs, which is why the order-2 operator with
   ! symmetric coefficients is its own adjoint - checked in the suite.
   !===================================================================!
@@ -1041,7 +1099,8 @@ contains
     !    odd order:    S  D  G  D ... G  D       first step)
     !
     ! so the reverse walk transposes each step and runs them last to
-    ! first: the transposed folds and differences make the pairs, and
+    ! first: the transposed incidence steps and differences make the
+    ! pairs, and
     ! for an odd order the transposed average comes at the very end -
     ! carrying the coefficient, because its forward twin carried it.
 
@@ -1054,13 +1113,13 @@ contains
     end if
 
     do i = 1, pairs
-       call fold_step_reversed(g, m, ms, y, z)
+       call incidence_step_reversed(g, m, ms, y, z)
        call difference_step_reversed(g, &
             & mod(order, 2) == 0 .and. i == pairs, c, cs, h, hs, z, y)
     end do
 
     if (mod(order, 2) == 1) then
-       call fold_step_reversed(g, m, ms, y, z)
+       call incidence_step_reversed(g, m, ms, y, z)
        call average_step_reversed(g, 1.0_dp, .true., c, cs, z, w)
        y = w
     end if

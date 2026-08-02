@@ -29,7 +29,8 @@ no storage and no algorithms. The concrete layer behind it:
                                               coefficients, adjoint
                                               as the reverse walk
     composition    class_graph_balance        vertex source plus
-                                              folded edge terms
+                                              edge terms reduced
+                                              through incidence
     algorithms     class_graph_walk           colouring, visit order,
                                               components, depth
 
@@ -56,7 +57,7 @@ The properties worth trusting because a check fails without them:
                              check has a failure mode
     the derivative numbers   a line slopes, a parabola gives 2, the
                              fourth power gives 24 at order 4, a
-                             weighted fold gives the hand-computed 8
+                             weighted incidence step gives the hand-computed 8
     components               a line and a parabola ride one field and
                              one application answers both slots
     adjoints                 forward and reverse walks pair to machine
@@ -73,7 +74,7 @@ The properties worth trusting because a check fails without them:
 
 **A per-edge coefficient was spent twice on one path.** The vertex
 operator fed an edge field scales the samples by the coefficient
-before its first fold. At order above one it then continues into the
+before its first incidence step. At order above one it then continues into the
 deeper chain - and passed its coefficient array along, where the
 innermost step applied it again. The comment said "already spent";
 the code disagreed. Fixed by passing a never-allocated array, and
@@ -95,7 +96,7 @@ is the gate.
 
 **2. The balance holds no vertex-side terms.** It carries edge terms
 and one scalar source. Two consequences for a flow solver: the
-pressure force - a fold with normal-weighted coefficients, which is a
+pressure force - an incidence step with normal-weighted coefficients, which is a
 vertex operator - cannot join a balance today; and a source that
 varies cell to cell cannot either, because the source is one number.
 The fix is small and additive: a `vertex_terms` array of the vertex
@@ -160,9 +161,9 @@ For the record, the delegation as it now stands. A model brings:
                     refreshed each evaluation
     viscosity       order 2, coefficients = viscosity times area
                     over distance
-    pressure force  interpolation folded with normal-weighted
+    pressure force  interpolation reduced with normal-weighted
                     coefficients, one call per direction
-    continuity      the same fold read as a constraint
+    continuity      the same reduction read as a constraint
     wave-speed
     fluxes,
     limiters        concrete classes on the edge leaf

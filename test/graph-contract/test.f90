@@ -1,4 +1,108 @@
 !=====================================================================!
+! A deliberately nonlinear edge formula, defined here to prove a
+! contract property: the edge leaf accepts ANY per-edge function of
+! the two end values. Nothing in the contract assumes linearity.
+!
+!             q_t                 q_h
+!            (i) ---------------> (j)
+!
+!            z_e = (q_t + q_h) * |q_h - q_t| / 2
+!
+! The formula is chosen to be nonlinear in both ends and to have no
+! stored coefficients at all: everything state-dependent is computed
+! inside apply, from the input, per edge - which is the shape of a
+! wave-speed flux formula.
+!=====================================================================!
+
+module nonlinear_sample_support
+
+  use iso_fortran_env     , only : dp => REAL64
+  use abstract_graph_types, only : graph_edge_field_operation, graph
+  use abstract_graph_types, only : graph_data, graph_edge_field
+  use abstract_graph_types, only : graph_edge_support
+  use class_graph_support , only : edge_support
+  use class_graph_field   , only : vertex_field, edge_field
+
+  implicit none
+
+  private
+  public :: nonlinear_sample
+
+  type, extends(graph_edge_field_operation) :: nonlinear_sample
+   contains
+     procedure :: name    => nonlinear_sample_name
+     procedure :: support => nonlinear_sample_support_of
+     procedure :: apply   => nonlinear_sample_apply
+  end type nonlinear_sample
+
+contains
+
+  pure function nonlinear_sample_name(this) result(name)
+    class(nonlinear_sample), intent(in) :: this
+    character(len=:), allocatable       :: name
+    name = 'nonlinear sample'
+  end function nonlinear_sample_name
+
+  subroutine nonlinear_sample_support_of(this, input_graph, support)
+    class(nonlinear_sample), intent(in)                 :: this
+    class(graph), intent(in)                            :: input_graph
+    class(graph_edge_support), allocatable, intent(out) :: support
+    call input_graph % all_edges(support)
+  end subroutine nonlinear_sample_support_of
+
+  subroutine nonlinear_sample_apply(this, input_graph, input_data, output)
+
+    class(nonlinear_sample), intent(in)                 :: this
+    class(graph), intent(in)                            :: input_graph
+    class(graph_data), intent(in), optional             :: input_data(:)
+    class(graph_edge_field), allocatable, intent(inout) :: output
+
+    type(edge_field)      :: out
+    type(edge_support)    :: on
+    real(dp), allocatable :: q(:), z(:)
+    integer , allocatable :: indices(:)
+    real(dp)              :: qt, qh
+    integer               :: ne, e, t, h
+
+    ne = input_graph % num_edges()
+    allocate(indices(ne))
+    do e = 1, ne
+       indices(e) = e
+    end do
+    on  = edge_support(indices)
+    out = edge_field(this % name(), on)
+
+    allocate(z(ne))
+    z = 0.0_dp
+
+    if (present(input_data)) then
+       select type (state => input_data(1))
+       class is (vertex_field)
+          call state % get_real_vector(q)
+          do e = 1, ne
+             t  = input_graph % edge_tail(e)
+             qt = q(t)
+             if (input_graph % edge_has_head(e)) then
+                h  = input_graph % edge_head(e)
+                qh = q(h)
+             else
+                qh = 0.0_dp
+             end if
+             ! Nonlinear in both ends, computed on the spot.
+             z(e) = 0.5_dp * (qt + qh) * abs(qh - qt)
+          end do
+       end select
+    end if
+
+    call out % set_real_vector(z)
+    if (allocated(output)) deallocate(output)
+    allocate(output, source=out)
+
+  end subroutine nonlinear_sample_apply
+
+end module nonlinear_sample_support
+
+!=====================================================================!
 ! The graph-contract suite exercises the concrete classes that stand
 ! behind abstract_graph_types, with no mesh and no solver in sight.
 !
@@ -103,6 +207,7 @@ program test_graph_contract
   use class_graph_partitioner, only : PARTITION_BREADTH_FIRST, PARTITION_ADOPTED
   use class_graph_assembler , only : assembler
   use abstract_graph_types  , only : graph, graph_vertex_field
+  use abstract_graph_types  , only : graph_edge_field
   use class_graph_coarsener , only : coarsener, COARSEN_PAIRWISE, COARSEN_ADOPTED
   use class_graph_refiner   , only : refiner
   use class_graph_differential_operator, only : edge_differential_operator
@@ -112,6 +217,7 @@ program test_graph_contract
   use class_graph_balance   , only : balance
   use class_graph_walk      , only : walk, WALK_COLOURING, WALK_VISIT_ORDER
   use class_graph_walk      , only : WALK_COMPONENT, WALK_DEPTH
+  use nonlinear_sample_support, only : nonlinear_sample
 
   implicit none
 
@@ -148,6 +254,7 @@ program test_graph_contract
   call check_curl_on_border_graph(nfail)
   call check_components(nfail)
   call check_adjoint_is_the_transpose(nfail)
+  call check_nonlinear_edge_formulas(nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
@@ -1952,5 +2059,91 @@ contains
          & "the flag is the matrix transpose, orders one to four", nfail)
 
   end subroutine check_adjoint_is_the_transpose
+
+  !===================================================================!
+  ! State-dependent formulas on edges. Two claims, both about the
+  ! contract rather than about any formula:
+  !
+  ! First, the edge leaf accepts any per-edge function of the two end
+  ! values - nothing assumes linearity - and its output feeds the
+  ! fold like any other edge field.
+  !
+  ! Second, conservation belongs to the fold, not to the formula.
+  ! Whatever an edge holds, the fold gives it to one cell and takes
+  ! it from the other, so around a closed ring the total is zero for
+  ! ANY formula. This is the property that lets a wave-speed flux be
+  ! as nonlinear as it likes without breaking conservation.
+  !
+  ! Third, the lagged-coefficient path: coefficients computed FROM
+  ! the state, loaded into a linear operator, applied - the loop a
+  ! flow model runs each evaluation.
+  !===================================================================!
+
+  subroutine check_nonlinear_edge_formulas(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_graph)                     :: ring
+    type(nonlinear_sample)                 :: formula
+    type(vertex_differential_operator)     :: fold
+    class(graph_edge_field), allocatable   :: zf
+    class(graph_vertex_field), allocatable :: yf
+    type(vertex_support)                   :: on
+    type(vertex_field)                     :: qf
+    type(edge_support)                     :: eon
+    type(edge_field)                       :: samples
+    real(dp), allocatable                  :: z(:), y(:)
+    real(dp)                               :: q(4), c(4)
+    integer                                :: e, t, h
+
+    ring = stored_graph(4, tails=[1,2,3,4], heads=[2,3,4,1])
+    on   = vertex_support([1, 2, 3, 4])
+    qf   = vertex_field('q', on)
+
+    q = [3.0_dp, -1.0_dp, 4.0_dp, 1.5_dp]
+    call qf % set_real_vector(q)
+
+    ! The nonlinear formula runs through the ordinary leaf.
+    call formula % apply(ring, [qf], zf)
+    call zf % get_real_vector(z)
+    call report(abs(z(1) - 0.5_dp * (q(1) + q(2)) * abs(q(2) - q(1))) < 1.0d-12, &
+         & "an edge formula nonlinear in both ends runs on the leaf", nfail)
+
+    ! Conservation belongs to the fold: the fold of ANY edge field
+    ! over a closed ring sums to zero, this formula included. (The
+    ! samples ride in a concrete field; gfortran 11 cannot build an
+    ! array constructor from a polymorphic item.)
+    eon     = edge_support([1, 2, 3, 4])
+    samples = edge_field('z', eon)
+    call samples % set_real_vector(z)
+    fold = divergence()
+    call fold % apply(ring, [samples], yf)
+    call yf % get_real_vector(y)
+    call report(abs(sum(y)) < 1.0d-12, &
+         & "the fold of any nonlinear formula conserves on a ring", nfail)
+
+    ! The lagged-coefficient loop: compute per-edge numbers from the
+    ! state - here the larger end magnitude, the shape of a wave
+    ! speed - load them into the linear operator, apply.
+    do e = 1, 4
+       t = ring % edge_tail(e)
+       h = ring % edge_head(e)
+       c(e) = max(abs(q(t)), abs(q(h)))
+    end do
+
+    fold = vertex_differential_operator(order=2, coefficients=c)
+    call fold % apply(ring, [qf], yf)
+    call yf % get_real_vector(y)
+
+    ! By hand at vertex 2: c2 (q3 - q2) - c1 (q2 - q1), with
+    ! c1 = max(3,1) = 3 and c2 = max(1,4) = 4: 4*5 - 3*(-4) = 32.
+    call report(abs(y(2) - 32.0_dp) < 1.0d-12, &
+         & "coefficients computed from the state drive the operator", nfail)
+
+    ! And the sum still vanishes: the weighted fold conserves too.
+    call report(abs(sum(y)) < 1.0d-12, &
+         & "and the state-dependent weights still conserve", nfail)
+
+  end subroutine check_nonlinear_edge_formulas
 
 end program test_graph_contract

@@ -842,6 +842,11 @@ contains
     type(vertex_field)    :: out
     type(vertex_support)  :: on
     real(dp), allocatable :: q(:), z(:), y(:), qc(:), zc(:), yc(:), y2(:)
+    real(dp), allocatable :: spent(:)   ! never allocated: the
+                                        ! coefficient is applied once,
+                                        ! before the fold, and this
+                                        ! empty array keeps the deeper
+                                        ! chain from applying it again
     integer , allocatable :: indices(:)
     integer               :: nv, ne, v, e, nc, c
 
@@ -912,7 +917,7 @@ contains
 
           if (this % order > 1) then
              call run_vertex_chain(this % order - 1, input_graph, yc, &
-                  & 1.0_dp, this % coefficients, &   ! coefficient already spent
+                  & 1.0_dp, spent, &
                   & this % spacing, this % spacings, &
                   & this % measure, this % measures, &
                   & this % boundary_value, this % boundary_values, y2)

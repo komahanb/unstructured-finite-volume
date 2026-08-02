@@ -1660,6 +1660,22 @@ contains
          &      all(abs(y(2:4) - 1.0_dp) < 1.0d-12), &
          & "divergence of an edge field is its fold, hand-checked", nfail)
 
+    ! An edge field at order two, with per-edge coefficients: the
+    ! coefficient scales the given samples once, before the first
+    ! fold, and never again in the deeper chain. By hand, with
+    ! samples 1,2,3,4 and coefficients 2,1,1,1 around the ring:
+    ! scaled samples 2,2,3,4; first fold -2,0,1,1; then the order-1
+    ! chain on that: -3, 2, 1, 0.
+    op = vertex_differential_operator(order=2, &
+         & coefficients=[2.0_dp, 1.0_dp, 1.0_dp, 1.0_dp])
+    call op % apply(ring, [zf], yf)
+    call yf % get_real_vector(y)
+    call report(abs(y(1) + 3.0_dp) < 1.0d-12 .and. &
+         &      abs(y(2) - 2.0_dp) < 1.0d-12 .and. &
+         &      abs(y(3) - 1.0_dp) < 1.0d-12 .and. &
+         &      abs(y(4)) < 1.0d-12, &
+         & "a per-edge coefficient is spent once, not twice", nfail)
+
   end subroutine check_differential_operators
 
   !===================================================================!

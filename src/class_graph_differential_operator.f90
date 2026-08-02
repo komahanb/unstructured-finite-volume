@@ -1021,8 +1021,7 @@ contains
     real(dp), allocatable, intent(out):: y(:)
 
     real(dp), allocatable :: z(:), w(:)
-    integer               :: nv, ne, k, v
-    logical               :: outermost_pending
+    integer               :: nv, ne, pairs, i, v
 
     nv = g % num_vertices()
     ne = g % num_edges()
@@ -1036,28 +1035,35 @@ contains
        return
     end if
 
+    ! The forward chain, first step to last, is
+    !
+    !    even order:   G  D  G  D ... G  D      (coefficient on the
+    !    odd order:    S  D  G  D ... G  D       first step)
+    !
+    ! so the reverse walk transposes each step and runs them last to
+    ! first: the transposed folds and differences make the pairs, and
+    ! for an odd order the transposed average comes at the very end -
+    ! carrying the coefficient, because its forward twin carried it.
+
     y = q
-    k = order
 
-    ! The forward chain ends with a fold, so the reverse walk begins
-    ! with the transposed fold, and the step that carried the
-    ! coefficient - the forward chain's first - is met last.
-    do while (k > 0)
+    if (mod(order, 2) == 0) then
+       pairs = order / 2
+    else
+       pairs = (order - 1) / 2
+    end if
 
+    do i = 1, pairs
        call fold_step_reversed(g, m, ms, y, z)
-
-       outermost_pending = (k == 1 .or. k == 2)
-
-       if (mod(k, 2) == 1) then
-          call average_step_reversed(g, 1.0_dp, outermost_pending, c, cs, z, w)
-          y = w
-          k = k - 1
-       else
-          call difference_step_reversed(g, outermost_pending, c, cs, h, hs, z, y)
-          k = k - 2
-       end if
-
+       call difference_step_reversed(g, &
+            & mod(order, 2) == 0 .and. i == pairs, c, cs, h, hs, z, y)
     end do
+
+    if (mod(order, 2) == 1) then
+       call fold_step_reversed(g, m, ms, y, z)
+       call average_step_reversed(g, 1.0_dp, .true., c, cs, z, w)
+       y = w
+    end if
 
   end subroutine run_vertex_chain_reversed
 

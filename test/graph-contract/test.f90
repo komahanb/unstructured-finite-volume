@@ -147,6 +147,7 @@ program test_graph_contract
   call check_adjoints(nfail)
   call check_curl_on_border_graph(nfail)
   call check_components(nfail)
+  call check_adjoint_is_the_transpose(nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
@@ -1877,5 +1878,79 @@ contains
          & "the reverse walk pairs exactly with two components aboard", nfail)
 
   end subroutine check_components
+
+  !===================================================================!
+  ! The strongest statement the adjoint flag can make: the matrix.
+  !
+  ! Apply the operator to each unit field in turn and its columns
+  ! appear; do the same with the flag raised; the second matrix must
+  ! be the first one written sideways -
+  !
+  !      A*(i,j) = A(j,i)   for every entry, at every order,
+  !
+  ! on a graph that has a boundary edge, so the rows a boundary bends
+  ! are checked too. A pairing identity can hold by luck on one pair
+  ! of fields; twenty-five entries per order cannot.
+  !===================================================================!
+
+  subroutine check_adjoint_is_the_transpose(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_graph)                     :: g
+    type(vertex_differential_operator)     :: fwd, rev
+    class(graph_vertex_field), allocatable :: yf
+    type(vertex_support)                   :: on
+    type(vertex_field)                     :: unit
+    real(dp), allocatable                  :: col(:)
+    real(dp)                               :: a(5,5), at(5,5), e(5)
+    real(dp)                               :: cs(5)
+    integer                                :: order, i, j
+    logical                                :: ok
+
+    ! Five vertices, four interior edges, and one boundary edge
+    ! hanging off the last vertex.
+    g  = stored_graph(5, tails=[1,2,3,4,5], heads=[2,3,4,5,0])
+    on = vertex_support([1, 2, 3, 4, 5])
+    unit = vertex_field('e', on)
+
+    ! Per-edge coefficients, so the transpose is tested with weights
+    ! aboard, not just with ones.
+    cs = [2.0_dp, 0.5_dp, 3.0_dp, 1.5_dp, 4.0_dp]
+
+    ok = .true.
+
+    do order = 1, 4
+
+       fwd = vertex_differential_operator(order=order, coefficients=cs)
+       rev = vertex_differential_operator(order=order, coefficients=cs, &
+            &                             adjoint=.true.)
+
+       do j = 1, 5
+          e = 0.0_dp
+          e(j) = 1.0_dp
+          call unit % set_real_vector(e)
+
+          call fwd % apply(g, [unit], yf)
+          call yf % get_real_vector(col)
+          a(:, j) = col
+
+          call rev % apply(g, [unit], yf)
+          call yf % get_real_vector(col)
+          at(:, j) = col
+       end do
+
+       do i = 1, 5
+          do j = 1, 5
+             ok = ok .and. abs(at(i, j) - a(j, i)) < 1.0d-11
+          end do
+       end do
+
+    end do
+
+    call report(ok, &
+         & "the flag is the matrix transpose, orders one to four", nfail)
+
+  end subroutine check_adjoint_is_the_transpose
 
 end program test_graph_contract

@@ -56,11 +56,12 @@
 module class_graph_partitioner
 
   use iso_fortran_env     , only : dp => REAL64
-  use abstract_graph_types, only : graph_partitioner, graph, graph_data
-  use abstract_graph_types, only : graph_field, graph_support
+  use graph_grammar       , only : graph, graph_field
+  use graph_calculus      , only : graph_partitioner
+  use graph_calculus      , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
   use class_graph         , only : stored_graph
-  use class_graph_support , only : vertex_support, edge_support
-  use class_graph_field   , only : vertex_field, edge_field
+  use class_graph_support , only : support
+  use class_graph_field   , only : field
 
   implicit none
 
@@ -174,7 +175,7 @@ contains
 
     class(partitioner), intent(in) :: this
     class(graph)      , intent(in) :: input_graph
-    class(graph_data) , intent(in) :: input_data
+    class(graph_field) , intent(in) :: input_data
 
     defined_on_data = this % defined_on_graph(input_graph)
 
@@ -453,17 +454,18 @@ contains
 
     class(partitioner), intent(in)               :: this
     class(graph)      , intent(in)               :: global_graph
-    class(graph_data) , intent(in)               :: global_data
+    class(graph_field) , intent(in)               :: global_data
     class(graph)      , intent(in)               :: part_graph
-    class(graph_data) , allocatable, intent(out) :: part_data
+    class(graph_field) , allocatable, intent(out) :: part_data
 
     select type (global_data)
 
-    class is (vertex_field)
-       call carry_vertex_field(global_data, part_graph, part_data)
-
-    class is (edge_field)
-       call carry_edge_field(global_data, part_graph, part_data)
+    class is (field)
+       if (global_data % on % side() == GRAPH_SIDE_VERTEX) then
+          call carry_vertex_field(global_data, part_graph, part_data)
+       else
+          call carry_edge_field(global_data, part_graph, part_data)
+       end if
 
     end select
 
@@ -477,12 +479,12 @@ contains
 
   subroutine carry_vertex_field(global_data, part_graph, part_data)
 
-    type(vertex_field), intent(in)               :: global_data
+    type(field), intent(in)               :: global_data
     class(graph)      , intent(in)               :: part_graph
-    class(graph_data) , allocatable, intent(out) :: part_data
+    class(graph_field) , allocatable, intent(out) :: part_data
 
-    type(vertex_field)    :: out
-    type(vertex_support)  :: on
+    type(field)    :: out
+    type(support)  :: on
     real(dp), allocatable :: fv(:), lv(:)
     integer , allocatable :: locals(:)
     integer :: nlocal, ncomp, l, c
@@ -495,8 +497,8 @@ contains
        locals(l) = l
     end do
 
-    on  = vertex_support(locals)
-    out = vertex_field(global_data % name(), on, ncomp=ncomp, unit_name=global_data % units())
+    on  = support(GRAPH_SIDE_VERTEX, locals)
+    out = field(global_data % name(), on, ncomp=ncomp, unit_name=global_data % units())
 
     call global_data % get_real_vector(fv)
     allocate(lv(nlocal * ncomp))
@@ -521,12 +523,12 @@ contains
 
   subroutine carry_edge_field(global_data, part_graph, part_data)
 
-    type(edge_field), intent(in)               :: global_data
+    type(field), intent(in)               :: global_data
     class(graph)    , intent(in)               :: part_graph
-    class(graph_data), allocatable, intent(out) :: part_data
+    class(graph_field), allocatable, intent(out) :: part_data
 
-    type(edge_field)      :: out
-    type(edge_support)    :: on
+    type(field)      :: out
+    type(support)    :: on
     real(dp), allocatable :: fv(:), lv(:)
     integer , allocatable :: locals(:)
     integer :: nlocal, ncomp, l, c
@@ -539,8 +541,8 @@ contains
        locals(l) = l
     end do
 
-    on  = edge_support(locals)
-    out = edge_field(global_data % name(), on, ncomp=ncomp, unit_name=global_data % units())
+    on  = support(GRAPH_SIDE_EDGE, locals)
+    out = field(global_data % name(), on, ncomp=ncomp, unit_name=global_data % units())
 
     call global_data % get_real_vector(fv)
     allocate(lv(nlocal * ncomp))

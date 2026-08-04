@@ -46,11 +46,10 @@
 
 module class_graph_walk
 
-  use abstract_graph_types, only : graph_vertex_field_operation, graph
-  use abstract_graph_types, only : graph_data, graph_vertex_field
-  use abstract_graph_types, only : graph_vertex_support
-  use class_graph_support , only : vertex_support
-  use class_graph_field   , only : vertex_field
+  use graph_grammar      , only : graph_operation, graph, graph_field
+  use graph_calculus     , only : GRAPH_SIDE_VERTEX
+  use class_graph_support, only : support
+  use class_graph_field  , only : field
 
   implicit none
 
@@ -67,16 +66,16 @@ module class_graph_walk
   ! One walk, holding which question it answers and where it starts.
   !===================================================================!
 
-  type, extends(graph_vertex_field_operation) :: walk
+  type, extends(graph_operation) :: walk
 
      integer :: rule = WALK_COLOURING
      integer :: seed = 1
 
    contains
 
-     procedure :: name    => walk_name
-     procedure :: support => walk_support
-     procedure :: apply   => walk_apply
+     procedure :: name   => walk_name
+     procedure :: domain => walk_domain
+     procedure :: apply  => walk_apply
 
   end type walk
 
@@ -133,15 +132,15 @@ contains
   !      depth          a distance per vertex
   !===================================================================!
 
-  subroutine walk_support(this, input_graph, support)
+  subroutine walk_domain(this, input_graph, domain)
 
-    class(walk) , intent(in)                              :: this
-    class(graph), intent(in)                              :: input_graph
-    class(graph_vertex_support), allocatable, intent(out) :: support
+    class(walk) , intent(in)               :: this
+    class(graph), intent(in)               :: input_graph
+    class(graph), allocatable, intent(out) :: domain
 
-    call input_graph % all_vertices(support)
+    call input_graph % all_vertices(domain)
 
-  end subroutine walk_support
+  end subroutine walk_domain
 
   !===================================================================!
   ! Walk the graph and return a whole number per cell.
@@ -152,13 +151,13 @@ contains
 
   subroutine walk_apply(this, input_graph, input_data, output)
 
-    class(walk)      , intent(in)                         :: this
-    class(graph)     , intent(in)                         :: input_graph
-    class(graph_data), intent(in), optional               :: input_data(:)
-    class(graph_vertex_field), allocatable, intent(inout) :: output
+    class(walk)       , intent(in)                 :: this
+    class(graph)      , intent(in)                 :: input_graph
+    class(graph_field), intent(in), optional       :: input_data(:)
+    class(graph_field), allocatable, intent(inout) :: output
 
-    type(vertex_field)    :: out
-    type(vertex_support)  :: on
+    type(field)           :: out
+    type(support)         :: on
     integer , allocatable :: mark(:), indices(:)
     integer :: nv, v
 
@@ -169,8 +168,8 @@ contains
        indices(v) = v
     end do
 
-    on  = vertex_support(indices)
-    out = vertex_field(this % name(), on)
+    on  = support(GRAPH_SIDE_VERTEX, indices)
+    out = field(this % name(), on)
 
     select case (this % rule)
     case (WALK_VISIT_ORDER)

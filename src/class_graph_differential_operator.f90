@@ -162,18 +162,16 @@
 
 module class_graph_differential_operator
 
-  use iso_fortran_env     , only : dp => REAL64
-  use abstract_graph_types, only : graph_edge_field_operation
-  use abstract_graph_types, only : graph_vertex_field_operation
-  use abstract_graph_types, only : graph, graph_data
-  use abstract_graph_types, only : graph_edge_field, graph_vertex_field
-  use abstract_graph_types, only : graph_edge_support, graph_vertex_support
-  use class_graph_support , only : vertex_support, edge_support
-  use class_graph_field   , only : vertex_field, edge_field
+  use iso_fortran_env    , only : dp => REAL64
+  use graph_grammar      , only : graph_operation, graph, graph_field
+  use graph_calculus     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
+  use class_graph_support, only : support
+  use class_graph_field  , only : field
 
   implicit none
 
   private
+  public :: differential_operator
   public :: edge_differential_operator
   public :: vertex_differential_operator
   public :: gradient, interpolation, divergence, laplacian
@@ -193,57 +191,28 @@ module class_graph_differential_operator
   !===================================================================!
 
   !===================================================================!
-  ! The operator that returns an edge field: the derivative of order
-  ! n, sampled on the edges.
+  ! ONE OPERATOR, TWO LANDINGS. The derivative of order n, landing on
+  ! the side the constructor chose:
   !
-  !    order 0    S q     the average on each edge
-  !    order 1    G q     the slope along each edge
-  !    order n    G of the vertex result of n - 1
-  !===================================================================!
-
-  type, extends(graph_edge_field_operation) :: edge_differential_operator
-
-     integer :: order = 1
-
-     real(dp)              :: coefficient    = 1.0_dp
-     real(dp), allocatable :: coefficients(:)
-     real(dp)              :: spacing        = 1.0_dp
-     real(dp), allocatable :: spacings(:)
-     real(dp)              :: measure        = 1.0_dp
-     real(dp), allocatable :: measures(:)
-     real(dp)              :: boundary_value = 0.0_dp
-     real(dp), allocatable :: boundary_values(:)
-
-     character(len=:), allocatable :: label
-
-   contains
-
-     procedure :: name    => edge_differential_operator_name
-     procedure :: support => edge_differential_operator_support
-     procedure :: apply   => edge_differential_operator_apply
-
-  end type edge_differential_operator
-
-  !===================================================================!
-  ! The operator that returns a vertex field: the derivative of order
-  ! n at each vertex.
+  !    landing = edge      order 0   S q    the average on each edge
+  !                        order 1   G q    the slope along each edge
+  !                        order n   G of the vertex result of n - 1
   !
-  !    order 0    c q          the term itself
-  !    order 1    D S q        first derivative
-  !    order 2    D G q        second derivative
-  !    order n    keep going
+  !    landing = vertex    order 0   c q    the term itself
+  !                        order 1   D S q  first derivative
+  !                        order 2   D G q  second derivative
+  !                        order n   keep going
   !
-  ! Handed an EDGE field instead of a vertex field, the chain enters
-  ! at the incidence step: order 1 on an edge field is the divergence of that
-  ! field.
-  !
+  ! Handed an EDGE field on the vertex landing, the chain enters at
+  ! the incidence step: order 1 is then the divergence of that field.
   ! With `adjoint` true the operator runs the reverse walk: the
   ! transposed steps, in reverse order.
   !===================================================================!
 
-  type, extends(graph_vertex_field_operation) :: vertex_differential_operator
+  type, extends(graph_operation) :: differential_operator
 
-     integer :: order = 2
+     integer :: landing = GRAPH_SIDE_VERTEX
+     integer :: order   = 2
 
      logical :: adjoint = .false.
 
@@ -260,19 +229,11 @@ module class_graph_differential_operator
 
    contains
 
-     procedure :: name    => vertex_differential_operator_name
-     procedure :: support => vertex_differential_operator_support
-     procedure :: apply   => vertex_differential_operator_apply
+     procedure :: name   => operator_name
+     procedure :: domain => operator_domain
+     procedure :: apply  => operator_apply
 
-  end type vertex_differential_operator
-
-  interface edge_differential_operator
-     module procedure create_edge_operator
-  end interface edge_differential_operator
-
-  interface vertex_differential_operator
-     module procedure create_vertex_operator
-  end interface vertex_differential_operator
+  end type differential_operator
 
 contains
 
@@ -281,7 +242,7 @@ contains
   ! wins over its scalar when given.
   !===================================================================!
 
-  pure type(edge_differential_operator) function create_edge_operator &
+  pure type(differential_operator) function edge_differential_operator &
        & (order, coefficient, coefficients, spacing, spacings, &
        &  measure, measures, boundary_value, boundary_values, label) result(this)
 
@@ -296,7 +257,8 @@ contains
     real(dp)        , intent(in), optional :: boundary_values(:)
     character(len=*), intent(in), optional :: label
 
-    this % order = max(order, 0)
+    this % landing = GRAPH_SIDE_EDGE
+    this % order   = max(order, 0)
 
     if (present(coefficient))     this % coefficient    = coefficient
     if (present(coefficients))    allocate(this % coefficients, source=coefficients)
@@ -308,14 +270,14 @@ contains
     if (present(boundary_values)) allocate(this % boundary_values, source=boundary_values)
     if (present(label))           this % label          = label
 
-  end function create_edge_operator
+  end function edge_differential_operator
 
   !===================================================================!
   ! The same constructor, for the vertex side, plus the adjoint flag:
   ! raised, the operator applies its transpose.
   !===================================================================!
 
-  pure type(vertex_differential_operator) function create_vertex_operator &
+  pure type(differential_operator) function vertex_differential_operator &
        & (order, coefficient, coefficients, spacing, spacings, &
        &  measure, measures, boundary_value, boundary_values, adjoint, label) result(this)
 
@@ -331,7 +293,8 @@ contains
     logical         , intent(in), optional :: adjoint
     character(len=*), intent(in), optional :: label
 
-    this % order = max(order, 0)
+    this % landing = GRAPH_SIDE_VERTEX
+    this % order   = max(order, 0)
 
     if (present(coefficient))     this % coefficient    = coefficient
     if (present(coefficients))    allocate(this % coefficients, source=coefficients)
@@ -344,7 +307,7 @@ contains
     if (present(adjoint))         this % adjoint        = adjoint
     if (present(label))           this % label          = label
 
-  end function create_vertex_operator
+  end function vertex_differential_operator
 
   !===================================================================!
   ! The named layer. Four operators every equation reaches for, as
@@ -356,7 +319,7 @@ contains
   !    laplacian(...)       the second derivative at each vertex
   !===================================================================!
 
-  pure type(edge_differential_operator) function gradient(coefficient, coefficients, &
+  pure type(differential_operator) function gradient(coefficient, coefficients, &
        & spacing, spacings, boundary_value, boundary_values) result(this)
 
     real(dp), intent(in), optional :: coefficient, coefficients(:)
@@ -370,7 +333,7 @@ contains
 
   end function gradient
 
-  pure type(edge_differential_operator) function interpolation(coefficient, coefficients, &
+  pure type(differential_operator) function interpolation(coefficient, coefficients, &
        & boundary_value, boundary_values) result(this)
 
     real(dp), intent(in), optional :: coefficient, coefficients(:)
@@ -382,7 +345,7 @@ contains
 
   end function interpolation
 
-  pure type(vertex_differential_operator) function divergence(coefficient, coefficients, &
+  pure type(differential_operator) function divergence(coefficient, coefficients, &
        & measure, measures) result(this)
 
     real(dp), intent(in), optional :: coefficient, coefficients(:)
@@ -394,7 +357,7 @@ contains
 
   end function divergence
 
-  pure type(vertex_differential_operator) function laplacian(coefficient, coefficients, &
+  pure type(differential_operator) function laplacian(coefficient, coefficients, &
        & spacing, spacings, measure, measures, boundary_value, boundary_values) result(this)
 
     real(dp), intent(in), optional :: coefficient, coefficients(:)
@@ -414,23 +377,10 @@ contains
   ! with its order.
   !===================================================================!
 
-  pure function edge_differential_operator_name(this) result(name)
+  pure function operator_name(this) result(name)
 
-    class(edge_differential_operator), intent(in) :: this
-    character(len=:), allocatable                 :: name
-
-    if (allocated(this % label)) then
-       name = this % label
-    else
-       name = order_name(this % order)
-    end if
-
-  end function edge_differential_operator_name
-
-  pure function vertex_differential_operator_name(this) result(name)
-
-    class(vertex_differential_operator), intent(in) :: this
-    character(len=:), allocatable                   :: name
+    class(differential_operator), intent(in) :: this
+    character(len=:), allocatable            :: name
 
     if (allocated(this % label)) then
        name = this % label
@@ -438,7 +388,7 @@ contains
        name = order_name(this % order)
     end if
 
-  end function vertex_differential_operator_name
+  end function operator_name
 
   !===================================================================!
   ! The spelled-out order, for an operator with no name of its own.
@@ -461,25 +411,19 @@ contains
   ! is a second instance handed that subset's graph.
   !===================================================================!
 
-  subroutine edge_differential_operator_support(this, input_graph, support)
+  subroutine operator_domain(this, input_graph, domain)
 
-    class(edge_differential_operator), intent(in)       :: this
-    class(graph), intent(in)                            :: input_graph
-    class(graph_edge_support), allocatable, intent(out) :: support
+    class(differential_operator), intent(in) :: this
+    class(graph), intent(in)                 :: input_graph
+    class(graph), allocatable, intent(out)   :: domain
 
-    call input_graph % all_edges(support)
+    if (this % landing == GRAPH_SIDE_EDGE) then
+       call input_graph % all_edges(domain)
+    else
+       call input_graph % all_vertices(domain)
+    end if
 
-  end subroutine edge_differential_operator_support
-
-  subroutine vertex_differential_operator_support(this, input_graph, support)
-
-    class(vertex_differential_operator), intent(in)       :: this
-    class(graph), intent(in)                              :: input_graph
-    class(graph_vertex_support), allocatable, intent(out) :: support
-
-    call input_graph % all_vertices(support)
-
-  end subroutine vertex_differential_operator_support
+  end subroutine operator_domain
 
   !===================================================================!
   ! Parameter lookups. One line each, so the kernels read identically
@@ -845,15 +789,39 @@ contains
   !      G or S  ------>  the derivative, sampled on edges
   !===================================================================!
 
-  subroutine edge_differential_operator_apply(this, input_graph, input_data, output)
+  subroutine operator_apply(this, input_graph, input_data, output)
 
-    class(edge_differential_operator), intent(in)       :: this
-    class(graph), intent(in)                            :: input_graph
-    class(graph_data), intent(in), optional             :: input_data(:)
-    class(graph_edge_field), allocatable, intent(inout) :: output
+    class(differential_operator), intent(in)       :: this
+    class(graph), intent(in)                       :: input_graph
+    class(graph_field), intent(in), optional       :: input_data(:)
+    class(graph_field), allocatable, intent(inout) :: output
 
-    type(edge_field)      :: out
-    type(edge_support)    :: on
+    type(field) :: out
+
+    if (this % landing == GRAPH_SIDE_EDGE) then
+       call apply_on_edges(this, input_graph, input_data, out)
+    else
+       call apply_on_vertices(this, input_graph, input_data, out)
+    end if
+
+    ! A supplied buffer is overwritten, never added to.
+    if (allocated(output)) deallocate(output)
+    allocate(output, source=out)
+
+  end subroutine operator_apply
+
+  !===================================================================!
+  ! The edge landing, worked out.
+  !===================================================================!
+
+  subroutine apply_on_edges(this, input_graph, input_data, out)
+
+    class(differential_operator), intent(in) :: this
+    class(graph), intent(in)                 :: input_graph
+    class(graph_field), intent(in), optional :: input_data(:)
+    type(field), intent(out)                 :: out
+
+    type(support)         :: on
     real(dp), allocatable :: q(:), z(:), qc(:), zc(:), yc(:)
     integer , allocatable :: indices(:)
     integer               :: nv, ne, e, nc, c
@@ -867,8 +835,8 @@ contains
     do e = 1, ne
        indices(e) = e
     end do
-    on  = edge_support(indices)
-    out = edge_field(this % name(), on, ncomp=max(nc, 1))
+    on  = support(GRAPH_SIDE_EDGE, indices)
+    out = field(this % name(), on, ncomp=max(nc, 1))
 
     allocate(z(ne * max(nc, 1)))
     z = 0.0_dp
@@ -912,11 +880,7 @@ contains
 
     call out % set_real_vector(z)
 
-    ! A supplied buffer is overwritten, never added to.
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=out)
-
-  end subroutine edge_differential_operator_apply
+  end subroutine apply_on_edges
 
   !===================================================================!
   ! THE VERTEX OPERATOR. The chain of steps, or - with `adjoint`
@@ -927,15 +891,14 @@ contains
   ! input makes the walk once.
   !===================================================================!
 
-  subroutine vertex_differential_operator_apply(this, input_graph, input_data, output)
+  subroutine apply_on_vertices(this, input_graph, input_data, out)
 
-    class(vertex_differential_operator), intent(in)       :: this
-    class(graph), intent(in)                              :: input_graph
-    class(graph_data), intent(in), optional               :: input_data(:)
-    class(graph_vertex_field), allocatable, intent(inout) :: output
+    class(differential_operator), intent(in) :: this
+    class(graph), intent(in)                 :: input_graph
+    class(graph_field), intent(in), optional :: input_data(:)
+    type(field), intent(out)                 :: out
 
-    type(vertex_field)    :: out
-    type(vertex_support)  :: on
+    type(support)         :: on
     real(dp), allocatable :: q(:), z(:), y(:), qc(:), zc(:), yc(:), y2(:)
     real(dp), allocatable :: spent(:)   ! never allocated: the
                                         ! coefficient is applied once,
@@ -955,8 +918,8 @@ contains
     do v = 1, nv
        indices(v) = v
     end do
-    on  = vertex_support(indices)
-    out = vertex_field(this % name(), on, ncomp=max(nc, 1))
+    on  = support(GRAPH_SIDE_VERTEX, indices)
+    out = field(this % name(), on, ncomp=max(nc, 1))
 
     allocate(y(nv * max(nc, 1)))
     y = 0.0_dp
@@ -1028,11 +991,7 @@ contains
 
     call out % set_real_vector(y)
 
-    ! A supplied buffer is overwritten, never added to.
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=out)
-
-  end subroutine vertex_differential_operator_apply
+  end subroutine apply_on_vertices
 
   !===================================================================!
   ! The forward chain, drawn once and run everywhere.
@@ -1174,7 +1133,7 @@ contains
 
   subroutine fetch_vertex_values(input_data, nv, q, ncomp)
 
-    class(graph_data), intent(in), optional :: input_data(:)
+    class(graph_field), intent(in), optional :: input_data(:)
     integer          , intent(in)           :: nv
     real(dp), allocatable, intent(out)      :: q(:)
     integer          , intent(out)          :: ncomp
@@ -1183,11 +1142,13 @@ contains
 
     if (present(input_data)) then
        select type (state => input_data(1))
-       class is (vertex_field)
-          ncomp = max(state % num_components(), 1)
-          call state % get_real_vector(q)
-          if (size(q) == nv * ncomp) return
-          ncomp = 0
+       class is (field)
+          if (state % on % side() == GRAPH_SIDE_VERTEX) then
+             ncomp = max(state % num_components(), 1)
+             call state % get_real_vector(q)
+             if (size(q) == nv * ncomp) return
+             ncomp = 0
+          end if
        end select
     end if
 
@@ -1201,7 +1162,7 @@ contains
 
   subroutine fetch_edge_values(input_data, ne, z, ncomp)
 
-    class(graph_data), intent(in), optional :: input_data(:)
+    class(graph_field), intent(in), optional :: input_data(:)
     integer          , intent(in)           :: ne
     real(dp), allocatable, intent(out)      :: z(:)
     integer          , intent(out)          :: ncomp
@@ -1210,11 +1171,13 @@ contains
 
     if (present(input_data)) then
        select type (state => input_data(1))
-       class is (edge_field)
-          ncomp = max(state % num_components(), 1)
-          call state % get_real_vector(z)
-          if (size(z) == ne * ncomp) return
-          ncomp = 0
+       class is (field)
+          if (state % on % side() == GRAPH_SIDE_EDGE) then
+             ncomp = max(state % num_components(), 1)
+             call state % get_real_vector(z)
+             if (size(z) == ne * ncomp) return
+             ncomp = 0
+          end if
        end select
     end if
 

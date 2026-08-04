@@ -77,10 +77,11 @@
 module class_graph_reduction
 
   use iso_fortran_env       , only : dp => REAL64
-  use abstract_graph_types  , only : graph_reduction, graph_broadcast
-  use abstract_graph_types  , only : graph_field, graph_functional
-  use abstract_graph_types  , only : GRAPH_FIELD_REAL, GRAPH_FIELD_COMPLEX
-  use abstract_graph_types  , only : GRAPH_FIELD_LOGICAL
+  use graph_grammar         , only : graph_field
+  use graph_grammar         , only : GRAPH_FIELD_REAL, GRAPH_FIELD_COMPLEX
+  use graph_grammar         , only : GRAPH_FIELD_LOGICAL
+  use graph_calculus        , only : graph_reduction, graph_broadcast
+  use graph_calculus        , only : graph_functional
   use class_graph_functional, only : scalar_result => functional
 
   implicit none
@@ -200,15 +201,15 @@ contains
 
        select case (this % rule)
        case (REDUCE_MINIMUM)
-          call state % set_real_value(huge(1.0_dp))
+          call set_real(state, huge(1.0_dp))
        case (REDUCE_MAXIMUM)
-          call state % set_real_value(-huge(1.0_dp))
+          call set_real(state, -huge(1.0_dp))
        case (REDUCE_ALL)
-          call state % set_logical_value(.true.)
+          call set_logical(state, .true.)
        case (REDUCE_ANY)
-          call state % set_logical_value(.false.)
+          call set_logical(state, .false.)
        case default
-          call state % set_real_value(0.0_dp)
+          call set_real(state, 0.0_dp)
        end select
 
     end select
@@ -245,13 +246,13 @@ contains
     case (REDUCE_ALL, REDUCE_ANY)
 
        call field % get_logical_vector(lv)
-       call state % get_logical_value(lacc)
+       call get_logical(state, lacc)
        if (this % rule == REDUCE_ALL) then
           lacc = lacc .and. all(lv)
        else
           lacc = lacc .or. any(lv)
        end if
-       call state % set_logical_value(lacc)
+       call set_logical(state, lacc)
 
     case (REDUCE_COUNT)
 
@@ -268,14 +269,14 @@ contains
        if (field % value_kind() == GRAPH_FIELD_COMPLEX) then
 
           call field % get_complex_vector(cv)
-          call state % get_complex_value(cacc)
+          call get_complex(state, cacc)
           do i = 1, nentry
              do c = 1, ncomp
                 k = (i - 1) * ncomp + c
                 if (k <= size(cv)) cacc = cacc + cv(k) * m(i)
              end do
           end do
-          call state % set_complex_value(cacc)
+          call set_complex(state, cacc)
 
        else
 
@@ -284,14 +285,14 @@ contains
           select case (this % rule)
 
           case (REDUCE_SUM)
-             call state % get_real_value(acc)
+             call get_real(state, acc)
              do i = 1, nentry
                 do c = 1, ncomp
                    k = (i - 1) * ncomp + c
                    if (k <= size(v)) acc = acc + v(k) * m(i)
                 end do
              end do
-             call state % set_real_value(acc)
+             call set_real(state, acc)
 
           case (REDUCE_AVERAGE, REDUCE_NORM)
              ! Both carry a running total and a running weight, and
@@ -314,18 +315,18 @@ contains
              end select
 
           case (REDUCE_MINIMUM)
-             call state % get_real_value(acc)
+             call get_real(state, acc)
              do k = 1, size(v)
                 acc = min(acc, v(k))
              end do
-             call state % set_real_value(acc)
+             call set_real(state, acc)
 
           case (REDUCE_MAXIMUM)
-             call state % get_real_value(acc)
+             call get_real(state, acc)
              do k = 1, size(v)
                 acc = max(acc, v(k))
              end do
-             call state % set_real_value(acc)
+             call set_real(state, acc)
 
           end select
 
@@ -381,12 +382,12 @@ contains
 
     case (REDUCE_ALL, REDUCE_ANY)
 
-       call left  % get_logical_value(la)
-       call right % get_logical_value(lb)
+       call get_logical(left, la)
+       call get_logical(right, lb)
        if (this % rule == REDUCE_ALL) then
-          call combined % set_logical_value(la .and. lb)
+          call set_logical(combined, la .and. lb)
        else
-          call combined % set_logical_value(la .or. lb)
+          call set_logical(combined, la .or. lb)
        end if
 
     case (REDUCE_AVERAGE, REDUCE_NORM, REDUCE_COUNT)
@@ -406,12 +407,12 @@ contains
 
     case (REDUCE_MINIMUM, REDUCE_MAXIMUM)
 
-       call left  % get_real_value(a)
-       call right % get_real_value(b)
+       call get_real(left, a)
+       call get_real(right, b)
        if (this % rule == REDUCE_MINIMUM) then
-          call combined % set_real_value(min(a, b))
+          call set_real(combined, min(a, b))
        else
-          call combined % set_real_value(max(a, b))
+          call set_real(combined, max(a, b))
        end if
 
     case default
@@ -419,13 +420,13 @@ contains
        ! Summing, on whichever road the parts travelled.
        if (left % value_kind() == GRAPH_FIELD_COMPLEX .or. &
             & right % value_kind() == GRAPH_FIELD_COMPLEX) then
-          call left  % get_complex_value(ca)
-          call right % get_complex_value(cb)
-          call combined % set_complex_value(ca + cb)
+          call get_complex(left, ca)
+          call get_complex(right, cb)
+          call set_complex(combined, ca + cb)
        else
-          call left  % get_real_value(a)
-          call right % get_real_value(b)
-          call combined % set_real_value(a + b)
+          call get_real(left, a)
+          call get_real(right, b)
+          call set_real(combined, a + b)
        end if
 
     end select
@@ -454,9 +455,9 @@ contains
        select type (state)
        type is (scalar_result)
           if (state % weight > 0.0_dp) then
-             call functional % set_real_value(state % tally / state % weight)
+             call set_real(functional, state % tally / state % weight)
           else
-             call functional % set_real_value(0.0_dp)
+             call set_real(functional, 0.0_dp)
           end if
        end select
 
@@ -465,9 +466,9 @@ contains
        select type (state)
        type is (scalar_result)
           if (state % tally > 0.0_dp) then
-             call functional % set_real_value(state % tally**(1.0_dp / this % power))
+             call set_real(functional, state % tally**(1.0_dp / this % power))
           else
-             call functional % set_real_value(0.0_dp)
+             call set_real(functional, 0.0_dp)
           end if
        end select
 
@@ -475,7 +476,7 @@ contains
 
        select type (state)
        type is (scalar_result)
-          call functional % set_integer_value(nint(state % tally))
+          call functional % set_integer_vector([nint(state % tally)])
        end select
 
     end select
@@ -527,13 +528,13 @@ contains
     n = field % num_entries() * max(field % num_components(), 1)
 
     if (functional % value_kind() == GRAPH_FIELD_COMPLEX) then
-       call functional % get_complex_value(complex_value)
+       call get_complex(functional, complex_value)
        if (this % rule == BROADCAST_SHARE .and. n > 0) then
           complex_value = complex_value / real(n, dp)
        end if
        call field % set_complex_vector([(complex_value, i = 1, n)])
     else
-       call functional % get_real_value(value)
+       call get_real(functional, value)
        if (this % rule == BROADCAST_SHARE .and. n > 0) then
           value = value / real(n, dp)
        end if
@@ -541,5 +542,86 @@ contains
     end if
 
   end subroutine broadcast_functional
+
+  !===================================================================!
+  ! One value in and out of any functional, through the contract's
+  ! vector adapters. A wrong-kind read answers the zero of the asked
+  ! kind, matching the adapters' zero-length signal.
+  !===================================================================!
+
+  pure subroutine get_real(f, x)
+
+    class(graph_functional), intent(in) :: f
+    real(dp), intent(out) :: x
+
+    real(dp), allocatable :: t(:)
+
+    call f % get_real_vector(t)
+    if (size(t) >= 1) then
+       x = t(1)
+    else
+       x = 0.0_dp
+    end if
+
+  end subroutine get_real
+
+  pure subroutine set_real(f, x)
+
+    class(graph_functional), intent(inout) :: f
+    real(dp), intent(in) :: x
+
+    call f % set_real_vector([x])
+
+  end subroutine set_real
+
+  pure subroutine get_complex(f, x)
+
+    class(graph_functional), intent(in) :: f
+    complex(dp), intent(out) :: x
+
+    complex(dp), allocatable :: t(:)
+
+    call f % get_complex_vector(t)
+    if (size(t) >= 1) then
+       x = t(1)
+    else
+       x = (0.0_dp, 0.0_dp)
+    end if
+
+  end subroutine get_complex
+
+  pure subroutine set_complex(f, x)
+
+    class(graph_functional), intent(inout) :: f
+    complex(dp), intent(in) :: x
+
+    call f % set_complex_vector([x])
+
+  end subroutine set_complex
+
+  pure subroutine get_logical(f, x)
+
+    class(graph_functional), intent(in) :: f
+    logical, intent(out) :: x
+
+    logical, allocatable :: t(:)
+
+    call f % get_logical_vector(t)
+    if (size(t) >= 1) then
+       x = t(1)
+    else
+       x = .false.
+    end if
+
+  end subroutine get_logical
+
+  pure subroutine set_logical(f, x)
+
+    class(graph_functional), intent(inout) :: f
+    logical, intent(in) :: x
+
+    call f % set_logical_vector([x])
+
+  end subroutine set_logical
 
 end module class_graph_reduction

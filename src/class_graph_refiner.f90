@@ -25,10 +25,12 @@
 module class_graph_refiner
 
   use iso_fortran_env     , only : dp => REAL64
-  use abstract_graph_types, only : graph_refiner, graph, graph_data, graph_field
+  use graph_grammar       , only : graph, graph_field
+  use graph_calculus      , only : graph_refiner
+  use graph_calculus      , only : GRAPH_SIDE_VERTEX
   use class_graph         , only : stored_graph
-  use class_graph_support , only : vertex_support
-  use class_graph_field   , only : vertex_field
+  use class_graph_support , only : support
+  use class_graph_field   , only : field
 
   implicit none
 
@@ -101,13 +103,15 @@ contains
 
     class(refiner)   , intent(in) :: this
     class(graph)     , intent(in) :: input_graph
-    class(graph_data), intent(in) :: input_data
+    class(graph_field), intent(in) :: input_data
 
     defined_on_data = this % defined_on_graph(input_graph)
 
     select type (input_data)
-    class is (vertex_field)
-       defined_on_data = defined_on_data .and. input_data % num_entries() >= 0
+    class is (field)
+       defined_on_data = defined_on_data &
+            & .and. input_data % on % side() == GRAPH_SIDE_VERTEX &
+            & .and. input_data % num_entries() >= 0
     class default
        defined_on_data = .false.
     end select
@@ -190,18 +194,18 @@ contains
 
     class(refiner)   , intent(in)               :: this
     class(graph)     , intent(in)               :: coarse_graph
-    class(graph_data), intent(in)               :: coarse_data
+    class(graph_field), intent(in)               :: coarse_data
     class(graph)     , intent(in)               :: fine_graph
-    class(graph_data), allocatable, intent(out) :: fine_data
+    class(graph_field), allocatable, intent(out) :: fine_data
 
-    type(vertex_field)    :: out
-    type(vertex_support)  :: on
+    type(field)    :: out
+    type(support)  :: on
     integer , allocatable :: indices(:)
     real(dp), allocatable :: cv(:), fv(:)
     integer :: nfine, ncomp, v, i, c, child
 
     select type (coarse_data)
-    class is (vertex_field)
+    class is (field)
 
        nfine = fine_graph % num_vertices()
        ncomp = coarse_data % num_components()
@@ -211,8 +215,8 @@ contains
           indices(v) = v
        end do
 
-       on  = vertex_support(indices)
-       out = vertex_field(coarse_data % name(), on, ncomp=ncomp, &
+       on  = support(GRAPH_SIDE_VERTEX, indices)
+       out = field(coarse_data % name(), on, ncomp=ncomp, &
             &             unit_name=coarse_data % units())
 
        call coarse_data % get_real_vector(cv)

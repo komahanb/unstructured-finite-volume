@@ -1,5 +1,6 @@
 objects= \
-abstract_graph.o \
+graph_grammar.o \
+graph_calculus.o \
 class_graph_support.o \
 class_graph_field.o \
 class_graph_functional.o \

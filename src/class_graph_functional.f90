@@ -13,7 +13,7 @@
 ! getter for the wrong kind returns the zero of that kind, and
 ! any setter replaces the value and the kind together.
 !
-! Complex is here so a complex-step derivative survives the fold. The
+! Complex is here so a complex-step derivative survives the reduction. The
 ! derivative is the imaginary part, and a real-only functional throws
 ! it away:
 !
@@ -151,6 +151,10 @@ contains
 
   end function name
 
+  !===================================================================!
+  ! What the value is measured in; a dash when nobody said.
+  !===================================================================!
+
   pure function units(this) result(unit_name)
 
     class(functional), intent(in) :: this
@@ -163,6 +167,10 @@ contains
     end if
 
   end function units
+
+  !===================================================================!
+  ! Which of the five kinds is live.
+  !===================================================================!
 
   pure integer function value_kind(this)
 
@@ -191,6 +199,10 @@ contains
 
   end subroutine get_integer_value
 
+  !===================================================================!
+  ! Take an integer in; the live kind becomes integer.
+  !===================================================================!
+
   pure subroutine set_integer_value(this, value)
 
     class(functional), intent(inout) :: this
@@ -200,6 +212,10 @@ contains
     this % vkind = GRAPH_FIELD_INTEGER
 
   end subroutine set_integer_value
+
+  !===================================================================!
+  ! The value, when the live kind is real; zero otherwise.
+  !===================================================================!
 
   pure subroutine get_real_value(this, value)
 
@@ -214,6 +230,10 @@ contains
 
   end subroutine get_real_value
 
+  !===================================================================!
+  ! Take a real in; the live kind becomes real.
+  !===================================================================!
+
   pure subroutine set_real_value(this, value)
 
     class(functional), intent(inout) :: this
@@ -223,6 +243,10 @@ contains
     this % vkind = GRAPH_FIELD_REAL
 
   end subroutine set_real_value
+
+  !===================================================================!
+  ! The value, when the live kind is complex; complex zero otherwise.
+  !===================================================================!
 
   pure subroutine get_complex_value(this, value)
 
@@ -237,6 +261,11 @@ contains
 
   end subroutine get_complex_value
 
+  !===================================================================!
+  ! Take a complex in; the live kind becomes complex. This is the
+  ! seat a complex-step derivative rides through the engine.
+  !===================================================================!
+
   pure subroutine set_complex_value(this, value)
 
     class(functional), intent(inout) :: this
@@ -246,6 +275,10 @@ contains
     this % vkind = GRAPH_FIELD_COMPLEX
 
   end subroutine set_complex_value
+
+  !===================================================================!
+  ! The value, when the live kind is logical; false otherwise.
+  !===================================================================!
 
   pure subroutine get_logical_value(this, value)
 
@@ -260,6 +293,10 @@ contains
 
   end subroutine get_logical_value
 
+  !===================================================================!
+  ! Take a logical in; the live kind becomes logical.
+  !===================================================================!
+
   pure subroutine set_logical_value(this, value)
 
     class(functional), intent(inout) :: this
@@ -269,6 +306,10 @@ contains
     this % vkind = GRAPH_FIELD_LOGICAL
 
   end subroutine set_logical_value
+
+  !===================================================================!
+  ! The word, when the live kind is character; empty otherwise.
+  !===================================================================!
 
   pure subroutine get_character_value(this, value)
 
@@ -282,6 +323,10 @@ contains
     end if
 
   end subroutine get_character_value
+
+  !===================================================================!
+  ! Take a word in; the live kind becomes character.
+  !===================================================================!
 
   pure subroutine set_character_value(this, value)
 

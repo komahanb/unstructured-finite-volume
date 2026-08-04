@@ -108,7 +108,7 @@ module class_graph
      integer :: me     = 1
 
      integer, allocatable :: vowner(:), eowner(:)
-     integer, allocatable :: vfull(:) , efull(:)
+     integer, allocatable :: vglobal(:) , eglobal(:)
 
      !----------------------------------------------------------------!
      ! Whatever the mesh knew when it was built. One array per kind,
@@ -183,8 +183,8 @@ module class_graph
 
      procedure :: num_parts
      procedure :: has_part_relation
-     procedure :: full_vertex_index
-     procedure :: full_edge_index
+     procedure :: global_vertex_index
+     procedure :: global_edge_index
      procedure :: part_vertex_index
      procedure :: part_edge_index
      procedure :: vertex_owner_part
@@ -449,6 +449,10 @@ contains
 
   end function id
 
+  !===================================================================!
+  ! How many vertices.
+  !===================================================================!
+
   pure integer function num_vertices(this)
 
     class(stored_graph), intent(in) :: this
@@ -456,6 +460,10 @@ contains
     num_vertices = this % nv
 
   end function num_vertices
+
+  !===================================================================!
+  ! How many edges.
+  !===================================================================!
 
   pure integer function num_edges(this)
 
@@ -478,6 +486,11 @@ contains
 
   end function edge_tail
 
+  !===================================================================!
+  ! The vertex an edge enters:  (i) --e--> (j)  answers j. A
+  ! boundary edge enters nothing and answers zero.
+  !===================================================================!
+
   pure integer function edge_head(this, edge_index)
 
     class(stored_graph), intent(in) :: this
@@ -486,6 +499,11 @@ contains
     edge_head = this % head(edge_index)
 
   end function edge_head
+
+  !===================================================================!
+  ! Whether the edge enters a vertex at all; false marks a boundary
+  ! edge.
+  !===================================================================!
 
   pure logical function edge_has_head(this, edge_index)
 
@@ -512,6 +530,10 @@ contains
 
   end subroutine all_vertices
 
+  !===================================================================!
+  ! The vertices that touch no boundary edge.
+  !===================================================================!
+
   subroutine interior_vertices(this, support)
 
     class(stored_graph), intent(in)                       :: this
@@ -533,6 +555,10 @@ contains
 
   end subroutine interior_vertices
 
+  !===================================================================!
+  ! The vertices that touch a boundary edge.
+  !===================================================================!
+
   subroutine boundary_vertices(this, support)
 
     class(stored_graph), intent(in)                       :: this
@@ -553,6 +579,11 @@ contains
     allocate(support, source=vertex_support(pick(1:n)))
 
   end subroutine boundary_vertices
+
+  !===================================================================!
+  ! The vertices carrying this tag - a mesh's named patches arrive
+  ! here.
+  !===================================================================!
 
   subroutine tagged_vertices(this, tag, support)
 
@@ -615,6 +646,10 @@ contains
 
   end subroutine all_edges
 
+  !===================================================================!
+  ! The edges with a head: both ends real.
+  !===================================================================!
+
   subroutine interior_edges(this, support)
 
     class(stored_graph), intent(in)                     :: this
@@ -636,6 +671,10 @@ contains
 
   end subroutine interior_edges
 
+  !===================================================================!
+  ! The edges with no head - the open ends of the graph.
+  !===================================================================!
+
   subroutine boundary_edges(this, support)
 
     class(stored_graph), intent(in)                     :: this
@@ -656,6 +695,11 @@ contains
     allocate(support, source=edge_support(pick(1:n)))
 
   end subroutine boundary_edges
+
+  !===================================================================!
+  ! The edges carrying this tag - a mesh's named patches arrive
+  ! here.
+  !===================================================================!
 
   subroutine tagged_edges(this, tag, support)
 
@@ -699,6 +743,11 @@ contains
 
   end subroutine owned_vertices
 
+  !===================================================================!
+  ! The vertices this part reads but does not own - the neighbours'
+  ! cells along the cut.
+  !===================================================================!
+
   subroutine borrowed_vertices(this, part_id, support)
 
     class(stored_graph), intent(in)                       :: this
@@ -729,6 +778,10 @@ contains
 
   end subroutine overlap_vertices
 
+  !===================================================================!
+  ! The edges whose keeper is this part.
+  !===================================================================!
+
   subroutine owned_edges(this, part_id, support)
 
     class(stored_graph), intent(in)                     :: this
@@ -739,6 +792,10 @@ contains
 
   end subroutine owned_edges
 
+  !===================================================================!
+  ! The edges this part reads but does not own.
+  !===================================================================!
+
   subroutine borrowed_edges(this, part_id, support)
 
     class(stored_graph), intent(in)                     :: this
@@ -748,6 +805,10 @@ contains
     allocate(support, source=edge_support(owner_matches(this % eowner, this % ne, part_id, this % cut, .false.)))
 
   end subroutine borrowed_edges
+
+  !===================================================================!
+  ! Owned and borrowed together: every edge this part can see.
+  !===================================================================!
 
   subroutine overlap_edges(this, part_id, support)
 
@@ -820,6 +881,10 @@ contains
 
   end subroutine incident_edges
 
+  !===================================================================!
+  ! The vertices one edge away, either direction.
+  !===================================================================!
+
   pure subroutine adjacent_vertices(this, vertex_index, indices)
 
     class(stored_graph), intent(in)   :: this
@@ -830,6 +895,10 @@ contains
 
   end subroutine adjacent_vertices
 
+  !===================================================================!
+  ! The edges leaving this vertex.
+  !===================================================================!
+
   pure subroutine outgoing_edges(this, vertex_index, indices)
 
     class(stored_graph), intent(in)   :: this
@@ -839,6 +908,10 @@ contains
     indices = this % eout(this % xout(vertex_index) : this % xout(vertex_index + 1) - 1)
 
   end subroutine outgoing_edges
+
+  !===================================================================!
+  ! The edges entering this vertex.
+  !===================================================================!
 
   pure subroutine incoming_edges(this, vertex_index, indices)
 
@@ -878,6 +951,11 @@ contains
 
   end subroutine outgoing_vertices
 
+  !===================================================================!
+  ! The vertices whose edges enter this one - the upstream
+  ! neighbours.
+  !===================================================================!
+
   pure subroutine incoming_vertices(this, vertex_index, indices)
 
     class(stored_graph), intent(in)   :: this
@@ -912,6 +990,11 @@ contains
 
   end function num_parts
 
+  !===================================================================!
+  ! Whether this graph knows how it sits in a whole; false for a
+  ! graph born whole.
+  !===================================================================!
+
   pure logical function has_part_relation(this)
 
     class(stored_graph), intent(in) :: this
@@ -920,61 +1003,75 @@ contains
 
   end function has_part_relation
 
-  pure integer function full_vertex_index(this, index)
+  !===================================================================!
+  ! The whole-graph name of this part's vertex. A graph that is not
+  ! a part answers the index unchanged.
+  !===================================================================!
+
+  pure integer function global_vertex_index(this, index)
 
     class(stored_graph), intent(in) :: this
     integer            , intent(in) :: index
 
-    if (this % cut .and. allocated(this % vfull)) then
-       full_vertex_index = this % vfull(index)
+    if (this % cut .and. allocated(this % vglobal)) then
+       global_vertex_index = this % vglobal(index)
     else
-       full_vertex_index = index
+       global_vertex_index = index
     end if
 
-  end function full_vertex_index
+  end function global_vertex_index
 
-  pure integer function full_edge_index(this, index)
+  !===================================================================!
+  ! The same, for an edge.
+  !===================================================================!
+
+  pure integer function global_edge_index(this, index)
 
     class(stored_graph), intent(in) :: this
     integer            , intent(in) :: index
 
-    if (this % cut .and. allocated(this % efull)) then
-       full_edge_index = this % efull(index)
+    if (this % cut .and. allocated(this % eglobal)) then
+       global_edge_index = this % eglobal(index)
     else
-       full_edge_index = index
+       global_edge_index = index
     end if
 
-  end function full_edge_index
+  end function global_edge_index
 
   !===================================================================!
   ! The map read backwards. Zero means the whole-graph index does not
   ! appear in that part at all.
   !===================================================================!
 
-  pure integer function part_vertex_index(this, full_index, part_id)
+  pure integer function part_vertex_index(this, global_index, part_id)
 
     class(stored_graph), intent(in) :: this
-    integer            , intent(in) :: full_index
+    integer            , intent(in) :: global_index
     integer            , intent(in) :: part_id
 
     if (this % cut .and. part_id /= this % me) then
        part_vertex_index = 0
     else
-       part_vertex_index = reverse_lookup(this % vfull, full_index, this % cut)
+       part_vertex_index = reverse_lookup(this % vglobal, global_index, this % cut)
     end if
 
   end function part_vertex_index
 
-  pure integer function part_edge_index(this, full_index, part_id)
+  !===================================================================!
+  ! The part's own index for a whole-graph edge; zero for an edge
+  ! this part does not hold.
+  !===================================================================!
+
+  pure integer function part_edge_index(this, global_index, part_id)
 
     class(stored_graph), intent(in) :: this
-    integer            , intent(in) :: full_index
+    integer            , intent(in) :: global_index
     integer            , intent(in) :: part_id
 
     if (this % cut .and. part_id /= this % me) then
        part_edge_index = 0
     else
-       part_edge_index = reverse_lookup(this % efull, full_index, this % cut)
+       part_edge_index = reverse_lookup(this % eglobal, global_index, this % cut)
     end if
 
   end function part_edge_index
@@ -984,28 +1081,32 @@ contains
   ! index.
   !===================================================================!
 
-  pure integer function reverse_lookup(full, full_index, cut)
+  pure integer function reverse_lookup(global, global_index, cut)
 
-    integer, allocatable, intent(in) :: full(:)
-    integer             , intent(in) :: full_index
+    integer, allocatable, intent(in) :: global(:)
+    integer             , intent(in) :: global_index
     logical             , intent(in) :: cut
 
     integer :: i
 
-    if (.not. cut .or. .not. allocated(full)) then
-       reverse_lookup = full_index
+    if (.not. cut .or. .not. allocated(global)) then
+       reverse_lookup = global_index
        return
     end if
 
     reverse_lookup = 0
-    do i = 1, size(full)
-       if (full(i) == full_index) then
+    do i = 1, size(global)
+       if (global(i) == global_index) then
           reverse_lookup = i
           return
        end if
     end do
 
   end function reverse_lookup
+
+  !===================================================================!
+  ! Which part keeps this vertex.
+  !===================================================================!
 
   pure integer function vertex_owner_part(this, index)
 
@@ -1019,6 +1120,10 @@ contains
     end if
 
   end function vertex_owner_part
+
+  !===================================================================!
+  ! Which part keeps this edge.
+  !===================================================================!
 
   pure integer function edge_owner_part(this, index)
 
@@ -1048,6 +1153,12 @@ contains
     has_data = find_vertex_data(this, name) > 0 .or. find_edge_data(this, name) > 0
 
   end function has_data
+
+  !===================================================================!
+  ! Hand out a copy of the named data. Fetch once, at the top of an
+  ! apply, never inside a loop - the copy is the price the frozen
+  ! signature charges.
+  !===================================================================!
 
   subroutine get_data(this, name, data)
 
@@ -1090,6 +1201,10 @@ contains
     end do
 
   end function find_vertex_data
+
+  !===================================================================!
+  ! The seat of the named edge data; zero when no such name.
+  !===================================================================!
 
   pure integer function find_edge_data(this, name)
 

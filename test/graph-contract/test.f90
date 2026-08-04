@@ -741,7 +741,7 @@ contains
 
     call report(g % vertex_owner_part(3) .eq. 1, &
          & "every cell belongs to the one part", nfail)
-    call report(g % full_vertex_index(3) .eq. 3, &
+    call report(g % global_vertex_index(3) .eq. 3, &
          & "its own numbering is the whole-graph numbering", nfail)
     call report(g % part_vertex_index(3, 1) .eq. 3, &
          & "and the map reads the same backwards", nfail)
@@ -1102,7 +1102,7 @@ contains
        call part % owned_vertices(k, vs)
        call vs % vertex_indices(indices)
        do l = 1, size(indices)
-          f = part % full_vertex_index(indices(l))
+          f = part % global_vertex_index(indices(l))
           times(f) = times(f) + 1
        end do
 
@@ -1155,7 +1155,7 @@ contains
        call part % owned_vertices(k, vs)
        call vs % vertex_indices(indices)
        do l = 1, size(indices)
-          f = part % full_vertex_index(indices(l))
+          f = part % global_vertex_index(indices(l))
           times(f) = times(f) + 1
        end do
     end do
@@ -1226,7 +1226,7 @@ contains
   !===================================================================!
   ! THE THIRD LAW.
   !
-  !      full_A( G, D )  ==  assemble( A( partition( G, D ) ) )
+  !      whole_A( G, D )  ==  assemble( A( partition( G, D ) ) )
   !
   ! Working something out on the whole must give the same answer as
   ! working it out on each piece and putting the pieces together. Here

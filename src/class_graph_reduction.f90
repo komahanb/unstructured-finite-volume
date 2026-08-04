@@ -107,7 +107,7 @@ module class_graph_reduction
    contains
 
      !----------------------------------------------------------------!
-     ! Start empty, fold values in, join two parts, finish once.
+     ! Start empty, take values in, join two parts, finish once.
      !----------------------------------------------------------------!
 
      procedure :: initialize
@@ -149,7 +149,7 @@ contains
   end function create
 
   !===================================================================!
-  ! The empty answer a fold starts from. Zero for a sum, the largest
+  ! The empty answer a reduction starts from. Zero for a sum, the largest
   ! number there is for a minimum, true for an "all".
   !
   ! Summing starts real. If the first field turns out to be complex,
@@ -408,7 +408,7 @@ contains
   end subroutine combine
 
   !===================================================================!
-  ! Finish, once, after every part has been folded in. This is where
+  ! Finish, once, after every part has been joined in. This is where
   ! an average divides and a norm takes its root - and doing either
   ! any earlier is exactly the bug the four steps exist to prevent.
   !===================================================================!

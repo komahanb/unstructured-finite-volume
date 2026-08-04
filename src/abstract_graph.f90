@@ -116,7 +116,7 @@
 !
 !    graph_vertex_functional_operation
 !         a WAY OF GETTING one, by looking at cells. It owns the cells
-!         it looks at and the rule it folds them by.
+!         it looks at and the rule it reduces them by.
 !
 !    graph_edge_functional_operation
 !         the same, by looking at faces.
@@ -157,12 +157,12 @@
 ! which is why the functional itself does not care which way it was
 ! reached.
 !
-! A balance is cell terms plus face terms folded onto the cells those
+! A balance is cell terms plus face terms summed onto the cells those
 ! faces touch:
 !
 !    balance = vertex_field_terms + incidence(edge_field_terms)
 !
-! Read the folding off the picture. z_e is the number the face term
+! Read the incidence step off the picture. z_e is the number the face term
 ! worked out for face e - one value per face, an edge field:
 !
 !                          z_e
@@ -171,7 +171,7 @@
 !
 ! The face gives z_e to the cell it leaves and takes the same z_e from
 ! the cell it enters, which is why the two signs are opposite and why
-! nothing is created by the folding. It happens exactly once per face.
+! nothing is created by the sum. It happens exactly once per face.
 !
 ! A boundary face has only one cell, so its contribution lands there
 ! and stops:
@@ -540,9 +540,9 @@ module abstract_graph_types
      !
      ! Reading that table both ways:
      !
-     !      full_vertex_index(1) = 5     part 2's cell 1 was 5 in the
+     !      global_vertex_index(1) = 5     part 2's cell 1 was 5 in the
      !                                   whole
-     !      full_vertex_index(5) = 4     part 2's cell 5 was 4
+     !      global_vertex_index(5) = 4     part 2's cell 5 was 4
      !      part_vertex_index(7, 2) = 3  the whole's cell 7 sits at 3
      !                                   in part 2
      !      vertex_owner_part(5) = 1     part 2's cell 5 is borrowed;
@@ -561,8 +561,8 @@ module abstract_graph_types
 
      procedure(graph_num_parts_interface)        , deferred :: num_parts
      procedure(graph_has_part_relation_interface), deferred :: has_part_relation
-     procedure(graph_full_id_interface)          , deferred :: full_vertex_index
-     procedure(graph_full_id_interface)          , deferred :: full_edge_index
+     procedure(graph_global_id_interface)          , deferred :: global_vertex_index
+     procedure(graph_global_id_interface)          , deferred :: global_edge_index
      procedure(graph_part_id_interface)          , deferred :: part_vertex_index
      procedure(graph_part_id_interface)          , deferred :: part_edge_index
      procedure(graph_owner_part_interface)       , deferred :: vertex_owner_part
@@ -734,7 +734,7 @@ module abstract_graph_types
   !      all        starts at .true.
   !
   ! In every line the starting value is the one that leaves the answer
-  ! alone when it is folded in. That is the test, and it is why a sum
+  ! alone when it is taken in. That is the test, and it is why a sum
   ! does not start at 1 and a minimum does not start at 0. Getting it
   ! wrong does not crash - it shifts every answer by a constant.
   !
@@ -771,7 +771,7 @@ module abstract_graph_types
    contains
 
      !----------------------------------------------------------------!
-     ! Start empty, fold values in, join two parts, finish once.
+     ! Start empty, take values in, join two parts, finish once.
      !----------------------------------------------------------------!
 
      procedure(reduction_initialize_interface)  , deferred :: initialize
@@ -1144,7 +1144,7 @@ module abstract_graph_types
      !                       |   |           |
      !      part 2           1   2           3
      !
-     !      full_vertex_index(2) = 4
+     !      global_vertex_index(2) = 4
      !
      ! Read that as: the part numbers this cell 2; the whole graph it
      ! was cut from numbered it 4. For an uncut graph the result
@@ -1155,11 +1155,11 @@ module abstract_graph_types
      ! writer uses it to print cell numbers a person will recognise.
      !---------------------------------------------------------------!
 
-     pure integer function graph_full_id_interface(this, index)
+     pure integer function graph_global_id_interface(this, index)
        import :: graph
        class(graph), intent(in) :: this
        integer, intent(in) :: index
-     end function graph_full_id_interface
+     end function graph_global_id_interface
 
      !---------------------------------------------------------------!
      ! The same map read backwards: where does whole-graph vertex 4
@@ -1172,10 +1172,10 @@ module abstract_graph_types
      ! queries a part it does not own.
      !---------------------------------------------------------------!
 
-     pure integer function graph_part_id_interface(this, full_index, part_id)
+     pure integer function graph_part_id_interface(this, global_index, part_id)
        import :: graph
        class(graph), intent(in) :: this
-       integer, intent(in) :: full_index
+       integer, intent(in) :: global_index
        integer, intent(in) :: part_id
      end function graph_part_id_interface
 
@@ -1511,7 +1511,7 @@ module abstract_graph_types
      end subroutine reduction_combine_interface
 
      !---------------------------------------------------------------!
-     ! Finish, once, after every part has been folded in.
+     ! Finish, once, after every part has been joined in.
      !
      !      a sum        nothing left to do
      !      an average   now divide the sum by the count
@@ -1609,10 +1609,10 @@ module abstract_graph_types
      ! it relates back to the whole.
      !---------------------------------------------------------------!
 
-     subroutine partition_graph_interface(this, full_graph, part_graph)
+     subroutine partition_graph_interface(this, global_graph, part_graph)
        import :: graph_partitioner, graph
        class(graph_partitioner), intent(in) :: this
-       class(graph), intent(in) :: full_graph
+       class(graph), intent(in) :: global_graph
        class(graph), allocatable, intent(out) :: part_graph
      end subroutine partition_graph_interface
 
@@ -1622,11 +1622,11 @@ module abstract_graph_types
      ! the values cannot drift out of step with the structure.
      !---------------------------------------------------------------!
 
-     subroutine partition_data_interface(this, full_graph, full_data, part_graph, part_data)
+     subroutine partition_data_interface(this, global_graph, global_data, part_graph, part_data)
        import :: graph_partitioner, graph, graph_data
        class(graph_partitioner), intent(in) :: this
-       class(graph), intent(in) :: full_graph
-       class(graph_data), intent(in) :: full_data
+       class(graph), intent(in) :: global_graph
+       class(graph_data), intent(in) :: global_data
        class(graph), intent(in) :: part_graph
        class(graph_data), allocatable, intent(out) :: part_data
      end subroutine partition_data_interface
@@ -1643,11 +1643,11 @@ module abstract_graph_types
      ! solver behaviour belongs in here.
      !---------------------------------------------------------------!
 
-     subroutine assemble_graph_interface(this, part_graph, full_graph)
+     subroutine assemble_graph_interface(this, part_graph, global_graph)
        import :: graph_assembler, graph
        class(graph_assembler), intent(in) :: this
        class(graph), intent(in) :: part_graph
-       class(graph), allocatable, intent(out) :: full_graph
+       class(graph), allocatable, intent(out) :: global_graph
      end subroutine assemble_graph_interface
 
      !---------------------------------------------------------------!
@@ -1660,13 +1660,13 @@ module abstract_graph_types
      ! conservation.
      !---------------------------------------------------------------!
 
-     subroutine assemble_data_interface(this, part_graph, part_data, full_graph, full_data)
+     subroutine assemble_data_interface(this, part_graph, part_data, global_graph, global_data)
        import :: graph_assembler, graph, graph_data
        class(graph_assembler), intent(in) :: this
        class(graph), intent(in) :: part_graph
        class(graph_data), intent(in) :: part_data
-       class(graph), intent(in) :: full_graph
-       class(graph_data), allocatable, intent(out) :: full_data
+       class(graph), intent(in) :: global_graph
+       class(graph_data), allocatable, intent(out) :: global_data
      end subroutine assemble_data_interface
 
      !---------------------------------------------------------------!
@@ -1820,7 +1820,7 @@ module abstract_graph_types
      !      a Newton step            u_new from u_old and the residual
      !      a time step              q at the next instant
      !      a balance                every cell term plus every face
-     !                               term folded in - what a solver
+     !                               term summed in - what a solver
      !                               calls the residual
      !---------------------------------------------------------------!
 
@@ -1873,7 +1873,7 @@ module abstract_graph_types
      !            (i) ----------------o
      !            q_i                  the tag identifies the condition there
      !
-     ! Either way the balance then folds F onto the cells it touches,
+     ! Either way the balance then sums F onto the cells it touches,
      ! once and only once:
      !
      !            y_i = y_i - F_e        y_j = y_j + F_e

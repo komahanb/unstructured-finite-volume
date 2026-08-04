@@ -93,10 +93,12 @@ module class_graph_assembler
 
 contains
 
-  pure type(assembler) function create() result(this)
+  !===================================================================!
+  ! Build an assembler. There is nothing to choose - everything
+  ! assembly needs is recorded on the part it will be handed.
+  !===================================================================!
 
-    ! Nothing to set up. Everything the assembler needs is recorded on
-    ! the part it will be handed.
+  pure type(assembler) function create() result(this)
 
   end function create
 
@@ -116,6 +118,11 @@ contains
          &               input_graph % num_parts() == 1
 
   end function defined_on_graph
+
+  !===================================================================!
+  ! Can this assembler say anything about that data? Yes for a field
+  ! riding a part that passes the graph gate above.
+  !===================================================================!
 
   pure logical function defined_on_data(this, input_graph, input_data)
 
@@ -143,14 +150,14 @@ contains
   ! part of anything.
   !===================================================================!
 
-  subroutine assemble_graph(this, part_graph, full_graph)
+  subroutine assemble_graph(this, part_graph, global_graph)
 
     class(assembler), intent(in)               :: this
     class(graph)    , intent(in)               :: part_graph
-    class(graph)    , allocatable, intent(out) :: full_graph
+    class(graph)    , allocatable, intent(out) :: global_graph
 
     integer, allocatable :: tails(:), heads(:)
-    integer :: ne, e, nv_full, l, biggest
+    integer :: ne, e, nv_global, l, biggest
 
     ne = part_graph % num_edges()
 
@@ -158,22 +165,22 @@ contains
     ! index recorded on this part.
     biggest = 0
     do l = 1, part_graph % num_vertices()
-       biggest = max(biggest, part_graph % full_vertex_index(l))
+       biggest = max(biggest, part_graph % global_vertex_index(l))
     end do
-    nv_full = biggest
+    nv_global = biggest
 
     allocate(tails(ne), heads(ne))
     do e = 1, ne
-       tails(e) = part_graph % full_vertex_index(part_graph % edge_tail(e))
+       tails(e) = part_graph % global_vertex_index(part_graph % edge_tail(e))
        if (part_graph % edge_has_head(e)) then
-          heads(e) = part_graph % full_vertex_index(part_graph % edge_head(e))
+          heads(e) = part_graph % global_vertex_index(part_graph % edge_head(e))
        else
           heads(e) = 0
        end if
     end do
 
-    allocate(full_graph, source = &
-         & stored_graph(nv_full, tails=tails, heads=heads, number=part_graph % id()))
+    allocate(global_graph, source = &
+         & stored_graph(nv_global, tails=tails, heads=heads, number=part_graph % id()))
 
   end subroutine assemble_graph
 
@@ -185,21 +192,21 @@ contains
   ! the answers from every part rebuilds the whole field exactly once.
   !===================================================================!
 
-  subroutine assemble_data(this, part_graph, part_data, full_graph, full_data)
+  subroutine assemble_data(this, part_graph, part_data, global_graph, global_data)
 
     class(assembler) , intent(in)               :: this
     class(graph)     , intent(in)               :: part_graph
     class(graph_data), intent(in)               :: part_data
-    class(graph)     , intent(in)               :: full_graph
-    class(graph_data), allocatable, intent(out) :: full_data
+    class(graph)     , intent(in)               :: global_graph
+    class(graph_data), allocatable, intent(out) :: global_data
 
     select type (part_data)
 
     class is (vertex_field)
-       call assemble_vertex_field(part_data, part_graph, full_graph, full_data)
+       call assemble_vertex_field(part_data, part_graph, global_graph, global_data)
 
     class is (edge_field)
-       call assemble_edge_field(part_data, part_graph, full_graph, full_data)
+       call assemble_edge_field(part_data, part_graph, global_graph, global_data)
 
     end select
 
@@ -210,25 +217,25 @@ contains
   ! only.
   !===================================================================!
 
-  subroutine assemble_vertex_field(part_data, part_graph, full_graph, full_data)
+  subroutine assemble_vertex_field(part_data, part_graph, global_graph, global_data)
 
     type(vertex_field), intent(in)               :: part_data
     class(graph)      , intent(in)               :: part_graph
-    class(graph)      , intent(in)               :: full_graph
-    class(graph_data) , allocatable, intent(out) :: full_data
+    class(graph)      , intent(in)               :: global_graph
+    class(graph_data) , allocatable, intent(out) :: global_data
 
     type(vertex_field)    :: out
     type(vertex_support)  :: on
     real(dp), allocatable :: lv(:), fv(:)
     integer , allocatable :: indices(:)
-    integer :: nfull, ncomp, l, c, f, me
+    integer :: nglobal, ncomp, l, c, f, me
 
-    nfull = full_graph % num_vertices()
+    nglobal = global_graph % num_vertices()
     ncomp = part_data % num_components()
     me    = part_graph % id()
 
-    allocate(indices(nfull))
-    do f = 1, nfull
+    allocate(indices(nglobal))
+    do f = 1, nglobal
        indices(f) = f
     end do
 
@@ -236,7 +243,7 @@ contains
     out = vertex_field(part_data % name(), on, ncomp=ncomp, unit_name=part_data % units())
 
     call part_data % get_real_vector(lv)
-    allocate(fv(nfull * ncomp))
+    allocate(fv(nglobal * ncomp))
     fv = 0.0_dp
 
     do l = 1, part_graph % num_vertices()
@@ -247,7 +254,7 @@ contains
           if (part_graph % vertex_owner_part(l) /= me) cycle
        end if
 
-       f = part_graph % full_vertex_index(l)
+       f = part_graph % global_vertex_index(l)
        do c = 1, ncomp
           associate (to => (f - 1) * ncomp + c, from => (l - 1) * ncomp + c)
             if (to >= 1 .and. to <= size(fv) .and. from <= size(lv)) fv(to) = lv(from)
@@ -257,7 +264,7 @@ contains
     end do
 
     call out % set_real_vector(fv)
-    allocate(full_data, source=out)
+    allocate(global_data, source=out)
 
   end subroutine assemble_vertex_field
 
@@ -265,25 +272,25 @@ contains
   ! Face values, the same way, by the edge map.
   !===================================================================!
 
-  subroutine assemble_edge_field(part_data, part_graph, full_graph, full_data)
+  subroutine assemble_edge_field(part_data, part_graph, global_graph, global_data)
 
     type(edge_field), intent(in)                :: part_data
     class(graph)    , intent(in)                :: part_graph
-    class(graph)    , intent(in)                :: full_graph
-    class(graph_data), allocatable, intent(out) :: full_data
+    class(graph)    , intent(in)                :: global_graph
+    class(graph_data), allocatable, intent(out) :: global_data
 
     type(edge_field)      :: out
     type(edge_support)    :: on
     real(dp), allocatable :: lv(:), fv(:)
     integer , allocatable :: indices(:)
-    integer :: nfull, ncomp, l, c, f, me
+    integer :: nglobal, ncomp, l, c, f, me
 
-    nfull = full_graph % num_edges()
+    nglobal = global_graph % num_edges()
     ncomp = part_data % num_components()
     me    = part_graph % id()
 
-    allocate(indices(nfull))
-    do f = 1, nfull
+    allocate(indices(nglobal))
+    do f = 1, nglobal
        indices(f) = f
     end do
 
@@ -291,7 +298,7 @@ contains
     out = edge_field(part_data % name(), on, ncomp=ncomp, unit_name=part_data % units())
 
     call part_data % get_real_vector(lv)
-    allocate(fv(nfull * ncomp))
+    allocate(fv(nglobal * ncomp))
     fv = 0.0_dp
 
     do l = 1, part_graph % num_edges()
@@ -300,7 +307,7 @@ contains
           if (part_graph % edge_owner_part(l) /= me) cycle
        end if
 
-       f = part_graph % full_edge_index(l)
+       f = part_graph % global_edge_index(l)
        do c = 1, ncomp
           associate (to => (f - 1) * ncomp + c, from => (l - 1) * ncomp + c)
             if (to >= 1 .and. to <= size(fv) .and. from <= size(lv)) fv(to) = lv(from)
@@ -310,7 +317,7 @@ contains
     end do
 
     call out % set_real_vector(fv)
-    allocate(full_data, source=out)
+    allocate(global_data, source=out)
 
   end subroutine assemble_edge_field
 

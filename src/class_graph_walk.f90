@@ -86,6 +86,11 @@ module class_graph_walk
 
 contains
 
+  !===================================================================!
+  ! Build a walk that follows one rule. The seed names the vertex a
+  ! depth walk starts from; the other rules need no seed.
+  !===================================================================!
+
   pure type(walk) function create(rule, seed) result(this)
 
     integer, intent(in)           :: rule
@@ -96,6 +101,10 @@ contains
     if (present(seed)) this % seed = seed
 
   end function create
+
+  !===================================================================!
+  ! The walk's name is its rule's name.
+  !===================================================================!
 
   pure function walk_name(this) result(name)
 
@@ -114,6 +123,15 @@ contains
     end select
 
   end function walk_name
+
+  !===================================================================!
+  ! Where the answer lives: one value per vertex, whatever the rule.
+  !
+  !      colouring      a colour per vertex
+  !      visit order    a position per vertex
+  !      component      a component number per vertex
+  !      depth          a distance per vertex
+  !===================================================================!
 
   subroutine walk_support(this, input_graph, support)
 

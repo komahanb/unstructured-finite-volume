@@ -310,6 +310,11 @@ contains
 
   end function create_edge_operator
 
+  !===================================================================!
+  ! The same constructor, for the vertex side, plus the adjoint flag:
+  ! raised, the operator applies its transpose.
+  !===================================================================!
+
   pure type(vertex_differential_operator) function create_vertex_operator &
        & (order, coefficient, coefficients, spacing, spacings, &
        &  measure, measures, boundary_value, boundary_values, adjoint, label) result(this)
@@ -435,6 +440,10 @@ contains
 
   end function vertex_differential_operator_name
 
+  !===================================================================!
+  ! The spelled-out order, for an operator with no name of its own.
+  !===================================================================!
+
   pure function order_name(order) result(name)
 
     integer, intent(in)           :: order
@@ -551,6 +560,15 @@ contains
 
   end subroutine average_step
 
+  !===================================================================!
+  ! The transpose of the average step. Reading an edge from its two
+  ! ends transposes to returning the edge value to those ends:
+  !
+  !    z_e ---> y_i and y_j     both ends, half each - or all of it
+  !                             to the sampled end, unsigned, when
+  !                             the step was one-sided
+  !===================================================================!
+
   pure subroutine average_step_reversed(g, one_sided_by, with_c, op_c, op_cs, z, y)
 
     class(graph), intent(in)          :: g
@@ -604,7 +622,7 @@ contains
   !
   !         q_j - q_i                    -z_e / h to the tail,
   !    z_e = ---------                   +z_e / h to the head:
-  !            h_e                       a fold, one sign flipped
+  !            h_e                       an incidence, one sign flipped
   !===================================================================!
 
   pure subroutine difference_step(g, with_c, op_c, op_cs, op_h, op_hs, op_b, op_bs, q, z)
@@ -643,6 +661,15 @@ contains
     end do
 
   end subroutine difference_step
+
+  !===================================================================!
+  ! The transpose of the difference step. A difference read off two
+  ! ends transposes to a signed return:
+  !
+  !    z_e / h_e   subtracted at the tail, added at the head
+  !
+  ! - an incidence, with the measure's seat taken by the spacing.
+  !===================================================================!
 
   pure subroutine difference_step_reversed(g, with_c, op_c, op_cs, op_h, op_hs, z, y)
 
@@ -723,6 +750,13 @@ contains
 
   end subroutine incidence_step
 
+  !===================================================================!
+  ! The transpose of the incidence step. Out minus in at each vertex
+  ! transposes to, per edge: the tail's value over its measure minus
+  ! the head's value over its measure - a difference, read the other
+  ! way round.
+  !===================================================================!
+
   pure subroutine incidence_step_reversed(g, op_m, op_ms, q, z)
 
     class(graph), intent(in)          :: g
@@ -779,6 +813,11 @@ contains
     end do
 
   end subroutine gather_component
+
+  !===================================================================!
+  ! The way back: write component c into its interleaved seats,
+  ! flat((entry - 1) n + c) - the ordering law, inverted.
+  !===================================================================!
 
   pure subroutine scatter_component(comp, ncomp, c, flat)
 
@@ -924,7 +963,7 @@ contains
 
     if (allocated(q) .and. size(q) > 0) then
 
-       ! A vertex field: the full chain per component, forward or
+       ! A vertex field: the whole chain per component, forward or
        ! reversed.
        allocate(qc(nv))
 
@@ -1127,8 +1166,6 @@ contains
   end subroutine run_vertex_chain_reversed
 
   !===================================================================!
-  ! Fetch the values once, before any loop. A wrong or missing field
-  !===================================================================!
   ! Fetch the values once, before any loop, and report how many
   ! components ride in each entry. A wrong or missing field leaves a
   ! zero-length array and zero components, and the operator returns
@@ -1157,6 +1194,10 @@ contains
     allocate(q(0))
 
   end subroutine fetch_vertex_values
+
+  !===================================================================!
+  ! The same fetch, for a field on edges.
+  !===================================================================!
 
   subroutine fetch_edge_values(input_data, ne, z, ncomp)
 

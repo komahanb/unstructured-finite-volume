@@ -13,13 +13,13 @@
 ! What comes out is one part, in its own numbering, and it is still a
 ! graph. It also records how it relates to the whole - which cells
 ! it owns, which it only borrows, and what each of its own numbers
-! was called in the full graph.
+! was called in the global graph.
 !
-!         full graph    1   2   3   4   5   6   7   8
+!         global graph    1   2   3   4   5   6   7   8
 !                                   |   |   |
 !         part 2                    1   2   3
 !
-!                       full_vertex_index(2) = 4
+!                       global_vertex_index(2) = 4
 !
 !=====================================================================!
 !
@@ -192,31 +192,31 @@ contains
   ! the piece as a graph in its own numbering.
   !===================================================================!
 
-  subroutine partition_graph(this, full_graph, part_graph)
+  subroutine partition_graph(this, global_graph, part_graph)
 
     class(partitioner), intent(in)              :: this
-    class(graph)      , intent(in)              :: full_graph
+    class(graph)      , intent(in)              :: global_graph
     class(graph)      , allocatable, intent(out) :: part_graph
 
     integer, allocatable :: owner(:), mine(:), whereis(:)
-    integer, allocatable :: ltail(:), lhead(:), efull(:), eowner(:), vowner(:)
+    integer, allocatable :: ltail(:), lhead(:), eglobal(:), eowner(:), vowner(:)
     integer :: nv, ne, e, t, h, k, nkeep
 
-    nv = full_graph % num_vertices()
-    ne = full_graph % num_edges()
+    nv = global_graph % num_vertices()
+    ne = global_graph % num_edges()
 
-    call assign_owners(this, full_graph, owner)
-    call gather_part(full_graph, owner, this % part, mine, whereis)
+    call assign_owners(this, global_graph, owner)
+    call gather_part(global_graph, owner, this % part, mine, whereis)
 
     ! Keep an edge when both its ends are in this part and at least one
     ! of them is owned here. An edge with neither end owned belongs
     ! entirely to another part; keeping it here would add its flux to
     ! the balance twice.
-    allocate(ltail(ne), lhead(ne), efull(ne), eowner(ne))
+    allocate(ltail(ne), lhead(ne), eglobal(ne), eowner(ne))
     nkeep = 0
     do e = 1, ne
-       t = full_graph % edge_tail(e)
-       h = full_graph % edge_head(e)
+       t = global_graph % edge_tail(e)
+       h = global_graph % edge_head(e)
 
        if (whereis(t) == 0) cycle
        if (h >= 1) then
@@ -234,7 +234,7 @@ contains
        else
           lhead(nkeep) = 0
        end if
-       efull(nkeep) = e
+       eglobal(nkeep) = e
 
        ! An edge is owned by the part that owns its tail, unless the
        ! tail is borrowed, in which case the head's owner answers for it.
@@ -262,9 +262,9 @@ contains
        part_graph % cut    = .true.
        part_graph % nparts = this % nparts
        part_graph % me     = this % part
-       allocate(part_graph % vfull , source=mine)
+       allocate(part_graph % vglobal , source=mine)
        allocate(part_graph % vowner, source=vowner)
-       allocate(part_graph % efull , source=efull(1:nkeep))
+       allocate(part_graph % eglobal , source=eglobal(1:nkeep))
        allocate(part_graph % eowner, source=eowner(1:nkeep))
     end select
 
@@ -274,15 +274,15 @@ contains
   ! Decide which part owns each cell of the whole graph.
   !===================================================================!
 
-  subroutine assign_owners(this, full_graph, owner)
+  subroutine assign_owners(this, global_graph, owner)
 
     class(partitioner)  , intent(in)  :: this
-    class(graph)        , intent(in)  :: full_graph
+    class(graph)        , intent(in)  :: global_graph
     integer, allocatable, intent(out) :: owner(:)
 
     integer :: nv
 
-    nv = full_graph % num_vertices()
+    nv = global_graph % num_vertices()
     allocate(owner(nv))
 
     select case (this % rule)
@@ -291,7 +291,7 @@ contains
        owner = this % adopted(1:nv)
 
     case (PARTITION_BREADTH_FIRST)
-       call assign_owners_breadth_first(full_graph, this % nparts, owner)
+       call assign_owners_breadth_first(global_graph, this % nparts, owner)
 
     case default
        call assign_owners_linear(nv, this % nparts, owner)
@@ -332,16 +332,16 @@ contains
   ! part comes out connected and few edges are left crossing.
   !===================================================================!
 
-  subroutine assign_owners_breadth_first(full_graph, nparts, owner)
+  subroutine assign_owners_breadth_first(global_graph, nparts, owner)
 
-    class(graph), intent(in)    :: full_graph
+    class(graph), intent(in)    :: global_graph
     integer     , intent(in)    :: nparts
     integer     , intent(inout) :: owner(:)
 
     integer, allocatable :: queue(:), nbrs(:)
     integer :: nv, share, k, v, seed, head_of_queue, tail_of_queue, taken, i
 
-    nv    = full_graph % num_vertices()
+    nv    = global_graph % num_vertices()
     owner = 0
     share = (nv + nparts - 1) / nparts
 
@@ -370,7 +370,7 @@ contains
        do while (head_of_queue <= tail_of_queue .and. taken < share)
           v = queue(head_of_queue)
           head_of_queue = head_of_queue + 1
-          call full_graph % adjacent_vertices(v, nbrs)
+          call global_graph % adjacent_vertices(v, nbrs)
           do i = 1, size(nbrs)
              if (taken >= share) exit
              if (owner(nbrs(i)) == 0) then
@@ -401,9 +401,9 @@ contains
   ! reduces over is a contiguous slice.
   !===================================================================!
 
-  subroutine gather_part(full_graph, owner, part, mine, whereis)
+  subroutine gather_part(global_graph, owner, part, mine, whereis)
 
-    class(graph)        , intent(in)  :: full_graph
+    class(graph)        , intent(in)  :: global_graph
     integer             , intent(in)  :: owner(:)
     integer             , intent(in)  :: part
     integer, allocatable, intent(out) :: mine(:)
@@ -412,7 +412,7 @@ contains
     integer, allocatable :: nbrs(:)
     integer :: nv, v, i, n
 
-    nv = full_graph % num_vertices()
+    nv = global_graph % num_vertices()
 
     allocate(whereis(nv))
     whereis = 0
@@ -429,7 +429,7 @@ contains
 
     do v = 1, nv
        if (owner(v) /= part) cycle
-       call full_graph % adjacent_vertices(v, nbrs)
+       call global_graph % adjacent_vertices(v, nbrs)
        do i = 1, size(nbrs)
           if (owner(nbrs(i)) /= part .and. whereis(nbrs(i)) == 0) then
              n = n + 1
@@ -449,21 +449,21 @@ contains
   ! cannot drift out of step with the structure.
   !===================================================================!
 
-  subroutine partition_data(this, full_graph, full_data, part_graph, part_data)
+  subroutine partition_data(this, global_graph, global_data, part_graph, part_data)
 
     class(partitioner), intent(in)               :: this
-    class(graph)      , intent(in)               :: full_graph
-    class(graph_data) , intent(in)               :: full_data
+    class(graph)      , intent(in)               :: global_graph
+    class(graph_data) , intent(in)               :: global_data
     class(graph)      , intent(in)               :: part_graph
     class(graph_data) , allocatable, intent(out) :: part_data
 
-    select type (full_data)
+    select type (global_data)
 
     class is (vertex_field)
-       call carry_vertex_field(full_data, part_graph, part_data)
+       call carry_vertex_field(global_data, part_graph, part_data)
 
     class is (edge_field)
-       call carry_edge_field(full_data, part_graph, part_data)
+       call carry_edge_field(global_data, part_graph, part_data)
 
     end select
 
@@ -471,13 +471,13 @@ contains
 
   !===================================================================!
   ! A cell field follows the vertex map: the part's cell l was called
-  ! full_vertex_index(l) in the whole graph, so its values come from
+  ! global_vertex_index(l) in the whole graph, so its values come from
   ! there.
   !===================================================================!
 
-  subroutine carry_vertex_field(full_data, part_graph, part_data)
+  subroutine carry_vertex_field(global_data, part_graph, part_data)
 
-    type(vertex_field), intent(in)               :: full_data
+    type(vertex_field), intent(in)               :: global_data
     class(graph)      , intent(in)               :: part_graph
     class(graph_data) , allocatable, intent(out) :: part_data
 
@@ -488,7 +488,7 @@ contains
     integer :: nlocal, ncomp, l, c
 
     nlocal = part_graph % num_vertices()
-    ncomp  = full_data % num_components()
+    ncomp  = global_data % num_components()
 
     allocate(locals(nlocal))
     do l = 1, nlocal
@@ -496,15 +496,15 @@ contains
     end do
 
     on  = vertex_support(locals)
-    out = vertex_field(full_data % name(), on, ncomp=ncomp, unit_name=full_data % units())
+    out = vertex_field(global_data % name(), on, ncomp=ncomp, unit_name=global_data % units())
 
-    call full_data % get_real_vector(fv)
+    call global_data % get_real_vector(fv)
     allocate(lv(nlocal * ncomp))
     lv = 0.0_dp
 
     do l = 1, nlocal
        do c = 1, ncomp
-          associate (from => (part_graph % full_vertex_index(l) - 1) * ncomp + c)
+          associate (from => (part_graph % global_vertex_index(l) - 1) * ncomp + c)
             if (from >= 1 .and. from <= size(fv)) lv((l - 1) * ncomp + c) = fv(from)
           end associate
        end do
@@ -519,9 +519,9 @@ contains
   ! A face field follows the edge map in the same way.
   !===================================================================!
 
-  subroutine carry_edge_field(full_data, part_graph, part_data)
+  subroutine carry_edge_field(global_data, part_graph, part_data)
 
-    type(edge_field), intent(in)               :: full_data
+    type(edge_field), intent(in)               :: global_data
     class(graph)    , intent(in)               :: part_graph
     class(graph_data), allocatable, intent(out) :: part_data
 
@@ -532,7 +532,7 @@ contains
     integer :: nlocal, ncomp, l, c
 
     nlocal = part_graph % num_edges()
-    ncomp  = full_data % num_components()
+    ncomp  = global_data % num_components()
 
     allocate(locals(nlocal))
     do l = 1, nlocal
@@ -540,15 +540,15 @@ contains
     end do
 
     on  = edge_support(locals)
-    out = edge_field(full_data % name(), on, ncomp=ncomp, unit_name=full_data % units())
+    out = edge_field(global_data % name(), on, ncomp=ncomp, unit_name=global_data % units())
 
-    call full_data % get_real_vector(fv)
+    call global_data % get_real_vector(fv)
     allocate(lv(nlocal * ncomp))
     lv = 0.0_dp
 
     do l = 1, nlocal
        do c = 1, ncomp
-          associate (from => (part_graph % full_edge_index(l) - 1) * ncomp + c)
+          associate (from => (part_graph % global_edge_index(l) - 1) * ncomp + c)
             if (from >= 1 .and. from <= size(fv)) lv((l - 1) * ncomp + c) = fv(from)
           end associate
        end do

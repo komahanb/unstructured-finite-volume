@@ -86,6 +86,12 @@ module class_graph_balance
 
 contains
 
+  !===================================================================!
+  ! Build a balance from what a model declares: the face terms, and
+  ! one number per cell added as a source. Both optional - an empty
+  ! balance answers zero.
+  !===================================================================!
+
   pure type(balance) function create(edge_terms, source) result(this)
 
     type(edge_differential_operator), intent(in), optional :: edge_terms(:)
@@ -95,6 +101,10 @@ contains
     if (present(source))     this % source = source
 
   end function create
+
+  !===================================================================!
+  ! The operation's name, for reports.
+  !===================================================================!
 
   pure function balance_name(this) result(name)
 

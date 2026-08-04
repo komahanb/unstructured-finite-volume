@@ -65,6 +65,11 @@ module class_graph_refiner
 
 contains
 
+  !===================================================================!
+  ! Build a refiner that opens every cell into this many. A split
+  ! below one is read as one: refine by doing nothing.
+  !===================================================================!
+
   pure type(refiner) function create(split) result(this)
 
     integer, intent(in) :: split
@@ -72,6 +77,11 @@ contains
     this % split = max(split, 1)
 
   end function create
+
+  !===================================================================!
+  ! Can this refiner say anything about that graph? Any graph with a
+  ! cell to open qualifies.
+  !===================================================================!
 
   pure logical function defined_on_graph(this, input_graph)
 
@@ -81,6 +91,11 @@ contains
     defined_on_graph = input_graph % num_vertices() > 0 .and. this % split >= 1
 
   end function defined_on_graph
+
+  !===================================================================!
+  ! Can this refiner say anything about that data? Yes for a field
+  ! whose entries match the graph it rides on.
+  !===================================================================!
 
   pure logical function defined_on_data(this, input_graph, input_data)
 

@@ -91,6 +91,13 @@ module class_graph_coarsener
 
 contains
 
+  !===================================================================!
+  ! Build a coarsener that follows one rule. Pairwise needs nothing
+  ! more; adopted brings its own map, cell -> block. The average flag
+  ! picks what a block's value is: the mean of its cells, or their
+  ! sum.
+  !===================================================================!
+
   pure type(coarsener) function create(rule, block_of, nblocks, average) result(this)
 
     integer, intent(in)           :: rule
@@ -135,6 +142,11 @@ contains
     end if
 
   end function defined_on_graph
+
+  !===================================================================!
+  ! Can this coarsener say anything about that data? Yes for a field
+  ! whose entries match the graph; the graph gate answers first.
+  !===================================================================!
 
   pure logical function defined_on_data(this, input_graph, input_data)
 

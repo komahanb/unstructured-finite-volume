@@ -277,6 +277,10 @@ contains
 
   end function vertex_field_name
 
+  !===================================================================!
+  ! What the values are measured in; a dash when nobody said.
+  !===================================================================!
+
   pure function vertex_field_units(this) result(units)
 
     class(vertex_field), intent(in) :: this
@@ -290,6 +294,10 @@ contains
 
   end function vertex_field_units
 
+  !===================================================================!
+  ! The set the values live on, answered as a plain support.
+  !===================================================================!
+
   subroutine vertex_field_support(this, support)
 
     class(vertex_field), intent(in)                :: this
@@ -298,6 +306,10 @@ contains
     allocate(support, source=this % on)
 
   end subroutine vertex_field_support
+
+  !===================================================================!
+  ! The same set, answered with its vertex type on show.
+  !===================================================================!
 
   subroutine vertex_field_vertex_support(this, support)
 
@@ -321,6 +333,10 @@ contains
 
   end function vertex_field_num_components
 
+  !===================================================================!
+  ! One entry per vertex of the support.
+  !===================================================================!
+
   pure integer function vertex_field_num_entries(this)
 
     class(vertex_field), intent(in) :: this
@@ -328,6 +344,10 @@ contains
     vertex_field_num_entries = this % on % size()
 
   end function vertex_field_num_entries
+
+  !===================================================================!
+  ! Which of the five kinds is live.
+  !===================================================================!
 
   pure integer function vertex_field_value_kind(this)
 
@@ -356,6 +376,10 @@ contains
 
   end subroutine vertex_field_get_integer_vector
 
+  !===================================================================!
+  ! Take integers in; the live kind becomes integer.
+  !===================================================================!
+
   pure subroutine vertex_field_set_integer_vector(this, values)
 
     class(vertex_field), intent(inout) :: this
@@ -365,6 +389,10 @@ contains
     this % vkind = GRAPH_FIELD_INTEGER
 
   end subroutine vertex_field_set_integer_vector
+
+  !===================================================================!
+  ! The values, when the live kind is real; zero-length otherwise.
+  !===================================================================!
 
   pure subroutine vertex_field_get_real_vector(this, values)
 
@@ -379,6 +407,10 @@ contains
 
   end subroutine vertex_field_get_real_vector
 
+  !===================================================================!
+  ! Take reals in; the live kind becomes real.
+  !===================================================================!
+
   pure subroutine vertex_field_set_real_vector(this, values)
 
     class(vertex_field), intent(inout) :: this
@@ -388,6 +420,10 @@ contains
     this % vkind = GRAPH_FIELD_REAL
 
   end subroutine vertex_field_set_real_vector
+
+  !===================================================================!
+  ! The values, when the live kind is complex; zero-length otherwise.
+  !===================================================================!
 
   pure subroutine vertex_field_get_complex_vector(this, values)
 
@@ -402,6 +438,11 @@ contains
 
   end subroutine vertex_field_get_complex_vector
 
+  !===================================================================!
+  ! Take complex values in; the live kind becomes complex. This is
+  ! the seat a complex-step perturbation rides into the engine.
+  !===================================================================!
+
   pure subroutine vertex_field_set_complex_vector(this, values)
 
     class(vertex_field), intent(inout) :: this
@@ -411,6 +452,10 @@ contains
     this % vkind = GRAPH_FIELD_COMPLEX
 
   end subroutine vertex_field_set_complex_vector
+
+  !===================================================================!
+  ! The values, when the live kind is logical; zero-length otherwise.
+  !===================================================================!
 
   pure subroutine vertex_field_get_logical_vector(this, values)
 
@@ -425,6 +470,10 @@ contains
 
   end subroutine vertex_field_get_logical_vector
 
+  !===================================================================!
+  ! Take logicals in; the live kind becomes logical.
+  !===================================================================!
+
   pure subroutine vertex_field_set_logical_vector(this, values)
 
     class(vertex_field), intent(inout) :: this
@@ -434,6 +483,10 @@ contains
     this % vkind = GRAPH_FIELD_LOGICAL
 
   end subroutine vertex_field_set_logical_vector
+
+  !===================================================================!
+  ! The words, when the live kind is character; zero-length otherwise.
+  !===================================================================!
 
   pure subroutine vertex_field_get_character_vector(this, values)
 
@@ -447,6 +500,10 @@ contains
     end if
 
   end subroutine vertex_field_get_character_vector
+
+  !===================================================================!
+  ! Take words in; the live kind becomes character.
+  !===================================================================!
 
   pure subroutine vertex_field_set_character_vector(this, values)
 
@@ -475,6 +532,10 @@ contains
 
   end function edge_field_name
 
+  !===================================================================!
+  ! What the values are measured in; a dash when nobody said.
+  !===================================================================!
+
   pure function edge_field_units(this) result(units)
 
     class(edge_field), intent(in)  :: this
@@ -488,6 +549,10 @@ contains
 
   end function edge_field_units
 
+  !===================================================================!
+  ! The set the values live on, answered as a plain support.
+  !===================================================================!
+
   subroutine edge_field_support(this, support)
 
     class(edge_field), intent(in)                  :: this
@@ -496,6 +561,10 @@ contains
     allocate(support, source=this % on)
 
   end subroutine edge_field_support
+
+  !===================================================================!
+  ! The same set, answered with its edge type on show.
+  !===================================================================!
 
   subroutine edge_field_edge_support(this, support)
 
@@ -518,6 +587,10 @@ contains
 
   end function edge_field_num_components
 
+  !===================================================================!
+  ! One entry per edge of the support.
+  !===================================================================!
+
   pure integer function edge_field_num_entries(this)
 
     class(edge_field), intent(in) :: this
@@ -525,6 +598,10 @@ contains
     edge_field_num_entries = this % on % size()
 
   end function edge_field_num_entries
+
+  !===================================================================!
+  ! Which of the five kinds is live.
+  !===================================================================!
 
   pure integer function edge_field_value_kind(this)
 
@@ -551,6 +628,10 @@ contains
 
   end subroutine edge_field_get_integer_vector
 
+  !===================================================================!
+  ! Take integers in; the live kind becomes integer.
+  !===================================================================!
+
   pure subroutine edge_field_set_integer_vector(this, values)
 
     class(edge_field), intent(inout) :: this
@@ -560,6 +641,10 @@ contains
     this % vkind = GRAPH_FIELD_INTEGER
 
   end subroutine edge_field_set_integer_vector
+
+  !===================================================================!
+  ! The values, when the live kind is real; zero-length otherwise.
+  !===================================================================!
 
   pure subroutine edge_field_get_real_vector(this, values)
 
@@ -574,6 +659,10 @@ contains
 
   end subroutine edge_field_get_real_vector
 
+  !===================================================================!
+  ! Take reals in; the live kind becomes real.
+  !===================================================================!
+
   pure subroutine edge_field_set_real_vector(this, values)
 
     class(edge_field), intent(inout) :: this
@@ -583,6 +672,10 @@ contains
     this % vkind = GRAPH_FIELD_REAL
 
   end subroutine edge_field_set_real_vector
+
+  !===================================================================!
+  ! The values, when the live kind is complex; zero-length otherwise.
+  !===================================================================!
 
   pure subroutine edge_field_get_complex_vector(this, values)
 
@@ -597,6 +690,11 @@ contains
 
   end subroutine edge_field_get_complex_vector
 
+  !===================================================================!
+  ! Take complex values in; the live kind becomes complex. This is
+  ! the seat a complex-step perturbation rides into the engine.
+  !===================================================================!
+
   pure subroutine edge_field_set_complex_vector(this, values)
 
     class(edge_field), intent(inout) :: this
@@ -606,6 +704,10 @@ contains
     this % vkind = GRAPH_FIELD_COMPLEX
 
   end subroutine edge_field_set_complex_vector
+
+  !===================================================================!
+  ! The values, when the live kind is logical; zero-length otherwise.
+  !===================================================================!
 
   pure subroutine edge_field_get_logical_vector(this, values)
 
@@ -620,6 +722,10 @@ contains
 
   end subroutine edge_field_get_logical_vector
 
+  !===================================================================!
+  ! Take logicals in; the live kind becomes logical.
+  !===================================================================!
+
   pure subroutine edge_field_set_logical_vector(this, values)
 
     class(edge_field), intent(inout) :: this
@@ -629,6 +735,10 @@ contains
     this % vkind = GRAPH_FIELD_LOGICAL
 
   end subroutine edge_field_set_logical_vector
+
+  !===================================================================!
+  ! The words, when the live kind is character; zero-length otherwise.
+  !===================================================================!
 
   pure subroutine edge_field_get_character_vector(this, values)
 
@@ -642,6 +752,10 @@ contains
     end if
 
   end subroutine edge_field_get_character_vector
+
+  !===================================================================!
+  ! Take words in; the live kind becomes character.
+  !===================================================================!
 
   pure subroutine edge_field_set_character_vector(this, values)
 

@@ -255,6 +255,7 @@ program test_graph_contract
   call check_components(nfail)
   call check_adjoint_is_the_transpose(nfail)
   call check_nonlinear_edge_formulas(nfail)
+  call check_inner_products(nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
@@ -2146,5 +2147,100 @@ contains
          & "and the state-dependent weights still conserve", nfail)
 
   end subroutine check_nonlinear_edge_formulas
+
+  !===================================================================!
+  ! THE INNER PRODUCT. It is not a new machine; it is the reduction
+  ! with its measure seat occupied. Reducing u with measure v sums
+  ! u times v entry by entry, which is the product <u, v>. These
+  ! checks pin that reading, and use it to state integration by
+  ! parts and the Laplacian's energy on a chain.
+  !===================================================================!
+
+  subroutine check_inner_products(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_graph)                     :: chain
+    type(vertex_support)                   :: on
+    type(edge_support)                     :: eon
+    type(vertex_field)                     :: uf, vf, wf
+    type(edge_field)                       :: zf, guf
+    type(vertex_differential_operator)     :: opposite
+    type(edge_differential_operator)       :: slope
+    type(reduction)                        :: total
+    class(graph_functional), allocatable   :: answer
+    class(graph_vertex_field), allocatable :: work_v
+    class(graph_edge_field), allocatable   :: work_e
+    real(dp), allocatable                  :: values(:)
+    real(dp)                               :: x, left, right
+    complex(dp)                            :: cx
+
+    chain = stored_graph(4, tails=[1, 2, 3], heads=[2, 3, 4])
+    on    = vertex_support([1, 2, 3, 4])
+    eon   = edge_support([1, 2, 3])
+
+    uf = vertex_field('u', on)
+    vf = vertex_field('v', on)
+    call uf % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
+    call vf % set_real_vector([2.0_dp, 1.0_dp, 0.0_dp, 3.0_dp])
+
+    ! By hand: 1*2 + 2*1 + 3*0 + 4*3 = 16.
+    total = reduction(REDUCE_SUM)
+    call total % reduce(chain, uf, on, answer, measure=vf)
+    call answer % get_real_value(x)
+    call report(abs(x - 16.0_dp) < 1.0d-12, &
+         & "a sum with a measure is the inner product", nfail)
+
+    ! Integration by parts. G reads the slope of u onto the edges,
+    ! D gathers z back onto the vertices, and the two products
+    ! cancel: the transpose of G is minus D.
+    zf = edge_field('z', eon)
+    call zf % set_real_vector([2.0_dp, 0.0_dp, 1.0_dp])
+
+    slope = gradient()
+    call slope % apply(chain, [uf], work_e)
+    call work_e % get_real_vector(values)
+    guf = edge_field('Gu', eon)
+    call guf % set_real_vector(values)
+
+    call total % reduce(chain, zf, eon, answer, measure=guf)
+    call answer % get_real_value(left)
+
+    opposite = divergence()
+    call opposite % apply(chain, [zf], work_v)
+    call work_v % get_real_vector(values)
+    wf = vertex_field('Dz', on)
+    call wf % set_real_vector(values)
+
+    call total % reduce(chain, wf, on, answer, measure=uf)
+    call answer % get_real_value(right)
+
+    call report(abs(left + right) < 1.0d-12, &
+         & "<z,Gu> + <Dz,u> = 0: integration by parts on the chain", nfail)
+
+    ! The energy: u = [0,1,3,6] slopes to [1,2,3], and the product
+    ! of the slope with itself is 1 + 4 + 9 = 14, the value of the
+    ! quadratic form u^T L u.
+    call uf % set_real_vector([0.0_dp, 1.0_dp, 3.0_dp, 6.0_dp])
+    call slope % apply(chain, [uf], work_e)
+    call work_e % get_real_vector(values)
+    guf = edge_field('Gu', eon)
+    call guf % set_real_vector(values)
+    call total % reduce(chain, guf, eon, answer, measure=guf)
+    call answer % get_real_value(x)
+    call report(abs(x - 14.0_dp) < 1.0d-12, &
+         & "the product of the gradient with itself is u^T L u", nfail)
+
+    ! The complex road: u + ih against a real measure v; the
+    ! imaginary part of the answer is h times the sum of v.
+    call uf % set_complex_vector([(1.0_dp, 0.001_dp), (2.0_dp, 0.001_dp), &
+         &                        (3.0_dp, 0.001_dp), (4.0_dp, 0.001_dp)])
+    call total % reduce(chain, uf, on, answer, measure=vf)
+    call answer % get_complex_value(cx)
+    call report(abs(real(cx, dp) - 16.0_dp) < 1.0d-12 .and. &
+         &      abs(aimag(cx) - 0.006_dp) < 1.0d-12, &
+         & "a complex field carries its derivative through the product", nfail)
+
+  end subroutine check_inner_products
 
 end program test_graph_contract

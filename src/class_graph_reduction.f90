@@ -51,6 +51,10 @@
 ! The measure carries one value per entry. A field several components
 ! wide weights every component of an entry by that entry's measure.
 !
+! The measure seat is also the inner product's second field: a sum
+! reduced with measure v answers the sum of q times v, the product
+! <q, v>.
+!
 !=====================================================================!
 !
 !                        WHICH KINDS
@@ -189,7 +193,7 @@ contains
   end subroutine initialize
 
   !===================================================================!
-  ! Fold one part's values into the running answer.
+  ! Add one part's values into the running answer.
   !===================================================================!
 
   pure subroutine accumulate(this, input_graph, field, support, state, measure)

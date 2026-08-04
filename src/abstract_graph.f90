@@ -1473,7 +1473,7 @@ module abstract_graph_types
      end subroutine reduction_initialize_interface
 
      !---------------------------------------------------------------!
-     ! Fold one part's values into the running state.
+     ! Add one part's values into the running state.
      !
      ! The optional measure is what turns a bare sum into an integral:
      ! weight each cell by its volume, or each face by its area, and

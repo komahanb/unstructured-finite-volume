@@ -5,6 +5,7 @@ class_graph_support.o \
 class_graph_field.o \
 class_graph_functional.o \
 class_graph.o \
+class_graph_mesh.o \
 class_graph_reduction.o \
 class_graph_partitioner.o \
 class_graph_assembler.o \

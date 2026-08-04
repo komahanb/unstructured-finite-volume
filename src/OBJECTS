@@ -1,4 +1,17 @@
 objects= \
+abstract_graph.o \
+class_graph_support.o \
+class_graph_field.o \
+class_graph_functional.o \
+class_graph.o \
+class_graph_reduction.o \
+class_graph_partitioner.o \
+class_graph_assembler.o \
+class_graph_coarsener.o \
+class_graph_refiner.o \
+class_graph_differential_operator.o \
+class_graph_balance.o \
+class_graph_walk.o \
 module_solve_mode.o \
 interface_graph.o \
 class_chain.o \

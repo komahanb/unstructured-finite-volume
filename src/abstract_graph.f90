@@ -52,12 +52,13 @@
 !
 !                            THE TAXONOMY
 !
-! Six families, and each answers a different question.
+! Seven families, and each answers a different question.
 !
 !    graph .............. what is joined to what
 !    graph_support ...... which ones we are talking about (vertex or edge)
 !    graph_data ......... what values they carry
 !    graph_reduction .... how many values become one
+!    graph_broadcast .... how one value becomes many
 !    graph_transform .... how one graph becomes another
 !    graph_operation .... how data becomes other data
 !
@@ -76,6 +77,8 @@
 !      graph_functional                one value, reduced from a field
 !
 !    graph_reduction                   field  -> functional
+!
+!    graph_broadcast                   functional -> field
 !
 !    graph_transform                   graph  -> graph
 !      graph_partitioner               whole  -> parts
@@ -276,6 +279,7 @@ module abstract_graph_types
   public :: graph_edge_field
   public :: graph_functional
   public :: graph_reduction
+  public :: graph_broadcast
 
   public :: graph_transform
   public :: graph_partitioner
@@ -786,6 +790,40 @@ module abstract_graph_types
      procedure(reduction_reduce_interface), deferred :: reduce
 
   end type graph_reduction
+
+  !===================================================================!
+  ! A BROADCAST turns a functional into a field: the reduction's
+  ! arrow, reversed.
+  !
+  !      graph_functional ----- graph_broadcast ----->  graph_field
+  !          one                                           many
+  !
+  ! Each rule is the transpose of a reduction rule. The transpose of
+  ! a sum copies the value to every entry; the transpose of an
+  ! average hands every entry an equal share. The round trip is the
+  ! law that pins the pair:
+  !
+  !      reduce( broadcast( J ) )  =  J
+  !
+  ! One step, not four. A reduction needs accumulate and combine
+  ! because parts must meet; a broadcast never crosses parts - each
+  ! entry receives its value without consulting the others.
+  !
+  ! Why it exists: the reverse walk of a computation that ends in a
+  ! reduction begins at one number, and enters the field world
+  ! through the reduction's transpose.
+  !===================================================================!
+
+  type, abstract :: graph_broadcast
+   contains
+
+     !----------------------------------------------------------------!
+     ! One value in, a field of values out.
+     !----------------------------------------------------------------!
+
+     procedure(broadcast_interface), deferred :: broadcast
+
+  end type graph_broadcast
 
   !===================================================================!
   ! TRANSFORMS map between graphs and between graph data.
@@ -1485,13 +1523,10 @@ module abstract_graph_types
      !      norm      J = sqrt( sum q_i^2 V_i )
      !---------------------------------------------------------------!
 
-     pure subroutine reduction_accumulate_interface(this, input_graph, field, support, state, measure)
-       import :: graph_reduction, graph, graph_field
-       import :: graph_support, graph_functional
+     pure subroutine reduction_accumulate_interface(this, field, state, measure)
+       import :: graph_reduction, graph_field, graph_functional
        class(graph_reduction), intent(in) :: this
-       class(graph), intent(in) :: input_graph
        class(graph_field), intent(in) :: field
-       class(graph_support), intent(in) :: support
        class(graph_functional), intent(inout) :: state
        class(graph_field), intent(in), optional :: measure
      end subroutine reduction_accumulate_interface
@@ -1535,16 +1570,26 @@ module abstract_graph_types
      ! somewhere, and this is the one place in the file where that is
      ! allowed.
      !---------------------------------------------------------------!
-     subroutine reduction_reduce_interface(this, input_graph, field, support, functional, measure)
-       import :: graph_reduction, graph, graph_field
-       import :: graph_support, graph_functional
+     subroutine reduction_reduce_interface(this, field, functional, measure)
+       import :: graph_reduction, graph_field, graph_functional
        class(graph_reduction), intent(in) :: this
-       class(graph), intent(in) :: input_graph
        class(graph_field), intent(in) :: field
-       class(graph_support), intent(in) :: support
        class(graph_functional), allocatable, intent(inout) :: functional
        class(graph_field), intent(in), optional :: measure
      end subroutine reduction_reduce_interface
+
+     !---------------------------------------------------------------!
+     ! Fill the field's entries from one value. The field arrives
+     ! constructed on its support, so it knows its own entry count
+     ! and its own side; only its values change.
+     !---------------------------------------------------------------!
+
+     pure subroutine broadcast_interface(this, functional, field)
+       import :: graph_broadcast, graph_functional, graph_field
+       class(graph_broadcast) , intent(in)    :: this
+       class(graph_functional), intent(in)    :: functional
+       class(graph_field)     , intent(inout) :: field
+     end subroutine broadcast_interface
 
      !===============================================================!
      ! Transforms.

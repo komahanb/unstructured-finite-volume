@@ -203,6 +203,7 @@ program test_graph_contract
   use class_graph_reduction , only : REDUCE_SUM, REDUCE_AVERAGE, REDUCE_MINIMUM
   use class_graph_reduction , only : REDUCE_MAXIMUM, REDUCE_NORM, REDUCE_COUNT
   use class_graph_reduction , only : REDUCE_ALL, REDUCE_ANY
+  use class_graph_reduction , only : broadcast, BROADCAST_COPY, BROADCAST_SHARE
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
   use class_graph_partitioner, only : PARTITION_BREADTH_FIRST, PARTITION_ADOPTED
   use class_graph_assembler , only : assembler
@@ -256,6 +257,7 @@ program test_graph_contract
   call check_adjoint_is_the_transpose(nfail)
   call check_nonlinear_edge_formulas(nfail)
   call check_inner_products(nfail)
+  call check_broadcast(nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
@@ -836,7 +838,7 @@ contains
     call f % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
 
     rule = reduction(REDUCE_SUM)
-    call rule % reduce(g, f, on, j)
+    call rule % reduce(f, j)
     call j % get_real_value(r)
     call report(abs(r - 10.0_dp) < 1.0d-13, "sum adds the values up", nfail)
 
@@ -845,31 +847,31 @@ contains
     ! finely the mesh was cut.
     vol = vertex_field('cell_volume', on)
     call vol % set_real_vector([2.0_dp, 2.0_dp, 2.0_dp, 2.0_dp])
-    call rule % reduce(g, f, on, j, measure=vol)
+    call rule % reduce(f, j, measure=vol)
     call j % get_real_value(r)
     call report(abs(r - 20.0_dp) < 1.0d-13, &
          & "a measure turns the sum into an integral", nfail)
 
     rule = reduction(REDUCE_MINIMUM)
-    call rule % reduce(g, f, on, j)
+    call rule % reduce(f, j)
     call j % get_real_value(r)
     call report(abs(r - 1.0_dp) < 1.0d-13, "minimum finds the smallest", nfail)
 
     rule = reduction(REDUCE_MAXIMUM)
-    call rule % reduce(g, f, on, j)
+    call rule % reduce(f, j)
     call j % get_real_value(r)
     call report(abs(r - 4.0_dp) < 1.0d-13, "maximum finds the largest", nfail)
 
     ! Three-four-five, so the root is exact.
     call f % set_real_vector([3.0_dp, 4.0_dp])
     rule = reduction(REDUCE_NORM)
-    call rule % reduce(g, f, on, j)
+    call rule % reduce(f, j)
     call j % get_real_value(r)
     call report(abs(r - 5.0_dp) < 1.0d-13, "the two-norm takes its root once", nfail)
 
     call f % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
     rule = reduction(REDUCE_COUNT)
-    call rule % reduce(g, f, on, j)
+    call rule % reduce(f, j)
     call j % get_integer_value(i)
     call report(i .eq. 4, "count counts, and answers as an integer", nfail)
     call report(j % value_kind() .eq. GRAPH_FIELD_INTEGER, &
@@ -879,12 +881,12 @@ contains
     ! like "is this graph acyclic" comes back in.
     call f % set_logical_vector([.true., .true., .false., .true.])
     rule = reduction(REDUCE_ALL)
-    call rule % reduce(g, f, on, j)
+    call rule % reduce(f, j)
     call j % get_logical_value(l)
     call report(.not. l, "all is false when one of them is", nfail)
 
     rule = reduction(REDUCE_ANY)
-    call rule % reduce(g, f, on, j)
+    call rule % reduce(f, j)
     call j % get_logical_value(l)
     call report(l, "any is true when one of them is", nfail)
     call report(j % value_kind() .eq. GRAPH_FIELD_LOGICAL, &
@@ -894,7 +896,7 @@ contains
     ! a reduction that rounded through a real would return zero.
     call f % set_complex_vector([(1.0_dp, 1.0d-20), (2.0_dp, 3.0d-20)])
     rule = reduction(REDUCE_SUM)
-    call rule % reduce(g, f, on, j)
+    call rule % reduce(f, j)
     call j % get_complex_value(c)
     call report(abs(real(c) - 3.0_dp) < 1.0d-13, &
          & "summing a complex field keeps the real part", nfail)
@@ -944,10 +946,10 @@ contains
 
     ! Each part accumulates on its own, and neither one divides.
     call rule % initialize(a)
-    call rule % accumulate(g, f1, s1, a)
+    call rule % accumulate(f1, a)
 
     call rule % initialize(b)
-    call rule % accumulate(g, f2, s2, b)
+    call rule % accumulate(f2, b)
 
     call rule % combine(a, b, both)
     call rule % finalize(both, j)
@@ -1265,7 +1267,7 @@ contains
     call d % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp])
 
     ! A on the whole.
-    call rule % reduce(g, d, on, whole)
+    call rule % reduce(d, whole)
     call whole % get_real_value(a_whole)
     call report(abs(a_whole - 210.0_dp) < 1.0d-13, &
          & "the sum over the whole graph is 210", nfail)
@@ -1297,7 +1299,7 @@ contains
        deallocate(pick)
 
        call rule % initialize(piece)
-       call rule % accumulate(g, owned_values, owned_only, piece)
+       call rule % accumulate(owned_values, piece)
        call rule % combine(running, piece, joined)
        call rule % initialize(running)
        call rule % combine(joined, running, running)
@@ -2186,7 +2188,7 @@ contains
 
     ! By hand: 1*2 + 2*1 + 3*0 + 4*3 = 16.
     total = reduction(REDUCE_SUM)
-    call total % reduce(chain, uf, on, answer, measure=vf)
+    call total % reduce(uf, answer, measure=vf)
     call answer % get_real_value(x)
     call report(abs(x - 16.0_dp) < 1.0d-12, &
          & "a sum with a measure is the inner product", nfail)
@@ -2203,7 +2205,7 @@ contains
     guf = edge_field('Gu', eon)
     call guf % set_real_vector(values)
 
-    call total % reduce(chain, zf, eon, answer, measure=guf)
+    call total % reduce(zf, answer, measure=guf)
     call answer % get_real_value(left)
 
     opposite = divergence()
@@ -2212,7 +2214,7 @@ contains
     wf = vertex_field('Dz', on)
     call wf % set_real_vector(values)
 
-    call total % reduce(chain, wf, on, answer, measure=uf)
+    call total % reduce(wf, answer, measure=uf)
     call answer % get_real_value(right)
 
     call report(abs(left + right) < 1.0d-12, &
@@ -2226,7 +2228,7 @@ contains
     call work_e % get_real_vector(values)
     guf = edge_field('Gu', eon)
     call guf % set_real_vector(values)
-    call total % reduce(chain, guf, eon, answer, measure=guf)
+    call total % reduce(guf, answer, measure=guf)
     call answer % get_real_value(x)
     call report(abs(x - 14.0_dp) < 1.0d-12, &
          & "the product of the gradient with itself is u^T L u", nfail)
@@ -2235,12 +2237,78 @@ contains
     ! imaginary part of the answer is h times the sum of v.
     call uf % set_complex_vector([(1.0_dp, 0.001_dp), (2.0_dp, 0.001_dp), &
          &                        (3.0_dp, 0.001_dp), (4.0_dp, 0.001_dp)])
-    call total % reduce(chain, uf, on, answer, measure=vf)
+    call total % reduce(uf, answer, measure=vf)
     call answer % get_complex_value(cx)
     call report(abs(real(cx, dp) - 16.0_dp) < 1.0d-12 .and. &
          &      abs(aimag(cx) - 0.006_dp) < 1.0d-12, &
          & "a complex field carries its derivative through the product", nfail)
 
   end subroutine check_inner_products
+
+  !===================================================================!
+  ! THE BROADCAST. The reduction's transpose: one value fills a
+  ! field. The round trips pin the two rule pairs, the pairing pins
+  ! the transpose property, and a complex seed rides intact. No
+  ! graph appears anywhere: the field's own support carries
+  ! everything a broadcast needs.
+  !===================================================================!
+
+  subroutine check_broadcast(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(vertex_support)                 :: on
+    type(vertex_field)                   :: f, uf
+    type(functional)                     :: seed
+    type(broadcast)                      :: copy_rule, share_rule
+    type(reduction)                      :: total
+    class(graph_functional), allocatable :: answer
+    real(dp)                             :: x
+    complex(dp)                          :: cx
+
+    on = vertex_support([1, 2, 3, 4])
+    f  = vertex_field('seed', on)
+    uf = vertex_field('u', on)
+
+    copy_rule  % rule = BROADCAST_COPY
+    share_rule % rule = BROADCAST_SHARE
+    call seed % set_real_value(6.0_dp)
+
+    ! The average of four copies of 6 is 6.
+    call copy_rule % broadcast(seed, f)
+    total = reduction(REDUCE_AVERAGE)
+    call total % reduce(f, answer)
+    call answer % get_real_value(x)
+    call report(abs(x - 6.0_dp) < 1.0d-12, &
+         & "reduce(broadcast(J)) = J: the average undoes the copy", nfail)
+
+    ! The sum of four shares of 6 is 6.
+    call share_rule % broadcast(seed, f)
+    total = reduction(REDUCE_SUM)
+    call total % reduce(f, answer)
+    call answer % get_real_value(x)
+    call report(abs(x - 6.0_dp) < 1.0d-12, &
+         & "reduce(broadcast(J)) = J: the sum undoes the share", nfail)
+
+    ! The pairing <broadcast(J), u> = J * sum(u): 6 * 10 = 60,
+    ! computed with the inner-product reading of the measure.
+    call uf % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
+    call copy_rule % broadcast(seed, f)
+    call total % reduce(uf, answer, measure=f)
+    call answer % get_real_value(x)
+    call report(abs(x - 60.0_dp) < 1.0d-12, &
+         & "<broadcast(J), u> = J sum(u): the transpose pairing", nfail)
+
+    ! A complex seed rides intact: four copies of 6 + 0.001i sum to
+    ! 24 + 0.004i.
+    call seed % set_complex_value((6.0_dp, 0.001_dp))
+    call copy_rule % broadcast(seed, f)
+    call total % reduce(f, answer)
+    call answer % get_complex_value(cx)
+    call report(abs(real(cx, dp) - 24.0_dp) < 1.0d-12 .and. &
+         &      abs(aimag(cx) - 0.004_dp) < 1.0d-12, &
+         & "a complex seed is copied and returns intact", nfail)
+
+  end subroutine check_broadcast
 
 end program test_graph_contract

@@ -77,8 +77,8 @@
 module class_graph_reduction
 
   use iso_fortran_env       , only : dp => REAL64
-  use abstract_graph_types  , only : graph_reduction, graph, graph_field
-  use abstract_graph_types  , only : graph_support, graph_functional
+  use abstract_graph_types  , only : graph_reduction, graph_broadcast
+  use abstract_graph_types  , only : graph_field, graph_functional
   use abstract_graph_types  , only : GRAPH_FIELD_REAL, GRAPH_FIELD_COMPLEX
   use abstract_graph_types  , only : GRAPH_FIELD_LOGICAL
   use class_graph_functional, only : scalar_result => functional
@@ -89,6 +89,8 @@ module class_graph_reduction
   public :: reduction
   public :: REDUCE_SUM, REDUCE_AVERAGE, REDUCE_MINIMUM, REDUCE_MAXIMUM
   public :: REDUCE_NORM, REDUCE_COUNT, REDUCE_ALL, REDUCE_ANY
+  public :: broadcast
+  public :: BROADCAST_COPY, BROADCAST_SHARE
 
   integer, parameter :: REDUCE_SUM     = 1
   integer, parameter :: REDUCE_AVERAGE = 2
@@ -98,6 +100,9 @@ module class_graph_reduction
   integer, parameter :: REDUCE_COUNT   = 6
   integer, parameter :: REDUCE_ALL     = 7
   integer, parameter :: REDUCE_ANY     = 8
+
+  integer, parameter :: BROADCAST_COPY  = 1   ! transpose of a sum
+  integer, parameter :: BROADCAST_SHARE = 2   ! transpose of an average
 
   !===================================================================!
   ! One reduction, carrying the rule it follows.
@@ -134,6 +139,24 @@ module class_graph_reduction
   interface reduction
      module procedure create
   end interface reduction
+
+  !===================================================================!
+  ! The reduction's pair: one value fills a field. Copy is the
+  ! transpose of a sum, share the transpose of an average, and the
+  ! round trip reduce(broadcast(J)) = J pins them. The rule
+  ! component is public, so the intrinsic structure constructor
+  ! broadcast(BROADCAST_SHARE) builds one.
+  !===================================================================!
+
+  type, extends(graph_broadcast) :: broadcast
+
+     integer :: rule = BROADCAST_COPY
+
+   contains
+
+     procedure :: broadcast => broadcast_functional
+
+  end type broadcast
 
 contains
 
@@ -196,12 +219,10 @@ contains
   ! Add one part's values into the running answer.
   !===================================================================!
 
-  pure subroutine accumulate(this, input_graph, field, support, state, measure)
+  pure subroutine accumulate(this, field, state, measure)
 
     class(reduction)       , intent(in)    :: this
-    class(graph)           , intent(in)    :: input_graph
     class(graph_field)     , intent(in)    :: field
-    class(graph_support)   , intent(in)    :: support
     class(graph_functional), intent(inout) :: state
     class(graph_field)     , intent(in), optional :: measure
 
@@ -469,21 +490,56 @@ contains
   ! distributed reduction would sum here before finalizing.
   !===================================================================!
 
-  subroutine reduce(this, input_graph, field, support, functional, measure)
+  subroutine reduce(this, field, functional, measure)
 
     class(reduction)    , intent(in) :: this
-    class(graph)        , intent(in) :: input_graph
     class(graph_field)  , intent(in) :: field
-    class(graph_support), intent(in) :: support
     class(graph_functional), allocatable, intent(inout) :: functional
     class(graph_field)  , intent(in), optional :: measure
 
     class(graph_functional), allocatable :: state
 
     call this % initialize(state)
-    call this % accumulate(input_graph, field, support, state, measure)
+    call this % accumulate(field, state, measure)
     call this % finalize(state, functional)
 
   end subroutine reduce
+
+  !===================================================================!
+  ! Fill every stored value of the field from the functional's one.
+  ! Copy hands each value J; share hands each value J over the count
+  ! of stored values, so a later sum returns J. A real J fills a
+  ! real field; a complex J fills a complex field and carries a
+  ! complex-step seed; any other kind fills zeros, following the
+  ! value-kind rule the fields state.
+  !===================================================================!
+
+  pure subroutine broadcast_functional(this, functional, field)
+
+    class(broadcast)       , intent(in)    :: this
+    class(graph_functional), intent(in)    :: functional
+    class(graph_field)     , intent(inout) :: field
+
+    real(dp)    :: value
+    complex(dp) :: complex_value
+    integer     :: n, i
+
+    n = field % num_entries() * max(field % num_components(), 1)
+
+    if (functional % value_kind() == GRAPH_FIELD_COMPLEX) then
+       call functional % get_complex_value(complex_value)
+       if (this % rule == BROADCAST_SHARE .and. n > 0) then
+          complex_value = complex_value / real(n, dp)
+       end if
+       call field % set_complex_vector([(complex_value, i = 1, n)])
+    else
+       call functional % get_real_value(value)
+       if (this % rule == BROADCAST_SHARE .and. n > 0) then
+          value = value / real(n, dp)
+       end if
+       call field % set_real_vector([(value, i = 1, n)])
+    end if
+
+  end subroutine broadcast_functional
 
 end module class_graph_reduction

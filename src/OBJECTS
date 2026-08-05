@@ -32,6 +32,7 @@ class_graph_gauss_seidel.o \
 class_graph_gmres.o \
 class_graph_newton.o \
 class_graph_multigrid.o \
+class_graph_marcher.o \
 module_solve_mode.o \
 interface_graph.o \
 class_chain.o \

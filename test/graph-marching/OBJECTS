@@ -1,0 +1,3 @@
+objects= \
+mandelbrot_law.o \
+test.o

@@ -31,11 +31,13 @@
 ! arrays.
 !
 ! THE OPERATOR ROAD, for a > 0: the diffusive part rides the
-! calculus directly. An edge coefficient -kappa*area*a/denom with
+! calculus directly. An edge coefficient kappa*area*a/denom with
 ! spacing delta and the stored value c/a in the operator's boundary
-! argument reproduces the eliminated flux exactly - the suite
-! demonstrates the row. For a = 0 the constant travels as a source
-! in the balance instead, because a zero coefficient carries nothing.
+! argument reproduces the eliminated flux with the old row's own
+! sign, so a boundary strengthens the diagonal exactly as the old
+! assembler's lhs does - the suite demonstrates the row. For a = 0
+! the constant travels as a source in the balance instead, because
+! a zero coefficient carries nothing.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -215,10 +217,10 @@ contains
   ! stored value that make the calculus reproduce the eliminated
   ! flux on a headless edge:
   !
-  !      z = c_f*(value - phi_p)/delta  =  -(lhs*phi_p - rhs)
+  !      z = c_f*(value - phi_p)/delta  =  lhs*phi_p - rhs
   !
-  !      c_f   = -kappa*area*a/denom  =  lhs*delta
-  !      value =  c/a
+  !      c_f   = kappa*area*a/denom  =  -lhs*delta
+  !      value = c/a
   !===================================================================!
 
   subroutine operator_coefficients(this, m, kappa, values)
@@ -234,7 +236,7 @@ contains
     call measures_of(this, m, area, delta)
     allocate(values(size(area)))
     do f = 1, size(values)
-       values(f) = -kappa * area(f) * this % a / denom(this, delta(f))
+       values(f) = kappa * area(f) * this % a / denom(this, delta(f))
     end do
 
   end subroutine operator_coefficients

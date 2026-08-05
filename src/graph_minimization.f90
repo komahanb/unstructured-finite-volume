@@ -1,0 +1,273 @@
+!=====================================================================!
+! LEVEL 2 OF THE STRATIFICATION . THE MINIMIZATION
+!
+! The first level with a goal: drive a residual toward zero. This
+! module holds the linear solver base, and its whole content is the
+! relabeling the tower ordered - the solver's vocabulary defined as
+! thin delegations to engine seats, so the engine never learns a
+! solver word and the solver never says apply or measure:
+!
+!      matvec ········· the operation applied, minus its constant
+!      inner_product ·· a sum reduction with the second field as
+!                       the measure
+!      norm ··········· the norm reduction
+!      sweep_order ···· the colouring walk
+!      diagonal ······· matvec probed by colour: applied to one
+!                       colour's indicator, the answer at a member
+!                       IS its diagonal entry, because no two
+!                       neighbours share a colour
+!      constant ······· the affine part of the attached operation -
+!                       what boundary values and sources contribute
+!                       at zero state; the assembled right hand side
+!                       is its negative
+!
+! A concrete solver works in plain arrays - fetched once, worked,
+! written back once, as the field banner orders - and states only
+! its iteration. Everything else is inherited from here.
+!
+! Author: Komahan Boopathy (komahan@gatech.edu)
+!=====================================================================!
+
+module graph_minimization
+
+  use iso_fortran_env       , only : dp => REAL64
+  use graph_grammar         , only : graph, graph_field, graph_operation
+  use graph_calculus        , only : GRAPH_SIDE_VERTEX, graph_functional
+  use class_graph_support   , only : support
+  use class_graph_field     , only : field
+  use class_graph_reduction , only : reduction, REDUCE_SUM, REDUCE_NORM
+  use class_graph_walk      , only : walk, WALK_COLOURING
+
+  implicit none
+
+  private
+  public :: linear_solver
+
+  !===================================================================!
+  ! The base: an attached operation, the graph it reads, and the
+  ! tolerances every iteration honours.
+  !===================================================================!
+
+  type, abstract :: linear_solver
+
+     class(graph_operation), allocatable :: action
+     class(graph)          , allocatable :: on
+
+     type(support) :: cells
+
+     real(dp), allocatable :: affine(:)
+
+     integer  :: max_iterations = 1000
+     real(dp) :: tolerance      = 1.0d-10
+
+   contains
+
+     procedure :: attach
+     procedure :: matvec
+     procedure :: inner_product
+     procedure :: norm
+     procedure :: sweep_order
+     procedure :: diagonal
+     procedure :: constant
+
+     procedure(solve_interface), deferred :: solve
+
+  end type linear_solver
+
+  abstract interface
+
+     !----------------------------------------------------------------!
+     ! Drive || rhs - matvec(x) || under the tolerance, within the
+     ! iteration budget. The achieved norm reports the truth either
+     ! way.
+     !----------------------------------------------------------------!
+
+     subroutine solve_interface(this, rhs, x, achieved)
+       import :: linear_solver, dp
+       class(linear_solver), intent(inout) :: this
+       real(dp), intent(in)    :: rhs(:)
+       real(dp), intent(inout) :: x(:)
+       real(dp), intent(out)   :: achieved
+     end subroutine solve_interface
+
+  end interface
+
+contains
+
+  !===================================================================!
+  ! Take the operation and the graph it reads. The affine part is
+  ! measured here, once: the operation applied to nothing is what
+  ! its boundary values and sources say by themselves.
+  !===================================================================!
+
+  subroutine attach(this, action, on)
+
+    class(linear_solver)  , intent(inout) :: this
+    class(graph_operation), intent(in)    :: action
+    class(graph)          , intent(in)    :: on
+
+    real(dp), allocatable :: zero(:)
+    integer :: v, nv
+
+    if (allocated(this % action)) deallocate(this % action)
+    allocate(this % action, source=action)
+    if (allocated(this % on)) deallocate(this % on)
+    allocate(this % on, source=on)
+
+    nv = on % num_vertices()
+    this % cells = support(GRAPH_SIDE_VERTEX, [(v, v = 1, nv)])
+
+    allocate(zero(nv))
+    zero = 0.0_dp
+    call raw_apply(this, zero, this % affine)
+
+  end subroutine attach
+
+  !===================================================================!
+  ! The operation applied as it stands, affine part and all.
+  !===================================================================!
+
+  subroutine raw_apply(this, x, y)
+
+    class(linear_solver), intent(in)   :: this
+    real(dp), intent(in)               :: x(:)
+    real(dp), allocatable, intent(out) :: y(:)
+
+    type(field) :: state
+    class(graph_field), allocatable :: answer
+
+    state = field('state', this % cells)
+    call state % set_real_vector(x)
+
+    call this % action % apply(this % on, [state], answer)
+    call answer % get_real_vector(y)
+
+  end subroutine raw_apply
+
+  !===================================================================!
+  ! The solver's words, each a delegation.
+  !===================================================================!
+
+  subroutine matvec(this, x, y)
+
+    class(linear_solver), intent(in)   :: this
+    real(dp), intent(in)               :: x(:)
+    real(dp), allocatable, intent(out) :: y(:)
+
+    call raw_apply(this, x, y)
+    y = y - this % affine
+
+  end subroutine matvec
+
+  real(dp) function inner_product(this, u, v) result(prod)
+
+    class(linear_solver), intent(in) :: this
+    real(dp), intent(in) :: u(:), v(:)
+
+    type(reduction) :: total
+    type(field) :: uf, vf
+    class(graph_functional), allocatable :: answer
+    real(dp), allocatable :: got(:)
+
+    uf = field('u', this % cells)
+    call uf % set_real_vector(u)
+    vf = field('v', this % cells)
+    call vf % set_real_vector(v)
+
+    total = reduction(REDUCE_SUM)
+    call total % reduce(uf, answer, measure=vf)
+
+    call answer % get_real_vector(got)
+    prod = got(1)
+
+  end function inner_product
+
+  real(dp) function norm(this, u) result(length)
+
+    class(linear_solver), intent(in) :: this
+    real(dp), intent(in) :: u(:)
+
+    type(reduction) :: measure_of
+    type(field) :: uf
+    class(graph_functional), allocatable :: answer
+    real(dp), allocatable :: got(:)
+
+    uf = field('u', this % cells)
+    call uf % set_real_vector(u)
+
+    measure_of = reduction(REDUCE_NORM)
+    call measure_of % reduce(uf, answer)
+
+    call answer % get_real_vector(got)
+    length = got(1)
+
+  end function norm
+
+  subroutine sweep_order(this, colours)
+
+    class(linear_solver), intent(in)  :: this
+    integer, allocatable, intent(out) :: colours(:)
+
+    type(walk) :: colouring
+    class(graph_field), allocatable :: answer
+
+    colouring = walk(WALK_COLOURING)
+    call colouring % apply(this % on, output=answer)
+    call answer % get_integer_vector(colours)
+
+  end subroutine sweep_order
+
+  !===================================================================!
+  ! The diagonal, probed by colour. Applied to the indicator of one
+  ! colour class, the answer at a member is that member's diagonal
+  ! entry, because none of its neighbours is in the class. One
+  ! matvec per colour, a handful in all.
+  !===================================================================!
+
+  subroutine diagonal(this, d)
+
+    class(linear_solver), intent(in)   :: this
+    real(dp), allocatable, intent(out) :: d(:)
+
+    integer , allocatable :: colours(:)
+    real(dp), allocatable :: indicator(:), y(:)
+    integer :: nv, col, v
+
+    nv = size(this % affine)
+    allocate(d(nv), indicator(nv))
+    d = 0.0_dp
+
+    call this % sweep_order(colours)
+
+    do col = 1, maxval(colours)
+
+       indicator = 0.0_dp
+       do v = 1, nv
+          if (colours(v) == col) indicator(v) = 1.0_dp
+       end do
+
+       call this % matvec(indicator, y)
+
+       do v = 1, nv
+          if (colours(v) == col) d(v) = y(v)
+       end do
+
+    end do
+
+  end subroutine diagonal
+
+  !===================================================================!
+  ! The affine part, for the caller assembling an equation: the
+  ! statement action(q) = 0 reads matvec(q) = -constant.
+  !===================================================================!
+
+  subroutine constant(this, g)
+
+    class(linear_solver), intent(in)   :: this
+    real(dp), allocatable, intent(out) :: g(:)
+
+    g = this % affine
+
+  end subroutine constant
+
+end module graph_minimization

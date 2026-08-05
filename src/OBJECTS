@@ -7,6 +7,8 @@ class_graph_functional.o \
 class_graph.o \
 class_graph_mesh.o \
 class_robin_condition.o \
+class_conduction.o \
+class_advection.o \
 class_graph_reduction.o \
 class_graph_partitioner.o \
 class_graph_assembler.o \
@@ -15,6 +17,9 @@ class_graph_refiner.o \
 class_graph_differential_operator.o \
 class_graph_balance.o \
 class_graph_walk.o \
+graph_minimization.o \
+class_graph_jacobi.o \
+class_graph_conjugate_gradient.o \
 module_solve_mode.o \
 interface_graph.o \
 class_chain.o \

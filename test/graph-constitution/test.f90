@@ -15,7 +15,7 @@
 ! the coefficients and stored value the condition supplies make the
 ! calculus reproduce the eliminated boundary flux on the row,
 !
-!      row with the wall  -  row without it  =  -(lhs*q_p - rhs)
+!      row with the wall  -  row without it  =  lhs*q_p - rhs
 !
 ! with lhs and rhs taken from the OLD functions, so the two worlds
 ! meet on one number.
@@ -34,6 +34,10 @@ program test_graph_constitution
   use class_boundary_condition, only : old_robin => robin
   use class_graph_differential_operator, only : differential_operator
   use class_graph_differential_operator, only : vertex_differential_operator
+  use class_graph_differential_operator, only : edge_differential_operator
+  use class_graph_balance  , only : balance
+  use class_conduction     , only : conduction
+  use class_advection      , only : advection
 
   implicit none
 
@@ -44,6 +48,8 @@ program test_graph_constitution
   call check_tag_resolves_once(nfail)
   call check_formula_fidelity(nfail)
   call check_operator_road(nfail)
+  call check_conduction_law(nfail)
+  call check_advection_law(nfail)
 
   write(*, '(a)') ' ============================================='
   if (nfail == 0) then
@@ -179,7 +185,8 @@ contains
   ! THE OPERATOR ROAD. The condition's coefficients and stored value
   ! make the calculus carry the boundary flux: the difference between
   ! the row with the condition and the row without it equals
-  ! -(lhs*q_p - rhs), both sides computed independently.
+  ! lhs*q_p - rhs - the old row's own boundary term, sign and all -
+  ! both sides computed independently.
   !===================================================================!
 
   subroutine check_operator_road(nfail)
@@ -225,8 +232,8 @@ contains
     call without % apply(m, [state], y)
     call y % get_real_vector(rows_without)
 
-    expected = -(old % lhs_coeff(0.7_dp, 0.3_dp, kappa) * q1 &
-         &       - old % rhs_coeff(0.7_dp, 0.3_dp, kappa))
+    expected = old % lhs_coeff(0.7_dp, 0.3_dp, kappa) * q1 &
+         &     - old % rhs_coeff(0.7_dp, 0.3_dp, kappa)
 
     call report(abs((rows_with(1) - rows_without(1)) - expected) < 1.0d-11, &
          & 'the row difference is the eliminated boundary flux', nfail)
@@ -235,5 +242,128 @@ contains
          & 'and the far cell feels nothing from it', nfail)
 
   end subroutine check_operator_road
+
+  !===================================================================!
+  ! THE CONDUCTION LAW. keff = n^T K n from the mesh's own normals:
+  ! isotropic k answers k on every unit normal; a diagonal tensor
+  ! answers the component its normal selects. The dictionary
+  ! coefficient keff*area lives on interior faces only.
+  !===================================================================!
+
+  subroutine check_conduction_law(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(mesh) :: m
+    type(conduction) :: law
+    real(dp), allocatable :: keff(:), c(:)
+    real(dp) :: k(3, 3)
+
+    m = hand_mesh()
+
+    law = conduction(2.5_dp)
+    call law % normal_conductivity(m, keff)
+    call report(all(abs(keff - 2.5_dp) < 1.0d-14), &
+         & 'an isotropic material answers k on every unit normal', nfail)
+
+    k = 0.0_dp
+    k(1, 1) = 2.0_dp
+    k(2, 2) = 3.0_dp
+    k(3, 3) = 4.0_dp
+    law = conduction(k)
+    call law % normal_conductivity(m, keff)
+    call report(all(abs(keff - 2.0_dp) < 1.0d-14), &
+         & 'a diagonal tensor answers the part its normal selects', nfail)
+
+    call law % edge_coefficients(m, c)
+    call report(abs(c(1) - 2.0_dp * 2.0_dp) < 1.0d-14, &
+         & 'the interior coefficient is keff times the area', nfail)
+    call report(c(2) == 0.0_dp .and. c(3) == 0.0_dp, &
+         & 'and the headless faces carry none: theirs come from a condition', nfail)
+
+  end subroutine check_conduction_law
+
+  !===================================================================!
+  ! THE ADVECTION LAW. vn = v.n and the coefficient vn*area; the
+  ! scheme is the calculus's one_sided flag, and both settings must
+  ! reproduce the old assembler's weights,
+  !
+  !      upwind    wp = max(vn,0), wn = min(vn,0)
+  !      central   wp = wn = vn/2
+  !
+  ! through the balance rows -A*(wp*q_p + wn*q_n), computed here by
+  ! hand, both flow directions.
+  !===================================================================!
+
+  subroutine check_advection_law(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(mesh) :: m
+    type(advection) :: flow
+    type(balance) :: sums
+    type(field) :: state
+    type(support) :: cells
+    class(graph_field), allocatable :: y
+    real(dp), allocatable :: vn(:), c(:), got(:)
+    real(dp), parameter :: q1 = 2.0_dp, q2 = 4.0_dp
+    real(dp) :: area, wp, wn
+    integer :: v
+
+    m = hand_mesh()
+    area = 2.0_dp
+
+    cells = support(GRAPH_SIDE_VERTEX, [(v, v = 1, 2)])
+    state = field('q', cells)
+    call state % set_real_vector([q1, q2])
+
+    flow = advection([1.5_dp, 0.0_dp, 0.0_dp])
+    call flow % normal_speed(m, vn)
+    call report(abs(vn(1) - 1.5_dp) < 1.0d-14, &
+         & 'the normal speed is v dot n', nfail)
+
+    call flow % edge_coefficients(m, c)
+    call report(abs(c(1) - 1.5_dp * area) < 1.0d-14 .and. c(2) == 0.0_dp, &
+         & 'the coefficient is vn times area, interior only', nfail)
+
+    ! Upwind, flow along the edge: the tail carries it.
+    sums = balance(edge_terms=[edge_differential_operator(order=0, &
+         & coefficients=c, one_sided=.true.)])
+    call sums % apply(m, [state], y)
+    call y % get_real_vector(got)
+
+    wp = max(vn(1), 0.0_dp)
+    wn = min(vn(1), 0.0_dp)
+    call report(abs(got(1) - (-area * (wp * q1 + wn * q2))) < 1.0d-12 .and. &
+         &      abs(got(2) - (+area * (wp * q1 + wn * q2))) < 1.0d-12, &
+         & 'upwind with the flow: the old rows, both cells', nfail)
+
+    ! Upwind, flow against the edge: the head carries it.
+    flow = advection([-1.5_dp, 0.0_dp, 0.0_dp])
+    call flow % edge_coefficients(m, c)
+    sums = balance(edge_terms=[edge_differential_operator(order=0, &
+         & coefficients=c, one_sided=.true.)])
+    call sums % apply(m, [state], y)
+    call y % get_real_vector(got)
+
+    wp = max(-1.5_dp, 0.0_dp)
+    wn = min(-1.5_dp, 0.0_dp)
+    call report(abs(got(1) - (-area * (wp * q1 + wn * q2))) < 1.0d-12, &
+         & 'upwind against the flow: the head is upstream', nfail)
+
+    ! Central: both ends, evenly - the old half weights.
+    flow = advection([1.5_dp, 0.0_dp, 0.0_dp])
+    call flow % edge_coefficients(m, c)
+    sums = balance(edge_terms=[edge_differential_operator(order=0, &
+         & coefficients=c, one_sided=.false.)])
+    call sums % apply(m, [state], y)
+    call y % get_real_vector(got)
+
+    wp = 0.5_dp * 1.5_dp
+    wn = 0.5_dp * 1.5_dp
+    call report(abs(got(1) - (-area * (wp * q1 + wn * q2))) < 1.0d-12, &
+         & 'central: the old half weights, exactly', nfail)
+
+  end subroutine check_advection_law
 
 end program test_graph_constitution

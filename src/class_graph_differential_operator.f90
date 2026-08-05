@@ -214,7 +214,8 @@ module class_graph_differential_operator
      integer :: landing = GRAPH_SIDE_VERTEX
      integer :: order   = 2
 
-     logical :: adjoint = .false.
+     logical :: adjoint   = .false.
+     logical :: one_sided = .false.
 
      real(dp)              :: coefficient    = 1.0_dp
      real(dp), allocatable :: coefficients(:)
@@ -244,7 +245,8 @@ contains
 
   pure type(differential_operator) function edge_differential_operator &
        & (order, coefficient, coefficients, spacing, spacings, &
-       &  measure, measures, boundary_value, boundary_values, label) result(this)
+       &  measure, measures, boundary_value, boundary_values, one_sided, &
+       &  label) result(this)
 
     integer         , intent(in)           :: order
     real(dp)        , intent(in), optional :: coefficient
@@ -255,10 +257,13 @@ contains
     real(dp)        , intent(in), optional :: measures(:)
     real(dp)        , intent(in), optional :: boundary_value
     real(dp)        , intent(in), optional :: boundary_values(:)
+    logical         , intent(in), optional :: one_sided
     character(len=*), intent(in), optional :: label
 
     this % landing = GRAPH_SIDE_EDGE
     this % order   = max(order, 0)
+
+    if (present(one_sided)) this % one_sided = one_sided
 
     if (present(coefficient))     this % coefficient    = coefficient
     if (present(coefficients))    allocate(this % coefficients, source=coefficients)
@@ -850,7 +855,8 @@ contains
           call gather_component(q, nc, c, qc)
 
           if (this % order <= 0) then
-             call average_step(input_graph, 0.0_dp, .true., &
+             call average_step(input_graph, &
+                  & merge(1.0_dp, 0.0_dp, this % one_sided), .true., &
                   & this % coefficient, this % coefficients, &
                   & this % boundary_value, this % boundary_values, qc, zc)
           else if (this % order == 1) then

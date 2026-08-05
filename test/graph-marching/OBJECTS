@@ -1,3 +1,4 @@
 objects= \
 mandelbrot_law.o \
+vdp_law.o \
 test.o

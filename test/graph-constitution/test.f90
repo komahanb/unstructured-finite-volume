@@ -30,8 +30,6 @@ program test_graph_constitution
   use class_graph_field  , only : field
   use class_graph_mesh   , only : mesh
   use class_robin_condition, only : robin_condition, robin, dirichlet, neumann
-  use class_boundary_condition, only : old_condition => boundary_condition
-  use class_boundary_condition, only : old_robin => robin
   use class_graph_differential_operator, only : differential_operator
   use class_graph_differential_operator, only : vertex_differential_operator
   use class_graph_differential_operator, only : edge_differential_operator
@@ -141,46 +139,50 @@ contains
     m = hand_mesh()
 
     call fidelity_case(m, dirichlet('in', 5.0_dp), &
-         & old_robin(1.0_dp, 0.0_dp, 5.0_dp), 0.7_dp, 0.3_dp, &
+         & 1.0_dp, 0.0_dp, 5.0_dp, 0.7_dp, 0.3_dp, &
          & kappa, vn, 'dirichlet', nfail)
 
     call fidelity_case(m, neumann('out', 2.0_dp), &
-         & old_robin(0.0_dp, 1.0_dp, 2.0_dp), 1.1_dp, 0.6_dp, &
+         & 0.0_dp, 1.0_dp, 2.0_dp, 1.1_dp, 0.6_dp, &
          & kappa, vn, 'neumann', nfail)
 
     call fidelity_case(m, robin('out', 2.0_dp, 3.0_dp, 4.0_dp), &
-         & old_robin(2.0_dp, 3.0_dp, 4.0_dp), 1.1_dp, 0.6_dp, &
+         & 2.0_dp, 3.0_dp, 4.0_dp, 1.1_dp, 0.6_dp, &
          & kappa, vn, 'mixed robin', nfail)
 
   end subroutine check_formula_fidelity
 
-  subroutine fidelity_case(m, bc, old, area, delta, kappa, vn, name, nfail)
+  subroutine fidelity_case(m, bc, a, b, c, area, delta, kappa, vn, name, nfail)
 
     type(mesh)            , intent(in)    :: m
     type(robin_condition) , intent(in)    :: bc
-    type(old_condition)   , intent(in)    :: old
-    real(dp)              , intent(in)    :: area, delta, kappa, vn
+    real(dp)              , intent(in)    :: a, b, c, area, delta, kappa, vn
     character(len=*)      , intent(in)    :: name
     integer               , intent(inout) :: nfail
 
     real(dp), allocatable :: got(:)
+    real(dp) :: denom
     real(dp), parameter :: tol = 1.0d-15
+
+    ! The formulas the old world stated, held here as the anchor
+    ! now that the old module is gone: denom = a + b/delta.
+    denom = a + b / delta
 
     call bc % lhs_coefficients(m, kappa, got)
     call report(size(got) == 1 .and. &
-         & abs(got(1) - old % lhs_coeff(area, delta, kappa)) < tol, &
-         & name // ': the diffusive diagonal matches the old world', nfail)
+         & abs(got(1) - (-kappa * area * a / (delta * denom))) < tol, &
+         & name // ': the diffusive diagonal matches the recorded formula', nfail)
 
     call bc % rhs_coefficients(m, kappa, got)
-    call report(abs(got(1) - old % rhs_coeff(area, delta, kappa)) < tol, &
+    call report(abs(got(1) - (-kappa * area * c / (delta * denom))) < tol, &
          & name // ': the diffusive constant matches', nfail)
 
     call bc % adv_lhs_coefficients(m, vn, got)
-    call report(abs(got(1) - old % adv_lhs_coeff(area, delta, vn)) < tol, &
+    call report(abs(got(1) - (-vn * area * (b / delta) / denom)) < tol, &
          & name // ': the advective diagonal matches', nfail)
 
     call bc % adv_rhs_coefficients(m, vn, got)
-    call report(abs(got(1) - old % adv_rhs_coeff(area, delta, vn)) < tol, &
+    call report(abs(got(1) - (vn * area * c / denom)) < tol, &
          & name // ': the advective constant matches', nfail)
 
   end subroutine fidelity_case
@@ -199,7 +201,6 @@ contains
 
     type(mesh) :: m
     type(robin_condition) :: bc
-    type(old_condition)   :: old
     type(differential_operator) :: with_wall, without
     type(field) :: state
     type(support) :: cells
@@ -212,7 +213,6 @@ contains
 
     m   = hand_mesh()
     bc  = dirichlet('in', 5.0_dp)
-    old = old_robin(1.0_dp, 0.0_dp, 5.0_dp)
 
     call bc % operator_coefficients(m, kappa, cin)
     call bc % boundary_values(m, bin)
@@ -236,8 +236,9 @@ contains
     call without % apply(m, [state], y)
     call y % get_real_vector(rows_without)
 
-    expected = old % lhs_coeff(0.7_dp, 0.3_dp, kappa) * q1 &
-         &     - old % rhs_coeff(0.7_dp, 0.3_dp, kappa)
+    ! lhs*q1 - rhs, from the recorded formulas at a=1, b=0, c=5.
+    expected = (-kappa * 0.7_dp / 0.3_dp) * q1 &
+         &     - (-kappa * 0.7_dp * 5.0_dp / 0.3_dp)
 
     call report(abs((rows_with(1) - rows_without(1)) - expected) < 1.0d-11, &
          & 'the row difference is the eliminated boundary flux', nfail)

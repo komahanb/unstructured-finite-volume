@@ -20,6 +20,9 @@ class_graph_walk.o \
 graph_minimization.o \
 class_graph_jacobi.o \
 class_graph_conjugate_gradient.o \
+class_graph_gauss_seidel.o \
+class_graph_gmres.o \
+class_graph_newton.o \
 module_solve_mode.o \
 interface_graph.o \
 class_chain.o \

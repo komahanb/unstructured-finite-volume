@@ -15,6 +15,87 @@
 ! order, each a delegation to an engine seat.
 !=====================================================================!
 
+module cubic_statement_fixture
+
+  use iso_fortran_env, only : dp => REAL64
+  use graph_grammar  , only : graph, graph_field, graph_operation
+  use graph_calculus , only : GRAPH_SIDE_VERTEX
+  use class_graph_support, only : support
+  use class_graph_field  , only : field
+  use class_graph_differential_operator, only : differential_operator
+
+  implicit none
+
+  private
+  public :: cubic_statement
+
+  !===================================================================!
+  ! A nonlinear statement for newton to chew: the chain's rows with
+  ! a small cube AGAINST them - a stable reaction, so the jacobian
+  ! keeps the rows' own sign and the root is one.
+  !===================================================================!
+
+  type, extends(graph_operation) :: cubic_statement
+
+     type(differential_operator) :: linear_part
+     real(dp) :: strength = 0.0_dp
+
+   contains
+
+     procedure :: name   => cubic_name
+     procedure :: domain => cubic_domain
+     procedure :: apply  => cubic_apply
+
+  end type cubic_statement
+
+contains
+
+  pure function cubic_name(this) result(name)
+    class(cubic_statement), intent(in) :: this
+    character(len=:), allocatable :: name
+    name = 'cubic statement'
+  end function cubic_name
+
+  subroutine cubic_domain(this, input_graph, domain)
+    class(cubic_statement), intent(in)     :: this
+    class(graph), intent(in)               :: input_graph
+    class(graph), allocatable, intent(out) :: domain
+    call input_graph % all_vertices(domain)
+  end subroutine cubic_domain
+
+  subroutine cubic_apply(this, input_graph, input_data, output)
+
+    class(cubic_statement), intent(in)             :: this
+    class(graph), intent(in)                       :: input_graph
+    class(graph_field), intent(in), optional       :: input_data(:)
+    class(graph_field), allocatable, intent(inout) :: output
+
+    type(support) :: cells
+    type(field)   :: out
+    real(dp), allocatable :: q(:), y(:)
+    integer :: nv, v
+
+    call this % linear_part % apply(input_graph, input_data, output)
+    call output % get_real_vector(y)
+
+    nv = input_graph % num_vertices()
+    if (present(input_data)) then
+       call input_data(1) % get_real_vector(q)
+       do v = 1, min(nv, size(q))
+          y(v) = y(v) - this % strength * q(v)**3
+       end do
+    end if
+
+    cells = support(GRAPH_SIDE_VERTEX, [(v, v = 1, nv)])
+    out = field('cubic', cells)
+    call out % set_real_vector(y)
+    if (allocated(output)) deallocate(output)
+    allocate(output, source=out)
+
+  end subroutine cubic_apply
+
+end module cubic_statement_fixture
+
 program test_graph_minimization
 
   use iso_fortran_env, only : dp => REAL64
@@ -27,6 +108,12 @@ program test_graph_minimization
   use class_graph_differential_operator, only : vertex_differential_operator
   use class_graph_jacobi   , only : jacobi
   use class_graph_conjugate_gradient, only : conjugate_gradient
+  use class_graph_gauss_seidel, only : gauss_seidel
+  use class_graph_gmres    , only : gmres
+  use class_graph_newton   , only : newton
+  use class_graph_differential_operator, only : edge_differential_operator
+  use class_graph_balance  , only : balance
+  use cubic_statement_fixture, only : cubic_statement
 
   implicit none
 
@@ -37,6 +124,9 @@ program test_graph_minimization
   call check_solver_words(nfail)
   call check_hand_problem(nfail)
   call check_real_mesh(nfail)
+  call check_sweeping_family(nfail)
+  call check_gmres_family(nfail)
+  call check_newton(nfail)
 
   write(*, '(a)') ' ============================================='
   if (nfail == 0) then
@@ -273,5 +363,139 @@ contains
          & nfail)
 
   end subroutine check_real_mesh
+
+  !===================================================================!
+  ! Gauss-seidel and its omega: the same chain, the same exact
+  ! answer, the sweep ordered by colour. SOR is not another type -
+  ! it is this one at omega away from one.
+  !===================================================================!
+
+  subroutine check_sweeping_family(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(mesh) :: m
+    type(gauss_seidel) :: gs
+    real(dp), allocatable :: g(:), rhs(:), x(:)
+    real(dp) :: achieved
+    real(dp), parameter :: exact(3) = [5.0_dp/3.0_dp, 5.0_dp, 25.0_dp/3.0_dp]
+
+    m = chain_mesh()
+    call gs % attach(chain_operator(m), m)
+    gs % max_iterations = 2000
+    gs % tolerance      = 1.0d-12
+
+    call gs % constant(g)
+    rhs = -g
+
+    allocate(x(3))
+    x = 0.0_dp
+    call gs % solve(rhs, x, achieved)
+    call report(all(abs(x - exact) < 1.0d-8), &
+         & 'gauss-seidel sweeps by colour to the exact answer', nfail)
+
+    gs % omega = 1.2_dp
+    x = 0.0_dp
+    call gs % solve(rhs, x, achieved)
+    call report(all(abs(x - exact) < 1.0d-8), &
+         & 'and over-relaxed it is sor, a parameter, not a type', nfail)
+
+  end subroutine check_sweeping_family
+
+  !===================================================================!
+  ! GMRES: the chain again, then an unsymmetric statement -
+  ! advection riding diffusion through the balance - where two
+  ! different solvers must meet on one answer.
+  !===================================================================!
+
+  subroutine check_gmres_family(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(mesh) :: m
+    type(gmres)  :: gm
+    type(jacobi) :: js
+    type(balance) :: statement
+    real(dp), allocatable :: g(:), rhs(:), x(:), xj(:)
+    real(dp) :: achieved
+    real(dp), parameter :: exact(3) = [5.0_dp/3.0_dp, 5.0_dp, 25.0_dp/3.0_dp]
+
+    m = chain_mesh()
+
+    call gm % attach(chain_operator(m), m)
+    gm % tolerance = 1.0d-12
+    call gm % constant(g)
+    rhs = -g
+    allocate(x(3))
+    x = 0.0_dp
+    call gm % solve(rhs, x, achieved)
+    call report(all(abs(x - exact) < 1.0d-8), &
+         & 'gmres lands on the exact answer', nfail)
+
+    ! Diffusion and upwind advection in one balance: unsymmetric.
+    statement = balance(edge_terms=[ &
+         & edge_differential_operator(order=1, &
+         &      coefficients=[1.0_dp, 1.0_dp, 2.0_dp, 2.0_dp], &
+         &      spacings=[1.0_dp, 1.0_dp, 0.5_dp, 0.5_dp], &
+         &      boundary_values=[0.0_dp, 0.0_dp, 0.0_dp, 10.0_dp]), &
+         & edge_differential_operator(order=0, &
+         &      coefficients=[0.4_dp, 0.4_dp, 0.0_dp, 0.0_dp], &
+         &      one_sided=.true.)])
+
+    call gm % attach(statement, m)
+    call gm % constant(g)
+    rhs = -g
+    x = 0.0_dp
+    call gm % solve(rhs, x, achieved)
+    call report(achieved < 1.0d-10, &
+         & 'gmres closes the unsymmetric statement', nfail)
+
+    call js % attach(statement, m)
+    js % max_iterations = 5000
+    js % tolerance      = 1.0d-12
+    allocate(xj(3))
+    xj = 0.0_dp
+    call js % solve(rhs, xj, achieved)
+    call report(all(abs(x - xj) < 1.0d-7), &
+         & 'and two different solvers meet on one answer', nfail)
+
+  end subroutine check_gmres_family
+
+  !===================================================================!
+  ! Newton over the linear family. A cubic term rides the chain
+  ! statement; newton linearizes by directional differences, hands
+  ! each linear question to the gmres it governs, and drives the
+  ! nonlinear residual to zero.
+  !===================================================================!
+
+  subroutine check_newton(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(mesh) :: m
+    type(newton) :: ns
+    type(cubic_statement) :: action
+    real(dp), allocatable :: q(:)
+    real(dp) :: achieved
+
+    m = chain_mesh()
+
+    action % linear_part = chain_operator(m)
+    action % strength    = 0.05_dp
+
+    allocate(ns % inner, source=gmres())
+    ns % inner % tolerance = 1.0d-12
+    ns % tolerance = 1.0d-7
+
+    allocate(q(3))
+    q = 0.0_dp
+    call ns % solve(action, m, q, achieved)
+
+    call report(achieved < 1.0d-7, &
+         & 'newton drives the nonlinear residual to the difference floor', nfail)
+    call report(q(1) > 0.0_dp .and. q(1) < q(2) .and. q(2) < q(3), &
+         & 'and the heated chain still rises monotonically', nfail)
+
+  end subroutine check_newton
 
 end program test_graph_minimization

@@ -62,5 +62,6 @@ class_forward_euler.o \
 class_gauss_jacobi.o \
 class_gauss_seidel.o \
 class_sor.o \
-class_config.o
+class_config.o \
+class_mesh_builder.o
 #tecplot_write.o

@@ -33,6 +33,7 @@ program test_graph_mesh
   use class_graph_support, only : support
   use class_graph_field  , only : field
   use class_graph_mesh   , only : mesh
+  use class_mesh_builder , only : mesh_from_gmsh
   use class_graph_differential_operator, only : differential_operator
   use class_graph_differential_operator, only : vertex_differential_operator
 
@@ -45,6 +46,7 @@ program test_graph_mesh
   call check_mesh_is_a_graph(nfail)
   call check_measurements_return(nfail)
   call check_dictionary_rows(nfail)
+  call check_gmsh_path(nfail)
 
   write(*, '(a)') ' ============================================='
   if (nfail == 0) then
@@ -240,5 +242,80 @@ contains
          & 'seated on the volumes, each row divides by its cell', nfail)
 
   end subroutine check_dictionary_rows
+
+  !===================================================================!
+  ! THE GMSH PATH. A real file walks the whole road: parsed and
+  ! measured by the bridge, seated on the tower, then proven by the
+  ! dictionary's conservation law - with conductivity on the interior
+  ! faces only, the interior rows exchange and cancel, so the rows
+  ! sum to zero over the whole mesh to machine precision.
+  !===================================================================!
+
+  subroutine check_gmsh_path(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(mesh) :: m
+    type(differential_operator) :: second
+    type(field) :: state
+    type(support) :: cells
+    class(graph_field), allocatable :: y
+    type(field) :: fa, fd, fv
+    real(dp), allocatable :: farea(:), fdelta(:), vol(:), got(:), c(:), q(:)
+    integer :: nv, ne, e, v, nwall
+
+    m = mesh_from_gmsh('../square-10.msh')
+
+    nv = m % num_vertices()
+    ne = m % num_edges()
+
+    call report(nv > 0 .and. ne > nv, &
+         & 'the file arrives: more faces than cells, as a mesh has', nfail)
+
+    fv = m % cell_volume()
+    call fv % get_real_vector(vol)
+    call report(all(vol > 0.0_dp), 'every cell volume is positive', nfail)
+
+    fa = m % face_area()
+    call fa % get_real_vector(farea)
+    call report(all(farea > 0.0_dp), 'every face area is positive', nfail)
+
+    fd = m % face_delta()
+    call fd % get_real_vector(fdelta)
+    call report(all(fdelta > 0.0_dp), 'every face delta is positive', nfail)
+
+    nwall = 0
+    do e = 1, ne
+       if (.not. m % edge_has_head(e)) nwall = nwall + 1
+    end do
+    call report(nwall > 0, 'the boundary faces arrived without heads', nfail)
+
+    ! Conservation: conductivity on interior faces only, an uneven
+    ! state, and the rows must sum to zero - what every face gives
+    ! one cell it takes from the other.
+    allocate(c(ne))
+    do e = 1, ne
+       c(e) = farea(e)
+       if (.not. m % edge_has_head(e)) c(e) = 0.0_dp
+    end do
+
+    allocate(q(nv))
+    do v = 1, nv
+       q(v) = real(mod(7 * v, 11), dp)
+    end do
+
+    cells = support(GRAPH_SIDE_VERTEX, [(v, v = 1, nv)])
+    state = field('q', cells)
+    call state % set_real_vector(q)
+
+    second = vertex_differential_operator(order=2, coefficients=c, &
+         & spacings=fdelta)
+    call second % apply(m, [state], y)
+    call y % get_real_vector(got)
+
+    call report(abs(sum(got)) < 1.0d-9 * sum(abs(got)) + 1.0d-12, &
+         & 'the interior rows conserve: they sum to zero on the real mesh', nfail)
+
+  end subroutine check_gmsh_path
 
 end program test_graph_mesh

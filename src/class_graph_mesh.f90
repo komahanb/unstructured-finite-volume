@@ -1,10 +1,12 @@
 !=====================================================================!
 ! The mesh: a stored graph that lives in space.
 !
-! LEVEL 2 OF THE STRATIFICATION. This is the tower's one inheritance
-! crossing: the mesh IS a graph - cells are the vertices, interior
-! faces the edges, boundary faces the edges without heads - so it
-! extends the stored graph rather than holding one.
+! LEVEL 1 OF THE STRATIFICATION - for measurements are calculus
+! content: values riding on structure, no goal anywhere in them.
+! This is the tower's one inheritance crossing: the mesh IS a graph
+! - cells are the vertices, interior faces the edges, boundary
+! faces the edges without heads - so it extends the stored graph
+! rather than holding one.
 !
 !     +-----+-----+
 !     |  1  |  2  |            (1)---(2)

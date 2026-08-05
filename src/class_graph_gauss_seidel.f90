@@ -19,24 +19,37 @@
 module class_graph_gauss_seidel
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_minimization, only : linear_solver
+  use graph_minimization, only : minimizer
 
   implicit none
 
   private
   public :: gauss_seidel
 
-  type, extends(linear_solver) :: gauss_seidel
+  type, extends(minimizer) :: gauss_seidel
 
      real(dp) :: omega = 1.0_dp
 
    contains
 
+     procedure :: name => gauss_seidel_name
      procedure :: solve
 
   end type gauss_seidel
 
 contains
+
+  pure function gauss_seidel_name(this) result(name)
+
+    class(gauss_seidel), intent(in) :: this
+    character(len=:), allocatable :: name
+
+    associate (u1 => this); end associate
+
+    name = 'gauss-seidel'
+
+  end function gauss_seidel_name
+
 
   subroutine solve(this, rhs, x, achieved)
 

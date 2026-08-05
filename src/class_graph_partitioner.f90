@@ -62,6 +62,7 @@ module class_graph_partitioner
   use class_graph         , only : stored_graph
   use class_graph_support , only : support
   use class_graph_field   , only : field
+  use class_graph_walk    , only : walk, WALK_VISIT_ORDER
 
   implicit none
 
@@ -339,48 +340,56 @@ contains
     integer     , intent(in)    :: nparts
     integer     , intent(inout) :: owner(:)
 
-    integer, allocatable :: queue(:), nbrs(:)
-    integer :: nv, share, k, v, seed, head_of_queue, tail_of_queue, taken, i
+    type(stored_graph) :: untaken
+    type(walk)         :: visit
+    class(graph_field), allocatable :: reached
+    integer, allocatable :: locals(:), whereis(:), tails(:), heads(:), order(:)
+    integer :: nv, ne, share, k, v, e, t, h, n, m
 
     nv    = global_graph % num_vertices()
+    ne    = global_graph % num_edges()
     owner = 0
     share = (nv + nparts - 1) / nparts
 
-    allocate(queue(nv))
+    allocate(locals(nv), whereis(nv), tails(ne), heads(ne))
 
     do k = 1, nparts
 
-       ! Start from the first cell nobody has claimed.
-       seed = 0
+       ! The unclaimed remainder, as the graph it is. The walk owns
+       ! breadth-first; this routine only asks and reads.
+       n = 0
+       whereis = 0
        do v = 1, nv
           if (owner(v) == 0) then
-             seed = v
-             exit
+             n = n + 1
+             locals(n)  = v
+             whereis(v) = n
           end if
        end do
-       if (seed == 0) exit
+       if (n == 0) exit
 
-       owner(seed)   = k
-       queue(1)      = seed
-       head_of_queue = 1
-       tail_of_queue = 1
-       taken         = 1
+       m = 0
+       do e = 1, ne
+          t = global_graph % edge_tail(e)
+          if (.not. global_graph % edge_has_head(e)) cycle
+          h = global_graph % edge_head(e)
+          if (whereis(t) > 0 .and. whereis(h) > 0) then
+             m = m + 1
+             tails(m) = whereis(t)
+             heads(m) = whereis(h)
+          end if
+       end do
 
-       ! Take neighbours, then their neighbours, until this part has
-       ! its share or the ring runs out.
-       do while (head_of_queue <= tail_of_queue .and. taken < share)
-          v = queue(head_of_queue)
-          head_of_queue = head_of_queue + 1
-          call global_graph % adjacent_vertices(v, nbrs)
-          do i = 1, size(nbrs)
-             if (taken >= share) exit
-             if (owner(nbrs(i)) == 0) then
-                owner(nbrs(i))       = k
-                taken                = taken + 1
-                tail_of_queue        = tail_of_queue + 1
-                queue(tail_of_queue) = nbrs(i)
-             end if
-          end do
+       untaken = stored_graph(n, tails=tails(1:m), heads=heads(1:m))
+
+       ! The first unclaimed cell seeds the part; the visit order
+       ! says who its share of the ring is.
+       visit = walk(WALK_VISIT_ORDER, seed=1)
+       call visit % apply(untaken, output=reached)
+       call reached % get_integer_vector(order)
+
+       do v = 1, n
+          if (order(v) >= 1 .and. order(v) <= share) owner(locals(v)) = k
        end do
 
     end do

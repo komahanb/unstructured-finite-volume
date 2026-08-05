@@ -207,6 +207,13 @@ module class_graph_differential_operator
   ! the incidence step: order 1 is then the divergence of that field.
   ! With `adjoint` true the operator runs the reverse walk: the
   ! transposed steps, in reverse order.
+  !
+  ! INTERPRETED AND COMPILED. This operator and the stencil operator
+  ! are the same mathematics in two execution styles. This one
+  ! INTERPRETS: it reads the incidence at every apply, matrix-free,
+  ! always fresh - the right default. The stencil is the COMPILED
+  ! form, weights computed once and walked many times. Neither
+  ! learns the other's business.
   !===================================================================!
 
   type, extends(graph_operation) :: differential_operator

@@ -16,24 +16,37 @@
 module class_graph_jacobi
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_minimization, only : linear_solver
+  use graph_minimization, only : minimizer
 
   implicit none
 
   private
   public :: jacobi
 
-  type, extends(linear_solver) :: jacobi
+  type, extends(minimizer) :: jacobi
 
      real(dp) :: omega = 1.0_dp
 
    contains
 
+     procedure :: name => jacobi_name
      procedure :: solve
 
   end type jacobi
 
 contains
+
+  pure function jacobi_name(this) result(name)
+
+    class(jacobi), intent(in) :: this
+    character(len=:), allocatable :: name
+
+    associate (u1 => this); end associate
+
+    name = 'jacobi'
+
+  end function jacobi_name
+
 
   subroutine solve(this, rhs, x, achieved)
 

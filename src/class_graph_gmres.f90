@@ -22,24 +22,37 @@
 module class_graph_gmres
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_minimization, only : linear_solver
+  use graph_minimization, only : minimizer
 
   implicit none
 
   private
   public :: gmres
 
-  type, extends(linear_solver) :: gmres
+  type, extends(minimizer) :: gmres
 
      integer :: restart = 30
 
    contains
 
+     procedure :: name => gmres_name
      procedure :: solve
 
   end type gmres
 
 contains
+
+  pure function gmres_name(this) result(name)
+
+    class(gmres), intent(in) :: this
+    character(len=:), allocatable :: name
+
+    associate (u1 => this); end associate
+
+    name = 'gmres'
+
+  end function gmres_name
+
 
   subroutine solve(this, rhs, x, achieved)
 
@@ -50,7 +63,7 @@ contains
 
     real(dp), allocatable :: basis(:,:), h(:,:), cs(:), sn(:), s(:)
     real(dp), allocatable :: r(:), w(:), y(:)
-    real(dp) :: goal, beta, hik, radius
+    real(dp) :: goal, beta, hik, radius, subdiag
     integer :: n, m, outer, i, j, k
 
     n = size(x)
@@ -78,12 +91,20 @@ contains
        do j = 1, m
 
           ! One more direction from the operator, kept orthonormal.
+          ! The raw subdiagonal is kept aside: the rotations will
+          ! overwrite its slot, and both the next basis vector and
+          ! the breakdown test need the true number.
           call this % matvec(basis(:, j), w)
           do i = 1, j
              h(i, j) = this % inner_product(w, basis(:, i))
              w = w - h(i, j) * basis(:, i)
           end do
-          h(j + 1, j) = this % norm(w)
+          subdiag     = this % norm(w)
+          h(j + 1, j) = subdiag
+
+          if (j < m .and. subdiag > tiny(1.0_dp)) then
+             basis(:, j + 1) = w / subdiag
+          end if
 
           ! The rotations that came before, then the new one.
           do i = 1, j - 1
@@ -108,8 +129,7 @@ contains
           k = j
           achieved = abs(s(j + 1))
           if (achieved < goal) exit
-          if (h(j + 1, j) < tiny(1.0_dp)) exit
-          if (j < m) basis(:, j + 1) = w / h(j + 1, j)
+          if (subdiag < tiny(1.0_dp)) exit
 
        end do
 

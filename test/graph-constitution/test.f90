@@ -38,6 +38,9 @@ program test_graph_constitution
   use class_graph_balance  , only : balance
   use class_conduction     , only : conduction
   use class_advection      , only : advection
+  use class_diffusion_statement, only : diffusion_statement
+  use class_graph_stencil  , only : stencil_operator
+  use class_graph_gmres    , only : gmres
 
   implicit none
 
@@ -50,6 +53,7 @@ program test_graph_constitution
   call check_operator_road(nfail)
   call check_conduction_law(nfail)
   call check_advection_law(nfail)
+  call check_the_statement_speaks(nfail)
 
   write(*, '(a)') ' ============================================='
   if (nfail == 0) then
@@ -365,5 +369,43 @@ contains
          & 'central: the old half weights, exactly', nfail)
 
   end subroutine check_advection_law
+
+  !===================================================================!
+  ! THE STATEMENT. The constitution's whole sentence in one call:
+  ! a material, two walls, a mesh - and the compiled operator closes
+  ! under the house solver, monotone between its held values.
+  !===================================================================!
+
+  subroutine check_the_statement_speaks(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(mesh) :: m
+    type(stencil_operator) :: op
+    type(gmres) :: gm
+    real(dp), allocatable :: g(:), rhs(:), x(:)
+    real(dp) :: achieved
+
+    m = hand_mesh()
+
+    op = diffusion_statement(m, conduction(1.7_dp), &
+         & [dirichlet('in', 0.0_dp), dirichlet('out', 10.0_dp)])
+
+    call gm % attach(op, m)
+    gm % tolerance = 1.0d-12
+
+    call gm % constant(g)
+    rhs = -g
+
+    allocate(x(2))
+    x = 0.0_dp
+    call gm % solve(rhs, x, achieved)
+
+    call report(achieved < 1.0d-10, &
+         & 'the statement closes under the house solver', nfail)
+    call report(x(1) > 0.0_dp .and. x(1) < x(2) .and. x(2) < 10.0_dp, &
+         & 'and the answer sits monotone between the held walls', nfail)
+
+  end subroutine check_the_statement_speaks
 
 end program test_graph_constitution

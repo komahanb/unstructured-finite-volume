@@ -21,7 +21,7 @@
 ! solution, so the incidence count is verified in the test suite
 ! rather than assumed.
 !
-! A wall face has no far cell, so its number lands on the one cell it
+! A boundary face has no far cell, so its number lands on the one cell it
 ! touches and stops there:
 !
 !                   (i) --------o

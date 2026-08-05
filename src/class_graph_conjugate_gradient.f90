@@ -22,22 +22,35 @@
 module class_graph_conjugate_gradient
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_minimization, only : linear_solver
+  use graph_minimization, only : minimizer
 
   implicit none
 
   private
   public :: conjugate_gradient
 
-  type, extends(linear_solver) :: conjugate_gradient
+  type, extends(minimizer) :: conjugate_gradient
 
    contains
 
+     procedure :: name => conjugate_gradient_name
      procedure :: solve
 
   end type conjugate_gradient
 
 contains
+
+  pure function conjugate_gradient_name(this) result(name)
+
+    class(conjugate_gradient), intent(in) :: this
+    character(len=:), allocatable :: name
+
+    associate (u1 => this); end associate
+
+    name = 'conjugate gradient'
+
+  end function conjugate_gradient_name
+
 
   subroutine solve(this, rhs, x, achieved)
 

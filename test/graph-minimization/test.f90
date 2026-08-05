@@ -487,9 +487,11 @@ contains
     ns % inner % tolerance = 1.0d-12
     ns % tolerance = 1.0d-7
 
+    call ns % attach(action, m)
+
     allocate(q(3))
     q = 0.0_dp
-    call ns % solve(action, m, q, achieved)
+    call ns % solve([0.0_dp, 0.0_dp, 0.0_dp], q, achieved)
 
     call report(achieved < 1.0d-7, &
          & 'newton drives the nonlinear residual to the difference floor', nfail)

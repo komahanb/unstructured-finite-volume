@@ -2,8 +2,11 @@
 ! LEVEL 2 OF THE STRATIFICATION . THE MINIMIZATION
 !
 ! The first level with a goal: drive a residual toward zero. This
-! module holds the linear solver base, and its whole content is the
-! relabeling the tower ordered - the solver's vocabulary defined as
+! module holds the minimizer base - ONE family for one story:
+! attach a statement, drive its residual to zero. Linear solvers,
+! newton, and whatever else minimizes a residual are its
+! concretions; their differences are governance inside the family,
+! never a second taxonomy. The solver vocabulary is defined here as
 ! thin delegations to engine seats, so the engine never learns a
 ! solver word and the solver never says apply or measure:
 !
@@ -32,6 +35,7 @@ module graph_minimization
 
   use iso_fortran_env       , only : dp => REAL64
   use graph_grammar         , only : graph, graph_field, graph_operation
+  use class_graph_field     , only : field
   use graph_calculus        , only : GRAPH_SIDE_VERTEX, graph_functional
   use class_graph_support   , only : support
   use class_graph_field     , only : field
@@ -41,14 +45,14 @@ module graph_minimization
   implicit none
 
   private
-  public :: linear_solver
+  public :: minimizer
 
   !===================================================================!
   ! The base: an attached operation, the graph it reads, and the
   ! tolerances every iteration honours.
   !===================================================================!
 
-  type, abstract :: linear_solver
+  type, abstract, extends(graph_operation) :: minimizer
 
      class(graph_operation), allocatable :: action
      class(graph)          , allocatable :: on
@@ -70,9 +74,16 @@ module graph_minimization
      procedure :: diagonal
      procedure :: constant
 
+     ! The operation face: a solver IS an operation - the one that
+     ! answers the attached statement. apply solves from zero, so a
+     ! solver composes wherever operations go; a preconditioner is
+     ! exactly this face of an inner solver.
+     procedure :: domain => solver_domain
+     procedure :: apply  => solver_apply
+
      procedure(solve_interface), deferred :: solve
 
-  end type linear_solver
+  end type minimizer
 
   abstract interface
 
@@ -83,8 +94,8 @@ module graph_minimization
      !----------------------------------------------------------------!
 
      subroutine solve_interface(this, rhs, x, achieved)
-       import :: linear_solver, dp
-       class(linear_solver), intent(inout) :: this
+       import :: minimizer, dp
+       class(minimizer), intent(inout) :: this
        real(dp), intent(in)    :: rhs(:)
        real(dp), intent(inout) :: x(:)
        real(dp), intent(out)   :: achieved
@@ -102,7 +113,7 @@ contains
 
   subroutine attach(this, action, on)
 
-    class(linear_solver)  , intent(inout) :: this
+    class(minimizer)  , intent(inout) :: this
     class(graph_operation), intent(in)    :: action
     class(graph)          , intent(in)    :: on
 
@@ -129,7 +140,7 @@ contains
 
   subroutine raw_apply(this, x, y)
 
-    class(linear_solver), intent(in)   :: this
+    class(minimizer), intent(in)   :: this
     real(dp), intent(in)               :: x(:)
     real(dp), allocatable, intent(out) :: y(:)
 
@@ -150,7 +161,7 @@ contains
 
   subroutine matvec(this, x, y)
 
-    class(linear_solver), intent(in)   :: this
+    class(minimizer), intent(in)   :: this
     real(dp), intent(in)               :: x(:)
     real(dp), allocatable, intent(out) :: y(:)
 
@@ -161,7 +172,7 @@ contains
 
   real(dp) function inner_product(this, u, v) result(prod)
 
-    class(linear_solver), intent(in) :: this
+    class(minimizer), intent(in) :: this
     real(dp), intent(in) :: u(:), v(:)
 
     type(reduction) :: total
@@ -184,7 +195,7 @@ contains
 
   real(dp) function norm(this, u) result(length)
 
-    class(linear_solver), intent(in) :: this
+    class(minimizer), intent(in) :: this
     real(dp), intent(in) :: u(:)
 
     type(reduction) :: measure_of
@@ -205,7 +216,7 @@ contains
 
   subroutine sweep_order(this, colours)
 
-    class(linear_solver), intent(in)  :: this
+    class(minimizer), intent(in)  :: this
     integer, allocatable, intent(out) :: colours(:)
 
     type(walk) :: colouring
@@ -226,7 +237,7 @@ contains
 
   subroutine diagonal(this, d)
 
-    class(linear_solver), intent(in)   :: this
+    class(minimizer), intent(in)   :: this
     real(dp), allocatable, intent(out) :: d(:)
 
     integer , allocatable :: colours(:)
@@ -263,11 +274,58 @@ contains
 
   subroutine constant(this, g)
 
-    class(linear_solver), intent(in)   :: this
+    class(minimizer), intent(in)   :: this
     real(dp), allocatable, intent(out) :: g(:)
 
     g = this % affine
 
   end subroutine constant
+
+  !===================================================================!
+  ! The operation face.
+  !===================================================================!
+
+  subroutine solver_domain(this, input_graph, domain)
+
+    class(minimizer), intent(in)       :: this
+    class(graph), intent(in)               :: input_graph
+    class(graph), allocatable, intent(out) :: domain
+
+    associate (u1 => this); end associate
+
+    call input_graph % all_vertices(domain)
+
+  end subroutine solver_domain
+
+  subroutine solver_apply(this, input_graph, input_data, output)
+
+    class(minimizer), intent(in)                   :: this
+    class(graph), intent(in)                       :: input_graph
+    class(graph_field), intent(in), optional       :: input_data(:)
+    class(graph_field), allocatable, intent(inout) :: output
+
+    class(minimizer), allocatable :: worker
+    type(field) :: out
+    real(dp), allocatable :: rhs(:), x(:)
+    real(dp) :: achieved
+
+    associate (u1 => input_graph); end associate
+
+    allocate(x(size(this % affine)))
+    x = 0.0_dp
+
+    if (present(input_data)) then
+       call input_data(1) % get_real_vector(rhs)
+       allocate(worker, source=this)
+       call worker % solve(rhs, x, achieved)
+    end if
+
+    out = field('solution', this % cells)
+    call out % set_real_vector(x)
+
+    if (allocated(output)) deallocate(output)
+    allocate(output, source=out)
+
+  end subroutine solver_apply
 
 end module graph_minimization

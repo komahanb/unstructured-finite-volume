@@ -154,10 +154,10 @@ contains
     type(field)   :: out
     type(stencil_operator) :: dual
     type(conjugate_gradient) :: solver
-    real(dp), allocatable :: positions(:), w(:), b(:,:)
-    real(dp), allocatable :: g(:,:), r(:), lam(:), entries(:)
+    real(dp), allocatable :: positions(:), w(:), b(:,:), bw(:,:)
+    real(dp), allocatable :: g(:,:), r(:), lam(:), entries(:), price(:)
     integer , allocatable :: rows(:), columns(:)
-    real(dp) :: achieved
+    real(dp) :: achieved, d2, nearest
     integer :: npts, nc, i, j, v
 
     npts = input_graph % num_vertices()
@@ -172,9 +172,20 @@ contains
        nc = this % shape % size_of()
        allocate(b(nc, npts), g(nc, nc), r(nc), lam(nc))
 
+       ! The distance metric: a point's share is priced by how far
+       ! it stands from the target; the target's own point, when it
+       ! is a member, is priced as the nearest neighbour.
+       allocate(price(npts))
+       nearest = huge(1.0_dp)
        do j = 1, npts
           call this % shape % values(positions(3 * j - 2 : 3 * j), &
                & this % at, b(:, j))
+          d2 = sum((positions(3 * j - 2 : 3 * j) - this % at)**2)
+          price(j) = d2
+          if (d2 > 0.0_dp) nearest = min(nearest, d2)
+       end do
+       do j = 1, npts
+          price(j) = 1.0_dp / max(price(j), nearest)
        end do
 
        call this % shape % slopes(this % at, this % at, &
@@ -192,7 +203,11 @@ contains
           end do
        end if
 
-       g = matmul(b, transpose(b))
+       allocate(bw(nc, npts))
+       do j = 1, npts
+          bw(:, j) = b(:, j) * price(j)
+       end do
+       g = matmul(bw, transpose(b))
        if (allocated(this % shape % active)) then
           do i = 1, nc
              if (.not. this % shape % active(i)) g(i, i) = 1.0_dp
@@ -224,6 +239,7 @@ contains
           do i = 1, nc
              w(j) = w(j) + b(i, j) * lam(i)
           end do
+          w(j) = w(j) * price(j)
        end do
 
     end if

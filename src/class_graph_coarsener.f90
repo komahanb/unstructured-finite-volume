@@ -84,6 +84,7 @@ module class_graph_coarsener
      procedure :: defined_on_data
      procedure :: coarsen_graph
      procedure :: coarsen_data
+     procedure :: blocks
 
   end type coarsener
 
@@ -226,6 +227,24 @@ contains
          &              number=fine_graph % id()))
 
   end subroutine coarsen_graph
+
+  !===================================================================!
+  ! The aggregate map, answered publicly: which block each fine cell
+  ! belongs to, and how many blocks there are. A multigrid reads
+  ! this to build its coarse operator; the map is the coarsener's to
+  ! own and everyone else's to consume.
+  !===================================================================!
+
+  subroutine blocks(this, fine_graph, assignment, nblocks)
+
+    class(coarsener)    , intent(in)  :: this
+    class(graph)        , intent(in)  :: fine_graph
+    integer, allocatable, intent(out) :: assignment(:)
+    integer             , intent(out) :: nblocks
+
+    call blocks_of(this, fine_graph, assignment, nblocks)
+
+  end subroutine blocks
 
   !===================================================================!
   ! Which block each fine cell belongs to.

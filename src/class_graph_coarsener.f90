@@ -28,10 +28,12 @@
 module class_graph_coarsener
 
   use iso_fortran_env     , only : dp => REAL64
-  use abstract_graph_types, only : graph_coarsener, graph, graph_data, graph_field
+  use graph_grammar       , only : graph, graph_field
+  use graph_calculus      , only : graph_coarsener
+  use graph_calculus      , only : GRAPH_SIDE_VERTEX
   use class_graph         , only : stored_graph
-  use class_graph_support , only : vertex_support
-  use class_graph_field   , only : vertex_field
+  use class_graph_support , only : support
+  use class_graph_field   , only : field
 
   implicit none
 
@@ -82,6 +84,7 @@ module class_graph_coarsener
      procedure :: defined_on_data
      procedure :: coarsen_graph
      procedure :: coarsen_data
+     procedure :: blocks
 
   end type coarsener
 
@@ -152,13 +155,15 @@ contains
 
     class(coarsener) , intent(in) :: this
     class(graph)     , intent(in) :: input_graph
-    class(graph_data), intent(in) :: input_data
+    class(graph_field), intent(in) :: input_data
 
     defined_on_data = this % defined_on_graph(input_graph)
 
     select type (input_data)
-    class is (vertex_field)
-       defined_on_data = defined_on_data .and. input_data % num_entries() >= 0
+    class is (field)
+       defined_on_data = defined_on_data &
+            & .and. input_data % on % side() == GRAPH_SIDE_VERTEX &
+            & .and. input_data % num_entries() >= 0
     class default
        defined_on_data = .false.
     end select
@@ -224,6 +229,24 @@ contains
   end subroutine coarsen_graph
 
   !===================================================================!
+  ! The aggregate map, answered publicly: which block each fine cell
+  ! belongs to, and how many blocks there are. A multigrid reads
+  ! this to build its coarse operator; the map is the coarsener's to
+  ! own and everyone else's to consume.
+  !===================================================================!
+
+  subroutine blocks(this, fine_graph, assignment, nblocks)
+
+    class(coarsener)    , intent(in)  :: this
+    class(graph)        , intent(in)  :: fine_graph
+    integer, allocatable, intent(out) :: assignment(:)
+    integer             , intent(out) :: nblocks
+
+    call blocks_of(this, fine_graph, assignment, nblocks)
+
+  end subroutine blocks
+
+  !===================================================================!
   ! Which block each fine cell belongs to.
   !===================================================================!
 
@@ -283,18 +306,18 @@ contains
 
     class(coarsener) , intent(in)               :: this
     class(graph)     , intent(in)               :: fine_graph
-    class(graph_data), intent(in)               :: fine_data
+    class(graph_field), intent(in)               :: fine_data
     class(graph)     , intent(in)               :: coarse_graph
-    class(graph_data), allocatable, intent(out) :: coarse_data
+    class(graph_field), allocatable, intent(out) :: coarse_data
 
-    type(vertex_field)    :: out
-    type(vertex_support)  :: on
+    type(field)    :: out
+    type(support)  :: on
     integer , allocatable :: blk(:), indices(:), tally(:)
     real(dp), allocatable :: fv(:), cv(:)
     integer :: nb, nv, ncomp, v, c, b
 
     select type (fine_data)
-    class is (vertex_field)
+    class is (field)
 
        call blocks_of(this, fine_graph, blk, nb)
 
@@ -306,8 +329,8 @@ contains
           indices(b) = b
        end do
 
-       on  = vertex_support(indices)
-       out = vertex_field(fine_data % name(), on, ncomp=ncomp, &
+       on  = support(GRAPH_SIDE_VERTEX, indices)
+       out = field(fine_data % name(), on, ncomp=ncomp, &
             &             unit_name=fine_data % units())
 
        call fine_data % get_real_vector(fv)

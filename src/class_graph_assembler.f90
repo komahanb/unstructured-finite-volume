@@ -60,11 +60,12 @@
 module class_graph_assembler
 
   use iso_fortran_env     , only : dp => REAL64
-  use abstract_graph_types, only : graph_assembler, graph, graph_data
-  use abstract_graph_types, only : graph_field
+  use graph_grammar       , only : graph, graph_field
+  use graph_calculus      , only : graph_assembler
+  use graph_calculus      , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
   use class_graph         , only : stored_graph
-  use class_graph_support , only : vertex_support, edge_support
-  use class_graph_field   , only : vertex_field, edge_field
+  use class_graph_support , only : support
+  use class_graph_field   , only : field
 
   implicit none
 
@@ -128,7 +129,7 @@ contains
 
     class(assembler) , intent(in) :: this
     class(graph)     , intent(in) :: input_graph
-    class(graph_data), intent(in) :: input_data
+    class(graph_field), intent(in) :: input_data
 
     defined_on_data = this % defined_on_graph(input_graph)
 
@@ -196,17 +197,18 @@ contains
 
     class(assembler) , intent(in)               :: this
     class(graph)     , intent(in)               :: part_graph
-    class(graph_data), intent(in)               :: part_data
+    class(graph_field), intent(in)               :: part_data
     class(graph)     , intent(in)               :: global_graph
-    class(graph_data), allocatable, intent(out) :: global_data
+    class(graph_field), allocatable, intent(out) :: global_data
 
     select type (part_data)
 
-    class is (vertex_field)
-       call assemble_vertex_field(part_data, part_graph, global_graph, global_data)
-
-    class is (edge_field)
-       call assemble_edge_field(part_data, part_graph, global_graph, global_data)
+    class is (field)
+       if (part_data % on % side() == GRAPH_SIDE_VERTEX) then
+          call assemble_vertex_field(part_data, part_graph, global_graph, global_data)
+       else
+          call assemble_edge_field(part_data, part_graph, global_graph, global_data)
+       end if
 
     end select
 
@@ -219,13 +221,13 @@ contains
 
   subroutine assemble_vertex_field(part_data, part_graph, global_graph, global_data)
 
-    type(vertex_field), intent(in)               :: part_data
+    type(field), intent(in)               :: part_data
     class(graph)      , intent(in)               :: part_graph
     class(graph)      , intent(in)               :: global_graph
-    class(graph_data) , allocatable, intent(out) :: global_data
+    class(graph_field) , allocatable, intent(out) :: global_data
 
-    type(vertex_field)    :: out
-    type(vertex_support)  :: on
+    type(field)    :: out
+    type(support)  :: on
     real(dp), allocatable :: lv(:), fv(:)
     integer , allocatable :: indices(:)
     integer :: nglobal, ncomp, l, c, f, me
@@ -239,8 +241,8 @@ contains
        indices(f) = f
     end do
 
-    on  = vertex_support(indices)
-    out = vertex_field(part_data % name(), on, ncomp=ncomp, unit_name=part_data % units())
+    on  = support(GRAPH_SIDE_VERTEX, indices)
+    out = field(part_data % name(), on, ncomp=ncomp, unit_name=part_data % units())
 
     call part_data % get_real_vector(lv)
     allocate(fv(nglobal * ncomp))
@@ -274,13 +276,13 @@ contains
 
   subroutine assemble_edge_field(part_data, part_graph, global_graph, global_data)
 
-    type(edge_field), intent(in)                :: part_data
+    type(field), intent(in)                :: part_data
     class(graph)    , intent(in)                :: part_graph
     class(graph)    , intent(in)                :: global_graph
-    class(graph_data), allocatable, intent(out) :: global_data
+    class(graph_field), allocatable, intent(out) :: global_data
 
-    type(edge_field)      :: out
-    type(edge_support)    :: on
+    type(field)      :: out
+    type(support)    :: on
     real(dp), allocatable :: lv(:), fv(:)
     integer , allocatable :: indices(:)
     integer :: nglobal, ncomp, l, c, f, me
@@ -294,8 +296,8 @@ contains
        indices(f) = f
     end do
 
-    on  = edge_support(indices)
-    out = edge_field(part_data % name(), on, ncomp=ncomp, unit_name=part_data % units())
+    on  = support(GRAPH_SIDE_EDGE, indices)
+    out = field(part_data % name(), on, ncomp=ncomp, unit_name=part_data % units())
 
     call part_data % get_real_vector(lv)
     allocate(fv(nglobal * ncomp))

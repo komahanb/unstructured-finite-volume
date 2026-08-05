@@ -37,11 +37,11 @@
 ! Each convenience procedure added here erodes that separation, one
 ! procedure at a time.
 !
-! FETCH GRAPH DATA ONCE. get_data returns a copy, because the
-! contract declares the result allocatable and freshly made. On a
-! million cells that copy is megabytes. An operation fetches what it
-! needs at the top of apply, before it starts looping - never inside a
-! loop over faces.
+! IT CARRIES NO VALUES. A field references its domain; the reference
+! never points the other way. What an operation reads, it is handed
+! at construction, as arguments the compiler can see. The one string
+! kept is the tag, which is data: the mesh file named its boundary
+! groups, and those names flow in from outside the code.
 !
 ! READ ONLY. No procedure puts data on a graph after construction.
 ! Anything computed leaves as an operation's output. Without this rule
@@ -53,10 +53,9 @@
 
 module class_graph
 
-  use abstract_graph_types , only : graph, graph_data
-  use abstract_graph_types , only : graph_vertex_support, graph_edge_support
-  use class_graph_support  , only : vertex_support, edge_support
-  use class_graph_field    , only : vertex_field, edge_field
+  use graph_grammar      , only : graph
+  use graph_calculus     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
+  use class_graph_support, only : support
 
   implicit none
 
@@ -109,15 +108,6 @@ module class_graph
 
      integer, allocatable :: vowner(:), eowner(:)
      integer, allocatable :: vglobal(:) , eglobal(:)
-
-     !----------------------------------------------------------------!
-     ! Whatever the mesh knew when it was built. One array per kind,
-     ! because a Fortran array holds one type and there is exactly one
-     ! concrete vertex field and one concrete edge field.
-     !----------------------------------------------------------------!
-
-     type(vertex_field), allocatable :: vdata(:)
-     type(edge_field)  , allocatable :: edata(:)
 
    contains
 
@@ -190,13 +180,6 @@ module class_graph
      procedure :: vertex_owner_part
      procedure :: edge_owner_part
 
-     !----------------------------------------------------------------!
-     ! The data the graph came with.
-     !----------------------------------------------------------------!
-
-     procedure :: has_data
-     procedure :: get_data
-
   end type stored_graph
 
   !===================================================================!
@@ -218,15 +201,13 @@ contains
   !===================================================================!
 
   type(stored_graph) function create(nv, tails, heads, vtags, etags, &
-       &                             vdata, edata, number) result(this)
+       &                             number) result(this)
 
     integer           , intent(in)           :: nv
     integer           , intent(in)           :: tails(:)
     integer           , intent(in)           :: heads(:)
     character(len=*)  , intent(in), optional :: vtags(:)
     character(len=*)  , intent(in), optional :: etags(:)
-    type(vertex_field), intent(in), optional :: vdata(:)
-    type(edge_field)  , intent(in), optional :: edata(:)
     integer           , intent(in), optional :: number
 
     integer :: e
@@ -253,8 +234,6 @@ contains
     if (present(etags)) allocate(this % etag, source=etags)
 
     ! Everything the mesh knew arrives here and never changes again.
-    if (present(vdata)) allocate(this % vdata, source=vdata)
-    if (present(edata)) allocate(this % edata, source=edata)
 
     call build_incidence(this % nv, this % tail, this % head, &
          &               this % xinc, this % einc)
@@ -519,14 +498,14 @@ contains
   ! boundary edge; an interior vertex is one that does not.
   !===================================================================!
 
-  subroutine all_vertices(this, support)
+  subroutine all_vertices(this, members)
 
     class(stored_graph), intent(in)                       :: this
-    class(graph_vertex_support), allocatable, intent(out) :: support
+    class(graph), allocatable, intent(out) :: members
 
     integer :: v
 
-    allocate(support, source=vertex_support([(v, v = 1, this % nv)]))
+    allocate(members, source=support(GRAPH_SIDE_VERTEX, [(v, v = 1, this % nv)]))
 
   end subroutine all_vertices
 
@@ -534,10 +513,10 @@ contains
   ! The vertices that touch no boundary edge.
   !===================================================================!
 
-  subroutine interior_vertices(this, support)
+  subroutine interior_vertices(this, members)
 
     class(stored_graph), intent(in)                       :: this
-    class(graph_vertex_support), allocatable, intent(out) :: support
+    class(graph), allocatable, intent(out) :: members
 
     integer, allocatable :: pick(:)
     integer :: v, n
@@ -551,7 +530,7 @@ contains
        end if
     end do
 
-    allocate(support, source=vertex_support(pick(1:n)))
+    allocate(members, source=support(GRAPH_SIDE_VERTEX, pick(1:n)))
 
   end subroutine interior_vertices
 
@@ -559,10 +538,10 @@ contains
   ! The vertices that touch a boundary edge.
   !===================================================================!
 
-  subroutine boundary_vertices(this, support)
+  subroutine boundary_vertices(this, members)
 
     class(stored_graph), intent(in)                       :: this
-    class(graph_vertex_support), allocatable, intent(out) :: support
+    class(graph), allocatable, intent(out) :: members
 
     integer, allocatable :: pick(:)
     integer :: v, n
@@ -576,7 +555,7 @@ contains
        end if
     end do
 
-    allocate(support, source=vertex_support(pick(1:n)))
+    allocate(members, source=support(GRAPH_SIDE_VERTEX, pick(1:n)))
 
   end subroutine boundary_vertices
 
@@ -585,11 +564,11 @@ contains
   ! here.
   !===================================================================!
 
-  subroutine tagged_vertices(this, tag, support)
+  subroutine tagged_vertices(this, tag, members)
 
     class(stored_graph), intent(in)                       :: this
     character(len=*), intent(in)                          :: tag
-    class(graph_vertex_support), allocatable, intent(out) :: support
+    class(graph), allocatable, intent(out) :: members
 
     integer, allocatable :: pick(:)
     integer :: v, n
@@ -605,7 +584,7 @@ contains
        end do
     end if
 
-    allocate(support, source=vertex_support(pick(1:n)))
+    allocate(members, source=support(GRAPH_SIDE_VERTEX, pick(1:n)))
 
   end subroutine tagged_vertices
 
@@ -635,14 +614,14 @@ contains
   ! The named edge sets. A boundary edge is one with no head.
   !===================================================================!
 
-  subroutine all_edges(this, support)
+  subroutine all_edges(this, members)
 
     class(stored_graph), intent(in)                     :: this
-    class(graph_edge_support), allocatable, intent(out) :: support
+    class(graph), allocatable, intent(out) :: members
 
     integer :: e
 
-    allocate(support, source=edge_support([(e, e = 1, this % ne)]))
+    allocate(members, source=support(GRAPH_SIDE_EDGE, [(e, e = 1, this % ne)]))
 
   end subroutine all_edges
 
@@ -650,10 +629,10 @@ contains
   ! The edges with a head: both ends real.
   !===================================================================!
 
-  subroutine interior_edges(this, support)
+  subroutine interior_edges(this, members)
 
     class(stored_graph), intent(in)                     :: this
-    class(graph_edge_support), allocatable, intent(out) :: support
+    class(graph), allocatable, intent(out) :: members
 
     integer, allocatable :: pick(:)
     integer :: e, n
@@ -667,7 +646,7 @@ contains
        end if
     end do
 
-    allocate(support, source=edge_support(pick(1:n)))
+    allocate(members, source=support(GRAPH_SIDE_EDGE, pick(1:n)))
 
   end subroutine interior_edges
 
@@ -675,10 +654,10 @@ contains
   ! The edges with no head - the open ends of the graph.
   !===================================================================!
 
-  subroutine boundary_edges(this, support)
+  subroutine boundary_edges(this, members)
 
     class(stored_graph), intent(in)                     :: this
-    class(graph_edge_support), allocatable, intent(out) :: support
+    class(graph), allocatable, intent(out) :: members
 
     integer, allocatable :: pick(:)
     integer :: e, n
@@ -692,7 +671,7 @@ contains
        end if
     end do
 
-    allocate(support, source=edge_support(pick(1:n)))
+    allocate(members, source=support(GRAPH_SIDE_EDGE, pick(1:n)))
 
   end subroutine boundary_edges
 
@@ -701,11 +680,11 @@ contains
   ! here.
   !===================================================================!
 
-  subroutine tagged_edges(this, tag, support)
+  subroutine tagged_edges(this, tag, members)
 
     class(stored_graph), intent(in)                     :: this
     character(len=*), intent(in)                        :: tag
-    class(graph_edge_support), allocatable, intent(out) :: support
+    class(graph), allocatable, intent(out) :: members
 
     integer, allocatable :: pick(:)
     integer :: e, n
@@ -721,7 +700,7 @@ contains
        end do
     end if
 
-    allocate(support, source=edge_support(pick(1:n)))
+    allocate(members, source=support(GRAPH_SIDE_EDGE, pick(1:n)))
 
   end subroutine tagged_edges
 
@@ -733,13 +712,13 @@ contains
   ! arrays and these answers become real.
   !===================================================================!
 
-  subroutine owned_vertices(this, part_id, support)
+  subroutine owned_vertices(this, part_id, members)
 
     class(stored_graph), intent(in)                       :: this
     integer, intent(in)                                   :: part_id
-    class(graph_vertex_support), allocatable, intent(out) :: support
+    class(graph), allocatable, intent(out) :: members
 
-    allocate(support, source=vertex_support(owner_matches(this % vowner, this % nv, part_id, this % cut, .true.)))
+    allocate(members, source=support(GRAPH_SIDE_VERTEX, owner_matches(this % vowner, this % nv, part_id, this % cut, .true.)))
 
   end subroutine owned_vertices
 
@@ -748,13 +727,13 @@ contains
   ! cells along the cut.
   !===================================================================!
 
-  subroutine borrowed_vertices(this, part_id, support)
+  subroutine borrowed_vertices(this, part_id, members)
 
     class(stored_graph), intent(in)                       :: this
     integer, intent(in)                                   :: part_id
-    class(graph_vertex_support), allocatable, intent(out) :: support
+    class(graph), allocatable, intent(out) :: members
 
-    allocate(support, source=vertex_support(owner_matches(this % vowner, this % nv, part_id, this % cut, .false.)))
+    allocate(members, source=support(GRAPH_SIDE_VERTEX, owner_matches(this % vowner, this % nv, part_id, this % cut, .false.)))
 
   end subroutine borrowed_vertices
 
@@ -763,18 +742,18 @@ contains
   ! owns: what it owns, plus what it borrows.
   !===================================================================!
 
-  subroutine overlap_vertices(this, part_id, support)
+  subroutine overlap_vertices(this, part_id, members)
 
     class(stored_graph), intent(in)                       :: this
     integer, intent(in)                                   :: part_id
-    class(graph_vertex_support), allocatable, intent(out) :: support
+    class(graph), allocatable, intent(out) :: members
 
     integer, allocatable :: owned(:), borrowed(:)
 
     allocate(owned   , source=owner_matches(this % vowner, this % nv, part_id, this % cut, .true.))
     allocate(borrowed, source=owner_matches(this % vowner, this % nv, part_id, this % cut, .false.))
 
-    allocate(support, source=vertex_support([owned, borrowed]))
+    allocate(members, source=support(GRAPH_SIDE_VERTEX, [owned, borrowed]))
 
   end subroutine overlap_vertices
 
@@ -782,13 +761,13 @@ contains
   ! The edges whose keeper is this part.
   !===================================================================!
 
-  subroutine owned_edges(this, part_id, support)
+  subroutine owned_edges(this, part_id, members)
 
     class(stored_graph), intent(in)                     :: this
     integer, intent(in)                                 :: part_id
-    class(graph_edge_support), allocatable, intent(out) :: support
+    class(graph), allocatable, intent(out) :: members
 
-    allocate(support, source=edge_support(owner_matches(this % eowner, this % ne, part_id, this % cut, .true.)))
+    allocate(members, source=support(GRAPH_SIDE_EDGE, owner_matches(this % eowner, this % ne, part_id, this % cut, .true.)))
 
   end subroutine owned_edges
 
@@ -796,13 +775,13 @@ contains
   ! The edges this part reads but does not own.
   !===================================================================!
 
-  subroutine borrowed_edges(this, part_id, support)
+  subroutine borrowed_edges(this, part_id, members)
 
     class(stored_graph), intent(in)                     :: this
     integer, intent(in)                                 :: part_id
-    class(graph_edge_support), allocatable, intent(out) :: support
+    class(graph), allocatable, intent(out) :: members
 
-    allocate(support, source=edge_support(owner_matches(this % eowner, this % ne, part_id, this % cut, .false.)))
+    allocate(members, source=support(GRAPH_SIDE_EDGE, owner_matches(this % eowner, this % ne, part_id, this % cut, .false.)))
 
   end subroutine borrowed_edges
 
@@ -810,18 +789,18 @@ contains
   ! Owned and borrowed together: every edge this part can see.
   !===================================================================!
 
-  subroutine overlap_edges(this, part_id, support)
+  subroutine overlap_edges(this, part_id, members)
 
     class(stored_graph), intent(in)                     :: this
     integer, intent(in)                                 :: part_id
-    class(graph_edge_support), allocatable, intent(out) :: support
+    class(graph), allocatable, intent(out) :: members
 
     integer, allocatable :: owned(:), borrowed(:)
 
     allocate(owned   , source=owner_matches(this % eowner, this % ne, part_id, this % cut, .true.))
     allocate(borrowed, source=owner_matches(this % eowner, this % ne, part_id, this % cut, .false.))
 
-    allocate(support, source=edge_support([owned, borrowed]))
+    allocate(members, source=support(GRAPH_SIDE_EDGE, [owned, borrowed]))
 
   end subroutine overlap_edges
 
@@ -1138,91 +1117,5 @@ contains
 
   end function edge_owner_part
 
-  !===================================================================!
-  ! The data the graph came with, fetched by name.
-  !
-  ! get_data returns a copy. Fetch what an operation needs once, at
-  ! the top of apply, never inside a loop over faces.
-  !===================================================================!
-
-  pure logical function has_data(this, name)
-
-    class(stored_graph), intent(in) :: this
-    character(len=*)   , intent(in) :: name
-
-    has_data = find_vertex_data(this, name) > 0 .or. find_edge_data(this, name) > 0
-
-  end function has_data
-
-  !===================================================================!
-  ! Hand out a copy of the named data. Fetch once, at the top of an
-  ! apply, never inside a loop - the copy is the price the frozen
-  ! signature charges.
-  !===================================================================!
-
-  subroutine get_data(this, name, data)
-
-    class(stored_graph), intent(in)             :: this
-    character(len=*)   , intent(in)             :: name
-    class(graph_data), allocatable, intent(out) :: data
-
-    integer :: k
-
-    k = find_vertex_data(this, name)
-    if (k > 0) then
-       allocate(data, source=this % vdata(k))
-       return
-    end if
-
-    k = find_edge_data(this, name)
-    if (k > 0) allocate(data, source=this % edata(k))
-
-  end subroutine get_data
-
-  !===================================================================!
-  ! Which slot holds that name, or zero if none does.
-  !===================================================================!
-
-  pure integer function find_vertex_data(this, name)
-
-    class(stored_graph), intent(in) :: this
-    character(len=*)   , intent(in) :: name
-
-    integer :: k
-
-    find_vertex_data = 0
-    if (.not. allocated(this % vdata)) return
-
-    do k = 1, size(this % vdata)
-       if (this % vdata(k) % name() == name) then
-          find_vertex_data = k
-          return
-       end if
-    end do
-
-  end function find_vertex_data
-
-  !===================================================================!
-  ! The seat of the named edge data; zero when no such name.
-  !===================================================================!
-
-  pure integer function find_edge_data(this, name)
-
-    class(stored_graph), intent(in) :: this
-    character(len=*)   , intent(in) :: name
-
-    integer :: k
-
-    find_edge_data = 0
-    if (.not. allocated(this % edata)) return
-
-    do k = 1, size(this % edata)
-       if (this % edata(k) % name() == name) then
-          find_edge_data = k
-          return
-       end if
-    end do
-
-  end function find_edge_data
 
 end module class_graph

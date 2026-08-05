@@ -21,7 +21,7 @@
 ! solution, so the incidence count is verified in the test suite
 ! rather than assumed.
 !
-! A wall face has no far cell, so its number lands on the one cell it
+! A boundary face has no far cell, so its number lands on the one cell it
 ! touches and stops there:
 !
 !                   (i) --------o
@@ -44,13 +44,12 @@
 
 module class_graph_balance
 
-  use iso_fortran_env     , only : dp => REAL64
-  use abstract_graph_types, only : graph_vertex_field_operation, graph
-  use abstract_graph_types, only : graph_data, graph_vertex_field
-  use abstract_graph_types, only : graph_vertex_support, graph_edge_field
-  use class_graph_support , only : vertex_support
-  use class_graph_field   , only : vertex_field
-  use class_graph_differential_operator, only : edge_differential_operator
+  use iso_fortran_env    , only : dp => REAL64
+  use graph_grammar      , only : graph_operation, graph, graph_field
+  use graph_calculus     , only : GRAPH_SIDE_VERTEX
+  use class_graph_support, only : support
+  use class_graph_field  , only : field
+  use class_graph_differential_operator, only : differential_operator
 
   implicit none
 
@@ -66,17 +65,17 @@ module class_graph_balance
   ! type is what lets the balance keep its terms in a plain array.
   !===================================================================!
 
-  type, extends(graph_vertex_field_operation) :: balance
+  type, extends(graph_operation) :: balance
 
-     type(edge_differential_operator), allocatable :: edge_terms(:)
+     type(differential_operator), allocatable :: edge_terms(:)
 
      real(dp) :: source = 0.0_dp
 
    contains
 
-     procedure :: name    => balance_name
-     procedure :: support => balance_support
-     procedure :: apply   => balance_apply
+     procedure :: name   => balance_name
+     procedure :: domain => balance_domain
+     procedure :: apply  => balance_apply
 
   end type balance
 
@@ -94,7 +93,7 @@ contains
 
   pure type(balance) function create(edge_terms, source) result(this)
 
-    type(edge_differential_operator), intent(in), optional :: edge_terms(:)
+    type(differential_operator), intent(in), optional :: edge_terms(:)
     real(dp)  , intent(in), optional :: source
 
     if (present(edge_terms)) allocate(this % edge_terms, source=edge_terms)
@@ -120,15 +119,15 @@ contains
   ! caller wanting only part of one hands it only part of one.
   !===================================================================!
 
-  subroutine balance_support(this, input_graph, support)
+  subroutine balance_domain(this, input_graph, domain)
 
-    class(balance), intent(in)                            :: this
-    class(graph)  , intent(in)                            :: input_graph
-    class(graph_vertex_support), allocatable, intent(out) :: support
+    class(balance), intent(in)             :: this
+    class(graph)  , intent(in)             :: input_graph
+    class(graph), allocatable, intent(out) :: domain
 
-    call input_graph % all_vertices(support)
+    call input_graph % all_vertices(domain)
 
-  end subroutine balance_support
+  end subroutine balance_domain
 
   !===================================================================!
   ! Work the balance out.
@@ -141,15 +140,15 @@ contains
 
   subroutine balance_apply(this, input_graph, input_data, output)
 
-    class(balance)   , intent(in)                       :: this
-    class(graph)     , intent(in)                       :: input_graph
-    class(graph_data), intent(in), optional             :: input_data(:)
-    class(graph_vertex_field), allocatable, intent(inout) :: output
+    class(balance)    , intent(in)                 :: this
+    class(graph)      , intent(in)                 :: input_graph
+    class(graph_field), intent(in), optional       :: input_data(:)
+    class(graph_field), allocatable, intent(inout) :: output
 
-    class(graph_edge_field), allocatable :: edge_values
+    class(graph_field), allocatable :: edge_values
 
-    type(vertex_field)    :: out
-    type(vertex_support)  :: on
+    type(field)           :: out
+    type(support)         :: on
     real(dp), allocatable :: y(:), z(:)
     integer , allocatable :: indices(:)
     integer               :: nv, ne, v, e, t, h, k
@@ -162,8 +161,8 @@ contains
        indices(v) = v
     end do
 
-    on  = vertex_support(indices)
-    out = vertex_field('balance', on)
+    on  = support(GRAPH_SIDE_VERTEX, indices)
+    out = field('balance', on)
 
     allocate(y(nv))
     y = this % source

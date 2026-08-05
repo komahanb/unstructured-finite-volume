@@ -1,0 +1,312 @@
+!=====================================================================!
+! The marcher: time as a graph, walked both ways.
+!
+! LEVEL 2 OF THE STRATIFICATION. Time is not a special dimension
+! here - it is one more graph: instants are vertices, steps are
+! edges, and a step size is a number riding an edge, exactly as a
+! spacing rides a mesh face,
+!
+!      (t0) --h--> (t1) --h--> (t2) --h--> ... --h--> (tn)
+!
+! THE FORWARD WALK. At every edge the attached statement is read
+! and the state moves against it. Three rules, absorbed:
+!
+!      MARCH_FORWARD    q <- q - h * action(q)          explicit
+!      MARCH_BACKWARD   q - qold + h * action(q) = 0    implicit,
+!                                                       one governed
+!                                                       solve per edge
+!      MARCH_BDF2       (3q - 4qold + qolder)/2
+!                              + h * action(q) = 0      second order,
+!                                                       started by one
+!                                                       backward step
+!
+! The implicit rules GOVERN: the marcher holds a minimizer and hands
+! it one step statement per edge - the same family discipline as
+! newton over its linear question. The statement returns MINUS the
+! velocity, matching the house convention that a balance measures
+! what a cell has left over; z -> z^2 + c at h = 1 is the forward
+! walk on S = z - z^2 - c, an identity.
+!
+! THE REVERSE WALK IS THE ADJOINT. The same chain traversed head to
+! tail carries sensitivities backward: handed the TRANSPOSED
+! statement, lambda <- lambda - h * transposed(lambda) per edge, in
+! reverse edge order. The pairing <lambda, q> is then invariant
+! across every step - the duality the suite holds to machine
+! precision. For statements that change along the walk the reversed
+! order is not a courtesy; it is the derivative's chain rule.
+!
+! Author: Komahan Boopathy (komahan@gatech.edu)
+!=====================================================================!
+
+module class_graph_marcher
+
+  use iso_fortran_env    , only : dp => REAL64
+  use graph_grammar      , only : graph, graph_field, graph_operation
+  use graph_calculus     , only : GRAPH_SIDE_VERTEX
+  use class_graph_support, only : support
+  use class_graph_field  , only : field
+  use class_graph        , only : stored_graph
+  use graph_minimization , only : minimizer
+
+  implicit none
+
+  private
+  public :: marcher
+  public :: MARCH_FORWARD, MARCH_BACKWARD, MARCH_BDF2
+
+  integer, parameter :: MARCH_FORWARD  = 1
+  integer, parameter :: MARCH_BACKWARD = 2
+  integer, parameter :: MARCH_BDF2     = 3
+
+  !===================================================================!
+  ! One step's statement, as an operation: the time terms plus the
+  ! scaled velocity. Private machinery the implicit rules build,
+  ! one per edge, for the governed minimizer to answer.
+  !===================================================================!
+
+  type, extends(graph_operation) :: step_statement
+
+     class(graph_operation), allocatable :: action
+
+     real(dp), allocatable :: qold(:)
+     real(dp), allocatable :: qolder(:)
+
+     real(dp) :: a0 = 1.0_dp
+     real(dp) :: a1 = -1.0_dp
+     real(dp) :: a2 = 0.0_dp
+     real(dp) :: hs = 0.0_dp
+
+   contains
+
+     procedure :: name   => step_name
+     procedure :: domain => step_domain
+     procedure :: apply  => step_apply
+
+  end type step_statement
+
+  type :: marcher
+
+     integer  :: rule = MARCH_FORWARD
+     real(dp) :: step = 1.0_dp
+
+     class(minimizer), allocatable :: inner
+
+   contains
+
+     procedure :: instants
+     procedure :: march
+     procedure :: march_adjoint
+
+  end type marcher
+
+contains
+
+  !===================================================================!
+  ! The time graph itself: one vertex per instant, one edge per
+  ! step. Callers who want to see time as structure hold this.
+  !===================================================================!
+
+  subroutine instants(this, nsteps, chain)
+
+    class(marcher), intent(in) :: this
+    integer, intent(in) :: nsteps
+    type(stored_graph), intent(out) :: chain
+
+    integer :: n
+
+    associate (u1 => this); end associate
+
+    chain = stored_graph(nsteps + 1, &
+         & tails=[(n, n = 1, nsteps)], heads=[(n + 1, n = 1, nsteps)])
+
+  end subroutine instants
+
+  !===================================================================!
+  ! Walk the chain forward, by the rule.
+  !===================================================================!
+
+  subroutine march(this, action, on, q, nsteps)
+
+    class(marcher), intent(inout)      :: this
+    class(graph_operation), intent(in) :: action
+    class(graph), intent(in)           :: on
+    real(dp), intent(inout)            :: q(:)
+    integer, intent(in)                :: nsteps
+
+    type(stored_graph) :: chain
+    type(step_statement) :: statement
+    real(dp), allocatable :: s(:), qold(:), qolder(:), zeros(:)
+    real(dp) :: answered
+    integer :: e
+
+    call this % instants(nsteps, chain)
+
+    if (this % rule == MARCH_FORWARD) then
+
+       do e = 1, chain % num_edges()
+          call read_statement(action, on, q, s)
+          q = q - this % step * s
+       end do
+       return
+
+    end if
+
+    ! The implicit rules: one governed solve per edge; bdf2 starts
+    ! with a single backward step, as it must.
+    allocate(statement % action, source=action)
+    allocate(zeros(size(q)))
+    zeros = 0.0_dp
+
+    qold = q
+
+    do e = 1, chain % num_edges()
+
+       if (this % rule == MARCH_BDF2 .and. e > 1) then
+          statement % a0 = 1.5_dp
+          statement % a1 = -2.0_dp
+          statement % a2 = 0.5_dp
+          statement % qolder = qolder
+       else
+          statement % a0 = 1.0_dp
+          statement % a1 = -1.0_dp
+          statement % a2 = 0.0_dp
+       end if
+
+       statement % hs   = this % step
+       statement % qold = qold
+
+       call this % inner % attach(statement, on)
+       call this % inner % solve(zeros, q, answered)
+
+       qolder = qold
+       qold   = q
+
+    end do
+
+  end subroutine march
+
+  !===================================================================!
+  ! Walk the chain in reverse, carrying the pairing: handed the
+  ! transposed statement, the sensitivities travel head to tail and
+  ! <lambda, q> stays put.
+  !===================================================================!
+
+  subroutine march_adjoint(this, transposed, on, lambda, nsteps)
+
+    class(marcher), intent(inout)      :: this
+    class(graph_operation), intent(in) :: transposed
+    class(graph), intent(in)           :: on
+    real(dp), intent(inout)            :: lambda(:)
+    integer, intent(in)                :: nsteps
+
+    type(stored_graph) :: chain
+    real(dp), allocatable :: s(:)
+    integer :: e
+
+    call this % instants(nsteps, chain)
+
+    do e = chain % num_edges(), 1, -1
+       call read_statement(transposed, on, lambda, s)
+       lambda = lambda - this % step * s
+    end do
+
+  end subroutine march_adjoint
+
+  !===================================================================!
+  ! One read of a statement at the standing state.
+  !===================================================================!
+
+  subroutine read_statement(action, on, q, s)
+
+    class(graph_operation), intent(in) :: action
+    class(graph), intent(in)           :: on
+    real(dp), intent(in)               :: q(:)
+    real(dp), allocatable, intent(out) :: s(:)
+
+    type(support) :: cells
+    type(field)   :: state
+    class(graph_field), allocatable :: answer
+    integer :: nv, ncomp, v
+
+    nv    = on % num_vertices()
+    ncomp = size(q) / max(nv, 1)
+
+    cells = support(GRAPH_SIDE_VERTEX, [(v, v = 1, nv)])
+    state = field('state', cells, ncomp=ncomp)
+    call state % set_real_vector(q)
+
+    call action % apply(on, [state], answer)
+    call answer % get_real_vector(s)
+
+  end subroutine read_statement
+
+  !===================================================================!
+  ! The step statement's three answers.
+  !===================================================================!
+
+  pure function step_name(this) result(name)
+
+    class(step_statement), intent(in) :: this
+    character(len=:), allocatable :: name
+
+    associate (u1 => this); end associate
+
+    name = 'step statement'
+
+  end function step_name
+
+  subroutine step_domain(this, input_graph, domain)
+
+    class(step_statement), intent(in)      :: this
+    class(graph), intent(in)               :: input_graph
+    class(graph), allocatable, intent(out) :: domain
+
+    associate (u1 => this); end associate
+
+    call input_graph % all_vertices(domain)
+
+  end subroutine step_domain
+
+  subroutine step_apply(this, input_graph, input_data, output)
+
+    class(step_statement), intent(in)              :: this
+    class(graph), intent(in)                       :: input_graph
+    class(graph_field), intent(in), optional       :: input_data(:)
+    class(graph_field), allocatable, intent(inout) :: output
+
+    type(support) :: cells
+    type(field)   :: out
+    class(graph_field), allocatable :: velocity
+    real(dp), allocatable :: q(:), s(:), y(:)
+    integer :: nv, ncomp, v
+
+    nv = input_graph % num_vertices()
+
+    if (present(input_data)) then
+
+       call input_data(1) % get_real_vector(q)
+
+       call this % action % apply(input_graph, input_data, velocity)
+       call velocity % get_real_vector(s)
+
+       y = this % a0 * q + this % a1 * this % qold + this % hs * s
+       if (allocated(this % qolder) .and. abs(this % a2) > 0.0_dp) then
+          y = y + this % a2 * this % qolder
+       end if
+
+    else
+       allocate(y(nv))
+       y = 0.0_dp
+    end if
+
+    ncomp = size(y) / max(nv, 1)
+    cells = support(GRAPH_SIDE_VERTEX, [(v, v = 1, nv)])
+    out = field('step residual', cells, ncomp=ncomp)
+    call out % set_real_vector(y)
+
+    if (allocated(output)) deallocate(output)
+    allocate(output, source=out)
+
+  end subroutine step_apply
+
+end module class_graph_marcher

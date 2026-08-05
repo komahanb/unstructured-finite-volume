@@ -56,11 +56,13 @@
 module class_graph_partitioner
 
   use iso_fortran_env     , only : dp => REAL64
-  use abstract_graph_types, only : graph_partitioner, graph, graph_data
-  use abstract_graph_types, only : graph_field, graph_support
+  use graph_grammar       , only : graph, graph_field
+  use graph_calculus      , only : graph_partitioner
+  use graph_calculus      , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
   use class_graph         , only : stored_graph
-  use class_graph_support , only : vertex_support, edge_support
-  use class_graph_field   , only : vertex_field, edge_field
+  use class_graph_support , only : support
+  use class_graph_field   , only : field
+  use class_graph_walk    , only : walk, WALK_VISIT_ORDER
 
   implicit none
 
@@ -174,7 +176,7 @@ contains
 
     class(partitioner), intent(in) :: this
     class(graph)      , intent(in) :: input_graph
-    class(graph_data) , intent(in) :: input_data
+    class(graph_field) , intent(in) :: input_data
 
     defined_on_data = this % defined_on_graph(input_graph)
 
@@ -338,48 +340,56 @@ contains
     integer     , intent(in)    :: nparts
     integer     , intent(inout) :: owner(:)
 
-    integer, allocatable :: queue(:), nbrs(:)
-    integer :: nv, share, k, v, seed, head_of_queue, tail_of_queue, taken, i
+    type(stored_graph) :: untaken
+    type(walk)         :: visit
+    class(graph_field), allocatable :: reached
+    integer, allocatable :: locals(:), whereis(:), tails(:), heads(:), order(:)
+    integer :: nv, ne, share, k, v, e, t, h, n, m
 
     nv    = global_graph % num_vertices()
+    ne    = global_graph % num_edges()
     owner = 0
     share = (nv + nparts - 1) / nparts
 
-    allocate(queue(nv))
+    allocate(locals(nv), whereis(nv), tails(ne), heads(ne))
 
     do k = 1, nparts
 
-       ! Start from the first cell nobody has claimed.
-       seed = 0
+       ! The unclaimed remainder, as the graph it is. The walk owns
+       ! breadth-first; this routine only asks and reads.
+       n = 0
+       whereis = 0
        do v = 1, nv
           if (owner(v) == 0) then
-             seed = v
-             exit
+             n = n + 1
+             locals(n)  = v
+             whereis(v) = n
           end if
        end do
-       if (seed == 0) exit
+       if (n == 0) exit
 
-       owner(seed)   = k
-       queue(1)      = seed
-       head_of_queue = 1
-       tail_of_queue = 1
-       taken         = 1
+       m = 0
+       do e = 1, ne
+          t = global_graph % edge_tail(e)
+          if (.not. global_graph % edge_has_head(e)) cycle
+          h = global_graph % edge_head(e)
+          if (whereis(t) > 0 .and. whereis(h) > 0) then
+             m = m + 1
+             tails(m) = whereis(t)
+             heads(m) = whereis(h)
+          end if
+       end do
 
-       ! Take neighbours, then their neighbours, until this part has
-       ! its share or the ring runs out.
-       do while (head_of_queue <= tail_of_queue .and. taken < share)
-          v = queue(head_of_queue)
-          head_of_queue = head_of_queue + 1
-          call global_graph % adjacent_vertices(v, nbrs)
-          do i = 1, size(nbrs)
-             if (taken >= share) exit
-             if (owner(nbrs(i)) == 0) then
-                owner(nbrs(i))       = k
-                taken                = taken + 1
-                tail_of_queue        = tail_of_queue + 1
-                queue(tail_of_queue) = nbrs(i)
-             end if
-          end do
+       untaken = stored_graph(n, tails=tails(1:m), heads=heads(1:m))
+
+       ! The first unclaimed cell seeds the part; the visit order
+       ! says who its share of the ring is.
+       visit = walk(WALK_VISIT_ORDER, seed=1)
+       call visit % apply(untaken, output=reached)
+       call reached % get_integer_vector(order)
+
+       do v = 1, n
+          if (order(v) >= 1 .and. order(v) <= share) owner(locals(v)) = k
        end do
 
     end do
@@ -453,17 +463,18 @@ contains
 
     class(partitioner), intent(in)               :: this
     class(graph)      , intent(in)               :: global_graph
-    class(graph_data) , intent(in)               :: global_data
+    class(graph_field) , intent(in)               :: global_data
     class(graph)      , intent(in)               :: part_graph
-    class(graph_data) , allocatable, intent(out) :: part_data
+    class(graph_field) , allocatable, intent(out) :: part_data
 
     select type (global_data)
 
-    class is (vertex_field)
-       call carry_vertex_field(global_data, part_graph, part_data)
-
-    class is (edge_field)
-       call carry_edge_field(global_data, part_graph, part_data)
+    class is (field)
+       if (global_data % on % side() == GRAPH_SIDE_VERTEX) then
+          call carry_vertex_field(global_data, part_graph, part_data)
+       else
+          call carry_edge_field(global_data, part_graph, part_data)
+       end if
 
     end select
 
@@ -477,12 +488,12 @@ contains
 
   subroutine carry_vertex_field(global_data, part_graph, part_data)
 
-    type(vertex_field), intent(in)               :: global_data
+    type(field), intent(in)               :: global_data
     class(graph)      , intent(in)               :: part_graph
-    class(graph_data) , allocatable, intent(out) :: part_data
+    class(graph_field) , allocatable, intent(out) :: part_data
 
-    type(vertex_field)    :: out
-    type(vertex_support)  :: on
+    type(field)    :: out
+    type(support)  :: on
     real(dp), allocatable :: fv(:), lv(:)
     integer , allocatable :: locals(:)
     integer :: nlocal, ncomp, l, c
@@ -495,8 +506,8 @@ contains
        locals(l) = l
     end do
 
-    on  = vertex_support(locals)
-    out = vertex_field(global_data % name(), on, ncomp=ncomp, unit_name=global_data % units())
+    on  = support(GRAPH_SIDE_VERTEX, locals)
+    out = field(global_data % name(), on, ncomp=ncomp, unit_name=global_data % units())
 
     call global_data % get_real_vector(fv)
     allocate(lv(nlocal * ncomp))
@@ -521,12 +532,12 @@ contains
 
   subroutine carry_edge_field(global_data, part_graph, part_data)
 
-    type(edge_field), intent(in)               :: global_data
+    type(field), intent(in)               :: global_data
     class(graph)    , intent(in)               :: part_graph
-    class(graph_data), allocatable, intent(out) :: part_data
+    class(graph_field), allocatable, intent(out) :: part_data
 
-    type(edge_field)      :: out
-    type(edge_support)    :: on
+    type(field)      :: out
+    type(support)    :: on
     real(dp), allocatable :: fv(:), lv(:)
     integer , allocatable :: locals(:)
     integer :: nlocal, ncomp, l, c
@@ -539,8 +550,8 @@ contains
        locals(l) = l
     end do
 
-    on  = edge_support(locals)
-    out = edge_field(global_data % name(), on, ncomp=ncomp, unit_name=global_data % units())
+    on  = support(GRAPH_SIDE_EDGE, locals)
+    out = field(global_data % name(), on, ncomp=ncomp, unit_name=global_data % units())
 
     call global_data % get_real_vector(fv)
     allocate(lv(nlocal * ncomp))

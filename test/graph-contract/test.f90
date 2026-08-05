@@ -16,23 +16,22 @@
 
 module nonlinear_sample_support
 
-  use iso_fortran_env     , only : dp => REAL64
-  use abstract_graph_types, only : graph_edge_field_operation, graph
-  use abstract_graph_types, only : graph_data, graph_edge_field
-  use abstract_graph_types, only : graph_edge_support
-  use class_graph_support , only : edge_support
-  use class_graph_field   , only : vertex_field, edge_field
+  use iso_fortran_env    , only : dp => REAL64
+  use graph_grammar      , only : graph_operation, graph, graph_field
+  use graph_calculus     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
+  use class_graph_support, only : support
+  use class_graph_field  , only : field
 
   implicit none
 
   private
   public :: nonlinear_sample
 
-  type, extends(graph_edge_field_operation) :: nonlinear_sample
+  type, extends(graph_operation) :: nonlinear_sample
    contains
-     procedure :: name    => nonlinear_sample_name
-     procedure :: support => nonlinear_sample_support_of
-     procedure :: apply   => nonlinear_sample_apply
+     procedure :: name   => nonlinear_sample_name
+     procedure :: domain => nonlinear_sample_domain
+     procedure :: apply  => nonlinear_sample_apply
   end type nonlinear_sample
 
 contains
@@ -43,22 +42,22 @@ contains
     name = 'nonlinear sample'
   end function nonlinear_sample_name
 
-  subroutine nonlinear_sample_support_of(this, input_graph, support)
-    class(nonlinear_sample), intent(in)                 :: this
-    class(graph), intent(in)                            :: input_graph
-    class(graph_edge_support), allocatable, intent(out) :: support
-    call input_graph % all_edges(support)
-  end subroutine nonlinear_sample_support_of
+  subroutine nonlinear_sample_domain(this, input_graph, domain)
+    class(nonlinear_sample), intent(in)    :: this
+    class(graph), intent(in)               :: input_graph
+    class(graph), allocatable, intent(out) :: domain
+    call input_graph % all_edges(domain)
+  end subroutine nonlinear_sample_domain
 
   subroutine nonlinear_sample_apply(this, input_graph, input_data, output)
 
     class(nonlinear_sample), intent(in)                 :: this
     class(graph), intent(in)                            :: input_graph
-    class(graph_data), intent(in), optional             :: input_data(:)
-    class(graph_edge_field), allocatable, intent(inout) :: output
+    class(graph_field), intent(in), optional             :: input_data(:)
+    class(graph_field), allocatable, intent(inout) :: output
 
-    type(edge_field)      :: out
-    type(edge_support)    :: on
+    type(field)      :: out
+    type(support)    :: on
     real(dp), allocatable :: q(:), z(:)
     integer , allocatable :: indices(:)
     real(dp)              :: qt, qh
@@ -69,15 +68,15 @@ contains
     do e = 1, ne
        indices(e) = e
     end do
-    on  = edge_support(indices)
-    out = edge_field(this % name(), on)
+    on  = support(GRAPH_SIDE_EDGE, indices)
+    out = field(this % name(), on)
 
     allocate(z(ne))
     z = 0.0_dp
 
     if (present(input_data)) then
        select type (state => input_data(1))
-       class is (vertex_field)
+       class is (field)
           call state % get_real_vector(q)
           do e = 1, ne
              t  = input_graph % edge_tail(e)
@@ -189,15 +188,14 @@ end module nonlinear_sample_support
 program test_graph_contract
 
   use iso_fortran_env       , only : dp => REAL64
-  use abstract_graph_types  , only : GRAPH_SUPPORT_VERTEX, GRAPH_SUPPORT_EDGE
-  use abstract_graph_types  , only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
-  use abstract_graph_types  , only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
-  use abstract_graph_types  , only : GRAPH_FIELD_CHARACTER
-  use abstract_graph_types  , only : graph_data, graph_functional
-  use abstract_graph_types  , only : graph_vertex_support, graph_edge_support
-  use class_graph_support   , only : vertex_support, edge_support
+  use graph_grammar         , only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
+  use graph_grammar         , only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
+  use graph_grammar         , only : GRAPH_FIELD_CHARACTER
+  use graph_calculus        , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
+  use graph_calculus        , only : graph_functional
+  use class_graph_support   , only : support
   use class_graph           , only : stored_graph
-  use class_graph_field     , only : vertex_field, edge_field
+  use class_graph_field     , only : field
   use class_graph_functional, only : functional
   use class_graph_reduction , only : reduction
   use class_graph_reduction , only : REDUCE_SUM, REDUCE_AVERAGE, REDUCE_MINIMUM
@@ -207,10 +205,10 @@ program test_graph_contract
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
   use class_graph_partitioner, only : PARTITION_BREADTH_FIRST, PARTITION_ADOPTED
   use class_graph_assembler , only : assembler
-  use abstract_graph_types  , only : graph, graph_vertex_field
-  use abstract_graph_types  , only : graph_edge_field
+  use graph_grammar         , only : graph, graph_field
   use class_graph_coarsener , only : coarsener, COARSEN_PAIRWISE, COARSEN_ADOPTED
   use class_graph_refiner   , only : refiner
+  use class_graph_differential_operator, only : differential_operator
   use class_graph_differential_operator, only : edge_differential_operator
   use class_graph_differential_operator, only : vertex_differential_operator
   use class_graph_differential_operator, only : gradient, interpolation
@@ -239,7 +237,6 @@ program test_graph_contract
   call check_graph_named_sets(nfail)
   call check_graph_walking(nfail)
   call check_graph_uncut(nfail)
-  call check_graph_data(nfail)
   call check_reductions(nfail)
   call check_average_across_parts(nfail)
   call check_identity_law_one_part(nfail)
@@ -298,30 +295,30 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(vertex_support)  :: vs, empty
-    type(edge_support)    :: es
+    type(support)  :: vs, empty
+    type(support)    :: es
     integer, allocatable  :: got(:)
 
-    vs = vertex_support([7, 3, 11])
-    es = edge_support([2, 5])
+    vs = support(GRAPH_SIDE_VERTEX, [7, 3, 11])
+    es = support(GRAPH_SIDE_EDGE, [2, 5])
 
-    call vs % vertex_indices(got)
+    call members_of(vs, got)
     call report(size(got) .eq. 3, "vertex support keeps its count", nfail)
     call report(all(got .eq. [7, 3, 11]), &
          & "vertex support keeps its indices, in order", nfail)
-    call report(vs % size() .eq. 3, "vertex support reports its size", nfail)
-    call report(vs % kind() .eq. GRAPH_SUPPORT_VERTEX, &
+    call report(vs % num_vertices() .eq. 3, "vertex support reports its size", nfail)
+    call report(vs % side() .eq. GRAPH_SIDE_VERTEX, &
          & "a vertex support reports the vertex kind", nfail)
 
-    call es % edge_indices(got)
+    call members_of(es, got)
     call report(all(got .eq. [2, 5]), "edge support keeps its indices", nfail)
-    call report(es % kind() .eq. GRAPH_SUPPORT_EDGE, &
+    call report(es % side() .eq. GRAPH_SIDE_EDGE, &
          & "an edge support reports the edge kind", nfail)
 
     ! An untouched support has nothing in it, and must still return a
     ! zero-length array, so a loop over it requires no prior check.
-    call report(empty % size() .eq. 0, "an empty support has size zero", nfail)
-    call empty % vertex_indices(got)
+    call report(empty % num_vertices() .eq. 0, "an empty support has size zero", nfail)
+    call members_of(empty, got)
     call report(allocated(got) .and. size(got) .eq. 0, &
          & "an empty support returns a zero-length array", nfail)
 
@@ -354,14 +351,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(vertex_support)  :: on
-    type(vertex_field)    :: f
+    type(support)  :: on
+    type(field)    :: f
     real(dp), allocatable :: got(:)
     integer               :: entry_position, component, position
     logical               :: ok
 
-    on = vertex_support([7, 3, 11])
-    f  = vertex_field('q', on, ncomp=2)
+    on = support(GRAPH_SIDE_VERTEX, [7, 3, 11])
+    f  = field('q', on, ncomp=2)
 
     call f % set_real_vector([71.0_dp, 72.0_dp, 31.0_dp, 32.0_dp, 111.0_dp, 112.0_dp])
 
@@ -413,13 +410,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(vertex_support)  :: on
-    type(vertex_field)    :: f
+    type(support)  :: on
+    type(field)    :: f
     real(dp), allocatable :: r(:)
     integer , allocatable :: i(:)
 
-    on = vertex_support([1, 2])
-    f  = vertex_field('q', on)
+    on = support(GRAPH_SIDE_VERTEX, [1, 2])
+    f  = field('q', on)
 
     call f % set_real_vector([1.0_dp, 2.0_dp])
     call report(f % value_kind() .eq. GRAPH_FIELD_REAL, &
@@ -454,16 +451,16 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(edge_support)                :: on
-    type(edge_field)                  :: f
+    type(support)                :: on
+    type(field)                  :: f
     integer         , allocatable     :: i(:)
     real(dp)        , allocatable     :: r(:)
     complex(dp)     , allocatable     :: c(:)
     logical         , allocatable     :: l(:)
     character(len=:), allocatable     :: s(:)
 
-    on = edge_support([1, 2])
-    f  = edge_field('F', on)
+    on = support(GRAPH_SIDE_EDGE, [1, 2])
+    f  = field('F', on)
 
     call f % set_integer_vector([3, 4])
     call f % get_integer_vector(i)
@@ -513,18 +510,18 @@ contains
     j = functional('J')
 
     call j % set_integer_value(7)
-    call j % get_integer_value(i)
+    call value_integer(j, i)
     call report(i .eq. 7, "a functional holds an integer", nfail)
 
     call j % set_real_value(2.5_dp)
-    call j % get_real_value(r)
+    call value_real(j, r)
     call report(abs(r - 2.5_dp) < 1.0d-13, "a functional holds a real", nfail)
 
     ! The complex-step case. The derivative is the imaginary part, and
     ! it is tiny on purpose: a functional that quietly rounded through
     ! a real would return exactly zero here.
     call j % set_complex_value((5.0_dp, 4.0d-20))
-    call j % get_complex_value(c)
+    call value_complex(j, c)
     call report(abs(real(c) - 5.0_dp) < 1.0d-13, &
          & "a functional holds the real part", nfail)
     call report(abs(aimag(c) - 4.0d-20) < 1.0d-33, &
@@ -534,7 +531,7 @@ contains
 
     ! A predicate answers true or false, not one or zero.
     call j % set_logical_value(.false.)
-    call j % get_logical_value(l)
+    call value_logical(j, l)
     call report(.not. l, "a functional holds a true-or-false value", nfail)
     call report(j % value_kind() .eq. GRAPH_FIELD_LOGICAL, &
          & "and reports itself logical, not numeric", nfail)
@@ -607,54 +604,54 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                       :: g
-    class(graph_vertex_support), allocatable :: vs
-    class(graph_edge_support)  , allocatable :: es
+    class(graph), allocatable :: vs
+    class(graph), allocatable :: es
     integer, allocatable                     :: indices(:)
 
     g = diamond()
 
     call g % all_vertices(vs)
-    call vs % vertex_indices(indices)
+    call members_of(vs, indices)
     call report(size(indices) .eq. 4 .and. all(indices .eq. [1, 2, 3, 4]), &
          & "all_vertices is every cell", nfail)
 
     call g % boundary_vertices(vs)
-    call vs % vertex_indices(indices)
+    call members_of(vs, indices)
     call report(size(indices) .eq. 1 .and. indices(1) .eq. 4, &
          & "only the cell behind the wall is a boundary cell", nfail)
 
     call g % interior_vertices(vs)
-    call vs % vertex_indices(indices)
+    call members_of(vs, indices)
     call report(size(indices) .eq. 3 .and. all(indices .eq. [1, 2, 3]), &
          & "the other three are interior", nfail)
 
     call g % all_edges(es)
-    call es % edge_indices(indices)
+    call members_of(es, indices)
     call report(size(indices) .eq. 5, "all_edges is every face", nfail)
 
     call g % boundary_edges(es)
-    call es % edge_indices(indices)
+    call members_of(es, indices)
     call report(size(indices) .eq. 1 .and. indices(1) .eq. 5, &
          & "the headless face is the boundary face", nfail)
 
     call g % interior_edges(es)
-    call es % edge_indices(indices)
+    call members_of(es, indices)
     call report(size(indices) .eq. 4, "the other four are interior faces", nfail)
 
     call g % tagged_edges('wall', es)
-    call es % edge_indices(indices)
+    call members_of(es, indices)
     call report(size(indices) .eq. 1 .and. indices(1) .eq. 5, &
          & "tagged_edges of wall returns the wall face", nfail)
 
     call g % tagged_edges('inlet', es)
-    call es % edge_indices(indices)
+    call members_of(es, indices)
     call report(size(indices) .eq. 0, &
          & "an unknown tag returns an empty set, not a failure", nfail)
 
     ! Nothing was tagged on the vertices, so every vertex query by
     ! name must come back empty rather than reaching into thin air.
     call g % tagged_vertices('heater', vs)
-    call vs % vertex_indices(indices)
+    call members_of(vs, indices)
     call report(size(indices) .eq. 0, &
          & "an untagged graph returns an empty set for every vertex tag", nfail)
 
@@ -725,7 +722,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                       :: g
-    class(graph_vertex_support), allocatable :: vs
+    class(graph), allocatable :: vs
     integer, allocatable                     :: indices(:)
 
     g = diamond()
@@ -735,11 +732,11 @@ contains
     call report(g % num_parts() .eq. 1, "an uncut graph is one part", nfail)
 
     call g % owned_vertices(1, vs)
-    call vs % vertex_indices(indices)
+    call members_of(vs, indices)
     call report(size(indices) .eq. 4, "and it owns every cell in it", nfail)
 
     call g % borrowed_vertices(1, vs)
-    call vs % vertex_indices(indices)
+    call members_of(vs, indices)
     call report(size(indices) .eq. 0, "and borrows none", nfail)
 
     call report(g % vertex_owner_part(3) .eq. 1, &
@@ -755,62 +752,6 @@ contains
   ! Geometry rides on the graph and is fetched by name. This is how a
   ! edge operation reaches a face normal without any caller threading
   ! it down through every call.
-  !===================================================================!
-
-  subroutine check_graph_data(nfail)
-
-    integer, intent(inout) :: nfail
-
-    type(stored_graph)             :: g
-    type(vertex_support)           :: cells
-    type(edge_support)             :: faces
-    type(vertex_field)             :: volume
-    type(edge_field)               :: area
-    class(graph_data), allocatable :: got
-    real(dp), allocatable          :: r(:)
-
-    cells = vertex_support([1, 2, 3, 4])
-    faces = edge_support([1, 2, 3, 4, 5])
-
-    volume = vertex_field('cell_volume', cells, unit_name='m3')
-    call volume % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
-
-    area = edge_field('face_area', faces, unit_name='m2')
-    call area % set_real_vector([0.1_dp, 0.2_dp, 0.3_dp, 0.4_dp, 0.5_dp])
-
-    g = stored_graph(4, tails=[1, 1, 2, 3, 4], heads=[2, 3, 4, 4, 0], &
-         &           vdata=[volume], edata=[area])
-
-    call report(g % has_data('cell_volume'), "the graph holds cell volumes", nfail)
-    call report(g % has_data('face_area'), "and face areas", nfail)
-    call report(.not. g % has_data('face_normal'), &
-         & "and has_data is false for absent names", nfail)
-
-    call g % get_data('cell_volume', got)
-    call report(allocated(got), "get_data returns an allocated object", nfail)
-    call report(got % name() .eq. 'cell_volume', "and it is the right one", nfail)
-    call report(got % units() .eq. 'm3', "holding its units", nfail)
-
-    select type (got)
-    class is (vertex_field)
-       call got % get_real_vector(r)
-       call report(size(r) .eq. 4 .and. abs(r(3) - 3.0_dp) < 1.0d-13, &
-            & "with the values intact", nfail)
-    class default
-       call report(.false., "with the values intact", nfail)
-    end select
-
-    call g % get_data('face_area', got)
-    select type (got)
-    class is (edge_field)
-       call got % get_real_vector(r)
-       call report(abs(r(5) - 0.5_dp) < 1.0d-13, &
-            & "an edge field comes back an edge field", nfail)
-    class default
-       call report(.false., "an edge field comes back an edge field", nfail)
-    end select
-
-  end subroutine check_graph_data
 
   !===================================================================!
   ! The reduction rules, each on numbers whose answer is obvious by
@@ -822,8 +763,8 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                   :: g
-    type(vertex_support)                 :: on
-    type(vertex_field)                   :: f, vol
+    type(support)                 :: on
+    type(field)                   :: f, vol
     type(reduction)                      :: rule
     class(graph_functional), allocatable :: j
     real(dp)                             :: r
@@ -832,47 +773,47 @@ contains
     integer                              :: i
 
     g  = diamond()
-    on = vertex_support([1, 2, 3, 4])
+    on = support(GRAPH_SIDE_VERTEX, [1, 2, 3, 4])
 
-    f = vertex_field('q', on)
+    f = field('q', on)
     call f % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
 
     rule = reduction(REDUCE_SUM)
     call rule % reduce(f, j)
-    call j % get_real_value(r)
+    call value_real(j, r)
     call report(abs(r - 10.0_dp) < 1.0d-13, "sum adds the values up", nfail)
 
     ! With a measure the same rule becomes an integral. Each cell is
     ! weighted by its volume, so the answer stops depending on how
     ! finely the mesh was cut.
-    vol = vertex_field('cell_volume', on)
+    vol = field('cell_volume', on)
     call vol % set_real_vector([2.0_dp, 2.0_dp, 2.0_dp, 2.0_dp])
     call rule % reduce(f, j, measure=vol)
-    call j % get_real_value(r)
+    call value_real(j, r)
     call report(abs(r - 20.0_dp) < 1.0d-13, &
          & "a measure turns the sum into an integral", nfail)
 
     rule = reduction(REDUCE_MINIMUM)
     call rule % reduce(f, j)
-    call j % get_real_value(r)
+    call value_real(j, r)
     call report(abs(r - 1.0_dp) < 1.0d-13, "minimum finds the smallest", nfail)
 
     rule = reduction(REDUCE_MAXIMUM)
     call rule % reduce(f, j)
-    call j % get_real_value(r)
+    call value_real(j, r)
     call report(abs(r - 4.0_dp) < 1.0d-13, "maximum finds the largest", nfail)
 
     ! Three-four-five, so the root is exact.
     call f % set_real_vector([3.0_dp, 4.0_dp])
     rule = reduction(REDUCE_NORM)
     call rule % reduce(f, j)
-    call j % get_real_value(r)
+    call value_real(j, r)
     call report(abs(r - 5.0_dp) < 1.0d-13, "the two-norm takes its root once", nfail)
 
     call f % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
     rule = reduction(REDUCE_COUNT)
     call rule % reduce(f, j)
-    call j % get_integer_value(i)
+    call value_integer(j, i)
     call report(i .eq. 4, "count counts, and answers as an integer", nfail)
     call report(j % value_kind() .eq. GRAPH_FIELD_INTEGER, &
          & "and reports integer kind", nfail)
@@ -882,12 +823,12 @@ contains
     call f % set_logical_vector([.true., .true., .false., .true.])
     rule = reduction(REDUCE_ALL)
     call rule % reduce(f, j)
-    call j % get_logical_value(l)
+    call value_logical(j, l)
     call report(.not. l, "all is false when one of them is", nfail)
 
     rule = reduction(REDUCE_ANY)
     call rule % reduce(f, j)
-    call j % get_logical_value(l)
+    call value_logical(j, l)
     call report(l, "any is true when one of them is", nfail)
     call report(j % value_kind() .eq. GRAPH_FIELD_LOGICAL, &
          & "and a predicate stays a predicate, not a one or a zero", nfail)
@@ -897,7 +838,7 @@ contains
     call f % set_complex_vector([(1.0_dp, 1.0d-20), (2.0_dp, 3.0d-20)])
     rule = reduction(REDUCE_SUM)
     call rule % reduce(f, j)
-    call j % get_complex_value(c)
+    call value_complex(j, c)
     call report(abs(real(c) - 3.0_dp) < 1.0d-13, &
          & "summing a complex field keeps the real part", nfail)
     call report(abs(aimag(c) - 4.0d-20) < 1.0d-33, &
@@ -927,8 +868,8 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                   :: g
-    type(vertex_support)                 :: s1, s2
-    type(vertex_field)                   :: f1, f2
+    type(support)                 :: s1, s2
+    type(field)                   :: f1, f2
     type(reduction)                      :: rule
     class(graph_functional), allocatable :: a, b, both, j
     real(dp)                             :: r
@@ -936,12 +877,12 @@ contains
     g    = diamond()
     rule = reduction(REDUCE_AVERAGE)
 
-    s1 = vertex_support([1, 2, 3])
-    f1 = vertex_field('q', s1)
+    s1 = support(GRAPH_SIDE_VERTEX, [1, 2, 3])
+    f1 = field('q', s1)
     call f1 % set_real_vector([2.0_dp, 2.0_dp, 2.0_dp])
 
-    s2 = vertex_support([1, 2])
-    f2 = vertex_field('q', s2)
+    s2 = support(GRAPH_SIDE_VERTEX, [1, 2])
+    f2 = field('q', s2)
     call f2 % set_real_vector([5.0_dp, 9.0_dp])
 
     ! Each part accumulates on its own, and neither one divides.
@@ -954,7 +895,7 @@ contains
     call rule % combine(a, b, both)
     call rule % finalize(both, j)
 
-    call j % get_real_value(r)
+    call value_real(j, r)
     call report(abs(r - 4.0_dp) < 1.0d-13, &
          & "two parts average to 4, not 4.5 - the division waits", nfail)
 
@@ -962,13 +903,13 @@ contains
     ! or a parallel run would depend on which image finished first.
     call rule % combine(b, a, both)
     call rule % finalize(both, j)
-    call j % get_real_value(r)
+    call value_real(j, r)
     call report(abs(r - 4.0_dp) < 1.0d-13, &
          & "and the order the parts arrive in makes no difference", nfail)
 
     ! One part alone still has to come out right.
     call rule % finalize(a, j)
-    call j % get_real_value(r)
+    call value_real(j, r)
     call report(abs(r - 2.0_dp) < 1.0d-13, &
          & "one part on its own averages to its own mean", nfail)
 
@@ -1012,9 +953,9 @@ contains
     type(partitioner)              :: p
     type(assembler)                :: a
     class(graph), allocatable      :: part, back
-    class(graph_data), allocatable :: pd, fd
-    type(vertex_support)           :: on
-    type(vertex_field)             :: d
+    class(graph_field), allocatable :: pd, fd
+    type(support)           :: on
+    type(field)             :: d
     real(dp), allocatable          :: v(:)
     integer                        :: e
     logical                        :: same
@@ -1047,15 +988,15 @@ contains
     call report(same, "and every face runs between the same two cells", nfail)
 
     ! Now the same round trip with values riding along.
-    on = vertex_support([1, 2, 3, 4, 5, 6])
-    d  = vertex_field('q', on)
+    on = support(GRAPH_SIDE_VERTEX, [1, 2, 3, 4, 5, 6])
+    d  = field('q', on)
     call d % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp])
 
     call p % partition_data(g, d, part, pd)
     call a % assemble_data(part, pd, g, fd)
 
     select type (fd)
-    class is (vertex_field)
+    class is (field)
        call fd % get_real_vector(v)
        call report(size(v) .eq. 6, "the data returns at the right size", nfail)
        call report(all(abs(v - [10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp]) < 1.0d-13), &
@@ -1086,7 +1027,7 @@ contains
     type(stored_graph)                       :: g
     type(partitioner)                        :: p
     class(graph), allocatable                :: part
-    class(graph_vertex_support), allocatable :: vs
+    class(graph), allocatable :: vs
     integer, allocatable                     :: indices(:)
     integer                                  :: k, l, f, times(6)
 
@@ -1103,7 +1044,7 @@ contains
 
        ! Count how often each whole-graph cell is owned.
        call part % owned_vertices(k, vs)
-       call vs % vertex_indices(indices)
+       call members_of(vs, indices)
        do l = 1, size(indices)
           f = part % global_vertex_index(indices(l))
           times(f) = times(f) + 1
@@ -1112,7 +1053,7 @@ contains
        ! Each piece should also have borrowed the one cell across the
        ! cut, so a face term there has a value on both sides.
        call part % borrowed_vertices(k, vs)
-       call vs % vertex_indices(indices)
+       call members_of(vs, indices)
        call report(size(indices) .eq. 1, &
             & "each piece borrows exactly one cell across the cut", nfail)
     end do
@@ -1145,7 +1086,7 @@ contains
 
     type(partitioner)                        :: p
     class(graph), allocatable                :: part
-    class(graph_vertex_support), allocatable :: vs
+    class(graph), allocatable :: vs
     integer, allocatable                     :: indices(:)
     integer                                  :: times(g % num_vertices())
     integer                                  :: k, l, f
@@ -1156,7 +1097,7 @@ contains
        p = partitioner(rule, nparts=nparts, part=k)
        call p % partition_graph(g, part)
        call part % owned_vertices(k, vs)
-       call vs % vertex_indices(indices)
+       call members_of(vs, indices)
        do l = 1, size(indices)
           f = part % global_vertex_index(indices(l))
           times(f) = times(f) + 1
@@ -1192,9 +1133,9 @@ contains
     type(partitioner)              :: p
     type(assembler)                :: a
     class(graph), allocatable      :: part
-    class(graph_data), allocatable :: pd, fd
-    type(vertex_support)           :: on
-    type(vertex_field)             :: d
+    class(graph_field), allocatable :: pd, fd
+    type(support)           :: on
+    type(field)             :: d
     real(dp), allocatable          :: v(:)
     real(dp)                       :: total(6)
     integer                        :: k
@@ -1202,8 +1143,8 @@ contains
     g = chain_of_six()
     a = assembler()
 
-    on = vertex_support([1, 2, 3, 4, 5, 6])
-    d  = vertex_field('q', on)
+    on = support(GRAPH_SIDE_VERTEX, [1, 2, 3, 4, 5, 6])
+    d  = field('q', on)
     call d % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp])
 
     total = 0.0_dp
@@ -1215,7 +1156,7 @@ contains
        call a % assemble_data(part, pd, g, fd)
 
        select type (fd)
-       class is (vertex_field)
+       class is (field)
           call fd % get_real_vector(v)
           total = total + v(1:6)
        end select
@@ -1249,11 +1190,11 @@ contains
     type(partitioner)                        :: p
     type(reduction)                          :: rule
     class(graph), allocatable                :: part
-    class(graph_data), allocatable           :: pd
-    class(graph_vertex_support), allocatable :: vs
+    class(graph_field), allocatable           :: pd
+    class(graph), allocatable :: vs
     class(graph_functional), allocatable     :: whole, piece, running, joined
-    type(vertex_support)                     :: on, owned_only
-    type(vertex_field)                       :: d, owned_values
+    type(support)                     :: on, owned_only
+    type(field)                       :: d, owned_values
     real(dp), allocatable                    :: v(:), pick(:)
     integer, allocatable                     :: indices(:)
     real(dp)                                 :: a_whole, a_parts
@@ -1262,13 +1203,13 @@ contains
     g    = chain_of_six()
     rule = reduction(REDUCE_SUM)
 
-    on = vertex_support([1, 2, 3, 4, 5, 6])
-    d  = vertex_field('q', on)
+    on = support(GRAPH_SIDE_VERTEX, [1, 2, 3, 4, 5, 6])
+    d  = field('q', on)
     call d % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp])
 
     ! A on the whole.
     call rule % reduce(d, whole)
-    call whole % get_real_value(a_whole)
+    call value_real(whole, a_whole)
     call report(abs(a_whole - 210.0_dp) < 1.0d-13, &
          & "the sum over the whole graph is 210", nfail)
 
@@ -1282,10 +1223,10 @@ contains
 
        ! Accumulate this piece's owned cells only.
        call part % owned_vertices(k, vs)
-       call vs % vertex_indices(indices)
+       call members_of(vs, indices)
 
        select type (pd)
-       class is (vertex_field)
+       class is (field)
           call pd % get_real_vector(v)
           allocate(pick(size(indices)))
           do l = 1, size(indices)
@@ -1293,8 +1234,8 @@ contains
           end do
        end select
 
-       owned_only   = vertex_support(indices)
-       owned_values = vertex_field('q', owned_only)
+       owned_only   = support(GRAPH_SIDE_VERTEX, indices)
+       owned_values = field('q', owned_only)
        call owned_values % set_real_vector(pick)
        deallocate(pick)
 
@@ -1305,7 +1246,7 @@ contains
        call rule % combine(joined, running, running)
     end do
 
-    call running % get_real_value(a_parts)
+    call value_real(running, a_parts)
     call report(abs(a_parts - a_whole) < 1.0d-13, &
          & "working it out piecewise gives the same answer as on the whole", nfail)
 
@@ -1330,9 +1271,9 @@ contains
     type(coarsener)                :: c
     type(refiner)                  :: r
     class(graph), allocatable      :: coarse, fine
-    class(graph_data), allocatable :: cd, fd
-    type(vertex_support)           :: on
-    type(vertex_field)             :: d
+    class(graph_field), allocatable :: cd, fd
+    type(support)           :: on
+    type(field)             :: d
     real(dp), allocatable          :: v(:)
 
     g = chain_of_six()
@@ -1348,13 +1289,13 @@ contains
 
     ! Averaging onto the blocks. Cells 1 and 2 hold 10 and 20, so
     ! their block holds 15.
-    on = vertex_support([1, 2, 3, 4, 5, 6])
-    d  = vertex_field('q', on)
+    on = support(GRAPH_SIDE_VERTEX, [1, 2, 3, 4, 5, 6])
+    d  = field('q', on)
     call d % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp])
 
     call c % coarsen_data(g, d, coarse, cd)
     select type (cd)
-    class is (vertex_field)
+    class is (field)
        call cd % get_real_vector(v)
        call report(size(v) .eq. 3, "the coarse field has one value per block", nfail)
        call report(abs(v(1) - 15.0_dp) < 1.0d-13, &
@@ -1369,7 +1310,7 @@ contains
     c = coarsener(COARSEN_PAIRWISE, average=.false.)
     call c % coarsen_data(g, d, coarse, cd)
     select type (cd)
-    class is (vertex_field)
+    class is (field)
        call cd % get_real_vector(v)
        call report(abs(v(1) - 30.0_dp) < 1.0d-13, &
             & "told to add rather than average, a block holds the total", nfail)
@@ -1384,7 +1325,7 @@ contains
     call c % coarsen_data(g, d, coarse, cd)
     call r % refine_data(coarse, cd, fine, fd)
     select type (fd)
-    class is (vertex_field)
+    class is (field)
        call fd % get_real_vector(v)
        call report(size(v) .eq. 6, "the fine field has one value per cell", nfail)
        call report(abs(v(1) - v(2)) < 1.0d-13, &
@@ -1475,11 +1416,11 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                       :: ring, open_chain
-    type(edge_differential_operator)         :: edge_term
+    type(differential_operator)         :: edge_term
     type(balance)                            :: bal
-    class(graph_vertex_field), allocatable   :: y
-    type(vertex_support)                     :: on
-    type(vertex_field)                       :: q
+    class(graph_field), allocatable   :: y
+    type(support)                     :: on
+    type(field)                       :: q
     real(dp), allocatable                    :: v(:)
     real(dp)                                 :: total
     logical                                  :: ok
@@ -1490,8 +1431,8 @@ contains
     edge_term = gradient(coefficient=1.0_dp)
     bal       = balance(edge_terms=[edge_term])
 
-    on = vertex_support([1, 2, 3, 4])
-    q  = vertex_field('q', on)
+    on = support(GRAPH_SIDE_VERTEX, [1, 2, 3, 4])
+    q  = field('q', on)
 
     ok = .true.
 
@@ -1561,7 +1502,7 @@ contains
 
     type(stored_graph)                     :: g, split_mesh
     type(walk)                             :: w
-    class(graph_vertex_field), allocatable :: f
+    class(graph_field), allocatable :: f
     integer, allocatable                   :: c(:)
     integer                                :: e, t, h
     logical                                :: ok
@@ -1649,20 +1590,20 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                     :: g7, g3, ring
-    type(vertex_differential_operator)     :: op
-    class(graph_vertex_field), allocatable :: yf
-    type(vertex_support)                   :: on
-    type(vertex_field)                     :: q
-    type(edge_support)                     :: eon
-    type(edge_field)                       :: zf
+    type(differential_operator)     :: op
+    class(graph_field), allocatable :: yf
+    type(support)                   :: on
+    type(field)                     :: q
+    type(support)                     :: eon
+    type(field)                       :: zf
     real(dp), allocatable                  :: y(:)
     real(dp)                               :: qv(7)
     integer                                :: v
     logical                                :: ok
 
     g7 = stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
-    on = vertex_support([(v, v = 1, 7)])
-    q  = vertex_field('q', on)
+    on = support(GRAPH_SIDE_VERTEX, [(v, v = 1, 7)])
+    q  = field('q', on)
 
     ! Order 0 is the term itself, coefficient and all.
     do v = 1, 7
@@ -1749,8 +1690,8 @@ contains
     ! Per-edge coefficients: three cells, weights 2 and 5, values
     ! 1, 2, 4. At the middle: 5*(4-2) - 2*(2-1) = 10 - 2 = 8.
     g3 = stored_graph(3, tails=[1, 2], heads=[2, 3])
-    on = vertex_support([1, 2, 3])
-    q  = vertex_field('q', on)
+    on = support(GRAPH_SIDE_VERTEX, [1, 2, 3])
+    q  = field('q', on)
     call q % set_real_vector([1.0_dp, 2.0_dp, 4.0_dp])
     op = laplacian(coefficients=[2.0_dp, 5.0_dp])
     call op % apply(g3, [q], yf)
@@ -1761,8 +1702,8 @@ contains
     ! Divergence of a given edge field: a ring with samples 1,2,3,4.
     ! Out minus in at each vertex: -3, 1, 1, 1.
     ring = stored_graph(4, tails=[1,2,3,4], heads=[2,3,4,1])
-    eon  = edge_support([1, 2, 3, 4])
-    zf   = edge_field('z', eon)
+    eon  = support(GRAPH_SIDE_EDGE, [1, 2, 3, 4])
+    zf   = field('z', eon)
     call zf % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
     op = divergence()
     call op % apply(ring, [zf], yf)
@@ -1805,18 +1746,18 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                     :: g7
-    type(vertex_differential_operator)     :: fwd, rev
-    class(graph_vertex_field), allocatable :: yf
-    type(vertex_support)                   :: on
-    type(vertex_field)                     :: qf, pf
+    type(differential_operator)     :: fwd, rev
+    class(graph_field), allocatable :: yf
+    type(support)                   :: on
+    type(field)                     :: qf, pf
     real(dp), allocatable                  :: aq(:), ap(:)
     real(dp)                               :: q(7), p(7), left, right
     integer                                :: v
 
     g7 = stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
-    on = vertex_support([(v, v = 1, 7)])
-    qf = vertex_field('q', on)
-    pf = vertex_field('p', on)
+    on = support(GRAPH_SIDE_VERTEX, [(v, v = 1, 7)])
+    qf = field('q', on)
+    pf = field('p', on)
 
     ! Two fields with nothing special about them.
     do v = 1, 7
@@ -1879,10 +1820,10 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                     :: border
-    type(vertex_differential_operator)     :: reduce_edges
-    class(graph_vertex_field), allocatable :: yf
-    type(edge_support)                     :: eon
-    type(edge_field)                       :: zf
+    type(differential_operator)     :: reduce_edges
+    class(graph_field), allocatable :: yf
+    type(support)                     :: eon
+    type(field)                       :: zf
     real(dp), allocatable                  :: y(:)
     real(dp)                               :: qsq(4)
 
@@ -1891,8 +1832,8 @@ contains
     ! face, and every square edge agrees with the walk, so every
     ! orientation coefficient is one.
     border = stored_graph(5, tails=[1, 2, 3, 4], heads=[5, 5, 5, 5])
-    eon    = edge_support([1, 2, 3, 4])
-    zf     = edge_field('z', eon)
+    eon    = support(GRAPH_SIDE_EDGE, [1, 2, 3, 4])
+    zf     = field('z', eon)
     reduce_edges = divergence()
 
     ! A difference field around the square: values q at the corners,
@@ -1936,18 +1877,18 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                     :: g7
-    type(vertex_differential_operator)     :: op, fwd, rev
-    class(graph_vertex_field), allocatable :: yf
-    type(vertex_support)                   :: on
-    type(vertex_field)                     :: qf, pf
+    type(differential_operator)     :: op, fwd, rev
+    class(graph_field), allocatable :: yf
+    type(support)                   :: on
+    type(field)                     :: qf, pf
     real(dp), allocatable                  :: y(:), aq(:), ap(:)
     real(dp)                               :: q(14), p(14)
     integer                                :: v
     logical                                :: ok
 
     g7 = stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
-    on = vertex_support([(v, v = 1, 7)])
-    qf = vertex_field('q', on, ncomp=2)
+    on = support(GRAPH_SIDE_VERTEX, [(v, v = 1, 7)])
+    qf = field('q', on, ncomp=2)
 
     do v = 1, 7
        q(2*v - 1) = 10.0_dp * v          ! component one: a line
@@ -1972,7 +1913,7 @@ contains
 
     ! The adjoint pairing on the whole interleaved vector: with two
     ! components aboard, the sums must still balance.
-    pf = vertex_field('p', on, ncomp=2)
+    pf = field('p', on, ncomp=2)
     do v = 1, 14
        p(v) = real(v, dp)**2 - 5.0_dp * v
     end do
@@ -2009,10 +1950,10 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                     :: g
-    type(vertex_differential_operator)     :: fwd, rev
-    class(graph_vertex_field), allocatable :: yf
-    type(vertex_support)                   :: on
-    type(vertex_field)                     :: unit
+    type(differential_operator)     :: fwd, rev
+    class(graph_field), allocatable :: yf
+    type(support)                   :: on
+    type(field)                     :: unit
     real(dp), allocatable                  :: col(:)
     real(dp)                               :: a(5,5), at(5,5), e(5)
     real(dp)                               :: cs(5)
@@ -2022,8 +1963,8 @@ contains
     ! Five vertices, four interior edges, and one boundary edge
     ! hanging off the last vertex.
     g  = stored_graph(5, tails=[1,2,3,4,5], heads=[2,3,4,5,0])
-    on = vertex_support([1, 2, 3, 4, 5])
-    unit = vertex_field('e', on)
+    on = support(GRAPH_SIDE_VERTEX, [1, 2, 3, 4, 5])
+    unit = field('e', on)
 
     ! Per-edge coefficients, so the transpose is tested with weights
     ! aboard, not just with ones.
@@ -2089,20 +2030,20 @@ contains
 
     type(stored_graph)                     :: ring
     type(nonlinear_sample)                 :: formula
-    type(vertex_differential_operator)     :: reduce_edges
-    class(graph_edge_field), allocatable   :: zf
-    class(graph_vertex_field), allocatable :: yf
-    type(vertex_support)                   :: on
-    type(vertex_field)                     :: qf
-    type(edge_support)                     :: eon
-    type(edge_field)                       :: samples
+    type(differential_operator)     :: reduce_edges
+    class(graph_field), allocatable   :: zf
+    class(graph_field), allocatable :: yf
+    type(support)                   :: on
+    type(field)                     :: qf
+    type(support)                     :: eon
+    type(field)                       :: samples
     real(dp), allocatable                  :: z(:), y(:)
     real(dp)                               :: q(4), c(4)
     integer                                :: e, t, h
 
     ring = stored_graph(4, tails=[1,2,3,4], heads=[2,3,4,1])
-    on   = vertex_support([1, 2, 3, 4])
-    qf   = vertex_field('q', on)
+    on   = support(GRAPH_SIDE_VERTEX, [1, 2, 3, 4])
+    qf   = field('q', on)
 
     q = [3.0_dp, -1.0_dp, 4.0_dp, 1.5_dp]
     call qf % set_real_vector(q)
@@ -2117,8 +2058,8 @@ contains
     ! over a closed ring sums to zero, this formula included. (The
     ! samples ride in a concrete field; gfortran 11 cannot build an
     ! array constructor from a polymorphic item.)
-    eon     = edge_support([1, 2, 3, 4])
-    samples = edge_field('z', eon)
+    eon     = support(GRAPH_SIDE_EDGE, [1, 2, 3, 4])
+    samples = field('z', eon)
     call samples % set_real_vector(z)
     reduce_edges = divergence()
     call reduce_edges % apply(ring, [samples], yf)
@@ -2163,59 +2104,59 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                     :: chain
-    type(vertex_support)                   :: on
-    type(edge_support)                     :: eon
-    type(vertex_field)                     :: uf, vf, wf
-    type(edge_field)                       :: zf, guf
-    type(vertex_differential_operator)     :: opposite
-    type(edge_differential_operator)       :: slope
+    type(support)                   :: on
+    type(support)                     :: eon
+    type(field)                     :: uf, vf, wf
+    type(field)                       :: zf, guf
+    type(differential_operator)     :: opposite
+    type(differential_operator)       :: slope
     type(reduction)                        :: total
     class(graph_functional), allocatable   :: answer
-    class(graph_vertex_field), allocatable :: work_v
-    class(graph_edge_field), allocatable   :: work_e
+    class(graph_field), allocatable :: work_v
+    class(graph_field), allocatable   :: work_e
     real(dp), allocatable                  :: values(:)
     real(dp)                               :: x, left, right
     complex(dp)                            :: cx
 
     chain = stored_graph(4, tails=[1, 2, 3], heads=[2, 3, 4])
-    on    = vertex_support([1, 2, 3, 4])
-    eon   = edge_support([1, 2, 3])
+    on    = support(GRAPH_SIDE_VERTEX, [1, 2, 3, 4])
+    eon   = support(GRAPH_SIDE_EDGE, [1, 2, 3])
 
-    uf = vertex_field('u', on)
-    vf = vertex_field('v', on)
+    uf = field('u', on)
+    vf = field('v', on)
     call uf % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
     call vf % set_real_vector([2.0_dp, 1.0_dp, 0.0_dp, 3.0_dp])
 
     ! By hand: 1*2 + 2*1 + 3*0 + 4*3 = 16.
     total = reduction(REDUCE_SUM)
     call total % reduce(uf, answer, measure=vf)
-    call answer % get_real_value(x)
+    call value_real(answer, x)
     call report(abs(x - 16.0_dp) < 1.0d-12, &
          & "a sum with a measure is the inner product", nfail)
 
     ! Integration by parts. G reads the slope of u onto the edges,
     ! D gathers z back onto the vertices, and the two products
     ! cancel: the transpose of G is minus D.
-    zf = edge_field('z', eon)
+    zf = field('z', eon)
     call zf % set_real_vector([2.0_dp, 0.0_dp, 1.0_dp])
 
     slope = gradient()
     call slope % apply(chain, [uf], work_e)
     call work_e % get_real_vector(values)
-    guf = edge_field('Gu', eon)
+    guf = field('Gu', eon)
     call guf % set_real_vector(values)
 
     call total % reduce(zf, answer, measure=guf)
-    call answer % get_real_value(left)
+    call value_real(answer, left)
 
     opposite = divergence()
     call opposite % apply(chain, [zf], work_v)
     call work_v % get_real_vector(values)
-    wf = vertex_field('Dz', on)
+    wf = field('Dz', on)
     call wf % set_real_vector(values)
 
     call total % reduce(wf, answer, measure=uf)
-    call answer % get_real_value(right)
+    call value_real(answer, right)
 
     call report(abs(left + right) < 1.0d-12, &
          & "<z,Gu> + <Dz,u> = 0: integration by parts on the chain", nfail)
@@ -2226,10 +2167,10 @@ contains
     call uf % set_real_vector([0.0_dp, 1.0_dp, 3.0_dp, 6.0_dp])
     call slope % apply(chain, [uf], work_e)
     call work_e % get_real_vector(values)
-    guf = edge_field('Gu', eon)
+    guf = field('Gu', eon)
     call guf % set_real_vector(values)
     call total % reduce(guf, answer, measure=guf)
-    call answer % get_real_value(x)
+    call value_real(answer, x)
     call report(abs(x - 14.0_dp) < 1.0d-12, &
          & "the product of the gradient with itself is u^T L u", nfail)
 
@@ -2238,7 +2179,7 @@ contains
     call uf % set_complex_vector([(1.0_dp, 0.001_dp), (2.0_dp, 0.001_dp), &
          &                        (3.0_dp, 0.001_dp), (4.0_dp, 0.001_dp)])
     call total % reduce(uf, answer, measure=vf)
-    call answer % get_complex_value(cx)
+    call value_complex(answer, cx)
     call report(abs(real(cx, dp) - 16.0_dp) < 1.0d-12 .and. &
          &      abs(aimag(cx) - 0.006_dp) < 1.0d-12, &
          & "a complex field carries its derivative through the product", nfail)
@@ -2257,8 +2198,8 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(vertex_support)                 :: on
-    type(vertex_field)                   :: f, uf
+    type(support)                 :: on
+    type(field)                   :: f, uf
     type(functional)                     :: seed
     type(broadcast)                      :: copy_rule, share_rule
     type(reduction)                      :: total
@@ -2266,9 +2207,9 @@ contains
     real(dp)                             :: x
     complex(dp)                          :: cx
 
-    on = vertex_support([1, 2, 3, 4])
-    f  = vertex_field('seed', on)
-    uf = vertex_field('u', on)
+    on = support(GRAPH_SIDE_VERTEX, [1, 2, 3, 4])
+    f  = field('seed', on)
+    uf = field('u', on)
 
     copy_rule  % rule = BROADCAST_COPY
     share_rule % rule = BROADCAST_SHARE
@@ -2278,7 +2219,7 @@ contains
     call copy_rule % broadcast(seed, f)
     total = reduction(REDUCE_AVERAGE)
     call total % reduce(f, answer)
-    call answer % get_real_value(x)
+    call value_real(answer, x)
     call report(abs(x - 6.0_dp) < 1.0d-12, &
          & "reduce(broadcast(J)) = J: the average undoes the copy", nfail)
 
@@ -2286,7 +2227,7 @@ contains
     call share_rule % broadcast(seed, f)
     total = reduction(REDUCE_SUM)
     call total % reduce(f, answer)
-    call answer % get_real_value(x)
+    call value_real(answer, x)
     call report(abs(x - 6.0_dp) < 1.0d-12, &
          & "reduce(broadcast(J)) = J: the sum undoes the share", nfail)
 
@@ -2295,7 +2236,7 @@ contains
     call uf % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
     call copy_rule % broadcast(seed, f)
     call total % reduce(uf, answer, measure=f)
-    call answer % get_real_value(x)
+    call value_real(answer, x)
     call report(abs(x - 60.0_dp) < 1.0d-12, &
          & "<broadcast(J), u> = J sum(u): the transpose pairing", nfail)
 
@@ -2304,11 +2245,63 @@ contains
     call seed % set_complex_value((6.0_dp, 0.001_dp))
     call copy_rule % broadcast(seed, f)
     call total % reduce(f, answer)
-    call answer % get_complex_value(cx)
+    call value_complex(answer, cx)
     call report(abs(real(cx, dp) - 24.0_dp) < 1.0d-12 .and. &
          &      abs(aimag(cx) - 0.004_dp) < 1.0d-12, &
          & "a complex seed is copied and returns intact", nfail)
 
   end subroutine check_broadcast
+
+  !===================================================================!
+  ! Suite helpers. The member list of any graph is its global index
+  ! column; one value comes out of any functional through the
+  ! contract's vector adapters.
+  !===================================================================!
+
+  subroutine members_of(g, indices)
+    class(graph), intent(in) :: g
+    integer, allocatable, intent(out) :: indices(:)
+    integer :: p
+    allocate(indices(g % num_vertices()))
+    do p = 1, size(indices)
+       indices(p) = g % global_vertex_index(p)
+    end do
+  end subroutine members_of
+
+  subroutine value_integer(f, x)
+    class(graph_functional), intent(in) :: f
+    integer, intent(out) :: x
+    integer, allocatable :: t(:)
+    call f % get_integer_vector(t)
+    x = 0
+    if (size(t) >= 1) x = t(1)
+  end subroutine value_integer
+
+  subroutine value_real(f, x)
+    class(graph_functional), intent(in) :: f
+    real(dp), intent(out) :: x
+    real(dp), allocatable :: t(:)
+    call f % get_real_vector(t)
+    x = 0.0_dp
+    if (size(t) >= 1) x = t(1)
+  end subroutine value_real
+
+  subroutine value_complex(f, x)
+    class(graph_functional), intent(in) :: f
+    complex(dp), intent(out) :: x
+    complex(dp), allocatable :: t(:)
+    call f % get_complex_vector(t)
+    x = (0.0_dp, 0.0_dp)
+    if (size(t) >= 1) x = t(1)
+  end subroutine value_complex
+
+  subroutine value_logical(f, x)
+    class(graph_functional), intent(in) :: f
+    logical, intent(out) :: x
+    logical, allocatable :: t(:)
+    call f % get_logical_vector(t)
+    x = .false.
+    if (size(t) >= 1) x = t(1)
+  end subroutine value_logical
 
 end program test_graph_contract

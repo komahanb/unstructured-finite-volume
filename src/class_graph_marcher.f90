@@ -51,7 +51,7 @@ module class_graph_marcher
   use class_graph_field  , only : field
   use class_graph        , only : stored_graph
   use class_graph_step   , only : step_operator, bdf
-  use graph_minimization , only : minimizer
+  use graph_minimization , only : fit_minimizer
 
   implicit none
 
@@ -68,7 +68,7 @@ module class_graph_marcher
      integer  :: rule = MARCH_FORWARD
      real(dp) :: step = 1.0_dp
 
-     class(minimizer), allocatable :: inner
+     type(fit_minimizer), allocatable :: inner
 
    contains
 

@@ -31,8 +31,8 @@ program test_graph_marching
   use class_graph_differential_operator, only : differential_operator
   use class_graph_marcher, only : marcher, MARCH_BACKWARD, MARCH_BDF2
   use class_graph_stencil , only : stencil_operator
-  use class_graph_newton  , only : newton
-  use class_graph_gmres   , only : gmres
+  use graph_minimization, only : fit_minimizer, form_minimizer
+  use graph_minimization, only : gmres, newton
   use mandelbrot_law_fixture, only : mandelbrot_law
   use vdp_fixture, only : vdp_law, vdp_tangent_law, vdp_adjoint_law
 
@@ -218,13 +218,9 @@ contains
 
     clock % rule = MARCH_BACKWARD
     clock % step = 0.125_dp
-    allocate(clock % inner, source=newton())
-    select type (nw => clock % inner)
-    type is (newton)
-       allocate(nw % inner, source=gmres())
-       nw % inner % tolerance = 1.0d-14
-       nw % tolerance = 1.0d-12
-    end select
+    allocate(clock % inner, source=newton(gmres()))
+    clock % inner % inner % tolerance = 1.0d-14
+    clock % inner % tolerance         = 1.0d-12
 
     q = [3.0_dp]
     call clock % march(decay, lone, q, 16)
@@ -276,13 +272,9 @@ contains
 
     clock % rule = MARCH_BACKWARD
     clock % step = 0.125_dp
-    allocate(clock % inner, source=newton())
-    select type (nw => clock % inner)
-    type is (newton)
-       allocate(nw % inner, source=gmres())
-       nw % inner % tolerance = 1.0d-14
-       nw % tolerance = 1.0d-12
-    end select
+    allocate(clock % inner, source=newton(gmres()))
+    clock % inner % inner % tolerance = 1.0d-14
+    clock % inner % tolerance         = 1.0d-12
 
     ! Two cells, one number each.
     tall = [3.0_dp, 5.0_dp]

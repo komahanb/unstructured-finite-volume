@@ -106,11 +106,8 @@ program test_graph_minimization
   use class_conduction     , only : conduction
   use class_graph_differential_operator, only : differential_operator
   use class_graph_differential_operator, only : vertex_differential_operator
-  use class_graph_jacobi   , only : jacobi
-  use class_graph_conjugate_gradient, only : conjugate_gradient
-  use class_graph_gauss_seidel, only : gauss_seidel
-  use class_graph_gmres    , only : gmres
-  use class_graph_newton   , only : newton
+  use graph_minimization, only : fit_minimizer, form_minimizer
+  use graph_minimization, only : conjugate_gradient, gauss_seidel, gmres, jacobi, newton
   use class_graph_differential_operator, only : edge_differential_operator
   use class_graph_balance  , only : balance
   use cubic_statement_fixture, only : cubic_statement
@@ -241,11 +238,14 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(jacobi) :: js
+    type(fit_minimizer) :: js
     real(dp), allocatable :: d(:)
     integer , allocatable :: colours(:), nbrs(:)
     logical :: proper
     integer :: v, i
+
+    ! stand at the named point of the product space
+    js = jacobi()
 
     m = chain_mesh()
     call js % attach(chain_operator(m), m)
@@ -282,10 +282,13 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(jacobi) :: js
+    type(fit_minimizer) :: js
     real(dp), allocatable :: g(:), rhs(:), x(:), y(:)
     real(dp) :: achieved
     real(dp), parameter :: exact(3) = [5.0_dp/3.0_dp, 5.0_dp, 25.0_dp/3.0_dp]
+
+    ! stand at the named point of the product space
+    js = jacobi()
 
     m = chain_mesh()
     call js % attach(chain_operator(m), m)
@@ -322,11 +325,14 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(conjugate_gradient) :: cg
+    type(fit_minimizer) :: cg
     type(conduction) :: law
     real(dp), allocatable :: c(:), deltas(:), xref(:), b(:), x(:), y(:)
     real(dp) :: achieved
     integer :: v
+
+    ! stand at the named point of the product space
+    cg = conjugate_gradient()
 
     m = mesh_from_gmsh('../square-10.msh')
 
@@ -375,10 +381,13 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(gauss_seidel) :: gs
+    type(fit_minimizer) :: gs
     real(dp), allocatable :: g(:), rhs(:), x(:)
     real(dp) :: achieved
     real(dp), parameter :: exact(3) = [5.0_dp/3.0_dp, 5.0_dp, 25.0_dp/3.0_dp]
+
+    ! stand at the named point of the product space
+    gs = gauss_seidel()
 
     m = chain_mesh()
     call gs % attach(chain_operator(m), m)
@@ -394,7 +403,7 @@ contains
     call report(all(abs(x - exact) < 1.0d-8), &
          & 'gauss-seidel sweeps by colour to the exact answer', nfail)
 
-    gs % omega = 1.2_dp
+    gs % relaxation = 1.2_dp
     x = 0.0_dp
     call gs % solve(rhs, x, achieved)
     call report(all(abs(x - exact) < 1.0d-8), &
@@ -413,12 +422,16 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(gmres)  :: gm
-    type(jacobi) :: js
+    type(fit_minimizer)  :: gm
+    type(fit_minimizer) :: js
     type(balance) :: statement
     real(dp), allocatable :: g(:), rhs(:), x(:), xj(:)
     real(dp) :: achieved
     real(dp), parameter :: exact(3) = [5.0_dp/3.0_dp, 5.0_dp, 25.0_dp/3.0_dp]
+
+    ! stand at the named points of the product space
+    gm = gmres()
+    js = jacobi()
 
     m = chain_mesh()
 
@@ -473,17 +486,19 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(newton) :: ns
+    type(fit_minimizer) :: ns
     type(cubic_statement) :: action
     real(dp), allocatable :: q(:)
     real(dp) :: achieved
+
+    ! stand at the named point of the product space
+    ns = newton(gmres())
 
     m = chain_mesh()
 
     action % linear_part = chain_operator(m)
     action % strength    = 0.05_dp
 
-    allocate(ns % inner, source=gmres())
     ns % inner % tolerance = 1.0d-12
     ns % tolerance = 1.0d-7
 

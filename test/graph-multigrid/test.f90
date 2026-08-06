@@ -24,9 +24,8 @@ program test_graph_multigrid
   use class_fitted_balance, only : fitted_balance_stencil
   use class_polynomial_form, only : polynomial_form
   use class_graph_coarsener, only : coarsener, COARSEN_PAIRWISE
-  use class_graph_multigrid, only : multigrid
-  use class_graph_jacobi   , only : jacobi
-  use class_graph_gmres    , only : gmres
+  use graph_minimization, only : fit_minimizer, form_minimizer
+  use graph_minimization, only : gmres, jacobi, multigrid
 
   implicit none
 
@@ -142,7 +141,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(multigrid) :: mg
+    type(fit_minimizer) :: mg
     type(coarsener) :: c
     integer, allocatable :: assignment(:)
     real(dp), allocatable :: e_blocks(:), e_fine(:), r_fine(:), rc(:), ec(:)
@@ -153,8 +152,7 @@ contains
     c = coarsener(COARSEN_PAIRWISE)
     call c % blocks(m, assignment, nb)
 
-    allocate(mg % smoother, source=jacobi())
-    allocate(mg % coarse  , source=gmres())
+    mg = multigrid(smoother=jacobi(), coarse=gmres())
     call mg % attach(chain_statement(m), m)
     call mg % setup(assignment)
     mg % coarse % tolerance = 1.0d-13
@@ -193,29 +191,28 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(multigrid) :: mg
-    type(gmres)     :: direct
+    type(fit_minimizer) :: mg
+    type(fit_minimizer)     :: direct
     type(coarsener) :: c
     integer, allocatable :: assignment(:)
     real(dp), allocatable :: g(:), rhs(:), x(:), xd(:)
     real(dp) :: achieved
     integer :: nb
 
+    ! stand at the named point of the product space
+    direct = gmres()
+
     m = chain_mesh()
     c = coarsener(COARSEN_PAIRWISE)
     call c % blocks(m, assignment, nb)
 
-    allocate(mg % smoother, source=jacobi())
-    allocate(mg % coarse  , source=gmres())
+    mg = multigrid(smoother=jacobi(), coarse=gmres())
     call mg % attach(chain_statement(m), m)
     call mg % setup(assignment)
 
     mg % smoother % max_iterations = 3
     mg % smoother % tolerance      = 0.0_dp
-    select type (s => mg % smoother)
-    type is (jacobi)
-       s % omega = 0.7_dp
-    end select
+    mg % smoother % relaxation     = 0.7_dp
     mg % coarse   % tolerance      = 1.0d-13
     mg % tolerance                 = 1.0d-11
     mg % max_iterations            = 60

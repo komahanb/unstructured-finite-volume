@@ -38,7 +38,8 @@ program test_graph_constitution
   use class_advection      , only : advection
   use class_diffusion_statement, only : diffusion_statement
   use class_graph_stencil  , only : stencil_operator
-  use class_graph_gmres    , only : gmres
+  use graph_minimization, only : fit_minimizer, form_minimizer
+  use graph_minimization, only : gmres
 
   implicit none
 
@@ -384,9 +385,12 @@ contains
 
     type(mesh) :: m
     type(stencil_operator) :: op
-    type(gmres) :: gm
+    type(fit_minimizer) :: gm
     real(dp), allocatable :: g(:), rhs(:), x(:)
     real(dp) :: achieved
+
+    ! stand at the named point of the product space
+    gm = gmres()
 
     m = hand_mesh()
 
@@ -428,9 +432,12 @@ contains
 
     type(mesh) :: m
     type(stencil_operator) :: op
-    type(gmres) :: gm
+    type(fit_minimizer) :: gm
     real(dp), allocatable :: g(:), rhs(:), x(:), mixed(:), pinned(:)
     real(dp) :: achieved
+
+    ! stand at the named point of the product space
+    gm = gmres()
 
     m = hand_mesh()
 
@@ -477,8 +484,11 @@ contains
     real(dp), allocatable, intent(out) :: x(:)
     real(dp), intent(out)              :: achieved
 
-    type(gmres) :: gm
+    type(fit_minimizer) :: gm
     real(dp), allocatable :: g(:), rhs(:)
+
+    ! stand at the named point of the product space
+    gm = gmres()
 
     call gm % attach(op, m)
     gm % tolerance      = 1.0d-12

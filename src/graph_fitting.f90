@@ -1,31 +1,21 @@
 !=====================================================================!
-! LEVEL 2 OF THE STRATIFICATION . THE FITTING FAMILY
+! THE FIT - level 2's floor, not one of its two citizens.
 !
-! Two abstractions, one sentence from the form-and-coefficients
-! doctrine: an expansion has a FORM - which functions stand in the
-! basis - and COEFFICIENTS - the weights found inside that form.
-! The two move at different speeds and belong to different citizens:
+! Given a form and a constellation of positions, find the weights
+! that reproduce the target exactly on the form's span. This is the
+! ACT the level is named for, and the two minimizers next door are
+! the ones who vary its two halves: the fit minimizer varies the
+! coefficients, the form minimizer varies which members stand. This
+! module performs the act; it decides nothing.
 !
-!      fit ·············· the coefficient sector, fast: given a form
-!                         and a constellation of positions, find the
-!                         weights that reproduce the target exactly
-!                         on the form's span. A fit is an OPERATION
-!                         on the point set, and its solve is a
-!                         minimization answered by the level's own
-!                         solver - never by hand.
-!
-!      form_optimizer ··· the form sector, slow: it GOVERNS fits,
-!                         adjusting which basis members stand active
-!                         - pruning what the points cannot see,
-!                         admitting what the residual demands. A
-!                         form change is a re-typing event; the fit
-!                         then works inside the new form.
+! Its solve is a minimization, so it is answered by the level's own
+! minimizer - never by hand. That is the standing rule: if it
+! minimizes, it delegates.
 !
 ! The form lives one level DOWN, as its own citizen: a fit HOLDS a
 ! form the way an operator holds coefficients. Polynomial or wave,
 ! the fit does not care - it evaluates the shape it was handed and
-! finds the coefficients. One concrete fit; the variation lives on
-! the form, where it belongs.
+! finds the coefficients.
 !
 !      B(m,j) = basis_m(x_j)        r(m) = scale * d(basis_m)/dn |at
 !      (B B^T) lambda = r           w = B^T lambda
@@ -42,13 +32,12 @@ module graph_fitting
   use class_graph_support, only : support
   use class_graph_field  , only : field
   use class_graph_stencil, only : stencil_operator
-  use class_graph_conjugate_gradient, only : conjugate_gradient
+  use graph_minimization, only : fit_minimizer, conjugate_gradient
 
   implicit none
 
   private
   public :: fit
-  public :: form_optimizer
 
   !===================================================================!
   ! The fit: one concrete. The target rides as components, the shape
@@ -76,30 +65,6 @@ module graph_fitting
   interface fit
      module procedure create_fit
   end interface fit
-
-  !===================================================================!
-  ! The form optimizer: it holds no machinery of its own; it reads a
-  ! form against a constellation and adjusts the roster.
-  !===================================================================!
-
-  type, abstract :: form_optimizer
-
-   contains
-
-     procedure(adapt_interface), deferred :: adapt
-
-  end type form_optimizer
-
-  abstract interface
-
-     subroutine adapt_interface(this, shape, positions)
-       import :: form_optimizer, form, dp
-       class(form_optimizer), intent(in) :: this
-       class(form), intent(inout) :: shape
-       real(dp), intent(in) :: positions(:)
-     end subroutine adapt_interface
-
-  end interface
 
 contains
 
@@ -154,7 +119,7 @@ contains
     type(support) :: points, conditions
     type(field)   :: out
     type(stencil_operator) :: dual
-    type(conjugate_gradient) :: solver
+    type(fit_minimizer) :: solver
     real(dp), allocatable :: positions(:), w(:), b(:,:), bw(:,:)
     real(dp), allocatable :: g(:,:), r(:), lam(:), entries(:), price(:)
     integer , allocatable :: rows(:), columns(:), standing(:)
@@ -233,6 +198,7 @@ contains
             & [(0.0_dp, i = 1, nc)], label='fitting dual')
 
        conditions = support(GRAPH_SIDE_VERTEX, [(i, i = 1, nc)])
+       solver = conjugate_gradient()
        call solver % attach(dual, conditions)
        solver % tolerance      = 1.0d-14
        solver % max_iterations = 50

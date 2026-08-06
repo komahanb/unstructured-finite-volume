@@ -33,10 +33,11 @@ program test_graph_robustness
   use class_graph_stencil, only : stencil_operator
   use class_fitted_balance, only : fitted_balance_stencil
   use graph_fitting        , only : fit
+  use graph_forms          , only : form
   use class_polynomial_form, only : polynomial_form
   use class_harmonic_form  , only : harmonic_form
-  use class_form_pruner    , only : pruner
-  use class_graph_gmres  , only : gmres
+  use graph_minimization, only : fit_minimizer, form_minimizer
+  use graph_minimization, only : gmres, pruner
 
   implicit none
 
@@ -195,7 +196,7 @@ contains
 
     type(fit)    :: wave
     type(fit)    :: poly
-    type(pruner) :: gardener
+    type(form_minimizer) :: gardener
     type(support) :: trio, pair
     type(field)   :: positions
     class(graph_field), allocatable :: answer
@@ -203,8 +204,12 @@ contains
     real(dp) :: pts(9), sampled(3), got, expected
     integer :: j
     integer, allocatable :: kept(:)
+    class(form), allocatable :: pruned
 
     ! Three points on a line, one wave through them.
+    ! stand at the named point of the product space
+    gardener = pruner()
+
     pts = [0.0_dp, 0.0_dp, 0.0_dp, &
          & 0.4_dp, 0.0_dp, 0.0_dp, &
          & 0.8_dp, 0.0_dp, 0.0_dp]
@@ -239,9 +244,11 @@ contains
     poly = fit(polynomial_form(), at=[0.25_dp, 0.0_dp, 0.0_dp], &
          & direction=[1.0_dp, 0.0_dp, 0.0_dp])
     call gardener % adapt(poly % shape, [0.0_dp, 0.0_dp, 0.0_dp, &
-         &                              0.5_dp, 0.0_dp, 0.0_dp])
+         &                              0.5_dp, 0.0_dp, 0.0_dp], pruned)
+    poly = fit(pruned, at=[0.25_dp, 0.0_dp, 0.0_dp], &
+         & direction=[1.0_dp, 0.0_dp, 0.0_dp])
 
-    call poly % shape % member_indices(kept)
+    call pruned % member_indices(kept)
     call report(size(kept) == 2 .and. all(kept == [1, 2]), &
          & 'the pruner strikes the members the points cannot see', nfail)
 
@@ -368,12 +375,15 @@ contains
 
     type(mesh) :: m
     type(stencil_operator) :: op
-    type(gmres) :: gm
+    type(fit_minimizer) :: gm
     type(field) :: fc
     real(dp), allocatable :: vb(:), centers(:), g(:), rhs(:), x(:)
     real(dp) :: achieved
     real(dp) :: q_exact(4)
     integer :: v, e
+
+    ! stand at the named point of the product space
+    gm = gmres()
 
     m = skewed_mesh()
 

@@ -1,0 +1,98 @@
+!=====================================================================!
+! The diffusion statement: the constitution speaks, an operator
+! answers.
+!
+! LEVEL 3 OF THE STRATIFICATION. This is where the physics words
+! live and stop: a conduction law says what the material carries, a
+! set of robin conditions says what the walls hold, and this module
+! translates both into the assembly's neutral vocabulary - scales
+! per face, values per wall - then delegates. It owns no
+! mathematics, no loops over neighbourhoods, no fitting: physics
+! words in, one compiled operator out,
+!
+!      scales ·········· keff * area, the conductivity's answer
+!                        through every face
+!      wall relation ··· two numbers per tagged face, the eliminated
+!                        face value as an affine function of its
+!                        cell: a held value, a held gradient, or
+!                        anything between
+!      the graph_form ········ the caller's choice of shape; polynomials
+!                        unless said otherwise
+!
+! Author: Komahan Boopathy (komahan@gatech.edu)
+!=====================================================================!
+
+module model_diffusion_statement
+
+  use iso_fortran_env      , only : dp => REAL64
+  use structure_graph, only : graph
+  use structure_graph_form          , only : graph_form
+  use data_field    , only : field
+  use structure_mesh     , only : mesh
+  use operation_stencil  , only : stencil
+  use operation_fitted_balance , only : fitted_balance_stencil
+  use model_conduction     , only : conduction
+  use model_robin_condition, only : robin_condition
+  use structure_polynomial_form, only : polynomial_form
+
+  implicit none
+
+  private
+  public :: diffusion_statement
+
+contains
+
+  function diffusion_statement(m, law, conditions, shape) result(op)
+
+    type(mesh)           , intent(in) :: m
+    type(conduction)     , intent(in) :: law
+    type(robin_condition), intent(in) :: conditions(:)
+    class(graph_form), intent(in), optional :: shape
+
+    type(stencil) :: op
+
+    class(graph_form), allocatable :: chosen
+    class(graph), allocatable :: members
+    type(field) :: fa
+    real(dp), allocatable :: keff(:), areas(:), scales(:)
+    real(dp), allocatable :: vb(:), wb(:), values(:), weights(:)
+    integer :: k, f, e, ne
+
+    ne = m % num_edges()
+
+    ! The material, through every face.
+    call law % normal_conductivity(m, keff)
+    fa = m % face_area()
+    call fa % get_real_vector(areas)
+    scales = keff * areas
+
+    ! The walls, each condition on its own tagged faces. Both
+    ! numbers of the wall relation travel: a wall that holds a value
+    ! and a wall that holds a gradient are not the same wall, and
+    ! one number cannot tell them apart.
+    allocate(vb(ne), wb(ne))
+    vb = 0.0_dp
+    wb = 1.0_dp
+    do k = 1, size(conditions)
+       call conditions(k) % faces(m, members)
+       call conditions(k) % wall_relation(m, weights, values)
+       do f = 1, members % num_vertices()
+          e = members % global_vertex_index(f)
+          wb(e) = weights(f)
+          vb(e) = values(f)
+       end do
+    end do
+
+    ! The shape, chosen or defaulted; then the assembly does the act.
+    if (present(shape)) then
+       allocate(chosen, source=shape)
+    else
+       allocate(chosen, source=polynomial_form())
+    end if
+
+    op = fitted_balance_stencil(m, chosen, scales, &
+         & boundary_values=vb, boundary_weights=wb)
+
+  end function diffusion_statement
+
+end module model_diffusion_statement

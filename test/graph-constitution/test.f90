@@ -24,22 +24,23 @@
 program test_graph_constitution
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_grammar  , only : graph, graph_field
-  use graph_calculus , only : GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
-  use class_graph_field  , only : field
-  use class_graph_mesh   , only : mesh
-  use class_robin_condition, only : robin_condition, robin, dirichlet, neumann
-  use class_graph_differential_operator, only : differential_operator
-  use class_graph_differential_operator, only : vertex_differential_operator
-  use class_graph_differential_operator, only : edge_differential_operator
-  use class_graph_balance  , only : balance
-  use class_conduction     , only : conduction
-  use class_advection      , only : advection
-  use class_diffusion_statement, only : diffusion_statement
-  use class_graph_stencil  , only : stencil_operator
-  use graph_optimization, only : fit_optimizer, form_optimizer
-  use graph_optimization, only : gmres
+  use structure_graph, only : graph
+  use data_graph_field, only : graph_field
+  use structure_graph, only : GRAPH_SIDE_VERTEX
+  use structure_support, only : support
+  use data_field  , only : field
+  use structure_mesh   , only : mesh
+  use model_robin_condition, only : robin_condition, robin, dirichlet, neumann
+  use operation_differential, only : differential
+  use operation_differential, only : vertex_differential_operator
+  use operation_differential, only : edge_differential_operator
+  use operation_balance  , only : balance
+  use model_conduction     , only : conduction
+  use model_advection      , only : advection
+  use model_diffusion_statement, only : diffusion_statement
+  use operation_stencil  , only : stencil
+  use operation_fit_optimizer, only : fit_optimizer, form_optimizer
+  use operation_fit_optimizer, only : gmres
 
   implicit none
 
@@ -203,7 +204,7 @@ contains
 
     type(mesh) :: m
     type(robin_condition) :: bc
-    type(differential_operator) :: with_wall, without
+    type(differential) :: with_wall, without
     type(field) :: state
     type(support) :: cells
     class(graph_field), allocatable :: y
@@ -384,7 +385,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(stencil_operator) :: op
+    type(stencil) :: op
     type(fit_optimizer) :: gm
     real(dp), allocatable :: g(:), rhs(:), x(:)
     real(dp) :: achieved
@@ -431,7 +432,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(stencil_operator) :: op
+    type(stencil) :: op
     type(fit_optimizer) :: gm
     real(dp), allocatable :: g(:), rhs(:), x(:), mixed(:), pinned(:)
     real(dp) :: achieved
@@ -479,7 +480,7 @@ contains
 
   subroutine solve_statement(op, m, x, achieved)
 
-    type(stencil_operator), intent(in) :: op
+    type(stencil), intent(in) :: op
     type(mesh), intent(in)             :: m
     real(dp), allocatable, intent(out) :: x(:)
     real(dp), intent(out)              :: achieved

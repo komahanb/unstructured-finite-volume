@@ -1,40 +1,58 @@
-objects= \
-graph_grammar.o \
-graph_calculus.o \
-class_graph_support.o \
-class_graph_field.o \
-class_graph_functional.o \
-class_graph.o \
-class_graph_mesh.o \
-class_robin_condition.o \
-class_conduction.o \
-class_advection.o \
-class_graph_stencil.o \
-class_graph_step.o \
-class_graph_linearization.o \
-graph_forms.o \
-class_polynomial_form.o \
-class_harmonic_form.o \
-class_graph_reduction.o \
-class_graph_walk.o \
-class_graph_partitioner.o \
-class_graph_assembler.o \
-class_graph_coarsener.o \
-class_graph_refiner.o \
-class_graph_differential_operator.o \
-class_graph_balance.o \
-graph_optimization.o \
-class_fitted_balance.o \
-class_diffusion_statement.o \
-module_solve_mode.o \
-module_verbosity.o \
-class_string.o \
-class_file.o \
-interface_graph.o \
-class_stored_graph.o \
-module_mesh_utils.o \
-interface_mesh_loader.o \
-class_array_mesh_loader.o \
-class_gmsh_loader.o \
-class_mesh.o \
-class_mesh_builder.o
+#=====================================================================#
+# What the library is made of, in the order it must compile.
+#
+# The four roots say what anything can be. Everything after them is
+# a concretion of one of the four, listed so that a file appears
+# after everything it uses.
+#=====================================================================#
+
+roots = \
+  structure/graph.o \
+  data/graph_field.o \
+  operation/graph_operation.o \
+  transform/graph_transform.o
+
+# Graphs, values, operations and transforms that stand on the roots.
+parts = \
+  structure/support.o \
+  data/field.o \
+  data/functional.o \
+  structure/stored_graph.o \
+  structure/mesh.o \
+  model/robin_condition.o \
+  model/conduction.o \
+  model/advection.o \
+  operation/stencil.o \
+  operation/step.o \
+  operation/difference_linearization.o \
+  structure/graph_form.o \
+  structure/polynomial_form.o \
+  structure/harmonic_form.o \
+  operation/reduction.o \
+  operation/walk.o \
+  transform/partitioner.o \
+  transform/assembler.o \
+  transform/coarsener.o \
+  transform/refiner.o \
+  operation/differential.o \
+  operation/balance.o \
+  operation/fit_optimizer.o \
+  operation/fitted_balance.o \
+  model/diffusion_statement.o
+
+# Scheduled for deletion when the native mesh reader lands.
+legacy = \
+  legacy/solve_mode.o \
+  legacy/verbosity.o \
+  legacy/string.o \
+  legacy/file.o \
+  legacy/interface_graph.o \
+  legacy/old_stored_graph.o \
+  legacy/mesh_utils.o \
+  legacy/mesh_loader.o \
+  legacy/array_mesh_loader.o \
+  legacy/gmsh_loader.o \
+  legacy/old_mesh.o \
+  legacy/mesh_builder.o
+
+objects = $(roots) $(parts) $(legacy)

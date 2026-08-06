@@ -23,20 +23,21 @@
 program test_graph_robustness
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_grammar  , only : graph, graph_field
-  use graph_calculus , only : GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
-  use class_graph_field  , only : field
-  use class_graph_mesh   , only : mesh
-  use class_graph_differential_operator, only : edge_differential_operator
-  use class_graph_differential_operator, only : differential_operator
-  use class_graph_stencil, only : stencil_operator
-  use class_fitted_balance, only : fitted_balance_stencil
-  use graph_forms          , only : form
-  use class_polynomial_form, only : polynomial_form
-  use class_harmonic_form  , only : harmonic_form
-  use graph_optimization, only : fit_optimizer, form_optimizer
-  use graph_optimization, only : gmres, pruner, fit
+  use structure_graph, only : graph
+  use data_graph_field, only : graph_field
+  use structure_graph, only : GRAPH_SIDE_VERTEX
+  use structure_support, only : support
+  use data_field  , only : field
+  use structure_mesh   , only : mesh
+  use operation_differential, only : edge_differential_operator
+  use operation_differential, only : differential
+  use operation_stencil, only : stencil
+  use operation_fitted_balance, only : fitted_balance_stencil
+  use structure_graph_form          , only : graph_form
+  use structure_polynomial_form, only : polynomial_form
+  use structure_harmonic_form  , only : harmonic_form
+  use operation_fit_optimizer, only : fit_optimizer, form_optimizer
+  use operation_fit_optimizer, only : gmres, pruner, fit
 
   implicit none
 
@@ -182,7 +183,7 @@ contains
   end subroutine check_derived_stencils
 
   !===================================================================!
-  ! VERDICT ZERO-B. The basis is truly the free seat, and the form
+  ! VERDICT ZERO-B. The basis is truly the free seat, and the graph_form
   ! is governed. A harmonic fit differentiates its own waves
   ! exactly, where polynomials only approximate them; and the
   ! pruner strikes the members two collinear points cannot see,
@@ -203,7 +204,7 @@ contains
     real(dp) :: pts(9), sampled(3), got, expected
     integer :: j
     integer, allocatable :: kept(:)
-    class(form), allocatable :: pruned
+    class(graph_form), allocatable :: pruned
 
     ! Three points on a line, one wave through them.
     ! stand at the named point of the product space
@@ -268,7 +269,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(differential_operator) :: slope
+    type(differential) :: slope
     type(field) :: state, fd
     type(support) :: cells
     class(graph_field), allocatable :: z
@@ -319,7 +320,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(stencil_operator) :: op
+    type(stencil) :: op
     type(field) :: state
     type(support) :: cells
     class(graph_field), allocatable :: y
@@ -373,7 +374,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(stencil_operator) :: op
+    type(stencil) :: op
     type(fit_optimizer) :: gm
     type(field) :: fc
     real(dp), allocatable :: vb(:), centers(:), g(:), rhs(:), x(:)

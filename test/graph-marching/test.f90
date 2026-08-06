@@ -22,17 +22,19 @@
 program test_graph_marching
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_grammar  , only : graph, graph_field, graph_operation
-  use graph_calculus , only : GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
-  use class_graph_field  , only : field
-  use class_graph        , only : stored_graph
-  use class_graph_differential_operator, only : vertex_differential_operator
-  use class_graph_differential_operator, only : differential_operator
-  use class_graph_step   , only : chain, chain_operator
-  use class_graph_step   , only : CHAIN_FORWARD, CHAIN_BACKWARD, CHAIN_BDF2
-  use graph_optimization , only : fit_optimizer, substitution, newton, gmres
-  use class_graph_stencil , only : stencil_operator
+  use structure_graph, only : graph
+  use data_graph_field, only : graph_field
+  use operation_graph_operation, only : graph_operation
+  use structure_graph, only : GRAPH_SIDE_VERTEX
+  use structure_support, only : support
+  use data_field  , only : field
+  use structure_stored_graph        , only : stored_graph
+  use operation_differential, only : vertex_differential_operator
+  use operation_differential, only : differential
+  use operation_step   , only : chain, chain
+  use operation_step   , only : CHAIN_FORWARD, CHAIN_BACKWARD, CHAIN_BDF2
+  use operation_fit_optimizer , only : fit_optimizer, substitution, newton, gmres
+  use operation_stencil , only : stencil
   use mandelbrot_law_fixture, only : mandelbrot_law
   use vdp_fixture, only : vdp_law, vdp_tangent_law, vdp_adjoint_law
 
@@ -112,7 +114,7 @@ contains
 
     type(support) :: cells
     type(stored_graph) :: lone
-    type(differential_operator) :: decay
+    type(differential) :: decay
     real(dp) :: q(1), expected
     integer :: v
 
@@ -203,7 +205,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph) :: lone
-    type(differential_operator) :: decay
+    type(differential) :: decay
     real(dp) :: q(1), expected, coarse_error, fine_error, ratio
 
     lone  = stored_graph(1, tails=[integer ::], heads=[integer ::])
@@ -245,7 +247,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph) :: pair, lone
-    type(differential_operator) :: decay
+    type(differential) :: decay
     real(dp) :: wide(2), tall(2), expected(2)
 
     pair = stored_graph(2, tails=[integer ::], heads=[integer ::])
@@ -280,7 +282,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph) :: trio
-    type(stencil_operator) :: forward_action, transposed
+    type(stencil) :: forward_action, transposed
     real(dp) :: q(3), lambda(3), before, after
     integer , parameter :: rows(6) = [1, 1, 2, 2, 3, 3]
     integer , parameter :: cols(6) = [1, 2, 2, 3, 3, 1]
@@ -292,8 +294,8 @@ contains
 
     ! An unsymmetric statement and its transpose: rows and columns
     ! swapped, the stencil's own adjoint.
-    forward_action = stencil_operator(rows, cols, w, zeros)
-    transposed     = stencil_operator(cols, rows, w, zeros)
+    forward_action = stencil(rows, cols, w, zeros)
+    transposed     = stencil(cols, rows, w, zeros)
 
     q      = [1.0_dp, -2.0_dp, 3.0_dp]
     lambda = [0.4_dp, 2.0_dp, -1.0_dp]
@@ -443,7 +445,7 @@ contains
     logical , intent(in)               :: backward
 
     type(stored_graph)   :: timeline
-    type(chain_operator) :: recurrence
+    type(chain) :: recurrence
     type(fit_optimizer)  :: causal
     real(dp), allocatable :: trajectory(:), g(:)
     real(dp) :: achieved

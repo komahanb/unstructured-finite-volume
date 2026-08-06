@@ -1,0 +1,1870 @@
+!=====================================================================!
+! The mesh IS a graph that happens to live in space. Cells are the
+! vertices; every interior face, shared by exactly two cells, is an
+! edge; a boundary face is a half-edge - one end in a cell, the other
+! open, waiting for a boundary condition to close it:
+!
+!     +-----+-----+
+!     |  1  |  2  |            (1)---(2)
+!     +-----+-----+             |     |        the same mesh, seen
+!     |  3  |  4  |            (3)---(4)       as its graph
+!     +-----+-----+
+!
+! Everything else this class computes is measurement hung on that
+! graph: volumes and centres sit on the vertices; areas, normals,
+! deltas and interpolation weights ride on the edges. A loader hands
+! over raw incidence lists (cell -> vertex, face -> vertex); the
+! connectivity routines turn arrows around and compose maps until
+! face -> cell and cell -> face emerge; the geometry routines then
+! walk the pieces with a tape measure. The inherited graph contract
+! (neighbours, degree) answers from the interior faces, so the
+! partitioners, orderings and solvers built on interface_graph
+! consume the mesh unchanged.
+!
+! Author: Komahan Boopathy (komahan@gatech.edu)
+!=====================================================================!
+
+module class_mesh
+
+  use iso_fortran_env       , only : dp => REAL64, error_unit
+  use interface_graph       , only : graph, vertex, edge, transpose_adjacency
+  use class_stored_graph    , only : stored_graph
+  use interface_mesh_loader , only : mesh_loader
+  use class_array_mesh_loader, only : array_mesh_loader
+  use class_string          , only : string
+  use module_mesh_utils     , only : distance, elem_type_face_count, &
+       & elem_type_dimension, cross_product, &
+       & order_face_vertices
+  use module_verbosity      , only : verbosity
+
+  implicit none
+
+  private
+  public :: mesh
+
+  ! The constructor interface for the mesh follows.
+  interface mesh
+     module procedure create_mesh
+  end interface mesh
+
+  !===================================================================!
+  ! A face group: the half-edges that share one physical tag, bundled
+  ! under a name - so "inlet" or "wall" points at a whole side of the
+  ! graph, and a boundary condition can grab it in one word.
+  !===================================================================!
+
+  type :: face_group
+
+     ! These fields hold the group's face data.
+     type(string) :: group_name
+     integer :: group_number
+     integer :: group_num_faces
+     integer, allocatable :: group_face_numbers(:)
+     integer, allocatable :: group_face_vertices(:,:)
+     integer, allocatable :: group_num_face_vertices(:)
+     integer, allocatable :: group_face_types(:)
+
+   contains
+
+     procedure :: print
+     final     :: destroy_face_group
+
+  end type face_group
+
+  ! The constructor interface for face_group follows.
+  interface face_group
+     module procedure create_face_group
+  end interface face_group
+
+  !===================================================================!
+  ! The mesh datatype is a collection of vertices, cells and faces.
+  !===================================================================!
+
+  type, extends(graph) :: mesh   ! The mesh IS the cell graph: cells are the graph's vertices and interior faces are its edges.
+
+     integer :: max_print = 20
+     integer :: num_spatial_dim   ! This is 2 or 3, from the top element dimension.
+     logical :: initialized = .false.
+
+     ! These tags come from the file's PhysicalNames section.
+     integer                   :: num_tags
+     integer     , allocatable :: tag_numbers(:)
+     integer     , allocatable :: tag_physical_dimensions(:)
+     type(string), allocatable :: tag_info(:)
+
+     !================================================================!
+     ! This section carries the basic topology information.
+     !================================================================!
+
+     ! These arrays hold the fundamental vertex information.
+     ! type(vertex_group), allocatable :: vertex_groups(:)
+
+     integer :: num_points
+     real(dp) , allocatable :: coordinates(:,:)  ! [[x,y,z],1:num_points]
+     integer  , allocatable :: vertex_numbers(:) ! These numbers are global.
+     integer  , allocatable :: vertex_tags(:)    ! This field is not set.
+
+     ! These arrays hold the fundamental edge information.
+     ! type(edge_group), allocatable :: face_groups(:)
+
+     integer :: num_boundary_edges
+     integer  , allocatable :: edge_numbers(:)
+     integer  , allocatable :: edge_tags(:)
+     integer  , allocatable :: edge_types(:)
+     integer  , allocatable :: edge_vertices(:,:)        ! [[v1,v2],1:nedges]
+     integer  , allocatable :: num_edge_vertices(:)
+
+     ! These arrays hold the fundamental face information.
+     type(face_group), allocatable :: face_groups(:)
+
+     integer :: num_faces
+     integer  , allocatable :: face_numbers(:)
+     integer  , allocatable :: face_tags(:)            ! Each face carries exactly one tag.
+     integer  , allocatable :: face_types(:)
+     integer  , allocatable :: face_vertices(:,:)        ! [[v1,v2],1:nfaces]
+     integer  , allocatable :: num_face_vertices(:)
+
+     ! These arrays hold the fundamental cell information.
+     integer :: num_cells
+     integer  , allocatable :: cell_numbers(:)
+     integer  , allocatable :: cell_tags(:)
+     integer  , allocatable :: cell_types(:)
+     integer  , allocatable :: cell_vertices(:,:)   ! [[v1,v2,v3], 1:ncells]
+     integer  , allocatable :: num_cell_vertices(:) ! [1:ncells]
+
+     !================================================================!
+     ! This section carries the derived topology information.
+     !================================================================!
+
+     ! These arrays hold the inverse cell information.
+     integer  , allocatable :: vertex_cells(:,:)    ! [[c1,c2,c3],[1:nvertices]]
+     integer  , allocatable :: num_vertex_cells(:)  ! [1:nvertices]
+
+     ! These are the intermediate connectivities and their inverses.
+     integer  , allocatable :: num_cell_faces(:)         ! [1:ncells]
+     integer  , allocatable :: cell_faces(:,:)           ! [[f1,f2,f3..],1:ncells]
+
+     integer  , allocatable :: num_face_cells(:)         ! [1:nfaces]
+     integer  , allocatable :: face_cells(:,:)           ! [[c1,c2...],1:nfaces]
+
+     ! The cell-to-cell adjacency is now the inherited graph adjacency:
+     ! neighbours(icell) and degree(icell), built from the interior faces.
+
+     !================================================================!
+     ! This section carries the derived geometry information.
+     !================================================================!
+
+     ! These arrays hold the derived cell information.
+     real(dp) , allocatable :: cell_centers(:,:)         ! [[x,y,z] , 1:ncells]
+     real(dp) , allocatable :: cell_volumes(:)           ! [1:ncells]
+
+     ! These arrays hold the derived vertex information.
+     real(dp) , allocatable :: face_centers(:,:)         ! [[x,y,z],1:nfaces]
+     real(dp) , allocatable :: face_areas(:)             ! [1:nfaces]
+     real(dp) , allocatable :: face_deltas(:)             ! [1:nfaces]
+     real(dp) , allocatable :: lvec(:,:)                 ! [[lx,ly,lz],1:nfaces]
+
+     ! Unifying t1, t2 and n into one cell-face triad is a deferred
+     ! consolidation. Assuming that the normal flux always dominates
+     ! can stall convergence.
+     real(dp) , allocatable :: cell_face_tangents(:,:,:,:) ! [[tx,ty,tz], t1 or t2 , [f1,f2,f3..] 1:ncells]
+     real(dp) , allocatable :: cell_face_normals(:,:,:)  ! [[nx,ny,nz], [f1,f2,f3..] 1:ncells]
+
+     real(dp) , allocatable :: vertex_cell_weights(:,:)  ! [[wc1,wc2...],1:vertices]
+     real(dp) , allocatable :: face_cell_weights(:,:)    ! [[wc1,wc2],1:nfaces]
+
+   contains
+
+     ! The type-bound procedures follow.
+     procedure :: to_string
+     procedure :: initialize
+
+     ! The evaluation routines follow.
+     procedure :: evaluate_cell_centers
+     procedure :: evaluate_cell_volumes
+     procedure :: evaluate_face_centers_areas
+     procedure :: evaluate_face_tangents_normals
+     procedure :: evaluate_centroidal_vector
+     procedure :: evaluate_face_deltas
+     procedure :: evaluate_face_weight
+     procedure :: evaluate_vertex_weight
+
+     procedure :: evaluate_face_centers_areas_2d
+     procedure :: evaluate_face_tangents_normals_2d
+
+     ! The mesh information routines follow.
+     procedure :: get_num_elems
+     procedure :: create_face_groups
+     procedure :: invert_connectivities
+
+     ! The tag lookup addresses a physical group by its name.
+     procedure :: find_tag_by_name
+
+     ! The deferred graph contract: the mesh answers neighbours/degree
+     ! from the retained adjacency built from the interior faces.
+     procedure :: neighbours
+     procedure :: degree
+
+     ! The mesh's own ladder: refined splits every triangle into four
+     ! real sub-triangles (a full mesh, through the loader front
+     ! door); agglomerated fuses the cells of each part into one
+     ! polygon (geometry for a writer, not a discretization).
+     procedure :: refined
+     procedure :: agglomerated
+     procedure :: node_graph
+     procedure, private :: face_between
+
+     ! The other end of the edge is the cell across a face.
+     procedure :: across
+
+     ! The destructor follows.
+     final   :: destroy
+
+  end type mesh
+
+contains
+
+  !===================================================================!
+  ! Constructor: bundle the given faces under one tag and name, and
+  ! refuse inconsistent lists at the door.
+  !===================================================================!
+
+  impure type(face_group) function create_face_group( &
+       & group_name, group_number, &
+       & num_faces, face_numbers, face_vertices, &
+       & num_face_vertices, face_types ) &
+       & result(this)
+
+    type(string) , intent(in) :: group_name
+    integer      , intent(in) :: group_number
+    integer      , intent(in) :: num_faces
+    integer      , intent(in) :: face_numbers(:)
+    integer      , intent(in) :: face_vertices(:,:)
+    integer      , intent(in) :: num_face_vertices(:)
+    integer      , intent(in) :: face_types(:)
+
+    this % group_name      = group_name
+    this % group_number    = group_number
+    this % group_num_faces = num_faces
+
+    allocate(this % group_face_numbers     , source = face_numbers)
+    allocate(this % group_face_vertices    , source = face_vertices)
+    allocate(this % group_num_face_vertices, source = num_face_vertices)
+    allocate(this % group_face_types       , source = face_types)
+
+    ! Perform sanity checks on the list sizes.
+    if (this % group_num_faces .ne. size(face_numbers)) &
+         & error stop "face group creation failed: inconsistent face numbers"
+    if (this % group_num_faces .ne. size(face_vertices, dim=2)) &
+         & error stop "face group creation failed: inconsistent face vertices"
+    if (this % group_num_faces .ne. size(face_types)) &
+         & error stop "face group creation failed : inconsistent face types"
+    if (this % group_num_faces .ne. size(num_face_vertices)) &
+         & error stop "face group creation failed : inconsistent # face vertices"
+
+  end function create_face_group
+
+  !===================================================================!
+  ! Destructor: hand back every list the group holds.
+  !===================================================================!
+
+  pure subroutine destroy_face_group(this)
+
+    type(face_group), intent(inout) :: this
+
+    if (allocated(this % group_name % str))        deallocate(this % group_name % str)
+    if (allocated(this % group_face_numbers))      deallocate(this % group_face_numbers)
+    if (allocated(this % group_face_vertices))     deallocate(this % group_face_vertices)
+    if (allocated(this % group_num_face_vertices)) deallocate(this % group_num_face_vertices)
+    if (allocated(this % group_face_types))        deallocate(this % group_face_types)
+
+  end subroutine destroy_face_group
+
+  !===================================================================!
+  ! Say who this group is: its number, its size, its name.
+  !===================================================================!
+
+  impure elemental subroutine print(this)
+
+    class(face_group), intent(in) :: this
+
+    print *, "face group number : ", this % group_number
+    print *, "face group number of faces : ", this % group_num_faces
+    print *, "face group name : ", this % group_name % str
+
+  end subroutine print
+
+  !===================================================================!
+  ! Construct the mesh object using the given mesh loader.
+  !===================================================================!
+
+  impure type(mesh) function create_mesh(loader) result(me)
+
+    class(mesh_loader), intent(in)  :: loader
+    integer           , allocatable :: bface_numbers(:)
+    integer           , allocatable :: bface_tags(:)
+    integer           , allocatable :: bface_types(:)
+    integer           , allocatable :: bface_vertices(:,:)
+    integer           , allocatable :: bnum_face_vertices(:)
+    integer                         :: bnum_faces
+
+    !-----------------------------------------------------------------!
+    ! Get the fundamental information needed from the loader.
+    !-----------------------------------------------------------------!
+
+    call loader % get_mesh_data( &
+         & me % num_points, me % vertex_numbers, me % vertex_tags , me % coordinates ,  &
+         & me % num_boundary_edges   , me % edge_numbers  , me % edge_tags   , me % edge_vertices , me % num_edge_vertices , &
+         & bnum_faces       , bface_numbers      , bface_tags       , bface_vertices     , bnum_face_vertices , &
+         & me % num_cells   , me % cell_numbers  , me % cell_tags   , me % cell_vertices , me % num_cell_vertices , &
+         & me % cell_types  , bface_types        , me % edge_types  , &
+         & me % num_tags    , me % tag_numbers   , me % tag_physical_dimensions, me % tag_info )
+
+    ! The spatial dimension is the dimension of the (top) cell elements.
+    me % num_spatial_dim = maxval(elem_type_dimension(me % cell_types))
+
+    ! Determine the number of faces algebraically.
+    me % num_faces = (sum(elem_type_face_count(me % cell_types)) - bnum_faces)/2 + bnum_faces
+
+    ! Allocate the mesh's face data.
+    allocate(me % face_numbers(me % num_faces))
+    allocate(me % face_tags(me % num_faces))
+    allocate(me % face_types(me % num_faces))
+    allocate(me % face_vertices(4, me % num_faces)) ! The maximum is a quadrilateral face.
+    allocate(me % num_face_vertices(me % num_faces))
+
+    me % face_numbers = 0
+    me % face_tags = 0
+    me % face_types = 0
+    me % face_vertices = 0
+    me % num_face_vertices = 0
+
+    ! Add the remaining boundary faces to the array.
+    add_boundary_faces : block
+
+      integer :: iface
+
+      do iface = 1, bnum_faces
+
+         me % face_numbers(iface)      = iface
+         me % face_tags(iface)         = bface_tags(iface)
+         me % face_types(iface)        = bface_types(iface)
+         me % num_face_vertices(iface) = bnum_face_vertices(iface)
+         me % face_vertices(1:bnum_face_vertices(iface),iface) = bface_vertices(1:bnum_face_vertices(iface), iface)
+
+      end do
+
+    end block add_boundary_faces
+
+    form_internal_faces: block
+
+      integer   :: num_faces
+      integer   :: icell, jcell, ivertex
+      integer   :: shared_node_count
+      integer   :: shared_vertices(4)
+
+      !---------------------------------------------------------------!
+      ! This logic naturally avoids forming the boundary faces,
+      ! because we dot only with a different interior cell. Therefore
+      ! we simply append these new internal faces to the existing
+      ! (boundary) faces provided by the mesh.
+      !---------------------------------------------------------------!
+
+      !---------------------------------------------------------------!
+      ! A partitioned mesh will need this count restricted to its
+      ! owned cells; whether the face numbers must stay global in
+      ! this assignment remains to be settled.
+      !---------------------------------------------------------------!
+
+      ! This count assumes linear elements; a higher-order mesh
+      ! shares more vertices per face.
+
+      ! The same sparse product would also build the cell-to-point
+      ! composition.
+
+      ! The ':' slices must respect the per-face vertex counts, and
+      ! the padded entries remain zero.
+
+      num_faces = bnum_faces ! me % num_boundary_faces
+
+      do icell = 1, me % num_cells
+
+         shared_vertices = 0
+
+         ! Pick only the upper triangle to avoid double counting.
+         do jcell = icell + 1, me % num_cells
+
+            !---------------------------------------------------------!
+            ! Sparsely carry out the dot product between two rows to
+            ! yield the count of shared vertices.
+            !---------------------------------------------------------!
+
+            shared_node_count = 0
+            do ivertex = 1, me % num_cell_vertices(icell)
+               if (any (me % cell_vertices(1 : me % num_cell_vertices(jcell),jcell) .eq. &
+                    & me % cell_vertices(ivertex, icell) &
+                    & ) .eqv. .true.) then
+                  shared_node_count = shared_node_count + 1
+                  shared_vertices(shared_node_count) = me % cell_vertices(ivertex, icell)
+               end if
+            end do
+
+            ! Post-process: how is icell related to jcell?
+            select case (shared_node_count)
+            case(0)
+               ! No vertices are shared between the two cells.
+            case (1)
+               ! Only a vertex is shared, which is never an interior face.
+            case (2)
+               !------------------------------------------------------!
+               ! A shared edge: in 2d that IS an interior face (a
+               ! line); in 3d two cells can touch along an edge
+               ! without sharing a face, so we ignore it there.
+               !------------------------------------------------------!
+
+               if (me % num_spatial_dim .eq. 2) then
+                  num_faces = num_faces + 1
+                  me % face_numbers(num_faces)      = num_faces
+                  me % face_tags(num_faces)         = me % cell_tags(icell)
+                  me % face_types(num_faces)        = 1
+                  me % num_face_vertices(num_faces) = 2
+                  call order_face_vertices(me % cell_types(jcell), me % cell_vertices(:,jcell), shared_vertices(1:2))
+                  me % face_vertices(1:2,num_faces) = shared_vertices(1:2)
+               end if
+            case (3)
+               ! A 3-noded triangle is shared between the two cells.
+               num_faces = num_faces + 1
+               me % face_numbers(num_faces)      = num_faces
+               me % face_tags(num_faces)         = me % cell_tags(icell)
+               me % face_types(num_faces)        = 2
+               me % num_face_vertices(num_faces) = 3
+               call order_face_vertices(me % cell_types(jcell), me % cell_vertices(:,jcell), shared_vertices(1:3))
+               me % face_vertices(1:3,num_faces) = shared_vertices(1:3)
+            case (4)
+               ! A 4-node quadrangle is shared between the two cells.
+               num_faces = num_faces + 1
+               me % face_numbers(num_faces)      = num_faces
+               me % face_tags(num_faces)         = me % cell_tags(icell)
+               me % face_types(num_faces)        = 3
+               me % num_face_vertices(num_faces) = 4
+               call order_face_vertices(me % cell_types(jcell), me % cell_vertices(:,jcell), shared_vertices(1:4))
+               me % face_vertices(1:4,num_faces) = shared_vertices(1:4)
+            case default
+               print *, shared_node_count
+               error stop "confused in shared node counting forming internal faces"
+            end select
+
+         end do
+
+      end do
+
+      if (num_faces .ne. me % num_faces) then
+         print *, "numfaces don't match", num_faces, me % num_faces
+      end if
+
+      if (maxval(me % face_vertices) .ne. me % num_points) then
+         print *, "check face vertices"
+         error stop
+      end if
+
+
+    end block form_internal_faces
+
+    ! Perform initialization tasks and store the resulting flag.
+    me % initialized = me % initialize()
+
+    !-----------------------------------------------------------------!
+    ! The mesh IS the cell graph: one vertex per cell, one edge per
+    ! interior face. This adjacency is also the nonzero pattern of the
+    ! Jacobian. Build the inherited edge list from the interior faces,
+    ! then the retained adjacency the base class builds for any stored
+    ! graph - neighbours(icell)/degree(icell) read it ever after.
+    !-----------------------------------------------------------------!
+
+    graph_of_cells : block
+
+      integer :: icell, iface, ctr
+
+      me % num_vertices = me % num_cells
+      allocate(me % vertices(me % num_cells))
+      do icell = 1, me % num_cells
+         me % vertices(icell) % number = me % cell_numbers(icell)
+         me % vertices(icell) % part   = 1
+      end do
+
+      me % num_edges = count(me % num_face_cells .eq. 2)
+      allocate(me % edges(me % num_edges))
+      ctr = 0
+      do iface = 1, me % num_faces
+         if (me % num_face_cells(iface) .eq. 2) then
+            ctr = ctr + 1
+            me % edges(ctr) % tail = me % face_cells(1, iface)
+            me % edges(ctr) % head = me % face_cells(2, iface)
+         end if
+      end do
+
+      call me % build_adjacency()
+
+    end block graph_of_cells
+
+    if (me % initialized .eqv. .false.) then
+       write(error_unit,*) "Mesh.Construct: failed"
+       error stop
+    end if
+
+    call me % create_face_groups()
+
+  end function create_mesh
+
+  !===================================================================!
+  ! Resolve a physical group name to its tag number. The function
+  ! returns -1 when the name is not among the named groups read from
+  ! the mesh file.
+  !===================================================================!
+
+  pure type(integer) function find_tag_by_name(this, name) result(tag)
+
+    class(mesh)      , intent(in) :: this
+    character(len=*) , intent(in) :: name
+    integer :: itag
+
+    tag = -1
+    do itag = 1, this % num_tags
+       if (this % tag_info(itag) % str .eq. name) then
+          tag = this % tag_numbers(itag)
+          return
+       end if
+    end do
+
+  end function find_tag_by_name
+
+  !===================================================================!
+  ! Sort the tagged faces into their named groups, one group per
+  ! physical tag: gather up the open edge-ends of the graph that
+  ! belong to each side of the domain, so boundary conditions later
+  ! find them by name instead of hunting through geometry.
+  !===================================================================!
+
+  impure elemental subroutine create_face_groups(this)
+
+    class(mesh), intent(inout) :: this
+
+    integer, allocatable :: face_tag_numbers(:)
+    logical, allocatable :: group_mask(:)
+
+    integer :: ifacegroup, face_group_number
+    integer :: num_node_tags, num_edge_tags, num_face_tags, num_cell_tags
+
+    num_node_tags = count(this % tag_physical_dimensions .eq. 0)
+    num_edge_tags = count(this % tag_physical_dimensions .eq. 1)
+    num_face_tags = count(this % tag_physical_dimensions .eq. 2)
+    num_cell_tags = count(this % tag_physical_dimensions .eq. 3)
+
+    if (verbosity .ge. 1) then
+       write (*, '(1x, a, 1x, i0)') "number of node tags :", num_node_tags
+       write (*, '(1x, a, 1x, i0)') "number of edge tags :", num_edge_tags
+       write (*, '(1x, a, 1x, i0)') "number of face tags :", num_face_tags
+       write (*, '(1x, a, 1x, i0)') "number of cell tags :", num_cell_tags
+    end if
+
+    allocate(face_tag_numbers(num_face_tags))
+    face_tag_numbers = pack(this % tag_numbers, mask = this % tag_physical_dimensions .eq. 2)
+
+    allocate(this % face_groups(num_face_tags))
+
+    ! Create the face groups.
+    loop_face_groups: do ifacegroup = 1, num_face_tags
+
+       face_group_number = face_tag_numbers(ifacegroup)
+
+       ! Allocate the group mask.
+       allocate(group_mask, source = this % face_tags .eq. face_group_number)
+
+       associate(&
+            & gname              => this % tag_info(findloc(this % tag_numbers, face_group_number, dim=1)), &
+            & gnumber            => face_group_number, &
+            & gnum_faces         => count(group_mask), &
+            & gface_numbers      => pack(this % face_numbers, mask = group_mask), &
+            & gface_vertices     => pack(this % face_vertices, mask = spread(group_mask, 1, size(this % face_vertices, 1))), &
+            & gnum_face_vertices => pack(this % num_face_vertices, mask = group_mask), &
+            & gface_types        => pack(this % face_types, mask = group_mask) &
+            & )
+
+         !------------------------------------------------------------!
+         ! To do: we may not need to use the first dimension of
+         ! 'face_vertices'; instead we can extract from 'face_types'
+         ! in the group and the corresponding number of vertices.
+         !------------------------------------------------------------!
+
+         this % face_groups(ifacegroup) = face_group(gname, gnumber, gnum_faces, &
+              & gface_numbers, &
+              & reshape(gface_vertices, [size(this % face_vertices, 1), gnum_faces]), &
+              & gnum_face_vertices, gface_types)
+
+       end associate
+
+     ! Deallocate the group mask.
+     if (allocated(group_mask)) deallocate(group_mask)
+
+    end do loop_face_groups
+
+    if (allocated(face_tag_numbers)) deallocate(face_tag_numbers)
+
+  end subroutine create_face_groups
+
+  !===================================================================!
+  ! Destructor: hand back every array the mesh carries - the graph's
+  ! wiring and all the measurements hung on it.
+  !===================================================================!
+
+  pure subroutine destroy(this)
+
+    type(mesh), intent(inout) :: this
+
+    if (allocated(this % tag_numbers)) deallocate(this % tag_numbers)
+    if (allocated(this % tag_physical_dimensions)) deallocate(this % tag_physical_dimensions)
+    if (allocated(this % tag_info)) deallocate(this % tag_info)
+
+    if (allocated(this % coordinates)) deallocate(this % coordinates)
+    if (allocated(this % vertex_numbers)) deallocate(this % vertex_numbers)
+
+    if (allocated(this % vertex_tags)) deallocate(this % vertex_tags)
+
+    if (allocated(this % edge_numbers)) deallocate(this % edge_numbers)
+    if (allocated(this % edge_tags)) deallocate(this % edge_tags)
+    if (allocated(this % edge_vertices)) deallocate(this % edge_vertices)
+    if (allocated(this % num_edge_vertices)) deallocate( this % num_edge_vertices)
+
+    if (allocated(this % face_numbers)) deallocate(this % face_numbers)
+    if (allocated(this % face_tags)) deallocate(this % face_tags)
+    if (allocated(this % face_vertices)) deallocate(this % face_vertices)
+    if (allocated(this % num_face_vertices)) deallocate(this % num_face_vertices)
+
+    if (allocated(this % cell_numbers)) deallocate(this % cell_numbers)
+    if (allocated(this % cell_tags)) deallocate(this % cell_tags)
+    if (allocated(this % cell_vertices)) deallocate(this % cell_vertices)
+    if (allocated(this % num_cell_vertices)) deallocate(this % num_cell_vertices)
+
+    if (allocated(this % vertex_cells)) deallocate(this % vertex_cells)
+    if (allocated(this % num_vertex_cells)) deallocate(this % num_vertex_cells)
+
+    if (allocated(this % num_cell_faces)) deallocate(this % num_cell_faces)
+    if (allocated(this % cell_faces)) deallocate(this % cell_faces)
+    if (allocated(this % num_face_cells)) deallocate(this % num_face_cells)
+    if (allocated(this % face_cells)) deallocate(this % face_cells)
+
+    if (allocated(this % cell_centers)) deallocate(this % cell_centers)
+    if (allocated(this % cell_volumes)) deallocate(this % cell_volumes)
+
+    if (allocated(this % face_centers)) deallocate(this % face_centers)
+    if (allocated(this % face_areas)) deallocate(this % face_areas)
+    if (allocated(this % face_deltas)) deallocate(this % face_deltas)
+    if (allocated(this % lvec)) deallocate(this % lvec)
+
+    if (allocated(this % cell_face_tangents)) deallocate(this % cell_face_tangents)
+    if (allocated(this % cell_face_normals)) deallocate(this % cell_face_normals)
+    if (allocated(this % vertex_cell_weights)) deallocate(this % vertex_cell_weights)
+    if (allocated(this % face_cell_weights)) deallocate(this % face_cell_weights)
+
+  end subroutine destroy
+
+  !===================================================================!
+  ! Turn the arrows around: the loader speaks cell -> vertex, but
+  ! assembly also needs vertex -> cell. Cells and vertices graph_form a
+  ! bipartite graph, and reading it from the other side is just its
+  ! transpose - transpose_adjacency does the turning.
+  !===================================================================!
+
+  impure subroutine invert_connectivities(this)
+
+    class(mesh), intent(inout) :: this
+
+    !-----------------------------------------------------------------!
+    ! Find the VertexCell connectivity by inverting the CellVertex
+    ! connectivity.
+    !-----------------------------------------------------------------!
+
+    vertex_cell: block
+
+      integer :: ivertex
+
+      if (verbosity .ge. 1) write(*,'(a)') "Inverting CellVertex Map..."
+
+      ! The graph transposes cell_vertices into vertex_cells.
+      call transpose_adjacency( &
+           & this % cell_vertices, this % num_cell_vertices, &
+           & this % num_points, &
+           & this % vertex_cells, this % num_vertex_cells)
+
+      if (verbosity .ge. 1) write(*,'(a)') "Inverting CellVertex Map complete ..."
+
+      if (verbosity .gt. 1) then
+
+         if (allocated(this % vertex_cells) .and. size(this % vertex_cells, dim = 2) .gt. 0) then
+
+            write(*,'(a,i8,a,i8)') &
+                 & "Vertex to cell info for", min(this % max_print,this % num_points), &
+                 & " vertices out of ", this % num_points
+
+            do ivertex = 1, min(this % max_print,this % num_points)
+               write(*,*) &
+                    & 'vertex [', this % vertex_numbers(ivertex), ']', &
+                    & 'num cells [', this % num_vertex_cells(ivertex), ']',&
+                    & 'cells [', this % vertex_cells(1:this % num_vertex_cells(ivertex),ivertex), ']'
+            end do
+
+            ! Perform a sanity check.
+            if (minval(this % num_vertex_cells) .lt. 1) then
+               write(error_unit, *) 'Error: There are vertices not mapped to a cell'
+               error stop
+            end if
+
+         else
+
+            write(*,'(a)') "Vertex to cell info not computed"
+
+         end if
+
+      end if
+
+    end block vertex_cell
+
+  end subroutine invert_connectivities
+
+  !===================================================================!
+  ! Wire the graph, then measure it. First connectivity: invert
+  ! cell -> vertex, then compose maps until face -> cell and its
+  ! transpose cell -> face appear - each interior face now knows the
+  ! two cells it joins, which is the edge list of the mesh graph.
+  ! Then geometry: centres, areas, normals, volumes, deltas, weights
+  ! - the numbers assembly will read off every vertex and edge.
+  ! The function returns true once the mesh is ready to be walked.
+  !===================================================================!
+
+  impure type(logical) function initialize(this)
+
+    class(mesh), intent(inout) :: this
+
+    call this % invert_connectivities()
+
+    !-----------------------------------------------------------------!
+    ! Find the CellFace connectivity by composing CF = CV x VF.
+    !-----------------------------------------------------------------!
+
+    cell_face_face_cell: block
+
+      integer :: icell, iface, k, iv
+      logical :: holds_all
+
+      if (verbosity .ge. 1) write(*,*) "Forming CellFace and FaceCell connectivities..."
+
+      !---------------------------------------------------------------!
+      ! The face_cells map holds, for each face, the cells that hold
+      ! every one of its vertices. Look only among the cells touching
+      ! the face's first vertex - the owners are there - not at every
+      ! cell.
+      !---------------------------------------------------------------!
+
+      allocate(this % num_face_cells(this % num_faces))
+      allocate(this % face_cells(2, this % num_faces))
+      this % num_face_cells = 0
+      this % face_cells     = 0
+      do iface = 1, this % num_faces
+         do k = 1, this % num_vertex_cells(this % face_vertices(1, iface))
+            icell = this % vertex_cells(k, this % face_vertices(1, iface))
+            holds_all = .true.
+            do iv = 1, this % num_face_vertices(iface)
+               if (.not. any(this % cell_vertices(1:this % num_cell_vertices(icell), icell) &
+                    &        .eq. this % face_vertices(iv, iface))) then
+                  holds_all = .false.
+                  exit
+               end if
+            end do
+            if (.not. holds_all) cycle
+            this % num_face_cells(iface) = this % num_face_cells(iface) + 1
+            this % face_cells(this % num_face_cells(iface), iface) = icell
+         end do
+      end do
+
+      ! The graph transposes face_cells into cell_faces.
+      call transpose_adjacency(this % face_cells, this % num_face_cells, &
+           & this % num_cells, this % cell_faces, this % num_cell_faces)
+
+      if (verbosity .gt. 1) then
+
+         if (allocated(this % cell_faces)) then
+
+            write(*,'(a,i8,a,i8)') &
+                 & "Cell to face info for", min(this % max_print,this % num_cells), &
+                 & " cells out of ", this % num_cells
+
+            do icell = 1, min(this % max_print,this % num_cells)
+               write(*,*) &
+                    & 'cell ['  , icell, ']',&
+                    & 'nfaces [', this % num_cell_faces(icell), ']',&
+                    & 'faces [' , this % cell_faces(&
+                    & 1:this % num_cell_faces(icell),icell), ']'
+            end do
+
+         else
+
+            write(*,'(a)') "Cell to face info not computed"
+
+         end if
+
+         if (allocated(this % face_cells)) then
+
+            do iface = 1, min(this % max_print,this % num_faces)
+               print *, &
+                    & 'face [', this % face_numbers(iface), ']', &
+                    & 'cells [', this % face_cells(1 : this % num_face_cells(iface),iface), ']'
+            end do
+
+            if (minval(this % num_face_cells) .lt. 1) then
+               write(error_unit, *) 'Error: There are faces not mapped to a cell'
+            end if
+
+         else
+
+            write(*,'(a)') "Face to cell info not computed"
+
+         end if
+
+      end if
+
+    end block cell_face_face_cell
+
+    !-----------------------------------------------------------------!
+    ! Evaluate all geometric quantities needed for FVM assembly.
+    !-----------------------------------------------------------------!
+
+    geometric_quantities : block
+
+      if (verbosity .ge. 1) write(*,*) 'Calculating mesh geometry information'
+
+      call this % evaluate_cell_centers()
+
+      !---------------------------------------------------------------!
+      ! Face areas and normals are dimension specific: in 2d a face
+      ! is a line (the area is a length and the normal lies in
+      ! plane), while in 3d it is a polygon.
+      !---------------------------------------------------------------!
+
+      if (this % num_spatial_dim .eq. 2) then
+         call this % evaluate_face_centers_areas_2d()
+         call this % evaluate_face_tangents_normals_2d()
+      else
+         call this % evaluate_face_centers_areas()
+         call this % evaluate_face_tangents_normals()
+      end if
+
+      call this % evaluate_cell_volumes()
+      call this % evaluate_centroidal_vector()
+      call this % evaluate_face_deltas()
+      call this % evaluate_face_weight()
+      call this % evaluate_vertex_weight()
+
+    end block geometric_quantities
+
+    ! Signal that all tasks are complete.
+    initialize = .true.
+
+  end function initialize
+
+  !===================================================================!
+  ! Every mesh point sits in a star of cells - its neighbours across
+  ! the bipartite cell-vertex graph:
+  !
+  !        (c1)   (c2)
+  !           \   /
+  !            (p)          weight each arm by 1/distance,
+  !           /   \         normalized to sum to one
+  !        (c3)   (c4)
+  !
+  ! Thus a cell-centred field can ride the arms out to the points.
+  !===================================================================!
+
+  impure subroutine evaluate_vertex_weight(this)
+
+    class(mesh), intent(inout) :: this
+    integer,  allocatable :: cells(:)
+    real(dp) :: total, dcell
+    integer  :: icell, ivertex
+
+    if (verbosity .ge. 1) write(*,*) 'Evaluating face weights for interpolation from cells to vertex'
+
+    allocate(cells(maxval(this % num_vertex_cells)))
+
+    allocate( &
+         & this % vertex_cell_weights( &
+         & 1:maxval(this % num_vertex_cells), &
+         & this % num_faces) &
+         & )
+    this % vertex_cell_weights = 0
+
+    do ivertex = 1, this % num_points
+       ! Gather the actual cell numbers.
+       cells(1:this % num_vertex_cells(ivertex)) = &
+            & this % vertex_cells(1:this % num_vertex_cells(ivertex), &
+            & ivertex)
+
+       total = real(0,dp)
+
+       do icell = 1, this % num_vertex_cells(ivertex)
+
+          dcell = distance(this % cell_centers(:,cells(icell)), this % coordinates(:,ivertex))
+
+          this % vertex_cell_weights(icell,ivertex) = real(1,dp)/dcell
+
+          total = total + this % vertex_cell_weights(icell,ivertex)
+
+       end do
+
+       this % vertex_cell_weights(1:this % num_vertex_cells(ivertex),ivertex) = &
+            & this % vertex_cell_weights(1:this % num_vertex_cells(ivertex),ivertex)/total
+
+    end do
+
+    if (verbosity .gt. 1) then
+       do ivertex = 1, min(this % max_print,this % num_points)
+          write(*,*) &
+               & "vertex [", this % vertex_numbers(ivertex), ']', &
+               & "weights [", this % vertex_cell_weights(&
+               & 1:this % num_vertex_cells(ivertex),ivertex), ']'
+       end do
+    end if
+
+    deallocate(cells)
+
+  end subroutine evaluate_vertex_weight
+
+  !===================================================================!
+  ! An interior face is an edge (P)---(N). Split the face's value
+  ! between its two ends by inverse distance to the face centre,
+  ! stored as the pair (w, 1-w) on the edge. A boundary half-edge
+  ! has only one end, so that cell takes the whole weight.
+  !===================================================================!
+
+  impure subroutine evaluate_face_weight(this)
+
+    class(mesh), intent(inout) :: this
+    integer  :: iface
+    integer  :: cellindex1, cellindex2
+    real(dp) :: xcellcenter1(3), xcellcenter2(3), xfacecenter(3)
+    real(dp) :: d1, d2
+    real(dp) :: dinv1, dinv2
+    real(dp) :: weight
+
+    if (verbosity .ge. 1) write(*, *) 'Evaluating face weights for interpolation from cells to face'
+    allocate(this % face_cell_weights(2, this % num_faces))
+    do iface = 1, this % num_faces
+       ! The first cell is found for all faces.
+       cellindex1   = this % face_cells(1, iface)
+       xcellcenter1 = this % cell_centers(:, cellindex1)
+       xfacecenter  = this % face_centers(:,iface)
+       d1           = distance(xcellcenter1, xfacecenter)
+       dinv1        = 1.0_dp/d1
+
+       ! Extract the second cell if this is not a boundary face or a hole.
+       if (this % num_face_cells(iface) .ne. 1) then
+          cellindex2   = this % face_cells(2, iface)
+          xcellcenter2 = this % cell_centers(:, cellindex2)
+          d2           = distance(xcellcenter2, xfacecenter)
+          dinv2        = 1.0_dp/d2
+       else
+          dinv2        = 0.0_dp
+       end if
+
+       weight       = dinv1/(dinv1+dinv2)
+
+       this % face_cell_weights(1:2,iface) = [weight,1.0_dp - weight]
+
+    end do
+
+    if (verbosity .gt. 1) then
+       do iface = 1, min(this % max_print,this % num_faces)
+          write(*,*) &
+               & "face [", iface, "] ",&
+               & "weight [", this % face_cell_weights(1:2,iface), "] "
+       end do
+    end if
+
+  end subroutine evaluate_face_weight
+
+  !===================================================================!
+  ! Draw each edge as an actual arrow in space: lvec runs centroid to
+  ! centroid across an interior face, and centroid to face centre on
+  ! a boundary half-edge. This is the line the two-point gradient
+  ! differences along - the edge, given a length and a direction.
+  !===================================================================!
+
+  impure subroutine evaluate_centroidal_vector(this)
+
+    class(mesh), intent(inout) :: this
+    integer :: iface
+
+    if (verbosity .ge. 1) write (*,*) "Evaluating centroidal vector..."
+
+    allocate(this % lvec(3,this % num_faces))
+    this % lvec = real(0,dp)
+
+    do iface = 1, this % num_faces
+       associate(face_cells => this % face_cells(1:this % num_face_cells(iface),iface))
+
+         ! The centroidal vector joins the centroids of the two cells.
+         check_boundary: if (this % num_face_cells(iface) .eq. 1) then
+            ! Handle boundary faces.
+            this % lvec(:,iface) = this % face_centers(:,iface) - this % cell_centers(:,face_cells(1))
+         else
+            ! Handle internal faces.
+            this % lvec(:,iface) = this % cell_centers(:,face_cells(2)) - this % cell_centers(:,face_cells(1))
+         end if check_boundary
+
+       end associate
+
+    end do
+
+  end subroutine evaluate_centroidal_vector
+
+  !===================================================================!
+  ! How much space does each vertex of the graph claim? Walk a cell's
+  ! faces and add up (x_f . n_f) A_f - the divergence theorem, summed
+  ! over the cell's edges. A negative volume is an inside-out cell,
+  ! refused loudly.
+  !===================================================================!
+
+  impure subroutine evaluate_cell_volumes(this)
+
+    class(mesh), intent(inout) :: this
+
+    ! Use the divergence theorem to find the volumes.
+    integer :: lcell, lface, gface
+
+    if (verbosity .ge. 1) write (*,*) "Evaluating cell volumes..."
+
+    allocate(this % cell_volumes (this % num_cells))
+    this % cell_volumes = real(0,dp)
+
+    !-----------------------------------------------------------------!
+    ! The divergence theorem gives V = (1/d) \sum_f (x_f . n_f) A_f,
+    ! with d the spatial dimension - 1/2 in 2d (area), 1/3 in 3d
+    ! (volume).
+    !-----------------------------------------------------------------!
+
+    do lcell = 1, this % num_cells
+       do lface = 1, this % num_cell_faces(lcell)
+          ! Fetch the global face index.
+          gface = this % cell_faces(lface, lcell)
+          associate( &
+               & face_center => this % face_centers(:,gface)/real(this % num_spatial_dim, dp), &
+               & face_normal => this % cell_face_normals(:,lface,lcell),&
+               & face_area => this % face_areas(gface))
+            this % cell_volumes(lcell) = this % cell_volumes(lcell) + &
+                 & face_area*dot_product(face_normal, face_center)
+          end associate
+       end do
+    end do
+
+    ! Check for negative volumes.
+    associate(minvol => minval(this % cell_volumes))
+      if (minvol .lt. 0) then
+         print *, 'negative volume encountered', minvol
+         error stop
+      end if
+    end associate
+
+  end subroutine evaluate_cell_volumes
+
+  !===================================================================!
+  ! The length of an edge as the diffusion operator feels it: project
+  ! the centroidal arrow onto the face normal. On a skewed mesh the
+  ! arrow crosses its face at a slant, so the normal distance is
+  ! shorter than the arrow - this delta is the denominator in every
+  ! two-point face gradient.
+  !===================================================================!
+
+  impure subroutine evaluate_face_deltas(this)
+
+    class(mesh), intent(inout) :: this
+
+    ! Use the divergence theorem to find the volumes.
+    integer :: lcell, lface, gface
+
+    if (verbosity .ge. 1) write (*,*) "Evaluating face delta..."
+
+    allocate(this % face_deltas (this % num_faces))
+    this % face_deltas = real(0,dp)
+
+    do lcell = 1, this % num_cells
+       do lface = 1, this % num_cell_faces(lcell)
+
+          gface = this % cell_faces(lface, lcell)
+
+          this % face_deltas(gface) = &
+               & abs(dot_product(this % lvec(:,gface), this % cell_face_normals(:, lface, lcell)))
+
+       end do
+
+    end do
+
+  end subroutine evaluate_face_deltas
+
+  !===================================================================!
+  ! Measure each 3d face: the centre is the mean of its corners; the
+  ! area comes from fanning the polygon into triangles and summing
+  ! half cross-products. The area is the width of the edge - how much
+  ! window two cells share to trade flux through.
+  !===================================================================!
+
+  impure subroutine evaluate_face_centers_areas(this)
+
+    class(mesh), intent(inout) :: this
+
+    ! Currently this is the length, as it is a 1D face.
+    type(integer) :: iface
+    real(dp)      :: n(3)
+
+    if (verbosity .ge. 1) write(*, *) 'Evaluating face centers and areas'
+
+    allocate(this % face_areas(this % num_faces))
+    this % face_areas = real(0,dp)
+
+    allocate(this % face_centers(3,this % num_faces))
+    this % face_centers = real(0,dp)
+
+    face_loop: do iface = 1, this % num_faces
+       associate(facenodes => this % face_vertices(1:this % num_face_vertices(iface),iface))
+
+         ! Compute the coordinates of the face centers.
+         associate(num_vertices => real(this % num_face_vertices(iface), kind=dp))
+           this % face_centers(:,iface) = sum(this % coordinates(:,facenodes),dim=2)/num_vertices
+         end associate
+
+         ! Measure the first triangle.
+         associate(&
+              & t12 => this % coordinates(:,facenodes(2)) - this % coordinates(:,facenodes(1)), &
+              & t13 => this % coordinates(:,facenodes(3)) - this % coordinates(:,facenodes(1)) &
+              & )
+
+           call cross_product(t12,t13,n)
+
+           this % face_areas(iface) = norm2(n)/real(2,dp)
+
+           ! If the face is a quadrilateral, add the second triangle.
+           if (this % num_face_vertices(iface) .gt. 3) then
+
+              associate (t14 => this % coordinates(:,facenodes(4)) - this % coordinates(:,facenodes(1)))
+
+                call cross_product(t13,t14,n)
+
+                ! Add the area of the second triangle.
+                this % face_areas(iface) = this % face_areas(iface) + norm2(n)/real(2,dp)
+
+              end associate
+
+           end if
+
+         end associate
+
+       end associate
+
+    end do face_loop
+
+    ! Check for negative areas.
+    associate(minarea => minval(this % face_areas))
+      if (minarea .lt. 0) then
+         print *, 'negative area encountered', minarea
+         error stop
+      end if
+    end associate
+
+  end subroutine evaluate_face_centers_areas
+
+  !===================================================================!
+  ! In 2d a face is a line segment: the centre is the midpoint of its
+  ! two vertices, the "area" is its length. Zero length means two
+  ! coincident points - a broken edge - and the mesh stops.
+  !===================================================================!
+
+  impure subroutine evaluate_face_centers_areas_2d(this)
+
+    class(mesh), intent(inout) :: this
+
+    ! Currently this is the length, as it is a 1D face.
+    type(integer) :: iface
+
+    if (verbosity .ge. 1) write(*, *) 'Evaluating face centers and areas'
+
+    allocate(this % face_areas(this % num_faces))
+    allocate(this % face_centers(3,this % num_faces))
+
+    do iface = 1, this % num_faces
+       !--------------------------------------------------------------!
+       ! A 2d face is a line: use only its two vertices, not the zero
+       ! padding of the (4,nfaces) face_vertices array.
+       !--------------------------------------------------------------!
+
+       associate(facenodes => this % face_vertices(1:this % num_face_vertices(iface), iface))
+
+         ! Compute the coordinates of the face centers.
+         this % face_centers(1:3, iface) = &
+              & sum(this % coordinates(1:3, facenodes),dim=2)/&
+              & real(2,kind=dp) ! This face has two edges.
+
+         ! Compute the face areas.
+         associate(v1 => this % coordinates(:,facenodes(1)), &
+              & v2 => this % coordinates(:,facenodes(2))  )
+           this % face_areas(iface) = distance(v1, v2)
+         end associate
+
+       end associate
+
+    end do
+
+    ! Check for zero areas.
+    if (abs(minval(this % face_areas)) .lt. 10.0d0*tiny(1.0d0)) then
+       print *, 'same points/bad face?'
+       error stop
+    end if
+
+  end subroutine evaluate_face_centers_areas_2d
+
+  !===================================================================!
+  ! Give every vertex of the graph a place to stand: the cell centre
+  ! is the mean of the cell's corner coordinates.
+  !===================================================================!
+
+  impure subroutine evaluate_cell_centers(this)
+
+    class(mesh), intent(inout) :: this
+
+    ! Find the cell centers as O = (A + B + C + ...)/count(vertices).
+    type(integer) :: icell
+
+    if (verbosity .ge. 1) write(*,*) 'Evaluating cell centers'
+
+    allocate(this % cell_centers(3, this % num_cells))
+
+    do icell = 1, this % num_cells
+       associate(&
+            & num_vertices => real(this % num_cell_vertices(icell), kind=dp), &
+            & vids => this % cell_vertices(1:this % num_cell_vertices(icell), icell) &
+            & )
+         this % cell_centers(:, icell) = sum(this % coordinates(:,vids),dim=2)/num_vertices
+       end associate
+    end do
+
+  end subroutine evaluate_cell_centers
+
+  !===================================================================!
+  ! Give every edge its direction frame, one per (cell, face) pair: a
+  ! unit normal from the face's corner fans, flipped if needed so it
+  ! points OUT of the cell, plus two tangents to complete the triad.
+  ! The same interior face carries opposite normals seen from its two
+  ! ends - each cell watches flux leave through its own side of the
+  ! edge, which is what makes the assembled operator conservative.
+  !===================================================================!
+
+  impure subroutine evaluate_face_tangents_normals(this)
+
+    class(mesh), intent(inout) :: this
+    integer  :: icell, iface, gface
+    real(dp) :: tmp(3)
+
+    if (verbosity .ge. 1) write(*,*) 'Evaluating face tangents normals'
+
+    allocate(this % cell_face_normals(3, maxval(this % num_cell_faces), this % num_cells))
+    this % cell_face_normals = real(0,dp)
+
+    ! In 3d there are two tangents per face.
+    allocate(this % cell_face_tangents(3, 2, maxval(this % num_cell_faces), this % num_cells))
+    this % cell_face_tangents = real(0,dp)
+
+    ! Loop over the cells.
+    cell_loop: do icell = 1, this % num_cells
+       ! Loop over the faces of each cell.
+       face_loop: do iface = 1, this % num_cell_faces(icell)
+
+          ! gface = this % face_numbers
+          gface = this % cell_faces(iface, icell)
+
+          associate(&
+               & ifv      => this % face_vertices(1:this % num_face_vertices(gface),gface), &
+               & normal   => this % cell_face_normals(:,iface,icell), &
+               & tangent1 => this % cell_face_tangents(:,1,iface,icell), &
+               & tangent2 => this % cell_face_tangents(:,2,iface,icell) &
+               & )
+
+            associate(&
+                 & t12 => this % coordinates(:,ifv(2)) - this % coordinates(:,ifv(1)), &
+                 & t13 => this % coordinates(:,ifv(3)) - this % coordinates(:,ifv(1))  &
+                 & )
+
+              call cross_product(t12, t13, normal)
+
+              ! If the face is a quadrilateral, add the second triangle (we may not need this at all).
+              if (this % num_face_vertices(gface) .gt. 3) then
+
+                 associate(t14 => this % coordinates(:,ifv(4)) - this % coordinates(:,ifv(1)))
+
+                   call cross_product(t13,t14,tmp)
+
+                   normal = normal + tmp
+
+                 end associate
+
+              end if
+
+              ! Normalize the normal.
+              normal = normal/norm2(normal)
+
+              !-------------------------------------------------------!
+              ! Determine whether the normal is inward or outward by
+              ! projecting it onto the vector connecting the cell
+              ! center and the face center.
+              !-------------------------------------------------------!
+
+              if (dot_product(normal, this % face_centers(:,gface) - this % cell_centers(:,icell)) &
+                   & .lt. real(0,dp)) then
+
+                 normal = - normal
+
+              end if
+
+              ! Normalize the first tangent.
+              tangent1 = t12/norm2(t12)
+
+              ! Take the cross product tangent2 = normal x tangent1.
+              call cross_product(normal, tangent1, tangent2)
+
+            end associate
+
+          end associate
+
+       end do face_loop
+
+    end do cell_loop
+
+  end subroutine evaluate_face_tangents_normals
+
+  !===================================================================!
+  ! The same frame in 2d: the tangent runs along the face segment,
+  ! the normal is that tangent turned a quarter turn in plane, then
+  ! flipped to point out of the cell - both ends of an edge agree on
+  ! the geometry, but each sees the normal leaving itself.
+  !===================================================================!
+
+  impure subroutine evaluate_face_tangents_normals_2d(this)
+
+    class(mesh), intent(inout) :: this
+
+    integer  :: icell, iface, gface
+    real(dp) :: t(3), n(3)
+    integer  :: fv1, fv2
+
+    if (verbosity .ge. 1) write(*,*) 'Evaluating face tangents normals'
+
+    allocate(this % cell_face_normals (3, maxval(this % num_cell_faces), this % num_cells))
+    allocate(this % cell_face_tangents(3, 2, maxval(this % num_cell_faces), this % num_cells))
+    this % cell_face_tangents = 0.0d0
+
+    ! Loop over the cells.
+    loop_cells: do icell = 1, this % num_cells
+       ! Loop over the faces of each cell.
+       loop_faces: do iface = 1, this % num_cell_faces(icell)
+
+          ! Fetch the global face and its two end vertices.
+          gface = this % cell_faces(iface, icell)
+          fv1   = this % face_vertices(1, gface)
+          fv2   = this % face_vertices(2, gface)
+
+          ! The tangent runs along the edge.
+          t = this % coordinates(:,fv2) - this % coordinates(:,fv1)
+          t = t/norm2(t)
+
+          ! The in-plane normal is the tangent rotated by -90 degrees.
+          n(1) =  t(2)
+          n(2) = -t(1)
+          n(3) =  0.0d0
+
+          ! Orient it to point out of this cell (towards the face centre).
+          if (dot_product(n, this % face_centers(:,gface) - this % cell_centers(:,icell)) .lt. 0.0d0) then
+             n = -n
+             t = -t
+          end if
+
+          this % cell_face_normals (:, iface, icell)    = n
+          this % cell_face_tangents(:, 1, iface, icell) = t
+
+       end do loop_faces
+
+    end do loop_cells
+
+  end subroutine evaluate_face_tangents_normals_2d
+
+  !===================================================================!
+  ! Count and return the number of elements with the supplied number
+  ! of nodes.
+  !===================================================================!
+
+  pure elemental type(integer) function get_num_elems(this, num_elem_nodes)
+
+    class(mesh)  , intent(in) :: this
+    type(integer), intent(in) :: num_elem_nodes
+
+    get_num_elems = count(MASK=(this % num_cell_vertices .eq. num_elem_nodes))
+
+  end function get_num_elems
+
+  !===================================================================!
+  ! Print the mesh: counts, tags, and the first few of everything.
+  !===================================================================!
+
+  impure subroutine to_string(this)
+
+    class(mesh), intent(in) :: this
+
+    integer :: icell, ivertex, iface, iedge, itag
+
+    write(*,*) 'Number of vertices :', this % num_points
+    write(*,*) 'Number of cells    :', this % num_cells
+    write(*,*) 'Number of faces    :', this % num_faces
+
+    do itag = 1, this % num_tags
+       write(*,'(1x,a,i0,a,a,a,a)') &
+            & "tag number [", this % tag_numbers(itag) , "] ", &
+            & "info [", this % tag_info(itag) % str, "] "
+    end do
+
+    if (this % num_points .gt. 0) then
+       write(*,'(a,i8,a,i8)') "Vertex info for ", min(this % max_print,this % num_points), &
+            & ' vertices out of ', this % num_points
+       write(*,*) "number tag x y z"
+       do ivertex = 1, min(this % max_print,this % num_points)
+          write(*,'(i8,i2,3ES15.3)') &
+               & this % vertex_numbers(ivertex), &
+               & this % vertex_tags(ivertex), &
+               & this % coordinates(:, ivertex)
+       end do
+    end if
+
+    if (this % num_cells .gt. 0) then
+       write(*,'(a,i8,a,i8)') "Cell info for ", min(this % max_print,this % num_cells), &
+            & ' cells out of ', this % num_cells
+       write(*,*) "cno ctag ncv iverts"
+       do icell = 1, min(this % max_print,this % num_cells)
+          write(*,'(i8,i2,i2,10i8)') &
+               & this % cell_numbers(icell), &
+               & this % cell_tags(icell), &
+               & this % num_cell_vertices(icell), &
+               & this % cell_vertices(1:this % num_cell_vertices(icell), icell)
+       end do
+    end if
+
+    if (this % num_faces .gt. 0) then
+       write(*,'(a,i8,a,i8)') "Face info for ", min(this % max_print,this % num_faces), &
+            & ' faces out of ', this % num_faces
+       write(*,*) "fno ftag nfv iverts"
+       do iface = 1, min(this % max_print,this % num_faces)
+          write(*,'(i8,i2,i2,10i8)') &
+               & this % face_numbers(iface), &
+               & this % face_tags(iface), &
+               & this % num_face_vertices(iface), &
+               & this % face_vertices(1:this % num_face_vertices(iface), iface)
+       end do
+    end if
+
+    if (this % num_boundary_edges .gt. 0) then
+       write(*,'(a,i8,a,i8)') "Edge info for ", min(this % max_print,this % num_boundary_edges), &
+            & ' edges out of ', this % num_boundary_edges
+       write(*,*) "eno etag nev iverts"
+       do iedge = 1, min(this % max_print,this % num_boundary_edges)
+          write(*,'(i8,i2,i2,10i8)') &
+               & this % edge_numbers(iedge), &
+               & this % edge_tags(iedge), &
+               & this % num_edge_vertices(iedge), &
+               & this % edge_vertices(1:this % num_edge_vertices(iedge), iedge)
+       end do
+    end if
+
+    if (this % initialized .eqv. .true.) then
+
+       write(*,*) "Cell Geo. Data [index] [center] [volume] "
+       do icell = 1, min(this % max_print,this % num_cells)
+          write(*,*) &
+               & "local number [", this % cell_numbers(icell)   ,"] ", &
+               & "center [", this % cell_centers(:,icell) ,"] ", &
+               & "volume [", this % cell_volumes(icell)   ,"] "
+       end do
+       write(*,*) "total volume ", sum(this % cell_volumes)
+
+       write(*,*) "Face Data [index] [center] [area] "
+       do iface = 1, min(this % max_print,this % num_faces)
+          write(*,*) &
+               & "num [",iface,"] ", &
+               & "center [",this % face_centers(:, iface),"] ", &
+               & "area [",this % face_areas(iface),"] ", &
+               & "lvec [",this % lvec(:,iface),"] ", &
+               & "delta [",this % face_deltas(iface),"] "
+       end do
+
+    end if
+
+  end subroutine to_string
+
+  !===================================================================!
+  ! The mesh refined once: every triangle splits into four real
+  ! sub-triangles - three at the corners, one in the middle - with a
+  ! new vertex at every face midpoint. The arrays go through the
+  ! loader front door, so the refined mesh arrives with everything a
+  ! loaded mesh has: faces, centres, volumes, neighbours. Children of
+  ! cell v sit at positions (v-1)*4+1..(v-1)*4+4, corners first,
+  ! middle last - the same numbering the graph's refinement uses.
+  !===================================================================!
+
+  impure type(mesh) function refined(this) result(fine)
+
+    class(mesh), intent(in) :: this
+
+    type(array_mesh_loader) :: gen
+
+    integer :: nv, nc, nf, nb
+    integer :: iface, icell, i, k, a, b, c, mab, mbc, mca
+
+    if (any(this % num_cell_vertices .ne. 3)) then
+       error stop "mesh: refined splits triangles - this mesh has other cells"
+    end if
+
+    nv = this % num_points
+    nc = this % num_cells
+    nf = this % num_faces
+
+    ! The vertices are the old ones, then one midpoint per face.
+    gen % num_vertices = nv + nf
+    allocate(gen % vertices(3, nv + nf))
+    gen % vertices(:, 1:nv) = this % coordinates(:, 1:nv)
+    do iface = 1, nf
+       gen % vertices(:, nv + iface) = 0.5_dp*( &
+            & this % coordinates(:, this % face_vertices(1, iface)) + &
+            & this % coordinates(:, this % face_vertices(2, iface)))
+    end do
+    gen % vertex_numbers = [(i, i = 1, nv + nf)]
+    allocate(gen % vertex_tags(nv + nf))
+    gen % vertex_tags = 0
+
+    ! The cells are four children per triangle, corners first and middle last.
+    gen % num_cells = 4*nc
+    allocate(gen % cell_vertices(3, 4*nc))
+    allocate(gen % num_cell_vertices(4*nc), gen % cell_tags(4*nc), gen % cell_types(4*nc))
+    gen % num_cell_vertices = 3
+    gen % cell_types        = 2   ! This is the gmsh three-node triangle.
+    gen % cell_numbers      = [(i, i = 1, 4*nc)]
+
+    do icell = 1, nc
+       a   = this % cell_vertices(1, icell)
+       b   = this % cell_vertices(2, icell)
+       c   = this % cell_vertices(3, icell)
+       mab = nv + this % face_between(icell, a, b)
+       mbc = nv + this % face_between(icell, b, c)
+       mca = nv + this % face_between(icell, c, a)
+       gen % cell_vertices(:, (icell-1)*4 + 1) = [a, mab, mca]
+       gen % cell_vertices(:, (icell-1)*4 + 2) = [b, mbc, mab]
+       gen % cell_vertices(:, (icell-1)*4 + 3) = [c, mca, mbc]
+       gen % cell_vertices(:, (icell-1)*4 + 4) = [mab, mbc, mca]
+       gen % cell_tags((icell-1)*4 + 1 : icell*4) = this % cell_tags(icell)
+    end do
+
+    ! Each boundary edge splits in two, and the tag is inherited.
+    nb = count(this % num_face_cells(1:nf) .eq. 1)
+    gen % num_faces = 2*nb
+    allocate(gen % face_vertices(2, 2*nb))
+    allocate(gen % face_tags(2*nb), gen % face_types(2*nb), gen % num_face_vertices(2*nb))
+    gen % num_face_vertices = 2
+    gen % face_numbers      = [(i, i = 1, 2*nb)]
+
+    k = 0
+    do iface = 1, nf
+       if (this % num_face_cells(iface) .ne. 1) cycle
+       a = this % face_vertices(1, iface)
+       b = this % face_vertices(2, iface)
+       k = k + 1
+       gen % face_vertices(:, k) = [a, nv + iface]
+       gen % face_tags(k)  = this % face_tags(iface)
+       gen % face_types(k) = this % face_types(iface)
+       k = k + 1
+       gen % face_vertices(:, k) = [nv + iface, b]
+       gen % face_tags(k)  = this % face_tags(iface)
+       gen % face_types(k) = this % face_types(iface)
+    end do
+
+    ! There are no edge elements; the tag table carries over whole.
+    allocate(gen % edge_numbers(0), gen % edge_tags(0), gen % edge_types(0))
+    allocate(gen % edge_vertices(2, 0), gen % num_edge_vertices(0))
+
+    gen % num_tags                = this % num_tags
+    gen % tag_numbers             = this % tag_numbers
+    gen % tag_physical_dimensions = this % tag_physical_dimensions
+    gen % tag_info                = this % tag_info
+
+    fine = mesh(gen)
+
+  end function refined
+
+  !===================================================================!
+  ! Find the face of a cell whose two endpoints are exactly the given
+  ! pair.
+  !===================================================================!
+
+  pure integer function face_between(this, icell, p, q) result(f)
+
+    class(mesh), intent(in) :: this
+    integer    , intent(in) :: icell, p, q
+
+    integer :: k, fa, fb
+
+    do k = 1, this % num_cell_faces(icell)
+       f  = this % cell_faces(k, icell)
+       fa = this % face_vertices(1, f)
+       fb = this % face_vertices(2, f)
+       if ((fa .eq. p .and. fb .eq. q) .or. (fa .eq. q .and. fb .eq. p)) return
+    end do
+
+    error stop "mesh: a cell edge without its face - the connectivity is broken"
+
+  end function face_between
+
+  !===================================================================!
+  ! The other end of the edge: a face and one of its two cells name
+  ! the cell across. Interior faces only - a boundary half-edge has
+  ! no other side to name.
+  !===================================================================!
+
+  pure integer function across(this, icell, gface) result(ncell)
+
+    class(mesh), intent(in) :: this
+    integer    , intent(in) :: icell, gface
+
+    ncell = this % face_cells(1, gface)
+    if (ncell .eq. icell) ncell = this % face_cells(2, gface)
+
+  end function across
+
+  !===================================================================!
+  ! The mesh agglomerated by a partition of its cells: one polygon
+  ! per part, its boundary traced from the faces that separate the
+  ! part from the rest of the world, wound counterclockwise. Only
+  ! what a writer needs is filled - vertices, the polygon loops,
+  ! volumes as the members' sums - because an agglomerate is the
+  ! picture of a coarse level, not a discretization to assemble on.
+  ! A part whose boundary edges do not close into loops stops with a
+  ! report.
+  !===================================================================!
+
+  impure type(mesh) function agglomerated(this, parts, nparts) result(coarse)
+
+    class(mesh), intent(in) :: this
+    integer    , intent(in) :: parts(:)
+    integer    , intent(in) :: nparts
+
+    integer, allocatable :: edge_tail(:), edge_head(:), loop(:)
+    integer, allocatable :: link(:,:), n_link(:)
+    logical, allocatable :: used(:)
+
+    real(dp) :: area
+    integer  :: p, iface, c1, c2, m, i, cur, nxt, longest, pass, n
+
+    ! Make two passes: size the widest polygon, then trace and fill.
+    longest = 0
+    do pass = 1, 2
+
+       if (pass .eq. 2) then
+          coarse % num_points = this % num_points
+          coarse % coordinates     = this % coordinates
+          coarse % num_cells    = nparts
+          allocate(coarse % cell_vertices(longest, nparts))
+          allocate(coarse % num_cell_vertices(nparts))
+          allocate(coarse % cell_types(nparts), coarse % cell_tags(nparts))
+          allocate(coarse % cell_volumes(nparts))
+          coarse % cell_vertices = 0
+          coarse % cell_types    = -1   ! This is our agglomerated-polygon convention.
+          coarse % cell_tags     = 0
+          coarse % cell_numbers  = [(p, p = 1, nparts)]
+          do p = 1, nparts
+             coarse % cell_volumes(p) = sum(this % cell_volumes, mask = parts .eq. p)
+          end do
+       end if
+
+       do p = 1, nparts
+
+          ! The part's boundary is the faces with exactly one member cell.
+          m = 0
+          do iface = 1, this % num_faces
+             c1 = this % face_cells(1, iface)
+             if (this % num_face_cells(iface) .eq. 1) then
+                if (parts(c1) .eq. p) m = m + 1
+             else
+                c2 = this % face_cells(2, iface)
+                if ((parts(c1) .eq. p) .neqv. (parts(c2) .eq. p)) m = m + 1
+             end if
+          end do
+
+          if (pass .eq. 1) then
+             longest = max(longest, m)
+             cycle
+          end if
+
+          ! Collect the boundary edges, then chain them into a loop.
+          if (allocated(edge_tail)) deallocate(edge_tail, edge_head)
+          allocate(edge_tail(m), edge_head(m))
+          m = 0
+          do iface = 1, this % num_faces
+             c1 = this % face_cells(1, iface)
+             if (this % num_face_cells(iface) .eq. 1) then
+                if (parts(c1) .ne. p) cycle
+             else
+                c2 = this % face_cells(2, iface)
+                if ((parts(c1) .eq. p) .eqv. (parts(c2) .eq. p)) cycle
+             end if
+             m = m + 1
+             edge_tail(m) = this % face_vertices(1, iface)
+             edge_head(m) = this % face_vertices(2, iface)
+          end do
+
+          !-----------------------------------------------------------!
+          ! Chain the edges into one loop, consuming each exactly
+          ! once. Where the part touches itself the polygon pinches,
+          ! and any unused edge continues the loop; the picture
+          ! survives a pinch, and only an open boundary is refused.
+          !-----------------------------------------------------------!
+
+          if (.not. allocated(link)) then
+             allocate(link(8, this % num_points), n_link(this % num_points))
+          end if
+          do i = 1, m
+             n_link(edge_tail(i)) = 0
+             n_link(edge_head(i)) = 0
+          end do
+          do i = 1, m
+             n_link(edge_tail(i)) = n_link(edge_tail(i)) + 1
+             link(n_link(edge_tail(i)), edge_tail(i)) = i
+             n_link(edge_head(i)) = n_link(edge_head(i)) + 1
+             link(n_link(edge_head(i)), edge_head(i)) = i
+          end do
+
+          if (allocated(loop)) deallocate(loop, used)
+          allocate(loop(m), used(m))
+          used = .false.
+          cur  = edge_tail(1)
+          do n = 1, m
+             loop(n) = cur
+             nxt = 0
+             do i = 1, n_link(cur)
+                if (.not. used(link(i, cur))) then
+                   nxt = link(i, cur)
+                   exit
+                end if
+             end do
+             if (nxt .eq. 0) then
+                error stop "mesh: an agglomerate's boundary does not close into one loop"
+             end if
+             used(nxt) = .true.
+             if (edge_tail(nxt) .eq. cur) then
+                cur = edge_head(nxt)
+             else
+                cur = edge_tail(nxt)
+             end if
+          end do
+          if (cur .ne. loop(1)) then
+             error stop "mesh: an agglomerate's boundary does not close into one loop"
+          end if
+
+          ! Wind counterclockwise (shoelace on the loop).
+          area = 0.0_dp
+          do n = 1, m
+             i    = loop(n)
+             nxt  = loop(mod(n, m) + 1)
+             area = area + this % coordinates(1, i)*this % coordinates(2, nxt) &
+                  &      - this % coordinates(1, nxt)*this % coordinates(2, i)
+          end do
+          if (area .lt. 0.0_dp) loop = loop(m:1:-1)
+
+          coarse % num_cell_vertices(p)   = m
+          coarse % cell_vertices(1:m, p)  = loop
+
+       end do
+
+    end do
+
+  end function agglomerated
+
+  !===================================================================!
+  ! The node-adjacency graph: a SECOND, wider cell graph. The mesh's
+  ! own graph joins cells across a shared FACE; this one joins cells
+  ! that share any mesh POINT - a strictly wider ring:
+  !
+  !     the mesh graph (faces)        the node graph (points)
+  !        o───o                         o───o
+  !        │   │      one edge per        │ X │   a corner touch is
+  !        o───o      shared face         o───o   an edge here too
+  !                                      (diagonal cells joined)
+  !
+  ! Each mesh point's ring of cells (vertex_cells, already built by
+  ! invert_connectivities) is a clique: every pair of cells on that
+  ! point is node-adjacent. The rule names every cell on one of my
+  ! points, repeats and all; the inherited harvest keeps each pair
+  ! once, smaller cell first, and build_adjacency does the rest.
+  ! Under a partition this graph's ghosts are the vertex-ring halo
+  ! the skew correction needs.
+  !===================================================================!
+
+  pure type(stored_graph) function node_graph(this) result(g)
+
+    class(mesh), intent(in) :: this
+
+    integer, allocatable :: tails(:), heads(:)
+
+    call this % harvest_edges(point_ring, tails, heads)
+    g = stored_graph(this % num_cells, tails, heads)
+
+  contains
+
+    !=================================================================!
+    ! Name every cell that touches one of my points, repeats and all.
+    !=================================================================!
+
+    pure function point_ring(ci) result(cands)
+      integer, intent(in)  :: ci
+      integer, allocatable :: cands(:)
+      integer :: iv, p
+      allocate(cands(0))
+      do iv = 1, this % num_cell_vertices(ci)
+         p = this % cell_vertices(iv, ci)
+         cands = [cands, this % vertex_cells(1:this % num_vertex_cells(p), p)]
+      end do
+    end function point_ring
+
+  end function node_graph
+
+  !===================================================================!
+  ! The deferred graph contract: one-line delegations to the retained
+  ! adjacency the constructor built from the interior faces.
+  !===================================================================!
+
+  pure function neighbours(this, v) result(nbrs)
+    class(mesh), intent(in) :: this
+    integer    , intent(in) :: v
+    integer, allocatable    :: nbrs(:)
+    nbrs = this % stored_neighbours(v)
+  end function neighbours
+
+  !===================================================================!
+  ! Answer the degree of a cell from the retained adjacency.
+  !===================================================================!
+
+  pure integer function degree(this, v)
+    class(mesh), intent(in) :: this
+    integer    , intent(in) :: v
+    degree = this % stored_degree(v)
+  end function degree
+
+end module class_mesh

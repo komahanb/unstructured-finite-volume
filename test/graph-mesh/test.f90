@@ -28,14 +28,15 @@
 program test_graph_mesh
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_grammar  , only : graph, graph_field
-  use graph_calculus , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
-  use class_graph_support, only : support
-  use class_graph_field  , only : field
-  use class_graph_mesh   , only : mesh
+  use structure_graph, only : graph
+  use data_graph_field, only : graph_field
+  use structure_graph, only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
+  use structure_support, only : support
+  use data_field  , only : field
+  use structure_mesh   , only : mesh
   use class_mesh_builder , only : mesh_from_gmsh
-  use class_graph_differential_operator, only : differential_operator
-  use class_graph_differential_operator, only : vertex_differential_operator
+  use operation_differential, only : differential
+  use operation_differential, only : vertex_differential_operator
 
   implicit none
 
@@ -195,7 +196,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(differential_operator) :: second
+    type(differential) :: second
     type(field) :: state
     type(support) :: cells
     class(graph_field), allocatable :: y
@@ -256,7 +257,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(differential_operator) :: second
+    type(differential) :: second
     type(field) :: state
     type(support) :: cells
     class(graph_field), allocatable :: y

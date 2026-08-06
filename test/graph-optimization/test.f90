@@ -18,11 +18,13 @@
 module cubic_statement_fixture
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_grammar  , only : graph, graph_field, graph_operation
-  use graph_calculus , only : GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
-  use class_graph_field  , only : field
-  use class_graph_differential_operator, only : differential_operator
+  use structure_graph, only : graph
+  use data_graph_field, only : graph_field
+  use operation_graph_operation, only : graph_operation
+  use structure_graph, only : GRAPH_SIDE_VERTEX
+  use structure_support, only : support
+  use data_field  , only : field
+  use operation_differential, only : differential
 
   implicit none
 
@@ -37,7 +39,7 @@ module cubic_statement_fixture
 
   type, extends(graph_operation) :: cubic_statement
 
-     type(differential_operator) :: linear_part
+     type(differential) :: linear_part
      real(dp) :: strength = 0.0_dp
 
    contains
@@ -99,17 +101,17 @@ end module cubic_statement_fixture
 program test_graph_optimization
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_grammar  , only : graph
-  use class_graph_mesh   , only : mesh
+  use structure_graph, only : graph
+  use structure_mesh   , only : mesh
   use class_mesh_builder , only : mesh_from_gmsh
-  use class_robin_condition, only : robin_condition, dirichlet
-  use class_conduction     , only : conduction
-  use class_graph_differential_operator, only : differential_operator
-  use class_graph_differential_operator, only : vertex_differential_operator
-  use graph_optimization, only : fit_optimizer, form_optimizer
-  use graph_optimization, only : conjugate_gradient, gauss_seidel, gmres, jacobi, newton
-  use class_graph_differential_operator, only : edge_differential_operator
-  use class_graph_balance  , only : balance
+  use model_robin_condition, only : robin_condition, dirichlet
+  use model_conduction     , only : conduction
+  use operation_differential, only : differential
+  use operation_differential, only : vertex_differential_operator
+  use operation_fit_optimizer, only : fit_optimizer, form_optimizer
+  use operation_fit_optimizer, only : conjugate_gradient, gauss_seidel, gmres, jacobi, newton
+  use operation_differential, only : edge_differential_operator
+  use operation_balance  , only : balance
   use cubic_statement_fixture, only : cubic_statement
 
   implicit none
@@ -182,7 +184,7 @@ contains
   ! wall - and nothing else.
   !===================================================================!
 
-  type(differential_operator) function chain_operator(m) result(op)
+  type(differential) function chain(m) result(op)
 
     type(mesh), intent(in) :: m
 
@@ -196,7 +198,7 @@ contains
     op = vertex_differential_operator(order=2, coefficients=c, &
          & spacings=[1.0_dp, 1.0_dp, 0.5_dp, 0.5_dp], boundary_values=b)
 
-  end function chain_operator
+  end function chain
 
   subroutine assemble(m, law, conditions, kappa, c, b)
 
@@ -248,7 +250,7 @@ contains
     js = jacobi()
 
     m = chain_mesh()
-    call js % attach(chain_operator(m), m)
+    call js % attach(chain(m), m)
 
     call js % diagonal(d)
     call report(all(abs(d - [-3.0_dp, -2.0_dp, -3.0_dp]) < 1.0d-12), &
@@ -291,7 +293,7 @@ contains
     js = jacobi()
 
     m = chain_mesh()
-    call js % attach(chain_operator(m), m)
+    call js % attach(chain(m), m)
     js % max_iterations = 5000
     js % tolerance      = 1.0d-12
 
@@ -341,7 +343,7 @@ contains
     c = -c
 
     block
-      use class_graph_field, only : field
+      use data_field, only : field
       type(field) :: fd
       fd = m % face_delta()
       call fd % get_real_vector(deltas)
@@ -390,7 +392,7 @@ contains
     gs = gauss_seidel()
 
     m = chain_mesh()
-    call gs % attach(chain_operator(m), m)
+    call gs % attach(chain(m), m)
     gs % max_iterations = 2000
     gs % tolerance      = 1.0d-12
 
@@ -435,7 +437,7 @@ contains
 
     m = chain_mesh()
 
-    call gm % attach(chain_operator(m), m)
+    call gm % attach(chain(m), m)
     gm % tolerance = 1.0d-12
     call gm % constant(g)
     rhs = -g
@@ -496,7 +498,7 @@ contains
 
     m = chain_mesh()
 
-    action % linear_part = chain_operator(m)
+    action % linear_part = chain(m)
     action % strength    = 0.05_dp
 
     ns % tolerance = 1.0d-7

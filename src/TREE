@@ -1,0 +1,126 @@
+=======================================================================
+ WHAT IS HERE, AND WHERE IT GOES
+=======================================================================
+
+Four directories, one for each root of the type tree. Every type in
+the library descends from exactly one of them, and that is what
+decides which directory it lives in.
+
+A file is named for the type it declares. Its module is named for
+its path, with the slash written as an underscore, because Fortran
+does not allow a module and a type to share a name. So
+operation/stencil.f90 holds module operation_stencil, which declares
+type stencil.
+
+An abstract type is written graph_something. A concrete type is the
+bare noun. That is the only difference in form between them, and it
+exists because several abstracts and their concretes would otherwise
+collide: graph_field and field, graph_support and support.
+
+-----------------------------------------------------------------------
+ structure/     a graph, and anything that is one
+-----------------------------------------------------------------------
+   graph.f90              graph            abstract
+                          graph_support    abstract, a graph with no
+                                           edges
+   support.f90            support          a list of members
+   stored_graph.f90       stored_graph     a graph held in arrays
+   mesh.f90               mesh             a stored graph carrying
+                                           measurements
+   graph_form.f90         graph_form       abstract, a support whose
+                                           members are basis functions
+   polynomial_form.f90    polynomial_form
+   harmonic_form.f90      harmonic_form
+
+-----------------------------------------------------------------------
+ data/          values carried on a graph
+-----------------------------------------------------------------------
+   graph_field.f90        graph_field      abstract
+                          graph_functional abstract, a field on a
+                                           one-member domain
+   field.f90              field
+   functional.f90         functional
+
+-----------------------------------------------------------------------
+ operation/     things that act: a graph and values in, values out
+-----------------------------------------------------------------------
+   graph_operation.f90    graph_operation       abstract
+                          graph_reduction       abstract, many to one
+                          graph_broadcast       abstract, one to many
+                          graph_discretization  abstract, built from an
+                                                operation by binding a
+                                                graph
+                          graph_linearization   abstract, built from an
+                                                operation by freezing a
+                                                state
+   reduction.f90          reduction, broadcast
+   walk.f90               walk
+   balance.f90            balance
+   differential.f90       differential
+   stencil.f90            stencil               weights on a mesh
+   step.f90               step, chain           one time step, and the
+                                                whole recurrence
+   difference_linearization.f90
+                          difference_linearization
+   fit_optimizer.f90      fit_optimizer         varies values
+   fitted_balance.f90     (functions only)      shared assembly
+
+-----------------------------------------------------------------------
+ transform/     things that remake a graph and carry its values over
+-----------------------------------------------------------------------
+   graph_transform.f90    graph_transform   abstract
+                          graph_partitioner, graph_assembler,
+                          graph_coarsener, graph_refiner   abstract
+   partitioner.f90        partitioner
+   assembler.f90          assembler
+   coarsener.f90          coarsener
+   refiner.f90            refiner
+   form_optimizer.f90     form_optimizer    varies structure
+
+-----------------------------------------------------------------------
+ model/         what equation to solve, and what holds at the edges
+-----------------------------------------------------------------------
+   conduction.f90, advection.f90, robin_condition.f90,
+   diffusion_statement.f90
+
+   These do not yet descend from any root, which is the one place the
+   tree is still open. The next pass gives them one.
+
+-----------------------------------------------------------------------
+ legacy/        scheduled for deletion
+-----------------------------------------------------------------------
+   Twelve files that exist only to read a gmsh file into a mesh. They
+   die when the native reader lands, and nothing else uses them.
+
+
+=======================================================================
+ THE RULES A NEW TYPE MUST PASS
+=======================================================================
+
+1. It descends from one of the four roots. A type that extends
+   nothing has no place to live and is a defect.
+
+2. It goes in the directory of the root it descends from, in a file
+   named after it, in a module named after that file's path.
+
+3. A finite set of choices rides as an argument, never as a family of
+   types. Over-relaxation is a number on gauss-seidel, not a class.
+   An open set - materials, for instance - is a family and inherits.
+
+4. A composite that existing types already express earns no name.
+
+5. No abstract type without a concrete one that means something.
+
+6. Two independent choices must give the same answer in either order,
+   or they are not independent.
+
+
+=======================================================================
+ WHAT DOES NOT BELONG IN A BANNER
+=======================================================================
+
+A file's banner states only what the compiler can check: what the
+type is, what it extends, what its procedures do. Anything the
+compiler cannot check will drift into a lie. Design facts - which
+stage of the pipeline a type serves, which level it was ruled to sit
+at - live here, in one place, where one edit keeps them true.

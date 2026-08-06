@@ -18,14 +18,14 @@
 program test_graph_multigrid
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_grammar  , only : graph
-  use class_graph_mesh   , only : mesh
-  use class_graph_stencil, only : stencil_operator
-  use class_fitted_balance, only : fitted_balance_stencil
-  use class_polynomial_form, only : polynomial_form
-  use class_graph_coarsener, only : coarsener, COARSEN_PAIRWISE
-  use graph_optimization, only : fit_optimizer, form_optimizer
-  use graph_optimization, only : gmres, jacobi, multigrid
+  use structure_graph, only : graph
+  use structure_mesh   , only : mesh
+  use operation_stencil, only : stencil
+  use operation_fitted_balance, only : fitted_balance_stencil
+  use structure_polynomial_form, only : polynomial_form
+  use transform_coarsener, only : coarsener, COARSEN_PAIRWISE
+  use operation_fit_optimizer, only : fit_optimizer, form_optimizer
+  use operation_fit_optimizer, only : gmres, jacobi, multigrid
 
   implicit none
 
@@ -88,7 +88,7 @@ contains
 
   end function chain_mesh
 
-  type(stencil_operator) function chain_statement(m) result(op)
+  type(stencil) function chain_statement(m) result(op)
 
     type(mesh), intent(in) :: m
 

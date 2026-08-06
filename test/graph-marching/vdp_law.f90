@@ -14,10 +14,12 @@
 module vdp_fixture
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_grammar      , only : graph, graph_field, graph_operation
-  use graph_calculus     , only : GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
-  use class_graph_field  , only : field
+  use structure_graph, only : graph
+  use data_graph_field, only : graph_field
+  use operation_graph_operation, only : graph_operation
+  use structure_graph, only : GRAPH_SIDE_VERTEX
+  use structure_support, only : support
+  use data_field  , only : field
 
   implicit none
 

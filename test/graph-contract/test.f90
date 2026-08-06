@@ -17,10 +17,12 @@
 module nonlinear_sample_support
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_grammar      , only : graph_operation, graph, graph_field
-  use graph_calculus     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
-  use class_graph_support, only : support
-  use class_graph_field  , only : field
+  use operation_graph_operation, only : graph_operation
+  use structure_graph, only : graph
+  use data_graph_field, only : graph_field
+  use structure_graph, only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
+  use structure_support, only : support
+  use data_field  , only : field
 
   implicit none
 
@@ -164,7 +166,7 @@ end module nonlinear_sample_support
 !      it never and it vanishes. Both only show up in parallel, near
 !      a cut.
 !  17. The pieces added together rebuild the whole field exactly. This
-!      is the only form the first law can take when the contract hands
+!      is the only graph_form the first law can take when the contract hands
 !      the assembler one part at a time.
 !  18. The third law: a sum worked out on the whole graph agrees with
 !      the same sum worked out piecewise and joined, provided only the
@@ -188,34 +190,35 @@ end module nonlinear_sample_support
 program test_graph_contract
 
   use iso_fortran_env       , only : dp => REAL64
-  use graph_grammar         , only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
-  use graph_grammar         , only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
-  use graph_grammar         , only : GRAPH_FIELD_CHARACTER
-  use graph_calculus        , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
-  use graph_calculus        , only : graph_functional
-  use class_graph_support   , only : support
-  use class_graph           , only : stored_graph
-  use class_graph_field     , only : field
-  use class_graph_functional, only : functional
-  use class_graph_reduction , only : reduction
-  use class_graph_reduction , only : REDUCE_SUM, REDUCE_AVERAGE, REDUCE_MINIMUM
-  use class_graph_reduction , only : REDUCE_MAXIMUM, REDUCE_NORM, REDUCE_COUNT
-  use class_graph_reduction , only : REDUCE_ALL, REDUCE_ANY
-  use class_graph_reduction , only : broadcast, BROADCAST_COPY, BROADCAST_SHARE
-  use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
-  use class_graph_partitioner, only : PARTITION_BREADTH_FIRST, PARTITION_ADOPTED
-  use class_graph_assembler , only : assembler
-  use graph_grammar         , only : graph, graph_field
-  use class_graph_coarsener , only : coarsener, COARSEN_PAIRWISE, COARSEN_ADOPTED
-  use class_graph_refiner   , only : refiner
-  use class_graph_differential_operator, only : differential_operator
-  use class_graph_differential_operator, only : edge_differential_operator
-  use class_graph_differential_operator, only : vertex_differential_operator
-  use class_graph_differential_operator, only : gradient, interpolation
-  use class_graph_differential_operator, only : divergence, laplacian
-  use class_graph_balance   , only : balance
-  use class_graph_walk      , only : walk, WALK_COLOURING, WALK_VISIT_ORDER
-  use class_graph_walk      , only : WALK_COMPONENT, WALK_DEPTH
+  use data_graph_field, only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
+  use data_graph_field, only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
+  use data_graph_field, only : GRAPH_FIELD_CHARACTER
+  use structure_graph, only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
+  use data_graph_field, only : graph_functional
+  use structure_support   , only : support
+  use structure_stored_graph           , only : stored_graph
+  use data_field     , only : field
+  use data_functional, only : functional
+  use operation_reduction , only : reduction
+  use operation_reduction , only : REDUCE_SUM, REDUCE_AVERAGE, REDUCE_MINIMUM
+  use operation_reduction , only : REDUCE_MAXIMUM, REDUCE_NORM, REDUCE_COUNT
+  use operation_reduction , only : REDUCE_ALL, REDUCE_ANY
+  use operation_reduction , only : broadcast, BROADCAST_COPY, BROADCAST_SHARE
+  use transform_partitioner, only : partitioner, PARTITION_LINEAR
+  use transform_partitioner, only : PARTITION_BREADTH_FIRST, PARTITION_ADOPTED
+  use transform_assembler , only : assembler
+  use structure_graph, only : graph
+  use data_graph_field, only : graph_field
+  use transform_coarsener , only : coarsener, COARSEN_PAIRWISE, COARSEN_ADOPTED
+  use transform_refiner   , only : refiner
+  use operation_differential, only : differential
+  use operation_differential, only : edge_differential_operator
+  use operation_differential, only : vertex_differential_operator
+  use operation_differential, only : gradient, interpolation
+  use operation_differential, only : divergence, laplacian
+  use operation_balance   , only : balance
+  use operation_walk      , only : walk, WALK_COLOURING, WALK_VISIT_ORDER
+  use operation_walk      , only : WALK_COMPONENT, WALK_DEPTH
   use nonlinear_sample_support, only : nonlinear_sample
 
   implicit none
@@ -1109,7 +1112,7 @@ contains
   end function covers_once
 
   !===================================================================!
-  ! THE FIRST LAW AGAIN, in the only form one part can satisfy.
+  ! THE FIRST LAW AGAIN, in the only graph_form one part can satisfy.
   !
   ! The contract hands the assembler a single piece, so no one call
   ! can rebuild a whole that was cut in two. What each call does is
@@ -1416,7 +1419,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                       :: ring, open_chain
-    type(differential_operator)         :: edge_term
+    type(differential)         :: edge_term
     type(balance)                            :: bal
     class(graph_field), allocatable   :: y
     type(support)                     :: on
@@ -1590,7 +1593,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                     :: g7, g3, ring
-    type(differential_operator)     :: op
+    type(differential)     :: op
     class(graph_field), allocatable :: yf
     type(support)                   :: on
     type(field)                     :: q
@@ -1746,7 +1749,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                     :: g7
-    type(differential_operator)     :: fwd, rev
+    type(differential)     :: fwd, rev
     class(graph_field), allocatable :: yf
     type(support)                   :: on
     type(field)                     :: qf, pf
@@ -1820,7 +1823,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                     :: border
-    type(differential_operator)     :: reduce_edges
+    type(differential)     :: reduce_edges
     class(graph_field), allocatable :: yf
     type(support)                     :: eon
     type(field)                       :: zf
@@ -1877,7 +1880,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                     :: g7
-    type(differential_operator)     :: op, fwd, rev
+    type(differential)     :: op, fwd, rev
     class(graph_field), allocatable :: yf
     type(support)                   :: on
     type(field)                     :: qf, pf
@@ -1950,7 +1953,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                     :: g
-    type(differential_operator)     :: fwd, rev
+    type(differential)     :: fwd, rev
     class(graph_field), allocatable :: yf
     type(support)                   :: on
     type(field)                     :: unit
@@ -2030,7 +2033,7 @@ contains
 
     type(stored_graph)                     :: ring
     type(nonlinear_sample)                 :: formula
-    type(differential_operator)     :: reduce_edges
+    type(differential)     :: reduce_edges
     class(graph_field), allocatable   :: zf
     class(graph_field), allocatable :: yf
     type(support)                   :: on
@@ -2108,8 +2111,8 @@ contains
     type(support)                     :: eon
     type(field)                     :: uf, vf, wf
     type(field)                       :: zf, guf
-    type(differential_operator)     :: opposite
-    type(differential_operator)       :: slope
+    type(differential)     :: opposite
+    type(differential)       :: slope
     type(reduction)                        :: total
     class(graph_functional), allocatable   :: answer
     class(graph_field), allocatable :: work_v
@@ -2163,7 +2166,7 @@ contains
 
     ! The energy: u = [0,1,3,6] slopes to [1,2,3], and the product
     ! of the slope with itself is 1 + 4 + 9 = 14, the value of the
-    ! quadratic form u^T L u.
+    ! quadratic graph_form u^T L u.
     call uf % set_real_vector([0.0_dp, 1.0_dp, 3.0_dp, 6.0_dp])
     call slope % apply(chain, [uf], work_e)
     call work_e % get_real_vector(values)

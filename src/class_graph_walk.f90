@@ -138,6 +138,8 @@ contains
     class(graph), intent(in)               :: input_graph
     class(graph), allocatable, intent(out) :: domain
 
+    associate (u1 => this); end associate
+
     call input_graph % all_vertices(domain)
 
   end subroutine walk_domain
@@ -160,6 +162,8 @@ contains
     type(support)         :: on
     integer , allocatable :: mark(:), indices(:)
     integer :: nv, v
+
+    associate (u1 => present(input_data)); end associate
 
     nv = input_graph % num_vertices()
 

@@ -316,6 +316,8 @@ contains
     real(dp), allocatable :: fv(:), cv(:)
     integer :: nb, nv, ncomp, v, c, b
 
+    associate (u1 => coarse_graph); end associate
+
     select type (fine_data)
     class is (field)
 

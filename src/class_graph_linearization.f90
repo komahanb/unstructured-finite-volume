@@ -134,14 +134,18 @@ contains
     type(field)   :: state
     class(graph_field), allocatable :: pushed
     real(dp), allocatable :: v(:), y(:), base(:)
-    integer :: nv, i
+    integer :: nv, ncomp, i
 
     nv = input_graph % num_vertices()
+
+    ! The width the frozen state carries. A statement of several
+    ! numbers per cell is differenced whole, like any other.
+    ncomp = max(size(this % at) / max(nv, 1), 1)
 
     if (present(input_data)) then
        call input_data(1) % get_real_vector(v)
     else
-       allocate(v(nv))
+       allocate(v(nv * ncomp))
        v = 0.0_dp
     end if
 
@@ -152,13 +156,13 @@ contains
     if (allocated(this % base)) then
        base = this % base
     else
-       state = field('state', cells)
+       state = field('state', cells, ncomp=ncomp)
        call state % set_real_vector(this % at)
        call this % of % apply(input_graph, [state], pushed)
        call pushed % get_real_vector(base)
     end if
 
-    state = field('state', cells)
+    state = field('state', cells, ncomp=ncomp)
     call state % set_real_vector(this % at + this % step * v)
 
     call this % of % apply(input_graph, [state], pushed)
@@ -166,7 +170,7 @@ contains
 
     y = (y - base) / this % step
 
-    state = field('J v', cells)
+    state = field('J v', cells, ncomp=ncomp)
     call state % set_real_vector(y)
     if (allocated(output)) deallocate(output)
     allocate(output, source=state)

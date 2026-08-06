@@ -76,6 +76,7 @@ module class_robin_condition
      procedure :: adv_rhs_coefficients
      procedure :: operator_coefficients
      procedure :: boundary_values
+     procedure :: wall_relation
 
   end type robin_condition
 
@@ -261,6 +262,42 @@ contains
     end if
 
   end subroutine boundary_values
+
+  !===================================================================!
+  ! THE WHOLE WALL, IN TWO NUMBERS. Eliminating the face value from
+  !
+  !      a*phi_b + b*(phi_b - phi_p)/delta = c
+  !
+  ! gives, with denom = a + b/delta,
+  !
+  !      phi_b = (1 - w)*phi_p + v        w = a/denom, v = c/denom
+  !
+  ! and that one line is the entire condition: dirichlet is w = 1,
+  ! phi_b = c; neumann is w = 0, phi_b = phi_p + c*delta, the wall
+  ! that carries a gradient rather than a value; anything mixed
+  ! stands between them. A caller that takes only v can express
+  ! dirichlet and nothing else, which is why both numbers travel.
+  !===================================================================!
+
+  subroutine wall_relation(this, m, weights, values)
+
+    class(robin_condition), intent(in) :: this
+    type(mesh), intent(in)             :: m
+    real(dp), allocatable, intent(out) :: weights(:)
+    real(dp), allocatable, intent(out) :: values(:)
+
+    real(dp), allocatable :: area(:), delta(:)
+    integer :: f
+
+    call measures_of(this, m, area, delta)
+    allocate(weights(size(area)), values(size(area)))
+
+    do f = 1, size(area)
+       weights(f) = this % a / denom(this, delta(f))
+       values(f)  = this % c / denom(this, delta(f))
+    end do
+
+  end subroutine wall_relation
 
   !===================================================================!
   ! The mesh's area and delta at this condition's faces, in member

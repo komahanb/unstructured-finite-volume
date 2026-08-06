@@ -59,6 +59,22 @@ module graph_minimization
 
      type(support) :: cells
 
+     ! A second seat, one member per NUMBER rather than per cell.
+     ! The pairings live here: a measure carries one weight per
+     ! entry, so a dot product over wide entries must be taken on
+     ! the values themselves - the calculus says as much in its own
+     ! banner. With one number per cell the two seats are the same
+     ! set, and nothing changes.
+     type(support) :: numbers
+
+     ! How wide an entry is. One number per cell is the common case
+     ! and the default; a state with several numbers per cell - a
+     ! complex plane point, a species vector, a whole spatial field
+     ! standing at one instant - says so at attach, and every word
+     ! below then measures the entire vector instead of its first
+     ! stripe.
+     integer :: ncomp = 1
+
      real(dp), allocatable :: affine(:)
 
      integer  :: max_iterations = 1000
@@ -111,11 +127,12 @@ contains
   ! its boundary values and sources say by themselves.
   !===================================================================!
 
-  subroutine attach(this, action, on)
+  subroutine attach(this, action, on, ncomp)
 
     class(minimizer)  , intent(inout) :: this
     class(graph_operation), intent(in)    :: action
     class(graph)          , intent(in)    :: on
+    integer, intent(in), optional         :: ncomp
 
     real(dp), allocatable :: zero(:)
     integer :: v, nv
@@ -125,10 +142,15 @@ contains
     if (allocated(this % on)) deallocate(this % on)
     allocate(this % on, source=on)
 
-    nv = on % num_vertices()
-    this % cells = support(GRAPH_SIDE_VERTEX, [(v, v = 1, nv)])
+    this % ncomp = 1
+    if (present(ncomp)) this % ncomp = max(ncomp, 1)
 
-    allocate(zero(nv))
+    nv = on % num_vertices()
+    this % cells   = support(GRAPH_SIDE_VERTEX, [(v, v = 1, nv)])
+    this % numbers = support(GRAPH_SIDE_VERTEX, &
+         & [(v, v = 1, nv * this % ncomp)])
+
+    allocate(zero(nv * this % ncomp))
     zero = 0.0_dp
     call raw_apply(this, zero, this % affine)
 
@@ -147,7 +169,7 @@ contains
     type(field) :: state
     class(graph_field), allocatable :: answer
 
-    state = field('state', this % cells)
+    state = field('state', this % cells, ncomp=this % ncomp)
     call state % set_real_vector(x)
 
     call this % action % apply(this % on, [state], answer)
@@ -180,9 +202,9 @@ contains
     class(graph_functional), allocatable :: answer
     real(dp), allocatable :: got(:)
 
-    uf = field('u', this % cells)
+    uf = field('u', this % numbers)
     call uf % set_real_vector(u)
-    vf = field('v', this % cells)
+    vf = field('v', this % numbers)
     call vf % set_real_vector(v)
 
     total = reduction(REDUCE_SUM)
@@ -203,7 +225,7 @@ contains
     class(graph_functional), allocatable :: answer
     real(dp), allocatable :: got(:)
 
-    uf = field('u', this % cells)
+    uf = field('u', this % numbers)
     call uf % set_real_vector(u)
 
     measure_of = reduction(REDUCE_NORM)
@@ -243,6 +265,13 @@ contains
     integer , allocatable :: colours(:)
     real(dp), allocatable :: indicator(:), y(:)
     integer :: nv, col, v
+
+    if (this % ncomp > 1) then
+       ! The probe reads one answer per cell, and a wide entry has
+       ! several. A block probe is the honest generalization and no
+       ! citizen has asked for one yet.
+       error stop 'diagonal: the coloured probe answers one number per cell'
+    end if
 
     nv = size(this % affine)
     allocate(d(nv), indicator(nv))
@@ -320,7 +349,7 @@ contains
        call worker % solve(rhs, x, achieved)
     end if
 
-    out = field('solution', this % cells)
+    out = field('solution', this % cells, ncomp=this % ncomp)
     call out % set_real_vector(x)
 
     if (allocated(output)) deallocate(output)

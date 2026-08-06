@@ -63,17 +63,28 @@ contains
 
   !===================================================================!
   ! The assembly. The scales arrive per edge, already meaning
-  ! whatever the caller means by them; boundary_values holds the
-  ! known value at each headless edge's center (zero where none is
-  ! stated); the form says what the values are fitted over.
+  ! whatever the caller means by them; the form says what the values
+  ! are fitted over; and a headless edge's own point is stated as an
+  ! AFFINE RELATION to its tail,
+  !
+  !      point = (1 - weight)*tail + value
+  !
+  ! because one number cannot say everything a boundary says. A
+  ! weight of one is the pinned case - the point stands at the given
+  ! value, knowing nothing of its tail - and that is the default when
+  ! no weights arrive, so a caller with a value alone gets what it
+  ! always got. A weight of zero is the other end: the point follows
+  ! its tail, offset by the value.
   !===================================================================!
 
-  function fitted_balance_stencil(m, shape, scales, boundary_values) result(op)
+  function fitted_balance_stencil(m, shape, scales, boundary_values, &
+       & boundary_weights) result(op)
 
     type(mesh) , intent(in) :: m
     class(form), intent(in) :: shape
     real(dp)   , intent(in) :: scales(:)
     real(dp)   , intent(in), optional :: boundary_values(:)
+    real(dp)   , intent(in), optional :: boundary_weights(:)
 
     type(stencil_operator) :: op
 
@@ -85,7 +96,7 @@ contains
     real(dp), allocatable :: areas(:), normals(:), fcenters(:), centers(:)
     integer , allocatable :: rows(:), columns(:), hood(:)
     real(dp), allocatable :: weights(:), pts(:), w(:), constant(:)
-    real(dp) :: xf(3), vb
+    real(dp) :: xf(3), vb, wb
     integer :: nv, ne, e, t, h, j, npts
 
     nv = m % num_vertices()
@@ -150,9 +161,23 @@ contains
        end do
 
        if (h == 0) then
+
           vb = 0.0_dp
-          if (present(boundary_values)) vb = boundary_values(e)
+          wb = 1.0_dp
+          if (present(boundary_values))  vb = boundary_values(e)
+          if (present(boundary_weights)) wb = boundary_weights(e)
+
+          ! The stated part leaves through the constant; the part
+          ! that follows the tail stays in the matrix, on the tail's
+          ! own diagonal.
           constant(t) = constant(t) + w(npts) * vb
+
+          if (abs(1.0_dp - wb) > 0.0_dp) then
+             rows    = [rows   , t]
+             columns = [columns, t]
+             weights = [weights, w(npts) * (1.0_dp - wb)]
+          end if
+
        end if
 
        deallocate(pts)

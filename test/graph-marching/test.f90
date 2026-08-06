@@ -46,6 +46,7 @@ program test_graph_marching
   call check_euler_is_exact_about_itself(nfail)
   call check_the_map_is_the_march(nfail)
   call check_the_implicit_road(nfail)
+  call check_a_wide_entry_marches(nfail)
   call check_the_reverse_walk(nfail)
   call check_tangent_meets_adjoint(nfail)
 
@@ -250,6 +251,55 @@ contains
          & 'bdf2 quarters its error when the step halves: second order', nfail)
 
   end subroutine check_the_implicit_road
+
+  !===================================================================!
+  ! The same numbers, seated two ways. Two cells carrying one number
+  ! each and one cell carrying two are the same state written
+  ! differently, and a decoupled law must march them to the same
+  ! place. The implicit road is where this can go wrong quietly: a
+  ! solver that measures its residual by the first stripe alone
+  ! declares victory while the rest of the entry is still moving.
+  !===================================================================!
+
+  subroutine check_a_wide_entry_marches(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(marcher) :: clock
+    type(stored_graph) :: pair, lone
+    type(differential_operator) :: decay
+    real(dp) :: wide(2), tall(2), expected(2)
+
+    pair = stored_graph(2, tails=[integer ::], heads=[integer ::])
+    lone = stored_graph(1, tails=[integer ::], heads=[integer ::])
+    decay = vertex_differential_operator(order=0, coefficient=1.0_dp)
+
+    clock % rule = MARCH_BACKWARD
+    clock % step = 0.125_dp
+    allocate(clock % inner, source=newton())
+    select type (nw => clock % inner)
+    type is (newton)
+       allocate(nw % inner, source=gmres())
+       nw % inner % tolerance = 1.0d-14
+       nw % tolerance = 1.0d-12
+    end select
+
+    ! Two cells, one number each.
+    tall = [3.0_dp, 5.0_dp]
+    call clock % march(decay, pair, tall, 8)
+
+    ! One cell, two numbers.
+    wide = [3.0_dp, 5.0_dp]
+    call clock % march(decay, lone, wide, 8)
+
+    expected = [3.0_dp, 5.0_dp] / (1.0_dp + 0.125_dp)**8
+
+    call report(maxval(abs(tall - expected)) < 1.0d-9, &
+         & 'two cells, one number each, land on their discrete truth', nfail)
+    call report(maxval(abs(wide - expected)) < 1.0d-9, &
+         & 'and one cell two numbers wide lands on the very same place', nfail)
+
+  end subroutine check_a_wide_entry_marches
 
   !===================================================================!
   ! VERDICT FIVE. The reverse walk is the adjoint: march q forward

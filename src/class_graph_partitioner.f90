@@ -478,6 +478,8 @@ contains
           call carry_edge_field(global_data, part_graph, part_data)
        end if
 
+    class default
+       error stop 'partition: this data does not ride on this transform'
     end select
 
   end subroutine partition_data

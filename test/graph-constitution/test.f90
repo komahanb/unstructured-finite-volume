@@ -52,6 +52,7 @@ program test_graph_constitution
   call check_conduction_law(nfail)
   call check_advection_law(nfail)
   call check_the_statement_speaks(nfail)
+  call check_the_wall_keeps_both_numbers(nfail)
 
   write(*, '(a)') ' ============================================='
   if (nfail == 0) then
@@ -408,5 +409,88 @@ contains
          & 'and the answer sits monotone between the held walls', nfail)
 
   end subroutine check_the_statement_speaks
+
+  !===================================================================!
+  ! A wall holding a value and a wall holding a gradient are not the
+  ! same wall. Eliminating the face gives an affine relation,
+  !
+  !      phi_b = (1 - w)*phi_p + v
+  !
+  ! and a statement that carries only v can say dirichlet and nothing
+  ! else - it compiles an insulated wall as a wall pinned at zero,
+  ! and a mixed wall as the pinned wall c/a. Two exact answers tell
+  ! the difference.
+  !===================================================================!
+
+  subroutine check_the_wall_keeps_both_numbers(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(mesh) :: m
+    type(stencil_operator) :: op
+    type(gmres) :: gm
+    real(dp), allocatable :: g(:), rhs(:), x(:), mixed(:), pinned(:)
+    real(dp) :: achieved
+
+    m = hand_mesh()
+
+    ! Held at five on one side, insulated on the other: nothing
+    ! enters and nothing leaves, so five fills the domain exactly.
+    op = diffusion_statement(m, conduction(1.7_dp), &
+         & [dirichlet('in', 5.0_dp), neumann('out', 0.0_dp)])
+
+    call solve_statement(op, m, x, achieved)
+
+    call report(achieved < 1.0d-10, &
+         & 'the insulated statement closes', nfail)
+    call report(all(abs(x - 5.0_dp) < 1.0d-9), &
+         & 'an insulated wall lets the held value fill the domain', nfail)
+
+    ! And a mixed wall is its own wall: robin(2, 3, 5) shares c/a
+    ! with dirichlet(2.5) and must not compile to the same operator.
+    op = diffusion_statement(m, conduction(1.7_dp), &
+         & [dirichlet('in', 0.0_dp), robin('out', 2.0_dp, 3.0_dp, 5.0_dp)])
+    call solve_statement(op, m, mixed, achieved)
+
+    op = diffusion_statement(m, conduction(1.7_dp), &
+         & [dirichlet('in', 0.0_dp), dirichlet('out', 2.5_dp)])
+    call solve_statement(op, m, pinned, achieved)
+
+    call report(maxval(abs(mixed - pinned)) > 1.0d-6, &
+         & 'a mixed wall does not collapse to the pinned wall c/a', nfail)
+
+    ! The mixed wall sits between: it lets less through than a wall
+    ! pinned at the same value, so its cell stands lower.
+    call report(mixed(2) < pinned(2) .and. mixed(2) > 0.0_dp, &
+         & 'and it stands between the held value and the far wall', nfail)
+
+  end subroutine check_the_wall_keeps_both_numbers
+
+  !===================================================================!
+  ! One statement, driven to its own zero by the house solver.
+  !===================================================================!
+
+  subroutine solve_statement(op, m, x, achieved)
+
+    type(stencil_operator), intent(in) :: op
+    type(mesh), intent(in)             :: m
+    real(dp), allocatable, intent(out) :: x(:)
+    real(dp), intent(out)              :: achieved
+
+    type(gmres) :: gm
+    real(dp), allocatable :: g(:), rhs(:)
+
+    call gm % attach(op, m)
+    gm % tolerance      = 1.0d-12
+    gm % max_iterations = 200
+
+    call gm % constant(g)
+    rhs = -g
+
+    allocate(x(m % num_vertices()))
+    x = 0.0_dp
+    call gm % solve(rhs, x, achieved)
+
+  end subroutine solve_statement
 
 end program test_graph_constitution

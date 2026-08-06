@@ -97,7 +97,7 @@ contains
        ! minimizer.
        call jacobian % freeze(x, base=y + g)
 
-       call this % inner % attach(jacobian, this % on)
+       call this % inner % attach(jacobian, this % on, ncomp = this % ncomp)
        dq = 0.0_dp
        call this % inner % solve(-residual, dq, linear_achieved)
 

@@ -12,8 +12,10 @@
 !
 !      scales ·········· keff * area, the conductivity's answer
 !                        through every face
-!      wall values ····· c / a, each condition's eliminated value
-!                        on its own tagged faces
+!      wall relation ··· two numbers per tagged face, the eliminated
+!                        face value as an affine function of its
+!                        cell: a held value, a held gradient, or
+!                        anything between
 !      the form ········ the caller's choice of shape; polynomials
 !                        unless said otherwise
 !
@@ -52,7 +54,8 @@ contains
     class(form), allocatable :: chosen
     class(graph), allocatable :: members
     type(field) :: fa
-    real(dp), allocatable :: keff(:), areas(:), scales(:), vb(:), bw(:)
+    real(dp), allocatable :: keff(:), areas(:), scales(:)
+    real(dp), allocatable :: vb(:), wb(:), values(:), weights(:)
     integer :: k, f, e, ne
 
     ne = m % num_edges()
@@ -63,15 +66,20 @@ contains
     call fa % get_real_vector(areas)
     scales = keff * areas
 
-    ! The walls, each condition on its own tagged faces.
-    allocate(vb(ne))
+    ! The walls, each condition on its own tagged faces. Both
+    ! numbers of the wall relation travel: a wall that holds a value
+    ! and a wall that holds a gradient are not the same wall, and
+    ! one number cannot tell them apart.
+    allocate(vb(ne), wb(ne))
     vb = 0.0_dp
+    wb = 1.0_dp
     do k = 1, size(conditions)
        call conditions(k) % faces(m, members)
-       call conditions(k) % boundary_values(m, bw)
+       call conditions(k) % wall_relation(m, weights, values)
        do f = 1, members % num_vertices()
           e = members % global_vertex_index(f)
-          vb(e) = bw(f)
+          wb(e) = weights(f)
+          vb(e) = values(f)
        end do
     end do
 
@@ -82,7 +90,8 @@ contains
        allocate(chosen, source=polynomial_form())
     end if
 
-    op = fitted_balance_stencil(m, chosen, scales, boundary_values=vb)
+    op = fitted_balance_stencil(m, chosen, scales, &
+         & boundary_values=vb, boundary_weights=wb)
 
   end function diffusion_statement
 

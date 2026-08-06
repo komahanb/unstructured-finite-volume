@@ -110,6 +110,8 @@ contains
     class(balance), intent(in)    :: this
     character(len=:), allocatable :: name
 
+    associate (u1 => this); end associate
+
     name = 'balance'
 
   end function balance_name
@@ -124,6 +126,8 @@ contains
     class(balance), intent(in)             :: this
     class(graph)  , intent(in)             :: input_graph
     class(graph), allocatable, intent(out) :: domain
+
+    associate (u1 => this); end associate
 
     call input_graph % all_vertices(domain)
 

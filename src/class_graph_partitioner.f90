@@ -467,6 +467,8 @@ contains
     class(graph)      , intent(in)               :: part_graph
     class(graph_field) , allocatable, intent(out) :: part_data
 
+    associate (u1 => this, u2 => global_graph); end associate
+
     select type (global_data)
 
     class is (field)

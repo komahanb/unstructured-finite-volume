@@ -902,8 +902,7 @@ contains
          & )
     this % vertex_cell_weights = 0
 
-    do concurrent (ivertex = 1 : this % num_points)
-
+    do ivertex = 1, this % num_points
        ! Gather the actual cell numbers.
        cells(1:this % num_vertex_cells(ivertex)) = &
             & this % vertex_cells(1:this % num_vertex_cells(ivertex), &
@@ -958,8 +957,7 @@ contains
 
     if (verbosity .ge. 1) write(*, *) 'Evaluating face weights for interpolation from cells to face'
     allocate(this % face_cell_weights(2, this % num_faces))
-    do concurrent (iface = 1 : this % num_faces)
-
+    do iface = 1, this % num_faces
        ! The first cell is found for all faces.
        cellindex1   = this % face_cells(1, iface)
        xcellcenter1 = this % cell_centers(:, cellindex1)
@@ -1010,8 +1008,7 @@ contains
     allocate(this % lvec(3,this % num_faces))
     this % lvec = real(0,dp)
 
-    do concurrent (iface = 1 : this % num_faces)
-
+    do iface = 1, this % num_faces
        associate(face_cells => this % face_cells(1:this % num_face_cells(iface),iface))
 
          ! The centroidal vector joins the centroids of the two cells.
@@ -1054,7 +1051,7 @@ contains
     ! (volume).
     !-----------------------------------------------------------------!
 
-    do concurrent (lcell = 1 : this % num_cells)
+    do lcell = 1, this % num_cells
        do lface = 1, this % num_cell_faces(lcell)
           ! Fetch the global face index.
           gface = this % cell_faces(lface, lcell)
@@ -1098,8 +1095,7 @@ contains
     allocate(this % face_deltas (this % num_faces))
     this % face_deltas = real(0,dp)
 
-    do concurrent (lcell = 1 : this % num_cells)
-
+    do lcell = 1, this % num_cells
        do lface = 1, this % num_cell_faces(lcell)
 
           gface = this % cell_faces(lface, lcell)
@@ -1136,8 +1132,7 @@ contains
     allocate(this % face_centers(3,this % num_faces))
     this % face_centers = real(0,dp)
 
-    face_loop: do concurrent(iface = 1 : this % num_faces)
-
+    face_loop: do iface = 1, this % num_faces
        associate(facenodes => this % face_vertices(1:this % num_face_vertices(iface),iface))
 
          ! Compute the coordinates of the face centers.
@@ -1203,8 +1198,7 @@ contains
     allocate(this % face_areas(this % num_faces))
     allocate(this % face_centers(3,this % num_faces))
 
-    do concurrent(iface = 1 : this % num_faces)
-
+    do iface = 1, this % num_faces
        !--------------------------------------------------------------!
        ! A 2d face is a line: use only its two vertices, not the zero
        ! padding of the (4,nfaces) face_vertices array.
@@ -1251,7 +1245,7 @@ contains
 
     allocate(this % cell_centers(3, this % num_cells))
 
-    do concurrent(icell=1:this % num_cells)
+    do icell = 1, this % num_cells
        associate(&
             & num_vertices => real(this % num_cell_vertices(icell), kind=dp), &
             & vids => this % cell_vertices(1:this % num_cell_vertices(icell), icell) &
@@ -1287,8 +1281,7 @@ contains
     this % cell_face_tangents = real(0,dp)
 
     ! Loop over the cells.
-    cell_loop: do concurrent (icell = 1 : this % num_cells)
-
+    cell_loop: do icell = 1, this % num_cells
        ! Loop over the faces of each cell.
        face_loop: do iface = 1, this % num_cell_faces(icell)
 
@@ -1376,8 +1369,7 @@ contains
     this % cell_face_tangents = 0.0d0
 
     ! Loop over the cells.
-    loop_cells: do concurrent (icell = 1 : this % num_cells)
-
+    loop_cells: do icell = 1, this % num_cells
        ! Loop over the faces of each cell.
        loop_faces: do iface = 1, this % num_cell_faces(icell)
 

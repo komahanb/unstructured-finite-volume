@@ -101,6 +101,10 @@ contains
 
   pure type(assembler) function create() result(this)
 
+    type(assembler) :: blank
+
+    this = blank
+
   end function create
 
   !===================================================================!
@@ -114,6 +118,8 @@ contains
 
     class(assembler), intent(in) :: this
     class(graph)    , intent(in) :: input_graph
+
+    associate (u1 => this); end associate
 
     defined_on_graph = input_graph % has_part_relation() .or. &
          &               input_graph % num_parts() == 1
@@ -160,6 +166,8 @@ contains
     integer, allocatable :: tails(:), heads(:)
     integer :: ne, e, nv_global, l, biggest
 
+    associate (u1 => this); end associate
+
     ne = part_graph % num_edges()
 
     ! The whole graph is at least as big as the largest whole-graph
@@ -200,6 +208,8 @@ contains
     class(graph_field), intent(in)               :: part_data
     class(graph)     , intent(in)               :: global_graph
     class(graph_field), allocatable, intent(out) :: global_data
+
+    associate (u1 => this); end associate
 
     select type (part_data)
 

@@ -626,8 +626,7 @@ contains
     idx_end_entities   = 0
 
     num_lines = size(lines)
-    do concurrent(iline = 1:num_lines)
-
+    do iline = 1, num_lines
        ! Find the mesh start and end.
        if (index(lines(iline) % str, BEGIN_MESH) .eq. 1) then
           idx_start_mesh = iline

@@ -102,9 +102,12 @@ module class_graph
      ! partitioner fills these in.
      !----------------------------------------------------------------!
 
+     ! Which part this one is has a name already - the graph's own
+     ! number, which the partitioner stamps as it cuts. A second
+     ! component saying the same thing is a second thing to keep
+     ! true.
      logical :: cut    = .false.
      integer :: nparts = 1
-     integer :: me     = 1
 
      integer, allocatable :: vowner(:), eowner(:)
      integer, allocatable :: vglobal(:) , eglobal(:)
@@ -201,7 +204,8 @@ contains
   !===================================================================!
 
   type(stored_graph) function create(nv, tails, heads, vtags, etags, &
-       &                             number) result(this)
+       &                             number, vglobal, vowner, eglobal, &
+       &                             eowner, nparts) result(this)
 
     integer           , intent(in)           :: nv
     integer           , intent(in)           :: tails(:)
@@ -210,12 +214,37 @@ contains
     character(len=*)  , intent(in), optional :: etags(:)
     integer           , intent(in), optional :: number
 
+    !----------------------------------------------------------------!
+    ! The frame, for a graph that is a piece of a larger one: what
+    ! each of its own numbers was called in the whole, and which part
+    ! owns it. These arrive HERE or not at all - a graph that could
+    ! be told its frame afterwards would answer the same question two
+    ! ways in one lifetime, which is the one thing the grammar says a
+    ! graph may never do. Present vglobal is what makes a graph a
+    ! piece; absent, it is a whole.
+    !----------------------------------------------------------------!
+
+    integer           , intent(in), optional :: vglobal(:)
+    integer           , intent(in), optional :: vowner(:)
+    integer           , intent(in), optional :: eglobal(:)
+    integer           , intent(in), optional :: eowner(:)
+    integer           , intent(in), optional :: nparts
+
     integer :: e
 
     this % nv = nv
     this % ne = size(tails)
 
     if (present(number)) this % number = number
+
+    if (present(vglobal)) then
+       this % cut = .true.
+       allocate(this % vglobal, source=vglobal)
+    end if
+    if (present(vowner))  allocate(this % vowner , source=vowner)
+    if (present(eglobal)) allocate(this % eglobal, source=eglobal)
+    if (present(eowner))  allocate(this % eowner , source=eowner)
+    if (present(nparts))  this % nparts = nparts
 
     allocate(this % tail, source=tails)
     allocate(this % head(this % ne))
@@ -1028,7 +1057,7 @@ contains
     integer            , intent(in) :: global_index
     integer            , intent(in) :: part_id
 
-    if (this % cut .and. part_id /= this % me) then
+    if (this % cut .and. part_id /= this % number) then
        part_vertex_index = 0
     else
        part_vertex_index = reverse_lookup(this % vglobal, global_index, this % cut)
@@ -1047,7 +1076,7 @@ contains
     integer            , intent(in) :: global_index
     integer            , intent(in) :: part_id
 
-    if (this % cut .and. part_id /= this % me) then
+    if (this % cut .and. part_id /= this % number) then
        part_edge_index = 0
     else
        part_edge_index = reverse_lookup(this % eglobal, global_index, this % cut)

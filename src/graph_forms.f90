@@ -23,6 +23,13 @@
 !                               reckoned about the point `at`
 !      slopes(x, at, n)         each entry's derivative along n
 !
+! and one act of its own: restrict, which sets that membership. It
+! is here rather than at the caller because a citizen's structure is
+! its own business - whoever decides a member should go says so, and
+! the form does it. When the form sector becomes a transform the
+! restriction will hand back a NEW form and this verb becomes the
+! constructor it calls.
+!
 ! Evaluating a form at a point is calculus; choosing its
 ! coefficients is minimization and lives one level up. Polynomials
 ! are one concretion, waves another; a fit holds a form the way an
@@ -34,6 +41,7 @@
 module graph_forms
 
   use iso_fortran_env    , only : dp => REAL64
+  use graph_calculus     , only : GRAPH_SIDE_VERTEX
   use class_graph_support, only : support
 
   implicit none
@@ -48,6 +56,8 @@ module graph_forms
      procedure(form_size_interface)  , deferred :: size_of
      procedure(form_values_interface), deferred :: values
      procedure(form_slopes_interface), deferred :: slopes
+
+     procedure :: restrict
 
   end type form
 
@@ -73,5 +83,22 @@ module graph_forms
      end subroutine form_slopes_interface
 
   end interface
+
+contains
+
+  !===================================================================!
+  ! Stand only these table entries. The kept indices name members of
+  ! the concretion's own table, and membership is the whole roster -
+  ! a set says who belongs by holding them.
+  !===================================================================!
+
+  pure subroutine restrict(this, kept)
+
+    class(form), intent(inout) :: this
+    integer    , intent(in)    :: kept(:)
+
+    this % support = support(GRAPH_SIDE_VERTEX, kept)
+
+  end subroutine restrict
 
 end module graph_forms

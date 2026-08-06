@@ -252,23 +252,20 @@ contains
        vowner(k) = owner(mine(k))
     end do
 
+    ! The piece is born knowing how it relates to the whole. Without
+    ! that record the assembler cannot restore whole-graph order and
+    ! defined_on_graph answers .false. rather than assuming a map -
+    ! and the record goes in through the door, because a graph told
+    ! its frame after birth would answer one question two ways in
+    ! one lifetime.
     allocate(part_graph, source = &
          & stored_graph(size(mine), tails=ltail(1:nkeep), heads=lhead(1:nkeep), &
-         &              number=this % part))
-
-    ! Record on the piece how it relates to the whole. Without this
-    ! record the assembler cannot restore whole-graph order, and
-    ! defined_on_graph returns .false. rather than assuming a map.
-    select type (part_graph)
-    type is (stored_graph)
-       part_graph % cut    = .true.
-       part_graph % nparts = this % nparts
-       part_graph % me     = this % part
-       allocate(part_graph % vglobal , source=mine)
-       allocate(part_graph % vowner, source=vowner)
-       allocate(part_graph % eglobal , source=eglobal(1:nkeep))
-       allocate(part_graph % eowner, source=eowner(1:nkeep))
-    end select
+         &              number  = this % part,   &
+         &              nparts  = this % nparts, &
+         &              vglobal = mine,          &
+         &              vowner  = vowner,        &
+         &              eglobal = eglobal(1:nkeep), &
+         &              eowner  = eowner(1:nkeep)))
 
   end subroutine partition_graph
 

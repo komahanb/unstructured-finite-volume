@@ -13,11 +13,9 @@
 
 module class_form_pruner
 
-  use iso_fortran_env    , only : dp => REAL64
-  use graph_calculus     , only : GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
-  use graph_forms        , only : form
-  use graph_fitting      , only : form_optimizer
+  use iso_fortran_env, only : dp => REAL64
+  use graph_forms    , only : form
+  use graph_fitting  , only : form_optimizer
 
   implicit none
 
@@ -72,11 +70,10 @@ contains
        end do
     end do
 
-    ! Membership is the roster: the pruned form's member set is the
-    ! kept table entries. A set needs no second list to say who
-    ! belongs.
-    shape % support = support(GRAPH_SIDE_VERTEX, &
-         & pack([(m, m = 1, nc)], seen > this % threshold))
+    ! Membership is the roster: the pruned form stands on the kept
+    ! table entries. A set needs no second list to say who belongs,
+    ! and the form sets its own - this decides, it does not reach.
+    call shape % restrict(pack([(m, m = 1, nc)], seen > this % threshold))
 
   end subroutine adapt
 

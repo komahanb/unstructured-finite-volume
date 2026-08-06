@@ -2,37 +2,46 @@
 ! LEVEL 1 . THE FORMS
 !
 ! A form is a family of functions of position - a basis shape - and
-! nothing more: no goal, no fitting, no solve. Evaluating a form at
-! a point is calculus; choosing its coefficients is minimization and
-! lives one level up; adapting which members stand active is the
-! form sector's governance, above that. This module holds only the
-! first: what the functions ARE.
+! the tower now says what that IS: a support whose members are basis
+! functions. Concretion continued in the graph direction, abstraction
+! reopened in the evaluation direction - the zoom, done deliberately:
 !
-!      values(x, at)            each member, evaluated at x,
+!      graph -> graph_support -> support -> form -> polynomial | wave
+!
+! Everything a roster once did, membership does: the standing basis
+! members ARE the support's members, indices into the concretion's
+! own table of functions. Pruning a form is building a smaller
+! member set - a graph act, owned by the form sector one level up.
+! No active(:) array survives; a set does not need a second list to
+! say who belongs to it.
+!
+! What the form adds beyond membership is only its evaluation
+! symbols, read over the FULL table, membership saying who stands:
+!
+!      size_of                  the table's width
+!      values(x, at)            each table entry, evaluated at x,
 !                               reckoned about the point `at`
-!      slopes(x, at, n)         each member's derivative along n
-!      active                   the roster the form sector writes
-!                               and every fit honours
+!      slopes(x, at, n)         each entry's derivative along n
 !
-! Polynomials are one concretion, waves another; a fit holds a form
-! the way an operator holds coefficients - as data about shape,
-! owned one level below the act that uses it.
+! Evaluating a form at a point is calculus; choosing its
+! coefficients is minimization and lives one level up. Polynomials
+! are one concretion, waves another; a fit holds a form the way an
+! operator holds coefficients - as data about shape.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module graph_forms
 
-  use iso_fortran_env, only : dp => REAL64
+  use iso_fortran_env    , only : dp => REAL64
+  use class_graph_support, only : support
 
   implicit none
 
   private
   public :: form
 
-  type, abstract :: form
-
-     logical, allocatable :: active(:)
+  type, abstract, extends(support) :: form
 
    contains
 

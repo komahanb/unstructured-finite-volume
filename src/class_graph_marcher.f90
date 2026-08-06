@@ -21,11 +21,12 @@
 !                                                       backward step
 !
 ! The implicit rules GOVERN: the marcher holds a minimizer and hands
-! it one step statement per edge - the same family discipline as
-! newton over its linear question. The statement returns MINUS the
-! velocity, matching the house convention that a balance measures
-! what a cell has left over; z -> z^2 + c at h = 1 is the forward
-! walk on S = z - z^2 - c, an identity.
+! it one step operator per edge - the level-1 citizen from the time
+! shelf, time's own discretization stencil - the same family
+! discipline as newton over its linear question. The statement
+! returns MINUS the velocity, matching the house convention that a
+! balance measures what a cell has left over; z -> z^2 + c at h = 1
+! is the forward walk on S = z - z^2 - c, an identity.
 !
 ! THE REVERSE WALK IS THE ADJOINT. The same chain traversed head to
 ! tail carries sensitivities backward: handed the TRANSPOSED
@@ -46,6 +47,7 @@ module class_graph_marcher
   use class_graph_support, only : support
   use class_graph_field  , only : field
   use class_graph        , only : stored_graph
+  use class_graph_step   , only : step_operator, bdf
   use graph_minimization , only : minimizer
 
   implicit none
@@ -57,32 +59,6 @@ module class_graph_marcher
   integer, parameter :: MARCH_FORWARD  = 1
   integer, parameter :: MARCH_BACKWARD = 2
   integer, parameter :: MARCH_BDF2     = 3
-
-  !===================================================================!
-  ! One step's statement, as an operation: the time terms plus the
-  ! scaled velocity. Private machinery the implicit rules build,
-  ! one per edge, for the governed minimizer to answer.
-  !===================================================================!
-
-  type, extends(graph_operation) :: step_statement
-
-     class(graph_operation), allocatable :: action
-
-     real(dp), allocatable :: qold(:)
-     real(dp), allocatable :: qolder(:)
-
-     real(dp) :: a0 = 1.0_dp
-     real(dp) :: a1 = -1.0_dp
-     real(dp) :: a2 = 0.0_dp
-     real(dp) :: hs = 0.0_dp
-
-   contains
-
-     procedure :: name   => step_name
-     procedure :: domain => step_domain
-     procedure :: apply  => step_apply
-
-  end type step_statement
 
   type :: marcher
 
@@ -134,7 +110,7 @@ contains
     integer, intent(in)                :: nsteps
 
     type(stored_graph) :: chain
-    type(step_statement) :: statement
+    type(step_operator) :: statement
     real(dp), allocatable :: s(:), qold(:), qolder(:), zeros(:)
     real(dp) :: answered
     integer :: e
@@ -152,8 +128,10 @@ contains
     end if
 
     ! The implicit rules: one governed solve per edge; bdf2 starts
-    ! with a single backward step, as it must.
-    allocate(statement % action, source=action)
+    ! with a single backward step, as it must. The step comes off
+    ! the time shelf; the per-edge state and the bdf2 start are
+    ! written onto it as the walk proceeds.
+    statement = bdf(1, action, this % step)
     allocate(zeros(size(q)))
     zeros = 0.0_dp
 
@@ -165,11 +143,13 @@ contains
           statement % a0 = 1.5_dp
           statement % a1 = -2.0_dp
           statement % a2 = 0.5_dp
+          statement % reach = 2
           statement % qolder = qolder
        else
           statement % a0 = 1.0_dp
           statement % a1 = -1.0_dp
           statement % a2 = 0.0_dp
+          statement % reach = 1
        end if
 
        statement % hs   = this % step
@@ -239,74 +219,5 @@ contains
     call answer % get_real_vector(s)
 
   end subroutine read_statement
-
-  !===================================================================!
-  ! The step statement's three answers.
-  !===================================================================!
-
-  pure function step_name(this) result(name)
-
-    class(step_statement), intent(in) :: this
-    character(len=:), allocatable :: name
-
-    associate (u1 => this); end associate
-
-    name = 'step statement'
-
-  end function step_name
-
-  subroutine step_domain(this, input_graph, domain)
-
-    class(step_statement), intent(in)      :: this
-    class(graph), intent(in)               :: input_graph
-    class(graph), allocatable, intent(out) :: domain
-
-    associate (u1 => this); end associate
-
-    call input_graph % all_vertices(domain)
-
-  end subroutine step_domain
-
-  subroutine step_apply(this, input_graph, input_data, output)
-
-    class(step_statement), intent(in)              :: this
-    class(graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
-
-    type(support) :: cells
-    type(field)   :: out
-    class(graph_field), allocatable :: velocity
-    real(dp), allocatable :: q(:), s(:), y(:)
-    integer :: nv, ncomp, v
-
-    nv = input_graph % num_vertices()
-
-    if (present(input_data)) then
-
-       call input_data(1) % get_real_vector(q)
-
-       call this % action % apply(input_graph, input_data, velocity)
-       call velocity % get_real_vector(s)
-
-       y = this % a0 * q + this % a1 * this % qold + this % hs * s
-       if (allocated(this % qolder) .and. abs(this % a2) > 0.0_dp) then
-          y = y + this % a2 * this % qolder
-       end if
-
-    else
-       allocate(y(nv))
-       y = 0.0_dp
-    end if
-
-    ncomp = size(y) / max(nv, 1)
-    cells = support(GRAPH_SIDE_VERTEX, [(v, v = 1, nv)])
-    out = field('step residual', cells, ncomp=ncomp)
-    call out % set_real_vector(y)
-
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=out)
-
-  end subroutine step_apply
 
 end module class_graph_marcher

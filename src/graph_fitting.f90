@@ -52,8 +52,9 @@ module graph_fitting
 
   !===================================================================!
   ! The fit: one concrete. The target rides as components, the shape
-  ! is HELD - a level-1 form whose roster the form sector writes and
-  ! this fit honours.
+  ! is HELD - a level-1 form whose membership the form sector writes
+  ! and this fit honours: the form IS a support, and its members say
+  ! which table entries stand.
   !===================================================================!
 
   type, extends(graph_operation) :: fit
@@ -156,7 +157,8 @@ contains
     type(conjugate_gradient) :: solver
     real(dp), allocatable :: positions(:), w(:), b(:,:), bw(:,:)
     real(dp), allocatable :: g(:,:), r(:), lam(:), entries(:), price(:)
-    integer , allocatable :: rows(:), columns(:)
+    integer , allocatable :: rows(:), columns(:), standing(:)
+    logical , allocatable :: stands(:)
     real(dp) :: achieved, d2, nearest
     integer :: npts, nc, i, j, v
 
@@ -192,27 +194,31 @@ contains
             & this % direction, r)
        r = this % scale * r
 
-       ! The roster: an inactive member carries no condition and no
-       ! demand.
-       if (allocated(this % shape % active)) then
-          do i = 1, nc
-             if (.not. this % shape % active(i)) then
-                b(i, :) = 0.0_dp
-                r(i)    = 0.0_dp
-             end if
-          end do
-       end if
+       ! Membership is the roster: a table entry outside the form's
+       ! member set carries no condition and no demand.
+       call this % shape % member_indices(standing)
+       allocate(stands(nc))
+       stands = .false.
+       do i = 1, size(standing)
+          if (standing(i) >= 1 .and. standing(i) <= nc) then
+             stands(standing(i)) = .true.
+          end if
+       end do
+       do i = 1, nc
+          if (.not. stands(i)) then
+             b(i, :) = 0.0_dp
+             r(i)    = 0.0_dp
+          end if
+       end do
 
        allocate(bw(nc, npts))
        do j = 1, npts
           bw(:, j) = b(:, j) * price(j)
        end do
        g = matmul(bw, transpose(b))
-       if (allocated(this % shape % active)) then
-          do i = 1, nc
-             if (.not. this % shape % active(i)) g(i, i) = 1.0_dp
-          end do
-       end if
+       do i = 1, nc
+          if (.not. stands(i)) g(i, i) = 1.0_dp
+       end do
 
        allocate(rows(nc * nc), columns(nc * nc), entries(nc * nc))
        do i = 1, nc

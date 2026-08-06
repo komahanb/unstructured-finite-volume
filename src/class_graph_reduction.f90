@@ -77,11 +77,14 @@
 module class_graph_reduction
 
   use iso_fortran_env       , only : dp => REAL64
-  use graph_grammar         , only : graph_field
+  use graph_grammar         , only : graph, graph_field
   use graph_grammar         , only : GRAPH_FIELD_REAL, GRAPH_FIELD_COMPLEX
   use graph_grammar         , only : GRAPH_FIELD_LOGICAL
   use graph_calculus        , only : graph_reduction, graph_broadcast
   use graph_calculus        , only : graph_functional
+  use graph_calculus        , only : GRAPH_SIDE_VERTEX
+  use class_graph_support   , only : support
+  use class_graph_field     , only : plain_field => field
   use class_graph_functional, only : scalar_result => functional
 
   implicit none
@@ -131,6 +134,15 @@ module class_graph_reduction
 
      procedure :: reduce
 
+     !----------------------------------------------------------------!
+     ! The operation face: the field reduced over its own domain,
+     ! the measure riding as the second input field.
+     !----------------------------------------------------------------!
+
+     procedure :: name   => reduction_name
+     procedure :: domain => reduction_domain
+     procedure :: apply  => reduction_apply
+
   end type reduction
 
   !===================================================================!
@@ -156,6 +168,15 @@ module class_graph_reduction
    contains
 
      procedure :: broadcast => broadcast_functional
+
+     !----------------------------------------------------------------!
+     ! The operation face: the functional arrives as the one input
+     ! field, and the fill leaves on the graph's own vertices.
+     !----------------------------------------------------------------!
+
+     procedure :: name   => broadcast_name
+     procedure :: domain => broadcast_domain
+     procedure :: apply  => broadcast_apply
 
   end type broadcast
 
@@ -505,6 +526,135 @@ contains
     call this % finalize(state, functional)
 
   end subroutine reduce
+
+  !===================================================================!
+  ! The reduction's operation face. The field is reduced over its
+  ! own domain; a second input field is the measure; the functional
+  ! leaves as the output, for a functional IS a field.
+  !===================================================================!
+
+  pure function reduction_name(this) result(name)
+
+    class(reduction), intent(in) :: this
+    character(len=:), allocatable :: name
+
+    associate (u1 => this); end associate
+
+    name = 'reduction'
+
+  end function reduction_name
+
+  subroutine reduction_domain(this, input_graph, domain)
+
+    class(reduction), intent(in)           :: this
+    class(graph), intent(in)               :: input_graph
+    class(graph), allocatable, intent(out) :: domain
+
+    associate (u1 => this, u2 => input_graph); end associate
+
+    ! The answer's home is the one-entry domain.
+    allocate(domain, source=support(GRAPH_SIDE_VERTEX, [1]))
+
+  end subroutine reduction_domain
+
+  subroutine reduction_apply(this, input_graph, input_data, output)
+
+    class(reduction), intent(in)                   :: this
+    class(graph), intent(in)                       :: input_graph
+    class(graph_field), intent(in), optional       :: input_data(:)
+    class(graph_field), allocatable, intent(inout) :: output
+
+    class(graph_functional), allocatable :: answer
+
+    associate (u1 => input_graph); end associate
+
+    if (present(input_data)) then
+       if (size(input_data) >= 2) then
+          call reduce_measured(this, input_data(1), input_data(2), answer)
+       else
+          call this % reduce(input_data(1), answer)
+       end if
+    else
+       call this % initialize(answer)
+    end if
+
+    if (allocated(output)) deallocate(output)
+    allocate(output, source=answer)
+
+  end subroutine reduction_apply
+
+  ! A separate frame so the measure lands on a required dummy:
+  ! gfortran crashes (gfc_get_descriptor_field; verified on 11.4,
+  ! 13.4, 15.2, and 16.0 trunk) when an optional class dummy is fed
+  ! from a polymorphic array element. Delete when the compiler stops
+  ! crashing on the direct call.
+  subroutine reduce_measured(this, u, v, answer)
+
+    class(reduction), intent(in)   :: this
+    class(graph_field), intent(in) :: u
+    class(graph_field), intent(in) :: v
+    class(graph_functional), allocatable, intent(inout) :: answer
+
+    call this % reduce(u, answer, measure=v)
+
+  end subroutine reduce_measured
+
+  !===================================================================!
+  ! The broadcast's operation face: the mirror. The one input field
+  ! must be a functional; the fill leaves on the graph's vertices.
+  !===================================================================!
+
+  pure function broadcast_name(this) result(name)
+
+    class(broadcast), intent(in) :: this
+    character(len=:), allocatable :: name
+
+    associate (u1 => this); end associate
+
+    name = 'broadcast'
+
+  end function broadcast_name
+
+  subroutine broadcast_domain(this, input_graph, domain)
+
+    class(broadcast), intent(in)           :: this
+    class(graph), intent(in)               :: input_graph
+    class(graph), allocatable, intent(out) :: domain
+
+    associate (u1 => this); end associate
+
+    call input_graph % all_vertices(domain)
+
+  end subroutine broadcast_domain
+
+  subroutine broadcast_apply(this, input_graph, input_data, output)
+
+    class(broadcast), intent(in)                   :: this
+    class(graph), intent(in)                       :: input_graph
+    class(graph_field), intent(in), optional       :: input_data(:)
+    class(graph_field), allocatable, intent(inout) :: output
+
+    type(support) :: cells
+    type(plain_field) :: out
+    integer :: nv, v
+
+    nv = input_graph % num_vertices()
+    cells = support(GRAPH_SIDE_VERTEX, [(v, v = 1, nv)])
+    out = plain_field('broadcast', cells)
+
+    if (present(input_data)) then
+       select type (f => input_data(1))
+       class is (graph_functional)
+          call this % broadcast(f, out)
+       class default
+          error stop 'broadcast: the operation face wants a functional'
+       end select
+    end if
+
+    if (allocated(output)) deallocate(output)
+    allocate(output, source=out)
+
+  end subroutine broadcast_apply
 
   !===================================================================!
   ! Fill every stored value of the field from the functional's one.

@@ -10,32 +10,46 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 !
-!                      THE EIGHT CONCRETIONS
+!                      THE TEN CONCRETIONS
 !
 !    graph -----[edge count = 0]----------> graph_support
 !    field -----[domain size = 1]---------> graph_functional
+!    operation -[answer domain = 1]-------> graph_reduction
+!    operation -[source domain = 1]-------> graph_broadcast
+!    operation -[built from an operation
+!                by binding a graph]------> discretization_operator
+!    operation -[built from an operation
+!                by freezing a state]-----> linearization_operator
 !    transform -[verb = partition]--------> graph_partitioner
 !    transform -[verb = assemble]---------> graph_assembler
 !    transform -[verb = coarsen]----------> graph_coarsener
 !    transform -[verb = refine]-----------> graph_refiner
 !
-! and, standing BESIDE the operation role rather than under it:
+! THE FOLD OF THE DUAL PAIR. The reduction and the broadcast once
+! stood beside the operation role, for fear that the measure
+! argument and the staged parallel combine would not survive the
+! apply signature. They survive untouched: a reduction is an
+! operation whose ANSWER lives on the one-entry domain - and a
+! functional IS a field, so apply carries it; the measure rides as
+! the second input field; the staged combine remains the abstract's
+! own discipline. The broadcast is the mirror, its SOURCE on the
+! one-entry domain. Every extends-chain in the tower now ends at
+! one of the grammar's four roots.
 !
-!    graph_reduction                        field      -> functional
-!    graph_broadcast                        functional -> field
+! THE DERIVED OPERATORS. Two families of operations are built FROM
+! operations. The discretization binds a continuous statement to a
+! graph's arithmetic - the act that turns pde and ode into algebra -
+! and its contract exposes the algebraic structure: the dependency
+! pattern is a graph, visible by law, because that is what the
+! minimizers one level up interrogate. The linearization freezes a
+! statement at a state, so a nonlinear question becomes the linear
+! one newton governs. Both bind one thing and defer the rest; a
+! parent over the pair would own no symbol, and generation refuses
+! it a name.
 !
-! ONE DELIBERATE DEVIATION. The reduction and the broadcast are the
-! maps that touch the one-entry domain, so by the letter of the
-! tower they would be concretions of graph_operation. They stand
-! apart for a stated reason: the reduction's measure argument and
-! its staged parallel combine are settled designs that the operation
-! signature cannot carry without reopening them. A deviation chosen
-! and recorded beats a symmetry restored at the price of a won
-! argument.
-!
-! The census of this level: eight types, fifteen operation symbols.
-! With the grammar beneath, the tower stands at twelve types and
-! seventy symbols.
+! The census of this level: ten types, seventeen operation symbols.
+! With the grammar beneath, the tower stands at fourteen types and
+! seventy-two symbols.
 !
 !=====================================================================!
 !
@@ -56,7 +70,9 @@
 
 module graph_calculus
 
-  use graph_grammar, only : graph, graph_field, graph_transform
+  use iso_fortran_env, only : dp => REAL64
+  use graph_grammar  , only : graph, graph_field, graph_operation, &
+       &                      graph_transform
 
   implicit none
 
@@ -66,6 +82,8 @@ module graph_calculus
   public :: graph_functional
   public :: graph_reduction
   public :: graph_broadcast
+  public :: discretization_operator
+  public :: linearization_operator
   public :: graph_partitioner
   public :: graph_assembler
   public :: graph_coarsener
@@ -158,7 +176,7 @@ module graph_calculus
   !      product   J = sum u_i v_i          <- measure is the field v
   !===================================================================!
 
-  type, abstract :: graph_reduction
+  type, abstract, extends(graph_operation) :: graph_reduction
 
    contains
 
@@ -169,6 +187,10 @@ module graph_calculus
      procedure(reduction_finalize_interface)  , deferred :: finalize
 
      ! All four in one call, for a caller holding the whole thing.
+     ! The inherited apply is this verb's operation face: the field
+     ! reduced over its own domain, the measure riding as the second
+     ! input field, the functional leaving as the output - for a
+     ! functional IS a field, one entry wide.
      procedure(reduction_reduce_interface), deferred :: reduce
 
   end type graph_reduction
@@ -185,13 +207,63 @@ module graph_calculus
   ! part, so there is nothing to communicate and nothing to stage.
   !===================================================================!
 
-  type, abstract :: graph_broadcast
+  type, abstract, extends(graph_operation) :: graph_broadcast
 
    contains
 
      procedure(broadcast_interface), deferred :: broadcast
 
   end type graph_broadcast
+
+  !===================================================================!
+  ! DISCRETIZATION_OPERATOR. An operation built from an operation by
+  ! binding it to a graph's arithmetic - the act that turns pde and
+  ! ode into algebra. A scheme is a MOTIF stamped along the domain
+  ! graph:
+  !
+  !      backward euler    o<--o          reach 1, weights [1, -1]
+  !      bdf-k             o<--o<-..<--o  reach k, the k-step table
+  !      two-point flux    one mesh edge, weights -+ 1/delta
+  !      fitted, degree p  the p-ring, weights solved by the fit
+  !
+  ! What every member owes by contract: its dependency PATTERN, as a
+  ! graph. The support is to a field what this pattern is to a
+  ! derived operator - values sit on members, arithmetic flows on
+  ! pairs. The minimizers one level up interrogate the pattern - the
+  ! diagonal, the colouring, the triangularity, the Galerkin road -
+  ! so it is exposed by law, never by inspection.
+  !===================================================================!
+
+  type, abstract, extends(graph_operation) :: discretization_operator
+
+   contains
+
+     procedure(discretization_pattern_interface), deferred :: dependencies
+
+  end type discretization_operator
+
+  !===================================================================!
+  ! LINEARIZATION_OPERATOR. An operation built from an operation by
+  ! freezing a state: the tangent of S at q, wearing the operation
+  ! face, so a governed minimizer sees an ordinary linear question,
+  !
+  !      J v  at  q        the derivative of S along v, at the
+  !                        standing state
+  !
+  ! One deferred verb beyond the face: freeze, which moves the
+  ! standing state (and may cache the base residual) between
+  ! newton's steps. The difference road divides two residuals; the
+  ! exact road, when a statement speaks its own tangent, joins as a
+  ! second concretion with no change here.
+  !===================================================================!
+
+  type, abstract, extends(graph_operation) :: linearization_operator
+
+   contains
+
+     procedure(linearization_freeze_interface), deferred :: freeze
+
+  end type linearization_operator
 
   !===================================================================!
   ! GRAPH_PARTITIONER. P: the whole becomes parts.
@@ -352,6 +424,24 @@ module graph_calculus
        class(graph_functional), intent(in)    :: functional
        class(graph_field)     , intent(inout) :: field
      end subroutine broadcast_interface
+
+     !===============================================================!
+     ! The derived operators' two verbs: the pattern a discretization
+     ! owes, and the freeze a linearization answers.
+     !===============================================================!
+
+     subroutine discretization_pattern_interface(this, pattern)
+       import :: discretization_operator, graph
+       class(discretization_operator), intent(in) :: this
+       class(graph), allocatable, intent(out)     :: pattern
+     end subroutine discretization_pattern_interface
+
+     subroutine linearization_freeze_interface(this, at, base)
+       import :: linearization_operator, dp
+       class(linearization_operator), intent(inout) :: this
+       real(dp), intent(in)           :: at(:)
+       real(dp), intent(in), optional :: base(:)
+     end subroutine linearization_freeze_interface
 
      !===============================================================!
      ! The four verbs. Each carries its graph map and its data map,

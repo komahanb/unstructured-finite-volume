@@ -202,6 +202,7 @@ contains
     real(dp), allocatable :: w(:)
     real(dp) :: pts(9), sampled(3), got, expected
     integer :: j
+    integer, allocatable :: kept(:)
 
     ! Three points on a line, one wave through them.
     pts = [0.0_dp, 0.0_dp, 0.0_dp, &
@@ -240,9 +241,8 @@ contains
     call gardener % adapt(poly % shape, [0.0_dp, 0.0_dp, 0.0_dp, &
          &                              0.5_dp, 0.0_dp, 0.0_dp])
 
-    call report(poly % shape % active(1) .and. poly % shape % active(2) &
-         & .and. .not. poly % shape % active(3) &
-         & .and. .not. poly % shape % active(4), &
+    call poly % shape % member_indices(kept)
+    call report(size(kept) == 2 .and. all(kept == [1, 2]), &
          & 'the pruner strikes the members the points cannot see', nfail)
 
     call poly % apply(pair, [positions], answer)

@@ -102,13 +102,13 @@ contains
 
     type is (stencil_operator)
 
-       ne = fine % dependencies % num_edges()
+       ne = fine % pattern % num_edges()
        allocate(rows(ne), columns(ne), weights(ne))
 
        call fine % weights % get_real_vector(weights)
        do e = 1, ne
-          rows(e)    = aggregates(fine % dependencies % edge_head(e))
-          columns(e) = aggregates(fine % dependencies % edge_tail(e))
+          rows(e)    = aggregates(fine % pattern % edge_head(e))
+          columns(e) = aggregates(fine % pattern % edge_tail(e))
        end do
 
        allocate(zeros(this % nblocks))

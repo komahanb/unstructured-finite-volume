@@ -237,6 +237,8 @@ contains
        call out % set_real_vector(fv)
        allocate(fine_data, source=out)
 
+    class default
+       error stop 'refine: this data does not ride on this transform'
     end select
 
   end subroutine refine_data

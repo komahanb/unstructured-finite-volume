@@ -220,6 +220,8 @@ contains
           call assemble_edge_field(part_data, part_graph, global_graph, global_data)
        end if
 
+    class default
+       error stop 'assemble: this data does not ride on this transform'
     end select
 
   end subroutine assemble_data

@@ -363,6 +363,8 @@ contains
        call out % set_real_vector(cv)
        allocate(coarse_data, source=out)
 
+    class default
+       error stop 'coarsen: this data does not ride on this transform'
     end select
 
   end subroutine coarsen_data

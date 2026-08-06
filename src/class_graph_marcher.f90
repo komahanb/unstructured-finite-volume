@@ -28,13 +28,16 @@
 ! balance measures what a cell has left over; z -> z^2 + c at h = 1
 ! is the forward walk on S = z - z^2 - c, an identity.
 !
-! THE REVERSE WALK IS THE ADJOINT. The same chain traversed head to
-! tail carries sensitivities backward: handed the TRANSPOSED
-! statement, lambda <- lambda - h * transposed(lambda) per edge, in
-! reverse edge order. The pairing <lambda, q> is then invariant
-! across every step - the duality the suite holds to machine
-! precision. For statements that change along the walk the reversed
-! order is not a courtesy; it is the derivative's chain rule.
+! THE REVERSE WALK IS THE ADJOINT - OF THE EXPLICIT RULE. The same
+! chain traversed head to tail carries sensitivities backward:
+! handed the TRANSPOSED statement, lambda <- lambda - h *
+! transposed(lambda) per edge, in reverse edge order. The pairing
+! <lambda, q> is then invariant across every step - the duality the
+! suite holds to machine precision. For statements that change along
+! the walk the reversed order is not a courtesy; it is the
+! derivative's chain rule. Under an implicit rule this walk refuses
+! rather than lies: the adjoint of a solved step is the transpose of
+! that solve, and nothing here holds the trajectory it would need.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -155,7 +158,10 @@ contains
        statement % hs   = this % step
        statement % qold = qold
 
-       call this % inner % attach(statement, on)
+       ! The state's width travels with it: a cell carrying several
+       ! numbers is measured whole, not by its first stripe.
+       call this % inner % attach(statement, on, &
+            & ncomp = size(q) / max(on % num_vertices(), 1))
        call this % inner % solve(zeros, q, answered)
 
        qolder = qold
@@ -169,6 +175,18 @@ contains
   ! Walk the chain in reverse, carrying the pairing: handed the
   ! transposed statement, the sensitivities travel head to tail and
   ! <lambda, q> stays put.
+  !
+  ! ONLY THE EXPLICIT RULE, AND IT SAYS SO. The adjoint of a walk is
+  ! the adjoint of the walk that was actually taken: if the forward
+  ! rule solves an implicit step at every edge, the reverse walk owes
+  ! the transpose of that solve, and doing plain euler backwards
+  ! instead returns a lambda that pairs with nothing. Worse, an
+  ! implicit reverse walk needs the forward trajectory to linearize
+  ! against, and this signature is handed no trajectory - only a
+  ! statement and a lambda. So the refusal below is the honest state
+  ! of the art, not a stub: the trajectory arrives when this citizen
+  ! becomes backward substitution on the chain, and the reverse walk
+  ! becomes the same verb as the forward one.
   !===================================================================!
 
   subroutine march_adjoint(this, transposed, on, lambda, nsteps)
@@ -182,6 +200,10 @@ contains
     type(stored_graph) :: chain
     real(dp), allocatable :: s(:)
     integer :: e
+
+    if (this % rule /= MARCH_FORWARD) then
+       error stop 'march_adjoint: the reverse walk answers the explicit rule only'
+    end if
 
     call this % instants(nsteps, chain)
 

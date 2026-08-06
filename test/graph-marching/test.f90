@@ -29,10 +29,10 @@ program test_graph_marching
   use class_graph        , only : stored_graph
   use class_graph_differential_operator, only : vertex_differential_operator
   use class_graph_differential_operator, only : differential_operator
-  use class_graph_marcher, only : marcher, MARCH_BACKWARD, MARCH_BDF2
+  use class_graph_step   , only : chain, chain_operator
+  use class_graph_step   , only : CHAIN_FORWARD, CHAIN_BACKWARD, CHAIN_BDF2
+  use graph_optimization , only : fit_optimizer, substitution, newton, gmres
   use class_graph_stencil , only : stencil_operator
-  use graph_optimization, only : fit_optimizer, form_optimizer
-  use graph_optimization, only : gmres, newton
   use mandelbrot_law_fixture, only : mandelbrot_law
   use vdp_fixture, only : vdp_law, vdp_tangent_law, vdp_adjoint_law
 
@@ -83,19 +83,18 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(marcher) :: clock
-    type(stored_graph) :: chain
+    type(stored_graph) :: timeline
     logical :: ordered
     integer :: e
 
-    call clock % instants(10, chain)
+    timeline = instants(10)
 
-    call report(chain % num_vertices() == 11 .and. chain % num_edges() == 10, &
+    call report(timeline % num_vertices() == 11 .and. timeline % num_edges() == 10, &
          & 'eleven instants, ten steps: the chain stands', nfail)
 
     ordered = .true.
     do e = 1, 10
-       if (chain % edge_tail(e) /= e .or. chain % edge_head(e) /= e + 1) &
+       if (timeline % edge_tail(e) /= e .or. timeline % edge_head(e) /= e + 1) &
             & ordered = .false.
     end do
     call report(ordered, 'and every step leads to the next instant', nfail)
@@ -111,7 +110,6 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(marcher) :: clock
     type(support) :: cells
     type(stored_graph) :: lone
     type(differential_operator) :: decay
@@ -124,9 +122,8 @@ contains
 
     decay = vertex_differential_operator(order=0, coefficient=1.0_dp)
 
-    clock % step = 0.125_dp
     q = [3.0_dp]
-    call clock % march(decay, lone, q, 20)
+    call walk(decay, lone, q, 20, 0.125_dp, CHAIN_FORWARD)
 
     expected = 3.0_dp * (1.0_dp - 0.125_dp)**20
 
@@ -146,7 +143,6 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(marcher) :: clock
     type(mandelbrot_law) :: law
     type(stored_graph) :: points
     type(support) :: cells
@@ -166,10 +162,8 @@ contains
     q      = 0.0_dp
     escape = 0
 
-    clock % step = 1.0_dp
-
     do n = 1, nmax
-       call clock % march(law, points, q, 1)
+       call walk(law, points, q, 1, 1.0_dp, CHAIN_FORWARD)
        do v = 1, nv
           if (escape(v) == 0 .and. &
                & q(2 * v - 1)**2 + q(2 * v)**2 > 4.0_dp) then
@@ -208,7 +202,6 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(marcher) :: clock
     type(stored_graph) :: lone
     type(differential_operator) :: decay
     real(dp) :: q(1), expected, coarse_error, fine_error, ratio
@@ -216,30 +209,20 @@ contains
     lone  = stored_graph(1, tails=[integer ::], heads=[integer ::])
     decay = vertex_differential_operator(order=0, coefficient=1.0_dp)
 
-    clock % rule = MARCH_BACKWARD
-    clock % step = 0.125_dp
-    allocate(clock % inner, source=newton(gmres()))
-    clock % inner % inner % tolerance = 1.0d-14
-    clock % inner % tolerance         = 1.0d-12
-
     q = [3.0_dp]
-    call clock % march(decay, lone, q, 16)
+    call walk(decay, lone, q, 16, 0.125_dp, CHAIN_BACKWARD)
     expected = 3.0_dp / (1.0_dp + 0.125_dp)**16
 
     call report(abs(q(1) - expected) < 1.0d-9, &
          & 'backward euler lands on q0/(1+h)^n: its own discrete truth', nfail)
 
     ! bdf2 against exp(-2): half the step, a quarter of the error.
-    clock % rule = MARCH_BDF2
-
-    clock % step = 0.1_dp
     q = [1.0_dp]
-    call clock % march(decay, lone, q, 20)
+    call walk(decay, lone, q, 20, 0.1_dp, CHAIN_BDF2)
     coarse_error = abs(q(1) - exp(-2.0_dp))
 
-    clock % step = 0.05_dp
     q = [1.0_dp]
-    call clock % march(decay, lone, q, 40)
+    call walk(decay, lone, q, 40, 0.05_dp, CHAIN_BDF2)
     fine_error = abs(q(1) - exp(-2.0_dp))
 
     ratio = coarse_error / fine_error
@@ -261,7 +244,6 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(marcher) :: clock
     type(stored_graph) :: pair, lone
     type(differential_operator) :: decay
     real(dp) :: wide(2), tall(2), expected(2)
@@ -270,19 +252,13 @@ contains
     lone = stored_graph(1, tails=[integer ::], heads=[integer ::])
     decay = vertex_differential_operator(order=0, coefficient=1.0_dp)
 
-    clock % rule = MARCH_BACKWARD
-    clock % step = 0.125_dp
-    allocate(clock % inner, source=newton(gmres()))
-    clock % inner % inner % tolerance = 1.0d-14
-    clock % inner % tolerance         = 1.0d-12
-
     ! Two cells, one number each.
     tall = [3.0_dp, 5.0_dp]
-    call clock % march(decay, pair, tall, 8)
+    call walk(decay, pair, tall, 8, 0.125_dp, CHAIN_BACKWARD)
 
     ! One cell, two numbers.
     wide = [3.0_dp, 5.0_dp]
-    call clock % march(decay, lone, wide, 8)
+    call walk(decay, lone, wide, 8, 0.125_dp, CHAIN_BACKWARD)
 
     expected = [3.0_dp, 5.0_dp] / (1.0_dp + 0.125_dp)**8
 
@@ -303,7 +279,6 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(marcher) :: clock
     type(stored_graph) :: trio
     type(stencil_operator) :: forward_action, transposed
     real(dp) :: q(3), lambda(3), before, after
@@ -320,19 +295,17 @@ contains
     forward_action = stencil_operator(rows, cols, w, zeros)
     transposed     = stencil_operator(cols, rows, w, zeros)
 
-    clock % rule = 1
-    clock % step = 0.05_dp
-
     q      = [1.0_dp, -2.0_dp, 3.0_dp]
     lambda = [0.4_dp, 2.0_dp, -1.0_dp]
 
     ! The pairing at the far end: <lambda_N, q_N> needs q marched
     ! all the way forward first.
-    call clock % march(forward_action, trio, q, 12)
+    call walk(forward_action, trio, q, 12, 0.05_dp, CHAIN_FORWARD)
     before = sum(lambda * q)
 
-    ! Now lambda walks home under the transpose.
-    call clock % march_adjoint(transposed, trio, lambda, 12)
+    ! Now lambda walks home under the transpose: the same sweep,
+    ! running the other way.
+    call walk_home(transposed, trio, lambda, 12, 0.05_dp)
 
     ! And meets the initial state.
     q = [1.0_dp, -2.0_dp, 3.0_dp]
@@ -357,7 +330,6 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(marcher) :: clock
     type(stored_graph) :: cell
     type(vdp_law)         :: law
     type(vdp_tangent_law) :: tangent
@@ -369,15 +341,13 @@ contains
     integer :: n, i
 
     cell = stored_graph(1, tails=[integer ::], heads=[integer ::])
-    clock % rule = 1
-    clock % step = h
 
     ! The trajectory, stored: the reverse walk reads it back.
     allocate(trajectory(2, 0:nsteps))
     q = [2.0_dp, 0.0_dp]
     trajectory(:, 0) = q
     do n = 1, nsteps
-       call clock % march(law, cell, q, 1)
+       call walk(law, cell, q, 1, h, CHAIN_FORWARD)
        trajectory(:, n) = q
     end do
 
@@ -387,7 +357,7 @@ contains
        aug = 0.0_dp
        aug(1:2) = trajectory(:, 0)
        aug(2 + i) = 1.0_dp
-       call clock % march(tangent, cell, aug, nsteps)
+       call walk(tangent, cell, aug, nsteps, h, CHAIN_FORWARD)
        grad_tangent(i) = aug(3)
     end do
 
@@ -395,7 +365,7 @@ contains
     lambda = [1.0_dp, 0.0_dp]
     do n = nsteps, 1, -1
        transposed % at = trajectory(:, n - 1)
-       call clock % march_adjoint(transposed, cell, lambda, 1)
+       call walk_home(transposed, cell, lambda, 1, h)
     end do
 
     call report(all(abs(lambda - grad_tangent) < 1.0d-12 &
@@ -410,5 +380,98 @@ contains
          & 'and the pairing holds across the walk: the identity stands', nfail)
 
   end subroutine check_tangent_meets_adjoint
+
+  !===================================================================!
+  ! The chain of instants: one vertex per moment, one edge per step.
+  !===================================================================!
+
+  type(stored_graph) function instants(nsteps) result(timeline)
+
+    integer, intent(in) :: nsteps
+    integer :: n
+
+    timeline = stored_graph(nsteps + 1, &
+         & tails=[(n, n = 1, nsteps)], heads=[(n + 1, n = 1, nsteps)])
+
+  end function instants
+
+  !===================================================================!
+  ! A march, expressed as what it is: the whole recurrence stated on
+  ! the time chain, and one causal sweep answering it exactly. The
+  ! state arrives as the initial instant and leaves as the last.
+  !===================================================================!
+
+  subroutine walk(action, space, q, nsteps, h, rule)
+
+    class(graph_operation), intent(in) :: action
+    class(graph), intent(in)           :: space
+    real(dp), intent(inout)            :: q(:)
+    integer , intent(in)               :: nsteps
+    real(dp), intent(in)               :: h
+    integer , intent(in)               :: rule
+
+    call sweep(action, space, q, nsteps, h, rule, backward=.false.)
+
+  end subroutine walk
+
+  !===================================================================!
+  ! And the same sweep running the other way: sensitivities settle
+  ! backward along the chain the state settled forward on.
+  !===================================================================!
+
+  subroutine walk_home(transposed, space, lambda, nsteps, h)
+
+    class(graph_operation), intent(in) :: transposed
+    class(graph), intent(in)           :: space
+    real(dp), intent(inout)            :: lambda(:)
+    integer , intent(in)               :: nsteps
+    real(dp), intent(in)               :: h
+
+    call sweep(transposed, space, lambda, nsteps, h, CHAIN_FORWARD, &
+         & backward=.true.)
+
+  end subroutine walk_home
+
+  subroutine sweep(action, space, q, nsteps, h, rule, backward)
+
+    class(graph_operation), intent(in) :: action
+    class(graph), intent(in)           :: space
+    real(dp), intent(inout)            :: q(:)
+    integer , intent(in)               :: nsteps
+    real(dp), intent(in)               :: h
+    integer , intent(in)               :: rule
+    logical , intent(in)               :: backward
+
+    type(stored_graph)   :: timeline
+    type(chain_operator) :: recurrence
+    type(fit_optimizer)  :: causal
+    real(dp), allocatable :: trajectory(:), g(:)
+    real(dp) :: achieved
+    integer :: width, last
+
+    width = size(q)
+
+    timeline   = instants(nsteps)
+    recurrence = chain(action, space, h, rule, initial=q)
+
+    causal = substitution(newton(gmres()), backward=backward)
+    causal % inner % tolerance = 1.0d-13
+
+    call causal % attach(recurrence, timeline, ncomp=width)
+
+    allocate(trajectory((nsteps + 1) * width))
+    trajectory = 0.0_dp
+
+    call causal % constant(g)
+    call causal % solve(-g, trajectory, achieved)
+
+    if (backward) then
+       q = trajectory(1 : width)
+    else
+       last = nsteps * width
+       q = trajectory(last + 1 : last + width)
+    end if
+
+  end subroutine sweep
 
 end program test_graph_marching

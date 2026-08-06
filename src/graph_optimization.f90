@@ -99,6 +99,7 @@ module graph_optimization
   use class_graph_support   , only : support
   use class_graph_field     , only : field
   use class_graph_stencil   , only : stencil_operator
+  use class_graph_step      , only : step_operator, chain_operator
   use class_graph_linearization, only : difference_linearization
   use class_graph_reduction , only : reduction, REDUCE_SUM, REDUCE_NORM
   use class_graph_walk      , only : walk, WALK_COLOURING
@@ -111,12 +112,12 @@ module graph_optimization
 
   ! the named points of the product space
   public :: jacobi, gauss_seidel, conjugate_gradient, gmres
-  public :: multigrid, newton, fit
+  public :: multigrid, newton, fit, substitution
   public :: pruner
 
   ! the axes themselves, for a caller standing somewhere unnamed
   public :: PRECONDITION_NONE, PRECONDITION_DIAGONAL
-  public :: PRECONDITION_COLOUR, PRECONDITION_CYCLE
+  public :: PRECONDITION_COLOUR, PRECONDITION_CYCLE, PRECONDITION_CAUSAL
   public :: MEMORY_NONE, MEMORY_FULL
   public :: STEP_FIXED, STEP_GALERKIN, STEP_MINIMUM_RESIDUAL
   public :: FORM_PRUNE
@@ -129,6 +130,8 @@ module graph_optimization
   integer, parameter :: PRECONDITION_DIAGONAL = 2   ! divide by the diagonal
   integer, parameter :: PRECONDITION_COLOUR   = 3   ! sweep, colour by colour
   integer, parameter :: PRECONDITION_CYCLE    = 4   ! smooth, coarsen, correct
+  integer, parameter :: PRECONDITION_CAUSAL   = 5   ! walk the order the
+                                                   ! pattern already has
 
   !-------------------------------------------------------------------!
   ! Memory: how many past directions are kept. Zero is a relaxation,
@@ -206,6 +209,10 @@ module graph_optimization
      !----------------------------------------------------------------!
 
      logical :: relinearize = .false.
+
+     ! Which way a causal sweep runs. The state settles forward; its
+     ! sensitivities settle backward, along the same chain.
+     logical :: reverse = .false.
 
      type(fit_optimizer), allocatable :: inner
 
@@ -344,12 +351,14 @@ contains
 
     type(fit_optimizer), intent(in) :: inner
 
-    this % precondition = PRECONDITION_NONE
-    this % memory       = MEMORY_NONE
-    this % step         = STEP_FIXED
-    this % relinearize  = .true.
-    allocate(this % inner, source=inner)
-    this % label        = 'newton'
+    ! Newton holds nothing. It IS the given optimizer with the last
+    ! column turned on: the same M, the same memory, the same step,
+    ! now re-reading the statement at every state. A method that
+    ! held another copy of itself to do its linear work would be
+    ! saying the column is a family, and it is not.
+    this = inner
+    this % relinearize = .true.
+    this % label       = 'newton'
 
   end function newton
 
@@ -379,6 +388,32 @@ contains
     this % label = 'fit'
 
   end function fit
+
+  !===================================================================!
+  ! SUBSTITUTION. The point where M is the exact inverse of a
+  ! triangular block, which is to say: no iteration at all. A
+  ! statement whose pattern has a causal order - every row reading
+  ! its own unknown and ones already settled, nothing ahead - is
+  ! answered EXACTLY by one sweep in that order, each block handed
+  ! to the governed optimizer as it comes. Forward for the state,
+  ! backward for the adjoint; the direction is one absorbed answer,
+  ! not a second verb, because it changes no role: field in, field
+  ! out, same shape either way.
+  !===================================================================!
+
+  type(fit_optimizer) function substitution(inner, backward) result(this)
+
+    type(fit_optimizer), intent(in) :: inner
+    logical, intent(in), optional   :: backward
+
+    this % precondition = PRECONDITION_CAUSAL
+    this % memory       = MEMORY_NONE
+    this % step         = STEP_FIXED
+    allocate(this % inner, source=inner)
+    if (present(backward)) this % reverse = backward
+    this % label        = 'substitution'
+
+  end function substitution
 
   pure type(form_optimizer) function pruner(threshold) result(this)
 
@@ -649,6 +684,11 @@ contains
        return
     end if
 
+    if (this % precondition == PRECONDITION_CAUSAL) then
+       call solve_by_substituting(this, rhs, x, achieved)
+       return
+    end if
+
     select case (this % step)
     case (STEP_GALERKIN)
        call solve_by_conjugacy(this, rhs, x, achieved)
@@ -770,6 +810,98 @@ contains
     achieved = this % norm(rhs - y)
 
   end subroutine solve_by_relaxing
+
+  !===================================================================!
+  ! THE CAUSAL SWEEP. Settle the held instant, then walk the chain
+  ! one edge at a time: at each instant the row is a statement in
+  ! that instant alone, everything it leans on being already known,
+  ! so the governed optimizer answers a block and the sweep moves
+  ! on. One pass, exact - the residual afterwards is not a tolerance
+  ! met but a fact.
+  !===================================================================!
+
+  subroutine solve_by_substituting(this, rhs, x, achieved)
+
+    class(fit_optimizer), intent(inout) :: this
+    real(dp), intent(in)    :: rhs(:)
+    real(dp), intent(inout) :: x(:)
+    real(dp), intent(out)   :: achieved
+
+    type(step_operator) :: block
+    real(dp), allocatable :: zeros(:), y(:), g(:)
+    real(dp) :: elsewhere
+    integer :: ninstants, width, n, lo, hi, first, last, stride, settled
+
+    associate (u1 => rhs); end associate
+
+    select type (recurrence => this % action)
+
+    class is (chain_operator)
+
+       ninstants = this % on % num_vertices()
+       width     = size(recurrence % initial)
+
+       allocate(zeros(width))
+       zeros = 0.0_dp
+
+       ! The held instant stands where it was put: the first one
+       ! going forward, the last one coming back - a sweep is held
+       ! at the end it starts from.
+       if (this % reverse) then
+          x((ninstants - 1) * width + 1 : ninstants * width) = recurrence % initial
+          first = ninstants - 1; last = 1; stride = -1
+          settled = width
+       else
+          x(1 : width) = recurrence % initial
+          first = 2; last = ninstants; stride = 1
+          settled = -width
+       end if
+
+       do n = first, last, stride
+
+          lo = (n - 1) * width + 1
+          hi = n * width
+
+          if (n > 2 .and. .not. this % reverse) then
+             block = recurrence % row(n, x(lo + settled : lo + settled + width - 1), &
+                  &                   qolder=x(lo + 2*settled : lo + 2*settled + width - 1))
+          else
+             block = recurrence % row(n, x(lo + settled : lo + settled + width - 1))
+          end if
+
+          call this % inner % attach(block, recurrence % space, &
+               & ncomp = width / max(recurrence % space % num_vertices(), 1))
+
+          if (block % explicit) then
+
+             ! An explicit row carries its unknown alone, with the
+             ! identity for a coefficient: its block inverse is
+             ! exactly known, so the sweep reads the answer off
+             ! rather than iterating toward it.
+             call this % inner % constant(g)
+             x(lo : hi) = -g / block % a0
+
+          else
+
+             ! A guess to start from: where the chain stood a moment
+             ! ago.
+             x(lo : hi) = x(lo + settled : lo + settled + width - 1)
+             call this % inner % solve(zeros, x(lo : hi), elsewhere)
+
+          end if
+
+       end do
+
+    class default
+
+       error stop 'substitution: attach a statement whose pattern is causal'
+
+    end select
+
+    call this % matvec(x, y)
+    achieved = this % norm(y + this % affine)
+
+  end subroutine solve_by_substituting
 
   !===================================================================!
   ! FULL MEMORY, GALERKIN STEP. When the constraint is the search
@@ -956,6 +1088,7 @@ contains
     real(dp), intent(out)   :: achieved
 
     type(difference_linearization) :: jacobian
+    type(fit_optimizer) :: linear
     real(dp), allocatable :: residual(:), g(:), y(:), dq(:)
     real(dp) :: elsewhere
     integer :: it
@@ -965,6 +1098,11 @@ contains
     call this % constant(g)
 
     jacobian = difference_linearization(this % action)
+
+    ! The linear question is answered by this very optimizer with
+    ! the column turned off - not by a second one it carries.
+    linear = this
+    linear % relinearize = .false.
 
     do it = 1, this % max_iterations
 
@@ -979,9 +1117,9 @@ contains
        ! minimizer.
        call jacobian % freeze(x, base=y + g)
 
-       call this % inner % attach(jacobian, this % on, ncomp = this % ncomp)
+       call linear % attach(jacobian, this % on, ncomp = this % ncomp)
        dq = 0.0_dp
-       call this % inner % solve(-residual, dq, elsewhere)
+       call linear % solve(-residual, dq, elsewhere)
 
        x = x + dq
 

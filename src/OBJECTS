@@ -26,7 +26,6 @@ class_graph_balance.o \
 graph_optimization.o \
 class_fitted_balance.o \
 class_diffusion_statement.o \
-class_graph_marcher.o \
 module_solve_mode.o \
 module_verbosity.o \
 class_string.o \

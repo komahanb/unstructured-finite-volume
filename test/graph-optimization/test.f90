@@ -499,7 +499,6 @@ contains
     action % linear_part = chain_operator(m)
     action % strength    = 0.05_dp
 
-    ns % inner % tolerance = 1.0d-12
     ns % tolerance = 1.0d-7
 
     call ns % attach(action, m)

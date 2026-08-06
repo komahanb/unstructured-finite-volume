@@ -1,5 +1,5 @@
 !=====================================================================!
-! The minimization suite: rung 4's acceptance.
+! The optimization suite: rung 4's acceptance.
 !
 ! The whole tower stands in one problem: heat conduction on a chain
 ! of three cells, walls held at 0 and 10,
@@ -96,7 +96,7 @@ contains
 
 end module cubic_statement_fixture
 
-program test_graph_minimization
+program test_graph_optimization
 
   use iso_fortran_env, only : dp => REAL64
   use graph_grammar  , only : graph
@@ -106,8 +106,8 @@ program test_graph_minimization
   use class_conduction     , only : conduction
   use class_graph_differential_operator, only : differential_operator
   use class_graph_differential_operator, only : vertex_differential_operator
-  use graph_minimization, only : fit_minimizer, form_minimizer
-  use graph_minimization, only : conjugate_gradient, gauss_seidel, gmres, jacobi, newton
+  use graph_optimization, only : fit_optimizer, form_optimizer
+  use graph_optimization, only : conjugate_gradient, gauss_seidel, gmres, jacobi, newton
   use class_graph_differential_operator, only : edge_differential_operator
   use class_graph_balance  , only : balance
   use cubic_statement_fixture, only : cubic_statement
@@ -127,9 +127,9 @@ program test_graph_minimization
 
   write(*, '(a)') ' ============================================='
   if (nfail == 0) then
-     write(*, '(a)') ' all minimization checks passed'
+     write(*, '(a)') ' all optimization checks passed'
   else
-     write(*, '(a, i0, a)') ' ', nfail, ' minimization checks FAILED'
+     write(*, '(a, i0, a)') ' ', nfail, ' optimization checks FAILED'
      error stop 1
   end if
 
@@ -238,7 +238,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(fit_minimizer) :: js
+    type(fit_optimizer) :: js
     real(dp), allocatable :: d(:)
     integer , allocatable :: colours(:), nbrs(:)
     logical :: proper
@@ -282,7 +282,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(fit_minimizer) :: js
+    type(fit_optimizer) :: js
     real(dp), allocatable :: g(:), rhs(:), x(:), y(:)
     real(dp) :: achieved
     real(dp), parameter :: exact(3) = [5.0_dp/3.0_dp, 5.0_dp, 25.0_dp/3.0_dp]
@@ -325,7 +325,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(fit_minimizer) :: cg
+    type(fit_optimizer) :: cg
     type(conduction) :: law
     real(dp), allocatable :: c(:), deltas(:), xref(:), b(:), x(:), y(:)
     real(dp) :: achieved
@@ -381,7 +381,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(fit_minimizer) :: gs
+    type(fit_optimizer) :: gs
     real(dp), allocatable :: g(:), rhs(:), x(:)
     real(dp) :: achieved
     real(dp), parameter :: exact(3) = [5.0_dp/3.0_dp, 5.0_dp, 25.0_dp/3.0_dp]
@@ -422,8 +422,8 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(fit_minimizer)  :: gm
-    type(fit_minimizer) :: js
+    type(fit_optimizer)  :: gm
+    type(fit_optimizer) :: js
     type(balance) :: statement
     real(dp), allocatable :: g(:), rhs(:), x(:), xj(:)
     real(dp) :: achieved
@@ -486,7 +486,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(fit_minimizer) :: ns
+    type(fit_optimizer) :: ns
     type(cubic_statement) :: action
     real(dp), allocatable :: q(:)
     real(dp) :: achieved
@@ -515,4 +515,4 @@ contains
 
   end subroutine check_newton
 
-end program test_graph_minimization
+end program test_graph_optimization

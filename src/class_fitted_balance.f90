@@ -52,7 +52,7 @@ module class_fitted_balance
   use class_graph_field  , only : field
   use class_graph_mesh   , only : mesh
   use class_graph_stencil, only : stencil_operator
-  use graph_fitting      , only : fit
+  use graph_optimization , only : fit_optimizer, fit
 
   implicit none
 
@@ -89,7 +89,7 @@ contains
     type(stencil_operator) :: op
 
     type(field) :: fa, fn, fc, fcc
-    type(fit) :: fitting
+    type(fit_optimizer) :: fitting
     type(support) :: constellation
     type(field)   :: positions
     class(graph_field), allocatable :: answer

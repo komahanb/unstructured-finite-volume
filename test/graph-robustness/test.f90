@@ -32,12 +32,11 @@ program test_graph_robustness
   use class_graph_differential_operator, only : differential_operator
   use class_graph_stencil, only : stencil_operator
   use class_fitted_balance, only : fitted_balance_stencil
-  use graph_fitting        , only : fit
   use graph_forms          , only : form
   use class_polynomial_form, only : polynomial_form
   use class_harmonic_form  , only : harmonic_form
-  use graph_minimization, only : fit_minimizer, form_minimizer
-  use graph_minimization, only : gmres, pruner
+  use graph_optimization, only : fit_optimizer, form_optimizer
+  use graph_optimization, only : gmres, pruner, fit
 
   implicit none
 
@@ -153,7 +152,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(fit) :: fitting
+    type(fit_optimizer) :: fitting
     type(support) :: pair
     type(field)   :: positions
     class(graph_field), allocatable :: answer
@@ -194,9 +193,9 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(fit)    :: wave
-    type(fit)    :: poly
-    type(form_minimizer) :: gardener
+    type(fit_optimizer)    :: wave
+    type(fit_optimizer)    :: poly
+    type(form_optimizer) :: gardener
     type(support) :: trio, pair
     type(field)   :: positions
     class(graph_field), allocatable :: answer
@@ -375,7 +374,7 @@ contains
 
     type(mesh) :: m
     type(stencil_operator) :: op
-    type(fit_minimizer) :: gm
+    type(fit_optimizer) :: gm
     type(field) :: fc
     real(dp), allocatable :: vb(:), centers(:), g(:), rhs(:), x(:)
     real(dp) :: achieved

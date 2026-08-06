@@ -1,15 +1,29 @@
 !=====================================================================!
-! LEVEL 2 OF THE STRATIFICATION . THE MINIMIZATION
+! LEVEL 2 OF THE STRATIFICATION . THE OPTIMIZATION
 !
-! The first level with a goal: drive a residual toward zero. It holds
-! TWO citizens and no abstraction of its own, because its
-! abstractions are the grammar's - and the grammar has exactly two
-! nouns, so there are exactly two things a minimizer can vary:
+! The first level with a goal: drive an imbalance toward zero. The
+! optimizer subtree splits in two and no further, because it splits
+! on the grammar's two nouns - so there are exactly two things an
+! optimizer can vary, and no third is possible:
 !
-!      fit_minimizer    varies the VALUES     - an operation
-!      form_minimizer   varies the STRUCTURE  - a transform
+!      fit_optimizer    varies the VALUES     - an operation
+!      form_optimizer   varies the STRUCTURE  - a transform
 !
-! and no third is possible, because nothing else exists to vary.
+! There is no abstraction above the pair and there cannot be: one
+! answers with a field and the other with a graph, so their parents
+! are the grammar's operation and transform. The subtree IS this
+! module; the level is the tree.
+!
+! WHERE EACH GETS ITS IMBALANCE. The fit optimizer reads it straight
+! off the attached statement, r = rhs - matvec(x). The form
+! optimizer's is the fit's LEFTOVER - what survives after the
+! coefficients have done their best inside the current form, because
+! a form is judged by what it cannot represent. Today's one rule,
+! pruning by invisibility, is the zero-risk corner of that: a member
+! the points cannot see contributes nothing to any fit, so striking
+! it cannot move the residual at all. Its partner, enrichment - admit
+! what the leftover demands - waits for a caller who needs a richer
+! basis, as the inhabitation rule orders.
 !
 !=====================================================================!
 !
@@ -76,7 +90,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_minimization
+module graph_optimization
 
   use iso_fortran_env       , only : dp => REAL64
   use graph_grammar         , only : graph, graph_field, graph_operation
@@ -93,11 +107,11 @@ module graph_minimization
   implicit none
 
   private
-  public :: fit_minimizer, form_minimizer
+  public :: fit_optimizer, form_optimizer
 
   ! the named points of the product space
   public :: jacobi, gauss_seidel, conjugate_gradient, gmres
-  public :: multigrid, newton
+  public :: multigrid, newton, fit
   public :: pruner
 
   ! the axes themselves, for a caller standing somewhere unnamed
@@ -144,7 +158,7 @@ module graph_minimization
   ! put it.
   !===================================================================!
 
-  type, extends(graph_operation) :: fit_minimizer
+  type, extends(graph_operation) :: fit_optimizer
 
      !----------------------------------------------------------------!
      ! The attached statement and the seats its answers live on.
@@ -181,15 +195,33 @@ module graph_minimization
      integer, allocatable :: aggregates(:)
      integer              :: nblocks = 0
 
-     type(fit_minimizer), allocatable :: smoother
-     type(fit_minimizer), allocatable :: coarse
+     type(fit_optimizer), allocatable :: smoother
+     type(fit_optimizer), allocatable :: coarse
 
      !----------------------------------------------------------------!
-     ! The last column: the minimizer that answers the linear
-     ! question a re-read tangent poses.
+     ! The last column: whether the operator is re-read at the new
+     ! state, and the optimizer that answers the linear question a
+     ! re-read tangent poses. The inner seat is shared - the fit
+     ! point governs one too, for its own dual.
      !----------------------------------------------------------------!
 
-     type(fit_minimizer), allocatable :: inner
+     logical :: relinearize = .false.
+
+     type(fit_optimizer), allocatable :: inner
+
+     !----------------------------------------------------------------!
+     ! THE FIT POINT. Every optimizer here fits coefficients inside a
+     ! form; at this one the form is HELD and the statement is not
+     ! attached beforehand but assembled from the points handed to
+     ! apply - the conditions that make the answer exact on the
+     ! form's span. Same act, same family, one more point.
+     !----------------------------------------------------------------!
+
+     class(form), allocatable :: shape
+
+     real(dp) :: at(3)        = 0.0_dp
+     real(dp) :: direction(3) = [1.0_dp, 0.0_dp, 0.0_dp]
+     real(dp) :: scale        = 1.0_dp
 
      character(len=:), allocatable :: label
 
@@ -214,7 +246,8 @@ module graph_minimization
 
      procedure :: solve
 
-  end type fit_minimizer
+  end type fit_optimizer
+
 
   !===================================================================!
   ! THE STRUCTURE SIDE. It answers with a graph, because a form is
@@ -222,7 +255,7 @@ module graph_minimization
   ! here: dependency sets the floor, role sets the home.
   !===================================================================!
 
-  type, extends(graph_transform) :: form_minimizer
+  type, extends(graph_transform) :: form_optimizer
 
      integer  :: rule      = FORM_PRUNE
      real(dp) :: threshold = 1.0d-12
@@ -232,7 +265,7 @@ module graph_minimization
      procedure :: defined_on_graph => form_defined_on_graph
      procedure :: adapt
 
-  end type form_minimizer
+  end type form_optimizer
 
 contains
 
@@ -241,7 +274,7 @@ contains
   ! difference between the methods.
   !===================================================================!
 
-  pure type(fit_minimizer) function jacobi(omega) result(this)
+  pure type(fit_optimizer) function jacobi(omega) result(this)
 
     real(dp), intent(in), optional :: omega
 
@@ -253,7 +286,7 @@ contains
 
   end function jacobi
 
-  pure type(fit_minimizer) function gauss_seidel(omega) result(this)
+  pure type(fit_optimizer) function gauss_seidel(omega) result(this)
 
     real(dp), intent(in), optional :: omega
 
@@ -265,7 +298,7 @@ contains
 
   end function gauss_seidel
 
-  pure type(fit_minimizer) function conjugate_gradient() result(this)
+  pure type(fit_optimizer) function conjugate_gradient() result(this)
 
     this % precondition = PRECONDITION_NONE
     this % memory       = MEMORY_FULL
@@ -274,7 +307,7 @@ contains
 
   end function conjugate_gradient
 
-  pure type(fit_minimizer) function gmres(restart) result(this)
+  pure type(fit_optimizer) function gmres(restart) result(this)
 
     integer, intent(in), optional :: restart
 
@@ -286,10 +319,10 @@ contains
 
   end function gmres
 
-  type(fit_minimizer) function multigrid(smoother, coarse) result(this)
+  type(fit_optimizer) function multigrid(smoother, coarse) result(this)
 
-    type(fit_minimizer), intent(in) :: smoother
-    type(fit_minimizer), intent(in) :: coarse
+    type(fit_optimizer), intent(in) :: smoother
+    type(fit_optimizer), intent(in) :: coarse
 
     this % precondition = PRECONDITION_CYCLE
     this % memory       = MEMORY_NONE
@@ -307,19 +340,47 @@ contains
   ! it is one argument.
   !===================================================================!
 
-  type(fit_minimizer) function newton(inner) result(this)
+  type(fit_optimizer) function newton(inner) result(this)
 
-    type(fit_minimizer), intent(in) :: inner
+    type(fit_optimizer), intent(in) :: inner
 
     this % precondition = PRECONDITION_NONE
     this % memory       = MEMORY_NONE
     this % step         = STEP_FIXED
+    this % relinearize  = .true.
     allocate(this % inner, source=inner)
     this % label        = 'newton'
 
   end function newton
 
-  pure type(form_minimizer) function pruner(threshold) result(this)
+  !===================================================================!
+  ! THE FIT POINT. A form, a target, and the place the answer is
+  ! wanted; the conditions are assembled at apply from whatever
+  ! constellation arrives. Its dual is answered by the family's own
+  ! conjugate gradient - if it minimizes, it delegates.
+  !===================================================================!
+
+  type(fit_optimizer) function fit(shape, at, direction, scale) result(this)
+
+    class(form), intent(in)        :: shape
+    real(dp), intent(in)           :: at(3)
+    real(dp), intent(in)           :: direction(3)
+    real(dp), intent(in), optional :: scale
+
+    allocate(this % shape, source=shape)
+    this % at        = at
+    this % direction = direction
+    if (present(scale)) this % scale = scale
+
+    allocate(this % inner, source=conjugate_gradient())
+    this % inner % tolerance      = 1.0d-14
+    this % inner % max_iterations = 50
+
+    this % label = 'fit'
+
+  end function fit
+
+  pure type(form_optimizer) function pruner(threshold) result(this)
 
     real(dp), intent(in), optional :: threshold
 
@@ -336,7 +397,7 @@ contains
 
   subroutine attach(this, action, on, ncomp)
 
-    class(fit_minimizer)  , intent(inout) :: this
+    class(fit_optimizer)  , intent(inout) :: this
     class(graph_operation), intent(in)    :: action
     class(graph)          , intent(in)    :: on
     integer, intent(in), optional         :: ncomp
@@ -371,7 +432,7 @@ contains
 
   subroutine setup(this, aggregates)
 
-    class(fit_minimizer), intent(inout) :: this
+    class(fit_optimizer), intent(inout) :: this
     integer, intent(in) :: aggregates(:)
 
     type(stencil_operator) :: block_statement
@@ -422,7 +483,7 @@ contains
 
   subroutine raw_apply(this, x, y)
 
-    class(fit_minimizer), intent(in)   :: this
+    class(fit_optimizer), intent(in)   :: this
     real(dp), intent(in)               :: x(:)
     real(dp), allocatable, intent(out) :: y(:)
 
@@ -443,7 +504,7 @@ contains
 
   subroutine matvec(this, x, y)
 
-    class(fit_minimizer), intent(in)   :: this
+    class(fit_optimizer), intent(in)   :: this
     real(dp), intent(in)               :: x(:)
     real(dp), allocatable, intent(out) :: y(:)
 
@@ -454,7 +515,7 @@ contains
 
   real(dp) function inner_product(this, u, v) result(prod)
 
-    class(fit_minimizer), intent(in) :: this
+    class(fit_optimizer), intent(in) :: this
     real(dp), intent(in) :: u(:), v(:)
 
     type(reduction) :: total
@@ -477,7 +538,7 @@ contains
 
   real(dp) function norm(this, u) result(length)
 
-    class(fit_minimizer), intent(in) :: this
+    class(fit_optimizer), intent(in) :: this
     real(dp), intent(in) :: u(:)
 
     type(reduction) :: measure_of
@@ -498,7 +559,7 @@ contains
 
   subroutine sweep_order(this, colours)
 
-    class(fit_minimizer), intent(in)  :: this
+    class(fit_optimizer), intent(in)  :: this
     integer, allocatable, intent(out) :: colours(:)
 
     type(walk) :: colouring
@@ -519,7 +580,7 @@ contains
 
   subroutine diagonal(this, d)
 
-    class(fit_minimizer), intent(in)   :: this
+    class(fit_optimizer), intent(in)   :: this
     real(dp), allocatable, intent(out) :: d(:)
 
     integer , allocatable :: colours(:)
@@ -563,7 +624,7 @@ contains
 
   subroutine constant(this, g)
 
-    class(fit_minimizer), intent(in)   :: this
+    class(fit_optimizer), intent(in)   :: this
     real(dp), allocatable, intent(out) :: g(:)
 
     g = this % affine
@@ -578,12 +639,12 @@ contains
 
   subroutine solve(this, rhs, x, achieved)
 
-    class(fit_minimizer), intent(inout) :: this
+    class(fit_optimizer), intent(inout) :: this
     real(dp), intent(in)    :: rhs(:)
     real(dp), intent(inout) :: x(:)
     real(dp), intent(out)   :: achieved
 
-    if (allocated(this % inner)) then
+    if (this % relinearize) then
        call solve_by_relinearizing(this, rhs, x, achieved)
        return
     end if
@@ -608,7 +669,7 @@ contains
 
   subroutine solve_by_relaxing(this, rhs, x, achieved)
 
-    class(fit_minimizer), intent(inout) :: this
+    class(fit_optimizer), intent(inout) :: this
     real(dp), intent(in)    :: rhs(:)
     real(dp), intent(inout) :: x(:)
     real(dp), intent(out)   :: achieved
@@ -725,7 +786,7 @@ contains
 
   subroutine solve_by_conjugacy(this, rhs, x, achieved)
 
-    class(fit_minimizer), intent(inout) :: this
+    class(fit_optimizer), intent(inout) :: this
     real(dp), intent(in)    :: rhs(:)
     real(dp), intent(inout) :: x(:)
     real(dp), intent(out)   :: achieved
@@ -777,7 +838,7 @@ contains
 
   subroutine solve_by_arnoldi(this, rhs, x, achieved)
 
-    class(fit_minimizer), intent(inout) :: this
+    class(fit_optimizer), intent(inout) :: this
     real(dp), intent(in)    :: rhs(:)
     real(dp), intent(inout) :: x(:)
     real(dp), intent(out)   :: achieved
@@ -889,7 +950,7 @@ contains
 
   subroutine solve_by_relinearizing(this, rhs, x, achieved)
 
-    class(fit_minimizer), intent(inout) :: this
+    class(fit_optimizer), intent(inout) :: this
     real(dp), intent(in)    :: rhs(:)
     real(dp), intent(inout) :: x(:)
     real(dp), intent(out)   :: achieved
@@ -937,7 +998,7 @@ contains
 
   pure function solver_name(this) result(name)
 
-    class(fit_minimizer), intent(in) :: this
+    class(fit_optimizer), intent(in) :: this
     character(len=:), allocatable :: name
 
     if (allocated(this % label)) then
@@ -950,7 +1011,7 @@ contains
 
   subroutine solver_domain(this, input_graph, domain)
 
-    class(fit_minimizer), intent(in)       :: this
+    class(fit_optimizer), intent(in)       :: this
     class(graph), intent(in)               :: input_graph
     class(graph), allocatable, intent(out) :: domain
 
@@ -962,15 +1023,22 @@ contains
 
   subroutine solver_apply(this, input_graph, input_data, output)
 
-    class(fit_minimizer), intent(in)               :: this
+    class(fit_optimizer), intent(in)               :: this
     class(graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
-    type(fit_minimizer) :: worker
+    type(fit_optimizer) :: worker
     type(field) :: out
     real(dp), allocatable :: rhs(:), x(:)
     real(dp) :: achieved
+
+    if (allocated(this % shape)) then
+       ! At the fit point the statement is not attached; it is
+       ! assembled from the constellation that just arrived.
+       call fit_apply(this, input_graph, input_data, output)
+       return
+    end if
 
     associate (u1 => input_graph); end associate
 
@@ -992,6 +1060,133 @@ contains
   end subroutine solver_apply
 
   !===================================================================!
+  ! THE FIT, PERFORMED. Positions in, weights out:
+  !
+  !      B(m,j) = basis_m(x_j)     r(m) = scale * d(basis_m)/dn |at
+  !      (B W B') lambda = r       w = W B' lambda
+  !
+  ! the conditions that make the answer exact on the form's span,
+  ! priced by distance so the near points carry the formula. The
+  ! dual is a statement like any other, and the governed optimizer
+  ! answers it.
+  !===================================================================!
+
+  subroutine fit_apply(this, input_graph, input_data, output)
+
+    class(fit_optimizer), intent(in)               :: this
+    class(graph), intent(in)                       :: input_graph
+    class(graph_field), intent(in), optional       :: input_data(:)
+    class(graph_field), allocatable, intent(inout) :: output
+
+    type(support) :: points, conditions
+    type(field)   :: out
+    type(stencil_operator) :: dual
+    real(dp), allocatable :: positions(:), w(:), b(:,:), bw(:,:)
+    real(dp), allocatable :: g(:,:), r(:), lam(:), entries(:), price(:)
+    integer , allocatable :: rows(:), columns(:), standing(:)
+    logical , allocatable :: stands(:)
+    type(fit_optimizer)   :: worker
+    real(dp) :: achieved, d2, nearest
+    integer :: npts, nc, i, j, v
+
+    worker = this % inner
+
+    npts = input_graph % num_vertices()
+
+    allocate(w(npts))
+    w = 0.0_dp
+
+    if (present(input_data)) then
+
+       call input_data(1) % get_real_vector(positions)
+
+       nc = this % shape % size_of()
+       allocate(b(nc, npts), g(nc, nc), r(nc), lam(nc))
+
+       ! The distance metric: a point's share is priced by how far
+       ! it stands from the target; the target's own point, when it
+       ! is a member, is priced as the nearest neighbour.
+       allocate(price(npts))
+       nearest = huge(1.0_dp)
+       do j = 1, npts
+          call this % shape % values(positions(3 * j - 2 : 3 * j), &
+               & this % at, b(:, j))
+          d2 = sum((positions(3 * j - 2 : 3 * j) - this % at)**2)
+          price(j) = d2
+          if (d2 > 0.0_dp) nearest = min(nearest, d2)
+       end do
+       do j = 1, npts
+          price(j) = 1.0_dp / max(price(j), nearest)
+       end do
+
+       call this % shape % slopes(this % at, this % at, &
+            & this % direction, r)
+       r = this % scale * r
+
+       ! Membership is the roster: a table entry outside the form's
+       ! member set carries no condition and no demand.
+       call this % shape % member_indices(standing)
+       allocate(stands(nc))
+       stands = .false.
+       do i = 1, size(standing)
+          if (standing(i) >= 1 .and. standing(i) <= nc) then
+             stands(standing(i)) = .true.
+          end if
+       end do
+       do i = 1, nc
+          if (.not. stands(i)) then
+             b(i, :) = 0.0_dp
+             r(i)    = 0.0_dp
+          end if
+       end do
+
+       allocate(bw(nc, npts))
+       do j = 1, npts
+          bw(:, j) = b(:, j) * price(j)
+       end do
+       g = matmul(bw, transpose(b))
+       do i = 1, nc
+          if (.not. stands(i)) g(i, i) = 1.0_dp
+       end do
+
+       allocate(rows(nc * nc), columns(nc * nc), entries(nc * nc))
+       do i = 1, nc
+          do j = 1, nc
+             rows((i - 1) * nc + j)    = i
+             columns((i - 1) * nc + j) = j
+             entries((i - 1) * nc + j) = g(i, j)
+          end do
+       end do
+
+       dual = stencil_operator(rows, columns, entries, &
+            & [(0.0_dp, i = 1, nc)], label='fitting dual')
+
+       conditions = support(GRAPH_SIDE_VERTEX, [(i, i = 1, nc)])
+       call worker % attach(dual, conditions)
+
+       lam = 0.0_dp
+       call worker % solve(r, lam, achieved)
+
+       do j = 1, npts
+          w(j) = 0.0_dp
+          do i = 1, nc
+             w(j) = w(j) + b(i, j) * lam(i)
+          end do
+          w(j) = w(j) * price(j)
+       end do
+
+    end if
+
+    points = support(GRAPH_SIDE_VERTEX, [(v, v = 1, npts)])
+    out = field('fit weights', points)
+    call out % set_real_vector(w)
+
+    if (allocated(output)) deallocate(output)
+    allocate(output, source=out)
+
+  end subroutine fit_apply
+
+  !===================================================================!
   ! THE STRUCTURE SIDE. A form arrives, a smaller form leaves. The
   ! rule says which members go; the restriction itself is the form's
   ! own act, so nothing here reaches into anyone.
@@ -999,7 +1194,7 @@ contains
 
   pure logical function form_defined_on_graph(this, input_graph)
 
-    class(form_minimizer), intent(in) :: this
+    class(form_optimizer), intent(in) :: this
     class(graph)         , intent(in) :: input_graph
 
     associate (u1 => this); end associate
@@ -1020,7 +1215,7 @@ contains
 
   subroutine adapt(this, shape, positions, adapted)
 
-    class(form_minimizer), intent(in)      :: this
+    class(form_optimizer), intent(in)      :: this
     class(form)          , intent(in)      :: shape
     real(dp)             , intent(in)      :: positions(:)
     class(form), allocatable, intent(out)  :: adapted
@@ -1053,4 +1248,4 @@ contains
 
   end subroutine adapt
 
-end module graph_minimization
+end module graph_optimization

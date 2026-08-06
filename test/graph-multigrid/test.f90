@@ -24,8 +24,8 @@ program test_graph_multigrid
   use class_fitted_balance, only : fitted_balance_stencil
   use class_polynomial_form, only : polynomial_form
   use class_graph_coarsener, only : coarsener, COARSEN_PAIRWISE
-  use graph_minimization, only : fit_minimizer, form_minimizer
-  use graph_minimization, only : gmres, jacobi, multigrid
+  use graph_optimization, only : fit_optimizer, form_optimizer
+  use graph_optimization, only : gmres, jacobi, multigrid
 
   implicit none
 
@@ -141,7 +141,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(fit_minimizer) :: mg
+    type(fit_optimizer) :: mg
     type(coarsener) :: c
     integer, allocatable :: assignment(:)
     real(dp), allocatable :: e_blocks(:), e_fine(:), r_fine(:), rc(:), ec(:)
@@ -191,8 +191,8 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(fit_minimizer) :: mg
-    type(fit_minimizer)     :: direct
+    type(fit_optimizer) :: mg
+    type(fit_optimizer)     :: direct
     type(coarsener) :: c
     integer, allocatable :: assignment(:)
     real(dp), allocatable :: g(:), rhs(:), x(:), xd(:)

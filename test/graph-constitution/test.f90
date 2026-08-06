@@ -38,8 +38,8 @@ program test_graph_constitution
   use class_advection      , only : advection
   use class_diffusion_statement, only : diffusion_statement
   use class_graph_stencil  , only : stencil_operator
-  use graph_minimization, only : fit_minimizer, form_minimizer
-  use graph_minimization, only : gmres
+  use graph_optimization, only : fit_optimizer, form_optimizer
+  use graph_optimization, only : gmres
 
   implicit none
 
@@ -385,7 +385,7 @@ contains
 
     type(mesh) :: m
     type(stencil_operator) :: op
-    type(fit_minimizer) :: gm
+    type(fit_optimizer) :: gm
     real(dp), allocatable :: g(:), rhs(:), x(:)
     real(dp) :: achieved
 
@@ -432,7 +432,7 @@ contains
 
     type(mesh) :: m
     type(stencil_operator) :: op
-    type(fit_minimizer) :: gm
+    type(fit_optimizer) :: gm
     real(dp), allocatable :: g(:), rhs(:), x(:), mixed(:), pinned(:)
     real(dp) :: achieved
 
@@ -484,7 +484,7 @@ contains
     real(dp), allocatable, intent(out) :: x(:)
     real(dp), intent(out)              :: achieved
 
-    type(fit_minimizer) :: gm
+    type(fit_optimizer) :: gm
     real(dp), allocatable :: g(:), rhs(:)
 
     ! stand at the named point of the product space

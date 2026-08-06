@@ -23,8 +23,7 @@ class_graph_coarsener.o \
 class_graph_refiner.o \
 class_graph_differential_operator.o \
 class_graph_balance.o \
-graph_minimization.o \
-graph_fitting.o \
+graph_optimization.o \
 class_fitted_balance.o \
 class_diffusion_statement.o \
 class_graph_marcher.o \

@@ -843,10 +843,7 @@ contains
 
     call fetch_vertex_values(input_data, nv, q, nc)
 
-    allocate(indices(ne))
-    do e = 1, ne
-       indices(e) = e
-    end do
+    indices = [(e, e = 1, ne)]
     on  = support(GRAPH_SIDE_EDGE, indices)
     out = field(this % name(), on, ncomp=max(nc, 1))
 
@@ -927,10 +924,7 @@ contains
     call fetch_vertex_values(input_data, nv, q, nc)
     if (nc == 0) call fetch_edge_values(input_data, ne, z, nc)
 
-    allocate(indices(nv))
-    do v = 1, nv
-       indices(v) = v
-    end do
+    indices = [(v, v = 1, nv)]
     on  = support(GRAPH_SIDE_VERTEX, indices)
     out = field(this % name(), on, ncomp=max(nc, 1))
 

@@ -55,7 +55,6 @@ module class_graph_refiner
    contains
 
      procedure :: defined_on_graph
-     procedure :: defined_on_data
      procedure :: refine_graph
      procedure :: refine_data
 
@@ -93,30 +92,6 @@ contains
     defined_on_graph = input_graph % num_vertices() > 0 .and. this % split >= 1
 
   end function defined_on_graph
-
-  !===================================================================!
-  ! Can this refiner say anything about that data? Yes for a field
-  ! whose entries match the graph it rides on.
-  !===================================================================!
-
-  pure logical function defined_on_data(this, input_graph, input_data)
-
-    class(refiner)   , intent(in) :: this
-    class(graph)     , intent(in) :: input_graph
-    class(graph_field), intent(in) :: input_data
-
-    defined_on_data = this % defined_on_graph(input_graph)
-
-    select type (input_data)
-    class is (field)
-       defined_on_data = defined_on_data &
-            & .and. input_data % on % side() == GRAPH_SIDE_VERTEX &
-            & .and. input_data % num_entries() >= 0
-    class default
-       defined_on_data = .false.
-    end select
-
-  end function defined_on_data
 
   !===================================================================!
   ! R. Split every cell, join each family together, and carry every
@@ -210,10 +185,7 @@ contains
        nfine = fine_graph % num_vertices()
        ncomp = coarse_data % num_components()
 
-       allocate(indices(nfine))
-       do v = 1, nfine
-          indices(v) = v
-       end do
+       indices = [(v, v = 1, nfine)]
 
        on  = support(GRAPH_SIDE_VERTEX, indices)
        out = field(coarse_data % name(), on, ncomp=ncomp, &

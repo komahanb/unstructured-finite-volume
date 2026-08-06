@@ -167,10 +167,7 @@ contains
 
     nv = input_graph % num_vertices()
 
-    allocate(indices(nv))
-    do v = 1, nv
-       indices(v) = v
-    end do
+    indices = [(v, v = 1, nv)]
 
     on  = support(GRAPH_SIDE_VERTEX, indices)
     out = field(this % name(), on)

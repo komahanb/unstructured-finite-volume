@@ -2,7 +2,7 @@
 ! LEVEL 1 OF THE STRATIFICATION . THE CALCULUS
 !
 ! The first level above the ground. This module answers one question
-! and no other: HOW QUANTITIES RELATE on a graph. It holds the eight
+! and no other: HOW QUANTITIES RELATE on a graph. It holds the ten
 ! named citizens of graph mathematics, each one a partial concretion
 ! of a grammar role - one bound parameter per name, and nothing else
 ! new.
@@ -49,7 +49,7 @@
 !
 ! The census of this level: ten types, seventeen operation symbols.
 ! With the grammar beneath, the tower stands at fourteen types and
-! seventy-two symbols.
+! seventy-one symbols.
 !
 !=====================================================================!
 !

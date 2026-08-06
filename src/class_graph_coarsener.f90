@@ -81,7 +81,6 @@ module class_graph_coarsener
    contains
 
      procedure :: defined_on_graph
-     procedure :: defined_on_data
      procedure :: coarsen_graph
      procedure :: coarsen_data
      procedure :: blocks
@@ -145,30 +144,6 @@ contains
     end if
 
   end function defined_on_graph
-
-  !===================================================================!
-  ! Can this coarsener say anything about that data? Yes for a field
-  ! whose entries match the graph; the graph gate answers first.
-  !===================================================================!
-
-  pure logical function defined_on_data(this, input_graph, input_data)
-
-    class(coarsener) , intent(in) :: this
-    class(graph)     , intent(in) :: input_graph
-    class(graph_field), intent(in) :: input_data
-
-    defined_on_data = this % defined_on_graph(input_graph)
-
-    select type (input_data)
-    class is (field)
-       defined_on_data = defined_on_data &
-            & .and. input_data % on % side() == GRAPH_SIDE_VERTEX &
-            & .and. input_data % num_entries() >= 0
-    class default
-       defined_on_data = .false.
-    end select
-
-  end function defined_on_data
 
   !===================================================================!
   ! C. Work out the blocks, then draw a face between two blocks
@@ -326,10 +301,7 @@ contains
        nv    = fine_graph % num_vertices()
        ncomp = fine_data % num_components()
 
-       allocate(indices(nb))
-       do b = 1, nb
-          indices(b) = b
-       end do
+       indices = [(b, b = 1, nb)]
 
        on  = support(GRAPH_SIDE_VERTEX, indices)
        out = field(fine_data % name(), on, ncomp=ncomp, &

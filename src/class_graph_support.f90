@@ -65,26 +65,26 @@ module class_graph_support
      procedure :: interior_vertices
      procedure :: boundary_vertices
      procedure :: tagged_vertices
-     procedure :: all_edges
-     procedure :: interior_edges
-     procedure :: boundary_edges
+     procedure :: all_edges      => no_edges
+     procedure :: interior_edges => no_edges
+     procedure :: boundary_edges => no_edges
      procedure :: tagged_edges
 
      ! The frame's sets.
      procedure :: owned_vertices
      procedure :: borrowed_vertices
      procedure :: overlap_vertices
-     procedure :: owned_edges
-     procedure :: borrowed_edges
-     procedure :: overlap_edges
+     procedure :: owned_edges    => no_part_edges
+     procedure :: borrowed_edges => no_part_edges
+     procedure :: overlap_edges  => no_part_edges
 
      ! Neighbourhoods: nobody is next to anybody.
-     procedure :: incident_edges
-     procedure :: adjacent_vertices
-     procedure :: outgoing_edges
-     procedure :: incoming_edges
-     procedure :: outgoing_vertices
-     procedure :: incoming_vertices
+     procedure :: incident_edges     => no_neighbours
+     procedure :: adjacent_vertices  => no_neighbours
+     procedure :: outgoing_edges     => no_neighbours
+     procedure :: incoming_edges     => no_neighbours
+     procedure :: outgoing_vertices  => no_neighbours
+     procedure :: incoming_vertices  => no_neighbours
 
      ! The frame's relations.
      procedure :: num_parts
@@ -256,7 +256,7 @@ contains
 
   end subroutine tagged_vertices
 
-  subroutine all_edges(this, members)
+  subroutine no_edges(this, members)
 
     class(support), intent(in) :: this
     class(graph), allocatable, intent(out) :: members
@@ -265,29 +265,7 @@ contains
 
     call empty_set(GRAPH_SIDE_EDGE, members)
 
-  end subroutine all_edges
-
-  subroutine interior_edges(this, members)
-
-    class(support), intent(in) :: this
-    class(graph), allocatable, intent(out) :: members
-
-    associate (u1 => this); end associate
-
-    call empty_set(GRAPH_SIDE_EDGE, members)
-
-  end subroutine interior_edges
-
-  subroutine boundary_edges(this, members)
-
-    class(support), intent(in) :: this
-    class(graph), allocatable, intent(out) :: members
-
-    associate (u1 => this); end associate
-
-    call empty_set(GRAPH_SIDE_EDGE, members)
-
-  end subroutine boundary_edges
+  end subroutine no_edges
 
   subroutine tagged_edges(this, tag, members)
 
@@ -342,7 +320,7 @@ contains
 
   end subroutine overlap_vertices
 
-  subroutine owned_edges(this, part_id, members)
+  subroutine no_part_edges(this, part_id, members)
 
     class(support), intent(in) :: this
     integer, intent(in) :: part_id
@@ -352,31 +330,7 @@ contains
 
     call empty_set(GRAPH_SIDE_EDGE, members)
 
-  end subroutine owned_edges
-
-  subroutine borrowed_edges(this, part_id, members)
-
-    class(support), intent(in) :: this
-    integer, intent(in) :: part_id
-    class(graph), allocatable, intent(out) :: members
-
-    associate (u1 => this, u2 => part_id); end associate
-
-    call empty_set(GRAPH_SIDE_EDGE, members)
-
-  end subroutine borrowed_edges
-
-  subroutine overlap_edges(this, part_id, members)
-
-    class(support), intent(in) :: this
-    integer, intent(in) :: part_id
-    class(graph), allocatable, intent(out) :: members
-
-    associate (u1 => this, u2 => part_id); end associate
-
-    call empty_set(GRAPH_SIDE_EDGE, members)
-
-  end subroutine overlap_edges
+  end subroutine no_part_edges
 
   !===================================================================!
   ! Neighbourhoods. No edges, so every neighbourhood is empty, and
@@ -384,7 +338,7 @@ contains
   ! unallocated one.
   !===================================================================!
 
-  pure subroutine incident_edges(this, vertex_index, indices)
+  pure subroutine no_neighbours(this, vertex_index, indices)
 
     class(support), intent(in) :: this
     integer, intent(in) :: vertex_index
@@ -394,67 +348,7 @@ contains
 
     allocate(indices(0))
 
-  end subroutine incident_edges
-
-  pure subroutine adjacent_vertices(this, vertex_index, indices)
-
-    class(support), intent(in) :: this
-    integer, intent(in) :: vertex_index
-    integer, allocatable, intent(out) :: indices(:)
-
-    associate (u1 => this, u2 => vertex_index); end associate
-
-    allocate(indices(0))
-
-  end subroutine adjacent_vertices
-
-  pure subroutine outgoing_edges(this, vertex_index, indices)
-
-    class(support), intent(in) :: this
-    integer, intent(in) :: vertex_index
-    integer, allocatable, intent(out) :: indices(:)
-
-    associate (u1 => this, u2 => vertex_index); end associate
-
-    allocate(indices(0))
-
-  end subroutine outgoing_edges
-
-  pure subroutine incoming_edges(this, vertex_index, indices)
-
-    class(support), intent(in) :: this
-    integer, intent(in) :: vertex_index
-    integer, allocatable, intent(out) :: indices(:)
-
-    associate (u1 => this, u2 => vertex_index); end associate
-
-    allocate(indices(0))
-
-  end subroutine incoming_edges
-
-  pure subroutine outgoing_vertices(this, vertex_index, indices)
-
-    class(support), intent(in) :: this
-    integer, intent(in) :: vertex_index
-    integer, allocatable, intent(out) :: indices(:)
-
-    associate (u1 => this, u2 => vertex_index); end associate
-
-    allocate(indices(0))
-
-  end subroutine outgoing_vertices
-
-  pure subroutine incoming_vertices(this, vertex_index, indices)
-
-    class(support), intent(in) :: this
-    integer, intent(in) :: vertex_index
-    integer, allocatable, intent(out) :: indices(:)
-
-    associate (u1 => this, u2 => vertex_index); end associate
-
-    allocate(indices(0))
-
-  end subroutine incoming_vertices
+  end subroutine no_neighbours
 
   !===================================================================!
   ! The frame's relations. Uncut, so one part and no stored record.

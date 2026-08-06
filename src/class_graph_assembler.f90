@@ -82,7 +82,6 @@ module class_graph_assembler
    contains
 
      procedure :: defined_on_graph
-     procedure :: defined_on_data
      procedure :: assemble_graph
      procedure :: assemble_data
 
@@ -125,28 +124,6 @@ contains
          &               input_graph % num_parts() == 1
 
   end function defined_on_graph
-
-  !===================================================================!
-  ! Can this assembler say anything about that data? Yes for a field
-  ! riding a part that passes the graph gate above.
-  !===================================================================!
-
-  pure logical function defined_on_data(this, input_graph, input_data)
-
-    class(assembler) , intent(in) :: this
-    class(graph)     , intent(in) :: input_graph
-    class(graph_field), intent(in) :: input_data
-
-    defined_on_data = this % defined_on_graph(input_graph)
-
-    select type (input_data)
-    class is (graph_field)
-       defined_on_data = defined_on_data .and. input_data % num_entries() >= 0
-    class default
-       defined_on_data = .false.
-    end select
-
-  end function defined_on_data
 
   !===================================================================!
   ! Put the piece back in whole-graph order.
@@ -248,10 +225,7 @@ contains
     ncomp = part_data % num_components()
     me    = part_graph % id()
 
-    allocate(indices(nglobal))
-    do f = 1, nglobal
-       indices(f) = f
-    end do
+    indices = [(f, f = 1, nglobal)]
 
     on  = support(GRAPH_SIDE_VERTEX, indices)
     out = field(part_data % name(), on, ncomp=ncomp, unit_name=part_data % units())
@@ -303,10 +277,7 @@ contains
     ncomp = part_data % num_components()
     me    = part_graph % id()
 
-    allocate(indices(nglobal))
-    do f = 1, nglobal
-       indices(f) = f
-    end do
+    indices = [(f, f = 1, nglobal)]
 
     on  = support(GRAPH_SIDE_EDGE, indices)
     out = field(part_data % name(), on, ncomp=ncomp, unit_name=part_data % units())

@@ -104,13 +104,9 @@ module class_graph_functional
      ! the concrete type: the same ten doors without the array.
      !----------------------------------------------------------------!
 
-     procedure :: get_integer_value
      procedure :: set_integer_value
-     procedure :: get_real_value
      procedure :: set_real_value
-     procedure :: get_complex_value
      procedure :: set_complex_value
-     procedure :: get_logical_value
      procedure :: set_logical_value
      procedure :: get_character_value
      procedure :: set_character_value
@@ -368,19 +364,6 @@ contains
   ! of the asked kind; a setter replaces the value and the kind.
   !===================================================================!
 
-  pure subroutine get_integer_value(this, value)
-
-    class(functional), intent(in) :: this
-    integer, intent(out) :: value
-
-    if (this % vkind == GRAPH_FIELD_INTEGER) then
-       value = this % ival
-    else
-       value = 0
-    end if
-
-  end subroutine get_integer_value
-
   pure subroutine set_integer_value(this, value)
 
     class(functional), intent(inout) :: this
@@ -390,19 +373,6 @@ contains
     this % vkind = GRAPH_FIELD_INTEGER
 
   end subroutine set_integer_value
-
-  pure subroutine get_real_value(this, value)
-
-    class(functional), intent(in) :: this
-    real(dp), intent(out) :: value
-
-    if (this % vkind == GRAPH_FIELD_REAL) then
-       value = this % rval
-    else
-       value = 0.0_dp
-    end if
-
-  end subroutine get_real_value
 
   pure subroutine set_real_value(this, value)
 
@@ -414,19 +384,6 @@ contains
 
   end subroutine set_real_value
 
-  pure subroutine get_complex_value(this, value)
-
-    class(functional), intent(in) :: this
-    complex(dp), intent(out) :: value
-
-    if (this % vkind == GRAPH_FIELD_COMPLEX) then
-       value = this % cval
-    else
-       value = (0.0_dp, 0.0_dp)
-    end if
-
-  end subroutine get_complex_value
-
   pure subroutine set_complex_value(this, value)
 
     class(functional), intent(inout) :: this
@@ -436,19 +393,6 @@ contains
     this % vkind = GRAPH_FIELD_COMPLEX
 
   end subroutine set_complex_value
-
-  pure subroutine get_logical_value(this, value)
-
-    class(functional), intent(in) :: this
-    logical, intent(out) :: value
-
-    if (this % vkind == GRAPH_FIELD_LOGICAL) then
-       value = this % lval
-    else
-       value = .false.
-    end if
-
-  end subroutine get_logical_value
 
   pure subroutine set_logical_value(this, value)
 

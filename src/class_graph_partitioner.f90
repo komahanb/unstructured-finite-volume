@@ -113,7 +113,6 @@ module class_graph_partitioner
    contains
 
      procedure :: defined_on_graph
-     procedure :: defined_on_data
      procedure :: partition_graph
      procedure :: partition_data
 
@@ -166,28 +165,6 @@ contains
     end if
 
   end function defined_on_graph
-
-  !===================================================================!
-  ! Data can be carried across when the graph can be cut and the data
-  ! sits on that graph.
-  !===================================================================!
-
-  pure logical function defined_on_data(this, input_graph, input_data)
-
-    class(partitioner), intent(in) :: this
-    class(graph)      , intent(in) :: input_graph
-    class(graph_field) , intent(in) :: input_data
-
-    defined_on_data = this % defined_on_graph(input_graph)
-
-    select type (input_data)
-    class is (graph_field)
-       defined_on_data = defined_on_data .and. input_data % num_entries() >= 0
-    class default
-       defined_on_data = .false.
-    end select
-
-  end function defined_on_data
 
   !===================================================================!
   ! P. Work out who owns what, gather this part's cells, and rebuild
@@ -502,10 +479,7 @@ contains
     nlocal = part_graph % num_vertices()
     ncomp  = global_data % num_components()
 
-    allocate(locals(nlocal))
-    do l = 1, nlocal
-       locals(l) = l
-    end do
+    locals = [(l, l = 1, nlocal)]
 
     on  = support(GRAPH_SIDE_VERTEX, locals)
     out = field(global_data % name(), on, ncomp=ncomp, unit_name=global_data % units())
@@ -546,10 +520,7 @@ contains
     nlocal = part_graph % num_edges()
     ncomp  = global_data % num_components()
 
-    allocate(locals(nlocal))
-    do l = 1, nlocal
-       locals(l) = l
-    end do
+    locals = [(l, l = 1, nlocal)]
 
     on  = support(GRAPH_SIDE_EDGE, locals)
     out = field(global_data % name(), on, ncomp=ncomp, unit_name=global_data % units())

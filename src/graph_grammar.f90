@@ -61,7 +61,7 @@
 ! Under these rules the minimum is exactly the four roles below. A
 ! fifth role always either absorbs into one of the four or forces
 ! dead procedures somewhere. The census of this level: four roles,
-! fifty-five operation symbols.
+! fifty-four operation symbols.
 !
 !=====================================================================!
 !
@@ -403,7 +403,6 @@ module graph_grammar
    contains
 
      procedure(transform_on_graph_interface), deferred :: defined_on_graph
-     procedure(transform_on_data_interface) , deferred :: defined_on_data
 
   end type graph_transform
 
@@ -662,13 +661,6 @@ module graph_grammar
        class(graph_transform), intent(in) :: this
        class(graph), intent(in) :: input_graph
      end function transform_on_graph_interface
-
-     pure logical function transform_on_data_interface(this, input_graph, input_data)
-       import :: graph_transform, graph, graph_field
-       class(graph_transform), intent(in) :: this
-       class(graph), intent(in) :: input_graph
-       class(graph_field), intent(in) :: input_data
-     end function transform_on_data_interface
 
   end interface
 

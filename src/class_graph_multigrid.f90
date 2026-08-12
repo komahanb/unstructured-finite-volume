@@ -120,9 +120,9 @@ contains
 
     end select
 
-    call this % smoother % attach(this % action, this % on)
+    call this % smoother % attach(this % action, this % on, this % unknown_domain)
 
-    call this % coarse % attach(block_statement, block_statement % pattern)
+    call this % coarse % attach(block_statement, block_statement % pattern, block_statement % pattern % vertex_set())
 
   end subroutine setup
 

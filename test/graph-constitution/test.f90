@@ -393,7 +393,7 @@ contains
     op = diffusion_statement(m, conduction(1.7_dp), &
          & [dirichlet('in', 0.0_dp), dirichlet('out', 10.0_dp)])
 
-    call gm % attach(op, m)
+    call gm % attach(op, m, m % vertex_set())
     gm % tolerance = 1.0d-12
 
     call gm % constant(g)
@@ -480,7 +480,7 @@ contains
     type(gmres) :: gm
     real(dp), allocatable :: g(:), rhs(:)
 
-    call gm % attach(op, m)
+    call gm % attach(op, m, m % vertex_set())
     gm % tolerance      = 1.0d-12
     gm % max_iterations = 200
 

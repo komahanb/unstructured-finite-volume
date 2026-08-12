@@ -396,7 +396,7 @@ contains
            & boundary_values=vb)
     end block
 
-    call gm % attach(op, m)
+    call gm % attach(op, m, m % vertex_set())
     gm % tolerance = 1.0d-12
 
     call gm % constant(g)

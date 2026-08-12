@@ -249,7 +249,7 @@ contains
     integer :: v, i
 
     m = chain_mesh()
-    call js % attach(chain_operator(m), m)
+    call js % attach(chain_operator(m), m, m % vertex_set())
 
     call js % diagonal(d)
     call report(all(abs(d - [-3.0_dp, -2.0_dp, -3.0_dp]) < 1.0d-12), &
@@ -289,7 +289,7 @@ contains
     real(dp), parameter :: exact(3) = [5.0_dp/3.0_dp, 5.0_dp, 25.0_dp/3.0_dp]
 
     m = chain_mesh()
-    call js % attach(chain_operator(m), m)
+    call js % attach(chain_operator(m), m, m % vertex_set())
     js % max_iterations = 5000
     js % tolerance      = 1.0d-12
 
@@ -343,7 +343,7 @@ contains
     end block
 
     call cg % attach(vertex_differential_operator(order=2, &
-         & coefficients=c, spacings=deltas), m)
+         & coefficients=c, spacings=deltas), m, m % vertex_set())
     cg % max_iterations = 2000
     cg % tolerance      = 1.0d-10
 
@@ -382,7 +382,7 @@ contains
     real(dp), parameter :: exact(3) = [5.0_dp/3.0_dp, 5.0_dp, 25.0_dp/3.0_dp]
 
     m = chain_mesh()
-    call gs % attach(chain_operator(m), m)
+    call gs % attach(chain_operator(m), m, m % vertex_set())
     gs % max_iterations = 2000
     gs % tolerance      = 1.0d-12
 
@@ -423,7 +423,7 @@ contains
 
     m = chain_mesh()
 
-    call gm % attach(chain_operator(m), m)
+    call gm % attach(chain_operator(m), m, m % vertex_set())
     gm % tolerance = 1.0d-12
     call gm % constant(g)
     rhs = -g
@@ -443,7 +443,7 @@ contains
          &      coefficients=[0.4_dp, 0.4_dp, 0.0_dp, 0.0_dp], &
          &      one_sided=.true.)])
 
-    call gm % attach(statement, m)
+    call gm % attach(statement, m, m % vertex_set())
     call gm % constant(g)
     rhs = -g
     x = 0.0_dp
@@ -451,7 +451,7 @@ contains
     call report(achieved < 1.0d-10, &
          & 'gmres closes the unsymmetric statement', nfail)
 
-    call js % attach(statement, m)
+    call js % attach(statement, m, m % vertex_set())
     js % max_iterations = 5000
     js % tolerance      = 1.0d-12
     allocate(xj(3))
@@ -488,7 +488,7 @@ contains
     ns % inner % tolerance = 1.0d-12
     ns % tolerance = 1.0d-7
 
-    call ns % attach(action, m)
+    call ns % attach(action, m, m % vertex_set())
 
     allocate(q(3))
     q = 0.0_dp

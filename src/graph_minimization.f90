@@ -1,7 +1,12 @@
 !=====================================================================!
-! LEVEL 2 OF THE STRATIFICATION . THE MINIMIZATION
+! LEVEL 7 OF THE NEW TOWER . THE MINIMIZATION
 !
-! The first level with a goal: drive a residual toward zero. This
+! The first level with a goal, and its law in one line: given a
+! residual map R : U -> Y, vary the values on the UNKNOWN domain U
+! to drive the values on the RESIDUAL domain Y toward zero. U and Y
+! are member_set identities - never assumed to be anyone's
+! vertices; the graph argument survives only as the legacy
+! operation host the compatibility apply() signature still wants. This
 ! module holds the minimizer base - ONE family for one story:
 ! attach a statement, drive its residual to zero. Linear solvers,
 ! newton, and whatever else minimizes a residual are its
@@ -56,7 +61,13 @@ module graph_minimization
      class(graph_operation), allocatable :: action
      class(graph)          , allocatable :: on
 
-     type(counted_set) :: cells
+     ! The unknown domain U: where the answer lives, explicit at
+     ! attach, identity preserved - never inferred from the host.
+     class(member_set), allocatable :: unknown_domain
+
+     ! The residual domain Y: what the action answers on, asked of
+     ! the action itself at attach.
+     class(member_set), allocatable :: residual_domain
 
      ! A second seat, one member per NUMBER rather than per cell.
      ! The pairings live here: a measure carries one weight per
@@ -126,15 +137,16 @@ contains
   ! its boundary values and sources say by themselves.
   !===================================================================!
 
-  subroutine attach(this, action, on, ncomp)
+  subroutine attach(this, action, on, unknown_domain, ncomp)
 
     class(minimizer)  , intent(inout) :: this
     class(graph_operation), intent(in)    :: action
     class(graph)          , intent(in)    :: on
+    class(member_set)     , intent(in)    :: unknown_domain
     integer, intent(in), optional         :: ncomp
 
     real(dp), allocatable :: zero(:)
-    integer :: v, nv
+    integer :: n
 
     if (allocated(this % action)) deallocate(this % action)
     allocate(this % action, source=action)
@@ -144,13 +156,19 @@ contains
     this % ncomp = 1
     if (present(ncomp)) this % ncomp = max(ncomp, 1)
 
-    nv = on % num_vertices()
-    ! The solver's fields ride the statement graph's own carrier, so
-    ! every kernel downstream recognizes their domain by identity.
-    this % cells   = on % vertex_set()
-    this % numbers = counted_set('numbers', nv * this % ncomp)
+    ! The unknown domain arrives EXPLICIT and identity-preserving.
+    ! No hidden fallback to the host's vertices: a caller that
+    ! means vertices says so at its own call site.
+    if (allocated(this % unknown_domain)) deallocate(this % unknown_domain)
+    allocate(this % unknown_domain, source=unknown_domain)
 
-    allocate(zero(nv * this % ncomp))
+    ! The residual domain is the action's own answer.
+    call action % domain(on, this % residual_domain)
+
+    n = this % unknown_domain % size()
+    this % numbers = counted_set('numbers', n * this % ncomp)
+
+    allocate(zero(n * this % ncomp))
     zero = 0.0_dp
     call raw_apply(this, zero, this % affine)
 
@@ -169,10 +187,19 @@ contains
     type(field) :: state
     class(graph_field), allocatable :: answer
 
-    state = field('state', this % cells, ncomp=this % ncomp)
+    state = field('state', this % unknown_domain, ncomp=this % ncomp)
     call state % set_real_vector(x)
 
     call this % action % apply(this % on, [state], answer)
+
+    block
+      class(member_set), allocatable :: got
+      call answer % domain(got)
+      if (.not. got % same_as(this % residual_domain)) then
+         error stop 'minimization: the action must answer on its stated residual domain'
+      end if
+    end block
+
     call answer % get_real_vector(y)
 
   end subroutine raw_apply
@@ -320,9 +347,10 @@ contains
     class(graph), intent(in)               :: input_graph
     class(member_set), allocatable, intent(out) :: domain
 
-    associate (u1 => this); end associate
+    associate (u1 => input_graph); end associate
 
-    call input_graph % all_vertices(domain)
+    ! The solver's answer is a solution on U.
+    allocate(domain, source=this % unknown_domain)
 
   end subroutine solver_domain
 
@@ -349,7 +377,7 @@ contains
        call worker % solve(rhs, x, achieved)
     end if
 
-    out = field('solution', this % cells, ncomp=this % ncomp)
+    out = field('solution', this % unknown_domain, ncomp=this % ncomp)
     call out % set_real_vector(x)
 
     if (allocated(output)) deallocate(output)

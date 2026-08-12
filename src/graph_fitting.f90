@@ -230,7 +230,7 @@ contains
        dual = stencil_operator(rows, columns, entries, &
             & [(0.0_dp, i = 1, nc)], label='fitting dual')
 
-       call solver % attach(dual, dual % pattern)
+       call solver % attach(dual, dual % pattern, dual % pattern % vertex_set())
        solver % tolerance      = 1.0d-14
        solver % max_iterations = 50
 

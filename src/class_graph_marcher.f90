@@ -158,7 +158,7 @@ contains
 
        ! The state's width travels with it: a cell carrying several
        ! numbers is measured whole, not by its first stripe.
-       call this % inner % attach(statement, on, &
+       call this % inner % attach(statement, on, on % vertex_set(), &
             & ncomp = size(q) / max(on % num_vertices(), 1))
        call this % inner % solve(zeros, q, answered)
 

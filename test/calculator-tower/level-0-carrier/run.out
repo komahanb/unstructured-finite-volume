@@ -1,0 +1,31 @@
+ =============================================
+ calculator tower . level 0 . carriers
+ =============================================
+ PASS : X counts its five value slots
+ PASS : O counts its two operations
+ PASS : P counts its three ports
+ PASS : X is not O
+ PASS : X is not P
+ PASS : O is not P
+ PASS : member and local_index invert on X
+ PASS : member and local_index invert on O
+ PASS : member and local_index invert on P
+ PASS : a and e are value slots
+ PASS : + is an operation and out is a port
+ PASS : an outsider is rejected by X
+ PASS : and by O
+ PASS : and by P
+ =============================================
+ calculator level 0: all truths hold
+ERROR STOP graph_carrier: a domain never signs twice
+
+Error termination. Backtrace:
+#0  0x7fbd83db7e70 in ???
+#1  0x7fbd83db8ba9 in ???
+#2  0x7fbd83dba2f7 in ???
+#3  0x55fa112008fd in __graph_carrier_MOD_declare
+	at /home/komahan/git/unstructured-finite-volume/src/graph_carrier.f90:227
+#4  0x55fa111fd3b2 in calculator_level_0_refusal
+	at /home/komahan/git/unstructured-finite-volume/test/calculator-tower/level-0-carrier/refusal.f90:21
+#5  0x55fa111fd479 in main
+	at /home/komahan/git/unstructured-finite-volume/test/calculator-tower/level-0-carrier/refusal.f90:13

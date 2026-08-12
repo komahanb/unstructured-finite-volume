@@ -6,10 +6,14 @@ make -C "$here" clean >/dev/null 2>&1 || true
 make -C "$here" >/dev/null
 cd "$here" && ./run
 declare -A reason=(
-  [shape]="a value vector must fill its domain exactly"
+  [ishape]="a value vector must fill its domain exactly"
+  [rshape]="a value vector must fill its domain exactly"
+  [cshape]="a value vector must fill its domain exactly"
+  [lshape]="a value vector must fill its domain exactly"
+  [sshape]="a value vector must fill its domain exactly"
   [unsigned]="a field needs a declared domain"
 )
-for case in shape unsigned; do
+for case in ishape rshape cshape lshape sshape unsigned; do
     if ./refusal "$case" >refusal.out 2>&1; then echo " FAIL : '$case' accepted"; exit 1; fi
     grep -q "${reason[$case]}" refusal.out && echo " PASS : '$case' is refused, loudly" || { cat refusal.out; exit 1; }
 done

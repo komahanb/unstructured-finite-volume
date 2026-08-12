@@ -2,9 +2,9 @@
 ! The concrete field: values over a domain.
 !
 ! One concrete type serves every field in the tower. Its domain is a
-! support, and the support's side - vertex or edge - is the only
-! thing that ever distinguished a cell field from a face field, so
-! the distinction lives there and nowhere else. Because there is
+! member_set - an ambient carrier or a subset subobject - and the
+! domain's identity is the only thing that ever distinguishes a
+! cell field from a face field; no side flag exists anywhere. Because there is
 ! exactly one concrete field, a plain Fortran array can hold a
 ! collection of them.
 !
@@ -142,9 +142,9 @@ module class_graph_field
 contains
 
   !===================================================================!
-  ! Build an empty field on a domain. The domain's side says whether
-  ! this is a cell field or a face field; the field does not repeat
-  ! the fact.
+  ! Build an empty field on a domain. The domain's identity says
+  ! whether this is a cell field or a face field; the field does not
+  ! repeat the fact.
   !===================================================================!
 
   type(field) function create(label, on, ncomp, unit_name) result(this)

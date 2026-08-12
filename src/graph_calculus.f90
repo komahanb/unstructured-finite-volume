@@ -12,7 +12,6 @@
 !
 !                      THE TEN CONCRETIONS
 !
-!    graph -----[edge count = 0]----------> graph_support
 !    field -----[domain size = 1]---------> graph_functional
 !    operation -[answer domain = 1]-------> graph_reduction
 !    operation -[source domain = 1]-------> graph_broadcast
@@ -340,8 +339,7 @@ module graph_calculus
   abstract interface
 
      !===============================================================!
-     ! The support's one question.
-     !===============================================================!
+          !===============================================================!
 
 
      !===============================================================!
@@ -514,3 +512,9 @@ module graph_calculus
   end interface
 
 end module graph_calculus
+
+! NOTE (phase 5B): GRAPH_SIDE_VERTEX / GRAPH_SIDE_EDGE survive only
+! as the legacy differential operator's finite LANDING choice - which
+! side its answer lands on. They no longer describe any field's
+! domain: domains are member_set identities, and the old
+! support-as-edgeless-graph ontology is retired.

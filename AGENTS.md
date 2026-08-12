@@ -1065,8 +1065,12 @@ f:S\to V.
 \]
 
 A field domain is therefore **always a member_set** — an ambient
-carrier or a `subset_set` subobject — one domain kind, never a
-carrier-or-predicate union, and never an edgeless graph.
+carrier or a `subset_set` subobject (a support IS a member_set) —
+one domain kind, never a carrier-or-predicate union, and never an
+edgeless graph. This is now implemented: `graph_field_calculus`
+owns the abstract field, `class_graph_field%on` is a polymorphic
+member_set, and the shape law `stored = domain.size * ncomp` is
+refused loudly in every value kind.
 
 ## 20.2 Field contract
 
@@ -1525,7 +1529,10 @@ not:
 support extends graph with zero edges
 ```
 
-Migration rule (staged; 1 is complete):
+Migration rule (staged; ALL STAGES COMPLETE as of 2026-08-12 —
+`class_graph_support` is deleted, field domains are member_set,
+the six side() routing sites are gone, and partition/assembly
+transport domains; the stages remain recorded for the history):
 
 1. introduce `subset_set` with the inclusion law, `inclusion_of`,
    and the transitive `is_subobject_of` embedding query;
@@ -2026,9 +2033,14 @@ Architecture first, filenames second.
 Proceed by semantic seams, not by mass rewrite.
 
 Status (2026-08-12, branch `tower-graph-as-sets-relations`): Phases
-0–4 are complete, with the reviews' amendments folded in; Phase 5's
-subobject introduction (5A) is complete; the staged field/consumer
-rewiring (5B, section 37) is next.
+0–5 are complete, with the reviews' amendments folded in. The earned
+relation-algebra primitives exist (restrict/project/compose, §9);
+the relational graph exists (§14); graph interpretation and
+algorithms exist (directed adjacency view, sources/sinks/reachable/
+topological order, §16/§18); the 5B field/support migration is
+complete (§37–§38) including domain-aware partition/assembly
+transport (§39); calculator levels 0–5 are certified. Phase
+numbering is historical — it does not mirror calculator levels.
 
 ## Phase 0 — characterization
 

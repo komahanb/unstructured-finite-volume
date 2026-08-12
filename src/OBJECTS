@@ -1,13 +1,13 @@
 objects= \
 graph_identity.o \
 graph_carrier.o \
-graph_field_calculus.o \
 graph_relation.o \
 graph_binary_relation.o \
 graph_relation_algebra.o \
 graph_structure.o \
 graph_profile.o \
 graph_algorithms.o \
+graph_field_calculus.o \
 graph_grammar.o \
 graph_calculus.o \
 class_graph_field.o \

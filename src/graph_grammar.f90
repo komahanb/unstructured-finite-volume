@@ -1,11 +1,16 @@
 !=====================================================================!
-! LEVEL 0 OF THE STRATIFICATION . THE GRAMMAR
+! THE LEGACY ORDINARY-GRAPH COMPATIBILITY CONTRACT
 !
-! The ground level of the tower. This module answers one question and
-! no other: WHAT MAY EXIST. It holds four abstract roles and their
-! operation symbols - no mathematics, no algorithms, no physics.
-! Those arrive on the levels above, each one a partial concretion of
-! what stands here.
+! ONCE the ground level of the old stratification; now the legacy
+! vertex/edge compatibility contract of the relation-centered tower
+! (AGENTS.md). The NEW ground is graph_carrier; relations, algebra,
+! the relational graph, the interpretations and the field calculus
+! all live in their own level modules. What remains here is the
+! ordinary-graph vocabulary the old solvers still speak - retyped
+! onto the new ontology: named graph sets answer member_set /
+! subset_set; a field's domain IS a member_set; the field
+! abstraction itself is OWNED by graph_field_calculus and only
+! re-exported here for its remaining consumers.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -75,10 +80,9 @@
 !    graph_operation .. verb within   how data becomes other data
 !    graph_transform .. verb between  how one graph becomes another
 !
-! The definition is self-hosting. A graph is two member sets and two
-! integer edge fields, tail and head. A member set is itself a graph
-! with no edges. A field's domain is such a graph. Structure is
-! data, and the grammar closes on itself.
+! A graph here is the ordinary reading: two member sets joined by
+! tail and head. Member sets themselves are carriers now, never
+! edgeless graphs; a field's domain is a member_set, full stop.
 !
 !=====================================================================!
 !

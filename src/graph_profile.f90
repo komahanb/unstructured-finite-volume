@@ -61,7 +61,7 @@ module graph_profile
   implicit none
 
   private
-  public :: ordinary_graph_view
+  public :: ordinary_graph_view, directed_adjacency_view
 
   type :: ordinary_graph_view
 
@@ -92,6 +92,47 @@ module graph_profile
   interface ordinary_graph_view
      module procedure create_view
   end interface ordinary_graph_view
+
+  !===================================================================!
+  ! THE DIRECTED ADJACENCY: the second schema this level reads, and
+  ! a smaller one. Where the ordinary view wants E, V and two
+  ! endpoint relations, this one interprets a single binary
+  ! relation whose two slots are ONE declared domain,
+  !
+  !      A  <=  V x V        first slot FROM, second slot TO
+  !
+  ! No edge carrier is manufactured, no tail and head relations are
+  ! derived, no orientation metadata rides anywhere: the tuple
+  ! order of a same-domain binary relation IS the direction.
+  !
+  ! OWNERSHIP, AS EVERYWHERE. The constructor takes the graph and a
+  ! SELECTOR - an identity used only to find the graph-owned
+  ! relation. What the view borrows is g's own stable storage,
+  ! never the selector object, so the selector may die the moment
+  ! the view is born; the graph must outlive the view, as the
+  ! ownership policy has always said.
+  !
+  ! The view interprets; it does not compute. Sources, sinks,
+  ! reachability and ordering act on it from outside
+  ! (graph_algorithms) - traversal is not storage.
+  !===================================================================!
+
+  type :: directed_adjacency_view
+
+     class(member_set)     , allocatable, private :: over
+     class(binary_relation), pointer    , private :: adjacency => null()
+
+   contains
+
+     procedure :: domain            => adjacency_domain
+     procedure :: successors_view
+     procedure :: predecessors_view
+
+  end type directed_adjacency_view
+
+  interface directed_adjacency_view
+     module procedure create_adjacency_view
+  end interface directed_adjacency_view
 
 contains
 
@@ -409,5 +450,95 @@ contains
     indices = indices(1:n)
 
   end subroutine incoming_vertices
+
+  !===================================================================!
+  ! Read the directed adjacency off a relational graph: find the
+  ! graph-owned relation the selector names, and refuse everything
+  ! the interpretation cannot mean. The graph may lawfully CONTAIN
+  ! all the refused shapes - only this reading refuses them:
+  !
+  !      not owned by the graph      no borrow without an owner
+  !      not binary                  an adjacency is a pair
+  !      two different domains       an adjacency runs over one
+  !===================================================================!
+
+  type(directed_adjacency_view) function create_adjacency_view(g, &
+       & selector) result(this)
+
+    class(relational_graph), target, intent(in) :: g
+    class(relation)                , intent(in) :: selector
+
+    class(relation), pointer       :: rp
+    class(member_set), allocatable :: s, t
+    integer                        :: k
+    logical                        :: found
+
+    found = .false.
+    do k = 1, g % num_relations()
+       rp => g % relation_at(k)
+       if (rp % same_as(selector)) then
+          found = .true.
+          exit
+       end if
+    end do
+    if (.not. found) then
+       error stop 'graph_profile: the graph does not own the selected relation'
+    end if
+
+    select type (rp)
+    class is (binary_relation)
+       this % adjacency => rp
+    class default
+       error stop 'graph_profile: a directed adjacency reads a binary relation'
+    end select
+
+    s = this % adjacency % source()
+    t = this % adjacency % target()
+    if (.not. s % same_as(t)) then
+       error stop 'graph_profile: a directed adjacency runs over one domain'
+    end if
+
+    allocate(this % over, source=s)
+
+  end function create_adjacency_view
+
+  !===================================================================!
+  ! The one domain, as a copy - the same declared domain.
+  !===================================================================!
+
+  function adjacency_domain(this) result(domain)
+
+    class(directed_adjacency_view), intent(in) :: this
+    class(member_set), allocatable             :: domain
+
+    allocate(domain, source=this % over)
+
+  end function adjacency_domain
+
+  !===================================================================!
+  ! The fibres of the interpretation: where a member points, and
+  ! what points at it - borrows into the graph-owned index, costs
+  ! as the binary citizen states them.
+  !===================================================================!
+
+  function successors_view(this, member) result(fibre)
+
+    class(directed_adjacency_view), intent(in) :: this
+    integer                       , intent(in) :: member
+    integer, pointer                           :: fibre(:)
+
+    fibre => this % adjacency % image_view(member)
+
+  end function successors_view
+
+  function predecessors_view(this, member) result(fibre)
+
+    class(directed_adjacency_view), intent(in) :: this
+    integer                       , intent(in) :: member
+    integer, pointer                           :: fibre(:)
+
+    fibre => this % adjacency % preimage_view(member)
+
+  end function predecessors_view
 
 end module graph_profile

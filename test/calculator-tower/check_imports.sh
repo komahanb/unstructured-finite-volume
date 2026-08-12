@@ -25,6 +25,10 @@ allowed_for() {
         # infrastructure); the profile and everything above stay
         # forbidden.
         level-3-graph)           echo "calculator_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_structure" ;;
+        # level 4: the profile's interpretation and the algorithms
+        # that walk it; the legacy graph stack, fields and all above
+        # stay forbidden.
+        level-4-graph-calculus)  echo "calculator_assert graph_carrier graph_relation graph_relation_algebra graph_structure graph_profile graph_algorithms" ;;
         *)                       echo "__no_allowlist__" ;;
     esac
 }

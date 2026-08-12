@@ -417,6 +417,20 @@ The topological order is
 \boxed{+,\times}.
 \]
 
+**As implemented**, the interpretation reads the graph-owned
+dependency and the algorithms act from outside:
+
+```text
+graph-owned D
+    ↓ directed_adjacency_view(g, d)     borrows g's own relation;
+    ↓                                   the selector may die
+graph_algorithms: sources / sinks / reachable / topological_order
+```
+
+Sources and sinks come back as `subset_set` subobjects of \(O\),
+canonical by the carrier's declaration order
+(`src/graph_profile.f90`, `src/graph_algorithms.f90`).
+
 ## Minimal verification
 
 Verify:

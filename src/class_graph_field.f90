@@ -147,12 +147,16 @@ contains
   ! the fact.
   !===================================================================!
 
-  pure type(field) function create(label, on, ncomp, unit_name) result(this)
+  type(field) function create(label, on, ncomp, unit_name) result(this)
 
     character(len=*), intent(in)           :: label
     class(member_set), intent(in)          :: on
     integer         , intent(in), optional :: ncomp
     character(len=*), intent(in), optional :: unit_name
+
+    if (.not. on % same_as(on)) then
+       error stop 'class_graph_field: a field needs a declared domain'
+    end if
 
     this % label = label
     allocate(this % on, source=on)

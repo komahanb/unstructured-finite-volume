@@ -32,9 +32,8 @@ module class_graph_step
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_grammar      , only : graph, graph_field, graph_operation
+  use graph_carrier      , only : member_set
   use graph_calculus     , only : discretization_operator
-  use graph_calculus     , only : GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
   use class_graph_field  , only : field
   use class_graph        , only : stored_graph
 
@@ -157,7 +156,7 @@ contains
 
     class(step_operator), intent(in)       :: this
     class(graph), intent(in)               :: input_graph
-    class(graph), allocatable, intent(out) :: domain
+    class(member_set), allocatable, intent(out) :: domain
 
     associate (u1 => this); end associate
 
@@ -172,11 +171,10 @@ contains
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
-    type(support) :: cells
     type(field)   :: out
     class(graph_field), allocatable :: velocity
     real(dp), allocatable :: q(:), s(:), y(:)
-    integer :: nv, ncomp, v
+    integer :: nv, ncomp
 
     nv = input_graph % num_vertices()
 
@@ -198,8 +196,7 @@ contains
     end if
 
     ncomp = size(y) / max(nv, 1)
-    cells = support(GRAPH_SIDE_VERTEX, [(v, v = 1, nv)])
-    out = field('step residual', cells, ncomp=ncomp)
+    out = field('step residual', input_graph % vertex_set(), ncomp=ncomp)
     call out % set_real_vector(y)
 
     if (allocated(output)) deallocate(output)

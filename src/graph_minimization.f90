@@ -35,9 +35,8 @@ module graph_minimization
 
   use iso_fortran_env       , only : dp => REAL64
   use graph_grammar         , only : graph, graph_field, graph_operation
-  use class_graph_field     , only : field
-  use graph_calculus        , only : GRAPH_SIDE_VERTEX, graph_functional
-  use class_graph_support   , only : support
+  use graph_carrier         , only : member_set, counted_set
+  use graph_calculus        , only : graph_functional
   use class_graph_field     , only : field
   use class_graph_reduction , only : reduction, REDUCE_SUM, REDUCE_NORM
   use class_graph_walk      , only : walk, WALK_COLOURING
@@ -57,7 +56,7 @@ module graph_minimization
      class(graph_operation), allocatable :: action
      class(graph)          , allocatable :: on
 
-     type(support) :: cells
+     type(counted_set) :: cells
 
      ! A second seat, one member per NUMBER rather than per cell.
      ! The pairings live here: a measure carries one weight per
@@ -65,7 +64,7 @@ module graph_minimization
      ! the values themselves - the calculus says as much in its own
      ! banner. With one number per cell the two seats are the same
      ! set, and nothing changes.
-     type(support) :: numbers
+     type(counted_set) :: numbers
 
      ! How wide an entry is. One number per cell is the common case
      ! and the default; a state with several numbers per cell - a
@@ -146,9 +145,10 @@ contains
     if (present(ncomp)) this % ncomp = max(ncomp, 1)
 
     nv = on % num_vertices()
-    this % cells   = support(GRAPH_SIDE_VERTEX, [(v, v = 1, nv)])
-    this % numbers = support(GRAPH_SIDE_VERTEX, &
-         & [(v, v = 1, nv * this % ncomp)])
+    ! The solver's fields ride the statement graph's own carrier, so
+    ! every kernel downstream recognizes their domain by identity.
+    this % cells   = on % vertex_set()
+    this % numbers = counted_set('numbers', nv * this % ncomp)
 
     allocate(zero(nv * this % ncomp))
     zero = 0.0_dp
@@ -318,7 +318,7 @@ contains
 
     class(minimizer), intent(in)       :: this
     class(graph), intent(in)               :: input_graph
-    class(graph), allocatable, intent(out) :: domain
+    class(member_set), allocatable, intent(out) :: domain
 
     associate (u1 => this); end associate
 

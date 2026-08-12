@@ -78,7 +78,6 @@ module graph_calculus
 
   private
 
-  public :: graph_support
   public :: graph_functional
   public :: graph_reduction
   public :: graph_broadcast
@@ -115,13 +114,6 @@ module graph_calculus
   ! graph no longer carries data that could.
   !===================================================================!
 
-  type, abstract, extends(graph) :: graph_support
-
-   contains
-
-     procedure(support_side_interface), deferred :: side
-
-  end type graph_support
 
   !===================================================================!
   ! GRAPH_FUNCTIONAL. The grammar's field at domain size one: a
@@ -351,10 +343,6 @@ module graph_calculus
      ! The support's one question.
      !===============================================================!
 
-     pure integer function support_side_interface(this)
-       import :: graph_support
-       class(graph_support), intent(in) :: this
-     end function support_side_interface
 
      !===============================================================!
      ! The reduction's four steps and its one-call form. The state is

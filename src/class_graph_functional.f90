@@ -40,8 +40,8 @@ module class_graph_functional
   use graph_grammar      , only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
   use graph_grammar      , only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
   use graph_grammar      , only : GRAPH_FIELD_CHARACTER
-  use graph_calculus     , only : graph_functional, GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
+  use graph_calculus     , only : graph_functional
+  use graph_carrier      , only : member_set, counted_set
 
   implicit none
 
@@ -53,6 +53,10 @@ module class_graph_functional
   !===================================================================!
 
   type, extends(graph_functional) :: functional
+
+     ! The one-entry home, minted at construction so domain()
+     ! stays pure.
+     type(counted_set), private :: home
 
      character(len=:), allocatable :: label
      character(len=:), allocatable :: unit_name
@@ -132,7 +136,7 @@ contains
   ! Build a functional that holds nothing yet.
   !===================================================================!
 
-  pure type(functional) function create(label, unit_name) result(this)
+  type(functional) function create(label, unit_name) result(this)
 
     character(len=*), intent(in), optional :: label
     character(len=*), intent(in), optional :: unit_name
@@ -149,6 +153,8 @@ contains
        this % unit_name = '-'
     end if
 
+
+    this % home = counted_set('functional', 1)
   end function create
 
   !===================================================================!
@@ -189,12 +195,10 @@ contains
 
   subroutine functional_domain(this, domain)
 
-    class(functional), intent(in)          :: this
-    class(graph), allocatable, intent(out) :: domain
+    class(functional), intent(in)               :: this
+    class(member_set), allocatable, intent(out) :: domain
 
-    associate (u1 => this); end associate
-
-    allocate(domain, source=support(GRAPH_SIDE_VERTEX, [1]))
+    allocate(domain, source=this % home)
 
   end subroutine functional_domain
 

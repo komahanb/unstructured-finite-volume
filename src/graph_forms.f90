@@ -42,14 +42,14 @@ module graph_forms
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_calculus     , only : GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
+  use graph_carrier, only : subset_set, member_set
 
   implicit none
 
   private
   public :: form
 
-  type, abstract, extends(support) :: form
+  type, abstract, extends(subset_set) :: form
 
    contains
 
@@ -92,12 +92,15 @@ contains
   ! a set says who belongs by holding them.
   !===================================================================!
 
-  pure subroutine restrict(this, kept)
+  subroutine restrict(this, kept)
 
     class(form), intent(inout) :: this
     integer    , intent(in)    :: kept(:)
 
-    this % support = support(GRAPH_SIDE_VERTEX, kept)
+    class(member_set), allocatable :: table
+
+    table = this % ambient()
+    this % subset_set = subset_set('basis', table, kept)
 
   end subroutine restrict
 

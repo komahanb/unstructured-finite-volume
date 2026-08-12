@@ -40,7 +40,11 @@
 ! Nothing here is optimized ahead of a large caller. With n = |V|,
 ! m = |A|, and the carrier's own lookup cost T_idx:
 !
-!      sources/sinks       O(n) fibre borrows, each paying T_idx
+!      sources/sinks       O(n) fibre borrows, each paying T_idx -
+!                          and then the subset_set construction,
+!                          which validates every kept member against
+!                          the ambient (T_has each) and dedupes with
+!                          its current quadratic worst-case check
 !      reachable           breadth-first, O(n + m) fibre reads and
 !                          visited stamps, each stamp one T_idx
 !      topological_order   the plain deterministic Kahn: each round

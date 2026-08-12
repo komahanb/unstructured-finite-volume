@@ -78,12 +78,12 @@ module class_graph_reduction
 
   use iso_fortran_env       , only : dp => REAL64
   use graph_grammar         , only : graph, graph_field
+  use graph_carrier         , only : member_set, counted_set
   use graph_grammar         , only : GRAPH_FIELD_REAL, GRAPH_FIELD_COMPLEX
   use graph_grammar         , only : GRAPH_FIELD_LOGICAL
   use graph_calculus        , only : graph_reduction, graph_broadcast
   use graph_calculus        , only : graph_functional
   use graph_calculus        , only : GRAPH_SIDE_VERTEX
-  use class_graph_support   , only : support
   use class_graph_field     , only : plain_field => field
   use class_graph_functional, only : scalar_result => functional
 
@@ -548,12 +548,12 @@ contains
 
     class(reduction), intent(in)           :: this
     class(graph), intent(in)               :: input_graph
-    class(graph), allocatable, intent(out) :: domain
+    class(member_set), allocatable, intent(out) :: domain
 
     associate (u1 => this, u2 => input_graph); end associate
 
     ! The answer's home is the one-entry domain.
-    allocate(domain, source=support(GRAPH_SIDE_VERTEX, [1]))
+    allocate(domain, source=counted_set('answer', 1))
 
   end subroutine reduction_domain
 
@@ -619,7 +619,7 @@ contains
 
     class(broadcast), intent(in)           :: this
     class(graph), intent(in)               :: input_graph
-    class(graph), allocatable, intent(out) :: domain
+    class(member_set), allocatable, intent(out) :: domain
 
     associate (u1 => this); end associate
 
@@ -634,13 +634,9 @@ contains
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
-    type(support) :: cells
     type(plain_field) :: out
-    integer :: nv, v
 
-    nv = input_graph % num_vertices()
-    cells = support(GRAPH_SIDE_VERTEX, [(v, v = 1, nv)])
-    out = plain_field('broadcast', cells)
+    out = plain_field('broadcast', input_graph % vertex_set())
 
     if (present(input_data)) then
        select type (f => input_data(1))

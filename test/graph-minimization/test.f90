@@ -20,7 +20,7 @@ module cubic_statement_fixture
   use iso_fortran_env, only : dp => REAL64
   use graph_grammar  , only : graph, graph_field, graph_operation
   use graph_calculus , only : GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
+  use graph_carrier         , only : member_set, counted_set, subset_set
   use class_graph_field  , only : field
   use class_graph_differential_operator, only : differential_operator
 
@@ -59,7 +59,7 @@ contains
   subroutine cubic_domain(this, input_graph, domain)
     class(cubic_statement), intent(in)     :: this
     class(graph), intent(in)               :: input_graph
-    class(graph), allocatable, intent(out) :: domain
+    class(member_set), allocatable, intent(out) :: domain
     call input_graph % all_vertices(domain)
   end subroutine cubic_domain
 
@@ -70,7 +70,7 @@ contains
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
-    type(support) :: cells
+    type(counted_set) :: cells
     type(field)   :: out
     real(dp), allocatable :: q(:), y(:)
     integer :: nv, v
@@ -86,7 +86,7 @@ contains
        end do
     end if
 
-    cells = support(GRAPH_SIDE_VERTEX, [(v, v = 1, nv)])
+    cells = input_graph % vertex_set()
     out = field('cubic', cells)
     call out % set_real_vector(y)
     if (allocated(output)) deallocate(output)
@@ -98,6 +98,7 @@ end module cubic_statement_fixture
 
 program test_graph_minimization
 
+  use graph_carrier, only : member_set, counted_set, subset_set
   use iso_fortran_env, only : dp => REAL64
   use graph_grammar  , only : graph
   use class_graph_mesh   , only : mesh
@@ -209,7 +210,7 @@ contains
     real(dp), intent(in)              :: kappa
     real(dp), allocatable, intent(out) :: c(:), b(:)
 
-    class(graph), allocatable :: members
+    class(member_set), allocatable :: members
     real(dp), allocatable :: cw(:), bw(:)
     integer :: k, f, e
 
@@ -221,8 +222,8 @@ contains
        call conditions(k) % faces(m, members)
        call conditions(k) % operator_coefficients(m, kappa, cw)
        call conditions(k) % boundary_values(m, bw)
-       do f = 1, members % num_vertices()
-          e = members % global_vertex_index(f)
+       do f = 1, members % size()
+          e = members % member(f)
           c(e) = cw(f)
           b(e) = bw(f)
        end do

@@ -164,8 +164,8 @@ module class_graph_differential_operator
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_grammar      , only : graph_operation, graph, graph_field
+  use graph_carrier      , only : member_set
   use graph_calculus     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
-  use class_graph_support, only : support
   use class_graph_field  , only : field
 
   implicit none
@@ -427,7 +427,7 @@ contains
 
     class(differential_operator), intent(in) :: this
     class(graph), intent(in)                 :: input_graph
-    class(graph), allocatable, intent(out)   :: domain
+    class(member_set), allocatable, intent(out)   :: domain
 
     if (this % landing == GRAPH_SIDE_EDGE) then
        call input_graph % all_edges(domain)
@@ -833,22 +833,15 @@ contains
     class(graph_field), intent(in), optional :: input_data(:)
     type(field), intent(out)                 :: out
 
-    type(support)         :: on
     real(dp), allocatable :: q(:), z(:), qc(:), zc(:), yc(:)
-    integer , allocatable :: indices(:)
     integer               :: nv, ne, e, nc, c
 
     nv = input_graph % num_vertices()
     ne = input_graph % num_edges()
 
-    call fetch_vertex_values(input_data, nv, q, nc)
+    call fetch_vertex_values(input_data, input_graph, nv, q, nc)
 
-    allocate(indices(ne))
-    do e = 1, ne
-       indices(e) = e
-    end do
-    on  = support(GRAPH_SIDE_EDGE, indices)
-    out = field(this % name(), on, ncomp=max(nc, 1))
+    out = field(this % name(), input_graph % edge_set(), ncomp=max(nc, 1))
 
     allocate(z(ne * max(nc, 1)))
     z = 0.0_dp
@@ -911,7 +904,6 @@ contains
     class(graph_field), intent(in), optional :: input_data(:)
     type(field), intent(out)                 :: out
 
-    type(support)         :: on
     real(dp), allocatable :: q(:), z(:), y(:), qc(:), zc(:), yc(:), y2(:)
     real(dp), allocatable :: spent(:)   ! never allocated: the
                                         ! coefficient is applied once,
@@ -924,15 +916,10 @@ contains
     nv = input_graph % num_vertices()
     ne = input_graph % num_edges()
 
-    call fetch_vertex_values(input_data, nv, q, nc)
-    if (nc == 0) call fetch_edge_values(input_data, ne, z, nc)
+    call fetch_vertex_values(input_data, input_graph, nv, q, nc)
+    if (nc == 0) call fetch_edge_values(input_data, input_graph, ne, z, nc)
 
-    allocate(indices(nv))
-    do v = 1, nv
-       indices(v) = v
-    end do
-    on  = support(GRAPH_SIDE_VERTEX, indices)
-    out = field(this % name(), on, ncomp=max(nc, 1))
+    out = field(this % name(), input_graph % vertex_set(), ncomp=max(nc, 1))
 
     allocate(y(nv * max(nc, 1)))
     y = 0.0_dp
@@ -1144,19 +1131,25 @@ contains
   ! zeros rather than reading memory it was never given.
   !===================================================================!
 
-  subroutine fetch_vertex_values(input_data, nv, q, ncomp)
+  subroutine fetch_vertex_values(input_data, input_graph, nv, q, ncomp)
 
     class(graph_field), intent(in), optional :: input_data(:)
+    class(graph)     , intent(in)           :: input_graph
     integer          , intent(in)           :: nv
     real(dp), allocatable, intent(out)      :: q(:)
     integer          , intent(out)          :: ncomp
+
+    class(member_set), allocatable :: dom
 
     ncomp = 0
 
     if (present(input_data)) then
        select type (state => input_data(1))
        class is (field)
-          if (state % on % side() == GRAPH_SIDE_VERTEX) then
+          call state % domain(dom)
+          ! Full coverage, by identity: this kernel indexes every
+          ! vertex densely (routing is not admissibility).
+          if (dom % same_as(input_graph % vertex_set())) then
              ncomp = max(state % num_components(), 1)
              call state % get_real_vector(q)
              if (size(q) == nv * ncomp) return
@@ -1173,19 +1166,23 @@ contains
   ! The same fetch, for a field on edges.
   !===================================================================!
 
-  subroutine fetch_edge_values(input_data, ne, z, ncomp)
+  subroutine fetch_edge_values(input_data, input_graph, ne, z, ncomp)
 
     class(graph_field), intent(in), optional :: input_data(:)
+    class(graph)     , intent(in)           :: input_graph
     integer          , intent(in)           :: ne
     real(dp), allocatable, intent(out)      :: z(:)
     integer          , intent(out)          :: ncomp
+
+    class(member_set), allocatable :: dom
 
     ncomp = 0
 
     if (present(input_data)) then
        select type (state => input_data(1))
        class is (field)
-          if (state % on % side() == GRAPH_SIDE_EDGE) then
+          call state % domain(dom)
+          if (dom % same_as(input_graph % edge_set())) then
              ncomp = max(state % num_components(), 1)
              call state % get_real_vector(z)
              if (size(z) == ne * ncomp) return

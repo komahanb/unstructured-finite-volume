@@ -41,10 +41,9 @@
 module class_graph_mesh
 
   use iso_fortran_env    , only : dp => REAL64, error_unit
-  use graph_calculus     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
-  use class_graph_support, only : support
   use class_graph_field  , only : field
   use class_graph        , only : stored_graph
+  use graph_carrier      , only : counted_set
 
   implicit none
 
@@ -109,8 +108,8 @@ contains
     character(len=*), intent(in), optional :: etags(:)
     integer         , intent(in), optional :: number
 
-    type(support) :: cells, faces
-    integer :: ne, v, e
+    type(counted_set) :: cells, faces
+    integer :: ne
 
     ! The structure first, through the parent's own constructor.
     this % stored_graph = stored_graph(nv, tails=tails, heads=heads, &
@@ -127,8 +126,10 @@ contains
     call gate(size(face_centers) == 3 * ne, 'three center parts per face')
     call gate(size(weights)      == ne    , 'one weight per face')
 
-    cells = support(GRAPH_SIDE_VERTEX, [(v, v = 1, nv)])
-    faces = support(GRAPH_SIDE_EDGE  , [(e, e = 1, ne)])
+    ! Geometry rides the graph's OWN carriers, so a field's domain
+    ! answers the mesh identity every consumer will ask about.
+    cells = this % vertex_set()
+    faces = this % edge_set()
 
     this % volumes       = field('cell_volume' , cells, unit_name='m3')
     this % cell_centers  = field('cell_center' , cells, ncomp=3, unit_name='m')

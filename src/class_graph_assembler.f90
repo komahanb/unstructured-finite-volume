@@ -61,10 +61,9 @@ module class_graph_assembler
 
   use iso_fortran_env     , only : dp => REAL64
   use graph_grammar       , only : graph, graph_field
+  use graph_carrier       , only : member_set, counted_set, subset_set
   use graph_calculus      , only : graph_assembler
-  use graph_calculus      , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
   use class_graph         , only : stored_graph
-  use class_graph_support , only : support
   use class_graph_field   , only : field
 
   implicit none
@@ -131,7 +130,7 @@ contains
   ! riding a part that passes the graph gate above.
   !===================================================================!
 
-  pure logical function defined_on_data(this, input_graph, input_data)
+  logical function defined_on_data(this, input_graph, input_data)
 
     class(assembler) , intent(in) :: this
     class(graph)     , intent(in) :: input_graph
@@ -209,15 +208,24 @@ contains
     class(graph)     , intent(in)               :: global_graph
     class(graph_field), allocatable, intent(out) :: global_data
 
+    class(member_set), allocatable :: dom
+
     associate (u1 => this); end associate
 
     select type (part_data)
 
     class is (field)
-       if (part_data % on % side() == GRAPH_SIDE_VERTEX) then
-          call assemble_vertex_field(part_data, part_graph, global_graph, global_data)
+       call part_data % domain(dom)
+       if (dom % is_subobject_of(part_graph % vertex_set())) then
+          call gather_field(part_data, dom, part_graph, &
+               & part_graph % vertex_set(), global_graph, .true., &
+               & global_data)
+       else if (dom % is_subobject_of(part_graph % edge_set())) then
+          call gather_field(part_data, dom, part_graph, &
+               & part_graph % edge_set(), global_graph, .false., &
+               & global_data)
        else
-          call assemble_edge_field(part_data, part_graph, global_graph, global_data)
+          error stop 'assemble: this field does not live on this part''s domains'
        end if
 
     class default
@@ -227,112 +235,127 @@ contains
   end subroutine assemble_data
 
   !===================================================================!
-  ! Cell values go back to the cells they came from - the owned ones
-  ! only.
+  ! One gather for both families and both coverages. A FULL part
+  ! field lands on the GLOBAL carrier, owned members only, exactly
+  ! the established assembly. A PROPER SUBSET maps home through the
+  ! part->global map and lands on a new subobject of the global
+  ! carrier - its actual mapped subdomain, no manufactured zeros on
+  ! members the field never held. A new ambient means a new
+  ! declared subset: extension and values return, tokens do not.
   !===================================================================!
 
-  subroutine assemble_vertex_field(part_data, part_graph, global_graph, global_data)
+  subroutine gather_field(part_data, dom, part_graph, part_carrier, &
+       &                  global_graph, on_vertices, global_data)
 
-    type(field), intent(in)               :: part_data
+    type(field)       , intent(in)               :: part_data
+    class(member_set) , intent(in)               :: dom
     class(graph)      , intent(in)               :: part_graph
+    type(counted_set) , intent(in)               :: part_carrier
     class(graph)      , intent(in)               :: global_graph
-    class(graph_field) , allocatable, intent(out) :: global_data
-
-    type(field)    :: out
-    type(support)  :: on
-    real(dp), allocatable :: lv(:), fv(:)
-    integer , allocatable :: indices(:)
-    integer :: nglobal, ncomp, l, c, f, me
-
-    nglobal = global_graph % num_vertices()
-    ncomp = part_data % num_components()
-    me    = part_graph % id()
-
-    allocate(indices(nglobal))
-    do f = 1, nglobal
-       indices(f) = f
-    end do
-
-    on  = support(GRAPH_SIDE_VERTEX, indices)
-    out = field(part_data % name(), on, ncomp=ncomp, unit_name=part_data % units())
-
-    call part_data % get_real_vector(lv)
-    allocate(fv(nglobal * ncomp))
-    fv = 0.0_dp
-
-    do l = 1, part_graph % num_vertices()
-
-       ! Borrowed cells belong to another part. Skipping them keeps
-       ! each value out of the answer exactly once.
-       if (part_graph % has_part_relation()) then
-          if (part_graph % vertex_owner_part(l) /= me) cycle
-       end if
-
-       f = part_graph % global_vertex_index(l)
-       do c = 1, ncomp
-          associate (to => (f - 1) * ncomp + c, from => (l - 1) * ncomp + c)
-            if (to >= 1 .and. to <= size(fv) .and. from <= size(lv)) fv(to) = lv(from)
-          end associate
-       end do
-
-    end do
-
-    call out % set_real_vector(fv)
-    allocate(global_data, source=out)
-
-  end subroutine assemble_vertex_field
-
-  !===================================================================!
-  ! Face values, the same way, by the edge map.
-  !===================================================================!
-
-  subroutine assemble_edge_field(part_data, part_graph, global_graph, global_data)
-
-    type(field), intent(in)                :: part_data
-    class(graph)    , intent(in)                :: part_graph
-    class(graph)    , intent(in)                :: global_graph
+    logical           , intent(in)               :: on_vertices
     class(graph_field), allocatable, intent(out) :: global_data
 
-    type(field)      :: out
-    type(support)    :: on
+    type(field)           :: out
+    type(counted_set)     :: global_carrier
+    type(subset_set)      :: sg
     real(dp), allocatable :: lv(:), fv(:)
-    integer , allocatable :: indices(:)
-    integer :: nglobal, ncomp, l, c, f, me
+    integer , allocatable :: kept(:), came(:)
+    integer :: nglobal, nlocal, ncomp, l, c, f, me, n, at
 
-    nglobal = global_graph % num_edges()
+    if (on_vertices) then
+       nglobal        = global_graph % num_vertices()
+       nlocal         = part_graph % num_vertices()
+       global_carrier = global_graph % vertex_set()
+    else
+       nglobal        = global_graph % num_edges()
+       nlocal         = part_graph % num_edges()
+       global_carrier = global_graph % edge_set()
+    end if
     ncomp = part_data % num_components()
     me    = part_graph % id()
 
-    allocate(indices(nglobal))
-    do f = 1, nglobal
-       indices(f) = f
-    end do
-
-    on  = support(GRAPH_SIDE_EDGE, indices)
-    out = field(part_data % name(), on, ncomp=ncomp, unit_name=part_data % units())
-
     call part_data % get_real_vector(lv)
-    allocate(fv(nglobal * ncomp))
-    fv = 0.0_dp
 
-    do l = 1, part_graph % num_edges()
+    if (dom % same_as(part_carrier)) then
 
-       if (part_graph % has_part_relation()) then
-          if (part_graph % edge_owner_part(l) /= me) cycle
-       end if
+       ! Full coverage: the established dense assembly, owned only.
+       out = field(part_data % name(), global_carrier, ncomp=ncomp, &
+            &      unit_name=part_data % units())
+       allocate(fv(nglobal * ncomp))
+       fv = 0.0_dp
 
-       f = part_graph % global_edge_index(l)
-       do c = 1, ncomp
-          associate (to => (f - 1) * ncomp + c, from => (l - 1) * ncomp + c)
-            if (to >= 1 .and. to <= size(fv) .and. from <= size(lv)) fv(to) = lv(from)
-          end associate
+       do l = 1, nlocal
+          if (part_graph % has_part_relation()) then
+             if (owner_of(part_graph, l, on_vertices) /= me) cycle
+          end if
+          f = global_of(part_graph, l, on_vertices)
+          do c = 1, ncomp
+             associate (to => (f - 1) * ncomp + c, from => (l - 1) * ncomp + c)
+               if (to >= 1 .and. to <= size(fv) .and. from <= size(lv)) fv(to) = lv(from)
+             end associate
+          end do
        end do
 
-    end do
+       call out % set_real_vector(fv)
 
-    call out % set_real_vector(fv)
+    else
+
+       ! Proper subset: carry the members home and keep only them.
+       allocate(kept(dom % size()), came(dom % size()))
+       n = 0
+       do l = 1, dom % size()
+          at = dom % member(l)              ! part-local member
+          if (part_graph % has_part_relation()) then
+             if (owner_of(part_graph, at, on_vertices) /= me) cycle
+          end if
+          n = n + 1
+          kept(n) = global_of(part_graph, at, on_vertices)
+          came(n) = l
+       end do
+       sg = subset_set(dom % name(), global_carrier, kept(1:n))
+
+       allocate(fv(n * ncomp))
+       do l = 1, n
+          do c = 1, ncomp
+             fv((l - 1) * ncomp + c) = lv((came(l) - 1) * ncomp + c)
+          end do
+       end do
+       out = field(part_data % name(), sg, ncomp=ncomp, &
+            &      unit_name=part_data % units())
+       call out % set_real_vector(fv)
+
+    end if
+
     allocate(global_data, source=out)
 
-  end subroutine assemble_edge_field
+  end subroutine gather_field
+
+  pure integer function global_of(part_graph, l, on_vertices)
+
+    class(graph), intent(in) :: part_graph
+    integer     , intent(in) :: l
+    logical     , intent(in) :: on_vertices
+
+    if (on_vertices) then
+       global_of = part_graph % global_vertex_index(l)
+    else
+       global_of = part_graph % global_edge_index(l)
+    end if
+
+  end function global_of
+
+  pure integer function owner_of(part_graph, l, on_vertices)
+
+    class(graph), intent(in) :: part_graph
+    integer     , intent(in) :: l
+    logical     , intent(in) :: on_vertices
+
+    if (on_vertices) then
+       owner_of = part_graph % vertex_owner_part(l)
+    else
+       owner_of = part_graph % edge_owner_part(l)
+    end if
+
+  end function owner_of
 
 end module class_graph_assembler

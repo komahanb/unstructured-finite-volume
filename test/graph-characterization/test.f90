@@ -26,10 +26,10 @@
 program test_graph_characterization
 
   use iso_fortran_env        , only : dp => REAL64
-  use graph_calculus         , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
+  use graph_calculus         , only : GRAPH_SIDE_VERTEX
   use graph_grammar          , only : graph, graph_field
+  use graph_carrier          , only : member_set, counted_set, subset_set
   use class_graph            , only : stored_graph
-  use class_graph_support    , only : support
   use class_graph_field      , only : field
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
   use class_graph_assembler  , only : assembler
@@ -92,7 +92,7 @@ contains
     type(stored_graph)              :: g
     type(differential_operator)     :: div
     class(graph_field), allocatable :: yf
-    type(support)                   :: eon
+    type(counted_set)                   :: eon
     type(field)                     :: zf
     integer, allocatable            :: idx(:)
     real(dp), allocatable           :: y(:)
@@ -121,7 +121,7 @@ contains
          & "derived adjacency names the neighbour once", nfail)
 
     ! The divergence spends each edge separately: out minus in.
-    eon = support(GRAPH_SIDE_EDGE, [1, 2])
+    eon = g % edge_set()
     zf  = field('z', eon)
     call zf % set_real_vector([3.0_dp, 5.0_dp])
     div = divergence()
@@ -146,9 +146,9 @@ contains
     type(stored_graph)              :: g
     type(differential_operator)     :: div
     class(graph_field), allocatable :: yf
-    type(support)                   :: eon
+    type(counted_set)                   :: eon
     type(field)                     :: zf
-    class(graph), allocatable       :: sset
+    class(member_set), allocatable       :: sset
     integer, allocatable            :: idx(:)
     real(dp), allocatable           :: y(:)
 
@@ -183,7 +183,7 @@ contains
     ! Divergence with samples 2, 4, 7: out minus in at each vertex
     ! gives 2, 2, 3 - and the total, 7, is the wall edge's sample:
     ! the half-edge contributes exactly once, to its tail alone.
-    eon = support(GRAPH_SIDE_EDGE, [1, 2, 3])
+    eon = g % edge_set()
     zf  = field('z', eon)
     call zf % set_real_vector([2.0_dp, 4.0_dp, 7.0_dp])
     div = divergence()
@@ -256,35 +256,33 @@ contains
 
   subroutine check_supports(nfail)
 
+    ! REWRITTEN at phase 5B, as the transitional mark promised: the
+    ! destination stands, and these pins now guard the subobject law
+    ! itself - membership, the host domain, order, and emptiness.
+
     integer, intent(inout) :: nfail
 
-    type(support)        :: es, vs, none
+    type(counted_set)    :: faces
+    type(subset_set)     :: es, none
     integer, allocatable :: idx(:)
-    integer              :: k
 
-    es = support(GRAPH_SIDE_EDGE, [11, 14, 19])
-    call report(es % side() .eq. GRAPH_SIDE_EDGE, &
-         & "a support knows which side its members reference", nfail)
-    call report(es % num_vertices() .eq. 3, &
-         & "and how many it holds", nfail)
+    faces = counted_set('faces', 20)
+    es    = subset_set('walls', faces, [11, 14, 19])
 
-    allocate(idx(es % num_vertices()))
-    do k = 1, size(idx)
-       idx(k) = es % global_vertex_index(k)
-    end do
+    call report(es % is_subobject_of(faces), &
+         & "a support is a subobject of its host domain", nfail)
+    call report(es % size() .eq. 3, &
+         & "and knows how many it holds", nfail)
+
+    call es % members(idx)
     call report(all(idx .eq. [11, 14, 19]), &
          & "members return exactly as given, in order", nfail)
-    deallocate(idx)
 
-    vs = support(GRAPH_SIDE_VERTEX, [2, 4, 6])
-    call report(vs % side() .eq. GRAPH_SIDE_VERTEX, &
-         & "the vertex side is the other side", nfail)
+    call report(es % has(14) .and. .not. es % has(12), &
+         & "membership answers the chosen family alone", nfail)
 
-    call report(es % num_edges() .eq. 0 .and. vs % num_edges() .eq. 0, &
-         & "a support carries members and no incidence", nfail)
-
-    none = support(GRAPH_SIDE_VERTEX, [integer ::])
-    call report(none % num_vertices() .eq. 0, &
+    none = subset_set('nothing', faces, [integer ::])
+    call report(none % size() .eq. 0, &
          & "the empty support is a support", nfail)
 
   end subroutine check_supports
@@ -305,7 +303,7 @@ contains
     type(assembler)                 :: a
     class(graph), allocatable       :: part
     class(graph_field), allocatable :: pd, fd
-    type(support)                   :: von, eon
+    type(counted_set)                   :: von, eon
     type(field)                     :: q, w
     real(dp), allocatable           :: v(:)
     real(dp)                        :: vtotal(6), etotal(5)
@@ -314,11 +312,11 @@ contains
     g = stored_graph(6, tails=[1, 2, 3, 4, 5], heads=[2, 3, 4, 5, 6])
     a = assembler()
 
-    von = support(GRAPH_SIDE_VERTEX, [1, 2, 3, 4, 5, 6])
+    von = g % vertex_set()
     q   = field('q', von)
     call q % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp, 5.0_dp, 6.0_dp])
 
-    eon = support(GRAPH_SIDE_EDGE, [1, 2, 3, 4, 5])
+    eon = g % edge_set()
     w   = field('w', eon)
     call w % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp])
 
@@ -368,7 +366,7 @@ contains
     type(stored_graph)              :: g
     type(differential_operator)     :: fwd, rev
     class(graph_field), allocatable :: yf
-    type(support)                   :: on
+    type(counted_set)                   :: on
     type(field)                     :: qf, pf
     real(dp), allocatable           :: aq(:), ap(:)
     real(dp)                        :: q(4), p(4), cs(5)
@@ -377,7 +375,7 @@ contains
 
     ! 1 ==> 2 (twice, in parallel), 2 --> 3 --> 4 --> wall.
     g  = stored_graph(4, tails=[1, 1, 2, 3, 4], heads=[2, 2, 3, 4, 0])
-    on = support(GRAPH_SIDE_VERTEX, [1, 2, 3, 4])
+    on = g % vertex_set()
     qf = field('q', on)
     pf = field('p', on)
 
@@ -415,14 +413,10 @@ contains
 
   subroutine members(g, indices)
 
-    class(graph), intent(in)          :: g
+    class(member_set), intent(in)     :: g
     integer, allocatable, intent(out) :: indices(:)
-    integer :: k
 
-    allocate(indices(g % num_vertices()))
-    do k = 1, size(indices)
-       indices(k) = g % global_vertex_index(k)
-    end do
+    call g % members(indices)
 
   end subroutine members
 

@@ -37,9 +37,8 @@ module graph_fitting
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_grammar      , only : graph, graph_field, graph_operation
+  use graph_carrier      , only : member_set
   use graph_forms        , only : form
-  use graph_calculus     , only : GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
   use class_graph_field  , only : field
   use class_graph_stencil, only : stencil_operator
   use class_graph_conjugate_gradient, only : conjugate_gradient
@@ -131,7 +130,7 @@ contains
 
     class(fit), intent(in)                 :: this
     class(graph), intent(in)               :: input_graph
-    class(graph), allocatable, intent(out) :: domain
+    class(member_set), allocatable, intent(out) :: domain
 
     associate (u1 => this); end associate
 
@@ -151,7 +150,6 @@ contains
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
-    type(support) :: points, conditions
     type(field)   :: out
     type(stencil_operator) :: dual
     type(conjugate_gradient) :: solver
@@ -196,7 +194,7 @@ contains
 
        ! Membership is the roster: a table entry outside the form's
        ! member set carries no condition and no demand.
-       call this % shape % member_indices(standing)
+       call this % shape % members(standing)
        allocate(stands(nc))
        stands = .false.
        do i = 1, size(standing)
@@ -232,8 +230,7 @@ contains
        dual = stencil_operator(rows, columns, entries, &
             & [(0.0_dp, i = 1, nc)], label='fitting dual')
 
-       conditions = support(GRAPH_SIDE_VERTEX, [(i, i = 1, nc)])
-       call solver % attach(dual, conditions)
+       call solver % attach(dual, dual % pattern)
        solver % tolerance      = 1.0d-14
        solver % max_iterations = 50
 
@@ -250,8 +247,7 @@ contains
 
     end if
 
-    points = support(GRAPH_SIDE_VERTEX, [(v, v = 1, npts)])
-    out = field('fit weights', points)
+    out = field('fit weights', input_graph % vertex_set())
     call out % set_real_vector(w)
 
     if (allocated(output)) deallocate(output)

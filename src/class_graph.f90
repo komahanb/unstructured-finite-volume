@@ -55,8 +55,7 @@ module class_graph
 
   use graph_grammar      , only : graph
   use graph_calculus     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
-  use class_graph_support, only : support
-  use graph_carrier      , only : counted_set
+  use graph_carrier      , only : counted_set, subset_set, member_set
 
   implicit none
 
@@ -576,11 +575,11 @@ contains
   subroutine all_vertices(this, members)
 
     class(stored_graph), intent(in)                       :: this
-    class(graph), allocatable, intent(out) :: members
+    class(member_set), allocatable, intent(out) :: members
 
     integer :: v
 
-    allocate(members, source=support(GRAPH_SIDE_VERTEX, [(v, v = 1, this % nv)]))
+    allocate(members, source=this % vset)
 
   end subroutine all_vertices
 
@@ -591,7 +590,7 @@ contains
   subroutine interior_vertices(this, members)
 
     class(stored_graph), intent(in)                       :: this
-    class(graph), allocatable, intent(out) :: members
+    class(member_set), allocatable, intent(out) :: members
 
     integer, allocatable :: pick(:)
     integer :: v, n
@@ -605,7 +604,7 @@ contains
        end if
     end do
 
-    allocate(members, source=support(GRAPH_SIDE_VERTEX, pick(1:n)))
+    allocate(members, source=subset_set('interior_vertices', this % vset, pick(1:n)))
 
   end subroutine interior_vertices
 
@@ -616,7 +615,7 @@ contains
   subroutine boundary_vertices(this, members)
 
     class(stored_graph), intent(in)                       :: this
-    class(graph), allocatable, intent(out) :: members
+    class(member_set), allocatable, intent(out) :: members
 
     integer, allocatable :: pick(:)
     integer :: v, n
@@ -630,7 +629,7 @@ contains
        end if
     end do
 
-    allocate(members, source=support(GRAPH_SIDE_VERTEX, pick(1:n)))
+    allocate(members, source=subset_set('boundary_vertices', this % vset, pick(1:n)))
 
   end subroutine boundary_vertices
 
@@ -643,7 +642,7 @@ contains
 
     class(stored_graph), intent(in)                       :: this
     character(len=*), intent(in)                          :: tag
-    class(graph), allocatable, intent(out) :: members
+    class(member_set), allocatable, intent(out) :: members
 
     integer, allocatable :: pick(:)
     integer :: v, n
@@ -659,7 +658,7 @@ contains
        end do
     end if
 
-    allocate(members, source=support(GRAPH_SIDE_VERTEX, pick(1:n)))
+    allocate(members, source=subset_set('tagged_vertices', this % vset, pick(1:n)))
 
   end subroutine tagged_vertices
 
@@ -692,11 +691,11 @@ contains
   subroutine all_edges(this, members)
 
     class(stored_graph), intent(in)                     :: this
-    class(graph), allocatable, intent(out) :: members
+    class(member_set), allocatable, intent(out) :: members
 
     integer :: e
 
-    allocate(members, source=support(GRAPH_SIDE_EDGE, [(e, e = 1, this % ne)]))
+    allocate(members, source=this % eset)
 
   end subroutine all_edges
 
@@ -707,7 +706,7 @@ contains
   subroutine interior_edges(this, members)
 
     class(stored_graph), intent(in)                     :: this
-    class(graph), allocatable, intent(out) :: members
+    class(member_set), allocatable, intent(out) :: members
 
     integer, allocatable :: pick(:)
     integer :: e, n
@@ -721,7 +720,7 @@ contains
        end if
     end do
 
-    allocate(members, source=support(GRAPH_SIDE_EDGE, pick(1:n)))
+    allocate(members, source=subset_set('interior_edges', this % eset, pick(1:n)))
 
   end subroutine interior_edges
 
@@ -732,7 +731,7 @@ contains
   subroutine boundary_edges(this, members)
 
     class(stored_graph), intent(in)                     :: this
-    class(graph), allocatable, intent(out) :: members
+    class(member_set), allocatable, intent(out) :: members
 
     integer, allocatable :: pick(:)
     integer :: e, n
@@ -746,7 +745,7 @@ contains
        end if
     end do
 
-    allocate(members, source=support(GRAPH_SIDE_EDGE, pick(1:n)))
+    allocate(members, source=subset_set('boundary_edges', this % eset, pick(1:n)))
 
   end subroutine boundary_edges
 
@@ -759,7 +758,7 @@ contains
 
     class(stored_graph), intent(in)                     :: this
     character(len=*), intent(in)                        :: tag
-    class(graph), allocatable, intent(out) :: members
+    class(member_set), allocatable, intent(out) :: members
 
     integer, allocatable :: pick(:)
     integer :: e, n
@@ -775,7 +774,7 @@ contains
        end do
     end if
 
-    allocate(members, source=support(GRAPH_SIDE_EDGE, pick(1:n)))
+    allocate(members, source=subset_set('tagged_edges', this % eset, pick(1:n)))
 
   end subroutine tagged_edges
 
@@ -791,9 +790,9 @@ contains
 
     class(stored_graph), intent(in)                       :: this
     integer, intent(in)                                   :: part_id
-    class(graph), allocatable, intent(out) :: members
+    class(member_set), allocatable, intent(out) :: members
 
-    allocate(members, source=support(GRAPH_SIDE_VERTEX, owner_matches(this % vowner, this % nv, part_id, this % cut, .true.)))
+    allocate(members, source=subset_set('owned_vertices', this % vset, owner_matches(this % vowner, this % nv, part_id, this % cut, .true.)))
 
   end subroutine owned_vertices
 
@@ -806,9 +805,9 @@ contains
 
     class(stored_graph), intent(in)                       :: this
     integer, intent(in)                                   :: part_id
-    class(graph), allocatable, intent(out) :: members
+    class(member_set), allocatable, intent(out) :: members
 
-    allocate(members, source=support(GRAPH_SIDE_VERTEX, owner_matches(this % vowner, this % nv, part_id, this % cut, .false.)))
+    allocate(members, source=subset_set('borrowed_vertices', this % vset, owner_matches(this % vowner, this % nv, part_id, this % cut, .false.)))
 
   end subroutine borrowed_vertices
 
@@ -821,14 +820,14 @@ contains
 
     class(stored_graph), intent(in)                       :: this
     integer, intent(in)                                   :: part_id
-    class(graph), allocatable, intent(out) :: members
+    class(member_set), allocatable, intent(out) :: members
 
     integer, allocatable :: owned(:), borrowed(:)
 
     allocate(owned   , source=owner_matches(this % vowner, this % nv, part_id, this % cut, .true.))
     allocate(borrowed, source=owner_matches(this % vowner, this % nv, part_id, this % cut, .false.))
 
-    allocate(members, source=support(GRAPH_SIDE_VERTEX, [owned, borrowed]))
+    allocate(members, source=subset_set('overlap_vertices', this % vset, [owned, borrowed]))
 
   end subroutine overlap_vertices
 
@@ -840,9 +839,9 @@ contains
 
     class(stored_graph), intent(in)                     :: this
     integer, intent(in)                                 :: part_id
-    class(graph), allocatable, intent(out) :: members
+    class(member_set), allocatable, intent(out) :: members
 
-    allocate(members, source=support(GRAPH_SIDE_EDGE, owner_matches(this % eowner, this % ne, part_id, this % cut, .true.)))
+    allocate(members, source=subset_set('owned_edges', this % eset, owner_matches(this % eowner, this % ne, part_id, this % cut, .true.)))
 
   end subroutine owned_edges
 
@@ -854,9 +853,9 @@ contains
 
     class(stored_graph), intent(in)                     :: this
     integer, intent(in)                                 :: part_id
-    class(graph), allocatable, intent(out) :: members
+    class(member_set), allocatable, intent(out) :: members
 
-    allocate(members, source=support(GRAPH_SIDE_EDGE, owner_matches(this % eowner, this % ne, part_id, this % cut, .false.)))
+    allocate(members, source=subset_set('borrowed_edges', this % eset, owner_matches(this % eowner, this % ne, part_id, this % cut, .false.)))
 
   end subroutine borrowed_edges
 
@@ -868,14 +867,14 @@ contains
 
     class(stored_graph), intent(in)                     :: this
     integer, intent(in)                                 :: part_id
-    class(graph), allocatable, intent(out) :: members
+    class(member_set), allocatable, intent(out) :: members
 
     integer, allocatable :: owned(:), borrowed(:)
 
     allocate(owned   , source=owner_matches(this % eowner, this % ne, part_id, this % cut, .true.))
     allocate(borrowed, source=owner_matches(this % eowner, this % ne, part_id, this % cut, .false.))
 
-    allocate(members, source=support(GRAPH_SIDE_EDGE, [owned, borrowed]))
+    allocate(members, source=subset_set('overlap_edges', this % eset, [owned, borrowed]))
 
   end subroutine overlap_edges
 

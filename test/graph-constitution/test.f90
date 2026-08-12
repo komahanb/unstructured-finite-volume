@@ -26,7 +26,7 @@ program test_graph_constitution
   use iso_fortran_env, only : dp => REAL64
   use graph_grammar  , only : graph, graph_field
   use graph_calculus , only : GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
+  use graph_carrier         , only : member_set, counted_set, subset_set
   use class_graph_field  , only : field
   use class_graph_mesh   , only : mesh
   use class_robin_condition, only : robin_condition, robin, dirichlet, neumann
@@ -112,15 +112,15 @@ contains
 
     type(mesh) :: m
     type(robin_condition) :: bc
-    class(graph), allocatable :: members
+    class(member_set), allocatable :: members
 
     m  = hand_mesh()
     bc = dirichlet('in', 5.0_dp)
 
     call bc % faces(m, members)
-    call report(members % num_vertices() == 1, &
+    call report(members % size() == 1, &
          & 'the tag names one face', nfail)
-    call report(members % global_vertex_index(1) == 2, &
+    call report(members % member(1) == 2, &
          & 'and it is the second face', nfail)
 
   end subroutine check_tag_resolves_once
@@ -204,7 +204,7 @@ contains
     type(robin_condition) :: bc
     type(differential_operator) :: with_wall, without
     type(field) :: state
-    type(support) :: cells
+    type(counted_set) :: cells
     class(graph_field), allocatable :: y
     real(dp), allocatable :: cin(:), bin(:), rows_with(:), rows_without(:)
     real(dp) :: c(3), b(3), expected
@@ -222,7 +222,7 @@ contains
     c = [kint * 2.0_dp, cin(1), 0.0_dp]
     b = [0.0_dp, bin(1), 0.0_dp]
 
-    cells = support(GRAPH_SIDE_VERTEX, [(v, v = 1, 2)])
+    cells = m % vertex_set()
     state = field('q', cells)
     call state % set_real_vector([q1, q2])
 
@@ -309,7 +309,7 @@ contains
     type(advection) :: flow
     type(balance) :: sums
     type(field) :: state
-    type(support) :: cells
+    type(counted_set) :: cells
     class(graph_field), allocatable :: y
     real(dp), allocatable :: vn(:), c(:), got(:)
     real(dp), parameter :: q1 = 2.0_dp, q2 = 4.0_dp
@@ -319,7 +319,7 @@ contains
     m = hand_mesh()
     area = 2.0_dp
 
-    cells = support(GRAPH_SIDE_VERTEX, [(v, v = 1, 2)])
+    cells = m % vertex_set()
     state = field('q', cells)
     call state % set_real_vector([q1, q2])
 

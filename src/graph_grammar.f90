@@ -146,7 +146,12 @@
 
 module graph_grammar
 
-  use iso_fortran_env, only : dp => REAL64
+  use iso_fortran_env    , only : dp => REAL64
+  use graph_carrier      , only : member_set, counted_set
+  use graph_field_calculus, only : graph_field
+  use graph_field_calculus, only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
+  use graph_field_calculus, only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
+  use graph_field_calculus, only : GRAPH_FIELD_CHARACTER
 
   implicit none
 
@@ -167,11 +172,6 @@ module graph_grammar
   ! absorbed axis. Integer for a colouring or a part number, real for
   ! the ordinary state, complex for a complex-step derivative,
   ! logical for a mask, character for boundary and material names.
-  integer, parameter :: GRAPH_FIELD_INTEGER   = 1
-  integer, parameter :: GRAPH_FIELD_REAL      = 2
-  integer, parameter :: GRAPH_FIELD_COMPLEX   = 3
-  integer, parameter :: GRAPH_FIELD_LOGICAL   = 4
-  integer, parameter :: GRAPH_FIELD_CHARACTER = 5
 
   !===================================================================!
   ! GRAPH. The reader of structure.
@@ -233,6 +233,13 @@ module graph_grammar
      procedure(graph_id_interface)    , deferred :: id
      procedure(graph_count_interface) , deferred :: num_vertices
      procedure(graph_count_interface) , deferred :: num_edges
+
+     ! The carrier bridge (migration, AGENTS.md 5B): the graph's two
+     ! persistent declared domains, for consumers that must ask
+     ! where a field domain ultimately lives. This root is already
+     ! explicitly the ordinary vertex/edge compatibility contract.
+     procedure(graph_carrier_interface), deferred :: vertex_set
+     procedure(graph_carrier_interface), deferred :: edge_set
 
      ! Incidence: the two integer edge fields that ARE the structure.
      procedure(graph_edge_end_interface)     , deferred :: edge_tail
@@ -307,34 +314,6 @@ module graph_grammar
   ! priced convenience for call sites, recorded here so nobody
   ! mistakes it for a generator.
   !===================================================================!
-
-  type, abstract :: graph_field
-
-   contains
-
-     ! Identity: what it is called and what unit it carries.
-     procedure(field_name_interface), deferred :: name
-     procedure(field_name_interface), deferred :: units
-
-     ! Where it lives and how it is shaped.
-     procedure(field_domain_interface), deferred :: domain
-     procedure(field_count_interface) , deferred :: num_components
-     procedure(field_count_interface) , deferred :: num_entries
-     procedure(field_count_interface) , deferred :: value_kind
-
-     ! The plain-vector adapters, one pair per value kind.
-     procedure(field_get_integer_interface)  , deferred :: get_integer_vector
-     procedure(field_set_integer_interface)  , deferred :: set_integer_vector
-     procedure(field_get_real_interface)     , deferred :: get_real_vector
-     procedure(field_set_real_interface)     , deferred :: set_real_vector
-     procedure(field_get_complex_interface)  , deferred :: get_complex_vector
-     procedure(field_set_complex_interface)  , deferred :: set_complex_vector
-     procedure(field_get_logical_interface)  , deferred :: get_logical_vector
-     procedure(field_set_logical_interface)  , deferred :: set_logical_vector
-     procedure(field_get_character_interface), deferred :: get_character_vector
-     procedure(field_set_character_interface), deferred :: set_character_vector
-
-  end type graph_field
 
   !===================================================================!
   ! GRAPH_OPERATION. The verb within a graph: data in, data out.
@@ -423,6 +402,11 @@ module graph_grammar
        class(graph), intent(in) :: this
      end function graph_count_interface
 
+     pure type(counted_set) function graph_carrier_interface(this)
+       import :: graph, counted_set
+       class(graph), intent(in) :: this
+     end function graph_carrier_interface
+
      pure integer function graph_edge_end_interface(this, edge_index)
        import :: graph
        class(graph), intent(in) :: this
@@ -442,23 +426,23 @@ module graph_grammar
      !===============================================================!
 
      subroutine graph_member_set_interface(this, members)
-       import :: graph
+       import :: graph, member_set
        class(graph), intent(in) :: this
-       class(graph), allocatable, intent(out) :: members
+       class(member_set), allocatable, intent(out) :: members
      end subroutine graph_member_set_interface
 
      subroutine graph_tagged_set_interface(this, tag, members)
-       import :: graph
+       import :: graph, member_set
        class(graph), intent(in) :: this
        character(len=*), intent(in) :: tag
-       class(graph), allocatable, intent(out) :: members
+       class(member_set), allocatable, intent(out) :: members
      end subroutine graph_tagged_set_interface
 
      subroutine graph_part_set_interface(this, part_id, members)
-       import :: graph
+       import :: graph, member_set
        class(graph), intent(in) :: this
        integer, intent(in) :: part_id
-       class(graph), allocatable, intent(out) :: members
+       class(member_set), allocatable, intent(out) :: members
      end subroutine graph_part_set_interface
 
      !===============================================================!
@@ -544,91 +528,6 @@ module graph_grammar
      end function graph_owner_part_interface
 
      !===============================================================!
-     ! Value: identity, domain, shape.
-     !===============================================================!
-
-     pure function field_name_interface(this) result(name)
-       import :: graph_field
-       class(graph_field), intent(in) :: this
-       character(len=:), allocatable :: name
-     end function field_name_interface
-
-     subroutine field_domain_interface(this, domain)
-       import :: graph_field, graph
-       class(graph_field), intent(in) :: this
-       class(graph), allocatable, intent(out) :: domain
-     end subroutine field_domain_interface
-
-     pure integer function field_count_interface(this)
-       import :: graph_field
-       class(graph_field), intent(in) :: this
-     end function field_count_interface
-
-     !===============================================================!
-     ! Value: the plain-vector adapters, one pair per kind.
-     !===============================================================!
-
-     pure subroutine field_get_integer_interface(this, values)
-       import :: graph_field
-       class(graph_field), intent(in) :: this
-       integer, allocatable, intent(out) :: values(:)
-     end subroutine field_get_integer_interface
-
-     pure subroutine field_set_integer_interface(this, values)
-       import :: graph_field
-       class(graph_field), intent(inout) :: this
-       integer, intent(in) :: values(:)
-     end subroutine field_set_integer_interface
-
-     pure subroutine field_get_real_interface(this, values)
-       import :: graph_field, dp
-       class(graph_field), intent(in) :: this
-       real(dp), allocatable, intent(out) :: values(:)
-     end subroutine field_get_real_interface
-
-     pure subroutine field_set_real_interface(this, values)
-       import :: graph_field, dp
-       class(graph_field), intent(inout) :: this
-       real(dp), intent(in) :: values(:)
-     end subroutine field_set_real_interface
-
-     pure subroutine field_get_complex_interface(this, values)
-       import :: graph_field, dp
-       class(graph_field), intent(in) :: this
-       complex(dp), allocatable, intent(out) :: values(:)
-     end subroutine field_get_complex_interface
-
-     pure subroutine field_set_complex_interface(this, values)
-       import :: graph_field, dp
-       class(graph_field), intent(inout) :: this
-       complex(dp), intent(in) :: values(:)
-     end subroutine field_set_complex_interface
-
-     pure subroutine field_get_logical_interface(this, values)
-       import :: graph_field
-       class(graph_field), intent(in) :: this
-       logical, allocatable, intent(out) :: values(:)
-     end subroutine field_get_logical_interface
-
-     pure subroutine field_set_logical_interface(this, values)
-       import :: graph_field
-       class(graph_field), intent(inout) :: this
-       logical, intent(in) :: values(:)
-     end subroutine field_set_logical_interface
-
-     pure subroutine field_get_character_interface(this, values)
-       import :: graph_field
-       class(graph_field), intent(in) :: this
-       character(len=:), allocatable, intent(out) :: values(:)
-     end subroutine field_get_character_interface
-
-     pure subroutine field_set_character_interface(this, values)
-       import :: graph_field
-       class(graph_field), intent(inout) :: this
-       character(len=*), intent(in) :: values(:)
-     end subroutine field_set_character_interface
-
-     !===============================================================!
      ! Verb within: name, domain, apply.
      !===============================================================!
 
@@ -639,10 +538,10 @@ module graph_grammar
      end function operation_name_interface
 
      subroutine operation_domain_interface(this, input_graph, domain)
-       import :: graph_operation, graph
+       import :: graph_operation, graph, member_set
        class(graph_operation), intent(in) :: this
        class(graph), intent(in) :: input_graph
-       class(graph), allocatable, intent(out) :: domain
+       class(member_set), allocatable, intent(out) :: domain
      end subroutine operation_domain_interface
 
      subroutine operation_apply_interface(this, input_graph, input_data, output)
@@ -663,7 +562,7 @@ module graph_grammar
        class(graph), intent(in) :: input_graph
      end function transform_on_graph_interface
 
-     pure logical function transform_on_data_interface(this, input_graph, input_data)
+     logical function transform_on_data_interface(this, input_graph, input_data)
        import :: graph_transform, graph, graph_field
        class(graph_transform), intent(in) :: this
        class(graph), intent(in) :: input_graph

@@ -57,10 +57,9 @@ module class_graph_partitioner
 
   use iso_fortran_env     , only : dp => REAL64
   use graph_grammar       , only : graph, graph_field
+  use graph_carrier       , only : member_set, counted_set, subset_set
   use graph_calculus      , only : graph_partitioner
-  use graph_calculus      , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
   use class_graph         , only : stored_graph
-  use class_graph_support , only : support
   use class_graph_field   , only : field
   use class_graph_walk    , only : walk, WALK_VISIT_ORDER
 
@@ -172,7 +171,7 @@ contains
   ! sits on that graph.
   !===================================================================!
 
-  pure logical function defined_on_data(this, input_graph, input_data)
+  logical function defined_on_data(this, input_graph, input_data)
 
     class(partitioner), intent(in) :: this
     class(graph)      , intent(in) :: input_graph
@@ -464,15 +463,23 @@ contains
     class(graph)      , intent(in)               :: part_graph
     class(graph_field) , allocatable, intent(out) :: part_data
 
-    associate (u1 => this, u2 => global_graph); end associate
+    class(member_set), allocatable :: dom
+
+    associate (u1 => this); end associate
 
     select type (global_data)
 
     class is (field)
-       if (global_data % on % side() == GRAPH_SIDE_VERTEX) then
-          call carry_vertex_field(global_data, part_graph, part_data)
+       call global_data % domain(dom)
+       ! Classify by embedding; coverage decides the carry inside.
+       if (dom % is_subobject_of(global_graph % vertex_set())) then
+          call carry_field(global_data, dom, &
+               & global_graph % vertex_set(), part_graph, .true., part_data)
+       else if (dom % is_subobject_of(global_graph % edge_set())) then
+          call carry_field(global_data, dom, &
+               & global_graph % edge_set(), part_graph, .false., part_data)
        else
-          call carry_edge_field(global_data, part_graph, part_data)
+          error stop 'partition: this field does not live on this graph''s domains'
        end if
 
     class default
@@ -482,93 +489,111 @@ contains
   end subroutine partition_data
 
   !===================================================================!
-  ! A cell field follows the vertex map: the part's cell l was called
-  ! global_vertex_index(l) in the whole graph, so its values come from
-  ! there.
+  ! One carry for both families and both coverages. A FULL field -
+  ! domain same_as the global carrier - lands on the part's own
+  ! carrier, every part member valued through the global map. A
+  ! PROPER SUBSET travels as a subset: the part-local members whose
+  ! global names the subset holds, each value fetched through the
+  ! GLOBAL DOMAIN'S local_index - never by raw member arithmetic -
+  ! and seated on a new subobject of the part's carrier. A new
+  ! ambient means a new declared subset: identity is not preserved
+  ! across transport, extension and values are.
   !===================================================================!
 
-  subroutine carry_vertex_field(global_data, part_graph, part_data)
+  subroutine carry_field(global_data, dom, global_carrier, part_graph, &
+       &                 on_vertices, part_data)
 
-    type(field), intent(in)               :: global_data
+    type(field)       , intent(in)               :: global_data
+    class(member_set) , intent(in)               :: dom
+    type(counted_set) , intent(in)               :: global_carrier
     class(graph)      , intent(in)               :: part_graph
-    class(graph_field) , allocatable, intent(out) :: part_data
-
-    type(field)    :: out
-    type(support)  :: on
-    real(dp), allocatable :: fv(:), lv(:)
-    integer , allocatable :: locals(:)
-    integer :: nlocal, ncomp, l, c
-
-    nlocal = part_graph % num_vertices()
-    ncomp  = global_data % num_components()
-
-    allocate(locals(nlocal))
-    do l = 1, nlocal
-       locals(l) = l
-    end do
-
-    on  = support(GRAPH_SIDE_VERTEX, locals)
-    out = field(global_data % name(), on, ncomp=ncomp, unit_name=global_data % units())
-
-    call global_data % get_real_vector(fv)
-    allocate(lv(nlocal * ncomp))
-    lv = 0.0_dp
-
-    do l = 1, nlocal
-       do c = 1, ncomp
-          associate (from => (part_graph % global_vertex_index(l) - 1) * ncomp + c)
-            if (from >= 1 .and. from <= size(fv)) lv((l - 1) * ncomp + c) = fv(from)
-          end associate
-       end do
-    end do
-
-    call out % set_real_vector(lv)
-    allocate(part_data, source=out)
-
-  end subroutine carry_vertex_field
-
-  !===================================================================!
-  ! A face field follows the edge map in the same way.
-  !===================================================================!
-
-  subroutine carry_edge_field(global_data, part_graph, part_data)
-
-    type(field), intent(in)               :: global_data
-    class(graph)    , intent(in)               :: part_graph
+    logical           , intent(in)               :: on_vertices
     class(graph_field), allocatable, intent(out) :: part_data
 
-    type(field)      :: out
-    type(support)    :: on
+    type(field)           :: out
+    type(counted_set)     :: part_carrier
+    type(subset_set)      :: sp
     real(dp), allocatable :: fv(:), lv(:)
-    integer , allocatable :: locals(:)
-    integer :: nlocal, ncomp, l, c
+    integer , allocatable :: kept(:)
+    integer :: nlocal, ncomp, l, c, g, n, at
 
-    nlocal = part_graph % num_edges()
-    ncomp  = global_data % num_components()
-
-    allocate(locals(nlocal))
-    do l = 1, nlocal
-       locals(l) = l
-    end do
-
-    on  = support(GRAPH_SIDE_EDGE, locals)
-    out = field(global_data % name(), on, ncomp=ncomp, unit_name=global_data % units())
+    if (on_vertices) then
+       nlocal       = part_graph % num_vertices()
+       part_carrier = part_graph % vertex_set()
+    else
+       nlocal       = part_graph % num_edges()
+       part_carrier = part_graph % edge_set()
+    end if
+    ncomp = global_data % num_components()
 
     call global_data % get_real_vector(fv)
-    allocate(lv(nlocal * ncomp))
-    lv = 0.0_dp
 
-    do l = 1, nlocal
-       do c = 1, ncomp
-          associate (from => (part_graph % global_edge_index(l) - 1) * ncomp + c)
-            if (from >= 1 .and. from <= size(fv)) lv((l - 1) * ncomp + c) = fv(from)
-          end associate
+    if (dom % same_as(global_carrier)) then
+
+       ! Full coverage: the part field lives on the part's carrier.
+       allocate(lv(nlocal * ncomp))
+       lv = 0.0_dp
+       do l = 1, nlocal
+          g = global_of(part_graph, l, on_vertices)
+          at = dom % local_index(g)
+          if (at >= 1) then
+             do c = 1, ncomp
+                lv((l - 1) * ncomp + c) = fv((at - 1) * ncomp + c)
+             end do
+          end if
        end do
-    end do
+       out = field(global_data % name(), part_carrier, ncomp=ncomp, &
+            &      unit_name=global_data % units())
+       call out % set_real_vector(lv)
 
-    call out % set_real_vector(lv)
+    else
+
+       ! Proper subset: gather the part members the subset names.
+       allocate(kept(nlocal))
+       n = 0
+       do l = 1, nlocal
+          g = global_of(part_graph, l, on_vertices)
+          if (dom % has(g)) then
+             n = n + 1
+             kept(n) = l
+          end if
+       end do
+       sp = subset_set(dom % name(), part_carrier, kept(1:n))
+
+       allocate(lv(n * ncomp))
+       do l = 1, n
+          g  = global_of(part_graph, kept(l), on_vertices)
+          at = dom % local_index(g)
+          do c = 1, ncomp
+             lv((l - 1) * ncomp + c) = fv((at - 1) * ncomp + c)
+          end do
+       end do
+       out = field(global_data % name(), sp, ncomp=ncomp, &
+            &      unit_name=global_data % units())
+       call out % set_real_vector(lv)
+
+    end if
+
     allocate(part_data, source=out)
 
-  end subroutine carry_edge_field
+  end subroutine carry_field
+
+  !===================================================================!
+  ! What the part's l-th member was called in the whole.
+  !===================================================================!
+
+  pure integer function global_of(part_graph, l, on_vertices)
+
+    class(graph), intent(in) :: part_graph
+    integer     , intent(in) :: l
+    logical     , intent(in) :: on_vertices
+
+    if (on_vertices) then
+       global_of = part_graph % global_vertex_index(l)
+    else
+       global_of = part_graph % global_edge_index(l)
+    end if
+
+  end function global_of
 
 end module class_graph_partitioner

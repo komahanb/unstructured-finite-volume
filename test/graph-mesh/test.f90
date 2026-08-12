@@ -29,8 +29,8 @@ program test_graph_mesh
 
   use iso_fortran_env, only : dp => REAL64
   use graph_grammar  , only : graph, graph_field
-  use graph_calculus , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
-  use class_graph_support, only : support
+  use graph_calculus , only : GRAPH_SIDE_VERTEX
+  use graph_carrier         , only : member_set, counted_set, subset_set
   use class_graph_field  , only : field
   use class_graph_mesh   , only : mesh
   use class_mesh_builder , only : mesh_from_gmsh
@@ -110,7 +110,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    class(graph), allocatable :: wall
+    class(member_set), allocatable :: wall
     integer, allocatable :: nbrs(:)
 
     m = hand_mesh()
@@ -123,9 +123,9 @@ contains
     call report(size(nbrs) == 2, 'the middle cell has two neighbours', nfail)
 
     call m % tagged_edges('wall', wall)
-    call report(wall % num_vertices() == 1, &
+    call report(wall % size() == 1, &
          & 'the wall tag names one face', nfail)
-    call report(wall % global_vertex_index(1) == 3, &
+    call report(wall % member(1) == 3, &
          & 'and it is the third face', nfail)
 
   end subroutine check_mesh_is_a_graph
@@ -197,7 +197,7 @@ contains
     type(mesh) :: m
     type(differential_operator) :: second
     type(field) :: state
-    type(support) :: cells
+    type(counted_set) :: cells
     class(graph_field), allocatable :: y
     real(dp), allocatable :: farea(:), fdelta(:), vol(:), got(:)
     real(dp) :: k(3), c(3)
@@ -218,7 +218,7 @@ contains
     k = [2.0_dp, 4.0_dp, 0.0_dp]
     c = k * farea
 
-    cells = support(GRAPH_SIDE_VERTEX, [(v, v = 1, 3)])
+    cells = m % vertex_set()
     state = field('q', cells)
     call state % set_real_vector([1.0_dp, 3.0_dp, 6.0_dp])
 
@@ -258,7 +258,7 @@ contains
     type(mesh) :: m
     type(differential_operator) :: second
     type(field) :: state
-    type(support) :: cells
+    type(counted_set) :: cells
     class(graph_field), allocatable :: y
     type(field) :: fa, fd, fv
     real(dp), allocatable :: farea(:), fdelta(:), vol(:), got(:), c(:), q(:)
@@ -304,7 +304,7 @@ contains
        q(v) = real(mod(7 * v, 11), dp)
     end do
 
-    cells = support(GRAPH_SIDE_VERTEX, [(v, v = 1, nv)])
+    cells = m % vertex_set()
     state = field('q', cells)
     call state % set_real_vector(q)
 

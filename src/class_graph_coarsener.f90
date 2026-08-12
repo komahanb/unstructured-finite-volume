@@ -29,10 +29,9 @@ module class_graph_coarsener
 
   use iso_fortran_env     , only : dp => REAL64
   use graph_grammar       , only : graph, graph_field
+  use graph_carrier       , only : member_set
   use graph_calculus      , only : graph_coarsener
-  use graph_calculus      , only : GRAPH_SIDE_VERTEX
   use class_graph         , only : stored_graph
-  use class_graph_support , only : support
   use class_graph_field   , only : field
 
   implicit none
@@ -151,7 +150,7 @@ contains
   ! whose entries match the graph; the graph gate answers first.
   !===================================================================!
 
-  pure logical function defined_on_data(this, input_graph, input_data)
+  logical function defined_on_data(this, input_graph, input_data)
 
     class(coarsener) , intent(in) :: this
     class(graph)     , intent(in) :: input_graph
@@ -161,9 +160,16 @@ contains
 
     select type (input_data)
     class is (field)
-       defined_on_data = defined_on_data &
-            & .and. input_data % on % side() == GRAPH_SIDE_VERTEX &
-            & .and. input_data % num_entries() >= 0
+       block
+         class(member_set), allocatable :: dom
+         call input_data % domain(dom)
+         ! Full coverage, not merely family: this kernel indexes
+         ! every vertex densely (AGENTS.md 5B: routing is not
+         ! admissibility).
+         defined_on_data = defined_on_data &
+              & .and. dom % same_as(input_graph % vertex_set()) &
+              & .and. input_data % num_entries() >= 0
+       end block
     class default
        defined_on_data = .false.
     end select
@@ -311,12 +317,9 @@ contains
     class(graph_field), allocatable, intent(out) :: coarse_data
 
     type(field)    :: out
-    type(support)  :: on
-    integer , allocatable :: blk(:), indices(:), tally(:)
+    integer , allocatable :: blk(:), tally(:)
     real(dp), allocatable :: fv(:), cv(:)
     integer :: nb, nv, ncomp, v, c, b
-
-    associate (u1 => coarse_graph); end associate
 
     select type (fine_data)
     class is (field)
@@ -326,14 +329,8 @@ contains
        nv    = fine_graph % num_vertices()
        ncomp = fine_data % num_components()
 
-       allocate(indices(nb))
-       do b = 1, nb
-          indices(b) = b
-       end do
-
-       on  = support(GRAPH_SIDE_VERTEX, indices)
-       out = field(fine_data % name(), on, ncomp=ncomp, &
-            &             unit_name=fine_data % units())
+       out = field(fine_data % name(), coarse_graph % vertex_set(), &
+            &             ncomp=ncomp, unit_name=fine_data % units())
 
        call fine_data % get_real_vector(fv)
        allocate(cv(nb * ncomp), tally(nb))

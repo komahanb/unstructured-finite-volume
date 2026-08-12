@@ -27,9 +27,8 @@ module class_graph_linearization
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_grammar      , only : graph, graph_field, graph_operation
+  use graph_carrier      , only : member_set
   use graph_calculus     , only : linearization_operator
-  use graph_calculus     , only : GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
   use class_graph_field  , only : field
 
   implicit none
@@ -112,7 +111,7 @@ contains
 
     class(difference_linearization), intent(in) :: this
     class(graph), intent(in)                    :: input_graph
-    class(graph), allocatable, intent(out)      :: domain
+    class(member_set), allocatable, intent(out)      :: domain
 
     call this % of % domain(input_graph, domain)
 
@@ -130,7 +129,6 @@ contains
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
-    type(support) :: cells
     type(field)   :: state
     class(graph_field), allocatable :: pushed
     real(dp), allocatable :: v(:), y(:), base(:)
@@ -149,20 +147,19 @@ contains
        v = 0.0_dp
     end if
 
-    cells = support(GRAPH_SIDE_VERTEX, [(i, i = 1, nv)])
 
     ! The base residual: taken from the freeze when it rode along,
     ! measured here once when it did not.
     if (allocated(this % base)) then
        base = this % base
     else
-       state = field('state', cells, ncomp=ncomp)
+       state = field('state', input_graph % vertex_set(), ncomp=ncomp)
        call state % set_real_vector(this % at)
        call this % of % apply(input_graph, [state], pushed)
        call pushed % get_real_vector(base)
     end if
 
-    state = field('state', cells, ncomp=ncomp)
+    state = field('state', input_graph % vertex_set(), ncomp=ncomp)
     call state % set_real_vector(this % at + this % step * v)
 
     call this % of % apply(input_graph, [state], pushed)
@@ -170,7 +167,7 @@ contains
 
     y = (y - base) / this % step
 
-    state = field('J v', cells, ncomp=ncomp)
+    state = field('J v', input_graph % vertex_set(), ncomp=ncomp)
     call state % set_real_vector(y)
     if (allocated(output)) deallocate(output)
     allocate(output, source=state)

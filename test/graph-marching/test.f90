@@ -24,7 +24,7 @@ program test_graph_marching
   use iso_fortran_env, only : dp => REAL64
   use graph_grammar  , only : graph, graph_field, graph_operation
   use graph_calculus , only : GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
+  use graph_carrier         , only : member_set, counted_set, subset_set
   use class_graph_field  , only : field
   use class_graph        , only : stored_graph
   use class_graph_differential_operator, only : vertex_differential_operator
@@ -112,7 +112,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(marcher) :: clock
-    type(support) :: cells
+    type(counted_set) :: cells
     type(stored_graph) :: lone
     type(differential_operator) :: decay
     real(dp) :: q(1), expected
@@ -149,7 +149,7 @@ contains
     type(marcher) :: clock
     type(mandelbrot_law) :: law
     type(stored_graph) :: points
-    type(support) :: cells
+    type(counted_set) :: cells
     type(field) :: escape_field
     real(dp), allocatable :: q(:)
     integer, allocatable :: escape(:)
@@ -185,7 +185,7 @@ contains
 
     ! The counts leave as an integer field: the tower's native kind
     ! for a picture of whole numbers.
-    cells = support(GRAPH_SIDE_VERTEX, [(v, v = 1, nv)])
+    cells = points % vertex_set()
     escape_field = field('escape time', cells)
     call escape_field % set_integer_vector(escape)
 

@@ -60,11 +60,11 @@
 module class_graph_field
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_grammar      , only : graph, graph_field
-  use graph_grammar      , only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
-  use graph_grammar      , only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
-  use graph_grammar      , only : GRAPH_FIELD_CHARACTER
-  use class_graph_support, only : support
+  use graph_carrier       , only : member_set
+  use graph_field_calculus, only : graph_field
+  use graph_field_calculus, only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
+  use graph_field_calculus, only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
+  use graph_field_calculus, only : GRAPH_FIELD_CHARACTER
 
   implicit none
 
@@ -80,7 +80,10 @@ module class_graph_field
      character(len=:), allocatable :: label
      character(len=:), allocatable :: unit_name
 
-     type(support) :: on
+     ! The one domain: an ambient carrier or a subset subobject,
+     ! copied at construction so its identity travels. Private, so
+     ! consumers ask through domain() rather than inspecting on.
+     class(member_set), allocatable, private :: on
 
      integer :: ncomp = 1
      integer :: vkind = GRAPH_FIELD_REAL
@@ -147,12 +150,12 @@ contains
   pure type(field) function create(label, on, ncomp, unit_name) result(this)
 
     character(len=*), intent(in)           :: label
-    type(support)   , intent(in)           :: on
+    class(member_set), intent(in)          :: on
     integer         , intent(in), optional :: ncomp
     character(len=*), intent(in), optional :: unit_name
 
     this % label = label
-    this % on    = on
+    allocate(this % on, source=on)
 
     if (present(ncomp)) then
        this % ncomp = ncomp
@@ -208,8 +211,8 @@ contains
 
   subroutine field_domain(this, domain)
 
-    class(field), intent(in)               :: this
-    class(graph), allocatable, intent(out) :: domain
+    class(field), intent(in)                    :: this
+    class(member_set), allocatable, intent(out) :: domain
 
     allocate(domain, source=this % on)
 
@@ -232,7 +235,7 @@ contains
 
     class(field), intent(in) :: this
 
-    field_num_entries = this % on % num_vertices()
+    field_num_entries = this % on % size()
 
   end function field_num_entries
 
@@ -268,6 +271,9 @@ contains
     class(field), intent(inout) :: this
     integer     , intent(in)    :: values(:)
 
+    if (size(values) /= this % on % size() * this % ncomp) then
+       error stop 'class_graph_field: a value vector must fill its domain exactly'
+    end if
     this % ivals = values
     this % vkind = GRAPH_FIELD_INTEGER
 
@@ -291,6 +297,9 @@ contains
     class(field), intent(inout) :: this
     real(dp)    , intent(in)    :: values(:)
 
+    if (size(values) /= this % on % size() * this % ncomp) then
+       error stop 'class_graph_field: a value vector must fill its domain exactly'
+    end if
     this % rvals = values
     this % vkind = GRAPH_FIELD_REAL
 
@@ -319,6 +328,9 @@ contains
     class(field), intent(inout) :: this
     complex(dp) , intent(in)    :: values(:)
 
+    if (size(values) /= this % on % size() * this % ncomp) then
+       error stop 'class_graph_field: a value vector must fill its domain exactly'
+    end if
     this % cvals = values
     this % vkind = GRAPH_FIELD_COMPLEX
 
@@ -342,6 +354,9 @@ contains
     class(field), intent(inout) :: this
     logical     , intent(in)    :: values(:)
 
+    if (size(values) /= this % on % size() * this % ncomp) then
+       error stop 'class_graph_field: a value vector must fill its domain exactly'
+    end if
     this % lvals = values
     this % vkind = GRAPH_FIELD_LOGICAL
 
@@ -365,6 +380,9 @@ contains
     class(field), intent(inout)  :: this
     character(len=*), intent(in) :: values(:)
 
+    if (size(values) /= this % on % size() * this % ncomp) then
+       error stop 'class_graph_field: a value vector must fill its domain exactly'
+    end if
     this % svals = values
     this % vkind = GRAPH_FIELD_CHARACTER
 

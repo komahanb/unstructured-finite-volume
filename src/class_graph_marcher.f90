@@ -46,8 +46,6 @@ module class_graph_marcher
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_grammar      , only : graph, graph_field, graph_operation
-  use graph_calculus     , only : GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
   use class_graph_field  , only : field
   use class_graph        , only : stored_graph
   use class_graph_step   , only : step_operator, bdf
@@ -225,16 +223,14 @@ contains
     real(dp), intent(in)               :: q(:)
     real(dp), allocatable, intent(out) :: s(:)
 
-    type(support) :: cells
     type(field)   :: state
     class(graph_field), allocatable :: answer
-    integer :: nv, ncomp, v
+    integer :: nv, ncomp
 
     nv    = on % num_vertices()
     ncomp = size(q) / max(nv, 1)
 
-    cells = support(GRAPH_SIDE_VERTEX, [(v, v = 1, nv)])
-    state = field('state', cells, ncomp=ncomp)
+    state = field('state', on % vertex_set(), ncomp=ncomp)
     call state % set_real_vector(q)
 
     call action % apply(on, [state], answer)

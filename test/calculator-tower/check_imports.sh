@@ -29,6 +29,10 @@ allowed_for() {
         # that walk it; the legacy graph stack, fields and all above
         # stay forbidden.
         level-4-graph-calculus)  echo "calculator_assert graph_carrier graph_relation graph_relation_algebra graph_structure graph_profile graph_algorithms" ;;
+        # level 6: sparsity is structure - carriers, relations, the
+        # algebra, and the binary transpose view; no field, no graph
+        # container, no value ever needed.
+        level-6-discretization)  echo "calculator_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation" ;;
         # level 5: a field needs a domain, never a graph container.
         level-5-field-calculus)  echo "calculator_assert graph_carrier graph_field_calculus class_graph_field" ;;
         *)                       echo "__no_allowlist__" ;;

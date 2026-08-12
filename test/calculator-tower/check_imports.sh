@@ -19,6 +19,7 @@ allowed_for() {
         common)                  echo "" ;;
         level-0-carrier)         echo "calculator_assert graph_carrier" ;;
         level-1-relation)        echo "calculator_assert graph_carrier graph_relation" ;;
+        level-2-relation-algebra) echo "calculator_assert graph_carrier graph_relation graph_relation_algebra" ;;
         *)                       echo "__no_allowlist__" ;;
     esac
 }

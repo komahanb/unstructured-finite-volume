@@ -289,6 +289,21 @@ R_{\mathrm{in}}
 \right).
 \]
 
+**As implemented**, the derivation uses an equivalent smaller
+factorization — natural join remains unearned:
+
+```text
+R_out3   = restrict_slot(R_flow, 3, {out})       two tuples
+R_in3    = restrict_slot(R_flow, 3, {in₁,in₂})   four tuples
+produces = project_slots(R_out3, [1,2])  ⊆ O×X   {(+,c), (×,e)}
+consumes = project_slots(R_in3,  [2,1])  ⊆ X×O   {(a,+),(b,+),(c,×),(d,×)}
+D        = compose_binary(produces, consumes)    consumes ∘ produces
+```
+
+which yields the same extension \(D=\{(+,\times)\}\) through
+restriction + projection + binary composition
+(`src/graph_relation_algebra.f90`).
+
 ```mermaid
 flowchart LR
     plus["+"] -->|"c"| times["×"]

@@ -21,6 +21,7 @@ program test_graph_ordinary
   use graph_structure      , only : relational_graph, held_set, &
        &                            held_relation
   use graph_profile        , only : ordinary_graph_view
+  use listed_set_fixture   , only : listed_set
 
   implicit none
 
@@ -59,6 +60,7 @@ program test_graph_ordinary
        & "the self-loop, tuples shuffled", nfail, scrambled=.true.)
 
   call check_wall_is_absence(nfail)
+  call check_declared_order(nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
@@ -235,5 +237,56 @@ contains
          & "and the profile reads the absence as the old zero", nfail)
 
   end subroutine check_wall_is_absence
+
+  !===================================================================!
+  ! Canonical order is the carrier's DECLARED enumeration, not the
+  ! members' numeric order. Edges { 30 10 20 } stand in that
+  ! declared order in every derived list, however the tuples were
+  ! shuffled - a numeric sort would answer 10 20 30 and be wrong.
+  !===================================================================!
+
+  subroutine check_declared_order(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(listed_set)               :: edges
+    type(counted_set)              :: verts
+    type(csr_relation)             :: t, h
+    type(relational_graph), target :: g
+    type(ordinary_graph_view)      :: view
+    integer, allocatable           :: idx(:)
+
+    edges = listed_set('edges', [30, 10, 20])
+    verts = counted_set('vertices', 2)
+
+    ! Every edge runs 1 -> 2; tuples handed in scrambled order.
+    t = csr_relation('tail', edges, verts, &
+         & reshape([10,1,  30,1,  20,1], [2, 3]))
+    h = csr_relation('head', edges, verts, &
+         & reshape([20,2,  10,2,  30,2], [2, 3]))
+
+    g = relational_graph('sparse-edged', &
+         & [held_set(verts), held_set(edges)], &
+         & [held_relation(t), held_relation(h)])
+
+    view = ordinary_graph_view(g, tail_at=1, head_at=2)
+
+    call view % outgoing_edges(1, idx)
+    call report(all(idx .eq. [30, 10, 20]), &
+         & "outgoing edges stand in declared order, not numeric", nfail)
+
+    call view % incoming_edges(2, idx)
+    call report(all(idx .eq. [30, 10, 20]), &
+         & "and so do incoming edges", nfail)
+
+    call view % incident_edges(1, idx)
+    call report(all(idx .eq. [30, 10, 20]), &
+         & "and the merged incidence follows the same declaration", nfail)
+
+    call report(view % edge_tail(20) .eq. 1 .and. &
+         &      view % edge_head(30) .eq. 2, &
+         & "the ends answer by member value, wherever it stands", nfail)
+
+  end subroutine check_declared_order
 
 end program test_graph_ordinary

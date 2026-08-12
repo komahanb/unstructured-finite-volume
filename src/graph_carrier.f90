@@ -54,7 +54,7 @@ module graph_carrier
   implicit none
 
   private
-  public :: member_set, counted_set
+  public :: member_set, counted_set, subset_set
 
   !===================================================================!
   ! The abstract member set: an identity, a count, its members, and
@@ -155,6 +155,48 @@ module graph_carrier
   interface counted_set
      module procedure create_counted
   end interface counted_set
+
+  !===================================================================!
+  ! The subobject: a subset that IS a member set,
+  !
+  !      S c--> A          s in S  =>  s in A
+  !
+  ! This is what the old edgeless-graph "support" was reaching for
+  ! (AGENTS.md 6, 37): a chosen family of an ambient domain's
+  ! members, itself a declared domain - so a field lives on a
+  ! member_set, ambient or subset, and never learns two domain
+  ! kinds. The inclusion law is sealed at construction - every
+  ! member must already belong to the ambient - and immutability
+  ! keeps it sealed for life. The subset signs its own identity: a
+  ! subobject is its own declared domain, never a disguise of its
+  ! host. The unary-predicate face is has(); the relational face,
+  ! I_S <= S x A, is built by inclusion_of in the binary level.
+  !
+  ! Membership and standing are honest scans here, as in any listed
+  ! roster; a subset that matters at million-member scale owes
+  ! itself an indexed concretion, and says so.
+  !===================================================================!
+
+  type, extends(member_set) :: subset_set
+
+     class(member_set), allocatable, private :: host
+     integer          , allocatable, private :: roll(:)
+
+   contains
+
+     procedure :: size        => subset_size
+     procedure :: member      => subset_member
+     procedure :: members     => subset_members
+     procedure :: has         => subset_has
+     procedure :: local_index => subset_local_index
+
+     procedure :: ambient
+
+  end type subset_set
+
+  interface subset_set
+     module procedure create_subset
+  end interface subset_set
 
 contains
 
@@ -302,5 +344,115 @@ contains
     end if
 
   end function counted_local_index
+
+  !===================================================================!
+  ! Declare a subobject: a name, the ambient domain, the chosen
+  ! members. Refusals guard the inclusion:
+  !
+  !      an unsigned ambient       a subset needs a declared ambient
+  !                                domain
+  !      a member from elsewhere   a subset holds members of its
+  !                                ambient domain only
+  !
+  ! and a member handed in twice is in the subset once, first
+  ! appearance keeping its place - carriers are sets everywhere.
+  !===================================================================!
+
+  type(subset_set) function create_subset(name, ambient, members) &
+       & result(this)
+
+    character(len=*) , intent(in) :: name
+    class(member_set), intent(in) :: ambient
+    integer          , intent(in) :: members(:)
+
+    integer :: keep(size(members))
+    integer :: j, nkept
+
+    if (.not. ambient % same_as(ambient)) then
+       error stop 'graph_carrier: a subset needs a declared ambient domain'
+    end if
+
+    nkept = 0
+    do j = 1, size(members)
+       if (.not. ambient % has(members(j))) then
+          error stop 'graph_carrier: a subset holds members of its ambient domain only'
+       end if
+       if (.not. any(keep(1:nkept) == members(j))) then
+          nkept       = nkept + 1
+          keep(nkept) = members(j)
+       end if
+    end do
+
+    allocate(this % host, source=ambient)
+    this % roll = keep(1:nkept)
+    call this % declare(name)
+
+  end function create_subset
+
+  !===================================================================!
+  ! The ambient domain, as a copy - which is to say, as the same
+  ! declared domain the subset was carved from.
+  !===================================================================!
+
+  function ambient(this) result(host)
+
+    class(subset_set), intent(in)  :: this
+    class(member_set), allocatable :: host
+
+    allocate(host, source=this % host)
+
+  end function ambient
+
+  pure integer function subset_size(this)
+
+    class(subset_set), intent(in) :: this
+
+    subset_size = size(this % roll)
+
+  end function subset_size
+
+  pure integer function subset_member(this, local_index)
+
+    class(subset_set), intent(in) :: this
+    integer          , intent(in) :: local_index
+
+    subset_member = this % roll(local_index)
+
+  end function subset_member
+
+  pure subroutine subset_members(this, indices)
+
+    class(subset_set)   , intent(in)  :: this
+    integer, allocatable, intent(out) :: indices(:)
+
+    indices = this % roll
+
+  end subroutine subset_members
+
+  pure logical function subset_has(this, member)
+
+    class(subset_set), intent(in) :: this
+    integer          , intent(in) :: member
+
+    subset_has = any(this % roll == member)
+
+  end function subset_has
+
+  pure integer function subset_local_index(this, member)
+
+    class(subset_set), intent(in) :: this
+    integer          , intent(in) :: member
+
+    integer :: k
+
+    subset_local_index = 0
+    do k = 1, size(this % roll)
+       if (this % roll(k) == member) then
+          subset_local_index = k
+          return
+       end if
+    end do
+
+  end function subset_local_index
 
 end module graph_carrier

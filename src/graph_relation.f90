@@ -111,11 +111,12 @@ module graph_relation
      procedure :: same_as
 
      !----------------------------------------------------------------!
-     ! Self-containment. A relation is MATERIALIZED - whole unto
-     ! itself, safe to copy and to own - unless it says otherwise. A
-     ! borrowing view overrides this to false, and a graph refuses
-     ! to own it: owning a borrower would be owning a promise
-     ! someone else has to keep.
+     ! Self-containment, FAILING CLOSED. A relation is assumed a
+     ! borrower - unsafe to own - until a concretion CLAIMS to be
+     ! materialized: whole unto itself, safe to copy and to own.
+     ! Stored citizens claim it; views never do, and a view an
+     ! author forgets to mark stays unownable by default, which is
+     ! the only safe direction for the mistake.
      !----------------------------------------------------------------!
 
      procedure :: materialized
@@ -191,11 +192,12 @@ module graph_relation
 
    contains
 
-     procedure :: arity      => stored_arity
-     procedure :: domain     => stored_domain
-     procedure :: has        => stored_has
-     procedure :: num_tuples => stored_num_tuples
-     procedure :: tuples     => stored_tuples
+     procedure :: arity        => stored_arity
+     procedure :: domain       => stored_domain
+     procedure :: has          => stored_has
+     procedure :: num_tuples   => stored_num_tuples
+     procedure :: tuples       => stored_tuples
+     procedure :: materialized => stored_materialized
 
   end type stored_relation
 
@@ -250,9 +252,17 @@ contains
 
     class(relation), intent(in) :: this
 
-    materialized = .true.
+    materialized = .false.
 
   end function materialized
+
+  pure logical function stored_materialized(this)
+
+    class(stored_relation), intent(in) :: this
+
+    stored_materialized = .true.
+
+  end function stored_materialized
 
   function name(this)
 

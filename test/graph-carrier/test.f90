@@ -15,7 +15,7 @@
 program test_graph_carrier
 
   use graph_identity, only : token
-  use graph_carrier , only : member_set, counted_set
+  use graph_carrier , only : member_set, counted_set, subset_set
   use class_graph   , only : stored_graph
 
   implicit none
@@ -30,6 +30,7 @@ program test_graph_carrier
 
   call check_counted_contract(nfail)
   call check_structural_identity(nfail)
+  call check_subsets(nfail)
   call check_graph_hands_out_carriers(nfail)
 
   write(*,'(1x,a)') "============================================="
@@ -174,6 +175,73 @@ contains
          & "no two declarations share a stamp", nfail)
 
   end subroutine check_structural_identity
+
+  !===================================================================!
+  ! The subobject (AGENTS.md 6 and 37, phase 5): S c--> A. A subset
+  ! IS a member set - it answers the whole five-question contract,
+  ! signs its own identity, and adds one law: every member belongs
+  ! to the ambient, sealed at construction. This is the destination
+  ! the old edgeless-graph support was reaching for.
+  !===================================================================!
+
+  subroutine check_subsets(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(counted_set)              :: faces
+    type(subset_set)               :: walls, hot
+    class(member_set), allocatable :: amb
+    integer, allocatable           :: idx(:)
+    integer                        :: k
+    logical                        :: ok
+
+    faces = counted_set('faces', 6)
+    walls = subset_set('walls', faces, [2, 5, 2])
+
+    call report(walls % size() .eq. 2, &
+         & "a member handed in twice is in the subset once", nfail)
+    call walls % members(idx)
+    call report(all(idx .eq. [2, 5]), &
+         & "first appearances stand, in their first order", nfail)
+
+    call report(walls % has(2) .and. walls % has(5) .and. &
+         &      .not. walls % has(3) .and. .not. walls % has(9), &
+         & "membership answers the chosen family alone", nfail)
+
+    ok = .true.
+    do k = 1, walls % size()
+       ok = ok .and. (walls % local_index(walls % member(k)) .eq. k)
+       ok = ok .and. (walls % member(walls % local_index( &
+            &         walls % member(k))) .eq. walls % member(k))
+    end do
+    call report(ok, &
+         & "member and local_index invert each other on the subset", nfail)
+
+    amb = walls % ambient()
+    call report(amb % same_as(faces), &
+         & "the ambient is the domain the subset was carved from", nfail)
+    call report(.not. walls % same_as(faces), &
+         & "a subobject is its own declared domain, not its host", nfail)
+
+    ok = .true.
+    do k = 1, walls % size()
+       ok = ok .and. amb % has(walls % member(k))
+    end do
+    call report(ok, &
+         & "the inclusion law: every member belongs to the ambient", nfail)
+
+    ! Subobjects nest: a subset of a subset, each layer keeping its
+    ! own ambient.
+    hot = subset_set('hot-walls', walls, [5])
+    call report(hot % size() .eq. 1 .and. hot % member(1) .eq. 5, &
+         & "a subset of a subset is a subset", nfail)
+    amb = hot % ambient()
+    call report(amb % same_as(walls), &
+         & "whose ambient is the layer above, not the ground", nfail)
+    call report(faces % has(hot % member(1)), &
+         & "and whose members reach the ground transitively", nfail)
+
+  end subroutine check_subsets
 
   !===================================================================!
   ! The phase-1 wiring: a stored graph declares its two carriers at

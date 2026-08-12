@@ -35,8 +35,10 @@
 ! ORDER, CANONICAL. A relation is a set: how its tuples were handed
 ! in is no part of what it IS, so no profile answer may depend on
 ! it. Every derived list is CANONICALIZED to the edge carrier's own
-! enumeration order - fibres sorted ascending before use - which is
-! exactly the order the old stored_graph produced from its builds.
+! enumeration - fibres sorted by the carrier's local_index, never
+! by the members' integer values, which a sparse carrier declares
+! in whatever order it pleases. On a counted carrier this is the
+! ascending order the old stored_graph produced from its builds.
 ! Hand T and H their tuples shuffled and every answer stands.
 !
 ! TWO SCHEMA LAWS BEYOND THE FIBRES. E and V are distinct declared
@@ -234,7 +236,7 @@ contains
     integer, allocatable      , intent(out) :: indices(:)
 
     call this % tails % preimage(vertex_index, indices)
-    call ascending(indices)
+    call canonical(this, indices)
 
   end subroutine outgoing_edges
 
@@ -245,34 +247,39 @@ contains
     integer, allocatable      , intent(out) :: indices(:)
 
     call this % heads % preimage(vertex_index, indices)
-    call ascending(indices)
+    call canonical(this, indices)
 
   end subroutine incoming_edges
 
   !===================================================================!
-  ! The canonical order: the edge carrier's own enumeration, read
-  ! off the members ascending. Fibres are small; an insertion sort
-  ! is honest and allocation-free.
+  ! The canonical order: the edge carrier's OWN ENUMERATION, keyed
+  ! by local_index - never by the members' integer values, which a
+  ! sparse carrier is free to hand out in any order it declared.
+  ! For a counted carrier the two coincide; for { 30 10 20 } they
+  ! do not, and the declaration wins. Fibres are small; an
+  ! insertion sort is honest and allocation-free.
   !===================================================================!
 
-  pure subroutine ascending(list)
+  pure subroutine canonical(this, list)
 
-    integer, intent(inout) :: list(:)
+    class(ordinary_graph_view), intent(in)    :: this
+    integer                   , intent(inout) :: list(:)
 
-    integer :: i, j, key
+    integer :: i, j, key, keypos
 
     do i = 2, size(list)
-       key = list(i)
-       j   = i - 1
+       key    = list(i)
+       keypos = this % edges % local_index(key)
+       j      = i - 1
        do while (j >= 1)
-          if (list(j) <= key) exit
+          if (this % edges % local_index(list(j)) <= keypos) exit
           list(j + 1) = list(j)
           j = j - 1
        end do
        list(j + 1) = key
     end do
 
-  end subroutine ascending
+  end subroutine canonical
 
   !===================================================================!
   ! Incidence is the two fibres merged ascending - the old einc
@@ -305,7 +312,8 @@ contains
        else if (i > size(out_f)) then
           indices(n) = in_f(j)
           j = j + 1
-       else if (out_f(i) <= in_f(j)) then
+       else if (this % edges % local_index(out_f(i)) <= &
+            &   this % edges % local_index(in_f(j))) then
           indices(n) = out_f(i)
           i = i + 1
        else

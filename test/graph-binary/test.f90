@@ -15,9 +15,9 @@
 
 program test_graph_binary
 
-  use graph_carrier         , only : counted_set, member_set
+  use graph_carrier         , only : counted_set, member_set, subset_set
   use graph_binary_relation , only : csr_relation, transpose_of, &
-       &                             transposed_view
+       &                             transposed_view, inclusion_of
   use listed_set_fixture    , only : listed_set
 
   implicit none
@@ -33,6 +33,7 @@ program test_graph_binary
   call check_csr_contract(nfail)
   call check_fibre_views(nfail)
   call check_sparse_source(nfail)
+  call check_inclusion(nfail)
   call check_transpose_view(nfail)
   call check_involution_is_extensional(nfail)
 
@@ -207,6 +208,58 @@ contains
          & "the sparse slot answers its own declared domain", nfail)
 
   end subroutine check_sparse_source
+
+  !===================================================================!
+  ! The subobject's relational face: I_S <= S x A holds (s, s) for
+  ! every member, total, functional, injective by construction -
+  ! and it is an ordinary CSR citizen, so the subset stands in a
+  ! relation slot like any declared domain.
+  !===================================================================!
+
+  subroutine check_inclusion(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(counted_set)              :: faces
+    type(subset_set)               :: walls
+    type(csr_relation), target     :: inc
+    class(member_set), allocatable :: d
+    integer, pointer               :: f(:)
+    integer                        :: k
+    logical                        :: ok
+
+    faces = counted_set('faces', 5)
+    walls = subset_set('walls', faces, [2, 5])
+
+    inc = inclusion_of(walls)
+
+    call report(inc % arity() .eq. 2 .and. inc % num_tuples() .eq. 2, &
+         & "the inclusion holds one tuple per subset member", nfail)
+
+    call report(inc % has([2, 2]) .and. inc % has([5, 5]) .and. &
+         &      .not. inc % has([2, 5]) .and. .not. inc % has([3, 3]), &
+         & "each member relates to its own image and nothing else", nfail)
+
+    d = inc % domain(1)
+    call report(d % same_as(walls), &
+         & "the source is the subset itself", nfail)
+    d = inc % domain(2)
+    call report(d % same_as(faces), &
+         & "the target is the ambient it was carved from", nfail)
+
+    ok = .true.
+    do k = 1, walls % size()
+       f => inc % image_view(walls % member(k))
+       ok = ok .and. (size(f) .eq. 1) .and. (f(1) .eq. walls % member(k))
+    end do
+    call report(ok, &
+         & "total, functional, injective - by construction", nfail)
+
+    f => inc % preimage_view(3)
+    call report(size(f) .eq. 0, &
+         & "an ambient member outside the subset has no preimage", nfail)
+
+  end subroutine check_inclusion
 
   !===================================================================!
   ! The transpose view: O(1) to make, nothing copied, every answer

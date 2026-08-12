@@ -97,13 +97,14 @@
 
 module graph_binary_relation
 
-  use graph_carrier , only : member_set
+  use graph_carrier , only : member_set, subset_set
   use graph_relation, only : relation, slot
 
   implicit none
 
   private
   public :: binary_relation, csr_relation, transposed_view, transpose_of
+  public :: inclusion_of
 
   !===================================================================!
   ! The abstract binary relation: the general contract, plus the
@@ -169,6 +170,7 @@ module graph_binary_relation
      procedure :: tuples        => csr_tuples
      procedure :: image_view    => csr_image_view
      procedure :: preimage_view => csr_preimage_view
+     procedure :: materialized  => csr_materialized
 
   end type csr_relation
 
@@ -195,10 +197,11 @@ module graph_binary_relation
      procedure :: image_view    => view_image_view
      procedure :: preimage_view => view_preimage_view
 
-     ! A borrower is not whole unto itself: copying it copies a
-     ! pointer to a base it does not keep alive, so no graph may own
-     ! it. Views live OVER graph-owned relations, never inside them.
-     procedure :: materialized  => view_materialized
+     ! No materialized binding, on purpose: the root's fail-closed
+     ! default already answers false, and a borrower - copying it
+     ! copies a pointer to a base it does not keep alive - is
+     ! exactly what the default guards against. Views live OVER
+     ! graph-owned relations, never inside them.
 
   end type transposed_view
 
@@ -573,12 +576,44 @@ contains
 
   end function view_preimage_view
 
-  pure logical function view_materialized(this)
+  pure logical function csr_materialized(this)
 
-    class(transposed_view), intent(in) :: this
+    class(csr_relation), intent(in) :: this
 
-    view_materialized = .false.
+    csr_materialized = .true.
 
-  end function view_materialized
+  end function csr_materialized
+
+  !===================================================================!
+  ! The relational face of a subobject: the inclusion
+  !
+  !      I_S  <=  S x A ,       (s, s) for every s in S
+  !
+  ! total, functional and injective by construction - each member of
+  ! S relates to exactly its own image in the ambient. What the
+  ! subset states as membership, this states as a relation, ready
+  ! for the algebra: restriction of a relation to a subset is a
+  ! composition with its inclusion.
+  !===================================================================!
+
+  type(csr_relation) function inclusion_of(s) result(inclusion)
+
+    class(subset_set), intent(in) :: s
+
+    class(member_set), allocatable :: host
+    integer, allocatable           :: table(:,:)
+    integer                        :: k
+
+    host = s % ambient()
+
+    allocate(table(2, s % size()))
+    do k = 1, s % size()
+       table(:, k) = [s % member(k), s % member(k)]
+    end do
+
+    inclusion = csr_relation(s % name() // ' in ' // host % name(), &
+         &                   s, host, table)
+
+  end function inclusion_of
 
 end module graph_binary_relation

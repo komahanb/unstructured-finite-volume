@@ -1,6 +1,6 @@
 #!/bin/bash
-# build the library and the carrier suite, run the laws, then run the
-# refusal and assert that it dies for the stated reason.
+# build the library and the carrier suite, run the laws, then run
+# every refusal and assert that each dies for its stated reason.
 set -e
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -12,15 +12,23 @@ make -C "$here" >/dev/null
 
 cd "$here" && ./run
 
-if ./refusal >refusal.out 2>&1; then
-    echo " FAIL : a second declare was accepted"
-    exit 1
-fi
-if grep -q "a domain never signs twice" refusal.out; then
-    echo " PASS : a second declare is refused, loudly"
-else
-    echo " FAIL : the refusal died for the wrong reason"
-    cat refusal.out
-    exit 1
-fi
+declare -A reason=(
+  [twice]="a domain never signs twice"
+  [outsider]="a subset holds members of its ambient domain only"
+  [unhosted]="a subset needs a declared ambient domain"
+)
+
+for case in twice outsider unhosted; do
+    if ./refusal "$case" >refusal.out 2>&1; then
+        echo " FAIL : '$case' was accepted"
+        exit 1
+    fi
+    if grep -q "${reason[$case]}" refusal.out; then
+        echo " PASS : '$case' is refused, loudly"
+    else
+        echo " FAIL : '$case' died for the wrong reason"
+        cat refusal.out
+        exit 1
+    fi
+done
 rm -f refusal.out

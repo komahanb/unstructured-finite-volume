@@ -244,12 +244,14 @@ contains
   ! Today it answers through the graph vocabulary - side constants,
   ! num_vertices, even num_edges == 0 - and these checks pin that
   ! TODAY, so nothing shifts unseen while the ground moves. The
-  ! destination is different on purpose: support becomes a predicate
-  ! over a member set, P <= A (AGENTS.md sections 6 and 37), and the
-  ! edgeless-graph vocabulary retires. When phase 5 lands, REWRITE
-  ! these checks against the predicate contract - what must survive
-  ! is membership, the host domain, order, and emptiness; the
-  ! graph-flavoured spelling must not.
+  ! destination is different on purpose: support becomes a SUBOBJECT
+  ! S c--> A (AGENTS.md sections 6 and 37, refined by review) - and
+  ! THE DESTINATION NOW STANDS: subset_set in graph_carrier, with
+  ! its own laws in test/graph-carrier. The pins below keep guarding
+  ! the OLD support until the old fields retire onto the new
+  ! carriers; then these checks are rewritten, not obeyed - what
+  ! survives is membership, the host domain, order, and emptiness;
+  ! the graph-flavoured spelling does not.
   !===================================================================!
 
   subroutine check_supports(nfail)

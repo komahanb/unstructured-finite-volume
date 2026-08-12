@@ -98,10 +98,21 @@ contains
     call report(ok, &
          & "every reported member belongs to the domain", nfail)
 
+    ! Membership is a primitive: one comparison, never an
+    ! enumeration and a search. This is what a relation signature
+    ! leans on when it validates a tuple.
+    call report(cells % has(1) .and. cells % has(4) .and. cells % has(6), &
+         & "has says yes to every member", nfail)
+    call report(.not. (cells % has(0) .or. cells % has(7) .or. &
+         &             cells % has(-3)), &
+         & "and no to everything outside the domain", nfail)
+
     none = counted_set('nothing', 0)
     call none % members(idx)
     call report(none % size() .eq. 0 .and. size(idx) .eq. 0, &
          & "the empty domain is a domain", nfail)
+    call report(.not. none % has(1), &
+         & "and holds nothing", nfail)
 
   end subroutine check_counted_contract
 

@@ -10,6 +10,14 @@
 ! no relations, no graph words - vertices, edges, cells and faces
 ! are what higher levels call the sets they declare here.
 !
+! The structural contract is four questions: how many (size), which
+! one (member), all of them (members), and IS THIS ONE OF YOURS
+! (has). Membership is a primitive, not a search: a relation
+! signature will validate tuples against it, and must never have to
+! enumerate a domain to ask whether one index belongs. The name a
+! set was declared with is metadata for the reader - carried,
+! printable, and no part of the mathematics.
+!
 !                       STRUCTURAL IDENTITY
 !
 ! Two member sets are the same only when they are the SAME DECLARED
@@ -19,9 +27,16 @@
 !      cells  = { 1 2 3 4 }        four cells
 !      faces  = { 1 2 3 4 }        four faces - a different world
 !
-! So every construction stamps a fresh identity, copies carry the
-! stamp along, and same_as reads the stamp alone. A relation
-! signature will refer to these identities, not to array contents.
+! Identity is an OPAQUE TOKEN. Its parts are private, so no caller
+! can compose one with chosen contents; the only ways a token moves
+! are minting - fresh, unrepeatable - and whole-object copy, which
+! is precisely what "the same declared domain" means. A set signs
+! once, at declaration, and a second signing is refused loudly: a
+! domain that changed identity mid-life would let one question
+! answer two ways. The token today is an (image, serial) pair, so
+! two coarray images can never mint the same stamp; the
+! representation stays free to grow because nothing outside this
+! module can read its parts.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -31,48 +46,75 @@ module graph_carrier
   implicit none
 
   private
-  public :: member_set, counted_set, new_identity
+  public :: member_set, counted_set, token, mint_token
 
   !===================================================================!
-  ! The stamp roll. Every declared domain takes the next number, so
-  ! no two declarations ever collide. Zero is reserved for the
-  ! undeclared - a default-initialized set that was never constructed
-  ! is no domain at all, and same_as says so.
+  ! The stamp roll of this image. Serial zero is reserved for the
+  ! undeclared: a default-initialized token is no identity at all,
+  ! and matches nothing, itself included.
   !===================================================================!
 
-  integer, save :: last_identity = 0
+  integer, save :: last_serial = 0
 
   !===================================================================!
-  ! The abstract member set: identity, a name for the reader, a
-  ! count, and its members. The contract is deliberately this small
-  ! (AGENTS.md 4.2); subsets, tags, parts and every other refinement
-  ! arrive on higher levels as predicates and relations, never here.
+  ! The opaque token. Parts private; minting and copying are the
+  ! only ways one comes to exist. serial() is a read-only diagnostic
+  ! for messages and tests - matches is the law.
+  !===================================================================!
+
+  type :: token
+
+     integer, private :: image  = 0
+     integer, private :: serial = 0
+
+   contains
+
+     procedure :: matches
+     procedure :: declared
+     procedure :: serial_number
+
+  end type token
+
+  !===================================================================!
+  ! The abstract member set: an identity, a count, its members, and
+  ! membership. The contract is deliberately this small (AGENTS.md
+  ! 4.2); subsets, tags, parts and every other refinement arrive on
+  ! higher levels as predicates and relations, never here.
   !===================================================================!
 
   type, abstract :: member_set
 
-     integer, private :: identity = 0
+     type(token)                  , private :: identity
+     character(len=:), allocatable, private :: label
 
    contains
 
-     procedure(set_name_interface)   , deferred :: name
+     !----------------------------------------------------------------!
+     ! The structural questions, deferred to each concretion.
+     !----------------------------------------------------------------!
+
      procedure(set_size_interface)   , deferred :: size
      procedure(set_member_interface) , deferred :: member
      procedure(set_members_interface), deferred :: members
+     procedure(set_has_interface)    , deferred :: has
 
+     !----------------------------------------------------------------!
+     ! Identity, answered once for every concretion.
+     !----------------------------------------------------------------!
+
+     procedure :: declare
      procedure :: id
      procedure :: same_as
-     procedure :: stamp
+
+     !----------------------------------------------------------------!
+     ! Metadata, not mathematics: the declared name, or ''.
+     !----------------------------------------------------------------!
+
+     procedure :: name
 
   end type member_set
 
   abstract interface
-
-     function set_name_interface(this) result(name)
-       import member_set
-       class(member_set), intent(in) :: this
-       character(len=:), allocatable :: name
-     end function set_name_interface
 
      pure integer function set_size_interface(this)
        import member_set
@@ -91,27 +133,33 @@ module graph_carrier
        integer, allocatable, intent(out) :: indices(:)
      end subroutine set_members_interface
 
+     pure logical function set_has_interface(this, member)
+       import member_set
+       class(member_set), intent(in) :: this
+       integer          , intent(in) :: member
+     end function set_has_interface
+
   end interface
 
   !===================================================================!
   ! The first concrete citizen: a counted set, members 1 to n. Every
   ! domain the repository names today - cells, faces, points, parts,
   ! instants - enumerates exactly so, which makes one integer its
-  ! whole storage. A domain that must list its members arrives as a
-  ! second concretion the day something needs it.
+  ! whole storage and membership one comparison. A domain that must
+  ! list its members arrives as a second concretion the day
+  ! something needs it.
   !===================================================================!
 
   type, extends(member_set) :: counted_set
 
-     character(len=:), allocatable, private :: label
-     integer                      , private :: n = 0
+     integer, private :: n = 0
 
    contains
 
-     procedure :: name    => counted_name
      procedure :: size    => counted_size
      procedure :: member  => counted_member
      procedure :: members => counted_members
+     procedure :: has     => counted_has
 
   end type counted_set
 
@@ -122,27 +170,82 @@ module graph_carrier
 contains
 
   !===================================================================!
-  ! new_identity hands the next stamp to whoever declares a domain -
-  ! this module's own constructors, and any concretion that lives
-  ! elsewhere.
+  ! mint_token hands out the next stamp of this image: fresh,
+  ! unrepeatable, contents unchoosable. Higher levels with their own
+  ! identities (relations, graphs) mint here too, so the whole tower
+  ! draws on one roll per image.
   !===================================================================!
 
-  integer function new_identity()
+  type(token) function mint_token()
 
-    last_identity = last_identity + 1
-    new_identity  = last_identity
+    last_serial          = last_serial + 1
+    mint_token % serial  = last_serial
+    mint_token % image   = this_image()
 
-  end function new_identity
+  end function mint_token
 
   !===================================================================!
-  ! id reads the stamp; zero means never declared.
+  ! The token's three answers.
+  !===================================================================!
+
+  pure logical function matches(this, other)
+
+    class(token), intent(in) :: this
+    type(token) , intent(in) :: other
+
+    matches = (this % serial /= 0)              .and. &
+         &    (this % serial == other % serial) .and. &
+         &    (this % image  == other % image)
+
+  end function matches
+
+  pure logical function declared(this)
+
+    class(token), intent(in) :: this
+
+    declared = this % serial /= 0
+
+  end function declared
+
+  pure integer function serial_number(this)
+
+    class(token), intent(in) :: this
+
+    serial_number = this % serial
+
+  end function serial_number
+
+  !===================================================================!
+  ! declare stamps a set with a fresh identity and, if given, its
+  ! name. A set signs once; a second signing stops the program,
+  ! because a silent refusal would leave the caller believing a
+  ! domain it never made.
+  !===================================================================!
+
+  subroutine declare(this, name)
+
+    class(member_set), intent(inout)        :: this
+    character(len=*) , intent(in), optional :: name
+
+    if (this % identity % declared()) then
+       error stop 'graph_carrier: a domain never signs twice'
+    end if
+
+    this % identity = mint_token()
+    if (present(name)) this % label = name
+
+  end subroutine declare
+
+  !===================================================================!
+  ! id reads the stamp's serial - a diagnostic, local to this image;
+  ! zero means never declared. same_as is the law.
   !===================================================================!
 
   pure integer function id(this)
 
     class(member_set), intent(in) :: this
 
-    id = this % identity
+    id = this % identity % serial_number()
 
   end function id
 
@@ -156,27 +259,27 @@ contains
     class(member_set), intent(in) :: this
     class(member_set), intent(in) :: other
 
-    same_as = (this % identity /= 0) .and. &
-         &    (this % identity == other % identity)
+    same_as = this % identity % matches(other % identity)
 
   end function same_as
 
   !===================================================================!
-  ! stamp marks a set with an identity already minted. Constructors
-  ! outside this module use it in one breath with new_identity; the
-  ! stamp is refused if the set already carries one, because a domain
-  ! that changes identity mid-life would let one question answer two
-  ! ways.
+  ! name answers the declared label, or '' for a set declared
+  ! nameless. Metadata only: no law reads it.
   !===================================================================!
 
-  subroutine stamp(this, identity)
+  function name(this)
 
-    class(member_set), intent(inout) :: this
-    integer          , intent(in)    :: identity
+    class(member_set), intent(in) :: this
+    character(len=:), allocatable :: name
 
-    if (this % identity == 0) this % identity = identity
+    if (allocated(this % label)) then
+       name = this % label
+    else
+       name = ''
+    end if
 
-  end subroutine stamp
+  end function name
 
   !===================================================================!
   ! Declare a counted domain: a name for the reader, a count for the
@@ -188,24 +291,10 @@ contains
     character(len=*), intent(in) :: name
     integer         , intent(in) :: n
 
-    this % label = name
-    this % n     = max(0, n)
-    call this % stamp(new_identity())
+    this % n = max(0, n)
+    call this % declare(name)
 
   end function create_counted
-
-  function counted_name(this) result(name)
-
-    class(counted_set), intent(in) :: this
-    character(len=:), allocatable  :: name
-
-    if (allocated(this % label)) then
-       name = this % label
-    else
-       name = ''
-    end if
-
-  end function counted_name
 
   pure integer function counted_size(this)
 
@@ -237,5 +326,19 @@ contains
     end do
 
   end subroutine counted_members
+
+  !===================================================================!
+  ! Membership in one comparison - the primitive a relation
+  ! signature leans on, never an enumeration and a search.
+  !===================================================================!
+
+  pure logical function counted_has(this, member)
+
+    class(counted_set), intent(in) :: this
+    integer           , intent(in) :: member
+
+    counted_has = (member >= 1) .and. (member <= this % n)
+
+  end function counted_has
 
 end module graph_carrier

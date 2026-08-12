@@ -34,9 +34,11 @@ without a documented reason and an optimization plan.
 ## Reading
 
 - Every traversal query today returns a freshly allocated index
-  array; the ~22 ns/query at -O3 is therefore mostly allocation, not
-  lookup. A future CSR-slice view (AGENTS.md §33) should beat this,
-  and must not fall below it.
+  array, so the ~22 ns/query at -O3 plausibly carries substantial
+  allocation overhead — this benchmark does not isolate that split.
+  A future CSR-slice view (AGENTS.md §33) is expected to improve on
+  it; the requirement is that hot queries must not materially
+  regress above these times.
 - Divergence and laplacian walk the edge list directly; their per-edge
   cost is the honest hot-loop reference for the Level-6 migration.
 - The partition rows time the whole four-part construction including

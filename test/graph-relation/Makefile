@@ -1,7 +1,7 @@
 include ../../Makefile.in
 
 #=====================================================================#
-# Two programs: the law suite, and the refusal that must die.
+# Two programs: the law suite, and the refusals that must die.
 #=====================================================================#
 
 # Ufvm (-I../../src for scalar.fpp, -I../../lib for the .mod files)

@@ -10,9 +10,15 @@
 !      parallel edges         two edges, same endpoints, two identities
 !      boundary half-edges    a wall needs no imaginary neighbour
 !      directed traversal     out and in, edges and vertices
-!      supports               membership, side, emptiness
+!      supports               membership, side, emptiness  (TRANSITIONAL)
 !      partition round trip   vertex AND edge fields rebuild exactly
 !      differential adjoints  the pairing holds on awkward topology
+!
+! One block is marked TRANSITIONAL: it pins vocabulary the tower has
+! already sentenced (the support as an edgeless graph). Such checks
+! guard the migration while it runs and are REWRITTEN, not obeyed,
+! when their phase arrives - they must never veto the redesign they
+! chaperone.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -232,10 +238,18 @@ contains
   end subroutine check_directed_traversal
 
   !===================================================================!
+  ! TRANSITIONAL - LEGACY COMPATIBILITY, NOT DESTINATION.
+  !
   ! A support is a chosen set of members on one side of its host.
-  ! Today it answers through the graph vocabulary; whatever it
-  ! becomes (AGENTS.md: a predicate over a member set), membership,
-  ! side, and emptiness must survive.
+  ! Today it answers through the graph vocabulary - side constants,
+  ! num_vertices, even num_edges == 0 - and these checks pin that
+  ! TODAY, so nothing shifts unseen while the ground moves. The
+  ! destination is different on purpose: support becomes a predicate
+  ! over a member set, P <= A (AGENTS.md sections 6 and 37), and the
+  ! edgeless-graph vocabulary retires. When phase 5 lands, REWRITE
+  ! these checks against the predicate contract - what must survive
+  ! is membership, the host domain, order, and emptiness; the
+  ! graph-flavoured spelling must not.
   !===================================================================!
 
   subroutine check_supports(nfail)

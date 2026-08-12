@@ -1,4 +1,5 @@
 objects= \
+graph_carrier.o \
 graph_grammar.o \
 graph_calculus.o \
 class_graph_support.o \

@@ -56,6 +56,7 @@ module class_graph
   use graph_grammar      , only : graph
   use graph_calculus     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
   use class_graph_support, only : support
+  use graph_carrier      , only : counted_set
 
   implicit none
 
@@ -112,6 +113,17 @@ module class_graph
      integer, allocatable :: vowner(:), eowner(:)
      integer, allocatable :: vglobal(:) , eglobal(:)
 
+     !----------------------------------------------------------------!
+     ! The graph's two carriers (AGENTS.md, phase 1): its vertices
+     ! and its edges as declared member sets, stamped once at
+     ! construction and handed out beside the old vocabulary. Every
+     ! call to vertex_set answers the SAME domain, so a relation
+     ! signature can hold onto the identity.
+     !----------------------------------------------------------------!
+
+     type(counted_set) :: vset
+     type(counted_set) :: eset
+
    contains
 
      !----------------------------------------------------------------!
@@ -121,6 +133,13 @@ module class_graph
      procedure :: id
      procedure :: num_vertices
      procedure :: num_edges
+
+     !----------------------------------------------------------------!
+     ! The carriers, beside the old vocabulary (AGENTS.md, phase 1).
+     !----------------------------------------------------------------!
+
+     procedure :: vertex_set
+     procedure :: edge_set
 
      !----------------------------------------------------------------!
      ! Where an edge goes.
@@ -234,6 +253,11 @@ contains
 
     this % nv = nv
     this % ne = size(tails)
+
+    ! Declare the two domains once, here, so every later answer
+    ! carries one identity per side for this graph's whole life.
+    this % vset = counted_set('vertices', this % nv)
+    this % eset = counted_set('edges'   , this % ne)
 
     if (present(number)) this % number = number
 
@@ -468,6 +492,28 @@ contains
     num_vertices = this % nv
 
   end function num_vertices
+
+  !===================================================================!
+  ! The two carriers, as declared at construction. Copies of one
+  ! stamped domain: every call answers a set that same_as agrees is
+  ! the same set (AGENTS.md, phase 1).
+  !===================================================================!
+
+  pure type(counted_set) function vertex_set(this)
+
+    class(stored_graph), intent(in) :: this
+
+    vertex_set = this % vset
+
+  end function vertex_set
+
+  pure type(counted_set) function edge_set(this)
+
+    class(stored_graph), intent(in) :: this
+
+    edge_set = this % eset
+
+  end function edge_set
 
   !===================================================================!
   ! How many edges.

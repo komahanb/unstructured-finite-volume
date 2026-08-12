@@ -265,9 +265,51 @@ A unary relation
 P\subseteq A
 \]
 
-is a predicate or subset of \(A\).
+is a predicate on \(A\).
 
-This is the natural home of the concept currently called `support`.
+The concept currently called `support` is refined (review, 2026-08-12)
+beyond the raw predicate: a support is a **member-set subobject**,
+
+\[
+\boxed{
+S\hookrightarrow A,\qquad S\ \text{is itself a member_set}
+}
+\]
+
+implemented as `subset_set`: it answers the full carrier contract —
+`id`, `size`, `member`, `members`, `has`, `local_index` — signs its
+own structural identity, and adds exactly one law, sealed at
+construction:
+
+\[
+s\in S\implies s\in A.
+\]
+
+The subobject has two derived faces, both views of it rather than the
+primary object:
+
+- the **predicate face**: \(P_S(a)\iff a\in S\), answered by `has`;
+- the **relational face**: the inclusion
+  \(I_S\subseteq S\times A,\ s\mapsto s\) (`inclusion_of`), total,
+  functional and injective by construction.
+
+The subobject, not the bare predicate, is primary because fields
+store values in domain enumeration order: a predicate answers
+membership but does not supply the `size/member/local_index` contract
+field storage requires.
+
+Embedding is queryable, transitively:
+
+```fortran
+domain % is_subobject_of(ancestor)
+```
+
+with \(A\preceq A\) and \(S\hookrightarrow A\Rightarrow S\preceq A\),
+following nested ambients to any depth. This query — never a side
+flag, never concrete-type inspection — is how routing decisions
+("does this field ultimately live on cells or on faces") are made.
+
+The empty subset is a valid domain.
 
 Therefore:
 
@@ -275,18 +317,6 @@ Therefore:
 \boxed{
 \text{support is not an edgeless graph}
 }
-\]
-
-Conceptually, a support is:
-
-```text
-predicate over a member set
-```
-
-or equivalently an inclusion
-
-\[
-S\hookrightarrow A.
 \]
 
 Examples:
@@ -1028,13 +1058,15 @@ If \(A\) is a member set and \(V\) a value space:
 f:A\to V.
 \]
 
-If the field exists only on a support \(P\subseteq A\), then:
+If the field exists only on a subobject \(S\hookrightarrow A\), then:
 
 \[
-f:P\to V.
+f:S\to V.
 \]
 
-A field domain is therefore a member set or predicate/support, not an edgeless graph.
+A field domain is therefore **always a member_set** — an ambient
+carrier or a `subset_set` subobject — one domain kind, never a
+carrier-or-predicate union, and never an edgeless graph.
 
 ## 20.2 Field contract
 
@@ -1484,7 +1516,7 @@ The existing `support` class is a prime early migration target.
 Target:
 
 ```text
-support = predicate/subset over a member set
+support = subset_set subobject S ↪ A, itself a member_set
 ```
 
 not:
@@ -1493,13 +1525,20 @@ not:
 support extends graph with zero edges
 ```
 
-Migration rule:
+Migration rule (staged; 1 is complete):
 
-1. introduce the new predicate/support abstraction;
-2. adapt field domains to accept it;
-3. migrate named-set queries;
-4. remove degenerate graph procedures from support;
-5. only then retire the old graph-support inheritance.
+1. introduce `subset_set` with the inclusion law, `inclusion_of`,
+   and the transitive `is_subobject_of` embedding query;
+2. change the field domain contract to `member_set` (5B.1);
+3. make field storage reference the new domains, ambient or
+   subset (5B.2);
+4. replace `side()` routing in consumers — assembler, partitioner,
+   reductions, operators — with domain identity and
+   `is_subobject_of` (5B.3);
+5. retire the edgeless-graph support and its inheritance only when
+   no consumer needs the fiction (5B.4);
+6. hold the numerical suites — differential, adjoint, partition
+   round trips — as unchanged oracles throughout (5B.5).
 
 ---
 
@@ -1986,6 +2025,11 @@ Architecture first, filenames second.
 
 Proceed by semantic seams, not by mass rewrite.
 
+Status (2026-08-12, branch `tower-graph-as-sets-relations`): Phases
+0–4 are complete, with the reviews' amendments folded in; Phase 5's
+subobject introduction (5A) is complete; the staged field/consumer
+rewiring (5B, section 37) is next.
+
 ## Phase 0 — characterization
 
 Before changing behavior:
@@ -2020,9 +2064,10 @@ Keep the old `graph` API as a compatibility view.
 
 ## Phase 5 — migrate support
 
-Replace edgeless-graph support with unary predicate/subset semantics.
+Replace edgeless-graph support with the `subset_set` subobject
+semantics: \(S\hookrightarrow A\), itself a member_set.
 
-Adapt fields.
+Adapt fields: `field.domain` is always a member_set.
 
 ## Phase 6 — relation algebra
 
@@ -2158,6 +2203,9 @@ Where adjacency is defined by composition, it agrees with the ordinary graph pro
 ### Support validity
 
 Every support member belongs to its host member set.
+
+The empty subset is a valid domain; a field with zero entries
+remains well-defined.
 
 ### Field domain validity
 

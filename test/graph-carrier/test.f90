@@ -31,6 +31,8 @@ program test_graph_carrier
   call check_counted_contract(nfail)
   call check_structural_identity(nfail)
   call check_subsets(nfail)
+  call check_embedding_order(nfail)
+  call check_empty_subset(nfail)
   call check_graph_hands_out_carriers(nfail)
 
   write(*,'(1x,a)') "============================================="
@@ -242,6 +244,79 @@ contains
          & "and whose members reach the ground transitively", nfail)
 
   end subroutine check_subsets
+
+  !===================================================================!
+  ! The embedding order: A precedes A; a subset precedes its whole
+  ! ambient chain; nothing else precedes anything. This query is
+  ! what replaces the old side flag - a consumer asks where a
+  ! domain ultimately lives, and no select type ever answers.
+  !===================================================================!
+
+  subroutine check_embedding_order(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(counted_set) :: faces, other
+    type(subset_set)  :: walls, hot, cold
+
+    faces = counted_set('faces', 8)
+    other = counted_set('other', 8)
+    walls = subset_set('walls', faces, [2, 5, 7])
+    hot   = subset_set('hot'  , walls, [5, 7])
+    cold  = subset_set('cold' , faces, [1])
+
+    call report(faces % is_subobject_of(faces), &
+         & "a domain is a subobject of itself", nfail)
+    call report(.not. faces % is_subobject_of(other), &
+         & "and of no unrelated domain, sizes notwithstanding", nfail)
+
+    call report(walls % is_subobject_of(faces), &
+         & "a subset is a subobject of its ambient", nfail)
+    call report(hot % is_subobject_of(walls) .and. &
+         &      hot % is_subobject_of(faces), &
+         & "and of the whole chain above it, transitively", nfail)
+    call report(hot % is_subobject_of(hot), &
+         & "while remaining a subobject of itself", nfail)
+
+    call report(.not. faces % is_subobject_of(walls), &
+         & "the order points one way: the ambient never descends", nfail)
+    call report(.not. cold % is_subobject_of(walls), &
+         & "and siblings of one ambient are unrelated", nfail)
+    call report(.not. hot % is_subobject_of(other), &
+         & "no chain reaches a domain it was never carved from", nfail)
+
+  end subroutine check_embedding_order
+
+  !===================================================================!
+  ! The empty subset is a valid domain: declared, counted at zero,
+  ! holding nothing, still embedded where it was carved.
+  !===================================================================!
+
+  subroutine check_empty_subset(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(counted_set)              :: faces
+    type(subset_set)               :: none
+    class(member_set), allocatable :: amb
+    integer, allocatable           :: idx(:)
+
+    faces = counted_set('faces', 6)
+    none  = subset_set('nothing', faces, [integer ::])
+
+    call none % members(idx)
+    call report(none % size() .eq. 0 .and. size(idx) .eq. 0, &
+         & "the empty subset is a domain", nfail)
+    call report(.not. none % has(2) .and. none % local_index(2) .eq. 0, &
+         & "that holds nothing and places nothing", nfail)
+
+    amb = none % ambient()
+    call report(amb % same_as(faces), &
+         & "yet remembers what it was carved from", nfail)
+    call report(none % is_subobject_of(faces), &
+         & "and stands embedded there, empty or not", nfail)
+
+  end subroutine check_empty_subset
 
   !===================================================================!
   ! The phase-1 wiring: a stored graph declares its two carriers at

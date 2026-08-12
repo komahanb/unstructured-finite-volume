@@ -89,6 +89,15 @@ module graph_carrier
      procedure :: same_as
 
      !----------------------------------------------------------------!
+     ! Embedding, transitive: A is a subobject of itself, and a
+     ! subset is a subobject of everything its ambient chain
+     ! reaches. This query - never a side flag, never a select type
+     ! - is how a consumer asks where a domain ultimately lives.
+     !----------------------------------------------------------------!
+
+     procedure :: is_subobject_of
+
+     !----------------------------------------------------------------!
      ! Metadata, not mathematics: the declared name, or ''.
      !----------------------------------------------------------------!
 
@@ -192,6 +201,8 @@ module graph_carrier
 
      procedure :: ambient
 
+     procedure :: is_subobject_of => subset_is_subobject_of
+
   end type subset_set
 
   interface subset_set
@@ -247,6 +258,20 @@ contains
     same_as = this % identity % matches(other % identity)
 
   end function same_as
+
+  !===================================================================!
+  ! The embedding order: A precedes A, and nothing else at ground
+  ! level - the subset overrides this to walk its ambient chain.
+  !===================================================================!
+
+  pure logical function is_subobject_of(this, ancestor)
+
+    class(member_set), intent(in) :: this
+    class(member_set), intent(in) :: ancestor
+
+    is_subobject_of = this % same_as(ancestor)
+
+  end function is_subobject_of
 
   !===================================================================!
   ! name answers the declared label, or '' for a set declared
@@ -454,5 +479,22 @@ contains
     end do
 
   end function subset_local_index
+
+  !===================================================================!
+  ! A subset precedes itself, its ambient, and everything its
+  ! ambient precedes - the chain walked to any depth.
+  !===================================================================!
+
+  pure logical function subset_is_subobject_of(this, ancestor)
+
+    class(subset_set) , intent(in) :: this
+    class(member_set) , intent(in) :: ancestor
+
+    subset_is_subobject_of = this % same_as(ancestor)
+    if (.not. subset_is_subobject_of) then
+       subset_is_subobject_of = this % host % is_subobject_of(ancestor)
+    end if
+
+  end function subset_is_subobject_of
 
 end module graph_carrier

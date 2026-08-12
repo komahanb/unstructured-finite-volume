@@ -14,8 +14,9 @@
 !
 !                          THE SIGNATURE
 !
-! Each slot of the signature names one carrier, by the carrier's own
-! structural identity. The signature holds copies, and a copy IS the
+! Each slot of the signature holds one carrier - ANY concretion of
+! member_set, and different concretions may stand in different slots
+! of one relation. The signature holds copies, and a copy IS the
 ! declared domain - so two relations built over one carrier answer
 ! same_as across each other's slots, and no relation ever assumes
 ! its domains are owned by one graph. A slot may repeat a carrier:
@@ -32,6 +33,17 @@
 ! lone (e, v, tail) for a boundary face - no imaginary far-side
 ! member, the same wall the old grammar drew with a headless edge.
 !
+!                         A SET, NOT A BAG
+!
+! A relation is a set of tuples: no tuple is in it twice. The
+! constructor collapses duplicate columns to the first occurrence,
+! order kept, so num_tuples, tuples and has all answer set
+! semantics and nothing else. Multiplicity that MEANS something -
+! two parallel edges between one pair of cells - is already carried
+! by distinct members of an edge domain; the day counted repetition
+! itself is the mathematics, that is a distinct multirelation
+! abstraction, not a quiet flag here.
+!
 !                       WHAT IS VALIDATED
 !
 ! Construction refuses, loudly: a tuple table whose row count is not
@@ -43,25 +55,26 @@
 !
 !                     CAPABILITY, NOT FICTION
 !
-! This stored relation keeps its tuples verbatim: order kept,
-! duplicates kept - a deliberate departure from pure set semantics,
-! stated here (AGENTS.md 11.5); has() answers membership regardless
-! of multiplicity. It carries NO per-slot index yet: has() is a
-! linear scan over the tuple table, honest and documented
-! (AGENTS.md 53). The indexed, CSR-backed binary specialization is
-! the next phase's business; nothing here pretends to be O(degree).
+! This stored relation carries NO per-slot index yet: has() is a
+! linear scan over the tuple table, and the constructor's duplicate
+! collapse is quadratic in the tuple count - both honest, both
+! stated (AGENTS.md 53), both construction-or-query costs no hot
+! loop should sit on. The indexed, CSR-backed binary specialization
+! is the next phase's business; nothing here pretends to be
+! O(degree).
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module graph_relation
 
-  use graph_carrier, only : member_set, counted_set, token, mint_token
+  use graph_identity, only : token, mint_token
+  use graph_carrier , only : member_set, counted_set
 
   implicit none
 
   private
-  public :: relation, stored_relation
+  public :: relation, stored_relation, slot
 
   !===================================================================!
   ! The abstract relation: identity, arity, ordered signature,
@@ -88,9 +101,9 @@ module graph_relation
      procedure(relation_tuples_interface) , deferred :: tuples
 
      !----------------------------------------------------------------!
-     ! Identity, answered once for every concretion - the same
-     ! opaque-token law the carriers keep: sign once, refuse twice,
-     ! copies carry the stamp, the undeclared equal nothing.
+     ! Identity, answered once for every concretion - the one token
+     ! law of graph_identity: sign once, refuse twice, copies carry
+     ! the stamp, the undeclared equal nothing.
      !----------------------------------------------------------------!
 
      procedure :: declare
@@ -112,10 +125,10 @@ module graph_relation
        class(relation), intent(in) :: this
      end function relation_arity_interface
 
-     function relation_domain_interface(this, slot) result(domain)
+     function relation_domain_interface(this, slot_index) result(domain)
        import relation, member_set
-       class(relation), intent(in)   :: this
-       integer        , intent(in)   :: slot
+       class(relation), intent(in)    :: this
+       integer        , intent(in)    :: slot_index
        class(member_set), allocatable :: domain
      end function relation_domain_interface
 
@@ -139,27 +152,32 @@ module graph_relation
   end interface
 
   !===================================================================!
-  ! One signature slot. The wrapper exists because Fortran arrays
-  ! hold one dynamic type: each slot carries its own copy of a
-  ! declared carrier, whatever concretion that carrier is.
+  ! One signature slot, holding any carrier concretion. The wrapper
+  ! exists because a Fortran array carries one dynamic type: an
+  ! array of slots is how different concretions stand side by side
+  ! in one signature. Build one with slot(carrier).
   !===================================================================!
 
-  type :: slot_domain
+  type :: slot
 
      class(member_set), allocatable :: carrier
 
-  end type slot_domain
+  end type slot
+
+  interface slot
+     module procedure create_slot
+  end interface slot
 
   !===================================================================!
-  ! The stored relation: the tuple table verbatim, the signature as
-  ! carrier copies. The first inhabitant of the contract, and the
+  ! The stored relation: the deduplicated tuple table, the signature
+  ! as carrier copies. The first inhabitant of the contract, and the
   ! validation gate of the level.
   !===================================================================!
 
   type, extends(relation) :: stored_relation
 
-     type(slot_domain), allocatable, private :: signature(:)
-     integer          , allocatable, private :: entry(:,:)
+     type(slot)  , allocatable, private :: signature(:)
+     integer     , allocatable, private :: entry(:,:)
 
    contains
 
@@ -173,6 +191,7 @@ module graph_relation
 
   interface stored_relation
      module procedure create_stored
+     module procedure create_stored_counted
   end interface stored_relation
 
 contains
@@ -195,11 +214,16 @@ contains
 
   end subroutine declare
 
-  pure integer function id(this)
+  !===================================================================!
+  ! id answers the whole opaque token - the identity itself, honest
+  ! across images, never a bare local integer.
+  !===================================================================!
+
+  pure type(token) function id(this)
 
     class(relation), intent(in) :: this
 
-    id = this % identity % serial_number()
+    id = this % identity
 
   end function id
 
@@ -226,7 +250,19 @@ contains
   end function name
 
   !===================================================================!
-  ! Declare a stored relation: a name, the ordered carriers, and the
+  ! Wrap one carrier - any concretion - as a signature slot.
+  !===================================================================!
+
+  type(slot) function create_slot(carrier) result(this)
+
+    class(member_set), intent(in) :: carrier
+
+    allocate(this % carrier, source=carrier)
+
+  end function create_slot
+
+  !===================================================================!
+  ! Declare a stored relation: a name, the ordered slots, and the
   ! tuple table, one column per tuple. Refusals, in the order they
   ! are checked:
   !
@@ -235,49 +271,101 @@ contains
   !                                   domains only
   !     a row count off the arity     each tuple has exactly k parts
   !     a member no slot holds        domain validity, through has
+  !
+  ! Duplicate tuple columns then collapse to the first occurrence,
+  ! order kept: a relation is a set.
   !===================================================================!
 
-  type(stored_relation) function create_stored(name, domains, table) &
+  type(stored_relation) function create_stored(name, slots, table) &
        & result(this)
 
-    character(len=*)  , intent(in) :: name
-    type(counted_set) , intent(in) :: domains(:)
-    integer           , intent(in) :: table(:,:)
+    character(len=*), intent(in) :: name
+    type(slot)      , intent(in) :: slots(:)
+    integer         , intent(in) :: table(:,:)
 
-    integer :: k, j
+    integer, allocatable :: kept(:)
+    integer              :: k, j, i, nkept
+    logical              :: fresh
 
-    if (size(domains) < 1) then
+    if (size(slots) < 1) then
        error stop 'graph_relation: a relation relates at least one domain'
     end if
 
-    do k = 1, size(domains)
-       if (.not. domains(k) % same_as(domains(k))) then
+    do k = 1, size(slots)
+       if (.not. allocated(slots(k) % carrier)) then
+          error stop 'graph_relation: a signature refers to declared domains only'
+       end if
+       if (.not. slots(k) % carrier % same_as(slots(k) % carrier)) then
           error stop 'graph_relation: a signature refers to declared domains only'
        end if
     end do
 
-    if (size(table, 1) /= size(domains)) then
+    if (size(table, 1) /= size(slots)) then
        error stop 'graph_relation: each tuple has exactly one part per slot'
     end if
 
     do j = 1, size(table, 2)
-       do k = 1, size(domains)
-          if (.not. domains(k) % has(table(k, j))) then
+       do k = 1, size(slots)
+          if (.not. slots(k) % carrier % has(table(k, j))) then
              error stop 'graph_relation: a tuple names a member its domain does not hold'
           end if
        end do
     end do
 
-    allocate(this % signature(size(domains)))
-    do k = 1, size(domains)
-       allocate(this % signature(k) % carrier, source=domains(k))
+    ! A set, not a bag: keep each tuple's first appearance, in order.
+    allocate(kept(size(table, 2)))
+    nkept = 0
+    do j = 1, size(table, 2)
+       fresh = .true.
+       do i = 1, nkept
+          if (all(table(:, kept(i)) == table(:, j))) then
+             fresh = .false.
+             exit
+          end if
+       end do
+       if (fresh) then
+          nkept       = nkept + 1
+          kept(nkept) = j
+       end if
     end do
 
-    allocate(this % entry, source=table)
+    allocate(this % signature(size(slots)))
+    do k = 1, size(slots)
+       allocate(this % signature(k) % carrier, source=slots(k) % carrier)
+    end do
+
+    allocate(this % entry(size(slots), nkept))
+    do i = 1, nkept
+       this % entry(:, i) = table(:, kept(i))
+    end do
 
     call this % declare(name)
 
   end function create_stored
+
+  !===================================================================!
+  ! The counted convenience: the common case, a signature of counted
+  ! domains, wrapped into slots and handed to the one gate above.
+  !===================================================================!
+
+  type(stored_relation) function create_stored_counted(name, domains, &
+       & table) result(this)
+
+    character(len=*)  , intent(in) :: name
+    type(counted_set) , intent(in) :: domains(:)
+    integer           , intent(in) :: table(:,:)
+
+    type(slot), allocatable :: slots(:)
+    integer                 :: k
+
+    allocate(slots(size(domains)))
+    do k = 1, size(domains)
+       allocate(slots(k) % carrier, source=domains(k))
+    end do
+
+    this = create_stored(name, slots, table)
+
+  end function create_stored_counted
 
   pure integer function stored_arity(this)
 
@@ -292,13 +380,13 @@ contains
   ! declared domain.
   !===================================================================!
 
-  function stored_domain(this, slot) result(domain)
+  function stored_domain(this, slot_index) result(domain)
 
     class(stored_relation), intent(in) :: this
-    integer               , intent(in) :: slot
+    integer               , intent(in) :: slot_index
     class(member_set), allocatable     :: domain
 
-    allocate(domain, source=this % signature(slot) % carrier)
+    allocate(domain, source=this % signature(slot_index) % carrier)
 
   end function stored_domain
 

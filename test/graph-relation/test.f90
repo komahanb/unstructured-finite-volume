@@ -6,18 +6,23 @@
 ! no graph stands anywhere in this file. The checks are the
 ! acceptance laws of sections 61 and 62 that phase 2 owes - domain
 ! validity, arity, membership, verbatim tuples, signature identity -
-! plus the design commitments the review demanded: carriers shared
+! plus the design commitments the reviews demanded: carriers shared
 ! across relations without an owning graph, adjacency and incidence
-! as readings of one primitive, and the boundary written with no
-! imaginary far-side member.
+! as readings of one primitive, the boundary written with no
+! imaginary far-side member, SET semantics at the interface (a
+! duplicate tuple collapses), and a signature genuinely generic
+! over member_set - proved by mixing a counted carrier with the
+! listed fixture in one relation.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 program test_graph_relation
 
-  use graph_carrier , only : counted_set, member_set
-  use graph_relation, only : stored_relation
+  use graph_identity    , only : token
+  use graph_carrier     , only : counted_set, member_set
+  use graph_relation    , only : stored_relation, slot
+  use listed_set_fixture, only : listed_set
 
   implicit none
 
@@ -30,6 +35,8 @@ program test_graph_relation
   write(*,'(1x,a)') "============================================="
 
   call check_incidence_contract(nfail)
+  call check_set_semantics(nfail)
+  call check_mixed_carriers(nfail)
   call check_adjacency_is_a_reading(nfail)
   call check_ternary_endpoint(nfail)
   call check_shared_carriers(nfail)
@@ -74,6 +81,7 @@ contains
     type(counted_set)              :: cells, faces
     type(stored_relation)          :: r
     class(member_set), allocatable :: d
+    type(token)                    :: tk
     integer, allocatable           :: t(:,:)
 
     cells = counted_set('cells', 4)
@@ -82,8 +90,9 @@ contains
     r = stored_relation('touches', [cells, faces], &
          & reshape([1,1,  1,2,  2,2,  3,4], [2, 4]))
 
-    call report(r % id() > 0, &
-         & "a declared relation carries a nonzero stamp", nfail)
+    tk = r % id()
+    call report(tk % declared(), &
+         & "a declared relation carries a token that has signed", nfail)
     call report(r % name() == 'touches', &
          & "and the name it was declared with", nfail)
     call report(r % arity() .eq. 2, &
@@ -103,7 +112,7 @@ contains
     call r % tuples(t)
     call report(size(t, 1) .eq. 2 .and. size(t, 2) .eq. 4 .and. &
          &      all(t(:, 3) .eq. [2, 2]) .and. all(t(:, 4) .eq. [3, 4]), &
-         & "tuples come back verbatim, order and all", nfail)
+         & "tuples come back as handed, order kept", nfail)
 
     d = r % domain(1)
     call report(d % same_as(cells), &
@@ -115,6 +124,78 @@ contains
          & "slot two answers the faces domain", nfail)
 
   end subroutine check_incidence_contract
+
+  !===================================================================!
+  ! A relation is a set, not a bag: a tuple handed in twice is in
+  ! the relation once, and everything the interface answers - the
+  ! count, the table, membership - answers set semantics. Parallel
+  ! edges do not live here; they are distinct members of an edge
+  ! domain, as the ternary check shows.
+  !===================================================================!
+
+  subroutine check_set_semantics(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(counted_set)     :: cells, faces
+    type(stored_relation) :: r
+    integer, allocatable  :: t(:,:)
+
+    cells = counted_set('cells', 4)
+    faces = counted_set('faces', 5)
+
+    r = stored_relation('touches', [cells, faces], &
+         & reshape([1,1,  2,2,  1,1,  3,3,  2,2], [2, 5]))
+
+    call report(r % num_tuples() .eq. 3, &
+         & "a tuple handed in twice is in the relation once", nfail)
+
+    call r % tuples(t)
+    call report(size(t, 2) .eq. 3 .and. &
+         &      all(t(:, 1) .eq. [1, 1]) .and. &
+         &      all(t(:, 2) .eq. [2, 2]) .and. &
+         &      all(t(:, 3) .eq. [3, 3]), &
+         & "first appearances stand, in their first order", nfail)
+
+    call report(r % has([1, 1]) .and. r % has([2, 2]), &
+         & "and membership reads the set, not the handing", nfail)
+
+  end subroutine check_set_semantics
+
+  !===================================================================!
+  ! The signature is generic over member_set, proved: a counted set
+  ! and a listed fixture stand in one signature, each slot judging
+  ! membership by its own law and answering its own identity.
+  !===================================================================!
+
+  subroutine check_mixed_carriers(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(counted_set)              :: cells
+    type(listed_set)               :: sensors
+    type(stored_relation)          :: r
+    class(member_set), allocatable :: d
+
+    cells   = counted_set('cells', 3)
+    sensors = listed_set('sensors', [10, 20, 30])
+
+    r = stored_relation('reads', [slot(cells), slot(sensors)], &
+         & reshape([1,10,  2,30], [2, 2]))
+
+    call report(r % arity() .eq. 2 .and. r % num_tuples() .eq. 2, &
+         & "two carrier concretions stand in one signature", nfail)
+
+    call report(r % has([2, 30]) .and. .not. r % has([2, 20]), &
+         & "membership crosses the concretions untroubled", nfail)
+
+    d = r % domain(2)
+    call report(d % same_as(sensors), &
+         & "the listed slot answers the listed domain, by identity", nfail)
+    call report(d % has(20) .and. .not. d % has(15), &
+         & "and the carrier's own membership law travels with it", nfail)
+
+  end subroutine check_mixed_carriers
 
   !===================================================================!
   ! Adjacency is a reading, not a primitive: the same carrier stands
@@ -253,13 +334,15 @@ contains
 
     type(counted_set)     :: cells
     type(stored_relation) :: none
+    type(token)           :: tk
 
     cells = counted_set('cells', 3)
 
     none = stored_relation('nothing', [cells, cells], &
          & reshape([integer ::], [2, 0]))
 
-    call report(none % id() > 0 .and. none % num_tuples() .eq. 0, &
+    tk = none % id()
+    call report(tk % declared() .and. none % num_tuples() .eq. 0, &
          & "the empty relation is declared and holds nothing", nfail)
     call report(.not. none % has([1, 1]), &
          & "and no tuple is in it", nfail)

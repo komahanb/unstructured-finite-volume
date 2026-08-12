@@ -14,8 +14,9 @@
 
 program test_graph_carrier
 
-  use graph_carrier, only : member_set, counted_set
-  use class_graph  , only : stored_graph
+  use graph_identity, only : token
+  use graph_carrier , only : member_set, counted_set
+  use class_graph   , only : stored_graph
 
   implicit none
 
@@ -66,14 +67,17 @@ contains
     integer, intent(inout) :: nfail
 
     type(counted_set)    :: cells, none
+    type(token)          :: t
     integer, allocatable :: idx(:)
     integer              :: k
     logical              :: ok
 
     cells = counted_set('cells', 6)
 
-    call report(cells % id() > 0, &
-         & "a declared domain carries a nonzero stamp", nfail)
+    ! id answers the whole opaque token, never a bare local integer.
+    t = cells % id()
+    call report(t % declared(), &
+         & "a declared domain carries a token that has signed", nfail)
     call report(cells % name() == 'cells', &
          & "and the name it was declared with", nfail)
     call report(cells % size() .eq. 6, &
@@ -126,6 +130,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(counted_set) :: cells, faces, again, copy, raw
+    type(token)       :: tc, tf, ta
 
     cells = counted_set('cells', 4)
     faces = counted_set('faces', 4)
@@ -147,8 +152,10 @@ contains
     call report(.not. raw % same_as(raw), &
          & "an undeclared set equals nothing, itself included", nfail)
 
-    call report(cells % id() /= faces % id() .and. &
-         &      cells % id() /= again % id(), &
+    tc = cells % id()
+    tf = faces % id()
+    ta = again % id()
+    call report(.not. tc % matches(tf) .and. .not. tc % matches(ta), &
          & "no two declarations share a stamp", nfail)
 
   end subroutine check_structural_identity

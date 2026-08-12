@@ -13,7 +13,7 @@
 ! The structural contract is four questions: how many (size), which
 ! one (member), all of them (members), and IS THIS ONE OF YOURS
 ! (has). Membership is a primitive, not a search: a relation
-! signature will validate tuples against it, and must never have to
+! signature validates tuples against it, and must never have to
 ! enumerate a domain to ask whether one index belongs. The name a
 ! set was declared with is metadata for the reader - carried,
 ! printable, and no part of the mathematics.
@@ -27,53 +27,25 @@
 !      cells  = { 1 2 3 4 }        four cells
 !      faces  = { 1 2 3 4 }        four faces - a different world
 !
-! Identity is an OPAQUE TOKEN. Its parts are private, so no caller
-! can compose one with chosen contents; the only ways a token moves
-! are minting - fresh, unrepeatable - and whole-object copy, which
-! is precisely what "the same declared domain" means. A set signs
-! once, at declaration, and a second signing is refused loudly: a
-! domain that changed identity mid-life would let one question
-! answer two ways. The token today is an (image, serial) pair, so
-! two coarray images can never mint the same stamp; the
-! representation stays free to grow because nothing outside this
-! module can read its parts.
+! The identity machinery - the opaque token, its minting, its one
+! law - lives beneath the tower in graph_identity, because relations
+! sign the same way and the relational graph will be the third to
+! do so. Here the law is only applied: a set signs once, at
+! declaration; a second signing is refused loudly; id() answers the
+! whole token, so identity is never mistaken for an image-local
+! integer.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module graph_carrier
 
+  use graph_identity, only : token, mint_token
+
   implicit none
 
   private
-  public :: member_set, counted_set, token, mint_token
-
-  !===================================================================!
-  ! The stamp roll of this image. Serial zero is reserved for the
-  ! undeclared: a default-initialized token is no identity at all,
-  ! and matches nothing, itself included.
-  !===================================================================!
-
-  integer, save :: last_serial = 0
-
-  !===================================================================!
-  ! The opaque token. Parts private; minting and copying are the
-  ! only ways one comes to exist. serial() is a read-only diagnostic
-  ! for messages and tests - matches is the law.
-  !===================================================================!
-
-  type :: token
-
-     integer, private :: image  = 0
-     integer, private :: serial = 0
-
-   contains
-
-     procedure :: matches
-     procedure :: declared
-     procedure :: serial_number
-
-  end type token
+  public :: member_set, counted_set
 
   !===================================================================!
   ! The abstract member set: an identity, a count, its members, and
@@ -170,55 +142,9 @@ module graph_carrier
 contains
 
   !===================================================================!
-  ! mint_token hands out the next stamp of this image: fresh,
-  ! unrepeatable, contents unchoosable. Higher levels with their own
-  ! identities (relations, graphs) mint here too, so the whole tower
-  ! draws on one roll per image.
-  !===================================================================!
-
-  type(token) function mint_token()
-
-    last_serial          = last_serial + 1
-    mint_token % serial  = last_serial
-    mint_token % image   = this_image()
-
-  end function mint_token
-
-  !===================================================================!
-  ! The token's three answers.
-  !===================================================================!
-
-  pure logical function matches(this, other)
-
-    class(token), intent(in) :: this
-    type(token) , intent(in) :: other
-
-    matches = (this % serial /= 0)              .and. &
-         &    (this % serial == other % serial) .and. &
-         &    (this % image  == other % image)
-
-  end function matches
-
-  pure logical function declared(this)
-
-    class(token), intent(in) :: this
-
-    declared = this % serial /= 0
-
-  end function declared
-
-  pure integer function serial_number(this)
-
-    class(token), intent(in) :: this
-
-    serial_number = this % serial
-
-  end function serial_number
-
-  !===================================================================!
   ! declare stamps a set with a fresh identity and, if given, its
   ! name. A set signs once; a second signing stops the program,
-  ! because a silent refusal would leave the caller believing a
+  ! because a silent second stamp would leave the caller believing a
   ! domain it never made.
   !===================================================================!
 
@@ -237,15 +163,15 @@ contains
   end subroutine declare
 
   !===================================================================!
-  ! id reads the stamp's serial - a diagnostic, local to this image;
-  ! zero means never declared. same_as is the law.
+  ! id answers the whole opaque token - the identity itself, honest
+  ! across images, never a bare local integer.
   !===================================================================!
 
-  pure integer function id(this)
+  pure type(token) function id(this)
 
     class(member_set), intent(in) :: this
 
-    id = this % identity % serial_number()
+    id = this % identity
 
   end function id
 

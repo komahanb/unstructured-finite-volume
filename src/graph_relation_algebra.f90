@@ -33,12 +33,31 @@
 ! Every result here is MATERIALIZED, and says so: restriction and
 ! projection answer stored_relations, composition answers the
 ! established csr_relation - no second binary storage, no lazy view
-! hierarchy built on speculation. The costs, honestly: restriction
-! and projection walk the tuple table once, O(k |R|); composition
-! is the plain double scan, O(|R| |S|), with the constructor's own
-! set collapse behind it. None of this stands on a hot path; the
-! day a large caller composes large relations, an indexed
-! composition can be earned beside this one.
+! hierarchy built on speculation.
+!
+! The costs, parametrically and honestly - the semantic pass is only
+! the first half of each bill, because materialization inherits the
+! constructors' own validation and collapse:
+!
+!      restrict    tuple filtering O(|R| * T_has(allowed)), then
+!                  stored_relation materialization: carrier
+!                  membership validation per slot, and its current
+!                  QUADRATIC worst-case duplicate collapse
+!
+!      project     slot extraction O(m |R|), then the same generic
+!                  stored_relation materialization costs - and here
+!                  the collapse genuinely works, since projection
+!                  makes tuples indistinct
+!
+!      compose     witness search O(|R| |S|), then csr_relation
+!                  materialization, whose cost rides the carriers'
+!                  local_index complexity and the number of witness
+!                  pairs produced before collapse
+!
+! None of this stands on a hot path, and none of it is optimized
+! ahead of the caller that would earn it; the day a large caller
+! composes large relations, an indexed composition can be earned
+! beside this one.
 !
 ! Set semantics ride on the constructors: a projection that
 ! collapses many tuples to one, or a composition reached along two

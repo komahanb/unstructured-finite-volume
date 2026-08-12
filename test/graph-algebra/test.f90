@@ -65,9 +65,12 @@ contains
     integer, intent(inout) :: nfail
 
     type(counted_set)              :: a, b, c
-    type(subset_set)               :: some_b
+    type(subset_set)               :: some_b, nobody
     type(stored_relation)          :: r, narrowed
     class(member_set), allocatable :: d
+    integer, allocatable           :: rt(:,:)
+    integer                        :: j
+    logical                        :: ok
 
     a = counted_set('a-things', 3)
     b = counted_set('b-things', 4)
@@ -90,9 +93,33 @@ contains
     call report(d % same_as(b), &
          & "and the restricted slot still answers its full domain", nfail)
 
+    ! Full-domain restriction is the identity, extensionally: equal
+    ! count and every original tuple present - for two sets of equal
+    ! finite size, that is equality.
     narrowed = restrict_slot(r, 2, b)
-    call report(narrowed % num_tuples() .eq. 4, &
-         & "restricting by the full domain keeps everything", nfail)
+    call r % tuples(rt)
+    ok = narrowed % num_tuples() .eq. r % num_tuples()
+    do j = 1, size(rt, 2)
+       ok = ok .and. narrowed % has(rt(:, j))
+    end do
+    call report(ok, &
+         & "restricting by the full domain is the identity, as sets", nfail)
+
+    ! The empty subset admits nothing; the signature stands whole.
+    nobody   = subset_set('nobody', b, [integer ::])
+    narrowed = restrict_slot(r, 2, nobody)
+    call report(narrowed % num_tuples() .eq. 0, &
+         & "restriction by the empty subset is the empty relation", nfail)
+    call report(narrowed % arity() .eq. 3, &
+         & "whose arity is the original's", nfail)
+    d = narrowed % domain(1)
+    ok = d % same_as(a)
+    d = narrowed % domain(2)
+    ok = ok .and. d % same_as(b)
+    d = narrowed % domain(3)
+    ok = ok .and. d % same_as(c)
+    call report(ok, &
+         & "and whose signature is the original's, slot for slot", nfail)
 
   end subroutine check_restriction
 
@@ -107,7 +134,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(counted_set)              :: a, b, c
-    type(stored_relation)          :: r, image
+    type(stored_relation)          :: r, image, none
     class(member_set), allocatable :: d
 
     a = counted_set('a-things', 3)
@@ -137,6 +164,20 @@ contains
     image = project_slots(r, [3])
     call report(image % arity() .eq. 1 .and. image % num_tuples() .eq. 2, &
          & "projection to one slot is a unary relation, deduplicated", nfail)
+
+    ! The empty relation projects to the empty relation, carrying
+    ! exactly the selected signature.
+    none  = stored_relation('none', [a, b, c], &
+         & reshape([integer ::], [3, 0]))
+    image = project_slots(none, [3, 1])
+    call report(image % num_tuples() .eq. 0 .and. image % arity() .eq. 2, &
+         & "the empty relation projects to the empty relation", nfail)
+    d = image % domain(1)
+    call report(d % same_as(c), &
+         & "whose first selected slot is C", nfail)
+    d = image % domain(2)
+    call report(d % same_as(a), &
+         & "and whose second is A", nfail)
 
   end subroutine check_projection
 

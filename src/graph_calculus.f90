@@ -1,11 +1,11 @@
 !=====================================================================!
-! LEVEL 1 OF THE STRATIFICATION . THE CALCULUS
+! THE LEGACY COMPATIBILITY CALCULUS
 !
-! The first level above the ground. This module answers one question
-! and no other: HOW QUANTITIES RELATE on a graph. It holds the eight
-! named citizens of graph mathematics, each one a partial concretion
-! of a grammar role - one bound parameter per name, and nothing else
-! new.
+! Once level 1 of the old stratification; now the compatibility
+! module holding the named citizens the remaining legacy operations
+! still speak - functional, reduction, broadcast and their kin. The
+! living tower is the relation-centered one (AGENTS.md); nothing
+! here defines domains, supports, or field ontology any more.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -90,28 +90,15 @@ module graph_calculus
   public :: GRAPH_SIDE_VERTEX
   public :: GRAPH_SIDE_EDGE
 
-  ! Which side of its host a support references. A finite axis,
-  ! absorbed: it rides as an answer, never as a pair of types.
+  ! GRAPH_SIDE_VERTEX / GRAPH_SIDE_EDGE are the legacy differential
+  ! operator's output-LANDING choices - which side its answer lands
+  ! on - and nothing else. They are not field-domain identity, not
+  ! support identity, not a support side: domains are member_set
+  ! identities, and the support-as-edgeless-graph ontology is
+  ! retired.
   integer, parameter :: GRAPH_SIDE_VERTEX = 1
   integer, parameter :: GRAPH_SIDE_EDGE   = 2
 
-  !===================================================================!
-  ! GRAPH_SUPPORT. The grammar's graph at edge count zero: pure
-  ! membership, no incidence.
-  !
-  !      all_vertices           tagged_edges('wall')
-  !      +-------------+        +-------------+
-  !      | 1 2 3 4 5 6 |        |  11  14  19 |
-  !      +-------------+        +-------------+
-  !
-  ! Almost everything a membership list is asked, the inherited
-  ! grammar already answers: its size is num_vertices, its members
-  ! are its global indices, its identity is its id. One question has
-  ! no inherited answer, and it is the one symbol added here: which
-  ! SIDE of the host graph the members reference - its vertices or
-  ! its edges. An index list cannot say this about itself, and the
-  ! graph no longer carries data that could.
-  !===================================================================!
 
 
   !===================================================================!
@@ -513,8 +500,3 @@ module graph_calculus
 
 end module graph_calculus
 
-! NOTE (phase 5B): GRAPH_SIDE_VERTEX / GRAPH_SIDE_EDGE survive only
-! as the legacy differential operator's finite LANDING choice - which
-! side its answer lands on. They no longer describe any field's
-! domain: domains are member_set identities, and the old
-! support-as-edgeless-graph ontology is retired.

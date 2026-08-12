@@ -4,7 +4,7 @@
 ! One concrete type serves every field in the tower. Its domain is a
 ! member_set - an ambient carrier or a subset subobject - and the
 ! domain's identity is the only thing that ever distinguishes a
-! cell field from a face field; no side flag exists anywhere. Because there is
+! cell field from a face field; the field carries no side flag. Because there is
 ! exactly one concrete field, a plain Fortran array can hold a
 ! collection of them.
 !
@@ -210,7 +210,7 @@ contains
   end function field_units
 
   !===================================================================!
-  ! The domain the values live on: an edgeless graph of members.
+  ! The member_set domain the values live on.
   !===================================================================!
 
   subroutine field_domain(this, domain)

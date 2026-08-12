@@ -1,11 +1,11 @@
 include ../../../Makefile.in
 
 #=====================================================================#
-# Level 6: the sparsity suite. The refusal laws of the algebra
-# primitives are pinned generically in test/graph-algebra; this
-# level proves the derivation. Framework modules this level may
-# see: graph_carrier, graph_relation, graph_relation_algebra - the
-# import gate holds the door.
+# Level 6: the sparsity suite. Framework modules this level may
+# see: graph_carrier, graph_relation, graph_relation_algebra, and
+# graph_binary_relation - the last DELIBERATELY, because the
+# reverse structure is transpose_of over the derived J, part of the
+# level's dependency boundary. The import gate holds the door.
 #=====================================================================#
 
 F90FLAGS += -I../../../lib/ -I../../../src/

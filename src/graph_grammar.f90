@@ -15,28 +15,20 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 !
-!                         THE STRATIFICATION
+!                     WHERE THIS FILE STANDS
 !
-! The codebase is a tower of levels. Walking down an edge of the
-! tower binds a parameter of an abstraction (concretion); walking up
-! unbinds it (abstraction); the retired name survives as an argument
-! value (absorption). One module per level; the extends edge carries
-! the level; no level number ever enters a name.
+! The old stratification that began here is retired. The living
+! tower is the relation-centered one (AGENTS.md): carriers,
+! relations, algebra, the relational graph, its interpretations,
+! and the field calculus, each in its own module. This file keeps
+! only the ordinary-graph compatibility vocabulary the remaining
+! legacy citizens speak - and its answers are already retyped onto
+! the new ground:
 !
-!    level 0   the grammar        what may exist          THIS FILE
-!    level 1   the calculus       how quantities relate
-!    level 2   the minimization   how answers are found
-!    level 3   the constitution   what the material says
-!    level 4   the statement      what is asked
-!
-! Level 1 concretes these roles into the named citizens of graph
-! mathematics, one bound parameter per name:
-!
-!    graph -----[edge count = 0]----------> support
-!    field -----[domain size = 1]---------> functional
-!    operation -[answer on the one entry]-> reduction
-!    operation -[input from the one entry]> broadcast
-!    transform -[verb = partition | assemble | coarsen | refine]
+!    named graph sets  ->  member_set objects
+!    full named sets   ->  the carrier itself
+!    restricted sets   ->  subset_set subobjects
+!    field domains     ->  member_set, owned by graph_field_calculus
 !
 !=====================================================================!
 !
@@ -196,18 +188,15 @@ module graph_grammar
   ! it originates outside the code, in the mesh file that named its
   ! boundary groups.
   !
-  ! A NAMED SET IS ITSELF A GRAPH: the edgeless graph of its members,
-  ! whose global indices point back into the graph that named them.
+  ! A NAMED SET IS A MEMBER SET. The full sets answer the graph's
+  ! own carrier; the restricted ones answer subset_set subobjects
+  ! of it,
   !
   !      all_vertices           tagged_edges('wall')
-  !      +-------------+        +-------------+
-  !      | 1 2 3 4 5 6 |        |  11  14  19 |     no edges:
-  !      +-------------+        +-------------+     pure membership
+  !      the vertex carrier     subset { 11 14 19 } c--> edges
   !
-  ! Level 1 names this degenerate case the support; here it needs no
-  ! name, because an edgeless graph already answers every question a
-  ! membership list is ever asked: its size is num_vertices, its
-  ! members are its global indices.
+  ! and membership, size, order and standing come from the carrier
+  ! contract - no edgeless-graph fiction anywhere.
   !
   ! THE FRAME. How a part relates to the whole it was cut from:
   !
@@ -424,9 +413,9 @@ module graph_grammar
      end function graph_edge_has_head_interface
 
      !===============================================================!
-     ! The named sets. Called once, when an operation begins, so each
-     ! answer is a whole graph - the edgeless graph of the members -
-     ! and the cost is paid once per sweep, not once per cell.
+     ! The named sets. Called once, when an operation begins, so
+     ! each answer is a member_set - the carrier itself or a subset
+     ! of it - and the cost is paid once per sweep, not per cell.
      !===============================================================!
 
      subroutine graph_member_set_interface(this, members)

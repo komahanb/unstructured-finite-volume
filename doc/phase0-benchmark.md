@@ -39,14 +39,25 @@ preimage(e) = tail vertex — against the old stored_graph queries:
 
 | act                              | default | -O3     | ns/item (default) | ns/item (-O3) |
 |----------------------------------|---------|---------|-------------------|---------------|
-| csr_relation construction        | 0.081 s | 0.038 s | 164.7             | 77.1          |
-| csr image sweep (x3)             | 0.052 s | 0.035 s | 35.2              | 23.6          |
-| csr preimage sweep (x3)          | 0.109 s | 0.066 s | 37.0              | 22.5          |
+| csr_relation construction        | 0.082 s | 0.038 s | 167.2             | 78.1          |
+| csr image sweep (x3)             | 0.068 s | 0.036 s | 46.3              | 24.4          |
+| csr preimage sweep (x3)          | 0.138 s | 0.074 s | 47.0              | 25.4          |
+| csr image_view sweep (x3)        | 0.033 s | 0.013 s | 22.1              | 9.0           |
+| csr preimage_view sweep (x3)     | 0.067 s | 0.026 s | 22.7              | 8.9           |
 
-Image sits within ~7% of `outgoing_edges` (23.6 vs 22.1 ns at -O3)
-while paying for a polymorphic `local_index` call per query; preimage
-is at parity; construction is faster than `stored_graph`'s (77 vs
-100 ns per vertex). No material regression — the §66 gate holds.
+Two tiers, and the split the Phase 0 notes could only conjecture is
+now measured: the same fibre costs 24.4 ns owned (allocating `image`)
+and 9.0 ns borrowed (`image_view`, a pointer slice) at -O3 — the
+difference IS the allocation. The borrow beats the old
+`outgoing_edges` (22.5 ns) by 2.5x; the allocating convenience sits
+at parity with the old API; construction is faster than
+`stored_graph`'s (78 vs 100 ns per vertex). The §66 gate holds with
+room to spare, and hot Phase-4 topology should ride the views.
+
+Complexity, stated honestly: every fibre first pays the carrier's
+`local_index(member)`, so T_image(a) = T_local_index(a) + O(deg a).
+Counted carriers answer local_index in O(1) — the V/E mesh path —
+so the promise collapses to O(deg) exactly where it matters.
 
 ## Reading
 

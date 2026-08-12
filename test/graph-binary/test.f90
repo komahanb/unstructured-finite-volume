@@ -31,6 +31,7 @@ program test_graph_binary
   write(*,'(1x,a)') "============================================="
 
   call check_csr_contract(nfail)
+  call check_fibre_views(nfail)
   call check_sparse_source(nfail)
   call check_transpose_view(nfail)
   call check_involution_is_extensional(nfail)
@@ -115,6 +116,48 @@ contains
          & "the target is the second's", nfail)
 
   end subroutine check_csr_contract
+
+  !===================================================================!
+  ! The hot-loop road: fibre views are borrows into the stored
+  ! index - no allocation, no copy - and they answer exactly what
+  ! the owning conveniences answer. The empty borrow is a zero-size
+  ! fibre, so size() reads absence without a second question.
+  !===================================================================!
+
+  subroutine check_fibre_views(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(counted_set)          :: cells, faces
+    type(csr_relation), target :: r
+    integer, pointer           :: f(:)
+    integer, allocatable       :: owned(:)
+
+    cells = counted_set('cells', 4)
+    faces = counted_set('faces', 5)
+
+    r = csr_relation('touches', cells, faces, &
+         & reshape([1,1,  1,2,  2,2,  3,4], [2, 4]))
+
+    f => r % image_view(1)
+    call r % image(1, owned)
+    call report(size(f) .eq. size(owned) .and. all(f .eq. owned), &
+         & "the view borrows what the convenience copies", nfail)
+
+    f => r % preimage_view(2)
+    call r % preimage(2, owned)
+    call report(size(f) .eq. size(owned) .and. all(f .eq. owned), &
+         & "and the mirrored view borrows the mirrored row", nfail)
+
+    f => r % image_view(4)
+    call report(size(f) .eq. 0, &
+         & "a member relating to nothing borrows the empty fibre", nfail)
+
+    f => r % image_view(9)
+    call report(size(f) .eq. 0, &
+         & "and so does an outsider", nfail)
+
+  end subroutine check_fibre_views
 
   !===================================================================!
   ! The inverse-map law at work: a sparse listed carrier as source.
@@ -221,9 +264,15 @@ contains
 
   !===================================================================!
   ! The involution (R^T)^T = R, tested the only way it is promised:
-  ! by extension. The double view carries R's tuples over R's
-  ! domains - and still is not R by identity, because same_as
-  ! answers stamps and no canonicalization is promised.
+  ! by SET extension. Relations are sets, so equal relations may
+  ! enumerate differently; the honest test is
+  !
+  !      |R| = |S|   and   every tuple of R is in S
+  !
+  ! which for two sets of equal finite size is equality - no appeal
+  ! to enumeration order anywhere. And the double view still is not
+  ! R by identity, because same_as answers stamps and no
+  ! canonicalization is promised.
   !===================================================================!
 
   subroutine check_involution_is_extensional(nfail)
@@ -235,7 +284,7 @@ contains
     type(transposed_view), target  :: t
     type(transposed_view)          :: tt
     class(member_set), allocatable :: da, db
-    integer, allocatable           :: rt(:,:), ttt(:,:)
+    integer, allocatable           :: rt(:,:)
     integer                        :: j
     logical                        :: ok
 
@@ -248,22 +297,25 @@ contains
     t  = transpose_of(r)
     tt = transpose_of(t)
 
-    call r % tuples(rt)
-    call tt % tuples(ttt)
+    call report(tt % num_tuples() .eq. r % num_tuples(), &
+         & "the double transpose counts what the base counts", nfail)
 
-    ok = size(ttt, 2) .eq. size(rt, 2)
-    if (ok) then
-       do j = 1, size(rt, 2)
-          ok = ok .and. all(ttt(:, j) .eq. rt(:, j))
-       end do
-    end if
+    call r % tuples(rt)
+    ok = .true.
+    do j = 1, size(rt, 2)
+       ok = ok .and. tt % has(rt(:, j))
+    end do
     call report(ok, &
-         & "the double transpose carries the base's tuples", nfail)
+         & "and holds every tuple of the base: equal as sets", nfail)
 
     da = tt % domain(1)
     db = r % domain(1)
     call report(da % same_as(db), &
          & "over the base's own domains, slot for slot", nfail)
+    da = tt % domain(2)
+    db = r % domain(2)
+    call report(da % same_as(db), &
+         & "both slots round home", nfail)
 
     call report(.not. tt % same_as(r), &
          & "extension returns; identity, unpromised, does not", nfail)

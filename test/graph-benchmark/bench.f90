@@ -43,7 +43,8 @@ program bench_graph_traversal
 
   type(stored_graph)              :: g
   type(counted_set)               :: vcarrier, ecarrier
-  type(csr_relation)              :: rel
+  type(csr_relation), target      :: rel
+  integer, pointer                :: fp(:)
   integer, allocatable            :: tab(:,:)
   type(differential_operator)     :: op
   type(partitioner)               :: p
@@ -165,6 +166,27 @@ program bench_graph_traversal
   end do
   call system_clock(t1)
   call line("csr preimage sweep (x3)", t0, t1, rate, int(3, int64) * ne)
+
+  ! -- the borrows: the same fibres with no allocation anywhere.
+  call system_clock(t0)
+  do rep = 1, 3
+     do v = 1, nv
+        fp => rel % image_view(v)
+        touched = touched + size(fp)
+     end do
+  end do
+  call system_clock(t1)
+  call line("csr image_view sweep (x3)", t0, t1, rate, int(3, int64) * nv)
+
+  call system_clock(t0)
+  do rep = 1, 3
+     do e = 1, ne
+        fp => rel % preimage_view(e)
+        touched = touched + size(fp)
+     end do
+  end do
+  call system_clock(t1)
+  call line("csr preimage_view sweep (x3)", t0, t1, rate, int(3, int64) * ne)
 
   ! -- differential operators over the whole graph.
   eon = support(GRAPH_SIDE_EDGE, [(e, e = 1, ne)])

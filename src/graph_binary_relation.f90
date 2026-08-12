@@ -25,6 +25,16 @@
 ! never assumes a domain is 1..n. The image of an outsider is the
 ! empty set: relating to nothing is an answer, not an error.
 !
+!                    TWO TIERS OF TRAVERSAL
+!
+! The deferred primitives are the VIEWS: image_view and
+! preimage_view answer a fibre as a pointer into the stored index -
+! no allocation, no copy, the hot-loop road (AGENTS.md 33). The
+! allocating image and preimage stand above them as conveniences,
+! written once for the whole family as copies of the views. A
+! caller holding a view holds a borrow: it lives while the relation
+! lives, and no longer.
+!
 !                        THE CSR CITIZEN
 !
 ! csr_relation stores both directions, built once at construction:
@@ -32,12 +42,22 @@
 !      xfwd, tgt      row a-local  ->  its B members     image
 !      xbwd, src      row b-local  ->  its A members     preimage
 !
-! so image and preimage are O(degree) slices, has([a,b]) is one row
-! scan, and construction - validation, duplicate collapse, both
-! index builds - is linear in members plus tuples. Set semantics
-! hold here exactly as in the stored relation: a tuple handed in
-! twice is in the relation once, first appearance keeping its
-! place.
+! so each fibre is one row slice, has([a,b]) is one row scan, and
+! construction - validation, duplicate collapse, both index builds -
+! is linear in members plus tuples. Set semantics hold here exactly
+! as in the stored relation: a tuple handed in twice is in the
+! relation once, first appearance keeping its place.
+!
+! COMPLEXITY, PARAMETERIZED HONESTLY. Every fibre first asks the
+! carrier where the member stands, so the true cost is
+!
+!      T_image(a)  =  T_local_index(a) + O(deg a)
+!
+! and the slice alone is O(deg). A counted carrier answers
+! local_index in O(1), so the promise collapses to O(deg) there -
+! the mesh path's case. A carrier whose local_index scans (the
+! listed fixture does) pays its scan on every query; if such a
+! carrier ever matters at scale, it owes itself an index.
 !
 !                     THE VIEW, AND ITS DEBT
 !
@@ -47,6 +67,17 @@
 ! the base must outlive it; the caller's base must carry the target
 ! attribute. That is the whole cost of an O(1) transpose in a
 ! language of value semantics, and it is stated rather than hidden.
+!
+! THE OWNERSHIP POLICY, DECLARED FOR THE LEVELS ABOVE. When the
+! graph arrives and contains relations (AGENTS.md 14), the law is:
+!
+!      the graph OWNS stable relations;
+!      views and fibre borrows may BORROW them.
+!
+! A graph accessor must therefore hand out its relations by
+! reference to owned, stable storage - never as temporary copies
+! that a view or fibre could dangle into. Whoever owns the base
+! decides its lifetime; every borrower lives strictly inside it.
 !
 !                  IDENTITY IS NOT EQUALITY
 !
@@ -86,8 +117,20 @@ module graph_binary_relation
 
      procedure :: arity => binary_arity
 
-     procedure(binary_fibre_interface), deferred :: image
-     procedure(binary_fibre_interface), deferred :: preimage
+     !----------------------------------------------------------------!
+     ! The deferred primitives: fibres as borrows, no allocation.
+     !----------------------------------------------------------------!
+
+     procedure(binary_fibre_view_interface), deferred :: image_view
+     procedure(binary_fibre_view_interface), deferred :: preimage_view
+
+     !----------------------------------------------------------------!
+     ! The conveniences, written once for the family: copies of the
+     ! views, for callers who would rather own than borrow.
+     !----------------------------------------------------------------!
+
+     procedure :: image
+     procedure :: preimage
 
      procedure :: source
      procedure :: target
@@ -96,12 +139,12 @@ module graph_binary_relation
 
   abstract interface
 
-     pure subroutine binary_fibre_interface(this, member, indices)
+     function binary_fibre_view_interface(this, member) result(fibre)
        import binary_relation
-       class(binary_relation), intent(in)  :: this
-       integer               , intent(in)  :: member
-       integer, allocatable  , intent(out) :: indices(:)
-     end subroutine binary_fibre_interface
+       class(binary_relation), target, intent(in) :: this
+       integer               , intent(in)         :: member
+       integer, pointer                           :: fibre(:)
+     end function binary_fibre_view_interface
 
   end interface
 
@@ -120,12 +163,12 @@ module graph_binary_relation
 
    contains
 
-     procedure :: domain     => csr_domain
-     procedure :: has        => csr_has
-     procedure :: num_tuples => csr_num_tuples
-     procedure :: tuples     => csr_tuples
-     procedure :: image      => csr_image
-     procedure :: preimage   => csr_preimage
+     procedure :: domain        => csr_domain
+     procedure :: has           => csr_has
+     procedure :: num_tuples    => csr_num_tuples
+     procedure :: tuples        => csr_tuples
+     procedure :: image_view    => csr_image_view
+     procedure :: preimage_view => csr_preimage_view
 
   end type csr_relation
 
@@ -145,12 +188,12 @@ module graph_binary_relation
 
    contains
 
-     procedure :: domain     => view_domain
-     procedure :: has        => view_has
-     procedure :: num_tuples => view_num_tuples
-     procedure :: tuples     => view_tuples
-     procedure :: image      => view_image
-     procedure :: preimage   => view_preimage
+     procedure :: domain        => view_domain
+     procedure :: has           => view_has
+     procedure :: num_tuples    => view_num_tuples
+     procedure :: tuples        => view_tuples
+     procedure :: image_view    => view_image_view
+     procedure :: preimage_view => view_preimage_view
 
   end type transposed_view
 
@@ -189,6 +232,31 @@ contains
     domain = this % domain(2)
 
   end function target
+
+  !===================================================================!
+  ! The conveniences: own a copy of what the view borrows. Written
+  ! once, here, for every binary citizen present and future.
+  !===================================================================!
+
+  subroutine image(this, member, indices)
+
+    class(binary_relation), target, intent(in)  :: this
+    integer                       , intent(in)  :: member
+    integer, allocatable          , intent(out) :: indices(:)
+
+    indices = this % image_view(member)
+
+  end subroutine image
+
+  subroutine preimage(this, member, indices)
+
+    class(binary_relation), target, intent(in)  :: this
+    integer                       , intent(in)  :: member
+    integer, allocatable          , intent(out) :: indices(:)
+
+    indices = this % preimage_view(member)
+
+  end subroutine preimage
 
   !===================================================================!
   ! Declare a CSR relation: a name, the two carriers - any
@@ -317,45 +385,47 @@ contains
   end function csr_domain
 
   !===================================================================!
-  ! The fibres: one local_index, one slice. Members in, members
-  ! out; an outsider's fibre is empty.
+  ! The fibre views: one local_index, one slice, zero allocation.
+  ! Members in, members out; an outsider's fibre is the empty
+  ! borrow. Cost, honestly: T_local_index(member) + O(1) to make,
+  ! O(degree) to read.
   !===================================================================!
 
-  pure subroutine csr_image(this, member, indices)
+  function csr_image_view(this, member) result(fibre)
 
-    class(csr_relation), intent(in)  :: this
-    integer            , intent(in)  :: member
-    integer, allocatable, intent(out) :: indices(:)
+    class(csr_relation), target, intent(in) :: this
+    integer                    , intent(in) :: member
+    integer, pointer                        :: fibre(:)
 
     integer :: row
 
     row = this % signature(1) % carrier % local_index(member)
     if (row == 0) then
-       allocate(indices(0))
+       fibre => this % tgt(1:0)
        return
     end if
 
-    indices = this % tgt(this % xfwd(row) : this % xfwd(row + 1) - 1)
+    fibre => this % tgt(this % xfwd(row) : this % xfwd(row + 1) - 1)
 
-  end subroutine csr_image
+  end function csr_image_view
 
-  pure subroutine csr_preimage(this, member, indices)
+  function csr_preimage_view(this, member) result(fibre)
 
-    class(csr_relation), intent(in)  :: this
-    integer            , intent(in)  :: member
-    integer, allocatable, intent(out) :: indices(:)
+    class(csr_relation), target, intent(in) :: this
+    integer                    , intent(in) :: member
+    integer, pointer                        :: fibre(:)
 
     integer :: row
 
     row = this % signature(2) % carrier % local_index(member)
     if (row == 0) then
-       allocate(indices(0))
+       fibre => this % src(1:0)
        return
     end if
 
-    indices = this % src(this % xbwd(row) : this % xbwd(row + 1) - 1)
+    fibre => this % src(this % xbwd(row) : this % xbwd(row + 1) - 1)
 
-  end subroutine csr_preimage
+  end function csr_preimage_view
 
   !===================================================================!
   ! Membership: one row, one scan - O(degree), as promised.
@@ -478,24 +548,24 @@ contains
 
   end subroutine view_tuples
 
-  pure subroutine view_image(this, member, indices)
+  function view_image_view(this, member) result(fibre)
 
-    class(transposed_view), intent(in)  :: this
-    integer               , intent(in)  :: member
-    integer, allocatable  , intent(out) :: indices(:)
+    class(transposed_view), target, intent(in) :: this
+    integer                       , intent(in) :: member
+    integer, pointer                           :: fibre(:)
 
-    call this % base % preimage(member, indices)
+    fibre => this % base % preimage_view(member)
 
-  end subroutine view_image
+  end function view_image_view
 
-  pure subroutine view_preimage(this, member, indices)
+  function view_preimage_view(this, member) result(fibre)
 
-    class(transposed_view), intent(in)  :: this
-    integer               , intent(in)  :: member
-    integer, allocatable  , intent(out) :: indices(:)
+    class(transposed_view), target, intent(in) :: this
+    integer                       , intent(in) :: member
+    integer, pointer                           :: fibre(:)
 
-    call this % base % image(member, indices)
+    fibre => this % base % image_view(member)
 
-  end subroutine view_preimage
+  end function view_preimage_view
 
 end module graph_binary_relation

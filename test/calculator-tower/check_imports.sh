@@ -20,6 +20,11 @@ allowed_for() {
         level-0-carrier)         echo "calculator_assert graph_carrier" ;;
         level-1-relation)        echo "calculator_assert graph_carrier graph_relation" ;;
         level-2-relation-algebra) echo "calculator_assert graph_carrier graph_relation graph_relation_algebra" ;;
+        # level 3: graph_binary_relation is granted for the view
+        # refusal alone (transpose_of is level-1 relation
+        # infrastructure); the profile and everything above stay
+        # forbidden.
+        level-3-graph)           echo "calculator_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_structure" ;;
         *)                       echo "__no_allowlist__" ;;
     esac
 }

@@ -111,6 +111,21 @@ contains
          &             cells % has(-3)), &
          & "and no to everything outside the domain", nfail)
 
+    ! The inverse enumeration: where does a member stand. Zero for
+    ! an outsider, and the two round-trip laws that make the pair
+    ! member/local_index a bijection on the domain.
+    call report(cells % local_index(4) .eq. 4 .and. &
+         &      cells % local_index(0) .eq. 0 .and. &
+         &      cells % local_index(7) .eq. 0, &
+         & "local_index answers the standing, zero for outsiders", nfail)
+    ok = .true.
+    do k = 1, cells % size()
+       ok = ok .and. (cells % member(cells % local_index(k)) .eq. k)
+       ok = ok .and. (cells % local_index(cells % member(k)) .eq. k)
+    end do
+    call report(ok, &
+         & "member and local_index invert each other, both ways", nfail)
+
     none = counted_set('nothing', 0)
     call none % members(idx)
     call report(none % size() .eq. 0 .and. size(idx) .eq. 0, &

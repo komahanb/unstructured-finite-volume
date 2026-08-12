@@ -25,6 +25,8 @@ program bench_graph_traversal
   use iso_fortran_env        , only : dp => REAL64, int64
   use graph_calculus         , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
   use graph_grammar          , only : graph, graph_field
+  use graph_carrier          , only : counted_set
+  use graph_binary_relation  , only : csr_relation
   use class_graph            , only : stored_graph
   use class_graph_support    , only : support
   use class_graph_field      , only : field
@@ -40,6 +42,9 @@ program bench_graph_traversal
   integer, parameter :: ne = (nx - 1) * ny + nx * (ny - 1)
 
   type(stored_graph)              :: g
+  type(counted_set)               :: vcarrier, ecarrier
+  type(csr_relation)              :: rel
+  integer, allocatable            :: tab(:,:)
   type(differential_operator)     :: op
   type(partitioner)               :: p
   type(assembler)                 :: a
@@ -125,6 +130,41 @@ program bench_graph_traversal
   end do
   call system_clock(t1)
   call line("incoming_edges sweep (x3)", t0, t1, rate, int(3, int64) * nv)
+
+  ! -- the phase-3 citizen on the same topology: the tail relation
+  !    V x E, image(v) = outgoing edges, preimage(e) = tail vertex.
+  vcarrier = counted_set('vertices', nv)
+  ecarrier = counted_set('edges'   , ne)
+  allocate(tab(2, ne))
+  do e = 1, ne
+     tab(1, e) = tails(e)
+     tab(2, e) = e
+  end do
+
+  call system_clock(t0)
+  rel = csr_relation('tail', vcarrier, ecarrier, tab)
+  call system_clock(t1)
+  call line("csr_relation construction", t0, t1, rate, int(nv, int64))
+
+  call system_clock(t0)
+  do rep = 1, 3
+     do v = 1, nv
+        call rel % image(v, idx)
+        touched = touched + size(idx)
+     end do
+  end do
+  call system_clock(t1)
+  call line("csr image sweep (x3)", t0, t1, rate, int(3, int64) * nv)
+
+  call system_clock(t0)
+  do rep = 1, 3
+     do e = 1, ne
+        call rel % preimage(e, idx)
+        touched = touched + size(idx)
+     end do
+  end do
+  call system_clock(t1)
+  call line("csr preimage sweep (x3)", t0, t1, rate, int(3, int64) * ne)
 
   ! -- differential operators over the whole graph.
   eon = support(GRAPH_SIDE_EDGE, [(e, e = 1, ne)])

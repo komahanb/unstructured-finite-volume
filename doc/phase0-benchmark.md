@@ -31,6 +31,23 @@ without a documented reason and an optimization plan.
 | partition_graph, 4 parts         | 0.269 s | 0.127 s | 549.4             | 259.4         |
 | carry + assemble field, 4 parts  | 0.294 s | 0.137 s | 600.4             | 279.1         |
 
+## Phase 3 comparison (added 2026-08-12)
+
+The CSR binary relation (`src/graph_binary_relation.f90`) on the same
+topology — the tail relation V x E, image(v) = outgoing edges,
+preimage(e) = tail vertex — against the old stored_graph queries:
+
+| act                              | default | -O3     | ns/item (default) | ns/item (-O3) |
+|----------------------------------|---------|---------|-------------------|---------------|
+| csr_relation construction        | 0.081 s | 0.038 s | 164.7             | 77.1          |
+| csr image sweep (x3)             | 0.052 s | 0.035 s | 35.2              | 23.6          |
+| csr preimage sweep (x3)          | 0.109 s | 0.066 s | 37.0              | 22.5          |
+
+Image sits within ~7% of `outgoing_edges` (23.6 vs 22.1 ns at -O3)
+while paying for a polymorphic `local_index` call per query; preimage
+is at parity; construction is faster than `stored_graph`'s (77 vs
+100 ns per vertex). No material regression — the §66 gate holds.
+
 ## Reading
 
 - Every traversal query today returns a freshly allocated index

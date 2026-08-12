@@ -36,6 +36,7 @@ program test_graph_relation
 
   call check_incidence_contract(nfail)
   call check_set_semantics(nfail)
+  call check_carrier_set_semantics(nfail)
   call check_mixed_carriers(nfail)
   call check_adjacency_is_a_reading(nfail)
   call check_ternary_endpoint(nfail)
@@ -161,6 +162,55 @@ contains
          & "and membership reads the set, not the handing", nfail)
 
   end subroutine check_set_semantics
+
+  !===================================================================!
+  ! Carriers obey set semantics too: a member handed in twice is in
+  ! the domain once, enumeration is injective, and member and
+  ! local_index invert each other - on the listed concretion, where
+  ! members and positions genuinely differ.
+  !===================================================================!
+
+  subroutine check_carrier_set_semantics(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(listed_set)     :: dup
+    integer, allocatable :: idx(:)
+    integer              :: i, j
+    logical              :: ok
+
+    dup = listed_set('sensors', [10, 20, 10, 30, 20])
+
+    call report(dup % size() .eq. 3, &
+         & "a member handed in twice is in the domain once", nfail)
+
+    call dup % members(idx)
+    call report(all(idx .eq. [10, 20, 30]), &
+         & "first appearances stand, in their first order", nfail)
+
+    ok = .true.
+    do i = 1, dup % size()
+       do j = i + 1, dup % size()
+          ok = ok .and. (dup % member(i) /= dup % member(j))
+       end do
+    end do
+    call report(ok, &
+         & "enumeration is injective: each member once", nfail)
+
+    call report(dup % local_index(20) .eq. 2 .and. &
+         &      dup % local_index(15) .eq. 0, &
+         & "local_index finds the standing, zero for outsiders", nfail)
+
+    ok = .true.
+    do i = 1, dup % size()
+       ok = ok .and. (dup % member(dup % local_index(dup % member(i))) &
+            &         .eq. dup % member(i))
+       ok = ok .and. (dup % local_index(dup % member(i)) .eq. i)
+    end do
+    call report(ok, &
+         & "member and local_index invert each other, both ways", nfail)
+
+  end subroutine check_carrier_set_semantics
 
   !===================================================================!
   ! The signature is generic over member_set, proved: a counted set

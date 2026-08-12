@@ -10,12 +10,21 @@
 ! no relations, no graph words - vertices, edges, cells and faces
 ! are what higher levels call the sets they declare here.
 !
-! The structural contract is four questions: how many (size), which
-! one (member), all of them (members), and IS THIS ONE OF YOURS
-! (has). Membership is a primitive, not a search: a relation
-! signature validates tuples against it, and must never have to
-! enumerate a domain to ask whether one index belongs. The name a
-! set was declared with is metadata for the reader - carried,
+! The structural contract is five questions: how many (size), which
+! one (member), all of them (members), IS THIS ONE OF YOURS (has),
+! and WHERE DOES IT STAND (local_index - the inverse of member,
+! zero for an outsider). Membership and position are primitives,
+! not searches: a relation signature validates tuples against has,
+! and an indexed relation finds its row through local_index, so
+! neither ever has to enumerate a domain. The two enumeration laws
+! bind them:
+!
+!      member(local_index(a)) = a        for every a in A
+!      local_index(member(i)) = i        for i = 1 .. size
+!
+! which forces enumeration to be injective: a member set holds each
+! member once - set semantics on the carriers themselves. The name
+! a set was declared with is metadata for the reader - carried,
 ! printable, and no part of the mathematics.
 !
 !                       STRUCTURAL IDENTITY
@@ -65,10 +74,11 @@ module graph_carrier
      ! The structural questions, deferred to each concretion.
      !----------------------------------------------------------------!
 
-     procedure(set_size_interface)   , deferred :: size
-     procedure(set_member_interface) , deferred :: member
-     procedure(set_members_interface), deferred :: members
-     procedure(set_has_interface)    , deferred :: has
+     procedure(set_size_interface)       , deferred :: size
+     procedure(set_member_interface)     , deferred :: member
+     procedure(set_members_interface)    , deferred :: members
+     procedure(set_has_interface)        , deferred :: has
+     procedure(set_local_index_interface), deferred :: local_index
 
      !----------------------------------------------------------------!
      ! Identity, answered once for every concretion.
@@ -111,6 +121,12 @@ module graph_carrier
        integer          , intent(in) :: member
      end function set_has_interface
 
+     pure integer function set_local_index_interface(this, member)
+       import member_set
+       class(member_set), intent(in) :: this
+       integer          , intent(in) :: member
+     end function set_local_index_interface
+
   end interface
 
   !===================================================================!
@@ -128,10 +144,11 @@ module graph_carrier
 
    contains
 
-     procedure :: size    => counted_size
-     procedure :: member  => counted_member
-     procedure :: members => counted_members
-     procedure :: has     => counted_has
+     procedure :: size        => counted_size
+     procedure :: member      => counted_member
+     procedure :: members     => counted_members
+     procedure :: has         => counted_has
+     procedure :: local_index => counted_local_index
 
   end type counted_set
 
@@ -266,5 +283,24 @@ contains
     counted_has = (member >= 1) .and. (member <= this % n)
 
   end function counted_has
+
+  !===================================================================!
+  ! Where a member stands - for the counted set, where it says. Zero
+  ! for an outsider, so an indexed relation reads absence without a
+  ! second question.
+  !===================================================================!
+
+  pure integer function counted_local_index(this, member)
+
+    class(counted_set), intent(in) :: this
+    integer           , intent(in) :: member
+
+    if (member >= 1 .and. member <= this % n) then
+       counted_local_index = member
+    else
+       counted_local_index = 0
+    end if
+
+  end function counted_local_index
 
 end module graph_carrier

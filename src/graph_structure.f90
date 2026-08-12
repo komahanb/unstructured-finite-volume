@@ -32,6 +32,13 @@
 ! graph, immutable after construction, never pulls that storage out
 ! from under anyone.
 !
+! And ownership means WHOLENESS: only a MATERIALIZED relation - one
+! whole unto itself - may be owned. A borrowing view is refused at
+! the door, because copying a view into owned storage would copy a
+! pointer to a base the graph does not keep alive: the graph would
+! own the view and not what makes it true. Views ride ABOVE
+! graph-owned relations, never inside them.
+!
 ! The graph is the third citizen to sign the identity roll, after
 ! the carriers and the relations - one law, one roll, three hands.
 !
@@ -130,9 +137,22 @@ contains
   end function hold_relation
 
   !===================================================================!
-  ! Declare a graph: a name, the member sets, the relations. One
-  ! refusal guards the level: every slot of every relation must
-  ! name one of the graph's own member sets.
+  ! Declare a graph: a name, the member sets, the relations. The
+  ! refusals that guard the level, in the order they are checked:
+  !
+  !     an empty or unsigned seat     a graph holds declared domains
+  !                                   only
+  !     the same domain twice         S_i /= S_j: a collection of
+  !                                   identified objects holds each
+  !                                   once
+  !     a hollow or unsigned relation a graph holds declared
+  !                                   relations only
+  !     a borrowing view              a graph owns whole relations; a
+  !                                   view rides above, never inside
+  !     the same relation twice       R_i /= R_j, by identity
+  !     a foreign domain              every slot of every relation
+  !                                   names one of the graph's own
+  !                                   member sets
   !===================================================================!
 
   type(relational_graph) function create_graph(name, sets, relations) &
@@ -145,6 +165,37 @@ contains
     class(member_set), allocatable :: d
     integer                        :: r, k, s
     logical                        :: found
+
+    do s = 1, size(sets)
+       if (.not. allocated(sets(s) % carrier)) then
+          error stop 'graph_structure: a graph holds declared domains only'
+       end if
+       if (.not. sets(s) % carrier % same_as(sets(s) % carrier)) then
+          error stop 'graph_structure: a graph holds declared domains only'
+       end if
+       do k = 1, s - 1
+          if (sets(s) % carrier % same_as(sets(k) % carrier)) then
+             error stop 'graph_structure: a graph holds each domain once'
+          end if
+       end do
+    end do
+
+    do r = 1, size(relations)
+       if (.not. allocated(relations(r) % contents)) then
+          error stop 'graph_structure: a graph holds declared relations only'
+       end if
+       if (.not. relations(r) % contents % same_as(relations(r) % contents)) then
+          error stop 'graph_structure: a graph holds declared relations only'
+       end if
+       if (.not. relations(r) % contents % materialized()) then
+          error stop 'graph_structure: a graph owns whole relations; a view cannot be owned'
+       end if
+       do k = 1, r - 1
+          if (relations(r) % contents % same_as(relations(k) % contents)) then
+             error stop 'graph_structure: a graph holds each relation once'
+          end if
+       end do
+    end do
 
     do r = 1, size(relations)
        do k = 1, relations(r) % contents % arity()

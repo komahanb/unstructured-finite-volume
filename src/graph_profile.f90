@@ -32,12 +32,19 @@
 ! The vertex and edge carriers ride along as copies - a copy IS
 ! the declared domain, and costs two integers.
 !
-! ORDER, STATED. Fibres answer in the order tuples were handed to
-! the relation. Hand T and H their tuples in ascending edge order -
-! as every mesh builder naturally does - and each derived list
-! reproduces the old stored_graph's ordering exactly; the merge in
-! incident_edges then interleaves the two ascending fibres into the
-! old einc order.
+! ORDER, CANONICAL. A relation is a set: how its tuples were handed
+! in is no part of what it IS, so no profile answer may depend on
+! it. Every derived list is CANONICALIZED to the edge carrier's own
+! enumeration order - fibres sorted ascending before use - which is
+! exactly the order the old stored_graph produced from its builds.
+! Hand T and H their tuples shuffled and every answer stands.
+!
+! TWO SCHEMA LAWS BEYOND THE FIBRES. E and V are distinct declared
+! domains - an ordinary graph whose edges ARE its vertices is a
+! category error, refused. And a self-loop is adjacent to nothing
+! new: the old adjacency excluded the vertex itself (other /= v),
+! and so does this one, while incident_edges still counts the loop
+! twice, once per end, as the old build stamped it.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -127,6 +134,10 @@ contains
 
     this % edges = this % tails % source()
     this % verts = this % tails % target()
+
+    if (this % edges % same_as(this % verts)) then
+       error stop 'graph_profile: edges and vertices are distinct domains'
+    end if
 
     d = this % heads % source()
     if (.not. d % same_as(this % edges)) then
@@ -223,6 +234,7 @@ contains
     integer, allocatable      , intent(out) :: indices(:)
 
     call this % tails % preimage(vertex_index, indices)
+    call ascending(indices)
 
   end subroutine outgoing_edges
 
@@ -233,8 +245,34 @@ contains
     integer, allocatable      , intent(out) :: indices(:)
 
     call this % heads % preimage(vertex_index, indices)
+    call ascending(indices)
 
   end subroutine incoming_edges
+
+  !===================================================================!
+  ! The canonical order: the edge carrier's own enumeration, read
+  ! off the members ascending. Fibres are small; an insertion sort
+  ! is honest and allocation-free.
+  !===================================================================!
+
+  pure subroutine ascending(list)
+
+    integer, intent(inout) :: list(:)
+
+    integer :: i, j, key
+
+    do i = 2, size(list)
+       key = list(i)
+       j   = i - 1
+       do while (j >= 1)
+          if (list(j) <= key) exit
+          list(j + 1) = list(j)
+          j = j - 1
+       end do
+       list(j + 1) = key
+    end do
+
+  end subroutine ascending
 
   !===================================================================!
   ! Incidence is the two fibres merged ascending - the old einc
@@ -248,11 +286,11 @@ contains
     integer                   , intent(in)  :: vertex_index
     integer, allocatable      , intent(out) :: indices(:)
 
-    integer, pointer :: out_f(:), in_f(:)
-    integer          :: i, j, n
+    integer, allocatable :: out_f(:), in_f(:)
+    integer              :: i, j, n
 
-    out_f => this % tails % preimage_view(vertex_index)
-    in_f  => this % heads % preimage_view(vertex_index)
+    call this % outgoing_edges(vertex_index, out_f)
+    call this % incoming_edges(vertex_index, in_f)
 
     allocate(indices(size(out_f) + size(in_f)))
 
@@ -280,7 +318,9 @@ contains
 
   !===================================================================!
   ! Neighbours: the far end of every incident edge, each named
-  ! once, the wall contributing nothing - old adjacency, derived.
+  ! once, the wall contributing nothing, and - as the old adjacency
+  ! always held - the vertex itself never its own neighbour, however
+  ! many loops it wears.
   !===================================================================!
 
   subroutine adjacent_vertices(this, vertex_index, indices)
@@ -302,7 +342,8 @@ contains
        else
           far = this % edge_tail(inc(k))
        end if
-       if (far >= 1 .and. .not. any(indices(1:n) == far)) then
+       if (far >= 1 .and. far /= vertex_index .and. &
+            & .not. any(indices(1:n) == far)) then
           n = n + 1
           indices(n) = far
        end if
@@ -322,10 +363,10 @@ contains
     integer                   , intent(in)  :: vertex_index
     integer, allocatable      , intent(out) :: indices(:)
 
-    integer, pointer :: f(:)
-    integer          :: k, h, n
+    integer, allocatable :: f(:)
+    integer              :: k, h, n
 
-    f => this % tails % preimage_view(vertex_index)
+    call this % outgoing_edges(vertex_index, f)
 
     allocate(indices(size(f)))
     n = 0
@@ -346,10 +387,10 @@ contains
     integer                   , intent(in)  :: vertex_index
     integer, allocatable      , intent(out) :: indices(:)
 
-    integer, pointer :: f(:)
-    integer          :: k, n
+    integer, allocatable :: f(:)
+    integer              :: k, n
 
-    f => this % heads % preimage_view(vertex_index)
+    call this % incoming_edges(vertex_index, f)
 
     allocate(indices(size(f)))
     n = 0

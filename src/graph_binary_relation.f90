@@ -195,6 +195,11 @@ module graph_binary_relation
      procedure :: image_view    => view_image_view
      procedure :: preimage_view => view_preimage_view
 
+     ! A borrower is not whole unto itself: copying it copies a
+     ! pointer to a base it does not keep alive, so no graph may own
+     ! it. Views live OVER graph-owned relations, never inside them.
+     procedure :: materialized  => view_materialized
+
   end type transposed_view
 
 contains
@@ -567,5 +572,13 @@ contains
     fibre => this % base % image_view(member)
 
   end function view_preimage_view
+
+  pure logical function view_materialized(this)
+
+    class(transposed_view), intent(in) :: this
+
+    view_materialized = .false.
+
+  end function view_materialized
 
 end module graph_binary_relation

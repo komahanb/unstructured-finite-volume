@@ -111,6 +111,16 @@ module graph_relation
      procedure :: same_as
 
      !----------------------------------------------------------------!
+     ! Self-containment. A relation is MATERIALIZED - whole unto
+     ! itself, safe to copy and to own - unless it says otherwise. A
+     ! borrowing view overrides this to false, and a graph refuses
+     ! to own it: owning a borrower would be owning a promise
+     ! someone else has to keep.
+     !----------------------------------------------------------------!
+
+     procedure :: materialized
+
+     !----------------------------------------------------------------!
      ! Metadata, not mathematics.
      !----------------------------------------------------------------!
 
@@ -235,6 +245,14 @@ contains
     same_as = this % identity % matches(other % identity)
 
   end function same_as
+
+  pure logical function materialized(this)
+
+    class(relation), intent(in) :: this
+
+    materialized = .true.
+
+  end function materialized
 
   function name(this)
 

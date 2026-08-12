@@ -45,6 +45,19 @@ program test_graph_ordinary
   call compare_topology(3, [1, 2, 3], [2, 3, 0], &
        & "a chain into a wall", nfail)
 
+  ! A self-loop beside ordinary edges: 1->2, 2->2, 2->3, 3->wall.
+  ! Old law: incident counts the loop twice, adjacency never names
+  ! the vertex to itself.
+  call compare_topology(3, [1, 2, 2, 3], [2, 2, 3, 0], &
+       & "a self-loop beside a wall", nfail)
+
+  ! A relation is a set: hand the same topologies in scrambled tuple
+  ! order and every answer must stand.
+  call compare_topology(5, [1, 1, 2, 3, 4], [2, 3, 4, 4, 0], &
+       & "the diamond, tuples shuffled", nfail, scrambled=.true.)
+  call compare_topology(3, [1, 2, 2, 3], [2, 2, 3, 0], &
+       & "the self-loop, tuples shuffled", nfail, scrambled=.true.)
+
   call check_wall_is_absence(nfail)
 
   write(*,'(1x,a)') "============================================="
@@ -79,12 +92,13 @@ contains
   ! in ascending edge order, as every mesh builder hands them.
   !===================================================================!
 
-  subroutine compare_topology(nv, tails, heads, what, nfail)
+  subroutine compare_topology(nv, tails, heads, what, nfail, scrambled)
 
-    integer         , intent(in)    :: nv
-    integer         , intent(in)    :: tails(:), heads(:)
-    character(len=*), intent(in)    :: what
-    integer         , intent(inout) :: nfail
+    integer         , intent(in)           :: nv
+    integer         , intent(in)           :: tails(:), heads(:)
+    character(len=*), intent(in)           :: what
+    integer         , intent(inout)        :: nfail
+    logical         , intent(in), optional :: scrambled
 
     type(stored_graph)              :: old
     type(counted_set)               :: verts, edges
@@ -117,6 +131,15 @@ contains
           htab(:, nh) = [e, heads(e)]
        end if
     end do
+
+    ! A set does not remember the order it was written down in:
+    ! reverse the columns and nothing downstream may notice.
+    if (present(scrambled)) then
+       if (scrambled) then
+          ttab = ttab(:, size(ttab, 2) : 1 : -1)
+          htab = htab(:, size(htab, 2) : 1 : -1)
+       end if
+    end if
 
     t = csr_relation('tail', edges, verts, ttab)
     h = csr_relation('head', edges, verts, htab)

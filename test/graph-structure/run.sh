@@ -15,9 +15,13 @@ cd "$here" && ./run
 declare -A reason=(
   [foreign]="a relation must relate the graph's own member sets"
   [twice]="a graph never signs twice"
+  [undeclared]="a graph holds declared domains only"
+  [dupset]="a graph holds each domain once"
+  [duprel]="a graph holds each relation once"
+  [view]="a view cannot be owned"
 )
 
-for case in foreign twice; do
+for case in foreign twice undeclared dupset duprel view; do
     if ./refusal "$case" >refusal.out 2>&1; then
         echo " FAIL : '$case' was accepted"
         exit 1

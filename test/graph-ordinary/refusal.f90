@@ -6,6 +6,7 @@
 !      twoheaded    an edge with two tuples in H
 !      ternary      a relation of the wrong arity offered as T
 !      mismatched   H over domains T does not share
+!      selfsame     one domain playing both edges and vertices
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -81,9 +82,16 @@ program ordinary_refusal
           & [held_relation(t), held_relation(h)])
      view = ordinary_graph_view(g, tail_at=1, head_at=2)
 
+  case ('selfsame')
+     t = csr_relation('tail', edges, edges, reshape([1, 2], [2, 1]))
+     h = csr_relation('head', edges, edges, reshape([2, 1], [2, 1]))
+     g = relational_graph('bad', [held_set(edges)], &
+          & [held_relation(t), held_relation(h)])
+     view = ordinary_graph_view(g, tail_at=1, head_at=2)
+
   case default
      write(*,'(1x,a)') &
-          & "usage: refusal tailless|twotailed|twoheaded|ternary|mismatched"
+          & "usage: refusal tailless|twotailed|twoheaded|ternary|mismatched|selfsame"
      error stop 'no case chosen'
 
   end select

@@ -260,6 +260,10 @@ contains
     call report(t % name() == 'touches^T', &
          & "and wears its derivation in its name", nfail)
 
+    call report(r % materialized() .and. .not. t % materialized(), &
+         & "the base is whole unto itself; the borrower says it is not", &
+         & nfail)
+
   end subroutine check_transpose_view
 
   !===================================================================!

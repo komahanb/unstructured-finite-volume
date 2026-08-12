@@ -18,9 +18,10 @@ declare -A reason=(
   [twoheaded]="no edge has two heads"
   [ternary]="must be binary"
   [mismatched]="must share the tail's domains"
+  [selfsame]="edges and vertices are distinct domains"
 )
 
-for case in tailless twotailed twoheaded ternary mismatched; do
+for case in tailless twotailed twoheaded ternary mismatched selfsame; do
     if ./refusal "$case" >refusal.out 2>&1; then
         echo " FAIL : '$case' was accepted"
         exit 1

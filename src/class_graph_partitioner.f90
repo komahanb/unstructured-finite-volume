@@ -237,8 +237,14 @@ contains
        end if
        eglobal(nkeep) = e
 
-       ! An edge is owned by the part that owns its tail, unless the
-       ! tail is borrowed, in which case the head's owner answers for it.
+       ! An edge is owned by the part that owns its TAIL - always,
+       ! whether this part holds that tail or borrows it. One global
+       ! edge therefore has exactly one owner across all parts, which
+       ! is what makes assembly reconstruct a global edge field
+       ! exactly once. (The branch below is vestigial: both arms
+       ! assign the same thing. An earlier design let the head's
+       ! owner answer for a borrowed tail; that rule was never
+       ! implemented, and the uniqueness law does not need it.)
        if (owner(t) == this % part) then
           eowner(nkeep) = owner(t)
        else

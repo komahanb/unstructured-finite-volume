@@ -401,10 +401,133 @@ If the host were scenery the two would agree. They do not.
 > the minimizer holds the graph as *conduit / context carrier*; the
 > differential operation reads it as *numerical topology operand*.
 
-# GATE C — Partitioned implicit statement *(unbuilt)*
+# GATE C — The partitioned implicit statement
 
-Will ask whether the partitioned action can itself serve as the
-matrix-free action of an implicit global solve.
+Gate C asks whether
+
+> partition + overlap refresh + local topology-consuming actions +
+> owned assembly
+
+compose into **one** global matrix-free operation that ordinary
+production GMRES can solve with.
+
+## Three things that must never be conflated
+
+\[
+\boxed{
+\begin{array}{lll}
+\textbf{STRUCTURAL PARTITION} & G\to\{G_1,G_2\} & \textbf{once} \\
+\textbf{NUMERICAL OVERLAP REFRESH} & q\to\{q_1,q_2\} & \textbf{every matvec} \\
+\textbf{OWNED ASSEMBLY} & \{A_1q_1,A_2q_2\}\to Aq & \textbf{every matvec}
+\end{array}}
+\]
+
+All three are routinely called "partitioning". They are not the same
+thing, and the composite's *shape* enforces the distinction: it owns
+the structure and owns **no mutable numerical state at all** — no
+cached `q`, no cached overlap, no previous result. Nothing in it can go
+stale because there is nothing in it to go stale.
+
+## The central road
+
+```text
+GLOBAL q
+   │
+   ├──── refresh G1 overlap ──> q1 ──> A_G1 ──> owned y1 ──┐
+   │                                                        │
+   └──── refresh G2 overlap ──> q2 ──> A_G2 ──> owned y2 ──┤
+                                                            ↓
+                                                    assemble + sum
+                                                            ↓
+                                                        GLOBAL Aq
+                                                            ↓
+                                                          GMRES
+                                                            ↓
+                                                           q*
+```
+
+\[
+\boxed{
+\textbf{VISIBILITY}\ \text{governs what a local calculation may READ.}\\
+\textbf{OWNERSHIP}\ \text{governs what it may authoritatively WRITE back.}}
+\]
+
+## Two kinds of graph-dependence
+
+| | `shifted_laplacian` (Gate B) | `partitioned_shifted_laplacian` (Gate C) |
+|---|---|---|
+| relationship to a graph | **graph-parameterized** | **decomposition-context-bound** |
+| acts on | whatever graph it is handed | only the \(G\) its \(G_1,G_2\) were cut from |
+| stores | nothing | \(G\), \(G_1\), \(G_2\), partitioners, assembler |
+| a foreign six-vertex host | is a legitimate different problem | is **refused** |
+
+Gate B's star convicted the host by *changing the answer*; here the same
+star is refused outright — in `domain()`, so a solver attaching on it
+dies before `attach` completes rather than deep inside a matvec with a
+chain-derived decomposition. Same cardinality, wrong decomposition.
+
+## What is proved
+
+**Extensional equality on four probes**, by global member —
+\(q^{*}\), a mixed-sign vector \([3,-1,4,1,5,-9]\), and the two
+**interface basis vectors** \(e_3\) and \(e_4\), which are the ones
+that force information across the cut:
+
+\[
+A_{\text{partitioned}}(v) = A_{\text{global}}(v).
+\]
+
+**No stale overlap.** One composite instance applied five times —
+\(q^{*}\), mixed, \(e_3\), \(e_4\), \(q^{*}\) — returns to its
+first answer (\(y_1=y_5\)), every intermediate answer matches the
+global action *at the time it was asked*, and the interleaved probes
+genuinely differ, so the sequence is not a repeated no-op. A halo
+cached from a previous matvec would survive into the next and break
+this.
+
+**Equivalence at the seat GMRES consumes.** Not only between the
+fixtures but at `solver % matvec` for all four probes, with both affine
+constants zero.
+
+**The statement.** Both solves run independently from the same
+\(b=[1,3,7,13,21,37]\):
+
+\[
+q_{\text{partitioned}} = q_{\text{global}} = q^{*} = [1,2,4,7,11,16].
+\]
+
+The decomposition changed the road, not the answer.
+
+## The result marker
+
+```text
+PARTITIONED_PDE_RESULT =  1.0000000000000002E+00  2.0000000000000009E+00
+                          4.0000000000000009E+00  7.0000000000000027E+00
+                          1.1000000000000002E+01  1.6000000000000004E+01
+```
+
+One marker, six real tokens in global vertex order, at full precision
+and **unrounded** — the honest image of the arithmetic. `check_marker.sh`
+validates shape and syntax only, never values; whether those numbers
+*are* \(q^{*}\) is the Gate-C test's business.
+
+## Why this is NOT a distributed solver
+
+The road still has, and this tower says so plainly:
+
+```text
+one process                    one global trial vector
+direct global access during partition_data
+parts executed sequentially    global assembly in-process
+global-array inner products    global-array norms
+```
+
+So the following are **not** claimed: distributed GMRES, MPI solver,
+parallel halo exchange, distributed vector support. The correct names
+are **partitioned matrix-free solve** and *serial semantic model of a
+partitioned operator*. What would be needed to make it genuinely
+distributed is derived — not implemented — in
+[`NUCLEUS-OBSERVATIONS.md`](NUCLEUS-OBSERVATIONS.md) under PIP-8.
 
 ---
 
@@ -453,11 +576,28 @@ them — and says so honestly rather than manufacturing per-level code:
 | 6 discretization | \(L\) and \(A=2I-L\) on the graph | Gate B |
 | 7 minimization | GMRES | Gate B, C |
 | 8 constitution | the shifted-diffusion law \(A(q)=2q-Lq\) | Gate B |
-| 9 statement | solve \(Aq=b\) by partitioned matrix-free action | Gate C |
+| 9 statement | solve \(Aq=b\); **implementation** production GMRES; **matvec realization** serial partitioned composite; **structural context** \(G\to G_1,G_2\) once; **state context** \(q\to q_1,q_2\) every matvec; **result** field \(q^{*}\) on \(V(G)\) | Gate C |
 
 ---
 
 # L. What this tower proves / does not prove
+
+## Proven by Gate C
+
+```text
+partition + overlap refresh + local actions + owned assembly compose
+    into ONE global matrix-free operation
+A_partitioned = A_global on four probes, including both interface
+    basis vectors
+the composite holds STRUCTURE and no mutable numerical state, so no
+    halo can go stale - proved by five interleaved applications
+    returning to the first answer
+equivalence holds at solver % matvec, the seat GMRES consumes
+production GMRES solves through the composite:
+    q_partitioned = q_global = q*
+a decomposition is bound to its graph: a same-sized foreign host is
+    refused in domain(), before attach completes
+```
 
 ## Proven by Gate B
 
@@ -514,10 +654,16 @@ test/partitioned-implicit-pde-tower/
 ├── common/
 │   └── partitioned_pde_assert.f90
 │   └── shifted_laplacian_fixture.f90
+│   └── partitioned_shifted_laplacian_fixture.f90
 ├── gate-a-partition/             test.f90
-└── gate-b-operator/              test.f90 · refusal.f90
+├── gate-b-operator/              test.f90 · refusal.f90
+│                                 · check_refusals.sh
+└── gate-c-statement/             test.f90 · refusal.f90
                                   · check_refusals.sh
 ```
+
+`check_marker.sh` holds the result contract and self-tests before the
+ladder runs.
 
 The import gate keys its allowlists **per file** inside `common/`, so the
 assert module's freedom from framework imports is proved mechanically
@@ -536,5 +682,10 @@ gate's truths back onto the nucleus levels it consumes.
 partitioned implicit pde tower
 ├── Gate A · partition / ownership / transport ... PASS
 ├── Gate B · topology-consuming action .......... PASS
-└── Gate C · partitioned implicit statement ..... UNBUILT
+└── Gate C · partitioned implicit statement ..... PASS
+
+solution field on V(G) ........................ q* = [1,2,4,7,11,16]
 ```
+
+**The tower is complete and sealed**, with **zero production changes**
+beyond a single corrected comment earned at Gate A.

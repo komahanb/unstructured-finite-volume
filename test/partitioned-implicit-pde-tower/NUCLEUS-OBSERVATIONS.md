@@ -434,11 +434,121 @@ action:               observe; A2 still unresolved
 
 ---
 
-## Deferred to Gate C
+## OBSERVATION PIP-8
 
 ```text
-PIP-8   serial partitioned action vs distributed execution   Gate C
+tower:                Partitioned Implicit PDE
+gate:                 C
+contextual radius:    2
+
+symptom / fact:       A PARTITIONED MATRIX-FREE SOLVE WORKS, AND IT IS
+                      NOT DISTRIBUTED. Production GMRES solved
+                      A q = b through a composite that decomposes,
+                      acts locally on each part's own topology, and
+                      reassembles owned outputs - reaching the same q*
+                      as the global road, and agreeing with the global
+                      action at solver % matvec on four probes
+                      including both interface basis vectors.
+
+                      What remains CENTRALIZED, exactly:
+
+                        one process, one global trial vector
+                        direct global access inside partition_data
+                        parts executed sequentially, in one address
+                          space
+                        assembly performed in-process
+                        inner products over a global array
+                        norms over a global array
+                        Krylov state held globally
+
+                      So the honest names are PARTITIONED MATRIX-FREE
+                      SOLVE and serial semantic model of a partitioned
+                      operator. The words distributed GMRES, MPI
+                      solver, parallel halo exchange and distributed
+                      vector are NOT used anywhere in this tower.
+
+exact caller:         common/partitioned_shifted_laplacian_fixture.f90
+                      (part_apply); gate-c-statement/test.f90
+
+mathematical concept: operator decomposition vs execution
+                      distribution - two independent axes
+
+local necessity:      n/a - this entry records a BOUNDARY, not a need
+global necessity:     n/a
+
+cross-tower recurrence: first tower to reach radius 2 at all
+
+graph role:           G1/G2 as topology operands (PIP-5); G as the
+                      recorded decomposition context
+
+comparison:           the SEMANTIC decomposition is complete: nothing
+                      in the operator's mathematics assumes a shared
+                      address space. What is missing is entirely
+                      EXECUTION machinery. That is a useful thing to
+                      have learned separately
+
+DERIVED frontier - what a genuinely distributed road would need, in
+the order the current code path would demand it:
+
+                        1. an owned distributed field/vector - today
+                           partition_data reads a global array that a
+                           rank would not possess
+                        2. overlap refresh as COMMUNICATION rather than
+                           as a read: neighbour exchange of borrowed
+                           values, replacing step (2) of part_apply
+                        3. a distributed assembly that sums owned
+                           contributions without materializing a global
+                           array
+                        4. a global inner product - the minimizer's
+                           inner_product currently reduces over one
+                           array
+                        5. a global norm, likewise
+                        6. Krylov synchronization: orthogonalization
+                           over distributed vectors, and the collective
+                           points that implies
+
+                      Items 4-6 sit in graph_minimization, NOT in this
+                      tower's fixtures - which is itself informative:
+                      the OPERATOR decomposed cleanly with no
+                      production change, while the SOLVER is where
+                      distribution would actually bite.
+
+                      These are FRONTIER observations. No MPI API is
+                      designed here, no distributed_graph is
+                      introduced, and none should be until a tower
+                      genuinely needs one.
+
+confidence:           high (the boundary); medium (the ordering of the
+                      frontier items)
+action:               observe; candidate subject for a future tower
 ```
 
-Named in advance so that Gate C answers a question that was asked
-before it began, rather than reporting whatever it happens to notice.
+---
+
+## Reverse-evidence status after this tower
+
+```text
+A1  graph_operation host          CLOSED at Gate B - measured, not
+                                  inferred. Gate C reinforces it and
+                                  does not reopen it.
+
+A2  operations carrying their     UNRESOLVED. Still TWO clients, both
+    own domain                    derivative-family. This tower was the
+                                  candidate for an independent third
+                                  vote and honestly did not supply one
+                                  (PIP-6).
+
+B   bidirectional linearization   NO new vote. This tower is not a
+                                  derivative client and needed no
+                                  reverse action.
+
+partition semantics               strong evidence ACROSS INCREASING
+                                  RADIUS within ONE tower. Gates A, B
+                                  and C are one client, not three, and
+                                  are counted as one.
+```
+
+Nothing in this tower justifies a nucleus refactor. Its most useful
+contribution to the reverse ledger is a rejection made safe: the seam
+with the most tower-votes (A1) is now closed on measurement rather than
+on inference.

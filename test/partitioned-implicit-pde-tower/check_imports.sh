@@ -41,6 +41,14 @@ allowed_for() {
         # tower's own shifted adapter. Still no derivative-family
         # fixture and no class_graph_linearization anywhere.
         gate-b-operator)   echo "partitioned_pde_assert shifted_laplacian_fixture graph_carrier graph_grammar class_graph class_graph_field class_graph_partitioner class_graph_assembler class_graph_differential_operator class_graph_gmres" ;;
+        # The composite is built from ONE decomposition: it needs the
+        # partition/assembly stack and the Gate-B local action, and
+        # nothing from any other tower.
+        common/partitioned_shifted_laplacian_fixture.f90) echo "graph_carrier graph_grammar class_graph class_graph_field class_graph_partitioner class_graph_assembler shifted_laplacian_fixture" ;;
+        # Gate C: the statement. Composition only - the two fixtures,
+        # the transport stack and the solver. No linearization, no
+        # derivative or adjoint fixture, no relational-graph machinery.
+        gate-c-statement)  echo "partitioned_pde_assert shifted_laplacian_fixture partitioned_shifted_laplacian_fixture graph_carrier graph_grammar class_graph class_graph_field class_graph_partitioner class_graph_assembler class_graph_gmres" ;;
         *)                 echo "__no_allowlist__" ;;
     esac
 }

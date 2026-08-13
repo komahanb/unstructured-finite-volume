@@ -61,14 +61,21 @@ level 2  relation algebra ...... PASS
 level 3  relational graph ...... PASS
 level 4  graph calculus ........ PASS
 level 5  field calculus ........ PASS
-level 6  discretization ........ ABSENT
-levels 7–9 ..................... BLOCKED
+level 6  discretization ........ PASS
+level 7  minimization .......... ABSENT
+levels 8–9 ..................... BLOCKED
 ```
 
 Data and parameters differ by domain and role, not by field class;
 uncomputed slots have no fabricated values. The relation
 `predict → error` existed at Level 2; only Level 4
-chooses to read it as directed execution. Each level is added RED-first, one review gate at a time, with the
+chooses to read it as directed execution. From topology alone, the
+tower derives that residual `r` depends on trainable `w` — through
+`ŷ`, transitively, never by adjacency — and the reverse structure
+is `J_Θᵀ`, a transpose view of the same dependency, not a
+separately stored backprop graph. No derivative value exists yet;
+this is the Jacobian's PATTERN, owned by the model, not by any one
+data instance. Each level is added RED-first, one review gate at a time, with the
 import gate holding every rung to its own allowlist. Production
 changes are expected to be **none** at every level — that is the
 experiment.

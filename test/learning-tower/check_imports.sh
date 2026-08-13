@@ -29,6 +29,12 @@ allowed_for() {
         # for the view refusal ONLY - the production path never
         # touches it.
         level-3-graph)           echo "learning_assert graph_carrier graph_relation graph_relation_algebra graph_structure graph_binary_relation" ;;
+        # level 6: the structural-Jacobian rung. The binary citizen
+        # is earned at last - J_Theta must materialize its generated
+        # pairs and answer its reverse as a transpose view. Fields
+        # stay forbidden: dependency structure belongs to the model,
+        # not to one data instance.
+        level-6-discretization)  echo "learning_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_structure graph_profile graph_algorithms" ;;
         *)                       echo "__no_allowlist__" ;;
     esac
 }

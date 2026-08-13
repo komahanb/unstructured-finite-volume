@@ -18,6 +18,9 @@ allowed_for() {
         # level 2: the algebra, and NOT the binary storage - D is
         # held as class(relation).
         level-2-relation-algebra) echo "learning_assert graph_carrier graph_relation graph_relation_algebra" ;;
+        # level 5: values need domains, not graphs - the smallest
+        # allowlist of any rung above the ground.
+        level-5-field-calculus)  echo "learning_assert graph_carrier class_graph_field" ;;
         # level 4: the profile's interpretation and the algorithms
         # that walk it - the binary storage the view leans on stays
         # forbidden to the learning client.

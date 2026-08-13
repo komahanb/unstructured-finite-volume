@@ -27,3 +27,6 @@ test/learning-tower/*/run.out
 test/derivative-action-tower/*/run
 test/derivative-action-tower/*/refusal
 test/derivative-action-tower/*/run.out
+test/adjoint-tower/*/run
+test/adjoint-tower/*/refusal
+test/adjoint-tower/*/run.out

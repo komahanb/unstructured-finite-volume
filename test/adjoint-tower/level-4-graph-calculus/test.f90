@@ -1,0 +1,201 @@
+!=====================================================================!
+! ADJOINT TOWER . LEVEL 4 . THE IMPLICIT SYSTEM IS NOT A PROGRAM
+!
+! The level answers one question: WHAT DOES GRAPH CALCULUS HONESTLY
+! SAY ABOUT AN IMPLICIT SYSTEM. Its siblings all found an execution
+! order here - the calculator walked [plus, times], the learner
+! walked [predict, error], the derivative specimen walked
+! [product, sum]. This tower must NOT manufacture one.
+!
+! The state is implicitly coupled, and the coupling is derived from
+! the same J_Q, never authored:
+!
+!      C_Q = J_Q^T o J_Q  <=  Q x Q
+!          = { (u,u), (u,v), (v,u), (v,v) }
+!
+! two state slots sharing both residual rows, so each depends on
+! the other and on itself. Interpreted as a directed graph this is
+! a perfectly VALID structure - the view builds, the domain is Q,
+! reachability answers in both directions - and it is emphatically
+! not a DAG:
+!
+!      a valid directed graph  /=  a DAG
+!
+! A topological order therefore does not exist, and the nucleus
+! says so by REFUSING rather than inventing one; that refusal is
+! this rung's central truth and it is checked, by message, in
+! check_refusals.sh. What solves an implicit system is minimization
+! (Level 7), never a walk. No acyclic fiction was invented here to
+! make graph calculus produce an order it has no right to produce.
+!
+! Author: Komahan Boopathy (komahan@gatech.edu)
+!=====================================================================!
+
+program adjoint_level_4
+
+  use adjoint_assert, only : report, verdict
+  use adjoint_assert, only : VAR_P, VAR_U, VAR_V
+  use adjoint_assert, only : TGT_R1, TGT_R2, TGT_F
+  use graph_carrier , only : counted_set, subset_set, member_set
+  use graph_relation, only : stored_relation, relation
+  use graph_relation_algebra, only : compose_binary
+  use graph_binary_relation , only : csr_relation, transposed_view, &
+       &                             transpose_of, inclusion_of
+  use graph_structure, only : relational_graph, held_set, held_relation
+  use graph_profile  , only : directed_adjacency_view
+  use graph_algorithms, only : reachable, sources, sinks
+
+  implicit none
+
+  type(counted_set)              :: v, t
+  type(subset_set)               :: p_dom, q_dom, y_dom, z_dom
+  type(stored_relation)          :: dep
+  type(csr_relation), target     :: inc_y, inc_q, jq
+  type(transposed_view)          :: inc_q_t, jq_t
+  type(csr_relation)             :: coupling
+  type(relational_graph), target :: g
+  type(directed_adjacency_view)  :: view
+  integer                        :: table(2, 9)
+  integer                        :: nfail
+
+  nfail = 0
+
+  write(*,'(1x,a)') "============================================="
+  write(*,'(1x,a)') "adjoint tower . level 4 . implicit coupling"
+  write(*,'(1x,a)') "============================================="
+
+  v = counted_set('variables', 3)
+  t = counted_set('targets'  , 3)
+
+  p_dom = subset_set('parameter', v, [VAR_P])
+  q_dom = subset_set('state'    , v, [VAR_U, VAR_V])
+  y_dom = subset_set('residual' , t, [TGT_R1, TGT_R2])
+  z_dom = subset_set('response' , t, [TGT_F])
+
+  table(:, 1) = [TGT_R1, VAR_P]
+  table(:, 2) = [TGT_R1, VAR_U]
+  table(:, 3) = [TGT_R1, VAR_V]
+  table(:, 4) = [TGT_R2, VAR_P]
+  table(:, 5) = [TGT_R2, VAR_U]
+  table(:, 6) = [TGT_R2, VAR_V]
+  table(:, 7) = [TGT_F , VAR_P]
+  table(:, 8) = [TGT_F , VAR_U]
+  table(:, 9) = [TGT_F , VAR_V]
+  dep = stored_relation('dependency', [t, v], table)
+
+  inc_y   = inclusion_of(y_dom)
+  inc_q   = inclusion_of(q_dom)
+  inc_q_t = transpose_of(inc_q)
+  jq      = compose_binary(compose_binary(inc_y, dep), inc_q_t)
+
+  ! The coupling, derived from the SAME J_Q - state to residual row
+  ! and back again. No second structure is authored for it.
+  jq_t     = transpose_of(jq)
+  coupling = compose_binary(jq_t, jq)
+
+  g = relational_graph('state coupling', [held_set(q_dom)], &
+       & [held_relation(coupling)])
+  view = directed_adjacency_view(g, coupling)
+
+  call check_coupling_extension(nfail)
+  call check_view_is_valid(nfail)
+  call check_the_cycle(nfail)
+  call check_no_source_or_sink(nfail)
+
+  ! topological_order is NOT called here: it would - correctly - stop
+  ! the program. Its refusal is the rung's truth, and it is proved
+  ! in refusal.f90 where dying loudly is the expected outcome.
+
+  call verdict(nfail, "level 4")
+
+contains
+
+  !===================================================================!
+  ! The coupling, derived and exact: both state slots share both
+  ! residual rows, so all four pairs stand - including the two
+  ! self-couplings.
+  !===================================================================!
+
+  subroutine check_coupling_extension(nfail)
+
+    integer, intent(inout) :: nfail
+
+    class(member_set), allocatable :: dom
+
+    dom = coupling % domain(1)
+    call report(dom % same_as(q_dom), &
+         & "the coupling runs from the state slots", nfail)
+    dom = coupling % domain(2)
+    call report(dom % same_as(q_dom), &
+         & "back into the state slots", nfail)
+
+    call report(coupling % num_tuples() .eq. 4 .and. &
+         &      coupling % has([VAR_U, VAR_U]) .and. &
+         &      coupling % has([VAR_U, VAR_V]) .and. &
+         &      coupling % has([VAR_V, VAR_U]) .and. &
+         &      coupling % has([VAR_V, VAR_V]), &
+         & "C_Q = { (u,u), (u,v), (v,u), (v,v) } - derived from " // &
+         & "J_Q alone", nfail)
+
+  end subroutine check_coupling_extension
+
+  !===================================================================!
+  ! The interpretation is perfectly legitimate: a view builds over
+  ! the graph-owned coupling and walks the state domain.
+  !===================================================================!
+
+  subroutine check_view_is_valid(nfail)
+
+    integer, intent(inout) :: nfail
+
+    class(member_set), allocatable :: dom
+
+    dom = view % domain()
+    call report(dom % same_as(q_dom) .and. dom % size() .eq. 2, &
+         & "the view is valid and walks the state slots", nfail)
+
+  end subroutine check_view_is_valid
+
+  !===================================================================!
+  ! And it holds a genuine cycle: each slot reaches the other, and
+  ! each reaches itself - not by the zero-length convention alone
+  ! but by a real self-coupling edge.
+  !===================================================================!
+
+  subroutine check_the_cycle(nfail)
+
+    integer, intent(inout) :: nfail
+
+    call report(reachable(view, VAR_U, VAR_V) .and. &
+         &      reachable(view, VAR_V, VAR_U), &
+         & "u reaches v AND v reaches u: the coupling is a cycle", &
+         & nfail)
+    call report(coupling % has([VAR_U, VAR_U]) .and. &
+         &      coupling % has([VAR_V, VAR_V]), &
+         & "and each slot couples to itself by a stored fact, not " // &
+         & "by convention", nfail)
+
+  end subroutine check_the_cycle
+
+  !===================================================================!
+  ! The structural signature of an implicit system: nothing to start
+  ! from and nothing to finish at. There is no first equation to
+  ! solve, which is exactly why a walk cannot solve it.
+  !===================================================================!
+
+  subroutine check_no_source_or_sink(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(subset_set) :: src, snk
+
+    src = sources(view)
+    snk = sinks(view)
+
+    call report(src % size() .eq. 0 .and. snk % size() .eq. 0, &
+         & "no sources and no sinks: the implicit system has no " // &
+         & "first equation and no last", nfail)
+
+  end subroutine check_no_source_or_sink
+
+end program adjoint_level_4

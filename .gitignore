@@ -21,3 +21,6 @@ test/*/tag_refusal
 test/calculator-tower/*/run
 test/calculator-tower/*/refusal
 test/calculator-tower/*/run.out
+test/learning-tower/*/run
+test/learning-tower/*/refusal
+test/learning-tower/*/run.out

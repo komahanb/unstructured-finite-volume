@@ -215,7 +215,7 @@ easiest way to get this tower wrong.
 | 6 | operator supports and orientation | `transpose_of` | `graph_binary_relation` | `level-6-discretization/` | \(J_Q^{T}\) swaps domain **identities** | NONE |
 | 7 | primal and adjoint **solves** | `gmres` / minimizer | `class_graph_gmres` | `level-7-minimization/` | one solver family, both orientations | NONE |
 | 8 | one constitution, both actions | test-local law + Gate-A supports | — | `level-8-constitution/` | \(q,\lambda,q_p\) and both sensitivities from one law | NONE |
-| 9 | one question: \(df/dp\) | composition | — | `level-9-statement/` | *Gate C — unbuilt* | — |
+| 9 | one question: \(df/dp\) | composition over a model graph | `graph_structure` + reused L8 law | `level-9-statement/` | the adjoint road alone answers \(7\) | NONE |
 
 ---
 
@@ -585,14 +585,160 @@ positional coefficient lookup (reading \(A\) as a literal 2×2 array
 indexed by position) passes the canonical run and breaks seven truths in
 the permuted one.
 
-# GATE C — The statement *(unbuilt)*
+# GATE C — The statement
 
-Will ask one question — at \(p=2\), solve and report \(df/dp\) — and
-answer it with the single real scalar \(7\). Level 9.
+Gate C asks one question:
+
+> At \(p=2\), solve \(R(q,p)=0\) and compute \(df/dp\) **by the
+> adjoint method**.
+
+It **selects** — it invents nothing and adds no coefficient. Level 9
+imports the Level-8 constitution and composes it; no law is rewritten,
+and there is no production `adjoint_statement`, `sensitivity_problem`
+or any other noun invented for the occasion.
+
+## The final execution road
+
+```text
+parameter field p = 2 on P
+        ↓
+model-owned J_Q, J_P, F_Q, F_P        (selectors already destroyed)
+        ↓
+Level-8 constitution — the one coefficient table
+        ↓
+constituted primal   Q → Y
+        ↓ gmres.apply(host, [rhs on Y])
+q on Q = [2, 4]
+        ↓
+response f on Z = 14
+        ↓
+F_Q read in REVERSE with z̄ = 1
+        ↓
+f_q^T on Q = [1, 2]                   generated, never written
+        ↓
+constituted adjoint  Y → Q            ← orientation exchanged
+        ↓ THE SAME gmres type
+λ on Y = [-0.4, 0.6]
+        ↓
+J_P action on dp=1 → R_p = [-4,-11] ;  F_P action on dp=1 → f_p = 2
+        ↓
+f_p − λᵀR_p  =  2 − (−5)
+        ↓
+       7
+```
+
+Beside it, run afterwards and never consulted above:
+
+```text
+INDEPENDENT TANGENT CERTIFICATION
+constituted tangent  Q → Y  (R_q q_p = −R_p)
+        ↓ same gmres type
+q_p on Q = [1, 2]
+        ↓
+f_q q_p + f_p = 7        ← agrees with an answer it never touched
+```
+
+Every derivative input on the primary road is **generated**: the
+literals \([1,2]\), \([-4,-11]\) and \(2\) appear in assertions as
+oracles only. The test even proves that the right-hand side the adjoint
+solver consumes *is* the generated \(f_q^{T}\), rather than a
+coincidentally equal literal.
+
+## Two graph roles at statement radius
+
+Two graphs stand in this statement and they are **not**
+interchangeable. Blurring them is the mistake this section exists to
+prevent.
+
+| | **MODEL GRAPH** | **SOLVER HOST** |
+|---|---|---|
+| type | `relational_graph` | `stored_graph` (legacy) |
+| content | \(V,T,P,Q,Y,Z\) and \(R_{\mathrm{dep}},J_Q,J_P,F_Q,F_P\) | seven vertices in a chain, unrelated to anything |
+| role | mathematical **ownership environment** | `graph_operation` **compatibility argument** |
+| supplies the supports? | **yes** — every action reads model-owned relations | no |
+| queried for coefficients? | no | no |
+| queried for topology? | no | no |
+| mathematically load-bearing? | **yes**, structurally | **no** |
+| provably distinct from \(Q,Y\)? | it *owns* them | yes — and not even their size |
+
+So the tower's evidence is **two compatible statements**, not one
+verdict:
+
+```text
+the MODEL graph is necessary as an ownership environment
+the SOLVER HOST is unnecessary as a numerical operand
+```
+
+Neither "the graph is unnecessary" nor "the graph is necessary" is a
+true sentence about this tower without saying *which graph*.
+
+## Ownership proved by lifetime
+
+The statement builds the four blocks exactly as Gate A does, admits
+them to the model, then locates the model's own citizens **by
+identity** and destroys every construction selector:
+
+```text
+build dep, J_Q, J_P, F_Q, F_P  (allocatable)
+    ↓ admitted to the model graph
+locate model-owned copies via relation_at + same_as
+    ↓
+deallocate(dep, jq, jp, fq, fp)  and the four inclusions
+    ↓
+every number below comes from model-owned structure
+```
+
+The test then pins that the selectors are gone, that the model still
+owns six carriers and five relations, and that each located relation
+still carries the signature the statement needs — \(J_Q\) on
+\(Y\times Q\), \(F_Q\) on \(Z\times Q\), and so on. This is a
+**lifetime** truth, not a repeat of Gate A's extension tests.
+
+## The hostile enumeration is inherited
+
+Level 9 deliberately runs on the configuration Level 8 proved hardest:
+
+```text
+Q = {v, u}        Y = {r2, r1}
+```
+
+Both two-member roles run backwards. Every answer is still read **by
+member**, so the sealed tower inherits the hard case rather than
+retreating to the convenient alignment. A positional implementation
+that survived the canonical enumeration would fail here.
+
+## The result marker
+
+```text
+ADJOINT_RESULT =  6.9999999999999991E+00
+```
+
+One marker, one finite real token, at full precision and **unrounded** —
+that is the honest image of the arithmetic. Whether it *is* the
+mathematical \(7\) is the Level-9 test's business
+(\(|s-7|<10^{-9}\)), never the checker's: a checker demanding the
+integer 7 would be demanding a rounded answer. `check_marker.sh`
+validates shape and syntax only, and self-tests before the ladder runs.
 
 ---
 
 # What this tower proves / does not prove
+
+## Proven by Gate C
+
+```text
+one statement selects the model, solves the primal, generates f_q^T by
+    reverse action, solves the adjoint and assembles df/dp = 7
+the model graph OWNS the structure: construction selectors are
+    destroyed and every number still arrives
+model graph and solver host are two different software roles, and the
+    tower needs the first while ignoring the second
+the primary answer is adjoint-only; the tangent road certifies it
+    afterwards without ever contributing to it
+the sealed configuration is the HOSTILE enumeration, not the easy one
+the result is one unrounded real scalar
+all of it with zero production changes
+```
 
 ## Proven by Gate B
 
@@ -659,9 +805,13 @@ test/adjoint-tower/
 ├── level-6-discretization/       test.f90
 ├── level-7-minimization/         opaque_equation_fixture.f90 · test.f90
 │                                 · refusal.f90 · check_refusals.sh
-└── level-8-constitution/         adjoint_constitution_fixture.f90
-                                  · test.f90
+├── level-8-constitution/         adjoint_constitution_fixture.f90
+│                                 · test.f90
+└── level-9-statement/            test.f90   (reuses the L8 fixture)
 ```
+
+`check_marker.sh` holds the result contract and self-tests before the
+ladder runs.
 
 `common/adjoint_assert.f90` is dependency-free and carries only the
 symbolic member names (`VAR_P`, `VAR_U`, `VAR_V`, `TGT_R1`, `TGT_R2`,
@@ -673,7 +823,11 @@ neither `calculator_assert`, `learning_assert`, nor
 
 - **`run.sh`** — the frontier law, grouped by architectural gate: a
   failed level blocks dependent work; the first absent level closes the
-  frontier. Gates B and C report `UNBUILT` until they exist.
+  frontier. A gate reports `PASS` when every level it holds does.
+- **`check_marker.sh`** — the result contract: exactly one
+  `ADJOINT_RESULT` marker carrying one finite **real** token. It
+  self-tests before the ladder runs, and validates shape and syntax
+  only — never the value.
 - **`check_imports.sh`** — fail-closed allowlists per level. Gate
   grouping does not weaken level-by-level dependency checking:
   Gate A may not import minimization or a solver, and levels 0–4 may not
@@ -712,8 +866,16 @@ adjoint sensitivity tower
 ├── Gate B · solve + constitution
 │   ├── 7 minimization ........... PASS
 │   └── 8 constitution ........... PASS
-└── Gate C · statement ............ UNBUILT
+└── Gate C · statement
+    └── 9 statement ............... PASS
+
+total sensitivity df/dp ........... 6.9999999999999991E+00
 ```
+
+**The tower is complete and sealed.** Its primary result is
+\(df/dp=7\), reached by the adjoint road alone and certified
+afterwards by an independent tangent road — with **zero production
+changes** across all three gates.
 
 The final claim this tower is being built to support is **not** "the
 framework has an adjoint class". It is:

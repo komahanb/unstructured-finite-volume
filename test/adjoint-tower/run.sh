@@ -7,14 +7,19 @@
 # reviewed. A gate reports PASS when every level it contains does,
 # and UNBUILT while its levels are absent.
 #
-# There is no result marker until Gate C exists: this tower's
-# answer is the total sensitivity df/dp, and nothing below the
-# statement has computed one.
+# After a full ladder the sensitivity is read - fail closed - from
+# the ninth rung's own output: exactly one marker carrying one
+# finite real token. The contract lives in check_marker.sh, which
+# self-tests before the ladder runs; the runner validates shape and
+# syntax only and never learns what the number should be.
 set -e
 
 here="$(cd "$(dirname "$0")" && pwd)"
 
 "$here/check_imports.sh" || { echo "└── the import gate refused the tower"; exit 1; }
+
+. "$here/check_marker.sh"
+"$here/check_marker.sh" --selftest || { echo "└── the result contract refused itself"; exit 1; }
 
 ( cd "$here/../.." && ./build.sh >/dev/null 2>&1 )
 
@@ -106,4 +111,18 @@ if [ "$failed" -ne 0 ]; then
 fi
 echo "├── Gate A · structure ............... ${gate_state[A]}"
 echo "├── Gate B · solve + constitution .... ${gate_state[B]}"
-echo "└── Gate C · statement ............... ${gate_state[C]}"
+echo "├── Gate C · statement ............... ${gate_state[C]}"
+
+if [ "${gate_state[C]}" != "PASS" ]; then
+    echo "└── total sensitivity .............. (unbuilt)"
+    exit 0
+fi
+
+out="$here/level-9-statement/run.out"
+marks=$(grep -c 'ADJOINT_RESULT =' "$out")
+values=$(grep -o 'ADJOINT_RESULT =.*' "$out" | sed 's/.*ADJOINT_RESULT =//')
+if ! marker_ok "$marks" 1 "$values"; then
+    echo "└── RUNNER FAILURE: the statement did not report one sensitivity"
+    exit 1
+fi
+echo "└── total sensitivity df/dp ......... $(echo $values)"

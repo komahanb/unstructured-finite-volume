@@ -755,3 +755,198 @@ confidence:           medium
 action:               observe; revisit if a third client or a
                       high-radius tower repeats the shape
 ```
+
+---
+
+## OBSERVATION AD-13
+
+```text
+tower:                Adjoint Sensitivity
+gate / level:         C / 9
+contextual radius:    1 (the complete statement)
+
+symptom / fact:       "GRAPH" CARRIES TWO DIFFERENT SOFTWARE ROLES,
+                      and this statement holds both at once.
+
+                      MODEL (relational_graph): owns V,T,P,Q,Y,Z and
+                      R_dep, J_Q, J_P, F_Q, F_P. The statement
+                      locates its citizens by identity, DESTROYS
+                      every construction selector, and every number
+                      afterwards arrives through model-owned
+                      relations. Load-bearing.
+
+                      HOST (stored_graph): seven vertices in a chain,
+                      provably neither Q nor Y nor their size, not
+                      owned by the model, never queried for topology
+                      or coefficients. It exists because
+                      graph_operation demands a class(graph).
+                      Compatibility scenery.
+
+                      Therefore both of these are true at once:
+
+                        the MODEL graph is necessary as an
+                            ownership environment
+                        the SOLVER HOST is unnecessary as a
+                            numerical operand
+
+exact caller:         level-9-statement/test.f90
+                      (check_model_ownership,
+                      check_host_is_not_the_model)
+
+mathematical concept: ownership environment vs operand
+
+local necessity:      model: YES at statement radius - the selectors
+                      are gone and the mathematics continues
+                      host: NO - nothing reads it
+global necessity:     unknown for both
+
+cross-tower recurrence: FOURTH tower to meet the operand question and
+                      the SECOND to answer it in both directions at a
+                      statement:
+                        learning L9      ownership load-bearing
+                        derivative DA-9A operand no / owner yes
+                        adjoint AD-9     host = compatibility (B)
+                        adjoint AD-13    model = owner (C)
+                      Two independent derivative-family clients now
+                      report the same split at the same radius. On
+                      the fractal document's scale this is
+                      approaching STRONG architectural evidence
+
+graph role:           both roles, simultaneously, in one program -
+                      which is precisely why "is the graph
+                      necessary?" has no answer until the question
+                      names WHICH graph
+
+comparison:           earlier towers could conflate the two because
+                      their model structure and their solver host
+                      never coexisted in one statement. Here they do,
+                      and they are different types holding different
+                      things
+
+suspected nucleus implication: the operation-host contract is the
+                      repository's oldest live seam and is now a
+                      REVERSE-MODE REFACTOR CANDIDATE - to be
+                      considered AFTER this tower is sealed, with the
+                      field_operation sketch re-examined in the light
+                      of four towers rather than one. NOT during
+                      Gate C, and not as a mutation justified by a
+                      2x2 specimen.
+
+confidence:           high (the fact); medium (the readiness)
+action:               reverse-mode refactor candidate, after the tower
+```
+
+---
+
+## OBSERVATION AD-14
+
+```text
+tower:                Adjoint Sensitivity
+gate / level:         C / 9 (whole-tower)
+contextual radius:    1
+
+symptom / fact:       the complete adjoint road required NO
+                      adjoint-specific production ontology:
+
+                        no adjoint field type      no adjoint solver
+                        no adjoint graph           no adjoint Jacobian
+                        no adjoint statement class no sensitivity type
+
+                      lambda is an ordinary field distinguished by
+                      living on Y; the adjoint equation is an
+                      ordinary operation with its unknown and
+                      residual domains exchanged; the adjoint solve
+                      is the ordinary minimizer; the adjoint support
+                      is a transpose view.
+
+exact caller:         the whole of level-9-statement/test.f90; the
+                      absence of any new src/ file across three gates
+
+mathematical concept: "adjoint" as a USE of general structure
+
+local necessity:      not applicable - a negative result
+global necessity:     not applicable
+
+cross-tower recurrence: the fourth consecutive tower to close with
+                      zero production changes (calculator, learning,
+                      derivative action, adjoint)
+
+graph role:           see AD-13
+
+comparison:           the adjective names a mathematical use of
+                      ordinary domains, fields, actions, minimization
+                      and transpose interpretation - not a family of
+                      software nouns. Naming a thing is not the same
+                      as needing it
+
+suspected nucleus implication: none. Recorded as the tower's headline
+                      architectural result.
+
+confidence:           high
+action:               observe
+```
+
+---
+
+## OBSERVATION AD-15
+
+```text
+tower:                Adjoint Sensitivity
+gate / level:         C / 9
+contextual radius:    1
+
+symptom / fact:       the one-law-two-directions protocol has now
+                      been used at three increasing radii:
+
+                        derivative action   evaluation only
+                        adjoint Gate B      inside a SOLVE
+                        adjoint Gate C      composed into a complete
+                                            statement, with f_q^T
+                                            itself generated by the
+                                            reverse reading
+
+                      In every case the duplicated MATERIAL was only
+                      application law. What recurred was the protocol
+                      shape: an input domain, an output domain, a
+                      forward action, a reverse action reading the
+                      same law, and the transpose orientation between
+                      them.
+
+exact caller:         adjoint_constitution_fixture.f90 used by both
+                      level-8 and level-9; derivative action's
+                      fixture for the earlier data point
+
+mathematical concept: a general linearization contract between
+                      DIFFERENT domains
+
+local necessity:      test-local adapters sufficed every time
+global necessity:     unknown
+
+cross-tower recurrence: TWO independent towers, THREE radii. By the
+                      ledger's own threshold ("two unrelated towers:
+                      recurring seam; three or more independent
+                      towers: strong architectural evidence") this is
+                      a recurring seam that has now been stressed at
+                      a larger radius rather than a third independent
+                      client. It does NOT yet clear the bar
+
+graph role:           the existing production
+                      difference_linearization cannot serve because
+                      it builds on input_graph % vertex_set()
+                      (AD-12) - a graph-as-domain assumption
+
+comparison:           the seam has strengthened without a third
+                      client appearing; that is exactly the situation
+                      the discipline says to record rather than act on
+
+suspected nucleus implication: a general linearization/action
+                      contract carrying its own input and output
+                      domains remains THE candidate. Marked a
+                      reverse-mode refactor candidate for AFTER the
+                      tower. Explicitly not added during Gate C:
+                      apply_transpose, adjoint_operation,
+                      bidirectional_operator.
+
+confidence:           medium
+action:               reverse-mode refactor candidate, after the tower
+```

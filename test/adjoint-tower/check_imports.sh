@@ -42,6 +42,15 @@ allowed_for() {
         # supports, the field, and the solver - plus its own fixture.
         # It may NOT reach back into Level 7's supplied equations.
         level-8-constitution)     echo "adjoint_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_grammar class_graph_field class_graph class_graph_gmres adjoint_constitution_fixture" ;;
+        # level 9: the statement - the composition rung. It may see
+        # the relation stack that carries the supports, the model
+        # graph that owns them, the field, the legacy host and the
+        # solver, plus the REUSED level-8 constitution. It may NOT
+        # import class_graph_linearization (the specialized
+        # same-domain path this tower cannot use), nor the graph
+        # algorithms: an implicit system does not become a DAG at
+        # the statement.
+        level-9-statement)        echo "adjoint_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_structure graph_grammar class_graph class_graph_field class_graph_gmres adjoint_constitution_fixture" ;;
         *)                        echo "__no_allowlist__" ;;
     esac
 }

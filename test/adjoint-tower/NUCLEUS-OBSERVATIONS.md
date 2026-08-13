@@ -401,3 +401,357 @@ suspected nucleus implication: none yet. Gate B will test whether
 confidence:           high
 action:               observe; press at Gate B
 ```
+
+---
+
+## OBSERVATION AD-7
+
+```text
+tower:                Adjoint Sensitivity
+gate / level:         B / 7
+contextual radius:    1 (an equation inside a solver)
+
+symptom / fact:       ONE minimizer family governed both orientations.
+                      The same gmres TYPE was attached twice:
+
+                        unknown Q, residual Y  ->  q      = [2,4]
+                        unknown Y, residual Q  ->  lambda = [-0.4,0.6]
+
+                      No adjoint_solver, transpose_gmres or
+                      reverse_gmres was needed or written. The solver
+                      never learns the word adjoint: it knows an
+                      unknown domain, a residual domain, and an
+                      operation that answers on the latter.
+
+exact caller:         level-7-minimization/test.f90
+                      (check_primal_solve, check_adjoint_solve,
+                      check_one_solver_family)
+
+mathematical concept: the transposed problem is a different EQUATION,
+                      not a different kind of solving
+
+local necessity:      not applicable - this is a NEGATIVE result about
+                      what was NOT needed
+global necessity:     unknown; a symmetric/SPD family or a Krylov
+                      method requiring the transpose action internally
+                      might yet distinguish them
+
+cross-tower recurrence: learning L7 and derivative-action never posed
+                      a transposed equation at all; this is the first
+                      evidence in any tower that unknown/residual
+                      orientation can be exchanged with no solver
+                      change
+
+graph role:           see AD-9
+
+comparison:           the minimizer's explicit unknown_domain and
+                      residual_domain - earned during the learning
+                      tower's Phase 5B - is exactly what makes this
+                      possible. A solver that inferred its domains
+                      from the host could not have done it
+
+suspected nucleus implication: NONE. The hypothesis "an adjoint solver
+                      is a new solver family" is contradicted for this
+                      radius; record and move on.
+
+confidence:           high
+action:               observe
+```
+
+---
+
+## OBSERVATION AD-8
+
+```text
+tower:                Adjoint Sensitivity
+gate / level:         B / 7
+contextual radius:    1
+
+symptom / fact:       Gate A's theorem became numerical and PRODUCTION
+                      enforced it. A right-hand side on the wrong
+                      domain has exactly the right SIZE when
+                      |Q| = |Y| = 2, and graph_minimization refuses it
+                      by identity:
+
+                        'a right-hand side lives on the residual domain'
+
+                      Two such refusals (primal rhs on Q, adjoint rhs
+                      on Y) are pinned by message, plus two more from
+                      the test-local equations refusing states on the
+                      wrong unknown domain.
+
+exact caller:         level-7-minimization/refusal.f90 and
+                      check_refusals.sh; the production check lives in
+                      src/graph_minimization.f90 (solver_apply)
+
+mathematical concept: dimension agreement vs domain identity
+
+local necessity:      yes, and sharply: nothing but same_as can reject
+                      these fields
+global necessity:     unknown, but the risk grows with radius - every
+                      square system offers this trap
+
+cross-tower recurrence: the minimizer's domain check existed before
+                      this tower and was never exercised adversarially;
+                      this is its first hostile test
+
+graph role:           not applicable
+
+comparison:           had the check compared sizes, all four wrong
+                      fields would have been accepted and the tower
+                      would have returned plausible wrong numbers
+
+suspected nucleus implication: none needed - production already holds.
+                      Recorded as evidence that the identity-based
+                      contract is load-bearing, not decorative.
+
+confidence:           high
+action:               observe
+```
+
+---
+
+## OBSERVATION AD-9
+
+```text
+tower:                Adjoint Sensitivity
+gate / level:         B / 7-8
+contextual radius:    1
+
+symptom / fact:       the legacy graph host is COMPATIBILITY at this
+                      radius. The graph_operation face requires a
+                      class(graph); a five-vertex stored_graph was
+                      supplied whose vertex set is neither Q nor Y and
+                      not even their size. It is never queried for
+                      topology, never influences q or lambda, and
+                      every operation ignores it via
+                      `associate (u1 => input_graph); end associate`.
+                      GMRES itself needs only matvec, inner_product
+                      and norm.
+
+exact caller:         level-7-minimization/test.f90
+                      (check_host_is_nobodys_domain); every apply() in
+                      both fixtures
+
+mathematical concept: graph as operand vs context vs compatibility
+
+local necessity:      NO as an operand - the mathematics never reads it
+global necessity:     unknown - deliberately. Partitioned, coupled or
+                      distributed adjoints may need context; nothing
+                      here recommends removing anything
+
+graph role classification (the evidence, not a verdict):
+                        operand?               no
+                        context?               not used as one here
+                        ownership environment? not at this radius
+                        compatibility host?    YES - this is what it is
+
+cross-tower recurrence: THIRD tower to report it - learning L7/L9,
+                      derivative-action (DA-8F), and now here. The
+                      strongest recurring seam in the derivative
+                      family. New this time: the host is provably
+                      distinct from BOTH the unknown and residual
+                      domains, which sharpens the earlier reports
+
+comparison:           derivative action found the graph locally
+                      unnecessary as an operand but load-bearing as an
+                      ownership environment at its statement (DA-9A);
+                      Gate C of this tower is where the same question
+                      must be asked again
+
+suspected nucleus implication: the operation-host contract remains the
+                      repository's oldest live seam. Three towers now
+                      agree it is not an operand at radius 0-1. Still
+                      NOT a refactor: the Case-III caution applies, and
+                      the field_operation proposal drafted earlier
+                      should be re-examined only with a higher-radius
+                      client in hand.
+
+confidence:           high (the fact); none offered (the design)
+action:               test at larger radius
+```
+
+---
+
+## OBSERVATION AD-10
+
+```text
+tower:                Adjoint Sensitivity
+gate / level:         B / 8
+contextual radius:    1
+
+symptom / fact:       ONE coefficient table generated everything. Each
+                      entry of A, b, c, d is written once, keyed by the
+                      MEMBERS it relates, and the following all read
+                      it: the primal residual, the response, the
+                      forward state action, the reverse state action,
+                      the parameter action, and both readings of the
+                      response block.
+
+                      There is no A^T in the file. The reverse action
+                      walks the same J_Q with the same coeff_state,
+                      accumulating with += into the state slots; and
+                      f_q^T is obtained as the response block's reverse
+                      action with a unit seed, never written down.
+
+exact caller:         level-8-constitution/adjoint_constitution_fixture.f90
+                      (coeff_state, rq_forward, rq_reverse, fq_reverse)
+
+mathematical concept: one linearization, read in two directions
+
+local necessity:      yes - a second transposed table could drift from
+                      the first, and with a non-symmetric A the drift
+                      would be silent
+global necessity:     unknown
+
+cross-tower recurrence: SECOND derivative-family client to establish
+                      it (derivative action's DA-8B was the first).
+                      New here: the reverse reading now feeds a SOLVE
+                      rather than a single evaluation, which is the
+                      stronger demand
+
+graph role:           none - the actions take relations, domains and
+                      arrays
+
+comparison:           derivative action applied one local linearization
+                      per operation along an execution order; this
+                      tower applies one coefficient table across a
+                      structural support with no order at all. Same
+                      law, different traversal
+
+suspected nucleus implication: see AD-12 - two clients now share a
+                      PROTOCOL shape, which is worth watching but not
+                      yet worth promoting
+
+confidence:           high
+action:               observe
+```
+
+---
+
+## OBSERVATION AD-11
+
+```text
+tower:                Adjoint Sensitivity
+gate / level:         B / 8
+contextual radius:    1
+
+symptom / fact:       every numerical action is driven by the Gate-A
+                      STRUCTURAL SUPPORTS, and every vector is indexed
+                      through its domain's own local_index. Nothing
+                      loops over "two rows and two columns".
+
+                      The whole Level-8 battery therefore runs twice:
+                      canonically, and with BOTH two-member roles
+                      independently reversed (Q' = [v,u],
+                      Y' = [r2,r1]). Every answer is checked by member
+                      and none moves.
+
+                      This was verified adversarially: replacing the
+                      member-keyed lookup with a positional one
+                      (reading A as a literal 2x2 array indexed by
+                      position in Y and Q) passes the canonical run
+                      and breaks SEVEN truths in the permuted one.
+
+exact caller:         level-8-constitution/test.f90 (run_battery,
+                      called twice with asserted storage positions)
+
+mathematical concept: structure decides participation; enumeration
+                      decides only storage
+
+local necessity:      yes
+global necessity:     unknown, but any client whose roles are built by
+                      partitioning, sorting or renumbering will meet
+                      exactly this
+
+cross-tower recurrence: the strongest form yet of the roles-are-domains
+                      discipline: not merely "role is a domain" but
+                      "no answer may depend on how a role is
+                      enumerated"
+
+graph role:           the supports are relations; the graph owns them
+                      at Gate A
+
+comparison:           earlier towers pinned declaration order (K={y,x},
+                      X={y,x}) to defeat raw-index assumptions in ONE
+                      domain. This tower permutes TWO domains
+                      independently, which is what catches a
+                      cross-domain positional assumption
+
+suspected nucleus implication: none - the nucleus already keyed
+                      everything by member. The lesson is for CLIENTS.
+
+confidence:           high
+action:               observe
+```
+
+---
+
+## OBSERVATION AD-12
+
+```text
+tower:                Adjoint Sensitivity
+gate / level:         B / 8
+contextual radius:    1
+
+symptom / fact:       TWO questions, kept apart deliberately.
+
+                      (a) The existing production
+                      difference_linearization builds its perturbed
+                      state and its Jv result on
+                      input_graph % vertex_set() - it is same-domain
+                      and graph-vertex specialized. It cannot express
+                      Rq : Q -> Y with Q not same_as Y. This tower did
+                      NOT contort Q and Y into vertices to reuse it,
+                      and did NOT pre-emptively generalize it.
+
+                      (b) Across the two derivative-family towers, the
+                      duplicated material is now visible. What is
+                      duplicated is APPLICATION LAW - coefficients,
+                      residual and response definitions - which is
+                      healthy. What RECURS is a protocol shape:
+
+                        an input domain
+                        an output domain
+                        a forward action
+                        a reverse action reading the same law
+                        the transpose orientation between the two
+
+exact caller:         src/class_graph_linearization.f90 (lines ~156-170)
+                      for (a); the two towers' fixtures for (b)
+
+mathematical concept: a general linearization contract between
+                      DIFFERENT domains
+
+local necessity:      the test-local adapters sufficed here
+global necessity:     unknown
+
+cross-tower recurrence: TWO independent clients have now written the
+                      same protocol shape by hand. Per the fractal
+                      document's scale that is a "recurring seam", not
+                      yet "strong architectural evidence" - three
+                      independent towers, or one high-radius failure,
+                      would raise it
+
+graph role:           difference_linearization's dependence on
+                      vertex_set is precisely a graph-as-domain
+                      assumption, and it is what makes it unusable
+                      here
+
+comparison:           the seam derivative action flagged (DA-8B) as
+                      "can the numerical reverse action be expressed as
+                      cleanly as the structural one" is answered YES -
+                      but by a test-local adapter both times
+
+suspected nucleus implication: a future general linearization/action
+                      contract carrying its own input and output
+                      domains is the candidate. It is NOT earned yet.
+                      Explicitly NOT added during Gate B:
+                      apply_transpose, adjoint_operation,
+                      bidirectional_operator - naming a thing is not
+                      the same as needing it.
+
+confidence:           medium
+action:               observe; revisit if a third client or a
+                      high-radius tower repeats the shape
+```

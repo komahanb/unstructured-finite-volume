@@ -213,8 +213,8 @@ easiest way to get this tower wrong.
 | 4 | the implicit system is **cyclic** | `directed_adjacency_view`, `topological_order` | `graph_profile`, `graph_algorithms` | `level-4-graph-calculus/` | a topological order **refuses** | NONE |
 | 5 | the first numbers | `field` | `class_graph_field` | `level-5-field-calculus/` | \(p=2\), \(q_0=[0,0]\); nothing fabricated | NONE |
 | 6 | operator supports and orientation | `transpose_of` | `graph_binary_relation` | `level-6-discretization/` | \(J_Q^{T}\) swaps domain **identities** | NONE |
-| 7 | primal and adjoint **solves** | `gmres` / minimizer | `class_graph_gmres` | `level-7-minimization/` | *Gate B — unbuilt* | — |
-| 8 | one constitution, both actions | test-local law | — | `level-8-constitution/` | *Gate B — unbuilt* | — |
+| 7 | primal and adjoint **solves** | `gmres` / minimizer | `class_graph_gmres` | `level-7-minimization/` | one solver family, both orientations | NONE |
+| 8 | one constitution, both actions | test-local law + Gate-A supports | — | `level-8-constitution/` | \(q,\lambda,q_p\) and both sensitivities from one law | NONE |
 | 9 | one question: \(df/dp\) | composition | — | `level-9-statement/` | *Gate C — unbuilt* | — |
 
 ---
@@ -471,11 +471,119 @@ Gate A finishes with **no** primal solution, **no** adjoint solution,
 
 ---
 
-# GATE B — Solve and constitution *(unbuilt)*
+# GATE B — Solve and constitution
 
-Will ask whether ordinary minimization can govern both \(R(q,p)=0\) and
-\(R_q^{T}\lambda=f_q^{T}\), and whether one constituted linearization
-generates the forward and reverse actions. Levels 7–8.
+Gate B asks:
+
+> Can the **same** ordinary minimization machinery govern \(R(q,p)=0\)
+> and \(R_q^{T}\lambda=f_q^{T}\) when \(Q\) and \(Y\) are different
+> member-set identities — and can **one** constitution generate the
+> primal, tangent and reverse numerical actions?
+
+## Level 7 — The solver is neutral
+
+Both equations are **supplied opaquely** here, as every earlier tower
+supplied a residual before constituting one. That duplication is
+deliberate and temporary: Level 7 tests solver mechanics, not
+one-source consistency.
+
+```text
+opaque primal equation      R(q,2) = [2u+v-8, 3u+4v-22]
+    domains                 Q -> Y
+    ↓ gmres.attach(eq, host, Q);  constant → R(0) = [-8,-22] on Y
+    ↓ rhs field on Y = [8,22]
+    ↓ gmres.apply(host, [rhs], sol)          ← the operation face
+    q on Q = [2, 4]
+
+opaque adjoint equation     A^T λ - c = [2λ₁+3λ₂-1, λ₁+4λ₂-2]
+    domains                 Y -> Q          ← orientation exchanged
+    ↓ THE SAME gmres type: attach(eq, host, Y);  constant → [-1,-2] on Q
+    ↓ rhs field on Q = [1,2]
+    ↓ gmres.apply(host, [rhs], sol)
+    λ on Y = [-0.4, 0.6]
+```
+
+The solver is never told which is which. It knows an unknown domain, a
+residual domain, and an operation that answers on the latter. There is
+no `adjoint_solver`, `transpose_gmres` or `reverse_gmres`.
+
+**The compatibility host.** The legacy `graph_operation` face still
+requires a `class(graph)`. It is supplied honestly as a five-vertex
+`stored_graph` whose vertex set is **neither \(Q\) nor \(Y\)** — and
+not even their size — so three identities stay distinct: *solver host*,
+*unknown domain*, *residual domain*. Neither role pretends to be a
+vertex set to satisfy the interface, and the host contributes nothing
+to either answer (Observation AD-9).
+
+**Same-size refusals — Gate A's theorem made numerical.** Because
+\(|Q|=|Y|=2\), a right-hand side on the wrong domain has exactly the
+right *size*; only identity can reject it:
+
+| Case | Offered | Refused by |
+|---|---|---|
+| `primal-rhs-on-Q` | rhs on \(Q\) to a \(Y\)-residual solver | **production** — `a right-hand side lives on the residual domain` |
+| `adjoint-rhs-on-Y` | rhs on \(Y\) to a \(Q\)-residual solver | **production** — same law |
+| `primal-state-on-Y` | state on \(Y\) to the primal equation | the equation itself |
+| `adjoint-covector-on-Q` | covector on \(Q\) to the adjoint equation | the equation itself |
+
+And the non-symmetric \(A\) convicts a reversed orientation: solving
+\(A\lambda=c\) instead would give \([0.4,0.2]\), which the test pins
+as *not* the answer.
+
+## Level 8 — One constitution, both directions
+
+Level 7's two independent equations are retired. One coefficient
+table — each entry written **once**, keyed by the members it relates —
+now generates everything:
+
+```text
+              A: (r1,u)=2 (r1,v)=1     dR/dp: (r1,p)=-4
+                 (r2,u)=3 (r2,v)=4            (r2,p)=-11
+              c: (f,u)=1  (f,v)=2      d:     (f,p)=2
+                            │
+        ┌───────────────────┼────────────────────┐
+        │                   │                    │
+   residual R(q,p)     Rq forward  Rq reverse   fq fwd / fq rev
+     Q,P -> Y            Q -> Y      Y -> Q       Q -> Z / Z -> Q
+   response f(q,p)     Rp forward                fp forward
+     Q,P -> Z            P -> Y                    P -> Z
+```
+
+There is **no \(A^{T}\) anywhere in the file**: the reverse action
+walks the same \(J_Q\) with the same `coeff_state`, accumulating into
+the state slots with `+=`. Likewise \(f_q^{T}\) is obtained as the
+response block's *reverse* action with a unit seed — never written down.
+
+Every action is driven by the **Gate-A structural supports**, not by a
+2×2 loop: it asks \(J_Q\), \(J_P\), \(F_Q\), \(F_P\) which
+incidences exist and asks the law what each is worth. Three operation
+faces then feed the ordinary solver:
+
+| Mathematics | Test-local type | Unknown | Residual | Solver call | Result |
+|---|---|---|---|---|---|
+| \(R(q,p)=0\) | `constituted_primal` | \(Q\) | \(Y\) | `gmres.apply` | \(q=[2,4]\) on \(Q\) |
+| \(R_q^{T}\lambda=f_q^{T}\) | `constituted_adjoint` | \(Y\) | \(Q\) | `gmres.apply` | \(\lambda=[-0.4,0.6]\) on \(Y\) |
+| \(R_qq_p=-R_p\) | `constituted_tangent` | \(Q\) | \(Y\) | `gmres.apply` | \(q_p=[1,2]\) on \(Q\) |
+
+and the two sensitivity roads meet without either calling the other:
+
+```text
+tangent   df/dp = fq q_p + fp       = 1(1) + 2(2) + 2   = 7
+adjoint   df/dp = fp - λ^T Rp       = 2 - (-5)          = 7
+```
+
+with \(f=14\) at the solved state, and duality
+\(\langle\mu,Av\rangle_Y=\langle A^{T}\mu,v\rangle_Q=-35\)
+computed through the constituted forward and reverse actions alone.
+
+**The permutation test.** The whole battery runs **twice** — once with
+\(Q=[u,v],\ Y=[r_1,r_2]\), once with both two-member roles
+*independently reversed* to \(Q'=[v,u],\ Y'=[r_2,r_1]\) — and every
+answer is checked **by member**. The stored vectors come back in
+different orders and the truths do not move. This is not decorative: a
+positional coefficient lookup (reading \(A\) as a literal 2×2 array
+indexed by position) passes the canonical run and breaks seven truths in
+the permuted one.
 
 # GATE C — The statement *(unbuilt)*
 
@@ -485,6 +593,24 @@ answer it with the single real scalar \(7\). Level 9.
 ---
 
 # What this tower proves / does not prove
+
+## Proven by Gate B
+
+```text
+ONE minimizer family governs both orientations - Q -> Y and Y -> Q -
+    and never learns the word adjoint
+a right-hand side of the RIGHT SIZE on the WRONG domain is refused by
+    production, by identity
+solver host, unknown domain and residual domain are three identities
+ONE coefficient table generates residual, response, forward action,
+    reverse action, parameter action and both response readings
+no A^T is written anywhere; f_q^T is a reverse action with a unit seed
+numerical actions are driven by the Gate-A structural supports
+tangent and adjoint sensitivities meet at 7 without calling each other
+duality holds at solver radius: -35 on both sides
+every result survives independently permuted role enumerations
+all of it with zero production changes
+```
 
 ## Proven by Gate A
 
@@ -530,7 +656,11 @@ test/adjoint-tower/
 ├── level-3-graph/                test.f90
 ├── level-4-graph-calculus/       test.f90 · refusal.f90 · check_refusals.sh
 ├── level-5-field-calculus/       test.f90
-└── level-6-discretization/       test.f90
+├── level-6-discretization/       test.f90
+├── level-7-minimization/         opaque_equation_fixture.f90 · test.f90
+│                                 · refusal.f90 · check_refusals.sh
+└── level-8-constitution/         adjoint_constitution_fixture.f90
+                                  · test.f90
 ```
 
 `common/adjoint_assert.f90` is dependency-free and carries only the
@@ -579,7 +709,9 @@ adjoint sensitivity tower
 │   ├── 4 graph calculus ......... PASS
 │   ├── 5 field calculus ......... PASS
 │   └── 6 discretization ......... PASS
-├── Gate B · solve + constitution . UNBUILT
+├── Gate B · solve + constitution
+│   ├── 7 minimization ........... PASS
+│   └── 8 constitution ........... PASS
 └── Gate C · statement ............ UNBUILT
 ```
 

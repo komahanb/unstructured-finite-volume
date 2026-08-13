@@ -32,6 +32,16 @@ allowed_for() {
         # level 6: support and orientation; still no field, because
         # where an operator stands is not what it multiplies.
         level-6-discretization)   echo "adjoint_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation" ;;
+        # level 7: the solver rung. gmres inherits attach/constant/
+        # apply from the minimizer base, so graph_minimization is not
+        # imported directly; the equations are SUPPLIED by the level's
+        # own fixture, and no Level-8 constitution may be reached.
+        level-7-minimization)     echo "adjoint_assert graph_carrier graph_grammar class_graph_field class_graph class_graph_gmres opaque_equation_fixture" ;;
+        # level 8: one constitution. It may see everything legitimately
+        # below it - the relation stack that carries the structural
+        # supports, the field, and the solver - plus its own fixture.
+        # It may NOT reach back into Level 7's supplied equations.
+        level-8-constitution)     echo "adjoint_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_grammar class_graph_field class_graph class_graph_gmres adjoint_constitution_fixture" ;;
         *)                        echo "__no_allowlist__" ;;
     esac
 }

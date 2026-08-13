@@ -40,6 +40,9 @@ allowed_for() {
         # level 8: constitution binds meaning to domains, relations
         # and fields - no solver, no graph host, no statement.
         level-8-constitution)    echo "calculator_assert graph_carrier graph_relation graph_relation_algebra class_graph_field arithmetic_constitution_fixture" ;;
+        # level 9: the composition rung - everything the statement
+        # SELECTS, and nothing it would have to invent.
+        level-9-statement)       echo "calculator_assert graph_carrier graph_relation graph_relation_algebra graph_structure graph_field_calculus class_graph_field graph_grammar class_graph graph_minimization class_graph_gmres arithmetic_constitution_fixture constituted_residual_fixture" ;;
         # level 5: a field needs a domain, never a graph container.
         level-5-field-calculus)  echo "calculator_assert graph_carrier graph_field_calculus class_graph_field" ;;
         *)                       echo "__no_allowlist__" ;;

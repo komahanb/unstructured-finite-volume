@@ -89,4 +89,9 @@ if [ "$failed" -ne 0 ]; then
     echo "└── the ladder stops at the first failure"
     exit 1
 fi
-echo "└── every certified rung holds its truths"
+if [ "$frontier_open" -eq 1 ] && [ -f "$here/level-9-statement/run.out" ]; then
+    result=$(grep -o 'CALCULATOR_RESULT = .*' "$here/level-9-statement/run.out" | awk '{print $3}')
+    echo "└── mathematical result ......... ${result}"
+else
+    echo "└── every certified rung holds its truths"
+fi

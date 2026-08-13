@@ -742,6 +742,27 @@ flowchart TB
     solve --> result["e = 20"]
 ```
 
+**As implemented**, the road is:
+
+```text
+statement
+  ├── chooses the calculator relational graph  (graph-owned R_flow)
+  ├── chooses known K = {d,a,b} values [4,2,3]
+  ├── chooses the Level-8 arithmetic constitution (reused fixture)
+  ├── chooses the Level-6 residual discretization L
+  └── requests e            (U declared {c,e}: e is NOT position 1)
+        ↓
+constituted residual operation (test-local adapter, pure delegation)
+        ↓
+ordinary GMRES, through its own operation face (rhs on Y → field on U)
+        ↓ U % local_index(e)
+       20
+```
+
+The physical Casio fx-115ES is manual independent confirmation, not
+a CI dependency. No production statement module exists; the literal
+20 appears only in the final assertion.
+
 ## Minimal verification
 
 The framework must return

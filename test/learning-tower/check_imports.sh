@@ -18,6 +18,10 @@ allowed_for() {
         # level 2: the algebra, and NOT the binary storage - D is
         # held as class(relation).
         level-2-relation-algebra) echo "learning_assert graph_carrier graph_relation graph_relation_algebra" ;;
+        # level 4: the profile's interpretation and the algorithms
+        # that walk it - the binary storage the view leans on stays
+        # forbidden to the learning client.
+        level-4-graph-calculus)  echo "learning_assert graph_carrier graph_relation graph_relation_algebra graph_structure graph_profile graph_algorithms" ;;
         # level 3: the container; graph_binary_relation is granted
         # for the view refusal ONLY - the production path never
         # touches it.

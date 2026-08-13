@@ -35,6 +35,13 @@ allowed_for() {
         # stay forbidden: dependency structure belongs to the model,
         # not to one data instance.
         level-6-discretization)  echo "learning_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_structure graph_profile graph_algorithms" ;;
+        # level 7: the fitting rung. The GMRES citizen inherits
+        # attach/constant/solve from the minimizer base, so
+        # graph_minimization is not directly imported and stays off
+        # the list; the relation/algebra/profile stack is not needed
+        # at all - the solver sees an opaque R : Theta -> Y. The
+        # named fixture is the level's own test-local oracle.
+        level-7-minimization)    echo "learning_assert graph_carrier graph_grammar class_graph_field class_graph class_graph_gmres learning_residual_fixture" ;;
         *)                       echo "__no_allowlist__" ;;
     esac
 }

@@ -62,8 +62,9 @@ level 3  relational graph ...... PASS
 level 4  graph calculus ........ PASS
 level 5  field calculus ........ PASS
 level 6  discretization ........ PASS
-level 7  minimization .......... ABSENT
-levels 8–9 ..................... BLOCKED
+level 7  minimization .......... PASS
+level 8  constitution .......... ABSENT
+level 9  statement ............. BLOCKED
 ```
 
 Data and parameters differ by domain and role, not by field class;
@@ -75,7 +76,11 @@ tower derives that residual `r` depends on trainable `w` — through
 is `J_Θᵀ`, a transpose view of the same dependency, not a
 separately stored backprop graph. No derivative value exists yet;
 this is the Jacobian's PATTERN, owned by the model, not by any one
-data instance. Each level is added RED-first, one review gate at a time, with the
+data instance. Given the supplied residual `r(w) = 2w − 6`, the
+existing residual minimizer changes the trainable state from
+`w = 0` to `w = 3` — and, handed `(4,8)` instead of `(2,6)`, fits
+`w = 2`: parameter fitting through the ordinary GMRES citizen, not
+gradient descent, and the model laws are still unconstituted. Each level is added RED-first, one review gate at a time, with the
 import gate holding every rung to its own allowlist. Production
 changes are expected to be **none** at every level — that is the
 experiment.

@@ -1100,7 +1100,8 @@ graph role:           not applicable
 comparison:           first vector-valued AND first genuinely
                       real-valued tower result in the repository;
                       the marker check validates SHAPE and SYNTAX
-                      (one marker, |X| finite real tokens) and never
+                      (one marker, |X| real tokens - lexically,
+                      not evaluatively) and never
                       the values
 
 suspected nucleus implication: result contracts should be domain-

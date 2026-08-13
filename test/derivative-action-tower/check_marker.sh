@@ -7,7 +7,15 @@
 #
 #     exactly one marker line
 #     exactly one token per member of the independent domain
-#     every token a finite real numeric literal
+#     every token a real numeric literal
+#
+# The token check is LEXICAL, not evaluative: the grammar admits a
+# signed decimal with an optional exponent, which excludes NaN and
+# Inf spellings because they carry letters it does not accept - but
+# it does not evaluate, so an overflowing literal such as 1e999999
+# would pass the syntax and parse to infinity. Calling this a
+# FINITE check would be an overclaim, and the value is not this
+# script's business in any case:
 #
 # and NOTHING about what the numbers should be. This tower's answer
 # is a real-valued field; the marker carries the field as it stands,

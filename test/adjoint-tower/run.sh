@@ -9,7 +9,7 @@
 #
 # After a full ladder the sensitivity is read - fail closed - from
 # the ninth rung's own output: exactly one marker carrying one
-# finite real token. The contract lives in check_marker.sh, which
+# real token. The contract lives in check_marker.sh, which
 # self-tests before the ladder runs; the runner validates shape and
 # syntax only and never learns what the number should be.
 set -e

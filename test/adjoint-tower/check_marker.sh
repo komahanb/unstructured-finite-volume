@@ -7,7 +7,14 @@
 #
 #     exactly one marker line
 #     exactly one token - this tower's answer is a scalar sensitivity
-#     that token a finite real numeric literal
+#     that token a real numeric literal
+#
+# The token check is LEXICAL, not evaluative: the grammar admits a
+# signed decimal with an optional exponent, which excludes NaN and
+# Inf spellings because they carry letters it does not accept - but
+# it does not evaluate, so an overflowing literal such as 1e999999
+# would pass the syntax and parse to infinity. Calling this a FINITE
+# check would be an overclaim.
 #
 # and NOTHING about what the number should be. df/dp is a real
 # quantity and is serialized as it stands: the computed value prints

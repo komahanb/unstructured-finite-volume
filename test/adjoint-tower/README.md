@@ -713,7 +713,7 @@ that survived the canonical enumeration would fail here.
 ADJOINT_RESULT =  6.9999999999999991E+00
 ```
 
-One marker, one finite real token, at full precision and **unrounded** —
+One marker, one real token, at full precision and **unrounded** —
 that is the honest image of the arithmetic. Whether it *is* the
 mathematical \(7\) is the Level-9 test's business
 (\(|s-7|<10^{-9}\)), never the checker's: a checker demanding the

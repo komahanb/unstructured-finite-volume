@@ -904,7 +904,7 @@ the actual real field, not a rounded image of it. A derivative of
 \(2.5\) would be reported as \(2.5\).
 
 The contract lives in `check_marker.sh` and is self-tested before the
-ladder runs. It requires exactly one marker carrying one **finite real
+ladder runs. It requires exactly one marker carrying one **real
 numeric token** per member of the independent domain — decimals,
 leading/trailing points, and `e`/`E`/`d`/`D` exponents all admitted —
 and it validates **shape and syntax only**, never values. The runner

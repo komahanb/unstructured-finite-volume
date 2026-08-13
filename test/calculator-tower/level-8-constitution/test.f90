@@ -22,38 +22,6 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module arithmetic_constitution_fixture
-
-  ! The one place where the symbols mean something.
-
-  use iso_fortran_env  , only : dp => REAL64
-  use calculator_assert, only : OP_PLUS, OP_TIMES
-
-  implicit none
-
-  private
-  public :: apply_law
-
-contains
-
-  real(dp) function apply_law(op, x, y) result(z)
-
-    integer , intent(in) :: op
-    real(dp), intent(in) :: x, y
-
-    select case (op)
-    case (OP_PLUS)
-       z = x + y
-    case (OP_TIMES)
-       z = x * y
-    case default
-       error stop 'constitution: no law binds this operation symbol'
-    end select
-
-  end function apply_law
-
-end module arithmetic_constitution_fixture
-
 program calculator_level_8
 
   use iso_fortran_env  , only : dp => REAL64
@@ -66,7 +34,8 @@ program calculator_level_8
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
   use class_graph_field, only : field
-  use arithmetic_constitution_fixture, only : apply_law
+  use arithmetic_constitution_fixture, only : apply_law, &
+       &  generated_residual, constitution_support
 
   implicit none
 
@@ -157,98 +126,6 @@ contains
   end subroutine check_laws
 
   !===================================================================!
-  ! One value, one home: known slots answer the known field,
-  ! unknown slots the unknown state, outsiders are refused.
-  !===================================================================!
-
-  real(dp) function q_of(slot, ustate) result(v)
-
-    integer , intent(in) :: slot
-    real(dp), intent(in) :: ustate(:)
-
-    real(dp), allocatable :: kv(:)
-
-    if (k % has(slot)) then
-       call qk % get_real_vector(kv)
-       v = kv(k % local_index(slot))
-    else if (u % has(slot)) then
-       v = ustate(u % local_index(slot))
-    else
-       error stop 'constitution: a slot with no home holds no value'
-    end if
-
-  end function q_of
-
-  !===================================================================!
-  ! The one tuple the flow holds for (operation, port) - refused
-  ! from the fixture if zero or many. The calculator relation
-  ! already keeps this law; nothing in production needs to.
-  !===================================================================!
-
-  integer function the_slot(r_flow, op, port) result(slot)
-
-    type(stored_relation), intent(in) :: r_flow
-    integer, intent(in) :: op, port
-
-    integer :: i, n
-
-    n = 0
-    do i = 1, x % size()
-       if (r_flow % has([op, x % member(i), port])) then
-          n = n + 1
-          slot = x % member(i)
-       end if
-    end do
-    if (n /= 1) error stop 'constitution: one port, one slot - or refusal'
-
-  end function the_slot
-
-  !===================================================================!
-  ! The generated residual: structure chooses every slot, the law
-  ! supplies every number. No row and no operand is named here.
-  !===================================================================!
-
-  subroutine generated_residual(r_flow, ustate, r)
-
-    type(stored_relation), intent(in)  :: r_flow
-    real(dp), intent(in)               :: ustate(:)
-    real(dp), allocatable, intent(out) :: r(:)
-
-    integer  :: i, j, row, x_out, op, in1, in2, nop
-    real(dp) :: produced
-
-    allocate(r(y % size()))
-    do i = 1, y % size()
-       row = y % member(i)
-
-       ! L locates the row's computed slot.
-       x_out = 0
-       do j = 1, x % size()
-          if (located % has([row, x % member(j)])) x_out = x % member(j)
-       end do
-       if (x_out == 0) error stop 'constitution: an unlocated residual row'
-
-       ! The unique operation whose out port names that slot.
-       op  = 0
-       nop = 0
-       do j = 1, o % size()
-          if (r_flow % has([o % member(j), x_out, PORT_OUT])) then
-             nop = nop + 1
-             op  = o % member(j)
-          end if
-       end do
-       if (nop /= 1) error stop 'constitution: one producer per slot - or refusal'
-
-       in1 = the_slot(r_flow, op, PORT_IN1)
-       in2 = the_slot(r_flow, op, PORT_IN2)
-
-       produced = apply_law(op, q_of(in1, ustate), q_of(in2, ustate))
-       r(y % local_index(row)) = q_of(x_out, ustate) - produced
-    end do
-
-  end subroutine generated_residual
-
-  !===================================================================!
   ! The generated map IS the Level-7 system - probed at several
   ! off-solution states, the expected formulas living only here in
   ! the assertions.
@@ -261,17 +138,17 @@ contains
     real(dp), allocatable :: r(:)
 
     ! U order is {e, c}.
-    call generated_residual(flow, [0.0_dp, 0.0_dp], r)
+    call gen(flow, [0.0_dp, 0.0_dp], r)
     call report(abs(r(y % local_index(ROW_C)) + 5.0_dp) < 1.0d-14 .and. &
          &      abs(r(y % local_index(ROW_E)) - 0.0_dp) < 1.0d-14, &
          & "at q(e)=0, q(c)=0: r = (-5, 0)", nfail)
 
-    call generated_residual(flow, [0.0_dp, 1.0_dp], r)
+    call gen(flow, [0.0_dp, 1.0_dp], r)
     call report(abs(r(y % local_index(ROW_C)) + 4.0_dp) < 1.0d-14 .and. &
          &      abs(r(y % local_index(ROW_E)) + 4.0_dp) < 1.0d-14, &
          & "at q(e)=0, q(c)=1: r = (-4, -4)", nfail)
 
-    call generated_residual(flow, [1.0_dp, 0.0_dp], r)
+    call gen(flow, [1.0_dp, 0.0_dp], r)
     call report(abs(r(y % local_index(ROW_C)) + 5.0_dp) < 1.0d-14 .and. &
          &      abs(r(y % local_index(ROW_E)) - 1.0_dp) < 1.0d-14, &
          & "at q(e)=1, q(c)=0: r = (-5, 1)", nfail)
@@ -290,7 +167,7 @@ contains
 
     real(dp), allocatable :: r(:)
 
-    call generated_residual(flow, [20.0_dp, 5.0_dp], r)
+    call gen(flow, [20.0_dp, 5.0_dp], r)
     call report(abs(r(1)) < 1.0d-14 .and. abs(r(2)) < 1.0d-14, &
          & "at q(c)=5, q(e)=20 the constitution's residual vanishes", &
          & nfail)
@@ -310,7 +187,8 @@ contains
 
     type(stored_relation)        :: q_, a_
     class(relation), allocatable :: b_, jac
-    integer :: i, row, x_out, op, j
+    integer, allocatable :: mine(:)
+    integer :: i, row, j
     logical :: ok
 
     ! The Level-6 road, walked again: J = A o (Q o L).
@@ -322,20 +200,10 @@ contains
     ok = .true.
     do i = 1, y % size()
        row = y % member(i)
-       ! the constitution's slots for this row
-       x_out = 0
+       call constitution_support(r_flow, located, x, o, row, mine)
        do j = 1, x % size()
-          if (located % has([row, x % member(j)])) x_out = x % member(j)
-       end do
-       op = merge(OP_PLUS, OP_TIMES, &
-            &     r_flow % has([OP_PLUS, x_out, PORT_OUT]))
-       do j = 1, x % size()
-          ! every slot the generated equation uses is in J, and
-          ! every slot J names is used: equality both ways.
           ok = ok .and. ( jac % has([row, x % member(j)]) .eqv. &
-               & ( x % member(j) == x_out .or. &
-               &   x % member(j) == the_slot(r_flow, op, PORT_IN1) .or. &
-               &   x % member(j) == the_slot(r_flow, op, PORT_IN2) ) )
+               &          any(mine == x % member(j)) )
        end do
     end do
     call report(ok, &
@@ -362,11 +230,45 @@ contains
     end do
     backwards = stored_relation('flow backwards', [o, x, p], rev)
 
-    call generated_residual(flow     , [7.0_dp, -2.0_dp], r1)
-    call generated_residual(backwards, [7.0_dp, -2.0_dp], r2)
+    call gen(flow     , [7.0_dp, -2.0_dp], r1)
+    call gen(backwards, [7.0_dp, -2.0_dp], r2)
     call report(all(abs(r1 - r2) < 1.0d-14), &
          & "the tuples' order means nothing to the constitution", nfail)
 
+    block
+      integer, allocatable :: s1(:), s2(:)
+      integer :: i, jj
+      logical :: ok
+      ok = .true.
+      do i = 1, y % size()
+         call constitution_support(flow     , located, x, o, y % member(i), s1)
+         call constitution_support(backwards, located, x, o, y % member(i), s2)
+         ok = ok .and. (size(s1) .eq. size(s2))
+         do jj = 1, size(s1)
+            ok = ok .and. any(s2 == s1(jj))
+         end do
+      end do
+      call report(ok, &
+           & "and neither does it to the generated supports", nfail)
+    end block
+
   end subroutine check_order_invariance
+
+  !===================================================================!
+  ! The fixture, applied with this calculator's own objects.
+  !===================================================================!
+
+  subroutine gen(r_flow, ustate, r)
+
+    type(stored_relation), intent(in)  :: r_flow
+    real(dp), intent(in)               :: ustate(:)
+    real(dp), allocatable, intent(out) :: r(:)
+
+    real(dp), allocatable :: kv(:)
+
+    call qk % get_real_vector(kv)
+    call generated_residual(r_flow, located, x, o, y, k, kv, u, ustate, r)
+
+  end subroutine gen
 
 end program calculator_level_8

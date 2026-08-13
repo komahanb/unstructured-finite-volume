@@ -2,10 +2,10 @@ include ../../../Makefile.in
 
 #=====================================================================#
 # Level 8: the meaning suite. Framework modules this level may see:
-# the carrier/domain machinery, the field, the legacy
-# graph_operation host contract, graph_minimization and the GMRES
-# citizen. Constitution and statement remain forbidden: the solver
-# never learns what + or x mean. The import gate holds the door.
+# the carriers/domains, the relations, the algebra, the field, and
+# the TEST-LOCAL arithmetic constitution fixture beside this file.
+# No solver, no graph host, no graph grammar, no statement: the
+# import gate holds the door.
 #=====================================================================#
 
 F90FLAGS += -I../../../lib/ -I../../../src/
@@ -13,8 +13,11 @@ LDFLAGS += -L../../../lib/ ../../../lib/libufvm.a -llapack
 
 all: run
 
-run: calculator_assert.o test.o
-	$(F90) calculator_assert.o test.o -o $@ $(LDFLAGS)
+run: calculator_assert.o constitution_fixture.o test.o
+	$(F90) calculator_assert.o constitution_fixture.o test.o -o $@ $(LDFLAGS)
+
+test.o: constitution_fixture.o
+constitution_fixture.o: calculator_assert.o
 
 test.o: calculator_assert.o
 

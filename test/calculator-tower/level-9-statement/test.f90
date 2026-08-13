@@ -132,6 +132,13 @@ contains
 
     associate (u1 => input_graph); end associate
 
+    if (.not. present(input_data)) then
+       error stop 'statement: the residual needs a state to judge'
+    end if
+    if (size(input_data) < 1) then
+       error stop 'statement: the residual needs a state to judge'
+    end if
+
     call input_data(1) % domain(dom)
     if (.not. dom % same_as(this % unknown)) then
        error stop 'statement: the state must live on the unknown domain'

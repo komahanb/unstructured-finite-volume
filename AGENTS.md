@@ -2039,7 +2039,11 @@ the relational graph exists (§14); graph interpretation and
 algorithms exist (directed adjacency view, sources/sinks/reachable/
 topological order, §16/§18); the 5B field/support migration is
 complete (§37–§38) including domain-aware partition/assembly
-transport (§39); calculator levels 0–8 are certified. The Level-7 gate migrated
+transport (§39); calculator levels 0–9 are certified; the calculator tower is
+complete. Level 9 selects existing structure, inputs,
+discretization, constitution and minimization, adds no production
+statement type, and produces the requested value through
+composition alone. The Level-7 gate migrated
 minimization to an explicit member_set unknown domain with a
 distinct residual domain asked of the action itself — the graph
 argument survives only as legacy operation-host compatibility and

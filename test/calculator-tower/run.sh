@@ -90,7 +90,13 @@ if [ "$failed" -ne 0 ]; then
     exit 1
 fi
 if [ "$frontier_open" -eq 1 ] && [ -f "$here/level-9-statement/run.out" ]; then
+    # Fail closed: exactly one computed marker, with a value.
+    marks=$(grep -c 'CALCULATOR_RESULT = ' "$here/level-9-statement/run.out")
     result=$(grep -o 'CALCULATOR_RESULT = .*' "$here/level-9-statement/run.out" | awk '{print $3}')
+    if [ "$marks" -ne 1 ] || [ -z "$result" ]; then
+        echo "└── RUNNER FAILURE: the statement did not report one computed result"
+        exit 1
+    fi
     echo "└── mathematical result ......... ${result}"
 else
     echo "└── every certified rung holds its truths"

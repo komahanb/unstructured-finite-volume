@@ -112,13 +112,17 @@ contains
     class(member_set), intent(in) :: slots
     integer          , intent(in) :: row
 
-    integer :: j
+    integer :: j, n
 
+    n     = 0
     x_out = 0
     do j = 1, slots % size()
-       if (located % has([row, slots % member(j)])) x_out = slots % member(j)
+       if (located % has([row, slots % member(j)])) then
+          n     = n + 1
+          x_out = slots % member(j)
+       end if
     end do
-    if (x_out == 0) error stop 'constitution: an unlocated residual row'
+    if (n /= 1) error stop 'constitution: one location per residual row - or refusal'
 
   end function located_slot
 

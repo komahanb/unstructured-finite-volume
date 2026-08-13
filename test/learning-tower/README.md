@@ -58,8 +58,9 @@ tower.
 level 0  carriers .............. PASS
 level 1  relation .............. PASS
 level 2  relation algebra ...... PASS
-level 3  relational graph ...... ABSENT
-levels 4–9 ..................... BLOCKED
+level 3  relational graph ...... PASS
+level 4  graph calculus ........ ABSENT
+levels 5–9 ..................... BLOCKED
 ```
 
 Each level is added RED-first, one review gate at a time, with the

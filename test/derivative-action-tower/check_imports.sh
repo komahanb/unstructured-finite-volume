@@ -29,6 +29,13 @@ allowed_for() {
         # materializes J_ZX and answers its reverse as a view.
         # Fields stay forbidden: the pattern needs no numbers.
         level-6-derivative-structure) echo "derivative_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_structure graph_profile graph_algorithms" ;;
+        # level 8 (Gate B): the numerical action rung. Structure
+        # derives the order, the test-local constitution supplies
+        # primal laws and ONE local linearization per operation,
+        # fields carry seeds and results. NO binary storage - the
+        # J-pattern is support metadata, never the propagation
+        # itinerary - and no solver, ever, at this gate.
+        level-8-derivative-constitution) echo "derivative_assert graph_carrier graph_relation graph_relation_algebra graph_structure graph_profile graph_algorithms class_graph_field derivative_constitution_fixture" ;;
         *)                        echo "__no_allowlist__" ;;
     esac
 }

@@ -29,8 +29,12 @@ mathematical concept: symbolic member domains
 
 local necessity:      yes — every later rung stands on these carriers
                       evidence: all Gate-A tests construct them first
-global necessity:     yes — third tower using the identical ontology
-                      evidence: calculator, learning, derivative all
+global necessity:     unknown — necessity at larger contextual radius
+                      (partitioned, coupled, nested systems) is
+                      untested by this gate
+
+cross-tower recurrence: third tower on the identical carrier
+                      ontology — calculator, learning, derivative all
                       begin with counted_set and nothing else
 
 graph role:           none yet — no graph exists at this rung
@@ -66,9 +70,11 @@ mathematical concept: typed finite-arity relation
 
 local necessity:      yes — the six tuples are the specimen's one
                       structural source of truth
-global necessity:     yes — same relation shape as both prior towers
-                      evidence: stored_relation with [O,V,P] signature,
-                      set semantics, unchanged
+global necessity:     unknown — untested at larger radius by this gate
+
+cross-tower recurrence: same relation shape as both prior towers —
+                      stored_relation with [O,V,P] signature, set
+                      semantics, unchanged
 
 graph role:           not applicable yet
 
@@ -104,8 +110,11 @@ mathematical concept: relation algebra (restriction, projection, binary
 
 local necessity:      yes — execution interpretation (L4) and any
                       future evaluation need D
-global necessity:     yes — third independent client of the same three
-                      primitives; natural join still unearned by anyone
+global necessity:     unknown — untested at larger radius by this gate
+
+cross-tower recurrence: third independent client of the same three
+                      algebra primitives; natural join still unearned
+                      by anyone
 
 graph role:           none yet
 
@@ -180,11 +189,15 @@ mathematical concept: explicit graph interpretation of a relation
 
 local necessity:      yes — future evaluation order must come from
                       structure, and this is where it comes from
-global necessity:     yes for the first two concepts (three towers);
-                      the third (derivative traversal) exists nowhere
-                      yet and MUST NOT be conflated with this walk
+global necessity:     unknown — untested at larger radius; derivative
+                      traversal exists nowhere yet and MUST NOT be
+                      conflated with this walk
                       evidence: Gate A contains no traversal that
                       carries derivative quantities
+
+cross-tower recurrence: the relation/interpretation distinction is
+                      three-tower-confirmed (calculator, learning,
+                      derivative)
 
 graph role:           the view borrows a graph-owned relation — the
                       established borrowing contract, unchanged
@@ -267,9 +280,10 @@ mathematical concept: structural sparsity precedes derivative values
 
 local necessity:      yes — Gate B's actions will live inside this
                       support
-global necessity:     yes — independently confirms Learning L6's
-                      J_Theta observation with a second, richer
-                      specimen
+global necessity:     unknown — untested at larger radius by this gate
+
+cross-tower recurrence: independently confirms Learning L6's J_Theta
+                      observation with a second, richer specimen
 
 graph role:           the dependency view borrows a graph-owned A_V
 
@@ -305,10 +319,13 @@ exact caller:         level-6-derivative-structure/test.f90
 mathematical concept: structural transpose duality
 
 local necessity:      yes — reverse support must be readable
-global necessity:     yes — third tower using transpose-as-view
+global necessity:     unknown — untested at larger radius by this gate
+
+cross-tower recurrence: third tower using transpose-as-view
                       (calculator L6, learning L6, derivative L6):
                       forward/reverse structural dependency is ONE
-                      truth, everywhere so far
+                      truth, everywhere so far — the most-confirmed
+                      behavior in the ledger
 
 graph role:           view over a materialized citizen
 
@@ -353,16 +370,33 @@ graph role:           the finer structure (A_V / R_flow) is graph-owned;
 
 comparison:           first tower to expose it
 
-suspected nucleus implication: numerical reverse accumulation (Gate B)
-                      must operate over the computational
-                      dependency/evaluation structure — A_V, or R_flow
-                      itself — NOT merely scan the final J-pattern and
-                      infer contributions. Support says WHO matters;
-                      the evaluation structure says WHY and HOW OFTEN.
-                      This likely shapes the entire Gate-B design.
+suspected nucleus implication: numerical action occurs PER
+                      OPERATION/INPUT-PORT INCIDENCE — an operation is
+                      visited once, each input port applies its local
+                      linear contribution, and contributions landing
+                      on the same value slot ACCUMULATE. No path
+                      enumeration, ever. The structural hierarchy is a
+                      ladder of intentional forgetting:
+
+                          R_flow   operation+value+port incidence
+                              ↓ derive        (numerical traversal
+                          A_V      value dependency    substrate)
+                              ↓ reachability
+                          J-support  who can affect whom
+                                     (sparsity metadata, not
+                                      propagation itinerary)
+
+                      Support says WHO matters; incidence says HOW.
 
 confidence:           high (the fact); medium (its design consequence)
 action:               candidate driver for Gate-B design review
+
+gate-B resolution:    CONFIRMED — the Gate-B evaluators traverse
+                      R_flow incidences in the derived order, apply
+                      one local linearization per operation, and
+                      accumulate with += per input-port incidence;
+                      neither J_ZX nor its transpose is consumed by
+                      the numerical path (see DA-8D, DA-8E)
 ```
 
 ---
@@ -386,18 +420,22 @@ exact caller:         level-6-derivative-structure/test.f90
 mathematical concept: subobject embedding vs location relation
 
 local necessity:      L is locally UNNECESSARY here
-global necessity:     L remains globally NECESSARY where the answering
-                      carrier is distinct from the value carrier
-                      (learning's residual rows; any future
-                      row-indexed system)
+global necessity:     unknown — whether some larger-radius derivative
+                      context (row-indexed responses, partitioned
+                      outputs) reintroduces a location relation is
+                      untested
+
+cross-tower recurrence: the towers DISAGREE, and the disagreement is
+                      the evidence — learning's residual rows were not
+                      value slots and needed Y + L; this tower's
+                      response is a value slot and needs only a
+                      subdomain chain
 
 graph role:           not applicable
 
-comparison:           the towers disagree, and the disagreement is the
-                      evidence: L is CONTEXTUAL, not universal — an
-                      instance of the independent-axes law (local
-                      unnecessity does not imply global unnecessity,
-                      and vice versa)
+comparison:           L is CONTEXTUAL, not universal — an instance of
+                      the independent-axes law (local unnecessity does
+                      not imply global unnecessity, and vice versa)
 
 suspected nucleus implication: never bake a location relation into a
                       universal residual/response contract; let each
@@ -447,4 +485,386 @@ suspected nucleus implication: none yet
 
 confidence:           high (the fact); none offered (the design)
 action:               Gate-A review decides the Gate-B shape
+```
+
+---
+
+## OBSERVATION DA-7
+
+```text
+tower:                Derivative Action
+gate / level:         B / 7 (deliberately uninhabited)
+contextual radius:    0–1
+
+symptom / fact:       nucleus Level 7 — minimization — is N/A for
+                      this orbital client as constituted: computing
+                      Jv and J^T zbar requires nothing to be varied,
+                      no residual driven to zero, no solver. No
+                      level-7 directory exists; the runner prints
+                      "N/A - not inhabited" and continues.
+
+exact caller:         run.sh (the N/A row); the absence of
+                      level-7-minimization/
+
+mathematical concept: nucleus levels as available radial contracts
+
+local necessity:      no — minimization is locally unnecessary for
+                      derivative action
+global necessity:     unknown — an adjoint-solve or optimization
+                      orbit will inhabit it naturally; nothing here
+                      says minimization is globally unnecessary
+
+cross-tower recurrence: FIRST tower to skip a nucleus level —
+                      calculator and learning inhabited all ten
+
+graph role:           not applicable
+
+comparison:           the nucleus ladder is a menu of contracts, not
+                      a compulsory pipeline — this orbit is the first
+                      constructive proof
+
+suspected nucleus implication: radial interfaces (fractal doc §26)
+                      should be inhabitable independently; no level
+                      may assume the one below-adjacent application
+                      level was crossed
+
+confidence:           high
+action:               observe
+```
+
+---
+
+## OBSERVATION DA-8A
+
+```text
+tower:                Derivative Action
+gate / level:         B / 8
+contextual radius:    0–1
+
+symptom / fact:       the local linearization belongs to
+                      OPERATION-PORT semantics: L_o(a,b) returns
+                      port-relative coefficients [d/d_in1, d/d_in2]
+                      knowing the operation symbol, the primal input
+                      values, and the port positions — and nothing
+                      about slots. No SLOT_X/Y/U/Z appears in the
+                      law module.
+
+exact caller:         derivative_constitution_fixture.f90
+                      (local_linearization)
+
+mathematical concept: local derivative law as constitution
+
+local necessity:      yes — both actions are built from this row
+global necessity:     unknown at larger radius
+
+cross-tower recurrence: echoes the constitution pattern of the
+                      calculator and learning L8 law tables
+                      (symbol + numbers in, number out), extended by
+                      one derivative row
+
+graph role:           none — the law is slot-blind by design;
+                      structure hands it operands
+
+comparison:           the old derivative-walks plan placed
+                      linearization on operator objects; here it is
+                      constitution, beside the primal law — smaller
+                      and test-local
+
+suspected nucleus implication: if a production derivative
+                      constitution is ever earned, it is one row per
+                      operation at primal inputs — not a tangent
+                      class hierarchy
+
+confidence:           high
+action:               observe
+```
+
+---
+
+## OBSERVATION DA-8B
+
+```text
+tower:                Derivative Action
+gate / level:         B / 8
+contextual radius:    0–1
+
+symptom / fact:       tangent and reverse are TWO ACTIONS OF ONE
+                      LOCAL LINEARIZATION. The fixture contains no
+                      reverse derivative formula anywhere: the
+                      forward action applies L_o, the reverse action
+                      applies the same coefficients ends-swapped.
+                      The local pairing <obar, Lv> = <L^T obar, v>
+                      is pinned per operation, and the global
+                      duality follows at two bases.
+
+exact caller:         level-8 test (check_local_pairing,
+                      check_duality_primary, check_secondary_base)
+
+mathematical concept: transpose duality of one linear shadow
+
+local necessity:      yes — duplicating the truth would invite
+                      disagreement between modes
+global necessity:     unknown, but the duality law is the invariant
+                      any larger-radius derivative contract must keep
+
+cross-tower recurrence: the structural analogue was already
+                      three-tower-confirmed (transpose_of as a view);
+                      Gate B extends the same one-truth-two-readings
+                      discipline to numbers
+
+graph role:           none
+
+comparison:           matches the old plan's intuition ("the adjoint
+                      is the flag") without importing its machinery
+
+suspected nucleus implication: a future production derivative face
+                      should expose one linearization and derive both
+                      actions, never two independent formulas
+
+confidence:           high
+action:               observe
+```
+
+---
+
+## OBSERVATION DA-8C
+
+```text
+tower:                Derivative Action
+gate / level:         B / 8
+contextual radius:    0–1
+
+symptom / fact:       derivative seeds and results are ORDINARY
+                      FIELDS on ordinary domains: v_X and J^T zbar on
+                      X, zbar and Jv on Z. DA-5's hypothesis tested
+                      and confirmed — no tangent_field,
+                      cotangent_field, dual_field, or dual-number
+                      type was needed; the existing field contract
+                      did not fail.
+
+exact caller:         level-8 test (check_forward_action,
+                      check_reverse_action)
+
+mathematical concept: derivative vectors as fields on roles
+
+local necessity:      yes — some carrier had to hold seeds/results,
+                      and the existing one sufficed
+global necessity:     unknown — higher-order or complex-valued
+                      derivative carriers untested
+
+cross-tower recurrence: extends the roles-are-domains discovery
+                      (learning L5, derivative L5) to derivative
+                      quantities
+
+graph role:           none — a field needs a domain, not a graph
+                      (confirmed again at the numerical radius)
+
+comparison:           first numerical-derivative use of the field
+                      contract anywhere in the repository
+
+suspected nucleus implication: derivative state is not a new kind of
+                      value; it is a value with a different ROLE —
+                      domains, not subclasses, distinguish it
+
+confidence:           high
+action:               observe
+```
+
+---
+
+## OBSERVATION DA-8D
+
+```text
+tower:                Derivative Action
+gate / level:         B / 8
+contextual radius:    0–1
+
+symptom / fact:       reverse accumulation is INCIDENCE-LOCAL +=,
+                      not path counting. The evaluator visits each
+                      operation once, applies each input port's
+                      coefficient, and += accumulates where
+                      incidences share a slot. The generic hit
+                      counter (naming no slot) certified y received
+                      exactly two contributions — sum.in2 and
+                      product.in2 — x and u one each, the response
+                      none. No path was ever enumerated.
+
+exact caller:         derivative_constitution_fixture.f90
+                      (reverse_action); level-8 test
+                      (check_accumulation)
+
+mathematical concept: reverse-mode accumulation over incidence
+                      structure
+
+local necessity:      yes — collapsing the += would compute the
+                      wrong ybar (2, not 6)
+global necessity:     unknown, but the conceptual law extends to
+                      f(x,x): two port incidences of ONE operation
+                      landing on one slot must both contribute —
+                      recorded as a law, not a second specimen
+
+cross-tower recurrence: resolves Gate A's DA-6C exactly as refined:
+                      the traversal substrate is R_flow incidence,
+                      not the J-pattern
+
+graph role:           the traversed facts are (graph-owned) R_flow
+                      incidences; the graph object itself is not an
+                      evaluator argument (see DA-8F)
+
+comparison:           first numerical reverse traversal in the
+                      repository
+
+suspected nucleus implication: any future production reverse action
+                      must be incidence-local; path enumeration is
+                      never the algorithm
+
+confidence:           high
+action:               observe
+```
+
+---
+
+## OBSERVATION DA-8E
+
+```text
+tower:                Derivative Action
+gate / level:         B / 8
+contextual radius:    0–1
+
+symptom / fact:       numerical action does NOT require structural J.
+                      The evaluators' signatures take R_flow, the
+                      derived order, primal values, domains and the
+                      law table — neither J_ZX nor J_XZ is an input.
+                      The test separately re-derived reachability and
+                      confirmed the support agrees with where the
+                      action's incidence landed (hits > 0 iff
+                      reachable), without feeding either to the
+                      numerical path.
+
+exact caller:         level-8 test (check_support_versus_action);
+                      the fixture's argument lists
+
+mathematical concept: support and action as complementary views
+
+local necessity:      J_ZX is locally unnecessary for propagation;
+                      locally its role is sparsity/support metadata
+global necessity:     unknown — coloring, seeding strategies, and
+                      sparse assembly at larger radius may consume
+                      the support heavily
+
+cross-tower recurrence: sharpens DA-6C's hierarchy with Gate-B
+                      evidence: R_flow = traversal substrate, A_V =
+                      dependency summary, J = support summary
+
+graph role:           not applicable
+
+comparison:           support says WHO can matter; the action says
+                      HOW MUCH, and HOW OFTEN
+
+suspected nucleus implication:
+                      support and action are complementary views of
+                      differentiation — a future contract should
+                      keep them separate objects, not merge them
+
+confidence:           high
+action:               observe
+```
+
+---
+
+## OBSERVATION DA-8F
+
+```text
+tower:                Derivative Action
+gate / level:         B / 8
+contextual radius:    0–1
+
+symptom / fact:       the graph object is not a numerical-derivative
+                      operand at this radius. The relational graph
+                      owns the structure and enables the derived
+                      execution interpretation (order); the
+                      evaluators then consume the flow relation, the
+                      order, domains, fields and constitution — no
+                      graph argument appears in any evaluator
+                      signature, and none was missed.
+
+exact caller:         derivative_constitution_fixture.f90 (all three
+                      evaluator signatures)
+
+mathematical concept: graph as owner/context vs graph as operand
+
+local necessity:      no — locally unnecessary as an operand
+global necessity:     unknown — DELIBERATELY left open per the
+                      fractal discipline: partitioned, coupled, or
+                      nested derivative contexts may need the graph
+                      as environment; nothing here recommends
+                      removing graph anywhere
+
+cross-tower recurrence: matches learning's minimizer-host
+                      observation in kind (graph not consumed
+                      numerically at the tested radius), but here by
+                      clean design rather than compatibility debt —
+                      no legacy host was needed at all, because no
+                      legacy operation face was used
+
+graph role:           owner + interpretation-enabler upstream;
+                      not an operand downstream, at this radius
+
+comparison:           DA-3 asked; Gate B answers for the numerical
+                      radius: ownership upstream, absence downstream
+
+suspected nucleus implication: none concluded — Case-III caution
+                      (locally unnecessary, possibly globally
+                      necessary) applies verbatim
+
+confidence:           high (the fact); none offered (the design)
+action:               test at larger radius
+```
+
+---
+
+## OBSERVATION DA-8G
+
+```text
+tower:                Derivative Action
+gate / level:         B / 8
+contextual radius:    0–1
+
+symptom / fact:       the reverse operation order is DERIVED from
+                      primal structure, not separately authored: the
+                      evaluator iterates the caller's derived
+                      topological order backwards
+                      (do i = size(order), 1, -1). No [sum, product]
+                      literal exists; no reverse schedule is stored;
+                      tuple-order invariance holds for the full
+                      primal + tangent + reverse + duality chain.
+
+exact caller:         derivative_constitution_fixture.f90
+                      (reverse_action); level-8 test
+                      (check_order_invariance)
+
+mathematical concept: reverse schedule as a reading of the forward
+                      schedule
+
+local necessity:      yes — a second authored schedule could drift
+                      from the first
+global necessity:     unknown; segment/checkpoint traversals at
+                      larger radius will test whether "reversal of
+                      the derived order" generalizes
+
+cross-tower recurrence: the same one-truth-two-readings discipline
+                      as the transpose view, applied to schedules
+
+graph role:           the order originates in the graph-owned D's
+                      directed interpretation
+
+comparison:           the old plan's "reversal is the adjoint's
+                      itinerary" — realized without a pipeline type
+
+suspected nucleus implication: reverse anything (order, structure,
+                      action) should be a reading of the forward
+                      truth, never a second stored artifact
+
+confidence:           high
+action:               observe
 ```

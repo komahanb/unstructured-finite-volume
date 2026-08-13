@@ -23,16 +23,30 @@ Gate A asks only:
 > which tangent and reverse derivative actions will later travel?
 
 It stops deliberately before numerical differentiation. No derivative
-value, seed, rule, or traversal exists anywhere in Gate A — and the gate
-closed with
+value, seed, rule, or traversal exists anywhere in Gate A.
+
+**Gate B** then asks:
+
+> Can numerical **tangent** and **reverse** actions travel over the same
+> constituted computation structure?
+
+Its targets are the operators \(v\mapsto Jv\) and
+\(\bar z\mapsto J^T\bar z\), sealed by the global duality law
+
+\[
+\boxed{\langle\bar z,Jv\rangle_Z=\langle J^T\bar z,v\rangle_X}
+\]
+
+with no adjoint solve, no minimization, and no Jacobian assembly. Both
+gates closed with
 
 \[
 \boxed{\text{production changes}=\text{NONE}}
 \]
 
 ```text
-Gate A   structural Levels 0–6 .......... PASS   (this document)
-Gate B   numerical derivative action .... UNBUILT
+Gate A   structural Levels 0–6 .......... PASS
+Gate B   numerical derivative action .... PASS   (Level 8)
 Gate C   derivative statement ........... UNBUILT
 ```
 
@@ -80,7 +94,9 @@ The load-bearing consequence is the
 | 4 | graph calculus | directed interpretation; walk \([\mathrm{product},\mathrm{sum}]\) |
 | 5 | field calculus | base point on \(X\); computed \(C\) valueless; **no seeds** |
 | 6 | derivative structure | \(A_V\), two-path truth, \(J_{ZX}=\{(z,x),(z,y)\}\), transpose view |
-| 7–9 | *(Gate B / Gate C)* | **UNBUILT** — not designed here |
+| 7 | minimization | **N/A — not inhabited** by this orbit as constituted |
+| 8 | derivative constitution | primal laws + one local linearization; \(Jv\), \(J^T\bar z\), duality |
+| 9 | *(Gate C)* | **UNBUILT** — not designed here |
 
 ---
 
@@ -173,7 +189,10 @@ Levels 0–4        STRUCTURE ONLY — product/sum are symbols
 Level 5           BASE VALUES — x=2, y=3; u/z uncomputed; NO seeds
 Level 6           DEPENDENCY STRUCTURE — who can influence whom;
                   no derivative values
-Gate B (unbuilt)  numerical derivative action
+Level 7           N/A — this orbit does not inhabit minimization
+Level 8 (Gate B)  CONSTITUTION + ACTION — product multiplies, sum
+                  adds, each operation owes one local linearization;
+                  Jv forward, J^T z̄ backward, duality sealed
 Gate C (unbuilt)  the derivative statement
 ```
 
@@ -544,6 +563,194 @@ graph_pipeline                 GMRES, minimization
 
 ---
 
+# Level 7 — Minimization: N/A for this orbit
+
+Nucleus Level 7 — minimization — is **not inhabited** by the derivative
+action orbit as currently constituted. Computing \(Jv\) and
+\(J^T\bar z\) requires no residual to be driven to zero, nothing to
+vary, and no solver.
+
+There is deliberately **no** `level-7-minimization/` directory and no
+empty placeholder test: that would confuse the map with the territory.
+The runner prints the truth instead:
+
+```text
+level 7  minimization ............ N/A - not inhabited
+```
+
+This is the first experiment showing that **nucleus levels are available
+radial contracts, not a compulsory application pipeline**. It means only
+that this orbit, at this gate, does not need the minimization contract.
+It does **not** mean minimization is globally unnecessary — a future
+adjoint-solve or optimization orbit will inhabit it naturally
+(Observation DA-7).
+
+---
+
+# Level 8 — Derivative constitution and numerical action
+
+Gate B. The load-bearing question:
+
+> Can numerical tangent and reverse actions travel over the same
+> constituted computation structure?
+
+## Primal constitution first
+
+Only here do the symbols mean something, bound test-locally
+(`level-8-derivative-constitution/derivative_constitution_fixture.f90`):
+
+\[
+\mathrm{product}(a,b)=ab,
+\qquad
+\mathrm{sum}(a,b)=a+b.
+\]
+
+The law table knows operation symbols and numbers — never `x`, `y`,
+`u`, `z`, never a graph slot. Execution order is re-derived through the
+certified road (\(R_{\mathrm{flow}}\to D\to\) graph \(\to\) view \(\to\)
+`topological_order`), every operation's `in1`/`in2`/`out` is discovered
+from \(R_{\mathrm{flow}}\) by uniqueness scan, and the primal executes
+into the computed slots with availability flags (never zero-as-absent):
+
+\[
+u=6,\qquad z=9
+\quad\text{at the base } x=2,\ y=3.
+\]
+
+## One local linearization, two actions
+
+Each operation owes constitution exactly one more thing — its **local
+linear shadow** at the primal inputs, a row of **port-relative**
+coefficients:
+
+\[
+L_{\mathrm{product}}(a,b)=[\,b,\ a\,],
+\qquad
+L_{\mathrm{sum}}(a,b)=[\,1,\ 1\,].
+\]
+
+The Gate-B load-bearing design:
+
+\[
+\boxed{\text{one local linearization}
+\rightarrow
+\text{forward action and transpose action}}
+\]
+
+**Tangent** (forward, along the derived order):
+
+\[
+\dot q_{out}=L_o
+\begin{bmatrix}\dot q_{in_1}\\ \dot q_{in_2}\end{bmatrix}.
+\]
+
+**Reverse** (backward, along the same order reversed):
+
+\[
+\begin{bmatrix}\bar q_{in_1}\\ \bar q_{in_2}\end{bmatrix}
+\mathrel{+}= L_o^T\,\bar q_{out}.
+\]
+
+There is **no separate reverse derivative formula anywhere** — the
+transpose action reads the same coefficients — and the local pairing
+\(\langle\bar o,L_o v\rangle=\langle L_o^T\bar o,v\rangle\) is pinned
+per operation at a nonsymmetric point.
+
+## Incidence, not paths
+
+The `+=` is architecturally essential. Numerical action occurs **per
+operation/input-port incidence**: an operation is visited once, each
+input port applies its local contribution, and contributions landing on
+the same value slot **accumulate**. No path is ever enumerated. This
+stays valid even for \(f(x,x)\), where both port incidences of one
+operation land on one slot (Observation DA-8D).
+
+The reverse accumulator starts at zero because zero is addition's
+identity — the lawful start of an accumulator, not a sentinel (the
+primal keeps separate availability flags).
+
+Accumulation is **certified, not assumed**: a generic incidence counter
+(naming no slot) shows \(y\) received exactly two contributions —
+`sum.in2` and `product.in2` — while \(x\) and \(u\) received one each
+and the response none.
+
+## Seeds and results are ordinary fields
+
+Testing DA-5's hypothesis: the tangent seed \(v_X\) is an ordinary
+`field` on \(X\), the result \(Jv\) an ordinary field on \(Z\), the
+reverse seed \(\bar z\) a field on \(Z\), the result \(J^T\bar z\) a
+field on \(X\). No `tangent_field`, `cotangent_field`, or dual-number
+type was needed (Observation DA-8C).
+
+## The certified numbers
+
+Primary base \(x=2,\ y=3\) (so \(u=6,\ z=9\)), seed
+\(\dot y=-1,\ \dot x=4\):
+
+\[
+\dot u=3(4)+2(-1)=10,
+\qquad
+\boxed{Jv=\dot z=\dot u+\dot y=9}.
+\]
+
+Reverse seed \(\bar z=2\): through `sum`, \(\bar u=2,\ \bar y=2\);
+through `product`, \(\bar x=3(2)=6,\ \bar y=2+2(2)=6\):
+
+\[
+\boxed{J^T\bar z=[6,6]\ \text{on } X=\{y,x\}}.
+\]
+
+Duality: \(\langle 2,9\rangle=18=[6,6]\cdot[-1,4]\).
+
+**Secondary asymmetric base** \(x=4,\ y=2\) (where
+\(\partial z/\partial x=2\neq 5=\partial z/\partial y\), so slot swaps
+cannot hide): \(u=8,\ z=10\); seed \((\dot y,\dot x)=(5,-3)\) gives
+\(\dot u=14,\ Jv=19\); reverse \(\bar z=-2\) gives
+\(J^T\bar z=[-10,-4]\); duality \((-2)(19)=-38=[-10,-4]\cdot[5,-3]\).
+Unit probes: \(\dot x=1\Rightarrow Jv=2\); \(\dot y=1\Rightarrow Jv=5\);
+\(\bar z=1\Rightarrow J^T\bar z=[5,2]\) — the gradient row from one
+backward pass. Same flow, same order, same laws, same evaluators; and
+the whole set repeats under reversed tuple declarations.
+
+## No full Jacobian
+
+Gate B proves the **operators** \(v\mapsto Jv\) and
+\(\bar z\mapsto J^T\bar z\). No matrix, dense or sparse, is assembled.
+The structural \(J_{ZX}\) remains support only.
+
+## What role does structural J play now?
+
+Answered by construction, not assumption: the evaluators' signatures
+take \(R_{\mathrm{flow}}\), the derived order, primal values, domains,
+and the law table — **neither \(J_{ZX}\) nor its transpose is an
+input**. The test separately re-derives reachability and confirms the
+support agrees with where the action's incidence landed:
+
+```text
+numerical action     R_flow + order + primal + local linearizations
+J_ZX / J_XZ          support/sparsity metadata — WHO can matter
+incidence traversal  the action itself — HOW MUCH, and HOW OFTEN
+```
+
+\[
+\boxed{\text{support and action are complementary views of
+differentiation}}
+\]
+
+(Observation DA-8E.)
+
+## Refusals
+
+```text
+unbound-law          a symbol no law binds cannot be evaluated
+missing-port         an operation without exactly one slot on a
+                     required port cannot be differentiated
+primal-starvation    a law cannot run before its primal inputs exist
+tangent-starvation   a tangent cannot be read before it is established
+```
+
+---
+
 # Forward vs reverse structure
 
 ```text
@@ -565,9 +772,9 @@ observation, over structure finer than the \(J\)-pattern alone.
 
 ---
 
-# What Gate A proves / does not prove
+# What the tower proves / does not prove
 
-## Proven
+## Proven by Gate A
 
 ```text
 a derivative specimen needs no new carrier ontology
@@ -579,25 +786,35 @@ primal base values use ordinary fields; computed slots stay valueless
 the structural Jacobian pattern is derivable before any derivative exists
 reverse support is one transpose view
 support does not encode path multiplicity
+```
+
+## Proven by Gate B
+
+```text
+numerical tangent action Jv over the constituted structure
+numerical reverse action J^T z̄ over the same structure, reversed
+one local linearization serves both actions — no reverse formula
+reverse accumulation is incidence-local +=, certified by count
+the global duality <z̄, Jv> = <J^T z̄, v>, at two bases, under unit
+    seeds, and under reversed tuple order
+derivative seeds/results are ordinary fields on ordinary domains
+the structural J-pattern is support metadata, not the propagation
+    itinerary
+minimization is not inhabited by this orbit — levels are contracts,
+    not a pipeline
 all of it, with zero production changes
 ```
 
 ## Not proven — deliberately
 
 ```text
-numerical tangent action Jv
-numerical reverse action J^T v
-derivative constitution (product rule, sum rule)
-accumulation across multiple paths
-gradients, adjoints, Hessians
-any Gate-B/Gate-C design decision
+adjoint equations or adjoint solves
+gradients of implicit/solved systems
+Hessians, higher-order actions
+full Jacobian assembly (dense or sparse)
+checkpointing, taping, source transformation
+any Gate-C design decision
 ```
-
-Gate A also does **not** decide how this orbit crosses the upper nucleus
-levels (minimization, constitution, statement). Gate A reached complete
-derivative structure without minimization appearing at all
-(Observation DA-6E) — what that means is a review question, not a
-conclusion.
 
 ---
 
@@ -605,9 +822,10 @@ conclusion.
 
 - **`run.sh`** — the frontier law, third client: first absent rung
   closes the frontier (`ABSENT`/`BLOCKED`), a genuine failure stops the
-  ladder (`FAIL`/`SKIPPED`, nonzero exit). There is deliberately **no
-  numerical result marker**: Gate A certifies structure, and fabricating
-  a number would claim a derivative nothing has computed.
+  ladder (`FAIL`/`SKIPPED`, nonzero exit). Level 7 prints `N/A — not
+  inhabited` and the frontier passes over it deliberately. There is
+  **no numerical result marker**: Gate B certifies two actions and
+  their duality, not one blessed number.
 
 - **`check_imports.sh`** — the fail-closed import gate. Every source may
   `use` only its level's allowlist; a directory with sources but no
@@ -633,6 +851,7 @@ had first right of refusal — and at Gate A it refused nothing.
 | 4 | `level-4-graph-calculus/` | + `graph_profile`, `graph_algorithms` |
 | 5 | `level-5-field-calculus/` | `graph_carrier`, `class_graph_field` — the smallest allowlist above ground |
 | 6 | `level-6-derivative-structure/` | + `graph_binary_relation` (`csr_relation`, `transpose_of` earned), `graph_structure`, `graph_profile`, `graph_algorithms` |
+| 8 | `level-8-derivative-constitution/` | carriers/relations/algebra/structure/profile/algorithms + `class_graph_field` + `derivative_constitution_fixture` (own file; refusal suite); **no** binary storage, no solver |
 
 Every level also imports `derivative_assert`
 (`common/derivative_assert.f90`) — dependency-free constants and
@@ -654,12 +873,18 @@ test/derivative-action-tower/
 ├── level-3-graph/                  test.f90
 ├── level-4-graph-calculus/         test.f90
 ├── level-5-field-calculus/         test.f90
-└── level-6-derivative-structure/   test.f90
+├── level-6-derivative-structure/   test.f90
+└── level-8-derivative-constitution/
+                                    derivative_constitution_fixture.f90
+                                    · test.f90 · refusal.f90
+                                    · check_refusals.sh
 ```
 
-No refusal executables exist at Gate A: every candidate refusal here
-would duplicate a law already pinned by the calculator, learning, or
-generic suites, and no derivative-specific invalid construction arose.
+There is deliberately no `level-7-minimization/` directory — see
+[Level 7](#level-7--minimization-na-for-this-orbit). Gate A carries no
+refusal executables (every candidate would duplicate a law already
+pinned by the calculator, learning, or generic suites); Gate B carries
+four derivative-specific refusals of its own.
 
 ---
 
@@ -682,7 +907,7 @@ learning towers remain sealed acceptance oracles alongside this one.
 # Status
 
 ```text
-derivative action tower - Gate A
+derivative action tower
 ├── level 0  carriers ................ PASS
 ├── level 1  relation ................ PASS
 ├── level 2  relation algebra ........ PASS
@@ -690,20 +915,23 @@ derivative action tower - Gate A
 ├── level 4  graph calculus .......... PASS
 ├── level 5  field calculus .......... PASS
 ├── level 6  derivative structure .... PASS
-└── Gate A  structural derivative ..... PASS
-
-Gate B   numerical derivative action ... UNBUILT
-Gate C   derivative statement .......... UNBUILT
+├── level 7  minimization ............ N/A - not inhabited
+├── level 8  derivative action ....... PASS
+├── Gate A  structure ................ PASS
+├── Gate B  numerical duality ........ PASS
+└── Gate C  statement ................ UNBUILT
 ```
 
-Gate A is complete and awaiting architectural review. The most important
-Gate-A truth is not that \(J_{ZX}=\{(z,x),(z,y)\}\) can be derived — it
-is that the implementation makes the distinction unmistakable:
+Gates A and B are complete and awaiting architectural review. Gate A's
+central truth — the \(J\)-support says \(y\) matters once while the
+computation says why and how it matters, twice — became Gate B's
+central mechanism: one local linearization per operation, applied per
+operation/input-port incidence, accumulating with `+=` where incidences
+share a slot, sealed by
 
 \[
-\boxed{J\text{-support says }y\text{ matters once,}
-\quad\text{while the computation says why and how it matters — twice.}}
+\boxed{\langle\bar z,Jv\rangle_Z=\langle J^T\bar z,v\rangle_X}
 \]
 
-That distinction is where the numerical derivative architecture will
-begin to reveal itself.
+at two base points, under unit seeds, and under reversed tuple order —
+with zero production changes.

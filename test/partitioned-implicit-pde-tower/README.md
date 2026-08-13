@@ -258,11 +258,148 @@ no halo-exchange class
 
 ---
 
-# GATE B — Topology-consuming action *(unbuilt)*
+# GATE B — Topology-consuming action
 
-Will ask whether applying a real Class-1 operation to overlap-complete
-part fields, then assembling owned outputs, equals applying it globally —
-and will put that operation behind production GMRES on the global graph.
+Gate B asks **two** different questions and proves them apart:
+
+> Does a real Class-1 operation, evaluated on overlap-complete part
+> fields and assembled through **owned** outputs, reproduce the global
+> operator?
+
+> And does the graph a minimizer carries become observably load-bearing
+> when the attached action genuinely traverses topology?
+
+## The operation
+
+`common/shifted_laplacian_fixture.f90` — test-local, and it **owns no
+graph**. Its graph arrives through `domain()` and `apply()`, and it hands
+that graph straight to production:
+
+```text
+caller / minimizer
+    │  supplies a graph
+    ▼
+shifted_laplacian        A(q) = 2q − L(q)     ← no topology here
+    │
+    ▼
+production laplacian()   ← traverses the graph it is handed
+    │
+    ▼
+input_graph incidence
+```
+
+The adapter never inspects `edge_tail` or `edge_head`, implements no
+incidence and reproduces no Laplacian loop. It also refuses a state of
+the **right size** on a foreign carrier — six members that are not
+`V(G)` — by domain identity (`check_refusals.sh`).
+
+## Road 1 — the global action
+
+```text
+q* on V(G)
+    ↓ shifted_laplacian(G)
+    ↓ production L traverses G
+L q* = [1, 1, 1, 1, 1, −5]
+A q* = 2q* − Lq* = [1, 3, 7, 13, 21, 37] = b
+```
+
+## Road 2 — the partitioned action
+
+```text
+q* on V(G)
+    ↓ partition_data
+q1 on overlap V(G1)          q2 on overlap V(G2)
+    ↓ shifted_laplacian(G1)      ↓ shifted_laplacian(G2)
+A1 q1                        A2 q2
+    ↓ assemble owned only        ↓ assemble owned only
+            ╲                   ╱
+             sum over parts
+                  ↓
+        [1, 3, 7, 13, 21, 37]   ← equals the global action, exactly
+```
+
+### The local answers, and which of them are authoritative
+
+| part | global member | status | q | L q | A q | authoritative? |
+|---|---:|---|---:|---:|---:|---|
+| G1 | 1 | owned | 1 | 1 | 1 | **yes** |
+| G1 | 2 | owned | 2 | 1 | 3 | **yes** |
+| G1 | 3 | owned | 4 | 1 | 7 | **yes** |
+| G1 | 4 | *borrowed* | 7 | −3 | **17** | **NO** — global says 13 |
+| G2 | 4 | owned | 7 | 1 | 13 | **yes** |
+| G2 | 5 | owned | 11 | 1 | 21 | **yes** |
+| G2 | 6 | owned | 16 | −5 | 37 | **yes** |
+| G2 | 3 | *borrowed* | 4 | 3 | **5** | **NO** — global says 7 |
+
+A part holds enough topology to answer for what it **owns** and no more:
+the borrowed vertex sits at the part's edge with half its stencil
+missing. Those two rows are why owned assembly is not an optimisation
+but a correctness requirement.
+
+\[
+oxed{A_G\,q \;=\; \sum_p P_p^{T}\,O_p\,A_{G_p}\,P_p\,q}
+\]
+
+where \(P_p\) exposes the overlap state, \(O_p\) keeps only owned
+outputs, and \(P_p^{T}\) restores global numbering. These are
+*mathematics*, not production types — nothing named `P` or `O` exists.
+
+## Borrowed input is numerically load-bearing
+
+Structural visibility (Gate A) is not the same claim as numerical
+dependence. Proved by perturbation, with the borrowed seat located
+through `global_vertex_index` rather than assumed:
+
+```text
+G1: q(borrowed global 4) += 10  →  owned A at global 3:  7 → −3
+G2: q(borrowed global 3) += 10  →  owned A at global 4: 13 →  3
+restore the halo → the correct answers return
+```
+
+\[
+oxed{	ext{borrowed INPUT}\;\longrightarrow\;	ext{owned OUTPUT}}
+\]
+
+## Road 3 — the solver-host conduit
+
+The baseline implicit solve puts the Class-1 operation behind production
+GMRES on the global graph:
+
+```text
+GMRES
+  │ carries G                       (it reads no topology itself)
+  ▼
+attached shifted_laplacian
+  ▼
+production laplacian
+  ▼
+G topology
+```
+
+`attach(shifted, G, V(G))`; the affine constant is zero (A is linear);
+`solver.apply(G, [b], sol)` returns a field on `V(G)` equal to
+\(q^{*}=[1,2,4,7,11,16]\).
+
+**And the conduit is proved behaviourally, not by reading code.** The
+same `shifted_laplacian` — which stores no graph — is attached to two
+solvers over two topologies with the *same* six vertices and *same* five
+edges:
+
+```text
+G      chain:  1→2→3→4→5→6
+G_alt  star :  1→2, 1→3, 1→4, 1→5, 1→6
+
+solver_G   % matvec(q*)  =  b            ✓
+solver_alt % matvec(q*)  ≠  b            ← nothing changed but the host
+```
+
+If the host were scenery the two would agree. They do not.
+
+> The finding is **not** "GMRES traverses the graph" — it does not. It
+> is: **GMRES carries the graph to the attached operation, and that
+> operation consumes the topology.** Two distinct roles:
+> the minimizer holds the graph as *conduit / context carrier*; the
+> differential operation reads it as *numerical topology operand*.
 
 # GATE C — Partitioned implicit statement *(unbuilt)*
 
@@ -281,8 +418,9 @@ reverse review forbids.
 
 | Object | Type | Role |
 |---|---|---|
-| **global G** | `stored_graph` | whole topology; global field domain; target of assembly; (Gate B) GMRES contextual host |
-| **parts G1, G2** | `stored_graph` with a part relation | **topology-consuming numerical operands**; local overlap carriers; global↔local maps; ownership environment |
+| **global G** | `stored_graph` | topology **yes**; global domain source **yes**; GMRES host **yes**; downstream numerical influence **yes** (proved by the star-host control) |
+| **parts G1, G2** | `stored_graph` with a part relation | partition frame **yes**; local domain source **yes**; local topology operand **yes**; ownership/global maps **yes** — one object, four roles |
+| **borrowed member** | a member of a part carrier | visible to the local operator **yes**; authoritative output contributor **NO** |
 | **vertex/edge sets** | `counted_set` / `subset_set` | value domains — what fields live on |
 
 Four distinct senses of "graph" are in play, and the tower keeps them
@@ -320,6 +458,21 @@ them — and says so honestly rather than manufacturing per-level code:
 ---
 
 # L. What this tower proves / does not prove
+
+## Proven by Gate B
+
+```text
+a real Class-1 operation, applied to overlap-complete part fields and
+    assembled through owned outputs, reproduces the global operator
+    EXACTLY
+borrowed outputs are demonstrably NOT authoritative (17 vs 13, 5 vs 7)
+borrowed INPUT numerically determines owned OUTPUT — proved by
+    perturbation, not by the existence of a borrowed set
+a state of the right SIZE on a foreign carrier is refused by identity
+the implicit global solve returns q* through production GMRES
+the graph a minimizer carries is LOAD-BEARING: same operation, same
+    probe, different host topology, different mathematical action
+```
 
 ## Proven by Gate A
 
@@ -360,8 +513,16 @@ test/partitioned-implicit-pde-tower/
 ├── check_imports.sh              fail-closed per-gate allowlists
 ├── common/
 │   └── partitioned_pde_assert.f90
-└── gate-a-partition/             test.f90
+│   └── shifted_laplacian_fixture.f90
+├── gate-a-partition/             test.f90
+└── gate-b-operator/              test.f90 · refusal.f90
+                                  · check_refusals.sh
 ```
+
+The import gate keys its allowlists **per file** inside `common/`, so the
+assert module's freedom from framework imports is proved mechanically
+rather than asserted in a comment — the fixture's permissions do not
+extend to it.
 
 Development is grouped into three **gates**, not ten rungs: no empty
 per-level directories exist, and the Rosetta table above maps each
@@ -374,6 +535,6 @@ gate's truths back onto the nucleus levels it consumes.
 ```text
 partitioned implicit pde tower
 ├── Gate A · partition / ownership / transport ... PASS
-├── Gate B · topology-consuming action .......... UNBUILT
+├── Gate B · topology-consuming action .......... PASS
 └── Gate C · partitioned implicit statement ..... UNBUILT
 ```

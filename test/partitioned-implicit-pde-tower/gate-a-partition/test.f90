@@ -291,13 +291,15 @@ contains
   ! the crossing edge? This is documentation of a law already
   ! satisfied, never a decision.
   !
-  ! The production comment beside the assignment says an edge is
-  ! owned by its tail's part "unless the tail is borrowed, in which
-  ! case the head's owner answers for it" - but both branches of
-  ! that if/else assign the tail's owner, so the code is
-  ! unconditionally tail-owned. The law above holds regardless,
-  ! because tail-ownership is still a single well-defined owner per
-  ! global edge. What is wrong is the PROSE, not the behaviour.
+  ! Before Gate A, the production comment beside that assignment
+  ! SAID an edge is owned by its tail's part "unless the tail is
+  ! borrowed, in which case the head's owner answers for it" - but
+  ! both branches of its if/else assign the tail's owner, so the
+  ! code was and is unconditionally tail-owned. The law above held
+  ! regardless, because tail-ownership is still a single
+  ! well-defined owner per global edge: the PROSE was wrong, never
+  ! the behaviour. That comment has since been corrected; this
+  ! test is what established which of the two to believe.
   !===================================================================!
 
   subroutine document_canonical_edge_owner(nfail)

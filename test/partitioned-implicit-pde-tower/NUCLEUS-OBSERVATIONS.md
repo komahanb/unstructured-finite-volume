@@ -93,7 +93,17 @@ exact caller:         gate-a-partition/test.f90
 mathematical concept: V_part = owned union borrowed as the numerical
                       INPUT carrier
 
-local necessity:      yes - Gate B's stencil will starve without it
+local necessity:      yes - PROVED NUMERICALLY at Gate B, not merely
+                      predicted: perturbing ONLY the borrowed copy
+                      moves an OWNED result.
+                        G1: q(borrowed global 4) += 10
+                            -> owned A at global 3:  7 -> -3
+                        G2: q(borrowed global 3) += 10
+                            -> owned A at global 4: 13 ->  3
+                      Restore the halo and the correct answers
+                      return. Structural visibility and numerical
+                      dependence are different claims, and this is
+                      the second one
 global necessity:     unknown at larger radius (deeper stencils need
                       wider overlap; this tower tests one ring only)
 
@@ -238,15 +248,197 @@ action:               observe
 
 ---
 
-## Deferred to later gates
+---
+
+## OBSERVATION PIP-4
 
 ```text
-PIP-4   graph host as a real conduit to a Class-1 consumer   Gate B
-PIP-5   the part graph as a genuine numerical operand        Gate B
-PIP-6   whether Class-2 domain-from-graph pressure arises    Gate B
+tower:                Partitioned Implicit PDE
+gate:                 B
+contextual radius:    2
+
+symptom / fact:       THE GRAPH HOST IS A REAL CONDUIT, and it is
+                      proved BEHAVIOURALLY rather than inferred from
+                      production call sites.
+
+                      One operation type (shifted_laplacian) that
+                      stores NO graph; two gmres instances; two hosts
+                      with the SAME six vertices and SAME five edges
+                      but different topology - the chain and a star;
+                      one numerical probe q*:
+
+                        solver_G   % matvec(q*)  =  b
+                        solver_alt % matvec(q*)  /= b
+
+                      Nothing changed but the graph the solver carries.
+                      If the host were scenery the two would agree.
+
+                      The finding is NOT "GMRES traverses the graph" -
+                      it does not; it reads no topology at all. It is
+                      that GMRES CARRIES the graph to an attached
+                      operation which does. Two roles:
+
+                        minimizer     graph as conduit / context carrier
+                        differential  graph as numerical topology
+                        operation     operand
+
+exact caller:         gate-b-operator/test.f90
+                      (check_host_is_load_bearing); the chain reaches
+                      production laplacian via
+                      common/shifted_laplacian_fixture.f90
+
+mathematical concept: an operator parameterized by the structure it
+                      is applied over
+
+local necessity:      YES for the attached action; the minimizer
+                      itself still reads nothing
+global necessity:     yes at this radius - and the reverse review's
+                      Case-III caution is now settled empirically for
+                      Class-1 clients
+
+cross-tower recurrence: the FOUR sealed towers reported the host as
+                      scenery (calculator, learning, adjoint) or took
+                      no host at all (derivative action). Their
+                      observation is not overturned - it was true of
+                      THEIR actions, all Class-2/3. What is overturned
+                      is the generalization. Independent tower count
+                      for "host unused" does NOT change; its
+                      INTERPRETATION does
+
+graph role:           conduit (minimizer) and topology operand
+                      (differential operator) in one call chain
+
+comparison:           the reverse review inferred this from
+                      test/graph-minimization/test.f90:345 and
+                      class_graph_multigrid.f90:123. This tower
+                      measures it: same operation, same probe,
+                      different host, different answer
+
+suspected nucleus implication: the reverse review's REJECT of
+                      "remove class(graph) from graph_operation" is
+                      now supported by evidence rather than by
+                      inference. Removing it would break this call
+                      chain outright. Seam A1 is CLOSED as a refactor
+                      candidate.
+
+confidence:           high
+action:               observe - and close A1
+```
+
+---
+
+## OBSERVATION PIP-5
+
+```text
+tower:                Partitioned Implicit PDE
+gate:                 B
+contextual radius:    2
+
+symptom / fact:       THE PART GRAPH IS A GENUINE NUMERICAL OPERAND.
+                      The production Laplacian is applied to G1 and G2
+                      directly and traverses each part's own local
+                      incidence, producing local answers that differ
+                      from the global ones exactly where the part's
+                      topology is incomplete:
+
+                        G1 borrowed global 4:  local L = -3, global 1
+                        G2 borrowed global 3:  local L =  3, global 1
+
+                      So one object - the part graph - carries four
+                      roles at once: partition frame, ownership
+                      environment, local field-domain source, and
+                      numerical topology operand.
+
+exact caller:         gate-b-operator/test.f90 (check_local_actions,
+                      one_local_action)
+
+mathematical concept: restriction of an operator to a subdomain with
+                      overlap
+
+local necessity:      yes
+global necessity:     unknown beyond this radius
+
+cross-tower recurrence: first tower in which a graph is BOTH a frame
+                      and an operand. In the adjoint tower the model
+                      graph was an owner and never an operand
+                      (AD-13); here the same object is both
+
+graph role:           all four, simultaneously
+
+comparison:           the borrowed rows are the evidence: a part's
+                      answer is authoritative only where its topology
+                      is complete, which is precisely what ownership
+                      records
+
+suspected nucleus implication: none - production needed nothing. The
+                      observation matters for what it forbids: a
+                      future "partitioned operator" abstraction must
+                      not assume a part's output is globally valid.
+
+confidence:           high
+action:               observe
+```
+
+---
+
+## OBSERVATION PIP-6
+
+```text
+tower:                Partitioned Implicit PDE
+gate:                 B
+contextual radius:    2
+
+symptom / fact:       UNRESOLVED - and deliberately so.
+
+                      The reverse review's seam A2 is that Class-2
+                      operations (fit, reduction, broadcast,
+                      difference_linearization) obtain their DOMAIN
+                      from a graph's vertex_set() instead of carrying
+                      it. Gate B was watched for natural pressure of
+                      that kind.
+
+                      None arose. Every operation this gate needed was
+                      Class-1: it wanted the topology, not merely a
+                      domain, and asking the graph for its vertex set
+                      was therefore not a workaround but the correct
+                      thing to do.
+
+                      No Class-2 caller was imported to manufacture a
+                      vote. difference_linearization, graph reduction
+                      and broadcast are absent from this tower.
+
+exact caller:         none - this entry records an ABSENCE
+
+mathematical concept: n/a
+
+local necessity:      n/a
+global necessity:     n/a
+
+cross-tower recurrence: seam A2 remains at TWO towers (derivative
+                      action, adjoint), both in the derivative family.
+                      This tower adds nothing to it
+
+graph role:           n/a
+
+comparison:           a tower should answer its own problem, not
+                      collect evidence for someone else's. Recording
+                      the absence honestly is the result
+
+suspected nucleus implication: A2 stays in BUILD-ANOTHER-TOWER-FIRST.
+                      A partitioned client did not supply the missing
+                      independent vote; some other client must.
+
+confidence:           high (that no pressure arose)
+action:               observe; A2 still unresolved
+```
+
+---
+
+## Deferred to Gate C
+
+```text
 PIP-8   serial partitioned action vs distributed execution   Gate C
 ```
 
-These are named now so that Gate B and Gate C are answering questions
-that were asked in advance, rather than reporting whatever they happen
-to notice.
+Named in advance so that Gate C answers a question that was asked
+before it began, rather than reporting whatever it happens to notice.

@@ -47,6 +47,12 @@ allowed_for() {
         # the home - no solver, no legacy host, no minimization, no
         # binary storage. The named fixture is the level's own.
         level-8-constitution)    echo "learning_assert graph_carrier graph_relation graph_relation_algebra graph_structure graph_profile graph_algorithms class_graph_field learning_constitution_fixture" ;;
+        # level 9: the statement - the composition rung. The REUSED
+        # level-8 constitution and the level's own adapter are the
+        # named fixtures; Level 7's affine oracle is deliberately
+        # absent, and graph_minimization stays off: gmres inherits
+        # the minimizer face. No new mathematics enters here.
+        level-9-statement)       echo "learning_assert graph_carrier graph_relation graph_relation_algebra graph_structure graph_profile graph_algorithms graph_grammar class_graph class_graph_field class_graph_gmres learning_constitution_fixture constituted_residual_fixture" ;;
         *)                       echo "__no_allowlist__" ;;
     esac
 }

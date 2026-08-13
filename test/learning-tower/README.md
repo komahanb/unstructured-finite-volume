@@ -64,7 +64,10 @@ level 5  field calculus ........ PASS
 level 6  discretization ........ PASS
 level 7  minimization .......... PASS
 level 8  constitution .......... PASS
-level 9  statement ............. ABSENT
+level 9  statement ............. PASS
+
+learned parameter .............. 3
+post-training inference ........ x* = 4  →  ŷ* = 12
 ```
 
 Data and parameters differ by domain and role, not by field class;
@@ -87,7 +90,20 @@ Only at constitution does `predict` become multiplication and
 computed domain — no field on `U`, no `q(e) − law` — then reads
 residual `r` from `e`, reproducing `r(w) = 2w − 6` without running
 a solver; and meaning does not bend topology: the trainable slots
-the evaluation reads equal Level 6's structural support `{w}`. Each level is added RED-first, one review gate at a time, with the
+the evaluation reads equal Level 6's structural support `{w}`.
+The statement selects and invents nothing: one relational model
+graph drives the complete path — derived dependency, derived order,
+constituted laws, `L`'s home — behind a test-local adapter the
+ordinary GMRES citizen solves through, `rhs` on `Y` in, learned
+state on `Θ` out, `w: 0 → 3`; the same predict law then serves
+inference without retraining or a target. The tower's primary
+result is the **learned parameter 3**; the inference `12` is its
+secondary proof that learned state outlives training. The tower
+learns one parameter by solving an attainable residual equation.
+It does not yet implement gradient-based ML training — no gradient,
+no SGD, no backpropagation, no autodiff; `J_Θᵀ` remains structure
+awaiting its own adjoint tower. The whole ladder closed with
+**zero production changes**. Each level is added RED-first, one review gate at a time, with the
 import gate holding every rung to its own allowlist. Production
 changes are expected to be **none** at every level — that is the
 experiment.

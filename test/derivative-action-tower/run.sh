@@ -9,16 +9,20 @@
 # compulsory pipeline.
 #
 # After a full ladder the derivative is read - fail closed - from
-# the ninth rung's own output. This tower's answer is a VECTOR, not
-# a scalar: exactly one marker, carrying one value per member of
-# the statement's independent domain. The runner checks the shape
-# and that every token is a number; it never learns what the
-# numbers should be.
+# the ninth rung's own output. This tower's answer is a REAL-VALUED
+# VECTOR, not a scalar: exactly one marker, carrying one real per
+# member of the statement's independent domain. The contract itself
+# lives in check_marker.sh, which self-tests before the ladder
+# runs; the runner checks shape and syntax only and never learns
+# what the numbers should be.
 set -e
 
 here="$(cd "$(dirname "$0")" && pwd)"
 
 "$here/check_imports.sh" || { echo "└── the import gate refused the tower"; exit 1; }
+
+. "$here/check_marker.sh"
+"$here/check_marker.sh" --selftest || { echo "└── the result contract refused itself"; exit 1; }
 
 ( cd "$here/../.." && ./build.sh >/dev/null 2>&1 )
 
@@ -101,21 +105,16 @@ fi
 echo "├── Gate B  numerical duality ........ PASS"
 echo "├── Gate C  statement ................ PASS"
 
-# Fail closed: exactly one marker, one number per independent-domain
-# member (the statement declares X = {y,x}: two), every token a
-# number. The runner knows the SHAPE of the answer, never its value.
+# Fail closed against the shared contract: exactly one marker, one
+# real per independent-domain member (the statement declares
+# X = {y,x}: two), every token a number. The runner knows the SHAPE
+# of the answer, never its value - and the tokens are displayed as
+# the statement wrote them, unrounded.
 out="$here/level-9-statement/run.out"
 marks=$(grep -c 'DERIVATIVE_RESULT =' "$out")
 values=$(grep -o 'DERIVATIVE_RESULT =.*' "$out" | sed 's/.*DERIVATIVE_RESULT =//')
-count=$(echo $values | wc -w)
-numeric=1
-for tok in $values; do
-    case "$tok" in
-        ''|*[!0-9-]*) numeric=0 ;;
-    esac
-done
-if [ "$marks" -ne 1 ] || [ "$count" -ne 2 ] || [ "$numeric" -ne 1 ]; then
+if ! marker_ok "$marks" 2 "$values"; then
     echo "└── RUNNER FAILURE: the statement did not report one derivative on X"
     exit 1
 fi
-echo "└── derivative on X={y,x} ........... [$(echo $values | sed 's/ /, /g')]"
+echo "└── derivative on X={y,x} ........... [$(echo $values | sed 's/  */, /g')]"

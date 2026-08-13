@@ -140,12 +140,15 @@ program derivative_level_9
   call check_functional_action(nfail)
   call check_duality(nfail)
 
-  ! -- the tower's one result: a FIELD, not a scalar - printed from
-  !    the computed field alone, digit by digit as X enumerates it
+  ! -- the tower's one result: a FIELD, not a scalar - and a
+  !    REAL-valued field, serialized as it stands. One token per
+  !    member, in X's own enumeration order, at full round-trip
+  !    precision: the marker carries the actual field, never a
+  !    rounded image of it. No integer conversion lives on this path.
   call grad_f % get_real_vector(gvals)
   write(*,'(1x,a)', advance='no') "DERIVATIVE_RESULT ="
   do i = 1, x_dom % size()
-     write(*,'(1x,i0)', advance='no') nint(gvals(i))
+     write(*,'(es24.16)', advance='no') gvals(i)
   end do
   write(*,'(a)') ""
 

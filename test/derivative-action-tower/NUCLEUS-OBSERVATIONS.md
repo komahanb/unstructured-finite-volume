@@ -1052,42 +1052,62 @@ tower:                Derivative Action
 gate / level:         C / 9
 contextual radius:    1
 
-symptom / fact:       the statement's answer is a FIELD on the
-                      independent domain - [3, 3] on X = {y,x} -
-                      obtained by one reverse traversal, and it acts
-                      as the derivative linear functional (paired
-                      with v = [-1,4] it reproduces Jv = 9). It is
-                      not a scalar and was never assembled as a
-                      matrix.
+symptom / fact:       the statement's answer is a DOMAIN-SHAPED,
+                      REAL-VALUED FIELD on the independent domain -
+                      [3, 3] on X = {y,x} - obtained by one reverse
+                      traversal, and it acts as the derivative
+                      linear functional (paired with v = [-1,4] it
+                      reproduces Jv = 9). It is not a scalar and was
+                      never assembled as a matrix.
+
+                      Result heterogeneity therefore has TWO axes:
+                      shape AND scalar type. The first serialization
+                      of this marker honoured the shape and quietly
+                      broke the type - it printed nint(entry) and
+                      the runner's grammar then accepted integers
+                      only, so a correct answer of 2.5 would have
+                      been reported as 3 or refused outright. The
+                      infrastructure must not collapse a field
+                      merely to fit a convenient marker format.
 
 exact caller:         level-9-statement/test.f90
                       (check_derivative_field,
-                      check_functional_action)
+                      check_functional_action, and the marker write);
+                      check_marker.sh (the contract and its
+                      self-test)
 
-mathematical concept: the derivative object of a statement
+mathematical concept: the derivative object of a statement, and the
+                      fidelity of its serialization
 
-local necessity:      yes - a scalar could not carry the answer
+local necessity:      yes - a scalar could not carry the answer, and
+                      an integer could not carry a derivative
 global necessity:     unknown; higher-order or multi-response
                       statements will want richer objects still
 
 cross-tower recurrence: healthy HETEROGENEITY across towers -
                       calculator answers a scalar (20), learning
                       answers a field component (w = 3), derivative
-                      action answers a whole field ([3,3]). No tower
-                      was contorted into another's output shape, and
-                      each runner's marker matches its own
-                      mathematics.
+                      action answers a whole real field ([3.0, 3.0]).
+                      No tower was contorted into another's output
+                      shape, and each runner's marker matches its own
+                      mathematics. The earlier scalar markers were
+                      integral by their own mathematics, not by a
+                      shared serialization habit - copying their
+                      nint() was exactly the defect.
 
 graph role:           not applicable
 
-comparison:           first vector-valued tower result in the
-                      repository; the runner's marker check
-                      validates SHAPE (one marker, |X| numeric
-                      tokens) and never the values
+comparison:           first vector-valued AND first genuinely
+                      real-valued tower result in the repository;
+                      the marker check validates SHAPE and SYNTAX
+                      (one marker, |X| finite real tokens) and never
+                      the values
 
 suspected nucleus implication: result contracts should be domain-
-                      shaped, not scalar-shaped; a future gradient
-                      or adjoint orbit will inherit this
+                      shaped AND type-faithful, not scalar-shaped
+                      and not silently rounded; a future gradient or
+                      adjoint orbit will inherit this. No production
+                      result API is proposed on this evidence.
 
 confidence:           high
 action:               observe

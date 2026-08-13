@@ -891,21 +891,29 @@ re-certifying every local numerical fact.
 
 ## The result marker
 
-The tower's answer is a vector, so its marker is too — exactly one,
-printed from the computed field alone:
+The tower's answer is a **real-valued vector**, so its marker is too —
+exactly one line, serializing the computed field's own entries in
+\(X\)'s enumeration order, at full round-trip precision:
 
 ```text
-DERIVATIVE_RESULT = 3 3        (in X = {y,x} order)
+DERIVATIVE_RESULT =  3.0000000000000000E+00  3.0000000000000000E+00
 ```
 
-The runner requires exactly one marker carrying one numeric token per
-member of the independent domain, and prints
+No integer conversion exists anywhere on this path: the marker carries
+the actual real field, not a rounded image of it. A derivative of
+\(2.5\) would be reported as \(2.5\).
+
+The contract lives in `check_marker.sh` and is self-tested before the
+ladder runs. It requires exactly one marker carrying one **finite real
+numeric token** per member of the independent domain — decimals,
+leading/trailing points, and `e`/`E`/`d`/`D` exponents all admitted —
+and it validates **shape and syntax only**, never values. The runner
+then prints the tokens as the statement wrote them:
 
 ```text
-└── derivative on X={y,x} ........... [3, 3]
+└── derivative on X={y,x} ........... [3.0000000000000000E+00, 3.0000000000000000E+00]
 ```
 
-It validates the **shape** of the answer and never learns its values.
 No separate marker is emitted for \(z=9\); the primal remains an
 asserted secondary truth.
 
@@ -914,11 +922,14 @@ asserted secondary truth.
 ```text
 Calculator result:        scalar value        20
 Learning result:          field component     w = 3
-Derivative Action result: derivative field    [3, 3]
+Derivative Action result: real derivative field  [3.0, 3.0] on X
 ```
 
-No tower is contorted into another's output shape. Each marker matches
-its own mathematics (Observation DA-9B).
+Heterogeneity runs along **two** axes — shape *and* scalar type. The
+earlier towers' markers are integral because their mathematics is, not
+because markers are integral; borrowing their `nint()` for a derivative
+would round the answer. No tower is contorted into another's output
+shape or type (Observation DA-9B).
 
 ---
 
@@ -1021,9 +1032,17 @@ that distinction; nothing here anticipates it.
   ladder (`FAIL`/`SKIPPED`, nonzero exit). Level 7 prints `N/A — not
   inhabited` and the frontier passes over it deliberately. After a full
   ladder the runner reads the derivative — fail closed — from Level 9's
-  own output: exactly one marker, one numeric token per member of the
-  independent domain, every token a number. It validates the answer's
-  shape and never its values.
+  own output.
+
+- **`check_marker.sh`** — the result contract, in one place: exactly
+  one `DERIVATIVE_RESULT` marker, one finite **real** numeric token per
+  member of the independent domain. `--selftest` runs it against a
+  table of accepted forms (`3 3`, `2.5 -1.25`, `.5 2.`, `3e-4
+  -2.5E+03`, `3.0D+00 -1.0D-02`) and refused ones (too narrow, too
+  wide, non-numeric, no marker, two markers) before the ladder starts,
+  so the shared grammar is proven, not assumed. The runner uses that
+  same function on the real output — shape and syntax only, never
+  values.
 
 - **`check_imports.sh`** — the fail-closed import gate. Every source may
   `use` only its level's allowlist; a directory with sources but no
@@ -1062,8 +1081,9 @@ fixture with the first two.
 test/derivative-action-tower/
 ├── README.md                       this document
 ├── NUCLEUS-OBSERVATIONS.md         the live evidence ledger
-├── run.sh                          Gate-A frontier-law runner
+├── run.sh                          frontier-law runner, fail-closed marker
 ├── check_imports.sh                fail-closed per-level allowlists
+├── check_marker.sh                 the result contract + its self-test
 ├── common/
 │   └── derivative_assert.f90
 ├── level-0-carrier/                test.f90
@@ -1121,11 +1141,12 @@ derivative action tower
 ├── Gate A  structure ................ PASS
 ├── Gate B  numerical duality ........ PASS
 ├── Gate C  statement ................ PASS
-└── derivative on X={y,x} ........... [3, 3]
+└── derivative on X={y,x} ........... [3.0000000000000000E+00, 3.0000000000000000E+00]
 ```
 
-**Complete.** The tower's result is the derivative field \([3,3]\) on
-\(X=\{y,x\}\), with \(z=9\) beside it — and Level 7 deliberately
+**Complete.** The tower's result is the real derivative field
+\([3,3]\) on \(X=\{y,x\}\) — serialized unrounded, as the field
+stands — with \(z=9\) beside it, and Level 7 deliberately
 uninhabited.
 
 Gate A's central truth — the \(J\)-support says \(y\) matters once

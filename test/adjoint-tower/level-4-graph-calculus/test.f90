@@ -10,14 +10,19 @@
 ! The state is implicitly coupled, and the coupling is derived from
 ! the same J_Q, never authored:
 !
-!      C_Q = J_Q^T o J_Q  <=  Q x Q
+!      C_Q = J_Q o J_Q^T  <=  Q x Q            the path Q -> Y -> Q
 !          = { (u,u), (u,v), (v,u), (v,v) }
 !
-! two state slots sharing both residual rows, so each depends on
-! the other and on itself. Interpreted as a directed graph this is
-! a perfectly VALID structure - the view builds, the domain is Q,
-! reachability answers in both directions - and it is emphatically
-! not a DAG:
+! written in code as compose_binary(J_Q^T, J_Q); as a Boolean
+! matrix pattern the same object reads J_Q^T J_Q. The two state
+! slots share both residual rows, so each depends on the OTHER: the
+! off-diagonal pair (u,v) and (v,u) is what makes the coupling
+! mutual. Self-couplings are present too, but they are not the
+! reason.
+!
+! Interpreted as a directed graph this is a perfectly VALID
+! structure - the view builds, the domain is Q, reachability
+! answers in both directions - and it is emphatically not a DAG:
 !
 !      a valid directed graph  /=  a DAG
 !
@@ -157,30 +162,37 @@ contains
   end subroutine check_view_is_valid
 
   !===================================================================!
-  ! And it holds a genuine cycle: each slot reaches the other, and
-  ! each reaches itself - not by the zero-length convention alone
-  ! but by a real self-coupling edge.
+  ! And it holds a genuine cycle. The MUTUAL coupling is the
+  ! off-diagonal pair: u depends on v and v depends on u, because
+  ! they share residual rows. The self-couplings exist as stored
+  ! facts too - worth pinning, since a walk would trip on them
+  ! either way - but they are not why the state is coupled.
   !===================================================================!
 
   subroutine check_the_cycle(nfail)
 
     integer, intent(inout) :: nfail
 
+    call report(coupling % has([VAR_U, VAR_V]) .and. &
+         &      coupling % has([VAR_V, VAR_U]), &
+         & "the off-diagonal pair stands: u depends on v and v on " // &
+         & "u - THAT is the mutual coupling", nfail)
     call report(reachable(view, VAR_U, VAR_V) .and. &
          &      reachable(view, VAR_V, VAR_U), &
-         & "u reaches v AND v reaches u: the coupling is a cycle", &
+         & "and each reaches the other, so the walk finds a cycle", &
          & nfail)
     call report(coupling % has([VAR_U, VAR_U]) .and. &
          &      coupling % has([VAR_V, VAR_V]), &
-         & "and each slot couples to itself by a stored fact, not " // &
-         & "by convention", nfail)
+         & "self-couplings are present too, by stored fact - not " // &
+         & "the reason, but not fiction either", nfail)
 
   end subroutine check_the_cycle
 
   !===================================================================!
-  ! The structural signature of an implicit system: nothing to start
-  ! from and nothing to finish at. There is no first equation to
-  ! solve, which is exactly why a walk cannot solve it.
+  ! The structural signature of an implicit system: the derived
+  ! state coupling has no source and no sink STATE SLOT - C_Q
+  ! relates slots, not equations - so there is nowhere for a walk
+  ! to begin or end, which is exactly why a walk cannot solve it.
   !===================================================================!
 
   subroutine check_no_source_or_sink(nfail)
@@ -193,8 +205,8 @@ contains
     snk = sinks(view)
 
     call report(src % size() .eq. 0 .and. snk % size() .eq. 0, &
-         & "no sources and no sinks: the implicit system has no " // &
-         & "first equation and no last", nfail)
+         & "the state coupling has no source or sink state slot: " // &
+         & "nowhere for a walk to begin", nfail)
 
   end subroutine check_no_source_or_sink
 

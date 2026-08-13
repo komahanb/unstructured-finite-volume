@@ -134,10 +134,16 @@ symptom / fact:       all four derivative supports came from ONE
                       dependency relation and the roles' own
                       relational faces:
 
-                        J_Q = (I_Y o R_dep) o I_Q^T   <= Y x Q
-                        J_P = (I_Y o R_dep) o I_P^T   <= Y x P
-                        F_Q = (I_Z o R_dep) o I_Q^T   <= Z x Q
-                        F_P = (I_Z o R_dep) o I_P^T   <= Z x P
+                        J_Q = I_Q^T o R_dep o I_Y   <= Y x Q
+                        J_P = I_P^T o R_dep o I_Y   <= Y x P
+                        F_Q = I_Q^T o R_dep o I_Z   <= Z x Q
+                        F_P = I_P^T o R_dep o I_Z   <= Z x P
+
+                      (relational composition, read right to left;
+                      in code the same road is written left to right
+                      as compose_binary(compose_binary(I_Y,R_dep),
+                      I_Q^T), since compose_binary(R_AB,R_BC) =
+                      R_BC o R_AB)
 
                       inclusion_of() turned each subobject's
                       membership into algebra, and the right-hand
@@ -240,7 +246,10 @@ symptom / fact:       THE structural break with every sibling tower.
                       found an execution order at level 4. This
                       tower's state is implicitly coupled:
 
-                        C_Q = J_Q^T o J_Q = {(u,u),(u,v),(v,u),(v,v)}
+                        C_Q = J_Q o J_Q^T = {(u,u),(u,v),(v,u),(v,v)}
+
+                      (the path Q -> Y -> Q; as a Boolean matrix
+                      pattern the same object reads J_Q^T J_Q)
 
                       derived from the same J_Q. The directed view
                       builds and is perfectly valid; reachability

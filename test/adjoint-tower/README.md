@@ -109,8 +109,9 @@ Two choices are **load-bearing**:
 
 - **\(A\) is not symmetric.** An implementation that quietly solves the
   primal system where it should solve the transpose *must fail*. With
-  \(A^{T}\) the adjoint is \([-0.4,0.6]\); with \(A\) it would be
-  \([-0.6,0.8]\) — different numbers, so the mistake cannot hide.
+  \(A^{T}\) the adjoint is \([-0.4,0.6]\); solving \(A\lambda=c\)
+  instead gives \([0.4,0.2]\) — different in both entries and even in
+  sign, so the mistake cannot hide.
 - **\(f_p=2\neq 0\).** The tower must not collapse total sensitivity to
   \(-\lambda^{T}R_p\) alone. That term is \(5\); the answer is \(7\).
 
@@ -349,10 +350,18 @@ Nothing is hand-maintained. Using the subobjects' own relational faces
 I_Y = inclusion_of(Y) ⊆ Y×T        I_Q = inclusion_of(Q) ⊆ Q×V
 I_Z = inclusion_of(Z) ⊆ Z×T        I_P = inclusion_of(P) ⊆ P×V
 
-J_Q = (I_Y ∘ R_dep) ∘ I_Q^T   ⊆ Y×Q
-J_P = (I_Y ∘ R_dep) ∘ I_P^T   ⊆ Y×P
-F_Q = (I_Z ∘ R_dep) ∘ I_Q^T   ⊆ Z×Q
-F_P = (I_Z ∘ R_dep) ∘ I_P^T   ⊆ Z×P
+J_Q = I_Q^T ∘ R_dep ∘ I_Y   ⊆ Y×Q      path  Y → T → V → Q
+J_P = I_P^T ∘ R_dep ∘ I_Y   ⊆ Y×P      path  Y → T → V → P
+F_Q = I_Q^T ∘ R_dep ∘ I_Z   ⊆ Z×Q      path  Z → T → V → Q
+F_P = I_P^T ∘ R_dep ∘ I_Z   ⊆ Z×P      path  Z → T → V → P
+```
+
+Read right-to-left, as function composition is read: the rightmost
+inclusion enters first. In code the same road is written left-to-right,
+because `compose_binary(R_AB, R_BC) = R_BC ∘ R_AB`:
+
+```text
+compose_binary( compose_binary(I_Y, R_dep), I_Q^T )
 ```
 
 with exact extensions
@@ -388,13 +397,22 @@ coupled, and the honest graph-calculus question is whether that coupling
 is acyclic. From the same \(J_Q\):
 
 \[
-C_Q=J_Q^{T}\circ J_Q\subseteq Q\times Q,
+C_Q=J_Q\circ J_Q^{T}\subseteq Q\times Q,
 \qquad
 C_Q=\{(u,u),(u,v),(v,u),(v,v)\}
 \]
 
-— two slots sharing residual rows, so each depends on the other and on
-itself. Interpreted as a directed graph, this view is perfectly valid
+— the path \(Q\to Y\to Q\), written in code as
+`compose_binary(J_Q^T, J_Q)`. (Beware the two conventions: as a
+**relational composition** this is \(J_Q\circ J_Q^{T}\), while the same
+object written as a **Boolean matrix pattern** is \(J_Q^{T}J_Q\). The
+README uses the relational form throughout.)
+
+The mutual coupling is carried by the **off-diagonal pair**
+\((u,v)\) and \((v,u)\): each state slot depends on the other, because
+they share residual rows. The self-couplings \((u,u)\) and \((v,v)\)
+are present too, but they are not the reason the system is mutually
+coupled. Interpreted as a directed graph, this view is perfectly valid
 and it **has a cycle**:
 
 ```text

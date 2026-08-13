@@ -8,7 +8,7 @@
 !                     than inventing one
 !
 ! The coupling handed to the walk is derived exactly as the test
-! derives it - C_Q = J_Q^T o J_Q from the one dependency source -
+! derives it - C_Q = J_Q o J_Q^T from the one dependency source -
 ! so what dies here is the real structure of the specimen, not a
 ! contrived cycle built to provoke an error message.
 !

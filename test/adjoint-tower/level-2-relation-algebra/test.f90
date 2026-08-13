@@ -7,16 +7,19 @@
 ! subobject S c--> A states its membership as an inclusion
 ! I_S <= S x A, and then the algebra does the rest:
 !
-!      J_Q = (I_Y o R_dep) o I_Q^T   <=  Y x Q
-!      J_P = (I_Y o R_dep) o I_P^T   <=  Y x P
-!      F_Q = (I_Z o R_dep) o I_Q^T   <=  Z x Q
-!      F_P = (I_Z o R_dep) o I_P^T   <=  Z x P
+!      J_Q = I_Q^T o R_dep o I_Y   <=  Y x Q      Y -> T -> V -> Q
+!      J_P = I_P^T o R_dep o I_Y   <=  Y x P      Y -> T -> V -> P
+!      F_Q = I_Q^T o R_dep o I_Z   <=  Z x Q      Z -> T -> V -> Q
+!      F_P = I_P^T o R_dep o I_Z   <=  Z x P      Z -> T -> V -> P
 !
-! reading compose_binary(R_AB, R_BC) = R_BC o R_AB as everywhere
-! else in this repository. The left inclusion selects which targets
-! the block answers ON; the right inclusion, TRANSPOSED and
-! borrowed rather than rebuilt, selects which variables it answers
-! FOR. Four blocks, one truth, no duplication.
+! written as relational composition, read right to left. In code the
+! same road runs left to right, because this repository reads
+! compose_binary(R_AB, R_BC) = R_BC o R_AB.
+!
+! The inclusion nearest R_dep on the right selects which targets the
+! block answers ON; the transposed inclusion on the left - borrowed
+! rather than rebuilt - selects which variables it answers FOR.
+! Four blocks, one truth, no duplication.
 !
 ! Their extensions are exact and their signatures are checked BY
 ! IDENTITY - which is the whole point, because J_Q <= Y x Q and

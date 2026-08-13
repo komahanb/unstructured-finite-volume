@@ -72,6 +72,7 @@ program partitioned_pde_gate_b
   call cut(g2, 2)
 
   call check_global_action(nfail)
+  call check_transported_state(nfail)
   call check_local_actions(nfail)
   call check_assembled_equivalence(nfail)
   call check_borrowed_input_matters(nfail)
@@ -131,6 +132,65 @@ contains
   end subroutine check_global_action
 
   !===================================================================!
+  ! The minimal re-check Gate B needs before it may trust its own
+  ! inputs: the transported state lives on the PART's whole vertex
+  ! carrier, by identity, and carries the right values in the
+  ! part's own enumeration. Gate A owns the full ownership story;
+  ! this is only the handshake.
+  !===================================================================!
+
+  subroutine check_transported_state(nfail)
+
+    integer, intent(inout) :: nfail
+
+    call one_transported_state(g1, 1, &
+         & [1.0_dp, 2.0_dp, 4.0_dp, 7.0_dp], nfail)
+    call one_transported_state(g2, 2, &
+         & [7.0_dp, 11.0_dp, 16.0_dp, 4.0_dp], nfail)
+
+  end subroutine check_transported_state
+
+  subroutine one_transported_state(part, k, expect, nfail)
+
+    class(graph), intent(in)    :: part
+    integer     , intent(in)    :: k
+    real(dp)    , intent(in)    :: expect(:)
+    integer     , intent(inout) :: nfail
+
+    type(partitioner)               :: p
+    type(field)                     :: q
+    class(graph_field), allocatable :: pd
+    class(member_set), allocatable  :: dom
+    real(dp), allocatable           :: v(:)
+    type(counted_set)               :: pvs
+    character(len=1)                :: tag
+
+    write(tag,'(i1)') k
+
+    q = field('q star', g % vertex_set())
+    call q % set_real_vector(Q_EXACT)
+
+    p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
+    call p % partition_data(g, q, part, pd)
+
+    call pd % domain(dom)
+    call pd % get_real_vector(v)
+
+    select type (part)
+    type is (stored_graph)
+       pvs = part % vertex_set()
+       call report(dom % same_as(pvs), &
+            & "q" // tag // " lives on G" // tag // "'s whole vertex " // &
+            & "carrier - the overlap a stencil will read", nfail)
+    end select
+
+    call report(size(v) .eq. size(expect) .and. &
+         &      maxval(abs(v - expect)) < 1.0d-13, &
+         & "and carries q* in G" // tag // "'s own enumeration", nfail)
+
+  end subroutine one_transported_state
+
+  !===================================================================!
   ! The same operation on each part, over the part's own topology.
   ! The complete local answers include BORROWED entries, and those
   ! are deliberately not the global ones.
@@ -170,21 +230,33 @@ contains
 
     qp = local_state(part, k)
 
+    ! Every value is located through the part's OWN global map -
+    ! never by array position - so a map inconsistency would show
+    ! up here rather than hide behind a coincidental ordering.
     lap = laplacian(coefficient=1.0_dp, spacing=1.0_dp, measure=1.0_dp)
     call lap % apply(part, [qp], lq)
     call lq % get_real_vector(v)
     ok = .true.
-    do i = 1, size(expect_l)
-       ok = ok .and. (abs(v(i) - expect_l(i)) < 1.0d-12)
+    do i = 1, size(globals)
+       seat = seat_of_global(part, globals(i))
+       ok = ok .and. (seat .gt. 0)
+       if (seat .gt. 0) then
+          ok = ok .and. (abs(v(seat) - expect_l(i)) < 1.0d-12)
+       end if
     end do
     call report(ok, &
-         & "L on G" // tag // " traverses the PART's topology", nfail)
+         & "L on G" // tag // " traverses the PART's topology, read " // &
+         & "by global member", nfail)
 
     call shifted % apply(part, [qp], aq)
     call aq % get_real_vector(v)
     ok = .true.
-    do i = 1, size(expect_a)
-       ok = ok .and. (abs(v(i) - expect_a(i)) < 1.0d-12)
+    do i = 1, size(globals)
+       seat = seat_of_global(part, globals(i))
+       ok = ok .and. (seat .gt. 0)
+       if (seat .gt. 0) then
+          ok = ok .and. (abs(v(seat) - expect_a(i)) < 1.0d-12)
+       end if
     end do
     call report(ok, &
          & "and A on G" // tag // " answers on all four local " // &

@@ -56,7 +56,9 @@ tower.
 
 ```text
 level 0  carriers .............. PASS
-levels 1–9 ..................... not yet implemented
+level 1  relation .............. PASS
+level 2  relation algebra ...... ABSENT
+levels 3–9 ..................... BLOCKED
 ```
 
 Each level is added RED-first, one review gate at a time, with the

@@ -14,6 +14,7 @@ allowed_for() {
     case "$1" in
         common)                  echo "" ;;
         level-0-carrier)         echo "learning_assert graph_carrier" ;;
+        level-1-relation)        echo "learning_assert graph_carrier graph_relation" ;;
         *)                       echo "__no_allowlist__" ;;
     esac
 }

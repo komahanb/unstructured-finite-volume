@@ -24,3 +24,6 @@ test/calculator-tower/*/run.out
 test/learning-tower/*/run
 test/learning-tower/*/refusal
 test/learning-tower/*/run.out
+test/derivative-action-tower/*/run
+test/derivative-action-tower/*/refusal
+test/derivative-action-tower/*/run.out

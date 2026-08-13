@@ -15,6 +15,9 @@ allowed_for() {
         common)                  echo "" ;;
         level-0-carrier)         echo "learning_assert graph_carrier" ;;
         level-1-relation)        echo "learning_assert graph_carrier graph_relation" ;;
+        # level 2: the algebra, and NOT the binary storage - D is
+        # held as class(relation).
+        level-2-relation-algebra) echo "learning_assert graph_carrier graph_relation graph_relation_algebra" ;;
         *)                       echo "__no_allowlist__" ;;
     esac
 }

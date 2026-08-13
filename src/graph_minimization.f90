@@ -172,6 +172,15 @@ contains
     zero = 0.0_dp
     call raw_apply(this, zero, this % affine)
 
+    ! Classification is not admissibility: U and Y stay distinct
+    ! identities, but THIS solver family is square - the scalar
+    ! dimensions must agree. A rectangular least-squares family may
+    ! earn R^n -> R^m later; it has not yet.
+    if (size(this % affine) /= n * this % ncomp) then
+       error stop 'minimization: the current solver family requires equal &
+            &unknown and residual value dimensions'
+    end if
+
   end subroutine attach
 
   !===================================================================!
@@ -368,10 +377,18 @@ contains
 
     associate (u1 => input_graph); end associate
 
-    allocate(x(size(this % affine)))
+    ! x IS a state on the unknown domain; say so.
+    allocate(x(this % unknown_domain % size() * this % ncomp))
     x = 0.0_dp
 
     if (present(input_data)) then
+       block
+         class(member_set), allocatable :: got
+         call input_data(1) % domain(got)
+         if (.not. got % same_as(this % residual_domain)) then
+            error stop 'minimization: a right-hand side lives on the residual domain'
+         end if
+       end block
        call input_data(1) % get_real_vector(rhs)
        allocate(worker, source=this)
        call worker % solve(rhs, x, achieved)

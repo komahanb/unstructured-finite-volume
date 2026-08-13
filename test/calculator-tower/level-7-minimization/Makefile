@@ -1,11 +1,11 @@
 include ../../../Makefile.in
 
 #=====================================================================#
-# Level 7: the solve suite. Framework modules this level may
-# see: graph_carrier, graph_relation, graph_relation_algebra, and
-# graph_binary_relation - the last DELIBERATELY, because the
-# reverse structure is transpose_of over the derived J, part of the
-# level's dependency boundary. The import gate holds the door.
+# Level 7: the solve suite. Framework modules this level may see:
+# the carrier/domain machinery, the field, the legacy
+# graph_operation host contract, graph_minimization and the GMRES
+# citizen. Constitution and statement remain forbidden: the solver
+# never learns what + or x mean. The import gate holds the door.
 #=====================================================================#
 
 F90FLAGS += -I../../../lib/ -I../../../src/

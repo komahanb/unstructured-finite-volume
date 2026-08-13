@@ -2039,7 +2039,12 @@ the relational graph exists (§14); graph interpretation and
 algorithms exist (directed adjacency view, sources/sinks/reachable/
 topological order, §16/§18); the 5B field/support migration is
 complete (§37–§38) including domain-aware partition/assembly
-transport (§39); calculator levels 0–5 are certified. Phase
+transport (§39); calculator levels 0–7 are certified. The Level-7 gate migrated
+minimization to an explicit member_set unknown domain with a
+distinct residual domain asked of the action itself — the graph
+argument survives only as legacy operation-host compatibility and
+no longer determines the unknown space; the current family's square
+scalar-dimension admissibility is pinned and refused loudly. Phase
 numbering is historical — it does not mirror calculator levels.
 
 ## Phase 0 — characterization

@@ -267,16 +267,28 @@ contains
   ! ends swapped. The += per input-port incidence is the whole
   ! architecture: contributions landing on one slot accumulate, and
   ! no path is counted. The optional hits array records - for every
-  ! slot, generically - how many incidences accumulated into it.
+  ! slot, generically - how many INPUT-PORT INCIDENCE ACCUMULATION
+  ! EVENTS landed on it. An event is a traversal fact, not a
+  ! numerical one: it is counted whenever
+  !
+  !      bar(in_i) += L_i * bar(out)
+  !
+  ! executes, even where that added value happens to be zero.
+  ! Incidence multiplicity is therefore NOT numerical nonzero
+  ! multiplicity - the coefficients and the seed decide the latter.
+  !
+  ! The computed domain is deliberately NOT a dummy here: reverse
+  ! traversal reads the primal workspace and the flow's incidences
+  ! and needs no schema check of its own. Signature symmetry with
+  ! the forward action was never a mathematical necessity.
   !===================================================================!
 
-  subroutine reverse_action(flow, slots, indep, computed, order, &
+  subroutine reverse_action(flow, slots, indep, order, &
        & primal, response, seed_values, result_values, hits)
 
     class(relation)  , intent(in)  :: flow
     class(member_set), intent(in)  :: slots
     class(member_set), intent(in)  :: indep
-    class(member_set), intent(in)  :: computed
     integer          , intent(in)  :: order(:)
     real(dp)         , intent(in)  :: primal(:)        ! full V workspace
     class(member_set), intent(in)  :: response         ! Z

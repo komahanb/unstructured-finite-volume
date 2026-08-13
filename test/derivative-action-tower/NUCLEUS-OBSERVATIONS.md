@@ -166,6 +166,13 @@ suspected nucleus implication: none yet; watch at Gate B
 
 confidence:           medium
 action:               test at larger radius (Gate B)
+
+gate-B resolution:    at the numerical-evaluator radius the graph is
+                      NOT an operand - no evaluator takes one (DA-8F)
+gate-C resolution:    at the statement radius the graph IS the
+                      ownership environment - the model outlives the
+                      selectors that built it (DA-9A). The two
+                      answers differ, and both are correct.
 ```
 
 ---
@@ -864,6 +871,272 @@ comparison:           the old plan's "reversal is the adjoint's
 suspected nucleus implication: reverse anything (order, structure,
                       action) should be a reading of the forward
                       truth, never a second stored artifact
+
+confidence:           high
+action:               observe
+```
+
+---
+
+## OBSERVATION DA-8H
+
+```text
+tower:                Derivative Action
+gate / level:         B / 8 (recorded at Gate C)
+contextual radius:    0
+
+symptom / fact:       an ACCUMULATION EVENT is not a NONZERO
+                      CONTRIBUTION. The hits counter increments
+                      whenever the traversal executes
+
+                          bar(in_i) += L_i * bar(out)
+
+                      which is a structural traversal fact. Whether
+                      the added value is zero is decided by the
+                      coefficients and the seed, not by the count.
+                      At the primary base both of y's events happen
+                      to carry nonzero value (2 and 4), which is why
+                      ybar reads 6 - but that follows from L and
+                      zbar, never from hits alone.
+
+exact caller:         derivative_constitution_fixture.f90
+                      (reverse_action, the nhits array); level-8
+                      test (check_accumulation)
+
+mathematical concept: incidence multiplicity vs numerical support
+
+local necessity:      the distinction is locally necessary for
+                      honest reporting: a zero coefficient (e.g. a
+                      constant-folding operation) would still
+                      produce an event
+global necessity:     unknown; sparse/structural tooling at larger
+                      radius may care about exactly this difference
+
+cross-tower recurrence: refines Gate A's support-vs-multiplicity
+                      family with a third distinct notion —
+                      structural support, path multiplicity, and now
+                      incidence-event multiplicity are three things
+
+graph role:           not applicable
+
+comparison:           Gate A: J-support collapses paths.
+                      Gate B: incidence events are counted, not
+                      paths.
+                      Neither equals "numerically nonzero".
+
+suspected nucleus implication: any future coverage/sparsity report
+                      must say which of the three it means
+
+confidence:           high
+action:               observe
+```
+
+---
+
+## OBSERVATION DA-8I
+
+```text
+tower:                Derivative Action
+gate / level:         B / 8 (corrected at Gate C)
+contextual radius:    0
+
+symptom / fact:       the reverse action carried an unused computed-
+                      domain dummy, kept only for visual symmetry
+                      with the tangent action. Reverse traversal
+                      reads the primal workspace and the flow's
+                      incidences and needs no schema check of its
+                      own; the argument was removed and every
+                      Gate-B number stayed identical.
+
+exact caller:         derivative_constitution_fixture.f90
+                      (reverse_action signature)
+
+mathematical concept: minimal truthful contract
+
+local necessity:      the dummy was locally UNNECESSARY - proven by
+                      deletion with no behavioural change
+global necessity:     not applicable at this scale
+
+cross-tower recurrence: none
+
+graph role:           not applicable
+
+comparison:           the forward action legitimately needs the
+                      computed domain (it enforces "an operation
+                      produces a computed slot" as it writes);
+                      reverse writes only into the accumulator
+
+suspected nucleus implication: NONE - explicitly no inference about
+                      tangent/reverse API design is drawn from one
+                      dummy. Signature symmetry is an aesthetic, not
+                      a mathematical necessity.
+
+confidence:           high
+action:               observe
+```
+
+---
+
+## OBSERVATION DA-9A
+
+```text
+tower:                Derivative Action
+gate / level:         C / 9
+contextual radius:    1 (the complete statement, not one evaluator)
+
+symptom / fact:       the graph's role CHANGED between radii without
+                      the graph itself changing.
+
+                      Gate B (evaluator radius): no graph argument
+                      appears in any evaluator signature; the graph
+                      is locally unnecessary as a numerical operand.
+
+                      Gate C (statement radius): the statement
+                      locates its flow relation inside G by
+                      identity, DESTROYS the external selector, and
+                      then computes the primal, both actions and the
+                      duality through the graph-owned relation. The
+                      graph is what makes the model outlive the
+                      temporaries that built it.
+
+exact caller:         level-9-statement/test.f90 (the relation_at
+                      identity scan, deallocate(flow), and every
+                      evaluator call thereafter taking gflow)
+
+mathematical concept: graph as ownership environment vs operand
+
+local necessity:      at evaluator radius: NO (Gate B)
+                      at statement radius: YES for the model to
+                      exist independently of construction
+                      temporaries - which is precisely what a
+                      statement asserts. (A statement that kept its
+                      selectors alive could avoid it; this one
+                      deliberately does not.)
+global necessity:     unknown - larger radii (partitioning,
+                      coupling, nesting) untested
+
+cross-tower recurrence: learning L9 used ownership the same way for
+                      its constituted residual; two towers now show
+                      ownership mattering exactly at the statement
+                      radius
+
+graph role:           owner / ownership environment - and NOT an
+                      operand, at both radii
+
+comparison:           this is a concrete instance of the fractal
+                      document's central caution:
+
+                          local unnecessity at one radius
+                              does NOT imply
+                          unnecessity at another radius
+
+                      DA-3 asked; DA-8F answered for the numerical
+                      radius; DA-9A answers for the statement radius
+                      - and the two answers differ.
+
+suspected nucleus implication: keep the graph argument out of
+                      radius-0 numerical faces AND keep graph
+                      ownership at the statement radius; they are
+                      not competing designs
+
+confidence:           high
+action:               observe
+```
+
+---
+
+## OBSERVATION DA-9B
+
+```text
+tower:                Derivative Action
+gate / level:         C / 9
+contextual radius:    1
+
+symptom / fact:       the statement's answer is a FIELD on the
+                      independent domain - [3, 3] on X = {y,x} -
+                      obtained by one reverse traversal, and it acts
+                      as the derivative linear functional (paired
+                      with v = [-1,4] it reproduces Jv = 9). It is
+                      not a scalar and was never assembled as a
+                      matrix.
+
+exact caller:         level-9-statement/test.f90
+                      (check_derivative_field,
+                      check_functional_action)
+
+mathematical concept: the derivative object of a statement
+
+local necessity:      yes - a scalar could not carry the answer
+global necessity:     unknown; higher-order or multi-response
+                      statements will want richer objects still
+
+cross-tower recurrence: healthy HETEROGENEITY across towers -
+                      calculator answers a scalar (20), learning
+                      answers a field component (w = 3), derivative
+                      action answers a whole field ([3,3]). No tower
+                      was contorted into another's output shape, and
+                      each runner's marker matches its own
+                      mathematics.
+
+graph role:           not applicable
+
+comparison:           first vector-valued tower result in the
+                      repository; the runner's marker check
+                      validates SHAPE (one marker, |X| numeric
+                      tokens) and never the values
+
+suspected nucleus implication: result contracts should be domain-
+                      shaped, not scalar-shaped; a future gradient
+                      or adjoint orbit will inherit this
+
+confidence:           high
+action:               observe
+```
+
+---
+
+## OBSERVATION DA-9C
+
+```text
+tower:                Derivative Action
+gate / level:         C / 9 (whole-tower)
+contextual radius:    1
+
+symptom / fact:       the first COMPLETE tower with an intentionally
+                      uninhabited nucleus level. The certified path
+                      is
+
+                          0 → 1 → 2 → 3 → 4 → 5 → 6 → (7) → 8 → 9
+
+                      where Level 7 is N/A: not missing, not failed,
+                      not stubbed. Level 9 compiles and runs with
+                      graph_minimization and class_graph_gmres
+                      forbidden by the import gate.
+
+exact caller:         run.sh (the N/A row); the absence of
+                      level-7-minimization/; check_imports.sh
+
+mathematical concept: nucleus levels as independently inhabitable
+                      radial contracts
+
+local necessity:      not applicable
+global necessity:     not applicable - this observation is ABOUT the
+                      necessity question, not an instance of it
+
+cross-tower recurrence: calculator and learning inhabited all ten
+                      levels, which made the ladder LOOK compulsory;
+                      one counterexample settles that it is not
+
+graph role:           not applicable
+
+comparison:           extends DA-7 from "this gate skipped a level"
+                      to "a complete, sealed tower skipped a level
+                      and still reached its statement"
+
+suspected nucleus implication: the radial-contract map (fractal doc
+                      §26) is a menu of questions each orbit MAY
+                      answer - no level may assume its neighbour was
+                      inhabited
 
 confidence:           high
 action:               observe

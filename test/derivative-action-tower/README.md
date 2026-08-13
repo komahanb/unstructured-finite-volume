@@ -37,8 +37,18 @@ Its targets are the operators \(v\mapsto Jv\) and
 \boxed{\langle\bar z,Jv\rangle_Z=\langle J^T\bar z,v\rangle_X}
 \]
 
-with no adjoint solve, no minimization, and no Jacobian assembly. Both
-gates closed with
+with no adjoint solve, no minimization, and no Jacobian assembly.
+
+**Gate C** asks the last question — what complete differentiation
+problem is being asked — and answers it with a **field**, not a scalar:
+
+\[
+\boxed{Dz^T(1)=[3,3]\ \text{on}\ X=\{y,x\}},
+\qquad
+\text{with } z=9 \text{ beside it}.
+\]
+
+All three gates closed with
 
 \[
 \boxed{\text{production changes}=\text{NONE}}
@@ -47,8 +57,18 @@ gates closed with
 ```text
 Gate A   structural Levels 0–6 .......... PASS
 Gate B   numerical derivative action .... PASS   (Level 8)
-Gate C   derivative statement ........... UNBUILT
+Gate C   derivative statement ........... PASS   (Level 9)
 ```
+
+The tower is complete. Its certified path skips one nucleus level on
+purpose:
+
+\[
+0\rightarrow1\rightarrow2\rightarrow3\rightarrow4\rightarrow5
+\rightarrow6\rightarrow(7)\rightarrow8\rightarrow9
+\]
+
+— see [Level 7](#level-7--minimization-na-for-this-orbit).
 
 ---
 
@@ -96,7 +116,7 @@ The load-bearing consequence is the
 | 6 | derivative structure | \(A_V\), two-path truth, \(J_{ZX}=\{(z,x),(z,y)\}\), transpose view |
 | 7 | minimization | **N/A — not inhabited** by this orbit as constituted |
 | 8 | derivative constitution | primal laws + one local linearization; \(Jv\), \(J^T\bar z\), duality |
-| 9 | *(Gate C)* | **UNBUILT** — not designed here |
+| 9 | statement | the whole question asked once; answer \([3,3]\) on \(X\) |
 
 ---
 
@@ -193,7 +213,8 @@ Level 7           N/A — this orbit does not inhabit minimization
 Level 8 (Gate B)  CONSTITUTION + ACTION — product multiplies, sum
                   adds, each operation owes one local linearization;
                   Jv forward, J^T z̄ backward, duality sealed
-Gate C (unbuilt)  the derivative statement
+Level 9 (Gate C)  THE STATEMENT — one question, selecting everything
+                  below; the answer is a derivative field on X
 ```
 
 ---
@@ -751,6 +772,156 @@ tangent-starvation   a tangent cannot be read before it is established
 
 ---
 
+# Level 9 — The statement
+
+Gate C. The last question:
+
+> What complete differentiation problem is being asked?
+
+## The statement
+
+> Given the relational computation \(u=\mathrm{product}(x,y)\),
+> \(z=\mathrm{sum}(u,y)\), constituted by \(\mathrm{product}(a,b)=ab\)
+> and \(\mathrm{sum}(a,b)=a+b\), evaluate the primal and the derivative
+> of the response \(z\) at \(x=2,\ y=3\).
+
+It **selects** — it invents nothing:
+
+```text
+structure       R_flow, owned by G; D derived; order derived
+base point      x = 2, y = 3 on X = {y,x}
+constitution    the Level-8 laws and the ONE local linearization,
+                reused, never redone
+response        Z = {z}, a subdomain — no location relation
+requested       the derivative of z with respect to X
+```
+
+Level 9 adds **no numerical law**: it imports `primal_execution`,
+`tangent_action` and `reverse_action` from the Gate-B fixture and
+composes them. There is no adapter — nothing here must satisfy a
+legacy operation face, so none was written.
+
+## The complete road
+
+```text
+R_flow
+    ↓ derive
+D
+    ↓ owned by G, interpreted, sorted
+execution order
+    ↓ Level-8 primal constitution
+z = 9
+    ↓ the same Level-8 local linearization
+    ├── tangent action  →  Jv
+    └── reverse action  →  J^T z̄
+    ↓
+the derivative statement
+```
+
+## Graph ownership, proved by lifetime
+
+The statement owns one relational model graph. It locates its flow
+relation **inside** \(G\) by identity (`relation_at(k) % same_as`),
+then destroys the external selector:
+
+```text
+external flow selector
+        ↓ used to identify the graph-owned R_flow
+graph-owned relation retained (a pointer into G)
+        ↓
+deallocate(flow)          the selector dies
+        ↓
+primal + both actions + duality still succeed
+```
+
+The dependency selector dies too, right after the directed view is
+made — so even the execution order is read from graph-owned structure.
+No `holds_relation` convenience was added; the ownership question is
+composed from `num_relations` / `relation_at` / `same_as`, as
+everywhere else in the repository.
+
+\[
+\boxed{\text{the final statement evaluates graph-owned structure,
+not a temporary selector}}
+\]
+
+This is where the graph's role **changes with radius**: at Gate B no
+evaluator takes a graph argument at all; at Gate C the graph is what
+lets the model outlive the temporaries that built it
+(Observations DA-8F, DA-9A).
+
+## The answer is a field
+
+The primary result is obtained by **one** reverse traversal with
+\(\bar z=1\), returned as an ordinary `field` on \(X\):
+
+\[
+\boxed{Dz^T(1)=[3,3]\quad\text{on }X=\{y,x\}}
+\]
+
+read through `local_index`: \(\partial z/\partial y=3\) (\(=x+1\)),
+\(\partial z/\partial x=3\) (\(=y\)). The primal \(z=9\) stands beside
+it as a secondary truth.
+
+Certified forward, one action per seed — no matrix assembled:
+
+```text
+y-basis seed [1,0]  →  J e_y = 3
+x-basis seed [0,1]  →  J e_x = 3
+```
+
+each agreeing with the component the single reverse pass returned. For
+this specimen one reverse traversal delivered the complete row while
+forward mode needed one action per direction — stated as a fact about
+this specimen, not as a complexity claim.
+
+The returned field then **acts**: on \(v=[-1,4]\) the tangent action
+answers \(Jv=9\), and the derivative field paired with the same \(v\)
+answers 9 — it is the derivative linear functional. And the pairing
+closes through the whole statement path:
+
+\[
+\langle 2,\,9\rangle_Z=18=\langle[6,6],[-1,4]\rangle_X.
+\]
+
+The asymmetric anti-hardcode witness (\(x=4,y=2\Rightarrow[5,2]\))
+lives at [Level 8](#level-8--derivative-constitution-and-numerical-action)
+and is not duplicated here: Level 9's job is composition, not
+re-certifying every local numerical fact.
+
+## The result marker
+
+The tower's answer is a vector, so its marker is too — exactly one,
+printed from the computed field alone:
+
+```text
+DERIVATIVE_RESULT = 3 3        (in X = {y,x} order)
+```
+
+The runner requires exactly one marker carrying one numeric token per
+member of the independent domain, and prints
+
+```text
+└── derivative on X={y,x} ........... [3, 3]
+```
+
+It validates the **shape** of the answer and never learns its values.
+No separate marker is emitted for \(z=9\); the primal remains an
+asserted secondary truth.
+
+## Tower results are heterogeneous, on purpose
+
+```text
+Calculator result:        scalar value        20
+Learning result:          field component     w = 3
+Derivative Action result: derivative field    [3, 3]
+```
+
+No tower is contorted into another's output shape. Each marker matches
+its own mathematics (Observation DA-9B).
+
+---
+
 # Forward vs reverse structure
 
 ```text
@@ -794,27 +965,52 @@ support does not encode path multiplicity
 numerical tangent action Jv over the constituted structure
 numerical reverse action J^T z̄ over the same structure, reversed
 one local linearization serves both actions — no reverse formula
-reverse accumulation is incidence-local +=, certified by count
+reverse accumulation is incidence-local +=, certified by event count
 the global duality <z̄, Jv> = <J^T z̄, v>, at two bases, under unit
     seeds, and under reversed tuple order
 derivative seeds/results are ordinary fields on ordinary domains
 the structural J-pattern is support metadata, not the propagation
     itinerary
-minimization is not inhabited by this orbit — levels are contracts,
-    not a pipeline
+```
+
+## Proven by Gate C
+
+```text
+one statement selects every truth below without collapsing them
+the statement evaluates graph-owned structure, its selectors dead
+a complete derivative statement returns a GRADIENT FIELD on its
+    independent domain — not a scalar, not a matrix
+the returned field acts as the derivative linear functional
+one nucleus level may be legitimately uninhabited, and the tower
+    still completes
 all of it, with zero production changes
 ```
 
 ## Not proven — deliberately
 
 ```text
-adjoint equations or adjoint solves
-gradients of implicit/solved systems
-Hessians, higher-order actions
+implicit-system adjoint          adjoint equation, adjoint solve
+parameter sensitivity of an implicit residual
+objective-functional adjoint     PDE adjoint, time-dependent adjoint
+checkpointing                    automatic differentiation
+finite-difference differentiation
+complex-step differentiation
+higher derivatives               Hessian-vector products
+general n-ary derivative constitution
+branching / control-flow differentiation
+distributed derivative traversal
 full Jacobian assembly (dense or sparse)
-checkpointing, taping, source transformation
-any Gate-C design decision
 ```
+
+Most importantly:
+
+\[
+\boxed{\text{reverse derivative action}\neq\text{the adjoint method}}
+\]
+
+A reverse traversal of an explicit computation is not the solution of
+an adjoint equation. The next orbit — the **Adjoint Tower** — must earn
+that distinction; nothing here anticipates it.
 
 ---
 
@@ -823,9 +1019,11 @@ any Gate-C design decision
 - **`run.sh`** — the frontier law, third client: first absent rung
   closes the frontier (`ABSENT`/`BLOCKED`), a genuine failure stops the
   ladder (`FAIL`/`SKIPPED`, nonzero exit). Level 7 prints `N/A — not
-  inhabited` and the frontier passes over it deliberately. There is
-  **no numerical result marker**: Gate B certifies two actions and
-  their duality, not one blessed number.
+  inhabited` and the frontier passes over it deliberately. After a full
+  ladder the runner reads the derivative — fail closed — from Level 9's
+  own output: exactly one marker, one numeric token per member of the
+  independent domain, every token a number. It validates the answer's
+  shape and never its values.
 
 - **`check_imports.sh`** — the fail-closed import gate. Every source may
   `use` only its level's allowlist; a directory with sources but no
@@ -852,6 +1050,7 @@ had first right of refusal — and at Gate A it refused nothing.
 | 5 | `level-5-field-calculus/` | `graph_carrier`, `class_graph_field` — the smallest allowlist above ground |
 | 6 | `level-6-derivative-structure/` | + `graph_binary_relation` (`csr_relation`, `transpose_of` earned), `graph_structure`, `graph_profile`, `graph_algorithms` |
 | 8 | `level-8-derivative-constitution/` | carriers/relations/algebra/structure/profile/algorithms + `class_graph_field` + `derivative_constitution_fixture` (own file; refusal suite); **no** binary storage, no solver |
+| 9 | `level-9-statement/` | the same set, reusing the Level-8 fixture — no adapter, no new law, and `graph_minimization` / `class_graph_gmres` forbidden |
 
 Every level also imports `derivative_assert`
 (`common/derivative_assert.f90`) — dependency-free constants and
@@ -874,17 +1073,18 @@ test/derivative-action-tower/
 ├── level-4-graph-calculus/         test.f90
 ├── level-5-field-calculus/         test.f90
 ├── level-6-derivative-structure/   test.f90
-└── level-8-derivative-constitution/
-                                    derivative_constitution_fixture.f90
-                                    · test.f90 · refusal.f90
-                                    · check_refusals.sh
+├── level-8-derivative-constitution/
+│                                   derivative_constitution_fixture.f90
+│                                   · test.f90 · refusal.f90
+│                                   · check_refusals.sh
+└── level-9-statement/              test.f90   (reuses the L8 fixture)
 ```
 
 There is deliberately no `level-7-minimization/` directory — see
-[Level 7](#level-7--minimization-na-for-this-orbit). Gate A carries no
-refusal executables (every candidate would duplicate a law already
-pinned by the calculator, learning, or generic suites); Gate B carries
-four derivative-specific refusals of its own.
+[Level 7](#level-7--minimization-na-for-this-orbit). Gates A and C carry
+no refusal executables (every candidate would duplicate a law already
+pinned below, or by the calculator, learning, or generic suites); Gate B
+carries four derivative-specific refusals of its own.
 
 ---
 
@@ -917,21 +1117,32 @@ derivative action tower
 ├── level 6  derivative structure .... PASS
 ├── level 7  minimization ............ N/A - not inhabited
 ├── level 8  derivative action ....... PASS
+├── level 9  statement ............... PASS
 ├── Gate A  structure ................ PASS
 ├── Gate B  numerical duality ........ PASS
-└── Gate C  statement ................ UNBUILT
+├── Gate C  statement ................ PASS
+└── derivative on X={y,x} ........... [3, 3]
 ```
 
-Gates A and B are complete and awaiting architectural review. Gate A's
-central truth — the \(J\)-support says \(y\) matters once while the
-computation says why and how it matters, twice — became Gate B's
-central mechanism: one local linearization per operation, applied per
-operation/input-port incidence, accumulating with `+=` where incidences
-share a slot, sealed by
+**Complete.** The tower's result is the derivative field \([3,3]\) on
+\(X=\{y,x\}\), with \(z=9\) beside it — and Level 7 deliberately
+uninhabited.
+
+Gate A's central truth — the \(J\)-support says \(y\) matters once
+while the computation says why and how it matters, twice — became Gate
+B's central mechanism: one local linearization per operation, applied
+per operation/input-port incidence, accumulating with `+=` where
+incidences share a slot, sealed by
 
 \[
 \boxed{\langle\bar z,Jv\rangle_Z=\langle J^T\bar z,v\rangle_X}
 \]
 
-at two base points, under unit seeds, and under reversed tuple order —
-with zero production changes.
+at two base points, under unit seeds, and under reversed tuple order.
+Gate C then asked the whole question once, on graph-owned structure
+whose selectors had already been destroyed, and answered with a field.
+Three gates, ten rungs minus one, **zero production changes**.
+
+The next orbit is the **Adjoint Tower**, which must earn what this one
+deliberately did not claim: that reverse derivative action is not yet
+the adjoint method.

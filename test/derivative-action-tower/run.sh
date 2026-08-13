@@ -6,9 +6,14 @@
 # nonzero exit. Level 7 is a deliberate N/A: this orbit, as
 # currently constituted, does not inhabit the minimization radial
 # contract - the nucleus levels are available contracts, not a
-# compulsory pipeline. There is deliberately NO numerical result
-# marker: Gate B certifies actions and their duality, not one
-# blessed number. Gate C is UNBUILT.
+# compulsory pipeline.
+#
+# After a full ladder the derivative is read - fail closed - from
+# the ninth rung's own output. This tower's answer is a VECTOR, not
+# a scalar: exactly one marker, carrying one value per member of
+# the statement's independent domain. The runner checks the shape
+# and that every token is a number; it never learns what the
+# numbers should be.
 set -e
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -27,6 +32,7 @@ levels=(
   "level-6-derivative-structure level 6  derivative structure"
   "N/A:                         level 7  minimization"
   "level-8-derivative-constitution level 8  derivative action"
+  "level-9-statement            level 9  statement"
 )
 
 echo "derivative action tower"
@@ -87,9 +93,29 @@ if [ "$failed" -ne 0 ]; then
     exit 1
 fi
 echo "├── Gate A  structure ................ PASS"
-if [ "$frontier_open" -eq 1 ]; then
-    echo "├── Gate B  numerical duality ........ PASS"
-else
+if [ "$frontier_open" -eq 0 ]; then
     echo "├── Gate B  numerical duality ........ ABSENT"
+    echo "└── Gate C  statement ................ ABSENT"
+    exit 0
 fi
-echo "└── Gate C  statement ................ UNBUILT"
+echo "├── Gate B  numerical duality ........ PASS"
+echo "├── Gate C  statement ................ PASS"
+
+# Fail closed: exactly one marker, one number per independent-domain
+# member (the statement declares X = {y,x}: two), every token a
+# number. The runner knows the SHAPE of the answer, never its value.
+out="$here/level-9-statement/run.out"
+marks=$(grep -c 'DERIVATIVE_RESULT =' "$out")
+values=$(grep -o 'DERIVATIVE_RESULT =.*' "$out" | sed 's/.*DERIVATIVE_RESULT =//')
+count=$(echo $values | wc -w)
+numeric=1
+for tok in $values; do
+    case "$tok" in
+        ''|*[!0-9-]*) numeric=0 ;;
+    esac
+done
+if [ "$marks" -ne 1 ] || [ "$count" -ne 2 ] || [ "$numeric" -ne 1 ]; then
+    echo "└── RUNNER FAILURE: the statement did not report one derivative on X"
+    exit 1
+fi
+echo "└── derivative on X={y,x} ........... [$(echo $values | sed 's/ /, /g')]"

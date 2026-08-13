@@ -36,6 +36,11 @@ allowed_for() {
         # J-pattern is support metadata, never the propagation
         # itinerary - and no solver, ever, at this gate.
         level-8-derivative-constitution) echo "derivative_assert graph_carrier graph_relation graph_relation_algebra graph_structure graph_profile graph_algorithms class_graph_field derivative_constitution_fixture" ;;
+        # level 9 (Gate C): the statement - the composition rung.
+        # The REUSED level-8 constitution is the only fixture; no
+        # adapter exists because nothing here must satisfy a legacy
+        # operation face. No new mathematics, and still no solver.
+        level-9-statement)        echo "derivative_assert graph_carrier graph_relation graph_relation_algebra graph_structure graph_profile graph_algorithms class_graph_field derivative_constitution_fixture" ;;
         *)                        echo "__no_allowlist__" ;;
     esac
 }

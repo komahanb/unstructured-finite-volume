@@ -295,7 +295,7 @@ contains
     call zbar_f % set_real_vector([2.0_dp])
     call zbar_f % get_real_vector(zseed)
 
-    call reverse_action(flow, v, x_dom, c, order, base, z_dom, &
+    call reverse_action(flow, v, x_dom, order, base, z_dom, &
          & zseed, xbar, hits)
 
     call report(abs(xbar(x_dom % local_index(SLOT_Y)) - 6.0_dp) &
@@ -314,10 +314,17 @@ contains
   end subroutine check_reverse_action
 
   !===================================================================!
-  ! Accumulation, certified - not assumed: the generic incidence
-  ! counter (which names no slot) shows y received exactly TWO
-  ! contributions - sum.in2 and product.in2 - while x and u
-  ! received one each and the response none.
+  ! Accumulation, certified - not assumed: the generic counter
+  ! (which names no slot) shows y received exactly TWO INPUT-PORT
+  ! INCIDENCE ACCUMULATION EVENTS - sum.in2 and product.in2 - while
+  ! x and u received one each and the response none.
+  !
+  ! An event is a traversal fact, counted whenever bar(in) += ...
+  ! executes; whether the added value is nonzero is the business of
+  ! the coefficients and the seed. Incidence multiplicity is NOT
+  ! numerical nonzero multiplicity. (At this base both of y's events
+  ! do carry nonzero value - 2 and 4 - which is why ybar reads 6;
+  ! that follows from L and zbar, not from the count.)
   !===================================================================!
 
   subroutine check_accumulation(nfail)
@@ -325,12 +332,13 @@ contains
     integer, intent(inout) :: nfail
 
     call report(hits(v % local_index(SLOT_Y)) .eq. 2, &
-         & "y accumulated two incidence contributions", nfail)
+         & "y took two input-port incidence accumulation events", &
+         & nfail)
     call report(hits(v % local_index(SLOT_X)) .eq. 1 .and. &
          &      hits(v % local_index(SLOT_U)) .eq. 1 .and. &
          &      hits(v % local_index(SLOT_Z)) .eq. 0, &
-         & "x and u one each, the response none: incidence-local " // &
-         & "+=, never path counting", nfail)
+         & "x and u one event each, the response none: " // &
+         & "incidence-local +=, never path counting", nfail)
 
   end subroutine check_accumulation
 
@@ -429,7 +437,7 @@ contains
          &      < 1.0d-12 .and. abs(jv2 - 19.0_dp) < 1.0d-12, &
          & "du = 2(-3) + 4(5) = 14 and Jv = 19", nfail)
 
-    call reverse_action(flow, v, x_dom, c, order, base2, z_dom, &
+    call reverse_action(flow, v, x_dom, order, base2, z_dom, &
          & [-2.0_dp], xbar2)
     call report(abs(xbar2(x_dom % local_index(SLOT_Y)) + 10.0_dp) &
          &      < 1.0d-12 .and. &
@@ -457,7 +465,7 @@ contains
          &      < 1.0d-12, &
          & "y-basis seed: Jv = 5 = dz/dy", nfail)
 
-    call reverse_action(flow, v, x_dom, c, order, base2, z_dom, &
+    call reverse_action(flow, v, x_dom, order, base2, z_dom, &
          & [1.0_dp], xbar2)
     call report(abs(xbar2(x_dom % local_index(SLOT_Y)) - 5.0_dp) &
          &      < 1.0d-12 .and. &
@@ -506,7 +514,7 @@ contains
     call tangent_action(backwards, v, x_dom, seedv, c, order2, &
          & baseb, dotb, davailb)
     jvb = dotb(v % local_index(SLOT_Z))
-    call reverse_action(backwards, v, x_dom, c, order2, baseb, &
+    call reverse_action(backwards, v, x_dom, order2, baseb, &
          & z_dom, zseed, xbarb)
 
     lhs = zseed(1) * jvb

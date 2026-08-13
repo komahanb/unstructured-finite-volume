@@ -42,6 +42,11 @@ allowed_for() {
         # at all - the solver sees an opaque R : Theta -> Y. The
         # named fixture is the level's own test-local oracle.
         level-7-minimization)    echo "learning_assert graph_carrier graph_grammar class_graph_field class_graph class_graph_gmres learning_residual_fixture" ;;
+        # level 8: the meaning rung. Structure derives the order,
+        # the test-local constitution supplies the laws, L supplies
+        # the home - no solver, no legacy host, no minimization, no
+        # binary storage. The named fixture is the level's own.
+        level-8-constitution)    echo "learning_assert graph_carrier graph_relation graph_relation_algebra graph_structure graph_profile graph_algorithms class_graph_field learning_constitution_fixture" ;;
         *)                       echo "__no_allowlist__" ;;
     esac
 }

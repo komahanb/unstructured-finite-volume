@@ -63,8 +63,8 @@ level 4  graph calculus ........ PASS
 level 5  field calculus ........ PASS
 level 6  discretization ........ PASS
 level 7  minimization .......... PASS
-level 8  constitution .......... ABSENT
-level 9  statement ............. BLOCKED
+level 8  constitution .......... PASS
+level 9  statement ............. ABSENT
 ```
 
 Data and parameters differ by domain and role, not by field class;
@@ -80,7 +80,14 @@ data instance. Given the supplied residual `r(w) = 2w − 6`, the
 existing residual minimizer changes the trainable state from
 `w = 0` to `w = 3` — and, handed `(4,8)` instead of `(2,6)`, fits
 `w = 2`: parameter fitting through the ordinary GMRES citizen, not
-gradient descent, and the model laws are still unconstituted. Each level is added RED-first, one review gate at a time, with the
+gradient descent, and the model laws are still unconstituted.
+Only at constitution does `predict` become multiplication and
+`error` become subtraction. With observed `{y,x}` and trainable
+`w`, the structural execution computes `ŷ` and `e` **into** the
+computed domain — no field on `U`, no `q(e) − law` — then reads
+residual `r` from `e`, reproducing `r(w) = 2w − 6` without running
+a solver; and meaning does not bend topology: the trainable slots
+the evaluation reads equal Level 6's structural support `{w}`. Each level is added RED-first, one review gate at a time, with the
 import gate holding every rung to its own allowlist. Production
 changes are expected to be **none** at every level — that is the
 experiment.

@@ -679,6 +679,19 @@ r_e=q(e)-4q(c),
 
 which is exactly the residual system used by Level 7.
 
+**As implemented**, the road is:
+
+```text
+O member ──▶ arithmetic law table (TEST-LOCAL: one select case)
+R_flow chooses each operation's in₁/in₂/out slots
+K = {d,a,b} and U = {e,c} provide values by domain local_index
+        ↓
+generated residual on Y  —  reproducing the Level-7 system
+```
+
+The law table is test-local; no universal production constitution
+interface has yet been earned.
+
 ## Minimal verification
 
 Evaluate at the expected solution:

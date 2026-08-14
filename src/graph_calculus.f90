@@ -207,9 +207,33 @@ module graph_calculus
   ! What every member owes by contract: its dependency PATTERN, as a
   ! graph. The support is to a field what this pattern is to a
   ! derived operator - values sit on members, arithmetic flows on
-  ! pairs. The minimizers one level up interrogate the pattern - the
+  ! pairs.
+  !
+  !                    THE PATTERN IS AXIS-RELATIVE
+  !
+  ! One meaning, read on whichever axis the concrete type represents:
+  !
+  !      dependencies() = the stencil on this operator's own axis
+  !
+  ! so a stencil_operator answers the stencil on the DEPENDENT
+  ! variable - which unknown feeds which - and a step_operator answers
+  ! the stencil on the INDEPENDENT variable - which instants the
+  ! residual reads. The independent axis need not be time: a
+  ! continuation coordinate, a parameter, a spatial sweep direction
+  ! all take the same seat. The type carries that context; the verb
+  ! does not have to.
+  !
+  ! And a stencil is not a chronology. Succession - which instant
+  ! follows which - is a different and equally real relation, and it
+  ! is not what this contract answers.
+  !
+  ! WHO CONSUMES IT. A minimizer's structural algorithms - the
   ! diagonal, the colouring, the triangularity, the Galerkin road -
-  ! so it is exposed by law, never by inspection.
+  ! need the DEPENDENT-variable stencil, and they are handed it
+  ! explicitly at attach by a caller that knows which object owns that
+  ! axis. They do not reach in and ask an operation for it, because
+  ! nothing here can tell them which axis a given operation's answer
+  ! belongs to.
   !===================================================================!
 
   type, abstract, extends(graph_operation) :: discretization_operator

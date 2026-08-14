@@ -120,8 +120,35 @@ contains
   end function bdf
 
   !===================================================================!
-  ! The contract's answer: the motif - a chain of reach + 1
-  ! instants, each edge one look further back.
+  ! The contract's answer: THE STENCIL ON THE INDEPENDENT AXIS.
+  !
+  ! A step's residual at the newest instant reads every instant its
+  ! table reaches back to,
+  !
+  !      R_n = a0 q_n + a1 q_(n-1) + a2 q_(n-2) + h S(q_n)
+  !
+  ! so the dependency is a FAN-IN onto the instant being solved for -
+  ! reach + 1 instants, every one of them an arrow into the last:
+  !
+  !      backward euler        bdf-2
+  !          1 --> 2               1 --> 3
+  !          2 --> 2               2 --> 3
+  !                                3 --> 3
+  !
+  ! A STENCIL IS NOT A CHRONOLOGY. The succession
+  !
+  !      1 -> 2 -> 3
+  !
+  ! is a true and useful relation - it is what the time integration
+  ! tower's instants and control chain describe - but it says which
+  ! instant FOLLOWS which, not which instants the residual READS. This
+  ! contract owes the second. The self-arrow is the implicit part, and
+  ! it is what makes the newest instant an unknown rather than data.
+  !
+  ! The axis here is the INDEPENDENT variable; a stencil_operator's
+  ! answer to the same verb is the stencil on the DEPENDENT variable.
+  ! One contract, one meaning - the stencil on whichever axis the
+  ! concrete type represents.
   !===================================================================!
 
   subroutine step_dependencies(this, pattern)
@@ -129,11 +156,13 @@ contains
     class(step_operator), intent(in)       :: this
     class(graph), allocatable, intent(out) :: pattern
 
-    integer :: n
+    integer :: n, newest
 
-    allocate(pattern, source=stored_graph(this % reach + 1, &
-         & tails=[(n, n = 1, this % reach)], &
-         & heads=[(n + 1, n = 1, this % reach)]))
+    newest = this % reach + 1
+
+    allocate(pattern, source=stored_graph(newest, &
+         & tails=[(n, n = 1, newest)], &
+         & heads=[(newest, n = 1, newest)]))
 
   end subroutine step_dependencies
 

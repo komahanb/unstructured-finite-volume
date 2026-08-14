@@ -120,9 +120,19 @@ contains
 
     end select
 
-    call this % smoother % attach(this % action, this % on, this % unknown_domain)
+    ! The smoother is a STRUCTURED one - jacobi, gauss-seidel - so it
+    ! is handed the dependent-variable coupling explicitly. On this
+    ! path the mesh the action executes over IS the coupling of its
+    ! unknowns, and saying so here makes that a caller's statement
+    ! rather than the minimizer's assumption.
+    call this % smoother % attach(this % action, this % on, &
+         & this % unknown_domain, coupling = this % on)
 
-    call this % coarse % attach(block_statement, block_statement % pattern, block_statement % pattern % vertex_set())
+    ! The coarse statement carries its own stencil, and that stencil
+    ! is exactly the coupling of the coarse unknowns.
+    call this % coarse % attach(block_statement, block_statement % pattern, &
+         & block_statement % pattern % vertex_set(), &
+         & coupling = block_statement % pattern)
 
   end subroutine setup
 

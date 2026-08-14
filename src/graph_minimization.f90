@@ -59,7 +59,28 @@ module graph_minimization
   type, abstract, extends(graph_operation) :: minimizer
 
      class(graph_operation), allocatable :: action
+
+     ! THE EXECUTION CONTEXT. The graph handed to the action when it
+     ! is applied, and nothing more. It is whatever the action needs
+     ! to compute with - a mesh, a compatibility host, a conduit -
+     ! and it carries no authority over the solver's own structure.
      class(graph)          , allocatable :: on
+
+     ! THE DEPENDENT-VARIABLE COUPLING. Which unknowns feed which:
+     ! the stencil the structural algorithms need, and the ONLY thing
+     ! sweep_order is permitted to colour.
+     !
+     ! It is OPTIONAL AT ATTACH AND HAS NO FALLBACK. A structure-free
+     ! minimizer - gmres, conjugate gradient, newton - never asks for
+     ! it and need never supply one. A structured one - jacobi,
+     ! gauss-seidel - is handed it by a caller that knows which object
+     ! owns the dependent axis, and fails loudly if it was not.
+     !
+     ! `coupling := on` would be exactly the mistake this seat exists
+     ! to prevent: the graph an action happens to execute over is not
+     ! evidence about which unknowns are coupled. Where the two really
+     ! are the same graph, the CALLER says so, at its own call site.
+     class(graph)          , allocatable :: coupling
 
      ! The unknown domain U: where the answer lives, explicit at
      ! attach, identity preserved - never inferred from the host.
@@ -137,13 +158,14 @@ contains
   ! its boundary values and sources say by themselves.
   !===================================================================!
 
-  subroutine attach(this, action, on, unknown_domain, ncomp)
+  subroutine attach(this, action, on, unknown_domain, ncomp, coupling)
 
     class(minimizer)  , intent(inout) :: this
     class(graph_operation), intent(in)    :: action
     class(graph)          , intent(in)    :: on
     class(member_set)     , intent(in)    :: unknown_domain
     integer, intent(in), optional         :: ncomp
+    class(graph)  , intent(in), optional  :: coupling
 
     real(dp), allocatable :: zero(:)
     integer :: n
@@ -152,6 +174,13 @@ contains
     allocate(this % action, source=action)
     if (allocated(this % on)) deallocate(this % on)
     allocate(this % on, source=on)
+
+    ! The dependent-variable coupling arrives EXPLICIT or not at all.
+    ! No fallback to the execution context: a solver that needs
+    ! structure and was given none says so when it reaches for it,
+    ! rather than colouring whatever graph happened to be nearby.
+    if (allocated(this % coupling)) deallocate(this % coupling)
+    if (present(coupling)) allocate(this % coupling, source=coupling)
 
     this % ncomp = 1
     if (present(ncomp)) this % ncomp = max(ncomp, 1)
@@ -280,8 +309,17 @@ contains
     type(walk) :: colouring
     class(graph_field), allocatable :: answer
 
+    ! THE COLOURING IS OF THE UNKNOWNS' COUPLING, never of the
+    ! execution context. Two unknowns may share a colour only when
+    ! nothing couples them, and the graph an action runs over knows
+    ! nothing about that.
+    if (.not. allocated(this % coupling)) then
+       error stop 'minimization: a sweep needs the dependent-variable &
+            &coupling - attach it with coupling='
+    end if
+
     colouring = walk(WALK_COLOURING)
-    call colouring % apply(this % on, output=answer)
+    call colouring % apply(this % coupling, output=answer)
     call answer % get_integer_vector(colours)
 
   end subroutine sweep_order

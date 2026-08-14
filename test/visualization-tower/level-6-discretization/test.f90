@@ -47,11 +47,23 @@
 !    out-of-range index, no manufactured union carrier.
 !
 ! 3. THE STEP WITNESS. The same family verb, asked of the other
-!    concrete citizen, answers about a different axis entirely: a
-!    chain of instants. Two steps wrapping actions with DIFFERENT
-!    state sparsity return the SAME motif, which is executable
-!    evidence that step's dependencies() describes the scheme's time
-!    axis and not the wrapped action's algebra.
+!    concrete citizen, answers on a different AXIS: the stencil on the
+!    independent variable. BDF2's residual at the newest instant reads
+!    three instants, so its stencil is a FAN-IN - 1->3, 2->3, 3->3 -
+!    and not the succession 1->2->3, which is a chronology and a
+!    different relation entirely.
+!
+!    Two steps wrapping actions with DIFFERENT state sparsity return
+!    the SAME stencil, which is executable evidence that a step's
+!    dependencies() describes its own axis and not the wrapped
+!    action's algebra.
+!
+!    ONE CONTRACT, ONE MEANING:
+!
+!        dependencies() = the stencil on the axis this concrete type
+!                         represents
+!
+!    dependent for the stencil operator, independent for the step.
 !
 !                     THE THEOREM THE LEVEL EXISTS FOR
 !
@@ -384,23 +396,33 @@ contains
     type(picture) :: pic
 
     call report(motif_d2 % num_vertices() .eq. 3 .and. &
-         &      motif_d2 % num_edges() .eq. 2, &
-         & "BDF2's dependencies() answers three vertices and two " // &
-         & "edges - reach + 1 instants", nfail)
+         &      motif_d2 % num_edges() .eq. 3, &
+         & "BDF2's dependencies() answers three vertices and three " // &
+         & "edges - reach + 1 instants, and one arrow from each", nfail)
 
-    call report(production_has(motif_d2, 1, 2) .and. &
+    call report(production_has(motif_d2, 1, 3) .and. &
          &      production_has(motif_d2, 2, 3) .and. &
-         &      .not. production_has(motif_d2, 1, 1) .and. &
-         &      .not. production_has(motif_d2, 1, 3), &
-         & "and its arrows form a CHAIN, 1 -> 2 -> 3: each edge one " // &
-         & "look further back", nfail)
+         &      production_has(motif_d2, 3, 3) .and. &
+         &      .not. production_has(motif_d2, 1, 2) .and. &
+         &      .not. production_has(motif_d2, 2, 1), &
+         & "and its arrows FAN IN on the newest instant: 1->3, 2->3, " // &
+         & "3->3 - what the residual actually reads", nfail)
 
     pic = pattern_picture(motif_d2, 'BDF2')
     call report(pic % at(4) .eq. '1       . . .' .and. &
-         &      pic % at(5) .eq. '2       # . .' .and. &
-         &      pic % at(6) .eq. '3       . # .', &
-         & "rendered, it is a lower subdiagonal - the shape of a " // &
-         & "history, not of a sparsity", nfail)
+         &      pic % at(5) .eq. '2       . . .' .and. &
+         &      pic % at(6) .eq. '3       # # #', &
+         & "rendered, one full row and nothing else - THE STENCIL OF " // &
+         & "THE INSTANT BEING SOLVED FOR", nfail)
+
+    ! A stencil is not a chronology. The succession 1 -> 2 -> 3 is a
+    ! true relation about which instant follows which, and it is not
+    ! what this contract answers.
+    call report(.not. production_has(motif_d2, 1, 2) .and. &
+         &      production_has(motif_d2, 3, 3), &
+         & "A STENCIL IS NOT A CHRONOLOGY: succession would hold " // &
+         & "1->2, and the self-arrow that makes the newest instant " // &
+         & "an unknown would be missing", nfail)
 
   end subroutine check_the_step_pattern
 
@@ -421,15 +443,15 @@ contains
          & "AND DIFFERENT EDGE STRUCTURE - equal cardinality is not " // &
          & "equal semantics", nfail)
 
-    call report(production_has(pat_d2, 1, 1) .and. &
-         &      .not. production_has(motif_d2, 1, 1), &
-         & "the stencil says state 1 depends on state 1; the step " // &
-         & "says no instant is its own predecessor", nfail)
+    call report(production_has(pat_d2, 2, 1) .and. &
+         &      .not. production_has(motif_d2, 2, 1), &
+         & "the state stencil couples unknown 2 to unknown 1; the " // &
+         & "step's independent axis has no such arrow", nfail)
 
-    call report(production_has(motif_d2, 2, 3) .and. &
-         &      .not. production_has(pat_d2, 2, 3), &
-         & "the step says instant 3 looks back to instant 2; the " // &
-         & "stencil has no such coefficient", nfail)
+    call report(production_has(motif_d2, 1, 3) .and. &
+         &      .not. production_has(pat_d2, 1, 3), &
+         & "the step's residual reads instant 1; the state stencil " // &
+         & "has no coefficient coupling unknown 1 to unknown 3", nfail)
 
   end subroutine check_state_is_not_time
 
@@ -454,10 +476,10 @@ contains
          & nfail)
 
     call report(motif_diag % num_vertices() .eq. 3 .and. &
-         &      production_has(motif_diag, 1, 2) .and. &
-         &      production_has(motif_diag, 2, 3), &
-         & "it describes the SCHEME'S TIME AXIS: reach + 1 instants, " // &
-         & "whatever action rides on them", nfail)
+         &      production_has(motif_diag, 1, 3) .and. &
+         &      production_has(motif_diag, 3, 3), &
+         & "it describes THE STENCIL ON ITS OWN AXIS: reach + 1 " // &
+         & "instants fanning in, whatever action rides on them", nfail)
 
   end subroutine check_the_motif_is_independent_of_what_it_wraps
 

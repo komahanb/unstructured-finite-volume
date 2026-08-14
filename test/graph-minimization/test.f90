@@ -249,7 +249,7 @@ contains
     integer :: v, i
 
     m = chain_mesh()
-    call js % attach(chain_operator(m), m, m % vertex_set())
+    call js % attach(chain_operator(m), m, m % vertex_set(), coupling = m)
 
     call js % diagonal(d)
     call report(all(abs(d - [-3.0_dp, -2.0_dp, -3.0_dp]) < 1.0d-12), &
@@ -289,7 +289,7 @@ contains
     real(dp), parameter :: exact(3) = [5.0_dp/3.0_dp, 5.0_dp, 25.0_dp/3.0_dp]
 
     m = chain_mesh()
-    call js % attach(chain_operator(m), m, m % vertex_set())
+    call js % attach(chain_operator(m), m, m % vertex_set(), coupling = m)
     js % max_iterations = 5000
     js % tolerance      = 1.0d-12
 
@@ -382,7 +382,7 @@ contains
     real(dp), parameter :: exact(3) = [5.0_dp/3.0_dp, 5.0_dp, 25.0_dp/3.0_dp]
 
     m = chain_mesh()
-    call gs % attach(chain_operator(m), m, m % vertex_set())
+    call gs % attach(chain_operator(m), m, m % vertex_set(), coupling = m)
     gs % max_iterations = 2000
     gs % tolerance      = 1.0d-12
 
@@ -451,7 +451,7 @@ contains
     call report(achieved < 1.0d-10, &
          & 'gmres closes the unsymmetric statement', nfail)
 
-    call js % attach(statement, m, m % vertex_set())
+    call js % attach(statement, m, m % vertex_set(), coupling = m)
     js % max_iterations = 5000
     js % tolerance      = 1.0d-12
     allocate(xj(3))

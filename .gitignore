@@ -36,3 +36,6 @@ test/partitioned-implicit-pde-tower/*/run.out
 test/time-integration-tower/*/run
 test/time-integration-tower/*/refusal
 test/time-integration-tower/*/run.out
+test/visualization-tower/*/run
+test/visualization-tower/*/refusal
+test/visualization-tower/*/run.out

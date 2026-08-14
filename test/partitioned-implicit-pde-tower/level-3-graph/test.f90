@@ -27,8 +27,8 @@ program partitioned_pde_level_3
   use graph_carrier          , only : counted_set
   use graph_binary_relation  , only : csr_relation
   use class_graph            , only : stored_graph
-  use chain_relations_fixture, only : chain_carriers, tail_relation, &
-       &                              head_relation
+  use chain_carriers_fixture , only : chain_carriers
+  use chain_relations_fixture, only : tail_relation, head_relation
 
   implicit none
 

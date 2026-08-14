@@ -16,6 +16,7 @@ set -e
 
 here="$(cd "$(dirname "$0")" && pwd)"
 
+"$here/check_imports.sh" --selftest || { echo "└── the import gate refused itself"; exit 1; }
 "$here/check_imports.sh" || { echo "└── the import gate refused the tower"; exit 1; }
 
 . "$here/check_marker.sh"

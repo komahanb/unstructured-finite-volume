@@ -2,16 +2,18 @@
 ! THE CHAIN RELATIONS FIXTURE - earned at LEVEL 1, and deliberately
 ! independent of any graph object.
 !
-! Before the chain is a graph, it is three carriers and three
-! primitive facts:
-!
-!      V = { 1 2 3 4 5 6 }        global vertices
-!      E = { e1 e2 e3 e4 e5 }     global edges
-!      K = { part1 part2 }        partition labels
+! It holds three primitive facts and nothing else:
 !
 !      Tail <= E x V     e_i -> i
 !      Head <= E x V     e_i -> i+1
 !      Own  <= K x V     part1 -> 1,2,3   part2 -> 4,5,6
+!
+! The carriers V, E and K are NOT declared here. They are Level 0's
+! property, they live in chain_carriers_fixture, and every
+! constructor below receives them as arguments. This file cannot
+! name a set into existence; it can only state facts over sets
+! somebody else has already declared - which is precisely what
+! makes it a Level-1 file and not a Level-0 one.
 !
 ! These are STRUCTURAL truths only. There is no overlap here, no
 ! borrowed member, no local numbering, and no ordinary graph: those
@@ -34,23 +36,9 @@ module chain_relations_fixture
   implicit none
 
   private
-  public :: chain_carriers, tail_relation, head_relation, own_relation
+  public :: tail_relation, head_relation, own_relation
 
 contains
-
-  !===================================================================!
-  ! The three carriers, declared and nothing more.
-  !===================================================================!
-
-  subroutine chain_carriers(v, e, k)
-
-    type(counted_set), intent(out) :: v, e, k
-
-    v = counted_set('global vertices', 6)
-    e = counted_set('global edges'   , 5)
-    k = counted_set('partition labels', 2)
-
-  end subroutine chain_carriers
 
   !===================================================================!
   ! Tail <= E x V : which vertex each edge leaves.

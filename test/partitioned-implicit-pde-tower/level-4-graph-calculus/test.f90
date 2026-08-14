@@ -18,15 +18,29 @@
 ! to the other part.
 !
 ! And the rung's sharpest truth: production's edge ownership is
-! checked against the LEVEL-2 RELATIONAL LAW, not against a
-! previous observation of production. Level 2 derived
+! read as a CHOICE BETWEEN TWO NAMED POLICIES, not as agreement with
+! a single forced law. Level 2 derived both, from the primitive
+! facts alone, before any partitioner existed:
 !
-!      EdgeOwner = Own^T o Tail : E -> K
+!      TailOwner = Own^T o Tail : E -> K
+!      HeadOwner = Own^T o Head : E -> K
 !
-! from the primitive facts alone, before any partitioner existed.
-! Here every edge_owner_part the machinery reports must agree with
-! it - which turns tail-ownership from a convention someone noticed
-! into a theorem production happens to satisfy.
+! Both are total functions, so both satisfy the reconstruction law
+! and neither is singled out by it. They differ on exactly one edge
+! here - the crossing edge e3 - and that one edge is what lets this
+! level say which policy production implements:
+!
+!      production(e3) = part1 = TailOwner(e3) /= HeadOwner(e3)
+!
+! so the conclusion is empirical and specific: PRODUCTION SELECTS
+! THE TAIL-BASED POLICY. Not "production satisfies the uniquely
+! forced ownership theorem" - there is no such theorem.
+!
+! This also names an old prose defect exactly. The partitioner's
+! comment once described a hybrid - tail owner normally, head owner
+! when the tail is borrowed - while the executable behaviour was
+! uniformly TailOwner. With both policies in hand that sentence is
+! no longer merely wrong; it is wrong in a way this level can spell.
 !
 ! This level is graph-to-graph interpretation ONLY. No field is
 ! transported here; that is Level 5's mathematics.
@@ -42,15 +56,16 @@ program partitioned_pde_level_4
   use graph_binary_relation  , only : csr_relation
   use class_graph            , only : stored_graph
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
-  use chain_relations_fixture, only : chain_carriers, tail_relation, &
+  use chain_carriers_fixture , only : chain_carriers
+  use chain_relations_fixture, only : tail_relation, head_relation, &
        &                              own_relation
-  use chain_algebra_fixture  , only : derive_edge_owner
+  use chain_algebra_fixture  , only : derive_tail_owner, derive_head_owner
 
   implicit none
 
   type(counted_set)          :: v, e, k
-  type(csr_relation), target :: tail, own
-  type(csr_relation)         :: edge_owner
+  type(csr_relation), target :: tail, head, own
+  type(csr_relation)         :: tail_owner, head_owner
   type(stored_graph)         :: g
   class(graph), allocatable  :: g1, g2
   integer                    :: nfail
@@ -61,12 +76,14 @@ program partitioned_pde_level_4
   write(*,'(1x,a)') "partitioned pde tower . level 4 . partition"
   write(*,'(1x,a)') "============================================="
 
-  ! The Level-2 law, re-derived here so this level checks production
-  ! against mathematics rather than against memory.
+  ! BOTH Level-2 candidate policies, re-derived here so this level
+  ! selects between mathematics rather than recalling an observation.
   call chain_carriers(v, e, k)
   tail = tail_relation(e, v)
+  head = head_relation(e, v)
   own  = own_relation(k, v)
-  edge_owner = derive_edge_owner(tail, own)
+  tail_owner = derive_tail_owner(tail, own)
+  head_owner = derive_head_owner(head, own)
 
   g = stored_graph(6, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
   call cut(g1, 1)
@@ -77,7 +94,7 @@ program partitioned_pde_level_4
   call check_maps_and_ownership(g1, 1, [1,2,3,4], 4, nfail)
   call check_maps_and_ownership(g2, 2, [4,5,6,3], 3, nfail)
   call check_crossing_edge_presence(nfail)
-  call check_production_matches_the_law(nfail)
+  call check_production_selects_tail_ownership(nfail)
 
   call verdict(nfail, "level 4")
 
@@ -195,11 +212,13 @@ contains
   end subroutine check_crossing_edge_presence
 
   !===================================================================!
-  ! THE rung's theorem-check: production's ownership against the
-  ! Level-2 derivation, edge for edge, in both directions.
+  ! THE rung's selection: production's ownership read against BOTH
+  ! Level-2 candidate policies, edge for edge. Agreement with
+  ! TailOwner alone is what identifies the policy; agreement with
+  ! "some total function" would identify nothing.
   !===================================================================!
 
-  subroutine check_production_matches_the_law(nfail)
+  subroutine check_production_selects_tail_ownership(nfail)
 
     integer, intent(inout) :: nfail
 
@@ -211,19 +230,29 @@ contains
        produced = owner_of_global_edge(g1, ge)
        if (produced .eq. 0) produced = owner_of_global_edge(g2, ge)
        ok = ok .and. (produced .ne. 0)
-       ok = ok .and. edge_owner % has([ge, produced])
+       ok = ok .and. tail_owner % has([ge, produced])
     end do
     call report(ok, &
-         & "every edge_owner_part production reports satisfies the " // &
-         & "Level-2 law EdgeOwner = Own^T o Tail", nfail)
+         & "every edge_owner_part production reports agrees with " // &
+         & "TailOwner = Own^T o Tail, edge for edge", nfail)
 
+    ! The crossing edge is the whole discriminator: it is the only
+    ! place the two policies differ, so it is the only place
+    ! production can be caught choosing.
     call report(owner_of_global_edge(g1, 3) .eq. 1 .and. &
          &      owner_of_global_edge(g2, 3) .eq. 1 .and. &
-         &      edge_owner % has([3, 1]), &
-         & "and both parts agree the crossing edge is part1's - as " // &
-         & "the law derived before any partitioner existed", nfail)
+         &      tail_owner % has([3, 1]), &
+         & "both parts report the crossing edge as part1's, and so " // &
+         & "does TailOwner(e3)", nfail)
 
-  end subroutine check_production_matches_the_law
+    call report(head_owner % has([3, 2]) .and. &
+         &      .not. head_owner % has([3, 1]) .and. &
+         &      owner_of_global_edge(g1, 3) .ne. 2 .and. &
+         &      owner_of_global_edge(g2, 3) .ne. 2, &
+         & "while HeadOwner(e3) = part2, which production does NOT " // &
+         & "report: PRODUCTION SELECTS THE TAIL-BASED POLICY", nfail)
+
+  end subroutine check_production_selects_tail_ownership
 
   logical function holds_global_edge(part, ge)
 

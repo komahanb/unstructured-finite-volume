@@ -16,8 +16,25 @@
 !
 ! Every signature is pinned by carrier IDENTITY, because the ids
 ! collide across V, E and K and orientation could not otherwise be
-! established: the pair [3,4] is a legitimate member of Tail, Head
-! and Own alike, meaning three different things each time.
+! established. The collisions are real and specific:
+!
+!      [1,1]  is a fact of Tail  -  e1 leaves vertex 1
+!             and a fact of Own  -  part1 owns vertex 1
+!
+!      [1,2]  is a fact of Head  -  e1 enters vertex 2
+!             and a fact of Own  -  part1 owns vertex 2
+!
+! Identical integers, unrelated meanings, and nothing in the pair
+! itself says which is which. Only the SIGNATURE does - E x V in one
+! case, K x V in the other:
+!
+!      raw integer tuple  /=  typed relational fact.
+!
+! No pair belongs to all three relations, and none could: Tail and
+! Head are disjoint on this chain, and a K-indexed relation admits
+! only 1 and 2 in its first slot. That last point is a carrier
+! truth, not an arithmetic one - Own refuses [3,4] outright because
+! K has no member 3.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -27,8 +44,9 @@ program partitioned_pde_level_1
   use partitioned_pde_assert , only : report, verdict
   use graph_carrier          , only : counted_set, member_set
   use graph_binary_relation  , only : csr_relation
-  use chain_relations_fixture, only : chain_carriers, tail_relation, &
-       &                              head_relation, own_relation
+  use chain_carriers_fixture , only : chain_carriers
+  use chain_relations_fixture, only : tail_relation, head_relation, &
+       &                              own_relation
 
   implicit none
 
@@ -147,22 +165,30 @@ contains
 
   !===================================================================!
   ! Why signatures matter here more than anywhere: the ids collide,
-  ! so one and the same pair means three different things depending
-  ! only on which relation is asked.
+  ! so one and the same pair of integers is a fact of two different
+  ! relations meaning two unrelated things.
   !===================================================================!
 
   subroutine check_orientation_is_signature(nfail)
 
     integer, intent(inout) :: nfail
 
-    call report(tail % has([3, 3]) .and. head % has([3, 4]) .and. &
-         &      own % has([1, 3]), &
-         & "the pair [3,4] reads as 'e3 enters vertex 4' in Head - " // &
-         & "and would read as 'part3 owns vertex 4' in a relation " // &
-         & "from K, if K had a third member", nfail)
-    call report(.not. own % has([3, 4]), &
-         & "Own refuses it outright: K has no member 3, and that " // &
-         & "is a carrier truth, not an arithmetic one", nfail)
+    call report(tail % has([1, 1]) .and. own % has([1, 1]), &
+         & "the pair [1,1] is 'e1 leaves vertex 1' in Tail over " // &
+         & "E x V, and 'part1 owns vertex 1' in Own over K x V", &
+         & nfail)
+
+    call report(head % has([1, 2]) .and. own % has([1, 2]), &
+         & "and [1,2] is 'e1 enters vertex 2' in Head, and 'part1 " // &
+         & "owns vertex 2' in Own: the signature is the semantics", &
+         & nfail)
+
+    call report(head % has([3, 4]) .and. .not. tail % has([3, 4]) .and. &
+         &      .not. own % has([3, 4]), &
+         & "no pair is a fact of all three - [3,4] is Head's alone: " // &
+         & "Tail says e3 leaves vertex 3, and Own refuses it because " // &
+         & "K has no member 3, a carrier truth, not an arithmetic one", &
+         & nfail)
 
   end subroutine check_orientation_is_signature
 

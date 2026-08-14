@@ -19,14 +19,20 @@
 ! sets - only identity does, and every level above depends on that
 ! being true here first.
 !
+! The level imports carriers and the assert module, and NOTHING
+! relational. Its fixture, chain_carriers_fixture, is earned here;
+! the relation fixture one rung up is out of reach by construction,
+! and the import gate proves that mechanically rather than by
+! promise.
+!
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 program partitioned_pde_level_0
 
-  use partitioned_pde_assert, only : report, verdict
-  use graph_carrier         , only : counted_set, member_set
-  use chain_relations_fixture, only : chain_carriers
+  use partitioned_pde_assert , only : report, verdict
+  use graph_carrier          , only : counted_set, member_set
+  use chain_carriers_fixture , only : chain_carriers
 
   implicit none
 

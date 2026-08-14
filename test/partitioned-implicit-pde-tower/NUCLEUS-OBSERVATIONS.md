@@ -145,13 +145,50 @@ level:                relational oracle 2 · partition 4 ·
 review gate:          A (2, 4) · B (5)
 contextual radius:    2
 
-symptom / fact:       ONE GLOBAL ENTITY, ONE ASSEMBLED CONTRIBUTION.
+symptom / fact:       ONE GLOBAL ENTITY, ONE ASSEMBLED CONTRIBUTION -
+                      and this entry keeps TWO different truths apart,
+                      because the tower once ran them together.
+
+                      A. THE OWNERSHIP POLICY. Which part is
+                      designated owner? Relation algebra supplies at
+                      least two total candidates from the same
+                      primitives:
+
+                        TailOwner = Own^T o Tail : E -> K
+                        HeadOwner = Own^T o Head : E -> K
+
+                      PRODUCTION CHOOSES TailOwner. That is a policy
+                      selection, established EMPIRICALLY at Level 4 by
+                      reading edge_owner_part at the crossing edge -
+                      the only edge where the two candidates differ:
+
+                        production(e3) = part1 = TailOwner(e3)
+                                              /= HeadOwner(e3)
+
+                      It is NOT forced by Tail, Head and Own. Nothing
+                      in the primitive facts prefers the tail anchor
+                      over the head anchor.
+
+                      B. THE RECONSTRUCTION LAW. Does every global
+                      entity have exactly one authoritative
+                      contribution? This requires only that the
+                      SELECTED owner relation be total and
+                      single-valued - and BOTH candidates are, as
+                      Level 2 proves independently for each. So
+                      "tail ownership is what makes reconstruction
+                      possible" is false. The correct statement:
+
+                        a total single-valued ownership policy makes
+                        unique reconstruction possible; production
+                        chooses the tail-based policy.
+
                       The law was imposed BEFORE any ownership array
                       was inspected: an edge probe [10,20,30,40,50] was
                       partitioned to both parts, each part's field
                       assembled home, and the two summed. The result is
                       the probe exactly - the crossing edge contributes
-                      30 once.
+                      30 once. Level 5's probe checks production's
+                      SELECTED policy operationally.
 
                       Only then was edge_owner_part consulted, and it
                       documents part 1 (the TAIL's owner) as canonical,
@@ -160,10 +197,11 @@ symptom / fact:       ONE GLOBAL ENTITY, ONE ASSEMBLED CONTRIBUTION.
                       A PROSE DEFECT was found beside that code. The
                       comment claimed an edge is owned by its tail's
                       part "unless the tail is borrowed, in which case
-                      the head's owner answers for it" - but both arms
-                      of the if/else assign the tail's owner. The
-                      behaviour is unconditionally tail-owned, which
-                      satisfies the law; the comment described a rule
+                      the head's owner answers for it" - a HYBRID of
+                      the two policies - but both arms of the if/else
+                      assign the tail's owner. The behaviour is
+                      uniformly TailOwner, which satisfies the
+                      reconstruction law; the comment described a rule
                       that was never implemented.
 
 exact caller:         gate-a-partition/test.f90
@@ -173,18 +211,30 @@ exact caller:         gate-a-partition/test.f90
                       assignment)
 
 mathematical concept: a partition of a set of entities into ownership
-                      classes; assembly as the inverse of restriction
+                      classes; assembly as the inverse of restriction.
+                      A policy is a CHOICE of total single-valued
+                      relation E -> K; the law is a PROPERTY that
+                      choice must have
 
-local necessity:      yes
-global necessity:     yes - reconstruction is meaningless without it
+local necessity:      yes - for the law. The particular policy is a
+                      convention, and a head-anchored partitioner
+                      would reconstruct just as exactly
+global necessity:     yes for the law - reconstruction is meaningless
+                      without it. NOT global for the tail anchor
 
-cross-tower recurrence: first tower to test it on a CROSSING entity
+cross-tower recurrence: first tower to test it on a CROSSING entity,
+                      which is also the only entity that can reveal
+                      WHICH policy is in force
 
 graph role:           not applicable
 
-comparison:           the law is what makes ownership canonical. Had
+comparison:           the law is what makes ownership USABLE; it is
+                      not what makes the tail anchor canonical. Had
                       the tower begun by reading the comment, it would
-                      have "fixed" working code to match wrong prose
+                      have "fixed" working code to match wrong prose -
+                      and had it stopped at "exactly one owner", it
+                      would have mistaken a property shared by both
+                      candidates for a derivation of one of them
 
 suspected nucleus implication: PROSE ONLY, and applied: the comment now
                       describes tail-ownership and names the vestigial
@@ -192,12 +242,16 @@ suspected nucleus implication: PROSE ONLY, and applied: the comment now
                       removed - RED exposed no defect, so the code was
                       left alone. It is recorded here as a hazard: both
                       arms are identical, so a future editor could
-                      "repair" one of them and silently break unique
-                      reconstruction. Removing it is a candidate for a
-                      later cleanup pass, not for this tower.
+                      "repair" one of them into the HYBRID the old
+                      comment described. That hybrid is a third policy,
+                      and it is not obviously total on a general mesh -
+                      which is exactly why the two clean candidates are
+                      now named. Removing the branch is a candidate for
+                      a later cleanup pass, not for this tower.
 
 confidence:           high
-action:               observe (prose corrected; dead branch flagged)
+action:               observe (policy named; law separated from it;
+                      prose corrected; dead branch flagged)
 ```
 
 ---

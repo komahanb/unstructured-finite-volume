@@ -19,8 +19,14 @@
 ! The same law is checked on edges, where it bites hardest: the
 ! crossing edge e3 lives in both parts, and an edge probe must
 ! come home unchanged - contributing 30 once, not twice, not never.
-! Level 2 derived WHY that works (one owner per edge, through the
-! tail map); this level confirms the field machinery honours it.
+!
+! Level 2 derived WHY that works, and the reason is narrower than
+! it looks: the selected ownership policy is a TOTAL, SINGLE-VALUED
+! map E -> K, so each edge answers exactly once. That property, not
+! the tail anchor specifically, is what reconstruction needs -
+! HeadOwner has it too. Level 4 then found which policy production
+! actually selected (the tail-based one), and this level confirms
+! the field machinery honours production's selection operationally.
 !
 ! No operator appears here. Values move; nothing is computed.
 !

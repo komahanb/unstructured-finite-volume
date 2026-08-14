@@ -1,45 +1,43 @@
 !=====================================================================!
-! PARTITIONED IMPLICIT PDE TOWER . GATE B . TOPOLOGY-CONSUMING ACTION
+! PARTITIONED IMPLICIT PDE TOWER . LEVEL 6 . DISCRETIZATION
 !
-! The gate answers TWO different questions, and proves them apart.
+! The level answers one question: DOES THE SAME DISCRETE SPATIAL LAW
+! APPLIED ON THE PARTS RECONSTRUCT THE LAW APPLIED ON THE WHOLE.
 !
-! FIRST: does a real Class-1 operation, evaluated on
-! overlap-complete part fields and assembled through OWNED outputs,
-! reproduce the global operator?
+!      L   the production vertex Laplacian
+!      A   the test-local shift,  A(q) = 2q - L(q)
+!
+! The Laplacian genuinely traverses whatever graph it is handed, so
+! each part answers over its OWN incidence - and its answers at
+! BORROWED members are wrong on purpose, because a borrowed vertex
+! sits at the part's edge with half its stencil missing:
+!
+!      G1's copy of global 4 says 17;  the whole says 13
+!      G2's copy of global 3 says  5;  the whole says  7
+!
+! Keep only what each part owns and the pieces reconstruct the
+! global action exactly:
 !
 !      A_G q  =  sum_p  P_p^T O_p A_{G_p} P_p q
 !
-! It does, exactly - and the borrowed outputs it discards are
-! visibly wrong: G1's copy of global vertex 4 answers 17 where the
-! global action answers 13, and G2's copy of global vertex 3
-! answers 5 where the global action answers 7. A part holds enough
-! topology to answer for what it OWNS and no more. Borrowed inputs
-! are necessary; borrowed outputs are not authoritative.
+! Level 5 stated the read/write law structurally. This level proves
+! it NUMERICALLY: perturbing only a borrowed copy moves an owned
+! result across the cut, so visibility is not a courtesy - the
+! stencil genuinely depends on it.
 !
-! SECOND: is the graph a minimizer carries actually load-bearing?
-! Four earlier towers reported it as scenery - correctly, about
-! their own actions, which had no topology to traverse. Here the
-! attached action does. The same shifted_laplacian type, which
-! stores no graph at all, is attached to two solvers over two
-! DIFFERENT six-vertex five-edge topologies, and handed the same
-! probe:
+!      VISIBILITY governs what a local calculation may READ.
+!      OWNERSHIP governs what it may authoritatively WRITE back.
 !
-!      solver on the chain -> b
-!      solver on the star  -> something else entirely
-!
-! Nothing changed but the host. The minimizer never reads topology;
-! it CARRIES the graph to an operation that does. Those are two
-! roles, and this gate is where the distinction stops being an
-! inference from production code and becomes a measurement.
+! No solver appears here.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-program partitioned_pde_gate_b
+program partitioned_pde_level_6
 
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : report, verdict
-  use partitioned_pde_assert, only : NV, NE, Q_EXACT, B_EXACT, L_EXACT
+  use partitioned_pde_assert, only : NV, Q_EXACT, B_EXACT, L_EXACT
   use graph_carrier    , only : counted_set, subset_set, member_set
   use graph_grammar    , only : graph, graph_field
   use class_graph      , only : stored_graph
@@ -48,12 +46,11 @@ program partitioned_pde_gate_b
   use class_graph_assembler  , only : assembler
   use class_graph_differential_operator, only : differential_operator, &
        &                                        laplacian
-  use class_graph_gmres, only : gmres
   use shifted_laplacian_fixture, only : shifted_laplacian
 
   implicit none
 
-  type(stored_graph)        :: g, g_alt
+  type(stored_graph)        :: g
   type(assembler)           :: a
   type(shifted_laplacian)   :: shifted
   class(graph), allocatable :: g1, g2
@@ -62,12 +59,11 @@ program partitioned_pde_gate_b
   nfail = 0
 
   write(*,'(1x,a)') "============================================="
-  write(*,'(1x,a)') "partitioned pde tower . gate B . the action"
+  write(*,'(1x,a)') "partitioned pde tower . level 6 . operator"
   write(*,'(1x,a)') "============================================="
 
   g = stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
   a = assembler()
-
   call cut(g1, 1)
   call cut(g2, 2)
 
@@ -76,13 +72,10 @@ program partitioned_pde_gate_b
   call check_local_actions(nfail)
   call check_assembled_equivalence(nfail)
   call check_borrowed_input_matters(nfail)
-  call check_global_solve(nfail)
-  call check_host_is_load_bearing(nfail)
 
-  call verdict(nfail, "gate B")
+  call verdict(nfail, "level 6")
 
 contains
-
   subroutine cut(part, k)
 
     class(graph), allocatable, intent(out) :: part
@@ -94,7 +87,6 @@ contains
     call p % partition_graph(g, part)
 
   end subroutine cut
-
   !===================================================================!
   ! The global oracles, from the production Laplacian traversing G -
   ! never from a matrix.
@@ -130,7 +122,6 @@ contains
          & nfail)
 
   end subroutine check_global_action
-
   !===================================================================!
   ! The minimal re-check Gate B needs before it may trust its own
   ! inputs: the transported state lives on the PART's whole vertex
@@ -149,7 +140,6 @@ contains
          & [7.0_dp, 11.0_dp, 16.0_dp, 4.0_dp], nfail)
 
   end subroutine check_transported_state
-
   subroutine one_transported_state(part, k, expect, nfail)
 
     class(graph), intent(in)    :: part
@@ -189,7 +179,6 @@ contains
          & "and carries q* in G" // tag // "'s own enumeration", nfail)
 
   end subroutine one_transported_state
-
   !===================================================================!
   ! The same operation on each part, over the part's own topology.
   ! The complete local answers include BORROWED entries, and those
@@ -208,7 +197,6 @@ contains
          & [13.0_dp, 21.0_dp, 37.0_dp, 5.0_dp], 3, 5.0_dp, 7.0_dp, nfail)
 
   end subroutine check_local_actions
-
   subroutine one_local_action(part, k, globals, expect_l, expect_a, &
        & borrowed_global, borrowed_says, global_says, nfail)
 
@@ -271,7 +259,6 @@ contains
          & "global action - it is a copy, not an answer", nfail)
 
   end subroutine one_local_action
-
   !===================================================================!
   ! THE GATE-B THEOREM: assemble the two local actions, keeping only
   ! owned members, and the sum is the global action exactly.
@@ -296,7 +283,6 @@ contains
          & "copies said 5 and 17 - the owned answers stand", nfail)
 
   end subroutine check_assembled_equivalence
-
   !===================================================================!
   ! The negative control: borrowed INPUT is numerically load-bearing.
   ! Perturb only the borrowed copy and an OWNED result must move.
@@ -310,7 +296,6 @@ contains
     call perturb_and_watch(g2, 2, 3, 4, 13.0_dp, 3.0_dp, nfail)
 
   end subroutine check_borrowed_input_matters
-
   subroutine perturb_and_watch(part, k, borrowed_global, watched_global, &
        & before, after, nfail)
 
@@ -361,99 +346,6 @@ contains
          & nfail)
 
   end subroutine perturb_and_watch
-
-  !===================================================================!
-  ! The Class-1 operation behind production minimization, on G.
-  !===================================================================!
-
-  subroutine check_global_solve(nfail)
-
-    integer, intent(inout) :: nfail
-
-    type(gmres)                     :: solver
-    type(field)                     :: rhs
-    class(member_set), allocatable  :: dom
-    class(graph_field), allocatable :: sol
-    real(dp), allocatable           :: gv(:), v(:)
-    type(counted_set)               :: vs
-
-    vs = g % vertex_set()
-
-    call solver % attach(shifted, g, vs)
-    solver % tolerance      = 1.0d-12
-    solver % max_iterations = 200
-
-    call solver % domain(g, dom)
-    call report(dom % same_as(vs), &
-         & "the solver answers on V(G)", nfail)
-    call shifted % domain(g, dom)
-    call report(dom % same_as(vs), &
-         & "and so does its action: unknown and residual domains " // &
-         & "coincide here, both being V(G)", nfail)
-
-    call solver % constant(gv)
-    call report(maxval(abs(gv)) < 1.0d-12, &
-         & "the affine constant is zero: A is linear", nfail)
-
-    rhs = field('b', vs)
-    call rhs % set_real_vector(B_EXACT)
-    call solver % apply(g, [rhs], sol)
-
-    call sol % domain(dom)
-    call sol % get_real_vector(v)
-    call report(dom % same_as(vs), &
-         & "the solution is a field on V(G)", nfail)
-    call report(by_member(v, vs, Q_EXACT), &
-         & "and A q = b solves to q* = [1,2,4,7,11,16], by member", &
-         & nfail)
-
-  end subroutine check_global_solve
-
-  !===================================================================!
-  ! THE CONDUIT TEST, behavioural. One operation type storing no
-  ! graph; two solvers over two different six-vertex five-edge
-  ! topologies; one probe. If the host were scenery the two matvecs
-  ! would agree. They do not.
-  !===================================================================!
-
-  subroutine check_host_is_load_bearing(nfail)
-
-    integer, intent(inout) :: nfail
-
-    type(gmres)           :: solver_g, solver_alt
-    type(counted_set)     :: vs, vs_alt
-    real(dp), allocatable :: y(:), y_alt(:)
-
-    ! Same counts, different shape: a star, not a chain.
-    g_alt = stored_graph(NV, tails=[1,1,1,1,1], heads=[2,3,4,5,6])
-    vs     = g % vertex_set()
-    vs_alt = g_alt % vertex_set()
-
-    call report(g_alt % num_vertices() .eq. g % num_vertices() .and. &
-         &      g_alt % num_edges() .eq. g % num_edges() .and. &
-         &      .not. vs_alt % same_as(vs), &
-         & "G_alt is a star: same six vertices, same five edges, " // &
-         & "different topology", nfail)
-
-    call solver_g % attach(shifted, g, vs)
-    call solver_alt % attach(shifted, g_alt, vs_alt)
-
-    ! The SAME operation object, the SAME probe, two hosts.
-    call solver_g % matvec(Q_EXACT, y)
-    call solver_alt % matvec(Q_EXACT, y_alt)
-
-    call report(maxval(abs(y - B_EXACT)) < 1.0d-12, &
-         & "on the chain host the solver's own matvec gives b", nfail)
-    call report(maxval(abs(y_alt - B_EXACT)) > 1.0_dp, &
-         & "on the star host it does NOT - nothing changed but the " // &
-         & "graph the solver carries", nfail)
-    call report(maxval(abs(y_alt - y)) > 1.0_dp, &
-         & "so the host reaches the mathematics: a minimizer that " // &
-         & "reads no topology still CARRIES it to one that does", &
-         & nfail)
-
-  end subroutine check_host_is_load_bearing
-
   !===================================================================!
   ! Helpers.
   !===================================================================!
@@ -480,7 +372,6 @@ contains
     call qp % set_real_vector(v)
 
   end function local_state
-
   ! Apply A on a part and add its OWNED contribution into total.
   subroutine add_local_action(part, k, total)
 
@@ -519,7 +410,6 @@ contains
     end select
 
   end subroutine add_local_action
-
   ! The local seat holding this global member, or 0.
   integer function seat_of_global(part, gm)
 
@@ -537,7 +427,6 @@ contains
     end select
 
   end function seat_of_global
-
   ! Values compared through the domain's own map, never by position.
   logical function by_member(v, dom, expect)
 
@@ -555,5 +444,4 @@ contains
     end do
 
   end function by_member
-
-end program partitioned_pde_gate_b
+end program partitioned_pde_level_6

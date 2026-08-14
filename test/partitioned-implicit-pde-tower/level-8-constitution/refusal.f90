@@ -1,5 +1,5 @@
 !=====================================================================!
-! PARTITIONED IMPLICIT PDE TOWER . GATE C . THE REFUSAL
+! PARTITIONED IMPLICIT PDE TOWER . LEVEL 8 . THE REFUSAL
 !
 ! The composite is DECOMPOSITION-CONTEXT-BOUND: its G1 and G2 were
 ! cut from one particular chain. Gate B's six-vertex star has the
@@ -14,7 +14,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-program partitioned_pde_gate_c_refusal
+program partitioned_pde_level_8_refusal
 
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : NV, Q_EXACT
@@ -62,4 +62,4 @@ program partitioned_pde_gate_c_refusal
 
   end select
 
-end program partitioned_pde_gate_c_refusal
+end program partitioned_pde_level_8_refusal

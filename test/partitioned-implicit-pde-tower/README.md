@@ -16,12 +16,23 @@ with no topology to traverse, so none could see it.
 > minimizer, on a partitioned graph.** It is deliberately *not* a
 > derivative-family client.
 
+## Levels are the architecture; gates are only review checkpoints
+
+The tower is **ten levels**, 0 through 9. Each level is a directory, a
+test, an import ceiling and a distinct mathematical responsibility.
+
+Review happens at three checkpoints — after Level 4, after Level 7,
+after Level 9 — and that is *all* a gate is. Gates own no mathematics,
+appear in no directory name, and never stand in for a level's own
+result. In the runner they are horizontal separators between levels
+that have each reported for themselves.
+
 ---
 
 # A. The mathematical specimen
 
-One problem carried through the whole tower. On the six-vertex chain
-\(G\), with \(L\) the production vertex Laplacian:
+On the six-vertex chain \(G\), with \(L\) the production vertex
+Laplacian:
 
 \[
 \boxed{A\,q = b},
@@ -29,82 +40,62 @@ One problem carried through the whole tower. On the six-vertex chain
 A = 2I - L .
 \]
 
-The exact state and the right-hand side are chosen so that both are
-non-uniform:
-
 \[
 q^{*}=\begin{bmatrix}1&2&4&7&11&16\end{bmatrix}^{T},
-\qquad
+\quad
 L\,q^{*}=\begin{bmatrix}1&1&1&1&1&-5\end{bmatrix}^{T},
+\quad
+b=\begin{bmatrix}1&3&7&13&21&37\end{bmatrix}^{T}.
 \]
 
-\[
-b=(2I-L)\,q^{*}
- =\begin{bmatrix}1&3&7&13&21&37\end{bmatrix}^{T}.
-\]
+These are **oracles**. \(A\) is never built as a matrix: the road is
+\(q \mapsto 2q - L(q)\), with the Laplacian traversing the graph.
 
-These are **test oracles**. \(A\) is never built as a \(6\times6\)
-matrix: the execution road is
+**Honest naming.** A *shifted graph-diffusion (shifted-Laplacian)*
+problem, not a complete finite-volume discretization. The continuous
+analogue \(2q-q''=b\) is intuition only.
+
+**Why this specimen.** The topology is genuinely traversed; the cut
+falls between vertices 3 and 4; owned vertex 3's stencil needs borrowed
+\(q(4)\) and owned vertex 4's needs borrowed \(q(3)\); the solution is
+non-uniform; \(2I-L\) is non-singular; no boundary-condition machinery
+needs inventing.
+
+---
+
+# B. The ten-level Rosetta table
+
+| Level | Mathematical object | Framework object | Domains | Relations | Numerical meaning | Test | Truth established | Production consequence |
+|---|---|---|---|---|---|---|---|---|
+| **0** | \(V,E,K\) | `counted_set` | three carriers | — | none | `level-0-carrier/` | carriers precede structure; the integer 1 is a vertex, an edge *and* a part | none |
+| **1** | \(\mathrm{Tail},\mathrm{Head}\subseteq E\times V\); \(\mathrm{Own}\subseteq K\times V\) | `csr_relation` | \(E\times V\), \(K\times V\) | primitive facts | none | `level-1-relation/` | the chain and its *intended* ownership, stated before any graph | none |
+| **2** | \(A=\mathrm{Head}\circ\mathrm{Tail}^{T}\); \(\mathrm{EdgeOwner}=\mathrm{Own}^{T}\circ\mathrm{Tail}\) | `transpose_of`, `compose_binary` | \(V\to V\), \(E\to K\) | **derived** | none | `level-2-relation-algebra/` | **edge ownership is a theorem, not a partitioner convention** | none |
+| **3** | \(G\) | `stored_graph` | own carriers | realizes \(\mathrm{Tail},\mathrm{Head}\) | none | `level-3-graph/` | the ordinary graph realizes the relation structure — extensionally, not by identity | none |
+| **4** | \(G\to\{G_1,G_2\}\) | `partitioner` | part carriers + global maps | `edge_owner_part` vs the Level-2 law | none | `level-4-graph-calculus/` | owned / borrowed / overlap; **production satisfies the derived law** | none |
+| **5** | fields under restriction and extension | `field`, `partition_data`, `assemble_data` | overlap and owned | — | values move | `level-5-field-calculus/` | **read = overlap, write-back = owned**; one entity, one contribution | none |
+| **6** | \(L\) and \(A=2I-L\) | `laplacian`, `shifted_laplacian` | part carriers | incidence traversed | the discrete law | `level-6-discretization/` | local actions assemble to the global action; borrowed input is numerically load-bearing | none |
+| **7** | solve \(Aq=b\) | `gmres` | \(V(G)\) | — | the implicit solve | `level-7-minimization/` | **the graph host is a conduit** — chain vs star changes the answer | none |
+| **8** | \(A_{\text{part}}=A_{\text{global}}\) | `partitioned_shifted_laplacian` | \(V(G)\to V(G)\) | — | same map, alternate constitution | `level-8-constitution/` | structure once, overlap every apply, no cached state | none |
+| **9** | the statement | GMRES + partitioned action | \(V(G)\) | — | \(q^{*}\) | `level-9-statement/` | \(q_{\text{part}}=q_{\text{global}}=q^{*}\) | none |
+
+The path a reader can follow:
 
 ```text
-q ──┬── 2q
-    └── L(q)   ← the production Laplacian traverses the graph
-         ↓
-      2q − L(q)
-```
-
-The matrix appears in this README because it is the clearest oracle for
-a reader; it is not a design.
-
-## Honest naming
-
-This is a **shifted graph-diffusion (shifted-Laplacian) problem**, not a
-complete finite-volume PDE discretization. Its continuous analogue
-
-\[
-2q - q'' = b
-\]
-
-is intuition only. The framework truth is the discrete graph equation.
-
-## Why this specimen
-
-```text
-the topology is genuinely traversed        (a real Class-1 operation)
-the cut lies between vertices 3 and 4
-owned vertex 3's stencil needs borrowed q(4)
-owned vertex 4's stencil needs borrowed q(3)
-the exact solution is non-uniform          (no accidental symmetry)
-interface values cannot vanish without changing the answer
-2I − L is non-singular                     (an implicit solve is posed)
-no boundary-condition machinery needs inventing
+carrier → relation → relation algebra → graph → partition interpretation
+   → field transport → discrete operator → minimization
+   → partitioned constitution → statement
 ```
 
 ---
 
-# B. Topology
+# C. Topology, the cut, and the vocabulary
 
 ```text
 GLOBAL G
 
   1 --e1--> 2 --e2--> 3 --e3--> 4 --e4--> 5 --e5--> 6
-
-  tails = [1,2,3,4,5]        heads = [2,3,4,5,6]
-  6 vertices, 5 edges, uniform spacing = measure = coefficient = 1
-```
-
----
-
-# C. The partition
-
-Two linear parts, `partitioner(PARTITION_LINEAR, nparts=2, part=k)`:
-
-```text
-GLOBAL
-
-  1 -- 2 -- 3 -- 4 -- 5 -- 6
-              |
-             cut
+                       |
+                      cut
 
 PART 1                          PART 2
 
@@ -112,13 +103,9 @@ PART 1                          PART 2
                  borrowed       borrowed
 ```
 
-**The parentheses mean BORROWED VISIBILITY, not ownership.** A borrowed
-vertex is present in the part because a stencil needs to *see* it; it
-belongs to the other part.
+**Parentheses mean BORROWED VISIBILITY, not ownership.**
 
-## Vertex map — all six members
-
-| global | global owner | G1 local | G1 status | G2 local | G2 status |
+| global | owner | G1 local | G1 status | G2 local | G2 status |
 |---:|---:|---:|---|---:|---|
 | 1 | part 1 | 1 | owned | — | absent |
 | 2 | part 1 | 2 | owned | — | absent |
@@ -128,199 +115,134 @@ belongs to the other part.
 | 6 | part 2 | — | absent | 3 | owned |
 
 ```text
-G1 local order:  [1, 2, 3, 4]      owned owned owned BORROWED
-G2 local order:  [4, 5, 6, 3]      owned owned owned BORROWED
+G1 local order:  [1, 2, 3, 4]      G2 local order:  [4, 5, 6, 3]
 ```
 
-Note G2's local order is deliberately **not** global order — local
-member 1 is global vertex 4. Every value in this tower is therefore read
-through `global_vertex_index` and `local_index`, never by position.
+G2's local order is deliberately **not** global order: local member 1 is
+global vertex 4. Every value is read through `global_vertex_index` and
+`local_index`.
 
-## Edge map — all five members
-
-| global | tail→head | global owner | G1 local | G1 status | G2 local | G2 status |
-|---:|---|---:|---:|---|---:|---|
-| e1 | 1→2 | part 1 | 1 | owned | — | absent |
-| e2 | 2→3 | part 1 | 2 | owned | — | absent |
-| **e3** | **3→4** | **part 1** | 3 | **owned** | 4 | **borrowed** |
-| e4 | 4→5 | part 2 | — | absent | 1 | owned |
-| e5 | 5→6 | part 2 | — | absent | 2 | owned |
-
-The **crossing edge e3 is present in both parts** and owned by exactly
-one — see §9 of the Gate-A section for how that ownership was *derived*
-rather than assumed.
-
----
-
-# D. Ownership vocabulary
+| global edge | tail→head | owner | in G1 | in G2 |
+|---|---|---:|---|---|
+| e1 | 1→2 | part 1 | owned | absent |
+| e2 | 2→3 | part 1 | owned | absent |
+| **e3** | **3→4** | **part 1** | **owned** | **borrowed** |
+| e4 | 4→5 | part 2 | absent | owned |
+| e5 | 5→6 | part 2 | absent | owned |
 
 ```text
 OWNED      this part answers for it; its contribution is assembled
 BORROWED   this part can SEE it; its contribution is discarded
 OVERLAP    owned ∪ borrowed — everything locally present
-ABSENT     not in this part at all
 ```
-
-## The central partition law
-
-The part carrier is **not** merely the owned subset. A
-topology-consuming stencil needs its neighbours:
-
-\[
-\boxed{V_{\text{part}} = \text{owned}\;\cup\;\text{borrowed}}
-\]
-
-is the numerical **input** carrier. But only owned members contribute
-back:
 
 \[
 \boxed{
 \begin{gathered}
-\text{local evaluation domain} = \text{overlap}\\
-\text{assembly contribution domain} = \text{owned}
+\textbf{VISIBILITY}\ \text{governs what a local calculation may READ.}\\
+\textbf{OWNERSHIP}\ \text{governs what it may authoritatively WRITE back.}
 \end{gathered}}
 \]
 
-Stated as the law this tower keeps repeating:
+---
+
+# Levels 0–2 — before there is a graph
+
+**Level 0** declares \(V\) (6 vertices), \(E\) (5 edges) and \(K\) (2
+part labels) and nothing else. Its sharpest truth is a hazard: all three
+carriers enumerate from one, so **the integer 1 is a member of all
+three**. Only identity separates them, and every level above depends on
+that being true here.
+
+**Level 1** states three primitive facts as binary relations:
 
 ```text
-borrowed INPUTS  are necessary
-borrowed OUTPUTS are disposable copies
+Tail ⊆ E×V     e_i → i          Head ⊆ E×V     e_i → i+1
+Own  ⊆ K×V     part1 → 1,2,3    part2 → 4,5,6
 ```
 
-Conflating the two is the single easiest way to get a partitioned
-operator wrong — either by starving a stencil, or by double-counting a
-contribution.
+Ownership here is an **intention over carriers** — no partitioner exists
+to realize it. Every signature is pinned by identity, because with
+colliding ids the pair `[3,4]` means something different in each
+relation.
+
+**Level 2** derives what follows, and this level is *inhabited*, not
+N/A:
+
+\[
+A=\mathrm{Head}\circ\mathrm{Tail}^{T}:V\to V,
+\qquad
+\mathrm{EdgeOwner}=\mathrm{Own}^{T}\circ\mathrm{Tail}:E\to K.
+\]
+
+The second is the one that matters. The earlier gate-shaped tower found
+tail-ownership *operationally* — it imposed an assembly law on a probe
+field and read back what the partitioner had done. That was the right
+way to find it, but it left the rule resting on an observation of
+production. Here the same rule is **derived from `Own` and `Tail`
+alone, before any partitioner exists**:
+
+> an edge belongs to whichever part owns the vertex it **leaves**
+
+so Level 4 can check production against mathematics rather than against
+a previous reading of production. Level 2 also proves `EdgeOwner` is a
+*function* — exactly one owner per edge — which is the reconstruction
+law stated relationally before any field exists.
+
+```text
+relational EdgeOwner   ↕   production edge_owner_part
+        (Level 2)              (Level 4)
+```
 
 ---
 
-# GATE A — Partition, ownership, transport
+# Level 3 — the ordinary graph realizes the structure
 
-Gate A asks:
+`stored_graph(6, tails=[1..5], heads=[2..6])`, checked against the
+Level-1 oracle **extensionally and signature-aware**, never by carrier
+identity: \(G\) builds its own carriers, and demanding they be the same
+objects as \(V\) and \(E\) would be demanding that two parties who agree
+must be the same party. Every `edge_tail` and `edge_head` must satisfy
+`Tail` and `Head`, and nothing unlicensed may appear.
 
-> Does the existing graph partition machinery preserve enough structural
-> and field truth for a topology-consuming numerical operation to run
-> locally?
+# Level 4 — the partition interpretation
 
-No operator. No solver. Structure, ownership, visibility, transport and
-reconstruction only.
+Where the production partitioner first appears, and where *owned*,
+*borrowed* and *overlap* first mean something. It pins both parts'
+`global_vertex_index` maps, their owner functions, their
+owned/borrowed/overlap subsets, and the crossing edge's presence in
+**both** parts — then holds `edge_owner_part` to the Level-2 law, edge
+for edge.
 
-## What is pinned
+Graph-to-graph interpretation **only**: no field is transported here.
 
-**Global topology** — six vertices, five edges, each edge's tail and
-head, and the stable identities of `vertex_set()` and `edge_set()`.
+> **REVIEW GATE A** — after Level 4.
 
-**Part structure**, for each part: `has_part_relation`, `num_parts = 2`,
-`id`, and the full `global_vertex_index` / `vertex_owner_part` maps,
-against `owned_vertices`, `borrowed_vertices` and `overlap_vertices`.
+---
 
-**The crossing-edge law, derived not guessed.** The invariant imposed
-first is
+# Level 5 — field transport
 
-\[
-\boxed{\text{one global entity}\;\longrightarrow\;\text{one assembled
-contribution}}
-\]
-
-An edge probe field \(z=[10,20,30,40,50]\) is partitioned to both parts,
-each part's field is assembled home, and the two contributions summed.
-The result must be exactly \(z\) — in particular the crossing edge e3
-must contribute \(30\) **once**. Only after that law is pinned does the
-tower inspect `edge_owner_part` to *document* which part is canonical.
-
-**Full vertex transport.** \(q^{*}\) partitioned to both parts becomes a
-full **overlap** field on each — `q1.domain same_as G1.vertex_set()`,
-likewise G2 — with values checked by global member:
+A full global field becomes a **full field on each part's whole vertex
+carrier**, borrowed member included:
 
 ```text
 G1 globals [1,2,3,4]  →  q1 = [1, 2, 4, 7]
 G2 globals [4,5,6,3]  →  q2 = [7, 11, 16, 4]     ← not global order
 ```
 
-**Round trips.** Assembling each part's field home yields only that
-part's *owned* contribution; the two sum to \(q^{*}\) exactly, with no
-borrowed value counted twice.
+Assembling each part home contributes only what it **owns**, so the two
+tile the whole exactly. The same law is checked on edges, where it bites
+hardest — an edge probe \([10,20,30,40,50]\) must come home unchanged,
+the crossing edge contributing 30 **once** — and on a proper subset
+\(S=\{6,3,4\}\) declared in non-global order.
 
-**Proper-subset transport.** A global vertex subset
-\(S=\{6,3,4\}\hookrightarrow V_G\), declared in non-global order with
-unmistakable values \(600,300,400\), is partitioned, read through
-`local_index`, and assembled home to recover \(S\) extensionally. This
-carries the learning tower's Phase-5B subdomain law out to radius 2.
-Transformed subsets are *not* required to keep \(S\)'s identity token.
+# Level 6 — the discrete operator
 
-## Gate-A negative truths
+The production Laplacian traverses whatever graph it is handed, so each
+part answers over its **own** incidence — and its answers at borrowed
+members are wrong on purpose:
 
-```text
-no laplacian     no PDE residual    no GMRES
-no adjoint       no dense matrix    no MPI
-no halo-exchange class
-```
-
----
-
-# GATE B — Topology-consuming action
-
-Gate B asks **two** different questions and proves them apart:
-
-> Does a real Class-1 operation, evaluated on overlap-complete part
-> fields and assembled through **owned** outputs, reproduce the global
-> operator?
-
-> And does the graph a minimizer carries become observably load-bearing
-> when the attached action genuinely traverses topology?
-
-## The operation
-
-`common/shifted_laplacian_fixture.f90` — test-local, and it **owns no
-graph**. Its graph arrives through `domain()` and `apply()`, and it hands
-that graph straight to production:
-
-```text
-caller / minimizer
-    │  supplies a graph
-    ▼
-shifted_laplacian        A(q) = 2q − L(q)     ← no topology here
-    │
-    ▼
-production laplacian()   ← traverses the graph it is handed
-    │
-    ▼
-input_graph incidence
-```
-
-The adapter never inspects `edge_tail` or `edge_head`, implements no
-incidence and reproduces no Laplacian loop. It also refuses a state of
-the **right size** on a foreign carrier — six members that are not
-`V(G)` — by domain identity (`check_refusals.sh`).
-
-## Road 1 — the global action
-
-```text
-q* on V(G)
-    ↓ shifted_laplacian(G)
-    ↓ production L traverses G
-L q* = [1, 1, 1, 1, 1, −5]
-A q* = 2q* − Lq* = [1, 3, 7, 13, 21, 37] = b
-```
-
-## Road 2 — the partitioned action
-
-```text
-q* on V(G)
-    ↓ partition_data
-q1 on overlap V(G1)          q2 on overlap V(G2)
-    ↓ shifted_laplacian(G1)      ↓ shifted_laplacian(G2)
-A1 q1                        A2 q2
-    ↓ assemble owned only        ↓ assemble owned only
-            ╲                   ╱
-             sum over parts
-                  ↓
-        [1, 3, 7, 13, 21, 37]   ← equals the global action, exactly
-```
-
-### The local answers, and which of them are authoritative
-
-| part | global member | status | q | L q | A q | authoritative? |
+| part | global | status | q | L q | A q | authoritative? |
 |---|---:|---|---:|---:|---:|---|
 | G1 | 1 | owned | 1 | 1 | 1 | **yes** |
 | G1 | 2 | owned | 2 | 1 | 3 | **yes** |
@@ -331,24 +253,14 @@ A1 q1                        A2 q2
 | G2 | 6 | owned | 16 | −5 | 37 | **yes** |
 | G2 | 3 | *borrowed* | 4 | 3 | **5** | **NO** — global says 7 |
 
-A part holds enough topology to answer for what it **owns** and no more:
-the borrowed vertex sits at the part's edge with half its stencil
-missing. Those two rows are why owned assembly is not an optimisation
-but a correctness requirement.
+Keep only owned outputs and the pieces reconstruct the global action:
 
 \[
-oxed{A_G\,q \;=\; \sum_p P_p^{T}\,O_p\,A_{G_p}\,P_p\,q}
+\boxed{A_G\,q \;=\; \sum_p P_p^{T}\,O_p\,A_{G_p}\,P_p\,q}
 \]
 
-where \(P_p\) exposes the overlap state, \(O_p\) keeps only owned
-outputs, and \(P_p^{T}\) restores global numbering. These are
-*mathematics*, not production types — nothing named `P` or `O` exists.
-
-## Borrowed input is numerically load-bearing
-
-Structural visibility (Gate A) is not the same claim as numerical
-dependence. Proved by perturbation, with the borrowed seat located
-through `global_vertex_index` rather than assumed:
+\(P_p\), \(O_p\) are *mathematics*, not production types. Level 5 stated
+the read/write law structurally; **Level 6 proves it numerically**:
 
 ```text
 G1: q(borrowed global 4) += 10  →  owned A at global 3:  7 → −3
@@ -356,79 +268,57 @@ G2: q(borrowed global 3) += 10  →  owned A at global 4: 13 →  3
 restore the halo → the correct answers return
 ```
 
-\[
-oxed{	ext{borrowed INPUT}\;\longrightarrow\;	ext{owned OUTPUT}}
-\]
+A state of the right *size* on a foreign carrier is refused by identity.
 
-## Road 3 — the solver-host conduit
+# Level 7 — minimization, and what the host does
 
-The baseline implicit solve puts the Class-1 operation behind production
-GMRES on the global graph:
-
-```text
-GMRES
-  │ carries G                       (it reads no topology itself)
-  ▼
-attached shifted_laplacian
-  ▼
-production laplacian
-  ▼
-G topology
-```
-
-`attach(shifted, G, V(G))`; the affine constant is zero (A is linear);
-`solver.apply(G, [b], sol)` returns a field on `V(G)` equal to
-\(q^{*}=[1,2,4,7,11,16]\).
-
-**And the conduit is proved behaviourally, not by reading code.** The
-same `shifted_laplacian` — which stores no graph — is attached to two
-solvers over two topologies with the *same* six vertices and *same* five
-edges:
+Production GMRES attached to the Level-6 action on \(G\) solves
+\(Aq=b\) to \(q^{*}\), with affine constant zero. Then the level's real
+question, answered **behaviourally**:
 
 ```text
 G      chain:  1→2→3→4→5→6
-G_alt  star :  1→2, 1→3, 1→4, 1→5, 1→6
+G_alt  star :  1→2, 1→3, 1→4, 1→5, 1→6      same 6 vertices, same 5 edges
 
 solver_G   % matvec(q*)  =  b            ✓
 solver_alt % matvec(q*)  ≠  b            ← nothing changed but the host
 ```
 
-If the host were scenery the two would agree. They do not.
+The same operation type, which stores no graph, gives different
+mathematics on a different host.
 
 > The finding is **not** "GMRES traverses the graph" — it does not. It
 > is: **GMRES carries the graph to the attached operation, and that
-> operation consumes the topology.** Two distinct roles:
-> the minimizer holds the graph as *conduit / context carrier*; the
-> differential operation reads it as *numerical topology operand*.
+> operation consumes the topology.**
+>
+> ```text
+> minimizer               graph as conduit / context carrier
+> differential operation  graph as numerical topology operand
+> ```
 
-# GATE C — The partitioned implicit statement
+> **REVIEW GATE B** — after Level 7.
 
-Gate C asks whether
+---
 
-> partition + overlap refresh + local topology-consuming actions +
-> owned assembly
+# Level 8 — the partitioned constitution
 
-compose into **one** global matrix-free operation that ordinary
-production GMRES can solve with.
+\[
+\boxed{\text{SAME MATHEMATICS, DIFFERENT COMPUTATIONAL CONSTITUTION.}}
+\]
 
-## Three things that must never be conflated
+Level 6 established the local discrete law. Level 8 **composes** it into
+a complete realization of the global operation, and the three things
+routinely conflated as "partitioning" are kept apart by the type's very
+shape:
 
 \[
 \boxed{
 \begin{array}{lll}
 \textbf{STRUCTURAL PARTITION} & G\to\{G_1,G_2\} & \textbf{once} \\
-\textbf{NUMERICAL OVERLAP REFRESH} & q\to\{q_1,q_2\} & \textbf{every matvec} \\
-\textbf{OWNED ASSEMBLY} & \{A_1q_1,A_2q_2\}\to Aq & \textbf{every matvec}
+\textbf{NUMERICAL OVERLAP REFRESH} & q\to\{q_1,q_2\} & \textbf{every apply} \\
+\textbf{OWNED ASSEMBLY} & \{A_1q_1,A_2q_2\}\to Aq & \textbf{every apply}
 \end{array}}
 \]
-
-All three are routinely called "partitioning". They are not the same
-thing, and the composite's *shape* enforces the distinction: it owns
-the structure and owns **no mutable numerical state at all** — no
-cached `q`, no cached overlap, no previous result. Nothing in it can go
-stale because there is nothing in it to go stale.
-
-## The central road
 
 ```text
 GLOBAL q
@@ -440,65 +330,38 @@ GLOBAL q
                                                     assemble + sum
                                                             ↓
                                                         GLOBAL Aq
-                                                            ↓
-                                                          GMRES
-                                                            ↓
-                                                           q*
 ```
 
-\[
-\boxed{
-\textbf{VISIBILITY}\ \text{governs what a local calculation may READ.}\\
-\textbf{OWNERSHIP}\ \text{governs what it may authoritatively WRITE back.}}
-\]
+The composite owns structure and **no mutable numerical state** — no
+cached `q`, halo, residual or previous answer. Nothing can go stale
+because there is nothing to go stale, and that is *proved*: one instance
+applied five times (\(q^{*}\), mixed, \(e_3\), \(e_4\), \(q^{*}\))
+returns to its first answer, every intermediate matches the global
+action at the time it was asked, and the interleaved probes genuinely
+differ.
 
-## Two kinds of graph-dependence
+Extensional equality holds on four probes — \(q^{*}\), a mixed-sign
+vector, and both **interface basis vectors** \(e_3,e_4\), which force
+information across the cut.
 
-| | `shifted_laplacian` (Gate B) | `partitioned_shifted_laplacian` (Gate C) |
+**Two kinds of graph-dependence**, and Level 8 is the second:
+
+| | Level 6 `shifted_laplacian` | Level 8 `partitioned_shifted_laplacian` |
 |---|---|---|
 | relationship to a graph | **graph-parameterized** | **decomposition-context-bound** |
-| acts on | whatever graph it is handed | only the \(G\) its \(G_1,G_2\) were cut from |
-| stores | nothing | \(G\), \(G_1\), \(G_2\), partitioners, assembler |
-| a foreign six-vertex host | is a legitimate different problem | is **refused** |
+| acts on | whatever graph it is handed | only the \(G\) its parts were cut from |
+| Level 7's star | a legitimate different problem | **refused**, in `domain()` |
 
-Gate B's star convicted the host by *changing the answer*; here the same
-star is refused outright — in `domain()`, so a solver attaching on it
-dies before `attach` completes rather than deep inside a matvec with a
-chain-derived decomposition. Same cardinality, wrong decomposition.
+# Level 9 — the statement
 
-## What is proved
-
-**Extensional equality on four probes**, by global member —
-\(q^{*}\), a mixed-sign vector \([3,-1,4,1,5,-9]\), and the two
-**interface basis vectors** \(e_3\) and \(e_4\), which are the ones
-that force information across the cut:
+The user says *solve \(Aq=b\)*; the implementation chooses the
+partitioned realization. Equivalence is required first at
+`solver % matvec` — the seat GMRES consumes — on all four probes, both
+affine constants zero. Then both roads are solved independently:
 
 \[
-A_{\text{partitioned}}(v) = A_{\text{global}}(v).
+\boxed{q_{\text{partitioned}} = q_{\text{global}} = q^{*} = [1,2,4,7,11,16]}
 \]
-
-**No stale overlap.** One composite instance applied five times —
-\(q^{*}\), mixed, \(e_3\), \(e_4\), \(q^{*}\) — returns to its
-first answer (\(y_1=y_5\)), every intermediate answer matches the
-global action *at the time it was asked*, and the interleaved probes
-genuinely differ, so the sequence is not a repeated no-op. A halo
-cached from a previous matvec would survive into the next and break
-this.
-
-**Equivalence at the seat GMRES consumes.** Not only between the
-fixtures but at `solver % matvec` for all four probes, with both affine
-constants zero.
-
-**The statement.** Both solves run independently from the same
-\(b=[1,3,7,13,21,37]\):
-
-\[
-q_{\text{partitioned}} = q_{\text{global}} = q^{*} = [1,2,4,7,11,16].
-\]
-
-The decomposition changed the road, not the answer.
-
-## The result marker
 
 ```text
 PARTITIONED_PDE_RESULT =  1.0000000000000002E+00  2.0000000000000009E+00
@@ -506,127 +369,73 @@ PARTITIONED_PDE_RESULT =  1.0000000000000002E+00  2.0000000000000009E+00
                           1.1000000000000002E+01  1.6000000000000004E+01
 ```
 
-One marker, six real tokens in global vertex order, at full precision
-and **unrounded** — the honest image of the arithmetic. `check_marker.sh`
-validates shape and syntax only, never values; whether those numbers
-*are* \(q^{*}\) is the Gate-C test's business.
+One marker, six real tokens in global order, **unrounded** — the honest
+image of the arithmetic. `check_marker.sh` validates shape and syntax
+only; whether those numbers *are* \(q^{*}\) is the Level-9 test's
+business.
+
+> **REVIEW GATE C** — after Level 9. Tower sealed.
 
 ## Why this is NOT a distributed solver
 
-The road still has, and this tower says so plainly:
-
 ```text
 one process                    one global trial vector
-direct global access during partition_data
-parts executed sequentially    global assembly in-process
+partition_data reads global state
+parts executed sequentially    assembly in-process
 global-array inner products    global-array norms
+global Krylov state
 ```
 
-So the following are **not** claimed: distributed GMRES, MPI solver,
-parallel halo exchange, distributed vector support. The correct names
-are **partitioned matrix-free solve** and *serial semantic model of a
-partitioned operator*. What would be needed to make it genuinely
-distributed is derived — not implemented — in
-[`NUCLEUS-OBSERVATIONS.md`](NUCLEUS-OBSERVATIONS.md) under PIP-8.
+Not claimed: distributed GMRES, MPI solver, parallel halo exchange,
+distributed vectors. The correct names are **partitioned matrix-free
+solve** and *serial semantic model of a partitioned operator*. What a
+genuinely distributed road would need is **derived, not implemented**,
+in [`NUCLEUS-OBSERVATIONS.md`](NUCLEUS-OBSERVATIONS.md) under PIP-8.
 
 ---
 
-# J. Graph roles at radius 2
+# D. Graph roles at radius 2
 
-This tower deliberately exercises the **legacy ordinary-graph / HPC
-branch** of the nucleus. It introduces no `relational_graph`, because
-its mathematics does not need one — and forcing one in merely because
-other towers used one would be exactly the aesthetic reasoning the
-reverse review forbids.
+This tower exercises the **legacy ordinary-graph / HPC branch** of the
+nucleus and introduces no `relational_graph`, because its mathematics
+does not need one.
 
 | Object | Type | Role |
 |---|---|---|
-| **global G** | `stored_graph` | topology **yes**; global domain source **yes**; GMRES host **yes**; downstream numerical influence **yes** (proved by the star-host control) |
-| **parts G1, G2** | `stored_graph` with a part relation | partition frame **yes**; local domain source **yes**; local topology operand **yes**; ownership/global maps **yes** — one object, four roles |
+| **global G** | `stored_graph` | topology **yes**; global domain source **yes**; GMRES host **yes**; downstream numerical influence **yes** (Level-7 star control) |
+| **parts G1, G2** | `stored_graph` + part relation | partition frame **yes**; local domain source **yes**; local topology operand **yes**; ownership/global maps **yes** — one object, four roles |
 | **borrowed member** | a member of a part carrier | visible to the local operator **yes**; authoritative output contributor **NO** |
 | **vertex/edge sets** | `counted_set` / `subset_set` | value domains — what fields live on |
 
-Four distinct senses of "graph" are in play, and the tower keeps them
-apart:
-
 ```text
-graph as TOPOLOGY         what the Laplacian traverses          (Gate B)
+graph as TOPOLOGY         what the Laplacian traverses          (L6)
 graph as CONDUIT          what the minimizer carries so its
-                          action can traverse something         (Gate B)
-graph as PARTITION FRAME  what holds global↔local maps and
-                          ownership                             (Gate A)
+                          action can traverse something         (L7)
+graph as PARTITION FRAME  global↔local maps and ownership       (L4)
 member_set as DOMAIN      what a field lives on; never a graph
 ```
 
 ---
 
-# K. Nucleus Rosetta
+# E. What this tower proves / does not prove
 
-This tower **consumes** most nucleus levels rather than reconstructing
-them — and says so honestly rather than manufacturing per-level code:
-
-| Level | What this tower uses it for | Reconstructed or consumed? |
-|---|---|---|
-| 0 carrier | global and part vertex/edge domains | consumed |
-| 1 relation | incidence, embodied by the ordinary graph topology | consumed |
-| 2 relation algebra | none required — no new derivation here | **not used** |
-| 3 graph | global and part structural ownership | consumed |
-| 4 graph calculus | partition / overlap / local topology interpretation | **exercised at a new radius** |
-| 5 field calculus | global, overlap and transported fields | **exercised at a new radius** |
-| 6 discretization | \(L\) and \(A=2I-L\) on the graph | Gate B |
-| 7 minimization | GMRES | Gate B, C |
-| 8 constitution | the shifted-diffusion law \(A(q)=2q-Lq\) | Gate B |
-| 9 statement | solve \(Aq=b\); **implementation** production GMRES; **matvec realization** serial partitioned composite; **structural context** \(G\to G_1,G_2\) once; **state context** \(q\to q_1,q_2\) every matvec; **result** field \(q^{*}\) on \(V(G)\) | Gate C |
-
----
-
-# L. What this tower proves / does not prove
-
-## Proven by Gate C
+## Proven
 
 ```text
-partition + overlap refresh + local actions + owned assembly compose
-    into ONE global matrix-free operation
-A_partitioned = A_global on four probes, including both interface
-    basis vectors
-the composite holds STRUCTURE and no mutable numerical state, so no
-    halo can go stale - proved by five interleaved applications
-    returning to the first answer
-equivalence holds at solver % matvec, the seat GMRES consumes
-production GMRES solves through the composite:
-    q_partitioned = q_global = q*
-a decomposition is bound to its graph: a same-sized foreign host is
-    refused in domain(), before attach completes
+carriers precede structure, and numerals never establish identity
+primitive incidence and intended ownership are relations, not a graph
+edge ownership is DERIVED (Own^T ∘ Tail), and production satisfies it
+the ordinary graph realizes the relation structure extensionally
+presence is not ownership; overlap is visibility
+read = overlap, write-back = owned; one entity, one contribution
+local topology actions assemble to the global action, exactly
+borrowed input is numerically load-bearing across the cut
+the minimizer's graph host is a real conduit to a Class-1 consumer
+a partitioned matrix-free action is extensionally the global operator
+GMRES solves through it: q_part = q_global = q*
 ```
 
-## Proven by Gate B
-
-```text
-a real Class-1 operation, applied to overlap-complete part fields and
-    assembled through owned outputs, reproduces the global operator
-    EXACTLY
-borrowed outputs are demonstrably NOT authoritative (17 vs 13, 5 vs 7)
-borrowed INPUT numerically determines owned OUTPUT — proved by
-    perturbation, not by the existence of a borrowed set
-a state of the right SIZE on a foreign carrier is refused by identity
-the implicit global solve returns q* through production GMRES
-the graph a minimizer carries is LOAD-BEARING: same operation, same
-    probe, different host topology, different mathematical action
-```
-
-## Proven by Gate A
-
-```text
-a linear partition of a chain yields the expected ownership
-overlap contains exactly the borrowed neighbours a stencil needs
-presence is not ownership: a member can be visible and unowned
-global↔local maps are the only honest way to read part storage
-a crossing edge is assembled exactly once
-full vertex fields, full edge fields and proper subsets all survive
-    partition and reassembly
-```
-
-## Not proven — anywhere in this tower
+## Not proven — anywhere
 
 ```text
 MPI communication              asynchronous halo exchange
@@ -637,55 +446,70 @@ communication hiding           parallel performance
 multi-rank failure handling
 ```
 
-The phrase **"distributed solver" is not used** for what is a serial
-semantic decomposition. The honest names are *partitioned matrix-free
-solve* and *serial semantic model of a partitioned operator*.
-
 ---
 
-# Code map
+# F. Code map
 
 ```text
 test/partitioned-implicit-pde-tower/
 ├── README.md                     this document — the Rosetta stone
-├── NUCLEUS-OBSERVATIONS.md       the evidence ledger (PIP-*)
-├── run.sh                        gate-grouped runner
-├── check_imports.sh              fail-closed per-gate allowlists
+├── NUCLEUS-OBSERVATIONS.md       the evidence ledger (PIP-*), by level
+├── run.sh                        level-by-level runner; gates are separators
+├── check_imports.sh              fail-closed allowlists, PER LEVEL
+├── check_marker.sh               the result contract + its self-test
 ├── common/
-│   └── partitioned_pde_assert.f90
-│   └── shifted_laplacian_fixture.f90
-│   └── partitioned_shifted_laplacian_fixture.f90
-├── gate-a-partition/             test.f90
-├── gate-b-operator/              test.f90 · refusal.f90
-│                                 · check_refusals.sh
-└── gate-c-statement/             test.f90 · refusal.f90
-                                  · check_refusals.sh
+│   ├── partitioned_pde_assert.f90                 (below everything)
+│   ├── chain_relations_fixture.f90                earned at Level 1
+│   ├── chain_algebra_fixture.f90                  earned at Level 2
+│   ├── shifted_laplacian_fixture.f90              earned at Level 6
+│   └── partitioned_shifted_laplacian_fixture.f90  earned at Level 8
+├── level-0-carrier/              test.f90
+├── level-1-relation/             test.f90
+├── level-2-relation-algebra/     test.f90
+├── level-3-graph/                test.f90
+├── level-4-graph-calculus/       test.f90
+├── level-5-field-calculus/       test.f90
+├── level-6-discretization/       test.f90 · refusal.f90 · check_refusals.sh
+├── level-7-minimization/         test.f90
+├── level-8-constitution/         test.f90 · refusal.f90 · check_refusals.sh
+└── level-9-statement/            test.f90
 ```
 
-`check_marker.sh` holds the result contract and self-tests before the
-ladder runs.
-
-The import gate keys its allowlists **per file** inside `common/`, so the
-assert module's freedom from framework imports is proved mechanically
-rather than asserted in a comment — the fixture's permissions do not
-extend to it.
-
-Development is grouped into three **gates**, not ten rungs: no empty
-per-level directories exist, and the Rosetta table above maps each
-gate's truths back onto the nucleus levels it consumes.
+`common/` is **not** a hole in the stratification: the import gate keys
+its allowlists **per file**, so each shared fixture is bound to the level
+that earns it — Level 5 cannot reach the Level-6 operator, and Level 7
+cannot reach the Level-8 composite.
 
 ---
 
-# Status
+# G. Status
 
 ```text
-partitioned implicit pde tower
-├── Gate A · partition / ownership / transport ... PASS
-├── Gate B · topology-consuming action .......... PASS
-└── Gate C · partitioned implicit statement ..... PASS
+PARTITIONED IMPLICIT PDE TOWER
 
-solution field on V(G) ........................ q* = [1,2,4,7,11,16]
+    L0 carrier ........................ PASS
+    L1 relation ....................... PASS
+    L2 relation algebra ............... PASS
+    L3 graph .......................... PASS
+    L4 graph calculus ................. PASS
+
+    ===== REVIEW GATE A =====
+
+    L5 field calculus ................. PASS
+    L6 discretization ................. PASS
+    L7 minimization ................... PASS
+
+    ===== REVIEW GATE B =====
+
+    L8 constitution ................... PASS
+    L9 statement ...................... PASS
+
+    ===== REVIEW GATE C =====
+
+    PARTITIONED_PDE_RESULT = 1.0000000000000002E+00 ... 1.6000000000000004E+01
+
+    TOWER SEALED.
 ```
 
-**The tower is complete and sealed**, with **zero production changes**
-beyond a single corrected comment earned at Gate A.
+**Zero production changes** beyond a single corrected comment earned at
+what is now Level 4.

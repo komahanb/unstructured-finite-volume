@@ -1,5 +1,5 @@
 !=====================================================================!
-! PARTITIONED IMPLICIT PDE TOWER . GATE B . THE REFUSAL
+! PARTITIONED IMPLICIT PDE TOWER . LEVEL 6 . THE REFUSAL
 !
 ! One case, and it is the same law every tower in this repository
 ! has had to learn at its own radius:
@@ -15,7 +15,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-program partitioned_pde_gate_b_refusal
+program partitioned_pde_level_6_refusal
 
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : NV, Q_EXACT
@@ -56,4 +56,4 @@ program partitioned_pde_gate_b_refusal
 
   end select
 
-end program partitioned_pde_gate_b_refusal
+end program partitioned_pde_level_6_refusal

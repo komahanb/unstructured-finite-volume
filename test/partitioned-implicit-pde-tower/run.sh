@@ -1,59 +1,77 @@
 #!/bin/bash
-# The partitioned implicit PDE tower runner. Development is grouped
-# by GATE, not by nucleus rung: this tower consumes most levels
-# rather than reconstructing them, and the README's Rosetta table
-# maps each gate's truths back onto the levels it uses.
+# The partitioned implicit PDE tower runner.
 #
-# The frontier law still holds gate by gate: a failed gate stops the
-# ladder, and the first absent gate closes the frontier so nothing
-# above it is claimed. Gates B and C report UNBUILT until they exist.
+# LEVELS are the implementation architecture; GATES are only review
+# checkpoints, and appear here as horizontal separators - never as
+# directories, and never in place of a level's own result. Every
+# level reports its own status, in order, and a gate line may only
+# follow the levels it reviews.
 #
-# After a full ladder the solution field is read - fail closed - from
-# Gate C's own output. There is no marker before then: this tower's
-# answer is a six-member field, and nothing below the statement has
-# computed one.
+# The frontier law still holds level by level: a failed level stops
+# the ladder, and the first absent level closes the frontier.
+#
+# After a full ladder the solution field is read - fail closed -
+# from Level 9's own output.
 set -e
 
 here="$(cd "$(dirname "$0")" && pwd)"
 
 "$here/check_imports.sh" || { echo "└── the import gate refused the tower"; exit 1; }
 
-if [ -f "$here/check_marker.sh" ]; then
-    . "$here/check_marker.sh"
-    "$here/check_marker.sh" --selftest || { echo "└── the result contract refused itself"; exit 1; }
-fi
+. "$here/check_marker.sh"
+"$here/check_marker.sh" --selftest || { echo "└── the result contract refused itself"; exit 1; }
 
 ( cd "$here/../.." && ./build.sh >/dev/null 2>&1 )
 
-gates=(
-  "gate-a-partition   A partition / ownership / transport"
-  "gate-b-operator    B topology-consuming action"
-  "gate-c-statement   C partitioned implicit statement"
+levels=(
+  "level-0-carrier            0 carrier"
+  "level-1-relation           1 relation"
+  "level-2-relation-algebra   2 relation algebra"
+  "level-3-graph              3 graph"
+  "level-4-graph-calculus     4 graph calculus"
+  "GATE                       A"
+  "level-5-field-calculus     5 field calculus"
+  "level-6-discretization     6 discretization"
+  "level-7-minimization       7 minimization"
+  "GATE                       B"
+  "level-8-constitution       8 constitution"
+  "level-9-statement          9 statement"
+  "GATE                       C"
 )
 
-echo "partitioned implicit pde tower"
+echo "PARTITIONED IMPLICIT PDE TOWER"
+echo
 
 frontier_open=1
 failed=0
 
-for entry in "${gates[@]}"; do
+for entry in "${levels[@]}"; do
     set -- $entry
-    dir="$1"; letter="$2"; shift 2; label="Gate $letter · $*"
-    dots="$(printf '%.*s' $((46 - ${#label})) '..............................................')"
+    dir="$1"; shift
+
+    if [ "$dir" = "GATE" ]; then
+        echo
+        echo "    ===== REVIEW GATE $1 ====="
+        echo
+        continue
+    fi
+
+    num="$1"; shift; label="L$num $*"
+    dots="$(printf '%.*s' $((34 - ${#label})) '..................................')"
 
     if [ "$failed" -ne 0 ]; then
-        echo "├── $label $dots SKIPPED"
+        echo "    $label $dots SKIPPED"
         continue
     fi
     if [ "$frontier_open" -eq 0 ] || [ ! -d "$here/$dir" ]; then
-        echo "├── $label $dots UNBUILT"
+        echo "    $label $dots ABSENT"
         frontier_open=0
         continue
     fi
 
     make -C "$here/$dir" clean >/dev/null 2>&1 || true
     if ! make -C "$here/$dir" >/dev/null 2>&1; then
-        echo "├── $label $dots FAIL (build)"
+        echo "    $label $dots FAIL (build)"
         failed=1
         continue
     fi
@@ -65,28 +83,30 @@ for entry in "${gates[@]}"; do
     fi
 
     if [ "$ok" -eq 1 ]; then
-        echo "├── $label $dots PASS"
+        echo "    $label $dots PASS"
     else
-        echo "├── $label $dots FAIL"
-        sed 's/^/│       /' "$here/$dir/run.out"
+        echo "    $label $dots FAIL"
+        sed 's/^/        /' "$here/$dir/run.out"
         failed=1
     fi
 done
 
 if [ "$failed" -ne 0 ]; then
-    echo "└── the ladder stops at the first failure"
+    echo "    the ladder stops at the first failure"
     exit 1
 fi
 if [ "$frontier_open" -eq 0 ]; then
-    echo "└── solution field ............................. (unbuilt)"
+    echo "    (the tower is incomplete)"
     exit 0
 fi
 
-out="$here/gate-c-statement/run.out"
+out="$here/level-9-statement/run.out"
 marks=$(grep -c 'PARTITIONED_PDE_RESULT =' "$out")
 values=$(grep -o 'PARTITIONED_PDE_RESULT =.*' "$out" | sed 's/.*PARTITIONED_PDE_RESULT =//')
 if ! marker_ok "$marks" 6 "$values"; then
-    echo "└── RUNNER FAILURE: the statement did not report one solution field"
+    echo "    RUNNER FAILURE: the statement did not report one solution field"
     exit 1
 fi
-echo "└── solution field on V(G) ..................... [$(echo $values | sed 's/  */, /g')]"
+echo "    PARTITIONED_PDE_RESULT = $(echo $values)"
+echo
+echo "    TOWER SEALED."

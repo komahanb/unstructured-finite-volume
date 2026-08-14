@@ -10,7 +10,12 @@ The live evidence ledger of this orbital client, per the discipline of
 *Local necessity* means necessity at the object's own radius; *global
 necessity* means necessity at larger contextual radius. Cross-tower
 recurrence is its own field and is never used as proof of global
-necessity. **The three gates of this tower are one client, not three.**
+necessity.
+
+Every entry names the **LEVEL** that owns its evidence and the review
+**gate** at which that level was reviewed. Levels are the architecture;
+gates are checkpoints. **The ten levels of this tower are ONE client,
+not ten** — and its three review gates are not three clients either.
 
 This tower was named by
 [the reverse architecture review](../../doc/REVERSE-ARCHITECTURE-REVIEW.md)
@@ -24,7 +29,8 @@ put a topology-consuming operation behind a minimizer.
 
 ```text
 tower:                Partitioned Implicit PDE
-gate:                 A
+level:                4  (partition interpretation)
+review gate:          A
 contextual radius:    2 (an object inside a partition of a larger whole)
 
 symptom / fact:       PRESENCE IS NOT OWNERSHIP. Global vertex 3 is
@@ -74,7 +80,8 @@ action:               observe
 
 ```text
 tower:                Partitioned Implicit PDE
-gate:                 A
+level:                structural 4 · field 5 · numerical 6
+review gate:          A (structural) · B (field, numerical)
 contextual radius:    2
 
 symptom / fact:       OVERLAP IS VISIBILITY. A full global vertex field
@@ -133,7 +140,9 @@ action:               observe
 
 ```text
 tower:                Partitioned Implicit PDE
-gate:                 A
+level:                relational oracle 2 · partition 4 ·
+                      field reconstruction 5
+review gate:          A (2, 4) · B (5)
 contextual radius:    2
 
 symptom / fact:       ONE GLOBAL ENTITY, ONE ASSEMBLED CONTRIBUTION.
@@ -197,7 +206,8 @@ action:               observe (prose corrected; dead branch flagged)
 
 ```text
 tower:                Partitioned Implicit PDE
-gate:                 A
+level:                4  (maps) · 5  (transport)
+review gate:          A and B
 contextual radius:    2
 
 symptom / fact:       LOCAL NUMBERING IS A CONTEXTUAL COORDINATE, not a
@@ -254,7 +264,8 @@ action:               observe
 
 ```text
 tower:                Partitioned Implicit PDE
-gate:                 B
+level:                7  (minimization)
+review gate:          B
 contextual radius:    2
 
 symptom / fact:       THE GRAPH HOST IS A REAL CONDUIT, and it is
@@ -331,7 +342,8 @@ action:               observe - and close A1
 
 ```text
 tower:                Partitioned Implicit PDE
-gate:                 B
+level:                6  (discretization)
+review gate:          B
 contextual radius:    2
 
 symptom / fact:       THE PART GRAPH IS A GENUINE NUMERICAL OPERAND.
@@ -385,7 +397,8 @@ action:               observe
 
 ```text
 tower:                Partitioned Implicit PDE
-gate:                 B
+level:                observed through 6-9; still unresolved
+review gate:          B and C
 contextual radius:    2
 
 symptom / fact:       UNRESOLVED - and deliberately so.
@@ -438,7 +451,8 @@ action:               observe; A2 still unresolved
 
 ```text
 tower:                Partitioned Implicit PDE
-gate:                 C
+level:                9  (statement)
+review gate:          C
 contextual radius:    2
 
 symptom / fact:       A PARTITIONED MATRIX-FREE SOLVE WORKS, AND IT IS

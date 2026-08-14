@@ -1,40 +1,33 @@
 !=====================================================================!
-! PARTITIONED IMPLICIT PDE TOWER . GATE A . PARTITION
+! PARTITIONED IMPLICIT PDE TOWER . LEVEL 5 . FIELD CALCULUS
 !
-! The gate answers one question: DOES THE PARTITION MACHINERY
-! PRESERVE ENOUGH TRUTH FOR A TOPOLOGY-CONSUMING OPERATION TO RUN
-! LOCALLY. No operator and no solver appear here - only structure,
-! ownership, visibility, transport and reconstruction.
+! The level answers one question: HOW DO VALUES MOVE BETWEEN THE
+! WHOLE AND ITS PART CARRIERS. Level 4 established what the parts
+! ARE; this level establishes what may be read from them and what
+! may be written back:
 !
-!      GLOBAL   1 -- 2 -- 3 -- 4 -- 5 -- 6
-!                          |
-!                         cut
+!      READ DOMAIN           = overlap  (owned union borrowed)
+!      WRITE-BACK AUTHORITY  = owned
 !
-!      PART 1   1 -- 2 -- 3 -- (4)        (4) borrowed
-!      PART 2  (3) -- 4 -- 5 -- 6         (3) borrowed
+! A full global field becomes a FULL field on each part's whole
+! vertex carrier - borrowed member included - because that is the
+! shape a stencil will need one level above. But assembling a part
+! home contributes only what that part OWNS, so the two
+! contributions tile the whole exactly and no borrowed copy is
+! counted twice.
 !
-! The parentheses are VISIBILITY, not ownership, and the whole gate
-! turns on keeping those apart:
+! The same law is checked on edges, where it bites hardest: the
+! crossing edge e3 lives in both parts, and an edge probe must
+! come home unchanged - contributing 30 once, not twice, not never.
+! Level 2 derived WHY that works (one owner per edge, through the
+! tail map); this level confirms the field machinery honours it.
 !
-!      borrowed INPUTS  are necessary - a stencil at owned vertex 3
-!                       cannot be evaluated without seeing q(4)
-!      borrowed OUTPUTS are disposable - only owned members may
-!                       contribute back to the whole
-!
-! The crossing edge e3 = 3->4 lives in BOTH parts, and this gate
-! does NOT guess which part owns it. It imposes the assembly law
-! first -
-!
-!      one global entity  ->  one assembled contribution
-!
-! - with an edge probe whose reconstruction must be exact, and only
-! then reads edge_owner_part to DOCUMENT the canonical owner. A law
-! decides; an inspection records.
+! No operator appears here. Values move; nothing is computed.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-program partitioned_pde_gate_a
+program partitioned_pde_level_5
 
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : report, verdict
@@ -56,188 +49,37 @@ program partitioned_pde_gate_a
   nfail = 0
 
   write(*,'(1x,a)') "============================================="
-  write(*,'(1x,a)') "partitioned pde tower . gate A . partition"
+  write(*,'(1x,a)') "partitioned pde tower . level 5 . fields"
   write(*,'(1x,a)') "============================================="
 
   g = stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
   a = assembler()
+  call cut(g1, 1)
+  call cut(g2, 2)
 
-  call cut_the_graph(g1, 1)
-  call cut_the_graph(g2, 2)
-
-  call check_global_topology(nfail)
-  call check_part_structure(g1, 1, [1,2,3,4], 4, nfail)
-  call check_part_structure(g2, 2, [4,5,6,3], 3, nfail)
-  call check_crossing_edge_is_present_twice(nfail)
   call check_edge_assembly_law(nfail)
-  call document_canonical_edge_owner(nfail)
   call check_vertex_transport(nfail)
   call check_vertex_round_trip(nfail)
   call check_proper_subset_transport(nfail)
 
-  call verdict(nfail, "gate A")
+  call verdict(nfail, "level 5")
 
 contains
-
   !===================================================================!
   ! One part, cut from the global graph by the production rule.
   !===================================================================!
 
-  subroutine cut_the_graph(part, k)
+  subroutine cut(part, kpart)
 
     class(graph), allocatable, intent(out) :: part
-    integer                  , intent(in)  :: k
+    integer                  , intent(in)  :: kpart
 
     type(partitioner) :: p
 
-    p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
+    p = partitioner(PARTITION_LINEAR, nparts=2, part=kpart)
     call p % partition_graph(g, part)
 
-  end subroutine cut_the_graph
-
-  !===================================================================!
-  ! The global chain, exactly - six vertices, five edges, and each
-  ! edge running from its stated tail to its stated head.
-  !===================================================================!
-
-  subroutine check_global_topology(nfail)
-
-    integer, intent(inout) :: nfail
-
-    type(counted_set) :: vs, es
-    integer           :: e
-    logical           :: ok
-
-    call report(g % num_vertices() .eq. NV .and. &
-         &      g % num_edges() .eq. NE, &
-         & "G is the six-vertex chain with five edges", nfail)
-
-    ok = .true.
-    do e = 1, NE
-       ok = ok .and. (g % edge_tail(e) .eq. e)
-       ok = ok .and. g % edge_has_head(e)
-       ok = ok .and. (g % edge_head(e) .eq. e + 1)
-    end do
-    call report(ok, &
-         & "every edge e runs from vertex e to vertex e+1", nfail)
-
-    vs = g % vertex_set()
-    es = g % edge_set()
-    call report(vs % size() .eq. NV .and. es % size() .eq. NE .and. &
-         &      .not. vs % same_as(es), &
-         & "its vertex and edge carriers are distinct domains", nfail)
-
-    call report(.not. g % has_part_relation(), &
-         & "and the whole graph is not itself a part", nfail)
-
-  end subroutine check_global_topology
-
-  !===================================================================!
-  ! One part's structure: its identity, its global map, and the
-  ! agreement between owner-per-local-member and the owned/borrowed/
-  ! overlap subsets. Local member numbers are NOT global numbers.
-  !===================================================================!
-
-  subroutine check_part_structure(part, k, globals, borrowed_global, &
-       & nfail)
-
-    class(graph)      , intent(in)    :: part
-    integer           , intent(in)    :: k
-    integer           , intent(in)    :: globals(:)
-    integer           , intent(in)    :: borrowed_global
-    integer           , intent(inout) :: nfail
-
-    class(member_set), allocatable :: owned, borrowed, overlap
-    character(len=1)  :: tag
-    integer           :: i
-    logical           :: ok
-
-    write(tag,'(i1)') k
-
-    select type (part)
-    type is (stored_graph)
-
-       call report(part % has_part_relation() .and. &
-            &      part % num_parts() .eq. 2 .and. &
-            &      part % id() .eq. k, &
-            & "G" // tag // " knows it is part " // tag // " of two", &
-            & nfail)
-
-       call report(part % num_vertices() .eq. size(globals), &
-            & "G" // tag // " holds four vertices: three owned and " // &
-            & "one borrowed", nfail)
-
-       ok = .true.
-       do i = 1, min(part % num_vertices(), size(globals))
-          ok = ok .and. (part % global_vertex_index(i) .eq. globals(i))
-       end do
-       call report(ok, &
-            & "G" // tag // "'s global map is exactly as declared - " // &
-            & "local order is not global order", nfail)
-
-       ! Owner per local member, against the owned/borrowed subsets.
-       ok = .true.
-       do i = 1, part % num_vertices()
-          if (part % global_vertex_index(i) .eq. borrowed_global) then
-             ok = ok .and. (part % vertex_owner_part(i) .ne. k)
-          else
-             ok = ok .and. (part % vertex_owner_part(i) .eq. k)
-          end if
-       end do
-       call report(ok, &
-            & "G" // tag // " owns every local vertex but the one it " // &
-            & "borrows", nfail)
-
-       call part % owned_vertices(k, owned)
-       call part % borrowed_vertices(k, borrowed)
-       call part % overlap_vertices(k, overlap)
-
-       call report(owned % size() .eq. 3 .and. &
-            &      borrowed % size() .eq. 1 .and. &
-            &      overlap % size() .eq. 4, &
-            & "G" // tag // ": |owned| = 3, |borrowed| = 1, " // &
-            & "|overlap| = 4", nfail)
-
-       ! The borrowed member, named by its GLOBAL index.
-       ok = .false.
-       do i = 1, part % num_vertices()
-          if (borrowed % has(i)) then
-             ok = part % global_vertex_index(i) .eq. borrowed_global
-          end if
-       end do
-       call report(ok, &
-            & "G" // tag // " borrows global vertex " // &
-            & achar(48 + borrowed_global) // ", and only that one", &
-            & nfail)
-
-       ! Overlap is the carrier a stencil may read.
-       call report(overlap % size() .eq. part % num_vertices(), &
-            & "G" // tag // "'s overlap is its whole local carrier: " // &
-            & "owned union borrowed", nfail)
-
-    class default
-       call report(.false., "G" // tag // " is a stored graph", nfail)
-    end select
-
-  end subroutine check_part_structure
-
-  !===================================================================!
-  ! The crossing edge is PRESENT in both parts - presence is not
-  ! ownership, and the next two checks are about telling them apart.
-  !===================================================================!
-
-  subroutine check_crossing_edge_is_present_twice(nfail)
-
-    integer, intent(inout) :: nfail
-
-    call report(holds_global_edge(g1, 3) .and. holds_global_edge(g2, 3), &
-         & "global e3 = 3->4 is present in BOTH parts", nfail)
-    call report(.not. holds_global_edge(g2, 1) .and. &
-         &      .not. holds_global_edge(g1, 5), &
-         & "while e1 and e5 each live in one part only", nfail)
-
-  end subroutine check_crossing_edge_is_present_twice
-
+  end subroutine cut
   !===================================================================!
   ! THE LAW, imposed before any inspection: partition an edge probe
   ! to both parts, assemble each home, and the sum must be the probe
@@ -285,46 +127,6 @@ contains
     if (allocated(got)) deallocate(got)
 
   end subroutine check_edge_assembly_law
-
-  !===================================================================!
-  ! Only NOW: which part does the machinery consider canonical for
-  ! the crossing edge? This is documentation of a law already
-  ! satisfied, never a decision.
-  !
-  ! Before Gate A, the production comment beside that assignment
-  ! SAID an edge is owned by its tail's part "unless the tail is
-  ! borrowed, in which case the head's owner answers for it" - but
-  ! both branches of its if/else assign the tail's owner, so the
-  ! code was and is unconditionally tail-owned. The law above held
-  ! regardless, because tail-ownership is still a single
-  ! well-defined owner per global edge: the PROSE was wrong, never
-  ! the behaviour. That comment has since been corrected; this
-  ! test is what established which of the two to believe.
-  !===================================================================!
-
-  subroutine document_canonical_edge_owner(nfail)
-
-    integer, intent(inout) :: nfail
-
-    integer :: o1, o2
-
-    o1 = owner_of_global_edge(g1, 3)
-    o2 = owner_of_global_edge(g2, 3)
-
-    call report(o1 .eq. o2 .and. o1 .ne. 0, &
-         & "both parts agree on who owns the crossing edge", nfail)
-    call report(o1 .eq. 1, &
-         & "and it is part 1 - the owner of its TAIL, vertex 3", &
-         & nfail)
-
-    call report(owner_of_global_edge(g1, 1) .eq. 1 .and. &
-         &      owner_of_global_edge(g2, 4) .eq. 2 .and. &
-         &      owner_of_global_edge(g2, 5) .eq. 2, &
-         & "every other edge is owned by its tail's part too: the " // &
-         & "rule is uniform", nfail)
-
-  end subroutine document_canonical_edge_owner
-
   !===================================================================!
   ! A FULL global vertex field becomes a FULL overlap field on each
   ! part - values read by GLOBAL member, never by position.
@@ -345,7 +147,6 @@ contains
          & [7.0_dp, 11.0_dp, 16.0_dp, 4.0_dp], nfail)
 
   end subroutine check_vertex_transport
-
   subroutine check_one_transport(q, part, k, globals, expect, nfail)
 
     type(field)      , intent(in)    :: q
@@ -395,7 +196,6 @@ contains
          & "holds", nfail)
 
   end subroutine check_one_transport
-
   !===================================================================!
   ! Assemble each part's field home: each contributes only what it
   ! OWNS, and the two together are exactly q* - no borrowed value
@@ -433,7 +233,6 @@ contains
          & "the whole", nfail)
 
   end subroutine check_vertex_round_trip
-
   !===================================================================!
   ! A PROPER global subset, declared out of global order, survives
   ! the same road: each part receives only the members it can see,
@@ -528,7 +327,6 @@ contains
          & "and absences alike", nfail)
 
   end subroutine check_proper_subset_transport
-
   !===================================================================!
   ! Helpers - each composed locally from the production API.
   !===================================================================!
@@ -553,43 +351,6 @@ contains
     total = total + v(1:size(total))
 
   end subroutine add_round_trip
-
-  logical function holds_global_edge(part, ge)
-
-    class(graph), intent(in) :: part
-    integer     , intent(in) :: ge
-
-    integer :: i
-
-    holds_global_edge = .false.
-    select type (part)
-    type is (stored_graph)
-       do i = 1, part % num_edges()
-          if (part % global_edge_index(i) .eq. ge) holds_global_edge = .true.
-       end do
-    end select
-
-  end function holds_global_edge
-
-  integer function owner_of_global_edge(part, ge)
-
-    class(graph), intent(in) :: part
-    integer     , intent(in) :: ge
-
-    integer :: i
-
-    owner_of_global_edge = 0
-    select type (part)
-    type is (stored_graph)
-       do i = 1, part % num_edges()
-          if (part % global_edge_index(i) .eq. ge) then
-             owner_of_global_edge = part % edge_owner_part(i)
-          end if
-       end do
-    end select
-
-  end function owner_of_global_edge
-
   real(dp) function value_at(d, dom, member)
 
     type(field)      , intent(in) :: d
@@ -602,5 +363,4 @@ contains
     value_at = v(dom % local_index(member))
 
   end function value_at
-
-end program partitioned_pde_gate_a
+end program partitioned_pde_level_5

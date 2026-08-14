@@ -1,0 +1,110 @@
+!=====================================================================!
+! THE CHAIN RELATIONS FIXTURE - earned at LEVEL 1, and deliberately
+! independent of any graph object.
+!
+! Before the chain is a graph, it is three carriers and three
+! primitive facts:
+!
+!      V = { 1 2 3 4 5 6 }        global vertices
+!      E = { e1 e2 e3 e4 e5 }     global edges
+!      K = { part1 part2 }        partition labels
+!
+!      Tail <= E x V     e_i -> i
+!      Head <= E x V     e_i -> i+1
+!      Own  <= K x V     part1 -> 1,2,3   part2 -> 4,5,6
+!
+! These are STRUCTURAL truths only. There is no overlap here, no
+! borrowed member, no local numbering, and no ordinary graph: those
+! are interpretations that Levels 3 and 4 will impose on top.
+!
+! Note the hazard this file is careful about: all three carriers
+! enumerate their members from one, so their raw ids COLLIDE - the
+! integer 1 is a vertex, an edge and a part all at once. Nothing
+! here may be read positionally across carriers, and orientation is
+! carried by the SIGNATURE, never by the numbers.
+!
+! Author: Komahan Boopathy (komahan@gatech.edu)
+!=====================================================================!
+
+module chain_relations_fixture
+
+  use graph_carrier        , only : counted_set
+  use graph_binary_relation, only : csr_relation
+
+  implicit none
+
+  private
+  public :: chain_carriers, tail_relation, head_relation, own_relation
+
+contains
+
+  !===================================================================!
+  ! The three carriers, declared and nothing more.
+  !===================================================================!
+
+  subroutine chain_carriers(v, e, k)
+
+    type(counted_set), intent(out) :: v, e, k
+
+    v = counted_set('global vertices', 6)
+    e = counted_set('global edges'   , 5)
+    k = counted_set('partition labels', 2)
+
+  end subroutine chain_carriers
+
+  !===================================================================!
+  ! Tail <= E x V : which vertex each edge leaves.
+  !===================================================================!
+
+  type(csr_relation) function tail_relation(e, v) result(tail)
+
+    type(counted_set), intent(in) :: e, v
+
+    integer :: table(2, 5), i
+
+    do i = 1, 5
+       table(:, i) = [i, i]
+    end do
+    tail = csr_relation('tail', e, v, table)
+
+  end function tail_relation
+
+  !===================================================================!
+  ! Head <= E x V : which vertex each edge enters.
+  !===================================================================!
+
+  type(csr_relation) function head_relation(e, v) result(head)
+
+    type(counted_set), intent(in) :: e, v
+
+    integer :: table(2, 5), i
+
+    do i = 1, 5
+       table(:, i) = [i, i + 1]
+    end do
+    head = csr_relation('head', e, v, table)
+
+  end function head_relation
+
+  !===================================================================!
+  ! Own <= K x V : the INTENDED ownership, stated before any
+  ! partitioner exists to realize it.
+  !===================================================================!
+
+  type(csr_relation) function own_relation(k, v) result(own)
+
+    type(counted_set), intent(in) :: k, v
+
+    integer :: table(2, 6)
+
+    table(:, 1) = [1, 1]
+    table(:, 2) = [1, 2]
+    table(:, 3) = [1, 3]
+    table(:, 4) = [2, 4]
+    table(:, 5) = [2, 5]
+    table(:, 6) = [2, 6]
+    own = csr_relation('owns', k, v, table)
+
+  end function own_relation
+
+end module chain_relations_fixture

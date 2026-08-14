@@ -7,22 +7,19 @@
 # level reports its own status, in order, and a gate line may only
 # follow the levels it reviews.
 #
-# THIS TOWER IS NOT SEALED, and this script must never say it is.
-# Levels 0-4 are built; Levels 5-9 are not. The runner therefore
-# ends by naming the frontier out loud rather than by reading a
-# result marker - because Gate A produces no numerical result, and
-# a result contract for a tower with no result would be a claim it
-# has not earned.
-#
-# When Level 5 lands, whoever builds it edits the frontier lines
-# below. That is honest: the runner declares where the frontier is,
-# so moving the frontier is an edit somebody makes on purpose.
+# All ten levels are built, and after a full ladder the answer is
+# read - fail closed - from Level 9's own output. The tower says
+# TOWER SEALED once, here, and only after every level has reported
+# for itself and the result contract has accepted the marker.
 set -e
 
 here="$(cd "$(dirname "$0")" && pwd)"
 
 "$here/check_imports.sh" --selftest || { echo "└── the import gate refused itself"; exit 1; }
 "$here/check_imports.sh" || { echo "└── the import gate refused the tower"; exit 1; }
+
+. "$here/check_marker.sh"
+"$here/check_marker.sh" --selftest || { echo "└── the result contract refused itself"; exit 1; }
 
 ( cd "$here/../.." && ./build.sh >/dev/null 2>&1 )
 
@@ -37,6 +34,9 @@ levels=(
   "level-6-discretization     6 discretization"
   "level-7-minimization       7 minimization"
   "GATE                       B"
+  "level-8-constitution       8 constitution"
+  "level-9-statement          9 statement"
+  "GATE                       C"
 )
 
 echo "TIME INTEGRATION TOWER"
@@ -89,7 +89,13 @@ if [ "$failed" -ne 0 ]; then
     exit 1
 fi
 
-echo "    L8 constitution .................... UNBUILT"
-echo "    L9 statement ....................... UNBUILT"
+out="$here/level-9-statement/run.out"
+marks=$(grep -c 'TIME_INTEGRATION_RESULT =' "$out")
+values=$(grep -o 'TIME_INTEGRATION_RESULT =.*' "$out" | sed 's/.*TIME_INTEGRATION_RESULT =//')
+if ! marker_ok "$marks" 2 "$values"; then
+    echo "    RUNNER FAILURE: the statement did not report one state on Q"
+    exit 1
+fi
+echo "    TIME_INTEGRATION_RESULT = $(echo $values)"
 echo
-echo "    frontier stops here."
+echo "    TOWER SEALED."

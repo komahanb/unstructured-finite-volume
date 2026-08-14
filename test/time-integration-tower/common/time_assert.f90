@@ -58,6 +58,8 @@ module time_assert
   public :: T0, T1, T2, T3, T4
   public :: E1, E2, E3, E4
   public :: H_STEP, TIME_COORD, Q0, Q_FE1, Q_BE1, Q_BDF2, TOL
+  public :: NSTEPS, TOL_MARCH
+  public :: FE_TRAJECTORY, BE_TRAJECTORY, BDF2_TRAJECTORY
   public :: action_of
 
   ! The cardinalities of the three carriers.
@@ -126,6 +128,80 @@ module time_assert
        & [5.0_dp / 6.0_dp, 47.0_dp / 72.0_dp]
 
   real(dp), parameter :: TOL = 1.0e-10_dp
+
+  !===================================================================!
+  ! The full four-step marches, earned at Level 8. Each column is one
+  ! instant, t0 through t4, and each row a state coordinate:
+  !
+  !      row 1 = x        row 2 = y
+  !
+  ! FORWARD EULER    q_{n+1} = q_n - h S(q_n)
+  !
+  !      x : 2, 1, 1/2, 1/4, 1/8
+  !      y : 0, 1, 1,   3/4, 1/2
+  !
+  ! BACKWARD EULER   (I + hM) q_{n+1} = q_n,  M = [[1,0],[-1,1]]
+  !
+  !      x : 2, 4/3, 8/9,   16/27, 32/81
+  !      y : 0, 4/9, 16/27, 16/27, 128/243
+  !
+  ! BDF-2, started with one backward-euler step, as production does:
+  !
+  !      x_{n+1} = x_n - x_{n-1}/4
+  !      y_{n+1} = y_n - y_{n-1}/4 + x_{n+1}/4
+  !
+  !      x : 2, 4/3, 5/6,   1/2, 7/24
+  !      y : 0, 4/9, 47/72, 2/3, 83/144
+  !
+  ! ORACLES, every one. They are the exact rational solutions of the
+  ! recurrences above, and no level may obtain them from the
+  ! machinery it is testing.
+  !===================================================================!
+
+  integer, parameter :: NSTEPS = 4
+
+  real(dp), parameter :: FE_TRAJECTORY(NQ, 0:NSTEPS) = reshape( &
+       & [2.0_dp        , 0.0_dp        , &
+       &  1.0_dp        , 1.0_dp        , &
+       &  0.5_dp        , 1.0_dp        , &
+       &  0.25_dp       , 0.75_dp       , &
+       &  0.125_dp      , 0.5_dp        ], [NQ, NSTEPS + 1])
+
+  real(dp), parameter :: BE_TRAJECTORY(NQ, 0:NSTEPS) = reshape( &
+       & [2.0_dp             , 0.0_dp               , &
+       &  4.0_dp/3.0_dp      , 4.0_dp/9.0_dp        , &
+       &  8.0_dp/9.0_dp      , 16.0_dp/27.0_dp      , &
+       &  16.0_dp/27.0_dp    , 16.0_dp/27.0_dp      , &
+       &  32.0_dp/81.0_dp    , 128.0_dp/243.0_dp    ], [NQ, NSTEPS + 1])
+
+  real(dp), parameter :: BDF2_TRAJECTORY(NQ, 0:NSTEPS) = reshape( &
+       & [2.0_dp             , 0.0_dp               , &
+       &  4.0_dp/3.0_dp      , 4.0_dp/9.0_dp        , &
+       &  5.0_dp/6.0_dp      , 47.0_dp/72.0_dp      , &
+       &  0.5_dp             , 2.0_dp/3.0_dp        , &
+       &  7.0_dp/24.0_dp     , 83.0_dp/144.0_dp     ], [NQ, NSTEPS + 1])
+
+  !===================================================================!
+  ! A SEPARATE tolerance for the marched answers, and it is separate
+  ! on purpose. Levels 5-7 substitute exact states into residuals and
+  ! meet TOL. Level 8 walks four steps of a finite-difference Newton
+  ! stack, whose error is a MEASURED quantity, not a guessed one.
+  !
+  ! MEASURED, on this specimen: the worst deviation from the exact
+  ! rational trajectory is 2.22e-16 for backward euler and the same
+  ! for bdf-2 - one unit in the last place. The stack converges
+  ! essentially exactly here because the residual is affine and the
+  ! problem is 2x2.
+  !
+  ! The constant below therefore sits four orders ABOVE what was
+  ! observed: loose enough that a different platform's last bits
+  ! cannot fail it, tight enough that it remains a real constraint.
+  ! A tolerance chosen to make a test pass without knowing the true
+  ! error is how a genuine discrepancy hides, and both marches
+  ! print their worst error so the margin stays visible.
+  !===================================================================!
+
+  real(dp), parameter :: TOL_MARCH = 1.0e-12_dp
 
 contains
 

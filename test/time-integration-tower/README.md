@@ -28,14 +28,17 @@ TIME INTEGRATION TOWER
 
     ===== REVIEW GATE B =====
 
-    L8 constitution .................... UNBUILT
-    L9 statement ....................... UNBUILT
+    L8 constitution .................... PASS
+    L9 statement ....................... PASS
 
-    frontier stops here.
+    ===== REVIEW GATE C =====
+
+    TIME_INTEGRATION_RESULT = 2.9166666666666674E-01 5.7638888888888895E-01
+
+    TOWER SEALED.
 ```
 
-The tower is **not sealed**. Levels 8–9 are unbuilt, and nothing in
-this document claims a truth they have not established.
+All ten levels are built. \(q(t_4) = [7/24,\, 83/144]\), on \(Q\).
 
 ## Levels are the architecture; gates are only review checkpoints
 
@@ -103,8 +106,8 @@ invent it.
 | **5** | \(q_0:Q\to\mathbb R\); \(\mathrm{time}:T\to\mathbb R\); \(h:E\to\mathbb R\) | `field` | \(Q\), \(T\), \(E\) — three distinct | consumed, not made | values, no scheme | `level-5-field-calculus/` | **values live on domains, not on graphs** — \(q_0\) needs no graph, and \(\mathrm{time}(\mathrm{head}(e))-\mathrm{time}(\mathrm{tail}(e))=h(e)\) | none |
 | **6** | \(S:Q\to Q\); FE; BE residual; BDF2 residual | `step_operator`, `backward_euler`, `bdf` | \(Q\), beside a 5-vertex host \(H_t\) | \(A_1,A_2\) supply the history roles | the discrete law | `level-6-discretization/` | **temporal discretization preserves \(Q\)** — RED first, then a narrow correction | `class_graph_step.f90` — domain and width delegated to the action |
 | **7** | solve temporal residual \(=0\) | `gmres` | unknown \(Q\), host \(H_t\) | — | the implicit solve | `level-7-minimization/` | **an explicit unknown domain \(Q\) survives minimization** while the host has five unrelated vertices | none — the minimizer was already right |
-| **8** | — | — | — | — | — | — | **UNBUILT** | — |
-| **9** | — | — | — | — | — | — | **UNBUILT** | — |
+| **8** | four-step marches: FE, BE, BDF2 | `marcher`, `newton`, `gmres` | \(Q\); control chain; \(H_{\text{context}}\) | control chain realizes \(A_1\) extensionally | multi-step constitution | `level-8-constitution/` | **the marcher's state domain is independent of its host**; three five-element objects stay apart | `class_graph_marcher.f90`, `class_graph_linearization.f90` — both RED-earned |
+| **9** | the complete IVP: \(q(0)=[2,0]\), \(\dot q=-S(q)\), \(h=1/2\), BDF2 → \(q(t_4)\) | the whole constitution | \(Q\), in and out | — | the statement | `level-9-statement/` | \(q(t_4)=[7/24,\,83/144]\), **a field on \(Q\)** | none |
 
 The road as far as it has been built:
 
@@ -119,8 +122,9 @@ L5  values on Q, T and E — three domains, no graph
 L6  the scheme: S on Q, and a discretization that keeps Q
 L7  the implicit solve, on Q, beside a five-vertex host
 --- REVIEW GATE B ---
-L8  constitution          UNBUILT
-L9  statement             UNBUILT
+L8  the multi-step march, constituted from every earned piece
+L9  the complete initial-value problem, answered on Q
+--- REVIEW GATE C ---   TOWER SEALED
 ```
 
 ---
@@ -457,7 +461,196 @@ vertices." That contrast is the evidence: the same seam that was open in
 the discretization was already closed in the minimization, by a contract
 written the other way round.
 
-> **REVIEW GATE B** — after Level 7. The frontier stops here.
+> **REVIEW GATE B** — after Level 7.
+
+---
+
+# D3. Levels 8–9 — constitution and statement
+
+## Four different things are called "time", and they are not synonyms
+
+This is one of the tower's main Rosetta contributions, because every
+one of these has been called "the time" by somebody:
+
+```text
+1.  TIME MEMBERS            T = { t0 t1 t2 t3 t4 }
+                            a carrier.  Five identities, no order,
+                            no numbers.                        (L0)
+
+2.  TEMPORAL RELATION       A1 = Head ∘ Tail^T,  A2 = A1 ∘ A1
+                            which instants follow which.
+                            Structure, no coefficients.        (L2)
+
+3.  NUMERICAL COORDINATE    time : T → R = [0, ½, 1, 3/2, 2]
+                            a FIELD on T.  Values, not structure,
+                            and h : E → R beside it.           (L5)
+
+4.  MARCHING RULE           FE / BE / BDF2, constituted through
+                            the marcher.  Coefficients weighting
+                            the roles (2) supplies.        (L6, L8)
+```
+
+And two more objects that are neither, and must not be confused with
+each other:
+
+```text
+    TIME GRAPH              the marcher's CONTROL CHAIN, generated
+                            by clock % instants(4).  Five vertices.
+
+    OPERATION HOST          H_context, the conduit the
+                            graph_operation contract requires.
+                            Five vertices — and a different object.
+```
+
+At Level 8 all three five-element things exist in one program —
+\(T\), the control chain, \(V(H_{\text{context}})\) — and the level
+pins that no two are the same carrier. **That they all have five
+elements is a coincidence of this specimen**, not a fact about time,
+and the assertions refuse to lean on it. Beside them sits the
+two-member \(Q\), which is none of them.
+
+## The constitution road
+
+```text
+    G_time / A1                      Q
+        │                            │
+        │ extensional realization    │  q0 : Q → R
+        ▼                            ▼
+    marcher.instants(4)        triangular_decay  S : Q → Q
+        │                            │
+        │  four causal steps         ▼
+        │                      step scheme : Q → Q
+        │                            │
+        │                            ▼
+        │                         Newton
+        │                            │
+        │                            ▼
+        │            difference linearization : Q → Q
+        │                            │
+        │                            ▼
+        │                          GMRES
+        │                            │
+        │                            ▼
+        └──────────────────────► q_(n+1) : Q
+                                     │
+                    repeated four times along the chain
+                                     │
+                                     ▼
+                                 q(t4) : Q
+
+    H_context ─────────────────────────────► carried alongside,
+    (5 vertices, chain)                      passed to the action,
+                                             never the state's seat
+```
+
+\[
+\boxed{\begin{gathered}
+\text{ONE STATE DOMAIN } Q \text{ SURVIVES THE WHOLE ROAD:}\\
+\text{field} \to \text{action} \to \text{step} \to \text{Newton}
+\to \text{linearization} \to \text{GMRES} \to \text{marcher}\\[2pt]
+\text{while the time structure and the compatibility host}\\
+\text{remain separate objects throughout.}
+\end{gathered}}
+\]
+
+## Level 8 — the marches, and two REDs
+
+The control chain first, before any value moves. Production's
+`instants(4)` is checked **extensionally** against \(A_1\) — step
+\(i\) joins instant \(i\) to instant \(i+1\), exactly the pairs
+\(A_1\) holds — and *not* by identity, which is not required and
+would be wrong to demand. Two realizations of one structure; agreement
+never made two parties one party.
+
+Then the marches:
+
+```text
+FE    [2,0] → [1,1] → [1/2,1] → [1/4,3/4] → [1/8,1/2]
+BE    [2,0] → [4/3,4/9] → [8/9,16/27] → [16/27,16/27] → [32/81,128/243]
+BDF2  [2,0] → [4/3,4/9] → [5/6,47/72] → [1/2,2/3] → [7/24,83/144]
+```
+
+every prefix pinned, not only the terminal state. BDF2's first state
+*is* the backward-euler one — a two-step scheme cannot reach two steps
+back on its first step, which is a structural fact before it is a
+numerical one.
+
+**Two REDs, both recorded before production was touched.**
+
+```text
+RED 1   read_statement built the state on the HOST's vertex set and
+        took its width as size(q)/num_vertices() = 2/5 = 0.
+        → class_graph_marcher.f90, narrow fix                 TI-14
+
+RED 2   difference_linearization built its frozen and perturbed
+        states on the HOST's vertex set.
+        → class_graph_linearization.f90, narrow fix           TI-16
+```
+
+The second is the one that matters as evidence. It was reached through
+
+```text
+marcher → newton → difference_linearization → gmres
+```
+
+— the production path an implicit march *requires* — and **no level of
+this tower may import that module**; the import gate refuses it
+universally and `--selftest` asserts the refusal. So the Class-2
+witness is demonstrably natural rather than manufactured.
+
+The implicit governor is **Newton, not bare GMRES**: the marcher drives
+the whole residual to zero via `inner % solve(zeros, q, …)`, and a bare
+GMRES `matvec` has already subtracted the affine constant, which would
+answer a different question.
+
+### Two specializations, and they are not defects
+
+```text
+production regenerates a LINEAR CHAIN from nsteps
+    rather than consuming G_time
+
+production carries ONE SCALAR step
+    rather than the field h : E → R
+```
+
+For this specimen both are **exact specializations** — the time graph
+is a simple chain and \(h\) is uniform, and Level 8 checks
+\(h(e) = \text{clock}\%\text{step}\) at every step. So no defect is
+established. They are recorded as frontier in §F below, for clients
+that would supply a nonuniform or nonlinear time structure. One tower
+cannot decide that.
+
+## Level 9 — the statement
+
+> Given \(Q=\{x,y\}\), \(q(0)=[2,0]\), \(\dot q = -S(q)\) with
+> \(S(q)=[x,\,y-x]\), \(t_0=0\), \(t_4=2\), \(h=1/2\), and BDF2
+> with one backward-euler startup step — compute \(q(t_4)\).
+
+Both ends of the statement are **fields on \(Q\)**: the initial state
+arrives as one and its vector is fetched once; the answer is written
+back into one and its domain checked. The marcher's raw-array core was
+left exactly as it is — nothing was refactored to make a public
+argument prettier.
+
+The endpoint is *earned*, not assumed: \(\text{time}(t_4)=2\) read off
+the Level-5 coordinate field, four steps walked, and the control chain's
+terminal instant reached by **following its incidence from \(t_0\)**
+rather than by indexing the integer 5.
+
+\[
+\boxed{q(t_4) = \left[\tfrac{7}{24},\ \tfrac{83}{144}\right]}
+\]
+
+```text
+TIME_INTEGRATION_RESULT = 2.9166666666666674E-01 5.7638888888888895E-01
+```
+
+Two tokens, not five — the result lives on \(Q\), and a five-token
+marker would quietly undo nine levels of argument at the last line of
+output. `check_marker.sh` validates shape and syntax only; whether those
+numbers *are* \(q(t_4)\) is the Level-9 test's business.
+
+> **REVIEW GATE C** — after Level 9. **Tower sealed.**
 
 ---
 
@@ -496,26 +689,51 @@ Nothing here says the production marcher is wrong, or that
 `graph_operation` must change. Those remain questions for levels that
 have not been built.
 
-## Seam A2 — the evidence count, and its limit
+## Seam A2 at seal — the count, and its limit
 
 ```text
 BEFORE this tower     Derivative Action, Adjoint
                       = 2 towers, one family (derivative)
 
-AFTER Level 6         + Time Integration
+AFTER this tower      + Time Integration
                       = 3 independent towers, and the FIRST
                         non-derivative-family client
 ```
 
-That reaches the repository's **strong-evidence** bar. What it earned
-here, and all it earned here, is one sentence of production:
+**Time contributes ONE tower vote**, not three. The tower produced
+three separate REDs — `class_graph_step` at Level 6,
+`class_graph_marcher` at Level 8, `class_graph_linearization` at Level 8
+— but its ten levels are one client, and counting them separately would
+be counting one experiment three times.
 
-> temporal discretization no longer infers its state domain from the
-> compatibility host.
+What *did* increase is **evidence quality**:
+
+```text
+3 independent towers                        (the strong-evidence bar)
++ first non-derivative-family client
++ first full temporal PRODUCTION COMPOSITION
+      marcher → newton → difference_linearization → gmres
++ a genuine CLASS-2 WITNESS, reached naturally: no level of this
+      tower may import class_graph_linearization, and the import
+      gate enforces it
+```
+
+What that earned is **three narrow sentences of production**, each
+RED-first:
+
+> temporal discretization takes its state domain from the action it
+> discretizes; a march takes its state domain from the action it
+> marches; a finite difference takes its domain from the operation it
+> differences.
 
 It does **not** authorize the broader A2 migration across `fit`,
-`graph_reduction`, `graph_broadcast` or `difference_linearization`.
+`graph_reduction`, `graph_broadcast`, or a rectangular linearization.
 None of those was exercised by this tower.
+
+**Recommended next action: a dedicated reverse architecture review.**
+It has not been performed here, and
+`doc/REVERSE-ARCHITECTURE-REVIEW.md` was deliberately left unedited —
+that document is a separate artifact with its own process.
 
 \[
 \boxed{\begin{gathered}
@@ -532,19 +750,46 @@ and this tower is not sealed.
 ```text
 A1   graph host cannot be removed generically
      CLOSED by the Partitioned Implicit PDE Tower, on production
-     evidence.  This client locally ignores H_t's topology because a
-     triangular 2x2 decay has no topology to traverse.  That is a
-     property of THIS action, not a counterexample.  A1 stays closed.
+     evidence.  This client locally ignores H_context's topology
+     because a triangular 2x2 decay HAS no topology to traverse -
+     a property of THIS action, not a counterexample.  The host is
+     still passed to every action, at every level, all the way
+     through the march.  A1 stays closed.
 
 B    one law, forward and reverse, between different domains
-     ZERO new votes.  This gate has no tangent, no adjoint, no
-     transpose and no linearization operator.  Nothing here bears on it.
+     ZERO new votes, and this needs saying carefully because the
+     tower did touch difference_linearization.  It remains a
+     SAME-DOMAIN citizen, L : Q -> Q.  Its forward use inside
+     Newton is not bidirectional-linearization evidence: no
+     tangent, no adjoint, no transpose, no rectangular U -> Y, and
+     no reverse action appears anywhere in this tower.  Seam B
+     still stands at 2 independent derivative-family towers.
+
+A3   relational_graph as structural owner
+     Another successful ownership pattern - G_time owns two axes
+     and four relations, including a carrier no relation names.
+     No production change follows automatically.  KEEP.
 ```
 
 > Read carefully: **seam A2** is the review's *"operations should carry
 > their own domain"*, and \(A_2\) is this tower's *two-step reach
 > relation*. They share a label and nothing else. This document uses
 > "seam A2" for the first and \(A_2\) for the second, everywhere.
+
+## The specialization frontier
+
+Recorded, deliberately **not** fixed:
+
+| What production does | What the tower declared | Status here |
+|---|---|---|
+| regenerates a linear chain from `nsteps` | \(G_{\text{time}}\), a relational structure with \(A_1, A_2\) | **exact specialization** — the specimen's time graph *is* a simple chain, checked extensionally at L8 |
+| carries one scalar `clock % step` | \(h : E \to \mathbb{R}\), one value per step | **exact specialization** — \(h\) is uniform, and L8 checks \(h(e)=\text{step}\) at every step |
+
+Neither is a defect, and this tower establishes neither as a general
+contract. They are the natural experiments for an **Adaptive Time** or
+**Composite Time** client, which would supply a nonuniform \(h\) or a
+branching time structure and find out whether the specialization holds.
+Not implemented here.
 
 ---
 
@@ -576,18 +821,39 @@ A1/A2 supply the history ROLES; bdf-2 supplies the COEFFICIENTS,
     and neither contains the other
 production GMRES solves an implicit temporal step on Q while the
     host carries five unrelated vertices
+
+CONSTITUTION (L8-L9)
+production's control chain realizes A1 EXTENSIONALLY - two
+    realizations of one structure, never one object
+the marcher's state domain is independent of its host, and a
+    four-step march runs on a two-member Q beside a five-vertex host
+FE, BE and BDF2 all march to their exact rational trajectories,
+    every prefix pinned, worst error 2.2e-16
+a uniform h field and a linear time chain are exact
+    SPECIALIZATIONS of what production carries - not defects
+the complete initial-value problem is asked and answered on Q:
+    q(t4) = [7/24, 83/144]
 ```
 
 ## Not proven — anywhere yet
 
 ```text
-a time-marching loop         the production marcher's contract
-more than one step           a trajectory, an alternate constitution
-                             or a statement (L8, L9: UNBUILT)
-any tangent or adjoint       any linearization  ← SEAM B, zero votes
-whether fit / reduction / broadcast / difference_linearization
-    should carry their own domains   ← the BROADER A2 migration,
-                                       NOT performed and NOT tested
+NONUNIFORM TIME              a variable step size that actually varies
+NONLINEAR TIME STRUCTURE     branching, adaptive or composite time
+    - production regenerates a linear chain from nsteps and carries
+      one scalar step.  Both are EXACT here.  Whether they are
+      general contracts is what an Adaptive Time or Composite Time
+      client would decide, and this tower cannot
+
+any tangent or adjoint       any transpose, any reverse action
+any rectangular U -> Y linearization   ← SEAM B, still zero votes
+    - difference_linearization remains SAME-DOMAIN, Q -> Q
+
+whether fit / reduction / broadcast should carry their own domains
+    ← the BROADER A2 migration, NOT performed and NOT tested here
+
+a transient adjoint          more than one specimen
+    - one 2x2 triangular decay, on one uniform chain
 ```
 
 **Seam A2** of
@@ -606,9 +872,10 @@ sites is eligible for reverse review and has not been done here.
 test/time-integration-tower/
 ├── README.md                    this document — the Rosetta stone
 ├── NUCLEUS-OBSERVATIONS.md      the evidence ledger (TI-*), by level
-├── run.sh                       level-by-level runner; stops at Gate B
+├── run.sh                       level-by-level runner; seals at Gate C
 ├── check_imports.sh             fail-closed allowlists, PER LEVEL,
 │                                + its own --selftest
+├── check_marker.sh              the result contract + its self-test
 ├── common/
 │   ├── time_assert.f90                    (below everything)
 │   ├── time_carriers_fixture.f90          earned at Level 0
@@ -623,10 +890,9 @@ test/time-integration-tower/
 ├── level-4-graph-calculus/      test.f90
 ├── level-5-field-calculus/      test.f90
 ├── level-6-discretization/      test.f90
-└── level-7-minimization/        test.f90
-
-    level-8-constitution/        NOT YET
-    level-9-statement/           NOT YET
+├── level-7-minimization/        test.f90
+├── level-8-constitution/        test.f90
+└── level-9-statement/           test.f90
 ```
 
 The fixture ladder is the tower's own stratification applied to itself:
@@ -640,9 +906,15 @@ Level 6    triangular_decay_fixture   the action S : Q -> Q
 ```
 
 The import ceiling rises the same way, one rung at a time — the step
-operator is refused below Level 6, the minimizer and GMRES below Level
-7 — so no level can redescribe machinery it has not yet earned. The
-marcher is refused at **every** built level.
+operator refused below Level 6, the minimizer and GMRES below Level 7,
+the marcher and Newton below Level 8 — so no level can redescribe
+machinery it has not yet earned.
+
+`class_graph_linearization` is refused at **every** level, and that
+refusal is load-bearing rather than hygienic: Level 8 reached its
+Class-2 defect through `marcher → newton → difference_linearization`,
+and because no level may name that module, the failure cannot have been
+manufactured.
 
 The relation fixture does not *import* the carrier fixture — its
 constructors receive \(Q,T,E\) as arguments, because a Level-1 file may
@@ -651,7 +923,8 @@ is enforced by the import gate's per-file allowlists, by each level's
 Makefile, and by `check_imports.sh --selftest`, which asserts that a
 Level-0 source saying `use time_relations_fixture` is refused.
 
-There is no `check_marker.sh`. Gate B computes real numbers, but it does
-not yet produce a single *statement* — that is Level 9's business — and
-a result contract for a result the tower has not claimed would be a
-claim it has not earned.
+`check_marker.sh` arrived at Level 9, with the statement it validates.
+It checks **shape and syntax only** — one marker, two real literals, in
+\(Q\)'s declaration order — and says nothing about the values. Two
+tokens, not five: the answer lives on \(Q\), and a five-token marker
+would undo nine levels of argument at the last line of output.

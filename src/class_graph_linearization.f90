@@ -122,6 +122,26 @@ contains
   ! the input field; the answer leaves on the same cells.
   !===================================================================!
 
+  !===================================================================!
+  ! THE DIFFERENCE IS TAKEN WHERE THE OPERATION LIVES.
+  !
+  ! derivative_domain has always delegated to the underlying
+  ! operation; the states this routine builds now do the same. A
+  ! finite difference of an operation is a statement about that
+  ! operation's own domain, and the graph it is reached through was
+  ! never the seat of it.
+  !
+  ! For every operation that reads its domain off the graph - which
+  ! is all of them on the ordinary-graph road - the domain asked for
+  ! here is exactly the vertex set that was being used before, so
+  ! nothing a graph-based caller sees changes.
+  !
+  ! THIS CITIZEN REMAINS SAME-DOMAIN. It differences L : U -> U and
+  ! nothing wider. No rectangular U -> Y, no transpose, no reverse
+  ! action: those would be a different mathematical object, and this
+  ! correction deliberately does not become one.
+  !===================================================================!
+
   subroutine derivative_apply(this, input_graph, input_data, output)
 
     class(difference_linearization), intent(in)    :: this
@@ -131,47 +151,84 @@ contains
 
     type(field)   :: state
     class(graph_field), allocatable :: pushed
+    class(member_set), allocatable  :: on, given
     real(dp), allocatable :: v(:), y(:), base(:)
-    integer :: nv, ncomp, i
+    integer :: n, ncomp
 
-    nv = input_graph % num_vertices()
+    call this % of % domain(input_graph, on)
 
-    ! The width the frozen state carries. A statement of several
-    ! numbers per cell is differenced whole, like any other.
-    ncomp = max(size(this % at) / max(nv, 1), 1)
-
-    if (present(input_data)) then
-       call input_data(1) % get_real_vector(v)
-    else
-       allocate(v(nv * ncomp))
-       v = 0.0_dp
+    n = on % size()
+    if (n <= 0) then
+       error stop 'linearization: the operation''s domain is empty'
+    end if
+    if (mod(size(this % at), n) /= 0) then
+       error stop 'linearization: the frozen state must carry a whole number &
+            &per member of the operation''s domain'
     end if
 
+    ! The width the frozen state carries. A statement of several
+    ! numbers per member is differenced whole, like any other.
+    ncomp = max(size(this % at) / n, 1)
+
+    if (present(input_data)) then
+       call input_data(1) % domain(given)
+       if (.not. given % same_as(on)) then
+          error stop 'linearization: the direction must live on the operation''s domain'
+       end if
+       call input_data(1) % get_real_vector(v)
+       if (size(v) /= size(this % at)) then
+          error stop 'linearization: the direction must match the frozen state''s width'
+       end if
+    else
+       allocate(v(n * ncomp))
+       v = 0.0_dp
+    end if
 
     ! The base residual: taken from the freeze when it rode along,
     ! measured here once when it did not.
     if (allocated(this % base)) then
        base = this % base
     else
-       state = field('state', input_graph % vertex_set(), ncomp=ncomp)
+       state = field('state', on, ncomp=ncomp)
        call state % set_real_vector(this % at)
        call this % of % apply(input_graph, [state], pushed)
+       call answered_on(pushed, on)
        call pushed % get_real_vector(base)
     end if
 
-    state = field('state', input_graph % vertex_set(), ncomp=ncomp)
+    state = field('state', on, ncomp=ncomp)
     call state % set_real_vector(this % at + this % step * v)
 
     call this % of % apply(input_graph, [state], pushed)
+    call answered_on(pushed, on)
     call pushed % get_real_vector(y)
 
     y = (y - base) / this % step
 
-    state = field('J v', input_graph % vertex_set(), ncomp=ncomp)
+    state = field('J v', on, ncomp=ncomp)
     call state % set_real_vector(y)
     if (allocated(output)) deallocate(output)
     allocate(output, source=state)
 
   end subroutine derivative_apply
+
+  !===================================================================!
+  ! A same-domain difference subtracts two answers, so both must
+  ! have come from the same place. Equal length is not that claim.
+  !===================================================================!
+
+  subroutine answered_on(answer, expected)
+
+    class(graph_field), intent(in) :: answer
+    class(member_set) , intent(in) :: expected
+
+    class(member_set), allocatable :: got
+
+    call answer % domain(got)
+    if (.not. got % same_as(expected)) then
+       error stop 'linearization: the operation must answer on its stated domain'
+    end if
+
+  end subroutine answered_on
 
 end module class_graph_linearization

@@ -41,28 +41,36 @@
 #     class_graph_step        earned at Level 6, refused at 0-5
 #     graph_minimization      earned at Level 7, refused at 0-6
 #     class_graph_gmres       earned at Level 7, refused at 0-6
+#     class_graph_marcher     earned at Level 8, refused at 0-7
+#     class_graph_newton      earned at Level 8, refused at 0-7
 #
 # A level that could reach the step operator before Level 6 could
 # have redescribed production instead of establishing the meaning
 # production is measured against - which is exactly what Level 6's
 # RED depended on not having happened.
 #
-# UNIVERSAL refusals never lift, at any built level:
+# UNIVERSAL refusals never lift, at ANY level of this tower:
 #
-#     class_graph_marcher     no level has earned it yet
-#     class_graph_newton      no level has earned it
-#     class_graph_linearization + the derivative/adjoint fixtures
-#                             this is not a derivative-family client
+#     class_graph_linearization
+#     the derivative and adjoint fixtures
 #
-# The marcher is the sharpest of these. Levels 5-7 test one step,
-# by hand, twice. Whether the machinery that stamps a step along a
-# chain can carry a state domain that is not its host's vertex set
-# is a question for a level that does not exist, and importing the
-# module before then would answer it by assumption.
+# THE LINEARIZATION REFUSAL IS THE SHARPEST ASSERTION IN THIS GATE,
+# and it is load-bearing evidence rather than hygiene.
 #
-# Levels 8-9 are unbuilt. Their allowlists do not exist yet, and a
-# level directory that appears without one fails closed - which is
-# the correct behaviour for a frontier.
+# Level 8 marches implicitly through
+#
+#     marcher -> newton -> difference_linearization -> gmres
+#
+# and difference_linearization FAILED there, on the state domain,
+# exactly as the reverse review's Class-2 seam predicted. Because
+# no level of this tower may name that module, the failure cannot
+# have been manufactured: it was reached by the production call
+# chain an implicit march requires, and by nothing else. The gate
+# is what makes that claim checkable instead of promised.
+#
+# The derivative and adjoint fixtures stay refused for the older
+# reason: this is not a derivative-family client, and its
+# independence as evidence depends on that being mechanical.
 
 here="$(cd "$(dirname "$0")" && pwd)"
 
@@ -103,6 +111,15 @@ allowed_for() {
         #          marcher.
         level-7-minimization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_carrier graph_grammar graph_relation graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step graph_minimization class_graph_gmres" ;;
 
+        # ===== REVIEW GATE B =====
+
+        # ---- L8: + the marcher and newton, the constituted citizens
+        #          under test. NOT class_graph_linearization: newton
+        #          reaches it, and the tower may not.
+        level-8-constitution) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_carrier graph_grammar graph_relation graph_relation_algebra graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step graph_minimization class_graph_gmres class_graph_newton class_graph_marcher" ;;
+        # ---- L9: the statement, on the same constitution.
+        level-9-statement) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_carrier graph_grammar graph_relation graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step graph_minimization class_graph_gmres class_graph_newton class_graph_marcher" ;;
+
         *)                 echo "__no_allowlist__" ;;
     esac
 }
@@ -141,9 +158,10 @@ allows() {
 
 if [ "$1" = "--selftest" ]; then
     fail=0
-    levels="level-0-carrier level-1-relation level-2-relation-algebra level-3-graph level-4-graph-calculus level-5-field-calculus level-6-discretization level-7-minimization"
+    levels="level-0-carrier level-1-relation level-2-relation-algebra level-3-graph level-4-graph-calculus level-5-field-calculus level-6-discretization level-7-minimization level-8-constitution level-9-statement"
     before_six="level-0-carrier level-1-relation level-2-relation-algebra level-3-graph level-4-graph-calculus level-5-field-calculus"
     before_seven="$before_six level-6-discretization"
+    before_eight="$before_seven level-7-minimization"
 
     permits() {
         if allows "$1" "$2"; then :; else
@@ -210,14 +228,21 @@ if [ "$1" = "--selftest" ]; then
         refuses "$lvl" class_graph_gmres
     done
 
-    # ---- UNIVERSAL: refusals that never lift at any built level.
-    #      The marcher is the sharpest: Levels 5-7 solve ONE step by
-    #      hand, and whether the machinery that stamps a step along a
-    #      chain can carry a non-vertex state domain is a question no
-    #      built level has asked.
-    for lvl in $levels; do
+    permits level-8-constitution class_graph_marcher
+    permits level-8-constitution class_graph_newton
+    permits level-9-statement class_graph_marcher
+    for lvl in $before_eight; do
         refuses "$lvl" class_graph_marcher
         refuses "$lvl" class_graph_newton
+    done
+
+    # ---- UNIVERSAL: refusals that never lift at ANY level.
+    #      class_graph_linearization is the load-bearing one: Level 8
+    #      reached its Class-2 defect through
+    #      marcher -> newton -> difference_linearization, and because
+    #      no level may name that module, the failure cannot have been
+    #      manufactured.
+    for lvl in $levels; do
         refuses "$lvl" class_graph_linearization
         refuses "$lvl" derivative_fixture
         refuses "$lvl" adjoint_fixture
@@ -231,11 +256,11 @@ if [ "$1" = "--selftest" ]; then
     refuses common/triangular_decay_fixture.f90 class_graph_step
     refuses common/triangular_decay_fixture.f90 class_graph_marcher
 
-    # An unclassified source fails closed rather than silently open -
-    # which is what the unbuilt Level 8 meets.
-    allows level-8-constitution graph_carrier
+    # An unclassified source still fails closed rather than silently
+    # open - the ten levels are named, and nothing else is.
+    allows level-10-nowhere graph_carrier
     if [ "$?" -ne 2 ]; then
-        echo " FAIL : an unbuilt level did not fail closed"
+        echo " FAIL : an undeclared level did not fail closed"
         fail=1
     fi
 
@@ -243,7 +268,7 @@ if [ "$1" = "--selftest" ]; then
         echo "IMPORT GATE: the layering decision is wrong"
         exit 1
     fi
-    echo "import gate: the ladder rises one rung at a time, and the marcher is refused at every level"
+    echo "import gate: the ladder rises one rung at a time, and the linearization is refused at every level"
     exit 0
 fi
 

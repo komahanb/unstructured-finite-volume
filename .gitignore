@@ -33,3 +33,6 @@ test/adjoint-tower/*/run.out
 test/partitioned-implicit-pde-tower/*/run
 test/partitioned-implicit-pde-tower/*/refusal
 test/partitioned-implicit-pde-tower/*/run.out
+test/time-integration-tower/*/run
+test/time-integration-tower/*/refusal
+test/time-integration-tower/*/run.out

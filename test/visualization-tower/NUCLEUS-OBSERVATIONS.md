@@ -484,27 +484,46 @@ symptom / fact:       VISUALIZATION ASKED FOR NO NEW MATHEMATICS. IT
                       Five representations of a three-operator chain -
                       forward, reverse, three individual sparsities,
                       the composed skeleton and its transpose - were
-                      produced from:
+                      produced, and NO RED OCCURRED AT ANY LEVEL.
 
-                        member_set          size, member, local_index
-                        relation            domain, has, num_tuples,
-                                            tuples, name
+                      git diff 44ae3da -- src/  is EMPTY.
+
+                      AND THE RESULT IS SHARPER THAN "SUFFICIENT".
+                      The two jobs used different amounts of nucleus.
+
+                      DERIVING the structure needed the binary
+                      specialization and the algebra:
+
                         binary_relation     source, target,
                                             transpose_of
                         relation algebra    compose_binary
                         relational_graph    ownership and closure
 
-                      and nothing else. NO RED OCCURRED AT ANY LEVEL.
+                      INTERPRETING it needed strictly less - the ROOT
+                      relation contract and the carriers, and nothing
+                      whatever below them:
 
-                      git diff 44ae3da -- src/  is EMPTY.
+                        relation            arity, domain(k), has,
+                                            name
+                        member_set          size, member, local_index,
+                                            name
+
+                      structural_renderer_fixture names no binary
+                      relation, calls no source(), no target(), no
+                      image_view and no transpose_of. It is handed
+                      transposed and composed relations and cannot
+                      tell them from any other. So RENDERING A
+                      RECTANGULAR TYPED DEPENDENCY REQUIRED LESS OF
+                      THE NUCLEUS THAN BUILDING ONE DID.
 
                       The absence of numbers is part of the claim, not
-                      an omission: visualization_assert holds no real
-                      constant of any kind, and the import gate
-                      refuses class_graph_field and
-                      graph_field_calculus at every level. The
-                      structural picture preceded the coefficients
-                      entirely.
+                      an omission - and it is ENFORCED, not asserted:
+                      check_imports.sh refuses any real or complex
+                      declaration and any literal carrying a decimal
+                      point or an exponent, in every Gate-A source,
+                      with its own selftest and a planted-violation
+                      check. The structural picture preceded the
+                      coefficients entirely.
 
 exact caller:         the whole of test/visualization-tower/
 

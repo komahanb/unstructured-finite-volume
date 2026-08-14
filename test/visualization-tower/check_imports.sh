@@ -112,6 +112,37 @@ allowlist_for() {
     echo "$allow"
 }
 
+#---------------------------------------------------------------------
+# THE NUMBERLESS LAW.
+#
+# Gate A's central claim is that the structural picture precedes the
+# numerical coefficients entirely. Refusing class_graph_field and
+# graph_field_calculus does not establish that: a level could simply
+# have written
+#
+#     real(dp) :: w = 2.0_dp
+#
+# and helped itself. So the claim is checked directly - no real or
+# complex declaration, and no literal carrying a decimal point or an
+# exponent, in any Gate-A source.
+#
+# Comments are stripped first, because the tower's prose says the word
+# "real" often and means the English one. The stripping cuts at the
+# first '!', which is exact for these sources - none of them puts a
+# bang inside a string.
+#
+# Integers are untouched. A carrier's size is 4, and that is not a
+# coefficient.
+#---------------------------------------------------------------------
+
+holds_no_number() {
+    local code
+    code=$(sed 's/!.*//' "$1")
+    echo "$code" | grep -qiE '\b(real|complex|double[[:space:]]+precision)\b' && return 1
+    echo "$code" | grep -qE '[0-9]\.[0-9]|\.[0-9]+[eEdD]?|[0-9][eEdDqQ][+-]?[0-9]|_dp\b' && return 1
+    return 0
+}
+
 # allows <level[/file]> <module>
 #     0  the module is on that source's ceiling
 #     1  it is not - a layering violation
@@ -249,6 +280,25 @@ if [ "$1" = "--selftest" ]; then
     refuses common/visualization_relations_fixture.f90 graph_relation_algebra
     refuses common/visualization_algebra_fixture.f90 graph_structure
 
+    # ---- THE NUMBERLESS LAW, tested on the checker itself.
+    numbered=$(mktemp);   printf 'module m\n real(dp) :: w = 2.0_dp\nend module\n' > "$numbered"
+    numberless=$(mktemp); printf '! a real picture, honestly\nmodule m\n integer, parameter :: N = 4\n x = reshape([1, 2], [2, 1])\n if (k .eq. 3) call go(a)\nend module\n' > "$numberless"
+    exponent=$(mktemp);   printf 'module m\n t = 1.0e-3\nend module\n' > "$exponent"
+
+    if holds_no_number "$numbered"; then
+        echo " FAIL : the numberless law accepted a real coefficient"
+        fail=1
+    fi
+    if holds_no_number "$exponent"; then
+        echo " FAIL : the numberless law accepted an exponent literal"
+        fail=1
+    fi
+    if holds_no_number "$numberless"; then :; else
+        echo " FAIL : the numberless law refused integers and the word 'real' in a comment"
+        fail=1
+    fi
+    rm -f "$numbered" "$numberless" "$exponent"
+
     # An unclassified source still fails closed rather than silently
     # open - the five built levels are named, and nothing else is.
     allows level-5-field-calculus graph_carrier
@@ -295,6 +345,13 @@ for dir in "$here"/common "$here"/level-*; do
                 violation=1
             fi
         done
+
+        # Gate A holds no number, and this is where that is enforced
+        # rather than asserted.
+        if ! holds_no_number "$src"; then
+            echo "IMPORT GATE: $(basename "$src") in $name carries a real declaration or a non-integer literal - Gate A holds no coefficients"
+            violation=1
+        fi
 
         # The two production TYPE names the brief forbids by name.
         # Refusing their modules already refuses them; this catches a

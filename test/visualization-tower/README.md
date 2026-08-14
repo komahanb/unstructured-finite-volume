@@ -126,9 +126,16 @@ downstream of everything above it and feeds back into none of it.
 > entirely.
 
 Levels 0–4 exercise items 2, 4 and 5 while items 1 and 3 do not exist.
-That is the claim, and it is executable: `visualization_assert` holds
-no real constant of any kind, and the import gate refuses
-`class_graph_field` and `graph_field_calculus` at every level.
+That is the claim, and it is **enforced rather than asserted**.
+Refusing `class_graph_field` and `graph_field_calculus` would not have
+been enough — a level could simply have written `real(dp) :: w = 2.0_dp`
+and helped itself. So `check_imports.sh` carries a *numberless law*:
+no `real` or `complex` declaration, and no literal carrying a decimal
+point or an exponent, in any Gate-A source. Comments are stripped
+first (the prose says "real" and means the English word); integers are
+untouched, because a carrier's size is 4 and that is not a
+coefficient. The law has its own selftest, and refuses a planted
+`real :: coefficient = 2.0`.
 
 ---
 
@@ -239,6 +246,12 @@ relations, and are required to agree cell for cell while differing in
 their name line. That is Level 2's transpose/composition law seen
 through a representation instead of through `same_extension`.
 
+The borderless grid style follows the brief's §30 exactly. The
+bordered style shown in §5 and §16 (`+------` / `|`) is the same
+content with rules drawn in; both sections state that the artistic
+formatting is not prescribed and that the semantic content is the
+oracle.
+
 ### The witness collapse, visible in the picture
 
 Seven walks run `X0 -> X1 -> X2`; `D2:1` holds six tuples. Both
@@ -297,6 +310,22 @@ that its first column is full. Every one of those facts is obtained,
 at the moment of drawing, by asking `domain(1)`, `domain(2)`,
 `size()`, `member(i)`, `has([col, row])`, `name()` and
 `label_for(carrier, member)` — and nothing else.
+
+### Interpreting needed strictly less of the nucleus than deriving did
+
+Worth stating separately, because it makes the Gate-A answer stronger
+than "the nucleus was sufficient":
+
+| Job | What it needed |
+|---|---|
+| **deriving** the structure | `binary_relation` (`source`, `target`, `transpose_of`), `compose_binary`, `relational_graph` |
+| **interpreting** it | the **root `relation`** contract (`arity`, `domain(k)`, `has`, `name`) and `member_set` (`size`, `member`, `local_index`, `name`) |
+
+`structural_renderer_fixture` names no binary relation at all. It never
+calls `source()`, `target()`, `image_view()` or `transpose_of()` — it
+is handed transposed and composed relations and cannot tell them from
+any other. Rendering a rectangular typed dependency turned out to need
+*less* of the nucleus than building one.
 
 ---
 
@@ -377,8 +406,9 @@ can quietly become a picture.
 
 Three families are refused **universally**, at every level:
 
-1. **Values** — `class_graph_field`, `graph_field_calculus`. Gate A
-   holds no number, and the gate is what makes that mechanical.
+1. **Values** — `class_graph_field`, `graph_field_calculus`, *and any
+   real number written by hand*. See the numberless law above; the
+   module refusal alone would have left the back door open.
 2. **Operators** — `graph_grammar`, `class_graph_stencil`,
    `class_graph_step`, `graph_calculus`, `graph_fitting`,
    `class_graph_linearization`, `graph_minimization`,

@@ -86,6 +86,8 @@ allowed_for() {
         common/structural_renderer_fixture.f90) echo "visualization_carriers_fixture graph_carrier graph_relation graph_binary_relation" ;;
         common/visualization_values_fixture.f90) echo "graph_carrier class_graph_field" ;;
         common/valued_renderer_fixture.f90) echo "visualization_carriers_fixture structural_renderer_fixture graph_carrier graph_relation graph_binary_relation graph_field_calculus class_graph_field" ;;
+        common/production_discretization_fixture.f90) echo "graph_grammar class_graph_stencil class_graph_step" ;;
+        common/production_pattern_renderer_fixture.f90) echo "visualization_carriers_fixture structural_renderer_fixture graph_carrier graph_relation graph_grammar" ;;
         common)            echo "__no_allowlist__" ;;
 
         # ---- L0: carriers only. NOTHING relational - not the relation
@@ -111,7 +113,16 @@ allowed_for() {
         #          not.
         level-5-field-calculus) echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture visualization_values_fixture valued_renderer_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra graph_structure graph_field_calculus class_graph_field" ;;
 
-        # ---- levels 6-9 are UNBUILT.
+        # ---- L6: + PRODUCTION DISCRETIZATION, and only the three
+        #          modules the level actually names. graph_calculus and
+        #          class_graph are NOT permitted: the test reaches the
+        #          concrete citizens, never the abstract type or the
+        #          stored graph directly, and a ceiling permits what is
+        #          used rather than what is nearby. graph_fitting is
+        #          refused outright, and so is everything that solves.
+        level-6-discretization) echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_discretization_fixture production_pattern_renderer_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra graph_structure graph_grammar class_graph_stencil class_graph_step" ;;
+
+        # ---- levels 7-9 are UNBUILT.
 
         *)                 echo "__no_allowlist__" ;;
     esac
@@ -171,7 +182,21 @@ numbers_allowed() {
         level-5-field-calculus|level-5-field-calculus/*) return 0 ;;
         common/visualization_values_fixture.f90)         return 0 ;;
         common/valued_renderer_fixture.f90)              return 0 ;;
+        level-6-discretization|level-6-discretization/*) return 0 ;;
+        common/production_discretization_fixture.f90)    return 0 ;;
         *)                                               return 1 ;;
+    esac
+}
+
+# discretization_allowed <level[/file]>
+#     0  this source may name production discretization vocabulary
+#     1  it may not
+discretization_allowed() {
+    case "$1" in
+        level-6-discretization|level-6-discretization/*)  return 0 ;;
+        common/production_discretization_fixture.f90)     return 0 ;;
+        common/production_pattern_renderer_fixture.f90)   return 0 ;;
+        *)                                                return 1 ;;
     esac
 }
 
@@ -350,6 +375,65 @@ if [ "$1" = "--selftest" ]; then
     refuses common/structural_renderer_fixture.f90 valued_renderer_fixture
     refuses common/visualization_values_fixture.f90 structural_renderer_fixture
 
+    # ---- L6 earns production discretization, and only what it uses.
+    permits level-6-discretization class_graph_stencil
+    permits level-6-discretization class_graph_step
+    permits level-6-discretization graph_grammar
+    permits level-6-discretization production_discretization_fixture
+    permits level-6-discretization production_pattern_renderer_fixture
+    permits level-6-discretization structural_renderer_fixture
+    for lvl in $with_five; do
+        refuses "$lvl" class_graph_stencil
+        refuses "$lvl" class_graph_step
+        refuses "$lvl" graph_grammar
+        refuses "$lvl" graph_calculus
+        refuses "$lvl" production_discretization_fixture
+        refuses "$lvl" production_pattern_renderer_fixture
+    done
+
+    # L6 does NOT lift the rest of the frontier. Nothing that solves,
+    # and nothing merely adjacent to discretization machinery.
+    refuses level-6-discretization graph_fitting
+    refuses level-6-discretization graph_minimization
+    refuses level-6-discretization class_graph_gmres
+    refuses level-6-discretization class_graph_newton
+    refuses level-6-discretization class_graph_marcher
+    refuses level-6-discretization class_graph_linearization
+    refuses level-6-discretization graph_profile
+    refuses level-6-discretization graph_algorithms
+    refuses level-6-discretization graph_calculus
+    refuses level-6-discretization class_graph
+    refuses level-6-discretization class_graph_field
+    refuses level-6-discretization valued_renderer_fixture
+
+    # The production fixtures stand where they are earned, and the
+    # Level-4 renderer still knows nothing of production.
+    permits common/production_pattern_renderer_fixture.f90 graph_grammar
+    permits common/production_pattern_renderer_fixture.f90 structural_renderer_fixture
+    permits common/production_discretization_fixture.f90 class_graph_stencil
+    refuses common/structural_renderer_fixture.f90 graph_grammar
+    refuses common/structural_renderer_fixture.f90 class_graph_stencil
+    refuses common/valued_renderer_fixture.f90 class_graph_step
+    refuses common/production_pattern_renderer_fixture.f90 class_graph_stencil
+
+    # ---- THE DISCRETIZATION VOCABULARY: WHERE IT LIFTS.
+    for below in level-0-carrier/test.f90 level-4-graph-calculus/test.f90 \
+                 level-5-field-calculus/test.f90 \
+                 common/structural_renderer_fixture.f90 \
+                 common/valued_renderer_fixture.f90; do
+        if discretization_allowed "$below"; then
+            echo " FAIL : production discretization vocabulary allowed at $below"
+            fail=1
+        fi
+    done
+    for at_six in level-6-discretization/test.f90 \
+                  common/production_discretization_fixture.f90; do
+        if discretization_allowed "$at_six"; then :; else
+            echo " FAIL : Level 6 was refused its own production vocabulary at $at_six"
+            fail=1
+        fi
+    done
+
     # ---- THE NUMBERLESS LAW: WHERE IT HOLDS AND WHERE IT LIFTS.
     if numbers_allowed level-4-graph-calculus/test.f90; then
         echo " FAIL : the numberless law lifted below Level 5"
@@ -366,7 +450,9 @@ if [ "$1" = "--selftest" ]; then
     done
     for at_five in level-5-field-calculus/test.f90 \
                    common/visualization_values_fixture.f90 \
-                   common/valued_renderer_fixture.f90; do
+                   common/valued_renderer_fixture.f90 \
+                   level-6-discretization/test.f90 \
+                   common/production_discretization_fixture.f90; do
         if numbers_allowed "$at_five"; then :; else
             echo " FAIL : Level 5 was refused its own coefficients at $at_five"
             fail=1
@@ -394,7 +480,7 @@ if [ "$1" = "--selftest" ]; then
 
     # An unclassified source still fails closed rather than silently
     # open - the five built levels are named, and nothing else is.
-    allows level-6-discretization graph_carrier
+    allows level-7-minimization graph_carrier
     if [ "$?" -ne 2 ]; then
         echo " FAIL : an unbuilt level did not fail closed"
         fail=1
@@ -449,15 +535,30 @@ for dir in "$here"/common "$here"/level-*; do
             fi
         fi
 
-        # The two production TYPE names the brief forbids by name.
-        # Refusing their modules already refuses them; this catches a
-        # road to them the module scan would not see.
-        for banned in discretization_operator stencil_operator; do
-            if grep -qiE "(^|[^a-zA-Z0-9_])$banned([^a-zA-Z0-9_]|$)" "$src"; then
-                echo "IMPORT GATE: $(basename "$src") in $name names '$banned' - that is Level 6's question"
-                violation=1
-            fi
-        done
+        # THE PRODUCTION DISCRETIZATION VOCABULARY, level-sensitive.
+        #
+        # Refusing the modules already refuses the types; this catches
+        # a road to them the module scan would not see. Like the
+        # numberless law, it is a CEILING THAT LIFTS rather than a rule
+        # deleted when Level 6 needed it: forbidden L0-L5, allowed L6.
+        if ! discretization_allowed "$key"; then
+            for banned in discretization_operator stencil_operator step_operator; do
+                if grep -qiE "(^|[^a-zA-Z0-9_])$banned([^a-zA-Z0-9_]|$)" "$src"; then
+                    echo "IMPORT GATE: $(basename "$src") in $name names '$banned' - production discretization first enters at Level 6"
+                    violation=1
+                fi
+            done
+        fi
+
+        # NOTHING IN THIS TOWER IS EVER APPLIED. Level 6 constructs
+        # production operators and interrogates them; the moment a
+        # level evaluates one it has stopped measuring structure and
+        # started doing arithmetic, and the claim "zero applies" would
+        # become a promise instead of a fact.
+        if grep -qE "% *apply *\(" "$src"; then
+            echo "IMPORT GATE: $(basename "$src") in $name applies an operation - this tower interrogates structure, it never evaluates"
+            violation=1
+        fi
     done
 done
 

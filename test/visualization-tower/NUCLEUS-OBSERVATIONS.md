@@ -15,9 +15,9 @@ necessity.
 Every entry names the **LEVEL** that owns its evidence and the review
 **gate** at which that level was reviewed. Levels are the architecture;
 gates are checkpoints. **The ten levels of this tower are ONE client,
-not ten.** Six of them are built; the tower is **not sealed**, and
+not ten.** Seven of them are built; the tower is **not sealed**, and
 Review Gate B is **not reached** - Gate B reviews Levels 5, 6 and 7
-together, and two of those do not exist.
+together, and Level 7 does not exist.
 
 ---
 
@@ -50,6 +50,14 @@ is also NONE**, recorded in VIZ-11.
 VIZ-11 through VIZ-15 belong to Level 5 and are likewise seam-free:
 attaching a field to an occurrence carrier is not an operation taking
 a domain from a graph, and a coefficient is not a linearization.
+
+**VIZ-16 through VIZ-24 belong to Level 6, and they are the first
+entries in this ledger about PRODUCTION.** They are still seam-free,
+and for a reason worth stating: seam A2 is about an operation taking
+its DOMAIN from a graph, and Level 6 never applied an operation to
+anything. It constructed two and asked them what their dependency
+pattern is. **Level 6's production change is NONE**, and no RED
+occurred - see VIZ-23.
 
 ---
 
@@ -841,34 +849,524 @@ action:               OBSERVE.
 
 ---
 
-## Seam accounting through Level 5
+## OBSERVATION VIZ-16
+
+```text
+tower:                Visualization
+level:                6  (discretization)
+review gate:          not yet reviewed - Gate B needs L5, L6, L7
+contextual radius:    4 (a typed relation against a production graph)
+
+symptom / fact:       IDENTICAL BOOLEAN MATRICES CAN REPRESENT
+                      DIFFERENT TYPED RELATIONS.
+
+                      A production stencil carrying D2's occupancy
+                      renders, through dependencies():
+
+                        signature: vertices -> vertices
+                                1 2 3
+                        1       # # .
+                        2       . # .
+                        3       . . #
+
+                      and the tower's D2 renders:
+
+                        signature: X1 -> X2
+                                p q r
+                        u       # # .
+                        v       . # .
+                        w       . . #
+
+                      Same grid, glyph for glyph. THREE DECLARED
+                      CARRIERS stand behind those two pictures: X1,
+                      X2, and the pattern's own 'vertices'. No two of
+                      them are the same domain, and all three hold
+                      three members.
+
+                      So, with V the representation that forgets
+                      carrier identity:
+
+                        V(R1) = V(R2)   does NOT imply   R1 = R2
+
+                      The tower's response is not to fix the
+                      renderer but to SHOW THE SIGNATURE: every
+                      Level-6 picture prints its signature above its
+                      grid, because the grid alone is exactly the part
+                      that cannot tell the two apart.
+
+exact caller:         test/visualization-tower/level-6-discretization/
+                      test.f90  check_the_typed_identity_differs,
+                      check_the_visual_equality_theorem
+
+evidence:             same_coordinate_pattern(D2, pattern) TRUE;
+                      pattern's vertex_set() not same_as X1 and not
+                      same_as X2; the two grids equal glyph for
+                      glyph after labels and spacing are stripped.
+                      PASS.
+
+confidence:           high.
+
+action:               OBSERVE. Classification: STENCIL-B.
+```
+
+---
+
+## OBSERVATION VIZ-17
+
+```text
+tower:                Visualization
+level:                6  (discretization)
+review gate:          not yet reviewed
+contextual radius:    4 (rectangular signature against one carrier)
+
+symptom / fact:       THE PRODUCTION DEPENDENCY ANSWER CANNOT
+                      INTRINSICALLY REPRESENT X -> Y WITH X /= Y.
+
+                      D1 : X0 -> X1 runs 4 -> 3. The production
+                      constructor takes ONE vertex count:
+
+                        stored_graph(nv, tails=columns, heads=rows)
+                        nv = size(constant)
+
+                      so |V| would have to be 4 and 3 at once. Given
+                      4, it holds every one of D1's five arrows - and
+                      then reports a FOURTH ROW that D1's codomain
+                      does not have:
+
+                                1 2 3 4
+                        1       # # . .
+                        2       . # # .
+                        3       . . . #
+                        4       . . . .     <-- phantom
+
+                      THE ARROWS SURVIVED. THE SIGNATURE DID NOT.
+
+                      No union carrier was manufactured, no domain was
+                      padded, and nothing was indexed out of range.
+                      The phantom row is simply what one carrier
+                      serving both axes looks like, read off safely.
+
+                      THIS IS A SPECIALIZATION, NOT A DEFECT.
+                      stencil_operator is a same-domain square-matrix
+                      citizen, and its pattern contract is correct at
+                      that radius. A defect would need an executable
+                      promise that behaviour violates; see VIZ-22.
+
+exact caller:         test/visualization-tower/level-6-discretization/
+                      test.f90  check_the_rectangular_witness
+
+evidence:             coordinate_shapes_fit(D1, pattern) FALSE;
+                      pattern % num_vertices() = 4 while D1's codomain
+                      holds 3; row 4 empty at every column;
+                      same_coordinate_pattern refuses the comparison
+                      rather than padding. PASS.
+
+confidence:           high - the cardinality argument is exact, and
+                      rests on the constructor's own single count.
+
+action:               OBSERVE. Classification: RECT-B. No production
+                      change. Rectangular support was NOT added
+                      merely because this tower asked for it.
+```
+
+---
+
+## OBSERVATION VIZ-18
+
+```text
+tower:                Visualization
+level:                6  (discretization)
+review gate:          not yet reviewed
+contextual radius:    4 (what one concrete's verb means)
+
+symptom / fact:       stencil_operator % dependencies() EXPOSES
+                      ALGEBRAIC STATE SPARSITY.
+
+                      Its graph is built at construction, one edge per
+                      sparse coefficient, running
+
+                        column -> row
+
+                      over a single vertex carrier sized by the
+                      constant vector. Read back through the graph's
+                      own edge ends, the D2 stencil answers exactly
+                      four arrows: 1->1, 2->1, 2->2, 3->3.
+
+                      That is the sparsity of a matrix acting on a
+                      state, and nothing else. It says which state
+                      member feeds which.
+
+exact caller:         test/visualization-tower/level-6-discretization/
+                      test.f90  check_the_stencil_coordinate_pattern
+
+evidence:             3 vertices, 4 edges, one per coefficient;
+                      production_has agrees with the relation at every
+                      cell; the rendered grid matches Level 4's. PASS.
+
+confidence:           high.
+
+action:               OBSERVE.
+```
+
+---
+
+## OBSERVATION VIZ-19
+
+```text
+tower:                Visualization
+level:                6  (discretization)
+review gate:          not yet reviewed
+contextual radius:    4 (what the other concrete's verb means)
+
+symptom / fact:       step_operator % dependencies() EXPOSES THE
+                      SCHEME'S TEMPORAL MOTIF.
+
+                      BDF2 answers three vertices and two edges,
+                      1 -> 2 -> 3: reach + 1 instants, each edge one
+                      look further back. Rendered, it is a lower
+                      subdiagonal - the shape of a HISTORY, not of a
+                      sparsity.
+
+                      It is manufactured fresh from `reach` at the
+                      moment of asking, and it does not consult the
+                      wrapped action at all.
+
+                      THE PROBE THAT SETTLES IT. Two BDF2 steps were
+                      built around two actions with genuinely
+                      different state sparsity - D2's occupancy and a
+                      diagonal - and dependencies() returned the
+                      IDENTICAL motif for both. So the answer is
+                      independent of what the step wraps.
+
+                      Note the trap this specimen was built to spring:
+                      the step's answer and its wrapped action's
+                      answer BOTH have three vertices here. Equal
+                      cardinality, entirely different semantics.
+
+exact caller:         test/visualization-tower/level-6-discretization/
+                      test.f90  check_the_step_pattern,
+                      check_state_is_not_time,
+                      check_the_motif_is_independent_of_what_it_wraps
+
+evidence:             motif and wrapped pattern have equal vertex
+                      counts and unequal adjacency; the stencil holds
+                      1->1 and the motif does not; the motif holds
+                      2->3 and the stencil does not; the two motifs
+                      from two different wrapped sparsities are
+                      extensionally identical. PASS.
+
+confidence:           high.
+
+action:               OBSERVE.
+```
+
+---
+
+## OBSERVATION VIZ-20
+
+```text
+tower:                Visualization
+level:                6  (discretization)
+review gate:          not yet reviewed
+contextual radius:    4 (one family verb, two concretes)
+
+symptom / fact:       ONE FAMILY VERB DENOTES TWO DIFFERENT
+                      STRUCTURAL AXES.
+
+                        stencil % dependencies()  ->  state sparsity
+                        step    % dependencies()  ->  temporal reach
+
+                      Both are faithful to what their own concrete
+                      represents. Neither is wrong. But the family
+                      procedure does not have ONE invariant meaning
+                      across its two citizens, and that was answered
+                      from executable structure rather than from the
+                      shared method name.
+
+                      THE DEEPER READING, RECORDED AND NOT ACTED ON.
+                      The pressure this exposes may not be
+
+                        "we need one universal dependencies()"
+
+                      but rather
+
+                        "an operation may admit SEVERAL legitimate
+                         structural interpretations"
+
+                      D_state, D_time, D_space, D_block. The stencil
+                      witness exposes one; the step witness exposes
+                      another. That is evidence about the shape of the
+                      problem, not a design.
+
+                      DO NOT DESIGN THE ABSTRACTION. Two witnesses at
+                      one radius is not enough to rule what the family
+                      verb should mean, and this tower has inspected
+                      no other operation family at all.
+
+exact caller:         the whole of level-6-discretization/test.f90
+
+evidence:             VIZ-18 and VIZ-19 together, plus the
+                      independence probe. PASS.
+
+confidence:           medium-high for the observation; LOW for any
+                      design that might follow from it.
+
+action:               OBSERVE. Classification: FAMILY-B.
+```
+
+---
+
+## OBSERVATION VIZ-21
+
+```text
+tower:                Visualization
+level:                6  (discretization)
+review gate:          not yet reviewed
+contextual radius:    4 (pressure toward the root)
+
+symptom / fact:       THIS TOWER DOES NOT JUSTIFY STRUCTURAL
+                      INTROSPECTION ON graph_operation.
+
+                      Level 6 inspected discretization_operator and
+                      its two concretes. It inspected NO other
+                      operation family - not a linearization, not a
+                      marcher, not a minimizer, not a partitioner.
+
+                      The root question is:
+
+                        Does EVERY graph_operation possess one
+                        meaningful dependency structure?
+
+                      Level 6 does not answer it, and VIZ-20 is if
+                      anything evidence for caution: if two concretes
+                      of ONE family already mean two different axes,
+                      a single root-level verb across ALL families is
+                      further from justified, not closer.
+
+                      Nothing was added to graph_operation. No
+                      dependencies(), no structure(), no visualize().
+                      dependencies() was not moved upward and its
+                      return type was not changed.
+
+exact caller:         n/a - this observation is about what was NOT
+                      done
+
+evidence:             git diff b134a1f -- src/ is EMPTY.
+
+confidence:           high.
+
+action:               OBSERVE. Explicitly NOT REFACTOR.
+```
+
+---
+
+## OBSERVATION VIZ-22
+
+```text
+tower:                Visualization
+level:                6  (discretization)
+review gate:          not yet reviewed
+contextual radius:    4 (the contract's consumers)
+
+symptom / fact:       dependencies() HAS TWO IMPLEMENTATIONS AND, AT
+                      THE STARTING HEAD, NO CALLERS AT ALL.
+
+                      The Level-6 census, run over every .f90 in the
+                      repository at b134a1f:
+
+                        discretization_operator      graph_calculus:219
+                          deferred :: dependencies    interface :406-410
+                          returns class(graph), allocatable
+
+                        stencil_operator   class_graph_stencil.f90:47
+                          stencil_dependencies                    :168
+                          returns a copy of its own stored pattern
+                          repo callers: 0
+
+                        step_operator      class_graph_step.f90:46
+                          step_dependencies                       :127
+                          builds a fresh reach+1 chain
+                          repo callers: 0
+
+                        repo-wide callers of % dependencies():  ZERO
+
+                      THREE FACTS THAT MUST NOT BE RUN TOGETHER:
+
+                        the family contract exists
+                        two implementations exist
+                        no consumer exercises the contract
+
+                      THE PROSE. graph_calculus says "the minimizers
+                      one level up interrogate the pattern - the
+                      diagonal, the colouring, the triangularity, the
+                      Galerkin road - so it is exposed by law, never
+                      by inspection." No minimizer does. That sentence
+                      is recorded as
+
+                        PROSE INTENTION - NO EXECUTABLE CALLER FOUND
+
+                      and must not be repeated as an established
+                      repository fact.
+
+                      THIS IS NOT DEAD CODE. It is a LATENT contract:
+                      two faithful implementations waiting for a
+                      consumer. Level 6 is the first executable
+                      consumer pressure it has ever had.
+
+                      IT IS ALSO WHY NO RED WAS POSSIBLE. A RED needs
+                      an executable promise that behaviour violates.
+                      Design intent in a comment, with no caller
+                      behind it, cannot justify modifying production.
+
+exact caller:         the census itself, and
+                      level-6-discretization/test.f90 as the first
+                      caller
+
+evidence:             grep over every .f90 in the repository returns
+                      no `% dependencies(` outside the two procedure
+                      bindings and the one deferred declaration.
+
+confidence:           high - exhaustive over the tracked tree.
+
+action:               OBSERVE. Records the exact count: ZERO.
+```
+
+---
+
+## OBSERVATION VIZ-23
+
+```text
+tower:                Visualization
+level:                6  (discretization)
+review gate:          not yet reviewed
+contextual radius:    4 (the whole Level-6 measurement)
+
+symptom / fact:       A LIMITATION IS NOT A RED, AND LEVEL 6 PRODUCED
+                      NONE.
+
+                      Two findings could have been misread as defects
+                      and are not:
+
+                        "the ordinary dependency graph cannot
+                         represent X0 -> X1 intrinsically"
+
+                      is an architectural observation, because that
+                      capability was never promised by executable
+                      behaviour; and
+
+                        "step dependencies means temporal reach while
+                         stencil dependencies means state sparsity"
+
+                      is not a failure merely because the two differ.
+                      Each concrete faithfully implements the narrower
+                      mathematics it actually represents.
+
+                      A RED would require BOTH of:
+
+                        1. an existing executable contract, test or
+                           caller promising a behaviour
+                        2. the implementation violating it
+
+                      The census found no consumer at all (VIZ-22), so
+                      condition 1 was never met.
+
+                      NOTHING WAS APPLIED. stencil % apply and
+                      step % apply were called zero times, and the
+                      import gate refuses a `% apply(` in any tower
+                      source so that is mechanical rather than
+                      promised. No numerical composition of A3 A2 A1,
+                      no transpose stencil, no A^T v.
+
+exact caller:         the whole of level-6-discretization/
+
+evidence:             git diff b134a1f -- src/ is EMPTY. L6 PASS.
+
+confidence:           high.
+
+action:               OBSERVE.
+```
+
+---
+
+## OBSERVATION VIZ-24
+
+```text
+tower:                Visualization
+level:                6  (discretization)
+review gate:          not yet reviewed
+contextual radius:    4 (multiple structural projections)
+
+symptom / fact:       A SINGLE COMPUTATION MAY POSSESS SEVERAL
+                      LEGITIMATE STRUCTURAL VIEWS.
+
+                      The evidence, so far, is exactly two:
+
+                        D_state   the stencil's sparsity
+                        D_time    the step's motif
+
+                      and the specimen showed them CO-EXISTING in one
+                      composed object: a BDF2 step wrapping a stencil
+                      has both, and dependencies() returns only the
+                      temporal one.
+
+                      Other axes are conceivable - D_space, D_block -
+                      and this tower has seen none of them.
+
+                      IF THIS HOLDS UP, the architectural question is
+                      not "which one should dependencies() return"
+                      but "how does an operation offer more than one".
+
+                      DO NOT DESIGN THAT NOW. One tower, one radius,
+                      two witnesses. Recording the shape of the
+                      question is the whole of what is earned.
+
+exact caller:         level-6-discretization/test.f90
+                      check_state_is_not_time
+
+evidence:             one composed object, two structures, and
+                      dependencies() answering with one of them. PASS.
+
+confidence:           medium - the observation is solid; its
+                      generality is not established.
+
+action:               OBSERVE. Do NOT promote a visualization or
+                      introspection abstraction from this.
+```
+
+---
+
+## Seam accounting through Level 6
 
 | Seam | Before this tower | After Gate A | Why |
 |---|---|---|---|
 | **A1** graph host as conduit | CLOSED | CLOSED | nothing here reopens it; no operation was hosted anywhere |
-| **A2** operations take domain from graph | 3 towers | **3 towers — unchanged** | Gate A attached no operation to anything, and Level 5 attached a FIELD to a CARRIER — no `graph_operation` exists anywhere in this tower, so the seam could not have been exercised |
+| **A2** operations take domain from graph | 3 towers | **3 towers — unchanged** | Gate A attached no operation to anything; Level 5 attached a FIELD to a CARRIER; Level 6 CONSTRUCTED two production operations and asked them a structural question without ever applying one. The seam is about an operation taking its DOMAIN from a graph, and no operation was applied to anything |
 | **A3** relational_graph ownership | KEEP | KEEP | one more successful typed-ownership pattern (7 carriers, 6 relations, full signature closure); no production change follows |
 | **B** bidirectional/rectangular linearization | 2 towers | **2 towers — ZERO new votes** | this tower is full of rectangular structure and none of it is a linearization; structural transpose is not numerical adjoint, and Level 5 built no `w^T`, applied no `A^T v`, and composed no coefficients |
 
-**This tower is ONE client, not six.** Level 5 produced no RED. If
-Levels 6–9 are later built and do produce REDs, they will still be
-**one** tower's vote.
+**This tower is ONE client, not seven.** Neither Level 5 nor Level 6
+produced a RED. If Levels 7–9 are later built and do produce REDs,
+they will still be **one** tower's vote.
 
 ---
 
 ## Frontier
 
 Level 5 asked *"does a numerical zero erase structural dependency?"*
-and answered **no**. `structure != value` is now a test rather than a
-slogan.
+and answered **no**. Level 6 asked whether a production discretization
+operator exposes the same structural skeleton, and answered
+**STENCIL-B / RECT-B / FAMILY-B**: coordinate-equivalent but not
+typed-equivalent; unable to hold a rectangular signature; and one verb
+denoting two different axes.
 
 ```
-NEXT FRONTIER = Level 6 — does a production operator expose
-                          this same structural skeleton?
+NEXT FRONTIER = Level 7 — does minimization actually consume
+                          discretization structure at all?
 ```
 
-The question waiting there: how does the structural relation `D`
-correspond to `discretization_operator % dependencies()`? Nothing is
-pre-decided, `dependencies()` has not been generalized, and Level 6
-must RED against the persistent typed chain before production is
-touched.
+The Level-6 census found ZERO existing callers of `dependencies()`,
+and the contract's prose names *minimizers* as the intended consumer.
+Level 7 should test whether that consumption exists — and if it does
+not, determine whether Level 7 is genuinely N/A for this tower.
+It must be inhabited or explicitly refused after evidence, never to
+fill a row.

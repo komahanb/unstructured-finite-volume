@@ -35,14 +35,14 @@ nothing structural moves when they do:
 
 ## Status
 
-**Levels 0–5 are built and green.** Review Gate A is behind them.
+**Levels 0–6 are built and green.** Review Gate A is behind them.
 
 **Review Gate B is NOT reached.** Gate B comes after Levels 5, 6 and
-7; Levels 6 and 7 are UNBUILT. Levels 8 and 9 are UNBUILT. The tower
-is not sealed and does not claim to be.
+7; Level 7 is UNBUILT, and so are 8 and 9. The tower is not sealed and
+does not claim to be.
 
-Gate A completed at `44ae3da`/`29c0ccd`; Level 5 was built on top of
-`29c0ccd`.
+Gate A completed at `44ae3da`/`29c0ccd`; Level 5 at `b134a1f`; Level 6
+on top of that.
 
 ---
 
@@ -57,7 +57,7 @@ Gate A completed at `44ae3da`/`29c0ccd`; Level 5 was built on top of
 | **L4** | structural interpretation | test-local `structural_renderer_fixture` | any binary relation | text | chain line + sparsity | chain line + sparsity | A, B, C, D, E | five generated representations, cell by cell against `relation % has` | PASS |
 | — | ===== **REVIEW GATE A** ===== | | | | | | | | |
 | **L5** | fields `w_k : E_k -> R` | `class_graph_field` / `field` | occurrence carriers `E1, E2, E3` | scalar values | structure **unchanged** | structure unchanged; **no numerical reverse** | structural sparsity **+ coefficient view** | `level-5-field-calculus/test.f90` | PASS |
-| **L6** | production operator structure | — | — | — | — | — | — | — | UNBUILT |
+| **L6** | production dependency projection | `discretization_operator % dependencies()` → `class(graph)` | one ordinary vertex carrier | the same carrier | Boolean coordinate pattern equals `D2 : X1 -> X2` | structure unchanged; no numerical reverse | signature **+** sparsity, shown side by side | `level-6-discretization/test.f90` | PASS |
 | **L7** | minimization | — | — | — | — | — | — | — | UNBUILT |
 | **L8** | constitution | — | — | — | — | — | — | — | UNBUILT |
 | **L9** | statement | — | — | — | — | — | — | — | UNBUILT |
@@ -330,6 +330,180 @@ in exactly the same places. So
 
 ---
 
+## Level 6 — what production actually exposes
+
+The first level to name production machinery, and the **first
+executable consumer `dependencies()` has ever had.**
+
+### The production census, at `b134a1f`
+
+```
+discretization_operator                    src/graph_calculus.f90:219
+│   deferred :: dependencies
+│   subroutine (this, pattern)
+│       class(graph), allocatable, intent(out) :: pattern
+│
+├── stencil_operator                       src/class_graph_stencil.f90:47
+│   ├── implementation   stencil_dependencies              :168
+│   ├── meaning          a copy of its own stored pattern, built at
+│   │                    construction as
+│   │                    stored_graph(nv, tails=columns, heads=rows),
+│   │                    nv = size(constant)
+│   ├── returns          class(graph) → concretely stored_graph
+│   └── repo callers     0
+│
+└── step_operator                          src/class_graph_step.f90:46
+    ├── implementation   step_dependencies                 :127
+    ├── meaning          a freshly built linear chain of reach+1
+    │                    instants, tails=[1..reach], heads=[2..reach+1]
+    ├── returns          class(graph) → concretely stored_graph
+    └── repo callers     0
+
+repo-wide executable callers of % dependencies():  ZERO
+```
+
+Three separate facts, and they must not be run together:
+
+| | |
+|---|---|
+| the family contract exists | `graph_calculus.f90:219`, with a signature at `:406–410` |
+| two implementations exist | `stencil_dependencies`, `step_dependencies` |
+| **no consumer exercises it** | zero call sites, anywhere in the repository |
+
+The contract's own prose says *"the minimizers one level up
+interrogate the pattern — the diagonal, the colouring, the
+triangularity, the Galerkin road — so it is exposed by law, never by
+inspection."* No minimizer does. That sentence is recorded here as
+
+```
+    PROSE INTENTION — NO EXECUTABLE CALLER FOUND
+```
+
+and is **not** repeated as an established repository fact. It is a
+**latent contract**, not dead code: two faithful implementations
+waiting for a consumer. Level 6 is the first.
+
+### Measurement one — the stencil witness
+
+A production `stencil_operator` is built carrying D2's Boolean
+occupancy in production's own coordinates, with Level 5's `w2` as its
+weights. Then `dependencies()` is called.
+
+```
+    RELATIONAL D2                    STENCIL dependencies()
+    signature: X1 -> X2              signature: vertices -> vertices
+
+            p q r                            1 2 3
+    u       # # .                    1       # # .
+    v       . # .                    2       . # .
+    w       . . #                    3       . . #
+
+    coordinate pattern equal ........................ YES
+    typed source identity equal ..................... NO
+    typed target identity equal ..................... NO
+```
+
+`D2` stands on **two** declared carriers and production's answer on
+**one**, which is neither of them. All three sets hold three members.
+
+> **STENCIL-B** — coordinate-equivalent to `D2`, and it loses the
+> distinct typed source and target carriers.
+
+### Measurement two — the rectangular witness
+
+`D1 : X0 -> X1` runs `4 -> 3`. The production constructor takes a
+single vertex count, so `|V|` would have to be 4 and 3 at once. Given
+4 it holds every one of D1's five arrows — and then reports a row that
+D1's codomain does not have:
+
+```
+    RECTANGULAR D1                   STENCIL dependencies()
+    signature: X0 -> X1              signature: vertices -> vertices
+    shape: 3 rows x 4 columns
+
+            a b c d                          1 2 3 4
+    p       # # . .                  1       # # . .
+    q       . # # .                  2       . # # .
+    r       . . . #                  3       . . . #
+                                     4       . . . .    <-- phantom
+
+    production contract preserves this typed signature . NO
+```
+
+The arrows survived. The **signature** did not. No union carrier was
+manufactured, no domain was padded, and nothing was indexed out of
+range — the fourth row is simply what one carrier serving both axes
+looks like.
+
+> **RECT-B** — the ordinary-graph answer cannot intrinsically
+> represent distinct 4-member source and 3-member target carriers.
+
+### Measurement three — the step witness
+
+The same family verb, asked of the other concrete citizen:
+
+```
+    BDF2 dependencies()
+    signature: vertices -> vertices
+
+            1 2 3
+    1       . . .
+    2       # . .
+    3       . # .
+
+    wrapped state pattern equal ..................... NO
+    same BDF2 motif under second wrapped sparsity ... YES
+```
+
+Three vertices, like the stencil's answer — and a different edge
+structure entirely. The stencil says *state 1 depends on state 1*; the
+step says *no instant is its own predecessor*. Wrapping a second
+action whose state sparsity is genuinely different (a diagonal) yields
+the **identical** motif, which is executable evidence that the step's
+`dependencies()` describes the scheme's **time axis** and not the
+wrapped action's algebra.
+
+> **FAMILY-B** — the two concretes use one procedure for two different
+> structural axes: `stencil` for state sparsity, `step` for temporal
+> reach.
+
+**This is not a defect in either.** Each faithfully implements the
+narrower mathematics it actually represents, and no executable
+contract, test or caller promises otherwise. A defect would require a
+promise that behaviour violates; the census found no promise with a
+consumer behind it.
+
+### The visual equality theorem
+
+```
+    V(R1) = V(R2)   does NOT imply   R1 = R2
+```
+
+when the representation `V` forgets carrier identity. `D2 : X1 -> X2`
+and `pattern : vertices -> vertices` render an identical grid and are
+different objects.
+
+**Therefore a richer visualization preserves the signature.** Every
+Level-6 picture prints `signature:` above its grid, because the grid
+alone is exactly the part that cannot tell the two apart. This is the
+tower demonstrating, on itself, which information a representation
+retains and which it discards.
+
+`(signature, sparsity)` is **not** turned into a production type here.
+
+### Nothing was applied
+
+`stencil % apply` and `step % apply` are called **zero** times, and
+that is mechanical rather than promised: `check_imports.sh` refuses a
+`% apply(` in any tower source. The weights, constants and step size
+exist only because the production constructors require complete
+objects.
+
+No numerical composition of `A3 A2 A1`, no transpose stencil, no
+`A^T v`. `D2:1` and `D3:1` remain relation-algebra results.
+
+---
+
 ## Mathematics and Fortran spelling
 
 The repository's composition reads its arguments in the order the data
@@ -486,11 +660,15 @@ any other. Rendering a rectangular typed dependency turned out to need
 - **No union carrier.** There is no
   `V = X0 u X1 u X2 u X3`. Level 3 asserts the graph does not hold
   one, and Level 4 shows what adopting one would cost.
-- **No production change at all.** `git diff 44ae3da -- src/` and
-  `git diff 29c0ccd -- src/` are both empty. Level 5 needed no
-  production correction either: the existing field machinery already
+- **No production change at all.** `git diff 44ae3da -- src/`,
+  `git diff 29c0ccd -- src/` and `git diff b134a1f -- src/` are all
+  empty. Level 5 needed no correction — the field machinery already
   seats a coefficient on an occurrence carrier and already answers
-  domain questions by identity.
+  domain questions by identity. Level 6 needed none either: it is a
+  measurement, and what it measured was a specialization, not a
+  defect.
+- **`dependencies()` was not generalized**, its return type was not
+  changed, and nothing was moved onto `graph_operation`.
 
 The tower succeeded, and success here means: **the nucleus was already
 sufficient.** That is a reason to build nothing, not a reason to build
@@ -570,6 +748,7 @@ fixture, with `--selftest`.
 | L4 | `+ structural_renderer_fixture` |
 | — | ===== **REVIEW GATE A** ===== |
 | L5 | `+ class_graph_field`, `graph_field_calculus`, `visualization_values_fixture`, `valued_renderer_fixture` |
+| L6 | `+ graph_grammar`, `class_graph_stencil`, `class_graph_step`, `production_discretization_fixture`, `production_pattern_renderer_fixture` |
 
 The shared fixtures are keyed by file and classified by the first
 level that earns them: `visualization_assert` below everything,
@@ -577,8 +756,10 @@ level that earns them: `visualization_assert` below everything,
 `visualization_relations_fixture` at L1,
 `visualization_algebra_fixture` at L2,
 `structural_renderer_fixture` **at L4** — so no level below Level 4
-can quietly become a picture — and `visualization_values_fixture`
-plus `valued_renderer_fixture` **at L5**.
+can quietly become a picture — `visualization_values_fixture` plus
+`valued_renderer_fixture` **at L5**, and
+`production_discretization_fixture` plus
+`production_pattern_renderer_fixture` **at L6**.
 
 Two families are refused **universally**, at every level built so far.
 Values used to be a third, and Level 5 is where it stopped being one:
@@ -588,14 +769,27 @@ Values used to be a third, and Level 5 is where it stopped being one:
    L5**. See the numberless law above; the module refusal alone would
    have left the back door open, and the ceiling lifting at exactly
    one rung is what keeps Level 4's claim mechanical after Gate A.
-2. **Operators** — `graph_grammar`, `class_graph_stencil`,
-   `class_graph_step`, `graph_calculus`, `graph_fitting`,
+2. **Operators, refused at L0–L5 and PARTLY earned at L6.**
+   `graph_grammar`, `class_graph_stencil` and `class_graph_step` lift
+   at Level 6 — and only those three, because only those three are
+   used. `graph_calculus`, `graph_fitting`,
    `class_graph_linearization`, `graph_minimization`,
-   `class_graph_gmres`, `class_graph_newton`, `class_graph_marcher`,
-   and the derivative/adjoint fixtures. The type names the brief
-   forbids by name — `discretization_operator` and `stencil_operator`
-   — are additionally refused by a direct scan, in case a later level
-   finds another road to them.
+   `class_graph_gmres`, `class_graph_newton`, `class_graph_marcher`
+   and the derivative/adjoint fixtures stay refused **everywhere**,
+   Level 6 included.
+
+   The type names `discretization_operator`, `stencil_operator` and
+   `step_operator` are additionally refused by a direct source scan,
+   in case a later level finds another road to them — and that scan is
+   level-sensitive in the same way: **forbidden L0–L5, allowed L6.**
+   A planted `use class_graph_stencil` in a Level-5 source is refused
+   twice over, by the module scan and by the name scan.
+
+2b. **Application, refused everywhere.** A `% apply(` in any tower
+   source is refused at every level. This tower interrogates
+   structure; the moment a level evaluates a production operator it
+   has started doing arithmetic, and Level 6's "zero applies" would
+   become a promise instead of a fact.
 3. **The ordinary graph** — `graph_profile`, `graph_algorithms`,
    `class_graph`, `class_stored_graph`. Level 5 included: values
    arrived, machinery did not.
@@ -611,34 +805,53 @@ makes "no ordinary graph was required" checkable instead of promised.
 ## The frontier — documented, not implemented
 
 Level 5 asked *"does a numerical zero erase structural dependency?"*
-and answered **no**; see the Level-5 section above. What follows is
-still unbuilt.
+and answered **no**. Level 6 asked whether a production
+discretization operator exposes the same skeleton, and answered
+**STENCIL-B / RECT-B / FAMILY-B**; see the Level-6 section above.
+What follows is still unbuilt.
 
-### Level 6 — production operator structure
+### Level 6 — done, and what it left open
 
 Where production first enters. The expected question:
 
 > How does the structural relation `D` correspond to
 > `discretization_operator % dependencies()`?
 
-`discretization_operator`, `stencil_operator` and `step_operator` are
-to be audited **only at Level 6**, and Level 6 must RED against the
-persistent typed chain before changing anything. Possible findings
-include *"`dependencies()` already expresses the correct skeleton"*,
-*"`dependencies()` is ordinary-graph/square-domain specialized and
-cannot faithfully express `X -> Y`"*, or something else. Nothing is
-pre-decided, and the existing `dependencies()` is **not** generalized
-— not at Gate A, and not by Level 5's success either. Level 5 says
-what a *field* does to structure; it says nothing about what a
-production operator exposes, and that question is left open on
-purpose.
+The answer was the second of the anticipated findings:
+`dependencies()` is ordinary-graph/square-domain specialized and
+cannot intrinsically express `X -> Y`. No RED occurred, because no
+executable contract promised otherwise.
 
-### Level 7 — likely N/A, not yet refused
+**What Level 6 did NOT answer**, and deliberately: whether
+`dependencies()` belongs on `graph_operation` at all. This tower
+inspected `discretization_operator` and its two concretes and nothing
+else. The root question —
 
-Visualization does not obviously require minimization. But a later
-layout algorithm might genuinely introduce optimization, so the level
-is left UNBUILT rather than marked N/A. It must be inhabited or
-explicitly refused **after** evidence, never to fill a row.
+> Does every `graph_operation` possess one meaningful dependency
+> structure?
+
+— is untouched, and the ledger records root pressure as **OBSERVE**,
+never REFACTOR.
+
+**A deeper possibility the two witnesses raise.** The stencil exposes
+a state axis and the step a temporal one. The pressure this tower
+found may therefore not be *"we need one universal
+`dependencies()`"* but *"an operation may admit several legitimate
+structural interpretations"* — `D_state`, `D_time`, `D_space`,
+`D_block`. The evidence is recorded in VIZ-20 and VIZ-24. **The
+abstraction is not designed here.**
+
+### Level 7 — the question Level 6 sharpened
+
+Visualization does not obviously require minimization, and Level 7
+was always a candidate for N/A. Level 6 gave the question a sharper
+form: the census found **zero** existing callers of `dependencies()`,
+and the contract's prose names *minimizers* as the intended consumer.
+So Level 7 should first test whether minimization actually consumes
+discretization structure at all.
+
+The level stays UNBUILT rather than marked N/A. It must be inhabited
+or explicitly refused **after** evidence, never to fill a row.
 
 ### Level 8 — constitution
 
@@ -683,13 +896,16 @@ test/visualization-tower/
 │   ├── visualization_algebra_fixture.f90   earned at L2
 │   ├── structural_renderer_fixture.f90     earned at L4
 │   ├── visualization_values_fixture.f90    earned at L5
-│   └── valued_renderer_fixture.f90         earned at L5
+│   ├── valued_renderer_fixture.f90         earned at L5
+│   ├── production_discretization_fixture.f90    earned at L6
+│   └── production_pattern_renderer_fixture.f90  earned at L6
 ├── level-0-carrier/
 ├── level-1-relation/
 ├── level-2-relation-algebra/
 ├── level-3-graph/
 ├── level-4-graph-calculus/
-└── level-5-field-calculus/
+├── level-5-field-calculus/
+└── level-6-discretization/
 ```
 
 There is no `gate-a/` directory and no `gate-b/` directory, and there

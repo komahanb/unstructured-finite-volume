@@ -15,9 +15,9 @@ necessity.
 Every entry names the **LEVEL** that owns its evidence and the review
 **gate** at which that level was reviewed. Levels are the architecture;
 gates are checkpoints. **The ten levels of this tower are ONE client,
-not ten.** Seven of them are built; the tower is **not sealed**, and
-Review Gate B is **not reached** - Gate B reviews Levels 5, 6 and 7
-together, and Level 7 does not exist.
+not ten.** Eight of them are built, and the eighth is RED. The tower
+is **not sealed**, and Review Gate B is **not reached** - Gate B
+reviews Levels 5, 6 and 7 together, and Level 7 does not hold.
 
 ---
 
@@ -50,6 +50,23 @@ is also NONE**, recorded in VIZ-11.
 VIZ-11 through VIZ-15 belong to Level 5 and are likewise seam-free:
 attaching a field to an occurrence carrier is not an operation taking
 a domain from a graph, and a coefficient is not a linearization.
+
+**VIZ-25 through VIZ-30 belong to Level 7, and VIZ-28 is this
+ledger's first RED - captured, then RESOLVED.** It was a RED against
+an executable mathematical contract - the diagonal of an unchanged
+matrix - and not against a comment. The repair separated the
+minimizer's execution context from its dependent-variable coupling;
+it did NOT reach into the action for structure, for the reason
+VIZ-29 records.
+
+**A CORRECTION TO VIZ-20 AND VIZ-24.** Those entries read the two
+concretes' answers as different structural AXES and inferred that the
+family verb had no invariant meaning. That inference was wrong, and
+the error was in step_dependencies rather than in the family: it
+answered the succession 1->2->3, which is a chronology, where the
+contract owes a stencil. Corrected, BDF2 answers the fan-in 1->3,
+2->3, 3->3, and both citizens answer ONE thing - the stencil on the
+axis the concrete type represents. See VIZ-31.
 
 **VIZ-16 through VIZ-24 belong to Level 6, and they are the first
 entries in this ledger about PRODUCTION.** They are still seam-free,
@@ -1335,7 +1352,491 @@ action:               OBSERVE. Do NOT promote a visualization or
 
 ---
 
-## Seam accounting through Level 6
+## OBSERVATION VIZ-25
+
+```text
+tower:                Visualization
+level:                7  (minimization)
+review gate:          NOT REACHED - Gate B needs L5, L6, L7
+contextual radius:    5 (a solver over an operator over a host)
+
+symptom / fact:       MINIMIZATION IS STRUCTURALLY INHABITED. LEVEL 7
+                      IS NOT N/A.
+
+                      Solver traversal already consumes graph
+                      structure, and the census names the whole road:
+
+                        minimizer % sweep_order()
+                          -> walk(WALK_COLOURING)
+                          -> colouring % apply(this % on)
+
+                        minimizer % diagonal()
+                          -> sweep_order()
+                          -> one matvec per colour, with an
+                             indicator vector
+
+                        jacobi % solve()        -> diagonal()
+                        gauss_seidel % solve()  -> diagonal(),
+                                                   sweep_order()
+
+                      So the question was never WHETHER structure is
+                      consumed. It is WHOSE.
+
+exact caller:         src/graph_minimization.f90 sweep_order :: diagonal;
+                      src/class_graph_jacobi.f90 solve;
+                      src/class_graph_gauss_seidel.f90 solve
+
+evidence:             read from the local source at 7d4c501, and
+                      exercised at
+                      test/visualization-tower/level-7-minimization/
+                      test.f90. PASS.
+
+confidence:           high.
+
+action:               OBSERVE. Level 7 is inhabited and must not be
+                      marked N/A.
+```
+
+---
+
+## OBSERVATION VIZ-26
+
+```text
+tower:                Visualization
+level:                7  (minimization)
+review gate:          NOT REACHED
+contextual radius:    5 (where the colouring comes from)
+
+symptom / fact:       sweep_order() DERIVES ITS COLOURING FROM THE
+                      ATTACHED HOST GRAPH.
+
+                        colouring % apply(this % on)
+
+                      and `on` is the graph handed in at attach - the
+                      legacy operation/minimizer context, which may be
+                      unrelated to the operator's own coupling.
+
+                      Three structures must be kept apart:
+
+                        P_A     the operator's numerical coupling
+                        H       the host/context graph
+                        C(H)    what sweep_order() computes
+
+                      and the present path is
+
+                        H -> C(H) -> diagonal
+
+                      never
+
+                        P_A -> C(P_A) -> diagonal.
+
+                      MEASURED, not inferred: one stencil attached
+                      over two hosts gave colourings [1,2,1] and
+                      [1,1,1]. Same operator, different host,
+                      different sweep structure.
+
+                      AND THE HOST'S COLOURING IS NOT A VALID
+                      COLOURING OF THE OPERATOR. On the empty host,
+                      unknowns 1 and 2 are coupled by A and share a
+                      colour - which is exactly what a colouring is
+                      supposed to prevent.
+
+exact caller:         src/graph_minimization.f90 sweep_order;
+                      level-7-minimization/test.f90
+                      check_the_colouring_is_host_dependent
+
+evidence:             both colourings recorded; properly_coloured(
+                      col_match, P_A) TRUE and properly_coloured(
+                      col_empty, P_A) FALSE. PASS.
+
+confidence:           high.
+
+action:               OBSERVE.
+```
+
+---
+
+## OBSERVATION VIZ-27
+
+```text
+tower:                Visualization
+level:                7  (minimization)
+review gate:          NOT REACHED
+contextual radius:    5 (operator against host)
+
+symptom / fact:       A STENCIL'S NUMERICAL MAP IS INDEPENDENT OF ITS
+                      HOST. This is the control the RED rests on.
+
+                      stencil_apply computes entirely from
+
+                        this % pattern
+
+                      the stencil's OWN stored graph. The host is used
+                      only for the output field's domain. So:
+
+                        A_match x = A_empty x = [6, 14, 20]
+                                                for x = [1,2,3]
+
+                      measured through the minimizer's own matvec, not
+                      by calling apply - the tower never calls apply,
+                      and the import gate refuses one.
+
+                      P_A is likewise host-free: dependencies() reads
+                      the stored pattern, and answers the same graph
+                      twice regardless of any attachment.
+
+                      THE CONSEQUENCE, AND IT IS THE WHOLE POINT: any
+                      difference caused by host topology alone belongs
+                      to the MINIMIZER'S STRUCTURAL INTERPRETATION and
+                      to nothing else. There is nowhere else for it to
+                      come from.
+
+exact caller:         level-7-minimization/test.f90
+                      check_the_numerical_map_is_host_independent,
+                      check_the_operator_owns_its_structure
+
+evidence:             matvec equal under both hosts and equal to the
+                      hand oracle; dependencies() idempotent. PASS.
+
+confidence:           high.
+
+action:               OBSERVE.
+```
+
+---
+
+## OBSERVATION VIZ-28   *** RED ***
+
+```text
+tower:                Visualization
+level:                7  (minimization)
+review gate:          NOT REACHED
+contextual radius:    5 (the reported diagonal)
+status:               RED
+
+status after repair:  RESOLVED - see the resolution block below.
+
+symptom / fact:       THE REPORTED DIAGONAL CHANGES WHEN ONLY THE
+                      IRRELEVANT HOST TOPOLOGY CHANGES.
+
+                        A = [ 4 1 0 ]      true diagonal = [4, 5, 6]
+                            [ 1 5 1 ]
+                            [ 0 1 6 ]
+
+                        on H_match = P_A     diagonal = [4, 5, 6]
+                        on H_empty           diagonal = [5, 7, 7]
+
+                      and [5,7,7] is exactly A times the all-ones
+                      vector. The empty host colours everything 1, so
+                      the coloured probe fires ONE indicator - all
+                      ones - and reads a matvec where it expected a
+                      diagonal.
+
+                      THE FOUR FACTS, ESTABLISHED TOGETHER:
+
+                        A_match x  =  A_empty x            YES
+                        P_A same under both hosts          YES
+                        H_match /= H_empty                 YES
+                        d_match /= d_empty                 YES
+
+                      That isolates the provenance error completely.
+                      Nothing about the operator changed. Only the
+                      graph the SOLVER was asked to interpret changed.
+
+                      WHY THIS IS A GENUINE RED AND NOT A LIMITATION.
+                      Level 6's findings were limitations because no
+                      executable contract promised otherwise. This one
+                      does: diagonal() means the diagonal of the
+                      attached numerical action, and jacobi % solve
+                      divides by it. An unchanged matrix has an
+                      unchanged diagonal, and that is mathematics
+                      rather than prose.
+
+                      NOT WEAKENED. The oracle stays [4,5,6]. The
+                      hostile host was not replaced, the expectation
+                      was not lowered, no colour was hard-coded, and
+                      the test asserts the truth and fails.
+
+exact caller:         level-7-minimization/test.f90
+                      check_the_diagonal
+                      -> src/graph_minimization.f90 diagonal
+                      -> sweep_order -> colouring % apply(this % on)
+
+evidence:             FAIL : diagonal(A) on H_empty = [4,5,6] - THE
+                      DIAGONAL OF AN UNCHANGED MATRIX DOES NOT DEPEND
+                      ON AN IRRELEVANT CONTEXT GRAPH
+                      FAIL : and the two agree with each other
+                      captured verbatim before any production edit.
+
+confidence:           high.
+
+action:               RED, then REPAIRED.
+
+resolution:           The minimizer gained a SECOND SEAT.
+
+                        on         the execution context, handed to
+                                   action % apply()
+                        coupling   the dependent-variable stencil,
+                                   the only thing sweep_order may
+                                   colour
+
+                      coupling is EXPLICIT AT ATTACH AND HAS NO
+                      FALLBACK. `coupling := on` would have been
+                      exactly the mistake the seat exists to prevent.
+                      A structure-free minimizer never asks for one; a
+                      structured one handed none now says so:
+
+                        minimization: a sweep needs the
+                        dependent-variable coupling - attach it with
+                        coupling=
+
+                      Callers that genuinely run on a graph which IS
+                      the coupling of its unknowns - the mesh path -
+                      now say so at their own call sites, where it is
+                      a claim rather than an assumption.
+
+                      AFTER: both hosts give colours [1,2,1] and
+                      diagonal [4,5,6]. The hostile host was not
+                      weakened; the solver simply stopped looking at
+                      it. L7 PASS.
+```
+
+---
+
+## OBSERVATION VIZ-29
+
+```text
+tower:                Visualization
+level:                7  (minimization), resting on 6
+review gate:          NOT REACHED
+contextual radius:    5 (the obvious repair, refused)
+
+symptom / fact:       dependencies() CANNOT BE SUBSTITUTED BLINDLY.
+
+                      The tempting one-line repair is
+
+                        colour action % dependencies()
+                        instead of the host
+
+                      and Level 6 already forbids it. VIZ-20 recorded:
+
+                        stencil % dependencies() = state sparsity
+                        step    % dependencies() = temporal motif
+
+                      The family verb has NO INVARIANT MEANING across
+                      its two concretes. Colouring its answer would
+                      repair the stencil and silently break every
+                      step - a BDF2 step would have its unknowns
+                      coloured by a chain of instants that has nothing
+                      to do with which unknowns are coupled.
+
+                      Nor is a special case acceptable: no select type
+                      on stencil_operator, because that would encode
+                      "this family member happens to mean the right
+                      thing" as architecture.
+
+                      SO THE LEVEL-6 FINDING IS LOAD-BEARING HERE. It
+                      is the reason a one-line fix is unavailable, and
+                      the reason the RED is architectural rather than
+                      local.
+
+exact caller:         n/a - this observation is about what was NOT
+                      done
+
+evidence:             VIZ-20, plus git diff 7d4c501 -- src/ EMPTY.
+
+confidence:           high.
+
+action:               OBSERVE. Do NOT implement.
+```
+
+---
+
+## OBSERVATION VIZ-30
+
+```text
+tower:                Visualization
+level:                7  (minimization)
+review gate:          NOT REACHED
+contextual radius:    5 (what a consumer would have to ask for)
+
+symptom / fact:       A CONSUMER MAY NEED TO REQUEST A PARTICULAR KIND
+                      OF STRUCTURE, NOT MERELY "DEPENDENCIES".
+
+                      The minimizer does not want "the operation's
+                      dependency graph". It wants the ONE structure
+                      its algorithm requires: which unknowns are
+                      coupled, so that no two coupled unknowns share
+                      a colour.
+
+                      VIZ-24 already recorded that one computation may
+                      admit several structural views - D_state,
+                      D_time, and others unseen. Level 7 adds the
+                      consumer's half of that: a caller has a
+                      PARTICULAR view in mind, and today has no way to
+                      name which.
+
+                      Recorded as:
+
+                        MINIMIZER STRUCTURAL PROVENANCE
+
+                      and NOT as any of:
+
+                        "dependencies() should move to
+                         graph_operation"
+                        "the ordinary graph needs replacing"
+                        "add an explicit structural argument at
+                         attach"
+                        "add a typed operator-structure query"
+                        "add named structural projections"
+
+                      Those are candidate answers. Level 7 does not
+                      choose among them, and one tower at one radius
+                      is not enough to.
+
+exact caller:         the whole of level-7-minimization/
+
+evidence:             VIZ-26, VIZ-28 and VIZ-29 together.
+
+confidence:           medium-high for the problem statement; NONE is
+                      claimed for any remedy.
+
+action:               OBSERVE. The next decision is architectural and
+                      belongs to a review, not to this level.
+```
+
+---
+
+## OBSERVATION VIZ-31
+
+```text
+tower:                Visualization
+level:                6-7  (discretization, minimization)
+review gate:          B
+contextual radius:    5 (the family verb, correctly read)
+supersedes:           the FAMILY-B reading in VIZ-20 and VIZ-24
+
+symptom / fact:       dependencies() IS AXIS-RELATIVE, AND THAT IS ONE
+                      MEANING RATHER THAN TWO.
+
+                        dependencies() = the stencil on the axis this
+                                         concrete type represents
+
+                        stencil_operator -> DEPENDENT-variable stencil
+                        step_operator    -> INDEPENDENT-variable
+                                            stencil
+
+                      Level 6 first read this as two unrelated
+                      meanings, and that reading was wrong. The fault
+                      was in step_dependencies, which answered
+
+                        1 -> 2 -> 3
+
+                      the SUCCESSION of instants. A BDF2 residual at
+                      the newest instant reads three instants, so its
+                      stencil is a FAN-IN
+
+                        1 -> 3,  2 -> 3,  3 -> 3
+
+                      and backward euler answers 1->2, 2->2. The
+                      self-arrow is the implicit part - what makes the
+                      newest instant an unknown rather than data.
+
+                      A STENCIL IS NOT A CHRONOLOGY. Succession is a
+                      true relation and the time integration tower
+                      describes it correctly; it is simply not what
+                      this contract owes, and that tower's own
+                      chronology was left untouched.
+
+                      THE INDEPENDENT AXIS NEED NOT BE TIME. A
+                      continuation coordinate, a parameter, a spatial
+                      sweep direction all take the same seat. The
+                      concrete type carries the context so the verb
+                      does not have to.
+
+                      FAMILY-B is therefore WITHDRAWN and replaced by
+                      FAMILY-C: the apparent semantic difference
+                      disappears under the axis-relative reading.
+
+exact caller:         src/class_graph_step.f90 step_dependencies;
+                      level-6-discretization/test.f90
+                      check_the_step_pattern
+
+evidence:             BDF2 answers three vertices and three edges,
+                      fanning in on the newest; the same stencil under
+                      two differently-coupled wrapped actions; the
+                      succession arrow 1->2 is absent and the
+                      self-arrow present. PASS.
+
+confidence:           high.
+
+action:               PRODUCTION CORRECTED. This is the tower's second
+                      production change and the only one to alter
+                      behaviour rather than a seat.
+```
+
+---
+
+## OBSERVATION VIZ-32
+
+```text
+tower:                Visualization
+level:                7  (minimization)
+review gate:          B
+contextual radius:    5 (who supplies structure to whom)
+
+symptom / fact:       THE CONSUMER IS HANDED ITS STRUCTURE; IT DOES
+                      NOT REACH FOR IT.
+
+                      VIZ-30 asked where a consumer should ask for a
+                      particular structural projection. The answer
+                      this tower reached needs no new production
+                      vocabulary at all:
+
+                        stencil_operator
+                              |  dependencies()
+                              v
+                        dependent-variable stencil
+                              |
+                              v
+                        minimizer % attach(..., coupling = ...)
+
+                      The CALLER knows which object owns the dependent
+                      axis. Nothing in the minimizer inspects an
+                      action's type, and nothing asks a graph_operation
+                      for a structure it may not have.
+
+                      WHAT WAS NOT BUILT, and was not needed:
+
+                        dependencies() on graph_operation
+                        a structural-axis enum
+                        graph_observation
+                        graph_visualization
+                        a structural_projection type
+                        a generic visualization abstraction
+
+                      A step_operator's dependencies() is an
+                      INDEPENDENT-axis stencil and is therefore never
+                      passed as a minimizer's coupling. That is not a
+                      special case; it is a caller reading a type it
+                      already knows.
+
+exact caller:         src/graph_minimization.f90 attach :: sweep_order;
+                      level-7-minimization/test.f90 attach_to
+
+evidence:             L7 PASS with coupling = P_A under two unrelated
+                      execution contexts; the no-fallback refusal
+                      fires when a structured solver is handed none.
+
+confidence:           high at this radius.
+
+action:               OBSERVE. The seam is closed for this consumer
+                      without a root abstraction.
+```
+
+---
+
+## Seam accounting through Level 7
 
 | Seam | Before this tower | After Gate A | Why |
 |---|---|---|---|
@@ -1344,9 +1845,11 @@ action:               OBSERVE. Do NOT promote a visualization or
 | **A3** relational_graph ownership | KEEP | KEEP | one more successful typed-ownership pattern (7 carriers, 6 relations, full signature closure); no production change follows |
 | **B** bidirectional/rectangular linearization | 2 towers | **2 towers — ZERO new votes** | this tower is full of rectangular structure and none of it is a linearization; structural transpose is not numerical adjoint, and Level 5 built no `w^T`, applied no `A^T v`, and composed no coefficients |
 
-**This tower is ONE client, not seven.** Neither Level 5 nor Level 6
-produced a RED. If Levels 7–9 are later built and do produce REDs,
-they will still be **one** tower's vote.
+**This tower is ONE client, not eight.** Level 7 produced this
+tower's first RED, and it is resolved. It is still **one** tower's
+evidence, and it is not a vote for seam A2: the minimizer's fault was
+taking its COLOURING from the host, which is a different question from
+an operation taking its DOMAIN from one.
 
 ---
 
@@ -1359,14 +1862,15 @@ operator exposes the same structural skeleton, and answered
 typed-equivalent; unable to hold a rectangular signature; and one verb
 denoting two different axes.
 
+Level 7 asked whether minimization consumes discretization structure.
+It does — through colouring — and it colours the **host**, not the
+operator. The diagonal of an unchanged matrix moved when only an
+irrelevant context graph changed.
+
 ```
-NEXT FRONTIER = Level 7 — does minimization actually consume
-                          discretization structure at all?
+NEXT DECISION = define where a consumer asks for a PARTICULAR
+                structural projection of an operation.
 ```
 
-The Level-6 census found ZERO existing callers of `dependencies()`,
-and the contract's prose names *minimizers* as the intended consumer.
-Level 7 should test whether that consumption exists — and if it does
-not, determine whether Level 7 is genuinely N/A for this tower.
-It must be inhabited or explicitly refused after evidence, never to
-fill a row.
+This is a decision for a review, not for a level. Level 7 is RED,
+Gate B is not reached, and `src/` is untouched.

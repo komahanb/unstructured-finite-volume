@@ -7,10 +7,15 @@
 # level reports its own status, in order, and a gate line may only
 # follow the levels it reviews.
 #
-# Seven levels are built. Review Gate A is behind them and Gate B is
-# NOT: Gate B comes after Levels 5, 6 and 7, and Level 7 is unbuilt.
-# So the gate line below Level 4 is the only one printed, and Level 7
-# is UNBUILT - not passing, not skipped, and not N/A.
+# Eight levels are built, and the eighth is RED.
+#
+# Level 7 asserts that the diagonal of an unchanged matrix does not
+# depend on an irrelevant context graph. It does. The ladder therefore
+# stops there, and REVIEW GATE B IS NOT PRINTED - a gate reviews the
+# levels beneath it, and one of those does not hold.
+#
+# The failure is the finding, not an accident. Nothing here weakens
+# the oracle to make the line green.
 #
 # Nothing here prints TOWER SEALED, because nothing here has sealed
 # anything - the frontier is where this tower's evidence currently
@@ -33,6 +38,7 @@ levels=(
   "GATE                       A"
   "level-5-field-calculus     5 field calculus"
   "level-6-discretization     6 discretization"
+  "level-7-minimization       7 minimization"
 )
 
 echo "VISUALIZATION TOWER"
@@ -81,12 +87,14 @@ for entry in "${levels[@]}"; do
 done
 
 if [ "$failed" -ne 0 ]; then
+    echo
     echo "    the ladder stops at the first failure"
+    echo "    REVIEW GATE B is NOT reached"
     exit 1
 fi
 
 echo
-echo "    L7 minimization ................... UNBUILT"
+echo "    L8 constitution ................... UNBUILT"
 echo "    frontier stops here"
 echo
 

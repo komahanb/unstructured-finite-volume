@@ -35,14 +35,14 @@ nothing structural moves when they do:
 
 ## Status
 
-**Levels 0–6 are built and green.** Review Gate A is behind them.
+**Levels 0–7 are built and green.** Review Gates A and B are behind
+them. Levels 8 and 9 are UNBUILT.
 
-**Review Gate B is NOT reached.** Gate B comes after Levels 5, 6 and
-7; Level 7 is UNBUILT, and so are 8 and 9. The tower is not sealed and
-does not claim to be.
-
-Gate A completed at `44ae3da`/`29c0ccd`; Level 5 at `b134a1f`; Level 6
-on top of that.
+Level 7 was RED when first written, and the RED was real: the diagonal
+of an unchanged matrix moved when only an irrelevant context graph
+changed. It is resolved — see the Level-7 section. The hostile
+experiment was kept exactly as it was; what changed is that the solver
+is no longer asked to take its structure from the execution context.
 
 ---
 
@@ -58,11 +58,13 @@ on top of that.
 | — | ===== **REVIEW GATE A** ===== | | | | | | | | |
 | **L5** | fields `w_k : E_k -> R` | `class_graph_field` / `field` | occurrence carriers `E1, E2, E3` | scalar values | structure **unchanged** | structure unchanged; **no numerical reverse** | structural sparsity **+ coefficient view** | `level-5-field-calculus/test.f90` | PASS |
 | **L6** | production dependency projection | `discretization_operator % dependencies()` → `class(graph)` | one ordinary vertex carrier | the same carrier | Boolean coordinate pattern equals `D2 : X1 -> X2` | structure unchanged; no numerical reverse | signature **+** sparsity, shown side by side | `level-6-discretization/test.f90` | PASS |
-| **L7** | minimization | — | — | — | — | — | — | — | UNBUILT |
+| **L7** | minimizer structural provenance | `minimizer % attach(..., coupling=)`, `% sweep_order()`, `% diagonal()` | one operator, two execution contexts | colours, matvec, diagonal | coupling `P_A` is context-independent | not exercised | operator coupling **vs** execution context, side by side | `level-7-minimization/test.f90` | PASS |
 | **L8** | constitution | — | — | — | — | — | — | — | UNBUILT |
 | **L9** | statement | — | — | — | — | — | — | — | UNBUILT |
 
-No level is marked N/A, and every unbuilt level is marked UNBUILT.
+No level is marked N/A — **including Level 7, which is INHABITED**:
+minimization genuinely consumes graph structure. Every unbuilt level
+is marked UNBUILT.
 Levels are implementation units; gates are horizontal separators where
 review happens, and are never directories. **Level 5 being green does
 not make Gate B reached** — Gate B reviews Levels 5, 6 and 7 together,
@@ -448,30 +450,44 @@ The same family verb, asked of the other concrete citizen:
 
             1 2 3
     1       . . .
-    2       # . .
-    3       . # .
+    2       . . .
+    3       # # #
 
     wrapped state pattern equal ..................... NO
-    same BDF2 motif under second wrapped sparsity ... YES
+    same BDF2 stencil under second wrapped sparsity . YES
 ```
 
+A **fan-in onto the instant being solved for**: the residual reads
+`t_(n-2)`, `t_(n-1)` and `t_n`, and the self-arrow is what makes
+`t_n` an unknown rather than data. Backward Euler answers `1->2`,
+`2->2`.
+
 Three vertices, like the stencil's answer — and a different edge
-structure entirely. The stencil says *state 1 depends on state 1*; the
-step says *no instant is its own predecessor*. Wrapping a second
-action whose state sparsity is genuinely different (a diagonal) yields
-the **identical** motif, which is executable evidence that the step's
-`dependencies()` describes the scheme's **time axis** and not the
-wrapped action's algebra.
+structure entirely. Wrapping a second action whose state sparsity is
+genuinely different (a diagonal) yields the **identical** stencil,
+which is executable evidence that a step's `dependencies()` describes
+its own axis and not the wrapped action's algebra.
 
-> **FAMILY-B** — the two concretes use one procedure for two different
-> structural axes: `stencil` for state sparsity, `step` for temporal
-> reach.
+**A stencil is not a chronology.** The succession `1 -> 2 -> 3` is a
+true relation — the Time Integration Tower describes it correctly, and
+it was left untouched — but it says which instant *follows* which, not
+which instants the residual *reads*.
 
-**This is not a defect in either.** Each faithfully implements the
-narrower mathematics it actually represents, and no executable
-contract, test or caller promises otherwise. A defect would require a
-promise that behaviour violates; the census found no promise with a
-consumer behind it.
+> **FAMILY-C** — the apparent semantic difference disappears under a
+> more precise reading: **both answer a stencil, and the concrete type
+> says which axis the stencil belongs to.** `stencil_operator` owns
+> the dependent variable, `step_operator` the independent one.
+
+An earlier draft of this level read the two as *unrelated* meanings
+and concluded the verb was incoherent across the family. That was
+wrong, and the fault was in `step_dependencies`, which answered the
+**succession** `1 -> 2 -> 3` where the contract owes a **stencil**. A
+BDF2 residual reads three instants, so its stencil fans in. Corrected
+and reported above; the mistaken FAMILY-B claim is withdrawn.
+
+The independent axis need not be time — a continuation coordinate or a
+parameter takes the same seat. The type carries the context so the
+verb does not have to.
 
 ### The visual equality theorem
 
@@ -501,6 +517,111 @@ objects.
 
 No numerical composition of `A3 A2 A1`, no transpose stencil, no
 `A^T v`. `D2:1` and `D3:1` remain relation-algebra results.
+
+---
+
+## Level 7 — the solver colours the variables it solves
+
+Level 7 is **inhabited**, not N/A. Minimization already consumes graph
+structure:
+
+```
+    minimizer % sweep_order()   colours a graph
+    minimizer % diagonal()      probes one indicator per colour
+    jacobi % solve()            consumes diagonal()
+    gauss_seidel % solve()      consumes diagonal() and sweep_order()
+```
+
+The question was never *whether* structure is consumed. It was
+**whose**.
+
+### Three structures
+
+| | |
+|---|---|
+| `P_A` | the **dependent-variable stencil** — which unknowns feed which |
+| `H` | the **execution context** — the graph the action computes over |
+| `C` | the colouring `sweep_order()` computes |
+
+### The RED, as first captured
+
+`sweep_order()` coloured `this % on` — the execution context.
+
+```
+    A = [ 4 1 0 ]      H_match = P_A        H_empty = 3 vertices,
+        [ 1 5 1 ]                                     no edges
+        [ 0 1 6 ]      true diagonal = [4, 5, 6]
+
+    matvec([1,2,3])    [6,14,20]            [6,14,20]     same
+    colours            [1,2,1]              [1,1,1]
+    diagonal           [4,5,6]              [5,7,7]   <-- RED
+```
+
+`[5,7,7]` is `A·1`: an edgeless host colours everything 1, so the
+probe fired one all-ones indicator and read a matvec where it expected
+a diagonal.
+
+The control is what gave it teeth. `stencil % apply()` computes
+entirely from its **own** stored pattern, so the host cannot touch the
+numerical map — proved through the minimizer's own `matvec`, never by
+calling `apply`. Four facts held at once:
+
+```
+    same operator                        same P_A
+    same numerical action                different host
+    -------------------------------------------------
+    different reported diagonal          <-- nowhere else to come from
+```
+
+### Why `dependencies()` was not the repair
+
+The tempting patch — have the minimizer colour
+`action % dependencies()` — was refused. `dependencies()` is
+**axis-relative**: a stencil answers on the dependent variable, a step
+on the independent one. A minimizer reaching in for it would colour a
+BDF2 step's unknowns by a fan-in over instants. No `select type`, no
+special case.
+
+### The repair: a second seat
+
+The minimizer now holds two graphs, and they are different questions:
+
+```
+    on         the execution context, handed to action % apply()
+
+    coupling   the dependent-variable stencil, the ONLY thing
+               sweep_order is permitted to colour
+```
+
+`coupling` is **explicit at attach and has no fallback**. A
+structure-free minimizer — gmres, conjugate gradient, newton — never
+asks for one and need not supply one. A structured one that was handed
+none now says so:
+
+```
+    minimization: a sweep needs the dependent-variable coupling
+                  - attach it with coupling=
+```
+
+`coupling := on` would have been exactly the mistake the seat exists
+to prevent. Where the two genuinely are the same graph — the mesh
+path, where a mesh really is the coupling of its unknowns — the
+**caller** says so at its own call site, and the equality becomes a
+claim rather than an assumption.
+
+### After
+
+```
+                       H_match              H_empty
+    matvec([1,2,3])    [6,14,20]            [6,14,20]
+    colours            [1,2,1]              [1,2,1]     <-- from P_A
+    diagonal           [4,5,6]              [4,5,6]     ✓
+```
+
+The empty host did not flatten the colouring, because the colouring
+never looked at it.
+
+> **Execution context does not determine solver coupling.**
 
 ---
 
@@ -841,17 +962,11 @@ structural interpretations"* — `D_state`, `D_time`, `D_space`,
 `D_block`. The evidence is recorded in VIZ-20 and VIZ-24. **The
 abstraction is not designed here.**
 
-### Level 7 — the question Level 6 sharpened
+### Level 7 — done
 
-Visualization does not obviously require minimization, and Level 7
-was always a candidate for N/A. Level 6 gave the question a sharper
-form: the census found **zero** existing callers of `dependencies()`,
-and the contract's prose names *minimizers* as the intended consumer.
-So Level 7 should first test whether minimization actually consumes
-discretization structure at all.
-
-The level stays UNBUILT rather than marked N/A. It must be inhabited
-or explicitly refused **after** evidence, never to fill a row.
+Level 7 was a candidate for N/A and turned out to be **inhabited**:
+minimization consumes graph structure through colouring. It is built,
+it was RED, and it is resolved — see the Level-7 section above.
 
 ### Level 8 — constitution
 

@@ -122,7 +122,16 @@ allowed_for() {
         #          refused outright, and so is everything that solves.
         level-6-discretization) echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_discretization_fixture production_pattern_renderer_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra graph_structure graph_grammar class_graph_stencil class_graph_step" ;;
 
-        # ---- levels 7-9 are UNBUILT.
+        # ---- L7: + MINIMIZATION, and only the concrete the
+        #          experiment uses. graph_minimization itself is not
+        #          named (jacobi inherits attach/matvec/sweep_order/
+        #          diagonal), and gauss_seidel is inspected in the
+        #          census rather than run. Nothing that solves beyond
+        #          jacobi: no gmres, no newton, no multigrid, no
+        #          marcher, no linearization.
+        level-7-minimization) echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_pattern_renderer_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra graph_structure graph_grammar class_graph class_graph_stencil class_graph_jacobi" ;;
+
+        # ---- levels 8-9 are UNBUILT.
 
         *)                 echo "__no_allowlist__" ;;
     esac
@@ -183,6 +192,7 @@ numbers_allowed() {
         common/visualization_values_fixture.f90)         return 0 ;;
         common/valued_renderer_fixture.f90)              return 0 ;;
         level-6-discretization|level-6-discretization/*) return 0 ;;
+        level-7-minimization|level-7-minimization/*)     return 0 ;;
         common/production_discretization_fixture.f90)    return 0 ;;
         *)                                               return 1 ;;
     esac
@@ -194,6 +204,7 @@ numbers_allowed() {
 discretization_allowed() {
     case "$1" in
         level-6-discretization|level-6-discretization/*)  return 0 ;;
+        level-7-minimization|level-7-minimization/*)      return 0 ;;
         common/production_discretization_fixture.f90)     return 0 ;;
         common/production_pattern_renderer_fixture.f90)   return 0 ;;
         *)                                                return 1 ;;
@@ -416,6 +427,28 @@ if [ "$1" = "--selftest" ]; then
     refuses common/valued_renderer_fixture.f90 class_graph_step
     refuses common/production_pattern_renderer_fixture.f90 class_graph_stencil
 
+    # ---- L7 earns minimization, and only the concrete it uses.
+    permits level-7-minimization class_graph_jacobi
+    permits level-7-minimization class_graph
+    permits level-7-minimization class_graph_stencil
+    permits level-7-minimization production_pattern_renderer_fixture
+    for lvl in $with_five level-6-discretization; do
+        refuses "$lvl" class_graph_jacobi
+        refuses "$lvl" class_graph_gauss_seidel
+        refuses "$lvl" graph_minimization
+    done
+
+    # L7 does NOT lift the rest of the frontier.
+    refuses level-7-minimization class_graph_gmres
+    refuses level-7-minimization class_graph_newton
+    refuses level-7-minimization class_graph_multigrid
+    refuses level-7-minimization class_graph_marcher
+    refuses level-7-minimization class_graph_linearization
+    refuses level-7-minimization graph_fitting
+    refuses level-7-minimization graph_profile
+    refuses level-7-minimization class_graph_gauss_seidel
+    refuses level-7-minimization graph_minimization
+
     # ---- THE DISCRETIZATION VOCABULARY: WHERE IT LIFTS.
     for below in level-0-carrier/test.f90 level-4-graph-calculus/test.f90 \
                  level-5-field-calculus/test.f90 \
@@ -427,6 +460,7 @@ if [ "$1" = "--selftest" ]; then
         fi
     done
     for at_six in level-6-discretization/test.f90 \
+                  level-7-minimization/test.f90 \
                   common/production_discretization_fixture.f90; do
         if discretization_allowed "$at_six"; then :; else
             echo " FAIL : Level 6 was refused its own production vocabulary at $at_six"
@@ -452,6 +486,7 @@ if [ "$1" = "--selftest" ]; then
                    common/visualization_values_fixture.f90 \
                    common/valued_renderer_fixture.f90 \
                    level-6-discretization/test.f90 \
+                   level-7-minimization/test.f90 \
                    common/production_discretization_fixture.f90; do
         if numbers_allowed "$at_five"; then :; else
             echo " FAIL : Level 5 was refused its own coefficients at $at_five"
@@ -480,7 +515,7 @@ if [ "$1" = "--selftest" ]; then
 
     # An unclassified source still fails closed rather than silently
     # open - the five built levels are named, and nothing else is.
-    allows level-7-minimization graph_carrier
+    allows level-8-constitution graph_carrier
     if [ "$?" -ne 2 ]; then
         echo " FAIL : an unbuilt level did not fail closed"
         fail=1
@@ -550,12 +585,18 @@ for dir in "$here"/common "$here"/level-*; do
             done
         fi
 
-        # NOTHING IN THIS TOWER IS EVER APPLIED. Level 6 constructs
-        # production operators and interrogates them; the moment a
-        # level evaluates one it has stopped measuring structure and
-        # started doing arithmetic, and the claim "zero applies" would
-        # become a promise instead of a fact.
-        if grep -qE "% *apply *\(" "$src"; then
+        # NOTHING IN THIS TOWER IS EVER APPLIED DIRECTLY. Level 6
+        # constructs production operators and interrogates them;
+        # Level 7 probes numerically, but only through the minimizer's
+        # own vocabulary - matvec, sweep_order, diagonal - so the
+        # measurement is about the minimizer rather than about the
+        # action. A level that called apply itself would have bypassed
+        # the very interface it is measuring.
+        #
+        # Comments are stripped first, as the numberless law strips
+        # them: this scan measures CODE, and the tower's prose says
+        # "% apply()" whenever it explains why it does not call one.
+        if sed 's/!.*//' "$src" | grep -qE "% *apply *\("; then
             echo "IMPORT GATE: $(basename "$src") in $name applies an operation - this tower interrogates structure, it never evaluates"
             violation=1
         fi

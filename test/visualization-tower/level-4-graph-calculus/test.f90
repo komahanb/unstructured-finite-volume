@@ -473,16 +473,24 @@ contains
          & "and D1's two ends are two domains, which is exactly what " // &
          & "directed_adjacency_view refuses", nfail)
 
-    ! ---- What a union would cost. Level 2 distinguished D3:1 from
-    !      D3:1^T, and the FIRST thing that comparison tests is
-    !      domain identity. Collapse X0 and X3 into one V and the
-    !      distinction has nowhere left to live.
+    ! ---- What a union would cost, stated exactly.
+    !
+    !      DIRECTION IS NOT WHAT IS LOST. An ordinary directed graph
+    !      preserves ordered-pair direction perfectly well - the tuple
+    !      order of a same-domain relation IS the direction, as
+    !      directed_adjacency_view documents.
+    !
+    !      What a union loses is the intrinsic distinct TYPED source
+    !      and codomain: D : X_i -> X_j against D^T : X_j -> X_i. Under
+    !      a union both become relations over one V, and the first
+    !      thing same_extension tests - domain identity - has nothing
+    !      left to compare.
     from = d31 % source()
     to   = d31 % target()
     call report(.not. from % same_as(to) .and. .not. same_extension(d31, d31t), &
-         & "forcing a union carrier would make D3:1 and D3:1^T " // &
-         & "relations over ONE domain - and the orientation Level 2 " // &
-         & "proved would stop being expressible", nfail)
+         & "D3:1 and D3:1^T are told apart by their TYPED CARRIERS, " // &
+         & "which a union would erase - direction would survive as " // &
+         & "tuple order; the distinct source and codomain would not", nfail)
 
     call report(g % num_member_sets() .eq. 7 .and. .not. g % holds_set(union_like()), &
          & "so nothing was collapsed to make a picture: seven typed " // &

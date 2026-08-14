@@ -7,11 +7,14 @@
 # level reports its own status, in order, and a gate line may only
 # follow the levels it reviews.
 #
-# Five levels are built. The ladder therefore stops at REVIEW GATE A
-# and says so: Level 5 is UNBUILT, not passing, not skipped, and not
-# N/A. Nothing here prints TOWER SEALED, because nothing here has
-# sealed anything - the frontier is where this tower's evidence
-# currently ends, and the runner's last word is where to look next.
+# Six levels are built. Review Gate A is behind them and Gate B is
+# NOT: Gate B comes after Levels 5, 6 and 7, and two of those are
+# unbuilt. So the gate line below Level 4 is the only one printed, and
+# Level 6 is UNBUILT - not passing, not skipped, and not N/A.
+#
+# Nothing here prints TOWER SEALED, because nothing here has sealed
+# anything - the frontier is where this tower's evidence currently
+# ends, and the runner's last word is where to look next.
 set -e
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -28,6 +31,7 @@ levels=(
   "level-3-graph              3 relational graph"
   "level-4-graph-calculus     4 structural interpretation"
   "GATE                       A"
+  "level-5-field-calculus     5 field calculus"
 )
 
 echo "VISUALIZATION TOWER"
@@ -80,13 +84,18 @@ if [ "$failed" -ne 0 ]; then
     exit 1
 fi
 
-echo "    L5 field calculus ................. UNBUILT"
+echo
+echo "    L6 discretization ................. UNBUILT"
 echo "    frontier stops here"
 echo
 
-# What the tower actually produced, replayed from Level 4's own
-# output. Every line of it was generated from twelve occurrences a
-# moment ago; none of it is stored anywhere.
+# What the tower actually produced, replayed from the levels' own
+# output. Every line of it was generated a moment ago from twelve
+# occurrences and twelve coefficients; none of it is stored anywhere.
 echo "    GENERATED STRUCTURE"
 sed -n '/^ ----/,/^ ----/p' "$here/level-4-graph-calculus/run.out" \
+    | sed '1d;$d' | sed 's/^/    /'
+echo
+echo "    GENERATED VALUES"
+sed -n '/^ ----/,/^ ----/p' "$here/level-5-field-calculus/run.out" \
     | sed '1d;$d' | sed 's/^/    /'

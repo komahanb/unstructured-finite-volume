@@ -15,7 +15,9 @@ necessity.
 Every entry names the **LEVEL** that owns its evidence and the review
 **gate** at which that level was reviewed. Levels are the architecture;
 gates are checkpoints. **The ten levels of this tower are ONE client,
-not ten.** Five of them are built; the tower is **not sealed**.
+not ten.** Six of them are built; the tower is **not sealed**, and
+Review Gate B is **not reached** - Gate B reviews Levels 5, 6 and 7
+together, and two of those do not exist.
 
 ---
 
@@ -42,7 +44,12 @@ and calling the resemblance evidence would be the single easiest error
 this tower could make.
 
 **Gate A's production change is NONE**, which is itself the headline
-observation and is recorded as VIZ-10.
+observation and is recorded as VIZ-10. **Level 5's production change
+is also NONE**, recorded in VIZ-11.
+
+VIZ-11 through VIZ-15 belong to Level 5 and are likewise seam-free:
+attaching a field to an occurrence carrier is not an operation taking
+a domain from a graph, and a coefficient is not a linearization.
 
 ---
 
@@ -107,7 +114,9 @@ symptom / fact:       THE OCCURRENCE CARRIER GIVES DEPENDENCY
                       e11 is a member of a declared domain, not a
                       pair, not a nonzero, not an index into a table.
                       It can therefore be related, composed away, and
-                      - at a future Level 5 - given a value.
+                      - at Level 5 - given a value. VIZ-12 records
+                      that E_k turned out to be the ONLY carrier that
+                      could seat the coefficient.
 
                       This is a MODELLING CHOICE the nucleus made
                       possible rather than a capability it supplied.
@@ -125,10 +134,11 @@ evidence:             |E1|=5, |E2|=4, |E3|=3, all distinct from each
 
 confidence:           medium-high - one specimen, but the choice is
                       the reason Level 5's zero-coefficient experiment
-                      is even askable.
+                      was askable at all.
 
-action:               OBSERVE. Nothing follows for production. Record
-                      that E_k must survive to Level 5 to carry w_k.
+action:               OBSERVE. Nothing follows for production. E_k did
+                      survive to Level 5 and did carry w_k; see
+                      VIZ-12.
 ```
 
 ---
@@ -437,10 +447,28 @@ symptom / fact:       AN ORDINARY-GRAPH INTERPRETATION IS NOT REQUIRED
                       target X1.
 
                       Satisfying either would mean manufacturing
-                      V = X0 u X1 u X2 u X3 - and then D3:1 and
-                      D3:1^T would both be relations over ONE domain,
-                      so the orientation Level 2 proved would stop
-                      being expressible.
+                      V = X0 u X1 u X2 u X3, and it is worth being
+                      exact about the cost.
+
+                      DIRECTION IS NOT WHAT WOULD BE LOST. An ordinary
+                      directed graph preserves ordered-pair direction
+                      perfectly well - directed_adjacency_view
+                      documents that the tuple order of a same-domain
+                      relation IS the direction, and (a,p) would still
+                      be distinguishable from (p,a) inside a union.
+
+                      WHAT WOULD BE LOST is the intrinsic distinct
+                      TYPED source and codomain:
+
+                        D : X_i -> X_j    against    D^T : X_j -> X_i
+
+                      Under a union both become relations over one V.
+                      The two declared carriers that made them
+                      different KINDS of object are gone, recoverable
+                      only from an offset convention the mathematics
+                      never stated - and the first thing
+                      same_extension tests, domain identity, has
+                      nothing left to compare.
 
                       THIS IS NOT A DEFECT IN THE PROFILE. It is a
                       specialization the profile documents, correct
@@ -546,26 +574,301 @@ action:               OBSERVE, and BUILD NOTHING. Success here means
 
 ---
 
-## Seam accounting at Gate A
+## OBSERVATION VIZ-11
+
+```text
+tower:                Visualization
+level:                5  (field calculus)
+review gate:          not yet reviewed - Gate B needs L5, L6, L7
+contextual radius:    3 (fields over an occurrence carrier)
+
+symptom / fact:       A RELATION AND A FIELD MAY SHARE AN
+                      INTERPRETIVE PICTURE WITHOUT EITHER DEFINING
+                      THE OTHER.
+
+                      Three real fields were attached:
+
+                        w1 : E1 -> R = [ 2, -1,  0,  3,  4 ]
+                        w2 : E2 -> R = [ 1,  5, -2,  2 ]
+                        w3 : E3 -> R = [ 3, -1,  4 ]
+
+                      and afterwards D1, D2, D3, D2:1 and D3:1 held
+                      exactly the tuples Gate A derived, and the
+                      Level-4 pictures were the same strings
+                      CHARACTER FOR CHARACTER - captured before the
+                      fields existed and compared after.
+
+                      The independence runs both ways, and a second
+                      field on the same E1 shows the other direction:
+                      w1_alt = [9, 8, 7, 6, 5] draws a different
+                      coefficient picture over an identical structural
+                      one. So D1 does not determine w1, and w1 does
+                      not determine D1.
+
+                      NO PRODUCTION CHANGE WAS NEEDED. The existing
+                      field machinery already seats a coefficient on
+                      an occurrence carrier, already takes its entry
+                      count from the domain, and already answers
+                      domain questions by identity.
+
+exact caller:         test/visualization-tower/level-5-field-calculus/
+                      test.f90
+                      check_the_structural_pictures_are_unchanged,
+                      check_the_derivation_is_unchanged,
+                      check_value_and_structure_are_independent
+
+evidence:             L5 PASS. git diff 29c0ccd -- src/ is EMPTY.
+
+confidence:           high.
+
+action:               OBSERVE.
+```
+
+---
+
+## OBSERVATION VIZ-12
+
+```text
+tower:                Visualization
+level:                5  (field calculus)
+review gate:          not yet reviewed
+contextual radius:    3 (where a coefficient can sit)
+
+symptom / fact:       DEPENDENCY COEFFICIENTS NATURALLY INHABIT E_k,
+                      NOT THE SOURCE CARRIER AND NOT THE TARGET
+                      CARRIER.
+
+                      The reason is forced by the specimen rather
+                      than chosen:
+
+                        e12 : b -> p    w1(e12) = -1
+                        e13 : b -> q    w1(e13) =  0
+
+                      Two occurrences read the same member b and
+                      carry different numbers. A field on X0 could
+                      hold only one of them. A field on X1 could hold
+                      only one of them. E1 is where the two ends
+                      meet, and it is the only one of the three
+                      carriers that can seat both.
+
+                      This is what Level 0's occurrence carrier was
+                      FOR, five levels before anything needed a
+                      value - and the justification only became
+                      visible here.
+
+exact caller:         test/visualization-tower/common/
+                      visualization_values_fixture.f90, and
+                      level-5-field-calculus/test.f90
+                      check_the_domains_by_identity
+
+evidence:             domain(w1) same_as E1, and NOT same_as X0 or
+                      X1. Likewise w2/E2 and w3/E3. PASS.
+
+confidence:           high.
+
+action:               OBSERVE. Note for a future Level 6 that a
+                      production operator's coefficients must also
+                      have somewhere of this kind to live, and that
+                      "somewhere" is the question Level 6 will ask.
+```
+
+---
+
+## OBSERVATION VIZ-13
+
+```text
+tower:                Visualization
+level:                5  (field calculus)
+review gate:          not yet reviewed
+contextual radius:    3 (a value on an existing structural seat)
+
+symptom / fact:       NUMERICAL ZERO IS NOT STRUCTURAL ABSENCE.
+
+                        e13 : b -> q        T1(e13) = b, H1(e13) = q
+                        w1(e13) = 0
+                        b -> q IS IN D1
+
+                      D1 still holds five tuples, not four. The
+                      structural picture still writes # at (b,q),
+                      because it never asked what the value was.
+
+                      And the two facts are DIFFERENT facts in the
+                      representation:
+
+                        (b,q)  ->  0     present, carrying zero
+                        (a,q)  ->  .     absent, nothing to carry
+
+                      A picture that wrote 0 for both would have
+                      discarded the distinction.
+
+                      THE FORBIDDEN INFERENCE, stated so it can be
+                      checked for later:
+
+                        if (coefficient /= 0) then present
+
+                      appears nowhere. Presence comes from
+                      relation % has and from nothing else; the value
+                      is consulted only to decide how the number
+                      LOOKS.
+
+exact caller:         test/visualization-tower/level-5-field-calculus/
+                      test.f90  check_the_zero_witness,
+                      check_zero_is_not_absence
+
+evidence:             |w1(e13)| < 1e-14; d1 % has([b,q]) true;
+                      |D1| = 5; glyph_at(D1,b,q) = '#'; the rendered
+                      q row carries both a 0 and a dot, in different
+                      columns. PASS.
+
+confidence:           high - this is the level's load-bearing
+                      assertion and it is checked five ways.
+
+action:               OBSERVE.
+```
+
+---
+
+## OBSERVATION VIZ-14
+
+```text
+tower:                Visualization
+level:                5  (field calculus)
+review gate:          not yet reviewed
+contextual radius:    3 (representation fusing two sources)
+
+symptom / fact:       A VALUED SPARSITY PICTURE COMBINES TWO
+                      INDEPENDENT QUERIES, IN ONE ORDER AND NEVER THE
+                      OTHER.
+
+                        structure   glyph_at(D, x, y), which is
+                                    relation % has - the Level-4
+                                    renderer's own primitive, CALLED
+                                    here rather than reimplemented
+
+                        value       the unique occurrence e with
+                                    T(e)=x and H(e)=y, then w(e)
+
+                      The second may never answer the first. The
+                      valued renderer asks structure, and only if the
+                      answer is yes does it look for a coefficient.
+
+                      THE DEPENDENCY DIRECTION IS THE OTHER HALF OF
+                      THE OBSERVATION:
+
+                        L4 structural renderer
+                                ^
+                        L5 valued renderer
+
+                      Level 4 was not made field-aware. It imports
+                      nothing of Level 5, still cannot hold a real
+                      number - the numberless law refuses it one - and
+                      remains able to render mathematics that has no
+                      coefficients at all.
+
+                      Nothing in the Level-4 renderer was modified.
+                      The valued picture takes its page width and its
+                      stub POSITION from a structural picture of the
+                      same relation, so no measurement is duplicated
+                      as a literal and the two grids align row for
+                      row.
+
+exact caller:         test/visualization-tower/common/
+                      valued_renderer_fixture.f90, exercised by
+                      level-5-field-calculus/test.f90
+                      check_the_two_views_agree_on_presence
+
+evidence:             On every cell of D1, D2 and D3 the structural
+                      view, the coefficient view and the relation
+                      itself agree on presence - read by tokenizing
+                      both rendered grids, so the two layouts may
+                      differ freely. Still agree when the
+                      coefficients are replaced wholesale. PASS.
+
+confidence:           high.
+
+action:               OBSERVE. Do NOT promote either renderer to
+                      production.
+```
+
+---
+
+## OBSERVATION VIZ-15
+
+```text
+tower:                Visualization
+level:                5  (field calculus)
+review gate:          not yet reviewed
+contextual radius:    3 (field domain identity)
+
+symptom / fact:       EQUAL CARDINALITY DOES NOT MAKE ONE CARRIER A
+                      VALID COEFFICIENT DOMAIN FOR ANOTHER.
+
+                      The specimen supplies the hostile case for
+                      free:
+
+                        |X0| = |E2| = 4
+
+                      A four-valued real field on X0 was built. It is
+                      a perfectly valid field - the nucleus accepted
+                      it, it has four entries, one component, real
+                      kind - and it is REFUSED as E2's coefficients,
+                      because its declared domain is not E2.
+
+                      NO NEW VALIDATION MECHANISM WAS INVENTED. The
+                      check asks the field for its domain and the
+                      domain for its identity, which is what
+                      graph_carrier and class_graph_field have always
+                      offered. Level 5 exposes those semantics; it
+                      does not add to them.
+
+                      A size-based check would have accepted the
+                      decoy, which is exactly why the specimen was
+                      built with the collision in it at Level 0.
+
+exact caller:         test/visualization-tower/common/
+                      valued_renderer_fixture.f90 coefficients_fit,
+                      and level-5-field-calculus/test.f90
+                      check_the_domains_by_identity
+
+evidence:             coefficients_fit(decoy_on_X0, E2) is FALSE
+                      while decoy % num_entries() = 4 = |E2|. Also
+                      false for (w1,E2), (w2,E1), (decoy,E1). PASS.
+
+confidence:           high.
+
+action:               OBSERVE.
+```
+
+---
+
+## Seam accounting through Level 5
 
 | Seam | Before this tower | After Gate A | Why |
 |---|---|---|---|
 | **A1** graph host as conduit | CLOSED | CLOSED | nothing here reopens it; no operation was hosted anywhere |
-| **A2** operations take domain from graph | 3 towers | **3 towers — unchanged** | Gate A attached no operation to anything and could not have exercised the seam |
+| **A2** operations take domain from graph | 3 towers | **3 towers — unchanged** | Gate A attached no operation to anything, and Level 5 attached a FIELD to a CARRIER — no `graph_operation` exists anywhere in this tower, so the seam could not have been exercised |
 | **A3** relational_graph ownership | KEEP | KEEP | one more successful typed-ownership pattern (7 carriers, 6 relations, full signature closure); no production change follows |
-| **B** bidirectional/rectangular linearization | 2 towers | **2 towers — ZERO new votes** | this tower is full of rectangular structure and none of it is a linearization; structural transpose is not numerical adjoint |
+| **B** bidirectional/rectangular linearization | 2 towers | **2 towers — ZERO new votes** | this tower is full of rectangular structure and none of it is a linearization; structural transpose is not numerical adjoint, and Level 5 built no `w^T`, applied no `A^T v`, and composed no coefficients |
 
-**This tower is ONE client, not five.** If Levels 5–9 are later built
-and produce REDs, they will still be **one** tower's vote.
+**This tower is ONE client, not six.** Level 5 produced no RED. If
+Levels 6–9 are later built and do produce REDs, they will still be
+**one** tower's vote.
 
 ---
 
 ## Frontier
 
+Level 5 asked *"does a numerical zero erase structural dependency?"*
+and answered **no**. `structure != value` is now a test rather than a
+slogan.
+
 ```
-NEXT FRONTIER = Level 5 — values on dependency occurrences
+NEXT FRONTIER = Level 6 — does a production operator expose
+                          this same structural skeleton?
 ```
 
-The question waiting there: **does a numerical zero erase structural
-dependency?** The expected answer is no, and answering it is what will
-turn `structure != value` from a slogan into a test.
+The question waiting there: how does the structural relation `D`
+correspond to `discretization_operator % dependencies()`? Nothing is
+pre-decided, `dependencies()` has not been generalized, and Level 6
+must RED against the persistent typed chain before production is
+touched.

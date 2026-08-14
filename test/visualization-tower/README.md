@@ -14,9 +14,8 @@ The persistent specimen is a chain of three mathematical operators,
     X0 --A1--> X1 --A2--> X2 --A3--> X3
 ```
 
-which at Gate A have **no coefficients at all**. Not one real number
-appears anywhere in this tower. What exists instead is each
-operator's *structural dependency*,
+which through all of Gate A have **no coefficients at all**. What
+exists instead is each operator's *structural dependency*,
 
 ```
     D1 : X0 -> X1        D2 : X1 -> X2        D3 : X2 -> X3
@@ -25,14 +24,25 @@ operator's *structural dependency*,
 derived from primitive incidence, composed along the chain,
 transposed, and rendered.
 
+**Level 5 is where the numbers arrive** — `w_k : E_k -> R`, one
+coefficient per dependency occurrence — and its finding is that
+nothing structural moves when they do:
+
+> **structure != value**, and `w(e) = 0` does not make `e` or its
+> dependency disappear.
+
 ---
 
 ## Status
 
-**REVIEW GATE A — reached.** Levels 0–4 are built and green. Levels
-5–9 are UNBUILT. The tower is not sealed and does not claim to be.
+**Levels 0–5 are built and green.** Review Gate A is behind them.
 
-Starting HEAD: `44ae3da`.
+**Review Gate B is NOT reached.** Gate B comes after Levels 5, 6 and
+7; Levels 6 and 7 are UNBUILT. Levels 8 and 9 are UNBUILT. The tower
+is not sealed and does not claim to be.
+
+Gate A completed at `44ae3da`/`29c0ccd`; Level 5 was built on top of
+`29c0ccd`.
 
 ---
 
@@ -46,16 +56,17 @@ Starting HEAD: `44ae3da`.
 | **L3** | one relational ownership environment | `relational_graph` | — | — | owns 7 carriers + 6 primitive relations | derived on demand | none | signature closure over all twelve slots; whole chain re-derived from graph-owned relations alone | PASS |
 | **L4** | structural interpretation | test-local `structural_renderer_fixture` | any binary relation | text | chain line + sparsity | chain line + sparsity | A, B, C, D, E | five generated representations, cell by cell against `relation % has` | PASS |
 | — | ===== **REVIEW GATE A** ===== | | | | | | | | |
-| **L5** | values on dependency occurrences | — | — | — | — | — | — | — | UNBUILT |
+| **L5** | fields `w_k : E_k -> R` | `class_graph_field` / `field` | occurrence carriers `E1, E2, E3` | scalar values | structure **unchanged** | structure unchanged; **no numerical reverse** | structural sparsity **+ coefficient view** | `level-5-field-calculus/test.f90` | PASS |
 | **L6** | production operator structure | — | — | — | — | — | — | — | UNBUILT |
 | **L7** | minimization | — | — | — | — | — | — | — | UNBUILT |
 | **L8** | constitution | — | — | — | — | — | — | — | UNBUILT |
 | **L9** | statement | — | — | — | — | — | — | — | UNBUILT |
 
-No level below Gate A is marked N/A, and no level above it is marked
-anything but UNBUILT. Levels are implementation units; gates are
-horizontal separators where review happens, and are never
-directories.
+No level is marked N/A, and every unbuilt level is marked UNBUILT.
+Levels are implementation units; gates are horizontal separators where
+review happens, and are never directories. **Level 5 being green does
+not make Gate B reached** — Gate B reviews Levels 5, 6 and 7 together,
+and two of those do not exist.
 
 ---
 
@@ -107,7 +118,9 @@ tower's whole content at Gate A.
 ### 3. The numerical coefficient
 
 A number attached to a dependency occurrence — `w_k : E_k -> R`.
-**Absent at Gate A**, and the subject of the future Level 5.
+**Absent through all of Gate A; introduced at Level 5.** It lives on
+`E_k` and on nothing else, and attaching it changes no relation, no
+tuple and no structural picture.
 
 ### 4. The sparsity representation
 
@@ -120,22 +133,32 @@ object: `D_i` has no rows.
 Characters on a page. Derived from the representation. It is
 downstream of everything above it and feeds back into none of it.
 
-**Therefore the tower's central Gate-A hypothesis:**
+**Therefore the tower's central Gate-A hypothesis, now tested from
+both sides:**
 
 > The structural picture can precede the numerical coefficients
-> entirely.
+> entirely — and once they arrive, it does not change.
 
 Levels 0–4 exercise items 2, 4 and 5 while items 1 and 3 do not exist.
-That is the claim, and it is **enforced rather than asserted**.
-Refusing `class_graph_field` and `graph_field_calculus` would not have
-been enough — a level could simply have written `real(dp) :: w = 2.0_dp`
+Level 5 adds item 3 and shows items 2 and 4 unmoved.
+
+That is **enforced rather than asserted**. Refusing
+`class_graph_field` and `graph_field_calculus` would not have been
+enough — a level could simply have written `real(dp) :: w = 2.0_dp`
 and helped itself. So `check_imports.sh` carries a *numberless law*:
 no `real` or `complex` declaration, and no literal carrying a decimal
-point or an exponent, in any Gate-A source. Comments are stripped
-first (the prose says "real" and means the English word); integers are
-untouched, because a carrier's size is 4 and that is not a
-coefficient. The law has its own selftest, and refuses a planted
-`real :: coefficient = 2.0`.
+point or an exponent, in any source **below Level 5**. Comments are
+stripped first (the prose says "real" and means the English word);
+integers are untouched, because a carrier's size is 4 and that is not
+a coefficient.
+
+**The law is a ceiling that lifts at exactly one rung, not a rule that
+was deleted when it became inconvenient.** Level 5 and its two
+coefficient fixtures are entitled to numbers; Levels 0–4 and the
+structural renderer are not, and still are not. The selftest checks
+both directions, and the gate refuses a planted
+`real :: sneaky = 2.0` in Level 4 while accepting the real fields in
+Level 5.
 
 ---
 
@@ -180,6 +203,130 @@ already owns them.
 
 What `D^T` says, and all it says, is: **which members of `X0` could
 have reached this member of `X3`.**
+
+---
+
+## Level 5 — what changes when values arrive
+
+Nothing structural. That is the finding.
+
+```
+    w1 : E1 -> R  =  [ 2, -1,  0,  3,  4 ]
+    w2 : E2 -> R  =  [ 1,  5, -2,  2 ]
+    w3 : E3 -> R  =  [ 3, -1,  4 ]
+```
+
+### The coefficients live on `E`, and on nothing else
+
+`e12` and `e13` both read `b`; they carry `-1` and `0`. A field on
+`X0` could not hold both, and a field on `X1` could not either. `E_k`
+is where the two ends meet, and it is the only one of the three
+carriers that can seat the number.
+
+This is why Level 0 gave the occurrences first-class identity five
+levels before anything needed a value: **a coefficient needs somewhere
+to live that survives being zero.**
+
+The domain is checked by **identity**, never by size. The specimen
+supplies the hostile case for free — `|X0| = |E2| = 4` — so a
+four-valued field on `X0` exists, is perfectly valid, and is *refused*
+as `E2`'s coefficients.
+
+### `0` is not `.`
+
+Two representations of the same relation:
+
+```
+    D1 STRUCTURE                 D1 VALUES
+
+            a b c d                         a    b    c    d
+    p       # # . .              p          2   -1    .    .
+    q       . # # .              q          .    0    3    .
+    r       . . . #              r          .    .    .    4
+```
+
+```
+    #  = structural dependency
+    0  = structural dependency carrying the value zero
+    .  = no structural dependency
+```
+
+and therefore, within this representation:
+
+> **`0` != `.`**
+
+`w1(e13) = 0` where `e13 : b -> q`, and `b -> q` is still in `D1`. The
+cell at row `q`, column `b` prints `0`. The cell at row `q`, column
+`a` prints `.` — because there is no dependency there, so there is
+nothing to carry a value.
+
+A representation that wrote `0` for both would have thrown the
+distinction away.
+
+### Two independent queries, joined only for the picture
+
+The pipeline forks and rejoins exactly once:
+
+```
+    primitive incidence                occurrence carrier E
+            |                                  |
+            v                                  v
+    derived dependency structure          field w : E -> R
+            |                                  |
+            v                                  v
+    structural picture                  coefficient values
+            |                                  |
+            +---------------+------------------+
+                            |
+                            v
+                   valued visualization
+```
+
+**Never** redrawn as `coefficient field -> dependency structure`. That
+would invert the architecture. The forbidden inference is
+
+```fortran
+if (coefficient /= 0) then draw('#')
+```
+
+and it appears nowhere. A cell is present because
+`relation % has(x, y)` says so, and for no other reason; the value is
+consulted only to decide *how the number looks*, never whether the
+cell exists.
+
+### The independence probe
+
+A second field on the **same** `E1` — `w1_alt = [9, 8, 7, 6, 5]`,
+sharing no value with the first and containing no zero:
+
+```
+    D1 VALUES (w1)               D1 VALUES (w1_alt)
+
+               a    b    c    d            a   b   c   d
+    p          2   -1    .    .   p        9   8   .   .
+    q          .    0    3    .   q        .   7   6   .
+    r          .    .    .    4   r        .   .   .   5
+```
+
+Identical structural picture; different coefficient picture; the dots
+in exactly the same places. So
+
+> **`D1` does not determine `w1`, and `w1` does not determine `D1`.**
+
+### What Level 5 deliberately does not do
+
+- **No composed coefficients.** `D2:1` and `D3:1` stay structural.
+  Giving them values would mean choosing an algebra for numerical
+  composition — sums over intermediate members — which is operator
+  mathematics, not field calculus.
+- **No `w^T`.** Transposing a coefficient is a numerical act. Gate A's
+  structural reverse asked for none and still does not.
+- **No numerical operator is executed.** No `A` is applied to
+  anything, and no `A^T v` exists.
+- **Nothing in the Level-4 renderer changed.** The valued renderer
+  *imports* it; Level 4 remains able to render mathematics that has no
+  numbers at all, and the numberless law still forbids it from holding
+  one.
 
 ---
 
@@ -339,8 +486,11 @@ any other. Rendering a rectangular typed dependency turned out to need
 - **No union carrier.** There is no
   `V = X0 u X1 u X2 u X3`. Level 3 asserts the graph does not hold
   one, and Level 4 shows what adopting one would cost.
-- **No production change at all.** `git diff 44ae3da -- src/` is
-  empty.
+- **No production change at all.** `git diff 44ae3da -- src/` and
+  `git diff 29c0ccd -- src/` are both empty. Level 5 needed no
+  production correction either: the existing field machinery already
+  seats a coefficient on an occurrence carrier and already answers
+  domain questions by identity.
 
 The tower succeeded, and success here means: **the nucleus was already
 sufficient.** That is a reason to build nothing, not a reason to build
@@ -368,10 +518,33 @@ The two profile contracts were inspected rather than provoked:
 | `directed_adjacency_view` | `A <= V x V`, one `V` | `D1`'s source is `X0`, its target `X1`; refuses with *"a directed adjacency runs over one domain"* |
 
 Both readings demand a **single** vertex carrier. Satisfying either
-would require manufacturing `V = X0 u X1 u ...` — and then `D3:1` and
-`D3:1^T` would both be relations over one domain, so the orientation
-Level 2 proved would stop being expressible at all. The first thing
-`same_extension` tests is domain identity.
+would require manufacturing `V = X0 u X1 u ...`, and it is worth being
+exact about what that costs and what it does not.
+
+**Direction survives.** An ordinary directed graph preserves
+ordered-pair direction perfectly well: `directed_adjacency_view`
+documents that "the tuple order of a same-domain binary relation IS
+the direction", and `(a, p)` in a union carrier would still be
+distinguishable from `(p, a)`. Nothing here claims otherwise.
+
+**The typed signature does not.** What a union loses is the *intrinsic
+distinct source and codomain carriers* of the rectangular relation:
+
+```
+    D : X_i -> X_j        against        D^T : X_j -> X_i
+```
+
+Under a union both become relations over one domain `V`, and the two
+declared carriers that made them different KINDS of object are gone —
+recoverable only from an offset convention the mathematics never
+stated. The first thing `same_extension` tests is domain identity, and
+after a collapse that test has nothing left to compare.
+
+So the honest statement is:
+
+> An ordinary graph can preserve ordered-pair direction, but it does
+> not intrinsically preserve the distinct typed source/codomain
+> carriers of the rectangular relation.
 
 This is not a defect in the profile. It is a specialization the
 profile documents, and it is the right specialization for the mesh
@@ -395,20 +568,26 @@ fixture, with `--selftest`.
 | L2 | `+ graph_relation_algebra` |
 | L3 | `+ graph_structure` |
 | L4 | `+ structural_renderer_fixture` |
+| — | ===== **REVIEW GATE A** ===== |
+| L5 | `+ class_graph_field`, `graph_field_calculus`, `visualization_values_fixture`, `valued_renderer_fixture` |
 
 The shared fixtures are keyed by file and classified by the first
 level that earns them: `visualization_assert` below everything,
 `visualization_carriers_fixture` at L0,
 `visualization_relations_fixture` at L1,
-`visualization_algebra_fixture` at L2, and
+`visualization_algebra_fixture` at L2,
 `structural_renderer_fixture` **at L4** — so no level below Level 4
-can quietly become a picture.
+can quietly become a picture — and `visualization_values_fixture`
+plus `valued_renderer_fixture` **at L5**.
 
-Three families are refused **universally**, at every level:
+Two families are refused **universally**, at every level built so far.
+Values used to be a third, and Level 5 is where it stopped being one:
 
-1. **Values** — `class_graph_field`, `graph_field_calculus`, *and any
-   real number written by hand*. See the numberless law above; the
-   module refusal alone would have left the back door open.
+0. **Values** — `class_graph_field`, `graph_field_calculus`, *and any
+   real number written by hand*, refused at L0–L4 and **earned at
+   L5**. See the numberless law above; the module refusal alone would
+   have left the back door open, and the ceiling lifting at exactly
+   one rung is what keeps Level 4's claim mechanical after Gate A.
 2. **Operators** — `graph_grammar`, `class_graph_stencil`,
    `class_graph_step`, `graph_calculus`, `graph_fitting`,
    `class_graph_linearization`, `graph_minimization`,
@@ -418,7 +597,8 @@ Three families are refused **universally**, at every level:
    — are additionally refused by a direct scan, in case a later level
    finds another road to them.
 3. **The ordinary graph** — `graph_profile`, `graph_algorithms`,
-   `class_graph`, `class_stored_graph`.
+   `class_graph`, `class_stored_graph`. Level 5 included: values
+   arrived, machinery did not.
 
 **That third refusal is load-bearing evidence, not hygiene.** Gate A
 concludes that a rectangular typed dependency needs no ordinary-graph
@@ -430,26 +610,9 @@ makes "no ordinary graph was required" checkable instead of promised.
 
 ## The frontier — documented, not implemented
 
-### Level 5 — values on dependency occurrences
-
-The expected experiment attaches `w_k : E_k -> R` with at least one
-zero coefficient, e.g.
-
-```
-    w1 = [ 2, -1,  0,  3,  4 ]
-    w2 = [ 1,  5, -2,  2 ]
-    w3 = [ 3, -1,  4 ]
-```
-
-and asks:
-
-> **Does a numerical zero erase structural dependency?**
-
-Expected answer: **no**. A structurally existing occurrence with
-coefficient zero remains structurally present. This tests
-`structure != value`, and it is why `E_k` was given first-class
-identity at Level 0 — a coefficient needs somewhere to live that
-survives being zero.
+Level 5 asked *"does a numerical zero erase structural dependency?"*
+and answered **no**; see the Level-5 section above. What follows is
+still unbuilt.
 
 ### Level 6 — production operator structure
 
@@ -465,7 +628,10 @@ include *"`dependencies()` already expresses the correct skeleton"*,
 *"`dependencies()` is ordinary-graph/square-domain specialized and
 cannot faithfully express `X -> Y`"*, or something else. Nothing is
 pre-decided, and the existing `dependencies()` is **not** generalized
-at Gate A.
+— not at Gate A, and not by Level 5's success either. Level 5 says
+what a *field* does to structure; it says nothing about what a
+production operator exposes, and that question is left open on
+purpose.
 
 ### Level 7 — likely N/A, not yet refused
 
@@ -508,20 +674,24 @@ deliberately unresolved.
 test/visualization-tower/
 ├── README.md                    this file
 ├── NUCLEUS-OBSERVATIONS.md      the observation ledger
-├── run.sh                       the ladder, stopping at Gate A
+├── run.sh                       the ladder, stopping at the frontier
 ├── check_imports.sh             fail-closed, per level, --selftest
 ├── common/
 │   ├── visualization_assert.f90            below everything
 │   ├── visualization_carriers_fixture.f90  earned at L0
 │   ├── visualization_relations_fixture.f90 earned at L1
 │   ├── visualization_algebra_fixture.f90   earned at L2
-│   └── structural_renderer_fixture.f90     earned at L4
+│   ├── structural_renderer_fixture.f90     earned at L4
+│   ├── visualization_values_fixture.f90    earned at L5
+│   └── valued_renderer_fixture.f90         earned at L5
 ├── level-0-carrier/
 ├── level-1-relation/
 ├── level-2-relation-algebra/
 ├── level-3-graph/
-└── level-4-graph-calculus/
+├── level-4-graph-calculus/
+└── level-5-field-calculus/
 ```
 
-There is no `gate-a/` directory, and there will not be one. Gates are
-where you stop and report; levels are where you build.
+There is no `gate-a/` directory and no `gate-b/` directory, and there
+will not be either. Gates are where you stop and report; levels are
+where you build.

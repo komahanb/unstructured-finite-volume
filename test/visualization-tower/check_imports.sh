@@ -14,6 +14,8 @@
 #     visualization_relations_fixture  earned at Level 1
 #     visualization_algebra_fixture    earned at Level 2
 #     structural_renderer_fixture      earned at Level 4
+#     visualization_values_fixture     earned at Level 5
+#     valued_renderer_fixture          earned at Level 5
 #
 # THE RENDERER IS THE ONE THAT MATTERS. It is earned at Level 4 and
 # refused at 0-3, so no level below can quietly become a picture. A
@@ -30,14 +32,18 @@
 #     graph_relation_algebra                 earned at Level 2
 #     graph_structure                        earned at Level 3
 #     structural_renderer_fixture            earned at Level 4
+#     class_graph_field, graph_field_calculus, and the two
+#     coefficient fixtures                   earned at Level 5
 #
-# UNIVERSAL refusals never lift at ANY level of this tower, and there
-# are three families of them.
+# UNIVERSAL refusals never lift at any level BUILT SO FAR, and there
+# are two families of them - values used to be a third, and Level 5 is
+# where it stopped being one.
 #
-# 1. VALUES. graph_field_calculus and class_graph_field are Level 5's
-#    business and Level 5 is unbuilt. Gate A's central claim is that
-#    the structural picture precedes the numbers; a Gate-A level that
-#    could reach a field could have quietly leaned on one.
+# 0. VALUES, refused at L0-L4 and EARNED AT L5. graph_field_calculus
+#    and class_graph_field are Level 5's business. Gate A's claim is
+#    that the structural picture precedes the numbers, so the four
+#    levels below Level 5 must remain unable to reach a coefficient -
+#    which is a ceiling that lifted, not a refusal that was deleted.
 #
 # 2. OPERATORS. graph_grammar, class_graph_stencil, class_graph_step
 #    and everything that solves, steps, linearizes or marches. The
@@ -49,7 +55,7 @@
 #    dependencies() is Level 6's question and Level 6 is unbuilt.
 #
 # 3. THE ORDINARY GRAPH. graph_profile and graph_algorithms, refused
-#    at every level.
+#    at every level, Level 5 included.
 #
 # THAT THIRD REFUSAL IS THE SHARPEST ASSERTION IN THIS GATE, and it
 # is load-bearing evidence rather than hygiene.
@@ -78,6 +84,8 @@ allowed_for() {
         common/visualization_relations_fixture.f90) echo "visualization_assert graph_carrier graph_relation graph_binary_relation" ;;
         common/visualization_algebra_fixture.f90) echo "graph_carrier graph_relation graph_binary_relation graph_relation_algebra" ;;
         common/structural_renderer_fixture.f90) echo "visualization_carriers_fixture graph_carrier graph_relation graph_binary_relation" ;;
+        common/visualization_values_fixture.f90) echo "graph_carrier class_graph_field" ;;
+        common/valued_renderer_fixture.f90) echo "visualization_carriers_fixture structural_renderer_fixture graph_carrier graph_relation graph_binary_relation graph_field_calculus class_graph_field" ;;
         common)            echo "__no_allowlist__" ;;
 
         # ---- L0: carriers only. NOTHING relational - not the relation
@@ -95,7 +103,15 @@ allowed_for() {
         #          claim mechanical.
         level-4-graph-calculus) echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra graph_structure" ;;
 
-        # ===== REVIEW GATE A ===== levels 5-9 are UNBUILT.
+        # ===== REVIEW GATE A =====
+
+        # ---- L5: + the field nucleus, and the two fixtures that carry
+        #          coefficients. The ordinary graph and every operator
+        #          module stay refused: values arrived, machinery did
+        #          not.
+        level-5-field-calculus) echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture visualization_values_fixture valued_renderer_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra graph_structure graph_field_calculus class_graph_field" ;;
+
+        # ---- levels 6-9 are UNBUILT.
 
         *)                 echo "__no_allowlist__" ;;
     esac
@@ -113,7 +129,7 @@ allowlist_for() {
 }
 
 #---------------------------------------------------------------------
-# THE NUMBERLESS LAW.
+# THE NUMBERLESS LAW, AND WHERE IT STOPS.
 #
 # Gate A's central claim is that the structural picture precedes the
 # numerical coefficients entirely. Refusing class_graph_field and
@@ -124,16 +140,40 @@ allowlist_for() {
 #
 # and helped itself. So the claim is checked directly - no real or
 # complex declaration, and no literal carrying a decimal point or an
-# exponent, in any Gate-A source.
+# exponent, in any source below Level 5.
+#
+# LEVEL 5 IS WHERE THE NUMBERS ARRIVE, AND THEY ARRIVE DELIBERATELY.
+# The law is therefore a CEILING that lifts at exactly one rung, not a
+# rule that was deleted when it became inconvenient:
+#
+#     L0-L4 and their fixtures     no coefficient may be written
+#     L5 and its two fixtures      coefficients are the subject
+#
+# So the Gate-A claim stays mechanical after Gate A, which is the only
+# way it stays worth anything: Level 4's renderer must still be unable
+# to hold a number, or "Level 4 renders mathematics that has none"
+# would become a promise again.
 #
 # Comments are stripped first, because the tower's prose says the word
 # "real" often and means the English one. The stripping cuts at the
 # first '!', which is exact for these sources - none of them puts a
 # bang inside a string.
 #
-# Integers are untouched. A carrier's size is 4, and that is not a
-# coefficient.
+# Integers are untouched everywhere. A carrier's size is 4, and that
+# is not a coefficient.
 #---------------------------------------------------------------------
+
+# numbers_allowed <level[/file]>
+#     0  this source is entitled to carry coefficients
+#     1  it is not
+numbers_allowed() {
+    case "$1" in
+        level-5-field-calculus|level-5-field-calculus/*) return 0 ;;
+        common/visualization_values_fixture.f90)         return 0 ;;
+        common/valued_renderer_fixture.f90)              return 0 ;;
+        *)                                               return 1 ;;
+    esac
+}
 
 holds_no_number() {
     local code
@@ -167,6 +207,7 @@ allows() {
 if [ "$1" = "--selftest" ]; then
     fail=0
     levels="level-0-carrier level-1-relation level-2-relation-algebra level-3-graph level-4-graph-calculus"
+    with_five="$levels level-5-field-calculus"
     before_one="level-0-carrier"
     before_two="$before_one level-1-relation"
     before_three="$before_two level-2-relation-algebra"
@@ -240,7 +281,7 @@ if [ "$1" = "--selftest" ]; then
 
     # ---- UNIVERSAL 2: OPERATORS. Nothing that steps, solves,
     #      linearizes, marches, or owns dependencies().
-    for lvl in $levels; do
+    for lvl in $with_five; do
         refuses "$lvl" graph_grammar
         refuses "$lvl" class_graph_stencil
         refuses "$lvl" class_graph_step
@@ -259,7 +300,7 @@ if [ "$1" = "--selftest" ]; then
     #      Level 4 concludes that a rectangular typed dependency needs
     #      no ordinary-graph reading; because no level may name the
     #      profile, that conclusion cannot have been reached with one.
-    for lvl in $levels; do
+    for lvl in $with_five; do
         refuses "$lvl" graph_profile
         refuses "$lvl" graph_algorithms
         refuses "$lvl" class_graph
@@ -279,6 +320,58 @@ if [ "$1" = "--selftest" ]; then
     refuses common/structural_renderer_fixture.f90 graph_profile
     refuses common/visualization_relations_fixture.f90 graph_relation_algebra
     refuses common/visualization_algebra_fixture.f90 graph_structure
+
+    # ---- L5 earns the field nucleus and its two coefficient
+    #      fixtures. Nothing below it may reach any of them.
+    permits level-5-field-calculus class_graph_field
+    permits level-5-field-calculus graph_field_calculus
+    permits level-5-field-calculus visualization_values_fixture
+    permits level-5-field-calculus valued_renderer_fixture
+    permits level-5-field-calculus structural_renderer_fixture
+    for lvl in $levels; do
+        refuses "$lvl" visualization_values_fixture
+        refuses "$lvl" valued_renderer_fixture
+    done
+
+    # L5 does NOT lift the frontier. Values arrived; machinery did not.
+    refuses level-5-field-calculus graph_profile
+    refuses level-5-field-calculus graph_algorithms
+    refuses level-5-field-calculus class_graph_step
+    refuses level-5-field-calculus class_graph_stencil
+    refuses level-5-field-calculus graph_grammar
+    refuses level-5-field-calculus class_graph_linearization
+
+    # The valued renderer stands ON the structural one, never inside
+    # it - and the structural one may not learn about fields.
+    permits common/valued_renderer_fixture.f90 structural_renderer_fixture
+    permits common/valued_renderer_fixture.f90 class_graph_field
+    refuses common/structural_renderer_fixture.f90 class_graph_field
+    refuses common/structural_renderer_fixture.f90 graph_field_calculus
+    refuses common/structural_renderer_fixture.f90 valued_renderer_fixture
+    refuses common/visualization_values_fixture.f90 structural_renderer_fixture
+
+    # ---- THE NUMBERLESS LAW: WHERE IT HOLDS AND WHERE IT LIFTS.
+    if numbers_allowed level-4-graph-calculus/test.f90; then
+        echo " FAIL : the numberless law lifted below Level 5"
+        fail=1
+    fi
+    for below in level-0-carrier/test.f90 level-1-relation/test.f90 \
+                 level-2-relation-algebra/test.f90 level-3-graph/test.f90 \
+                 common/visualization_assert.f90 \
+                 common/structural_renderer_fixture.f90; do
+        if numbers_allowed "$below"; then
+            echo " FAIL : the numberless law lifted at $below"
+            fail=1
+        fi
+    done
+    for at_five in level-5-field-calculus/test.f90 \
+                   common/visualization_values_fixture.f90 \
+                   common/valued_renderer_fixture.f90; do
+        if numbers_allowed "$at_five"; then :; else
+            echo " FAIL : Level 5 was refused its own coefficients at $at_five"
+            fail=1
+        fi
+    done
 
     # ---- THE NUMBERLESS LAW, tested on the checker itself.
     numbered=$(mktemp);   printf 'module m\n real(dp) :: w = 2.0_dp\nend module\n' > "$numbered"
@@ -301,7 +394,7 @@ if [ "$1" = "--selftest" ]; then
 
     # An unclassified source still fails closed rather than silently
     # open - the five built levels are named, and nothing else is.
-    allows level-5-field-calculus graph_carrier
+    allows level-6-discretization graph_carrier
     if [ "$?" -ne 2 ]; then
         echo " FAIL : an unbuilt level did not fail closed"
         fail=1
@@ -346,11 +439,14 @@ for dir in "$here"/common "$here"/level-*; do
             fi
         done
 
-        # Gate A holds no number, and this is where that is enforced
-        # rather than asserted.
-        if ! holds_no_number "$src"; then
-            echo "IMPORT GATE: $(basename "$src") in $name carries a real declaration or a non-integer literal - Gate A holds no coefficients"
-            violation=1
+        # Below Level 5 there are no numbers, and this is where that
+        # is enforced rather than asserted. At Level 5 there are, and
+        # the ceiling lifts for exactly those three sources.
+        if ! numbers_allowed "$key"; then
+            if ! holds_no_number "$src"; then
+                echo "IMPORT GATE: $(basename "$src") in $name carries a real declaration or a non-integer literal - only Level 5 holds coefficients"
+                violation=1
+            fi
         fi
 
         # The two production TYPE names the brief forbids by name.

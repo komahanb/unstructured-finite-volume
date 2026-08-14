@@ -35,8 +35,8 @@ nothing structural moves when they do:
 
 ## Status
 
-**Levels 0–7 are built and green.** Review Gates A and B are behind
-them. Levels 8 and 9 are UNBUILT.
+**TOWER SEALED.** All ten levels are built and green; Review Gates A,
+B and C are all behind them.
 
 Level 7 was RED when first written, and the RED was real: the diagonal
 of an unchanged matrix moved when only an irrelevant context graph
@@ -59,12 +59,14 @@ is no longer asked to take its structure from the execution context.
 | **L5** | fields `w_k : E_k -> R` | `class_graph_field` / `field` | occurrence carriers `E1, E2, E3` | scalar values | structure **unchanged** | structure unchanged; **no numerical reverse** | structural sparsity **+ coefficient view** | `level-5-field-calculus/test.f90` | PASS |
 | **L6** | production dependency projection | `discretization_operator % dependencies()` → `class(graph)` | one ordinary vertex carrier | the same carrier | Boolean coordinate pattern equals `D2 : X1 -> X2` | structure unchanged; no numerical reverse | signature **+** sparsity, shown side by side | `level-6-discretization/test.f90` | PASS |
 | **L7** | minimizer structural provenance | `minimizer % attach(..., coupling=)`, `% sweep_order()`, `% diagonal()` | one operator, two execution contexts | colours, matvec, diagonal | coupling `P_A` is context-independent | not exercised | operator coupling **vs** execution context, side by side | `level-7-minimization/test.f90` | PASS |
-| **L8** | constitution | — | — | — | — | — | — | — | UNBUILT |
-| **L9** | statement | — | — | — | — | — | — | — | UNBUILT |
+| — | ===== **REVIEW GATE B** ===== | | | | | | | | |
+| **L8** | two axes and a context, coexisting | `step % dependencies()`, `stencil % dependencies()`, `minimizer % attach(coupling=)` | one composition | three distinct structures | independent stencil fans in | not exercised | all three grids side by side | `level-8-constitution/test.f90` | PASS |
+| **L9** | the tower's statement | all of the above, plus the L5 coefficient view | the whole specimen | one output | structure, values, both axes, context, solver | not exercised | five representations in one statement | `level-9-statement/test.f90` | PASS |
+| — | ===== **REVIEW GATE C** ===== | | | | | | | | |
 
-No level is marked N/A — **including Level 7, which is INHABITED**:
-minimization genuinely consumes graph structure. Every unbuilt level
-is marked UNBUILT.
+No level is marked N/A — **including Level 7, which turned out to be
+INHABITED**: minimization genuinely consumes graph structure. Nothing
+is UNBUILT.
 Levels are implementation units; gates are horizontal separators where
 review happens, and are never directories. **Level 5 being green does
 not make Gate B reached** — Gate B reviews Levels 5, 6 and 7 together,
@@ -625,6 +627,82 @@ never looked at it.
 
 ---
 
+## Level 8 — the axes coexist without conflation
+
+One composition, four objects alive at once, and three of them are
+distinct structures over three members each:
+
+```
+    INDEPENDENT-VARIABLE STENCIL      DEPENDENT-VARIABLE STENCIL
+    step % dependencies()             stencil % dependencies()
+
+            1 2 3                             1 2 3
+    1       . . .                     1       # # .
+    2       . . .                     2       # # #
+    3       # # #                     3       . # #
+
+    EXECUTION CONTEXT                 SOLVER
+    (no edges)                        coupling = dependent stencil
+                                      colours ........ 1 2 1
+            1 2 3                     matvec([1,2,3]) . 6 14 20
+    1       . . .                     diagonal ....... 4  5  6
+    2       . . .
+    3       . . .
+```
+
+The solver's colouring is a valid colouring of the **dependent**
+stencil, is **not** a valid colouring of the independent one, and is
+not the flat colouring the empty context would have produced. Backward
+Euler answers the same shape one instant narrower: `1->2`, `2->2`.
+
+No Kronecker product is formed and no product-space type exists. The
+point is only that the two axes remain distinct and composable.
+
+---
+
+## Level 9 — the statement
+
+```
+    INDEPENDENT-VARIABLE STENCIL     which instants the residual reads
+    DEPENDENT-VARIABLE STENCIL       which unknown feeds which
+    DEPENDENT-VARIABLE VALUES        the coefficients on that structure
+    EXECUTION CONTEXT                where the action runs — may differ
+    SOLVER STRUCTURE                 what the minimizer coloured
+    CONTEXT-INVARIANT DIAGONAL       [4, 5, 6]
+```
+
+> **The correct structure is determined by the mathematical axis, not
+> by whichever graph happens to be nearby.**
+
+Every representation is produced by the tower's own test-local
+renderers. There is no production visualization API, no `visualize()`
+on any root, and no representation type.
+
+---
+
+## The sealed result
+
+```
+    relation        ->  structure
+    field           ->  values
+    dependencies()  ->  the stencil on the concrete type's axis
+    renderer        ->  representation
+    minimizer       ->  explicit dependent-variable coupling
+```
+
+and
+
+```
+    context graph
+        !=  independent-variable stencil
+        !=  dependent-variable stencil
+```
+
+**No generic visualization abstraction was promoted.** The tower did
+not earn one, and says so.
+
+---
+
 ## Mathematics and Fortran spelling
 
 The repository's composition reads its arguments in the order the data
@@ -870,6 +948,8 @@ fixture, with `--selftest`.
 | — | ===== **REVIEW GATE A** ===== |
 | L5 | `+ class_graph_field`, `graph_field_calculus`, `visualization_values_fixture`, `valued_renderer_fixture` |
 | L6 | `+ graph_grammar`, `class_graph_stencil`, `class_graph_step`, `production_discretization_fixture`, `production_pattern_renderer_fixture` |
+| L7 | `+ class_graph`, `class_graph_jacobi` |
+| L8–L9 | the same, plus the L5 coefficient view at L9 |
 
 The shared fixtures are keyed by file and classified by the first
 level that earns them: `visualization_assert` below everything,
@@ -968,7 +1048,7 @@ Level 7 was a candidate for N/A and turned out to be **inhabited**:
 minimization consumes graph structure through colouring. It is built,
 it was RED, and it is resolved — see the Level-7 section above.
 
-### Level 8 — constitution
+### Level 8 — done
 
 > Can an actual operator chain and its structural representation
 > coexist compositionally?
@@ -984,15 +1064,14 @@ it was RED, and it is resolved — see the Level-7 section above.
                 picture
 ```
 
-A shape like `operation (x) representation` may emerge. It is not
-implemented, not named, and not designed here — Gate B must earn it.
+No such abstraction emerged, and none was built. What the level
+actually needed was already there: two concrete types that each know
+their own axis, and a caller that hands the right one to the solver.
 
-### Level 9 — statement
+### Level 9 — done
 
-Potentially `visualize_structure(A3 o A2 o A1)`, returning forward
-chain, reverse chain, individual sparsity and composed sparsity while
-leaving the mathematical operator unchanged. The exact interface is
-deliberately unresolved.
+Delivered as a printed statement from the test-local renderers, with
+no production interface at all. See the Level-9 section above.
 
 ---
 
@@ -1020,9 +1099,12 @@ test/visualization-tower/
 ├── level-3-graph/
 ├── level-4-graph-calculus/
 ├── level-5-field-calculus/
-└── level-6-discretization/
+├── level-6-discretization/
+├── level-7-minimization/
+├── level-8-constitution/
+└── level-9-statement/
 ```
 
-There is no `gate-a/` directory and no `gate-b/` directory, and there
-will not be either. Gates are where you stop and report; levels are
-where you build.
+There is no `gate-a/`, `gate-b/` or `gate-c/` directory, and there
+never was. Gates are where you stop and report; levels are where you
+build.

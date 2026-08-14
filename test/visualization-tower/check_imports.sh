@@ -131,7 +131,12 @@ allowed_for() {
         #          marcher, no linearization.
         level-7-minimization) echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_pattern_renderer_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra graph_structure graph_grammar class_graph class_graph_stencil class_graph_jacobi" ;;
 
-        # ---- levels 8-9 are UNBUILT.
+        # ---- L8: the constitution. Both axes and the context at once,
+        #          on the vocabulary Levels 6 and 7 already earned.
+        level-8-constitution) echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_pattern_renderer_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra graph_structure graph_grammar class_graph class_graph_stencil class_graph_step class_graph_jacobi" ;;
+        # ---- L9: the statement, on the same constitution plus the
+        #          coefficient view Level 5 earned.
+        level-9-statement) echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture valued_renderer_fixture visualization_values_fixture production_pattern_renderer_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra graph_structure graph_grammar graph_field_calculus class_graph class_graph_field class_graph_stencil class_graph_step class_graph_jacobi" ;;
 
         *)                 echo "__no_allowlist__" ;;
     esac
@@ -193,6 +198,8 @@ numbers_allowed() {
         common/valued_renderer_fixture.f90)              return 0 ;;
         level-6-discretization|level-6-discretization/*) return 0 ;;
         level-7-minimization|level-7-minimization/*)     return 0 ;;
+        level-8-constitution|level-8-constitution/*)     return 0 ;;
+        level-9-statement|level-9-statement/*)           return 0 ;;
         common/production_discretization_fixture.f90)    return 0 ;;
         *)                                               return 1 ;;
     esac
@@ -205,6 +212,8 @@ discretization_allowed() {
     case "$1" in
         level-6-discretization|level-6-discretization/*)  return 0 ;;
         level-7-minimization|level-7-minimization/*)      return 0 ;;
+        level-8-constitution|level-8-constitution/*)      return 0 ;;
+        level-9-statement|level-9-statement/*)            return 0 ;;
         common/production_discretization_fixture.f90)     return 0 ;;
         common/production_pattern_renderer_fixture.f90)   return 0 ;;
         *)                                                return 1 ;;
@@ -515,12 +524,7 @@ if [ "$1" = "--selftest" ]; then
 
     # An unclassified source still fails closed rather than silently
     # open - the five built levels are named, and nothing else is.
-    allows level-8-constitution graph_carrier
-    if [ "$?" -ne 2 ]; then
-        echo " FAIL : an unbuilt level did not fail closed"
-        fail=1
-    fi
-    allows level-9-statement graph_carrier
+    allows level-10-nowhere graph_carrier
     if [ "$?" -ne 2 ]; then
         echo " FAIL : an unbuilt level did not fail closed"
         fail=1

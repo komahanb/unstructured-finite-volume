@@ -15,9 +15,8 @@ necessity.
 Every entry names the **LEVEL** that owns its evidence and the review
 **gate** at which that level was reviewed. Levels are the architecture;
 gates are checkpoints. **The ten levels of this tower are ONE client,
-not ten.** Eight of them are built, and the eighth is RED. The tower
-is **not sealed**, and Review Gate B is **not reached** - Gate B
-reviews Levels 5, 6 and 7 together, and Level 7 does not hold.
+not ten.** All ten are built and the tower is SEALED. Review Gates A,
+B and C are behind it.
 
 ---
 
@@ -1836,12 +1835,75 @@ action:               OBSERVE. The seam is closed for this consumer
 
 ---
 
-## Seam accounting through Level 7
+## OBSERVATION VIZ-33
+
+```text
+tower:                Visualization
+level:                8-9  (constitution, statement)
+review gate:          C
+contextual radius:    5 (the whole sealed client)
+
+symptom / fact:       THREE STRUCTURES COEXIST IN ONE COMPOSITION
+                      WITHOUT BEING CONFLATED, AND NO NEW ABSTRACTION
+                      WAS NEEDED TO KEEP THEM APART.
+
+                        independent-variable stencil   step's own
+                        dependent-variable stencil     stencil's own
+                        execution context              neither
+
+                      all three carrying three members in the Level-8
+                      specimen - the coincidence that makes the
+                      distinction worth proving rather than asserting.
+
+                      The solver, handed the dependent stencil
+                      explicitly, produced a colouring that is valid
+                      for THAT structure, invalid for the independent
+                      one, and not the flat colouring the empty
+                      context would have given. Diagonal [4,5,6].
+
+                      NO KRONECKER PRODUCT WAS FORMED and no
+                      product-space type exists. The axes were shown
+                      to be distinct and composable; building the
+                      product would have been choosing an abstraction
+                      on one specimen's evidence.
+
+                      WHAT THE TOWER DID NOT BUILD, across all ten
+                      levels:
+
+                        graph_visualization
+                        graph_observation
+                        graph_representation
+                        graph_interpretation
+                        graph_renderer
+                        visualize() / print() / structure() on any root
+                        dependencies() on graph_operation
+                        a structural-axis enum
+                        a structural_projection type
+                        a product-space type
+
+                      The renderers are test fixtures and stay test
+                      fixtures. Their whole evidential value is that
+                      they may use nothing but the nucleus.
+
+exact caller:         level-8-constitution/test.f90,
+                      level-9-statement/test.f90
+
+evidence:             L8 PASS, L9 PASS, tower sealed.
+
+confidence:           high at this radius.
+
+action:               OBSERVE, AND BUILD NOTHING. A visualization
+                      abstraction was not earned.
+```
+
+---
+
+## Seam accounting at the seal
 
 | Seam | Before this tower | After Gate A | Why |
 |---|---|---|---|
 | **A1** graph host as conduit | CLOSED | CLOSED | nothing here reopens it; no operation was hosted anywhere |
-| **A2** operations take domain from graph | 3 towers | **3 towers — unchanged** | Gate A attached no operation to anything; Level 5 attached a FIELD to a CARRIER; Level 6 CONSTRUCTED two production operations and asked them a structural question without ever applying one. The seam is about an operation taking its DOMAIN from a graph, and no operation was applied to anything |
+| **A2** operations take domain from graph | 3 towers | **3 towers — unchanged** | Gate A attached no operation to anything; Level 5 attached a FIELD to a CARRIER; Level 6 interrogated operations without applying one. Levels 7–9 applied one through a minimizer — and the fault found there was the solver taking its COLOURING from the host, which is a different question from an operation taking its DOMAIN from one. The seam is untouched |
 | **A3** relational_graph ownership | KEEP | KEEP | one more successful typed-ownership pattern (7 carriers, 6 relations, full signature closure); no production change follows |
 | **B** bidirectional/rectangular linearization | 2 towers | **2 towers — ZERO new votes** | this tower is full of rectangular structure and none of it is a linearization; structural transpose is not numerical adjoint, and Level 5 built no `w^T`, applied no `A^T v`, and composed no coefficients |
 
@@ -1867,10 +1929,24 @@ It does — through colouring — and it colours the **host**, not the
 operator. The diagonal of an unchanged matrix moved when only an
 irrelevant context graph changed.
 
+The decision it demanded turned out to need no new vocabulary: the
+CALLER knows which object owns the dependent axis, and hands that
+structure to the minimizer at attach. See VIZ-32.
+
 ```
-NEXT DECISION = define where a consumer asks for a PARTICULAR
-                structural projection of an operation.
+TOWER SEALED.
+
+    relation        ->  structure
+    field           ->  values
+    dependencies()  ->  the stencil on the concrete type's axis
+    renderer        ->  representation
+    minimizer       ->  explicit dependent-variable coupling
+
+    context graph != independent stencil != dependent stencil
 ```
 
-This is a decision for a review, not for a level. Level 7 is RED,
-Gate B is not reached, and `src/` is untouched.
+Production changed in three places, all narrow and all earned:
+class_graph_step (a stencil is not a chronology), graph_calculus
+(the contract's prose), graph_minimization (a seat for the coupling),
+plus the caller adjustments the new argument required. No root was
+generalized and no visualization abstraction was promoted.

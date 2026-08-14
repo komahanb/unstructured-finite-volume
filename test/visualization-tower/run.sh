@@ -7,15 +7,14 @@
 # level reports its own status, in order, and a gate line may only
 # follow the levels it reviews.
 #
-# Eight levels are built, and the eighth is RED.
+# All ten levels are built. The tower says TOWER SEALED once, here,
+# and only after every level has reported for itself.
 #
-# Level 7 asserts that the diagonal of an unchanged matrix does not
-# depend on an irrelevant context graph. It does. The ladder therefore
-# stops there, and REVIEW GATE B IS NOT PRINTED - a gate reviews the
-# levels beneath it, and one of those does not hold.
-#
-# The failure is the finding, not an accident. Nothing here weakens
-# the oracle to make the line green.
+# Level 7 was RED when first written - the diagonal of an unchanged
+# matrix moved when only the execution context changed - and the RED
+# was resolved by giving the minimizer a seat for the dependent
+# variable's coupling rather than by weakening the experiment. The
+# hostile host is still three vertices and no edges.
 #
 # Nothing here prints TOWER SEALED, because nothing here has sealed
 # anything - the frontier is where this tower's evidence currently
@@ -39,6 +38,10 @@ levels=(
   "level-5-field-calculus     5 field calculus"
   "level-6-discretization     6 discretization"
   "level-7-minimization       7 minimization"
+  "GATE                       B"
+  "level-8-constitution       8 constitution"
+  "level-9-statement          9 statement"
+  "GATE                       C"
 )
 
 echo "VISUALIZATION TOWER"
@@ -89,13 +92,10 @@ done
 if [ "$failed" -ne 0 ]; then
     echo
     echo "    the ladder stops at the first failure"
-    echo "    REVIEW GATE B is NOT reached"
     exit 1
 fi
 
-echo
-echo "    L8 constitution ................... UNBUILT"
-echo "    frontier stops here"
+echo "    TOWER SEALED."
 echo
 
 # What the tower actually produced, replayed from the levels' own
@@ -111,4 +111,8 @@ sed -n '/^ ----/,/^ ----/p' "$here/level-5-field-calculus/run.out" \
 echo
 echo "    PRODUCTION MEASUREMENT"
 sed -n '/^ ----/,/^ ----/p' "$here/level-6-discretization/run.out" \
+    | sed '1d;$d' | sed 's/^/    /'
+echo
+echo "    THE STATEMENT"
+sed -n '/^ ----/,/^ ----/p' "$here/level-9-statement/run.out" \
     | sed '1d;$d' | sed 's/^/    /'

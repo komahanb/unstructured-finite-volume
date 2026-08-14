@@ -19,14 +19,35 @@
 ! T0..T4, E1..E4, C_X, C_Y, and the numbering lives in exactly one
 ! place.
 !
-! NO ORACLES LIVE HERE YET. Gate A has no numbers: no state value,
-! no step size, no scheme coefficient, no trajectory. When Level 5
-! earns them they will arrive beside these names, and not before.
+! THE ORACLES ARRIVE AT LEVEL 5, and not one instant before. Gate A
+! had no numbers at all. From Level 5 the specimen acquires them,
+! and they live here because every level above checks against them:
+!
+!      h    = 1/2                  the step size
+!      time = [0, 1/2, 1, 3/2, 2]  the instants' coordinates
+!      q0   = [2, 0]               the initial state
+!
+!      S(q) = [ x, y - x ]         the dynamical action
+!      qdot = -S(q)                the house convention
+!
+! and the three discrete answers the levels above must reach:
+!
+!      q_FE,1   = [1, 1]                forward euler, by hand
+!      q_BE,1   = [4/3, 4/9]            backward euler
+!      q_BDF2,2 = [5/6, 47/72]          bdf-2, started from q_BE,1
+!
+! These are ORACLES. No level is permitted to obtain them from the
+! machinery it is testing: forward euler is computed here from
+! ordinary arithmetic, and the two implicit answers are the exact
+! rational solutions of their own residual equations, verified by
+! substitution rather than by a solver.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module time_assert
+
+  use iso_fortran_env, only : dp => REAL64
 
   implicit none
 
@@ -36,6 +57,8 @@ module time_assert
   public :: C_X, C_Y
   public :: T0, T1, T2, T3, T4
   public :: E1, E2, E3, E4
+  public :: H_STEP, TIME_COORD, Q0, Q_FE1, Q_BE1, Q_BDF2, TOL
+  public :: action_of
 
   ! The cardinalities of the three carriers.
   integer, parameter :: NQ = 2
@@ -66,7 +89,65 @@ module time_assert
   integer, parameter :: E3 = 3
   integer, parameter :: E4 = 4
 
+  !===================================================================!
+  ! The numerical specimen, earned at Level 5.
+  !===================================================================!
+
+  real(dp), parameter :: H_STEP = 0.5_dp
+
+  ! The instants' coordinates, in T's declaration order.
+  real(dp), parameter :: TIME_COORD(NT) = &
+       & [0.0_dp, 0.5_dp, 1.0_dp, 1.5_dp, 2.0_dp]
+
+  ! The initial state, in Q's declaration order: x then y.
+  real(dp), parameter :: Q0(NQ) = [2.0_dp, 0.0_dp]
+
+  !===================================================================!
+  ! The three discrete answers, as exact rationals.
+  !
+  !   forward euler   q1 = q0 - h S(q0) = [2,0] - (1/2)[2,-2]
+  !                      = [1, 1]
+  !
+  !   backward euler  q1 - q0 + h S(q1) = 0, i.e. (I + hM) q1 = q0
+  !                   with M = [[1,0],[-1,1]]
+  !                      = [4/3, 4/9]
+  !
+  !   bdf-2           (3/2)q2 - 2 q1 + (1/2)q0 + (1/2) S(q2) = 0
+  !                   started from q0 and the backward-euler q1
+  !                      = [5/6, 47/72]
+  !===================================================================!
+
+  real(dp), parameter :: Q_FE1(NQ) = [1.0_dp, 1.0_dp]
+
+  real(dp), parameter :: Q_BE1(NQ) = &
+       & [4.0_dp / 3.0_dp, 4.0_dp / 9.0_dp]
+
+  real(dp), parameter :: Q_BDF2(NQ) = &
+       & [5.0_dp / 6.0_dp, 47.0_dp / 72.0_dp]
+
+  real(dp), parameter :: TOL = 1.0e-10_dp
+
 contains
+
+  !===================================================================!
+  ! The dynamical action, in the plainest arithmetic there is:
+  !
+  !      S([x, y]) = [ x, y - x ]
+  !
+  ! An ORACLE, and deliberately a duplicate of what the Level-6
+  ! fixture will compute through production types. A test that
+  ! checked production against production would check nothing.
+  !===================================================================!
+
+  pure function action_of(q) result(s)
+
+    real(dp), intent(in) :: q(NQ)
+    real(dp)             :: s(NQ)
+
+    s(1) = q(1)
+    s(2) = q(2) - q(1)
+
+  end function action_of
 
   subroutine report(ok, label, nfail)
 

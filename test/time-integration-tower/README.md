@@ -22,11 +22,19 @@ TIME INTEGRATION TOWER
 
     ===== REVIEW GATE A =====
 
-    L5 field calculus .................. UNBUILT
-    frontier stops here
+    L5 field calculus .................. PASS
+    L6 discretization .................. PASS
+    L7 minimization .................... PASS
+
+    ===== REVIEW GATE B =====
+
+    L8 constitution .................... UNBUILT
+    L9 statement ....................... UNBUILT
+
+    frontier stops here.
 ```
 
-The tower is **not sealed**. Levels 5–9 are unbuilt, and nothing in
+The tower is **not sealed**. Levels 8–9 are unbuilt, and nothing in
 this document claims a truth they have not established.
 
 ## Levels are the architecture; gates are only review checkpoints
@@ -92,9 +100,9 @@ invent it.
 | **2** | \(A_1=\mathrm{Head}\circ\mathrm{Tail}^{T}\); \(A_2=A_1\circ A_1\) | `transpose_of`, `compose_binary` | \(T\to T\) | **derived** | one-step and two-step temporal *reach* | `level-2-relation-algebra/` | reach is generated, not stored; \(A_1\neq A_2\) | none |
 | **3** | \(G_{\text{time}}=(\{Q,T,E\},\{\mathrm{Tail},\mathrm{Head},A_1,A_2\})\) | `relational_graph`, `held_set`, `held_relation` | three owned carriers | four owned relations | one relational structure, not one domain | `level-3-graph/` | signature closure holds, **and** \(Q\) is lawfully owned while naming no relation | none |
 | **4** | directed views over \(A_1\), \(A_2\) | `directed_adjacency_view`, `graph_profile`, `graph_algorithms` | \(T\) (both views) | borrowed from the graph | **causality** | `level-4-graph-calculus/` | forward causal order \([t_0..t_4]\); two views, one carrier | none |
-| **5** | — | — | — | — | — | — | **UNBUILT** | — |
-| **6** | — | — | — | — | — | — | **UNBUILT** | — |
-| **7** | — | — | — | — | — | — | **UNBUILT** | — |
+| **5** | \(q_0:Q\to\mathbb R\); \(\mathrm{time}:T\to\mathbb R\); \(h:E\to\mathbb R\) | `field` | \(Q\), \(T\), \(E\) — three distinct | consumed, not made | values, no scheme | `level-5-field-calculus/` | **values live on domains, not on graphs** — \(q_0\) needs no graph, and \(\mathrm{time}(\mathrm{head}(e))-\mathrm{time}(\mathrm{tail}(e))=h(e)\) | none |
+| **6** | \(S:Q\to Q\); FE; BE residual; BDF2 residual | `step_operator`, `backward_euler`, `bdf` | \(Q\), beside a 5-vertex host \(H_t\) | \(A_1,A_2\) supply the history roles | the discrete law | `level-6-discretization/` | **temporal discretization preserves \(Q\)** — RED first, then a narrow correction | `class_graph_step.f90` — domain and width delegated to the action |
+| **7** | solve temporal residual \(=0\) | `gmres` | unknown \(Q\), host \(H_t\) | — | the implicit solve | `level-7-minimization/` | **an explicit unknown domain \(Q\) survives minimization** while the host has five unrelated vertices | none — the minimizer was already right |
 | **8** | — | — | — | — | — | — | **UNBUILT** | — |
 | **9** | — | — | — | — | — | — | **UNBUILT** | — |
 
@@ -107,11 +115,12 @@ L2  derived one-step and two-step reach
 L3  one relational structure owning both axes without conflating them
 L4  causal traversal: sources, sinks, reachability, topological order
 --- REVIEW GATE A ---
-L5  field calculus       UNBUILT
-L6  discretization       UNBUILT
-L7  minimization         UNBUILT
-L8  constitution         UNBUILT
-L9  statement            UNBUILT
+L5  values on Q, T and E — three domains, no graph
+L6  the scheme: S on Q, and a discretization that keeps Q
+L7  the implicit solve, on Q, beside a five-vertex host
+--- REVIEW GATE B ---
+L8  constitution          UNBUILT
+L9  statement             UNBUILT
 ```
 
 ---
@@ -295,43 +304,242 @@ The Rosetta truth a later scheme can consume:
 A1 and A2 are DIFFERENT STRUCTURAL VIEWS over the SAME T carrier
 ```
 
-> **REVIEW GATE A** — after Level 4. The frontier stops here.
+> **REVIEW GATE A** — after Level 4.
 
 ---
 
-# E. What Gate B will ask
+# D2. Levels 5–7 — values, scheme, solve
 
-Stated as a question, because it has not been answered:
+## The road, and the arrow that is never drawn
+
+```text
+        TIME STRUCTURE                      STATE DOMAIN
+        T, E, A1, A2                            Q
+                                                |
+        (structure: which instants,             |  q_n : Q -> R
+         in which order, reachable              |
+         from which)                            v
+                                    +-----------------------+
+                                    | temporal step operator|
+                                    |  a0 q + a1 qold       |
+                                    |  + a2 qolder + h S(q) |
+                                    +-----------------------+
+                                          ^          |
+                    H_t --------------------          |
+                    (compatibility host,              |
+                     5 vertices, carried              v
+                     as context, unread)        residual on Q
+                                                      |
+                                                      v
+                                              GMRES, unknown = Q
+                                                      |
+                                                      v
+                                                q_{n+1} : Q -> R
+```
+
+**No arrow in that picture says \(Q = V(H_t)\), and none may.** The host
+enters from the side because the `graph_operation` contract requires
+one; it leaves nothing behind. \(Q\) has two members and \(V(H_t)\) has
+five, throughout.
+
+## Level 5 — field calculus
+
+Three fields on three domains:
+
+```text
+q0   : Q -> R      [2, 0]
+time : T -> R      [0, 1/2, 1, 3/2, 2]
+h    : E -> R      [1/2, 1/2, 1/2, 1/2]
+```
+
+pinned by domain **identity**, and pairwise distinct. The central truth:
+
+\[
+\boxed{\text{STATE VALUES LIVE ON } Q \text{, INDEPENDENTLY OF ANY GRAPH.}}
+\]
+
+No graph is constructed at Level 5. None is needed — production field
+calculus already says a field is a function over one `member_set`, and
+\(Q\) is one. That capability is not discovered here; it is *exercised*
+by a client whose state domain is emphatically nobody's vertex set.
+
+Values are not structure. The instant \(t_2\) is a **member** of \(T\);
+the real \(1.0\) is a **value** at \(t_2\). Their consistency is proved,
+not assumed, through the relations Level 1 earned:
+
+\[
+\mathrm{time}(\mathrm{head}(e)) - \mathrm{time}(\mathrm{tail}(e)) = h(e)
+\qquad\text{for every step } e.
+\]
+
+## Level 6 — discretization, and the seam
+
+The first rung to touch production, and the first place **seam A2** is
+genuinely exercised. The action \(S([x,y]) = [x, y-x]\) carries its own
+domain and stores no graph. The compatibility host \(H_t\) is a
+five-vertex chain:
+
+```text
+|V(H_t)| = 5        |Q| = 2        V(H_t) is NOT Q, and NOT T
+```
+
+The mismatch is load-bearing: at equal cardinality a substitution of one
+carrier for the other would produce plausible numbers and the seam would
+hide.
+
+```text
+S(q0)    = [2, -2]                          direct action, no fix needed
+q_FE,1   = q0 - h S(q0) = [1, 1]            by hand, not by marcher
+q_BE,1   = [4/3, 4/9]                       residual zero, by substitution
+q_BDF2,2 = [5/6, 47/72]                     residual zero, by substitution
+```
+
+**RED came first.** Asked `step % domain(H_t, d)`, the production
+reviewed at Gate A answered the host's five vertices, and `step % apply`
+then died inside `set_real_vector`. The failure is recorded verbatim in
+[`NUCLEUS-OBSERVATIONS.md`](NUCLEUS-OBSERVATIONS.md) TI-8, written
+before production was touched.
+
+The correction is narrow and lives in `src/class_graph_step.f90` alone:
+
+\[
+\boxed{\text{TEMPORAL DISCRETIZATION PRESERVES THE DOMAIN OF THE ACTION IT DISCRETIZES.}}
+\]
+
+A step is an operation *built from* another operation, so its residual
+is a statement about the same unknown. The domain question is delegated
+to the action; the component width is read from the input field; the
+answer lands on the action's domain. For every graph-based action —
+which is all of them on the ordinary-graph road, since each answers
+`input_graph % all_vertices(...)` — this returns exactly what asking the
+graph returned, and `test/graph-marching` passes unchanged.
+
+### Structure and scheme, finally joined
+
+Level 2 derived \(A_1\) and \(A_2\) and *refused* to call either a
+scheme. Level 6 supplies the other half. At instant \(t_2\):
+
+```text
+A1-predecessor of t2  =  t1        one-step history role
+A2-predecessor of t2  =  t0        two-step history role
+
+bdf-2:   a0 = 3/2 at t2     a1 = -2 at t1     a2 = 1/2 at t0
+```
+
+\[
+\boxed{A_1, A_2 \text{ supply STRUCTURAL REACH; the scheme supplies the NUMBERS.}}
+\]
+
+Neither contains the other, which is why Level 2 was right to refuse the
+name.
+
+## Level 7 — minimization
+
+Production GMRES, unknown domain \(Q\), host \(H_t\) with its five
+unrelated vertices. The affine constant is measured, not assumed, and
+the implicit step becomes a linear system:
+
+```text
+backward euler   c = R(0) = -q0 = [-2, 0]
+                 rhs = [2, 0]        ->  q1 = [4/3, 4/9]
+
+bdf-2            c = -2q1 + q0/2
+                 rhs = [5/3, 8/9]    ->  q2 = [5/6, 47/72]
+```
+
+Both right-hand sides are fields **on \(Q\)**; both solutions come back
+**on \(Q\)**.
+
+**The minimizer needed no change.** `graph_minimization` already takes
+its unknown domain as an explicit argument and asks the *action* for the
+residual domain — its own comment says "no hidden fallback to the host's
+vertices." That contrast is the evidence: the same seam that was open in
+the discretization was already closed in the minimization, by a contract
+written the other way round.
+
+> **REVIEW GATE B** — after Level 7. The frontier stops here.
+
+---
+
+# E. What Gate B asked, and what it answered
+
+The question, as Gate A posed it:
 
 > When \(q\) becomes a field on \(Q\), can the existing temporal
 > discretization and minimization stack preserve \(Q\) as the state
 > domain, independently of whatever graph supplies structural context?
 
-Neutral record of what will be tested there:
+**Answered: yes — after one narrow correction, and the two halves of the
+stack answered differently.**
 
 ```text
-the current step / march code (class_graph_step, class_graph_marcher)
-will be exercised at Gate B; it is NOT imported at Gate A
+graph_minimization      ALREADY preserved Q.  Unknown domain explicit,
+                        residual domain asked of the action.  No change.
+
+class_graph_step        DID NOT.  It read the host's vertices for the
+                        domain and the host's vertex count for the
+                        width.  RED at Level 6; corrected there.
 ```
 
-Gate A imports none of it deliberately. Levels 0–4 establish time's
-structure *independently of the current implementation of time
-marching*; otherwise this client would merely redescribe production and
-could not be evidence about it.
+The marcher was **not** imported and remains untested. Whether the
+machinery that stamps a step along a chain can carry a state domain that
+is not its host's vertex set is a question for a level that does not
+exist, and the import gate refuses the module at every built level.
 
 One further fact, recorded neutrally and **not** verified here:
 `test/graph-marching/test.f90` opens by stating *"TIME IS A GRAPH: the
 marcher's instants stand as a chain — one vertex per instant, one edge
 per step, walked in order."* That is production's own description of
-itself, read but not imported. It means the Gate-B comparison is at
-least well posed — there is a chain-of-instants notion on the other side
-to compare against. Whether it agrees with \(A_1\), and whether it
-preserves \(Q\), is exactly what Gate B is for.
+itself, read but not imported.
 
-Nothing here says the production marcher is wrong, that **seam A2** of
-the reverse architecture review must be closed, or that
-`graph_operation` must change. Those are questions for levels that have
-not been built.
+Nothing here says the production marcher is wrong, or that
+`graph_operation` must change. Those remain questions for levels that
+have not been built.
+
+## Seam A2 — the evidence count, and its limit
+
+```text
+BEFORE this tower     Derivative Action, Adjoint
+                      = 2 towers, one family (derivative)
+
+AFTER Level 6         + Time Integration
+                      = 3 independent towers, and the FIRST
+                        non-derivative-family client
+```
+
+That reaches the repository's **strong-evidence** bar. What it earned
+here, and all it earned here, is one sentence of production:
+
+> temporal discretization no longer infers its state domain from the
+> compatibility host.
+
+It does **not** authorize the broader A2 migration across `fit`,
+`graph_reduction`, `graph_broadcast` or `difference_linearization`.
+None of those was exercised by this tower.
+
+\[
+\boxed{\begin{gathered}
+\text{Strong evidence makes the broader refactor ELIGIBLE for reverse review;}\\
+\text{it does not make every possible implementation MANDATORY.}
+\end{gathered}}
+\]
+
+That question belongs to a reverse review after this tower is sealed —
+and this tower is not sealed.
+
+## Seams A1 and B — unmoved
+
+```text
+A1   graph host cannot be removed generically
+     CLOSED by the Partitioned Implicit PDE Tower, on production
+     evidence.  This client locally ignores H_t's topology because a
+     triangular 2x2 decay has no topology to traverse.  That is a
+     property of THIS action, not a counterexample.  A1 stays closed.
+
+B    one law, forward and reverse, between different domains
+     ZERO new votes.  This gate has no tangent, no adjoint, no
+     transpose and no linearization operator.  Nothing here bears on it.
+```
 
 > Read carefully: **seam A2** is the review's *"operations should carry
 > their own domain"*, and \(A_2\) is this tower's *two-step reach
@@ -342,9 +550,10 @@ not been built.
 
 # F. What this tower proves / does not prove
 
-## Proven, at Gate A
+## Proven, through Gate B
 
 ```text
+STRUCTURE (L0-L4)
 Q, T and E are independent carriers; raw integer equality is not
     domain identity
 temporal direction is relation structure, not loop index order
@@ -355,24 +564,39 @@ a relational graph may lawfully own a state carrier that no relation
 causality is a graph-calculus INTERPRETATION of A1, not a property
     of A1 itself
 reverse causal order exists structurally before any adjoint exists
+
+VALUES AND MATHEMATICS (L5-L7)
+state values live on Q, and a field needs no graph to exist
+values are not structure: time(head(e)) - time(tail(e)) = h(e) is
+    proved over the already-earned relations
+an action may carry its own domain and ignore the host it is handed
+temporal discretization PRESERVES the domain of the action it
+    discretizes - after a narrow correction earned by RED
+A1/A2 supply the history ROLES; bdf-2 supplies the COEFFICIENTS,
+    and neither contains the other
+production GMRES solves an implicit temporal step on Q while the
+    host carries five unrelated vertices
 ```
 
 ## Not proven — anywhere yet
 
 ```text
-anything numerical           any value of q
-Forward Euler                BDF2 or any scheme
-step size h                  a residual or action S(q)
 a time-marching loop         the production marcher's contract
-whether an operation can carry its own domain   ← SEAM A2,
-                                                  NOT exercised here
+more than one step           a trajectory, an alternate constitution
+                             or a statement (L8, L9: UNBUILT)
+any tangent or adjoint       any linearization  ← SEAM B, zero votes
+whether fit / reduction / broadcast / difference_linearization
+    should carry their own domains   ← the BROADER A2 migration,
+                                       NOT performed and NOT tested
 ```
 
 **Seam A2** of
 [the reverse architecture review](../../doc/REVERSE-ARCHITECTURE-REVIEW.md)
 — *operations should carry their domain rather than ask a graph for one*
-— is **not** advanced by Gate A. Nothing here has attached an operation
-to anything.
+— reaches **three independent towers** at Level 6, and this is the first
+outside the derivative family. What that earned is one narrow sentence
+of production, stated above. The migration across the other four call
+sites is eligible for reverse review and has not been done here.
 
 ---
 
@@ -382,23 +606,25 @@ to anything.
 test/time-integration-tower/
 ├── README.md                    this document — the Rosetta stone
 ├── NUCLEUS-OBSERVATIONS.md      the evidence ledger (TI-*), by level
-├── run.sh                       level-by-level runner; stops at Gate A
+├── run.sh                       level-by-level runner; stops at Gate B
 ├── check_imports.sh             fail-closed allowlists, PER LEVEL,
 │                                + its own --selftest
 ├── common/
 │   ├── time_assert.f90                    (below everything)
 │   ├── time_carriers_fixture.f90          earned at Level 0
 │   ├── time_relations_fixture.f90         earned at Level 1
-│   └── time_algebra_fixture.f90           earned at Level 2
+│   ├── time_algebra_fixture.f90           earned at Level 2
+│   ├── time_fields_fixture.f90            earned at Level 5
+│   └── triangular_decay_fixture.f90       earned at Level 6
 ├── level-0-carrier/             test.f90
 ├── level-1-relation/            test.f90
 ├── level-2-relation-algebra/    test.f90
 ├── level-3-graph/               test.f90
-└── level-4-graph-calculus/      test.f90
+├── level-4-graph-calculus/      test.f90
+├── level-5-field-calculus/      test.f90
+├── level-6-discretization/      test.f90
+└── level-7-minimization/        test.f90
 
-    level-5-field-calculus/      NOT YET
-    level-6-discretization/      NOT YET
-    level-7-minimization/        NOT YET
     level-8-constitution/        NOT YET
     level-9-statement/           NOT YET
 ```
@@ -409,7 +635,14 @@ The fixture ladder is the tower's own stratification applied to itself:
 Level 0    time_carriers_fixture      declares Q, T, E
 Level 1    time_relations_fixture     states Tail, Head over them
 Level 2    time_algebra_fixture       composes what follows
+Level 5    time_fields_fixture        puts values on all three
+Level 6    triangular_decay_fixture   the action S : Q -> Q
 ```
+
+The import ceiling rises the same way, one rung at a time — the step
+operator is refused below Level 6, the minimizer and GMRES below Level
+7 — so no level can redescribe machinery it has not yet earned. The
+marcher is refused at **every** built level.
 
 The relation fixture does not *import* the carrier fixture — its
 constructors receive \(Q,T,E\) as arguments, because a Level-1 file may
@@ -418,6 +651,7 @@ is enforced by the import gate's per-file allowlists, by each level's
 Makefile, and by `check_imports.sh --selftest`, which asserts that a
 Level-0 source saying `use time_relations_fixture` is refused.
 
-There is no `check_marker.sh`: Gate A produces no numerical result, and
-a result contract for a tower with no result would be a claim it has not
-earned.
+There is no `check_marker.sh`. Gate B computes real numbers, but it does
+not yet produce a single *statement* — that is Level 9's business — and
+a result contract for a result the tower has not claimed would be a
+claim it has not earned.

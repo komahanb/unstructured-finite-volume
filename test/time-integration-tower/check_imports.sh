@@ -14,6 +14,8 @@
 #     time_carriers_fixture      earned at Level 0
 #     time_relations_fixture     earned at Level 1
 #     time_algebra_fixture       earned at Level 2
+#     time_fields_fixture        earned at Level 5
+#     triangular_decay_fixture   earned at Level 6
 #
 # The fixture ladder is the tower's own stratification applied to
 # itself. Level 0 declares carriers and may reach ONLY the carrier
@@ -28,21 +30,37 @@
 #
 #                  THE FRONTIER, HELD SHUT
 #
-# Levels 0-4 establish what TIME IS, independently of how this
-# repository currently marches through it. So the marcher, the step
-# operators and the minimizer are forbidden at EVERY level of this
-# tower - not merely unused:
+# Two kinds of refusal live here, and the difference matters.
 #
-#     class_graph_step        class_graph_marcher
-#     graph_minimization      class_graph_gmres
-#     class_graph_newton
+# STAGED refusals are ceilings that RISE. Levels 0-4 established
+# what time IS independently of how this repository marches through
+# it, so they see no machinery at all; the machinery then arrives
+# one rung at a time, each where its level earns it:
 #
-# Were any of them imported here, the client would be redescribing
-# production instead of establishing the meaning production will
-# later be measured against. The derivative and adjoint modules are
-# likewise forbidden: this is not a derivative-family client.
+#     class_graph_field       earned at Level 5
+#     class_graph_step        earned at Level 6, refused at 0-5
+#     graph_minimization      earned at Level 7, refused at 0-6
+#     class_graph_gmres       earned at Level 7, refused at 0-6
 #
-# Levels 5-9 are unbuilt. Their allowlists do not exist yet, and a
+# A level that could reach the step operator before Level 6 could
+# have redescribed production instead of establishing the meaning
+# production is measured against - which is exactly what Level 6's
+# RED depended on not having happened.
+#
+# UNIVERSAL refusals never lift, at any built level:
+#
+#     class_graph_marcher     no level has earned it yet
+#     class_graph_newton      no level has earned it
+#     class_graph_linearization + the derivative/adjoint fixtures
+#                             this is not a derivative-family client
+#
+# The marcher is the sharpest of these. Levels 5-7 test one step,
+# by hand, twice. Whether the machinery that stamps a step along a
+# chain can carry a state domain that is not its host's vertex set
+# is a question for a level that does not exist, and importing the
+# module before then would answer it by assumption.
+#
+# Levels 8-9 are unbuilt. Their allowlists do not exist yet, and a
 # level directory that appears without one fails closed - which is
 # the correct behaviour for a frontier.
 
@@ -57,6 +75,8 @@ allowed_for() {
         common/time_carriers_fixture.f90) echo "graph_carrier" ;;
         common/time_relations_fixture.f90) echo "graph_carrier graph_relation graph_binary_relation" ;;
         common/time_algebra_fixture.f90) echo "graph_carrier graph_relation graph_relation_algebra graph_binary_relation" ;;
+        common/time_fields_fixture.f90) echo "graph_carrier graph_field_calculus class_graph_field time_assert" ;;
+        common/triangular_decay_fixture.f90) echo "graph_carrier graph_grammar graph_field_calculus class_graph_field" ;;
         common)            echo "__no_allowlist__" ;;
 
         # ---- L0: carriers only. NOTHING relational - not the
@@ -70,6 +90,18 @@ allowed_for() {
         level-3-graph)     echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_structure" ;;
         # ---- L4: + the profile and its algorithms. No marcher.
         level-4-graph-calculus) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_structure graph_profile graph_algorithms" ;;
+
+        # ===== REVIEW GATE A =====
+
+        # ---- L5: + fields. Values, and nothing that steps or solves.
+        level-5-field-calculus) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_field_calculus class_graph_field" ;;
+        # ---- L6: + the ordinary graph (the compatibility host), the
+        #          operation contract, and the step operators. NO
+        #          minimizer: the scheme is tested before the solve.
+        level-6-discretization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_carrier graph_grammar graph_relation graph_relation_algebra graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step" ;;
+        # ---- L7: + minimization and its gmres concretion. Still no
+        #          marcher.
+        level-7-minimization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_carrier graph_grammar graph_relation graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step graph_minimization class_graph_gmres" ;;
 
         *)                 echo "__no_allowlist__" ;;
     esac
@@ -109,7 +141,9 @@ allows() {
 
 if [ "$1" = "--selftest" ]; then
     fail=0
-    levels="level-0-carrier level-1-relation level-2-relation-algebra level-3-graph level-4-graph-calculus"
+    levels="level-0-carrier level-1-relation level-2-relation-algebra level-3-graph level-4-graph-calculus level-5-field-calculus level-6-discretization level-7-minimization"
+    before_six="level-0-carrier level-1-relation level-2-relation-algebra level-3-graph level-4-graph-calculus level-5-field-calculus"
+    before_seven="$before_six level-6-discretization"
 
     permits() {
         if allows "$1" "$2"; then :; else
@@ -156,26 +190,50 @@ if [ "$1" = "--selftest" ]; then
     permits level-4-graph-calculus graph_profile
     permits level-4-graph-calculus graph_algorithms
 
-    # THE FRONTIER: the marcher, the step operators and the
-    # minimizer are refused at EVERY level, L4 most of all.
-    for lvl in $levels; do
+    # ---- STAGED: ceilings that rise, each at the level that earns it.
+    permits level-5-field-calculus time_fields_fixture
+    permits level-5-field-calculus class_graph_field
+    refuses level-4-graph-calculus class_graph_field
+    refuses level-4-graph-calculus time_fields_fixture
+
+    permits level-6-discretization class_graph_step
+    permits level-6-discretization triangular_decay_fixture
+    for lvl in $before_six; do
         refuses "$lvl" class_graph_step
-        refuses "$lvl" class_graph_marcher
+        refuses "$lvl" triangular_decay_fixture
+    done
+
+    permits level-7-minimization graph_minimization
+    permits level-7-minimization class_graph_gmres
+    for lvl in $before_seven; do
         refuses "$lvl" graph_minimization
         refuses "$lvl" class_graph_gmres
+    done
+
+    # ---- UNIVERSAL: refusals that never lift at any built level.
+    #      The marcher is the sharpest: Levels 5-7 solve ONE step by
+    #      hand, and whether the machinery that stamps a step along a
+    #      chain can carry a non-vertex state domain is a question no
+    #      built level has asked.
+    for lvl in $levels; do
+        refuses "$lvl" class_graph_marcher
         refuses "$lvl" class_graph_newton
         refuses "$lvl" class_graph_linearization
-        refuses "$lvl" class_graph_field
+        refuses "$lvl" derivative_fixture
+        refuses "$lvl" adjoint_fixture
     done
 
     # The fixtures themselves are keyed per file.
     permits common/time_carriers_fixture.f90 graph_carrier
     refuses common/time_carriers_fixture.f90 graph_binary_relation
     refuses common/time_assert.f90 graph_carrier
+    permits common/triangular_decay_fixture.f90 graph_grammar
+    refuses common/triangular_decay_fixture.f90 class_graph_step
+    refuses common/triangular_decay_fixture.f90 class_graph_marcher
 
     # An unclassified source fails closed rather than silently open -
-    # which is also what an unbuilt Level 5 will meet.
-    allows level-5-field-calculus graph_carrier
+    # which is what the unbuilt Level 8 meets.
+    allows level-8-constitution graph_carrier
     if [ "$?" -ne 2 ]; then
         echo " FAIL : an unbuilt level did not fail closed"
         fail=1
@@ -185,7 +243,7 @@ if [ "$1" = "--selftest" ]; then
         echo "IMPORT GATE: the layering decision is wrong"
         exit 1
     fi
-    echo "import gate: the fixture ladder holds, and the marcher is refused at every level"
+    echo "import gate: the ladder rises one rung at a time, and the marcher is refused at every level"
     exit 0
 fi
 

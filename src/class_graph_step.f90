@@ -152,17 +152,50 @@ contains
 
   end function step_name
 
+  !===================================================================!
+  ! THE DOMAIN OF A STEP IS THE DOMAIN OF THE ACTION IT DISCRETIZES.
+  !
+  ! A step is an operation BUILT FROM another operation, and its
+  ! residual
+  !
+  !      a0 q + a1 qold + a2 qolder + h S(q)
+  !
+  ! is a statement about the same unknown S is a statement about.
+  ! So the question is delegated: the action answers, and the host
+  ! is the conduit that carries it there.
+  !
+  ! For every action that reads its domain off the graph - which is
+  ! all of them on the ordinary-graph road - this returns exactly
+  ! what asking the graph returned, so no marching caller sees a
+  ! change. For an action that carries its own domain, it returns
+  ! that domain, which asking the graph never could.
+  !===================================================================!
+
   subroutine step_domain(this, input_graph, domain)
 
     class(step_operator), intent(in)       :: this
     class(graph), intent(in)               :: input_graph
     class(member_set), allocatable, intent(out) :: domain
 
-    associate (u1 => this); end associate
-
-    call input_graph % all_vertices(domain)
+    call this % action % domain(input_graph, domain)
 
   end subroutine step_domain
+
+  !===================================================================!
+  ! The step's residual, on the action's own domain.
+  !
+  ! Three things travel with the DATA and the ACTION rather than
+  ! with the host: the domain, the component width, and the carrier
+  ! the answer lands on. The state's width is read from the state -
+  ! a coordinate carrying several numbers is measured whole - and
+  ! never inferred by dividing by a vertex count.
+  !
+  ! Both domain checks are identity questions, and both are refusals
+  ! the caller wants early: a state on a foreign carrier, or an
+  ! action that answers somewhere other than where it said it
+  ! would, are wrong in ways that produce plausible numbers if left
+  ! alone.
+  !===================================================================!
 
   subroutine step_apply(this, input_graph, input_data, output)
 
@@ -173,16 +206,27 @@ contains
 
     type(field)   :: out
     class(graph_field), allocatable :: velocity
+    class(member_set), allocatable  :: expected, given
     real(dp), allocatable :: q(:), s(:), y(:)
-    integer :: nv, ncomp
+    integer :: ncomp
 
-    nv = input_graph % num_vertices()
+    call this % action % domain(input_graph, expected)
 
     if (present(input_data)) then
+
+       call input_data(1) % domain(given)
+       if (.not. given % same_as(expected)) then
+          error stop 'step: the state must live on the action''s own domain'
+       end if
+       ncomp = input_data(1) % num_components()
 
        call input_data(1) % get_real_vector(q)
 
        call this % action % apply(input_graph, input_data, velocity)
+       call velocity % domain(given)
+       if (.not. given % same_as(expected)) then
+          error stop 'step: the action must answer on its stated domain'
+       end if
        call velocity % get_real_vector(s)
 
        y = this % a0 * q + this % a1 * this % qold + this % hs * s
@@ -191,12 +235,12 @@ contains
        end if
 
     else
-       allocate(y(nv))
+       ncomp = 1
+       allocate(y(expected % size()))
        y = 0.0_dp
     end if
 
-    ncomp = size(y) / max(nv, 1)
-    out = field('step residual', input_graph % vertex_set(), ncomp=ncomp)
+    out = field('step residual', expected, ncomp=ncomp)
     call out % set_real_vector(y)
 
     if (allocated(output)) deallocate(output)

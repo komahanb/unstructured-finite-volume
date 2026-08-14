@@ -32,6 +32,11 @@ levels=(
   "level-2-relation-algebra   2 relation algebra"
   "level-3-graph              3 relational graph"
   "level-4-graph-calculus     4 graph calculus"
+  "GATE                       A"
+  "level-5-field-calculus     5 field calculus"
+  "level-6-discretization     6 discretization"
+  "level-7-minimization       7 minimization"
+  "GATE                       B"
 )
 
 echo "TIME INTEGRATION TOWER"
@@ -42,6 +47,14 @@ failed=0
 for entry in "${levels[@]}"; do
     set -- $entry
     dir="$1"; shift
+
+    if [ "$dir" = "GATE" ]; then
+        echo
+        echo "    ===== REVIEW GATE $1 ====="
+        echo
+        continue
+    fi
+
     num="$1"; shift; label="L$num $*"
     dots="$(printf '%.*s' $((35 - ${#label})) '...................................')"
 
@@ -76,8 +89,7 @@ if [ "$failed" -ne 0 ]; then
     exit 1
 fi
 
+echo "    L8 constitution .................... UNBUILT"
+echo "    L9 statement ....................... UNBUILT"
 echo
-echo "    ===== REVIEW GATE A ====="
-echo
-echo "    L5 field calculus .................. UNBUILT"
-echo "    frontier stops here"
+echo "    frontier stops here."

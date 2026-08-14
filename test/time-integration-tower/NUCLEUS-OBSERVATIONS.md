@@ -15,24 +15,27 @@ necessity.
 Every entry names the **LEVEL** that owns its evidence and the review
 **gate** at which that level was reviewed. Levels are the architecture;
 gates are checkpoints. **The ten levels of this tower are ONE client,
-not ten** — and Levels 5–9 do not exist yet, so nothing below claims
+not ten** — and Levels 8–9 do not exist yet, so nothing below claims
 evidence from them.
 
 ---
 
 ## A standing caution for this ledger
 
-Every entry at Gate A is `action: observe`, and **none of them is
+**TI-1 … TI-6 are Gate-A structural observations, and none of them is
 evidence for seam A2** of
 [the reverse architecture review](../../doc/REVERSE-ARCHITECTURE-REVIEW.md)
 — *operations should carry their domain rather than ask a graph for
-one*.
+one*. Gate A attached no operation to anything, so it could not have
+exercised the seam.
 
-A2 concerns what an **operation** does. Gate A has attached no
-operation to anything. It has not asked a graph for a domain, because it
-has nothing that would need one. The seam is untouched here, and
-recording these six structural observations as though they bore on it
-would be counting a tower that has not run the experiment.
+**TI-8 is the seam-A2 observation.** It was earned at Level 6, by an
+experiment that failed first and was recorded before production was
+touched. It is ONE tower's evidence, not three levels' worth: Levels
+0–9 of this tower are ONE client, and the count below moves by one.
+
+**This tower is ONE client.** Do not count TI-7 … TI-11 as five new
+votes for anything.
 
 ---
 
@@ -144,7 +147,9 @@ mathematical concept: orientation as a pair of maps from an incidence
 local necessity:      yes
 global necessity:     unknown - production's marcher currently
                       expresses time as a loop, and whether that is
-                      equivalent is a Gate-B question
+                      equivalent remains UNANSWERED: Gate B solved
+                      single steps by hand and never imported the
+                      marcher
 
 cross-tower recurrence: first tower to state TIME this way
 
@@ -465,30 +470,481 @@ action:               observe
 
 ---
 
+## OBSERVATION TI-7
+
+```text
+tower:                Time Integration
+level:                5  (field calculus)
+review gate:          B
+contextual radius:    0
+
+symptom / fact:       THE STATE FIELD HAS ITS OWN DOMAIN, and no
+                      graph exists anywhere in the Level-5 program.
+
+                        q0   : Q -> R    [2, 0]
+                        time : T -> R    [0, 1/2, 1, 3/2, 2]
+                        h    : E -> R    [1/2, 1/2, 1/2, 1/2]
+
+                      Each pinned by domain IDENTITY, and the three
+                      domains pairwise distinct. q0 lives on Q
+                      because a field is a function over one
+                      member_set - which is what production field
+                      calculus already says, in those words.
+
+                      This is not a new capability. It is an
+                      EXERCISE of an existing one by a client whose
+                      state domain is emphatically nobody's vertex
+                      set, and the exercise is what makes Level 6's
+                      question askable at all: if q0 had needed a
+                      graph to exist, the seam would have been
+                      invisible one rung later.
+
+                      Values are not structure. The instant t2 is a
+                      MEMBER of T; the real 1.0 is a VALUE at t2.
+                      Their consistency is proved rather than
+                      assumed, over the relations Level 1 earned:
+
+                        time(head(e)) - time(tail(e)) = h(e)
+
+                      for every step - field calculus over
+                      established structure, and not a time scheme.
+
+exact caller:         level-5-field-calculus/test.f90
+                      (check_domains_by_identity,
+                      check_coordinates_agree_with_structure)
+
+mathematical concept: a field is a function over a member_set; the
+                      domain is the mathematics, the container is not
+
+local necessity:      yes
+global necessity:     unknown at this radius
+
+cross-tower recurrence: every prior tower put fields on domains too.
+                      What is new is that this client's state domain
+                      could not be mistaken for a vertex set even by
+                      accident - |Q| = 2 against a 5-vertex host one
+                      level later
+
+graph role:           NONE. No graph is constructed at this level,
+                      and that absence is the observation
+
+comparison:           the learning tower established that a field's
+                      domain is a member_set and roles are domains.
+                      This client needed that to already be true, and
+                      found it was
+
+suspected nucleus implication: none. class_graph_field needed
+                      nothing; it was already right.
+
+confidence:           high
+action:               observe
+```
+
+---
+
+## OBSERVATION TI-8
+
+```text
+tower:                Time Integration
+level:                6  (discretization)
+review gate:          B
+contextual radius:    1
+
+symptom / fact:       *** THE SEAM-A2 OBSERVATION. RED FIRST. ***
+
+                      TEMPORAL DISCRETIZATION SUBSTITUTED THE HOST'S
+                      VERTICES FOR THE STATE DOMAIN.
+
+                      The experiment: an action S : Q -> Q that
+                      carries its own domain and stores no graph;
+                      a compatibility host H_t with FIVE vertices;
+                      |Q| = 2. The mismatch is deliberate - at equal
+                      cardinality the substitution would have
+                      produced plausible numbers and hidden.
+
+                      The direct action was already correct and
+                      needed no production change:
+
+                        decay % domain(H_t)  ->  Q          PASS
+                        decay % apply(H_t, q0) on Q         PASS
+                        S(q0) = [2, -2]                     PASS
+
+                      The step operator built FROM it was not. Run
+                      against src as it stood at 6b60879 - BEFORE
+                      the correction this commit carries - VERBATIM.
+                      Every file:line below is a PRE-FIX line number
+                      and will not match the current source:
+
+                        FAIL : the backward-euler STEP answers Q when
+                               asked its domain: TEMPORAL
+                               DISCRETIZATION PRESERVES THE DOMAIN OF
+                               THE ACTION IT DISCRETIZES
+                        FAIL : and it does NOT answer the host's five
+                               vertices - the state domain is not
+                               inferred from the conduit
+
+                        ERROR STOP class_graph_field: a value vector
+                        must fill its domain exactly
+
+                        Error termination. Backtrace:
+                        #3 __class_graph_field_MOD_field_set_real_vector
+                           at src/class_graph_field.f90:305
+                        #4 __class_graph_step_MOD_step_apply
+                           at src/class_graph_step.f90:200
+
+                      Two distinct defects in one operator:
+
+                        step_domain  answered
+                                     input_graph % all_vertices(...)
+                                     - a 5-member carrier for a
+                                     2-member unknown
+
+                        step_apply   took its width as
+                                     size(y) / num_vertices() = 2/5 = 0
+                                     and landed the answer on
+                                     input_graph % vertex_set()
+
+                      The residual of a step is a statement about the
+                      same unknown the action is a statement about.
+                      Neither the domain nor the width was ever the
+                      host's business.
+
+exact caller:         level-6-discretization/test.f90
+                      (check_step_domain_is_the_action_s,
+                      check_backward_euler_residual);
+                      src/class_graph_step.f90 (step_domain:163,
+                      step_apply:179/198/199 as they stood)
+
+mathematical concept: an operator built from another operator
+                      inherits that operator's domain, not its
+                      container's
+
+local necessity:      yes - the level cannot pass otherwise
+global necessity:     YES for temporal discretization. A step is
+                      ALWAYS built from an action, so the delegation
+                      is right for every caller, not only this one
+
+cross-tower recurrence: *** THIS IS THE THIRD INDEPENDENT TOWER FOR
+                      SEAM A2, AND THE FIRST OUTSIDE THE DERIVATIVE
+                      FAMILY. ***
+
+                        before   Derivative Action, Adjoint
+                                 = 2 towers, one family
+                        after    + Time Integration
+                                 = 3 towers, two families
+
+                      which reaches the repository's strong-evidence
+                      bar. Counted as ONE client: this tower's ten
+                      levels are one client, not ten
+
+graph role:           compatibility conduit. H_t is present because
+                      the graph_operation contract requires a graph,
+                      and its topology is never read by this action
+
+comparison:           the reverse review predicted A2 would need a
+                      client "outside the derivative family" whose
+                      domains are not built by a graph's vertex set.
+                      It proposed a partitioned or coupled tower.
+                      Time integration turned out to be a cleaner
+                      instrument: the state domain is not merely
+                      DIFFERENT from the host's vertices, it is a
+                      different KIND of thing, and no partitioning
+                      relates them
+
+suspected nucleus implication: APPLIED, and deliberately narrow -
+                      see TI-9. Nothing broader was performed.
+
+confidence:           high
+action:               ACT (narrow), then observe
+```
+
+---
+
+## OBSERVATION TI-9
+
+```text
+tower:                Time Integration
+level:                6  (discretization)
+review gate:          B
+contextual radius:    1
+
+symptom / fact:       DISCRETIZATION PRESERVES THE ACTION'S DOMAIN -
+                      the correction TI-8's RED earned, and the whole
+                      of it.
+
+                      In src/class_graph_step.f90 ONLY:
+
+                        step_domain   delegates to
+                                      this % action % domain(...)
+
+                        step_apply    takes ncomp from
+                                      input_data(1) % num_components()
+                                      validates the input's domain
+                                      validates the action's answer
+                                      lands the residual on the
+                                      action's domain
+
+                        nv            deleted, with both its uses
+
+                      The rule, stated once:
+
+                        TEMPORAL DISCRETIZATION PRESERVES THE DOMAIN
+                        OF THE ACTION IT DISCRETIZES.
+
+                      REGRESSION, verified rather than argued. Every
+                      action on the ordinary-graph road answers
+                      input_graph % all_vertices(domain) - checked
+                      directly in mandelbrot_law, vdp_law,
+                      vdp_tangent_law and vdp_adjoint_law - and the
+                      test pins that all_vertices(H) and
+                      H % vertex_set() are the same carrier. So
+                      delegation returns exactly what asking the graph
+                      returned, and test/graph-marching passes
+                      unchanged, including its two-numbers-wide cell
+                      case, which is the one that exercises ncomp.
+
+                      class_graph_marcher is the ONLY consumer of
+                      step_operator in the repository, and it was not
+                      touched.
+
+                      WHAT WAS NOT DONE, deliberately:
+
+                        graph_operation root      unchanged
+                        graph_grammar             unchanged
+                        graph_fitting             unchanged
+                        reduction / broadcast     unchanged
+                        difference_linearization  unchanged
+                        class_graph_marcher       unchanged
+
+                      Strong evidence makes the broader A2 migration
+                      ELIGIBLE for reverse review; it does not make
+                      every possible implementation MANDATORY. None
+                      of those four call sites was exercised by this
+                      tower, and a refactor of an untested call site
+                      is a speculation wearing evidence's clothes.
+
+exact caller:         src/class_graph_step.f90 (step_domain,
+                      step_apply); level-6-discretization/test.f90
+
+mathematical concept: delegation of a domain question to the object
+                      that owns the mathematics
+
+local necessity:      yes
+global necessity:     yes for this operator; UNKNOWN for the other
+                      four A2 call sites, which remain untested
+
+cross-tower recurrence: the correction is new; the seam is TI-8's
+
+graph role:           unchanged - the host is still passed to the
+                      action, which may consume its topology or not
+
+comparison:           graph_minimization already had this contract
+                      (TI-11). One module asked the host, its
+                      immediate collaborator asked the action, and
+                      only a client with |Q| != |V(H)| could tell
+                      them apart
+
+suspected nucleus implication: applied and complete for this
+                      operator. The broader question is recorded for
+                      reverse review, not answered.
+
+confidence:           high
+action:               ACT - applied, narrow, regression-verified
+```
+
+---
+
+## OBSERVATION TI-10
+
+```text
+tower:                Time Integration
+level:                6  (discretization)
+review gate:          B
+contextual radius:    1
+
+symptom / fact:       STRUCTURE AND SCHEME, JOINED WITHOUT BEING
+                      CONFUSED - the other half of TI-3.
+
+                      Level 2 derived A1 and A2 and REFUSED to call
+                      either one BDF2. Level 6 supplies what was
+                      missing. At instant t2:
+
+                        A1-predecessor of t2  =  t1
+                        A2-predecessor of t2  =  t0
+
+                      and bdf(2, ...) carries reach = 2 with
+
+                        a0 = 3/2  at t2      the present
+                        a1 = -2   at t1      one-step history
+                        a2 = 1/2  at t0      two-step history
+
+                      So:
+
+                        A1, A2   supply STRUCTURAL REACH - which
+                                 instants a two-step scheme may look
+                                 at
+
+                        bdf-2    supplies NUMERICAL COEFFICIENTS on
+                                 exactly those roles
+
+                      Neither contains the other. A2's extension is
+                      fixed by composition and knows no coefficient;
+                      the scheme's table is fixed by accuracy order
+                      and knows no carrier. Level 2 was right to
+                      refuse the name, and this is where the two
+                      halves meet.
+
+exact caller:         level-6-discretization/test.f90
+                      (check_reach_supplies_the_history_roles)
+
+mathematical concept: a discretization is a weighting of a
+                      structurally available dependency
+
+local necessity:      yes
+global necessity:     unknown - one scheme family on one specimen
+
+cross-tower recurrence: first tower to hold reach and scheme apart
+                      and then join them explicitly
+
+graph role:           none at this junction; the reach relations are
+                      graph-owned but the scheme reads none of them
+
+comparison:           TI-3 recorded the refusal; this records the
+                      join. Together they are one argument in two
+                      parts, and the parts are one level apart on
+                      purpose
+
+suspected nucleus implication: none. Recorded because "A2 is BDF2"
+                      is the single most natural wrong sentence
+                      anyone reading this tower could write.
+
+confidence:           high
+action:               observe
+```
+
+---
+
+## OBSERVATION TI-11
+
+```text
+tower:                Time Integration
+level:                7  (minimization)
+review gate:          B
+contextual radius:    1
+
+symptom / fact:       MINIMIZATION WAS ALREADY DOMAIN-EXPLICIT, and
+                      needed no change whatever.
+
+                      Production GMRES solved two implicit temporal
+                      steps on Q while the host carried five
+                      unrelated vertices:
+
+                        backward euler  c = -q0 = [-2, 0]
+                                        rhs = [2, 0]
+                                        q1 = [4/3, 4/9]
+
+                        bdf-2           c = -2q1 + q0/2
+                                        rhs = [5/3, 8/9]
+                                        q2 = [5/6, 47/72]
+
+                      Both right-hand sides are fields ON Q; both
+                      solutions come back ON Q; the affine constants
+                      were measured, not assumed.
+
+                      graph_minimization takes its unknown domain as
+                      an EXPLICIT argument and asks the ACTION for
+                      the residual domain. Its own comment says so:
+                      "no hidden fallback to the host's vertices; a
+                      caller that means vertices says so at its own
+                      call site."
+
+                      THE CONTRAST IS THE EVIDENCE. Two collaborating
+                      modules, one seam:
+
+                        class_graph_step      asked the HOST     RED
+                        graph_minimization    asked the ACTION   fine
+
+                      Seam A2 is therefore not a uniform defect in
+                      the nucleus. It is a contract that some modules
+                      already keep and others did not, and the ones
+                      that keep it show what the correction should
+                      look like rather than needing one.
+
+exact caller:         level-7-minimization/test.f90
+                      (check_backward_euler_solve, check_bdf2_solve,
+                      check_unknown_domain_is_the_caller_s_word);
+                      src/graph_minimization.f90 (attach:159-166)
+
+mathematical concept: an unknown domain is the caller's declaration,
+                      not the container's property
+
+local necessity:      yes
+global necessity:     yes - and already satisfied
+
+cross-tower recurrence: the four sealed towers all attached
+                      minimizers whose unknown domain HAPPENED to be
+                      the host's vertex set. This is the first client
+                      for which it demonstrably is not, so the first
+                      to prove the explicit argument does real work
+
+graph role:           conduit only. The solver passes H_t to the
+                      step, which passes it to the action, which
+                      ignores it
+
+comparison:           seam A1 stays CLOSED. The partitioned tower
+                      settled on production evidence that the host is
+                      a real conduit for topology-consuming actions.
+                      This action consumes no topology because a
+                      triangular 2x2 decay has none - a property of
+                      THIS action, not a counterexample to that
+                      finding
+
+suspected nucleus implication: NONE, and specifically no
+                      "improvement" to graph_minimization. Nothing
+                      here found anything to improve.
+
+confidence:           high
+action:               observe
+```
+
+---
+
 # Frontier
 
 ```text
-Levels 5-9 are UNBUILT.
+Levels 8-9 are UNBUILT.
 
-WHAT GATE B WILL ASK
+WHAT GATE B ASKED, AND ANSWERED
 
     When q becomes a field on Q, can the existing temporal
     discretization and minimization stack preserve Q as the state
     domain, independently of whatever graph supplies structural
     context?
 
-WHAT WILL BE TESTED THERE, recorded neutrally
+    YES - after one narrow correction, and the two halves of the
+    stack answered differently:
 
-    the current step / march code - class_graph_step,
-    class_graph_marcher - is deliberately NOT imported at Gate A,
-    and will be exercised at Gate B.
+        graph_minimization   already did          (TI-11)
+        class_graph_step     did not; RED         (TI-8)
+                             corrected            (TI-9)
+
+WHAT REMAINS UNTESTED
+
+    class_graph_marcher is refused at every built level and has
+    NOT been exercised. Whether the machinery that stamps a step
+    along a chain can carry a state domain that is not its host's
+    vertex set is a question for a level that does not exist.
 
 WHAT THIS LEDGER DOES NOT SAY
 
     that the production marcher is wrong
-    that SEAM A2 must be closed
     that graph_operation must change
-    that seam A2 has gained a third independent tower
+    that fit / reduction / broadcast / difference_linearization
+        must be migrated - none was exercised here
+    that seam B has gained a vote (it has not: no tangent, no
+        adjoint, no transpose, no linearization at this gate)
+    that seam A1 has been reopened (it has not: this action
+        consumes no topology because it HAS none)
 
 A NOTE ON THE LABEL, because this ledger uses it both ways:
 

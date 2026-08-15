@@ -11,7 +11,7 @@
 ! The repository's composition reads its arguments in the order the
 ! data flows, and its result in the order mathematics writes it:
 !
-!      compose_binary(R_AB, R_BC)  =  R_BC o R_AB
+!      compose_binary(P_AB, P_BC)  =  P_BC o P_AB
 !
 ! so the FIRST argument is applied FIRST. Written out for the three
 ! derivations this tower needs:

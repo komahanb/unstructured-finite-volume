@@ -108,9 +108,9 @@ The load-bearing consequence is the
 | Level | Meaning | Core truth |
 |---|---|---|
 | 0 | carriers | \(V,O,P\) distinct symbolic domains |
-| 1 | relation | ternary \(R_{\mathrm{flow}}\), six tuples, y consumed twice |
+| 1 | relation | ternary \(T_{\mathrm{flow}}\), six tuples, y consumed twice |
 | 2 | relation algebra | \(D=\{(\mathrm{product},\mathrm{sum})\}\) **derived** |
-| 3 | relational graph | one owned structure \(G=(\mathcal S,\mathcal R)\) |
+| 3 | relational graph | one owned structure \(\Gamma=(\mathcal S,\mathcal P)\) |
 | 4 | graph calculus | directed interpretation; walk \([\mathrm{product},\mathrm{sum}]\) |
 | 5 | field calculus | base point on \(X\); computed \(C\) valueless; **no seeds** |
 | 6 | derivative structure | \(A_V\), two-path truth, \(J_{ZX}=\{(z,x),(z,y)\}\), transpose view |
@@ -144,7 +144,7 @@ P=\{in_1,in_2,out\},
 and the structural relation is exactly
 
 \[
-R_{\mathrm{flow}}\subseteq O\times V\times P
+T_{\mathrm{flow}}\subseteq O\times V\times P
 \]
 
 with six tuples:
@@ -251,7 +251,7 @@ new Level-0 ontology: the ordinary carriers suffice (Observation DA-0).
 
 **Capability.** How is the symbolic computation structurally wired?
 
-**Commitment.** The six-tuple ternary \(R_{\mathrm{flow}}\), built via
+**Commitment.** The six-tuple ternary \(T_{\mathrm{flow}}\), built via
 `stored_relation('flow', [o, v, p], table)` — handed seven tuples with
 one duplicate, holding six: a relation is a set. Signature answered by
 identity, slot by slot. Not reduced to an ordinary graph: the three-way
@@ -271,7 +271,7 @@ consumes its own output, \(z\) feeds nothing, a wrong-length tuple
 belongs to nothing.
 
 **Negative truth.** Derivative potential is completely **latent**:
-\(R_{\mathrm{flow}}\) contains computation structure, not derivative
+\(T_{\mathrm{flow}}\) contains computation structure, not derivative
 metadata, and looks exactly like ordinary computation structure because
 it is ordinary computation structure (Observation DA-1).
 
@@ -291,11 +291,11 @@ earned — never written — through the certified road
 (`src/graph_relation_algebra.f90`):
 
 ```text
-R_out3   = restrict_slot(R_flow, 3, {out})       two tuples
-R_in3    = restrict_slot(R_flow, 3, {in₁,in₂})   four tuples
+T_out3   = restrict_slot(T_flow, 3, {out})       two tuples
+T_in3    = restrict_slot(T_flow, 3, {in₁,in₂})   four tuples
 
-produces = project_slots(R_out3, [1,2]) ⊆ O×V    {(product,u),(sum,z)}
-consumes = project_slots(R_in3,  [2,1]) ⊆ V×O    {(x,product),(y,product),
+produces = project_slots(T_out3, [1,2]) ⊆ O×V    {(product,u),(sum,z)}
+consumes = project_slots(T_in3,  [2,1]) ⊆ V×O    {(x,product),(y,product),
                                                   (u,sum),(y,sum)}
 
 D = compose_binary(produces, consumes)           consumes ∘ produces
@@ -325,11 +325,11 @@ relational structure?
 **Commitment.**
 
 \[
-G=(\mathcal S,\mathcal R),
+\Gamma=(\mathcal S,\mathcal P),
 \qquad
 \mathcal S=\{V,O,P\},
 \qquad
-\mathcal R=\{R_{\mathrm{flow}},D\},
+\mathcal P=\{T_{\mathrm{flow}},D\},
 \]
 
 with \(D\) rederived before admission — the container infers nothing.
@@ -339,7 +339,7 @@ with \(D\) rederived before admission — the container infers nothing.
 `num_relations` / `relation_at` / `same_as`); the ternary flow survives
 ownership unchanged (arity 3, six tuples); the dependency survives
 (binary, one pair); signature closure — every relation slot resolves to
-an owned carrier; graph identity — no identically stocked twin is \(G\).
+an owned carrier; graph identity — no identically stocked twin is \(\Gamma\).
 
 **What ownership contributes here** (Observation DA-3): structural
 closure and identity — no more. No tangent seat, no adjoint seat, no
@@ -463,7 +463,7 @@ for symmetry's sake. The difference is architectural evidence
 
 ## Direct value dependency
 
-From \(R_{\mathrm{flow}}\), the same two participations as Level 2 —
+From \(T_{\mathrm{flow}}\), the same two participations as Level 2 —
 \(I\subseteq V\times O\) (consumed) and \(Q\subseteq O\times V\)
 (produced) — composed in the other order:
 
@@ -628,9 +628,9 @@ Only here do the symbols mean something, bound test-locally
 
 The law table knows operation symbols and numbers — never `x`, `y`,
 `u`, `z`, never a graph slot. Execution order is re-derived through the
-certified road (\(R_{\mathrm{flow}}\to D\to\) graph \(\to\) view \(\to\)
+certified road (\(T_{\mathrm{flow}}\to D\to\) graph \(\to\) view \(\to\)
 `topological_order`), every operation's `in1`/`in2`/`out` is discovered
-from \(R_{\mathrm{flow}}\) by uniqueness scan, and the primal executes
+from \(T_{\mathrm{flow}}\) by uniqueness scan, and the primal executes
 into the computed slots with availability flags (never zero-as-absent):
 
 \[
@@ -742,13 +742,13 @@ The structural \(J_{ZX}\) remains support only.
 ## What role does structural J play now?
 
 Answered by construction, not assumption: the evaluators' signatures
-take \(R_{\mathrm{flow}}\), the derived order, primal values, domains,
+take \(T_{\mathrm{flow}}\), the derived order, primal values, domains,
 and the law table — **neither \(J_{ZX}\) nor its transpose is an
 input**. The test separately re-derives reachability and confirms the
 support agrees with where the action's incidence landed:
 
 ```text
-numerical action     R_flow + order + primal + local linearizations
+numerical action     T_flow + order + primal + local linearizations
 J_ZX / J_XZ          support/sparsity metadata — WHO can matter
 incidence traversal  the action itself — HOW MUCH, and HOW OFTEN
 ```
@@ -788,7 +788,7 @@ Gate C. The last question:
 It **selects** — it invents nothing:
 
 ```text
-structure       R_flow, owned by G; D derived; order derived
+structure       T_flow, owned by GAMMA; D derived; order derived
 base point      x = 2, y = 3 on X = {y,x}
 constitution    the Level-8 laws and the ONE local linearization,
                 reused, never redone
@@ -804,10 +804,10 @@ legacy operation face, so none was written.
 ## The complete road
 
 ```text
-R_flow
+T_flow
     ↓ derive
 D
-    ↓ owned by G, interpreted, sorted
+    ↓ owned by GAMMA, interpreted, sorted
 execution order
     ↓ Level-8 primal constitution
 z = 9
@@ -821,13 +821,13 @@ the derivative statement
 ## Graph ownership, proved by lifetime
 
 The statement owns one relational model graph. It locates its flow
-relation **inside** \(G\) by identity (`relation_at(k) % same_as`),
+relation **inside** \(\Gamma\) by identity (`relation_at(k) % same_as`),
 then destroys the external selector:
 
 ```text
 external flow selector
-        ↓ used to identify the graph-owned R_flow
-graph-owned relation retained (a pointer into G)
+        ↓ used to identify the graph-owned T_flow
+graph-owned relation retained (a pointer into GAMMA)
         ↓
 deallocate(flow)          the selector dies
         ↓

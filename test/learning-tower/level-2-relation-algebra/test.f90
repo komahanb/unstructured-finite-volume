@@ -1,7 +1,7 @@
 !=====================================================================!
 ! LEARNING TOWER . LEVEL 2 . RELATION ALGEBRA
 !
-! The level answers one question: WHAT CAN BE DERIVED FROM R_flow.
+! The level answers one question: WHAT CAN BE DERIVED FROM T_flow.
 ! The answer is the operation dependency - and it is DERIVED, never
 ! written: restrict the flow to the output port and to the input
 ! ports, project to O x V and V x O so the middle domain aligns,
@@ -36,7 +36,7 @@ program learning_level_2
   type(counted_set)            :: v, o, p
   type(subset_set)             :: p_out, p_in
   type(stored_relation)        :: flow, backwards
-  type(stored_relation)        :: r_out3, r_in3, produces, consumes
+  type(stored_relation)        :: t_out3, t_in3, produces, consumes
   class(relation), allocatable :: d, d2
   integer                      :: table(3, 6)
   integer                      :: nfail
@@ -80,19 +80,19 @@ contains
 
     integer, intent(inout) :: nfail
 
-    r_out3 = restrict_slot(flow, 3, p_out)
-    r_in3  = restrict_slot(flow, 3, p_in)
+    t_out3 = restrict_slot(flow, 3, p_out)
+    t_in3  = restrict_slot(flow, 3, p_in)
 
-    call report(r_out3 % num_tuples() .eq. 2 .and. &
-         &      r_out3 % has([OP_PREDICT, SLOT_YHAT, PORT_OUT]) .and. &
-         &      r_out3 % has([OP_ERROR  , SLOT_E   , PORT_OUT]), &
+    call report(t_out3 % num_tuples() .eq. 2 .and. &
+         &      t_out3 % has([OP_PREDICT, SLOT_YHAT, PORT_OUT]) .and. &
+         &      t_out3 % has([OP_ERROR  , SLOT_E   , PORT_OUT]), &
          & "two tuples pass the output port - exactly these two", nfail)
 
-    call report(r_in3 % num_tuples() .eq. 4 .and. &
-         &      r_in3 % has([OP_PREDICT, SLOT_W   , PORT_IN1]) .and. &
-         &      r_in3 % has([OP_PREDICT, SLOT_X   , PORT_IN2]) .and. &
-         &      r_in3 % has([OP_ERROR  , SLOT_YHAT, PORT_IN1]) .and. &
-         &      r_in3 % has([OP_ERROR  , SLOT_Y   , PORT_IN2]), &
+    call report(t_in3 % num_tuples() .eq. 4 .and. &
+         &      t_in3 % has([OP_PREDICT, SLOT_W   , PORT_IN1]) .and. &
+         &      t_in3 % has([OP_PREDICT, SLOT_X   , PORT_IN2]) .and. &
+         &      t_in3 % has([OP_ERROR  , SLOT_YHAT, PORT_IN1]) .and. &
+         &      t_in3 % has([OP_ERROR  , SLOT_Y   , PORT_IN2]), &
          & "four tuples pass the input ports - exactly these four", nfail)
 
   end subroutine check_restrictions
@@ -109,8 +109,8 @@ contains
 
     class(member_set), allocatable :: dom
 
-    produces = project_slots(r_out3, [1, 2])
-    consumes = project_slots(r_in3 , [2, 1])
+    produces = project_slots(t_out3, [1, 2])
+    consumes = project_slots(t_in3 , [2, 1])
 
     dom = produces % domain(1)
     call report(dom % same_as(o), &

@@ -66,7 +66,7 @@ contains
 
   !===================================================================!
   ! The unique slot standing on a port of an operation - found by
-  ! scanning the value slots against R_flow, refused at zero or
+  ! scanning the value slots against T_flow, refused at zero or
   ! many. The facts live in the relation, never in the evaluator.
   !===================================================================!
 
@@ -122,7 +122,7 @@ contains
   !===================================================================!
   ! The constituted evaluation. Seed the observed and trainable
   ! values by DOMAIN enumeration, execute the caller-DERIVED order -
-  ! each operation's slots discovered from R_flow, each input
+  ! each operation's slots discovered from T_flow, each input
   ! demanded available, each output required to land in the
   ! computed domain - then read every row's residual as the VALUE
   ! at the home L locates. The caller may ask for the final

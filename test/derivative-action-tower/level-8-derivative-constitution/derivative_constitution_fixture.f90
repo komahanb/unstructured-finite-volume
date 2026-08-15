@@ -40,7 +40,7 @@
 ! Everything is parameterized by the abstract contracts -
 ! class(relation), class(member_set) - handed in by the caller: no
 ! derivative singleton, no stored-type demands, no graph argument.
-! What the evaluators consume is R_flow incidences, the DERIVED
+! What the evaluators consume is T_flow incidences, the DERIVED
 ! order, primal values, and the law table: the structural J-pattern
 ! is never an input here.
 !
@@ -109,7 +109,7 @@ contains
 
   !===================================================================!
   ! The unique slot standing on a port of an operation - discovered
-  ! by scanning the value slots against R_flow, refused at zero or
+  ! by scanning the value slots against T_flow, refused at zero or
   ! many. The facts live in the relation, never in the evaluators.
   !===================================================================!
 

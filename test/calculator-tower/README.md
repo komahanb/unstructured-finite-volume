@@ -37,9 +37,9 @@ Then each level gets the smallest possible test:
 | Level | Calculator demo | Truth to verify |
 |---|---|---|
 | **0 Carrier** | Declare \(X,O,P\) | distinct identities; `member(local_index(x)) = x` |
-| **1 Relation** | \(R\subseteq O\times X\times P\) | e.g. \((+,a,in_1),(+,c,out),(\times,c,in_1)\) exist |
+| **1 Relation** | \(T\subseteq O\times X\times P\) | e.g. \((+,a,in_1),(+,c,out),(\times,c,in_1)\) exist |
 | **2 Relation algebra** | Derive operation dependency by matching output→input | \(\boxed{+\rightarrow\times}\) and nothing else |
-| **3 Graph** | \(G=(\{X,O,P\},\{R,\ldots\})\) | calculator is representable with **no vertex/edge assumptions** |
+| **3 Graph** | \(\Gamma=(\{X,O,P\},\{T,\ldots\})\) | calculator is representable with **no vertex/edge assumptions** |
 | **4 Graph calculus** | Topologically walk operation dependency | order must be \(\boxed{+,\times}\) |
 | **5 Field calculus** | Put numeric field \(q:X\to\mathbb R\) on slots | known field: \(q(a)=2,q(b)=3,q(d)=4\); supports/subsets preserve indexing |
 | **6 Discretization** | Compile relations into residual/stencil structure | \(r_c\) depends on \(\{a,b,c\}\); \(r_e\) on \(\{c,d,e\}\) |
@@ -50,7 +50,7 @@ Then each level gets the smallest possible test:
 The Level-1 relation would be simply
 
 \[
-R=
+T=
 \left\{
 \begin{array}{lll}
 (+,a,in_1),&(+,b,in_2),&(+,c,out),\\
@@ -202,7 +202,7 @@ Level 1 answers:
 Introduce one ternary relation
 
 \[
-R_{\mathrm{flow}}\subseteq O\times X\times P.
+T_{\mathrm{flow}}\subseteq O\times X\times P.
 \]
 
 Its tuples are
@@ -232,10 +232,10 @@ The arrows are only a visual reading of the ternary tuples. The relation itself 
 Test representative truths:
 
 ```text
-R.has(+, a, in₁)   = true
-R.has(+, c, out)   = true
-R.has(×, c, in₁)   = true
-R.has(×, a, in₁)   = false
+T.has(+, a, in₁)   = true
+T.has(+, c, out)   = true
+T.has(×, c, in₁)   = true
+T.has(×, a, in₁)   = false
 ```
 
 Verify also:
@@ -293,10 +293,10 @@ R_{\mathrm{in}}
 factorization — natural join remains unearned:
 
 ```text
-R_out3   = restrict_slot(R_flow, 3, {out})       two tuples
-R_in3    = restrict_slot(R_flow, 3, {in₁,in₂})   four tuples
-produces = project_slots(R_out3, [1,2])  ⊆ O×X   {(+,c), (×,e)}
-consumes = project_slots(R_in3,  [2,1])  ⊆ X×O   {(a,+),(b,+),(c,×),(d,×)}
+T_out3   = restrict_slot(T_flow, 3, {out})       two tuples
+T_in3    = restrict_slot(T_flow, 3, {in₁,in₂})   four tuples
+produces = project_slots(T_out3, [1,2])  ⊆ O×X   {(+,c), (×,e)}
+consumes = project_slots(T_in3,  [2,1])  ⊆ X×O   {(a,+),(b,+),(c,×),(d,×)}
 D        = compose_binary(produces, consumes)    consumes ∘ produces
 ```
 
@@ -342,7 +342,7 @@ Level 3 answers:
 Construct
 
 \[
-G=(\mathcal S,\mathcal R)
+\Gamma=(\mathcal S,\mathcal P)
 \]
 
 with
@@ -350,29 +350,29 @@ with
 \[
 \mathcal S=\{X,O,P\},
 \qquad
-\mathcal R=\{R_{\mathrm{flow}},D\}.
+\mathcal P=\{T_{\mathrm{flow}},D\}.
 \]
 
 ```mermaid
 flowchart TB
-    G["Calculator relational_graph"]
+    GAMMA["Calculator relational_graph"]
 
     X["X = value slots"]
     O["O = operations"]
     P["P = ports"]
 
-    R["R_flow ⊆ O × X × P"]
+    T["T_flow ⊆ O × X × P"]
     D["D ⊆ O × O"]
 
-    G --> X
-    G --> O
-    G --> P
-    G --> R
-    G --> D
+    GAMMA --> X
+    GAMMA --> O
+    GAMMA --> P
+    GAMMA --> T
+    GAMMA --> D
 
-    R -.signature.-> O
-    R -.signature.-> X
-    R -.signature.-> P
+    T -.signature.-> O
+    T -.signature.-> X
+    T -.signature.-> P
     D -.signature.-> O
 ```
 
@@ -683,7 +683,7 @@ which is exactly the residual system used by Level 7.
 
 ```text
 O member ──▶ arithmetic law table (TEST-LOCAL: one select case)
-R_flow chooses each operation's in₁/in₂/out slots
+T_flow chooses each operation's in₁/in₂/out slots
 K = {d,a,b} and U = {e,c} provide values by domain local_index
         ↓
 generated residual on Y  —  reproducing the Level-7 system
@@ -746,7 +746,7 @@ flowchart TB
 
 ```text
 statement
-  ├── chooses the calculator relational graph  (graph-owned R_flow)
+  ├── chooses the calculator relational graph  (graph-owned T_flow)
   ├── chooses known K = {d,a,b} values [4,2,3]
   ├── chooses the Level-8 arithmetic constitution (reused fixture)
   ├── chooses the Level-6 residual discretization L
@@ -798,9 +798,9 @@ The complete calculator tower can be read vertically:
 ```mermaid
 flowchart TB
     L0["0 — carriers<br/>X, O, P"]
-    L1["1 — relation<br/>R_flow ⊆ O×X×P"]
+    L1["1 — relation<br/>T_flow ⊆ O×X×P"]
     L2["2 — relation algebra<br/>D = {+ → ×}"]
-    L3["3 — relational graph<br/>G = (𝒮, ℛ)"]
+    L3["3 — relational graph<br/>Γ = (𝒮, 𝒫)"]
     L4["4 — graph calculus<br/>walk: + then ×"]
     L5["5 — field calculus<br/>q(a)=2, q(b)=3, q(d)=4"]
     L6["6 — discretization<br/>supports of r_c and r_e"]

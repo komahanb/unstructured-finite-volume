@@ -5,7 +5,7 @@
 ! from the Level-1 primitives by transpose and composition alone,
 ! reading the repository's convention
 !
-!      compose_binary(R_AB, R_BC) = R_BC o R_AB.
+!      compose_binary(P_AB, P_BC) = P_BC o P_AB.
 !
 ! ONE-STEP REACH. An instant reaches another when some step leaves
 ! the first and enters the second:

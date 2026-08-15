@@ -4,9 +4,9 @@
 ! The level answers one question: WHERE DO THE NUMERICAL VALUES
 ! LIVE. Three fields, three domains, and the domains are the answer:
 !
-!      q0   : Q -> R      [2, 0]
-!      time : T -> R      [0, 1/2, 1, 3/2, 2]
-!      h    : E -> R      [1/2, 1/2, 1/2, 1/2]
+!      q0   : Q -> reals  [2, 0]
+!      time : T -> reals  [0, 1/2, 1, 3/2, 2]
+!      h    : E -> reals  [1/2, 1/2, 1/2, 1/2]
 !
 !                    THE CENTRAL TRUTH
 !
@@ -29,7 +29,7 @@
 ! The instant t2 is a MEMBER of T. The real 1.0 is the VALUE of a
 ! field at t2. Four objects stay apart here where a looser client
 ! would keep one: the carrier T, the structure Tail/Head/A1/A2 over
-! it, the coordinates time : T -> R, and the sizes h : E -> R.
+! it, the coordinates time : T -> reals, and the sizes h : E -> reals.
 !
 ! And the consistency between values and structure is PROVED rather
 ! than assumed, using the relations Level 1 earned:

@@ -193,7 +193,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(counted_set)              :: a, b, c
-    type(stored_relation)          :: r_ab, r_bc
+    type(stored_relation)          :: p_ab, p_bc
     class(relation), allocatable   :: chained
     class(member_set), allocatable :: d
 
@@ -203,12 +203,12 @@ contains
 
     ! a1 reaches c1 through b1 AND through b2: two witnesses, one
     ! tuple. a2 reaches nothing.
-    r_ab = stored_relation('ab', [a, b], &
+    p_ab = stored_relation('ab', [a, b], &
          & reshape([1,1,  1,2,  2,3], [2, 3]))
-    r_bc = stored_relation('bc', [b, c], &
+    p_bc = stored_relation('bc', [b, c], &
          & reshape([1,1,  2,1,  2,2], [2, 3]))
 
-    chained = compose_binary(r_ab, r_bc)
+    chained = compose_binary(p_ab, p_bc)
 
     call report(chained % num_tuples() .eq. 2, &
          & "two witnesses, one tuple: composition is a set", nfail)
@@ -226,9 +226,9 @@ contains
          & "to the second target", nfail)
 
     ! No b-chain at all: the empty composition is a relation.
-    r_ab = stored_relation('ab', [a, b], reshape([1, 1], [2, 1]))
-    r_bc = stored_relation('bc', [b, c], reshape([3, 1], [2, 1]))
-    chained = compose_binary(r_ab, r_bc)
+    p_ab = stored_relation('ab', [a, b], reshape([1, 1], [2, 1]))
+    p_bc = stored_relation('bc', [b, c], reshape([3, 1], [2, 1]))
+    chained = compose_binary(p_ab, p_bc)
     call report(chained % num_tuples() .eq. 0, &
          & "no witness anywhere composes to the empty relation", nfail)
 

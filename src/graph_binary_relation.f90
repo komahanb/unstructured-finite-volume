@@ -4,7 +4,7 @@
 ! Arity two earns its own contract (AGENTS.md 5.3) because arity two
 ! has its own canonical questions. For
 !
-!      R  <=  A x B
+!      P  <=  A x B
 !
 ! the specialization adds what no general arity can promise:
 !
@@ -84,7 +84,7 @@
 ! same_as answers minted identity: a view signs its own token, so a
 ! view is never same_as its base, and the involution
 !
-!      (R^T)^T = R
+!      (P^T)^T = P
 !
 ! is a statement about EXTENSION - the same tuples over the same
 ! domains - not about stamps. Test it by comparing tuples and

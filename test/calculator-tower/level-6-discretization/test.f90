@@ -91,17 +91,17 @@ contains
   ! B row-to-operation, A operation-participation, J = A o B.
   !===================================================================!
 
-  function derive_jacobian(r_flow) result(jac)
+  function derive_jacobian(t_flow) result(jac)
 
-    type(stored_relation), intent(in) :: r_flow
+    type(stored_relation), intent(in) :: t_flow
     type(csr_relation)                :: jac
 
     type(stored_relation)        :: q_, a_
     class(relation), allocatable :: b_
 
-    q_  = project_slots(restrict_slot(r_flow, 3, p_out), [2, 1])
+    q_  = project_slots(restrict_slot(t_flow, 3, p_out), [2, 1])
     b_  = compose_binary(located, q_)
-    a_  = project_slots(r_flow, [1, 2])
+    a_  = project_slots(t_flow, [1, 2])
     jac = compose_binary(b_, a_)
 
     ! keep the intermediates visible for their own checks

@@ -10,7 +10,7 @@
 ! where Y = { r } is the residual row, born at this level and
 ! nowhere below. EVERYTHING ELSE IS DERIVED: input participation
 ! I <= V x O and output participation Q <= O x V are restricted and
-! projected out of R_flow - Level 2's own projections - and the
+! projected out of T_flow - Level 2's own projections - and the
 ! direct value dependency A = Q o I stands composed, four pairs
 ! never written down. A is then READ as a directed interpretation
 ! and walked: w reaches e only TRANSITIVELY, through yhat, never by
@@ -117,15 +117,15 @@ contains
   ! dependency O x O; here they give value dependency V x V.
   !===================================================================!
 
-  function derive_direct(r_flow) result(dep)
+  function derive_direct(t_flow) result(dep)
 
-    type(stored_relation), intent(in) :: r_flow
+    type(stored_relation), intent(in) :: t_flow
     type(csr_relation)                :: dep
 
     type(stored_relation) :: cons, prod
 
-    cons = project_slots(restrict_slot(r_flow, 3, p_in ), [2, 1])
-    prod = project_slots(restrict_slot(r_flow, 3, p_out), [1, 2])
+    cons = project_slots(restrict_slot(t_flow, 3, p_in ), [2, 1])
+    prod = project_slots(restrict_slot(t_flow, 3, p_out), [1, 2])
     dep  = compose_binary(cons, prod)
 
     ! keep the participations visible for their own checks

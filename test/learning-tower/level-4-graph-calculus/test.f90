@@ -40,7 +40,7 @@ program learning_level_4
 
   type(counted_set)              :: v, o, p
   type(subset_set)               :: p_out, p_in
-  type(stored_relation)          :: flow, r_out3, r_in3
+  type(stored_relation)          :: flow, t_out3, t_in3
   type(stored_relation)          :: produces, consumes
   class(relation), allocatable   :: d
   type(relational_graph), target :: g
@@ -68,10 +68,10 @@ program learning_level_4
 
   p_out    = subset_set('output-port', p, [PORT_OUT])
   p_in     = subset_set('input-ports', p, [PORT_IN1, PORT_IN2])
-  r_out3   = restrict_slot(flow, 3, p_out)
-  r_in3    = restrict_slot(flow, 3, p_in)
-  produces = project_slots(r_out3, [1, 2])
-  consumes = project_slots(r_in3 , [2, 1])
+  t_out3   = restrict_slot(flow, 3, p_out)
+  t_in3    = restrict_slot(flow, 3, p_in)
+  produces = project_slots(t_out3, [1, 2])
+  consumes = project_slots(t_in3 , [2, 1])
   d        = compose_binary(produces, consumes)
 
   g = relational_graph('learning', &

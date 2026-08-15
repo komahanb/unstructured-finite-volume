@@ -3,7 +3,7 @@
 !
 ! The container the whole redesign aims at (AGENTS.md 14):
 !
-!      G = ( S, R )
+!      GAMMA = ( S, P )
 !
 ! a structured collection of member sets and typed relations over
 ! them - and NOTHING ELSE. No vertex, no edge, no tail, no head:
@@ -11,6 +11,13 @@
 ! particular schema of relations. This container holds a mesh's
 ! cells and faces exactly as gladly as a calculator's operations,
 ! values and ports.
+!
+! The pair is written (S, P), never (S, R): the letter R belongs
+! to the residual of the COMPUTATIONAL graph G = (Q, R)
+! (COMPUTATIONAL-GRAPH.md), the epistemic pair that rides above a
+! structure like this one and is not this container. A structural
+! relation says which members stand together; a residual says what
+! data must satisfy. One letter may not mean both.
 !
 !      Graph CONTAINS Relations - composition, never inheritance.
 !      A graph is not a relation; a relation needs no graph.
@@ -149,7 +156,7 @@ contains
   !                                   relations only
   !     a borrowing view              a graph owns whole relations; a
   !                                   view rides above, never inside
-  !     the same relation twice       R_i /= R_j, by identity
+  !     the same relation twice       P_i /= P_j, by identity
   !     a foreign domain              every slot of every relation
   !                                   names one of the graph's own
   !                                   member sets

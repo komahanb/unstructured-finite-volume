@@ -7,7 +7,7 @@
 ! the Level-8 constitution, learn w from w0 = 0 such that r = 0.
 ! It SELECTS - it invents nothing:
 !
-!      structure       R_flow; D DERIVED; order DERIVED
+!      structure       T_flow; D DERIVED; order DERIVED
 !      observation     x = 2, y = 6 on K = { y, x }
 !      trainable       Theta = { w }
 !      computed        U = { e, yhat } - valueless until laws run

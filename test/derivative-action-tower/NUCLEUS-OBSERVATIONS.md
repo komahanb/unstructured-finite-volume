@@ -59,7 +59,7 @@ gate / level:         A / 1
 contextual radius:    0
 
 symptom / fact:       derivative potential is completely latent:
-                      R_flow ⊆ O×V×P holds computation structure, not
+                      T_flow ⊆ O×V×P holds computation structure, not
                       derivative metadata. The only derivative-relevant
                       fact — y consumed twice, x once — is plain
                       ternary membership.
@@ -78,7 +78,7 @@ cross-tower recurrence: same relation shape as both prior towers —
 
 graph role:           not applicable yet
 
-comparison:           learning's R_flow also carried a fan-out (yhat
+comparison:           learning's T_flow also carried a fan-out (yhat
                       produced then consumed); here the fan-out sits on
                       an INPUT, which is what makes reverse
                       accumulation eventually interesting
@@ -145,7 +145,7 @@ symptom / fact:       relational_graph contributed structural closure
 
 exact caller:         level-3-graph/test.f90
 
-mathematical concept: G = (S, R) ownership
+mathematical concept: GAMMA = (S, P) ownership
 
 local necessity:      partially — Gate A's L4/L6 views borrow
                       graph-OWNED relations, so ownership is the
@@ -372,7 +372,7 @@ global necessity:     suspected yes, and NEW — neither prior tower
                       could see this (learning's J had one path per
                       entry)
 
-graph role:           the finer structure (A_V / R_flow) is graph-owned;
+graph role:           the finer structure (A_V / T_flow) is graph-owned;
                       the collapsed pattern is derived
 
 comparison:           first tower to expose it
@@ -385,7 +385,7 @@ suspected nucleus implication: numerical action occurs PER
                       enumeration, ever. The structural hierarchy is a
                       ladder of intentional forgetting:
 
-                          R_flow   operation+value+port incidence
+                          T_flow   operation+value+port incidence
                               ↓ derive        (numerical traversal
                           A_V      value dependency    substrate)
                               ↓ reachability
@@ -399,7 +399,7 @@ confidence:           high (the fact); medium (its design consequence)
 action:               candidate driver for Gate-B design review
 
 gate-B resolution:    CONFIRMED — the Gate-B evaluators traverse
-                      R_flow incidences in the derived order, apply
+                      T_flow incidences in the derived order, apply
                       one local linearization per operation, and
                       accumulate with += per input-port incidence;
                       neither J_ZX nor its transpose is consumed by
@@ -711,10 +711,10 @@ global necessity:     unknown, but the conceptual law extends to
                       recorded as a law, not a second specimen
 
 cross-tower recurrence: resolves Gate A's DA-6C exactly as refined:
-                      the traversal substrate is R_flow incidence,
+                      the traversal substrate is T_flow incidence,
                       not the J-pattern
 
-graph role:           the traversed facts are (graph-owned) R_flow
+graph role:           the traversed facts are (graph-owned) T_flow
                       incidences; the graph object itself is not an
                       evaluator argument (see DA-8F)
 
@@ -739,7 +739,7 @@ gate / level:         B / 8
 contextual radius:    0–1
 
 symptom / fact:       numerical action does NOT require structural J.
-                      The evaluators' signatures take R_flow, the
+                      The evaluators' signatures take T_flow, the
                       derived order, primal values, domains and the
                       law table — neither J_ZX nor J_XZ is an input.
                       The test separately re-derived reachability and
@@ -760,7 +760,7 @@ global necessity:     unknown — coloring, seeding strategies, and
                       the support heavily
 
 cross-tower recurrence: sharpens DA-6C's hierarchy with Gate-B
-                      evidence: R_flow = traversal substrate, A_V =
+                      evidence: T_flow = traversal substrate, A_V =
                       dependency summary, J = support summary
 
 graph role:           not applicable
@@ -992,7 +992,7 @@ symptom / fact:       the graph's role CHANGED between radii without
                       is locally unnecessary as a numerical operand.
 
                       Gate C (statement radius): the statement
-                      locates its flow relation inside G by
+                      locates its flow relation inside GAMMA by
                       identity, DESTROYS the external selector, and
                       then computes the primal, both actions and the
                       duality through the graph-owned relation. The

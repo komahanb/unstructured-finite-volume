@@ -6,24 +6,24 @@
 ! calculator tower's dependency derivation - has earned, and not
 ! one more (AGENTS.md 9, CALCULATOR.md 9):
 !
-!      restrict_slot     R|_S       keep the tuples whose i-th part
+!      restrict_slot     P|_S       keep the tuples whose i-th part
 !                                   the subobject S admits; the
 !                                   signature stands unchanged
 !
-!      project_slots     pi(R)      keep the chosen parts, in the
+!      project_slots     pi(P)      keep the chosen parts, in the
 !                                   chosen order; the signature is
 !                                   exactly the selection
 !
-!      compose_binary    S o R      (a, c) wherever some b carries
-!                                   (a, b) in R and (b, c) in S
+!      compose_binary    T o P      (a, c) wherever some b carries
+!                                   (a, b) in P and (b, c) in T
 !
 ! No natural join, no union, no intersection, no identity relation,
 ! no general permutation: each waits for the caller that earns it.
 ! The calculator's derivation reads
 !
-!      R_flow restricted to the output port, projected to O x X,
+!      T_flow restricted to the output port, projected to O x X,
 !      composed with
-!      R_flow restricted to the input ports, projected to X x O,
+!      T_flow restricted to the input ports, projected to X x O,
 !
 ! and answers the one dependency (+, x) - the join-then-project of
 ! the textbook, factored through a smaller algebra.
@@ -192,8 +192,8 @@ contains
   !===================================================================!
   ! Binary composition, argument order and formula locked together:
   !
-  !      compose_binary(R_AB, R_BC)  =  R_BC o R_AB
-  !          =  { (a, c) : exists b, (a,b) in R_AB and (b,c) in R_BC }
+  !      compose_binary(P_AB, P_BC)  =  P_BC o P_AB
+  !          =  { (a, c) : exists b, (a,b) in P_AB and (b,c) in P_BC }
   !
   ! The middle domains must be the SAME declared domain -
   ! structural identity, never a size coincidence. The result is

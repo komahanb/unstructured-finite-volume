@@ -2,9 +2,9 @@
 ! THE SPECIMEN'S COEFFICIENTS - earned at LEVEL 5, and the first place
 ! in this tower where a number exists at all.
 !
-!      w1 : E1 -> R   =  [ 2, -1,  0,  3,  4 ]
-!      w2 : E2 -> R   =  [ 1,  5, -2,  2 ]
-!      w3 : E3 -> R   =  [ 3, -1,  4 ]
+!      w1 : E1 -> reals =  [ 2, -1,  0,  3,  4 ]
+!      w2 : E2 -> reals =  [ 1,  5, -2,  2 ]
+!      w3 : E3 -> reals =  [ 3, -1,  4 ]
 !
 !                    WHY THE VALUES LIVE ON E, NOT ON X
 !

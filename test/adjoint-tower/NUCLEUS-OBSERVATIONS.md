@@ -142,8 +142,8 @@ symptom / fact:       all four derivative supports came from ONE
                       (relational composition, read right to left;
                       in code the same road is written left to right
                       as compose_binary(compose_binary(I_Y,R_dep),
-                      I_Q^T), since compose_binary(R_AB,R_BC) =
-                      R_BC o R_AB)
+                      I_Q^T), since compose_binary(P_AB,P_BC) =
+                      P_BC o P_AB)
 
                       inclusion_of() turned each subobject's
                       membership into algebra, and the right-hand

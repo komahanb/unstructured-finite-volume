@@ -4,7 +4,7 @@
 ! The level answers one question: CAN THE WHOLE STRUCTURAL MODEL
 ! STAND AS ONE OWNED STRUCTURE. It can:
 !
-!      G = ( { V, T, P, Q, Y, Z }, { R_dep, J_Q, J_P, F_Q, F_P } )
+!      GAMMA = ( { V, T, P, Q, Y, Z }, { R_dep, J_Q, J_P, F_Q, F_P } )
 !
 ! six carriers - two parents and their four role subobjects, seated
 ! side by side as the ordinary member sets they are - and five

@@ -7,7 +7,7 @@
 ! has not earned a universal production constitution. Everything
 ! else was already true below:
 !
-!      R_flow chooses each operation's in1, in2 and out slots
+!      T_flow chooses each operation's in1, in2 and out slots
 !      L locates each residual row at its computed slot
 !      K = { d, a, b } and U = { e, c } hold the values
 !      the law supplies only the arithmetic
@@ -180,9 +180,9 @@ contains
   ! dependency read structurally, never by perturbation.
   !===================================================================!
 
-  subroutine check_topology_preserved(r_flow, nfail)
+  subroutine check_topology_preserved(t_flow, nfail)
 
-    type(stored_relation), intent(in) :: r_flow
+    type(stored_relation), intent(in) :: t_flow
     integer, intent(inout) :: nfail
 
     type(stored_relation)        :: q_, a_
@@ -192,15 +192,15 @@ contains
     logical :: ok
 
     ! The Level-6 road, walked again: J = A o (Q o L).
-    q_  = project_slots(restrict_slot(r_flow, 3, p_out), [2, 1])
+    q_  = project_slots(restrict_slot(t_flow, 3, p_out), [2, 1])
     b_  = compose_binary(located, q_)
-    a_  = project_slots(r_flow, [1, 2])
+    a_  = project_slots(t_flow, [1, 2])
     jac = compose_binary(b_, a_)
 
     ok = .true.
     do i = 1, y % size()
        row = y % member(i)
-       call constitution_support(r_flow, located, x, o, row, mine)
+       call constitution_support(t_flow, located, x, o, row, mine)
        do j = 1, x % size()
           ok = ok .and. ( jac % has([row, x % member(j)]) .eqv. &
                &          any(mine == x % member(j)) )
@@ -258,16 +258,16 @@ contains
   ! The fixture, applied with this calculator's own objects.
   !===================================================================!
 
-  subroutine gen(r_flow, ustate, r)
+  subroutine gen(t_flow, ustate, r)
 
-    type(stored_relation), intent(in)  :: r_flow
+    type(stored_relation), intent(in)  :: t_flow
     real(dp), intent(in)               :: ustate(:)
     real(dp), allocatable, intent(out) :: r(:)
 
     real(dp), allocatable :: kv(:)
 
     call qk % get_real_vector(kv)
-    call generated_residual(r_flow, located, x, o, y, k, kv, u, ustate, r)
+    call generated_residual(t_flow, located, x, o, y, k, kv, u, ustate, r)
 
   end subroutine gen
 

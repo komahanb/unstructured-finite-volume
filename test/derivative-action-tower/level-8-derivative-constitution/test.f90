@@ -21,7 +21,7 @@
 ! (-38 = -38), under unit seeds, and under reversed tuple order.
 ! Seeds and results are ORDINARY fields on ordinary domains: no
 ! tangent_field, no cotangent_field, no dual number. The evaluators
-! consume R_flow incidences, the derived order, primal values and
+! consume T_flow incidences, the derived order, primal values and
 ! the law table; the structural J_ZX pattern is consulted by the
 ! TEST as support metadata - never fed to the numerical path. And
 ! the accumulation is certified, not assumed: y receives exactly
@@ -368,7 +368,7 @@ contains
   ! Support and action, complementary: the reachability that built
   ! Gate A's J-pattern agrees with where the reverse action landed
   ! nonzero incidence - yet the evaluators never consumed A_V, J_ZX
-  ! or its transpose: their signatures take R_flow, order, values
+  ! or its transpose: their signatures take T_flow, order, values
   ! and laws, nothing more. Support says WHO; incidence says HOW.
   !===================================================================!
 

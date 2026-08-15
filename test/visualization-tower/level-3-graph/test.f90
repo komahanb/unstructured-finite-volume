@@ -4,8 +4,8 @@
 ! The level answers one question: CAN THE COMPLETE OPERATOR CHAIN
 ! EXIST AS ONE TYPED RELATIONAL STRUCTURE.
 !
-!      G = ( { X0 X1 X2 X3 E1 E2 E3 },
-!            { T1 H1 T2 H2 T3 H3 } )
+!      GAMMA = ( { X0 X1 X2 X3 E1 E2 E3 },
+!                { T1 H1 T2 H2 T3 H3 } )
 !
 ! Seven carriers, six primitive relations, and NOTHING ELSE. What is
 ! absent from that list is as much a claim as what is present.

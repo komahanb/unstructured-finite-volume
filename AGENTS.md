@@ -20,16 +20,16 @@ because that still assumes a binary relation between exactly two member sets.
 The new foundation is a family of typed finite-arity relations:
 
 \[
-R_\rho \subseteq
+P_\rho \subseteq
 A_1\times A_2\times\cdots\times A_k,
 \qquad k\ge 1.
 \]
 
-A graph is then a structured collection of member sets and relations:
+A graph is then a structured collection of member sets and relations — the **structural graph**:
 
 \[
 \boxed{
-G=(\mathcal S,\mathcal R)
+\Gamma=(\mathcal S,\mathcal P)
 }
 \]
 
@@ -39,15 +39,29 @@ where
 \mathcal S=\{S_1,\ldots,S_n\}
 \]
 
-and every relation \(R_\rho\in\mathcal R\) has a declared signature
+and every relation \(P_\rho\in\mathcal P\) has a declared signature
 
 \[
-\operatorname{sig}(R_\rho)
+\operatorname{sig}(P_\rho)
 =
 (S_{\rho,1},\ldots,S_{\rho,k_\rho}).
 \]
 
 The framework must therefore treat **member sets and relations as first-class mathematical objects**.
+
+## Notation reservation (naming pass, 2026-08-15)
+
+The letter \(R\) is **reserved**: it denotes the residual/operator of the **computational graph**
+
+\[
+G=(Q,R),
+\]
+
+the epistemic pair documented in `COMPUTATIONAL-GRAPH.md` — data \(Q\) and residual/operator \(R\), each independently realized or unrealized (\(\bot\)). Its four states carry canonical names: **void graph** \((\bot,\bot)\), **data graph** \((Q,\bot)\), **operator graph** \((\bot,R)\), **realized graph** \((Q,R)\).
+
+The structural object of this document is therefore written \(\Gamma=(\mathcal S,\mathcal P)\), and individual structural relations are denoted \(P\), \(T\), \(H\), \(A\), \(\ldots\) — never \(R\). Do not write the structural graph as \(G=(S,R)\) anywhere.
+
+`relational_graph` (graph_structure.f90) implements \(\Gamma\); `computational_graph` (graph_state.f90) implements \(G\). Neither is the other, and neither absorbs the other's vocabulary.
 
 ---
 
@@ -181,7 +195,7 @@ A relation signature must refer to member-set identities.
 A relation is a named finite-arity subset of a Cartesian product:
 
 \[
-R
+P
 \subseteq
 A_1\times\cdots\times A_k.
 \]
@@ -354,7 +368,7 @@ on a pure membership set.
 For
 
 \[
-R\subseteq A\times B,
+P\subseteq A\times B,
 \]
 
 the mathematical primitive is simply a binary relation.
@@ -390,25 +404,25 @@ not separate primitives.
 Examples:
 
 \[
-R_{VV}\subseteq V\times V
+P_{VV}\subseteq V\times V
 \]
 
 is vertex adjacency.
 
 \[
-R_{EE}\subseteq E\times E
+P_{EE}\subseteq E\times E
 \]
 
 is edge adjacency.
 
 \[
-R_{VE}\subseteq V\times E
+P_{VE}\subseteq V\times E
 \]
 
 is vertex-edge incidence.
 
 \[
-R_{CF}\subseteq C\times F
+P_{CF}\subseteq C\times F
 \]
 
 is cell-face incidence.
@@ -424,7 +438,7 @@ The framework must not assume that every structural fact can or should be reduce
 A ternary relation is valid:
 
 \[
-R\subseteq A\times B\times C.
+P\subseteq A\times B\times C.
 \]
 
 Likewise for arbitrary finite arity.
@@ -442,7 +456,7 @@ Instead of storing an endpoint role as opaque metadata:
 may itself be a ternary structural relation:
 
 \[
-R_{\mathrm{endpoint}}
+T_{\mathrm{endpoint}}
 \subseteq
 E\times V\times P,
 \]
@@ -483,7 +497,7 @@ P = ports / roles
 with
 
 \[
-R_{\mathrm{flow}}
+T_{\mathrm{flow}}
 \subseteq O\times V\times P.
 \]
 
@@ -521,13 +535,13 @@ This level contains the universal structural algebra, independent of graph seman
 For a \(k\)-ary relation
 
 \[
-R\subseteq A_1\times\cdots\times A_k
+P\subseteq A_1\times\cdots\times A_k
 \]
 
 and permutation \(\sigma\),
 
 \[
-\sigma R
+\sigma P
 \subseteq
 A_{\sigma(1)}
 \times\cdots\times
@@ -537,7 +551,7 @@ A_{\sigma(k)}.
 For a binary relation, transpose is the special permutation
 
 \[
-R^T=\tau R,
+P^T=\tau P,
 \qquad \tau=(12).
 \]
 
@@ -558,13 +572,13 @@ A relation may be projected onto selected slots.
 If
 
 \[
-R\subseteq A\times B\times C,
+P\subseteq A\times B\times C,
 \]
 
 then
 
 \[
-\pi_{AB}(R)\subseteq A\times B.
+\pi_{AB}(P)\subseteq A\times B.
 \]
 
 Projection may lose information.
@@ -578,10 +592,10 @@ A relation may be restricted by predicates on one or more slots.
 Conceptually:
 
 \[
-R|_{P}
+P|_{\varphi}
 \]
 
-or relational selection.
+for a predicate \(\varphi\), or relational selection.
 
 ## 9.4 Join
 
@@ -594,30 +608,30 @@ Natural join is the general operation from which many binary compositions can be
 For binary relations
 
 \[
-R\subseteq A\times B,
+P\subseteq A\times B,
 \qquad
-S\subseteq B\times C,
+T\subseteq B\times C,
 \]
 
 define:
 
 \[
-S\circ R
+T\circ P
 =
-\{(a,c):\exists b,\;aRb\land bSc\}.
+\{(a,c):\exists b,\;aPb\land bTc\}.
 \]
 
 Then incidence generates adjacency:
 
 \[
-R_{AB}\circ R_{AB}^T
+P_{AB}\circ P_{AB}^T
 \subseteq A\times A,
 \]
 
 and
 
 \[
-R_{AB}^T\circ R_{AB}
+P_{AB}^T\circ P_{AB}
 \subseteq B\times B.
 \]
 
@@ -683,29 +697,29 @@ Examples:
 ## 11.1 Permutation inverse
 
 \[
-\sigma^{-1}(\sigma R)=R.
+\sigma^{-1}(\sigma P)=P.
 \]
 
 ## 11.2 Binary transpose involution
 
 \[
-(R^T)^T=R.
+(P^T)^T=P.
 \]
 
 ## 11.3 Identity
 
 \[
-R\circ 1_A=R,
+P\circ 1_A=P,
 \qquad
-1_B\circ R=R.
+1_B\circ P=P.
 \]
 
 ## 11.4 Associativity of binary composition
 
 \[
-T\circ(S\circ R)
+H\circ(T\circ P)
 =
-(T\circ S)\circ R.
+(H\circ T)\circ P.
 \]
 
 ## 11.5 Projection semantics
@@ -750,7 +764,7 @@ Some relations satisfy stronger laws.
 A binary relation
 
 \[
-R\subseteq A\times B
+P\subseteq A\times B
 \]
 
 may be:
@@ -789,11 +803,13 @@ A graph is a **relational structure**:
 
 \[
 \boxed{
-G=(\mathcal S,\mathcal R)
+\Gamma=(\mathcal S,\mathcal P)
 }
 \]
 
-where \(\mathcal S\) is a collection of member sets and \(\mathcal R\) is a collection of typed relations over them.
+where \(\mathcal S\) is a collection of member sets and \(\mathcal P\) is a collection of typed relations over them.
+
+This structural \(\Gamma\) is not the computational graph \(G=(Q,R)\) of `COMPUTATIONAL-GRAPH.md`: \(\mathcal P\) relates members; \(R\) constrains data. Do not write the structural pair with the letter \(R\).
 
 A graph is therefore composition, not inheritance from relation.
 
@@ -842,7 +858,7 @@ A graph may contain multiple relations with the same signature.
 For example:
 
 \[
-R_1,R_2\subseteq A\times A
+P_1,P_2\subseteq A\times A
 \]
 
 may represent:
@@ -884,7 +900,7 @@ directed graph
 hypergraph
 finite-volume topology
 finite-element topology
-computation graph
+dataflow graph
 time-integration graph
 ```
 
@@ -903,7 +919,7 @@ ordinary_graph_view
 directed_graph_view
 hypergraph_view
 mesh_topology_view
-computation_graph_view
+dataflow_graph_view
 ```
 
 A view earns a type when it guarantees additional laws and therefore permits additional meaningful queries.
@@ -942,15 +958,15 @@ Duality is no longer foundational.
 For a particular two-sort structure with
 
 \[
-R\subseteq A\times B,
+P\subseteq A\times B,
 \]
 
 the familiar dual exchanges the two domains using transpose:
 
 \[
-(A,B,R)
+(A,B,P)
 \mapsto
-(B,A,R^T).
+(B,A,P^T).
 \]
 
 For higher-arity relations the analogous structural operation is a permutation of slots.
@@ -1109,7 +1125,7 @@ Relations naturally induce movement of data between domains.
 For binary
 
 \[
-R\subseteq A\times B,
+P\subseteq A\times B,
 \]
 
 field operations may include abstract forms of:
@@ -1379,7 +1395,7 @@ E = edges
 P = endpoint roles
 
 endpoint relation:
-    R_endpoint ⊆ E × V × P
+    T_endpoint ⊆ E × V × P
 ```
 
 or an equivalent pair of binary endpoint relations if benchmarking or simplicity strongly favors them.
@@ -1475,7 +1491,7 @@ A tag system may be represented as:
 
 ```text
 T = tag names
-R_tag ⊆ A × T
+P_tag ⊆ A × T
 ```
 
 rather than one fixed character array attached separately to every member-set kind.
@@ -1499,7 +1515,7 @@ P = parts
 Possible relations:
 
 \[
-R_{\mathrm{owner}}\subseteq A\times P
+T_{\mathrm{owner}}\subseteq A\times P
 \]
 
 for ownership, with a functional-law constraint.
@@ -1672,7 +1688,7 @@ Use:
 ```text
 V = vertices
 E = hyperedges
-R_incident ⊆ V × E
+P_incident ⊆ V × E
 ```
 
 or a higher-arity relation when roles/order require it.
@@ -1703,7 +1719,7 @@ X3 = cells
 and multiple relations:
 
 \[
-R_{01},R_{12},R_{23},R_{02},R_{13},\ldots
+P_{01},P_{12},P_{23},P_{02},P_{13},\ldots
 \]
 
 as primitive or derived structure.
@@ -1711,7 +1727,7 @@ as primitive or derived structure.
 Same-dimensional adjacency relations may also exist:
 
 \[
-R_{00},R_{11},R_{22},R_{33}.
+P_{00},P_{11},P_{22},P_{33}.
 \]
 
 Do not force the entire mesh into one ordinary graph.
@@ -2158,29 +2174,29 @@ Each tuple has exactly the relation's declared arity.
 ### Permutation inverse
 
 \[
-\sigma^{-1}(\sigma R)=R.
+\sigma^{-1}(\sigma P)=P.
 \]
 
 ### Binary transpose
 
 \[
-(R^T)^T=R.
+(P^T)^T=P.
 \]
 
 ### Binary composition identity
 
 \[
-R\circ 1=R,
+P\circ 1=P,
 \qquad
-1\circ R=R.
+1\circ P=P.
 \]
 
 ### Binary composition associativity
 
 \[
-T\circ(S\circ R)
+H\circ(T\circ P)
 =
-(T\circ S)\circ R.
+(H\circ T)\circ P.
 \]
 
 ### Restriction
@@ -2249,7 +2265,7 @@ Where ownership is declared functional, each owned member has exactly one owner.
 ### Round trip
 
 \[
-\operatorname{assemble}(\operatorname{partition}(G))=G
+\operatorname{assemble}(\operatorname{partition}(\Gamma))=\Gamma
 \]
 
 under existing exact-partition semantics.

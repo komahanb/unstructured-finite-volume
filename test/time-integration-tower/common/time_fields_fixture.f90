@@ -4,9 +4,9 @@
 ! Three fields on three different domains, and the point of the
 ! file is that they are three DIFFERENT domains:
 !
-!      q0   : Q -> R      [2, 0]                 the state
-!      time : T -> R      [0, 1/2, 1, 3/2, 2]    the instants' coords
-!      h    : E -> R      [1/2, 1/2, 1/2, 1/2]   the step sizes
+!      q0   : Q -> reals  [2, 0]                 the state
+!      time : T -> reals  [0, 1/2, 1, 3/2, 2]    the instants' coords
+!      h    : E -> reals  [1/2, 1/2, 1/2, 1/2]   the step sizes
 !
 ! THE STATE FIELD NEEDS NO GRAPH. A field is a function over one
 ! member set - that is the field ontology as production already
@@ -25,8 +25,8 @@
 !
 !      T                  the carrier of instants
 !      Tail/Head/A1/A2    the temporal structure over it
-!      time : T -> R      numerical coordinates
-!      h    : E -> R      numerical step sizes
+!      time : T -> reals  numerical coordinates
+!      h    : E -> reals  numerical step sizes
 !
 ! The consistency between the last two and the structure is a
 ! THEOREM this fixture's consumer proves, not an assumption it
@@ -58,7 +58,7 @@ module time_fields_fixture
 contains
 
   !===================================================================!
-  ! q0 : Q -> R, and NOT a graph in sight.
+  ! q0 : Q -> reals, and NOT a graph in sight.
   !===================================================================!
 
   type(field) function state_field(q) result(f)
@@ -71,7 +71,7 @@ contains
   end function state_field
 
   !===================================================================!
-  ! time : T -> R, the numerical coordinate of each instant.
+  ! time : T -> reals, the numerical coordinate of each instant.
   !===================================================================!
 
   type(field) function instant_coordinates(t) result(f)
@@ -84,7 +84,7 @@ contains
   end function instant_coordinates
 
   !===================================================================!
-  ! h : E -> R, one step size per step. A FIELD ON THE STEPS, not a
+  ! h : E -> reals, one step size per step. A FIELD ON THE STEPS, not a
   ! scalar hidden in a scheme: the tower will use a uniform h, and
   ! the uniformity is a property of these values rather than of the
   ! type that holds them.

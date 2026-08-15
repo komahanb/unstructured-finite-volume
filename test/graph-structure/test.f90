@@ -2,7 +2,7 @@
 ! The relational graph suite: the laws of the container (AGENTS.md,
 ! level 3, phase 4A).
 !
-! G = (S, R), and nothing else: the checks below build a graph out
+! GAMMA = (S, P), and nothing else: the checks below build a graph out
 ! of a CALCULATOR - operations, values, ports - precisely so that
 ! no vertex or edge can sneak in as an assumption. The container
 ! must hold arbitrary carriers and arbitrary-arity relations,

@@ -40,7 +40,7 @@
 !
 ! Production regenerates a linear chain from nsteps rather than
 ! consuming G_time, and carries ONE scalar step rather than the
-! field h : E -> R. For this specimen both are EXACT
+! field h : E -> reals. For this specimen both are EXACT
 ! specializations - the time graph is a simple chain and h is
 ! uniform - so no defect is established here. They are recorded as
 ! frontier, for clients that would supply a nonuniform or

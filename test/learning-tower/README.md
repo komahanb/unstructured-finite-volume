@@ -60,9 +60,9 @@ it does and does not prove is stated precisely in
 | Level | Learning meaning | Core truth |
 |---|---|---|
 | 0 | carriers | \(V,O,P\) distinct symbolic domains |
-| 1 | structural flow | ternary \(R_{\mathrm{flow}}\subseteq O\times V\times P\), six tuples |
+| 1 | structural flow | ternary \(T_{\mathrm{flow}}\subseteq O\times V\times P\), six tuples |
 | 2 | relation algebra | \(D=\{(\mathrm{predict},\mathrm{error})\}\) **derived** |
-| 3 | relational graph | one owned structure \(G=(\mathcal S,\mathcal R)\) |
+| 3 | relational graph | one owned structure \(\Gamma=(\mathcal S,\mathcal P)\) |
 | 4 | graph calculus | directed interpretation; walk \([\mathrm{predict},\mathrm{error}]\) |
 | 5 | field calculus | observed / trainable / computed **roles by domain** |
 | 6 | discretization | structural parameter→residual dependency \(J_\Theta=\{(r,w)\}\) |
@@ -101,7 +101,7 @@ P=\{in_1,in_2,out\}.
 The structural relation is exactly
 
 \[
-R_{\mathrm{flow}}\subseteq O\times V\times P
+T_{\mathrm{flow}}\subseteq O\times V\times P
 \]
 
 with the six tuples
@@ -334,7 +334,7 @@ Level 1 answers:
 One ternary relation:
 
 \[
-R_{\mathrm{flow}}\subseteq O\times V\times P
+T_{\mathrm{flow}}\subseteq O\times V\times P
 \]
 
 with exactly the six tuples of the persistent object. This is the one
@@ -362,7 +362,7 @@ stays a relation with three slots.
 
 - arity is exactly 3, and each signature slot is the declared carrier
   **by identity**;
-- `|R_flow| = 6` although seven tuples were handed in;
+- `|T_flow| = 6` although seven tuples were handed in;
 - all six expected tuples are members (six present in a six-element set:
   the extension is exact);
 - structurally meaningful absences:
@@ -395,7 +395,7 @@ signatures.
 
 Level 2 answers:
 
-> **What can be derived from \(R_{\mathrm{flow}}\) — without writing the
+> **What can be derived from \(T_{\mathrm{flow}}\) — without writing the
 > answer down?**
 
 ## New mathematical commitment
@@ -423,11 +423,11 @@ then restrict, project, and compose
 (`src/graph_relation_algebra.f90`):
 
 ```text
-R_out3   = restrict_slot(R_flow, 3, P_out)      two tuples
-R_in3    = restrict_slot(R_flow, 3, P_in)       four tuples
+T_out3   = restrict_slot(T_flow, 3, P_out)      two tuples
+T_in3    = restrict_slot(T_flow, 3, P_in)       four tuples
 
-produces = project_slots(R_out3, [1,2])  ⊆ O×V
-consumes = project_slots(R_in3,  [2,1])  ⊆ V×O
+produces = project_slots(T_out3, [1,2])  ⊆ O×V
+consumes = project_slots(T_in3,  [2,1])  ⊆ V×O
 ```
 
 with exact extensions
@@ -502,35 +502,35 @@ Level 3 answers:
 ## New mathematical commitment
 
 \[
-G=(\mathcal S,\mathcal R),
+\Gamma=(\mathcal S,\mathcal P),
 \qquad
 \mathcal S=\{V,O,P\},
 \qquad
-\mathcal R=\{R_{\mathrm{flow}},D\}.
+\mathcal P=\{T_{\mathrm{flow}},D\}.
 \]
 
 One relational model structure owns the learning schema.
 
 ```mermaid
 flowchart TB
-    G["learning relational_graph"]
+    GAMMA["learning relational_graph"]
 
     V["V = value slots"]
     O["O = operations"]
     P["P = ports"]
 
-    R["R_flow ⊆ O × V × P"]
+    T["T_flow ⊆ O × V × P"]
     D["D ⊆ O × O"]
 
-    G --> V
-    G --> O
-    G --> P
-    G --> R
-    G --> D
+    GAMMA --> V
+    GAMMA --> O
+    GAMMA --> P
+    GAMMA --> T
+    GAMMA --> D
 
-    R -.signature.-> O
-    R -.signature.-> V
-    R -.signature.-> P
+    T -.signature.-> O
+    T -.signature.-> V
+    T -.signature.-> P
     D -.signature.-> O
 ```
 
@@ -572,7 +572,7 @@ is not the same graph.
   \(O\);
 - signature closure: every slot of every owned relation resolves to an
   owned carrier;
-- graph identity: \(G\) is itself, and no identically stocked twin is it.
+- graph identity: \(\Gamma\) is itself, and no identically stocked twin is it.
 
 ## Required negative truth
 
@@ -809,7 +809,7 @@ Y=\{r\},
 
 ## Construction / implementation
 
-**Direct value dependency.** From \(R_{\mathrm{flow}}\) derive input and
+**Direct value dependency.** From \(T_{\mathrm{flow}}\) derive input and
 output participation — the same two projections Level 2 built, composed in
 the other order:
 
@@ -960,7 +960,7 @@ R(w)=x_{\mathrm{data}}\,w-y_{\mathrm{data}},
 \]
 
 is **test-local oracle data supplied from above the frontier**. Level 7
-does not derive it from \(R_{\mathrm{flow}}\); `predict` and `error`
+does not derive it from \(T_{\mathrm{flow}}\); `predict` and `error`
 remain lawless members of \(O\). The solver sees only an opaque
 
 \[
@@ -1058,7 +1058,7 @@ persistent problem remains \((2,6)\to 3\).
 
 ## Required negative truth
 
-- the formula \(2w-6\) is never derived from \(R_{\mathrm{flow}}\) here;
+- the formula \(2w-6\) is never derived from \(T_{\mathrm{flow}}\) here;
 - Level-6 \(J_\Theta\) is deliberately **not** consumed by the solver:
   structural sparsity and numerical operator action remain distinct;
 - no gradient, no SGD, no backpropagation, no autodiff. GMRES is not "the
@@ -1137,7 +1137,7 @@ Level 9) exposes:
 
 ```text
 apply_law(op, a, b)                      the law table
-slot_for_port(flow, V, op, port)         uniqueness scan against R_flow
+slot_for_port(flow, V, op, port)         uniqueness scan against T_flow
 located_slot(located, V, row)            uniqueness scan against L
 generated_residual(...)                  the constituted evaluation
 ```
@@ -1149,7 +1149,7 @@ parameterized by the abstract contracts `class(relation)` and
 certified lower road once more:
 
 ```text
-R_flow → restrict/project/compose → D → graph-owned → 
+T_flow → restrict/project/compose → D → graph-owned → 
 directed_adjacency_view → topological_order → [predict, error]
 ```
 
@@ -1166,7 +1166,7 @@ yhat, e:    NO value, and no zero/NaN/sentinel pretending otherwise
 ```
 
 Then for each operation in the derived order, the evaluator discovers
-`in1`/`in2`/`out` from \(R_{\mathrm{flow}}\) by uniqueness scan, demands
+`in1`/`in2`/`out` from \(T_{\mathrm{flow}}\) by uniqueness scan, demands
 both inputs **available**, requires the output to land in \(U\) (the
 test-local learning schema law: operations produce the slots Level 5
 classified as computed), executes the law into the out slot, and marks it
@@ -1178,7 +1178,7 @@ available:
 ```
 
 — but none of those slot names appears in the evaluator logic; the facts
-live in \(R_{\mathrm{flow}}\) and \(L\).
+live in \(T_{\mathrm{flow}}\) and \(L\).
 
 ```mermaid
 flowchart LR
@@ -1267,7 +1267,7 @@ it invents none.
 ## The complete path
 
 ```text
-R_flow
+T_flow
     ↓
 derive D
     ↓
@@ -1316,7 +1316,7 @@ external selector deallocated
 training still succeeds
 ```
 
-The final statement acts on the model structure owned by \(G\), not on a
+The final statement acts on the model structure owned by \(\Gamma\), not on a
 temporary.
 
 **The solve, through the operation face.** The ordinary GMRES citizen is
@@ -1345,7 +1345,7 @@ injected.
 flowchart TB
     S["Statement: learn w from (x,y) = (2,6)"]
 
-    S --> structure["one relational model graph<br/>R_flow owned, D derived, order derived"]
+    S --> structure["one relational model graph<br/>T_flow owned, D derived, order derived"]
     S --> data["observations on K: y=6, x=2"]
     S --> laws["Level-8 constitution (reused fixture)"]
     S --> loc["L = {(r,e)}"]
@@ -1442,9 +1442,9 @@ field on the trainable domain, reusable after training ends.
 ```mermaid
 flowchart TB
     L0["0 — carriers<br/>V, O, P"]
-    L1["1 — relation<br/>R_flow ⊆ O×V×P"]
+    L1["1 — relation<br/>T_flow ⊆ O×V×P"]
     L2["2 — relation algebra<br/>D = {predict → error}"]
-    L3["3 — relational graph<br/>G = (𝒮, ℛ)"]
+    L3["3 — relational graph<br/>Γ = (𝒮, 𝒫)"]
     L4["4 — graph calculus<br/>walk: predict then error"]
     L5["5 — field calculus<br/>y=6, x=2, w₀=0; U valueless"]
     L6["6 — discretization<br/>J_Θ = {(r,w)}, structurally"]
@@ -1527,7 +1527,7 @@ One of the tower's central lessons:
 Each object in the tower is exactly one of the two:
 
 ```text
-R_flow:                structural fact
+T_flow:                structural fact
 D:                     derived structural fact
 A:                     value dependency structure
 J_Theta:               derivative sparsity structure

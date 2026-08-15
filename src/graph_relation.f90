@@ -4,7 +4,7 @@
 ! The second object of the relation-centered tower (AGENTS.md): a
 ! named finite-arity subset of a cartesian product,
 !
-!      R  <=  A_1 x A_2 x ... x A_k ,        k >= 1
+!      P  <=  A_1 x A_2 x ... x A_k ,        k >= 1
 !
 ! A relation has identity, arity, an ordered signature, and a
 ! membership law - and it is FIRST-CLASS: constructible, queryable
@@ -21,13 +21,13 @@
 ! same_as across each other's slots, and no relation ever assumes
 ! its domains are owned by one graph. A slot may repeat a carrier:
 !
-!      R_CC  <=  cells x cells         adjacency
-!      R_CF  <=  cells x faces         incidence
+!      P_CC  <=  cells x cells         adjacency
+!      P_CF  <=  cells x faces         incidence
 !
 ! adjacency and incidence are interpretations of the signature, not
 ! separate primitives. Higher arity is a slot, not a special case:
 !
-!      R_end <=  edges x vertices x roles
+!      T_end <=  edges x vertices x roles
 !
 ! holds (e, v, tail) and (e, v, head) for an interior edge and one
 ! lone (e, v, tail) for a boundary face - no imaginary far-side

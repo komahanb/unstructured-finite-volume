@@ -34,7 +34,7 @@ program derivative_level_2
   type(counted_set)            :: v, o, p
   type(subset_set)             :: p_out, p_in
   type(stored_relation)        :: flow, backwards
-  type(stored_relation)        :: r_out3, r_in3, produces, consumes
+  type(stored_relation)        :: t_out3, t_in3, produces, consumes
   class(relation), allocatable :: d, d2
   integer                      :: table(3, 6)
   integer                      :: nfail
@@ -78,19 +78,19 @@ contains
 
     integer, intent(inout) :: nfail
 
-    r_out3 = restrict_slot(flow, 3, p_out)
-    r_in3  = restrict_slot(flow, 3, p_in)
+    t_out3 = restrict_slot(flow, 3, p_out)
+    t_in3  = restrict_slot(flow, 3, p_in)
 
-    call report(r_out3 % num_tuples() .eq. 2 .and. &
-         &      r_out3 % has([OP_PRODUCT, SLOT_U, PORT_OUT]) .and. &
-         &      r_out3 % has([OP_SUM    , SLOT_Z, PORT_OUT]), &
+    call report(t_out3 % num_tuples() .eq. 2 .and. &
+         &      t_out3 % has([OP_PRODUCT, SLOT_U, PORT_OUT]) .and. &
+         &      t_out3 % has([OP_SUM    , SLOT_Z, PORT_OUT]), &
          & "two tuples pass the output port - exactly these two", nfail)
 
-    call report(r_in3 % num_tuples() .eq. 4 .and. &
-         &      r_in3 % has([OP_PRODUCT, SLOT_X, PORT_IN1]) .and. &
-         &      r_in3 % has([OP_PRODUCT, SLOT_Y, PORT_IN2]) .and. &
-         &      r_in3 % has([OP_SUM    , SLOT_U, PORT_IN1]) .and. &
-         &      r_in3 % has([OP_SUM    , SLOT_Y, PORT_IN2]), &
+    call report(t_in3 % num_tuples() .eq. 4 .and. &
+         &      t_in3 % has([OP_PRODUCT, SLOT_X, PORT_IN1]) .and. &
+         &      t_in3 % has([OP_PRODUCT, SLOT_Y, PORT_IN2]) .and. &
+         &      t_in3 % has([OP_SUM    , SLOT_U, PORT_IN1]) .and. &
+         &      t_in3 % has([OP_SUM    , SLOT_Y, PORT_IN2]), &
          & "four tuples pass the input ports - exactly these four", nfail)
 
   end subroutine check_restrictions
@@ -108,8 +108,8 @@ contains
 
     class(member_set), allocatable :: dom
 
-    produces = project_slots(r_out3, [1, 2])
-    consumes = project_slots(r_in3 , [2, 1])
+    produces = project_slots(t_out3, [1, 2])
+    consumes = project_slots(t_in3 , [2, 1])
 
     dom = produces % domain(1)
     call report(dom % same_as(o), &

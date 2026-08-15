@@ -4,7 +4,7 @@
 ! The Gate-A load-bearing level. It answers one question: BEFORE
 ! DIFFERENTIATING ANYTHING NUMERICALLY, WHICH INDEPENDENT INPUTS
 ! CAN STRUCTURALLY INFLUENCE THE RESPONSE. Everything is derived
-! from R_flow; nothing new is architect-owned here - the response
+! from T_flow; nothing new is architect-owned here - the response
 !
 !      Z = { z }  c-->  C  c-->  V
 !
@@ -123,15 +123,15 @@ contains
   ! composed in the other order.
   !===================================================================!
 
-  function derive_direct(r_flow) result(dep)
+  function derive_direct(t_flow) result(dep)
 
-    type(stored_relation), intent(in) :: r_flow
+    type(stored_relation), intent(in) :: t_flow
     type(csr_relation)                :: dep
 
     type(stored_relation) :: cons, prod
 
-    cons = project_slots(restrict_slot(r_flow, 3, p_in ), [2, 1])
-    prod = project_slots(restrict_slot(r_flow, 3, p_out), [1, 2])
+    cons = project_slots(restrict_slot(t_flow, 3, p_in ), [2, 1])
+    prod = project_slots(restrict_slot(t_flow, 3, p_out), [1, 2])
     dep  = compose_binary(cons, prod)
 
     ! keep the participations visible for their own checks

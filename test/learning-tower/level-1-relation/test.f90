@@ -5,7 +5,7 @@
 ! STRUCTURALLY RELATED. The three carriers stand as at Level 0, and
 ! one ternary relation joins them,
 !
-!      R_flow  <=  O x V x P
+!      T_flow  <=  O x V x P
 !
 !      (predict, w,    in1)     (predict, x, in2)   (predict, yhat, out)
 !      (error,   yhat, in1)     (error,   y, in2)   (error,   e,    out)

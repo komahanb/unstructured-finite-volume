@@ -612,9 +612,9 @@ symptom / fact:       A RELATION AND A FIELD MAY SHARE AN
 
                       Three real fields were attached:
 
-                        w1 : E1 -> R = [ 2, -1,  0,  3,  4 ]
-                        w2 : E2 -> R = [ 1,  5, -2,  2 ]
-                        w3 : E3 -> R = [ 3, -1,  4 ]
+                        w1 : E1 -> reals = [ 2, -1,  0,  3,  4 ]
+                        w2 : E2 -> reals = [ 1,  5, -2,  2 ]
+                        w3 : E3 -> reals = [ 3, -1,  4 ]
 
                       and afterwards D1, D2, D3, D2:1 and D3:1 held
                       exactly the tuples Gate A derived, and the

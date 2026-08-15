@@ -5,7 +5,7 @@
 ! three carriers stand as at Level 0, and one ternary relation
 ! joins them,
 !
-!      R_flow  <=  O x X x P
+!      T_flow  <=  O x X x P
 !
 !      (+, a, in1)     (+, b, in2)     (+, c, out)
 !      (x, c, in1)     (x, d, in2)     (x, e, out)

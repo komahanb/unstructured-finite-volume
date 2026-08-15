@@ -5,7 +5,7 @@
 ! SPECIMEN LIVE AS ONE OWNED RELATIONAL STRUCTURE. The persistent
 ! object becomes
 !
-!      G = ( { V, O, P }, { R_flow, D } )
+!      GAMMA = ( { V, O, P }, { T_flow, D } )
 !
 ! where D is DERIVED once more by the certified Level-2 road and
 ! then ADMITTED - the container stores structure, it infers nothing
@@ -197,7 +197,7 @@ contains
   end subroutine check_signature_closure
 
   !===================================================================!
-  ! G is a declared graph: itself, and not an identically built
+  ! GAMMA is a declared graph: itself, and not an identically built
   ! twin - extension equality never collapses identity.
   !===================================================================!
 

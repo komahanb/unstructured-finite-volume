@@ -15,13 +15,15 @@
 This document records a working architectural hypothesis for the graph framework:
 
 \[
-\boxed{G=(\mathcal S,\mathcal R)}
+\boxed{\Gamma=(\mathcal S,\mathcal P)}
 \]
 
 is the most abstract structural object currently available to us, where:
 
 - \(\mathcal S\) is a collection of member sets;
-- \(\mathcal R\) is a collection of finite-arity typed relations among those sets.
+- \(\mathcal P\) is a collection of finite-arity typed relations among those sets.
+
+(The letter \(R\) is reserved for the residual of the computational graph \(G=(Q,R)\); see `COMPUTATIONAL-GRAPH.md`.)
 
 The immediate goal is **not** to force every software object into one inheritance hierarchy.
 
@@ -656,14 +658,14 @@ The generic graph is:
 
 \[
 \boxed{
-G=(\mathcal S,\mathcal R)
+\Gamma=(\mathcal S,\mathcal P)
 }
 \]
 
 not:
 
 \[
-G=(V,E).
+(V,E).
 \]
 
 This matters strongly for fractal architecture.
@@ -1540,7 +1542,7 @@ The current fractal claims should therefore be labeled:
 
 ```text
 ESTABLISHED
-    heterogeneous relational graph G=(S,R)
+    heterogeneous relational graph Gamma=(S,P)
     graph views/interpretations
     derived dependency
     structural transpose/reverse views

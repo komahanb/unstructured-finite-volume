@@ -26,7 +26,7 @@
 module affine_residual_fixture
 
   ! The test-local oracle: R : field(U) -> field(Y). These formulas
-  ! are supplied data. This fixture never inspects R_flow, OP_PLUS
+  ! are supplied data. This fixture never inspects T_flow, OP_PLUS
   ! or OP_TIMES - it is opaque to the solver and to Level 7 alike.
 
   use iso_fortran_env  , only : dp => REAL64

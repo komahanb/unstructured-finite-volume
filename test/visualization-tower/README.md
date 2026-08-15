@@ -24,7 +24,7 @@ exists instead is each operator's *structural dependency*,
 derived from primitive incidence, composed along the chain,
 transposed, and rendered.
 
-**Level 5 is where the numbers arrive** — `w_k : E_k -> R`, one
+**Level 5 is where the numbers arrive** — `w_k : E_k -> reals`, one
 coefficient per dependency occurrence — and its finding is that
 nothing structural moves when they do:
 
@@ -56,7 +56,7 @@ is no longer asked to take its structure from the execution context.
 | **L3** | one relational ownership environment | `relational_graph` | — | — | owns 7 carriers + 6 primitive relations | derived on demand | none | signature closure over all twelve slots; whole chain re-derived from graph-owned relations alone | PASS |
 | **L4** | structural interpretation | test-local `structural_renderer_fixture` | any binary relation | text | chain line + sparsity | chain line + sparsity | A, B, C, D, E | five generated representations, cell by cell against `relation % has` | PASS |
 | — | ===== **REVIEW GATE A** ===== | | | | | | | | |
-| **L5** | fields `w_k : E_k -> R` | `class_graph_field` / `field` | occurrence carriers `E1, E2, E3` | scalar values | structure **unchanged** | structure unchanged; **no numerical reverse** | structural sparsity **+ coefficient view** | `level-5-field-calculus/test.f90` | PASS |
+| **L5** | fields `w_k : E_k -> reals` | `class_graph_field` / `field` | occurrence carriers `E1, E2, E3` | scalar values | structure **unchanged** | structure unchanged; **no numerical reverse** | structural sparsity **+ coefficient view** | `level-5-field-calculus/test.f90` | PASS |
 | **L6** | production dependency projection | `discretization_operator % dependencies()` → `class(graph)` | one ordinary vertex carrier | the same carrier | Boolean coordinate pattern equals `D2 : X1 -> X2` | structure unchanged; no numerical reverse | signature **+** sparsity, shown side by side | `level-6-discretization/test.f90` | PASS |
 | **L7** | minimizer structural provenance | `minimizer % attach(..., coupling=)`, `% sweep_order()`, `% diagonal()` | one operator, two execution contexts | colours, matvec, diagonal | coupling `P_A` is context-independent | not exercised | operator coupling **vs** execution context, side by side | `level-7-minimization/test.f90` | PASS |
 | — | ===== **REVIEW GATE B** ===== | | | | | | | | |
@@ -121,7 +121,7 @@ tower's whole content at Gate A.
 
 ### 3. The numerical coefficient
 
-A number attached to a dependency occurrence — `w_k : E_k -> R`.
+A number attached to a dependency occurrence — `w_k : E_k -> reals`.
 **Absent through all of Gate A; introduced at Level 5.** It lives on
 `E_k` and on nothing else, and attaching it changes no relation, no
 tuple and no structural picture.
@@ -215,9 +215,9 @@ have reached this member of `X3`.**
 Nothing structural. That is the finding.
 
 ```
-    w1 : E1 -> R  =  [ 2, -1,  0,  3,  4 ]
-    w2 : E2 -> R  =  [ 1,  5, -2,  2 ]
-    w3 : E3 -> R  =  [ 3, -1,  4 ]
+    w1 : E1 -> reals = [ 2, -1,  0,  3,  4 ]
+    w2 : E2 -> reals = [ 1,  5, -2,  2 ]
+    w3 : E3 -> reals = [ 3, -1,  4 ]
 ```
 
 ### The coefficients live on `E`, and on nothing else
@@ -275,7 +275,7 @@ The pipeline forks and rejoins exactly once:
     primitive incidence                occurrence carrier E
             |                                  |
             v                                  v
-    derived dependency structure          field w : E -> R
+    derived dependency structure          field w : E -> reals
             |                                  |
             v                                  v
     structural picture                  coefficient values
@@ -709,7 +709,7 @@ The repository's composition reads its arguments in the order the data
 flows, and its result in the order mathematics writes it:
 
 ```
-    compose_binary(R_AB, R_BC)  =  R_BC o R_AB
+    compose_binary(P_AB, P_BC)  =  P_BC o P_AB
 ```
 
 so the **first argument is applied first**. Written out:

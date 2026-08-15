@@ -8,7 +8,7 @@
 ! the primal and the derivative of the response z at x = 2, y = 3.
 ! It SELECTS - it invents nothing:
 !
-!      structure       R_flow, owned by G; D derived; order derived
+!      structure       T_flow, owned by GAMMA; D derived; order derived
 !      base point      x = 2, y = 3 on X = { y, x }
 !      constitution    the Level-8 laws and the ONE local
 !                      linearization, reused, never redone
@@ -29,7 +29,7 @@
 ! secondary truth.
 !
 ! The statement evaluates GRAPH-OWNED structure: the external flow
-! selector is located in G by identity and then DESTROYED, and
+! selector is located in GAMMA by identity and then DESTROYED, and
 ! every number below is computed through the graph's own relation.
 ! Level 7 - minimization - is not on this road at all: this orbit
 ! does not inhabit that radial contract, and no solver, no host and

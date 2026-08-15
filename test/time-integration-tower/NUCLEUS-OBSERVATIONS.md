@@ -488,9 +488,9 @@ contextual radius:    0
 symptom / fact:       THE STATE FIELD HAS ITS OWN DOMAIN, and no
                       graph exists anywhere in the Level-5 program.
 
-                        q0   : Q -> R    [2, 0]
-                        time : T -> R    [0, 1/2, 1, 3/2, 2]
-                        h    : E -> R    [1/2, 1/2, 1/2, 1/2]
+                        q0   : Q -> reals [2, 0]
+                        time : T -> reals [0, 1/2, 1, 3/2, 2]
+                        h    : E -> reals [1/2, 1/2, 1/2, 1/2]
 
                       Each pinned by domain IDENTITY, and the three
                       domains pairwise distinct. q0 lives on Q
@@ -1431,7 +1431,7 @@ symptom / fact:       A UNIFORM TIME GRAPH AND A SCALAR STEP ARE
                         G_time
 
                         marcher carries ONE SCALAR step rather than
-                        the field h : E -> R that Level 5 declared
+                        the field h : E -> reals that Level 5 declared
 
                       For THIS specimen both are EXACT:
 

@@ -15,7 +15,7 @@
 !
 ! The residual formula r(w) = x_data*w - y_data is TEST-LOCAL
 ! ORACLE DATA supplied from above the frontier: Level 7 does not
-! derive it from R_flow, and predict/error remain lawless members
+! derive it from T_flow, and predict/error remain lawless members
 ! of O until Level 8. The solver is the ordinary GMRES citizen -
 ! attach, constant, solve - which discovers the linear action
 ! 2w from the opaque residual through the minimizer's own affine
@@ -36,7 +36,7 @@ module learning_residual_fixture
   ! The test-local oracle: R : field(Theta) -> field(Y), affine in
   ! the one trainable parameter. The data (x_data, y_data) live HERE,
   ! parametrically - never in production, never hard-coded in the
-  ! map. This fixture never inspects R_flow, OP_PREDICT or OP_ERROR:
+  ! map. This fixture never inspects T_flow, OP_PREDICT or OP_ERROR:
   ! it is opaque to the solver and to Level 7 alike.
 
   use iso_fortran_env  , only : dp => REAL64

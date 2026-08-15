@@ -6,9 +6,9 @@
 !
 ! The answer is: NOTHING STRUCTURAL CHANGES.
 !
-!      w1 : E1 -> R  = [ 2, -1,  0,  3,  4 ]
-!      w2 : E2 -> R  = [ 1,  5, -2,  2 ]
-!      w3 : E3 -> R  = [ 3, -1,  4 ]
+!      w1 : E1 -> reals = [ 2, -1,  0,  3,  4 ]
+!      w2 : E2 -> reals = [ 1,  5, -2,  2 ]
+!      w3 : E3 -> reals = [ 3, -1,  4 ]
 !
 ! and after all three exist, D1, D2, D3, D2:1 and D3:1 hold exactly
 ! the tuples Gate A derived, and the Level-4 pictures are the same

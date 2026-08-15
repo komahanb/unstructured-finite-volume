@@ -5,7 +5,7 @@
 ! STRUCTURALLY WIRED. The three carriers stand as at Level 0, and
 ! one ternary relation joins them,
 !
-!      R_flow  <=  O x V x P
+!      T_flow  <=  O x V x P
 !
 !      (product, x, in1)   (product, y, in2)   (product, u, out)
 !      (sum,     u, in1)   (sum,     y, in2)   (sum,     z, out)
@@ -15,7 +15,7 @@
 ! proves it independently of its siblings. The load-bearing wiring
 ! fact: y is consumed TWICE - by product and by sum - the fan-out
 ! that will one day make reverse accumulation nontrivial. But at
-! this level derivative potential is completely LATENT: R_flow
+! this level derivative potential is completely LATENT: T_flow
 ! contains computation structure, not derivative metadata, and it
 ! looks exactly like ordinary computation structure because it IS
 ! ordinary computation structure. product does not yet multiply;

@@ -224,7 +224,7 @@ A_2 = A_1 \circ A_1 : T \to T
 \]
 
 read through the repository's convention
-`compose_binary(R_AB, R_BC) = R_BC ∘ R_AB`.
+`compose_binary(P_AB, P_BC) = P_BC ∘ P_AB`.
 
 ```text
 A1 = { t0→t1, t1→t2, t2→t3, t3→t4 }        one-step reach
@@ -320,7 +320,7 @@ A1 and A2 are DIFFERENT STRUCTURAL VIEWS over the SAME T carrier
         TIME STRUCTURE                      STATE DOMAIN
         T, E, A1, A2                            Q
                                                 |
-        (structure: which instants,             |  q_n : Q -> R
+        (structure: which instants,             |  q_n : Q -> reals
          in which order, reachable              |
          from which)                            v
                                     +-----------------------+
@@ -338,7 +338,7 @@ A1 and A2 are DIFFERENT STRUCTURAL VIEWS over the SAME T carrier
                                               GMRES, unknown = Q
                                                       |
                                                       v
-                                                q_{n+1} : Q -> R
+                                                q_{n+1} : Q -> reals
 ```
 
 **No arrow in that picture says \(Q = V(H_t)\), and none may.** The host
@@ -351,9 +351,9 @@ five, throughout.
 Three fields on three domains:
 
 ```text
-q0   : Q -> R      [2, 0]
-time : T -> R      [0, 1/2, 1, 3/2, 2]
-h    : E -> R      [1/2, 1/2, 1/2, 1/2]
+q0   : Q -> reals  [2, 0]
+time : T -> reals  [0, 1/2, 1, 3/2, 2]
+h    : E -> reals  [1/2, 1/2, 1/2, 1/2]
 ```
 
 pinned by domain **identity**, and pairwise distinct. The central truth:

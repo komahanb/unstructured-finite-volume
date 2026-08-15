@@ -189,7 +189,7 @@ P=\{in_1,in_2,out\},
 with
 
 \[
-R_{\mathrm{flow}}\subseteq O\times X\times P.
+T_{\mathrm{flow}}\subseteq O\times X\times P.
 \]
 
 Numerical field values first appear at Level 5.
@@ -387,7 +387,7 @@ d ──in₂──▶ ×
 The ternary relation is:
 
 \[
-R_{\mathrm{flow}}\subseteq O\times X\times P
+T_{\mathrm{flow}}\subseteq O\times X\times P
 \]
 
 with exactly the six tuples
@@ -585,7 +585,7 @@ Level 1 answers:
 Build:
 
 \[
-R_{\mathrm{flow}}\subseteq O\times X\times P.
+T_{\mathrm{flow}}\subseteq O\times X\times P.
 \]
 
 Its arity is exactly 3.
@@ -608,25 +608,25 @@ The relation contains exactly:
 Representative assertions:
 
 ```text
-R.has(+, a, in₁)  = true
-R.has(+, c, out)  = true
-R.has(×, c, in₁)  = true
-R.has(×, a, in₁)  = false
+T.has(+, a, in₁)  = true
+T.has(+, c, out)  = true
+T.has(×, c, in₁)  = true
+T.has(×, a, in₁)  = false
 ```
 
 Signature truths:
 
 ```text
-arity(R) = 3
-domain(R,1) same_as O
-domain(R,2) same_as X
-domain(R,3) same_as P
+arity(T) = 3
+domain(T,1) same_as O
+domain(T,2) same_as X
+domain(T,3) same_as P
 ```
 
 Set semantics:
 
 ```text
-adding an existing tuple again does not increase |R|
+adding an existing tuple again does not increase |T|
 ```
 
 Foreign-domain members must be refused.
@@ -697,7 +697,7 @@ D.has(×, ×) = false
 
 The result must be invariant to enumeration order of the six input tuples.
 
-Test this explicitly by building the same \(R_{\mathrm{flow}}\) with a different tuple ordering and proving the same derived extension.
+Test this explicitly by building the same \(T_{\mathrm{flow}}\) with a different tuple ordering and proving the same derived extension.
 
 ---
 
@@ -749,7 +749,7 @@ Level 3 answers:
 Construct:
 
 \[
-G=(\mathcal S,\mathcal R)
+\Gamma=(\mathcal S,\mathcal P)
 \]
 
 with at least
@@ -761,7 +761,7 @@ with at least
 and
 
 \[
-\mathcal R\ni R_{\mathrm{flow}}.
+\mathcal P\ni T_{\mathrm{flow}}.
 \]
 
 If Level 2 has materialized \(D\), it may also be admitted when appropriate.
@@ -773,13 +773,13 @@ If Level 2 has materialized \(D\), it may also be admitted when appropriate.
 Verify:
 
 ```text
-G owns X
-G owns O
-G owns P
-G owns R_flow
+GAMMA owns X
+GAMMA owns O
+GAMMA owns P
+GAMMA owns T_flow
 ```
 
-Every relation domain must resolve to a carrier owned by \(G\).
+Every relation domain must resolve to a carrier owned by \(\Gamma\).
 
 Two distinct relations with the same signature must be allowed to coexist.
 

@@ -6,10 +6,10 @@
 ! anywhere - it is DERIVED from the six flow tuples, by the three
 ! primitives this level earned:
 !
-!      R_out3   = restrict R_flow to the output port
-!      R_in3    = restrict R_flow to the input ports
-!      produces = project R_out3 onto O x X
-!      consumes = project R_in3  onto X x O
+!      T_out3   = restrict T_flow to the output port
+!      T_in3    = restrict T_flow to the input ports
+!      produces = project T_out3 onto O x X
+!      consumes = project T_in3  onto X x O
 !      D        = consumes o produces  <=  O x O
 !
 ! and the whole answer is one tuple:  D = { (+, x) }. The pair
@@ -41,7 +41,7 @@ program calculator_level_2
   type(counted_set)            :: x, o, p
   type(subset_set)             :: p_out, p_in
   type(stored_relation)        :: flow, backwards
-  type(stored_relation)        :: r_out3, r_in3, produces, consumes
+  type(stored_relation)        :: t_out3, t_in3, produces, consumes
   class(relation), allocatable :: d, d2
   integer                      :: table(3, 6)
   integer                      :: nfail
@@ -88,12 +88,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    r_out3 = restrict_slot(flow, 3, p_out)
-    r_in3  = restrict_slot(flow, 3, p_in)
+    t_out3 = restrict_slot(flow, 3, p_out)
+    t_in3  = restrict_slot(flow, 3, p_in)
 
-    call report(r_out3 % num_tuples() .eq. 2, &
+    call report(t_out3 % num_tuples() .eq. 2, &
          & "two tuples pass the output port", nfail)
-    call report(r_in3 % num_tuples() .eq. 4, &
+    call report(t_in3 % num_tuples() .eq. 4, &
          & "four tuples pass the input ports", nfail)
 
   end subroutine check_restrictions
@@ -110,8 +110,8 @@ contains
 
     class(member_set), allocatable :: dom
 
-    produces = project_slots(r_out3, [1, 2])
-    consumes = project_slots(r_in3 , [2, 1])
+    produces = project_slots(t_out3, [1, 2])
+    consumes = project_slots(t_in3 , [2, 1])
 
     dom = produces % domain(1)
     call report(dom % same_as(o), &
@@ -151,7 +151,7 @@ contains
 
     type(stored_relation) :: ops_used
 
-    ops_used = project_slots(r_in3, [1])
+    ops_used = project_slots(t_in3, [1])
 
     call report(ops_used % num_tuples() .eq. 2 .and. &
          &      ops_used % has([OP_PLUS]) .and. &

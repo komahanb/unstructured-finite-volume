@@ -344,7 +344,7 @@ or \(f_p=2\). Those are numerical law data and belong to Level 8.
 
 Nothing is hand-maintained. Using the subobjects' own relational faces
 (`inclusion_of`) and the established composition convention
-`compose_binary(R_AB, R_BC) = R_BC ∘ R_AB`:
+`compose_binary(P_AB, P_BC) = P_BC ∘ P_AB`:
 
 ```text
 I_Y = inclusion_of(Y) ⊆ Y×T        I_Q = inclusion_of(Q) ⊆ Q×V
@@ -358,7 +358,7 @@ F_P = I_P^T ∘ R_dep ∘ I_Z   ⊆ Z×P      path  Z → T → V → P
 
 Read right-to-left, as function composition is read: the rightmost
 inclusion enters first. In code the same road is written left-to-right,
-because `compose_binary(R_AB, R_BC) = R_BC ∘ R_AB`:
+because `compose_binary(P_AB, P_BC) = P_BC ∘ P_AB`:
 
 ```text
 compose_binary( compose_binary(I_Y, R_dep), I_Q^T )

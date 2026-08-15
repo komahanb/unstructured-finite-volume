@@ -14,7 +14,7 @@
 !
 ! written as relational composition, read right to left. In code the
 ! same road runs left to right, because this repository reads
-! compose_binary(R_AB, R_BC) = R_BC o R_AB.
+! compose_binary(P_AB, P_BC) = P_BC o P_AB.
 !
 ! The inclusion nearest R_dep on the right selects which targets the
 ! block answers ON; the transposed inclusion on the left - borrowed

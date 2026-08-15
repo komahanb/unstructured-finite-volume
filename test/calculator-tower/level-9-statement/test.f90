@@ -5,7 +5,7 @@
 ! ASKED. The statement is: evaluate (2 + 3) x 4. It SELECTS - it
 ! invents nothing:
 !
-!      structure       the calculator relational graph G
+!      structure       the calculator relational graph GAMMA
 !      inputs          a = 2, b = 3, d = 4 on K = { d, a, b }
 !      constitution    the Level-8 law table, reused, never redone
 !      discretization  the Level-6 location relation L
@@ -64,7 +64,7 @@ contains
 
   !===================================================================!
   ! The selector only NAMES the relation; what the adapter keeps is
-  ! the graph-owned citizen, found by identity and refused if G
+  ! the graph-owned citizen, found by identity and refused if GAMMA
   ! does not own it.
   !===================================================================!
 
@@ -184,7 +184,7 @@ program calculator_level_9
   type(counted_set)     :: x, o, p, y
   type(subset_set)      :: k, u, p_out
   type(stored_relation), allocatable :: flow
-  type(stored_relation) :: located, r_out3, r_in3, produces, consumes
+  type(stored_relation) :: located, t_out3, t_in3, produces, consumes
   class(relation), allocatable       :: d
   type(relational_graph), target     :: g
   type(stored_graph)    :: host
@@ -219,11 +219,11 @@ program calculator_level_9
   flow = stored_relation('flow', [o, x, p], table)
 
   p_out    = subset_set('output-port', p, [PORT_OUT])
-  r_out3   = restrict_slot(flow, 3, p_out)
-  r_in3    = restrict_slot(flow, 3, &
+  t_out3   = restrict_slot(flow, 3, p_out)
+  t_in3    = restrict_slot(flow, 3, &
        &       subset_set('input-ports', p, [PORT_IN1, PORT_IN2]))
-  produces = project_slots(r_out3, [1, 2])
-  consumes = project_slots(r_in3 , [2, 1])
+  produces = project_slots(t_out3, [1, 2])
+  consumes = project_slots(t_in3 , [2, 1])
   d        = compose_binary(produces, consumes)
 
   g = relational_graph('calculator', &

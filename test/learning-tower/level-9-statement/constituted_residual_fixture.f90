@@ -55,7 +55,7 @@ contains
 
   !===================================================================!
   ! The selector only NAMES the flow; what the adapter keeps is the
-  ! graph-owned citizen, found by identity and refused if G does
+  ! graph-owned citizen, found by identity and refused if GAMMA does
   ! not own it.
   !===================================================================!
 

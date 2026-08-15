@@ -5,7 +5,7 @@
 ! ASKED. The statement is: evaluate (2 + 3) x 4. It SELECTS - it
 ! invents nothing:
 !
-!      structure       the calculator relational graph G
+!      structure       the calculator related graph G
 !      inputs          a = 2, b = 3, d = 4 on K = { d, a, b }
 !      constitution    the Level-8 law table, reused, never redone
 !      discretization  the Level-6 location relation L
@@ -32,10 +32,10 @@ module constituted_residual_fixture
   ! entire numerical act is delegation.
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_carrier    , only : member_set, counted_set, subset_set
+  use graph_set    , only : set, index_set, subset
   use graph_relation   , only : relation
-  use graph_structure  , only : relational_graph
-  use graph_grammar    , only : graph, graph_field, graph_operation
+  use graph_structure  , only : related_graph
+  use graph_grammar    , only : ordinary_graph, graph_field, graph_operation
   use class_graph_field, only : field
   use arithmetic_constitution_fixture, only : generated_residual
 
@@ -47,8 +47,8 @@ module constituted_residual_fixture
   type, extends(graph_operation) :: constituted_residual
      class(relation), allocatable :: flow      ! the GRAPH-OWNED copy
      class(relation), allocatable :: located
-     type(counted_set)            :: xs, os, ys
-     type(subset_set)             :: known, unknown
+     type(index_set)            :: xs, os, ys
+     type(subset)             :: known, unknown
      real(dp), allocatable        :: known_values(:)
    contains
      procedure :: name   => cr_name
@@ -71,10 +71,10 @@ contains
   function create_adapter(g, selector, located, xs, os, ys, &
        &                  known, known_values, unknown) result(this)
 
-    class(relational_graph), target, intent(in) :: g
+    class(related_graph), target, intent(in) :: g
     class(relation)  , intent(in) :: selector, located
-    type(counted_set), intent(in) :: xs, os, ys
-    type(subset_set) , intent(in) :: known, unknown
+    type(index_set), intent(in) :: xs, os, ys
+    type(subset) , intent(in) :: known, unknown
     real(dp)         , intent(in) :: known_values(:)
     type(constituted_residual)    :: this
 
@@ -85,7 +85,7 @@ contains
     found = .false.
     do kk = 1, g % num_relations()
        rp => g % relation_at(kk)
-       if (rp % same_as(selector)) then
+       if (rp % equals(selector)) then
           found = .true.
           exit
        end if
@@ -113,8 +113,8 @@ contains
 
   subroutine cr_domain(this, input_graph, domain)
     class(constituted_residual), intent(in) :: this
-    class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(ordinary_graph), intent(in) :: input_graph
+    class(set), allocatable, intent(out) :: domain
     associate (u1 => input_graph); end associate
     allocate(domain, source=this % ys)
   end subroutine cr_domain
@@ -122,12 +122,12 @@ contains
   subroutine cr_apply(this, input_graph, input_data, output)
 
     class(constituted_residual), intent(in)        :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
     type(field)                    :: out
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
     real(dp), allocatable          :: ustate(:), r(:)
 
     associate (u1 => input_graph); end associate
@@ -140,7 +140,7 @@ contains
     end if
 
     call input_data(1) % domain(dom)
-    if (.not. dom % same_as(this % unknown)) then
+    if (.not. dom % equals(this % unknown)) then
        error stop 'statement: the state must live on the unknown domain'
     end if
     call input_data(1) % get_real_vector(ustate)
@@ -165,12 +165,12 @@ program calculator_level_9
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use graph_set    , only : index_set, subset, set
   use graph_grammar    , only : graph_field
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_structure  , only : relational_graph, held_set, held_relation
+  use graph_structure  , only : related_graph, declared_set, declared_relation
   use class_graph      , only : stored_graph
   use class_graph_field, only : field
   use class_graph_gmres, only : gmres
@@ -181,17 +181,17 @@ program calculator_level_9
   integer, parameter :: ROW_C = 1
   integer, parameter :: ROW_E = 2
 
-  type(counted_set)     :: x, o, p, y
-  type(subset_set)      :: k, u, p_out
+  type(index_set)     :: x, o, p, y
+  type(subset)      :: k, u, p_out
   type(stored_relation), allocatable :: flow
   type(stored_relation) :: located, r_out3, r_in3, produces, consumes
   class(relation), allocatable       :: d
-  type(relational_graph), target     :: g
+  type(related_graph), target     :: g
   type(stored_graph)    :: host
   type(constituted_residual) :: residual_op
   type(gmres)           :: solver
   type(field)           :: rhsf
-  class(member_set), allocatable  :: dom
+  class(set), allocatable  :: dom
   class(graph_field), allocatable :: sol, rf
   real(dp), allocatable :: gv(:), solval(:), rv(:)
   real(dp)              :: answer
@@ -204,10 +204,10 @@ program calculator_level_9
   write(*,'(1x,a)') "============================================="
 
   ! -- the structure, and its graph
-  x = counted_set('value-slots'  , 5)
-  o = counted_set('operations'   , 2)
-  p = counted_set('ports'        , 3)
-  y = counted_set('residual-rows', 2)
+  x = index_set('value-slots'  , 5)
+  o = index_set('operations'   , 2)
+  p = index_set('ports'        , 3)
+  y = index_set('residual-rows', 2)
 
   table(:, 1) = [OP_PLUS , SLOT_A, PORT_IN1]
   table(:, 2) = [OP_PLUS , SLOT_B, PORT_IN2]
@@ -218,25 +218,25 @@ program calculator_level_9
   allocate(flow)
   flow = stored_relation('flow', [o, x, p], table)
 
-  p_out    = subset_set('output-port', p, [PORT_OUT])
+  p_out    = subset('output-port', p, [PORT_OUT])
   r_out3   = restrict_slot(flow, 3, p_out)
   r_in3    = restrict_slot(flow, 3, &
-       &       subset_set('input-ports', p, [PORT_IN1, PORT_IN2]))
+       &       subset('input-ports', p, [PORT_IN1, PORT_IN2]))
   produces = project_slots(r_out3, [1, 2])
   consumes = project_slots(r_in3 , [2, 1])
   d        = compose_binary(produces, consumes)
 
-  g = relational_graph('calculator', &
-       & [held_set(x), held_set(o), held_set(p)], &
-       & [held_relation(flow), held_relation(d)])
+  g = related_graph('calculator', &
+       & [declared_set(x), declared_set(o), declared_set(p)], &
+       & [declared_relation(flow), declared_relation(d)])
 
   ! -- the discretization, distinct from the graph on purpose
   located = stored_relation('located', [y, x], &
        & reshape([ROW_C, SLOT_C,  ROW_E, SLOT_E], [2, 2]))
 
   ! -- the inputs, and the unknowns in a NEW enumeration {c, e}
-  k = subset_set('known'  , x, [SLOT_D, SLOT_A, SLOT_B])
-  u = subset_set('unknown', x, [SLOT_C, SLOT_E])
+  k = subset('known'  , x, [SLOT_D, SLOT_A, SLOT_B])
+  u = subset('unknown', x, [SLOT_C, SLOT_E])
 
   ! -- the adapter keeps the GRAPH-OWNED flow; the selector dies.
   residual_op = constituted_residual(g, flow, located, x, o, y, &
@@ -252,7 +252,7 @@ program calculator_level_9
   solver % max_iterations = 50
 
   call solver % domain(host, dom)
-  call report(dom % same_as(u), &
+  call report(dom % equals(u), &
        & "the solver answers on U = { c, e }", nfail)
 
   call solver % constant(gv)
@@ -262,7 +262,7 @@ program calculator_level_9
   call solver % apply(host, [rhsf], sol)
 
   call sol % domain(dom)
-  call report(dom % same_as(u), &
+  call report(dom % equals(u), &
        & "and the solution field lives there, by identity", nfail)
 
   ! -- verify the constituted residual vanishes at the solution

@@ -1,7 +1,7 @@
 !=====================================================================!
-! CALCULATOR TOWER . LEVEL 3 . THE RELATIONAL GRAPH
+! CALCULATOR TOWER . LEVEL 3 . THE RELATED GRAPH
 !
-! The level answers one question: HOW CARRIERS AND RELATIONS COEXIST
+! The level answers one question: HOW SETS AND RELATIONS COEXIST
 ! AS ONE STRUCTURE. The persistent calculator becomes
 !
 !      G = ( { X, O, P }, { R_flow, D } )
@@ -14,8 +14,8 @@
 ! asks.
 !
 ! The strongest negative truth of the level is the import list: the
-! calculator compiles as a relational graph WITHOUT the ordinary
-! profile - no vertex, no edge, no tail, no head anywhere.
+! calculator compiles as a related graph WITHOUT the ordinary
+! interpretation - no vertex, no edge, no tail, no head anywhere.
 !
 ! A second, smaller graph witnesses the coexistence law: D and its
 ! own restriction to the times-only subset - the empty relation
@@ -30,32 +30,32 @@ program calculator_level_3
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use graph_set    , only : index_set, subset, set
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_structure  , only : relational_graph, held_set, held_relation
+  use graph_structure  , only : related_graph, declared_set, declared_relation
 
   implicit none
 
-  type(counted_set)              :: x, o, p
-  type(subset_set)               :: p_out, p_in
+  type(index_set)              :: x, o, p
+  type(subset)               :: p_out, p_in
   type(stored_relation)          :: flow, r_out3, r_in3
   type(stored_relation)          :: produces, consumes
   class(relation), allocatable   :: d
-  type(relational_graph), target :: g
+  type(related_graph), target :: g
   integer                        :: table(3, 6)
   integer                        :: nfail
 
   nfail = 0
 
   write(*,'(1x,a)') "============================================="
-  write(*,'(1x,a)') "calculator tower . level 3 . relational graph"
+  write(*,'(1x,a)') "calculator tower . level 3 . related graph"
   write(*,'(1x,a)') "============================================="
 
-  x = counted_set('value-slots', 5)
-  o = counted_set('operations' , 2)
-  p = counted_set('ports'      , 3)
+  x = index_set('value-slots', 5)
+  o = index_set('operations' , 2)
+  p = index_set('ports'      , 3)
 
   table(:, 1) = [OP_PLUS , SLOT_A, PORT_IN1]
   table(:, 2) = [OP_PLUS , SLOT_B, PORT_IN2]
@@ -68,17 +68,17 @@ program calculator_level_3
 
   ! The approved Level-2 road, walked once more; the graph admits
   ! what the algebra derived.
-  p_out    = subset_set('output-port', p, [PORT_OUT])
-  p_in     = subset_set('input-ports', p, [PORT_IN1, PORT_IN2])
+  p_out    = subset('output-port', p, [PORT_OUT])
+  p_in     = subset('input-ports', p, [PORT_IN1, PORT_IN2])
   r_out3   = restrict_slot(flow, 3, p_out)
   r_in3    = restrict_slot(flow, 3, p_in)
   produces = project_slots(r_out3, [1, 2])
   consumes = project_slots(r_in3 , [2, 1])
   d        = compose_binary(produces, consumes)
 
-  g = relational_graph('calculator', &
-       & [held_set(x), held_set(o), held_set(p)], &
-       & [held_relation(flow), held_relation(d)])
+  g = related_graph('calculator', &
+       & [declared_set(x), declared_set(o), declared_set(p)], &
+       & [declared_relation(flow), declared_relation(d)])
 
   call check_ownership(nfail)
   call check_signature_closure(nfail)
@@ -90,9 +90,9 @@ program calculator_level_3
 contains
 
   !===================================================================!
-  ! The graph owns exactly the three carriers and the two relations
+  ! The graph owns exactly the three sets and the two relations
   ! it was handed - by structural identity, through the generators
-  ! alone: holds_set for the carriers, and a scan of relation_at
+  ! alone: holds_set for the sets, and a scan of relation_at
   ! identities for the relations, composed here rather than added
   ! to the contract.
   !===================================================================!
@@ -101,7 +101,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(g % num_member_sets() .eq. 3, &
+    call report(g % num_sets() .eq. 3, &
          & "the graph owns three member sets", nfail)
     call report(g % num_relations() .eq. 2, &
          & "and two relations", nfail)
@@ -119,7 +119,7 @@ contains
 
   !===================================================================!
   ! Signature closure: every slot of every owned relation resolves
-  ! to a carrier the graph holds.
+  ! to a set the graph holds.
   !===================================================================!
 
   subroutine check_signature_closure(nfail)
@@ -127,7 +127,7 @@ contains
     integer, intent(inout) :: nfail
 
     class(relation), pointer       :: rp
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
     integer                        :: k, s
     logical                        :: ok
 
@@ -140,7 +140,7 @@ contains
        end do
     end do
     call report(ok, &
-         & "every relation slot resolves to an owned carrier", nfail)
+         & "every relation slot resolves to an owned set", nfail)
 
   end subroutine check_signature_closure
 
@@ -159,13 +159,13 @@ contains
 
     do k = 1, g % num_relations()
        rp => g % relation_at(k)
-       if (rp % same_as(flow)) then
+       if (rp % equals(flow)) then
           call report(rp % arity() .eq. 3 .and. &
                &      rp % num_tuples() .eq. 6 .and. &
                &      rp % has([OP_TIMES, SLOT_E, PORT_OUT]), &
                & "the owned flow is still ternary, six tuples strong", &
                & nfail)
-       else if (rp % same_as(d)) then
+       else if (rp % equals(d)) then
           call report(rp % num_tuples() .eq. 1 .and. &
                &      rp % has([OP_PLUS, OP_TIMES]), &
                & "the owned dependency still holds its one derived pair", &
@@ -186,34 +186,34 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(subset_set)               :: times_only
+    type(subset)               :: times_only
     type(stored_relation)          :: d_empty
-    type(relational_graph), target :: aux
+    type(related_graph), target :: aux
     class(relation), pointer       :: r1, r2
-    class(member_set), allocatable :: da, db
+    class(set), allocatable :: da, db
     logical                        :: ok
 
-    times_only = subset_set('times-only', o, [OP_TIMES])
+    times_only = subset('times-only', o, [OP_TIMES])
     d_empty    = restrict_slot(d, 1, times_only)
 
     call report(d_empty % num_tuples() .eq. 0, &
          & "restricting D to times-only leaves the empty relation", nfail)
 
-    aux = relational_graph('coexistence', [held_set(o)], &
-         & [held_relation(d), held_relation(d_empty)])
+    aux = related_graph('coexistence', [declared_set(o)], &
+         & [declared_relation(d), declared_relation(d_empty)])
 
     r1 => aux % relation_at(1)
     r2 => aux % relation_at(2)
 
-    call report(.not. r1 % same_as(r2), &
+    call report(.not. r1 % equals(r2), &
          & "one signature, two citizens - no collision", nfail)
 
     da = r1 % domain(1)
     db = r2 % domain(1)
-    ok = da % same_as(db)
+    ok = da % equals(db)
     da = r1 % domain(2)
     db = r2 % domain(2)
-    ok = ok .and. da % same_as(db)
+    ok = ok .and. da % equals(db)
     call report(ok, &
          & "over the very same signature, slot for slot", nfail)
 
@@ -230,7 +230,7 @@ contains
 
   logical function graph_holds_relation(g, r)
 
-    type(relational_graph), target, intent(in) :: g
+    type(related_graph), target, intent(in) :: g
     class(relation)               , intent(in) :: r
 
     class(relation), pointer :: rp
@@ -239,7 +239,7 @@ contains
     graph_holds_relation = .false.
     do k = 1, g % num_relations()
        rp => g % relation_at(k)
-       if (rp % same_as(r)) graph_holds_relation = .true.
+       if (rp % equals(r)) graph_holds_relation = .true.
     end do
 
   end function graph_holds_relation

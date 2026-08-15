@@ -13,7 +13,7 @@
 ! order { d, a, b }, so storage order is domain enumeration and a
 ! raw-member indexing habit fails loudly here. The import list is
 ! the negative truth: a field needs a DOMAIN - calculator_assert,
-! graph_carrier, graph_field_calculus, class_graph_field - and no
+! graph_set, graph_field_calculus, class_graph_field - and no
 ! graph container anywhere.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -24,14 +24,14 @@ program calculator_level_5
   use iso_fortran_env  , only : dp => REAL64
   use calculator_assert, only : report, verdict
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use graph_set    , only : index_set, subset, set
   use graph_field_calculus, only : graph_field
   use class_graph_field, only : field
 
   implicit none
 
-  type(counted_set) :: x
-  type(subset_set)  :: k, u, e
+  type(index_set) :: x
+  type(subset)  :: k, u, e
   type(field)       :: qk, qe
   integer           :: nfail
 
@@ -41,11 +41,11 @@ program calculator_level_5
   write(*,'(1x,a)') "calculator tower . level 5 . field calculus"
   write(*,'(1x,a)') "============================================="
 
-  x = counted_set('value-slots', 5)
+  x = index_set('value-slots', 5)
 
   ! The known support, declared in NONNUMERIC order on purpose.
-  k = subset_set('known'  , x, [SLOT_D, SLOT_A, SLOT_B])
-  u = subset_set('unknown', x, [SLOT_C, SLOT_E])
+  k = subset('known'  , x, [SLOT_D, SLOT_A, SLOT_B])
+  u = subset('unknown', x, [SLOT_C, SLOT_E])
 
   call check_supports(nfail)
   call check_known_field(nfail)
@@ -102,14 +102,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
     real(dp), allocatable          :: v(:)
 
     qk = field('q', k)
     call qk % set_real_vector([4.0_dp, 2.0_dp, 3.0_dp])
 
     call qk % domain(dom)
-    call report(dom % same_as(k), &
+    call report(dom % equals(k), &
          & "the field's domain is K, by identity", nfail)
     call report(qk % num_entries() .eq. k % size(), &
          & "and its entries count K's members", nfail)
@@ -136,7 +136,7 @@ contains
 
     real(dp), allocatable :: v(:)
 
-    e  = subset_set('nowhere', x, [integer ::])
+    e  = subset('nowhere', x, [integer ::])
     qe = field('q', e)
     call qe % set_real_vector([real(dp) ::])
 

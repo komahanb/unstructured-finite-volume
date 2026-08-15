@@ -57,18 +57,18 @@ program time_level_7
   use time_assert           , only : report, verdict
   use time_assert           , only : NQ, NT, TOL
   use time_assert           , only : H_STEP, Q0, Q_BE1, Q_BDF2
-  use graph_carrier         , only : counted_set, member_set
-  use graph_grammar         , only : graph, graph_field
+  use graph_set         , only : index_set, set
+  use graph_grammar         , only : ordinary_graph, graph_field
   use class_graph           , only : stored_graph
   use class_graph_field     , only : field
   use class_graph_step      , only : step_operator, backward_euler, bdf
   use class_graph_gmres     , only : gmres
-  use time_carriers_fixture , only : time_carriers
+  use time_sets_fixture , only : time_sets
   use triangular_decay_fixture, only : triangular_decay
 
   implicit none
 
-  type(counted_set)      :: q, t, e
+  type(index_set)      :: q, t, e
   type(stored_graph)     :: ht
   type(triangular_decay) :: decay
   integer                :: nfail
@@ -79,7 +79,7 @@ program time_level_7
   write(*,'(1x,a)') "time integration tower . level 7 . solve"
   write(*,'(1x,a)') "============================================="
 
-  call time_carriers(q, t, e)
+  call time_sets(q, t, e)
 
   ! The same compatibility host as Level 6: five vertices, and not Q.
   ht = stored_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
@@ -104,12 +104,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: hv
+    class(set), allocatable :: hv
 
     hv = ht % vertex_set()
 
     call report(ht % num_vertices() .eq. NT .and. q % size() .eq. NQ &
-         &      .and. .not. hv % same_as(q), &
+         &      .and. .not. hv % equals(q), &
          & "the host still has five vertices and Q still has two: " // &
          & "the solve below is not a coincidence of sizes", nfail)
 
@@ -127,7 +127,7 @@ contains
     type(gmres)                     :: solver
     type(field)                     :: rhs
     class(graph_field), allocatable :: answer
-    class(member_set), allocatable  :: d
+    class(set), allocatable  :: d
     real(dp), allocatable           :: c(:), v(:)
 
     step = backward_euler(decay, H_STEP)
@@ -136,7 +136,7 @@ contains
     call solver % attach(step, ht, q, ncomp=1)
 
     call solver % domain(ht, d)
-    call report(d % same_as(q), &
+    call report(d % equals(q), &
          & "the SOLVER answers Q when asked its domain, on a " // &
          & "five-vertex host", nfail)
 
@@ -154,7 +154,7 @@ contains
     call solver % apply(ht, [rhs], answer)
 
     call answer % domain(d)
-    call report(d % same_as(q), &
+    call report(d % equals(q), &
          & "and the SOLUTION lands on Q, through the operation " // &
          & "face, with the host present and unread", nfail)
 
@@ -178,7 +178,7 @@ contains
     type(gmres)                     :: solver
     type(field)                     :: rhs
     class(graph_field), allocatable :: answer
-    class(member_set), allocatable  :: d
+    class(set), allocatable  :: d
     real(dp), allocatable           :: c(:), v(:)
     real(dp)                        :: expected_rhs(NQ)
 
@@ -208,7 +208,7 @@ contains
     call solver % apply(ht, [rhs], answer)
 
     call answer % domain(d)
-    call report(d % same_as(q), &
+    call report(d % equals(q), &
          & "the bdf-2 solution lands on Q as well", nfail)
 
     call answer % get_real_vector(v)
@@ -235,7 +235,7 @@ contains
 
     type(step_operator)            :: step
     type(gmres)                    :: solver
-    class(member_set), allocatable :: d, hv
+    class(set), allocatable :: d, hv
 
     step = backward_euler(decay, H_STEP)
     step % qold = Q0
@@ -244,7 +244,7 @@ contains
     call solver % domain(ht, d)
     hv = ht % vertex_set()
 
-    call report(d % same_as(q) .and. .not. d % same_as(hv), &
+    call report(d % equals(q) .and. .not. d % equals(hv), &
          & "the unknown domain is exactly what the call site said - " // &
          & "Q - and never the host's vertices", nfail)
 
@@ -253,7 +253,7 @@ contains
     ! a five-member residual against a two-member unknown would have
     ! been refused as a rectangular problem.
     call step % domain(ht, d)
-    call report(d % same_as(q), &
+    call report(d % equals(q), &
          & "and the residual domain it validates against is the " // &
          & "step's, which is the action's: 2 unknowns, 2 residuals, " // &
          & "a square problem the solver family accepts", nfail)

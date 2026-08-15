@@ -45,8 +45,8 @@
 module class_robin_condition
 
   use iso_fortran_env , only : dp => REAL64
-  use graph_grammar   , only : graph
-  use graph_carrier      , only : member_set
+  use graph_grammar   , only : ordinary_graph
+  use graph_set      , only : set
   use class_graph_field, only : field
   use class_graph_mesh, only : mesh
 
@@ -127,7 +127,7 @@ contains
 
     class(robin_condition), intent(in)     :: this
     type(mesh), intent(in)                 :: m
-    class(member_set), allocatable, intent(out) :: members
+    class(set), allocatable, intent(out) :: members
 
     call m % tagged_edges(this % tag, members)
 
@@ -312,7 +312,7 @@ contains
     real(dp), allocatable, intent(out) :: area(:)
     real(dp), allocatable, intent(out) :: delta(:)
 
-    class(member_set), allocatable :: members
+    class(set), allocatable :: members
     type(field) :: fa, fd
     real(dp), allocatable :: all_areas(:), all_deltas(:)
     integer :: f, e

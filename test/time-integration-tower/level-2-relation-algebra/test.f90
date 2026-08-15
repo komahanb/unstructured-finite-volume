@@ -43,16 +43,16 @@ program time_level_2
   use time_assert           , only : report, verdict
   use time_assert           , only : NT
   use time_assert           , only : T0, T1, T2, T3, T4
-  use graph_carrier         , only : counted_set, member_set
+  use graph_set         , only : index_set, set
   use graph_binary_relation , only : csr_relation
-  use time_carriers_fixture , only : time_carriers
+  use time_sets_fixture , only : time_sets
   use time_relations_fixture, only : tail_relation, head_relation
   use time_algebra_fixture  , only : derive_one_step_reach, &
        &                             derive_two_step_reach
 
   implicit none
 
-  type(counted_set)          :: q, t, e
+  type(index_set)          :: q, t, e
   type(csr_relation), target :: tail, head, a1
   type(csr_relation)         :: a2
   integer                    :: nfail
@@ -63,7 +63,7 @@ program time_level_2
   write(*,'(1x,a)') "time integration tower . level 2 . algebra"
   write(*,'(1x,a)') "============================================="
 
-  call time_carriers(q, t, e)
+  call time_sets(q, t, e)
   tail = tail_relation(e, t)
   head = head_relation(e, t)
 
@@ -88,13 +88,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
     logical                        :: ok
 
     d = a1 % domain(1)
-    call report(d % same_as(t), "A1 runs from the instants", nfail)
+    call report(d % equals(t), "A1 runs from the instants", nfail)
     d = a1 % domain(2)
-    call report(d % same_as(t), "back into the instants", nfail)
+    call report(d % equals(t), "back into the instants", nfail)
 
     ok = a1 % num_tuples() .eq. 4
     ok = ok .and. a1 % has([T0, T1]) .and. a1 % has([T1, T2])
@@ -118,13 +118,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
     logical                        :: ok
 
     d = a2 % domain(1)
-    call report(d % same_as(t), "A2 runs from the instants too", nfail)
+    call report(d % equals(t), "A2 runs from the instants too", nfail)
     d = a2 % domain(2)
-    call report(d % same_as(t), "and back into the same instants", nfail)
+    call report(d % equals(t), "and back into the same instants", nfail)
 
     ok = a2 % num_tuples() .eq. 3
     ok = ok .and. a2 % has([T0, T2]) .and. a2 % has([T1, T3])
@@ -136,7 +136,7 @@ contains
   end subroutine check_two_step_reach
 
   !===================================================================!
-  ! Same signature, same carrier, different relations - by identity
+  ! Same signature, same set, different relations - by identity
   ! and by extension both. Identity is the address; a shared
   ! signature has never been one.
   !===================================================================!
@@ -145,7 +145,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(.not. a1 % same_as(a2), &
+    call report(.not. a1 % equals(a2), &
          & "A1 and A2 are different relations by IDENTITY, though " // &
          & "they share a signature", nfail)
 

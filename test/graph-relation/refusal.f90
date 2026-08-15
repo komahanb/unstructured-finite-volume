@@ -15,21 +15,21 @@
 
 program relation_refusal
 
-  use graph_carrier , only : counted_set
+  use graph_set , only : index_set
   use graph_relation, only : stored_relation
 
   implicit none
 
-  type(counted_set)              :: cells, faces, raw
-  type(counted_set), allocatable :: nothing(:)
+  type(index_set)              :: cells, faces, raw
+  type(index_set), allocatable :: nothing(:)
   type(stored_relation)          :: r
   character(len=32)              :: which
 
   which = ''
   call get_command_argument(1, which)
 
-  cells = counted_set('cells', 4)
-  faces = counted_set('faces', 5)
+  cells = index_set('cells', 4)
+  faces = index_set('faces', 5)
 
   select case (trim(which))
 

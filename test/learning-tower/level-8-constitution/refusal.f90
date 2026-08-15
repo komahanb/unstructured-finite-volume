@@ -21,7 +21,7 @@ program learning_level_8_refusal
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier  , only : counted_set, subset_set
+  use graph_set  , only : index_set, subset
   use graph_relation , only : stored_relation
   use learning_constitution_fixture, only : apply_law, generated_residual
 
@@ -29,8 +29,8 @@ program learning_level_8_refusal
 
   integer, parameter :: ROW_R = 1
 
-  type(counted_set)     :: v, o, p, y
-  type(subset_set)      :: k, theta, u
+  type(index_set)     :: v, o, p, y
+  type(subset)      :: k, theta, u
   type(stored_relation) :: flow, located
   integer               :: table(3, 6)
   real(dp)              :: r(1), z
@@ -48,13 +48,13 @@ program learning_level_8_refusal
      write(*,*) 'a lawless symbol computed', z
 
   case ('starved-input')
-     v     = counted_set('value-slots'  , 5)
-     o     = counted_set('operations'   , 2)
-     p     = counted_set('ports'        , 3)
-     y     = counted_set('residual-rows', 1)
-     k     = subset_set('observed' , v, [SLOT_Y, SLOT_X])
-     theta = subset_set('trainable', v, [SLOT_W])
-     u     = subset_set('computed' , v, [SLOT_E, SLOT_YHAT])
+     v     = index_set('value-slots'  , 5)
+     o     = index_set('operations'   , 2)
+     p     = index_set('ports'        , 3)
+     y     = index_set('residual-rows', 1)
+     k     = subset('observed' , v, [SLOT_Y, SLOT_X])
+     theta = subset('trainable', v, [SLOT_W])
+     u     = subset('computed' , v, [SLOT_E, SLOT_YHAT])
 
      table(:, 1) = [OP_PREDICT, SLOT_W   , PORT_IN1]
      table(:, 2) = [OP_PREDICT, SLOT_X   , PORT_IN2]

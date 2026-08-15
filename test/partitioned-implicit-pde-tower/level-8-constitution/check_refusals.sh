@@ -8,11 +8,11 @@ here="$(cd "$(dirname "$0")" && pwd)"
 cd "$here"
 
 declare -A reason=(
-  [foreign-host-apply]="this decomposition belongs to another graph"
-  [foreign-host-attach]="this decomposition belongs to another graph"
+  [unequal-host-apply]="this decomposition belongs to another graph"
+  [unequal-host-attach]="this decomposition belongs to another graph"
 )
 
-for case in foreign-host-apply foreign-host-attach; do
+for case in unequal-host-apply unequal-host-attach; do
     if ./refusal "$case" >refusal.out 2>&1; then
         echo " FAIL : '$case' was accepted"
         exit 1

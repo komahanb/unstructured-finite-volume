@@ -40,7 +40,7 @@
 ! constructors' own validation and collapse:
 !
 !      restrict    tuple filtering O(|R| * T_has(allowed)), then
-!                  stored_relation materialization: carrier
+!                  stored_relation materialization: set
 !                  membership validation per slot, and its current
 !                  QUADRATIC worst-case duplicate collapse
 !
@@ -50,7 +50,7 @@
 !                  makes tuples indistinct
 !
 !      compose     witness search O(|R| |S|), then csr_relation
-!                  materialization, whose cost rides the carriers'
+!                  materialization, whose cost rides the sets'
 !                  local_index complexity and the number of witness
 !                  pairs produced before collapse
 !
@@ -68,8 +68,8 @@
 
 module graph_relation_algebra
 
-  use graph_carrier        , only : member_set
-  use graph_relation       , only : relation, stored_relation, slot
+  use graph_set        , only : set
+  use graph_relation       , only : relation, stored_relation, declared_domain
   use graph_binary_relation, only : csr_relation
 
   implicit none
@@ -94,10 +94,10 @@ contains
 
     class(relation)  , intent(in) :: r
     integer          , intent(in) :: slot_index
-    class(member_set), intent(in) :: allowed
+    class(set), intent(in) :: allowed
 
-    type(slot), allocatable        :: seats(:)
-    class(member_set), allocatable :: d
+    type(declared_domain), allocatable        :: domains(:)
+    class(set), allocatable :: d
     integer, allocatable           :: table(:,:), kept(:,:)
     integer                        :: k, j, n
 
@@ -110,10 +110,10 @@ contains
        error stop 'graph_relation_algebra: a restriction domain must embed in the slot it restricts'
     end if
 
-    allocate(seats(r % arity()))
+    allocate(domains(r % arity()))
     do k = 1, r % arity()
        d = r % domain(k)
-       seats(k) = slot(d)
+       domains(k) = declared_domain(d)
     end do
 
     call r % tuples(table)
@@ -127,7 +127,7 @@ contains
     end do
 
     narrowed = stored_relation(r % name() // ' restricted', &
-         &                     seats, kept(:, 1:n))
+         &                     domains, kept(:, 1:n))
 
   end function restrict_slot
 
@@ -149,8 +149,8 @@ contains
     class(relation), intent(in) :: r
     integer        , intent(in) :: slot_indices(:)
 
-    type(slot), allocatable        :: seats(:)
-    class(member_set), allocatable :: d
+    type(declared_domain), allocatable        :: domains(:)
+    class(set), allocatable :: d
     integer, allocatable           :: table(:,:), proj(:,:)
     integer                        :: k, l, j, m
 
@@ -170,10 +170,10 @@ contains
        end do
     end do
 
-    allocate(seats(m))
+    allocate(domains(m))
     do k = 1, m
        d = r % domain(slot_indices(k))
-       seats(k) = slot(d)
+       domains(k) = declared_domain(d)
     end do
 
     call r % tuples(table)
@@ -185,7 +185,7 @@ contains
     end do
 
     image = stored_relation(r % name() // ' projected', &
-         &                  seats, proj)
+         &                  domains, proj)
 
   end function project_slots
 
@@ -208,7 +208,7 @@ contains
     class(relation), intent(in) :: r_ab
     class(relation), intent(in) :: r_bc
 
-    class(member_set), allocatable :: da, db, db2, dc
+    class(set), allocatable :: da, db, db2, dc
     integer, allocatable           :: tab(:,:), tbc(:,:), pairs(:,:)
     integer                        :: i, j, n
 
@@ -218,7 +218,7 @@ contains
 
     db  = r_ab % domain(2)
     db2 = r_bc % domain(1)
-    if (.not. db % same_as(db2)) then
+    if (.not. db % equals(db2)) then
        error stop 'graph_relation_algebra: composition requires one shared middle domain'
     end if
 

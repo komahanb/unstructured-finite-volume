@@ -9,7 +9,7 @@
 !                   port value 3 offered in the operation slot,
 !                   and 3 is not in O = {1, 2}: the ordered
 !                   signature supplies the typing
-!      undeclared   a carrier that never signed
+!      undeclared   a set that never signed
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -17,21 +17,21 @@
 program calculator_level_1_refusal
 
   use calculator_assert, only : SLOT_A, OP_PLUS, PORT_IN1, PORT_OUT
-  use graph_carrier    , only : counted_set
+  use graph_set    , only : index_set
   use graph_relation   , only : stored_relation
 
   implicit none
 
-  type(counted_set)     :: x, o, p, raw
+  type(index_set)     :: x, o, p, raw
   type(stored_relation) :: flow
   character(len=32)     :: which
 
   which = ''
   call get_command_argument(1, which)
 
-  x = counted_set('value-slots', 5)
-  o = counted_set('operations' , 2)
-  p = counted_set('ports'      , 3)
+  x = index_set('value-slots', 5)
+  o = index_set('operations' , 2)
+  p = index_set('ports'      , 3)
 
   select case (trim(which))
 

@@ -3,7 +3,7 @@
 ! level 1, phase 3).
 !
 ! The CSR citizen answers image and preimage as O(degree) slices,
-! speaks members in and members out across any carrier concretion -
+! speaks members in and members out across any set concretion -
 ! the sparse-source check is the inverse-map law at work - and the
 ! transpose arrives as a borrowing view: O(1) to make, ends
 ! swapped, its own identity. The involution (R^T)^T = R is tested
@@ -15,7 +15,7 @@
 
 program test_graph_binary
 
-  use graph_carrier         , only : counted_set, member_set, subset_set
+  use graph_set         , only : index_set, set, subset
   use graph_binary_relation , only : csr_relation, transpose_of, &
        &                             transposed_view, inclusion_of
   use listed_set_fixture    , only : listed_set
@@ -71,13 +71,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)              :: cells, faces
+    type(index_set)              :: cells, faces
     type(csr_relation)             :: r
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
     integer, allocatable           :: idx(:), t(:,:)
 
-    cells = counted_set('cells', 4)
-    faces = counted_set('faces', 5)
+    cells = index_set('cells', 4)
+    faces = index_set('faces', 5)
 
     ! One duplicate handed in, on purpose.
     r = csr_relation('touches', cells, faces, &
@@ -110,10 +110,10 @@ contains
          & "the tuple table carries the set, not the handing", nfail)
 
     d = r % source()
-    call report(d % same_as(cells), &
+    call report(d % equals(cells), &
          & "the source is the first slot's domain, by identity", nfail)
     d = r % target()
-    call report(d % same_as(faces), &
+    call report(d % equals(faces), &
          & "the target is the second's", nfail)
 
   end subroutine check_csr_contract
@@ -129,13 +129,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)          :: cells, faces
+    type(index_set)          :: cells, faces
     type(csr_relation), target :: r
     integer, pointer           :: f(:)
     integer, allocatable       :: owned(:)
 
-    cells = counted_set('cells', 4)
-    faces = counted_set('faces', 5)
+    cells = index_set('cells', 4)
+    faces = index_set('faces', 5)
 
     r = csr_relation('touches', cells, faces, &
          & reshape([1,1,  1,2,  2,2,  3,4], [2, 4]))
@@ -161,7 +161,7 @@ contains
   end subroutine check_fibre_views
 
   !===================================================================!
-  ! The inverse-map law at work: a sparse listed carrier as source.
+  ! The inverse-map law at work: a sparse listed set as source.
   ! Rows live at local indices; questions and answers speak
   ! members; local_index is the only bridge, and outsiders answer
   ! empty.
@@ -172,13 +172,13 @@ contains
     integer, intent(inout) :: nfail
 
     type(listed_set)               :: sensors
-    type(counted_set)              :: cells
+    type(index_set)              :: cells
     type(csr_relation)             :: r
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
     integer, allocatable           :: idx(:)
 
     sensors = listed_set('sensors', [10, 20, 30])
-    cells   = counted_set('cells', 3)
+    cells   = index_set('cells', 3)
 
     r = csr_relation('reads', sensors, cells, &
          & reshape([10,1,  20,1,  20,3], [2, 3]))
@@ -201,10 +201,10 @@ contains
          & "the preimage speaks members, never rows", nfail)
 
     call report(r % has([20, 3]) .and. .not. r % has([10, 3]), &
-         & "membership crosses the sparse carrier untroubled", nfail)
+         & "membership crosses the sparse set untroubled", nfail)
 
     d = r % domain(1)
-    call report(d % same_as(sensors), &
+    call report(d % equals(sensors), &
          & "the sparse slot answers its own declared domain", nfail)
 
   end subroutine check_sparse_source
@@ -220,16 +220,16 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)              :: faces
-    type(subset_set)               :: walls
+    type(index_set)              :: faces
+    type(subset)               :: walls
     type(csr_relation), target     :: inc
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
     integer, pointer               :: f(:)
     integer                        :: k
     logical                        :: ok
 
-    faces = counted_set('faces', 5)
-    walls = subset_set('walls', faces, [2, 5])
+    faces = index_set('faces', 5)
+    walls = subset('walls', faces, [2, 5])
 
     inc = inclusion_of(walls)
 
@@ -241,10 +241,10 @@ contains
          & "each member relates to its own image and nothing else", nfail)
 
     d = inc % domain(1)
-    call report(d % same_as(walls), &
+    call report(d % equals(walls), &
          & "the source is the subset itself", nfail)
     d = inc % domain(2)
-    call report(d % same_as(faces), &
+    call report(d % equals(faces), &
          & "the target is the ambient it was carved from", nfail)
 
     ok = .true.
@@ -271,14 +271,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)               :: cells, faces
+    type(index_set)               :: cells, faces
     type(csr_relation), target      :: r
     type(transposed_view)           :: t
-    class(member_set), allocatable  :: d
+    class(set), allocatable  :: d
     integer, allocatable            :: fwd(:), rev(:)
 
-    cells = counted_set('cells', 4)
-    faces = counted_set('faces', 5)
+    cells = index_set('cells', 4)
+    faces = index_set('faces', 5)
 
     r = csr_relation('touches', cells, faces, &
          & reshape([1,1,  1,2,  2,2,  3,4], [2, 4]))
@@ -302,13 +302,13 @@ contains
          & "membership reads backwards through the view", nfail)
 
     d = t % domain(1)
-    call report(d % same_as(faces), &
+    call report(d % equals(faces), &
          & "the view's source is the base's target", nfail)
     d = t % domain(2)
-    call report(d % same_as(cells), &
+    call report(d % equals(cells), &
          & "and its target the base's source", nfail)
 
-    call report(.not. t % same_as(r), &
+    call report(.not. t % equals(r), &
          & "a view signs its own token: identity is not extension", nfail)
     call report(t % name() == 'touches^T', &
          & "and wears its derivation in its name", nfail)
@@ -328,7 +328,7 @@ contains
   !
   ! which for two sets of equal finite size is equality - no appeal
   ! to enumeration order anywhere. And the double view still is not
-  ! R by identity, because same_as answers stamps and no
+  ! R by identity, because equals answers stamps and no
   ! canonicalization is promised.
   !===================================================================!
 
@@ -336,17 +336,17 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)               :: cells, faces
+    type(index_set)               :: cells, faces
     type(csr_relation) , target    :: r
     type(transposed_view), target  :: t
     type(transposed_view)          :: tt
-    class(member_set), allocatable :: da, db
+    class(set), allocatable :: da, db
     integer, allocatable           :: rt(:,:)
     integer                        :: j
     logical                        :: ok
 
-    cells = counted_set('cells', 4)
-    faces = counted_set('faces', 5)
+    cells = index_set('cells', 4)
+    faces = index_set('faces', 5)
 
     r = csr_relation('touches', cells, faces, &
          & reshape([1,1,  1,2,  2,2,  3,4], [2, 4]))
@@ -367,14 +367,14 @@ contains
 
     da = tt % domain(1)
     db = r % domain(1)
-    call report(da % same_as(db), &
+    call report(da % equals(db), &
          & "over the base's own domains, slot for slot", nfail)
     da = tt % domain(2)
     db = r % domain(2)
-    call report(da % same_as(db), &
+    call report(da % equals(db), &
          & "both slots round home", nfail)
 
-    call report(.not. tt % same_as(r), &
+    call report(.not. tt % equals(r), &
          & "extension returns; identity, unpromised, does not", nfail)
 
   end subroutine check_involution_is_extensional

@@ -2,7 +2,7 @@
 ! DERIVATIVE ACTION TOWER . LEVEL 1 . THE RELATION
 !
 ! The level answers one question: HOW IS THE SYMBOLIC COMPUTATION
-! STRUCTURALLY WIRED. The three carriers stand as at Level 0, and
+! STRUCTURALLY WIRED. The three sets stand as at Level 0, and
 ! one ternary relation joins them,
 !
 !      R_flow  <=  O x V x P
@@ -20,7 +20,7 @@
 ! looks exactly like ordinary computation structure because it IS
 ! ordinary computation structure. product does not yet multiply;
 ! sum does not yet add; nothing differentiates anything. The import
-! list is the negative truth - derivative_assert, graph_carrier,
+! list is the negative truth - derivative_assert, graph_set,
 ! graph_relation, and nothing above.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -32,12 +32,12 @@ program derivative_level_1
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : counted_set, member_set
+  use graph_set    , only : index_set, set
   use graph_relation   , only : stored_relation
 
   implicit none
 
-  type(counted_set)     :: v, o, p
+  type(index_set)     :: v, o, p
   type(stored_relation) :: flow
   integer               :: table(3, 7)
   integer               :: nfail
@@ -48,9 +48,9 @@ program derivative_level_1
   write(*,'(1x,a)') "derivative action tower . level 1 . relation"
   write(*,'(1x,a)') "============================================="
 
-  v = counted_set('value-slots', 4)
-  o = counted_set('operations' , 2)
-  p = counted_set('ports'      , 3)
+  v = index_set('value-slots', 4)
+  o = index_set('operations' , 2)
+  p = index_set('ports'      , 3)
 
   ! The six facts of the specimen's flow - and the first handed twice.
   table(:, 1) = [OP_PRODUCT, SLOT_X, PORT_IN1]
@@ -81,19 +81,19 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
 
     call report(flow % arity() .eq. 3, &
          & "the flow is genuinely ternary", nfail)
 
     d = flow % domain(1)
-    call report(d % same_as(o), &
+    call report(d % equals(o), &
          & "slot one is the operations, by identity", nfail)
     d = flow % domain(2)
-    call report(d % same_as(v), &
+    call report(d % equals(v), &
          & "slot two is the value slots", nfail)
     d = flow % domain(3)
-    call report(d % same_as(p), &
+    call report(d % equals(p), &
          & "slot three is the ports", nfail)
 
   end subroutine check_signature

@@ -3,7 +3,7 @@
 !
 ! Gate A's theorem, made numerical and made to bite. Every field
 ! offered below has exactly the RIGHT SIZE and the WRONG IDENTITY,
-! so nothing but same_as can reject it:
+! so nothing but equals can reject it:
 !
 !   primal-rhs-on-Q ..... a right-hand side on Q handed to a solver
 !                         whose residual domain is Y
@@ -26,7 +26,7 @@ program adjoint_level_7_refusal
 
   use iso_fortran_env  , only : dp => REAL64
   use adjoint_assert   , only : VAR_U, VAR_V, TGT_R1, TGT_R2
-  use graph_carrier    , only : counted_set, subset_set
+  use graph_set    , only : index_set, subset
   use graph_grammar    , only : graph_field
   use class_graph      , only : stored_graph
   use class_graph_field, only : field
@@ -35,8 +35,8 @@ program adjoint_level_7_refusal
 
   implicit none
 
-  type(counted_set)               :: v, t
-  type(subset_set)                :: q_dom, y_dom
+  type(index_set)               :: v, t
+  type(subset)                :: q_dom, y_dom
   type(stored_graph)              :: host
   type(opaque_primal)             :: primal_eq
   type(opaque_adjoint)            :: adjoint_eq
@@ -50,10 +50,10 @@ program adjoint_level_7_refusal
   end if
   call get_command_argument(1, which)
 
-  v = counted_set('variables', 3)
-  t = counted_set('targets'  , 3)
-  q_dom = subset_set('state'   , v, [VAR_U, VAR_V])
-  y_dom = subset_set('residual', t, [TGT_R1, TGT_R2])
+  v = index_set('variables', 3)
+  t = index_set('targets'  , 3)
+  q_dom = subset('state'   , v, [VAR_U, VAR_V])
+  y_dom = subset('residual', t, [TGT_R1, TGT_R2])
   host  = stored_graph(5, tails=[1,2,3,4], heads=[2,3,4,5])
 
   primal_eq  = opaque_primal(q_dom, y_dom)

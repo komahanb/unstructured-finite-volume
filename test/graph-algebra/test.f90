@@ -10,7 +10,7 @@
 
 program test_graph_algebra
 
-  use graph_carrier        , only : counted_set, subset_set, member_set
+  use graph_set        , only : index_set, subset, set
   use graph_relation       , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
@@ -64,22 +64,22 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)              :: a, b, c
-    type(subset_set)               :: some_b, nobody
+    type(index_set)              :: a, b, c
+    type(subset)               :: some_b, nobody
     type(stored_relation)          :: r, narrowed
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
     integer, allocatable           :: rt(:,:)
     integer                        :: j
     logical                        :: ok
 
-    a = counted_set('a-things', 3)
-    b = counted_set('b-things', 4)
-    c = counted_set('c-things', 2)
+    a = index_set('a-things', 3)
+    b = index_set('b-things', 4)
+    c = index_set('c-things', 2)
 
     r = stored_relation('r', [a, b, c], &
          & reshape([1,1,1,  1,2,2,  2,2,1,  3,4,2], [3, 4]))
 
-    some_b = subset_set('some-b', b, [2])
+    some_b = subset('some-b', b, [2])
 
     narrowed = restrict_slot(r, 2, some_b)
 
@@ -90,7 +90,7 @@ contains
     call report(narrowed % arity() .eq. 3, &
          & "the signature's arity stands unchanged", nfail)
     d = narrowed % domain(2)
-    call report(d % same_as(b), &
+    call report(d % equals(b), &
          & "and the restricted slot still answers its full domain", nfail)
 
     ! Full-domain restriction is the identity, extensionally: equal
@@ -106,18 +106,18 @@ contains
          & "restricting by the full domain is the identity, as sets", nfail)
 
     ! The empty subset admits nothing; the signature stands whole.
-    nobody   = subset_set('nobody', b, [integer ::])
+    nobody   = subset('nobody', b, [integer ::])
     narrowed = restrict_slot(r, 2, nobody)
     call report(narrowed % num_tuples() .eq. 0, &
          & "restriction by the empty subset is the empty relation", nfail)
     call report(narrowed % arity() .eq. 3, &
          & "whose arity is the original's", nfail)
     d = narrowed % domain(1)
-    ok = d % same_as(a)
+    ok = d % equals(a)
     d = narrowed % domain(2)
-    ok = ok .and. d % same_as(b)
+    ok = ok .and. d % equals(b)
     d = narrowed % domain(3)
-    ok = ok .and. d % same_as(c)
+    ok = ok .and. d % equals(c)
     call report(ok, &
          & "and whose signature is the original's, slot for slot", nfail)
 
@@ -133,13 +133,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)              :: a, b, c
+    type(index_set)              :: a, b, c
     type(stored_relation)          :: r, image, none
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
 
-    a = counted_set('a-things', 3)
-    b = counted_set('b-things', 4)
-    c = counted_set('c-things', 2)
+    a = index_set('a-things', 3)
+    b = index_set('b-things', 4)
+    c = index_set('c-things', 2)
 
     ! Two tuples agree on (slot1, slot2); they differ only in slot 3.
     r = stored_relation('r', [a, b, c], &
@@ -153,10 +153,10 @@ contains
 
     image = project_slots(r, [2, 1])
     d = image % domain(1)
-    call report(d % same_as(b), &
+    call report(d % equals(b), &
          & "the chosen order is structural: slot one of [2,1] is B", nfail)
     d = image % domain(2)
-    call report(d % same_as(a), &
+    call report(d % equals(a), &
          & "and slot two is A", nfail)
     call report(image % has([1, 1]) .and. image % has([3, 2]), &
          & "with the tuples reversed to match", nfail)
@@ -173,10 +173,10 @@ contains
     call report(image % num_tuples() .eq. 0 .and. image % arity() .eq. 2, &
          & "the empty relation projects to the empty relation", nfail)
     d = image % domain(1)
-    call report(d % same_as(c), &
+    call report(d % equals(c), &
          & "whose first selected slot is C", nfail)
     d = image % domain(2)
-    call report(d % same_as(a), &
+    call report(d % equals(a), &
          & "and whose second is A", nfail)
 
   end subroutine check_projection
@@ -192,14 +192,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)              :: a, b, c
+    type(index_set)              :: a, b, c
     type(stored_relation)          :: r_ab, r_bc
     class(relation), allocatable   :: chained
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
 
-    a = counted_set('a-things', 2)
-    b = counted_set('b-things', 3)
-    c = counted_set('c-things', 2)
+    a = index_set('a-things', 2)
+    b = index_set('b-things', 3)
+    c = index_set('c-things', 2)
 
     ! a1 reaches c1 through b1 AND through b2: two witnesses, one
     ! tuple. a2 reaches nothing.
@@ -219,10 +219,10 @@ contains
          & "a member with no chain relates to nothing", nfail)
 
     d = chained % domain(1)
-    call report(d % same_as(a), &
+    call report(d % equals(a), &
          & "the result runs from the first source", nfail)
     d = chained % domain(2)
-    call report(d % same_as(c), &
+    call report(d % equals(c), &
          & "to the second target", nfail)
 
     ! No b-chain at all: the empty composition is a relation.

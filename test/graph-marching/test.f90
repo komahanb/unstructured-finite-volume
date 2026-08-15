@@ -22,9 +22,9 @@
 program test_graph_marching
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_grammar  , only : graph, graph_field, graph_operation
+  use graph_grammar  , only : ordinary_graph, graph_field, graph_operation
   use graph_calculus , only : GRAPH_SIDE_VERTEX
-  use graph_carrier         , only : member_set, counted_set, subset_set
+  use graph_set         , only : set, index_set, subset
   use class_graph_field  , only : field
   use class_graph        , only : stored_graph
   use class_graph_differential_operator, only : vertex_differential_operator
@@ -112,7 +112,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(marcher) :: clock
-    type(counted_set) :: cells
+    type(index_set) :: cells
     type(stored_graph) :: lone
     type(differential_operator) :: decay
     real(dp) :: q(1), expected
@@ -149,7 +149,7 @@ contains
     type(marcher) :: clock
     type(mandelbrot_law) :: law
     type(stored_graph) :: points
-    type(counted_set) :: cells
+    type(index_set) :: cells
     type(field) :: escape_field
     real(dp), allocatable :: q(:)
     integer, allocatable :: escape(:)

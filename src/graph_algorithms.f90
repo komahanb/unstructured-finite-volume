@@ -19,7 +19,7 @@
 !
 !                    SUBOBJECTS, NOT INTEGER LISTS
 !
-! Sources and sinks are answered as subset_set subobjects of the
+! Sources and sinks are answered as subset subobjects of the
 ! view's own domain - so they carry identity, membership, size and
 ! local_index for free, and their enumeration is CANONICAL BY THE
 ! DOMAIN'S DECLARATION ORDER: the scan walks V by local index, and a
@@ -38,10 +38,10 @@
 !                    COSTS, AS WRITTEN
 !
 ! Nothing here is optimized ahead of a large caller. With n = |V|,
-! m = |A|, and the carrier's own lookup cost T_idx:
+! m = |A|, and the set's own lookup cost T_idx:
 !
 !      sources/sinks       O(n) fibre borrows, each paying T_idx -
-!                          and then the subset_set construction,
+!                          and then the subset construction,
 !                          which validates every kept member against
 !                          the ambient (T_has each) and dedupes with
 !                          its current quadratic worst-case check
@@ -58,8 +58,8 @@
 
 module graph_algorithms
 
-  use graph_carrier, only : member_set, subset_set
-  use graph_profile, only : directed_adjacency_view
+  use graph_set, only : set, subset
+  use graph_interpretation, only : directed_adjacency_view
 
   implicit none
 
@@ -76,9 +76,9 @@ contains
   function sources(view) result(chosen)
 
     type(directed_adjacency_view), intent(in) :: view
-    type(subset_set)                          :: chosen
+    type(subset)                          :: chosen
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
     integer, allocatable           :: keep(:)
     integer, pointer               :: fibre(:)
     integer                        :: i, n, m
@@ -95,7 +95,7 @@ contains
        end if
     end do
 
-    chosen = subset_set('sources', dom, keep(1:n))
+    chosen = subset('sources', dom, keep(1:n))
 
   end function sources
 
@@ -106,9 +106,9 @@ contains
   function sinks(view) result(chosen)
 
     type(directed_adjacency_view), intent(in) :: view
-    type(subset_set)                          :: chosen
+    type(subset)                          :: chosen
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
     integer, allocatable           :: keep(:)
     integer, pointer               :: fibre(:)
     integer                        :: i, n, m
@@ -125,7 +125,7 @@ contains
        end if
     end do
 
-    chosen = subset_set('sinks', dom, keep(1:n))
+    chosen = subset('sinks', dom, keep(1:n))
 
   end function sinks
 
@@ -142,7 +142,7 @@ contains
     integer                      , intent(in) :: from
     integer                      , intent(in) :: to
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
     logical, allocatable           :: visited(:)
     integer, allocatable           :: queue(:)
     integer, pointer               :: fibre(:)
@@ -199,7 +199,7 @@ contains
     type(directed_adjacency_view), intent(in)  :: view
     integer, allocatable         , intent(out) :: order(:)
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
     integer, allocatable           :: indegree(:)
     logical, allocatable           :: placed(:)
     integer, pointer               :: fibre(:)

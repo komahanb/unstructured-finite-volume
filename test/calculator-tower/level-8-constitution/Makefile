@@ -2,7 +2,7 @@ include ../../../Makefile.in
 
 #=====================================================================#
 # Level 8: the meaning suite. Framework modules this level may see:
-# the carriers/domains, the relations, the algebra, the field, and
+# the sets/domains, the relations, the algebra, the field, and
 # the TEST-LOCAL arithmetic constitution fixture beside this file.
 # No solver, no graph host, no graph grammar, no statement: the
 # import gate holds the door.

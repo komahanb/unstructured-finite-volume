@@ -25,10 +25,10 @@ here="$(cd "$(dirname "$0")" && pwd)"
 
 # level-directory  gate  label
 levels=(
-  "level-0-carrier            A 0 carrier"
+  "level-0-set            A 0 set"
   "level-1-relation           A 1 relation"
   "level-2-relation-algebra   A 2 relation algebra"
-  "level-3-graph              A 3 relational graph"
+  "level-3-graph              A 3 related graph"
   "level-4-graph-calculus     A 4 graph calculus"
   "level-5-field-calculus     A 5 field calculus"
   "level-6-discretization     A 6 discretization"

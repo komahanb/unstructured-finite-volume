@@ -17,9 +17,9 @@
 module nonlinear_sample_support
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_grammar      , only : graph_operation, graph, graph_field
+  use graph_grammar      , only : graph_operation, ordinary_graph, graph_field
   use graph_calculus     , only : GRAPH_SIDE_VERTEX
-  use graph_carrier         , only : member_set, counted_set, subset_set
+  use graph_set         , only : set, index_set, subset
   use class_graph_field  , only : field
 
   implicit none
@@ -44,20 +44,20 @@ contains
 
   subroutine nonlinear_sample_domain(this, input_graph, domain)
     class(nonlinear_sample), intent(in)    :: this
-    class(graph), intent(in)               :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(ordinary_graph), intent(in)               :: input_graph
+    class(set), allocatable, intent(out) :: domain
     call input_graph % all_edges(domain)
   end subroutine nonlinear_sample_domain
 
   subroutine nonlinear_sample_apply(this, input_graph, input_data, output)
 
     class(nonlinear_sample), intent(in)                 :: this
-    class(graph), intent(in)                            :: input_graph
+    class(ordinary_graph), intent(in)                            :: input_graph
     class(graph_field), intent(in), optional             :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
     type(field)      :: out
-    type(counted_set)    :: on
+    type(index_set)    :: on
     real(dp), allocatable :: q(:), z(:)
     integer , allocatable :: indices(:)
     real(dp)              :: qt, qh
@@ -184,7 +184,7 @@ end module nonlinear_sample_support
 program test_graph_contract
 
   use iso_fortran_env       , only : dp => REAL64
-  use graph_carrier         , only : member_set, counted_set, subset_set
+  use graph_set         , only : set, index_set, subset
   use graph_grammar         , only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
   use graph_grammar         , only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
   use graph_grammar         , only : GRAPH_FIELD_CHARACTER
@@ -201,7 +201,7 @@ program test_graph_contract
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
   use class_graph_partitioner, only : PARTITION_BREADTH_FIRST, PARTITION_ADOPTED
   use class_graph_assembler , only : assembler
-  use graph_grammar         , only : graph, graph_field
+  use graph_grammar         , only : ordinary_graph, graph_field
   use class_graph_coarsener , only : coarsener, COARSEN_PAIRWISE, COARSEN_ADOPTED
   use class_graph_refiner   , only : refiner
   use class_graph_differential_operator, only : differential_operator
@@ -294,12 +294,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)    :: host
-    type(subset_set)     :: vs, empty
+    type(index_set)    :: host
+    type(subset)     :: vs, empty
     integer, allocatable :: got(:)
 
-    host = counted_set('cells', 12)
-    vs   = subset_set('chosen', host, [7, 3, 11])
+    host = index_set('cells', 12)
+    vs   = subset('chosen', host, [7, 3, 11])
 
     call vs % members(got)
     call report(size(got) .eq. 3, "a subset keeps its count", nfail)
@@ -310,7 +310,7 @@ contains
     call report(vs % has(11) .and. .not. vs % has(5), &
          & "membership answers the chosen family alone", nfail)
 
-    empty = subset_set('none', host, [integer ::])
+    empty = subset('none', host, [integer ::])
     call report(empty % size() .eq. 0, &
          & "the empty subset is a domain", nfail)
 
@@ -343,13 +343,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)  :: on
+    type(index_set)  :: on
     type(field)    :: f
     real(dp), allocatable :: got(:)
     integer               :: entry_position, component, position
     logical               :: ok
 
-    on = counted_set('domain', 3)
+    on = index_set('domain', 3)
     f  = field('q', on, ncomp=2)
 
     call f % set_real_vector([71.0_dp, 72.0_dp, 31.0_dp, 32.0_dp, 111.0_dp, 112.0_dp])
@@ -402,12 +402,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)  :: on
+    type(index_set)  :: on
     type(field)    :: f
     real(dp), allocatable :: r(:)
     integer , allocatable :: i(:)
 
-    on = counted_set('domain', 2)
+    on = index_set('domain', 2)
     f  = field('q', on)
 
     call f % set_real_vector([1.0_dp, 2.0_dp])
@@ -443,7 +443,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)                :: on
+    type(index_set)                :: on
     type(field)                  :: f
     integer         , allocatable     :: i(:)
     real(dp)        , allocatable     :: r(:)
@@ -451,7 +451,7 @@ contains
     logical         , allocatable     :: l(:)
     character(len=:), allocatable     :: s(:)
 
-    on = counted_set('domain', 2)
+    on = index_set('domain', 2)
     f  = field('F', on)
 
     call f % set_integer_vector([3, 4])
@@ -596,8 +596,8 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                       :: g
-    class(member_set), allocatable :: vs
-    class(member_set), allocatable :: es
+    class(set), allocatable :: vs
+    class(set), allocatable :: es
     integer, allocatable                     :: indices(:)
 
     g = diamond()
@@ -714,7 +714,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                       :: g
-    class(member_set), allocatable :: vs
+    class(set), allocatable :: vs
     integer, allocatable                     :: indices(:)
 
     g = diamond()
@@ -755,7 +755,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                   :: g
-    type(counted_set)                 :: on
+    type(index_set)                 :: on
     type(field)                   :: f, vol
     type(reduction)                      :: rule
     class(graph_functional), allocatable :: j
@@ -765,7 +765,7 @@ contains
     integer                              :: i
 
     g  = diamond()
-    on = counted_set('domain', 4)
+    on = index_set('domain', 4)
 
     f = field('q', on)
     call f % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
@@ -798,14 +798,14 @@ contains
     ! Three-four-five, so the root is exact.
     ! The shape law now refuses reusing a four-cell field for two
     ! values: the norm check gets its own two-entry domain.
-    f = field('q', counted_set('pair', 2))
+    f = field('q', index_set('pair', 2))
     call f % set_real_vector([3.0_dp, 4.0_dp])
     rule = reduction(REDUCE_NORM)
     call rule % reduce(f, j)
     call value_real(j, r)
     call report(abs(r - 5.0_dp) < 1.0d-13, "the two-norm takes its root once", nfail)
 
-    f = field('q', counted_set('quad', 4))
+    f = field('q', index_set('quad', 4))
     call f % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
     rule = reduction(REDUCE_COUNT)
     call rule % reduce(f, j)
@@ -831,7 +831,7 @@ contains
 
     ! The complex-step road. The imaginary parts are tiny on purpose:
     ! a reduction that rounded through a real would return zero.
-    f = field('q', counted_set('pair', 2))
+    f = field('q', index_set('pair', 2))
     call f % set_complex_vector([(1.0_dp, 1.0d-20), (2.0_dp, 3.0d-20)])
     rule = reduction(REDUCE_SUM)
     call rule % reduce(f, j)
@@ -865,7 +865,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                   :: g
-    type(counted_set)                 :: s1, s2
+    type(index_set)                 :: s1, s2
     type(field)                   :: f1, f2
     type(reduction)                      :: rule
     class(graph_functional), allocatable :: a, b, both, j
@@ -875,11 +875,11 @@ contains
     rule = reduction(REDUCE_AVERAGE)
 
     ! Two part-sized domains: three cells here, two there.
-    s1 = counted_set('part-one', 3)
+    s1 = index_set('part-one', 3)
     f1 = field('q', s1)
     call f1 % set_real_vector([2.0_dp, 2.0_dp, 2.0_dp])
 
-    s2 = counted_set('part-two', 2)
+    s2 = index_set('part-two', 2)
     f2 = field('q', s2)
     call f2 % set_real_vector([5.0_dp, 9.0_dp])
 
@@ -950,9 +950,9 @@ contains
     type(stored_graph)             :: g
     type(partitioner)              :: p
     type(assembler)                :: a
-    class(graph), allocatable      :: part, back
+    class(ordinary_graph), allocatable      :: part, back
     class(graph_field), allocatable :: pd, fd
-    type(counted_set)           :: on
+    type(index_set)           :: on
     type(field)             :: d
     real(dp), allocatable          :: v(:)
     integer                        :: e
@@ -1024,8 +1024,8 @@ contains
 
     type(stored_graph)                       :: g
     type(partitioner)                        :: p
-    class(graph), allocatable                :: part
-    class(member_set), allocatable :: vs
+    class(ordinary_graph), allocatable                :: part
+    class(set), allocatable :: vs
     integer, allocatable                     :: indices(:)
     integer                                  :: k, l, f, times(6)
 
@@ -1083,8 +1083,8 @@ contains
     integer           , intent(in) :: nparts
 
     type(partitioner)                        :: p
-    class(graph), allocatable                :: part
-    class(member_set), allocatable :: vs
+    class(ordinary_graph), allocatable                :: part
+    class(set), allocatable :: vs
     integer, allocatable                     :: indices(:)
     integer                                  :: times(g % num_vertices())
     integer                                  :: k, l, f
@@ -1130,9 +1130,9 @@ contains
     type(stored_graph)             :: g
     type(partitioner)              :: p
     type(assembler)                :: a
-    class(graph), allocatable      :: part
+    class(ordinary_graph), allocatable      :: part
     class(graph_field), allocatable :: pd, fd
-    type(counted_set)           :: on
+    type(index_set)           :: on
     type(field)             :: d
     real(dp), allocatable          :: v(:)
     real(dp)                       :: total(6)
@@ -1187,12 +1187,12 @@ contains
     type(stored_graph)                       :: g
     type(partitioner)                        :: p
     type(reduction)                          :: rule
-    class(graph), allocatable                :: part
+    class(ordinary_graph), allocatable                :: part
     class(graph_field), allocatable           :: pd
-    class(member_set), allocatable :: vs
+    class(set), allocatable :: vs
     class(graph_functional), allocatable     :: whole, piece, running, joined
-    type(counted_set)                        :: on
-    type(subset_set)                         :: owned_only
+    type(index_set)                        :: on
+    type(subset)                         :: owned_only
     type(field)                       :: d, owned_values
     real(dp), allocatable                    :: v(:), pick(:)
     integer, allocatable                     :: indices(:)
@@ -1233,7 +1233,7 @@ contains
           end do
        end select
 
-       owned_only = subset_set('owned', part % vertex_set(), indices)
+       owned_only = subset('owned', part % vertex_set(), indices)
        owned_values = field('q', owned_only)
        call owned_values % set_real_vector(pick)
        deallocate(pick)
@@ -1269,9 +1269,9 @@ contains
     type(stored_graph)             :: g
     type(coarsener)                :: c
     type(refiner)                  :: r
-    class(graph), allocatable      :: coarse, fine
+    class(ordinary_graph), allocatable      :: coarse, fine
     class(graph_field), allocatable :: cd, fd
-    type(counted_set)           :: on
+    type(index_set)           :: on
     type(field)             :: d
     real(dp), allocatable          :: v(:)
 
@@ -1352,7 +1352,7 @@ contains
     type(coarsener)                :: c
     type(assembler)                :: a
     type(partitioner)              :: p
-    class(graph), allocatable      :: out, part, back
+    class(ordinary_graph), allocatable      :: out, part, back
     integer, allocatable           :: no_edges(:)
 
     allocate(no_edges(0))
@@ -1418,7 +1418,7 @@ contains
     type(differential_operator)         :: edge_term
     type(balance)                            :: bal
     class(graph_field), allocatable   :: y
-    type(counted_set)                     :: on
+    type(index_set)                     :: on
     type(field)                       :: q
     real(dp), allocatable                    :: v(:)
     real(dp)                                 :: total
@@ -1595,9 +1595,9 @@ contains
     type(stored_graph)                     :: g7, g3, ring
     type(differential_operator)     :: op
     class(graph_field), allocatable :: yf
-    type(counted_set)                   :: on
+    type(index_set)                   :: on
     type(field)                     :: q
-    type(counted_set)                     :: eon
+    type(index_set)                     :: eon
     type(field)                       :: zf
     real(dp), allocatable                  :: y(:)
     real(dp)                               :: qv(7)
@@ -1750,7 +1750,7 @@ contains
     type(stored_graph)                     :: g7
     type(differential_operator)     :: fwd, rev
     class(graph_field), allocatable :: yf
-    type(counted_set)                   :: on
+    type(index_set)                   :: on
     type(field)                     :: qf, pf
     real(dp), allocatable                  :: aq(:), ap(:)
     real(dp)                               :: q(7), p(7), left, right
@@ -1824,7 +1824,7 @@ contains
     type(stored_graph)                     :: border
     type(differential_operator)     :: reduce_edges
     class(graph_field), allocatable :: yf
-    type(counted_set)                     :: eon
+    type(index_set)                     :: eon
     type(field)                       :: zf
     real(dp), allocatable                  :: y(:)
     real(dp)                               :: qsq(4)
@@ -1881,7 +1881,7 @@ contains
     type(stored_graph)                     :: g7
     type(differential_operator)     :: op, fwd, rev
     class(graph_field), allocatable :: yf
-    type(counted_set)                   :: on
+    type(index_set)                   :: on
     type(field)                     :: qf, pf
     real(dp), allocatable                  :: y(:), aq(:), ap(:)
     real(dp)                               :: q(14), p(14)
@@ -1954,7 +1954,7 @@ contains
     type(stored_graph)                     :: g
     type(differential_operator)     :: fwd, rev
     class(graph_field), allocatable :: yf
-    type(counted_set)                   :: on
+    type(index_set)                   :: on
     type(field)                     :: unit
     real(dp), allocatable                  :: col(:)
     real(dp)                               :: a(5,5), at(5,5), e(5)
@@ -2035,9 +2035,9 @@ contains
     type(differential_operator)     :: reduce_edges
     class(graph_field), allocatable   :: zf
     class(graph_field), allocatable :: yf
-    type(counted_set)                   :: on
+    type(index_set)                   :: on
     type(field)                     :: qf
-    type(counted_set)                     :: eon
+    type(index_set)                     :: eon
     type(field)                       :: samples
     real(dp), allocatable                  :: z(:), y(:)
     real(dp)                               :: q(4), c(4)
@@ -2106,8 +2106,8 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                     :: chain
-    type(counted_set)                   :: on
-    type(counted_set)                     :: eon
+    type(index_set)                   :: on
+    type(index_set)                     :: eon
     type(field)                     :: uf, vf, wf
     type(field)                       :: zf, guf
     type(differential_operator)     :: opposite
@@ -2200,7 +2200,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)                 :: on
+    type(index_set)                 :: on
     type(field)                   :: f, uf
     type(functional)                     :: seed
     type(broadcast)                      :: copy_rule, share_rule
@@ -2209,7 +2209,7 @@ contains
     real(dp)                             :: x
     complex(dp)                          :: cx
 
-    on = counted_set('domain', 4)
+    on = index_set('domain', 4)
     f  = field('seed', on)
     uf = field('u', on)
 
@@ -2261,7 +2261,7 @@ contains
   !===================================================================!
 
   subroutine members_of(g, indices)
-    class(member_set), intent(in) :: g
+    class(set), intent(in) :: g
     integer, allocatable, intent(out) :: indices(:)
     call g % members(indices)
   end subroutine members_of

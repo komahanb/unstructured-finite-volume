@@ -46,7 +46,7 @@ program adjoint_level_8
   use adjoint_assert   , only : report, verdict
   use adjoint_assert   , only : VAR_P, VAR_U, VAR_V
   use adjoint_assert   , only : TGT_R1, TGT_R2, TGT_F
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use graph_set    , only : index_set, subset, set
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : compose_binary
   use graph_binary_relation , only : csr_relation, transposed_view, &
@@ -62,9 +62,9 @@ program adjoint_level_8
 
   implicit none
 
-  type(counted_set)     :: v, t
-  type(subset_set)      :: p_dom, z_dom
-  type(subset_set)      :: q_can, y_can, q_perm, y_perm
+  type(index_set)     :: v, t
+  type(subset)      :: p_dom, z_dom
+  type(subset)      :: q_can, y_can, q_perm, y_perm
   type(stored_graph)    :: host
   type(stored_relation) :: dep
   integer               :: table(2, 9)
@@ -76,17 +76,17 @@ program adjoint_level_8
   write(*,'(1x,a)') "adjoint tower . level 8 . one constitution"
   write(*,'(1x,a)') "============================================="
 
-  v = counted_set('variables', 3)
-  t = counted_set('targets'  , 3)
+  v = index_set('variables', 3)
+  t = index_set('targets'  , 3)
 
   ! The one-member roles cannot be permuted; the two-member ones can.
-  p_dom = subset_set('parameter', v, [VAR_P])
-  z_dom = subset_set('response' , t, [TGT_F])
+  p_dom = subset('parameter', v, [VAR_P])
+  z_dom = subset('response' , t, [TGT_F])
 
-  q_can  = subset_set('state canonical'   , v, [VAR_U, VAR_V])
-  y_can  = subset_set('residual canonical', t, [TGT_R1, TGT_R2])
-  q_perm = subset_set('state permuted'    , v, [VAR_V, VAR_U])
-  y_perm = subset_set('residual permuted' , t, [TGT_R2, TGT_R1])
+  q_can  = subset('state canonical'   , v, [VAR_U, VAR_V])
+  y_can  = subset('residual canonical', t, [TGT_R1, TGT_R2])
+  q_perm = subset('state permuted'    , v, [VAR_V, VAR_U])
+  y_perm = subset('residual permuted' , t, [TGT_R2, TGT_R1])
 
   table(:, 1) = [TGT_R1, VAR_P]
   table(:, 2) = [TGT_R1, VAR_U]
@@ -120,7 +120,7 @@ contains
 
   subroutine run_battery(q_dom, y_dom, tag, u_at, r1_at, nfail)
 
-    class(subset_set), intent(in)    :: q_dom, y_dom
+    class(subset), intent(in)    :: q_dom, y_dom
     character(len=*) , intent(in)    :: tag
     integer          , intent(in)    :: u_at, r1_at
     integer          , intent(inout) :: nfail
@@ -134,7 +134,7 @@ contains
     type(gmres)                     :: primal_solver, adjoint_solver
     type(gmres)                     :: tangent_solver
     type(field)                     :: rhs_y, rhs_q, state
-    class(member_set), allocatable  :: dom
+    class(set), allocatable  :: dom
     class(graph_field), allocatable :: sol
     real(dp), allocatable           :: gv(:), qv(:), lv(:), qp(:)
     real(dp)                        :: rp_dir(y_dom % size())
@@ -185,7 +185,7 @@ contains
 
     call sol % domain(dom)
     call sol % get_real_vector(qv)
-    call report(dom % same_as(q_dom) .and. &
+    call report(dom % equals(q_dom) .and. &
          &      abs(qv(q_dom % local_index(VAR_U)) - 2.0_dp) < 1.0d-9 &
          & .and. abs(qv(q_dom % local_index(VAR_V)) - 4.0_dp) &
          &      < 1.0d-9, &
@@ -210,7 +210,7 @@ contains
 
     call sol % domain(dom)
     call sol % get_real_vector(lv)
-    call report(dom % same_as(y_dom) .and. &
+    call report(dom % equals(y_dom) .and. &
          &      abs(lv(y_dom % local_index(TGT_R1)) + 0.4_dp) < 1.0d-9 &
          & .and. abs(lv(y_dom % local_index(TGT_R2)) - 0.6_dp) &
          &      < 1.0d-9, &
@@ -275,7 +275,7 @@ contains
   subroutine check_duality(jq, q_dom, y_dom, tag, nfail)
 
     class(relation)  , intent(in)    :: jq
-    class(subset_set), intent(in)    :: q_dom, y_dom
+    class(subset), intent(in)    :: q_dom, y_dom
     character(len=*) , intent(in)    :: tag
     integer          , intent(inout) :: nfail
 

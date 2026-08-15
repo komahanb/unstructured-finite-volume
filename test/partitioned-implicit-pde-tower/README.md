@@ -67,13 +67,13 @@ needs inventing.
 
 | Level | Mathematical object | Framework object | Domains | Relations | Numerical meaning | Test | Truth established | Production consequence |
 |---|---|---|---|---|---|---|---|---|
-| **0** | \(V,E,K\) | `counted_set` | three carriers | — | none | `level-0-carrier/` | carriers precede structure; the integer 1 is a vertex, an edge *and* a part | none |
+| **0** | \(V,E,K\) | `index_set` | three sets | — | none | `level-0-set/` | sets precede structure; the integer 1 is a vertex, an edge *and* a part | none |
 | **1** | \(\mathrm{Tail},\mathrm{Head}\subseteq E\times V\); \(\mathrm{Own}\subseteq K\times V\) | `csr_relation` | \(E\times V\), \(K\times V\) | primitive facts | none | `level-1-relation/` | the chain and its *intended* ownership, stated before any graph | none |
 | **2** | \(A=\mathrm{Head}\circ\mathrm{Tail}^{T}\); \(\mathrm{TailOwner}=\mathrm{Own}^{T}\circ\mathrm{Tail}\); \(\mathrm{HeadOwner}=\mathrm{Own}^{T}\circ\mathrm{Head}\) | `transpose_of`, `compose_binary` | \(V\to V\), \(E\to K\) | **derived** | none | `level-2-relation-algebra/` | relation algebra exposes tail-based **and** head-based ownership policies; both are total functions, and the crossing edge distinguishes them | none |
-| **3** | \(G\) | `stored_graph` | own carriers | realizes \(\mathrm{Tail},\mathrm{Head}\) | none | `level-3-graph/` | the ordinary graph realizes the relation structure — extensionally, not by identity | none |
-| **4** | \(G\to\{G_1,G_2\}\) | `partitioner` | part carriers + global maps | `edge_owner_part` vs *both* Level-2 policies | none | `level-4-graph-calculus/` | owned / borrowed / overlap; **production partitioning realizes the tail-based policy** | none |
+| **3** | \(G\) | `stored_graph` | own sets | realizes \(\mathrm{Tail},\mathrm{Head}\) | none | `level-3-graph/` | the ordinary graph realizes the relation structure — extensionally, not by identity | none |
+| **4** | \(G\to\{G_1,G_2\}\) | `partitioner` | part sets + global maps | `edge_owner_part` vs *both* Level-2 policies | none | `level-4-graph-calculus/` | owned / borrowed / overlap; **production partitioning realizes the tail-based policy** | none |
 | **5** | fields under restriction and extension | `field`, `partition_data`, `assemble_data` | overlap and owned | — | values move | `level-5-field-calculus/` | **read = overlap, write-back = owned**; one entity, one contribution | none |
-| **6** | \(L\) and \(A=2I-L\) | `laplacian`, `shifted_laplacian` | part carriers | incidence traversed | the discrete law | `level-6-discretization/` | local actions assemble to the global action; borrowed input is numerically load-bearing | none |
+| **6** | \(L\) and \(A=2I-L\) | `laplacian`, `shifted_laplacian` | part sets | incidence traversed | the discrete law | `level-6-discretization/` | local actions assemble to the global action; borrowed input is numerically load-bearing | none |
 | **7** | solve \(Aq=b\) | `gmres` | \(V(G)\) | — | the implicit solve | `level-7-minimization/` | **the graph host is a conduit** — chain vs star changes the answer | none |
 | **8** | \(A_{\text{part}}=A_{\text{global}}\) | `partitioned_shifted_laplacian` | \(V(G)\to V(G)\) | — | same map, alternate constitution | `level-8-constitution/` | structure once, overlap every apply, no cached state | none |
 | **9** | the statement | GMRES + partitioned action | \(V(G)\) | — | \(q^{*}\) | `level-9-statement/` | \(q_{\text{part}}=q_{\text{global}}=q^{*}\) | none |
@@ -81,7 +81,7 @@ needs inventing.
 The road a reader can follow:
 
 ```text
-L0  carriers
+L0  sets
 L1  primitive incidence + vertex ownership facts
 L2  relational consequences AND candidate edge-ownership policies
 L3  ordinary graph realization
@@ -163,7 +163,7 @@ OVERLAP    owned ∪ borrowed — everything locally present
 
 **Level 0** declares \(V\) (6 vertices), \(E\) (5 edges) and \(K\) (2
 part labels) and nothing else. Its sharpest truth is a hazard: all three
-carriers enumerate from one, so **the integer 1 is a member of all
+sets enumerate from one, so **the integer 1 is a member of all
 three**. Only identity separates them, and every level above depends on
 that being true here.
 
@@ -174,7 +174,7 @@ Tail ⊆ E×V     e_i → i          Head ⊆ E×V     e_i → i+1
 Own  ⊆ K×V     part1 → 1,2,3    part2 → 4,5,6
 ```
 
-Ownership here is an **intention over carriers** — no partitioner exists
+Ownership here is an **intention over sets** — no partitioner exists
 to realize it. Every signature is pinned by identity, because with
 colliding ids the *same* integer pair is a fact of two unrelated
 relations:
@@ -188,7 +188,7 @@ Same numerals, unrelated meanings; only the signature — \(E\times V\)
 versus \(K\times V\) — tells them apart. **A raw integer tuple is not a
 typed relational fact.** No pair belongs to all three relations and none
 could: `[3,4]` is Head's alone, and `Own` refuses it because \(K\) has
-no member 3 — a carrier truth, not an arithmetic one.
+no member 3 — a set truth, not an arithmetic one.
 
 **Level 2** derives what follows, and this level is *inhabited*, not
 N/A:
@@ -257,8 +257,8 @@ observation.
 # Level 3 — the ordinary graph realizes the structure
 
 `stored_graph(6, tails=[1..5], heads=[2..6])`, checked against the
-Level-1 oracle **extensionally and signature-aware**, never by carrier
-identity: \(G\) builds its own carriers, and demanding they be the same
+Level-1 oracle **extensionally and signature-aware**, never by set
+identity: \(G\) builds its own sets, and demanding they be the same
 objects as \(V\) and \(E\) would be demanding that two parties who agree
 must be the same party. Every `edge_tail` and `edge_head` must satisfy
 `Tail` and `Head`, and nothing unlicensed may appear.
@@ -301,7 +301,7 @@ Graph-to-graph interpretation **only**: no field is transported here.
 # Level 5 — field transport
 
 A full global field becomes a **full field on each part's whole vertex
-carrier**, borrowed member included:
+set**, borrowed member included:
 
 ```text
 G1 globals [1,2,3,4]  →  q1 = [1, 2, 4, 7]
@@ -346,7 +346,7 @@ G2: q(borrowed global 3) += 10  →  owned A at global 4: 13 →  3
 restore the halo → the correct answers return
 ```
 
-A state of the right *size* on a foreign carrier is refused by identity.
+A state of the right *size* on an unequal domain is refused by identity.
 
 # Level 7 — minimization, and what the host does
 
@@ -370,7 +370,7 @@ mathematics on a different host.
 > operation consumes the topology.**
 >
 > ```text
-> minimizer               graph as conduit / context carrier
+> minimizer               graph as conduit / context set
 > differential operation  graph as numerical topology operand
 > ```
 
@@ -475,22 +475,22 @@ in [`NUCLEUS-OBSERVATIONS.md`](NUCLEUS-OBSERVATIONS.md) under PIP-8.
 # D. Graph roles at radius 2
 
 This tower exercises the **legacy ordinary-graph / HPC branch** of the
-nucleus and introduces no `relational_graph`, because its mathematics
+nucleus and introduces no `related_graph`, because its mathematics
 does not need one.
 
 | Object | Type | Role |
 |---|---|---|
 | **global G** | `stored_graph` | topology **yes**; global domain source **yes**; GMRES host **yes**; downstream numerical influence **yes** (Level-7 star control) |
 | **parts G1, G2** | `stored_graph` + part relation | partition frame **yes**; local domain source **yes**; local topology operand **yes**; ownership/global maps **yes** — one object, four roles |
-| **borrowed member** | a member of a part carrier | visible to the local operator **yes**; authoritative output contributor **NO** |
-| **vertex/edge sets** | `counted_set` / `subset_set` | value domains — what fields live on |
+| **borrowed member** | a member of a part set | visible to the local operator **yes**; authoritative output contributor **NO** |
+| **vertex/edge sets** | `index_set` / `subset` | value domains — what fields live on |
 
 ```text
 graph as TOPOLOGY         what the Laplacian traverses          (L6)
 graph as CONDUIT          what the minimizer carries so its
                           action can traverse something         (L7)
 graph as PARTITION FRAME  global↔local maps and ownership       (L4)
-member_set as DOMAIN      what a field lives on; never a graph
+set as DOMAIN      what a field lives on; never a graph
 ```
 
 ---
@@ -500,7 +500,7 @@ member_set as DOMAIN      what a field lives on; never a graph
 ## Proven
 
 ```text
-carriers precede structure, and numerals never establish identity
+sets precede structure, and numerals never establish identity
 primitive incidence and intended ownership are relations, not a graph
 relation algebra exposes TWO total edge-ownership policies, not one:
     TailOwner = Own^T ∘ Tail   and   HeadOwner = Own^T ∘ Head
@@ -544,12 +544,12 @@ test/partitioned-implicit-pde-tower/
 ├── check_marker.sh               the result contract + its self-test
 ├── common/
 │   ├── partitioned_pde_assert.f90                 (below everything)
-│   ├── chain_carriers_fixture.f90                 earned at Level 0
+│   ├── chain_sets_fixture.f90                 earned at Level 0
 │   ├── chain_relations_fixture.f90                earned at Level 1
 │   ├── chain_algebra_fixture.f90                  earned at Level 2
 │   ├── shifted_laplacian_fixture.f90              earned at Level 6
 │   └── partitioned_shifted_laplacian_fixture.f90  earned at Level 8
-├── level-0-carrier/              test.f90
+├── level-0-set/              test.f90
 ├── level-1-relation/             test.f90
 ├── level-2-relation-algebra/     test.f90
 ├── level-3-graph/                test.f90
@@ -569,18 +569,18 @@ cannot reach the Level-8 composite.
 The fixture ladder is the tower's own stratification applied to itself:
 
 ```text
-Level 0    chain_carriers_fixture      declares V, E, K
+Level 0    chain_sets_fixture      declares V, E, K
 Level 1    chain_relations_fixture     states Tail, Head, Own over them
 Level 2    chain_algebra_fixture       composes what follows
 ```
 
-The relation fixture does not *import* the carrier fixture — its
+The relation fixture does not *import* the set fixture — its
 constructors receive \(V,E,K\) as arguments, because a Level-1 file may
 state facts over sets but may not name a set into existence. The ladder
 is realized by the tests' imports and by the per-file allowlist keying,
 and it is enforced in **three** places at once: the import gate's
 allowlists, each level's Makefile (Level 0 compiles and links the
-carrier fixture and *never* the relation fixture), and
+set fixture and *never* the relation fixture), and
 `check_imports.sh --selftest`, which asserts directly that a Level-0
 source saying `use chain_relations_fixture` is refused.
 
@@ -591,7 +591,7 @@ source saying `use chain_relations_fixture` is refused.
 ```text
 PARTITIONED IMPLICIT PDE TOWER
 
-    L0 carrier ........................ PASS
+    L0 set ........................ PASS
     L1 relation ....................... PASS
     L2 relation algebra ............... PASS
     L3 graph .......................... PASS

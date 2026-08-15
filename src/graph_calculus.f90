@@ -70,7 +70,7 @@
 module graph_calculus
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_grammar  , only : graph, graph_field, graph_operation, &
+  use graph_grammar  , only : ordinary_graph, graph_field, graph_operation, &
        &                      graph_transform
 
   implicit none
@@ -93,7 +93,7 @@ module graph_calculus
   ! GRAPH_SIDE_VERTEX / GRAPH_SIDE_EDGE are the legacy differential
   ! operator's output-LANDING choices - which side its answer lands
   ! on - and nothing else. They are not field-domain identity, not
-  ! support identity, not a support side: domains are member_set
+  ! support identity, not a support side: domains are set
   ! identities, and the support-as-edgeless-graph ontology is
   ! retired.
   integer, parameter :: GRAPH_SIDE_VERTEX = 1
@@ -428,9 +428,9 @@ module graph_calculus
      !===============================================================!
 
      subroutine discretization_pattern_interface(this, pattern)
-       import :: discretization_operator, graph
+       import :: discretization_operator, ordinary_graph
        class(discretization_operator), intent(in) :: this
-       class(graph), allocatable, intent(out)     :: pattern
+       class(ordinary_graph), allocatable, intent(out)     :: pattern
      end subroutine discretization_pattern_interface
 
      subroutine linearization_freeze_interface(this, at, base)
@@ -447,44 +447,44 @@ module graph_calculus
      !===============================================================!
 
      subroutine partition_graph_interface(this, global_graph, part_graph)
-       import :: graph_partitioner, graph
+       import :: graph_partitioner, ordinary_graph
        class(graph_partitioner), intent(in) :: this
-       class(graph), intent(in) :: global_graph
-       class(graph), allocatable, intent(out) :: part_graph
+       class(ordinary_graph), intent(in) :: global_graph
+       class(ordinary_graph), allocatable, intent(out) :: part_graph
      end subroutine partition_graph_interface
 
      subroutine partition_data_interface(this, global_graph, global_data, &
           & part_graph, part_data)
-       import :: graph_partitioner, graph, graph_field
+       import :: graph_partitioner, ordinary_graph, graph_field
        class(graph_partitioner), intent(in) :: this
-       class(graph), intent(in) :: global_graph
+       class(ordinary_graph), intent(in) :: global_graph
        class(graph_field), intent(in) :: global_data
-       class(graph), intent(in) :: part_graph
+       class(ordinary_graph), intent(in) :: part_graph
        class(graph_field), allocatable, intent(out) :: part_data
      end subroutine partition_data_interface
 
      subroutine assemble_graph_interface(this, part_graph, global_graph)
-       import :: graph_assembler, graph
+       import :: graph_assembler, ordinary_graph
        class(graph_assembler), intent(in) :: this
-       class(graph), intent(in) :: part_graph
-       class(graph), allocatable, intent(out) :: global_graph
+       class(ordinary_graph), intent(in) :: part_graph
+       class(ordinary_graph), allocatable, intent(out) :: global_graph
      end subroutine assemble_graph_interface
 
      subroutine assemble_data_interface(this, part_graph, part_data, &
           & global_graph, global_data)
-       import :: graph_assembler, graph, graph_field
+       import :: graph_assembler, ordinary_graph, graph_field
        class(graph_assembler), intent(in) :: this
-       class(graph), intent(in) :: part_graph
+       class(ordinary_graph), intent(in) :: part_graph
        class(graph_field), intent(in) :: part_data
-       class(graph), intent(in) :: global_graph
+       class(ordinary_graph), intent(in) :: global_graph
        class(graph_field), allocatable, intent(out) :: global_data
      end subroutine assemble_data_interface
 
      subroutine coarsen_graph_interface(this, fine_graph, coarse_graph)
-       import :: graph_coarsener, graph
+       import :: graph_coarsener, ordinary_graph
        class(graph_coarsener), intent(in) :: this
-       class(graph), intent(in) :: fine_graph
-       class(graph), allocatable, intent(out) :: coarse_graph
+       class(ordinary_graph), intent(in) :: fine_graph
+       class(ordinary_graph), allocatable, intent(out) :: coarse_graph
      end subroutine coarsen_graph_interface
 
      ! Several fine values land on one coarse cell, so the concrete
@@ -492,19 +492,19 @@ module graph_calculus
      ! state, volume-weighted when the cells are unequal.
      subroutine coarsen_data_interface(this, fine_graph, fine_data, &
           & coarse_graph, coarse_data)
-       import :: graph_coarsener, graph, graph_field
+       import :: graph_coarsener, ordinary_graph, graph_field
        class(graph_coarsener), intent(in) :: this
-       class(graph), intent(in) :: fine_graph
+       class(ordinary_graph), intent(in) :: fine_graph
        class(graph_field), intent(in) :: fine_data
-       class(graph), intent(in) :: coarse_graph
+       class(ordinary_graph), intent(in) :: coarse_graph
        class(graph_field), allocatable, intent(out) :: coarse_data
      end subroutine coarsen_data_interface
 
      subroutine refine_graph_interface(this, coarse_graph, fine_graph)
-       import :: graph_refiner, graph
+       import :: graph_refiner, ordinary_graph
        class(graph_refiner), intent(in) :: this
-       class(graph), intent(in) :: coarse_graph
-       class(graph), allocatable, intent(out) :: fine_graph
+       class(ordinary_graph), intent(in) :: coarse_graph
+       class(ordinary_graph), allocatable, intent(out) :: fine_graph
      end subroutine refine_graph_interface
 
      ! One coarse value feeds several fine ones, so the concrete says
@@ -512,15 +512,14 @@ module graph_calculus
      ! result stays smooth across the new cells.
      subroutine refine_data_interface(this, coarse_graph, coarse_data, &
           & fine_graph, fine_data)
-       import :: graph_refiner, graph, graph_field
+       import :: graph_refiner, ordinary_graph, graph_field
        class(graph_refiner), intent(in) :: this
-       class(graph), intent(in) :: coarse_graph
+       class(ordinary_graph), intent(in) :: coarse_graph
        class(graph_field), intent(in) :: coarse_data
-       class(graph), intent(in) :: fine_graph
+       class(ordinary_graph), intent(in) :: fine_graph
        class(graph_field), allocatable, intent(out) :: fine_data
      end subroutine refine_data_interface
 
   end interface
 
 end module graph_calculus
-

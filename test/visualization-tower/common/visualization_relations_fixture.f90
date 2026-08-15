@@ -7,7 +7,7 @@
 !      H_k  <=  E_k x X_k          where the occurrence writes TO
 !
 ! Twelve occurrences in all, each with exactly one tail and exactly
-! one head, and each end living in its own correctly typed carrier.
+! one head, and each end living in its own correctly typed set.
 !
 !      A1        A2        A3
 !      --------  --------  --------
@@ -44,7 +44,7 @@
 
 module visualization_relations_fixture
 
-  use graph_carrier        , only : member_set
+  use graph_set        , only : set
   use graph_binary_relation, only : csr_relation
   use visualization_assert , only : X0_A, X0_B, X0_C, X0_D
   use visualization_assert , only : X1_P, X1_Q, X1_R
@@ -71,7 +71,7 @@ contains
 
   subroutine occurrences_of_a1(e1, x0, x1, tail, head)
 
-    class(member_set) , intent(in)  :: e1, x0, x1
+    class(set) , intent(in)  :: e1, x0, x1
     type(csr_relation), intent(out) :: tail, head
 
     tail = csr_relation('T1', e1, x0, reshape( &
@@ -99,7 +99,7 @@ contains
 
   subroutine occurrences_of_a2(e2, x1, x2, tail, head)
 
-    class(member_set) , intent(in)  :: e2, x1, x2
+    class(set) , intent(in)  :: e2, x1, x2
     type(csr_relation), intent(out) :: tail, head
 
     tail = csr_relation('T2', e2, x1, reshape( &
@@ -125,7 +125,7 @@ contains
 
   subroutine occurrences_of_a3(e3, x2, x3, tail, head)
 
-    class(member_set) , intent(in)  :: e3, x2, x3
+    class(set) , intent(in)  :: e3, x2, x3
     type(csr_relation), intent(out) :: tail, head
 
     tail = csr_relation('T3', e3, x2, reshape( &

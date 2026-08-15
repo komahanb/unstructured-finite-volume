@@ -6,7 +6,7 @@ include ../../../Makefile.in
 # src/, and its evaluation semantics are the learning tower's own:
 # laws execute INTO the computed slots, the residual is the value
 # at the home L locates. Framework modules this level may see: the
-# carriers, the relations, the algebra, the container, the profile,
+# sets, the relations, the algebra, the container, the interpretation,
 # the algorithms and the field - no solver, no legacy host, no
 # minimization. The import gate holds the door.
 #=====================================================================#

@@ -2,7 +2,7 @@ include ../../../Makefile.in
 
 #=====================================================================#
 # Level 3: the law suite and the refusals that must die. The
-# framework modules this level may see: the carriers, the relations,
+# framework modules this level may see: the sets, the relations,
 # the algebra, the container - and, for the view refusal alone, the
 # binary infrastructure. The import gate holds the door.
 #=====================================================================#

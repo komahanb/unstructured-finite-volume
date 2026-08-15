@@ -11,7 +11,7 @@
 !      L4  structural_renderer_fixture     typed relations over
 !                                          member sets
 !      L5  valued_renderer_fixture         a relation and a field on
-!                                          its occurrence carrier
+!                                          its occurrence set
 !      L6  production_pattern_renderer     an ordinary graph, as
 !                                          production returns one
 !
@@ -25,11 +25,11 @@
 ! Every picture this file draws carries its SIGNATURE line, because
 ! Level 6's whole finding is that a grid alone forgets something:
 !
-!      D2 : X1 -> X2            two declared carriers, three members
+!      D2 : X1 -> X2            two declared sets, three members
 !                               each, and X1 is not X2
 !
 !      pattern : vertices -> vertices
-!                               ONE declared carrier, standing in
+!                               ONE declared set, standing in
 !                               both places
 !
 ! Those two objects can render an identical grid. They are not the
@@ -46,7 +46,7 @@
 !
 ! and compares Boolean occupancy cell by cell against P's directed
 ! adjacency, read at the SAME local coordinates through P's own
-! vertex carrier.
+! vertex set.
 !
 ! IT PROVES EXACTLY ONE THING:
 !
@@ -55,7 +55,7 @@
 ! and it proves NONE of these:
 !
 !      same relation
-!      same carriers
+!      same sets
 !      same signature
 !      same mathematical object
 !
@@ -70,10 +70,10 @@
 
 module production_pattern_renderer_fixture
 
-  use graph_carrier                 , only : member_set, counted_set
+  use graph_set                 , only : set, index_set
   use graph_relation                , only : relation
-  use graph_grammar                 , only : graph
-  use visualization_carriers_fixture, only : label_for
+  use graph_grammar                 , only : ordinary_graph
+  use visualization_sets_fixture, only : label_for
   use structural_renderer_fixture   , only : picture
 
   implicit none
@@ -100,7 +100,7 @@ contains
 
   logical function production_has(p, from, to)
 
-    class(graph), intent(in) :: p
+    class(ordinary_graph), intent(in) :: p
     integer     , intent(in) :: from, to
 
     integer :: e
@@ -118,23 +118,23 @@ contains
 
   !===================================================================!
   ! The signature a production pattern actually has: one vertex
-  ! carrier, standing in both places, named as it named itself.
+  ! set, standing in both places, named as it named itself.
   !===================================================================!
 
   function signature_of_pattern(p) result(text)
 
-    class(graph), intent(in) :: p
+    class(ordinary_graph), intent(in) :: p
 
     character(len=:), allocatable :: text
-    type(counted_set)             :: v
+    type(index_set)             :: v
 
     v    = p % vertex_set()
-    text = carrier_name(v) // ' -> ' // carrier_name(v)
+    text = set_name(v) // ' -> ' // set_name(v)
 
   end function signature_of_pattern
 
   !===================================================================!
-  ! The signature a typed relation has: two declared carriers, which
+  ! The signature a typed relation has: two declared sets, which
   ! may or may not be the same one.
   !===================================================================!
 
@@ -143,11 +143,11 @@ contains
     class(relation), intent(in) :: r
 
     character(len=:), allocatable  :: text
-    class(member_set), allocatable :: from, to
+    class(set), allocatable :: from, to
 
     from = r % domain(1)
     to   = r % domain(2)
-    text = carrier_name(from) // ' -> ' // carrier_name(to)
+    text = set_name(from) // ' -> ' // set_name(to)
 
   end function signature_of_relation
 
@@ -163,9 +163,9 @@ contains
   logical function coordinate_shapes_fit(r, p)
 
     class(relation), intent(in) :: r
-    class(graph)   , intent(in) :: p
+    class(ordinary_graph)   , intent(in) :: p
 
-    class(member_set), allocatable :: cols, rows
+    class(set), allocatable :: cols, rows
 
     coordinate_shapes_fit = .false.
     if (r % arity() .ne. 2) return
@@ -186,10 +186,10 @@ contains
   logical function same_coordinate_pattern(r, p)
 
     class(relation), intent(in) :: r
-    class(graph)   , intent(in) :: p
+    class(ordinary_graph)   , intent(in) :: p
 
-    class(member_set), allocatable :: cols, rows
-    type(counted_set)              :: verts
+    class(set), allocatable :: cols, rows
+    type(index_set)              :: verts
     integer                        :: i, j
 
     same_coordinate_pattern = coordinate_shapes_fit(r, p)
@@ -212,21 +212,21 @@ contains
   !===================================================================!
   ! The production pattern as a grid.
   !
-  !      rows    = the vertex carrier, in ITS declaration order,
+  !      rows    = the vertex set, in ITS declaration order,
   !                read as the HEAD of an arrow
-  !      columns = the same carrier, read as the TAIL
+  !      columns = the same set, read as the TAIL
   !
-  ! One carrier on both axes, which is precisely what the picture is
+  ! One set on both axes, which is precisely what the picture is
   ! here to make visible. The title and the signature stand above the
   ! grid so no reader can mistake this for a typed relation.
   !===================================================================!
 
   type(picture) function pattern_picture(p, title) result(pic)
 
-    class(graph)    , intent(in) :: p
+    class(ordinary_graph)    , intent(in) :: p
     character(len=*), intent(in) :: title
 
-    type(counted_set) :: verts
+    type(index_set) :: verts
     integer           :: stub, wide, i, j, at, n
 
     verts = p % vertex_set()
@@ -264,29 +264,29 @@ contains
   ! Small mechanics, kept local so Level 4 need not export any.
   !===================================================================!
 
-  integer function widest(carrier)
+  integer function widest(set)
 
-    class(member_set), intent(in) :: carrier
+    class(set), intent(in) :: set
 
     integer :: k
 
     widest = 1
-    do k = 1, carrier % size()
-       widest = max(widest, len(label_for(carrier, carrier % member(k))))
+    do k = 1, set % size()
+       widest = max(widest, len(label_for(set, set % member(k))))
     end do
 
   end function widest
 
-  function carrier_name(carrier) result(text)
+  function set_name(set) result(text)
 
-    class(member_set), intent(in) :: carrier
+    class(set), intent(in) :: set
 
     character(len=:), allocatable :: text
 
-    text = carrier % name()
+    text = set % name()
     if (len(text) .eq. 0) text = '?'
 
-  end function carrier_name
+  end function set_name
 
   subroutine put(line, at, text)
 

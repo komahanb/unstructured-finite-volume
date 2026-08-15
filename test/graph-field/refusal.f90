@@ -5,14 +5,14 @@
 !=====================================================================!
 program field_refusal
   use iso_fortran_env  , only : dp => REAL64
-  use graph_carrier    , only : counted_set
+  use graph_set    , only : index_set
   use class_graph_field, only : field
   implicit none
-  type(counted_set) :: cells, raw
+  type(index_set) :: cells, raw
   type(field)       :: q
   character(len=32) :: which
   which=''; call get_command_argument(1, which)
-  cells = counted_set('cells', 4)
+  cells = index_set('cells', 4)
   select case (trim(which))
   case ('ishape')
      q = field('q', cells)

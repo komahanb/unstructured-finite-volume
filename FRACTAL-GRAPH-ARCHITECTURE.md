@@ -20,7 +20,7 @@ This document records a working architectural hypothesis for the graph framework
 
 is the most abstract structural object currently available to us, where:
 
-- \(\mathcal S\) is a collection of member sets;
+- \(\mathcal S\) is a collection of sets;
 - \(\mathcal R\) is a collection of finite-arity typed relations among those sets.
 
 The immediate goal is **not** to force every software object into one inheritance hierarchy.
@@ -53,10 +53,10 @@ The existing mathematical tower is the **nucleus** or **sun**.
 ```mermaid
 flowchart TB
     subgraph SUN["CORE-MATH NUCLEUS / SUN"]
-        L0["0 · carrier"]
+        L0["0 · set"]
         L1["1 · relation"]
         L2["2 · relation algebra"]
-        L3["3 · relational graph"]
+        L3["3 · related graph"]
         L4["4 · graph calculus"]
         L5["5 · field calculus"]
         L6["6 · discretization"]
@@ -119,7 +119,7 @@ At radius \(r=0\), an object is examined almost in isolation.
 
 Examples:
 
-- a field on one member set;
+- a field on one set;
 - a scalar residual operation;
 - a simple relation;
 - a local derivative action.
@@ -130,7 +130,7 @@ Examples:
 
 - a field participates in an operation;
 - an operation participates in a dependency graph;
-- a relation participates in a relational graph;
+- a relation participates in a related graph;
 - a derivative action participates in a chain.
 
 At radius \(r=k\), the object may participate in a larger network containing:
@@ -436,7 +436,7 @@ toward larger radius:
     outward / contextual traversal
 
 across interpretations:
-    view / dual / profile traversal
+    view / dual / interpretation traversal
 ```
 
 A tree is excellent for unique parent-child ownership.
@@ -637,7 +637,7 @@ Possible realizations of graphhood include:
 - adapter;
 - reference;
 - generated relation;
-- graph profile;
+- graph interpretation;
 - contextual embedding.
 
 Therefore:
@@ -650,7 +650,7 @@ Until then, do not confuse ontology with implementation.
 
 ---
 
-# 11. The relational graph remains the neutral nucleus
+# 11. The related graph remains the neutral nucleus
 
 The generic graph is:
 
@@ -668,7 +668,7 @@ G=(V,E).
 
 This matters strongly for fractal architecture.
 
-At one radius, member sets may represent:
+At one radius, sets may represent:
 
 ```text
 values
@@ -770,7 +770,7 @@ What lower-radius structure does this object expose?
 ```text
 component
     ↓ inward
-member sets + relations
+sets + relations
 ```
 
 ---
@@ -1092,7 +1092,7 @@ Implementation may compress this using:
 - identities;
 - parent contexts;
 - relation-valued members;
-- graph profiles;
+- graph interpretations;
 - external registries;
 - lazy construction.
 
@@ -1137,7 +1137,7 @@ semantic object:
     graph
 
 possible representation:
-    owned relational graph
+    owned related graph
     ordinary graph view
     incidence storage
     dual view
@@ -1327,10 +1327,10 @@ A provisional map is:
 
 | Nucleus level | Radial question |
 |---|---|
-| Carrier | What domains exist at this radius? |
+| Set | What domains exist at this radius? |
 | Relation | What facts connect them? |
 | Relation algebra | What new structure is derived? |
-| Relational graph | What structure belongs together? |
+| Related graph | What structure belongs together? |
 | Graph calculus | What interpretation/traversal is selected? |
 | Field calculus | What values inhabit which domains? |
 | Discretization | What equation/dependency layout emerges? |
@@ -1516,10 +1516,10 @@ towers dispose}
 The sealed calculator tower established that the architecture can move through:
 
 ```text
-carrier
+set
 → relation
 → relation algebra
-→ relational graph
+→ related graph
 → graph calculus
 → field calculus
 → discretization
@@ -1540,7 +1540,7 @@ The current fractal claims should therefore be labeled:
 
 ```text
 ESTABLISHED
-    heterogeneous relational graph G=(S,R)
+    heterogeneous related graph G=(S,R)
     graph views/interpretations
     derived dependency
     structural transpose/reverse views

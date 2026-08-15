@@ -27,7 +27,7 @@
 
 module class_stored_graph
 
-  use interface_graph, only : graph, digraph
+  use interface_graph, only : mesh_graph, digraph
 
   implicit none
 
@@ -35,7 +35,7 @@ module class_stored_graph
   public :: stored_graph
   public :: stored_digraph
 
-  type, extends(graph) :: stored_graph
+  type, extends(mesh_graph) :: stored_graph
 
    contains
 
@@ -111,7 +111,7 @@ contains
 
   pure type(stored_graph) function create_quotient(fine) result(this)
 
-    class(graph), intent(in) :: fine
+    class(mesh_graph), intent(in) :: fine
 
     integer, allocatable :: tails(:), heads(:)
 
@@ -130,7 +130,7 @@ contains
 
   pure type(stored_graph) function create_refined(coarse, children) result(this)
 
-    class(graph), intent(in) :: coarse
+    class(mesh_graph), intent(in) :: coarse
     integer     , intent(in) :: children
 
     integer, allocatable :: tails(:), heads(:)

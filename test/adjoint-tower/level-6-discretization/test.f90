@@ -20,7 +20,7 @@
 ! 2x2 array swaps two integers; transposing this support swaps the
 ! actual DOMAINS - J_Q answers on Y for Q, J_Q^T answers on Q for
 ! Y - and since |Q| = |Y| = 2, no dimension check could ever notice
-! the difference. Only same_as can.
+! the difference. Only equals can.
 !
 ! SECOND, a support relation is written (row, column), so its first
 ! slot is the OPERATOR'S CODOMAIN: J_Q <= Y x Q supports Rq: Q -> Y.
@@ -39,7 +39,7 @@ program adjoint_level_6
   use adjoint_assert, only : report, verdict
   use adjoint_assert, only : VAR_P, VAR_U, VAR_V
   use adjoint_assert, only : TGT_R1, TGT_R2, TGT_F
-  use graph_carrier , only : counted_set, subset_set, member_set
+  use graph_set , only : index_set, subset, set
   use graph_relation, only : stored_relation, relation
   use graph_relation_algebra, only : compose_binary
   use graph_binary_relation , only : csr_relation, transposed_view, &
@@ -47,8 +47,8 @@ program adjoint_level_6
 
   implicit none
 
-  type(counted_set)          :: v, t
-  type(subset_set)           :: p_dom, q_dom, y_dom, z_dom
+  type(index_set)          :: v, t
+  type(subset)           :: p_dom, q_dom, y_dom, z_dom
   type(stored_relation)      :: dep
   type(csr_relation), target :: inc_y, inc_z, inc_q, inc_p, jq
   type(transposed_view)      :: inc_q_t, inc_p_t, jq_t
@@ -62,13 +62,13 @@ program adjoint_level_6
   write(*,'(1x,a)') "adjoint tower . level 6 . operator support"
   write(*,'(1x,a)') "============================================="
 
-  v = counted_set('variables', 3)
-  t = counted_set('targets'  , 3)
+  v = index_set('variables', 3)
+  t = index_set('targets'  , 3)
 
-  p_dom = subset_set('parameter', v, [VAR_P])
-  q_dom = subset_set('state'    , v, [VAR_U, VAR_V])
-  y_dom = subset_set('residual' , t, [TGT_R1, TGT_R2])
-  z_dom = subset_set('response' , t, [TGT_F])
+  p_dom = subset('parameter', v, [VAR_P])
+  q_dom = subset('state'    , v, [VAR_U, VAR_V])
+  y_dom = subset('residual' , t, [TGT_R1, TGT_R2])
+  z_dom = subset('response' , t, [TGT_F])
 
   table(:, 1) = [TGT_R1, VAR_P]
   table(:, 2) = [TGT_R1, VAR_U]
@@ -114,26 +114,26 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: row, col
+    class(set), allocatable :: row, col
 
     row = jq % domain(1)
     col = jq % domain(2)
-    call report(row % same_as(y_dom) .and. col % same_as(q_dom), &
+    call report(row % equals(y_dom) .and. col % equals(q_dom), &
          & "J_Q <= Y x Q supports Rq : Q -> Y", nfail)
 
     row = jp % domain(1)
     col = jp % domain(2)
-    call report(row % same_as(y_dom) .and. col % same_as(p_dom), &
+    call report(row % equals(y_dom) .and. col % equals(p_dom), &
          & "J_P <= Y x P supports Rp : P -> Y", nfail)
 
     row = fq % domain(1)
     col = fq % domain(2)
-    call report(row % same_as(z_dom) .and. col % same_as(q_dom), &
+    call report(row % equals(z_dom) .and. col % equals(q_dom), &
          & "F_Q <= Z x Q supports fq : Q -> Z", nfail)
 
     row = fp % domain(1)
     col = fp % domain(2)
-    call report(row % same_as(z_dom) .and. col % same_as(p_dom), &
+    call report(row % equals(z_dom) .and. col % equals(p_dom), &
          & "F_P <= Z x P supports fp : P -> Z", nfail)
 
   end subroutine check_operator_supports
@@ -174,30 +174,30 @@ contains
   ! With |Q| = |Y| = 2 no dimension check could tell J_Q from
   ! J_Q^T - and the specimen's A is non-symmetric, so a solver that
   ! confused them would answer a different, plausible-looking
-  ! number. Only same_as separates them.
+  ! number. Only equals separates them.
   !===================================================================!
 
   subroutine check_orientation_is_identity(nfail)
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: row, col
+    class(set), allocatable :: row, col
 
     row = jq_t % domain(1)
     col = jq_t % domain(2)
 
-    call report(row % same_as(q_dom) .and. col % same_as(y_dom), &
+    call report(row % equals(q_dom) .and. col % equals(y_dom), &
          & "J_Q^T <= Q x Y supports Rq^T : Y -> Q - the domains " // &
          & "themselves are exchanged", nfail)
 
     call report(row % size() .eq. 2 .and. col % size() .eq. 2 .and. &
-         &      .not. row % same_as(col), &
+         &      .not. row % equals(col), &
          & "both slots hold two members and are still different " // &
          & "domains: no size check could catch a reversed adjoint", &
          & nfail)
 
-    call report(.not. row % same_as(y_dom) .and. &
-         &      .not. col % same_as(q_dom), &
+    call report(.not. row % equals(y_dom) .and. &
+         &      .not. col % equals(q_dom), &
          & "and neither slot is what the primal support had there", &
          & nfail)
 

@@ -50,19 +50,19 @@ program time_level_9
   use time_assert           , only : NQ, NT, NSTEPS, TOL, TOL_MARCH
   use time_assert           , only : T0, T4, C_X, C_Y, H_STEP
   use time_assert           , only : TIME_COORD, BDF2_TRAJECTORY
-  use graph_carrier         , only : counted_set, member_set
+  use graph_set         , only : index_set, set
   use class_graph           , only : stored_graph
   use class_graph_field     , only : field
   use class_graph_gmres     , only : gmres
   use class_graph_newton    , only : newton
   use class_graph_marcher   , only : marcher, MARCH_BDF2
-  use time_carriers_fixture , only : time_carriers
+  use time_sets_fixture , only : time_sets
   use time_fields_fixture   , only : state_field, instant_coordinates
   use triangular_decay_fixture, only : triangular_decay
 
   implicit none
 
-  type(counted_set)      :: q, t, e
+  type(index_set)      :: q, t, e
   type(stored_graph)     :: hcontext
   type(triangular_decay) :: decay
   type(marcher)          :: clock
@@ -76,7 +76,7 @@ program time_level_9
   write(*,'(1x,a)') "time integration tower . level 9 . statement"
   write(*,'(1x,a)') "============================================="
 
-  call time_carriers(q, t, e)
+  call time_sets(q, t, e)
   hcontext = stored_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
   decay    = triangular_decay(q)
   tcoord   = instant_coordinates(t)
@@ -121,14 +121,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
 
     call q_initial % domain(d)
-    call report(d % same_as(q), &
+    call report(d % equals(q), &
          & "the statement's initial state is a FIELD ON Q", nfail)
 
     call q_final % domain(d)
-    call report(d % same_as(q), &
+    call report(d % equals(q), &
          & "and its answer is a FIELD ON Q - asked and answered in " // &
          & "the same terms", nfail)
 

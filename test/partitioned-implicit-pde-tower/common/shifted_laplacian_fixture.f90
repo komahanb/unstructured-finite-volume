@@ -39,8 +39,8 @@
 module shifted_laplacian_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_carrier    , only : member_set
-  use graph_grammar    , only : graph, graph_field, graph_operation
+  use graph_set    , only : set
+  use graph_grammar    , only : ordinary_graph, graph_field, graph_operation
   use class_graph_field, only : field
   use class_graph_differential_operator, only : differential_operator, &
        &                                        laplacian
@@ -73,8 +73,8 @@ contains
   subroutine shifted_domain(this, input_graph, domain)
 
     class(shifted_laplacian), intent(in) :: this
-    class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(ordinary_graph), intent(in) :: input_graph
+    class(set), allocatable, intent(out) :: domain
 
     allocate(domain, source=input_graph % vertex_set())
 
@@ -82,22 +82,22 @@ contains
 
   !===================================================================!
   ! A(q) = 2q - L(q). The state is checked against THIS graph's
-  ! vertex carrier by identity - a field of the right size on a
-  ! foreign carrier is refused - and the Laplacian is the production
+  ! vertex set by identity - a field of the right size on a
+  ! an unequal domain is refused - and the Laplacian is the production
   ! one, applied to the same graph.
   !===================================================================!
 
   subroutine shifted_apply(this, input_graph, input_data, output)
 
     class(shifted_laplacian), intent(in)           :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
     type(differential_operator)     :: lap
     type(field)                     :: out
     class(graph_field), allocatable :: lq
-    class(member_set), allocatable  :: dom
+    class(set), allocatable  :: dom
     real(dp), allocatable           :: q(:), l(:)
 
     if (.not. present(input_data)) then
@@ -108,8 +108,8 @@ contains
     end if
 
     call input_data(1) % domain(dom)
-    if (.not. dom % same_as(input_graph % vertex_set())) then
-       error stop 'shifted laplacian: the state must live on this graph''s vertex carrier'
+    if (.not. dom % equals(input_graph % vertex_set())) then
+       error stop 'shifted laplacian: the state must live on this graph''s vertex set'
     end if
 
     ! The topology is consumed HERE, by production, on THIS graph.

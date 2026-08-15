@@ -27,7 +27,7 @@
 module class_mesh
 
   use iso_fortran_env       , only : dp => REAL64, error_unit
-  use interface_graph       , only : graph, vertex, edge, transpose_adjacency
+  use interface_graph       , only : mesh_graph, vertex, edge, transpose_adjacency
   use class_stored_graph    , only : stored_graph
   use interface_mesh_loader , only : mesh_loader
   use class_array_mesh_loader, only : array_mesh_loader
@@ -80,7 +80,7 @@ module class_mesh
   ! The mesh datatype is a collection of vertices, cells and faces.
   !===================================================================!
 
-  type, extends(graph) :: mesh   ! The mesh IS the cell graph: cells are the graph's vertices and interior faces are its edges.
+  type, extends(mesh_graph) :: mesh   ! The mesh IS the cell graph: cells are the graph's vertices and interior faces are its edges.
 
      integer :: max_print = 20
      integer :: num_spatial_dim   ! This is 2 or 3, from the top element dimension.

@@ -26,23 +26,23 @@ program calculator_level_4
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use graph_set    , only : index_set, subset, set
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_structure  , only : relational_graph, held_set, held_relation
-  use graph_profile    , only : directed_adjacency_view
+  use graph_structure  , only : related_graph, declared_set, declared_relation
+  use graph_interpretation    , only : directed_adjacency_view
   use graph_algorithms , only : sources, sinks, reachable, &
        &                        topological_order
 
   implicit none
 
-  type(counted_set)              :: x, o, p
-  type(subset_set)               :: p_out, p_in
+  type(index_set)              :: x, o, p
+  type(subset)               :: p_out, p_in
   type(stored_relation)          :: flow, r_out3, r_in3
   type(stored_relation)          :: produces, consumes
   class(relation), allocatable   :: d
-  type(relational_graph), target :: g
+  type(related_graph), target :: g
   type(directed_adjacency_view)  :: view
   integer                        :: table(3, 6)
   integer                        :: nfail
@@ -53,9 +53,9 @@ program calculator_level_4
   write(*,'(1x,a)') "calculator tower . level 4 . graph calculus"
   write(*,'(1x,a)') "============================================="
 
-  x = counted_set('value-slots', 5)
-  o = counted_set('operations' , 2)
-  p = counted_set('ports'      , 3)
+  x = index_set('value-slots', 5)
+  o = index_set('operations' , 2)
+  p = index_set('ports'      , 3)
 
   table(:, 1) = [OP_PLUS , SLOT_A, PORT_IN1]
   table(:, 2) = [OP_PLUS , SLOT_B, PORT_IN2]
@@ -66,17 +66,17 @@ program calculator_level_4
 
   flow = stored_relation('flow', [o, x, p], table)
 
-  p_out    = subset_set('output-port', p, [PORT_OUT])
-  p_in     = subset_set('input-ports', p, [PORT_IN1, PORT_IN2])
+  p_out    = subset('output-port', p, [PORT_OUT])
+  p_in     = subset('input-ports', p, [PORT_IN1, PORT_IN2])
   r_out3   = restrict_slot(flow, 3, p_out)
   r_in3    = restrict_slot(flow, 3, p_in)
   produces = project_slots(r_out3, [1, 2])
   consumes = project_slots(r_in3 , [2, 1])
   d        = compose_binary(produces, consumes)
 
-  g = relational_graph('calculator', &
-       & [held_set(x), held_set(o), held_set(p)], &
-       & [held_relation(flow), held_relation(d)])
+  g = related_graph('calculator', &
+       & [declared_set(x), declared_set(o), declared_set(p)], &
+       & [declared_relation(flow), declared_relation(d)])
 
   ! The interpretation reads the GRAPH-OWNED dependency; the
   ! selector has served and may die.
@@ -101,7 +101,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(subset_set) :: src, snk
+    type(subset) :: src, snk
 
     src = sources(view)
     snk = sinks(view)

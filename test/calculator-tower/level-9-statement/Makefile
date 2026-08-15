@@ -1,8 +1,8 @@
 include ../../../Makefile.in
 
 #=====================================================================#
-# Level 9: the statement suite. The composition rung: carriers,
-# relations, algebra, the relational graph, the field, the legacy
+# Level 9: the statement suite. The composition rung: sets,
+# relations, algebra, the related graph, the field, the legacy
 # operation host, minimization with GMRES - and the REUSED level-8
 # constitution fixture, compiled from its own rung's directory.
 # There is deliberately no production statement module to import.

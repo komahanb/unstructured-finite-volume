@@ -41,8 +41,8 @@ module learning_residual_fixture
 
   use iso_fortran_env  , only : dp => REAL64
   use learning_assert  , only : SLOT_W
-  use graph_carrier    , only : member_set
-  use graph_grammar    , only : graph, graph_field, graph_operation
+  use graph_set    , only : set
+  use graph_grammar    , only : ordinary_graph, graph_field, graph_operation
   use class_graph_field, only : field
 
   implicit none
@@ -53,7 +53,7 @@ module learning_residual_fixture
   integer, parameter :: ROW_R = 1
 
   type, extends(graph_operation) :: affine_learning_residual
-     class(member_set), allocatable :: theta, y
+     class(set), allocatable :: theta, y
      real(dp)                       :: x_data, y_data
    contains
      procedure :: name   => oracle_name
@@ -69,7 +69,7 @@ contains
 
   type(affine_learning_residual) function create_oracle(theta, y, &
        & x_data, y_data) result(this)
-    class(member_set), intent(in) :: theta, y
+    class(set), intent(in) :: theta, y
     real(dp)         , intent(in) :: x_data, y_data
     allocate(this % theta, source=theta)
     allocate(this % y    , source=y)
@@ -85,8 +85,8 @@ contains
 
   subroutine oracle_domain(this, input_graph, domain)
     class(affine_learning_residual), intent(in) :: this
-    class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(ordinary_graph), intent(in) :: input_graph
+    class(set), allocatable, intent(out) :: domain
     associate (u1 => input_graph); end associate
     allocate(domain, source=this % y)
   end subroutine oracle_domain
@@ -94,19 +94,19 @@ contains
   subroutine oracle_apply(this, input_graph, input_data, output)
 
     class(affine_learning_residual), intent(in)    :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
     type(field)                    :: out
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
     real(dp), allocatable          :: q(:), r(:)
     real(dp)                       :: w
 
     associate (u1 => input_graph); end associate
 
     call input_data(1) % domain(dom)
-    if (.not. dom % same_as(this % theta)) then
+    if (.not. dom % equals(this % theta)) then
        error stop 'oracle: the state must live on the trainable domain'
     end if
     call input_data(1) % get_real_vector(q)
@@ -131,7 +131,7 @@ program learning_level_7
 
   use iso_fortran_env  , only : dp => REAL64
   use learning_assert  , only : report, verdict, SLOT_W
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use graph_set    , only : index_set, subset, set
   use graph_grammar    , only : graph_field
   use class_graph_field, only : field
   use class_graph      , only : stored_graph
@@ -140,14 +140,14 @@ program learning_level_7
 
   implicit none
 
-  type(counted_set)     :: v, y, hv
-  type(subset_set)      :: theta
+  type(index_set)     :: v, y, hv
+  type(subset)      :: theta
   type(stored_graph)    :: host
   type(affine_learning_residual) :: oracle, witness
   type(gmres)           :: solver, fitter
   type(field)           :: state
   class(graph_field), allocatable :: resid
-  class(member_set), allocatable  :: dom
+  class(set), allocatable  :: dom
   real(dp), allocatable :: g(:), rhs(:), w_state(:), rr(:)
   real(dp)              :: achieved
   integer               :: nfail
@@ -157,9 +157,9 @@ program learning_level_7
   write(*,'(1x,a)') "learning tower . level 7 . minimization"
   write(*,'(1x,a)') "============================================="
 
-  v     = counted_set('value-slots'  , 5)
-  theta = subset_set('trainable', v, [SLOT_W])
-  y     = counted_set('residual-rows', 1)
+  v     = index_set('value-slots'  , 5)
+  theta = subset('trainable', v, [SLOT_W])
+  y     = index_set('residual-rows', 1)
 
   ! Seven vertices: the wrong size for everything, on purpose.
   host = stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
@@ -167,11 +167,11 @@ program learning_level_7
   ! The primary training problem: (x, y) = (2, 6), supplied as data.
   oracle = affine_learning_residual(theta, y, 2.0_dp, 6.0_dp)
 
-  call report(.not. theta % same_as(y), &
+  call report(.not. theta % equals(y), &
        & "Theta and Y are distinct domains, cardinality " // &
        & "notwithstanding", nfail)
   hv = host % vertex_set()
-  call report(.not. hv % same_as(theta) .and. &
+  call report(.not. hv % equals(theta) .and. &
        &      host % num_vertices() /= theta % size(), &
        & "the host's seven vertices are nobody's trainables", nfail)
 
@@ -180,10 +180,10 @@ program learning_level_7
   solver % max_iterations = 50
 
   call solver % domain(host, dom)
-  call report(dom % same_as(theta), &
+  call report(dom % equals(theta), &
        & "the solver's answer domain is Theta, by identity", nfail)
   call oracle % domain(host, dom)
-  call report(dom % same_as(y), &
+  call report(dom % equals(y), &
        & "and the oracle answers on Y", nfail)
 
   ! The affine split, agreed on both sides: R(0) = -6, rhs = 6.

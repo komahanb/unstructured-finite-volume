@@ -2,7 +2,7 @@ include ../../../Makefile.in
 
 #=====================================================================#
 # Learning level 9: the statement suite. The composition rung:
-# carriers, relations, algebra, the relational graph, the profile
+# sets, relations, algebra, the related graph, the interpretation
 # and algorithms for the derived order, the field, the legacy
 # operation host, the GMRES citizen - and the REUSED level-8
 # constitution fixture, compiled from its own rung's directory.

@@ -29,7 +29,7 @@ program calculator_level_8
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use graph_set    , only : index_set, subset, set
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
@@ -42,8 +42,8 @@ program calculator_level_8
   integer, parameter :: ROW_C = 1
   integer, parameter :: ROW_E = 2
 
-  type(counted_set)     :: x, o, p, y
-  type(subset_set)      :: k, u, p_out
+  type(index_set)     :: x, o, p, y
+  type(subset)      :: k, u, p_out
   type(stored_relation) :: flow, located
   type(field)           :: qk, qu
   integer               :: table(3, 6)
@@ -54,10 +54,10 @@ program calculator_level_8
   write(*,'(1x,a)') "calculator tower . level 8 . constitution"
   write(*,'(1x,a)') "============================================="
 
-  x = counted_set('value-slots'  , 5)
-  o = counted_set('operations'   , 2)
-  p = counted_set('ports'        , 3)
-  y = counted_set('residual-rows', 2)
+  x = index_set('value-slots'  , 5)
+  o = index_set('operations'   , 2)
+  p = index_set('ports'        , 3)
+  y = index_set('residual-rows', 2)
 
   table(:, 1) = [OP_PLUS , SLOT_A, PORT_IN1]
   table(:, 2) = [OP_PLUS , SLOT_B, PORT_IN2]
@@ -70,10 +70,10 @@ program calculator_level_8
   located = stored_relation('located', [y, x], &
        & reshape([ROW_C, SLOT_C,  ROW_E, SLOT_E], [2, 2]))
 
-  p_out = subset_set('output-port', p, [PORT_OUT])
+  p_out = subset('output-port', p, [PORT_OUT])
 
-  k = subset_set('known'  , x, [SLOT_D, SLOT_A, SLOT_B])
-  u = subset_set('unknown', x, [SLOT_E, SLOT_C])
+  k = subset('known'  , x, [SLOT_D, SLOT_A, SLOT_B])
+  u = subset('unknown', x, [SLOT_E, SLOT_C])
   qk = field('q known', k)
   call qk % set_real_vector([4.0_dp, 2.0_dp, 3.0_dp])
   qu = field('q unknown', u)

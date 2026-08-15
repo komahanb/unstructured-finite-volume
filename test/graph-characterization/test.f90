@@ -27,8 +27,8 @@ program test_graph_characterization
 
   use iso_fortran_env        , only : dp => REAL64
   use graph_calculus         , only : GRAPH_SIDE_VERTEX
-  use graph_grammar          , only : graph, graph_field
-  use graph_carrier          , only : member_set, counted_set, subset_set
+  use graph_grammar          , only : ordinary_graph, graph_field
+  use graph_set          , only : set, index_set, subset
   use class_graph            , only : stored_graph
   use class_graph_field      , only : field
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
@@ -92,7 +92,7 @@ contains
     type(stored_graph)              :: g
     type(differential_operator)     :: div
     class(graph_field), allocatable :: yf
-    type(counted_set)                   :: eon
+    type(index_set)                   :: eon
     type(field)                     :: zf
     integer, allocatable            :: idx(:)
     real(dp), allocatable           :: y(:)
@@ -146,9 +146,9 @@ contains
     type(stored_graph)              :: g
     type(differential_operator)     :: div
     class(graph_field), allocatable :: yf
-    type(counted_set)                   :: eon
+    type(index_set)                   :: eon
     type(field)                     :: zf
-    class(member_set), allocatable       :: sset
+    class(set), allocatable       :: sset
     integer, allocatable            :: idx(:)
     real(dp), allocatable           :: y(:)
 
@@ -199,7 +199,7 @@ contains
   !===================================================================!
   ! Directed traversal on a diamond: 1 --> 2 --> 4 and 1 --> 3 --> 4.
   ! Out and in, edges and vertices, sources and sinks - the queries
-  ! the compatibility profile must go on answering.
+  ! the compatibility interpretation must go on answering.
   !===================================================================!
 
   subroutine check_directed_traversal(nfail)
@@ -246,10 +246,10 @@ contains
   ! TODAY, so nothing shifts unseen while the ground moves. The
   ! destination is different on purpose: support becomes a SUBOBJECT
   ! S c--> A (AGENTS.md sections 6 and 37, refined by review) - and
-  ! THE DESTINATION NOW STANDS: subset_set in graph_carrier, with
-  ! its own laws in test/graph-carrier. The pins below keep guarding
+  ! THE DESTINATION NOW STANDS: subset in graph_set, with
+  ! its own laws in test/graph-set. The pins below keep guarding
   ! the OLD support until the old fields retire onto the new
-  ! carriers; then these checks are rewritten, not obeyed - what
+  ! sets; then these checks are rewritten, not obeyed - what
   ! survives is membership, the host domain, order, and emptiness;
   ! the graph-flavoured spelling does not.
   !===================================================================!
@@ -262,12 +262,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)    :: faces
-    type(subset_set)     :: es, none
+    type(index_set)    :: faces
+    type(subset)     :: es, none
     integer, allocatable :: idx(:)
 
-    faces = counted_set('faces', 20)
-    es    = subset_set('walls', faces, [11, 14, 19])
+    faces = index_set('faces', 20)
+    es    = subset('walls', faces, [11, 14, 19])
 
     call report(es % is_subobject_of(faces), &
          & "a support is a subobject of its host domain", nfail)
@@ -281,7 +281,7 @@ contains
     call report(es % has(14) .and. .not. es % has(12), &
          & "membership answers the chosen family alone", nfail)
 
-    none = subset_set('nothing', faces, [integer ::])
+    none = subset('nothing', faces, [integer ::])
     call report(none % size() .eq. 0, &
          & "the empty support is a support", nfail)
 
@@ -301,9 +301,9 @@ contains
     type(stored_graph)              :: g
     type(partitioner)               :: p
     type(assembler)                 :: a
-    class(graph), allocatable       :: part
+    class(ordinary_graph), allocatable       :: part
     class(graph_field), allocatable :: pd, fd
-    type(counted_set)                   :: von, eon
+    type(index_set)                   :: von, eon
     type(field)                     :: q, w
     real(dp), allocatable           :: v(:)
     real(dp)                        :: vtotal(6), etotal(5)
@@ -366,7 +366,7 @@ contains
     type(stored_graph)              :: g
     type(differential_operator)     :: fwd, rev
     class(graph_field), allocatable :: yf
-    type(counted_set)                   :: on
+    type(index_set)                   :: on
     type(field)                     :: qf, pf
     real(dp), allocatable           :: aq(:), ap(:)
     real(dp)                        :: q(4), p(4), cs(5)
@@ -413,7 +413,7 @@ contains
 
   subroutine members(g, indices)
 
-    class(member_set), intent(in)     :: g
+    class(set), intent(in)     :: g
     integer, allocatable, intent(out) :: indices(:)
 
     call g % members(indices)

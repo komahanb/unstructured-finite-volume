@@ -14,7 +14,7 @@
 
 program algebra_refusal
 
-  use graph_carrier         , only : counted_set, subset_set
+  use graph_set         , only : index_set, subset
   use graph_relation        , only : stored_relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
@@ -22,8 +22,8 @@ program algebra_refusal
 
   implicit none
 
-  type(counted_set)     :: a, b, c, other
-  type(subset_set)      :: foreign
+  type(index_set)     :: a, b, c, other
+  type(subset)      :: outside_slot_domain
   type(stored_relation) :: r, r_ab, r_bc, fat
   type(stored_relation) :: out1
   type(csr_relation)    :: out2
@@ -32,9 +32,9 @@ program algebra_refusal
   which = ''
   call get_command_argument(1, which)
 
-  a = counted_set('a-things', 3)
-  b = counted_set('b-things', 4)
-  c = counted_set('c-things', 2)
+  a = index_set('a-things', 3)
+  b = index_set('b-things', 4)
+  c = index_set('c-things', 2)
 
   r = stored_relation('r', [a, b, c], &
        & reshape([1,1,1,  2,2,2], [3, 2]))
@@ -45,9 +45,9 @@ program algebra_refusal
      out1 = restrict_slot(r, 4, b)
 
   case ('embed')
-     other   = counted_set('elsewhere', 4)
-     foreign = subset_set('foreign', other, [2])
-     out1 = restrict_slot(r, 2, foreign)
+     other   = index_set('elsewhere', 4)
+     outside_slot_domain = subset('not a subobject of slot 2', other, [2])
+     out1 = restrict_slot(r, 2, outside_slot_domain)
 
   case ('none')
      out1 = project_slots(r, [integer ::])

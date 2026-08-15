@@ -10,8 +10,8 @@
 ! and nothing else happens here: no partition, no field, no
 ! operator, no solver.
 !
-! The comparison is EXTENSIONAL and signature-aware, not by carrier
-! identity. G builds its own vertex and edge carriers, and there is
+! The comparison is EXTENSIONAL and signature-aware, not by set
+! identity. G builds its own vertex and edge sets, and there is
 ! no reason on earth they should be the same objects as the
 ! independent oracle's V and E - only that they hold the same
 ! members and relate them the same way. Demanding identity here
@@ -24,15 +24,15 @@
 program partitioned_pde_level_3
 
   use partitioned_pde_assert , only : report, verdict
-  use graph_carrier          , only : counted_set
+  use graph_set          , only : index_set
   use graph_binary_relation  , only : csr_relation
   use class_graph            , only : stored_graph
-  use chain_carriers_fixture , only : chain_carriers
+  use chain_sets_fixture , only : chain_sets
   use chain_relations_fixture, only : tail_relation, head_relation
 
   implicit none
 
-  type(counted_set)  :: v, e, k
+  type(index_set)  :: v, e, k
   type(csr_relation) :: tail, head
   type(stored_graph) :: g
   integer            :: nfail
@@ -43,14 +43,14 @@ program partitioned_pde_level_3
   write(*,'(1x,a)') "partitioned pde tower . level 3 . graph"
   write(*,'(1x,a)') "============================================="
 
-  call chain_carriers(v, e, k)
+  call chain_sets(v, e, k)
   tail = tail_relation(e, v)
   head = head_relation(e, v)
 
   g = stored_graph(6, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
 
   call check_counts(nfail)
-  call check_carriers_extensionally(nfail)
+  call check_sets_extensionally(nfail)
   call check_incidence_against_the_oracle(nfail)
   call check_it_is_not_a_part(nfail)
 
@@ -70,14 +70,14 @@ contains
 
   !===================================================================!
   ! Extensional agreement: the same members, member for member. NOT
-  ! carrier identity - G's carriers are its own.
+  ! set identity - G's sets are its own.
   !===================================================================!
 
-  subroutine check_carriers_extensionally(nfail)
+  subroutine check_sets_extensionally(nfail)
 
     integer, intent(inout) :: nfail
 
-    type(counted_set) :: gv, ge
+    type(index_set) :: gv, ge
     integer           :: i
     logical           :: ok
 
@@ -89,21 +89,21 @@ contains
        ok = ok .and. gv % has(v % member(i))
     end do
     call report(ok, &
-         & "G's vertex carrier holds exactly V's members", nfail)
+         & "G's vertex set holds exactly V's members", nfail)
 
     ok = ge % size() .eq. e % size()
     do i = 1, e % size()
        ok = ok .and. ge % has(e % member(i))
     end do
     call report(ok, &
-         & "and its edge carrier exactly E's", nfail)
+         & "and its edge set exactly E's", nfail)
 
-    call report(.not. gv % same_as(v), &
-         & "yet G's carrier is NOT the oracle's V: agreement is " // &
+    call report(.not. gv % equals(v), &
+         & "yet G's set is NOT the oracle's V: agreement is " // &
          & "extensional, and two independent declarations are two " // &
          & "different domains", nfail)
 
-  end subroutine check_carriers_extensionally
+  end subroutine check_sets_extensionally
 
   !===================================================================!
   ! Every incidence G reports agrees with the Level-1 relations, in

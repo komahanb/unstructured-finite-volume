@@ -43,12 +43,12 @@ program learning_level_9
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier  , only : counted_set, subset_set, member_set
+  use graph_set  , only : index_set, subset, set
   use graph_relation , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_structure, only : relational_graph, held_set, held_relation
-  use graph_profile  , only : directed_adjacency_view
+  use graph_structure, only : related_graph, declared_set, declared_relation
+  use graph_interpretation  , only : directed_adjacency_view
   use graph_algorithms, only : topological_order
   use graph_grammar  , only : graph_field
   use class_graph    , only : stored_graph
@@ -61,19 +61,19 @@ program learning_level_9
 
   integer, parameter :: ROW_R = 1
 
-  type(counted_set)                  :: v, o, p, y
-  type(subset_set)                   :: k, theta, u, p_in, p_out
+  type(index_set)                  :: v, o, p, y
+  type(subset)                   :: k, theta, u, p_in, p_out
   type(stored_relation), allocatable :: flow
   type(stored_relation)              :: located, consumes, produces
   class(relation), allocatable       :: d
   class(relation), pointer           :: gflow
-  type(relational_graph), target     :: g
+  type(related_graph), target     :: g
   type(directed_adjacency_view)      :: view
   type(stored_graph)                 :: host
   type(constituted_learning_residual) :: residual_op
   type(gmres)                        :: solver
   type(field)                        :: q_k, rhsf
-  class(member_set), allocatable     :: dom
+  class(set), allocatable     :: dom
   class(graph_field), allocatable    :: sol, rf
   integer, allocatable               :: order(:)
   real(dp), allocatable              :: obs(:), gv(:), solval(:), rv(:)
@@ -88,13 +88,13 @@ program learning_level_9
   write(*,'(1x,a)') "============================================="
 
   ! -- the structure, and its one relational model graph
-  v     = counted_set('value-slots'  , 5)
-  o     = counted_set('operations'   , 2)
-  p     = counted_set('ports'        , 3)
-  y     = counted_set('residual-rows', 1)
-  k     = subset_set('observed' , v, [SLOT_Y, SLOT_X])
-  theta = subset_set('trainable', v, [SLOT_W])
-  u     = subset_set('computed' , v, [SLOT_E, SLOT_YHAT])
+  v     = index_set('value-slots'  , 5)
+  o     = index_set('operations'   , 2)
+  p     = index_set('ports'        , 3)
+  y     = index_set('residual-rows', 1)
+  k     = subset('observed' , v, [SLOT_Y, SLOT_X])
+  theta = subset('trainable', v, [SLOT_W])
+  u     = subset('computed' , v, [SLOT_E, SLOT_YHAT])
 
   table(:, 1) = [OP_PREDICT, SLOT_W   , PORT_IN1]
   table(:, 2) = [OP_PREDICT, SLOT_X   , PORT_IN2]
@@ -105,15 +105,15 @@ program learning_level_9
   allocate(flow)
   flow = stored_relation('flow', [o, v, p], table)
 
-  p_in     = subset_set('input-ports', p, [PORT_IN1, PORT_IN2])
-  p_out    = subset_set('output-port', p, [PORT_OUT])
+  p_in     = subset('input-ports', p, [PORT_IN1, PORT_IN2])
+  p_out    = subset('output-port', p, [PORT_OUT])
   consumes = project_slots(restrict_slot(flow, 3, p_in ), [2, 1])
   produces = project_slots(restrict_slot(flow, 3, p_out), [1, 2])
   d        = compose_binary(produces, consumes)
 
-  g = relational_graph('learning', &
-       & [held_set(v), held_set(o), held_set(p)], &
-       & [held_relation(flow), held_relation(d)])
+  g = related_graph('learning', &
+       & [declared_set(v), declared_set(o), declared_set(p)], &
+       & [declared_relation(flow), declared_relation(d)])
 
   ! -- the discretization, distinct from the graph on purpose
   located = stored_relation('located', [y, v], &
@@ -147,10 +147,10 @@ program learning_level_9
   solver % max_iterations = 50
 
   call solver % domain(host, dom)
-  call report(dom % same_as(theta), &
+  call report(dom % equals(theta), &
        & "the solver answers on Theta, by identity", nfail)
   call residual_op % domain(host, dom)
-  call report(dom % same_as(y) .and. .not. dom % same_as(theta), &
+  call report(dom % equals(y) .and. .not. dom % equals(theta), &
        & "the residual answers on Y - and Y is not Theta", nfail)
 
   ! -- the affine constant, through the ENTIRE constituted model
@@ -168,7 +168,7 @@ program learning_level_9
   call solver % apply(host, [rhsf], sol)
 
   call sol % domain(dom)
-  call report(dom % same_as(theta), &
+  call report(dom % equals(theta), &
        & "the learned state is a field on Theta, by identity", nfail)
 
   call sol % get_real_vector(solval)

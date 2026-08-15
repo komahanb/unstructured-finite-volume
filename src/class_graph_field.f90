@@ -2,7 +2,7 @@
 ! The concrete field: values over a domain.
 !
 ! One concrete type serves every field in the tower. Its domain is a
-! member_set - an ambient carrier or a subset subobject - and the
+! set - an ambient set or a subset subobject - and the
 ! domain's identity is the only thing that ever distinguishes a
 ! cell field from a face field; the field carries no side flag. Because there is
 ! exactly one concrete field, a plain Fortran array can hold a
@@ -60,7 +60,7 @@
 module class_graph_field
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_carrier       , only : member_set
+  use graph_set       , only : set
   use graph_field_calculus, only : graph_field
   use graph_field_calculus, only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
   use graph_field_calculus, only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
@@ -80,10 +80,10 @@ module class_graph_field
      character(len=:), allocatable :: label
      character(len=:), allocatable :: unit_name
 
-     ! The one domain: an ambient carrier or a subset subobject,
+     ! The one domain: an ambient set or a subset subobject,
      ! copied at construction so its identity travels. Private, so
      ! consumers ask through domain() rather than inspecting on.
-     class(member_set), allocatable, private :: on
+     class(set), allocatable, private :: on
 
      integer :: ncomp = 1
      integer :: vkind = GRAPH_FIELD_REAL
@@ -150,11 +150,11 @@ contains
   type(field) function create(label, on, ncomp, unit_name) result(this)
 
     character(len=*), intent(in)           :: label
-    class(member_set), intent(in)          :: on
+    class(set), intent(in)          :: on
     integer         , intent(in), optional :: ncomp
     character(len=*), intent(in), optional :: unit_name
 
-    if (.not. on % same_as(on)) then
+    if (.not. on % equals(on)) then
        error stop 'class_graph_field: a field needs a declared domain'
     end if
 
@@ -210,13 +210,13 @@ contains
   end function field_units
 
   !===================================================================!
-  ! The member_set domain the values live on.
+  ! The set domain the values live on.
   !===================================================================!
 
   subroutine field_domain(this, domain)
 
     class(field), intent(in)                    :: this
-    class(member_set), allocatable, intent(out) :: domain
+    class(set), allocatable, intent(out) :: domain
 
     allocate(domain, source=this % on)
 

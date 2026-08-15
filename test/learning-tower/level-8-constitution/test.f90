@@ -33,12 +33,12 @@ program learning_level_8
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier  , only : counted_set, subset_set, member_set
+  use graph_set  , only : index_set, subset, set
   use graph_relation , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_structure, only : relational_graph, held_set, held_relation
-  use graph_profile  , only : directed_adjacency_view
+  use graph_structure, only : related_graph, declared_set, declared_relation
+  use graph_interpretation  , only : directed_adjacency_view
   use graph_algorithms, only : reachable, topological_order
   use class_graph_field, only : field
   use learning_constitution_fixture, only : apply_law, slot_for_port, &
@@ -49,12 +49,12 @@ program learning_level_8
   ! Residual rows exist only from Level 6 upward.
   integer, parameter :: ROW_R = 1
 
-  type(counted_set)              :: v, o, p, y
-  type(subset_set)               :: k, theta, u, p_in, p_out
+  type(index_set)              :: v, o, p, y
+  type(subset)               :: k, theta, u, p_in, p_out
   type(stored_relation)          :: flow, backwards, located
   type(stored_relation)          :: consumes, produces
   class(relation), allocatable   :: d, a, d2
-  type(relational_graph), target :: g, g_a, g2
+  type(related_graph), target :: g, g_a, g2
   type(directed_adjacency_view)  :: view, dep_view, view2
   type(field)                    :: q_k, q_k2
   integer, allocatable           :: order(:), order2(:)
@@ -68,13 +68,13 @@ program learning_level_8
   write(*,'(1x,a)') "learning tower . level 8 . constitution"
   write(*,'(1x,a)') "============================================="
 
-  v     = counted_set('value-slots'  , 5)
-  o     = counted_set('operations'   , 2)
-  p     = counted_set('ports'        , 3)
-  y     = counted_set('residual-rows', 1)
-  k     = subset_set('observed' , v, [SLOT_Y, SLOT_X])
-  theta = subset_set('trainable', v, [SLOT_W])
-  u     = subset_set('computed' , v, [SLOT_E, SLOT_YHAT])
+  v     = index_set('value-slots'  , 5)
+  o     = index_set('operations'   , 2)
+  p     = index_set('ports'        , 3)
+  y     = index_set('residual-rows', 1)
+  k     = subset('observed' , v, [SLOT_Y, SLOT_X])
+  theta = subset('trainable', v, [SLOT_W])
+  u     = subset('computed' , v, [SLOT_E, SLOT_YHAT])
 
   table(:, 1) = [OP_PREDICT, SLOT_W   , PORT_IN1]
   table(:, 2) = [OP_PREDICT, SLOT_X   , PORT_IN2]
@@ -87,8 +87,8 @@ program learning_level_8
   located = stored_relation('located', [y, v], &
        & reshape([ROW_R, SLOT_E], [2, 1]))
 
-  p_in  = subset_set('input-ports', p, [PORT_IN1, PORT_IN2])
-  p_out = subset_set('output-port', p, [PORT_OUT])
+  p_in  = subset('input-ports', p, [PORT_IN1, PORT_IN2])
+  p_out = subset('output-port', p, [PORT_OUT])
 
   ! The Level-5 observed field, carried forward: [6, 2] on K = {y, x}
   ! in declaration order. U gets NO field - before evaluation the
@@ -102,9 +102,9 @@ program learning_level_8
   consumes = project_slots(restrict_slot(flow, 3, p_in ), [2, 1])
   produces = project_slots(restrict_slot(flow, 3, p_out), [1, 2])
   d = compose_binary(produces, consumes)
-  g = relational_graph('learning', &
-       & [held_set(v), held_set(o), held_set(p)], &
-       & [held_relation(flow), held_relation(d)])
+  g = related_graph('learning', &
+       & [declared_set(v), declared_set(o), declared_set(p)], &
+       & [declared_relation(flow), declared_relation(d)])
   view = directed_adjacency_view(g, d)
   call topological_order(view, order)
 
@@ -251,8 +251,8 @@ contains
     logical              :: same
 
     a = compose_binary(consumes, produces)
-    g_a = relational_graph('value dependency', [held_set(v)], &
-         & [held_relation(a)])
+    g_a = related_graph('value dependency', [declared_set(v)], &
+         & [declared_relation(a)])
     dep_view = directed_adjacency_view(g_a, a)
 
     home = located_slot(located, v, ROW_R)
@@ -337,9 +337,9 @@ contains
     d2 = compose_binary( &
          & project_slots(restrict_slot(backwards, 3, p_out), [1, 2]), &
          & project_slots(restrict_slot(backwards, 3, p_in ), [2, 1]))
-    g2 = relational_graph('learning backwards', &
-         & [held_set(v), held_set(o), held_set(p)], &
-         & [held_relation(backwards), held_relation(d2)])
+    g2 = related_graph('learning backwards', &
+         & [declared_set(v), declared_set(o), declared_set(p)], &
+         & [declared_relation(backwards), declared_relation(d2)])
     view2 = directed_adjacency_view(g2, d2)
     call topological_order(view2, order2)
 

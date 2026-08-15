@@ -4,7 +4,7 @@ include ../../../Makefile.in
 # Level 5: the field suite. The view and algorithm refusal
 # laws are pinned generically in test/graph-algorithms; this level
 # proves the walk. Framework modules this level may see: the
-# carriers, the relations, the algebra, the container, the profile
+# sets, the relations, the algebra, the container, the interpretation
 # needs a domain, not a graph - the import gate holds the door.
 #=====================================================================#
 

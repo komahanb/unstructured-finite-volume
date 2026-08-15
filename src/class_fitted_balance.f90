@@ -45,7 +45,7 @@
 module class_fitted_balance
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_grammar      , only : graph, graph_field
+  use graph_grammar      , only : ordinary_graph, graph_field
   use class_graph        , only : stored_graph
   use graph_forms        , only : form
   use class_graph_field  , only : field

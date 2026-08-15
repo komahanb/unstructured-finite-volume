@@ -6,12 +6,12 @@
 ! no graph stands anywhere in this file. The checks are the
 ! acceptance laws of sections 61 and 62 that phase 2 owes - domain
 ! validity, arity, membership, verbatim tuples, signature identity -
-! plus the design commitments the reviews demanded: carriers shared
+! plus the design commitments the reviews demanded: sets shared
 ! across relations without an owning graph, adjacency and incidence
 ! as readings of one primitive, the boundary written with no
 ! imaginary far-side member, SET semantics at the interface (a
 ! duplicate tuple collapses), and a signature genuinely generic
-! over member_set - proved by mixing a counted carrier with the
+! over set - proved by mixing an index set with the
 ! listed fixture in one relation.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -20,8 +20,8 @@
 program test_graph_relation
 
   use graph_identity    , only : token
-  use graph_carrier     , only : counted_set, member_set
-  use graph_relation    , only : stored_relation, slot
+  use graph_set     , only : index_set, set
+  use graph_relation    , only : stored_relation, declared_domain
   use listed_set_fixture, only : listed_set
 
   implicit none
@@ -36,11 +36,11 @@ program test_graph_relation
 
   call check_incidence_contract(nfail)
   call check_set_semantics(nfail)
-  call check_carrier_set_semantics(nfail)
-  call check_mixed_carriers(nfail)
+  call check_set_set_semantics(nfail)
+  call check_mixed_sets(nfail)
   call check_adjacency_is_a_reading(nfail)
   call check_ternary_endpoint(nfail)
-  call check_shared_carriers(nfail)
+  call check_shared_sets(nfail)
   call check_relation_identity(nfail)
   call check_empty_relation(nfail)
 
@@ -79,14 +79,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)              :: cells, faces
+    type(index_set)              :: cells, faces
     type(stored_relation)          :: r
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
     type(token)                    :: tk
     integer, allocatable           :: t(:,:)
 
-    cells = counted_set('cells', 4)
-    faces = counted_set('faces', 5)
+    cells = index_set('cells', 4)
+    faces = index_set('faces', 5)
 
     r = stored_relation('touches', [cells, faces], &
          & reshape([1,1,  1,2,  2,2,  3,4], [2, 4]))
@@ -116,12 +116,12 @@ contains
          & "tuples come back as handed, order kept", nfail)
 
     d = r % domain(1)
-    call report(d % same_as(cells), &
+    call report(d % equals(cells), &
          & "slot one answers the cells domain, by identity", nfail)
-    call report(.not. d % same_as(faces), &
+    call report(.not. d % equals(faces), &
          & "and is not the faces domain, whatever the sizes say", nfail)
     d = r % domain(2)
-    call report(d % same_as(faces), &
+    call report(d % equals(faces), &
          & "slot two answers the faces domain", nfail)
 
   end subroutine check_incidence_contract
@@ -138,12 +138,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)     :: cells, faces
+    type(index_set)     :: cells, faces
     type(stored_relation) :: r
     integer, allocatable  :: t(:,:)
 
-    cells = counted_set('cells', 4)
-    faces = counted_set('faces', 5)
+    cells = index_set('cells', 4)
+    faces = index_set('faces', 5)
 
     r = stored_relation('touches', [cells, faces], &
          & reshape([1,1,  2,2,  1,1,  3,3,  2,2], [2, 5]))
@@ -164,13 +164,13 @@ contains
   end subroutine check_set_semantics
 
   !===================================================================!
-  ! Carriers obey set semantics too: a member handed in twice is in
+  ! Sets obey set semantics too: a member handed in twice is in
   ! the domain once, enumeration is injective, and member and
   ! local_index invert each other - on the listed concretion, where
   ! members and positions genuinely differ.
   !===================================================================!
 
-  subroutine check_carrier_set_semantics(nfail)
+  subroutine check_set_set_semantics(nfail)
 
     integer, intent(inout) :: nfail
 
@@ -210,45 +210,45 @@ contains
     call report(ok, &
          & "member and local_index invert each other, both ways", nfail)
 
-  end subroutine check_carrier_set_semantics
+  end subroutine check_set_set_semantics
 
   !===================================================================!
-  ! The signature is generic over member_set, proved: a counted set
+  ! The signature is generic over set, proved: an index set
   ! and a listed fixture stand in one signature, each slot judging
   ! membership by its own law and answering its own identity.
   !===================================================================!
 
-  subroutine check_mixed_carriers(nfail)
+  subroutine check_mixed_sets(nfail)
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)              :: cells
+    type(index_set)              :: cells
     type(listed_set)               :: sensors
     type(stored_relation)          :: r
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
 
-    cells   = counted_set('cells', 3)
+    cells   = index_set('cells', 3)
     sensors = listed_set('sensors', [10, 20, 30])
 
-    r = stored_relation('reads', [slot(cells), slot(sensors)], &
+    r = stored_relation('reads', [declared_domain(cells), declared_domain(sensors)], &
          & reshape([1,10,  2,30], [2, 2]))
 
     call report(r % arity() .eq. 2 .and. r % num_tuples() .eq. 2, &
-         & "two carrier concretions stand in one signature", nfail)
+         & "two set concretions stand in one signature", nfail)
 
     call report(r % has([2, 30]) .and. .not. r % has([2, 20]), &
          & "membership crosses the concretions untroubled", nfail)
 
     d = r % domain(2)
-    call report(d % same_as(sensors), &
+    call report(d % equals(sensors), &
          & "the listed slot answers the listed domain, by identity", nfail)
     call report(d % has(20) .and. .not. d % has(15), &
-         & "and the carrier's own membership law travels with it", nfail)
+         & "and the set's own membership law travels with it", nfail)
 
-  end subroutine check_mixed_carriers
+  end subroutine check_mixed_sets
 
   !===================================================================!
-  ! Adjacency is a reading, not a primitive: the same carrier stands
+  ! Adjacency is a reading, not a primitive: the same set stands
   ! in both slots, and the signature says so by identity.
   !===================================================================!
 
@@ -256,20 +256,20 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)              :: cells
+    type(index_set)              :: cells
     type(stored_relation)          :: adj
-    class(member_set), allocatable :: d1, d2
+    class(set), allocatable :: d1, d2
 
-    cells = counted_set('cells', 3)
+    cells = index_set('cells', 3)
 
     adj = stored_relation('beside', [cells, cells], &
          & reshape([1,2,  2,3], [2, 2]))
 
     d1 = adj % domain(1)
     d2 = adj % domain(2)
-    call report(d1 % same_as(d2), &
-         & "one carrier may stand in both slots", nfail)
-    call report(d1 % same_as(cells) .and. d2 % same_as(cells), &
+    call report(d1 % equals(d2), &
+         & "one set may stand in both slots", nfail)
+    call report(d1 % equals(cells) .and. d2 % equals(cells), &
          & "and both are the one declared domain", nfail)
 
   end subroutine check_adjacency_is_a_reading
@@ -284,14 +284,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)     :: edges, verts, roles
+    type(index_set)     :: edges, verts, roles
     type(stored_relation) :: ends
     integer               :: v
     logical               :: ok
 
-    edges = counted_set('edges'   , 3)
-    verts = counted_set('vertices', 4)
-    roles = counted_set('roles'   , 2)     ! 1 = tail, 2 = head
+    edges = index_set('edges'   , 3)
+    verts = index_set('vertices', 4)
+    roles = index_set('roles'   , 2)     ! 1 = tail, 2 = head
 
     ! 1 --> 2 --> 3, then edge 3 leaves vertex 3 for the wall.
     ends = stored_relation('endpoint', [edges, verts, roles], &
@@ -314,21 +314,21 @@ contains
   end subroutine check_ternary_endpoint
 
   !===================================================================!
-  ! Carriers are not owned by a graph, or by anything: two relations
+  ! Sets are not owned by a graph, or by anything: two relations
   ! declared over the one cells domain agree, slot against slot,
   ! across relations.
   !===================================================================!
 
-  subroutine check_shared_carriers(nfail)
+  subroutine check_shared_sets(nfail)
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)              :: cells, faces
+    type(index_set)              :: cells, faces
     type(stored_relation)          :: adj, inc
-    class(member_set), allocatable :: da, di
+    class(set), allocatable :: da, di
 
-    cells = counted_set('cells', 4)
-    faces = counted_set('faces', 5)
+    cells = index_set('cells', 4)
+    faces = index_set('faces', 5)
 
     adj = stored_relation('beside' , [cells, cells], &
          & reshape([1,2,  3,4], [2, 2]))
@@ -337,10 +337,10 @@ contains
 
     da = adj % domain(1)
     di = inc % domain(1)
-    call report(da % same_as(di), &
-         & "two relations share one carrier, by identity", nfail)
+    call report(da % equals(di), &
+         & "two relations share one set, by identity", nfail)
 
-  end subroutine check_shared_carriers
+  end subroutine check_shared_sets
 
   !===================================================================!
   ! Relation identity is independent of signature: two relations
@@ -351,24 +351,24 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)     :: cells, faces
+    type(index_set)     :: cells, faces
     type(stored_relation) :: physical, coarse, copy
 
-    cells = counted_set('cells', 4)
-    faces = counted_set('faces', 5)
+    cells = index_set('cells', 4)
+    faces = index_set('faces', 5)
 
     physical = stored_relation('physical', [cells, faces], &
          & reshape([1,1,  2,2], [2, 2]))
     coarse   = stored_relation('coarse'  , [cells, faces], &
          & reshape([1,1,  3,3], [2, 2]))
 
-    call report(.not. physical % same_as(coarse), &
+    call report(.not. physical % equals(coarse), &
          & "same signature, two relations - no collision", nfail)
     call report(physical % has([2, 2]) .and. .not. coarse % has([2, 2]), &
          & "and each keeps its own tuples", nfail)
 
     copy = physical
-    call report(copy % same_as(physical), &
+    call report(copy % equals(physical), &
          & "a copy is the same declared relation", nfail)
 
   end subroutine check_relation_identity
@@ -382,11 +382,11 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)     :: cells
+    type(index_set)     :: cells
     type(stored_relation) :: none
     type(token)           :: tk
 
-    cells = counted_set('cells', 3)
+    cells = index_set('cells', 3)
 
     none = stored_relation('nothing', [cells, cells], &
          & reshape([integer ::], [2, 0]))

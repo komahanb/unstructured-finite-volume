@@ -36,8 +36,8 @@ program partitioned_pde_level_7
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : report, verdict
   use partitioned_pde_assert, only : NV, Q_EXACT, B_EXACT
-  use graph_carrier    , only : counted_set, member_set
-  use graph_grammar    , only : graph, graph_field
+  use graph_set    , only : index_set, set
+  use graph_grammar    , only : ordinary_graph, graph_field
   use class_graph      , only : stored_graph
   use class_graph_field, only : field
   use class_graph_gmres, only : gmres
@@ -73,10 +73,10 @@ contains
 
     type(gmres)                     :: solver
     type(field)                     :: rhs
-    class(member_set), allocatable  :: dom
+    class(set), allocatable  :: dom
     class(graph_field), allocatable :: sol
     real(dp), allocatable           :: gv(:), v(:)
-    type(counted_set)               :: vs
+    type(index_set)               :: vs
 
     vs = g % vertex_set()
 
@@ -85,10 +85,10 @@ contains
     solver % max_iterations = 200
 
     call solver % domain(g, dom)
-    call report(dom % same_as(vs), &
+    call report(dom % equals(vs), &
          & "the solver answers on V(G)", nfail)
     call shifted % domain(g, dom)
-    call report(dom % same_as(vs), &
+    call report(dom % equals(vs), &
          & "and so does its action: unknown and residual domains " // &
          & "coincide here, both being V(G)", nfail)
 
@@ -102,7 +102,7 @@ contains
 
     call sol % domain(dom)
     call sol % get_real_vector(v)
-    call report(dom % same_as(vs), &
+    call report(dom % equals(vs), &
          & "the solution is a field on V(G)", nfail)
     call report(by_member(v, vs, Q_EXACT), &
          & "and A q = b solves to q* = [1,2,4,7,11,16], by member", &
@@ -121,7 +121,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(gmres)           :: solver_g, solver_alt
-    type(counted_set)     :: vs, vs_alt
+    type(index_set)     :: vs, vs_alt
     real(dp), allocatable :: y(:), y_alt(:)
 
     ! Same counts, different shape: a star, not a chain.
@@ -131,7 +131,7 @@ contains
 
     call report(g_alt % num_vertices() .eq. g % num_vertices() .and. &
          &      g_alt % num_edges() .eq. g % num_edges() .and. &
-         &      .not. vs_alt % same_as(vs), &
+         &      .not. vs_alt % equals(vs), &
          & "G_alt is a star: same six vertices, same five edges, " // &
          & "different topology", nfail)
 
@@ -157,7 +157,7 @@ contains
   logical function by_member(v, dom, expect)
 
     real(dp)         , intent(in) :: v(:)
-    class(member_set), intent(in) :: dom
+    class(set), intent(in) :: dom
     real(dp)         , intent(in) :: expect(:)
 
     integer :: i, m

@@ -43,7 +43,7 @@ module class_graph_mesh
   use iso_fortran_env    , only : dp => REAL64, error_unit
   use class_graph_field  , only : field
   use class_graph        , only : stored_graph
-  use graph_carrier      , only : counted_set
+  use graph_set      , only : index_set
 
   implicit none
 
@@ -108,7 +108,7 @@ contains
     character(len=*), intent(in), optional :: etags(:)
     integer         , intent(in), optional :: number
 
-    type(counted_set) :: cells, faces
+    type(index_set) :: cells, faces
     integer :: ne
 
     ! The structure first, through the parent's own constructor.
@@ -126,7 +126,7 @@ contains
     call gate(size(face_centers) == 3 * ne, 'three center parts per face')
     call gate(size(weights)      == ne    , 'one weight per face')
 
-    ! Geometry rides the graph's OWN carriers, so a field's domain
+    ! Geometry rides the graph's OWN sets, so a field's domain
     ! answers the mesh identity every consumer will ask about.
     cells = this % vertex_set()
     faces = this % edge_set()

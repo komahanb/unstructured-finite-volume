@@ -18,10 +18,10 @@
 ! The action S : Q -> Q carries its own domain and stores no graph.
 ! The compatibility host H_t has FIVE vertices in a chain, and Q
 ! has TWO members. The mismatch is deliberate and load-bearing: if
-! the two carriers had the same size, a substitution of one for the
+! the two sets had the same size, a substitution of one for the
 ! other would produce plausible numbers and the seam would hide.
 !
-!      |V(H_t)| = 5        |Q| = 2        and they are not same_as
+!      |V(H_t)| = 5        |Q| = 2        and they are not equals
 !
 ! H_t is a COMPATIBILITY HOST - the conduit the graph_operation
 ! contract requires - and this tower's action does not read its
@@ -69,13 +69,13 @@ program time_level_6
   use time_assert           , only : T0, T1, T2
   use time_assert           , only : H_STEP, Q0, Q_FE1, Q_BE1, Q_BDF2
   use time_assert           , only : action_of
-  use graph_carrier         , only : counted_set, member_set
-  use graph_grammar         , only : graph, graph_field
+  use graph_set         , only : index_set, set
+  use graph_grammar         , only : ordinary_graph, graph_field
   use graph_binary_relation , only : csr_relation
   use class_graph           , only : stored_graph
   use class_graph_field     , only : field
   use class_graph_step      , only : step_operator, backward_euler, bdf
-  use time_carriers_fixture , only : time_carriers
+  use time_sets_fixture , only : time_sets
   use time_relations_fixture, only : tail_relation, head_relation
   use time_algebra_fixture  , only : derive_one_step_reach, &
        &                             derive_two_step_reach
@@ -84,7 +84,7 @@ program time_level_6
 
   implicit none
 
-  type(counted_set)          :: q, t, e
+  type(index_set)          :: q, t, e
   type(csr_relation), target :: tail, head, a1
   type(csr_relation)         :: a2
   type(stored_graph)         :: ht
@@ -98,7 +98,7 @@ program time_level_6
   write(*,'(1x,a)') "time integration tower . level 6 . scheme"
   write(*,'(1x,a)') "============================================="
 
-  call time_carriers(q, t, e)
+  call time_sets(q, t, e)
   tail = tail_relation(e, t)
   head = head_relation(e, t)
   a1   = derive_one_step_reach(tail, head)
@@ -112,7 +112,7 @@ program time_level_6
   qf    = state_field(q)
 
   call check_host_is_not_the_state_domain(nfail)
-  call check_host_carriers_agree_with_themselves(nfail)
+  call check_host_sets_agree_with_themselves(nfail)
   call check_direct_action_preserves_q(nfail)
   call check_forward_euler_oracle(nfail)
   call check_step_domain_is_the_action_s(nfail)
@@ -134,7 +134,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: hv
+    class(set), allocatable :: hv
 
     hv = ht % vertex_set()
 
@@ -142,11 +142,11 @@ contains
          & "the compatibility host H_t has five vertices; Q has two", &
          & nfail)
 
-    call report(.not. hv % same_as(q), &
+    call report(.not. hv % equals(q), &
          & "and V(H_t) is NOT Q - no accidental equality is hiding " // &
          & "the seam", nfail)
 
-    call report(.not. hv % same_as(t), &
+    call report(.not. hv % equals(t), &
          & "nor is it T: H_t carries the same EXTENSION as the time " // &
          & "axis and none of its identity", nfail)
 
@@ -158,20 +158,20 @@ contains
   ! vertices agree.
   !===================================================================!
 
-  subroutine check_host_carriers_agree_with_themselves(nfail)
+  subroutine check_host_sets_agree_with_themselves(nfail)
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d, hv
+    class(set), allocatable :: d, hv
 
     hv = ht % vertex_set()
     call ht % all_vertices(d)
-    call report(d % same_as(hv), &
+    call report(d % equals(hv), &
          & "all_vertices(H_t) and H_t % vertex_set() are the same " // &
-         & "carrier - so delegating a domain question changes no " // &
+         & "set - so delegating a domain question changes no " // &
          & "graph-based caller's answer", nfail)
 
-  end subroutine check_host_carriers_agree_with_themselves
+  end subroutine check_host_sets_agree_with_themselves
 
   !===================================================================!
   ! THE first half of the experiment, and it needs no production
@@ -184,17 +184,17 @@ contains
     integer, intent(inout) :: nfail
 
     class(graph_field), allocatable :: answer
-    class(member_set), allocatable  :: d
+    class(set), allocatable  :: d
     real(dp), allocatable           :: s(:)
 
     call decay % domain(ht, d)
-    call report(d % same_as(q), &
+    call report(d % equals(q), &
          & "the ACTION answers Q when asked its domain, though it " // &
          & "was handed a five-vertex host", nfail)
 
     call decay % apply(ht, [qf], answer)
     call answer % domain(d)
-    call report(d % same_as(q), &
+    call report(d % equals(q), &
          & "and it ANSWERS on Q: graph host and state domain are " // &
          & "independent concepts in this specimen", nfail)
 
@@ -236,16 +236,16 @@ contains
   ! A temporal discretization is an operation BUILT FROM another
   ! operation. Its residual is a statement about the same unknown
   ! the action is about, so its domain must be the ACTION's domain
-  ! - not whatever carrier the compatibility host happens to have.
+  ! - not whatever set the compatibility host happens to have.
   !
   ! On the production reviewed at Gate A, step_domain answered
   ! input_graph % all_vertices(...) and this assertion FAILED,
-  ! reporting a five-member carrier for a two-member unknown. That
+  ! reporting a five-member set for a two-member unknown. That
   ! RED is recorded verbatim in NUCLEUS-OBSERVATIONS.md TI-8.
   !
   ! The second assertion is the permanent guard: it is not enough
   ! that the answer BE Q; it must also not be the host's vertices,
-  ! or a future coincidence of carriers would let the seam back in
+  ! or a future coincidence of sets would let the seam back in
   ! unnoticed.
   !===================================================================!
 
@@ -254,19 +254,19 @@ contains
     integer, intent(inout) :: nfail
 
     type(step_operator)            :: step
-    class(member_set), allocatable :: d, hv
+    class(set), allocatable :: d, hv
 
     step = backward_euler(decay, H_STEP)
 
     call step % domain(ht, d)
 
-    call report(d % same_as(q), &
+    call report(d % equals(q), &
          & "the backward-euler STEP answers Q when asked its " // &
          & "domain: TEMPORAL DISCRETIZATION PRESERVES THE DOMAIN OF " // &
          & "THE ACTION IT DISCRETIZES", nfail)
 
     hv = ht % vertex_set()
-    call report(.not. d % same_as(hv), &
+    call report(.not. d % equals(hv), &
          & "and it does NOT answer the host's five vertices - the " // &
          & "state domain is not inferred from the conduit", nfail)
 
@@ -289,7 +289,7 @@ contains
     type(step_operator)             :: step
     type(field)                     :: state
     class(graph_field), allocatable :: r
-    class(member_set), allocatable  :: d
+    class(set), allocatable  :: d
     real(dp), allocatable           :: v(:)
 
     step = backward_euler(decay, H_STEP)
@@ -301,7 +301,7 @@ contains
     call step % apply(ht, [state], r)
 
     call r % domain(d)
-    call report(d % same_as(q), &
+    call report(d % equals(q), &
          & "the backward-euler RESIDUAL lands on Q, not on the " // &
          & "host's vertices", nfail)
 
@@ -375,7 +375,7 @@ contains
     type(step_operator)             :: step
     type(field)                     :: state
     class(graph_field), allocatable :: r
-    class(member_set), allocatable  :: d
+    class(set), allocatable  :: d
     real(dp), allocatable           :: v(:)
 
     step = bdf(2, decay, H_STEP)
@@ -387,7 +387,7 @@ contains
     call step % apply(ht, [state], r)
 
     call r % domain(d)
-    call report(d % same_as(q), &
+    call report(d % equals(q), &
          & "the bdf-2 RESIDUAL lands on Q as well - a two-step " // &
          & "scheme changes the coefficients, never the domain", nfail)
 

@@ -26,8 +26,8 @@
 module class_graph_linearization
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_grammar      , only : graph, graph_field, graph_operation
-  use graph_carrier      , only : member_set
+  use graph_grammar      , only : ordinary_graph, graph_field, graph_operation
+  use graph_set      , only : set
   use graph_calculus     , only : linearization_operator
   use class_graph_field  , only : field
 
@@ -110,8 +110,8 @@ contains
   subroutine derivative_domain(this, input_graph, domain)
 
     class(difference_linearization), intent(in) :: this
-    class(graph), intent(in)                    :: input_graph
-    class(member_set), allocatable, intent(out)      :: domain
+    class(ordinary_graph), intent(in)                    :: input_graph
+    class(set), allocatable, intent(out)      :: domain
 
     call this % of % domain(input_graph, domain)
 
@@ -145,13 +145,13 @@ contains
   subroutine derivative_apply(this, input_graph, input_data, output)
 
     class(difference_linearization), intent(in)    :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
     type(field)   :: state
     class(graph_field), allocatable :: pushed
-    class(member_set), allocatable  :: on, given
+    class(set), allocatable  :: on, given
     real(dp), allocatable :: v(:), y(:), base(:)
     integer :: n, ncomp
 
@@ -172,7 +172,7 @@ contains
 
     if (present(input_data)) then
        call input_data(1) % domain(given)
-       if (.not. given % same_as(on)) then
+       if (.not. given % equals(on)) then
           error stop 'linearization: the direction must live on the operation''s domain'
        end if
        call input_data(1) % get_real_vector(v)
@@ -220,12 +220,12 @@ contains
   subroutine answered_on(answer, expected)
 
     class(graph_field), intent(in) :: answer
-    class(member_set) , intent(in) :: expected
+    class(set) , intent(in) :: expected
 
-    class(member_set), allocatable :: got
+    class(set), allocatable :: got
 
     call answer % domain(got)
-    if (.not. got % same_as(expected)) then
+    if (.not. got % equals(expected)) then
        error stop 'linearization: the operation must answer on its stated domain'
     end if
 

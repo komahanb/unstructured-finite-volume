@@ -28,8 +28,8 @@
 module class_graph_coarsener
 
   use iso_fortran_env     , only : dp => REAL64
-  use graph_grammar       , only : graph, graph_field
-  use graph_carrier       , only : member_set
+  use graph_grammar       , only : ordinary_graph, graph_field
+  use graph_set       , only : set
   use graph_calculus      , only : graph_coarsener
   use class_graph         , only : stored_graph
   use class_graph_field   , only : field
@@ -131,7 +131,7 @@ contains
   pure logical function defined_on_graph(this, input_graph)
 
     class(coarsener), intent(in) :: this
-    class(graph)    , intent(in) :: input_graph
+    class(ordinary_graph)    , intent(in) :: input_graph
 
     defined_on_graph = input_graph % num_vertices() > 0
 
@@ -153,7 +153,7 @@ contains
   logical function defined_on_data(this, input_graph, input_data)
 
     class(coarsener) , intent(in) :: this
-    class(graph)     , intent(in) :: input_graph
+    class(ordinary_graph)     , intent(in) :: input_graph
     class(graph_field), intent(in) :: input_data
 
     defined_on_data = this % defined_on_graph(input_graph)
@@ -161,13 +161,13 @@ contains
     select type (input_data)
     class is (field)
        block
-         class(member_set), allocatable :: dom
+         class(set), allocatable :: dom
          call input_data % domain(dom)
          ! Full coverage, not merely family: this kernel indexes
          ! every vertex densely (AGENTS.md 5B: routing is not
          ! admissibility).
          defined_on_data = defined_on_data &
-              & .and. dom % same_as(input_graph % vertex_set()) &
+              & .and. dom % equals(input_graph % vertex_set()) &
               & .and. input_data % num_entries() >= 0
        end block
     class default
@@ -184,8 +184,8 @@ contains
   subroutine coarsen_graph(this, fine_graph, coarse_graph)
 
     class(coarsener), intent(in)               :: this
-    class(graph)    , intent(in)               :: fine_graph
-    class(graph)    , allocatable, intent(out) :: coarse_graph
+    class(ordinary_graph)    , intent(in)               :: fine_graph
+    class(ordinary_graph)    , allocatable, intent(out) :: coarse_graph
 
     integer, allocatable :: blk(:), tails(:), heads(:)
     integer :: nb, ne, e, t, h, bt, bh, n
@@ -244,7 +244,7 @@ contains
   subroutine blocks(this, fine_graph, assignment, nblocks)
 
     class(coarsener)    , intent(in)  :: this
-    class(graph)        , intent(in)  :: fine_graph
+    class(ordinary_graph)        , intent(in)  :: fine_graph
     integer, allocatable, intent(out) :: assignment(:)
     integer             , intent(out) :: nblocks
 
@@ -259,7 +259,7 @@ contains
   subroutine blocks_of(this, fine_graph, blk, nb)
 
     class(coarsener)    , intent(in)  :: this
-    class(graph)        , intent(in)  :: fine_graph
+    class(ordinary_graph)        , intent(in)  :: fine_graph
     integer, allocatable, intent(out) :: blk(:)
     integer             , intent(out) :: nb
 
@@ -311,9 +311,9 @@ contains
   subroutine coarsen_data(this, fine_graph, fine_data, coarse_graph, coarse_data)
 
     class(coarsener) , intent(in)               :: this
-    class(graph)     , intent(in)               :: fine_graph
+    class(ordinary_graph)     , intent(in)               :: fine_graph
     class(graph_field), intent(in)               :: fine_data
-    class(graph)     , intent(in)               :: coarse_graph
+    class(ordinary_graph)     , intent(in)               :: coarse_graph
     class(graph_field), allocatable, intent(out) :: coarse_data
 
     type(field)    :: out

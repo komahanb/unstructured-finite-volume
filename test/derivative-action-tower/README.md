@@ -107,10 +107,10 @@ The load-bearing consequence is the
 
 | Level | Meaning | Core truth |
 |---|---|---|
-| 0 | carriers | \(V,O,P\) distinct symbolic domains |
+| 0 | sets | \(V,O,P\) distinct symbolic domains |
 | 1 | relation | ternary \(R_{\mathrm{flow}}\), six tuples, y consumed twice |
 | 2 | relation algebra | \(D=\{(\mathrm{product},\mathrm{sum})\}\) **derived** |
-| 3 | relational graph | one owned structure \(G=(\mathcal S,\mathcal R)\) |
+| 3 | related graph | one owned structure \(G=(\mathcal S,\mathcal R)\) |
 | 4 | graph calculus | directed interpretation; walk \([\mathrm{product},\mathrm{sum}]\) |
 | 5 | field calculus | base point on \(X\); computed \(C\) valueless; **no seeds** |
 | 6 | derivative structure | \(A_V\), two-path truth, \(J_{ZX}=\{(z,x),(z,y)\}\), transpose view |
@@ -131,7 +131,7 @@ x    y    u    z          product   sum          in₁  in₂  out
                           laws never appear in Gate A
 ```
 
-The symbolic carriers are
+The symbolic sets are
 
 \[
 V=\{x,y,u,z\},
@@ -175,7 +175,7 @@ flowchart LR
 > The underlying object is not initially an ordinary graph, and below
 > constitution `product` and `sum` are only members of \(O\).
 
-At Level 5 the value carrier partitions into roles:
+At Level 5 the value set partitions into roles:
 
 \[
 V=X\;\dot\cup\;C,
@@ -219,16 +219,16 @@ Level 9 (Gate C)  THE STATEMENT — one question, selecting everything
 
 ---
 
-# Level 0 — Carriers
+# Level 0 — Sets
 
 **Capability.** What symbolic kinds of members may exist?
 
-**Commitment.** Three independent `counted_set` declarations —
+**Commitment.** Three independent `index_set` declarations —
 \(|V|=4\), \(|O|=2\), \(|P|=3\). The member constants
 (`SLOT_X = 1`, …, in `common/derivative_assert.f90`) are enumeration
 handles, not semantics.
 
-**Verification.** Cardinalities; distinct identities by `same_as`; both
+**Verification.** Cardinalities; distinct identities by `equals`; both
 enumeration round trips,
 \(\operatorname{member}(\operatorname{local\_index}(m))=m\) and
 \(\operatorname{local\_index}(\operatorname{member}(i))=i\), on every
@@ -243,7 +243,7 @@ no numerical law
 ```
 
 **What this proves.** Nothing about a *derivative* application required a
-new Level-0 ontology: the ordinary carriers suffice (Observation DA-0).
+new Level-0 ontology: the ordinary sets suffice (Observation DA-0).
 
 ---
 
@@ -317,7 +317,7 @@ nothing derivative-specific has appeared (Observation DA-2).
 
 ---
 
-# Level 3 — Relational graph
+# Level 3 — Related graph
 
 **Capability.** Can the symbolic derivative specimen live as one owned
 relational structure?
@@ -334,17 +334,17 @@ G=(\mathcal S,\mathcal R),
 
 with \(D\) rederived before admission — the container infers nothing.
 
-**Verification.** Three carriers and two relations owned by identity
+**Verification.** Three sets and two relations owned by identity
 (`holds_set`, and relation ownership composed locally from
-`num_relations` / `relation_at` / `same_as`); the ternary flow survives
+`num_relations` / `relation_at` / `equals`); the ternary flow survives
 ownership unchanged (arity 3, six tuples); the dependency survives
 (binary, one pair); signature closure — every relation slot resolves to
-an owned carrier; graph identity — no identically stocked twin is \(G\).
+an owned set; graph identity — no identically stocked twin is \(G\).
 
 **What ownership contributes here** (Observation DA-3): structural
 closure and identity — no more. No tangent seat, no adjoint seat, no
 derivative metadata was asked of the container, and no ordinary-graph
-profile is imported to build it.
+interpretation is imported to build it.
 
 ---
 
@@ -455,7 +455,7 @@ Z=\{z\}\hookrightarrow C\hookrightarrow V.
 \]
 
 This is deliberately different from Learning. Learning required a
-distinct residual-row carrier \(Y\) plus a location relation
+distinct residual-row set \(Y\) plus a location relation
 \(L=\{(r,e)\}\) **because residual rows were not value slots**. Here the
 response already *is* a value slot, so no location relation is invented
 for symmetry's sake. The difference is architectural evidence
@@ -507,7 +507,7 @@ structural facts suffice.
 
 ## Structural Jacobian pattern
 
-\(A_V\) is admitted to a small relational graph holding \(V\) and
+\(A_V\) is admitted to a small related graph holding \(V\) and
 interpreted as a directed value dependency. Then \(J_{ZX}\subseteq
 Z\times X\) is **generated** by scanning response members against
 independent-input members:
@@ -821,7 +821,7 @@ the derivative statement
 ## Graph ownership, proved by lifetime
 
 The statement owns one relational model graph. It locates its flow
-relation **inside** \(G\) by identity (`relation_at(k) % same_as`),
+relation **inside** \(G\) by identity (`relation_at(k) % equals`),
 then destroys the external selector:
 
 ```text
@@ -837,7 +837,7 @@ primal + both actions + duality still succeed
 The dependency selector dies too, right after the directed view is
 made — so even the execution order is read from graph-owned structure.
 No `holds_relation` convenience was added; the ownership question is
-composed from `num_relations` / `relation_at` / `same_as`, as
+composed from `num_relations` / `relation_at` / `equals`, as
 everywhere else in the repository.
 
 \[
@@ -959,7 +959,7 @@ observation, over structure finer than the \(J\)-pattern alone.
 ## Proven by Gate A
 
 ```text
-a derivative specimen needs no new carrier ontology
+a derivative specimen needs no new set ontology
 derivative potential is latent in ordinary structural flow
 operation dependency is generic relation algebra
 the specimen lives as one owned relational structure
@@ -1061,14 +1061,14 @@ had first right of refusal — and at Gate A it refused nothing.
 
 | Level | Test directory | Principal modules exercised (per the import gate) |
 |---|---|---|
-| 0 | `level-0-carrier/` | `graph_carrier` |
+| 0 | `level-0-set/` | `graph_set` |
 | 1 | `level-1-relation/` | + `graph_relation` |
 | 2 | `level-2-relation-algebra/` | + `graph_relation_algebra` (D held as `class(relation)`) |
 | 3 | `level-3-graph/` | + `graph_structure` |
-| 4 | `level-4-graph-calculus/` | + `graph_profile`, `graph_algorithms` |
-| 5 | `level-5-field-calculus/` | `graph_carrier`, `class_graph_field` — the smallest allowlist above ground |
-| 6 | `level-6-derivative-structure/` | + `graph_binary_relation` (`csr_relation`, `transpose_of` earned), `graph_structure`, `graph_profile`, `graph_algorithms` |
-| 8 | `level-8-derivative-constitution/` | carriers/relations/algebra/structure/profile/algorithms + `class_graph_field` + `derivative_constitution_fixture` (own file; refusal suite); **no** binary storage, no solver |
+| 4 | `level-4-graph-calculus/` | + `graph_interpretation`, `graph_algorithms` |
+| 5 | `level-5-field-calculus/` | `graph_set`, `class_graph_field` — the smallest allowlist above ground |
+| 6 | `level-6-derivative-structure/` | + `graph_binary_relation` (`csr_relation`, `transpose_of` earned), `graph_structure`, `graph_interpretation`, `graph_algorithms` |
+| 8 | `level-8-derivative-constitution/` | sets/relations/algebra/structure/interpretation/algorithms + `class_graph_field` + `derivative_constitution_fixture` (own file; refusal suite); **no** binary storage, no solver |
 | 9 | `level-9-statement/` | the same set, reusing the Level-8 fixture — no adapter, no new law, and `graph_minimization` / `class_graph_gmres` forbidden |
 
 Every level also imports `derivative_assert`
@@ -1086,7 +1086,7 @@ test/derivative-action-tower/
 ├── check_marker.sh                 the result contract + its self-test
 ├── common/
 │   └── derivative_assert.f90
-├── level-0-carrier/                test.f90
+├── level-0-set/                test.f90
 ├── level-1-relation/               test.f90
 ├── level-2-relation-algebra/       test.f90
 ├── level-3-graph/                  test.f90
@@ -1128,10 +1128,10 @@ learning towers remain sealed acceptance oracles alongside this one.
 
 ```text
 derivative action tower
-├── level 0  carriers ................ PASS
+├── level 0  sets ................ PASS
 ├── level 1  relation ................ PASS
 ├── level 2  relation algebra ........ PASS
-├── level 3  relational graph ........ PASS
+├── level 3  related graph ........ PASS
 ├── level 4  graph calculus .......... PASS
 ├── level 5  field calculus .......... PASS
 ├── level 6  derivative structure .... PASS

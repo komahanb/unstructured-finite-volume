@@ -33,13 +33,13 @@ program adjoint_level_5
   use iso_fortran_env  , only : dp => REAL64
   use adjoint_assert   , only : report, verdict
   use adjoint_assert   , only : VAR_P, VAR_U, VAR_V
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use graph_set    , only : index_set, subset, set
   use class_graph_field, only : field
 
   implicit none
 
-  type(counted_set) :: v
-  type(subset_set)  :: p_dom, q_dom
+  type(index_set) :: v
+  type(subset)  :: p_dom, q_dom
   type(field)       :: p_field, q0
   integer           :: nfail
 
@@ -49,9 +49,9 @@ program adjoint_level_5
   write(*,'(1x,a)') "adjoint tower . level 5 . fields"
   write(*,'(1x,a)') "============================================="
 
-  v     = counted_set('variables', 3)
-  p_dom = subset_set('parameter', v, [VAR_P])
-  q_dom = subset_set('state'    , v, [VAR_U, VAR_V])
+  v     = index_set('variables', 3)
+  p_dom = subset('parameter', v, [VAR_P])
+  q_dom = subset('state'    , v, [VAR_U, VAR_V])
 
   call check_parameter(nfail)
   call check_initial_state(nfail)
@@ -72,14 +72,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
     real(dp), allocatable          :: val(:)
 
     p_field = field('parameter', p_dom)
     call p_field % set_real_vector([2.0_dp])
 
     call p_field % domain(dom)
-    call report(dom % same_as(p_dom), &
+    call report(dom % equals(p_dom), &
          & "the parameter field's domain is P, by identity", nfail)
     call report(p_field % num_entries() .eq. 1, &
          & "one parameter entry", nfail)
@@ -100,14 +100,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
     real(dp), allocatable          :: val(:)
 
     q0 = field('initial state', q_dom)
     call q0 % set_real_vector([0.0_dp, 0.0_dp])
 
     call q0 % domain(dom)
-    call report(dom % same_as(q_dom), &
+    call report(dom % equals(q_dom), &
          & "the state field's domain is Q, by identity", nfail)
     call report(q0 % num_entries() .eq. 2 .and. &
          &      q0 % num_components() .eq. 1, &
@@ -135,13 +135,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dp_, dq
+    class(set), allocatable :: dp_, dq
 
     call p_field % domain(dp_)
     call q0 % domain(dq)
 
-    call report(.not. dp_ % same_as(q_dom) .and. &
-         &      .not. dq % same_as(p_dom), &
+    call report(.not. dp_ % equals(q_dom) .and. &
+         &      .not. dq % equals(p_dom), &
          & "parameter and state are distinguished by domain alone", &
          & nfail)
     call report(dp_ % size() .ne. dq % size(), &

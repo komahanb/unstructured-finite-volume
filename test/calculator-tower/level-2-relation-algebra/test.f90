@@ -31,15 +31,15 @@ program calculator_level_2
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use graph_set    , only : index_set, subset, set
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
 
   implicit none
 
-  type(counted_set)            :: x, o, p
-  type(subset_set)             :: p_out, p_in
+  type(index_set)            :: x, o, p
+  type(subset)             :: p_out, p_in
   type(stored_relation)        :: flow, backwards
   type(stored_relation)        :: r_out3, r_in3, produces, consumes
   class(relation), allocatable :: d, d2
@@ -52,9 +52,9 @@ program calculator_level_2
   write(*,'(1x,a)') "calculator tower . level 2 . relation algebra"
   write(*,'(1x,a)') "============================================="
 
-  x = counted_set('value-slots', 5)
-  o = counted_set('operations' , 2)
-  p = counted_set('ports'      , 3)
+  x = index_set('value-slots', 5)
+  o = index_set('operations' , 2)
+  p = index_set('ports'      , 3)
 
   table(:, 1) = [OP_PLUS , SLOT_A, PORT_IN1]
   table(:, 2) = [OP_PLUS , SLOT_B, PORT_IN2]
@@ -67,8 +67,8 @@ program calculator_level_2
 
   ! The structural selections: which ports mean leaving, which mean
   ! arriving. Subobjects of P - not fields, not values.
-  p_out = subset_set('output-port', p, [PORT_OUT])
-  p_in  = subset_set('input-ports', p, [PORT_IN1, PORT_IN2])
+  p_out = subset('output-port', p, [PORT_OUT])
+  p_in  = subset('input-ports', p, [PORT_IN1, PORT_IN2])
 
   call check_restrictions(nfail)
   call check_projections(nfail)
@@ -108,16 +108,16 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
 
     produces = project_slots(r_out3, [1, 2])
     consumes = project_slots(r_in3 , [2, 1])
 
     dom = produces % domain(1)
-    call report(dom % same_as(o), &
+    call report(dom % equals(o), &
          & "produces runs from the operations", nfail)
     dom = produces % domain(2)
-    call report(dom % same_as(x), &
+    call report(dom % equals(x), &
          & "into the value slots", nfail)
     call report(produces % num_tuples() .eq. 2 .and. &
          &      produces % has([OP_PLUS , SLOT_C]) .and. &
@@ -125,10 +125,10 @@ contains
          & "produces = { (+, c), (x, e) } - exactly", nfail)
 
     dom = consumes % domain(1)
-    call report(dom % same_as(x), &
+    call report(dom % equals(x), &
          & "consumes runs from the value slots", nfail)
     dom = consumes % domain(2)
-    call report(dom % same_as(o), &
+    call report(dom % equals(o), &
          & "into the operations", nfail)
     call report(consumes % num_tuples() .eq. 4 .and. &
          &      consumes % has([SLOT_A, OP_PLUS ]) .and. &
@@ -170,15 +170,15 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
 
     d = compose_binary(produces, consumes)
 
     dom = d % domain(1)
-    call report(dom % same_as(o), &
+    call report(dom % equals(o), &
          & "D runs from the operations", nfail)
     dom = d % domain(2)
-    call report(dom % same_as(o), &
+    call report(dom % equals(o), &
          & "back into the operations", nfail)
 
     call report(d % num_tuples() .eq. 1, &
@@ -206,7 +206,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_relation)          :: out2, in2, prod2, cons2
-    class(member_set), allocatable :: da, db
+    class(set), allocatable :: da, db
     integer                        :: rev(3, 6)
     integer, allocatable           :: dt(:,:)
     integer                        :: j
@@ -236,11 +236,11 @@ contains
 
     da = d % domain(1)
     db = d2 % domain(1)
-    call report(da % same_as(db), &
+    call report(da % equals(db), &
          & "the first slots are one domain", nfail)
     da = d % domain(2)
     db = d2 % domain(2)
-    call report(da % same_as(db), &
+    call report(da % equals(db), &
          & "and so are the second", nfail)
 
   end subroutine check_order_invariance

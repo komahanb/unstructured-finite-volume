@@ -51,8 +51,8 @@
 module triangular_decay_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_grammar    , only : graph, graph_field, graph_operation
-  use graph_carrier    , only : member_set
+  use graph_grammar    , only : ordinary_graph, graph_field, graph_operation
+  use graph_set    , only : set
   use class_graph_field, only : field
 
   implicit none
@@ -62,12 +62,12 @@ module triangular_decay_fixture
 
   !===================================================================!
   ! The action carries its own domain. One component, and it is the
-  ! state carrier Q - never a graph, and never a vertex set.
+  ! state set Q - never a graph, and never a vertex set.
   !===================================================================!
 
   type, extends(graph_operation) :: triangular_decay
 
-     class(member_set), allocatable :: state
+     class(set), allocatable :: state
 
    contains
 
@@ -89,9 +89,9 @@ contains
 
   type(triangular_decay) function create_decay(state) result(this)
 
-    class(member_set), intent(in) :: state
+    class(set), intent(in) :: state
 
-    if (.not. state % same_as(state)) then
+    if (.not. state % equals(state)) then
        error stop 'triangular_decay: an action needs a declared state domain'
     end if
     allocate(this % state, source=state)
@@ -111,15 +111,15 @@ contains
 
   !===================================================================!
   ! THE answer that makes this fixture the experiment: the domain is
-  ! the STORED state carrier. input_graph is present because the
+  ! the STORED state set. input_graph is present because the
   ! contract says so, and is not consulted.
   !===================================================================!
 
   subroutine decay_domain(this, input_graph, domain)
 
     class(triangular_decay), intent(in)         :: this
-    class(graph)           , intent(in)         :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(ordinary_graph)           , intent(in)         :: input_graph
+    class(set), allocatable, intent(out) :: domain
 
     associate (u1 => input_graph); end associate
 
@@ -130,7 +130,7 @@ contains
   !===================================================================!
   ! S([x, y]) = [x, y - x], with the input checked against the
   ! stored domain by IDENTITY - not by size. A field of the right
-  ! width on the wrong carrier is a different mathematical object,
+  ! width on the wrong set is a different mathematical object,
   ! and this operation says so rather than computing something
   ! plausible.
   !===================================================================!
@@ -138,11 +138,11 @@ contains
   subroutine decay_apply(this, input_graph, input_data, output)
 
     class(triangular_decay), intent(in)            :: this
-    class(graph)           , intent(in)            :: input_graph
+    class(ordinary_graph)           , intent(in)            :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
-    class(member_set), allocatable :: given
+    class(set), allocatable :: given
     type(field)                    :: out
     real(dp), allocatable          :: q(:), s(:)
 
@@ -153,7 +153,7 @@ contains
     end if
 
     call input_data(1) % domain(given)
-    if (.not. given % same_as(this % state)) then
+    if (.not. given % equals(this % state)) then
        error stop 'triangular_decay: the state must live on the action''s own domain'
     end if
 

@@ -30,13 +30,13 @@ program derivative_level_5
   use iso_fortran_env  , only : dp => REAL64
   use derivative_assert, only : report, verdict
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use graph_set    , only : index_set, subset, set
   use class_graph_field, only : field
 
   implicit none
 
-  type(counted_set) :: v
-  type(subset_set)  :: x_dom, c
+  type(index_set) :: v
+  type(subset)  :: x_dom, c
   type(field)       :: qx
   integer           :: nfail
 
@@ -46,11 +46,11 @@ program derivative_level_5
   write(*,'(1x,a)') "derivative action tower . level 5 . fields"
   write(*,'(1x,a)') "============================================="
 
-  v = counted_set('value-slots', 4)
+  v = index_set('value-slots', 4)
 
   ! The two roles, declared in deliberately nonsemantic order.
-  x_dom = subset_set('independent', v, [SLOT_Y, SLOT_X])
-  c     = subset_set('computed'   , v, [SLOT_U, SLOT_Z])
+  x_dom = subset('independent', v, [SLOT_Y, SLOT_X])
+  c     = subset('computed'   , v, [SLOT_U, SLOT_Z])
 
   call check_partition(nfail)
   call check_base_point(nfail)
@@ -108,14 +108,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
     real(dp), allocatable          :: val(:)
 
     qx = field('base point', x_dom)
     call qx % set_real_vector([3.0_dp, 2.0_dp])
 
     call qx % domain(dom)
-    call report(dom % same_as(x_dom), &
+    call report(dom % equals(x_dom), &
          & "the base field's domain is X, by identity", nfail)
     call report(qx % num_entries() .eq. 2 .and. &
          &      qx % num_components() .eq. 1, &

@@ -21,7 +21,7 @@ relations
   ↓
 relation algebra
   ↓
-relational graph
+related graph
   ↓
 graph calculus
   ↓
@@ -106,7 +106,7 @@ gap takes priority over further higher-level migration.
 ## Current migration consequence
 
 The repository already contains substantial implementation corresponding to
-carriers, relations, relational graphs, ordinary graph profiles, and support
+sets, relations, related graphs, ordinary graph interpretations, and support
 subobjects.
 
 Therefore the calculator tower must now be backfilled from Level 0 upward,
@@ -116,10 +116,10 @@ calculator truth.
 Expected behavior:
 
 ```text
-Level 0  carriers             write test → should already be GREEN
+Level 0  sets             write test → should already be GREEN
 Level 1  finite-arity relation write test → should already be GREEN
 Level 2  relation algebra      write test → may expose the next real gap
-Level 3  relational graph      only certify after Level 2 is GREEN
+Level 3  related graph      only certify after Level 2 is GREEN
 Level 4  graph calculus        only certify after Level 3 is GREEN
 Level 5  field calculus        write RED test before invasive field migration
 ```
@@ -415,7 +415,7 @@ test/calculator-tower/
 ├── run.sh
 ├── common/
 │   └── calculator_assert.f90
-├── level-0-carrier/
+├── level-0-set/
 │   └── test.f90
 ├── level-1-relation/
 │   └── test.f90
@@ -453,10 +453,10 @@ The top-level runner should produce a compact vertical summary:
 
 ```text
 calculator tower
-├── level 0  carriers .............. PASS
+├── level 0  sets .............. PASS
 ├── level 1  relation .............. PASS
 ├── level 2  relation algebra ...... PASS
-├── level 3  relational graph ...... PASS
+├── level 3  related graph ...... PASS
 ├── level 4  graph calculus ........ PASS
 ├── level 5  field calculus ........ PASS
 ├── level 6  discretization ........ PASS
@@ -480,7 +480,7 @@ and the README instructs the human to verify the same result independently on th
 
 ---
 
-# 7. Level 0 — carriers
+# 7. Level 0 — sets
 
 ## New mathematical commitment
 
@@ -488,7 +488,7 @@ Level 0 answers:
 
 > What members may exist?
 
-Create independent carriers corresponding to:
+Create independent sets corresponding to:
 
 \[
 X,\quad O,\quad P.
@@ -506,7 +506,7 @@ No field values exist yet.
 
 ## Required truths
 
-For every member \(x\) of every carrier:
+For every member \(x\) of every set:
 
 \[
 member(local\_index(x))=x.
@@ -521,9 +521,9 @@ local\_index(member(i))=i.
 Verify:
 
 ```text
-X.same_as(O) = false
-X.same_as(P) = false
-O.same_as(P) = false
+X.equals(O) = false
+X.equals(P) = false
+O.equals(P) = false
 ```
 
 Verify exact cardinalities:
@@ -540,7 +540,7 @@ Verify an outsider is rejected by membership:
 X.has(outsider) = false
 ```
 
-If a non-counted/listed carrier is used, verify carrier enumeration remains injective.
+If a non-counted/listed set is used, verify set enumeration remains injective.
 
 ---
 
@@ -580,7 +580,7 @@ without graph interpretation.
 
 Level 1 answers:
 
-> How may members of carriers be related?
+> How may members of sets be related?
 
 Build:
 
@@ -618,9 +618,9 @@ Signature truths:
 
 ```text
 arity(R) = 3
-domain(R,1) same_as O
-domain(R,2) same_as X
-domain(R,3) same_as P
+domain(R,1) equals O
+domain(R,2) equals X
+domain(R,3) equals P
 ```
 
 Set semantics:
@@ -738,13 +738,13 @@ Passing Level 2 proves:
 
 ---
 
-# 10. Level 3 — relational graph
+# 10. Level 3 — related graph
 
 ## New mathematical commitment
 
 Level 3 answers:
 
-> How do carriers and relations coexist as one structure?
+> How do sets and relations coexist as one structure?
 
 Construct:
 
@@ -779,13 +779,13 @@ G owns P
 G owns R_flow
 ```
 
-Every relation domain must resolve to a carrier owned by \(G\).
+Every relation domain must resolve to a set owned by \(G\).
 
 Two distinct relations with the same signature must be allowed to coexist.
 
 Relations are addressed by identity, not signature alone.
 
-A foreign carrier in a relation signature must be refused.
+A set the graph does not hold, in a relation signature, must be refused.
 
 A borrowing/non-materialized relation view must not be accepted as graph-owned stable storage unless the graph ownership contract has explicitly evolved to make that safe.
 
@@ -793,7 +793,7 @@ A borrowing/non-materialized relation view must not be accepted as graph-owned s
 
 ## Most important negative truth
 
-The Level-3 calculator test must compile without importing an ordinary-graph profile.
+The Level-3 calculator test must compile without importing an ordinary-graph interpretation.
 
 There must be no requirement for:
 
@@ -804,7 +804,7 @@ tail
 head
 ```
 
-in `relational_graph`.
+in `related_graph`.
 
 ---
 
@@ -813,7 +813,7 @@ in `relational_graph`.
 Passing Level 3 proves:
 
 \[
-\boxed{\text{Graph is a collection of member sets and relations}}
+\boxed{\text{Graph is a collection of sets and relations}}
 \]
 
 rather than:
@@ -838,7 +838,7 @@ Interpret
 D=\{(+,\times)\}
 \]
 
-as a directed dependency graph over operation carrier \(O\).
+as a directed dependency graph over operation set \(O\).
 
 ---
 
@@ -865,7 +865,7 @@ No other operation order is permitted.
 
 ## Ordering law
 
-If graph-calculus output has a canonical order, canonicalize by carrier enumeration/local index, not by raw integer member value.
+If graph-calculus output has a canonical order, canonicalize by set enumeration/local index, not by raw integer member value.
 
 The meaning of a member is not its numeric storage representation.
 
@@ -937,7 +937,7 @@ A support is an indexable subobject:
 S\hookrightarrow A.
 \]
 
-It should behave as a `member_set` refinement/subdomain with an ambient carrier.
+It should behave as a `set` refinement/subdomain with an ambient set.
 
 Required law:
 
@@ -947,7 +947,7 @@ s\in S\implies s\in A.
 
 A field always lives on an indexable member domain.
 
-Do not create a `field` API that must branch between unrelated "carrier" and "predicate" domain kinds.
+Do not create a `field` API that must branch between unrelated "set" and "predicate" domain kinds.
 
 ---
 
@@ -1243,9 +1243,9 @@ It must not alter topology.
 Do not move arithmetic meaning into:
 
 ```text
-member_set
+set
 relation
-relational_graph
+related_graph
 graph calculus
 field
 ```
@@ -1281,7 +1281,7 @@ Construct the complete calculator problem:
 The statement supplies or selects:
 
 ```text
-structure      calculator relational graph
+structure      calculator related graph
 inputs         a=2, b=3, d=4
 constitution   addition and multiplication
 requested      output e
@@ -1359,7 +1359,7 @@ A higher level must not invalidate a lower-level law.
 
 Examples:
 
-- constitution cannot change carrier identity;
+- constitution cannot change set identity;
 - minimization cannot change graph topology;
 - field values cannot alter relation membership;
 - graph calculus cannot mutate relation extension;
@@ -1411,7 +1411,7 @@ Derived structures may be materialized for performance only when their derivatio
 
 ## 17.5 Set semantics
 
-Carriers and relations obey mathematical set semantics.
+Sets and relations obey mathematical set semantics.
 
 Tuple/member insertion order must not alter extensional truth.
 
@@ -1546,20 +1546,20 @@ At minimum consider:
 
 ```text
 Level 0
-    duplicate/invalid carrier declaration as defined by carrier contract
+    duplicate/invalid set declaration as defined by set contract
 
 Level 1
     wrong arity
-    foreign member
+    unheld member
     undeclared domain
 
 Level 3
-    foreign relation domain
+    unheld relation domain
     duplicate owned identities
     non-materialized borrowing relation ownership
 
 Level 5
-    support member outside ambient carrier
+    support member outside ambient set
 
 Level 8
     constitution applied to incompatible operation/domain schema
@@ -1581,7 +1581,7 @@ Do not use it to claim hot-path performance.
 When calculator-driven implementation changes touch:
 
 ```text
-carrier lookup
+set lookup
 relation fibres
 graph traversal
 field indexing
@@ -1658,10 +1658,10 @@ The calculator tower is intended to keep the architecture anchored through incre
 The **calculator acceptance frontier** advances only in tower order:
 
 ```text
-0  carrier
+0  set
 1  relation
 2  relation algebra
-3  relational graph
+3  related graph
 4  graph calculus
 5  field calculus
 6  discretization

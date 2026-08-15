@@ -1,5 +1,5 @@
 !=====================================================================!
-! LEVEL 3 OF THE NEW TOWER . THE RELATIONAL GRAPH
+! LEVEL 3 OF THE NEW TOWER . THE RELATED GRAPH
 !
 ! The container the whole redesign aims at (AGENTS.md 14):
 !
@@ -7,7 +7,7 @@
 !
 ! a structured collection of member sets and typed relations over
 ! them - and NOTHING ELSE. No vertex, no edge, no tail, no head:
-! those words belong to profiles, one level up, that interpret a
+! those words belong to interpretations, one level up, that interpret a
 ! particular schema of relations. This container holds a mesh's
 ! cells and faces exactly as gladly as a calculator's operations,
 ! values and ports.
@@ -18,8 +18,8 @@
 !                     THE SIGNATURE VALIDITY LAW
 !
 ! Every relation admitted must relate the graph's own member sets:
-! each slot of each relation's signature answers same_as against
-! one of the owned carriers, or the graph refuses to exist
+! each slot of each relation's signature answers equals against
+! one of the owned sets, or the graph refuses to exist
 ! (AGENTS.md 62). Two relations of one signature coexist freely -
 ! identity is the address, never the signature.
 !
@@ -27,7 +27,7 @@
 !
 ! The graph OWNS stable relations; views and fibre borrows BORROW
 ! them. So the accessors answer POINTERS into owned storage, never
-! copies: a profile that borrows a relation through relation_at may
+! copies: an interpretation that borrows a relation through relation_at may
 ! hold fibre views into it for as long as the graph lives, and the
 ! graph, immutable after construction, never pulls that storage out
 ! from under anyone.
@@ -40,158 +40,146 @@
 ! graph-owned relations, never inside them.
 !
 ! The graph is the third citizen to sign the identity roll, after
-! the carriers and the relations - one law, one roll, three hands.
+! the sets and the relations - one law, one roll, three hands.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module graph_structure
 
-  use graph_identity, only : token, mint_token
-  use graph_carrier , only : member_set
+  use graph_set , only : graph, set, declared_set, unrelated_graph
   use graph_relation, only : relation
 
   implicit none
 
   private
-  public :: relational_graph, held_set, held_relation
+  public :: related_graph, declared_set, declared_relation
+  public :: declare_relations, forget_relations
 
   !===================================================================!
-  ! The seats. A Fortran array carries one dynamic type, so the
-  ! graph's heterogeneous collections sit in wrapper seats - any
-  ! carrier concretion, any relation concretion, side by side.
+  ! The declared elements. A Fortran array carries one dynamic type, so the
+  ! graph's heterogeneous collections sit in declared-element wrappers - any
+  ! set concretion, any relation concretion, side by side.
   !===================================================================!
 
-  type :: held_set
-
-     class(member_set), allocatable :: carrier
-
-  end type held_set
-
-  interface held_set
-     module procedure hold_set
-  end interface held_set
-
-  type :: held_relation
+  type :: declared_relation
 
      class(relation), allocatable :: contents
 
-  end type held_relation
+  end type declared_relation
 
-  interface held_relation
-     module procedure hold_relation
-  end interface held_relation
+  interface declared_relation
+     module procedure create_declared_relation
+  end interface declared_relation
 
   !===================================================================!
-  ! The relational graph: sets, relations, an identity, and the
+  ! The related graph: sets, relations, an identity, and the
   ! questions a container answers. Immutable after construction.
   !===================================================================!
 
-  type :: relational_graph
+  type, extends(graph) :: related_graph
 
-     type(token)                  , private :: identity
-     character(len=:), allocatable, private :: label
-
-     type(held_set)     , allocatable, private :: sets(:)
-     type(held_relation), allocatable, private :: relations(:)
+     type(declared_set)     , allocatable, private :: sets(:)
+     type(declared_relation), allocatable, private :: relations(:)
 
    contains
 
-     procedure :: num_member_sets
-     procedure :: member_set_at
+     procedure :: num_sets
+     procedure :: set_at
      procedure :: num_relations
      procedure :: relation_at
      procedure :: holds_set
 
-     procedure :: declare
-     procedure :: id
-     procedure :: same_as
-     procedure :: name
+  end type related_graph
 
-  end type relational_graph
-
-  interface relational_graph
+  interface related_graph
      module procedure create_graph
-  end interface relational_graph
+  end interface related_graph
 
 contains
 
   !===================================================================!
-  ! Wrap one carrier, or one relation, for a seat.
+  ! Declare one element of S, or one element of R.
   !===================================================================!
 
-  type(held_set) function hold_set(carrier) result(this)
-
-    class(member_set), intent(in) :: carrier
-
-    allocate(this % carrier, source=carrier)
-
-  end function hold_set
-
-  type(held_relation) function hold_relation(contents) result(this)
+  type(declared_relation) function create_declared_relation(contents) result(this)
 
     class(relation), intent(in) :: contents
 
     allocate(this % contents, source=contents)
 
-  end function hold_relation
+  end function create_declared_relation
 
   !===================================================================!
   ! Declare a graph: a name, the member sets, the relations. The
   ! refusals that guard the level, in the order they are checked:
   !
-  !     an empty or unsigned seat     a graph holds declared domains
+  !     an empty or unsigned element  a graph holds declared domains
   !                                   only
   !     the same domain twice         S_i /= S_j: a collection of
   !                                   identified objects holds each
   !                                   once
+  !     an empty relation family      |R| > 0 IS what related_graph
+  !                                   means; a graph over which no
+  !                                   relation is declared is an
+  !                                   unrelated_graph, and this is
+  !                                   not that type
   !     a hollow or unsigned relation a graph holds declared
   !                                   relations only
   !     a borrowing view              a graph owns whole relations; a
   !                                   view rides above, never inside
   !     the same relation twice       R_i /= R_j, by identity
-  !     a foreign domain              every slot of every relation
+  !     an unheld domain              every slot of every relation
   !                                   names one of the graph's own
   !                                   member sets
   !===================================================================!
 
-  type(relational_graph) function create_graph(name, sets, relations) &
+  type(related_graph) function create_graph(name, sets, relations) &
        & result(this)
 
     character(len=*)   , intent(in) :: name
-    type(held_set)     , intent(in) :: sets(:)
-    type(held_relation), intent(in) :: relations(:)
+    type(declared_set)     , intent(in) :: sets(:)
+    type(declared_relation), intent(in) :: relations(:)
 
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
     integer                        :: r, k, s
     logical                        :: found
 
     do s = 1, size(sets)
-       if (.not. allocated(sets(s) % carrier)) then
+       if (.not. allocated(sets(s) % set)) then
           error stop 'graph_structure: a graph holds declared domains only'
        end if
-       if (.not. sets(s) % carrier % same_as(sets(s) % carrier)) then
+       if (.not. sets(s) % set % equals(sets(s) % set)) then
           error stop 'graph_structure: a graph holds declared domains only'
        end if
        do k = 1, s - 1
-          if (sets(s) % carrier % same_as(sets(k) % carrier)) then
+          if (sets(s) % set % equals(sets(k) % set)) then
              error stop 'graph_structure: a graph holds each domain once'
           end if
        end do
     end do
 
+    ! |R| > 0 is the defining law of this type, checked after the
+    ! domains because S is prior: a graph's sets are what its
+    ! relations are declared OVER. The count is of DECLARED RELATION
+    ! OBJECTS, never of tuples - a relation holding no tuples is a
+    ! relation, and one of them is enough.
+    if (size(relations) == 0) then
+       error stop 'graph_structure: a related graph declares at least one relation'
+    end if
+
     do r = 1, size(relations)
        if (.not. allocated(relations(r) % contents)) then
           error stop 'graph_structure: a graph holds declared relations only'
        end if
-       if (.not. relations(r) % contents % same_as(relations(r) % contents)) then
+       if (.not. relations(r) % contents % equals(relations(r) % contents)) then
           error stop 'graph_structure: a graph holds declared relations only'
        end if
        if (.not. relations(r) % contents % materialized()) then
           error stop 'graph_structure: a graph owns whole relations; a view cannot be owned'
        end if
        do k = 1, r - 1
-          if (relations(r) % contents % same_as(relations(k) % contents)) then
+          if (relations(r) % contents % equals(relations(k) % contents)) then
              error stop 'graph_structure: a graph holds each relation once'
           end if
        end do
@@ -202,7 +190,7 @@ contains
           d = relations(r) % contents % domain(k)
           found = .false.
           do s = 1, size(sets)
-             found = found .or. d % same_as(sets(s) % carrier)
+             found = found .or. d % equals(sets(s) % set)
           end do
           if (.not. found) then
              error stop 'graph_structure: a relation must relate the graph''s own member sets'
@@ -212,7 +200,7 @@ contains
 
     allocate(this % sets(size(sets)))
     do s = 1, size(sets)
-       allocate(this % sets(s) % carrier, source=sets(s) % carrier)
+       allocate(this % sets(s) % set, source=sets(s) % set)
     end do
 
     allocate(this % relations(size(relations)))
@@ -225,17 +213,17 @@ contains
 
   end function create_graph
 
-  pure integer function num_member_sets(this)
+  pure integer function num_sets(this)
 
-    class(relational_graph), intent(in) :: this
+    class(related_graph), intent(in) :: this
 
-    num_member_sets = size(this % sets)
+    num_sets = size(this % sets)
 
-  end function num_member_sets
+  end function num_sets
 
   pure integer function num_relations(this)
 
-    class(relational_graph), intent(in) :: this
+    class(related_graph), intent(in) :: this
 
     num_relations = size(this % relations)
 
@@ -247,19 +235,31 @@ contains
   ! the graph's whole life.
   !===================================================================!
 
-  function member_set_at(this, k) result(carrier)
+  function set_at(this, slot) result(domain)
 
-    class(relational_graph), target, intent(in) :: this
-    integer                        , intent(in) :: k
-    class(member_set), pointer                  :: carrier
+    class(related_graph), target, intent(in) :: this
+    integer             ,         intent(in) :: slot
+    class(set)          , pointer            :: domain
 
-    carrier => this % sets(k) % carrier
+    ! set_at : {1 .. num_sets()} -> S, and nowhere else. The range is
+    ! the root's contract, so a slot outside it is refused here as it
+    ! is on a set, rather than read off the end of the collection.
+    if (slot < 1 .or. slot > size(this % sets)) then
+       error stop 'graph_structure: set_at is asked outside {1 .. num_sets()}'
+    end if
 
-  end function member_set_at
+    select type (element => this % sets(slot) % set)
+    class is (set)
+       domain => element
+    class default
+       error stop 'graph_structure: a declared element of S is a set, and this one is not'
+    end select
+
+  end function set_at
 
   function relation_at(this, k) result(contents)
 
-    class(relational_graph), target, intent(in) :: this
+    class(related_graph), target, intent(in) :: this
     integer                        , intent(in) :: k
     class(relation), pointer                    :: contents
 
@@ -271,67 +271,91 @@ contains
   ! Does this declared domain sit in the graph's collection.
   !===================================================================!
 
-  pure logical function holds_set(this, carrier)
+  pure logical function holds_set(this, domain)
 
-    class(relational_graph), intent(in) :: this
-    class(member_set)      , intent(in) :: carrier
+    class(related_graph), intent(in) :: this
+    class(set)             , intent(in) :: domain
 
     integer :: s
 
     holds_set = .false.
     do s = 1, size(this % sets)
-       holds_set = holds_set .or. carrier % same_as(this % sets(s) % carrier)
+       holds_set = holds_set .or. domain % equals(this % sets(s) % set)
     end do
 
   end function holds_set
 
+
   !===================================================================!
-  ! The identity block, one law with the carriers' and the
-  ! relations'.
+  ! THE TRANSITION MAPS between the two branches of the tree.
+  !
+  !      declare_relations : (S, empty), R  ->  (S, R),  |R| > 0
+  !      forget_relations  : (S, R)         ->  (S, empty)
+  !
+  ! MODULE PROCEDURES, AND NOT BY PREFERENCE. declare_relations
+  ! cannot be bound to unrelated_graph: its result is a level-3 type
+  ! and unrelated_graph is level 0, so the binding would make the
+  ! ground level name the container that is built over it. Its
+  ! partner is written the same way rather than bound to
+  ! related_graph, because a complementary pair that reads two
+  ! different ways at the call site has stopped being a pair.
+  !
+  ! NEITHER MUTATES. Both build a NEW declared graph and leave the
+  ! source untouched, so a borrow already taken from the source stays
+  ! good; structural objects are immutable and a transformation is a
+  ! new truth, not a rewritten one (AGENTS.md 23, 54).
+  !
+  ! WHAT SURVIVES, AND WHAT DOES NOT.
+  !
+  !      S    survives BY IDENTITY - each set of the result equals
+  !           the set it came from, because a whole-object copy IS
+  !           the declared domain
+  !      R    is exactly what the map says: handed in, or emptied
+  !      G    does NOT survive: the result signs its own name, and
+  !           equals(source, result) is false
+  !
+  ! NO VALIDATION LIVES HERE. Both maps rebuild the collection from
+  ! the source's own root contract and hand it to the constructor
+  ! that already owns the laws - so the empty-family refusal, the
+  ! view-ownership refusal and the signature-closure refusal are the
+  ! SAME refusals, raised in the same place, and cannot drift from
+  ! the direct construction.
   !===================================================================!
 
-  subroutine declare(this, name)
+  type(related_graph) function declare_relations(over, relations, name) &
+       & result(this)
 
-    class(relational_graph), intent(inout)        :: this
-    character(len=*)       , intent(in), optional :: name
+    class(unrelated_graph), target, intent(in) :: over
+    type(declared_relation)      , intent(in) :: relations(:)
+    character(len=*)             , intent(in) :: name
 
-    if (this % identity % declared()) then
-       error stop 'graph_structure: a graph never signs twice'
-    end if
+    type(declared_set), allocatable :: domains(:)
+    integer                         :: s
 
-    this % identity = mint_token()
-    if (present(name)) this % label = name
+    allocate(domains(over % num_sets()))
+    do s = 1, over % num_sets()
+       domains(s) = declared_set(over % set_at(s))
+    end do
 
-  end subroutine declare
+    this = related_graph(name, domains, relations)
 
-  pure type(token) function id(this)
+  end function declare_relations
 
-    class(relational_graph), intent(in) :: this
+  type(unrelated_graph) function forget_relations(over, name) result(this)
 
-    id = this % identity
+    class(related_graph), target, intent(in) :: over
+    character(len=*)           , intent(in) :: name
 
-  end function id
+    type(declared_set), allocatable :: domains(:)
+    integer                         :: s
 
-  pure logical function same_as(this, other)
+    allocate(domains(over % num_sets()))
+    do s = 1, over % num_sets()
+       domains(s) = declared_set(over % set_at(s))
+    end do
 
-    class(relational_graph), intent(in) :: this
-    class(relational_graph), intent(in) :: other
+    this = unrelated_graph(name, domains)
 
-    same_as = this % identity % matches(other % identity)
-
-  end function same_as
-
-  function name(this)
-
-    class(relational_graph), intent(in) :: this
-    character(len=:), allocatable       :: name
-
-    if (allocated(this % label)) then
-       name = this % label
-    else
-       name = ''
-    end if
-
-  end function name
+  end function forget_relations
 
 end module graph_structure

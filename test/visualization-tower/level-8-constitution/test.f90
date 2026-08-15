@@ -38,8 +38,8 @@ program visualization_level_8
 
   use iso_fortran_env      , only : dp => REAL64
   use visualization_assert , only : report, verdict
-  use graph_carrier        , only : counted_set
-  use graph_grammar        , only : graph
+  use graph_set        , only : index_set
+  use graph_grammar        , only : ordinary_graph
   use class_graph          , only : stored_graph
   use class_graph_stencil  , only : stencil_operator
   use class_graph_step     , only : step_operator, bdf, backward_euler
@@ -60,7 +60,7 @@ program visualization_level_8
 
   type(stencil_operator)    :: a
   type(step_operator)       :: clock, euler
-  class(graph), allocatable :: dependent, independent, independent_be
+  class(ordinary_graph), allocatable :: dependent, independent, independent_be
   type(stored_graph)        :: context
   type(jacobi)              :: solver
 
@@ -309,7 +309,7 @@ contains
 
   logical function same_pattern(p, q)
 
-    class(graph), intent(in) :: p, q
+    class(ordinary_graph), intent(in) :: p, q
 
     integer :: i, j
 
@@ -328,7 +328,7 @@ contains
   logical function properly_coloured(colours, coupling)
 
     integer     , intent(in) :: colours(:)
-    class(graph), intent(in) :: coupling
+    class(ordinary_graph), intent(in) :: coupling
 
     integer :: i, j
 

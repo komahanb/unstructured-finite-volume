@@ -37,7 +37,7 @@ moves it.
 Seam **B** — bidirectional/rectangular linearization — is likewise
 untouched. This tower is *full* of rectangular structure, and none of
 it is a linearization: `D_k^T` reverses the orientation of possible
-dependence between two carriers, with no coefficient to transpose and
+dependence between two sets, with no coefficient to transpose and
 no vector to apply. **Structural transpose is not numerical adjoint**,
 and calling the resemblance evidence would be the single easiest error
 this tower could make.
@@ -47,7 +47,7 @@ observation and is recorded as VIZ-10. **Level 5's production change
 is also NONE**, recorded in VIZ-11.
 
 VIZ-11 through VIZ-15 belong to Level 5 and are likewise seam-free:
-attaching a field to an occurrence carrier is not an operation taking
+attaching a field to an occurrence set is not an operation taking
 a domain from a graph, and a coefficient is not a linearization.
 
 **VIZ-25 through VIZ-30 belong to Level 7, and VIZ-28 is this
@@ -81,12 +81,12 @@ occurred - see VIZ-23.
 
 ```text
 tower:                Visualization
-level:                0-1  (carrier, relation)
+level:                0-1  (set, relation)
 review gate:          A
-contextual radius:    1 (typed relations over declared carriers)
+contextual radius:    1 (typed relations over declared sets)
 
 symptom / fact:       A STRUCTURAL DEPENDENCY NATURALLY HAS SEPARATE
-                      INPUT AND OUTPUT CARRIERS.
+                      INPUT AND OUTPUT SETS.
 
                         D1 <= X0 x X1,  X0 /= X1
                         D2 <= X1 x X2,  X1 /= X2   (both size 3)
@@ -94,7 +94,7 @@ symptom / fact:       A STRUCTURAL DEPENDENCY NATURALLY HAS SEPARATE
 
                       Every mesh client the repository has built reads
                       relations whose two ends land in ONE vertex
-                      carrier. An operator chain does not: A1's input
+                      set. An operator chain does not: A1's input
                       domain and output domain are two different
                       worlds, and the tower declares them so before
                       any relation exists.
@@ -106,14 +106,14 @@ symptom / fact:       A STRUCTURAL DEPENDENCY NATURALLY HAS SEPARATE
 exact caller:         test/visualization-tower/level-1-relation/test.f90
                       check_the_signatures_are_rectangular
 
-evidence:             T1 % target() and H1 % target() are not same_as,
+evidence:             T1 % target() and H1 % target() are not equals,
                       on all three operators. PASS.
 
 confidence:           high - three independent instances, checked by
                       structural identity rather than by size.
 
 action:               OBSERVE. The nucleus already permits it: a
-                      relation signature holds one carrier per slot
+                      relation signature holds one set per slot
                       and never asked for them to agree.
 ```
 
@@ -123,11 +123,11 @@ action:               OBSERVE. The nucleus already permits it: a
 
 ```text
 tower:                Visualization
-level:                0  (carrier)
+level:                0  (set)
 review gate:          A
 contextual radius:    0 (declared sets, nothing between them)
 
-symptom / fact:       THE OCCURRENCE CARRIER GIVES DEPENDENCY
+symptom / fact:       THE OCCURRENCE SET GIVES DEPENDENCY
                       OCCURRENCES FIRST-CLASS IDENTITY BEFORE ANY
                       COEFFICIENT EXISTS.
 
@@ -139,21 +139,21 @@ symptom / fact:       THE OCCURRENCE CARRIER GIVES DEPENDENCY
                       pair, not a nonzero, not an index into a table.
                       It can therefore be related, composed away, and
                       - at Level 5 - given a value. VIZ-12 records
-                      that E_k turned out to be the ONLY carrier that
+                      that E_k turned out to be the ONLY set that
                       could seat the coefficient.
 
                       This is a MODELLING CHOICE the nucleus made
                       possible rather than a capability it supplied.
                       The same choice is what the mesh path makes when
-                      it declares an edge carrier instead of storing
+                      it declares an edge set instead of storing
                       pairs.
 
 exact caller:         test/visualization-tower/common/
-                      visualization_carriers_fixture.f90
-                      structural_carriers
+                      visualization_sets_fixture.f90
+                      structural_sets
 
 evidence:             |E1|=5, |E2|=4, |E3|=3, all distinct from each
-                      other and from the four state carriers. PASS at
+                      other and from the four state sets. PASS at
                       Level 0.
 
 confidence:           medium-high - one specimen, but the choice is
@@ -238,7 +238,7 @@ exact caller:         test/visualization-tower/level-2-relation-algebra/
 
 evidence:             |D3:1| = 6, exact extension
                       { a->m, b->m, c->m, b->n, c->n, d->n }. Both
-                      bracketings agree. Both intermediate carriers
+                      bracketings agree. Both intermediate sets
                       X1 and X2 appear in neither slot of the result.
                       PASS.
 
@@ -258,7 +258,7 @@ action:               OBSERVE. Note for a future Level 6 that a
 tower:                Visualization
 level:                2  (relation algebra)
 review gate:          A
-contextual radius:    2 (composition through a shared middle carrier)
+contextual radius:    2 (composition through a shared middle set)
 
 symptom / fact:       MULTIPLE INTERMEDIATE PATHS COLLAPSE TO ONE
                       ENDPOINT TUPLE UNDER SET SEMANTICS.
@@ -346,7 +346,7 @@ action:               OBSERVE. Explicitly: SEAM B GETS NO VOTE FROM
 
 ```text
 tower:                Visualization
-level:                2-3  (relation algebra, relational graph)
+level:                2-3  (relation algebra, related graph)
 review gate:          A
 contextual radius:    2 (the composition/transpose law)
 
@@ -359,7 +359,7 @@ symptom / fact:       (D3 o D2 o D1)^T AND D1^T o D2^T o D3^T AGREE
                       would ask this of them.
 
                       Compared as EXTENSIONS - domains slot for slot
-                      by same_as, cardinality, and membership both
+                      by equals, cardinality, and membership both
                       ways round - never by tuple enumeration order,
                       because a relation is a set and how its tuples
                       were handed in is no part of what it is.
@@ -411,7 +411,7 @@ symptom / fact:       A STRUCTURAL RELATION ADMITS MULTIPLE
                       The renderer knows nothing about the specimen.
                       Order comes from member(i) and local_index;
                       content from relation % has; names from the
-                      objects that carry them. A hostile carrier
+                      objects that carry them. A hostile set
                       declaring { 30, 10, 20 } renders 30 10 20.
 
                       THE FLOW IS ONE-DIRECTIONAL. The oracle pictures
@@ -448,14 +448,14 @@ action:               OBSERVE. Do NOT promote the renderer to
 tower:                Visualization
 level:                4  (structural interpretation)
 review gate:          A
-contextual radius:    3 (the ordinary-graph profile's schema)
+contextual radius:    3 (the ordinary-graph interpretation's schema)
 
 symptom / fact:       AN ORDINARY-GRAPH INTERPRETATION IS NOT REQUIRED
                       AT THIS RADIUS, AND WOULD BE INAPPROPRIATE IF
                       FORCED.
 
-                      Both profile readings demand a SINGLE vertex
-                      carrier:
+                      Both interpretation readings demand a SINGLE vertex
+                      set:
 
                         ordinary_graph_view      T <= E x V
                                                  H <= E x V
@@ -487,31 +487,31 @@ symptom / fact:       AN ORDINARY-GRAPH INTERPRETATION IS NOT REQUIRED
                         D : X_i -> X_j    against    D^T : X_j -> X_i
 
                       Under a union both become relations over one V.
-                      The two declared carriers that made them
+                      The two declared sets that made them
                       different KINDS of object are gone, recoverable
                       only from an offset convention the mathematics
                       never stated - and the first thing
                       same_extension tests, domain identity, has
                       nothing left to compare.
 
-                      THIS IS NOT A DEFECT IN THE PROFILE. It is a
-                      specialization the profile documents, correct
+                      THIS IS NOT A DEFECT IN THE INTERPRETATION. It is a
+                      specialization the interpretation documents, correct
                       for the mesh path it was written for.
 
 exact caller:         test/visualization-tower/level-4-graph-calculus/
                       test.f90  check_the_ordinary_graph_question,
-                      against src/graph_profile.f90 create_view and
+                      against src/graph_interpretation.f90 create_view and
                       create_adjacency_view
 
 evidence:             The premises are asserted executably; the
                       contracts were inspected rather than provoked,
                       per the brief. Level 3 asserts the graph holds
-                      no twelve-member union carrier. The import gate
-                      refuses graph_profile at EVERY level, so the
+                      no twelve-member union set. The import gate
+                      refuses graph_interpretation at EVERY level, so the
                       pictures cannot have leaned on one. PASS.
 
 confidence:           high - one specimen, but the conclusion follows
-                      from the profile's own documented schema rather
+                      from the interpretation's own documented schema rather
                       than from this specimen's shape.
 
 action:               OBSERVE. Verdict: ordinary graph interpretation
@@ -549,15 +549,15 @@ symptom / fact:       VISUALIZATION ASKED FOR NO NEW MATHEMATICS. IT
                         binary_relation     source, target,
                                             transpose_of
                         relation algebra    compose_binary
-                        relational_graph    ownership and closure
+                        related_graph    ownership and closure
 
                       INTERPRETING it needed strictly less - the ROOT
-                      relation contract and the carriers, and nothing
+                      relation contract and the sets, and nothing
                       whatever below them:
 
                         relation            arity, domain(k), has,
                                             name
-                        member_set          size, member, local_index,
+                        set          size, member, local_index,
                                             name
 
                       structural_renderer_fixture names no binary
@@ -604,7 +604,7 @@ action:               OBSERVE, and BUILD NOTHING. Success here means
 tower:                Visualization
 level:                5  (field calculus)
 review gate:          not yet reviewed - Gate B needs L5, L6, L7
-contextual radius:    3 (fields over an occurrence carrier)
+contextual radius:    3 (fields over an occurrence set)
 
 symptom / fact:       A RELATION AND A FIELD MAY SHARE AN
                       INTERPRETIVE PICTURE WITHOUT EITHER DEFINING
@@ -631,7 +631,7 @@ symptom / fact:       A RELATION AND A FIELD MAY SHARE AN
 
                       NO PRODUCTION CHANGE WAS NEEDED. The existing
                       field machinery already seats a coefficient on
-                      an occurrence carrier, already takes its entry
+                      an occurrence set, already takes its entry
                       count from the domain, and already answers
                       domain questions by identity.
 
@@ -659,8 +659,8 @@ review gate:          not yet reviewed
 contextual radius:    3 (where a coefficient can sit)
 
 symptom / fact:       DEPENDENCY COEFFICIENTS NATURALLY INHABIT E_k,
-                      NOT THE SOURCE CARRIER AND NOT THE TARGET
-                      CARRIER.
+                      NOT THE SOURCE SET AND NOT THE TARGET
+                      SET.
 
                       The reason is forced by the specimen rather
                       than chosen:
@@ -673,9 +673,9 @@ symptom / fact:       DEPENDENCY COEFFICIENTS NATURALLY INHABIT E_k,
                       hold only one of them. A field on X1 could hold
                       only one of them. E1 is where the two ends
                       meet, and it is the only one of the three
-                      carriers that can seat both.
+                      sets that can seat both.
 
-                      This is what Level 0's occurrence carrier was
+                      This is what Level 0's occurrence set was
                       FOR, five levels before anything needed a
                       value - and the justification only became
                       visible here.
@@ -685,7 +685,7 @@ exact caller:         test/visualization-tower/common/
                       level-5-field-calculus/test.f90
                       check_the_domains_by_identity
 
-evidence:             domain(w1) same_as E1, and NOT same_as X0 or
+evidence:             domain(w1) equals E1, and NOT equals X0 or
                       X1. Likewise w2/E2 and w3/E3. PASS.
 
 confidence:           high.
@@ -824,7 +824,7 @@ level:                5  (field calculus)
 review gate:          not yet reviewed
 contextual radius:    3 (field domain identity)
 
-symptom / fact:       EQUAL CARDINALITY DOES NOT MAKE ONE CARRIER A
+symptom / fact:       EQUAL CARDINALITY DOES NOT MAKE ONE SET A
                       VALID COEFFICIENT DOMAIN FOR ANOTHER.
 
                       The specimen supplies the hostile case for
@@ -841,7 +841,7 @@ symptom / fact:       EQUAL CARDINALITY DOES NOT MAKE ONE CARRIER A
                       NO NEW VALIDATION MECHANISM WAS INVENTED. The
                       check asks the field for its domain and the
                       domain for its identity, which is what
-                      graph_carrier and class_graph_field have always
+                      graph_set and class_graph_field have always
                       offered. Level 5 exposes those semantics; it
                       does not add to them.
 
@@ -894,13 +894,13 @@ symptom / fact:       IDENTICAL BOOLEAN MATRICES CAN REPRESENT
                         w       . . #
 
                       Same grid, glyph for glyph. THREE DECLARED
-                      CARRIERS stand behind those two pictures: X1,
+                      SETS stand behind those two pictures: X1,
                       X2, and the pattern's own 'vertices'. No two of
                       them are the same domain, and all three hold
                       three members.
 
                       So, with V the representation that forgets
-                      carrier identity:
+                      set identity:
 
                         V(R1) = V(R2)   does NOT imply   R1 = R2
 
@@ -915,8 +915,8 @@ exact caller:         test/visualization-tower/level-6-discretization/
                       check_the_visual_equality_theorem
 
 evidence:             same_coordinate_pattern(D2, pattern) TRUE;
-                      pattern's vertex_set() not same_as X1 and not
-                      same_as X2; the two grids equal glyph for
+                      pattern's vertex_set() not equals X1 and not
+                      equals X2; the two grids equal glyph for
                       glyph after labels and spacing are stripped.
                       PASS.
 
@@ -933,7 +933,7 @@ action:               OBSERVE. Classification: STENCIL-B.
 tower:                Visualization
 level:                6  (discretization)
 review gate:          not yet reviewed
-contextual radius:    4 (rectangular signature against one carrier)
+contextual radius:    4 (rectangular signature against one set)
 
 symptom / fact:       THE PRODUCTION DEPENDENCY ANSWER CANNOT
                       INTRINSICALLY REPRESENT X -> Y WITH X /= Y.
@@ -957,9 +957,9 @@ symptom / fact:       THE PRODUCTION DEPENDENCY ANSWER CANNOT
 
                       THE ARROWS SURVIVED. THE SIGNATURE DID NOT.
 
-                      No union carrier was manufactured, no domain was
+                      No union set was manufactured, no domain was
                       padded, and nothing was indexed out of range.
-                      The phantom row is simply what one carrier
+                      The phantom row is simply what one set
                       serving both axes looks like, read off safely.
 
                       THIS IS A SPECIALIZATION, NOT A DEFECT.
@@ -1003,7 +1003,7 @@ symptom / fact:       stencil_operator % dependencies() EXPOSES
 
                         column -> row
 
-                      over a single vertex carrier sized by the
+                      over a single vertex set sized by the
                       constant vector. Read back through the graph's
                       own edge ends, the D2 stencil answers exactly
                       four arrows: 1->1, 2->1, 2->2, 3->3.
@@ -1903,8 +1903,8 @@ action:               OBSERVE, AND BUILD NOTHING. A visualization
 | Seam | Before this tower | After Gate A | Why |
 |---|---|---|---|
 | **A1** graph host as conduit | CLOSED | CLOSED | nothing here reopens it; no operation was hosted anywhere |
-| **A2** operations take domain from graph | 3 towers | **3 towers — unchanged** | Gate A attached no operation to anything; Level 5 attached a FIELD to a CARRIER; Level 6 interrogated operations without applying one. Levels 7–9 applied one through a minimizer — and the fault found there was the solver taking its COLOURING from the host, which is a different question from an operation taking its DOMAIN from one. The seam is untouched |
-| **A3** relational_graph ownership | KEEP | KEEP | one more successful typed-ownership pattern (7 carriers, 6 relations, full signature closure); no production change follows |
+| **A2** operations take domain from graph | 3 towers | **3 towers — unchanged** | Gate A attached no operation to anything; Level 5 attached a FIELD to a SET; Level 6 interrogated operations without applying one. Levels 7–9 applied one through a minimizer — and the fault found there was the solver taking its COLOURING from the host, which is a different question from an operation taking its DOMAIN from one. The seam is untouched |
+| **A3** related_graph ownership | KEEP | KEEP | one more successful typed-ownership pattern (7 sets, 6 relations, full signature closure); no production change follows |
 | **B** bidirectional/rectangular linearization | 2 towers | **2 towers — ZERO new votes** | this tower is full of rectangular structure and none of it is a linearization; structural transpose is not numerical adjoint, and Level 5 built no `w^T`, applied no `A^T v`, and composed no coefficients |
 
 **This tower is ONE client, not eight.** Level 7 produced this

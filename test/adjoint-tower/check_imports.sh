@@ -17,31 +17,31 @@ intrinsics="iso_fortran_env iso_c_binding ieee_arithmetic ieee_exceptions ieee_f
 allowed_for() {
     case "$1" in
         common)                   echo "" ;;
-        level-0-carrier)          echo "adjoint_assert graph_carrier" ;;
-        level-1-relation)         echo "adjoint_assert graph_carrier graph_relation" ;;
+        level-0-set)          echo "adjoint_assert graph_set" ;;
+        level-1-relation)         echo "adjoint_assert graph_set graph_relation" ;;
         # level 2: the algebra, and the binary citizen for the
         # subobjects' own inclusions and their transposed use.
-        level-2-relation-algebra) echo "adjoint_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation" ;;
-        level-3-graph)            echo "adjoint_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_structure" ;;
-        # level 4: the profile and the algorithms - which are here to
+        level-2-relation-algebra) echo "adjoint_assert graph_set graph_relation graph_relation_algebra graph_binary_relation" ;;
+        level-3-graph)            echo "adjoint_assert graph_set graph_relation graph_relation_algebra graph_binary_relation graph_structure" ;;
+        # level 4: the interpretation and the algorithms - which are here to
         # REFUSE an order, not to produce one.
-        level-4-graph-calculus)   echo "adjoint_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_structure graph_profile graph_algorithms" ;;
+        level-4-graph-calculus)   echo "adjoint_assert graph_set graph_relation graph_relation_algebra graph_binary_relation graph_structure graph_interpretation graph_algorithms" ;;
         # level 5: values need domains, not graphs - the smallest
         # allowlist above the ground.
-        level-5-field-calculus)   echo "adjoint_assert graph_carrier class_graph_field" ;;
+        level-5-field-calculus)   echo "adjoint_assert graph_set class_graph_field" ;;
         # level 6: support and orientation; still no field, because
         # where an operator stands is not what it multiplies.
-        level-6-discretization)   echo "adjoint_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation" ;;
+        level-6-discretization)   echo "adjoint_assert graph_set graph_relation graph_relation_algebra graph_binary_relation" ;;
         # level 7: the solver rung. gmres inherits attach/constant/
         # apply from the minimizer base, so graph_minimization is not
         # imported directly; the equations are SUPPLIED by the level's
         # own fixture, and no Level-8 constitution may be reached.
-        level-7-minimization)     echo "adjoint_assert graph_carrier graph_grammar class_graph_field class_graph class_graph_gmres opaque_equation_fixture" ;;
+        level-7-minimization)     echo "adjoint_assert graph_set graph_grammar class_graph_field class_graph class_graph_gmres opaque_equation_fixture" ;;
         # level 8: one constitution. It may see everything legitimately
         # below it - the relation stack that carries the structural
         # supports, the field, and the solver - plus its own fixture.
         # It may NOT reach back into Level 7's supplied equations.
-        level-8-constitution)     echo "adjoint_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_grammar class_graph_field class_graph class_graph_gmres adjoint_constitution_fixture" ;;
+        level-8-constitution)     echo "adjoint_assert graph_set graph_relation graph_relation_algebra graph_binary_relation graph_grammar class_graph_field class_graph class_graph_gmres adjoint_constitution_fixture" ;;
         # level 9: the statement - the composition rung. It may see
         # the relation stack that carries the supports, the model
         # graph that owns them, the field, the legacy host and the
@@ -50,7 +50,7 @@ allowed_for() {
         # same-domain path this tower cannot use), nor the graph
         # algorithms: an implicit system does not become a DAG at
         # the statement.
-        level-9-statement)        echo "adjoint_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_structure graph_grammar class_graph class_graph_field class_graph_gmres adjoint_constitution_fixture" ;;
+        level-9-statement)        echo "adjoint_assert graph_set graph_relation graph_relation_algebra graph_binary_relation graph_structure graph_grammar class_graph class_graph_field class_graph_gmres adjoint_constitution_fixture" ;;
         *)                        echo "__no_allowlist__" ;;
     esac
 }

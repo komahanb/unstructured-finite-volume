@@ -2,7 +2,7 @@ include ../../../Makefile.in
 
 #=====================================================================#
 # Level 7: the solve suite. Framework modules this level may see:
-# the carrier/domain machinery, the field, the legacy
+# the set/domain machinery, the field, the legacy
 # graph_operation host contract, graph_minimization and the GMRES
 # citizen. Constitution and statement remain forbidden: the solver
 # never learns what + or x mean. The import gate holds the door.

@@ -1,8 +1,8 @@
 !=====================================================================!
-! LEVEL 4 OF THE NEW TOWER . THE ORDINARY GRAPH PROFILE
+! LEVEL 4 OF THE NEW TOWER . THE ORDINARY GRAPH INTERPRETATION
 !
 ! The container is general; the ordinary directed graph is ONE
-! SCHEMA read over it (AGENTS.md 16). The schema this profile
+! SCHEMA read over it (AGENTS.md 16). The schema this interpretation
 ! demands is two binary relations over one pair of domains,
 !
 !      T  <=  E x V        the tail: every edge, exactly one
@@ -20,24 +20,24 @@
 !      incident_edges(v)   the two preimages, merged ascending
 !      adjacent, out/in vertices ... all readings of T and H
 !
-! ONE SOURCE OF TRUTH. The profile stores no tail array, no head
+! ONE SOURCE OF TRUTH. The interpretation stores no tail array, no head
 ! array, no adjacency of its own: every answer is read through the
 ! two relations' fibre views at the moment of asking. What the old
 ! stored_graph precomputed, this derives - and the compatibility
 ! suite holds the two against each other, query for query.
 !
 ! A BORROWER, BY POLICY. The graph owns T and H in stable storage;
-! this profile holds them by pointer (the ownership law of
-! graph_binary_relation), so the graph must outlive the profile.
-! The vertex and edge carriers ride along as copies - a copy IS
+! this interpretation holds them by pointer (the ownership law of
+! graph_binary_relation), so the graph must outlive the interpretation.
+! The vertex and edge sets ride along as copies - a copy IS
 ! the declared domain, and costs two integers.
 !
 ! ORDER, CANONICAL. A relation is a set: how its tuples were handed
-! in is no part of what it IS, so no profile answer may depend on
-! it. Every derived list is CANONICALIZED to the edge carrier's own
-! enumeration - fibres sorted by the carrier's local_index, never
-! by the members' integer values, which a sparse carrier declares
-! in whatever order it pleases. On a counted carrier this is the
+! in is no part of what it IS, so no interpretation answer may depend on
+! it. Every derived list is CANONICALIZED to the edge set's own
+! enumeration - fibres sorted by the set's local_index, never
+! by the members' integer values, which a sparse set declares
+! in whatever order it pleases. On an index set this is the
 ! ascending order the old stored_graph produced from its builds.
 ! Hand T and H their tuples shuffled and every answer stands.
 !
@@ -51,12 +51,12 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_profile
+module graph_interpretation
 
-  use graph_carrier        , only : member_set
+  use graph_set        , only : set
   use graph_relation       , only : relation
   use graph_binary_relation, only : binary_relation
-  use graph_structure      , only : relational_graph
+  use graph_structure      , only : related_graph
 
   implicit none
 
@@ -65,8 +65,8 @@ module graph_profile
 
   type :: ordinary_graph_view
 
-     class(member_set), allocatable, private :: verts
-     class(member_set), allocatable, private :: edges
+     class(set), allocatable, private :: verts
+     class(set), allocatable, private :: edges
 
      class(binary_relation), pointer, private :: tails => null()
      class(binary_relation), pointer, private :: heads => null()
@@ -101,7 +101,7 @@ module graph_profile
   !
   !      A  <=  V x V        first slot FROM, second slot TO
   !
-  ! No edge carrier is manufactured, no tail and head relations are
+  ! No edge set is manufactured, no tail and head relations are
   ! derived, no orientation metadata rides anywhere: the tuple
   ! order of a same-domain binary relation IS the direction.
   !
@@ -119,7 +119,7 @@ module graph_profile
 
   type :: directed_adjacency_view
 
-     class(member_set)     , allocatable, private :: over
+     class(set)     , allocatable, private :: over
      class(binary_relation), pointer    , private :: adjacency => null()
 
    contains
@@ -137,10 +137,10 @@ module graph_profile
 contains
 
   !===================================================================!
-  ! Read the schema off a relational graph: which owned relation
+  ! Read the schema off a related graph: which owned relation
   ! plays T, which plays H. Refusals guard the schema:
   !
-  !      not binary            the profile reads fibres both ways
+  !      not binary            the interpretation reads fibres both ways
   !      mismatched domains    T and H must share E and V
   !      a tailless edge       every edge has exactly one tail
   !      a two-tailed edge     ditto
@@ -150,12 +150,12 @@ contains
   type(ordinary_graph_view) function create_view(g, tail_at, head_at) &
        & result(this)
 
-    class(relational_graph), target, intent(in) :: g
+    class(related_graph), target, intent(in) :: g
     integer                        , intent(in) :: tail_at
     integer                        , intent(in) :: head_at
 
     class(relation), pointer       :: r
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
     integer, pointer               :: f(:)
     integer                        :: k, e
 
@@ -164,7 +164,7 @@ contains
     class is (binary_relation)
        this % tails => r
     class default
-       error stop 'graph_profile: the tail relation must be binary'
+       error stop 'graph_interpretation: the tail relation must be binary'
     end select
 
     r => g % relation_at(head_at)
@@ -172,34 +172,34 @@ contains
     class is (binary_relation)
        this % heads => r
     class default
-       error stop 'graph_profile: the head relation must be binary'
+       error stop 'graph_interpretation: the head relation must be binary'
     end select
 
     this % edges = this % tails % source()
     this % verts = this % tails % target()
 
-    if (this % edges % same_as(this % verts)) then
-       error stop 'graph_profile: edges and vertices are distinct domains'
+    if (this % edges % equals(this % verts)) then
+       error stop 'graph_interpretation: edges and vertices are distinct domains'
     end if
 
     d = this % heads % source()
-    if (.not. d % same_as(this % edges)) then
-       error stop 'graph_profile: the head relation must share the tail''s domains'
+    if (.not. d % equals(this % edges)) then
+       error stop 'graph_interpretation: the head relation must share the tail''s domains'
     end if
     d = this % heads % target()
-    if (.not. d % same_as(this % verts)) then
-       error stop 'graph_profile: the head relation must share the tail''s domains'
+    if (.not. d % equals(this % verts)) then
+       error stop 'graph_interpretation: the head relation must share the tail''s domains'
     end if
 
     do k = 1, this % edges % size()
        e = this % edges % member(k)
        f => this % tails % image_view(e)
        if (size(f) /= 1) then
-          error stop 'graph_profile: every edge has exactly one tail'
+          error stop 'graph_interpretation: every edge has exactly one tail'
        end if
        f => this % heads % image_view(e)
        if (size(f) > 1) then
-          error stop 'graph_profile: no edge has two heads'
+          error stop 'graph_interpretation: no edge has two heads'
        end if
     end do
 
@@ -293,10 +293,10 @@ contains
   end subroutine incoming_edges
 
   !===================================================================!
-  ! The canonical order: the edge carrier's OWN ENUMERATION, keyed
+  ! The canonical order: the edge set's OWN ENUMERATION, keyed
   ! by local_index - never by the members' integer values, which a
-  ! sparse carrier is free to hand out in any order it declared.
-  ! For a counted carrier the two coincide; for { 30 10 20 } they
+  ! sparse set is free to hand out in any order it declared.
+  ! For an index set the two coincide; for { 30 10 20 } they
   ! do not, and the declaration wins. Fibres are small; an
   ! insertion sort is honest and allocation-free.
   !===================================================================!
@@ -452,7 +452,7 @@ contains
   end subroutine incoming_vertices
 
   !===================================================================!
-  ! Read the directed adjacency off a relational graph: find the
+  ! Read the directed adjacency off a related graph: find the
   ! graph-owned relation the selector names, and refuse everything
   ! the interpretation cannot mean. The graph may lawfully CONTAIN
   ! all the refused shapes - only this reading refuses them:
@@ -465,37 +465,37 @@ contains
   type(directed_adjacency_view) function create_adjacency_view(g, &
        & selector) result(this)
 
-    class(relational_graph), target, intent(in) :: g
+    class(related_graph), target, intent(in) :: g
     class(relation)                , intent(in) :: selector
 
     class(relation), pointer       :: rp
-    class(member_set), allocatable :: s, t
+    class(set), allocatable :: s, t
     integer                        :: k
     logical                        :: found
 
     found = .false.
     do k = 1, g % num_relations()
        rp => g % relation_at(k)
-       if (rp % same_as(selector)) then
+       if (rp % equals(selector)) then
           found = .true.
           exit
        end if
     end do
     if (.not. found) then
-       error stop 'graph_profile: the graph does not own the selected relation'
+       error stop 'graph_interpretation: the graph does not own the selected relation'
     end if
 
     select type (rp)
     class is (binary_relation)
        this % adjacency => rp
     class default
-       error stop 'graph_profile: a directed adjacency reads a binary relation'
+       error stop 'graph_interpretation: a directed adjacency reads a binary relation'
     end select
 
     s = this % adjacency % source()
     t = this % adjacency % target()
-    if (.not. s % same_as(t)) then
-       error stop 'graph_profile: a directed adjacency runs over one domain'
+    if (.not. s % equals(t)) then
+       error stop 'graph_interpretation: a directed adjacency runs over one domain'
     end if
 
     allocate(this % over, source=s)
@@ -509,7 +509,7 @@ contains
   function adjacency_domain(this) result(domain)
 
     class(directed_adjacency_view), intent(in) :: this
-    class(member_set), allocatable             :: domain
+    class(set), allocatable             :: domain
 
     allocate(domain, source=this % over)
 
@@ -541,4 +541,4 @@ contains
 
   end function predecessors_view
 
-end module graph_profile
+end module graph_interpretation

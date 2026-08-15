@@ -70,12 +70,12 @@ program visualization_level_5
   use visualization_assert , only : X3_M, X3_N
   use visualization_assert , only : E1_1, E1_2, E1_3, E1_4, E1_5
   use visualization_assert , only : E2_1, E2_4, E3_1, E3_2, E3_3
-  use graph_carrier        , only : counted_set, member_set
+  use graph_set        , only : index_set, set
   use graph_relation       , only : relation
   use graph_binary_relation, only : csr_relation
   use graph_field_calculus , only : GRAPH_FIELD_REAL
   use class_graph_field    , only : field
-  use visualization_carriers_fixture , only : structural_carriers, label_for
+  use visualization_sets_fixture , only : structural_sets, label_for
   use visualization_relations_fixture, only : occurrences_of_a1
   use visualization_relations_fixture, only : occurrences_of_a2
   use visualization_relations_fixture, only : occurrences_of_a3
@@ -99,7 +99,7 @@ program visualization_level_5
 
   implicit none
 
-  type(counted_set)          :: x0, x1, x2, x3, e1, e2, e3
+  type(index_set)          :: x0, x1, x2, x3, e1, e2, e3
   type(csr_relation)         :: t1, h1, t2, h2, t3, h3
   type(csr_relation), target :: d1, d2, d3, d21, d31
   type(field)                :: w1, w2, w3, w1_alt, decoy
@@ -113,7 +113,7 @@ program visualization_level_5
   write(*,'(1x,a)') "============================================="
 
   ! ---- the persistent structure, exactly as Gate A left it.
-  call structural_carriers(x0, x1, x2, x3, e1, e2, e3)
+  call structural_sets(x0, x1, x2, x3, e1, e2, e3)
   call occurrences_of_a1(e1, x0, x1, t1, h1)
   call occurrences_of_a2(e2, x1, x2, t2, h2)
   call occurrences_of_a3(e3, x2, x3, t3, h3)
@@ -239,7 +239,7 @@ contains
   end subroutine say_one_cell
 
   !===================================================================!
-  ! Three real scalar fields, on the three occurrence carriers.
+  ! Three real scalar fields, on the three occurrence sets.
   !===================================================================!
 
   subroutine check_the_fields_exist(nfail)
@@ -301,26 +301,26 @@ contains
   ! THE COEFFICIENTS LIVE ON E, AND NOWHERE ELSE.
   !
   ! Checked by identity. |X0| = |E2| = 4 in this specimen, so a field
-  ! of exactly the right length exists on the wrong carrier - and is
-  ! refused, because same_as is not a size comparison.
+  ! of exactly the right length exists on the wrong set - and is
+  ! refused, because equals is not a size comparison.
   !===================================================================!
 
   subroutine check_the_domains_by_identity(nfail)
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: on
+    class(set), allocatable :: on
 
     call w1 % domain(on)
-    call report(on % same_as(e1) .and. .not. on % same_as(x0) .and. &
-         &      .not. on % same_as(x1), &
+    call report(on % equals(e1) .and. .not. on % equals(x0) .and. &
+         &      .not. on % equals(x1), &
          & "domain(w1) IS E1 - not X0 which it reads, and not X1 " // &
          & "which it writes", nfail)
 
     call w2 % domain(on)
-    call report(on % same_as(e2), "domain(w2) is E2", nfail)
+    call report(on % equals(e2), "domain(w2) is E2", nfail)
     call w3 % domain(on)
-    call report(on % same_as(e3), "domain(w3) is E3", nfail)
+    call report(on % equals(e3), "domain(w3) is E3", nfail)
 
     call report(coefficients_fit(w1, e1) .and. coefficients_fit(w2, e2) .and. &
          &      coefficients_fit(w3, e3), &
@@ -550,11 +550,11 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: on
+    class(set), allocatable :: on
     type(picture)                  :: with_w1, with_alt, structural
 
     call w1_alt % domain(on)
-    call report(on % same_as(e1) .and. coefficients_fit(w1_alt, e1), &
+    call report(on % equals(e1) .and. coefficients_fit(w1_alt, e1), &
          & "w1_alt lives on the SAME E1 - the probe changes the " // &
          & "numbers and nothing else", nfail)
 
@@ -599,7 +599,7 @@ contains
   logical function all_values_recovered(w, occurrences, want)
 
     class(field)     , intent(in) :: w
-    class(member_set), intent(in) :: occurrences
+    class(set), intent(in) :: occurrences
     real(dp)         , intent(in) :: want(:)
 
     integer :: k
@@ -620,9 +620,9 @@ contains
   logical function seats_are_unique(d, tail, head, occurrences)
 
     class(relation)  , intent(in) :: d, tail, head
-    class(member_set), intent(in) :: occurrences
+    class(set), intent(in) :: occurrences
 
-    class(member_set), allocatable :: cols, rows
+    class(set), allocatable :: cols, rows
     integer                        :: i, j, want
 
     cols = d % domain(1)
@@ -663,10 +663,10 @@ contains
   logical function views_agree(d, tail, head, occurrences, w)
 
     class(relation)  , intent(in) :: d, tail, head
-    class(member_set), intent(in) :: occurrences
+    class(set), intent(in) :: occurrences
     class(field)     , intent(in) :: w
 
-    class(member_set), allocatable :: cols, rows
+    class(set), allocatable :: cols, rows
     type(picture)                  :: structural, valued
     character(len=32)              :: sbit(16), vbit(16)
     integer :: i, j, ns, nv

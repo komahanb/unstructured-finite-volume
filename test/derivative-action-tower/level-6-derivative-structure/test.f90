@@ -9,7 +9,7 @@
 !      Z = { z }  c-->  C  c-->  V
 !
 ! is already a value slot, so NO location relation is needed: where
-! Learning required a residual-row carrier Y plus L = {(r,e)}
+! Learning required a residual-row set Y plus L = {(r,e)}
 ! because residual rows were not value slots, the derivative
 ! specimen's output is a subdomain, directly. That difference is
 ! architectural evidence, not an omission.
@@ -48,26 +48,26 @@ program derivative_level_6
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use graph_set    , only : index_set, subset, set
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
   use graph_binary_relation , only : csr_relation, transposed_view, &
        &                             transpose_of
-  use graph_structure  , only : relational_graph, held_set, held_relation
-  use graph_profile    , only : directed_adjacency_view
+  use graph_structure  , only : related_graph, declared_set, declared_relation
+  use graph_interpretation    , only : directed_adjacency_view
   use graph_algorithms , only : reachable
 
   implicit none
 
-  type(counted_set)              :: v, o, p
-  type(subset_set)               :: x_dom, c, z, p_in, p_out
+  type(index_set)              :: v, o, p
+  type(subset)               :: x_dom, c, z, p_in, p_out
   type(stored_relation)          :: flow, backwards
   type(stored_relation)          :: consumes, produces
   type(csr_relation)             :: a, a2
   type(csr_relation), target     :: j_zx, j_zx2
   type(transposed_view)          :: jt, jt2
-  type(relational_graph), target :: g_a, g_a2
+  type(related_graph), target :: g_a, g_a2
   type(directed_adjacency_view)  :: dep_view, dep_view2
   integer                        :: table(3, 6)
   integer                        :: nfail
@@ -78,13 +78,13 @@ program derivative_level_6
   write(*,'(1x,a)') "derivative action tower . level 6 . structure"
   write(*,'(1x,a)') "============================================="
 
-  v = counted_set('value-slots', 4)
-  o = counted_set('operations' , 2)
-  p = counted_set('ports'      , 3)
+  v = index_set('value-slots', 4)
+  o = index_set('operations' , 2)
+  p = index_set('ports'      , 3)
 
-  x_dom = subset_set('independent', v, [SLOT_Y, SLOT_X])
-  c     = subset_set('computed'   , v, [SLOT_U, SLOT_Z])
-  z     = subset_set('response'   , c, [SLOT_Z])
+  x_dom = subset('independent', v, [SLOT_Y, SLOT_X])
+  c     = subset('computed'   , v, [SLOT_U, SLOT_Z])
+  z     = subset('response'   , c, [SLOT_Z])
 
   table(:, 1) = [OP_PRODUCT, SLOT_X, PORT_IN1]
   table(:, 2) = [OP_PRODUCT, SLOT_Y, PORT_IN2]
@@ -94,12 +94,12 @@ program derivative_level_6
   table(:, 6) = [OP_SUM    , SLOT_Z, PORT_OUT]
   flow = stored_relation('flow', [o, v, p], table)
 
-  p_in  = subset_set('input-ports', p, [PORT_IN1, PORT_IN2])
-  p_out = subset_set('output-port', p, [PORT_OUT])
+  p_in  = subset('input-ports', p, [PORT_IN1, PORT_IN2])
+  p_out = subset('output-port', p, [PORT_OUT])
 
   a = derive_direct(flow)
-  g_a = relational_graph('value dependency', [held_set(v)], &
-       & [held_relation(a)])
+  g_a = related_graph('value dependency', [declared_set(v)], &
+       & [declared_relation(a)])
   dep_view = directed_adjacency_view(g_a, a)
 
   j_zx = derive_jacobian(dep_view)
@@ -172,7 +172,7 @@ contains
 
   !===================================================================!
   ! The response is a subdomain of the computed slots - and through
-  ! them, of the value slots. NO residual-row carrier, NO location
+  ! them, of the value slots. NO residual-row set, NO location
   ! relation: where Learning needed Y and L because residual rows
   ! were not value slots, the derivative response already IS one.
   !===================================================================!
@@ -199,12 +199,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
 
     dom = consumes % domain(1)
-    call report(dom % same_as(v), "I runs from the value slots", nfail)
+    call report(dom % equals(v), "I runs from the value slots", nfail)
     dom = consumes % domain(2)
-    call report(dom % same_as(o), "into the operations", nfail)
+    call report(dom % equals(o), "into the operations", nfail)
     call report(consumes % num_tuples() .eq. 4 .and. &
          &      consumes % has([SLOT_X, OP_PRODUCT]) .and. &
          &      consumes % has([SLOT_Y, OP_PRODUCT]) .and. &
@@ -214,9 +214,9 @@ contains
          & "- exactly", nfail)
 
     dom = produces % domain(1)
-    call report(dom % same_as(o), "Q runs from the operations", nfail)
+    call report(dom % equals(o), "Q runs from the operations", nfail)
     dom = produces % domain(2)
-    call report(dom % same_as(v), "back into the value slots", nfail)
+    call report(dom % equals(v), "back into the value slots", nfail)
     call report(produces % num_tuples() .eq. 2 .and. &
          &      produces % has([OP_PRODUCT, SLOT_U]) .and. &
          &      produces % has([OP_SUM    , SLOT_Z]), &
@@ -233,12 +233,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
 
     dom = a % domain(1)
-    call report(dom % same_as(v), "A_V runs from the value slots", nfail)
+    call report(dom % equals(v), "A_V runs from the value slots", nfail)
     dom = a % domain(2)
-    call report(dom % same_as(v), "back into the value slots", nfail)
+    call report(dom % equals(v), "back into the value slots", nfail)
 
     call report(a % num_tuples() .eq. 4 .and. &
          &      a % has([SLOT_X, SLOT_U]) .and. &
@@ -287,13 +287,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
 
     dom = j_zx % domain(1)
-    call report(dom % same_as(z), &
+    call report(dom % equals(z), &
          & "J_ZX runs from the response", nfail)
     dom = j_zx % domain(2)
-    call report(dom % same_as(x_dom), &
+    call report(dom % equals(x_dom), &
          & "into the independent inputs", nfail)
 
     call report(j_zx % num_tuples() .eq. 2 .and. &
@@ -372,8 +372,8 @@ contains
     backwards = stored_relation('flow backwards', [o, v, p], rev)
 
     a2 = derive_direct(backwards)
-    g_a2 = relational_graph('value dependency again', [held_set(v)], &
-         & [held_relation(a2)])
+    g_a2 = related_graph('value dependency again', [declared_set(v)], &
+         & [declared_relation(a2)])
     dep_view2 = directed_adjacency_view(g_a2, a2)
     j_zx2 = derive_jacobian(dep_view2)
     jt2 = transpose_of(j_zx2)

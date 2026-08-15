@@ -25,13 +25,13 @@ contextual radius:    0
 symptom / fact:       |Q| = |Y| = 2 and Q is NOT Y. The state domain
                       and the residual domain of a square implicit
                       problem have equal cardinality and no
-                      relationship whatever; only same_as separates
+                      relationship whatever; only equals separates
                       them. Four roles - P, Q, Y, Z - are ordinary
                       subobjects of two parents, and no
                       parameter_field/state_field/residual_field/
                       adjoint_field type was needed or invented.
 
-exact caller:         level-0-carrier/test.f90
+exact caller:         level-0-set/test.f90
                       (check_role_identities)
 
 mathematical concept: role as domain; identity vs cardinality
@@ -52,7 +52,7 @@ comparison:           the first tower where confusing two domains
                       would produce a wrong ANSWER rather than a
                       compile error or an obvious mismatch
 
-suspected nucleus implication: none - carriers and subobjects
+suspected nucleus implication: none - sets and subobjects
                       sufficed; the temptation lives in client code,
                       and the nucleus already refuses it by identity
 
@@ -75,7 +75,7 @@ symptom / fact:       this specimen's dependency relation is DENSE:
                       queries carry no structural information at all
                       here.
 
-                      Worse (and instructive): the two carriers
+                      Worse (and instructive): the two sets
                       enumerate from one, so their raw ids OVERLAP -
                       TGT_R1 and VAR_P are both the integer 1 - and a
                       tuple written in the wrong orientation,
@@ -91,7 +91,7 @@ exact caller:         level-1-relation/test.f90 (check_absences) -
                       reversed pair was absent, and failed; the code
                       was right and the assertion was wrong
 
-mathematical concept: extension vs signature as carriers of meaning
+mathematical concept: extension vs signature as sets of meaning
 
 local necessity:      the signature check is locally necessary; the
                       membership check is locally worthless here
@@ -113,7 +113,7 @@ comparison:           a dense relation is not a degenerate one - it
 
 suspected nucleus implication: none. But a caution worth carrying:
                       any future tooling that reports structure by
-                      probing membership across carriers with
+                      probing membership across sets with
                       overlapping id spaces can be silently fooled;
                       signatures cannot.
 
@@ -191,13 +191,13 @@ tower:                Adjoint Sensitivity
 gate / level:         A / 3
 contextual radius:    0-1
 
-symptom / fact:       a relational_graph seated SUBOBJECTS as
+symptom / fact:       a related_graph seated SUBOBJECTS as
                       ordinary citizens beside their parents: six
-                      carriers (V, T and the four roles) and five
+                      sets (V, T and the four roles) and five
                       relations, with signature closure holding over
                       MIXED ownership - R_dep's slots resolve to the
                       parents, the four blocks' slots to the
-                      subobjects, and every one is a carrier the
+                      subobjects, and every one is a set the
                       graph holds.
 
 exact caller:         level-3-graph/test.f90
@@ -210,9 +210,9 @@ local necessity:      yes - the blocks cannot be owned unless their
                       role domains are
 global necessity:     unknown
 
-cross-tower recurrence: prior towers owned only parent carriers;
+cross-tower recurrence: prior towers owned only parent sets;
                       this is the first graph in the repository whose
-                      carrier list contains both a parent and its
+                      set list contains both a parent and its
                       subobjects
 
 graph role:           owner / structural closure. Nothing more was
@@ -220,8 +220,8 @@ graph role:           owner / structural closure. Nothing more was
                       transpose seat, no derivative metadata
 
 comparison:           the container needed no change to accept a
-                      subobject - a subset_set is a member_set, and
-                      held_set took it without ceremony
+                      subobject - a subset is a set, and
+                      declared_set took it without ceremony
 
 suspected nucleus implication: none. Evidence that the domain
                       lattice and the ownership contract compose
@@ -486,7 +486,7 @@ exact caller:         level-7-minimization/refusal.f90 and
 
 mathematical concept: dimension agreement vs domain identity
 
-local necessity:      yes, and sharply: nothing but same_as can reject
+local necessity:      yes, and sharply: nothing but equals can reject
                       these fields
 global necessity:     unknown, but the risk grows with radius - every
                       square system offers this trap
@@ -701,7 +701,7 @@ symptom / fact:       TWO questions, kept apart deliberately.
                       state and its Jv result on
                       input_graph % vertex_set() - it is same-domain
                       and graph-vertex specialized. It cannot express
-                      Rq : Q -> Y with Q not same_as Y. This tower did
+                      Rq : Q -> Y with Q not equals Y. This tower did
                       NOT contort Q and Y into vertices to reuse it,
                       and did NOT pre-emptively generalize it.
 
@@ -768,7 +768,7 @@ contextual radius:    1 (the complete statement)
 symptom / fact:       "GRAPH" CARRIES TWO DIFFERENT SOFTWARE ROLES,
                       and this statement holds both at once.
 
-                      MODEL (relational_graph): owns V,T,P,Q,Y,Z and
+                      MODEL (related_graph): owns V,T,P,Q,Y,Z and
                       R_dep, J_Q, J_P, F_Q, F_P. The statement
                       locates its citizens by identity, DESTROYS
                       every construction selector, and every number

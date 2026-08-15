@@ -1,21 +1,22 @@
 !=====================================================================!
-! The carrier suite: the laws of the member set (AGENTS.md, level 0,
+! The set suite: the laws of the member set (AGENTS.md, level 0,
 ! phase 1).
 !
 ! A member set answers id, name, size, and members - and its
 ! identity is STRUCTURAL: the same declared domain, never the same
 ! numbers. The checks below are the acceptance laws of section 4,
 ! plus the phase-1 wiring: a stored graph hands out its vertex and
-! edge carriers beside the old vocabulary, and hands out the SAME
+! edge sets beside the old vocabulary, and hands out the SAME
 ! domain every time it is asked.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-program test_graph_carrier
+program test_graph_set
 
   use graph_identity, only : token
-  use graph_carrier , only : member_set, counted_set, subset_set
+  use graph_set , only : set, index_set, subset
+  use graph_set , only : unrelated_graph, declared_set
   use class_graph   , only : stored_graph
 
   implicit none
@@ -25,7 +26,7 @@ program test_graph_carrier
   nfail = 0
 
   write(*,'(1x,a)') "============================================="
-  write(*,'(1x,a)') "graph carrier suite (AGENTS phase 1)"
+  write(*,'(1x,a)') "graph set suite (AGENTS phase 1)"
   write(*,'(1x,a)') "============================================="
 
   call check_counted_contract(nfail)
@@ -33,13 +34,14 @@ program test_graph_carrier
   call check_subsets(nfail)
   call check_embedding_order(nfail)
   call check_empty_subset(nfail)
-  call check_graph_hands_out_carriers(nfail)
+  call check_graph_hands_out_sets(nfail)
+  call check_unrelated_graph(nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
-     write(*,'(1x,a)') "all carrier checks passed"
+     write(*,'(1x,a)') "all set checks passed"
   else
-     write(*,'(1x,a,i0,a)') "FAILED: ", nfail, " carrier check(s)"
+     write(*,'(1x,a,i0,a)') "FAILED: ", nfail, " set check(s)"
      error stop
   end if
 
@@ -69,13 +71,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)    :: cells, none
+    type(index_set)    :: cells, none
     type(token)          :: t
     integer, allocatable :: idx(:)
     integer              :: k
     logical              :: ok
 
-    cells = counted_set('cells', 6)
+    cells = index_set('cells', 6)
 
     ! id answers the whole opaque token, never a bare local integer.
     t = cells % id()
@@ -129,7 +131,7 @@ contains
     call report(ok, &
          & "member and local_index invert each other, both ways", nfail)
 
-    none = counted_set('nothing', 0)
+    none = index_set('nothing', 0)
     call none % members(idx)
     call report(none % size() .eq. 0 .and. size(idx) .eq. 0, &
          & "the empty domain is a domain", nfail)
@@ -147,27 +149,27 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set) :: cells, faces, again, copy, raw
+    type(index_set) :: cells, faces, again, copy, raw
     type(token)       :: tc, tf, ta
 
-    cells = counted_set('cells', 4)
-    faces = counted_set('faces', 4)
+    cells = index_set('cells', 4)
+    faces = index_set('faces', 4)
 
-    call report(.not. cells % same_as(faces), &
+    call report(.not. cells % equals(faces), &
          & "four cells and four faces are different worlds", nfail)
 
-    again = counted_set('cells', 4)
-    call report(.not. cells % same_as(again), &
+    again = index_set('cells', 4)
+    call report(.not. cells % equals(again), &
          & "a second declaration is a second domain, same name or not", nfail)
 
     copy = cells
-    call report(copy % same_as(cells) .and. cells % same_as(copy), &
+    call report(copy % equals(cells) .and. cells % equals(copy), &
          & "a copy is the same declared domain, both ways round", nfail)
 
-    call report(cells % same_as(cells), &
+    call report(cells % equals(cells), &
          & "a domain is itself", nfail)
 
-    call report(.not. raw % same_as(raw), &
+    call report(.not. raw % equals(raw), &
          & "an undeclared set equals nothing, itself included", nfail)
 
     tc = cells % id()
@@ -190,15 +192,15 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)              :: faces
-    type(subset_set)               :: walls, hot
-    class(member_set), allocatable :: amb
+    type(index_set)              :: faces
+    type(subset)               :: walls, hot
+    class(set), allocatable :: amb
     integer, allocatable           :: idx(:)
     integer                        :: k
     logical                        :: ok
 
-    faces = counted_set('faces', 6)
-    walls = subset_set('walls', faces, [2, 5, 2])
+    faces = index_set('faces', 6)
+    walls = subset('walls', faces, [2, 5, 2])
 
     call report(walls % size() .eq. 2, &
          & "a member handed in twice is in the subset once", nfail)
@@ -220,9 +222,9 @@ contains
          & "member and local_index invert each other on the subset", nfail)
 
     amb = walls % ambient()
-    call report(amb % same_as(faces), &
+    call report(amb % equals(faces), &
          & "the ambient is the domain the subset was carved from", nfail)
-    call report(.not. walls % same_as(faces), &
+    call report(.not. walls % equals(faces), &
          & "a subobject is its own declared domain, not its host", nfail)
 
     ok = .true.
@@ -234,11 +236,11 @@ contains
 
     ! Subobjects nest: a subset of a subset, each layer keeping its
     ! own ambient.
-    hot = subset_set('hot-walls', walls, [5])
+    hot = subset('hot-walls', walls, [5])
     call report(hot % size() .eq. 1 .and. hot % member(1) .eq. 5, &
          & "a subset of a subset is a subset", nfail)
     amb = hot % ambient()
-    call report(amb % same_as(walls), &
+    call report(amb % equals(walls), &
          & "whose ambient is the layer above, not the ground", nfail)
     call report(faces % has(hot % member(1)), &
          & "and whose members reach the ground transitively", nfail)
@@ -256,14 +258,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set) :: faces, other
-    type(subset_set)  :: walls, hot, cold
+    type(index_set) :: faces, other
+    type(subset)  :: walls, hot, cold
 
-    faces = counted_set('faces', 8)
-    other = counted_set('other', 8)
-    walls = subset_set('walls', faces, [2, 5, 7])
-    hot   = subset_set('hot'  , walls, [5, 7])
-    cold  = subset_set('cold' , faces, [1])
+    faces = index_set('faces', 8)
+    other = index_set('other', 8)
+    walls = subset('walls', faces, [2, 5, 7])
+    hot   = subset('hot'  , walls, [5, 7])
+    cold  = subset('cold' , faces, [1])
 
     call report(faces % is_subobject_of(faces), &
          & "a domain is a subobject of itself", nfail)
@@ -296,13 +298,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)              :: faces
-    type(subset_set)               :: none
-    class(member_set), allocatable :: amb
+    type(index_set)              :: faces
+    type(subset)               :: none
+    class(set), allocatable :: amb
     integer, allocatable           :: idx(:)
 
-    faces = counted_set('faces', 6)
-    none  = subset_set('nothing', faces, [integer ::])
+    faces = index_set('faces', 6)
+    none  = subset('nothing', faces, [integer ::])
 
     call none % members(idx)
     call report(none % size() .eq. 0 .and. size(idx) .eq. 0, &
@@ -311,7 +313,7 @@ contains
          & "that holds nothing and places nothing", nfail)
 
     amb = none % ambient()
-    call report(amb % same_as(faces), &
+    call report(amb % equals(faces), &
          & "yet remembers what it was carved from", nfail)
     call report(none % is_subobject_of(faces), &
          & "and stands embedded there, empty or not", nfail)
@@ -319,17 +321,17 @@ contains
   end subroutine check_empty_subset
 
   !===================================================================!
-  ! The phase-1 wiring: a stored graph declares its two carriers at
+  ! The phase-1 wiring: a stored graph declares its two sets at
   ! construction and answers the SAME domain at every asking, while
   ! all the old vocabulary stands untouched beside them.
   !===================================================================!
 
-  subroutine check_graph_hands_out_carriers(nfail)
+  subroutine check_graph_hands_out_sets(nfail)
 
     integer, intent(inout) :: nfail
 
     type(stored_graph) :: g, h
-    type(counted_set)  :: vs, es, vs2
+    type(index_set)  :: vs, es, vs2
 
     g = stored_graph(3, tails=[1, 2], heads=[2, 3])
     h = stored_graph(3, tails=[1, 2], heads=[2, 3])
@@ -338,22 +340,84 @@ contains
     es = g % edge_set()
 
     call report(vs % size() .eq. g % num_vertices(), &
-         & "the vertex carrier counts what num_vertices counts", nfail)
+         & "the vertex set counts what num_vertices counts", nfail)
     call report(es % size() .eq. g % num_edges(), &
-         & "the edge carrier counts what num_edges counts", nfail)
+         & "the edge set counts what num_edges counts", nfail)
     call report(vs % name() == 'vertices' .and. es % name() == 'edges', &
-         & "the carriers wear the graph's own words", nfail)
+         & "the sets wear the graph's own words", nfail)
 
-    call report(.not. vs % same_as(es), &
+    call report(.not. vs % equals(es), &
          & "a graph's two sides are two domains", nfail)
 
     vs2 = g % vertex_set()
-    call report(vs % same_as(vs2), &
+    call report(vs % equals(vs2), &
          & "asked twice, the graph answers the same domain", nfail)
 
-    call report(.not. vs % same_as(h % vertex_set()), &
+    call report(.not. vs % equals(h % vertex_set()), &
          & "an identical twin graph still owns its own domains", nfail)
 
-  end subroutine check_graph_hands_out_carriers
+  end subroutine check_graph_hands_out_sets
 
-end program test_graph_carrier
+
+  !===================================================================!
+  ! THE RELATION-FREE GRAPH, G = (S, empty), for every S.
+  !
+  ! The empty graph and the three-domain graph are the two cases the
+  ! abstract parent could not express; the one-domain case is here
+  ! beside them to show that `set` is a SPECIALIZATION of this
+  ! object and not a rival to it.
+  !===================================================================!
+
+  subroutine check_unrelated_graph(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(index_set)      , target :: a, b, c
+    type(unrelated_graph), target :: empty, one, three
+    type(declared_set)                :: nothing(0)
+    class(set)           , pointer :: p, q
+    type(token)                    :: stamp
+
+    a = index_set('cells', 4)
+    b = index_set('faces', 6)
+    c = index_set('parts', 2)
+
+    empty = unrelated_graph('the empty graph', nothing)
+    one   = unrelated_graph('one domain',      [declared_set(a)])
+    three = unrelated_graph('three domains',   [declared_set(a), declared_set(b), declared_set(c)])
+
+    call report(empty % num_sets() .eq. 0, &
+         & "the empty graph G = (empty, empty) is a declared object", nfail)
+    call report(three % num_sets() .eq. 3, &
+         & "and a graph may hold three domains with nothing between them", nfail)
+    call report(one % num_sets() .eq. 1, &
+         & "one domain needs no special type: it is the same object", nfail)
+
+    call report(empty % num_relations() .eq. 0 .and. &
+         &      one   % num_relations() .eq. 0 .and. &
+         &      three % num_relations() .eq. 0, &
+         & "|R| = 0 is the law, and it does not vary", nfail)
+
+    p => three % set_at(2)
+    call report(p % equals(b), &
+         & "set_at answers the declared domain, by identity", nfail)
+    q => three % set_at(2)
+    call report(associated(p, q), &
+         & "and BORROWS one owned seat - asked twice, the same storage", nfail)
+
+    call report(three % holds_set(a) .and. three % holds_set(b) .and. &
+         &      three % holds_set(c), &
+         & "a graph knows every domain it holds", nfail)
+    call report(.not. three % holds_set(index_set('cells', 4)), &
+         & "and disowns an identical stranger", nfail)
+
+    stamp = empty % id()
+    call report(stamp % declared(), &
+         & "the empty graph signs like any other", nfail)
+
+    call report(.not. empty % equals(one), &
+         & "two declarations are two graphs, empty or not", nfail)
+
+  end subroutine check_unrelated_graph
+
+end program test_graph_set

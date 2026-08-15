@@ -12,9 +12,9 @@
 ! Three relations, and that is all this level knows. There is no
 ! overlap, no borrowed member, no local numbering, no graph object
 ! and no partitioner. Ownership here is an INTENTION stated over
-! carriers - not yet a thing any machinery has realized.
+! sets - not yet a thing any machinery has realized.
 !
-! Every signature is pinned by carrier IDENTITY, because the ids
+! Every signature is pinned by set IDENTITY, because the ids
 ! collide across V, E and K and orientation could not otherwise be
 ! established. The collisions are real and specific:
 !
@@ -32,7 +32,7 @@
 !
 ! No pair belongs to all three relations, and none could: Tail and
 ! Head are disjoint on this chain, and a K-indexed relation admits
-! only 1 and 2 in its first slot. That last point is a carrier
+! only 1 and 2 in its first slot. That last point is a set
 ! truth, not an arithmetic one - Own refuses [3,4] outright because
 ! K has no member 3.
 !
@@ -42,15 +42,15 @@
 program partitioned_pde_level_1
 
   use partitioned_pde_assert , only : report, verdict
-  use graph_carrier          , only : counted_set, member_set
+  use graph_set          , only : index_set, set
   use graph_binary_relation  , only : csr_relation
-  use chain_carriers_fixture , only : chain_carriers
+  use chain_sets_fixture , only : chain_sets
   use chain_relations_fixture, only : tail_relation, head_relation, &
        &                              own_relation
 
   implicit none
 
-  type(counted_set)  :: v, e, k
+  type(index_set)  :: v, e, k
   type(csr_relation) :: tail, head, own
   integer            :: nfail
 
@@ -60,7 +60,7 @@ program partitioned_pde_level_1
   write(*,'(1x,a)') "partitioned pde tower . level 1 . relation"
   write(*,'(1x,a)') "============================================="
 
-  call chain_carriers(v, e, k)
+  call chain_sets(v, e, k)
   tail = tail_relation(e, v)
   head = head_relation(e, v)
   own  = own_relation(k, v)
@@ -75,7 +75,7 @@ program partitioned_pde_level_1
 contains
 
   !===================================================================!
-  ! Every slot answers a DECLARED carrier by identity. Sizes could
+  ! Every slot answers a DECLARED set by identity. Sizes could
   ! not do this: E and K differ in size from V, but Tail and Head
   ! share both of theirs exactly.
   !===================================================================!
@@ -84,22 +84,22 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
 
     d = tail % domain(1)
-    call report(d % same_as(e), "Tail runs from the edges", nfail)
+    call report(d % equals(e), "Tail runs from the edges", nfail)
     d = tail % domain(2)
-    call report(d % same_as(v), "into the vertices", nfail)
+    call report(d % equals(v), "into the vertices", nfail)
 
     d = head % domain(1)
-    call report(d % same_as(e), "Head runs from the edges", nfail)
+    call report(d % equals(e), "Head runs from the edges", nfail)
     d = head % domain(2)
-    call report(d % same_as(v), "into the vertices as well", nfail)
+    call report(d % equals(v), "into the vertices as well", nfail)
 
     d = own % domain(1)
-    call report(d % same_as(k), "Own runs from the partition labels", nfail)
+    call report(d % equals(k), "Own runs from the partition labels", nfail)
     d = own % domain(2)
-    call report(d % same_as(v), "into the vertices", nfail)
+    call report(d % equals(v), "into the vertices", nfail)
 
   end subroutine check_signatures
 
@@ -187,7 +187,7 @@ contains
          &      .not. own % has([3, 4]), &
          & "no pair is a fact of all three - [3,4] is Head's alone: " // &
          & "Tail says e3 leaves vertex 3, and Own refuses it because " // &
-         & "K has no member 3, a carrier truth, not an arithmetic one", &
+         & "K has no member 3, a set truth, not an arithmetic one", &
          & nfail)
 
   end subroutine check_orientation_is_signature

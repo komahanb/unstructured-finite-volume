@@ -9,13 +9,28 @@ The architecture is allowed to evolve when a more general mathematical object is
 
 The present redesign supersedes the earlier incidence-first proposal.
 
+## The canonical mathematical source
+
+`MATHEMATICAL_ARCHITECTURE.md` is **normative for Levels 0 through 3** — set,
+relation, relation algebra, related graph. It states the laws the code must
+implement, and when code and mathematics disagree there, the code changes.
+
+Where this document and `MATHEMATICAL_ARCHITECTURE.md` differ on a Level-0–3
+law, `MATHEMATICAL_ARCHITECTURE.md` governs. Sections 4, 5, 9 and 14 below are
+retained for their derivations, migration history and worked examples; they are
+no longer the authority on the contracts themselves.
+
+This document remains the authority on everything else: the naming law
+(Section 0), stratification, Levels 4 through 9, acceptance laws, migration
+strategy, and the questions an agent must ask before implementing.
+
 The fundamental idea is no longer
 
 \[
 G=(A,B,I),
 \]
 
-because that still assumes a binary relation between exactly two member sets.
+because that still assumes a binary relation between exactly two sets.
 
 The new foundation is a family of typed finite-arity relations:
 
@@ -25,7 +40,7 @@ A_1\times A_2\times\cdots\times A_k,
 \qquad k\ge 1.
 \]
 
-A graph is then a structured collection of member sets and relations:
+A graph is then a structured collection of sets and relations:
 
 \[
 \boxed{
@@ -47,7 +62,7 @@ and every relation \(R_\rho\in\mathcal R\) has a declared signature
 (S_{\rho,1},\ldots,S_{\rho,k_\rho}).
 \]
 
-The framework must therefore treat **member sets and relations as first-class mathematical objects**.
+The framework must therefore treat **sets and relations as first-class mathematical objects**.
 
 ---
 
@@ -73,10 +88,10 @@ A type or level is justified when it represents a mathematically distinct object
 The intended long-term stratification is:
 
 ```text
-level 0   carriers             what members may exist
+level 0   sets             what members may exist
 level 1   relations            how members may be related
 level 2   relation algebra     how relations generate relations
-level 3   relational graph     how relations coexist as one structure
+level 3   related graph     how relations coexist as one structure
 level 4   graph calculus       graph-theoretic interpretations and transforms
 level 5   field calculus       values and transport over graph domains
 level 6   discretization       how continuous/local laws become discrete operators
@@ -110,11 +125,14 @@ The question for placement is:
 
 ---
 
-# 4. Level 0 — carriers
+# 4. Level 0 — sets
+
+> Normative source: `MATHEMATICAL_ARCHITECTURE.md`. The Level-0 laws there govern; this section is retained for its
+> derivation and migration history.
 
 ## 4.1 Fundamental object
 
-The ground object is a **member set**.
+The ground object is a **set**.
 
 Conceptually:
 
@@ -122,9 +140,9 @@ Conceptually:
 A=\{a_1,\ldots,a_n\}.
 \]
 
-A member set has identity independent of its storage representation.
+A set has identity independent of its storage representation.
 
-Two member sets are equal only when they are the same declared structural domain, not merely because:
+Two sets are equal only when they are the same declared structural domain, not merely because:
 
 - they contain equal integers;
 - they have equal cardinality;
@@ -145,14 +163,14 @@ parts
 tags
 ```
 
-are distinct member sets even if every one is represented by integer indices.
+are distinct sets even if every one is represented by integer indices.
 
 ## 4.2 Candidate contract
 
 Conceptually:
 
 ```fortran
-type, abstract :: member_set
+type, abstract :: set
 contains
     procedure :: id
     procedure :: size
@@ -166,15 +184,18 @@ Do not put graph-specific words such as `vertex` or `edge` here.
 
 ## 4.3 Identity
 
-Member-set identity is structural.
+Set identity is structural.
 
 Do not infer equality from array equality.
 
-A relation signature must refer to member-set identities.
+A relation signature must refer to set identities.
 
 ---
 
 # 5. Level 1 — relations
+
+> Normative source: `MATHEMATICAL_ARCHITECTURE.md`. The Level-1 laws there govern; this section is retained for its
+> derivation and migration history.
 
 ## 5.1 Fundamental object
 
@@ -204,7 +225,7 @@ type, abstract :: relation
 contains
     procedure :: id
     procedure :: arity
-    procedure :: domain          ! slot -> member_set
+    procedure :: domain          ! slot -> set
     procedure :: contains
     procedure :: tuples          ! non-hot generic access
 end type
@@ -268,15 +289,15 @@ P\subseteq A
 is a predicate on \(A\).
 
 The concept currently called `support` is refined (review, 2026-08-12)
-beyond the raw predicate: a support is a **member-set subobject**,
+beyond the raw predicate: a support is a **set subobject**,
 
 \[
 \boxed{
-S\hookrightarrow A,\qquad S\ \text{is itself a member_set}
+S\hookrightarrow A,\qquad S\ \text{is itself a set}
 }
 \]
 
-implemented as `subset_set`: it answers the full carrier contract —
+implemented as `subset`: it answers the full set contract —
 `id`, `size`, `member`, `members`, `has`, `local_index` — signs its
 own structural identity, and adds exactly one law, sealed at
 construction:
@@ -453,7 +474,7 @@ where
 P = {tail, head}
 ```
 
-is a member set of endpoint roles.
+is a set of endpoint roles.
 
 Then an interior edge may contain:
 
@@ -511,6 +532,9 @@ Choose reification only when the relation instance itself deserves identity or c
 ---
 
 # 9. Level 2 — relation algebra
+
+> Normative source: `MATHEMATICAL_ARCHITECTURE.md`. The Level-2 laws there govern; this section is retained for its
+> derivation and migration history.
 
 Relations generate new relations.
 
@@ -627,7 +651,7 @@ A same-set adjacency relation may also be primitive.
 
 ## 9.6 Identity relation
 
-Each member set has an identity relation:
+Each set has an identity relation:
 
 \[
 1_A=\{(a,a):a\in A\}.
@@ -728,7 +752,7 @@ For example, a multigraph may contain two distinct edges between the same vertic
 
 Do not collapse first-class edge objects into duplicate adjacency tuples.
 
-Instead retain an edge member set:
+Instead retain an edge set:
 
 ```text
 V = vertices
@@ -781,7 +805,10 @@ Use a refined type when downstream algorithms genuinely require the stronger law
 
 ---
 
-# 14. Level 3 — relational graph
+# 14. Level 3 — related graph
+
+> Normative source: `MATHEMATICAL_ARCHITECTURE.md`. The Level-3 laws there govern; this section is retained for its
+> derivation and migration history.
 
 ## 14.1 Graph definition
 
@@ -793,7 +820,7 @@ G=(\mathcal S,\mathcal R)
 }
 \]
 
-where \(\mathcal S\) is a collection of member sets and \(\mathcal R\) is a collection of typed relations over them.
+where \(\mathcal S\) is a collection of sets and \(\mathcal R\) is a collection of typed relations over them.
 
 A graph is therefore composition, not inheritance from relation.
 
@@ -802,8 +829,8 @@ Conceptually:
 ```fortran
 type, abstract :: graph
 contains
-    procedure :: num_member_sets
-    procedure :: member_set
+    procedure :: num_sets
+    procedure :: set
     procedure :: num_relations
     procedure :: relation
 end type
@@ -865,7 +892,7 @@ Do not address a relation solely by `(source_set, target_set)`.
 A graph has a relational signature/schema:
 
 ```text
-member-set identities
+set identities
 relation identities
 relation arities
 relation slot domains
@@ -892,9 +919,9 @@ A schema may state required relations without prescribing storage.
 
 ---
 
-# 16. Graph views / profiles
+# 16. Graph views / interpretations
 
-Traditional graph objects should be expressed as **views or profiles over relational graphs**.
+Traditional graph objects should be expressed as **views or interpretations over related graphs**.
 
 Examples:
 
@@ -971,7 +998,7 @@ Do not force every graph to have a dual.
 
 # 18. Level 4 — graph calculus
 
-This level introduces graph-theoretic interpretations and structural algorithms over relational graphs.
+This level introduces graph-theoretic interpretations and structural algorithms over related graphs.
 
 Examples include:
 
@@ -1029,14 +1056,14 @@ They are not universal methods of `relation`.
 
 Partition, assemble, coarsen, and refine remain graph-to-graph constructions.
 
-Their contracts should consume relational graphs and preserve or transform relations according to explicit laws.
+Their contracts should consume related graphs and preserve or transform relations according to explicit laws.
 
-Do not hard-code vertex/edge as the only transferable member sets.
+Do not hard-code vertex/edge as the only transferable sets.
 
 A transform should describe:
 
 ```text
-which member sets are transformed
+which sets are transformed
 how each relation is mapped
 which relation laws are preserved
 how fields are transported
@@ -1052,7 +1079,7 @@ Graph transforms may themselves induce relations between source and target graph
 
 A field is a function over a domain.
 
-If \(A\) is a member set and \(V\) a value space:
+If \(A\) is a set and \(V\) a value space:
 
 \[
 f:A\to V.
@@ -1064,12 +1091,12 @@ If the field exists only on a subobject \(S\hookrightarrow A\), then:
 f:S\to V.
 \]
 
-A field domain is therefore **always a member_set** — an ambient
-carrier or a `subset_set` subobject (a support IS a member_set) —
-one domain kind, never a carrier-or-predicate union, and never an
+A field domain is therefore **always a set** — an ambient
+set or a `subset` subobject (a support IS a set) —
+one domain kind, never a set-or-predicate union, and never an
 edgeless graph. This is now implemented: `graph_field_calculus`
 owns the abstract field, `class_graph_field%on` is a polymorphic
-member_set, and the shape law `stored = domain.size * ncomp` is
+set, and the shape law `stored = domain.size * ncomp` is
 refused loudly in every value kind.
 
 ## 20.2 Field contract
@@ -1143,7 +1170,7 @@ A reduction maps many field entries to a functional.
 
 A broadcast maps a functional to many field entries.
 
-Their domains should be expressed using the new member-set/support model.
+Their domains should be expressed using the new set/support model.
 
 Do not couple reduction semantics to vertices.
 
@@ -1210,7 +1237,7 @@ A discretization may operate directly on higher-arity relations if that is the n
 
 # 24. Dependency structure
 
-A discretization's dependency pattern is itself a relation or relational graph.
+A discretization's dependency pattern is itself a relation or related graph.
 
 Do not require dependency structure to be an ordinary graph unless the algorithm requires one.
 
@@ -1220,7 +1247,7 @@ For a field on \(A\), a dependency relation may naturally be:
 D\subseteq A\times A.
 \]
 
-For multi-field operators, dependencies may span several member sets.
+For multi-field operators, dependencies may span several sets.
 
 This should become more expressive than the current single ordinary-graph dependency pattern.
 
@@ -1261,7 +1288,7 @@ preconditioner structures
 
 but must not assume every unknown lives on "vertices".
 
-Unknown domains are member sets/supports.
+Unknown domains are sets/supports.
 
 Replace vertex-specific assumptions in minimizers with domain-driven logic as the migration reaches this level.
 
@@ -1329,7 +1356,7 @@ Do not mechanically patch more relation methods into the existing `graph` root.
 Instead migrate toward the new tower:
 
 ```text
-member_set
+set
 relation
 relation algebra
 graph
@@ -1365,10 +1392,10 @@ as its source representation.
 The target should separate:
 
 ```text
-member sets
+sets
 stored relations
 derived/cached relation views
-graph profile
+graph interpretation
 ```
 
 For the current ordinary directed graph, a viable transitional schema is:
@@ -1478,7 +1505,7 @@ T = tag names
 R_tag ⊆ A × T
 ```
 
-rather than one fixed character array attached separately to every member-set kind.
+rather than one fixed character array attached separately to every set kind.
 
 This need not be migrated immediately.
 
@@ -1490,7 +1517,7 @@ The important point is that tagging is a relation between members and labels, no
 
 Partition metadata should also be reconsidered relationally.
 
-Possible member set:
+Possible set:
 
 ```text
 P = parts
@@ -1520,7 +1547,7 @@ The existing `support` class is a prime early migration target.
 Target:
 
 ```text
-support = subset_set subobject S ↪ A, itself a member_set
+support = subset subobject S ↪ A, itself a set
 ```
 
 not:
@@ -1530,13 +1557,13 @@ support extends graph with zero edges
 ```
 
 Migration rule (staged; ALL STAGES COMPLETE as of 2026-08-12 —
-`class_graph_support` is deleted, field domains are member_set,
+`class_graph_support` is deleted, field domains are set,
 the six side() routing sites are gone, and partition/assembly
 transport domains; the stages remain recorded for the history):
 
-1. introduce `subset_set` with the inclusion law, `inclusion_of`,
+1. introduce `subset` with the inclusion law, `inclusion_of`,
    and the transitive `is_subobject_of` embedding query;
-2. change the field domain contract to `member_set` (5B.1);
+2. change the field domain contract to `set` (5B.1);
 3. make field storage reference the new domains, ambient or
    subset (5B.2);
 4. replace `side()` routing in consumers — assembler, partitioner,
@@ -1556,10 +1583,10 @@ Fields currently reference graph-shaped domains.
 Target:
 
 ```text
-field.domain -> member_set or support
+field.domain -> set or support
 ```
 
-A field on all cells references the cell member set.
+A field on all cells references the cell set.
 
 A field on boundary faces references a boundary-face predicate/support.
 
@@ -1589,7 +1616,7 @@ assemble_edge_field
 
 But the new design should go beyond a two-valued `side`.
 
-The domain is a first-class member set/support.
+The domain is a first-class set/support.
 
 Do not replace `vertex/edge` with merely `A/B` and declare the problem solved.
 
@@ -1626,8 +1653,8 @@ Do not rewrite every algorithm against arbitrary \(k\)-ary relations immediately
 Instead:
 
 ```text
-general relational graph
-    ↓ profile/view
+general related graph
+    ↓ interpretation/view
 ordinary graph view
     ↓
 existing algorithms
@@ -1641,7 +1668,7 @@ This gives generality without destroying mature graph algorithms.
 
 The ordinary graph API remains useful.
 
-A compatibility profile should continue to provide:
+A compatibility interpretation should continue to provide:
 
 ```text
 num_vertices
@@ -1657,7 +1684,7 @@ outgoing_vertices
 incoming_vertices
 ```
 
-while these are derived from or backed by the new relational graph.
+while these are derived from or backed by the new related graph.
 
 Do not remove user-facing graph vocabulary merely because the internal ontology changed.
 
@@ -1685,7 +1712,7 @@ No root contract may assume an edge has exactly two incident vertices.
 
 # 44. Mesh topology
 
-A geometric mesh naturally has several member sets:
+A geometric mesh naturally has several sets:
 
 \[
 X_0,X_1,X_2,X_3
@@ -1722,13 +1749,13 @@ A finite-volume solver may choose the cell-face relation as its primary operatio
 
 # 45. Composition of graphs
 
-Since a graph is a collection of member sets and relations, graph composition should eventually be expressible as composition/union of compatible relational structures.
+Since a graph is a collection of sets and relations, graph composition should eventually be expressible as composition/union of compatible relational structures.
 
 Potential operations include:
 
 ```text
 merge schemas
-join structures on shared member sets
+join structures on shared sets
 restrict to substructure
 quotient
 refine
@@ -1759,7 +1786,7 @@ Induced ordinary subgraphs become one specialization.
 
 # 47. Quotients and refinement
 
-A quotient graph should be formulated through maps/relations from fine member sets to coarse member sets.
+A quotient graph should be formulated through maps/relations from fine sets to coarse sets.
 
 Refinement is the complementary direction only when explicit laws make it so.
 
@@ -1783,7 +1810,7 @@ D\subseteq A\times A
 
 is sufficient.
 
-If dependency instances require identity, introduce a separate member set.
+If dependency instances require identity, introduce a separate set.
 
 Choose representation according to what is first-class in the problem.
 
@@ -1795,7 +1822,7 @@ Before adding an integer or enum attribute to a relation tuple, ask:
 
 > Is this attribute merely implementation metadata, or is it itself a structural axis whose values participate in laws?
 
-If structural, prefer giving it a member set and relation slot.
+If structural, prefer giving it a set and relation slot.
 
 Examples that may deserve domains:
 
@@ -1856,7 +1883,7 @@ Therefore:
 ```text
 binary_relation is-a relation
 stored_relation is-a relation realization
-graph has member_sets
+graph has sets
 graph has relations
 field has a domain
 ```
@@ -1916,7 +1943,7 @@ Avoid hidden O(N) scans behind methods that look like O(degree) neighborhood que
 Structural objects should remain immutable after construction by default:
 
 ```text
-member sets
+sets
 relations
 graphs
 schemas
@@ -1935,9 +1962,9 @@ Construction complexity should not contaminate immutable runtime objects.
 Consider builder types for:
 
 ```text
-member sets
+sets
 stored relations
-relational graphs
+related graphs
 mesh topology
 ```
 
@@ -1958,9 +1985,9 @@ Examples:
 ```text
 tuple indices belong to declared slot domains
 functional relations have at most one image where promised
-ordinary edge profile satisfies endpoint laws
+ordinary edge interpretation satisfies endpoint laws
 partition ownership is total where required
-relation signatures reference graph member sets
+relation signatures reference graph sets
 ```
 
 Do not repeatedly revalidate these invariants in hot loops.
@@ -1972,7 +1999,7 @@ Do not repeatedly revalidate these invariants in hot loops.
 Prefer mathematical names at fundamental levels:
 
 ```text
-member_set
+set
 relation
 predicate
 signature
@@ -1986,7 +2013,7 @@ graph
 field
 ```
 
-Use application vocabulary in profiles and higher layers:
+Use application vocabulary in interpretations and higher layers:
 
 ```text
 vertex
@@ -2009,7 +2036,7 @@ Do not replace precise established mathematical terminology with vague generic w
 The long-term module layout may evolve toward something conceptually like:
 
 ```text
-graph_carrier.f90
+graph_set.f90
 graph_relation.f90
 graph_relation_algebra.f90
 graph_structure.f90
@@ -2035,7 +2062,7 @@ Proceed by semantic seams, not by mass rewrite.
 Status (2026-08-12, branch `tower-graph-as-sets-relations`): Phases
 0–5 are complete, with the reviews' amendments folded in. The earned
 relation-algebra primitives exist (restrict/project/compose, §9);
-the relational graph exists (§14); graph interpretation and
+the related graph exists (§14); graph interpretation and
 algorithms exist (directed adjacency view, sources/sinks/reachable/
 topological order, §16/§18); the 5B field/support migration is
 complete (§37–§38) including domain-aware partition/assembly
@@ -2044,7 +2071,7 @@ complete. Level 9 selects existing structure, inputs,
 discretization, constitution and minimization, adds no production
 statement type, and produces the requested value through
 composition alone. The Level-7 gate migrated
-minimization to an explicit member_set unknown domain with a
+minimization to an explicit set unknown domain with a
 distinct residual domain asked of the action itself — the graph
 argument survives only as legacy operation-host compatibility and
 no longer determines the unknown space; the current family's square
@@ -2061,9 +2088,9 @@ Before changing behavior:
 - add tests for parallel edges, boundary half-edges, directed traversal, supports, partition round trips, and differential adjoints;
 - benchmark current hot graph traversals.
 
-## Phase 1 — introduce `member_set`
+## Phase 1 — introduce `set`
 
-Create a first-class domain/member-set abstraction.
+Create a first-class domain/set abstraction.
 
 Use it initially beside current vertex/edge APIs.
 
@@ -2081,16 +2108,16 @@ Use CSR or equivalent for the current ordinary graph path.
 
 ## Phase 4 — migrate ordinary graph structure
 
-Represent current vertex/edge topology through member sets + relation(s).
+Represent current vertex/edge topology through sets + relation(s).
 
 Keep the old `graph` API as a compatibility view.
 
 ## Phase 5 — migrate support
 
-Replace edgeless-graph support with the `subset_set` subobject
-semantics: \(S\hookrightarrow A\), itself a member_set.
+Replace edgeless-graph support with the `subset` subobject
+semantics: \(S\hookrightarrow A\), itself a set.
 
-Adapt fields: `field.domain` is always a member_set.
+Adapt fields: `field.domain` is always a set.
 
 ## Phase 6 — relation algebra
 
@@ -2149,7 +2176,7 @@ The relation layer must test at least:
 
 ### Domain validity
 
-Every tuple component belongs to its declared slot member set.
+Every tuple component belongs to its declared slot set.
 
 ### Arity
 
@@ -2197,7 +2224,7 @@ Projection returns exactly the selected tuple coordinates under the documented m
 
 ### Signature validity
 
-Every graph relation references member sets belonging to that graph or explicitly imported shared domains.
+Every graph relation references sets belonging to that graph or explicitly imported shared domains.
 
 ### Relation identity
 
@@ -2205,7 +2232,7 @@ Two relations with the same signature may coexist without collision.
 
 ### Ordinary graph compatibility
 
-Current ordinary graph queries must reproduce existing behavior through the compatibility profile.
+Current ordinary graph queries must reproduce existing behavior through the compatibility interpretation.
 
 ### Parallel-edge identity
 
@@ -2217,7 +2244,7 @@ A boundary face requires no imaginary remote member.
 
 ### Derived adjacency
 
-Where adjacency is defined by composition, it agrees with the ordinary graph profile's adjacency semantics.
+Where adjacency is defined by composition, it agrees with the ordinary graph interpretation's adjacency semantics.
 
 ---
 
@@ -2225,7 +2252,7 @@ Where adjacency is defined by composition, it agrees with the ordinary graph pro
 
 ### Support validity
 
-Every support member belongs to its host member set.
+Every support member belongs to its host set.
 
 The empty subset is a valid domain; a field with zero entries
 remains well-defined.
@@ -2256,7 +2283,7 @@ under existing exact-partition semantics.
 
 ### Field round trip
 
-Fields on every supported member set/domain survive partition and assembly.
+Fields on every supported set/domain survive partition and assembly.
 
 ---
 
@@ -2307,14 +2334,14 @@ Semantic generality should be obtained primarily through interfaces and views, n
 
 Before implementing a structural feature, ask in this order:
 
-1. **What are the member sets?**
+1. **What are the sets?**
 2. **What is the arity of the relation?**
 3. **What is its ordered signature?**
 4. **Does the relation itself need identity?**
 5. **Is it primitive or derived?**
 6. **If derived, by permutation, projection, restriction, join, or composition?**
 7. **Does a stronger subtype have additional laws?**
-8. **Does the graph merely contain this relation, or does a graph profile interpret it?**
+8. **Does the graph merely contain this relation, or does a graph interpretation interpret it?**
 9. **What queries are hot and therefore need indexing/materialization?**
 10. **What mathematical law will test the implementation?**
 
@@ -2358,7 +2385,7 @@ The new endpoint is:
 
 \[
 \boxed{
-\text{a graph is a structured collection of member sets and relations}
+\text{a graph is a structured collection of sets and relations}
 }
 \]
 

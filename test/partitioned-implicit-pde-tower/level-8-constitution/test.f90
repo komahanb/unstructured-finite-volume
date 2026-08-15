@@ -36,8 +36,8 @@ program partitioned_pde_level_8
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : report, verdict
   use partitioned_pde_assert, only : NV, Q_EXACT
-  use graph_carrier    , only : counted_set, member_set
-  use graph_grammar    , only : graph, graph_field
+  use graph_set    , only : index_set, set
+  use graph_grammar    , only : ordinary_graph, graph_field
   use class_graph      , only : stored_graph
   use class_graph_field, only : field
   use shifted_laplacian_fixture, only : shifted_laplacian
@@ -85,12 +85,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
-    type(counted_set)              :: vs
+    class(set), allocatable :: dom
+    type(index_set)              :: vs
 
     vs = g % vertex_set()
     call composite % domain(g, dom)
-    call report(dom % same_as(vs), &
+    call report(dom % equals(vs), &
          & "the composite maps V(G) -> V(G), by identity", nfail)
 
   end subroutine check_composite_context

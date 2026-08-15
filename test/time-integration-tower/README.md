@@ -14,10 +14,10 @@ before anything moves through it.
 ```text
 TIME INTEGRATION TOWER
 
-    L0 carrier ......................... PASS
+    L0 set ......................... PASS
     L1 relation ........................ PASS
     L2 relation algebra ................ PASS
-    L3 relational graph ................ PASS
+    L3 related graph ................ PASS
     L4 graph calculus .................. PASS
 
     ===== REVIEW GATE A =====
@@ -52,7 +52,7 @@ directory name.
 
 # A. The structural specimen
 
-Gate A carries **no numbers**. Its specimen is three carriers and the
+Gate A carries **no numbers**. Its specimen is three sets and the
 incidence between two of them:
 
 ```text
@@ -98,11 +98,11 @@ invent it.
 
 | Level | Mathematical object | Framework object | Domains | Relations | Interpretation | Exact test | Truth established | Production consequence |
 |---|---|---|---|---|---|---|---|---|
-| **0** | \(Q, T, E\) | `counted_set` | three carriers | — | none — sets only | `level-0-carrier/` | three independent identities; member 1 is \(x\), \(t_0\) **and** \(e_1\), and only identity separates them | none |
+| **0** | \(Q, T, E\) | `index_set` | three sets | — | none — sets only | `level-0-set/` | three independent identities; member 1 is \(x\), \(t_0\) **and** \(e_1\), and only identity separates them | none |
 | **1** | \(\mathrm{Tail},\mathrm{Head}\subseteq E\times T\) | `csr_relation` | \(E\times T\) | primitive temporal incidence | time acquires *direction* | `level-1-relation/` | direction is relation structure; \(Q\) participates in **no** relation, and that absence is the point | none |
 | **2** | \(A_1=\mathrm{Head}\circ\mathrm{Tail}^{T}\); \(A_2=A_1\circ A_1\) | `transpose_of`, `compose_binary` | \(T\to T\) | **derived** | one-step and two-step temporal *reach* | `level-2-relation-algebra/` | reach is generated, not stored; \(A_1\neq A_2\) | none |
-| **3** | \(G_{\text{time}}=(\{Q,T,E\},\{\mathrm{Tail},\mathrm{Head},A_1,A_2\})\) | `relational_graph`, `held_set`, `held_relation` | three owned carriers | four owned relations | one relational structure, not one domain | `level-3-graph/` | signature closure holds, **and** \(Q\) is lawfully owned while naming no relation | none |
-| **4** | directed views over \(A_1\), \(A_2\) | `directed_adjacency_view`, `graph_profile`, `graph_algorithms` | \(T\) (both views) | borrowed from the graph | **causality** | `level-4-graph-calculus/` | forward causal order \([t_0..t_4]\); two views, one carrier | none |
+| **3** | \(G_{\text{time}}=(\{Q,T,E\},\{\mathrm{Tail},\mathrm{Head},A_1,A_2\})\) | `related_graph`, `declared_set`, `declared_relation` | three owned sets | four owned relations | one relational structure, not one domain | `level-3-graph/` | signature closure holds, **and** \(Q\) is lawfully owned while naming no relation | none |
+| **4** | directed views over \(A_1\), \(A_2\) | `directed_adjacency_view`, `graph_interpretation`, `graph_algorithms` | \(T\) (both views) | borrowed from the graph | **causality** | `level-4-graph-calculus/` | forward causal order \([t_0..t_4]\); two views, one set | none |
 | **5** | \(q_0:Q\to\mathbb R\); \(\mathrm{time}:T\to\mathbb R\); \(h:E\to\mathbb R\) | `field` | \(Q\), \(T\), \(E\) — three distinct | consumed, not made | values, no scheme | `level-5-field-calculus/` | **values live on domains, not on graphs** — \(q_0\) needs no graph, and \(\mathrm{time}(\mathrm{head}(e))-\mathrm{time}(\mathrm{tail}(e))=h(e)\) | none |
 | **6** | \(S:Q\to Q\); FE; BE residual; BDF2 residual | `step_operator`, `backward_euler`, `bdf` | \(Q\), beside a 5-vertex host \(H_t\) | \(A_1,A_2\) supply the history roles | the discrete law | `level-6-discretization/` | **temporal discretization preserves \(Q\)** — RED first, then a narrow correction | `class_graph_step.f90` — domain and width delegated to the action |
 | **7** | solve temporal residual \(=0\) | `gmres` | unknown \(Q\), host \(H_t\) | — | the implicit solve | `level-7-minimization/` | **an explicit unknown domain \(Q\) survives minimization** while the host has five unrelated vertices | none — the minimizer was already right |
@@ -112,7 +112,7 @@ invent it.
 The road as far as it has been built:
 
 ```text
-L0  three carriers, three identities
+L0  three sets, three identities
 L1  primitive temporal incidence — time gets a direction
 L2  derived one-step and two-step reach
 L3  one relational structure owning both axes without conflating them
@@ -157,7 +157,7 @@ other:
 ```
 
 **Q is owned, and no relation mentions it.** That is lawful: a
-relational graph is a collection of member sets and typed relations over
+related graph is a collection of member sets and typed relations over
 them, and nothing requires it to be connected. Inventing a relation
 merely to attach \(Q\) to the time chain would be manufacturing
 structure to satisfy an aesthetic.
@@ -173,7 +173,7 @@ NOT   "state coordinates become graph vertices of the time chain"
 
 ## The collision, and why it is harmless
 
-All three carriers enumerate from one, so the integer **1** is a member
+All three sets enumerate from one, so the integer **1** is a member
 of \(Q\), of \(T\) and of \(E\) — meaning \(x\), \(t_0\) and \(e_1\)
 respectively. Raw integer equality is not domain identity. This is the
 same discipline the partitioned tower proved on \(V, E, K\), meeting a
@@ -194,7 +194,7 @@ produce. The signature is the entire difference.
 
 # D. Levels 0–4 in detail
 
-## Level 0 — carrier
+## Level 0 — set
 
 \(Q\), \(T\), \(E\), and nothing else. Cardinalities, mutual
 non-identity, `member`/`local_index` round trips, and boundary refusals.
@@ -207,7 +207,7 @@ Tail ⊆ E×T     e1→t0   e2→t1   e3→t2   e4→t3
 Head ⊆ E×T     e1→t1   e2→t2   e3→t3   e4→t4
 ```
 
-Signatures pinned by carrier identity. Extensions pinned exactly. Every
+Signatures pinned by set identity. Extensions pinned exactly. Every
 step has exactly one tail and exactly one head — *time's direction is
 relation structure, not the order of a loop index*.
 
@@ -249,14 +249,14 @@ temporal reach   ≠   temporal discretization scheme
 
 No union, no transitive closure: neither is earned by any caller yet.
 
-## Level 3 — relational graph
+## Level 3 — related graph
 
 \[
 G_{\text{time}} = \big(\{Q,T,E\},\ \{\mathrm{Tail},\mathrm{Head},A_1,A_2\}\big)
 \]
 
 Exactly three member sets, exactly four relations. Every slot of every
-owned relation resolves to a carrier \(G_{\text{time}}\) owns — the
+owned relation resolves to a set \(G_{\text{time}}\) owns — the
 signature validity law. `Tail`/`Head` remain \(E\times T\) and
 \(A_1\)/\(A_2\) remain \(T\times T\) *after* ownership.
 
@@ -278,7 +278,7 @@ reachable(t4, t0)      = false
 topological_order(A1)  = [t0, t1, t2, t3, t4]        FORWARD CAUSAL ORDER
 ```
 
-The order comes from the carrier's declaration order via `local_index`,
+The order comes from the set's declaration order via `local_index`,
 never from arithmetic on member values.
 
 **Reverse causal order** — \([t_4,t_3,t_2,t_1,t_0]\) — is *stated* as
@@ -288,7 +288,7 @@ derivative machinery is imported. That reverse order exists structurally
 *before* an adjoint exists is the observation; building one is not this
 level's business.
 
-\(A_2\), interpreted the same way over the **same carrier**:
+\(A_2\), interpreted the same way over the **same set**:
 
 ```text
 successors_A2(t0) = { t2 }     reachable_A2(t0, t4) = true    (t0→t2→t4)
@@ -305,7 +305,7 @@ relation that were BDF2's dependency would have to see \(t_3\) from
 The Rosetta truth a later scheme can consume:
 
 ```text
-A1 and A2 are DIFFERENT STRUCTURAL VIEWS over the SAME T carrier
+A1 and A2 are DIFFERENT STRUCTURAL VIEWS over the SAME T set
 ```
 
 > **REVIEW GATE A** — after Level 4.
@@ -363,7 +363,7 @@ pinned by domain **identity**, and pairwise distinct. The central truth:
 \]
 
 No graph is constructed at Level 5. None is needed — production field
-calculus already says a field is a function over one `member_set`, and
+calculus already says a field is a function over one `set`, and
 \(Q\) is one. That capability is not discovered here; it is *exercised*
 by a client whose state domain is emphatically nobody's vertex set.
 
@@ -388,7 +388,7 @@ five-vertex chain:
 ```
 
 The mismatch is load-bearing: at equal cardinality a substitution of one
-carrier for the other would produce plausible numbers and the seam would
+set for the other would produce plausible numbers and the seam would
 hide.
 
 ```text
@@ -474,7 +474,7 @@ one of these has been called "the time" by somebody:
 
 ```text
 1.  TIME MEMBERS            T = { t0 t1 t2 t3 t4 }
-                            a carrier.  Five identities, no order,
+                            a set.  Five identities, no order,
                             no numbers.                        (L0)
 
 2.  TEMPORAL RELATION       A1 = Head ∘ Tail^T,  A2 = A1 ∘ A1
@@ -504,7 +504,7 @@ each other:
 
 At Level 8 all three five-element things exist in one program —
 \(T\), the control chain, \(V(H_{\text{context}})\) — and the level
-pins that no two are the same carrier. **That they all have five
+pins that no two are the same set. **That they all have five
 elements is a coincidence of this specimen**, not a fact about time,
 and the assertions refuse to lean on it. Beside them sits the
 two-member \(Q\), which is none of them.
@@ -765,9 +765,9 @@ B    one law, forward and reverse, between different domains
      no reverse action appears anywhere in this tower.  Seam B
      still stands at 2 independent derivative-family towers.
 
-A3   relational_graph as structural owner
+A3   related_graph as structural owner
      Another successful ownership pattern - G_time owns two axes
-     and four relations, including a carrier no relation names.
+     and four relations, including a set no relation names.
      No production change follows automatically.  KEEP.
 ```
 
@@ -799,12 +799,12 @@ Not implemented here.
 
 ```text
 STRUCTURE (L0-L4)
-Q, T and E are independent carriers; raw integer equality is not
+Q, T and E are independent sets; raw integer equality is not
     domain identity
 temporal direction is relation structure, not loop index order
 one-step and two-step reach are GENERATED from primitive incidence,
     never stored independently
-a relational graph may lawfully own a state carrier that no relation
+a related graph may lawfully own a state set that no relation
     names
 causality is a graph-calculus INTERPRETATION of A1, not a property
     of A1 itself
@@ -878,12 +878,12 @@ test/time-integration-tower/
 ├── check_marker.sh              the result contract + its self-test
 ├── common/
 │   ├── time_assert.f90                    (below everything)
-│   ├── time_carriers_fixture.f90          earned at Level 0
+│   ├── time_sets_fixture.f90          earned at Level 0
 │   ├── time_relations_fixture.f90         earned at Level 1
 │   ├── time_algebra_fixture.f90           earned at Level 2
 │   ├── time_fields_fixture.f90            earned at Level 5
 │   └── triangular_decay_fixture.f90       earned at Level 6
-├── level-0-carrier/             test.f90
+├── level-0-set/             test.f90
 ├── level-1-relation/            test.f90
 ├── level-2-relation-algebra/    test.f90
 ├── level-3-graph/               test.f90
@@ -898,7 +898,7 @@ test/time-integration-tower/
 The fixture ladder is the tower's own stratification applied to itself:
 
 ```text
-Level 0    time_carriers_fixture      declares Q, T, E
+Level 0    time_sets_fixture      declares Q, T, E
 Level 1    time_relations_fixture     states Tail, Head over them
 Level 2    time_algebra_fixture       composes what follows
 Level 5    time_fields_fixture        puts values on all three
@@ -916,7 +916,7 @@ Class-2 defect through `marcher → newton → difference_linearization`,
 and because no level may name that module, the failure cannot have been
 manufactured.
 
-The relation fixture does not *import* the carrier fixture — its
+The relation fixture does not *import* the set fixture — its
 constructors receive \(Q,T,E\) as arguments, because a Level-1 file may
 state facts over sets but may not name a set into existence. The ladder
 is enforced by the import gate's per-file allowlists, by each level's

@@ -77,8 +77,8 @@
 module class_graph_reduction
 
   use iso_fortran_env       , only : dp => REAL64
-  use graph_grammar         , only : graph, graph_field
-  use graph_carrier         , only : member_set, counted_set
+  use graph_grammar         , only : ordinary_graph, graph_field
+  use graph_set         , only : set, index_set
   use graph_grammar         , only : GRAPH_FIELD_REAL, GRAPH_FIELD_COMPLEX
   use graph_grammar         , only : GRAPH_FIELD_LOGICAL
   use graph_calculus        , only : graph_reduction, graph_broadcast
@@ -547,20 +547,20 @@ contains
   subroutine reduction_domain(this, input_graph, domain)
 
     class(reduction), intent(in)           :: this
-    class(graph), intent(in)               :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(ordinary_graph), intent(in)               :: input_graph
+    class(set), allocatable, intent(out) :: domain
 
     associate (u1 => this, u2 => input_graph); end associate
 
     ! The answer's home is the one-entry domain.
-    allocate(domain, source=counted_set('answer', 1))
+    allocate(domain, source=index_set('answer', 1))
 
   end subroutine reduction_domain
 
   subroutine reduction_apply(this, input_graph, input_data, output)
 
     class(reduction), intent(in)                   :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
@@ -618,8 +618,8 @@ contains
   subroutine broadcast_domain(this, input_graph, domain)
 
     class(broadcast), intent(in)           :: this
-    class(graph), intent(in)               :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(ordinary_graph), intent(in)               :: input_graph
+    class(set), allocatable, intent(out) :: domain
 
     associate (u1 => this); end associate
 
@@ -630,7 +630,7 @@ contains
   subroutine broadcast_apply(this, input_graph, input_data, output)
 
     class(broadcast), intent(in)                   :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 

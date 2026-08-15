@@ -11,7 +11,7 @@
 # is keyed by FILE and classified by the first level that earns it:
 #
 #     partitioned_pde_assert            below everything (nothing)
-#     chain_carriers_fixture            earned at Level 0
+#     chain_sets_fixture            earned at Level 0
 #     chain_relations_fixture           earned at Level 1
 #     chain_algebra_fixture             earned at Level 2
 #     shifted_laplacian_fixture         earned at Level 6
@@ -23,7 +23,7 @@
 # rather than by comment.
 #
 # The fixture ladder is the tower's own stratification applied to
-# itself. Level 0 declares carriers and may reach ONLY the carrier
+# itself. Level 0 declares sets and may reach ONLY the set
 # fixture; the relation fixture is one rung above it and is out of
 # reach. A Level-0 source that says
 #
@@ -45,35 +45,35 @@ allowed_for() {
     case "$1" in
         # ---- shared fixtures, keyed by the level that earns them
         common/partitioned_pde_assert.f90) echo "" ;;
-        common/chain_carriers_fixture.f90) echo "graph_carrier" ;;
-        common/chain_relations_fixture.f90) echo "graph_carrier graph_relation graph_binary_relation" ;;
-        common/chain_algebra_fixture.f90) echo "graph_carrier graph_relation graph_relation_algebra graph_binary_relation" ;;
-        common/shifted_laplacian_fixture.f90) echo "graph_carrier graph_grammar class_graph_field class_graph_differential_operator" ;;
-        common/partitioned_shifted_laplacian_fixture.f90) echo "graph_carrier graph_grammar class_graph class_graph_field class_graph_partitioner class_graph_assembler shifted_laplacian_fixture" ;;
+        common/chain_sets_fixture.f90) echo "graph_set" ;;
+        common/chain_relations_fixture.f90) echo "graph_set graph_relation graph_binary_relation" ;;
+        common/chain_algebra_fixture.f90) echo "graph_set graph_relation graph_relation_algebra graph_binary_relation" ;;
+        common/shifted_laplacian_fixture.f90) echo "graph_set graph_grammar class_graph_field class_graph_differential_operator" ;;
+        common/partitioned_shifted_laplacian_fixture.f90) echo "graph_set graph_grammar class_graph class_graph_field class_graph_partitioner class_graph_assembler shifted_laplacian_fixture" ;;
         common)            echo "__no_allowlist__" ;;
 
-        # ---- L0: carriers only. NOTHING relational - not the
+        # ---- L0: sets only. NOTHING relational - not the
         #          relation nucleus, and not the Level-1 fixture.
-        level-0-carrier)   echo "partitioned_pde_assert chain_carriers_fixture graph_carrier" ;;
+        level-0-set)   echo "partitioned_pde_assert chain_sets_fixture graph_set" ;;
         # ---- L1: + the relation nucleus
-        level-1-relation)  echo "partitioned_pde_assert chain_carriers_fixture chain_relations_fixture graph_carrier graph_relation graph_binary_relation" ;;
+        level-1-relation)  echo "partitioned_pde_assert chain_sets_fixture chain_relations_fixture graph_set graph_relation graph_binary_relation" ;;
         # ---- L2: + relation algebra
-        level-2-relation-algebra) echo "partitioned_pde_assert chain_carriers_fixture chain_relations_fixture chain_algebra_fixture graph_carrier graph_relation graph_relation_algebra graph_binary_relation" ;;
+        level-2-relation-algebra) echo "partitioned_pde_assert chain_sets_fixture chain_relations_fixture chain_algebra_fixture graph_set graph_relation graph_relation_algebra graph_binary_relation" ;;
         # ---- L3: + the ordinary graph realization. No partitioner.
-        level-3-graph)     echo "partitioned_pde_assert chain_carriers_fixture chain_relations_fixture graph_carrier graph_relation graph_binary_relation class_graph" ;;
+        level-3-graph)     echo "partitioned_pde_assert chain_sets_fixture chain_relations_fixture graph_set graph_relation graph_binary_relation class_graph" ;;
         # ---- L4: + the partitioner. Graph-to-graph only; no field.
-        level-4-graph-calculus) echo "partitioned_pde_assert chain_carriers_fixture chain_relations_fixture chain_algebra_fixture graph_carrier graph_grammar graph_relation graph_relation_algebra graph_binary_relation class_graph class_graph_partitioner" ;;
+        level-4-graph-calculus) echo "partitioned_pde_assert chain_sets_fixture chain_relations_fixture chain_algebra_fixture graph_set graph_grammar graph_relation graph_relation_algebra graph_binary_relation class_graph class_graph_partitioner" ;;
         # ---- L5: + fields and transport. NO differential operator.
-        level-5-field-calculus) echo "partitioned_pde_assert graph_carrier graph_grammar class_graph class_graph_field class_graph_partitioner class_graph_assembler" ;;
+        level-5-field-calculus) echo "partitioned_pde_assert graph_set graph_grammar class_graph class_graph_field class_graph_partitioner class_graph_assembler" ;;
         # ---- L6: + the differential operator and its fixture.
         #          Still no solver.
-        level-6-discretization) echo "partitioned_pde_assert shifted_laplacian_fixture graph_carrier graph_grammar class_graph class_graph_field class_graph_partitioner class_graph_assembler class_graph_differential_operator" ;;
+        level-6-discretization) echo "partitioned_pde_assert shifted_laplacian_fixture graph_set graph_grammar class_graph class_graph_field class_graph_partitioner class_graph_assembler class_graph_differential_operator" ;;
         # ---- L7: + minimization. Consumes Level 6, not Level 8.
-        level-7-minimization) echo "partitioned_pde_assert shifted_laplacian_fixture graph_carrier graph_grammar class_graph class_graph_field class_graph_gmres" ;;
+        level-7-minimization) echo "partitioned_pde_assert shifted_laplacian_fixture graph_set graph_grammar class_graph class_graph_field class_graph_gmres" ;;
         # ---- L8: + the partitioned constitution, which consumes L6.
-        level-8-constitution) echo "partitioned_pde_assert shifted_laplacian_fixture partitioned_shifted_laplacian_fixture graph_carrier graph_grammar class_graph class_graph_field class_graph_gmres" ;;
+        level-8-constitution) echo "partitioned_pde_assert shifted_laplacian_fixture partitioned_shifted_laplacian_fixture graph_set graph_grammar class_graph class_graph_field class_graph_gmres" ;;
         # ---- L9: the statement, consuming Level 8 and the solver.
-        level-9-statement) echo "partitioned_pde_assert shifted_laplacian_fixture partitioned_shifted_laplacian_fixture graph_carrier graph_grammar class_graph class_graph_field class_graph_gmres" ;;
+        level-9-statement) echo "partitioned_pde_assert shifted_laplacian_fixture partitioned_shifted_laplacian_fixture graph_set graph_grammar class_graph class_graph_field class_graph_gmres" ;;
 
         *)                 echo "__no_allowlist__" ;;
     esac
@@ -127,30 +127,30 @@ if [ "$1" = "--selftest" ]; then
         fi
     }
 
-    # L0 earns carriers and the carrier fixture, and NOTHING relational.
-    permits level-0-carrier chain_carriers_fixture
-    permits level-0-carrier partitioned_pde_assert
-    permits level-0-carrier graph_carrier
-    permits level-0-carrier iso_fortran_env
-    refuses level-0-carrier chain_relations_fixture     # the C1 regression
-    refuses level-0-carrier chain_algebra_fixture
-    refuses level-0-carrier graph_relation
-    refuses level-0-carrier graph_binary_relation
-    refuses level-0-carrier class_graph
+    # L0 earns sets and the set fixture, and NOTHING relational.
+    permits level-0-set chain_sets_fixture
+    permits level-0-set partitioned_pde_assert
+    permits level-0-set graph_set
+    permits level-0-set iso_fortran_env
+    refuses level-0-set chain_relations_fixture     # the C1 regression
+    refuses level-0-set chain_algebra_fixture
+    refuses level-0-set graph_relation
+    refuses level-0-set graph_binary_relation
+    refuses level-0-set class_graph
 
     # L1 stands on L0's fixture and adds its own; L2's is still above it.
-    permits level-1-relation chain_carriers_fixture
+    permits level-1-relation chain_sets_fixture
     permits level-1-relation chain_relations_fixture
     refuses level-1-relation chain_algebra_fixture
 
-    # The fixtures themselves are keyed per file, and the carrier
-    # fixture is a Level-0 file: carriers only.
-    permits common/chain_carriers_fixture.f90 graph_carrier
-    refuses common/chain_carriers_fixture.f90 graph_binary_relation
-    refuses common/partitioned_pde_assert.f90 graph_carrier
+    # The fixtures themselves are keyed per file, and the set
+    # fixture is a Level-0 file: sets only.
+    permits common/chain_sets_fixture.f90 graph_set
+    refuses common/chain_sets_fixture.f90 graph_binary_relation
+    refuses common/partitioned_pde_assert.f90 graph_set
 
     # An unclassified source fails closed rather than silently open.
-    allows common/not_a_real_fixture.f90 graph_carrier
+    allows common/not_a_real_fixture.f90 graph_set
     if [ "$?" -ne 2 ]; then
         echo " FAIL : an unclassified source did not fail closed"
         fail=1
@@ -160,7 +160,7 @@ if [ "$1" = "--selftest" ]; then
         echo "IMPORT GATE: the layering decision is wrong"
         exit 1
     fi
-    echo "import gate: L0 admits the carrier fixture and refuses the relation fixture"
+    echo "import gate: L0 admits the set fixture and refuses the relation fixture"
     exit 0
 fi
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# build the library and the carrier suite, run the laws, then run
+# build the library and the set suite, run the laws, then run
 # every refusal and assert that each dies for its stated reason.
 set -e
 
@@ -13,12 +13,15 @@ make -C "$here" >/dev/null
 cd "$here" && ./run
 
 declare -A reason=(
-  [twice]="a domain never signs twice"
+  [twice]="a graph never signs twice"
   [outsider]="a subset holds members of its ambient domain only"
   [unhosted]="a subset needs a declared ambient domain"
+  [undeclared]="a graph holds declared domains only"
+  [dupset]="a graph holds each domain once"
+  [slot]="set_at is asked outside {1 .. num_sets()}"
 )
 
-for case in twice outsider unhosted; do
+for case in twice outsider unhosted undeclared dupset slot; do
     if ./refusal "$case" >refusal.out 2>&1; then
         echo " FAIL : '$case' was accepted"
         exit 1

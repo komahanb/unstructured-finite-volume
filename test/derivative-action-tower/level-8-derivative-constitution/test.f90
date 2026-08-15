@@ -41,12 +41,12 @@ program derivative_level_8
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use graph_set    , only : index_set, subset, set
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_structure  , only : relational_graph, held_set, held_relation
-  use graph_profile    , only : directed_adjacency_view
+  use graph_structure  , only : related_graph, declared_set, declared_relation
+  use graph_interpretation    , only : directed_adjacency_view
   use graph_algorithms , only : reachable, topological_order
   use class_graph_field, only : field
   use derivative_constitution_fixture, only : apply_law, &
@@ -55,11 +55,11 @@ program derivative_level_8
 
   implicit none
 
-  type(counted_set)              :: v, o, p
-  type(subset_set)               :: x_dom, c, z_dom, p_in, p_out
+  type(index_set)              :: v, o, p
+  type(subset)               :: x_dom, c, z_dom, p_in, p_out
   type(stored_relation)          :: flow, backwards
   class(relation), allocatable   :: d, d2, av
-  type(relational_graph), target :: g, g2, g_av
+  type(related_graph), target :: g, g2, g_av
   type(directed_adjacency_view)  :: view, view2, dep_view
   type(field)                    :: qx, vx, zbar_f, jv_f, xbar_f
   integer, allocatable           :: order(:), order2(:), hits(:)
@@ -76,12 +76,12 @@ program derivative_level_8
   write(*,'(1x,a)') "derivative action tower . level 8 . action"
   write(*,'(1x,a)') "============================================="
 
-  v     = counted_set('value-slots', 4)
-  o     = counted_set('operations' , 2)
-  p     = counted_set('ports'      , 3)
-  x_dom = subset_set('independent', v, [SLOT_Y, SLOT_X])
-  c     = subset_set('computed'   , v, [SLOT_U, SLOT_Z])
-  z_dom = subset_set('response'   , c, [SLOT_Z])
+  v     = index_set('value-slots', 4)
+  o     = index_set('operations' , 2)
+  p     = index_set('ports'      , 3)
+  x_dom = subset('independent', v, [SLOT_Y, SLOT_X])
+  c     = subset('computed'   , v, [SLOT_U, SLOT_Z])
+  z_dom = subset('response'   , c, [SLOT_Z])
 
   table(:, 1) = [OP_PRODUCT, SLOT_X, PORT_IN1]
   table(:, 2) = [OP_PRODUCT, SLOT_Y, PORT_IN2]
@@ -91,16 +91,16 @@ program derivative_level_8
   table(:, 6) = [OP_SUM    , SLOT_Z, PORT_OUT]
   flow = stored_relation('flow', [o, v, p], table)
 
-  p_in  = subset_set('input-ports', p, [PORT_IN1, PORT_IN2])
-  p_out = subset_set('output-port', p, [PORT_OUT])
+  p_in  = subset('input-ports', p, [PORT_IN1, PORT_IN2])
+  p_out = subset('output-port', p, [PORT_OUT])
 
   ! The lower road, walked again: the structure supplies the order.
   d = compose_binary( &
        & project_slots(restrict_slot(flow, 3, p_out), [1, 2]), &
        & project_slots(restrict_slot(flow, 3, p_in ), [2, 1]))
-  g = relational_graph('derivative specimen', &
-       & [held_set(v), held_set(o), held_set(p)], &
-       & [held_relation(flow), held_relation(d)])
+  g = related_graph('derivative specimen', &
+       & [declared_set(v), declared_set(o), declared_set(p)], &
+       & [declared_relation(flow), declared_relation(d)])
   view = directed_adjacency_view(g, d)
   call topological_order(view, order)
 
@@ -252,7 +252,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
     real(dp), allocatable          :: out_val(:)
 
     vx = field('tangent seed', x_dom)
@@ -272,7 +272,7 @@ contains
 
     call jv_f % domain(dom)
     call jv_f % get_real_vector(out_val)
-    call report(dom % same_as(z_dom) .and. &
+    call report(dom % equals(z_dom) .and. &
          &      abs(out_val(z_dom % local_index(SLOT_Z)) - 9.0_dp) &
          &      < 1.0d-12, &
          & "Jv = 9, an ordinary field on Z", nfail)
@@ -289,7 +289,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
 
     zbar_f = field('reverse seed', z_dom)
     call zbar_f % set_real_vector([2.0_dp])
@@ -308,7 +308,7 @@ contains
     xbar_f = field('reverse result', x_dom)
     call xbar_f % set_real_vector(xbar)
     call xbar_f % domain(dom)
-    call report(dom % same_as(x_dom), &
+    call report(dom % equals(x_dom), &
          & "J^T zbar is an ordinary field on X, by identity", nfail)
 
   end subroutine check_reverse_action
@@ -382,8 +382,8 @@ contains
     av = compose_binary( &
          & project_slots(restrict_slot(flow, 3, p_in ), [2, 1]), &
          & project_slots(restrict_slot(flow, 3, p_out), [1, 2]))
-    g_av = relational_graph('value dependency', [held_set(v)], &
-         & [held_relation(av)])
+    g_av = related_graph('value dependency', [declared_set(v)], &
+         & [declared_relation(av)])
     dep_view = directed_adjacency_view(g_av, av)
 
     ok = .true.
@@ -503,9 +503,9 @@ contains
     d2 = compose_binary( &
          & project_slots(restrict_slot(backwards, 3, p_out), [1, 2]), &
          & project_slots(restrict_slot(backwards, 3, p_in ), [2, 1]))
-    g2 = relational_graph('derivative specimen backwards', &
-         & [held_set(v), held_set(o), held_set(p)], &
-         & [held_relation(backwards), held_relation(d2)])
+    g2 = related_graph('derivative specimen backwards', &
+         & [declared_set(v), declared_set(o), declared_set(p)], &
+         & [declared_relation(backwards), declared_relation(d2)])
     view2 = directed_adjacency_view(g2, d2)
     call topological_order(view2, order2)
 

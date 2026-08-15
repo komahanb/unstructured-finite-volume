@@ -5,7 +5,7 @@ include ../../../Makefile.in
 # algorithm refusal laws are pinned generically in
 # test/graph-algorithms; this rung proves THIS derived dependency
 # can be read and walked. Framework modules this level may see: the
-# carriers, the relations, the algebra, the container, the profile
+# sets, the relations, the algebra, the container, the interpretation
 # and the algorithms - never the binary storage the view leans on
 # internally. The import gate holds the door.
 #=====================================================================#

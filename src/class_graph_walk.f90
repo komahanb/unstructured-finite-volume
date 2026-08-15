@@ -46,8 +46,8 @@
 
 module class_graph_walk
 
-  use graph_grammar      , only : graph_operation, graph, graph_field
-  use graph_carrier      , only : member_set
+  use graph_grammar      , only : graph_operation, ordinary_graph, graph_field
+  use graph_set      , only : set
   use class_graph_field  , only : field
 
   implicit none
@@ -134,8 +134,8 @@ contains
   subroutine walk_domain(this, input_graph, domain)
 
     class(walk) , intent(in)               :: this
-    class(graph), intent(in)               :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(ordinary_graph), intent(in)               :: input_graph
+    class(set), allocatable, intent(out) :: domain
 
     associate (u1 => this); end associate
 
@@ -153,7 +153,7 @@ contains
   subroutine walk_apply(this, input_graph, input_data, output)
 
     class(walk)       , intent(in)                 :: this
-    class(graph)      , intent(in)                 :: input_graph
+    class(ordinary_graph)      , intent(in)                 :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
@@ -196,7 +196,7 @@ contains
 
   subroutine colour(input_graph, mark)
 
-    class(graph)        , intent(in)  :: input_graph
+    class(ordinary_graph)        , intent(in)  :: input_graph
     integer, allocatable, intent(out) :: mark(:)
 
     integer, allocatable :: nbrs(:)
@@ -240,7 +240,7 @@ contains
 
   subroutine breadth_first(input_graph, seed, mark, want_depth)
 
-    class(graph)        , intent(in)  :: input_graph
+    class(ordinary_graph)        , intent(in)  :: input_graph
     integer             , intent(in)  :: seed
     integer, allocatable, intent(out) :: mark(:)
     logical             , intent(in)  :: want_depth
@@ -299,7 +299,7 @@ contains
 
   subroutine components(input_graph, mark)
 
-    class(graph)        , intent(in)  :: input_graph
+    class(ordinary_graph)        , intent(in)  :: input_graph
     integer, allocatable, intent(out) :: mark(:)
 
     integer, allocatable :: queue(:), nbrs(:)

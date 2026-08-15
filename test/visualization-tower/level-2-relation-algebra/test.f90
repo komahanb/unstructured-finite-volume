@@ -58,11 +58,11 @@ program visualization_level_2
   use visualization_assert , only : X1_P, X1_Q, X1_R
   use visualization_assert , only : X2_U, X2_V, X2_W
   use visualization_assert , only : X3_M, X3_N
-  use graph_carrier        , only : counted_set, member_set
+  use graph_set        , only : index_set, set
   use graph_relation       , only : relation
   use graph_binary_relation, only : csr_relation, binary_relation
   use graph_binary_relation, only : transposed_view, transpose_of
-  use visualization_carriers_fixture , only : structural_carriers
+  use visualization_sets_fixture , only : structural_sets
   use visualization_relations_fixture, only : occurrences_of_a1
   use visualization_relations_fixture, only : occurrences_of_a2
   use visualization_relations_fixture, only : occurrences_of_a3
@@ -73,7 +73,7 @@ program visualization_level_2
 
   implicit none
 
-  type(counted_set)          :: x0, x1, x2, x3, e1, e2, e3
+  type(index_set)          :: x0, x1, x2, x3, e1, e2, e3
   type(csr_relation)         :: t1, h1, t2, h2, t3, h3
   type(csr_relation), target :: d1, d2, d3, d21, d31
   type(csr_relation), target :: d1t, d2t, d3t
@@ -86,7 +86,7 @@ program visualization_level_2
   write(*,'(1x,a)') "visualization tower . level 2 . relation algebra"
   write(*,'(1x,a)') "============================================="
 
-  call structural_carriers(x0, x1, x2, x3, e1, e2, e3)
+  call structural_sets(x0, x1, x2, x3, e1, e2, e3)
   call occurrences_of_a1(e1, x0, x1, t1, h1)
   call occurrences_of_a2(e2, x1, x2, t2, h2)
   call occurrences_of_a3(e3, x2, x3, t3, h3)
@@ -124,7 +124,7 @@ contains
 
   !===================================================================!
   ! D1, D2, D3 - derived, never written down. Each lands on the two
-  ! carriers its operator relates, and holds exactly the tuples the
+  ! sets its operator relates, and holds exactly the tuples the
   ! occurrences imply.
   !===================================================================!
 
@@ -182,7 +182,7 @@ contains
     ! composition, and composition is what forgets it.
     call report(.not. mentions(d21, x1), &
          & "and X1 appears in neither slot of D2:1 - the intermediate " // &
-         & "carrier is spent by the composition", nfail)
+         & "set is spent by the composition", nfail)
 
   end subroutine check_the_intermediate_composition
 
@@ -244,7 +244,7 @@ contains
          & "chain is not part of its structure", nfail)
 
     call report(.not. mentions(d31, x1) .and. .not. mentions(d31, x2), &
-         & "and both intermediate carriers are spent: D3:1 relates " // &
+         & "and both intermediate sets are spent: D3:1 relates " // &
          & "only where the chain starts and where it ends", nfail)
 
   end subroutine check_the_full_composition
@@ -303,7 +303,7 @@ contains
   !
   !      (D3 o D2 o D1)^T  =  D1^T o D2^T o D3^T
   !
-  ! compared as extensions - domains by same_as, count, and
+  ! compared as extensions - domains by equals, count, and
   ! membership both ways - never as a list of tuples in some order.
   !===================================================================!
 
@@ -361,14 +361,14 @@ contains
   logical function runs_from_to(r, first, second)
 
     class(binary_relation), intent(in) :: r
-    class(member_set)     , intent(in) :: first, second
+    class(set)     , intent(in) :: first, second
 
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
 
     d = r % source()
-    runs_from_to = d % same_as(first)
+    runs_from_to = d % equals(first)
     d = r % target()
-    runs_from_to = runs_from_to .and. d % same_as(second)
+    runs_from_to = runs_from_to .and. d % equals(second)
 
   end function runs_from_to
 
@@ -392,18 +392,18 @@ contains
 
   end function turned_around
 
-  logical function mentions(r, carrier)
+  logical function mentions(r, set)
 
     class(relation)  , intent(in) :: r
-    class(member_set), intent(in) :: carrier
+    class(set), intent(in) :: set
 
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
     integer                        :: k
 
     mentions = .false.
     do k = 1, r % arity()
        d = r % domain(k)
-       mentions = mentions .or. d % same_as(carrier)
+       mentions = mentions .or. d % equals(set)
     end do
 
   end function mentions
@@ -437,7 +437,7 @@ contains
     class(binary_relation), intent(in) :: first, second
     integer               , intent(in) :: from, to
 
-    class(member_set), allocatable :: middle
+    class(set), allocatable :: middle
     integer                        :: k, y
 
     middle    = first % target()
@@ -455,7 +455,7 @@ contains
 
     class(binary_relation), intent(in) :: first, second
 
-    class(member_set), allocatable :: start, finish
+    class(set), allocatable :: start, finish
     integer                        :: i, j
 
     start  = first % source()

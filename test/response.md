@@ -179,7 +179,7 @@
                                                                                 
   * **Architectural longevity — 10/10:** this is the biggest win. New concepts  
   can usually enter as **new member sets, relations, relation views, or graph   
-  profiles**, rather than forcing another redesign of the foundation.           
+  interpretations**, rather than forcing another redesign of the foundation.           
                                                                                 
   ### Overall                                                                   
                                                                                 

@@ -4,7 +4,7 @@ include ../../../Makefile.in
 # Learning level 2: the derivation suite. The generic algebra laws
 # live in test/graph-algebra; this level proves THIS structure
 # derives THIS dependency. Framework modules this level may see:
-# graph_carrier, graph_relation, graph_relation_algebra - D is held
+# graph_set, graph_relation, graph_relation_algebra - D is held
 # as class(relation), so the storage behind the composition is
 # never named. The import gate holds the door.
 #=====================================================================#

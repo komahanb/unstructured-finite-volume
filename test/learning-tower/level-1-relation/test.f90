@@ -2,7 +2,7 @@
 ! LEARNING TOWER . LEVEL 1 . THE RELATION
 !
 ! The level answers one question: HOW ARE THE SYMBOLIC SLOTS
-! STRUCTURALLY RELATED. The three carriers stand as at Level 0, and
+! STRUCTURALLY RELATED. The three sets stand as at Level 0, and
 ! one ternary relation joins them,
 !
 !      R_flow  <=  O x V x P
@@ -18,7 +18,7 @@
 ! mean w*x, error does NOT yet mean yhat-y - structure before
 ! meaning, the learning tower's first real proof of it. No neuron,
 ! no layer, no network object anywhere: the import list IS the
-! negative truth - learning_assert, graph_carrier, graph_relation,
+! negative truth - learning_assert, graph_set, graph_relation,
 ! and nothing above.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -30,12 +30,12 @@ program learning_level_1
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier  , only : counted_set, member_set
+  use graph_set  , only : index_set, set
   use graph_relation , only : stored_relation
 
   implicit none
 
-  type(counted_set)     :: v, o, p
+  type(index_set)     :: v, o, p
   type(stored_relation) :: flow
   integer               :: table(3, 7)
   integer               :: nfail
@@ -46,9 +46,9 @@ program learning_level_1
   write(*,'(1x,a)') "learning tower . level 1 . relation"
   write(*,'(1x,a)') "============================================="
 
-  v = counted_set('value-slots', 5)
-  o = counted_set('operations' , 2)
-  p = counted_set('ports'      , 3)
+  v = index_set('value-slots', 5)
+  o = index_set('operations' , 2)
+  p = index_set('ports'      , 3)
 
   ! The six facts of the model's flow - and the first handed twice.
   table(:, 1) = [OP_PREDICT, SLOT_W   , PORT_IN1]
@@ -78,19 +78,19 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
 
     call report(flow % arity() .eq. 3, &
          & "the flow is genuinely ternary", nfail)
 
     d = flow % domain(1)
-    call report(d % same_as(o), &
+    call report(d % equals(o), &
          & "slot one is the operations, by identity", nfail)
     d = flow % domain(2)
-    call report(d % same_as(v), &
+    call report(d % equals(v), &
          & "slot two is the value slots", nfail)
     d = flow % domain(3)
-    call report(d % same_as(p), &
+    call report(d % equals(p), &
          & "slot three is the ports", nfail)
 
   end subroutine check_signature

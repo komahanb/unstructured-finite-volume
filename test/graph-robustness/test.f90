@@ -24,9 +24,9 @@ program test_graph_robustness
 
   use class_graph, only : stored_graph
   use iso_fortran_env, only : dp => REAL64
-  use graph_grammar  , only : graph, graph_field
+  use graph_grammar  , only : ordinary_graph, graph_field
   use graph_calculus , only : GRAPH_SIDE_VERTEX
-  use graph_carrier         , only : member_set, counted_set, subset_set
+  use graph_set         , only : set, index_set, subset
   use class_graph_field  , only : field
   use class_graph_mesh   , only : mesh
   use class_graph_differential_operator, only : edge_differential_operator
@@ -265,7 +265,7 @@ contains
     type(mesh) :: m
     type(differential_operator) :: slope
     type(field) :: state, fd
-    type(counted_set) :: cells
+    type(index_set) :: cells
     class(graph_field), allocatable :: z
     real(dp), allocatable :: got(:), deltas(:), q(:)
     real(dp) :: exact_flux(4), worst
@@ -316,7 +316,7 @@ contains
     type(mesh) :: m
     type(stencil_operator) :: op
     type(field) :: state
-    type(counted_set) :: cells
+    type(index_set) :: cells
     class(graph_field), allocatable :: y
     real(dp), allocatable :: got(:), q(:), vb(:), centers(:)
     type(field) :: fc

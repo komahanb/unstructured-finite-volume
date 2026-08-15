@@ -14,7 +14,7 @@
 !
 ! No graph is constructed at this level. None is needed: production
 ! field calculus already says a field is a function over one
-! member_set, and Q is a member_set. That capability is not
+! set, and Q is a set. That capability is not
 ! discovered here - it is EXERCISED here, by a client whose state
 ! domain is emphatically not anybody's vertex set.
 !
@@ -28,7 +28,7 @@
 !
 ! The instant t2 is a MEMBER of T. The real 1.0 is the VALUE of a
 ! field at t2. Four objects stay apart here where a looser client
-! would keep one: the carrier T, the structure Tail/Head/A1/A2 over
+! would keep one: the set T, the structure Tail/Head/A1/A2 over
 ! it, the coordinates time : T -> R, and the sizes h : E -> R.
 !
 ! And the consistency between values and structure is PROVED rather
@@ -53,17 +53,17 @@ program time_level_5
   use time_assert           , only : NQ, NT, NE, TOL
   use time_assert           , only : C_X, C_Y, T0, T2, T4, E1
   use time_assert           , only : H_STEP, TIME_COORD, Q0
-  use graph_carrier         , only : counted_set, member_set
+  use graph_set         , only : index_set, set
   use graph_binary_relation , only : csr_relation
   use class_graph_field     , only : field
-  use time_carriers_fixture , only : time_carriers
+  use time_sets_fixture , only : time_sets
   use time_relations_fixture, only : tail_relation, head_relation
   use time_fields_fixture   , only : state_field, instant_coordinates, &
        &                             step_sizes
 
   implicit none
 
-  type(counted_set)  :: q, t, e
+  type(index_set)  :: q, t, e
   type(csr_relation) :: tail, head
   type(field)        :: qf, tf, hf
   integer            :: nfail
@@ -74,7 +74,7 @@ program time_level_5
   write(*,'(1x,a)') "time integration tower . level 5 . fields"
   write(*,'(1x,a)') "============================================="
 
-  call time_carriers(q, t, e)
+  call time_sets(q, t, e)
   tail = tail_relation(e, t)
   head = head_relation(e, t)
 
@@ -93,7 +93,7 @@ contains
 
   !===================================================================!
   ! THE level's central truth: each field answers a DECLARED
-  ! carrier, and the state field answers Q without a graph existing
+  ! set, and the state field answers Q without a graph existing
   ! anywhere in this program.
   !===================================================================!
 
@@ -101,19 +101,19 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
 
     call qf % domain(d)
-    call report(d % same_as(q), &
+    call report(d % equals(q), &
          & "domain(q0) IS Q - the state field lives on the state " // &
-         & "carrier, and no graph was built in this program", nfail)
+         & "set, and no graph was built in this program", nfail)
 
     call tf % domain(d)
-    call report(d % same_as(t), &
+    call report(d % equals(t), &
          & "domain(time) IS T", nfail)
 
     call hf % domain(d)
-    call report(d % same_as(e), &
+    call report(d % equals(e), &
          & "domain(h) IS E - one step size per step", nfail)
 
     call report(qf % num_entries() .eq. NQ .and. &
@@ -126,7 +126,7 @@ contains
 
   !===================================================================!
   ! Three fields, three domains, no two the same. A field carrying
-  ! the right number of reals on the wrong carrier would be a
+  ! the right number of reals on the wrong set would be a
   ! different mathematical object, and only identity says so.
   !===================================================================!
 
@@ -134,26 +134,26 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dq, dt, de
+    class(set), allocatable :: dq, dt, de
 
     call qf % domain(dq)
     call tf % domain(dt)
     call hf % domain(de)
 
-    call report(.not. dq % same_as(dt), &
+    call report(.not. dq % equals(dt), &
          & "domain(q0) is NOT domain(time): the state axis is not " // &
          & "the time axis", nfail)
-    call report(.not. dq % same_as(de), &
+    call report(.not. dq % equals(de), &
          & "domain(q0) is NOT domain(h): a state coordinate is not " // &
          & "a step", nfail)
-    call report(.not. dt % same_as(de), &
+    call report(.not. dt % equals(de), &
          & "and domain(time) is NOT domain(h) either", nfail)
 
   end subroutine check_domains_are_distinct
 
   !===================================================================!
   ! Values are read through the DOMAIN'S local position. The
-  ! carriers here happen to enumerate 1..n, so member value and
+  ! sets here happen to enumerate 1..n, so member value and
   ! local position coincide - which is exactly when a raw-integer
   ! read would pass while meaning nothing.
   !===================================================================!

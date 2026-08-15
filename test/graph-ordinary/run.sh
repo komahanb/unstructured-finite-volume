@@ -1,5 +1,5 @@
 #!/bin/bash
-# build the library and the ordinary profile suite, run the laws,
+# build the library and the ordinary interpretation suite, run the laws,
 # then run every refusal and assert each dies for its stated reason.
 set -e
 

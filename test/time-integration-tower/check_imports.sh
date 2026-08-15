@@ -11,14 +11,14 @@
 # is keyed by FILE and classified by the first level that earns it:
 #
 #     time_assert                below everything (nothing)
-#     time_carriers_fixture      earned at Level 0
+#     time_sets_fixture      earned at Level 0
 #     time_relations_fixture     earned at Level 1
 #     time_algebra_fixture       earned at Level 2
 #     time_fields_fixture        earned at Level 5
 #     triangular_decay_fixture   earned at Level 6
 #
 # The fixture ladder is the tower's own stratification applied to
-# itself. Level 0 declares carriers and may reach ONLY the carrier
+# itself. Level 0 declares sets and may reach ONLY the set
 # fixture; the relation fixture is one rung above it. A Level-0
 # source that says
 #
@@ -80,45 +80,45 @@ allowed_for() {
     case "$1" in
         # ---- shared fixtures, keyed by the level that earns them
         common/time_assert.f90) echo "" ;;
-        common/time_carriers_fixture.f90) echo "graph_carrier" ;;
-        common/time_relations_fixture.f90) echo "graph_carrier graph_relation graph_binary_relation" ;;
-        common/time_algebra_fixture.f90) echo "graph_carrier graph_relation graph_relation_algebra graph_binary_relation" ;;
-        common/time_fields_fixture.f90) echo "graph_carrier graph_field_calculus class_graph_field time_assert" ;;
-        common/triangular_decay_fixture.f90) echo "graph_carrier graph_grammar graph_field_calculus class_graph_field" ;;
+        common/time_sets_fixture.f90) echo "graph_set" ;;
+        common/time_relations_fixture.f90) echo "graph_set graph_relation graph_binary_relation" ;;
+        common/time_algebra_fixture.f90) echo "graph_set graph_relation graph_relation_algebra graph_binary_relation" ;;
+        common/time_fields_fixture.f90) echo "graph_set graph_field_calculus class_graph_field time_assert" ;;
+        common/triangular_decay_fixture.f90) echo "graph_set graph_grammar graph_field_calculus class_graph_field" ;;
         common)            echo "__no_allowlist__" ;;
 
-        # ---- L0: carriers only. NOTHING relational - not the
+        # ---- L0: sets only. NOTHING relational - not the
         #          relation nucleus, and not the Level-1 fixture.
-        level-0-carrier)   echo "time_assert time_carriers_fixture graph_carrier" ;;
+        level-0-set)   echo "time_assert time_sets_fixture graph_set" ;;
         # ---- L1: + the relation nucleus
-        level-1-relation)  echo "time_assert time_carriers_fixture time_relations_fixture graph_carrier graph_relation graph_binary_relation" ;;
+        level-1-relation)  echo "time_assert time_sets_fixture time_relations_fixture graph_set graph_relation graph_binary_relation" ;;
         # ---- L2: + relation algebra
-        level-2-relation-algebra) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture graph_carrier graph_relation graph_relation_algebra graph_binary_relation" ;;
-        # ---- L3: + the relational graph container
-        level-3-graph)     echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_structure" ;;
-        # ---- L4: + the profile and its algorithms. No marcher.
-        level-4-graph-calculus) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_structure graph_profile graph_algorithms" ;;
+        level-2-relation-algebra) echo "time_assert time_sets_fixture time_relations_fixture time_algebra_fixture graph_set graph_relation graph_relation_algebra graph_binary_relation" ;;
+        # ---- L3: + the related graph container
+        level-3-graph)     echo "time_assert time_sets_fixture time_relations_fixture time_algebra_fixture graph_set graph_relation graph_relation_algebra graph_binary_relation graph_structure" ;;
+        # ---- L4: + the interpretation and its algorithms. No marcher.
+        level-4-graph-calculus) echo "time_assert time_sets_fixture time_relations_fixture time_algebra_fixture graph_set graph_relation graph_relation_algebra graph_binary_relation graph_structure graph_interpretation graph_algorithms" ;;
 
         # ===== REVIEW GATE A =====
 
         # ---- L5: + fields. Values, and nothing that steps or solves.
-        level-5-field-calculus) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_field_calculus class_graph_field" ;;
+        level-5-field-calculus) echo "time_assert time_sets_fixture time_relations_fixture time_algebra_fixture time_fields_fixture graph_set graph_relation graph_relation_algebra graph_binary_relation graph_field_calculus class_graph_field" ;;
         # ---- L6: + the ordinary graph (the compatibility host), the
         #          operation contract, and the step operators. NO
         #          minimizer: the scheme is tested before the solve.
-        level-6-discretization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_carrier graph_grammar graph_relation graph_relation_algebra graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step" ;;
+        level-6-discretization) echo "time_assert time_sets_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_set graph_grammar graph_relation graph_relation_algebra graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step" ;;
         # ---- L7: + minimization and its gmres concretion. Still no
         #          marcher.
-        level-7-minimization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_carrier graph_grammar graph_relation graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step graph_minimization class_graph_gmres" ;;
+        level-7-minimization) echo "time_assert time_sets_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_set graph_grammar graph_relation graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step graph_minimization class_graph_gmres" ;;
 
         # ===== REVIEW GATE B =====
 
         # ---- L8: + the marcher and newton, the constituted citizens
         #          under test. NOT class_graph_linearization: newton
         #          reaches it, and the tower may not.
-        level-8-constitution) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_carrier graph_grammar graph_relation graph_relation_algebra graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step graph_minimization class_graph_gmres class_graph_newton class_graph_marcher" ;;
+        level-8-constitution) echo "time_assert time_sets_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_set graph_grammar graph_relation graph_relation_algebra graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step graph_minimization class_graph_gmres class_graph_newton class_graph_marcher" ;;
         # ---- L9: the statement, on the same constitution.
-        level-9-statement) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_carrier graph_grammar graph_relation graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step graph_minimization class_graph_gmres class_graph_newton class_graph_marcher" ;;
+        level-9-statement) echo "time_assert time_sets_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_set graph_grammar graph_relation graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step graph_minimization class_graph_gmres class_graph_newton class_graph_marcher" ;;
 
         *)                 echo "__no_allowlist__" ;;
     esac
@@ -158,8 +158,8 @@ allows() {
 
 if [ "$1" = "--selftest" ]; then
     fail=0
-    levels="level-0-carrier level-1-relation level-2-relation-algebra level-3-graph level-4-graph-calculus level-5-field-calculus level-6-discretization level-7-minimization level-8-constitution level-9-statement"
-    before_six="level-0-carrier level-1-relation level-2-relation-algebra level-3-graph level-4-graph-calculus level-5-field-calculus"
+    levels="level-0-set level-1-relation level-2-relation-algebra level-3-graph level-4-graph-calculus level-5-field-calculus level-6-discretization level-7-minimization level-8-constitution level-9-statement"
+    before_six="level-0-set level-1-relation level-2-relation-algebra level-3-graph level-4-graph-calculus level-5-field-calculus"
     before_seven="$before_six level-6-discretization"
     before_eight="$before_seven level-7-minimization"
 
@@ -176,19 +176,19 @@ if [ "$1" = "--selftest" ]; then
         fi
     }
 
-    # L0 earns carriers and the carrier fixture, and NOTHING relational.
-    permits level-0-carrier time_carriers_fixture
-    permits level-0-carrier time_assert
-    permits level-0-carrier graph_carrier
-    permits level-0-carrier iso_fortran_env
-    refuses level-0-carrier time_relations_fixture   # the fixture ladder
-    refuses level-0-carrier time_algebra_fixture
-    refuses level-0-carrier graph_relation
-    refuses level-0-carrier graph_binary_relation
-    refuses level-0-carrier graph_structure
+    # L0 earns sets and the set fixture, and NOTHING relational.
+    permits level-0-set time_sets_fixture
+    permits level-0-set time_assert
+    permits level-0-set graph_set
+    permits level-0-set iso_fortran_env
+    refuses level-0-set time_relations_fixture   # the fixture ladder
+    refuses level-0-set time_algebra_fixture
+    refuses level-0-set graph_relation
+    refuses level-0-set graph_binary_relation
+    refuses level-0-set graph_structure
 
     # L1 stands on L0's fixture and adds its own; L2's is still above it.
-    permits level-1-relation time_carriers_fixture
+    permits level-1-relation time_sets_fixture
     permits level-1-relation time_relations_fixture
     refuses level-1-relation time_algebra_fixture
     refuses level-1-relation graph_structure
@@ -198,14 +198,14 @@ if [ "$1" = "--selftest" ]; then
     permits level-2-relation-algebra graph_relation_algebra
     refuses level-2-relation-algebra graph_structure
 
-    # L3 earns the container; the profile and its algorithms are not
+    # L3 earns the container; the interpretation and its algorithms are not
     # its business.
     permits level-3-graph graph_structure
-    refuses level-3-graph graph_profile
+    refuses level-3-graph graph_interpretation
     refuses level-3-graph graph_algorithms
 
     # L4 earns the interpretation.
-    permits level-4-graph-calculus graph_profile
+    permits level-4-graph-calculus graph_interpretation
     permits level-4-graph-calculus graph_algorithms
 
     # ---- STAGED: ceilings that rise, each at the level that earns it.
@@ -249,16 +249,16 @@ if [ "$1" = "--selftest" ]; then
     done
 
     # The fixtures themselves are keyed per file.
-    permits common/time_carriers_fixture.f90 graph_carrier
-    refuses common/time_carriers_fixture.f90 graph_binary_relation
-    refuses common/time_assert.f90 graph_carrier
+    permits common/time_sets_fixture.f90 graph_set
+    refuses common/time_sets_fixture.f90 graph_binary_relation
+    refuses common/time_assert.f90 graph_set
     permits common/triangular_decay_fixture.f90 graph_grammar
     refuses common/triangular_decay_fixture.f90 class_graph_step
     refuses common/triangular_decay_fixture.f90 class_graph_marcher
 
     # An unclassified source still fails closed rather than silently
     # open - the ten levels are named, and nothing else is.
-    allows level-10-nowhere graph_carrier
+    allows level-10-nowhere graph_set
     if [ "$?" -ne 2 ]; then
         echo " FAIL : an undeclared level did not fail closed"
         fail=1

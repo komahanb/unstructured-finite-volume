@@ -8,8 +8,8 @@
 !      Head <= E x V     e_i -> i+1
 !      Own  <= K x V     part1 -> 1,2,3   part2 -> 4,5,6
 !
-! The carriers V, E and K are NOT declared here. They are Level 0's
-! property, they live in chain_carriers_fixture, and every
+! The sets V, E and K are NOT declared here. They are Level 0's
+! property, they live in chain_sets_fixture, and every
 ! constructor below receives them as arguments. This file cannot
 ! name a set into existence; it can only state facts over sets
 ! somebody else has already declared - which is precisely what
@@ -19,10 +19,10 @@
 ! borrowed member, no local numbering, and no ordinary graph: those
 ! are interpretations that Levels 3 and 4 will impose on top.
 !
-! Note the hazard this file is careful about: all three carriers
+! Note the hazard this file is careful about: all three sets
 ! enumerate their members from one, so their raw ids COLLIDE - the
 ! integer 1 is a vertex, an edge and a part all at once. Nothing
-! here may be read positionally across carriers, and orientation is
+! here may be read positionally across sets, and orientation is
 ! carried by the SIGNATURE, never by the numbers.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -30,7 +30,7 @@
 
 module chain_relations_fixture
 
-  use graph_carrier        , only : counted_set
+  use graph_set        , only : index_set
   use graph_binary_relation, only : csr_relation
 
   implicit none
@@ -46,7 +46,7 @@ contains
 
   type(csr_relation) function tail_relation(e, v) result(tail)
 
-    type(counted_set), intent(in) :: e, v
+    type(index_set), intent(in) :: e, v
 
     integer :: table(2, 5), i
 
@@ -63,7 +63,7 @@ contains
 
   type(csr_relation) function head_relation(e, v) result(head)
 
-    type(counted_set), intent(in) :: e, v
+    type(index_set), intent(in) :: e, v
 
     integer :: table(2, 5), i
 
@@ -81,7 +81,7 @@ contains
 
   type(csr_relation) function own_relation(k, v) result(own)
 
-    type(counted_set), intent(in) :: k, v
+    type(index_set), intent(in) :: k, v
 
     integer :: table(2, 6)
 

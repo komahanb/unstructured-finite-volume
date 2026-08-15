@@ -177,9 +177,9 @@ The brief asked for this separation and the towers supply it:
 | **numerical operand** | Class 1: `differential_operator` reads incidence to compute | Classes 2 and 3 |
 | **compatibility argument** | the minimizer's `on`, from the perspective of the *minimizer itself* | — |
 | **contextual environment** | multigrid's `this % on`; a level's real graph | test-local towers |
-| **structural owner** (`relational_graph`) | adjoint Gate C model; learning L9; derivative Gate C | never the same object as the legacy host |
+| **structural owner** (`related_graph`) | adjoint Gate C model; learning L9; derivative Gate C | never the same object as the legacy host |
 
-Note the last row: `relational_graph` and the legacy `class(graph)` host
+Note the last row: `related_graph` and the legacy `class(graph)` host
 are **different types holding different things**, and the adjoint
 statement holds both simultaneously (AD-13). No proposal below conflates
 them.
@@ -257,8 +257,8 @@ change (AD-7). The precedent exists, is in production, and works.
 ```text
 an operation is a map between DOMAINS:
 
-    domain_in  : member_set          (what it consumes)
-    domain_out : member_set          (what it answers on)
+    domain_in  : set          (what it consumes)
+    domain_out : set          (what it answers on)
     apply(input_data, output)
 
 whether it additionally needs a GRAPH is a separate question,
@@ -318,7 +318,7 @@ Three narrowings, each independent:
    express \(L : U \to U\). \(R_q : Q \to Y\) with \(Q \neq Y\) is
    inexpressible.
 2. **Graph-as-domain.** That set is a graph's vertex set, so the domain
-   cannot be an arbitrary `member_set` — it is Class 2 (§3.2).
+   cannot be an arbitrary `set` — it is Class 2 (§3.2).
 3. **Forward-only.** It exposes `apply` (a \(Jv\) product by finite
    difference) and no reverse action at all. The transpose is not
    narrow here; it is *absent*.
@@ -364,8 +364,8 @@ Is that an incomplete ownership boundary?
 
 ## 5.2 Classification: **healthy identity handle**
 
-`member_set` identity is a **value-semantic token**: `held_set` copies
-the set into the graph, and the copy is `same_as` the original because
+`set` identity is a **value-semantic token**: `declared_set` copies
+the set into the graph, and the copy is `equals` the original because
 identity travels with the value (`graph_identity`'s opaque
 image+serial). `model % holds_set(q_dom)` answers true for the external
 handle, and answers false for the host's vertex set.
@@ -388,7 +388,7 @@ Recorded as an open question, not a defect. A partitioned or
 multiphysics statement will hold *many* domains and will want to
 **discover** them (“give me this model's residual domain”) rather than
 carry handles for all of them. That is a **lookup/context API** question
-— `relational_graph` currently exposes `member_set_at` and
+— `related_graph` currently exposes `set_at` and
 `holds_set`, which is enough to build such a lookup locally, exactly as
 the towers build every other convenience locally.
 
@@ -428,7 +428,7 @@ literals are not caught. No behaviour changed; both towers remain green.
 |---|---|---|---|---|---|---|---|---|---|---|
 | A1 | minimizer does not read its graph host | Calculator, Learning, Adjoint | **3, yes** | 1 | `graph_minimization.f90` `solver_apply` (`associate`-and-discard) | no | **YES** — it is a conduit to Class-1 actions | compatibility / conduit | supply an unrelated host | **strong evidence for the FACT; the fact does not imply the refactor** |
 | A2 | Class-2 operations take their domain from the graph | Derivative Action, Adjoint (+3 production sites) | 2 towers, same family | 0–1 | `fit`, `graph_reduction`, `graph_broadcast`, `difference_linearization` → `vertex_set()` / `all_vertices()` | yes | unknown | graph-as-domain | test-local operations carrying explicit domains | **recurring seam** |
-| A3 | `relational_graph` is load-bearing as owner | Learning, Derivative Action, Adjoint | **3, yes** | 1 | L9 statements; `relation_at` + `same_as` + selector destruction | yes | unknown | structural owner | none needed — it works | **strong evidence that the design is RIGHT** |
+| A3 | `related_graph` is load-bearing as owner | Learning, Derivative Action, Adjoint | **3, yes** | 1 | L9 statements; `relation_at` + `equals` + selector destruction | yes | unknown | structural owner | none needed — it works | **strong evidence that the design is RIGHT** |
 | B | one law, forward and reverse, between different domains | Derivative Action, Adjoint | 2, one family | 0–1 | test-local fixtures; `difference_linearization` is narrower on three axes | yes | unknown | none | test-local adapters | **recurring seam** |
 | C | domains held externally while relations are owned | Adjoint | 1 | 1 | Gate C statement | n/a | n/a | n/a | none — identity handles are sound | **observation; design is correct** |
 | D | "finite real" wording in marker checkers | Derivative Action, Adjoint | 2 | n/a | `check_marker.sh` | n/a | n/a | n/a | — | **defect, fixed** |
@@ -463,11 +463,11 @@ settled by **one** experiment, described in §8.
 A1  removing class(graph) from graph_operation
     REJECTED — Case III; it is the conduit for Class-1 actions
 
-A3  the relational_graph ownership contract
+A3  the related_graph ownership contract
     KEEP — three towers show it working; no change proposed
 
 C   fetching domains from their owning graph
-    KEEP — member_set identity is value-semantic; a handle IS the domain
+    KEEP — set identity is value-semantic; a handle IS the domain
 ```
 
 ## Requirements not met by any ACT-NOW candidate
@@ -518,7 +518,7 @@ have inhabited it without asking it to move.
 strongest seam by tower count      A1 (3 towers) — and REJECTED on
                                    production evidence
 strongest seam still open          A2 / B (2 towers each, one family)
-most confirmed design decision     A3 relational_graph ownership, and
+most confirmed design decision     A3 related_graph ownership, and
                                    the minimizer's explicit
                                    unknown/residual domains
 changed by this review             documentation only (candidate D)

@@ -1,5 +1,5 @@
 !=====================================================================!
-! VISUALIZATION TOWER . LEVEL 3 . RELATIONAL GRAPH
+! VISUALIZATION TOWER . LEVEL 3 . RELATED GRAPH
 !
 ! The level answers one question: CAN THE COMPLETE OPERATOR CHAIN
 ! EXIST AS ONE TYPED RELATIONAL STRUCTURE.
@@ -7,7 +7,7 @@
 !      G = ( { X0 X1 X2 X3 E1 E2 E3 },
 !            { T1 H1 T2 H2 T3 H3 } )
 !
-! Seven carriers, six primitive relations, and NOTHING ELSE. What is
+! Seven sets, six primitive relations, and NOTHING ELSE. What is
 ! absent from that list is as much a claim as what is present.
 !
 !                       DERIVED STRUCTURE STAYS DERIVED
@@ -21,7 +21,7 @@
 ! the answer can still be reached with nothing but graph-owned
 ! relations in hand.
 !
-!                     NO UNION CARRIER IS MANUFACTURED
+!                     NO UNION SET IS MANUFACTURED
 !
 ! There is no V = X0 u X1 u X2 u X3 here. The temptation to make one
 ! is real - it is what an ordinary graph would want, and Level 4 will
@@ -50,12 +50,12 @@ program visualization_level_3
   use visualization_assert , only : X1_P, X1_Q, X1_R
   use visualization_assert , only : X2_U, X2_V, X2_W
   use visualization_assert , only : X3_M, X3_N
-  use graph_carrier        , only : counted_set, member_set
+  use graph_set        , only : index_set, set
   use graph_relation       , only : relation
   use graph_binary_relation, only : csr_relation, binary_relation
   use graph_binary_relation, only : transposed_view, transpose_of
-  use graph_structure      , only : relational_graph, held_set, held_relation
-  use visualization_carriers_fixture , only : structural_carriers
+  use graph_structure      , only : related_graph, declared_set, declared_relation
+  use visualization_sets_fixture , only : structural_sets
   use visualization_relations_fixture, only : occurrences_of_a1
   use visualization_relations_fixture, only : occurrences_of_a2
   use visualization_relations_fixture, only : occurrences_of_a3
@@ -66,34 +66,34 @@ program visualization_level_3
 
   implicit none
 
-  type(counted_set)              :: x0, x1, x2, x3, e1, e2, e3
+  type(index_set)              :: x0, x1, x2, x3, e1, e2, e3
   type(csr_relation)     , target :: t1, h1, t2, h2, t3, h3
-  type(relational_graph) , target :: g
+  type(related_graph) , target :: g
   integer                         :: nfail
 
   nfail = 0
 
   write(*,'(1x,a)') "============================================="
-  write(*,'(1x,a)') "visualization tower . level 3 . relational graph"
+  write(*,'(1x,a)') "visualization tower . level 3 . related graph"
   write(*,'(1x,a)') "============================================="
 
-  call structural_carriers(x0, x1, x2, x3, e1, e2, e3)
+  call structural_sets(x0, x1, x2, x3, e1, e2, e3)
   call occurrences_of_a1(e1, x0, x1, t1, h1)
   call occurrences_of_a2(e2, x1, x2, t2, h2)
   call occurrences_of_a3(e3, x2, x3, t3, h3)
 
-  g = relational_graph('the operator chain A3 o A2 o A1', &
-       & [held_set(x0), held_set(x1), held_set(x2), held_set(x3), &
-       &  held_set(e1), held_set(e2), held_set(e3)], &
-       & [held_relation(t1), held_relation(h1), &
-       &  held_relation(t2), held_relation(h2), &
-       &  held_relation(t3), held_relation(h3)])
+  g = related_graph('the operator chain A3 o A2 o A1', &
+       & [declared_set(x0), declared_set(x1), declared_set(x2), declared_set(x3), &
+       &  declared_set(e1), declared_set(e2), declared_set(e3)], &
+       & [declared_relation(t1), declared_relation(h1), &
+       &  declared_relation(t2), declared_relation(h2), &
+       &  declared_relation(t3), declared_relation(h3)])
 
-  call check_the_seven_carriers_are_owned(nfail)
+  call check_the_seven_sets_are_owned(nfail)
   call check_the_six_primitives_are_owned(nfail)
   call check_signature_closure(nfail)
-  call check_the_carriers_stay_apart(nfail)
-  call check_no_union_carrier_exists(nfail)
+  call check_the_sets_stay_apart(nfail)
+  call check_no_union_set_exists(nfail)
   call check_nothing_derived_is_stored(nfail)
   call check_the_chain_is_recoverable(nfail)
 
@@ -106,26 +106,26 @@ contains
   ! and not by having been handed to the constructor.
   !===================================================================!
 
-  subroutine check_the_seven_carriers_are_owned(nfail)
+  subroutine check_the_seven_sets_are_owned(nfail)
 
     integer, intent(inout) :: nfail
 
-    call report(g % num_member_sets() .eq. 7, &
-         & "the graph holds SEVEN member sets - four state carriers " // &
-         & "and three occurrence carriers", nfail)
+    call report(g % num_sets() .eq. 7, &
+         & "the graph holds SEVEN member sets - four state sets " // &
+         & "and three occurrence sets", nfail)
 
     call report(g % holds_set(x0) .and. g % holds_set(x1) .and. &
          &      g % holds_set(x2) .and. g % holds_set(x3) .and. &
          &      g % holds_set(e1) .and. g % holds_set(e2) .and. &
          &      g % holds_set(e3), &
-         & "and each of X0 X1 X2 X3 E1 E2 E3 answers same_as against " // &
+         & "and each of X0 X1 X2 X3 E1 E2 E3 answers equals against " // &
          & "one of them: OWNERSHIP IS IDENTITY", nfail)
 
     call report(sizes_kept(), &
-         & "each owned carrier still holds what it declared: " // &
+         & "each owned set still holds what it declared: " // &
          & "4 3 3 2 5 4 3", nfail)
 
-  end subroutine check_the_seven_carriers_are_owned
+  end subroutine check_the_seven_sets_are_owned
 
   !===================================================================!
   ! Six primitive relations, each found by identity rather than by
@@ -155,7 +155,7 @@ contains
   !===================================================================!
   ! The signature validity law, checked from outside rather than
   ! trusted: every slot of every owned relation names an owned
-  ! carrier.
+  ! set.
   !===================================================================!
 
   subroutine check_signature_closure(nfail)
@@ -163,7 +163,7 @@ contains
     integer, intent(inout) :: nfail
 
     class(relation)  , pointer     :: r
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
     integer                        :: k, s
     logical                        :: closed
 
@@ -178,7 +178,7 @@ contains
 
     call report(closed, &
          & "EVERY SLOT OF EVERY OWNED RELATION RESOLVES TO AN OWNED " // &
-         & "CARRIER - the graph is closed under its own signatures", nfail)
+         & "SET - the graph is closed under its own signatures", nfail)
 
     call report(g % num_relations() .eq. 6 .and. all_binary(), &
          & "all twelve slots come from six binary relations, so the " // &
@@ -187,67 +187,67 @@ contains
   end subroutine check_signature_closure
 
   !===================================================================!
-  ! Admission changed nothing about identity: the four state carriers
-  ! are still four, and the three occurrence carriers still three.
+  ! Admission changed nothing about identity: the four state sets
+  ! are still four, and the three occurrence sets still three.
   !===================================================================!
 
-  subroutine check_the_carriers_stay_apart(nfail)
+  subroutine check_the_sets_stay_apart(nfail)
 
     integer, intent(inout) :: nfail
 
-    class(member_set), pointer :: a, b
+    class(set), pointer :: a, b
     integer                    :: i, j
     logical                    :: apart
 
     apart = .true.
-    do i = 1, g % num_member_sets()
-       a => g % member_set_at(i)
-       do j = 1, g % num_member_sets()
+    do i = 1, g % num_sets()
+       a => g % set_at(i)
+       do j = 1, g % num_sets()
           if (i .eq. j) cycle
-          b => g % member_set_at(j)
-          apart = apart .and. (.not. a % same_as(b))
+          b => g % set_at(j)
+          apart = apart .and. (.not. a % equals(b))
        end do
     end do
 
     call report(apart, &
-         & "no two OWNED carriers are the same domain - X0 X1 X2 X3 " // &
+         & "no two OWNED sets are the same domain - X0 X1 X2 X3 " // &
          & "stay distinct, and so do E1 E2 E3", nfail)
 
-    call report(.not. x1 % same_as(x2) .and. g % holds_set(x1) .and. &
+    call report(.not. x1 % equals(x2) .and. g % holds_set(x1) .and. &
          &      g % holds_set(x2), &
-         & "the graph holds both three-member state carriers, and " // &
+         & "the graph holds both three-member state sets, and " // &
          & "still tells X1 from X2", nfail)
 
-  end subroutine check_the_carriers_stay_apart
+  end subroutine check_the_sets_stay_apart
 
   !===================================================================!
-  ! NO FAKE VERTEX CARRIER. A twelve-member union of the four state
-  ! carriers would be exactly what an ordinary graph asks for, and
+  ! NO FAKE VERTEX SET. A twelve-member union of the four state
+  ! sets would be exactly what an ordinary graph asks for, and
   ! the graph does not hold one.
   !===================================================================!
 
-  subroutine check_no_union_carrier_exists(nfail)
+  subroutine check_no_union_set_exists(nfail)
 
     integer, intent(inout) :: nfail
 
-    type(counted_set) :: union_like
+    type(index_set) :: union_like
 
-    union_like = counted_set('V = X0 u X1 u X2 u X3', &
+    union_like = index_set('V = X0 u X1 u X2 u X3', &
          &                   NX0 + NX1 + NX2 + NX3)
 
     call report(.not. g % holds_set(union_like), &
-         & "a manufactured twelve-member vertex carrier IS NOT HELD - " // &
+         & "a manufactured twelve-member vertex set IS NOT HELD - " // &
          & "the chain was not collapsed to make it renderable", nfail)
 
-    call report(g % num_member_sets() .eq. 7 .and. union_like % size() .eq. 12, &
+    call report(g % num_sets() .eq. 7 .and. union_like % size() .eq. 12, &
          & "the graph keeps seven typed domains where an ordinary " // &
          & "graph would want one untyped set of twelve", nfail)
 
-  end subroutine check_no_union_carrier_exists
+  end subroutine check_no_union_set_exists
 
   !===================================================================!
   ! Derived structure stays derived. No owned relation runs between
-  ! two state carriers, and a view - the other thing that must never
+  ! two state sets, and a view - the other thing that must never
   ! be owned - fails the wholeness test the constructor applies.
   !===================================================================!
 
@@ -356,7 +356,7 @@ contains
     seat_of = 0
     do k = 1, g % num_relations()
        r => g % relation_at(k)
-       if (r % same_as(selector)) then
+       if (r % equals(selector)) then
           seat_of = k
           return
        end if
@@ -384,13 +384,13 @@ contains
 
   logical function sizes_kept()
 
-    class(member_set), pointer :: c
+    class(set), pointer :: c
     integer                    :: want(7), k
 
     want = [NX0, NX1, NX2, NX3, NE1, NE2, NE3]
     sizes_kept = .true.
     do k = 1, 7
-       c => g % member_set_at(k)
+       c => g % set_at(k)
        sizes_kept = sizes_kept .and. (c % size() .eq. want(k))
     end do
 
@@ -426,7 +426,7 @@ contains
   end function counted_occurrences
 
   !-------------------------------------------------------------------!
-  ! Does this relation run from one state carrier to the next - which
+  ! Does this relation run from one state set to the next - which
   ! is to say, is it a stored dependency wearing a primitive's seat.
   !-------------------------------------------------------------------!
 
@@ -434,7 +434,7 @@ contains
 
     class(relation), intent(in) :: r
 
-    class(member_set), allocatable :: first, second
+    class(set), allocatable :: first, second
 
     runs_between_states = .false.
     if (r % arity() .ne. 2) return
@@ -443,11 +443,11 @@ contains
     second = r % domain(2)
 
     runs_between_states = &
-         & (first % same_as(x0) .and. second % same_as(x1)) .or. &
-         & (first % same_as(x1) .and. second % same_as(x2)) .or. &
-         & (first % same_as(x2) .and. second % same_as(x3)) .or. &
-         & (first % same_as(x0) .and. second % same_as(x2)) .or. &
-         & (first % same_as(x0) .and. second % same_as(x3))
+         & (first % equals(x0) .and. second % equals(x1)) .or. &
+         & (first % equals(x1) .and. second % equals(x2)) .or. &
+         & (first % equals(x2) .and. second % equals(x3)) .or. &
+         & (first % equals(x0) .and. second % equals(x2)) .or. &
+         & (first % equals(x0) .and. second % equals(x3))
 
   end function runs_between_states
 

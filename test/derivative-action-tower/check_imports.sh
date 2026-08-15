@@ -16,31 +16,31 @@ intrinsics="iso_fortran_env iso_c_binding ieee_arithmetic ieee_exceptions ieee_f
 allowed_for() {
     case "$1" in
         common)                   echo "" ;;
-        level-0-carrier)          echo "derivative_assert graph_carrier" ;;
-        level-1-relation)         echo "derivative_assert graph_carrier graph_relation" ;;
-        level-2-relation-algebra) echo "derivative_assert graph_carrier graph_relation graph_relation_algebra" ;;
-        level-3-graph)            echo "derivative_assert graph_carrier graph_relation graph_relation_algebra graph_structure" ;;
-        level-4-graph-calculus)   echo "derivative_assert graph_carrier graph_relation graph_relation_algebra graph_structure graph_profile graph_algorithms" ;;
+        level-0-set)          echo "derivative_assert graph_set" ;;
+        level-1-relation)         echo "derivative_assert graph_set graph_relation" ;;
+        level-2-relation-algebra) echo "derivative_assert graph_set graph_relation graph_relation_algebra" ;;
+        level-3-graph)            echo "derivative_assert graph_set graph_relation graph_relation_algebra graph_structure" ;;
+        level-4-graph-calculus)   echo "derivative_assert graph_set graph_relation graph_relation_algebra graph_structure graph_interpretation graph_algorithms" ;;
         # level 5: primal values need domains, not graphs - and no
         # tangent/cotangent/seed type exists to be imported.
-        level-5-field-calculus)   echo "derivative_assert graph_carrier class_graph_field" ;;
+        level-5-field-calculus)   echo "derivative_assert graph_set class_graph_field" ;;
         # level 6: the structural rung - the algebra derives value
-        # dependency, the profile walks it, and the binary citizen
+        # dependency, the interpretation walks it, and the binary citizen
         # materializes J_ZX and answers its reverse as a view.
         # Fields stay forbidden: the pattern needs no numbers.
-        level-6-derivative-structure) echo "derivative_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_structure graph_profile graph_algorithms" ;;
+        level-6-derivative-structure) echo "derivative_assert graph_set graph_relation graph_relation_algebra graph_binary_relation graph_structure graph_interpretation graph_algorithms" ;;
         # level 8 (Gate B): the numerical action rung. Structure
         # derives the order, the test-local constitution supplies
         # primal laws and ONE local linearization per operation,
         # fields carry seeds and results. NO binary storage - the
         # J-pattern is support metadata, never the propagation
         # itinerary - and no solver, ever, at this gate.
-        level-8-derivative-constitution) echo "derivative_assert graph_carrier graph_relation graph_relation_algebra graph_structure graph_profile graph_algorithms class_graph_field derivative_constitution_fixture" ;;
+        level-8-derivative-constitution) echo "derivative_assert graph_set graph_relation graph_relation_algebra graph_structure graph_interpretation graph_algorithms class_graph_field derivative_constitution_fixture" ;;
         # level 9 (Gate C): the statement - the composition rung.
         # The REUSED level-8 constitution is the only fixture; no
         # adapter exists because nothing here must satisfy a legacy
         # operation face. No new mathematics, and still no solver.
-        level-9-statement)        echo "derivative_assert graph_carrier graph_relation graph_relation_algebra graph_structure graph_profile graph_algorithms class_graph_field derivative_constitution_fixture" ;;
+        level-9-statement)        echo "derivative_assert graph_set graph_relation graph_relation_algebra graph_structure graph_interpretation graph_algorithms class_graph_field derivative_constitution_fixture" ;;
         *)                        echo "__no_allowlist__" ;;
     esac
 }

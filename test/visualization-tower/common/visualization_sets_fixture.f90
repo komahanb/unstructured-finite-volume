@@ -1,5 +1,5 @@
 !=====================================================================!
-! THE SPECIMEN'S CARRIERS - earned at LEVEL 0, and the sole home of
+! THE SPECIMEN'S SETS - earned at LEVEL 0, and the sole home of
 ! the seven declared domains.
 !
 !      X0 = { a  b  c  d }
@@ -11,7 +11,7 @@
 !      E2 = { e21 e22 e23 e24 }
 !      E3 = { e31 e32 e33 }
 !
-! Its framework dependency is graph_carrier and nothing else. Level 0
+! Its framework dependency is graph_set and nothing else. Level 0
 ! knows about members; it does not know that a relation exists, or an
 ! operator, or a graph, or a picture.
 !
@@ -26,17 +26,17 @@
 ! first, 'e23' for E2's third - and every level above uses it for
 ! display only. Three properties keep it honest:
 !
-!   1. It is keyed by the carrier's DECLARED NAME, which graph_carrier
+!   1. It is keyed by the set's DECLARED NAME, which graph_set
 !      already states is metadata carried for the reader and no part
 !      of the mathematics. No law reads it.
 !
 !   2. It is keyed by MEMBER VALUE, never by position. A caller must
 !      already hold the member - which it can only have got by asking
-!      the carrier - before it can ask what to call it.
+!      the set - before it can ask what to call it.
 !
-!   3. A carrier it does not recognise gets its member printed as the
+!   3. A set it does not recognise gets its member printed as the
 !      integer it is. Nothing is invented, and the renderer above can
-!      be pointed at a carrier this file has never heard of.
+!      be pointed at a set this file has never heard of.
 !
 ! So a picture's ORDER can never come from here: order is whatever
 ! member(1), member(2), ... say it is, and this file is asked only
@@ -45,52 +45,52 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module visualization_carriers_fixture
+module visualization_sets_fixture
 
-  use graph_carrier, only : counted_set, member_set
+  use graph_set, only : index_set, set
 
   implicit none
 
   private
-  public :: structural_carriers, label_for
+  public :: structural_sets, label_for
 
 contains
 
   !===================================================================!
   ! The seven declared domains, each signing its own identity once.
-  ! Four state carriers and three occurrence carriers: |X1| = |X2|,
+  ! Four state sets and three occurrence sets: |X1| = |X2|,
   ! and X1 is still not X2.
   !===================================================================!
 
-  subroutine structural_carriers(x0, x1, x2, x3, e1, e2, e3)
+  subroutine structural_sets(x0, x1, x2, x3, e1, e2, e3)
 
-    type(counted_set), intent(out) :: x0, x1, x2, x3
-    type(counted_set), intent(out) :: e1, e2, e3
+    type(index_set), intent(out) :: x0, x1, x2, x3
+    type(index_set), intent(out) :: e1, e2, e3
 
-    x0 = counted_set('X0', 4)
-    x1 = counted_set('X1', 3)
-    x2 = counted_set('X2', 3)
-    x3 = counted_set('X3', 2)
+    x0 = index_set('X0', 4)
+    x1 = index_set('X1', 3)
+    x2 = index_set('X2', 3)
+    x3 = index_set('X3', 2)
 
-    e1 = counted_set('E1', 5)
-    e2 = counted_set('E2', 4)
-    e3 = counted_set('E3', 3)
+    e1 = index_set('E1', 5)
+    e2 = index_set('E2', 4)
+    e3 = index_set('E3', 3)
 
-  end subroutine structural_carriers
+  end subroutine structural_sets
 
   !===================================================================!
-  ! What the reader calls one member of one carrier. Display only.
+  ! What the reader calls one member of one set. Display only.
   !===================================================================!
 
-  function label_for(carrier, member) result(text)
+  function label_for(set, member) result(text)
 
-    class(member_set), intent(in) :: carrier
+    class(set), intent(in) :: set
     integer          , intent(in) :: member
 
     character(len=:), allocatable :: text
     character(len=12)             :: buf
 
-    select case (carrier % name())
+    select case (set % name())
     case ('X0'); text = pick(['a', 'b', 'c', 'd'], member)
     case ('X1'); text = pick(['p', 'q', 'r'], member)
     case ('X2'); text = pick(['u', 'v', 'w'], member)
@@ -101,7 +101,7 @@ contains
     case default; text = ''
     end select
 
-    ! An unrecognised carrier - or a member outside the alphabet -
+    ! An unrecognised set - or a member outside the alphabet -
     ! gets the integer it actually is. Nothing is invented.
     if (len(text) .eq. 0) then
        write(buf, '(i0)') member
@@ -129,4 +129,4 @@ contains
 
   end function pick
 
-end module visualization_carriers_fixture
+end module visualization_sets_fixture

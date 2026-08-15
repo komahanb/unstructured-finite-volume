@@ -2,7 +2,7 @@ include ../../../Makefile.in
 
 #=====================================================================#
 # Derivative level 9: the statement suite. The composition rung:
-# carriers, relations, algebra, the relational graph, the profile
+# sets, relations, algebra, the related graph, the interpretation
 # and algorithms for the derived order, the field - and the REUSED
 # level-8 derivative constitution, compiled from its own rung's
 # directory. There is deliberately no production statement module

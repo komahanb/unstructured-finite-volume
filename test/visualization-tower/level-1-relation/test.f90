@@ -9,7 +9,7 @@
 !      T_k  <=  E_k x X_(k-1)      one tail per occurrence
 !      H_k  <=  E_k x X_k          one head per occurrence
 !
-! and every end is checked against the carrier that is entitled to
+! and every end is checked against the set that is entitled to
 ! hold it - not against an integer, and not against a count.
 !
 !                      THE SIGNATURES ARE RECTANGULAR
@@ -17,12 +17,12 @@
 ! T1 relates E1 to X0; H1 relates E1 to X1; and X0 is not X1. That
 ! single fact is what separates this specimen from every mesh the
 ! repository has read so far, where the tail and the head of an edge
-! land in ONE vertex carrier. Here the two ends of an occurrence live
+! land in ONE vertex set. Here the two ends of an occurrence live
 ! in two different worlds on purpose, because an operator's input and
 ! output domains are two different worlds.
 !
 ! Level 4 will find that this is exactly the shape the ordinary-graph
-! profile cannot read, and Level 1 is where the shape is established.
+! interpretation cannot read, and Level 1 is where the shape is established.
 !
 !                       WHAT THIS LEVEL REFUSES TO SAY
 !
@@ -47,16 +47,16 @@ program visualization_level_1
   use visualization_assert , only : X1_P, X1_Q, X1_R
   use visualization_assert , only : X2_U, X2_V, X2_W
   use visualization_assert , only : X3_M, X3_N
-  use graph_carrier        , only : counted_set, member_set
+  use graph_set        , only : index_set, set
   use graph_binary_relation, only : csr_relation, binary_relation
-  use visualization_carriers_fixture, only : structural_carriers, label_for
+  use visualization_sets_fixture, only : structural_sets, label_for
   use visualization_relations_fixture, only : occurrences_of_a1
   use visualization_relations_fixture, only : occurrences_of_a2
   use visualization_relations_fixture, only : occurrences_of_a3
 
   implicit none
 
-  type(counted_set)  :: x0, x1, x2, x3, e1, e2, e3
+  type(index_set)  :: x0, x1, x2, x3, e1, e2, e3
   type(csr_relation) :: t1, h1, t2, h2, t3, h3
   integer            :: nfail
 
@@ -66,7 +66,7 @@ program visualization_level_1
   write(*,'(1x,a)') "visualization tower . level 1 . relation"
   write(*,'(1x,a)') "============================================="
 
-  call structural_carriers(x0, x1, x2, x3, e1, e2, e3)
+  call structural_sets(x0, x1, x2, x3, e1, e2, e3)
   call occurrences_of_a1(e1, x0, x1, t1, h1)
   call occurrences_of_a2(e2, x1, x2, t2, h2)
   call occurrences_of_a3(e3, x2, x3, t3, h3)
@@ -82,7 +82,7 @@ program visualization_level_1
 contains
 
   !===================================================================!
-  ! Each of the six relations relates the two carriers it is entitled
+  ! Each of the six relations relates the two sets it is entitled
   ! to relate, and says so by structural identity rather than by
   ! size - which would not distinguish X1 from X2 at all.
   !===================================================================!
@@ -109,31 +109,31 @@ contains
 
   !===================================================================!
   ! THE FACT THAT SHAPES THE WHOLE TOWER. The two ends of an
-  ! occurrence do not live in one carrier.
+  ! occurrence do not live in one set.
   !===================================================================!
 
   subroutine check_the_signatures_are_rectangular(nfail)
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: tail_end, head_end
+    class(set), allocatable :: tail_end, head_end
 
     tail_end = t1 % target()
     head_end = h1 % target()
 
-    call report(.not. tail_end % same_as(head_end), &
-         & "A1's TAIL END AND HEAD END ARE DIFFERENT CARRIERS - X0 is " // &
+    call report(.not. tail_end % equals(head_end), &
+         & "A1's TAIL END AND HEAD END ARE DIFFERENT SETS - X0 is " // &
          & "not X1, so this is no mesh edge", nfail)
 
     tail_end = t2 % target()
     head_end = h2 % target()
-    call report(.not. tail_end % same_as(head_end), &
+    call report(.not. tail_end % equals(head_end), &
          & "and neither are A2's - X1 is not X2, though both hold " // &
          & "three members", nfail)
 
     tail_end = t3 % target()
     head_end = h3 % target()
-    call report(.not. tail_end % same_as(head_end), &
+    call report(.not. tail_end % equals(head_end), &
          & "and neither are A3's - X2 is not X3", nfail)
 
   end subroutine check_the_signatures_are_rectangular
@@ -210,7 +210,7 @@ contains
   !===================================================================!
   ! Nothing at this level says a -> p. Every primitive fact is a fact
   ! ABOUT AN OCCURRENCE: its first slot is always an occurrence
-  ! carrier, never a state carrier.
+  ! set, never a state set.
   !===================================================================!
 
   subroutine check_no_dependency_is_stored(nfail)
@@ -239,21 +239,21 @@ contains
   logical function signed(r, first, second)
 
     class(binary_relation), intent(in) :: r
-    class(member_set)     , intent(in) :: first, second
+    class(set)     , intent(in) :: first, second
 
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
 
     d = r % source()
-    signed = d % same_as(first)
+    signed = d % equals(first)
     d = r % target()
-    signed = signed .and. d % same_as(second)
+    signed = signed .and. d % equals(second)
 
   end function signed
 
   logical function relates(r, first, second)
 
     class(binary_relation), intent(in) :: r
-    class(member_set)     , intent(in) :: first, second
+    class(set)     , intent(in) :: first, second
 
     relates = signed(r, first, second)
 
@@ -262,19 +262,19 @@ contains
   logical function about_an_occurrence(r, occurrences)
 
     class(binary_relation), intent(in) :: r
-    class(member_set)     , intent(in) :: occurrences
+    class(set)     , intent(in) :: occurrences
 
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
 
     d = r % source()
-    about_an_occurrence = d % same_as(occurrences)
+    about_an_occurrence = d % equals(occurrences)
 
   end function about_an_occurrence
 
   logical function exactly_one_end_each(tail, head, occurrences)
 
     class(binary_relation), target, intent(in) :: tail, head
-    class(member_set)             , intent(in) :: occurrences
+    class(set)             , intent(in) :: occurrences
 
     integer, pointer :: fibre(:)
     integer          :: k, e

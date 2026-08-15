@@ -36,14 +36,14 @@ program learning_level_6
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier  , only : counted_set, subset_set, member_set
+  use graph_set  , only : index_set, subset, set
   use graph_relation , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
   use graph_binary_relation , only : csr_relation, transposed_view, &
        &                             transpose_of
-  use graph_structure, only : relational_graph, held_set, held_relation
-  use graph_profile  , only : directed_adjacency_view
+  use graph_structure, only : related_graph, declared_set, declared_relation
+  use graph_interpretation  , only : directed_adjacency_view
   use graph_algorithms, only : reachable
 
   implicit none
@@ -51,14 +51,14 @@ program learning_level_6
   ! Residual rows exist only from this level upward.
   integer, parameter :: ROW_R = 1
 
-  type(counted_set)              :: v, o, p, y
-  type(subset_set)               :: theta, p_in, p_out
+  type(index_set)              :: v, o, p, y
+  type(subset)               :: theta, p_in, p_out
   type(stored_relation)          :: flow, backwards, located
   type(stored_relation)          :: consumes, produces
   type(csr_relation)             :: a, a2
   type(csr_relation), target     :: j_theta, j_theta2
   type(transposed_view)          :: jt
-  type(relational_graph), target :: g, g2
+  type(related_graph), target :: g, g2
   type(directed_adjacency_view)  :: view, view2
   integer                        :: table(3, 6)
   integer                        :: nfail
@@ -69,11 +69,11 @@ program learning_level_6
   write(*,'(1x,a)') "learning tower . level 6 . discretization"
   write(*,'(1x,a)') "============================================="
 
-  v     = counted_set('value-slots'  , 5)
-  o     = counted_set('operations'   , 2)
-  p     = counted_set('ports'        , 3)
-  y     = counted_set('residual-rows', 1)
-  theta = subset_set('trainable', v, [SLOT_W])
+  v     = index_set('value-slots'  , 5)
+  o     = index_set('operations'   , 2)
+  p     = index_set('ports'        , 3)
+  y     = index_set('residual-rows', 1)
+  theta = subset('trainable', v, [SLOT_W])
 
   table(:, 1) = [OP_PREDICT, SLOT_W   , PORT_IN1]
   table(:, 2) = [OP_PREDICT, SLOT_X   , PORT_IN2]
@@ -87,12 +87,12 @@ program learning_level_6
   located = stored_relation('located', [y, v], &
        & reshape([ROW_R, SLOT_E], [2, 1]))
 
-  p_in  = subset_set('input-ports', p, [PORT_IN1, PORT_IN2])
-  p_out = subset_set('output-port', p, [PORT_OUT])
+  p_in  = subset('input-ports', p, [PORT_IN1, PORT_IN2])
+  p_out = subset('output-port', p, [PORT_OUT])
 
   a = derive_direct(flow)
-  g = relational_graph('value dependency', [held_set(v)], &
-       & [held_relation(a)])
+  g = related_graph('value dependency', [declared_set(v)], &
+       & [declared_relation(a)])
   view = directed_adjacency_view(g, a)
 
   j_theta = derive_trainable(view)
@@ -199,12 +199,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
 
     dom = consumes % domain(1)
-    call report(dom % same_as(v), "I runs from the value slots", nfail)
+    call report(dom % equals(v), "I runs from the value slots", nfail)
     dom = consumes % domain(2)
-    call report(dom % same_as(o), "into the operations", nfail)
+    call report(dom % equals(o), "into the operations", nfail)
     call report(consumes % num_tuples() .eq. 4 .and. &
          &      consumes % has([SLOT_W   , OP_PREDICT]) .and. &
          &      consumes % has([SLOT_X   , OP_PREDICT]) .and. &
@@ -214,9 +214,9 @@ contains
          & "(y,error) } - exactly", nfail)
 
     dom = produces % domain(1)
-    call report(dom % same_as(o), "Q runs from the operations", nfail)
+    call report(dom % equals(o), "Q runs from the operations", nfail)
     dom = produces % domain(2)
-    call report(dom % same_as(v), "back into the value slots", nfail)
+    call report(dom % equals(v), "back into the value slots", nfail)
     call report(produces % num_tuples() .eq. 2 .and. &
          &      produces % has([OP_PREDICT, SLOT_YHAT]) .and. &
          &      produces % has([OP_ERROR  , SLOT_E   ]), &
@@ -233,12 +233,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
 
     dom = a % domain(1)
-    call report(dom % same_as(v), "A runs from the value slots", nfail)
+    call report(dom % equals(v), "A runs from the value slots", nfail)
     dom = a % domain(2)
-    call report(dom % same_as(v), "back into the value slots", nfail)
+    call report(dom % equals(v), "back into the value slots", nfail)
 
     call report(a % num_tuples() .eq. 4 .and. &
          &      a % has([SLOT_W   , SLOT_YHAT]) .and. &
@@ -264,10 +264,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
 
     dom = view % domain()
-    call report(dom % same_as(v), &
+    call report(dom % equals(v), &
          & "the interpretation walks the value slots", nfail)
 
     call report(reachable(view, SLOT_W   , SLOT_E) .and. &
@@ -314,13 +314,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
 
     dom = j_theta % domain(1)
-    call report(dom % same_as(y), &
+    call report(dom % equals(y), &
          & "J_Theta runs from the residual rows", nfail)
     dom = j_theta % domain(2)
-    call report(dom % same_as(theta), &
+    call report(dom % equals(theta), &
          & "into the trainable domain", nfail)
 
     call report(j_theta % num_tuples() .eq. 1, &
@@ -340,7 +340,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(subset_set) :: sr
+    type(subset) :: sr
     integer          :: ti, n
     integer          :: kept(theta % size())
 
@@ -351,7 +351,7 @@ contains
           kept(n) = theta % member(ti)
        end if
     end do
-    sr = subset_set('trainable support of r', theta, kept(1:n))
+    sr = subset('trainable support of r', theta, kept(1:n))
 
     call report(sr % size() .eq. 1 .and. sr % has(SLOT_W), &
          & "support(r) = { w }, composed, not stored", nfail)
@@ -403,8 +403,8 @@ contains
     backwards = stored_relation('flow backwards', [o, v, p], rev)
 
     a2 = derive_direct(backwards)
-    g2 = relational_graph('value dependency again', [held_set(v)], &
-         & [held_relation(a2)])
+    g2 = related_graph('value dependency again', [declared_set(v)], &
+         & [declared_relation(a2)])
     view2 = directed_adjacency_view(g2, a2)
     j_theta2 = derive_trainable(view2)
 

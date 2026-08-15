@@ -40,7 +40,7 @@ program adjoint_level_7
   use adjoint_assert   , only : report, verdict
   use adjoint_assert   , only : VAR_P, VAR_U, VAR_V
   use adjoint_assert   , only : TGT_R1, TGT_R2, TGT_F
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use graph_set    , only : index_set, subset, set
   use graph_grammar    , only : graph_field
   use class_graph      , only : stored_graph
   use class_graph_field, only : field
@@ -49,14 +49,14 @@ program adjoint_level_7
 
   implicit none
 
-  type(counted_set)               :: v, t, hv
-  type(subset_set)                :: q_dom, y_dom
+  type(index_set)               :: v, t, hv
+  type(subset)                :: q_dom, y_dom
   type(stored_graph)              :: host
   type(opaque_primal)             :: primal_eq
   type(opaque_adjoint)            :: adjoint_eq
   type(gmres)                     :: primal_solver, adjoint_solver
   type(field)                     :: rhs_y, rhs_q
-  class(member_set), allocatable  :: dom
+  class(set), allocatable  :: dom
   class(graph_field), allocatable :: q_sol, lam_sol
   real(dp), allocatable           :: gv(:), qv(:), lv(:)
   integer                         :: nfail
@@ -67,10 +67,10 @@ program adjoint_level_7
   write(*,'(1x,a)') "adjoint tower . level 7 . solver neutrality"
   write(*,'(1x,a)') "============================================="
 
-  v = counted_set('variables', 3)
-  t = counted_set('targets'  , 3)
-  q_dom = subset_set('state'   , v, [VAR_U, VAR_V])
-  y_dom = subset_set('residual', t, [TGT_R1, TGT_R2])
+  v = index_set('variables', 3)
+  t = index_set('targets'  , 3)
+  q_dom = subset('state'   , v, [VAR_U, VAR_V])
+  y_dom = subset('residual', t, [TGT_R1, TGT_R2])
 
   ! The compatibility host: five vertices, nobody's domain.
   host = stored_graph(5, tails=[1,2,3,4], heads=[2,3,4,5])
@@ -100,8 +100,8 @@ contains
 
     hv = host % vertex_set()
 
-    call report(.not. hv % same_as(q_dom) .and. &
-         &      .not. hv % same_as(y_dom), &
+    call report(.not. hv % equals(q_dom) .and. &
+         &      .not. hv % equals(y_dom), &
          & "the host's vertex set is neither Q nor Y", nfail)
     call report(host % num_vertices() .ne. q_dom % size() .and. &
          &      host % num_vertices() .ne. y_dom % size(), &
@@ -125,10 +125,10 @@ contains
     primal_solver % max_iterations = 50
 
     call primal_solver % domain(host, dom)
-    call report(dom % same_as(q_dom), &
+    call report(dom % equals(q_dom), &
          & "the primal solver answers on Q, by identity", nfail)
     call primal_eq % domain(host, dom)
-    call report(dom % same_as(y_dom) .and. .not. dom % same_as(q_dom), &
+    call report(dom % equals(y_dom) .and. .not. dom % equals(q_dom), &
          & "and the equation answers on Y - which is not Q", nfail)
 
     call primal_solver % constant(gv)
@@ -143,7 +143,7 @@ contains
     call primal_solver % apply(host, [rhs_y], q_sol)
 
     call q_sol % domain(dom)
-    call report(dom % same_as(q_dom), &
+    call report(dom % equals(q_dom), &
          & "the solution field lives on Q", nfail)
 
     call q_sol % get_real_vector(qv)
@@ -168,10 +168,10 @@ contains
     adjoint_solver % max_iterations = 50
 
     call adjoint_solver % domain(host, dom)
-    call report(dom % same_as(y_dom), &
+    call report(dom % equals(y_dom), &
          & "the adjoint solver answers on Y, by identity", nfail)
     call adjoint_eq % domain(host, dom)
-    call report(dom % same_as(q_dom), &
+    call report(dom % equals(q_dom), &
          & "and its equation answers on Q: the orientation is " // &
          & "exchanged, end for end", nfail)
 
@@ -187,7 +187,7 @@ contains
     call adjoint_solver % apply(host, [rhs_q], lam_sol)
 
     call lam_sol % domain(dom)
-    call report(dom % same_as(y_dom), &
+    call report(dom % equals(y_dom), &
          & "the adjoint field lives on Y", nfail)
 
     call lam_sol % get_real_vector(lv)
@@ -225,12 +225,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: a, b
+    class(set), allocatable :: a, b
 
     call primal_solver % domain(host, a)
     call adjoint_solver % domain(host, b)
 
-    call report(.not. a % same_as(b) .and. a % size() .eq. b % size(), &
+    call report(.not. a % equals(b) .and. a % size() .eq. b % size(), &
          & "the two solvers answer on different domains of equal " // &
          & "size - the same machinery, told apart only by identity", &
          & nfail)

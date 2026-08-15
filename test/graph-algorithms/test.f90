@@ -18,20 +18,20 @@
 
 program test_graph_algorithms
 
-  use graph_carrier        , only : counted_set, subset_set, member_set
+  use graph_set        , only : index_set, subset, set
   use graph_binary_relation, only : csr_relation
-  use graph_structure      , only : relational_graph, held_set, &
-       &                            held_relation
-  use graph_profile        , only : directed_adjacency_view
+  use graph_structure      , only : related_graph, declared_set, &
+       &                            declared_relation
+  use graph_interpretation        , only : directed_adjacency_view
   use graph_algorithms     , only : sources, sinks, reachable, &
        &                            topological_order
 
   implicit none
 
-  type(counted_set)              :: ground
-  type(subset_set)               :: v
+  type(index_set)              :: ground
+  type(subset)               :: v
   type(csr_relation)             :: after
-  type(relational_graph), target :: g
+  type(related_graph), target :: g
   type(directed_adjacency_view)  :: view
   integer                        :: nfail
 
@@ -41,13 +41,13 @@ program test_graph_algorithms
   write(*,'(1x,a)') "graph algorithms suite (level 4)"
   write(*,'(1x,a)') "============================================="
 
-  ground = counted_set('ground', 5)
-  v      = subset_set('ordered-domain', ground, [3, 1, 5, 4, 2])
+  ground = index_set('ground', 5)
+  v      = subset('ordered-domain', ground, [3, 1, 5, 4, 2])
 
   after = csr_relation('after', v, v, &
        & reshape([3,4,  1,4,  4,2], [2, 3]))
 
-  g = relational_graph('dag', [held_set(v)], [held_relation(after)])
+  g = related_graph('dag', [declared_set(v)], [declared_relation(after)])
 
   view = directed_adjacency_view(g, after)
 
@@ -92,7 +92,7 @@ contains
     type(directed_adjacency_view), intent(in)    :: view
     integer                      , intent(inout) :: nfail
 
-    type(subset_set)     :: src, snk
+    type(subset)     :: src, snk
     integer, allocatable :: idx(:)
 
     src = sources(view)
@@ -169,17 +169,17 @@ contains
     integer, intent(inout) :: nfail
 
     type(csr_relation)             :: backwards
-    type(relational_graph), target :: g2
+    type(related_graph), target :: g2
     type(directed_adjacency_view)  :: view2
-    type(subset_set)               :: src, snk
+    type(subset)               :: src, snk
     integer, allocatable           :: idx(:), order(:)
     logical                        :: ok
 
     backwards = csr_relation('after backwards', v, v, &
          & reshape([4,2,  1,4,  3,4], [2, 3]))
 
-    g2 = relational_graph('dag again', [held_set(v)], &
-         & [held_relation(backwards)])
+    g2 = related_graph('dag again', [declared_set(v)], &
+         & [declared_relation(backwards)])
     view2 = directed_adjacency_view(g2, backwards)
 
     src = sources(view2)

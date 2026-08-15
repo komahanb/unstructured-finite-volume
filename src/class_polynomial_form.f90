@@ -9,7 +9,7 @@
 module class_polynomial_form
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_carrier, only : subset_set, counted_set
+  use graph_set, only : subset, index_set
   use graph_forms        , only : form
 
   implicit none
@@ -38,7 +38,7 @@ contains
 
     integer :: m
 
-    this % subset_set = subset_set('polynomial-basis', counted_set('polynomial-table', 4), [(m, m = 1, 4)])
+    this % subset = subset('polynomial-basis', index_set('polynomial-table', 4), [(m, m = 1, 4)])
 
   end function create
 

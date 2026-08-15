@@ -45,8 +45,8 @@
 module class_graph_marcher
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_grammar      , only : graph, graph_field, graph_operation
-  use graph_carrier      , only : member_set
+  use graph_grammar      , only : ordinary_graph, graph_field, graph_operation
+  use graph_set      , only : set
   use class_graph_field  , only : field
   use class_graph        , only : stored_graph
   use class_graph_step   , only : step_operator, bdf
@@ -107,13 +107,13 @@ contains
 
     class(marcher), intent(inout)      :: this
     class(graph_operation), intent(in) :: action
-    class(graph), intent(in)           :: on
+    class(ordinary_graph), intent(in)           :: on
     real(dp), intent(inout)            :: q(:)
     integer, intent(in)                :: nsteps
 
     type(stored_graph) :: chain
     type(step_operator) :: statement
-    class(member_set), allocatable :: state_domain
+    class(set), allocatable :: state_domain
     real(dp), allocatable :: s(:), qold(:), qolder(:), zeros(:)
     real(dp) :: answered
     integer :: e, ncomp
@@ -200,7 +200,7 @@ contains
 
     class(marcher), intent(inout)      :: this
     class(graph_operation), intent(in) :: transposed
-    class(graph), intent(in)           :: on
+    class(ordinary_graph), intent(in)           :: on
     real(dp), intent(inout)            :: lambda(:)
     integer, intent(in)                :: nsteps
 
@@ -230,7 +230,7 @@ contains
   !
   ! A march is a repeated application of one action, so the thing
   ! being marched inhabits that action's domain - never the host's
-  ! vertex carrier, which is the conduit the action is reached
+  ! vertex set, which is the conduit the action is reached
   ! through and not the seat of the mathematics.
   !
   ! For every action that reads its domain off the graph - which is
@@ -247,9 +247,9 @@ contains
   subroutine state_seat(action, on, q, state_domain, ncomp)
 
     class(graph_operation), intent(in) :: action
-    class(graph), intent(in)           :: on
+    class(ordinary_graph), intent(in)           :: on
     real(dp), intent(in)               :: q(:)
-    class(member_set), allocatable, intent(out) :: state_domain
+    class(set), allocatable, intent(out) :: state_domain
     integer, intent(out)               :: ncomp
 
     integer :: n
@@ -272,13 +272,13 @@ contains
   subroutine read_statement(action, on, q, s)
 
     class(graph_operation), intent(in) :: action
-    class(graph), intent(in)           :: on
+    class(ordinary_graph), intent(in)           :: on
     real(dp), intent(in)               :: q(:)
     real(dp), allocatable, intent(out) :: s(:)
 
     type(field)   :: state
     class(graph_field), allocatable :: answer
-    class(member_set), allocatable  :: state_domain, given
+    class(set), allocatable  :: state_domain, given
     integer :: ncomp
 
     call state_seat(action, on, q, state_domain, ncomp)
@@ -290,9 +290,9 @@ contains
 
     ! q <- q - h s is an equation between two states, so the answer
     ! must inhabit the domain the state does. Equal length is not
-    ! the same claim, and would let a foreign carrier through.
+    ! the same claim, and would let an unequal domain through.
     call answer % domain(given)
-    if (.not. given % same_as(state_domain)) then
+    if (.not. given % equals(state_domain)) then
        error stop 'marcher: the action must answer on the domain its state lives on'
     end if
 

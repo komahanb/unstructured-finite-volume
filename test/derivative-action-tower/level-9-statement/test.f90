@@ -47,12 +47,12 @@ program derivative_level_9
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use graph_set    , only : index_set, subset, set
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_structure  , only : relational_graph, held_set, held_relation
-  use graph_profile    , only : directed_adjacency_view
+  use graph_structure  , only : related_graph, declared_set, declared_relation
+  use graph_interpretation    , only : directed_adjacency_view
   use graph_algorithms , only : topological_order
   use class_graph_field, only : field
   use derivative_constitution_fixture, only : primal_execution, &
@@ -60,16 +60,16 @@ program derivative_level_9
 
   implicit none
 
-  type(counted_set)                  :: v, o, p
-  type(subset_set)                   :: x_dom, c, z_dom, p_in, p_out
+  type(index_set)                  :: v, o, p
+  type(subset)                   :: x_dom, c, z_dom, p_in, p_out
   type(stored_relation), allocatable :: flow
   class(relation), allocatable       :: d
   class(relation), pointer           :: gflow => null()
   class(relation), pointer           :: rp    => null()
-  type(relational_graph), target     :: g
+  type(related_graph), target     :: g
   type(directed_adjacency_view)      :: view
   type(field)                        :: qx, zbar_f, grad_f, vseed_f
-  class(member_set), allocatable     :: dom
+  class(set), allocatable     :: dom
   integer, allocatable               :: order(:)
   real(dp), allocatable              :: obs(:), gradient(:), gvals(:)
   real(dp), allocatable              :: seed1(:), vdir(:), base(:), dot(:)
@@ -85,12 +85,12 @@ program derivative_level_9
   write(*,'(1x,a)') "============================================="
 
   ! -- the structure the statement selects
-  v     = counted_set('value-slots', 4)
-  o     = counted_set('operations' , 2)
-  p     = counted_set('ports'      , 3)
-  x_dom = subset_set('independent', v, [SLOT_Y, SLOT_X])
-  c     = subset_set('computed'   , v, [SLOT_U, SLOT_Z])
-  z_dom = subset_set('response'   , c, [SLOT_Z])
+  v     = index_set('value-slots', 4)
+  o     = index_set('operations' , 2)
+  p     = index_set('ports'      , 3)
+  x_dom = subset('independent', v, [SLOT_Y, SLOT_X])
+  c     = subset('computed'   , v, [SLOT_U, SLOT_Z])
+  z_dom = subset('response'   , c, [SLOT_Z])
 
   table(:, 1) = [OP_PRODUCT, SLOT_X, PORT_IN1]
   table(:, 2) = [OP_PRODUCT, SLOT_Y, PORT_IN2]
@@ -101,16 +101,16 @@ program derivative_level_9
   allocate(flow)
   flow = stored_relation('flow', [o, v, p], table)
 
-  p_in  = subset_set('input-ports', p, [PORT_IN1, PORT_IN2])
-  p_out = subset_set('output-port', p, [PORT_OUT])
+  p_in  = subset('input-ports', p, [PORT_IN1, PORT_IN2])
+  p_out = subset('output-port', p, [PORT_OUT])
 
   d = compose_binary( &
        & project_slots(restrict_slot(flow, 3, p_out), [1, 2]), &
        & project_slots(restrict_slot(flow, 3, p_in ), [2, 1]))
 
-  g = relational_graph('derivative specimen', &
-       & [held_set(v), held_set(o), held_set(p)], &
-       & [held_relation(flow), held_relation(d)])
+  g = related_graph('derivative specimen', &
+       & [declared_set(v), declared_set(o), declared_set(p)], &
+       & [declared_relation(flow), declared_relation(d)])
 
   ! -- the order comes from the graph's own dependency: the view is
   !    made, the dependency selector dies, and the walk still answers
@@ -122,7 +122,7 @@ program derivative_level_9
   !    then the external selector dies too
   do i = 1, g % num_relations()
      rp => g % relation_at(i)
-     if (rp % same_as(flow)) gflow => rp
+     if (rp % equals(flow)) gflow => rp
   end do
   if (.not. associated(gflow)) then
      error stop 'statement: the graph does not own the selected flow'
@@ -221,7 +221,7 @@ contains
     call grad_f % set_real_vector(gradient)
 
     call grad_f % domain(dom)
-    call report(dom % same_as(x_dom), &
+    call report(dom % equals(x_dom), &
          & "the derivative is a field on X, by identity - not a " // &
          & "raw array, not a matrix", nfail)
     call report(abs(gradient(x_dom % local_index(SLOT_Y)) - 3.0_dp) &

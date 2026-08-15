@@ -18,10 +18,10 @@
 !                    MEMBERS IN, MEMBERS OUT
 !
 ! Every query speaks MEMBER VALUES, never storage rows. A sparse
-! carrier may hold { 10 20 30 }; image(20) is asked with 20 and
+! set may hold { 10 20 30 }; image(20) is asked with 20 and
 ! answers members of the far side. The bridge between a member and
-! its storage row is the carrier's own local_index - the inverse
-! enumeration the carriers guarantee - so the indexed lookup below
+! its storage row is the set's own local_index - the inverse
+! enumeration the sets guarantee - so the indexed lookup below
 ! never assumes a domain is 1..n. The image of an outsider is the
 ! empty set: relating to nothing is an answer, not an error.
 !
@@ -49,15 +49,15 @@
 ! relation once, first appearance keeping its place.
 !
 ! COMPLEXITY, PARAMETERIZED HONESTLY. Every fibre first asks the
-! carrier where the member stands, so the true cost is
+! set where the member stands, so the true cost is
 !
 !      T_image(a)  =  T_local_index(a) + O(deg a)
 !
-! and the slice alone is O(deg). A counted carrier answers
+! and the slice alone is O(deg). A counted set answers
 ! local_index in O(1), so the promise collapses to O(deg) there -
-! the mesh path's case. A carrier whose local_index scans (the
+! the mesh path's case. A set whose local_index scans (the
 ! listed fixture does) pays its scan on every query; if such a
-! carrier ever matters at scale, it owes itself an index.
+! set ever matters at scale, it owes itself an index.
 !
 !                     THE VIEW, AND ITS DEBT
 !
@@ -81,8 +81,8 @@
 !
 !                  IDENTITY IS NOT EQUALITY
 !
-! same_as answers minted identity: a view signs its own token, so a
-! view is never same_as its base, and the involution
+! equals answers minted identity: a view signs its own token, so a
+! view is never equals its base, and the involution
 !
 !      (R^T)^T = R
 !
@@ -97,8 +97,8 @@
 
 module graph_binary_relation
 
-  use graph_carrier , only : member_set, subset_set
-  use graph_relation, only : relation, slot
+  use graph_set , only : set, subset
+  use graph_relation, only : relation, declared_domain
 
   implicit none
 
@@ -156,7 +156,7 @@ module graph_binary_relation
 
   type, extends(binary_relation) :: csr_relation
 
-     type(slot), allocatable, private :: signature(:)
+     type(declared_domain), allocatable, private :: signature(:)
 
      integer             , private :: nnz = 0
      integer, allocatable, private :: xfwd(:), tgt(:)
@@ -226,7 +226,7 @@ contains
   function source(this) result(domain)
 
     class(binary_relation), intent(in) :: this
-    class(member_set), allocatable     :: domain
+    class(set), allocatable     :: domain
 
     domain = this % domain(1)
 
@@ -235,7 +235,7 @@ contains
   function target(this) result(domain)
 
     class(binary_relation), intent(in) :: this
-    class(member_set), allocatable     :: domain
+    class(set), allocatable     :: domain
 
     domain = this % domain(2)
 
@@ -267,7 +267,7 @@ contains
   end subroutine preimage
 
   !===================================================================!
-  ! Declare a CSR relation: a name, the two carriers - any
+  ! Declare a CSR relation: a name, the two sets - any
   ! concretions, each judged by its own laws - and the tuple table,
   ! one column per tuple, members throughout. Refusals first, as at
   ! every gate of the level; then the duplicate collapse and both
@@ -283,8 +283,8 @@ contains
        & result(this)
 
     character(len=*) , intent(in) :: name
-    class(member_set), intent(in) :: source
-    class(member_set), intent(in) :: target
+    class(set), intent(in) :: source
+    class(set), intent(in) :: target
     integer          , intent(in) :: table(:,:)
 
     integer, allocatable :: aloc(:), bloc(:), order(:), fill(:), stamp(:)
@@ -292,8 +292,8 @@ contains
     integer              :: na, nb, nt
     integer              :: j, p, q, row, col, kept
 
-    if (.not. source % same_as(source) .or. &
-         & .not. target % same_as(target)) then
+    if (.not. source % equals(source) .or. &
+         & .not. target % equals(target)) then
        error stop 'graph_binary_relation: a signature refers to declared domains only'
     end if
 
@@ -305,8 +305,8 @@ contains
     nb = target % size()
     nt = size(table, 2)
 
-    ! Validate through the carriers' own membership, and read every
-    ! member's row through the carriers' own inverse enumeration.
+    ! Validate through the sets' own membership, and read every
+    ! member's row through the sets' own inverse enumeration.
     allocate(aloc(nt), bloc(nt))
     do j = 1, nt
        if (.not. source % has(table(1, j)) .or. &
@@ -375,8 +375,8 @@ contains
     end do
 
     allocate(this % signature(2))
-    allocate(this % signature(1) % carrier, source=source)
-    allocate(this % signature(2) % carrier, source=target)
+    allocate(this % signature(1) % set, source=source)
+    allocate(this % signature(2) % set, source=target)
 
     call this % declare(name)
 
@@ -386,9 +386,9 @@ contains
 
     class(csr_relation), intent(in) :: this
     integer            , intent(in) :: slot_index
-    class(member_set), allocatable  :: domain
+    class(set), allocatable  :: domain
 
-    allocate(domain, source=this % signature(slot_index) % carrier)
+    allocate(domain, source=this % signature(slot_index) % set)
 
   end function csr_domain
 
@@ -407,7 +407,7 @@ contains
 
     integer :: row
 
-    row = this % signature(1) % carrier % local_index(member)
+    row = this % signature(1) % set % local_index(member)
     if (row == 0) then
        fibre => this % tgt(1:0)
        return
@@ -425,7 +425,7 @@ contains
 
     integer :: row
 
-    row = this % signature(2) % carrier % local_index(member)
+    row = this % signature(2) % set % local_index(member)
     if (row == 0) then
        fibre => this % src(1:0)
        return
@@ -450,7 +450,7 @@ contains
 
     if (size(tuple) /= 2) return
 
-    row = this % signature(1) % carrier % local_index(tuple(1))
+    row = this % signature(1) % set % local_index(tuple(1))
     if (row == 0) return
 
     do j = this % xfwd(row), this % xfwd(row + 1) - 1
@@ -483,7 +483,7 @@ contains
 
     allocate(table(2, this % nnz))
     do row = 1, size(this % xfwd) - 1
-       a = this % signature(1) % carrier % member(row)
+       a = this % signature(1) % set % member(row)
        do j = this % xfwd(row), this % xfwd(row + 1) - 1
           table(1, j) = a
           table(2, j) = this % tgt(j)
@@ -516,7 +516,7 @@ contains
 
     class(transposed_view), intent(in) :: this
     integer               , intent(in) :: slot_index
-    class(member_set), allocatable     :: domain
+    class(set), allocatable     :: domain
 
     domain = this % base % domain(3 - slot_index)
 
@@ -598,9 +598,9 @@ contains
 
   type(csr_relation) function inclusion_of(s) result(inclusion)
 
-    class(subset_set), intent(in) :: s
+    class(subset), intent(in) :: s
 
-    class(member_set), allocatable :: host
+    class(set), allocatable :: host
     integer, allocatable           :: table(:,:)
     integer                        :: k
 

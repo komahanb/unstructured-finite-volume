@@ -24,9 +24,9 @@
 program test_graph_constitution
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_grammar  , only : graph, graph_field
+  use graph_grammar  , only : ordinary_graph, graph_field
   use graph_calculus , only : GRAPH_SIDE_VERTEX
-  use graph_carrier         , only : member_set, counted_set, subset_set
+  use graph_set         , only : set, index_set, subset
   use class_graph_field  , only : field
   use class_graph_mesh   , only : mesh
   use class_robin_condition, only : robin_condition, robin, dirichlet, neumann
@@ -112,7 +112,7 @@ contains
 
     type(mesh) :: m
     type(robin_condition) :: bc
-    class(member_set), allocatable :: members
+    class(set), allocatable :: members
 
     m  = hand_mesh()
     bc = dirichlet('in', 5.0_dp)
@@ -204,7 +204,7 @@ contains
     type(robin_condition) :: bc
     type(differential_operator) :: with_wall, without
     type(field) :: state
-    type(counted_set) :: cells
+    type(index_set) :: cells
     class(graph_field), allocatable :: y
     real(dp), allocatable :: cin(:), bin(:), rows_with(:), rows_without(:)
     real(dp) :: c(3), b(3), expected
@@ -309,7 +309,7 @@ contains
     type(advection) :: flow
     type(balance) :: sums
     type(field) :: state
-    type(counted_set) :: cells
+    type(index_set) :: cells
     class(graph_field), allocatable :: y
     real(dp), allocatable :: vn(:), c(:), got(:)
     real(dp), parameter :: q1 = 2.0_dp, q2 = 4.0_dp

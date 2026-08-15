@@ -12,7 +12,7 @@
 ! become the back door through which a higher level enters a lower
 ! test.
 !
-! THE NAMES EARN THEIR KEEP HERE. The carriers all count from one,
+! THE NAMES EARN THEIR KEEP HERE. The sets all count from one,
 ! so the instant written t0 is member 1, and t4 is member 5 - an
 ! off-by-one waiting to happen every time a test writes a literal.
 ! Nothing above may write a bare integer for a member; it writes
@@ -62,14 +62,14 @@ module time_assert
   public :: FE_TRAJECTORY, BE_TRAJECTORY, BDF2_TRAJECTORY
   public :: action_of
 
-  ! The cardinalities of the three carriers.
+  ! The cardinalities of the three sets.
   integer, parameter :: NQ = 2
   integer, parameter :: NT = 5
   integer, parameter :: NE = 4
 
   !===================================================================!
   ! The members, named for the reader and stored as the small
-  ! integers the carriers count. Note where the collision bites: the
+  ! integers the sets count. Note where the collision bites: the
   ! integer 1 below is C_X, T0 and E1 at once, and those three facts
   ! are about three different sets.
   !===================================================================!

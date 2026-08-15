@@ -68,7 +68,7 @@ module interface_graph
   implicit none
 
   private
-  public :: graph, digraph, vertex, edge
+  public :: mesh_graph, digraph, vertex, edge
   public :: counting_sort, transpose_adjacency
   public :: power_iteration
 
@@ -85,7 +85,7 @@ module interface_graph
   ! Abstract graph
   !===================================================================!
 
-  type, abstract :: graph
+  type, abstract :: mesh_graph
 
      integer :: num_vertices  = 0
      integer :: num_edges     = 0
@@ -203,7 +203,7 @@ module interface_graph
      procedure, private :: stamp_aggregate
      procedure, private :: gather_partition
 
-  end type graph
+  end type mesh_graph
 
   !===================================================================!
   ! Deferred interfaces
@@ -213,16 +213,16 @@ module interface_graph
 
      ! Return the neighbours of vertex v.
      pure function neighbours_interface(this, v) result(nbrs)
-       import :: graph
-       class(graph), intent(in) :: this
+       import :: mesh_graph
+       class(mesh_graph), intent(in) :: this
        integer     , intent(in) :: v
        integer, allocatable     :: nbrs(:)
      end function neighbours_interface
 
      ! Return the number of neighbours of vertex v.
      pure integer function degree_interface(this, v)
-       import :: graph
-       class(graph), intent(in) :: this
+       import :: mesh_graph
+       class(mesh_graph), intent(in) :: this
        integer     , intent(in) :: v
      end function degree_interface
 
@@ -245,7 +245,7 @@ module interface_graph
   ! the base; calling the directed protocol on it does not compile.
   !===================================================================!
 
-  type, abstract, extends(graph) :: digraph
+  type, abstract, extends(mesh_graph) :: digraph
 
      ! The stored directed adjacency holds two compressed lists built
      ! from the tail -> head edge list (a rule-generated subclass
@@ -345,7 +345,7 @@ contains
 
   pure type(integer) function dof(this, v, ivar)
 
-    class(graph), intent(in) :: this
+    class(mesh_graph), intent(in) :: this
     integer     , intent(in) :: v, ivar
 
     dof = (v - 1)*this % num_variables + ivar
@@ -358,7 +358,7 @@ contains
 
   pure type(integer) function num_dofs(this)
 
-    class(graph), intent(in) :: this
+    class(mesh_graph), intent(in) :: this
 
     num_dofs = this % num_vertices * this % num_variables
 
@@ -375,7 +375,7 @@ contains
 
   pure subroutine dof_adjacency(this, xadj, adj)
 
-    class(graph)        , intent(in)  :: this
+    class(mesh_graph)        , intent(in)  :: this
     integer, allocatable, intent(out) :: xadj(:), adj(:)
 
     integer, allocatable :: keys(:), values(:), nbrs(:)
@@ -421,7 +421,7 @@ contains
 
   pure subroutine build_adjacency(this)
 
-    class(graph), intent(inout) :: this
+    class(mesh_graph), intent(inout) :: this
 
     integer, allocatable :: keys(:), values(:)
     integer :: e
@@ -596,7 +596,7 @@ contains
 
   pure function stored_neighbours(this, v) result(nbrs)
 
-    class(graph), intent(in) :: this
+    class(mesh_graph), intent(in) :: this
     integer     , intent(in) :: v
 
     integer, allocatable :: nbrs(:)
@@ -617,7 +617,7 @@ contains
 
   pure integer function stored_degree(this, v)
 
-    class(graph), intent(in) :: this
+    class(mesh_graph), intent(in) :: this
     integer     , intent(in) :: v
 
     if (.not. allocated(this % xadj)) then
@@ -639,7 +639,7 @@ contains
 
   pure function traversal_order(this, direction) result(order)
 
-    class(graph), intent(in)           :: this
+    class(mesh_graph), intent(in)           :: this
     integer     , intent(in), optional :: direction   ! FORWARD (default) or REVERSE.
 
     integer, allocatable :: order(:)
@@ -704,7 +704,7 @@ contains
 
   pure function coloring(this) result(colors)
 
-    class(graph), intent(in) :: this
+    class(mesh_graph), intent(in) :: this
 
     integer, allocatable :: colors(:), nbrs(:)
     logical, allocatable :: used(:)
@@ -750,7 +750,7 @@ contains
 
   pure function orbit(this, start, successor, limit) result(visited)
 
-    class(graph), intent(in) :: this
+    class(mesh_graph), intent(in) :: this
     integer     , intent(in) :: start
     interface
        ! Return the single successor of vertex v under the rule.
@@ -808,7 +808,7 @@ contains
 
   pure function escape_times(this, successor, limit) result(times)
 
-    class(graph), intent(in) :: this
+    class(mesh_graph), intent(in) :: this
     interface
        ! Return the single successor of vertex v under the rule.
        pure integer function successor(v)
@@ -890,7 +890,7 @@ contains
 
   pure subroutine partition(this, nparts)
 
-    class(graph), intent(inout) :: this
+    class(mesh_graph), intent(inout) :: this
     integer     , intent(in)    :: nparts
 
     call this % stamp_bfs(nparts)
@@ -909,7 +909,7 @@ contains
 
   impure subroutine partition_rcb(this, coords, nparts)
 
-    class(graph), intent(inout) :: this
+    class(mesh_graph), intent(inout) :: this
     real(dp)    , intent(in)    :: coords(:,:)   ! Shape (ndim, num_vertices).
     integer     , intent(in)    :: nparts
 
@@ -932,7 +932,7 @@ contains
 
   pure subroutine partition_aggregate(this)
 
-    class(graph), intent(inout) :: this
+    class(mesh_graph), intent(inout) :: this
 
     integer :: nparts
 
@@ -950,7 +950,7 @@ contains
 
   pure subroutine set_partition(this, parts)
 
-    class(graph), intent(inout) :: this
+    class(mesh_graph), intent(inout) :: this
     integer     , intent(in)    :: parts(:)
 
     integer :: v
@@ -985,7 +985,7 @@ contains
 
   pure subroutine refine_edges(this, children, tails, heads)
 
-    class(graph)        , intent(in)  :: this
+    class(mesh_graph)        , intent(in)  :: this
     integer             , intent(in)  :: children
     integer, allocatable, intent(out) :: tails(:), heads(:)
 
@@ -1042,7 +1042,7 @@ contains
 
   pure subroutine harvest_edges(this, rule, tails, heads, group, directed)
 
-    class(graph), intent(in) :: this
+    class(mesh_graph), intent(in) :: this
     interface
        ! Return the candidate vertices the rule says v touches.
        pure function rule(v) result(cands)
@@ -1115,7 +1115,7 @@ contains
 
   pure subroutine quotient_edges(this, tails, heads)
 
-    class(graph)        , intent(in)  :: this
+    class(mesh_graph)        , intent(in)  :: this
     integer, allocatable, intent(out) :: tails(:), heads(:)
 
     integer :: v
@@ -1148,7 +1148,7 @@ contains
 
   pure subroutine stamp_bfs(this, nparts)
 
-    class(graph) , intent(inout) :: this
+    class(mesh_graph) , intent(inout) :: this
     integer      , intent(in)    :: nparts
 
     integer, allocatable :: order(:)
@@ -1175,7 +1175,7 @@ contains
 
   pure subroutine stamp_aggregate(this, nparts)
 
-    class(graph), intent(inout) :: this
+    class(mesh_graph), intent(inout) :: this
     integer     , intent(out)   :: nparts
 
     integer, allocatable :: part(:), nbrs(:)
@@ -1240,7 +1240,7 @@ contains
 
   impure subroutine stamp_rcb(this, coords, nparts)
 
-    class(graph), intent(inout) :: this
+    class(mesh_graph), intent(inout) :: this
     real(dp)    , intent(in)    :: coords(:,:)
     integer     , intent(in)    :: nparts
 
@@ -1276,7 +1276,7 @@ contains
 
   pure subroutine gather_partition(this, nparts)
 
-    class(graph), intent(inout) :: this
+    class(mesh_graph), intent(inout) :: this
     integer     , intent(in)    :: nparts
 
     integer, allocatable :: counts(:), mark(:), nbrs(:)
@@ -1351,7 +1351,7 @@ contains
 
   pure integer function part_of(this, v)
 
-    class(graph), intent(in) :: this
+    class(mesh_graph), intent(in) :: this
     integer     , intent(in) :: v
 
     part_of = this % vertices(v) % part
@@ -1364,7 +1364,7 @@ contains
 
   pure function owned(this, k) result(list)
 
-    class(graph), intent(in) :: this
+    class(mesh_graph), intent(in) :: this
     integer     , intent(in) :: k
 
     integer, allocatable :: list(:)
@@ -1382,7 +1382,7 @@ contains
 
   pure function dofs_of(this, verts) result(dofs)
 
-    class(graph), intent(in) :: this
+    class(mesh_graph), intent(in) :: this
     integer     , intent(in) :: verts(:)
 
     integer, allocatable :: dofs(:)
@@ -1407,7 +1407,7 @@ contains
 
   pure function gather(this, k, x) result(xk)
 
-    class(graph), intent(in) :: this
+    class(mesh_graph), intent(in) :: this
     integer     , intent(in) :: k
     real(dp)    , intent(in) :: x(:)
 
@@ -1424,7 +1424,7 @@ contains
 
   pure subroutine scatter(this, k, xk, x)
 
-    class(graph), intent(in)    :: this
+    class(mesh_graph), intent(in)    :: this
     integer     , intent(in)    :: k
     real(dp)    , intent(in)    :: xk(:)
     real(dp)    , intent(inout) :: x(:)
@@ -1447,7 +1447,7 @@ contains
 
   pure function frame(this, k) result(dofs)
 
-    class(graph), intent(in) :: this
+    class(mesh_graph), intent(in) :: this
     integer     , intent(in) :: k
 
     integer, allocatable :: dofs(:)
@@ -1464,7 +1464,7 @@ contains
 
   pure function frame_inverse(this, k) result(loc)
 
-    class(graph), intent(in) :: this
+    class(mesh_graph), intent(in) :: this
     integer     , intent(in) :: k
 
     integer, allocatable :: loc(:), dofs(:)
@@ -1497,7 +1497,7 @@ contains
 
   pure subroutine ghost_owners(this, k, owner, slot)
 
-    class(graph)        , intent(in)  :: this
+    class(mesh_graph)        , intent(in)  :: this
     integer             , intent(in)  :: k
     integer, allocatable, intent(out) :: owner(:), slot(:)
 
@@ -1540,7 +1540,7 @@ contains
 
   pure subroutine ghost_copies(this, k, ptr, image, ghost_index)
 
-    class(graph)        , intent(in)  :: this
+    class(mesh_graph)        , intent(in)  :: this
     integer             , intent(in)  :: k
     integer, allocatable, intent(out) :: ptr(:), image(:), ghost_index(:)
 
@@ -1605,7 +1605,7 @@ contains
 
   pure real(dp) function dot(this, k, x, y)
 
-    class(graph), intent(in) :: this
+    class(mesh_graph), intent(in) :: this
     integer     , intent(in) :: k
     real(dp)    , intent(in) :: x(:), y(:)
 
@@ -1619,7 +1619,7 @@ contains
 
   pure function ghosts(this, k) result(list)
 
-    class(graph), intent(in) :: this
+    class(mesh_graph), intent(in) :: this
     integer     , intent(in) :: k
 
     integer, allocatable :: list(:)
@@ -1635,7 +1635,7 @@ contains
 
   pure integer function n_owned(this, k)
 
-    class(graph), intent(in) :: this
+    class(mesh_graph), intent(in) :: this
     integer     , intent(in) :: k
 
     n_owned = this % own_ptr(k+1) - this % own_ptr(k)
@@ -1648,7 +1648,7 @@ contains
 
   pure integer function n_ghosts(this, k)
 
-    class(graph), intent(in) :: this
+    class(mesh_graph), intent(in) :: this
     integer     , intent(in) :: k
 
     n_ghosts = this % ghost_ptr(k+1) - this % ghost_ptr(k)
@@ -1662,7 +1662,7 @@ contains
 
   pure real(dp) function balance(this)
 
-    class(graph), intent(in) :: this
+    class(mesh_graph), intent(in) :: this
 
     integer :: k, lo, hi, m
 
@@ -1691,7 +1691,7 @@ contains
 
   pure type(integer) function edge_cut(this)
 
-    class(graph), intent(in) :: this
+    class(mesh_graph), intent(in) :: this
 
     integer, allocatable :: nbrs(:)
     integer :: v, i, w
@@ -1717,7 +1717,7 @@ contains
 
   impure subroutine print(this)
 
-    class(graph), intent(in) :: this
+    class(mesh_graph), intent(in) :: this
 
     write(*,'(1x,a,i0,a,i0,a,i0,a,i0)') &
          & "graph: ", this % num_vertices, " vertices, ", this % num_edges, &
@@ -1731,7 +1731,7 @@ contains
 
   impure subroutine print_partition(this)
 
-    class(graph), intent(in) :: this
+    class(mesh_graph), intent(in) :: this
 
     integer :: k
 

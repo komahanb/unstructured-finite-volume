@@ -45,8 +45,8 @@
 module partitioned_shifted_laplacian_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_carrier    , only : counted_set, subset_set, member_set
-  use graph_grammar    , only : graph, graph_field, graph_operation
+  use graph_set    , only : index_set, subset, set
+  use graph_grammar    , only : ordinary_graph, graph_field, graph_operation
   use class_graph      , only : stored_graph
   use class_graph_field, only : field
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
@@ -62,7 +62,7 @@ module partitioned_shifted_laplacian_fixture
 
      ! STRUCTURE, cut once and never rebuilt.
      type(stored_graph)        :: whole
-     class(graph), allocatable :: g1, g2
+     class(ordinary_graph), allocatable :: g1, g2
      type(partitioner)         :: p1, p2
      type(assembler)           :: asm
      type(shifted_laplacian)   :: local
@@ -109,15 +109,15 @@ contains
   !===================================================================!
   ! The composite answers on the decomposition it was built from -
   ! and refuses to answer about any other graph. This is the
-  ! earliest honest contract point: a solver attaching on a foreign
+  ! earliest honest contract point: a solver attaching on an unequal
   ! host dies here rather than deep inside a matvec.
   !===================================================================!
 
   subroutine part_domain(this, input_graph, domain)
 
     class(partitioned_shifted_laplacian), intent(in) :: this
-    class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(ordinary_graph), intent(in) :: input_graph
+    class(set), allocatable, intent(out) :: domain
 
     call demand_the_recorded_context(this, input_graph)
     allocate(domain, source=this % whole % vertex_set())
@@ -133,13 +133,13 @@ contains
   subroutine part_apply(this, input_graph, input_data, output)
 
     class(partitioned_shifted_laplacian), intent(in) :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
     type(field)                     :: out
     class(graph_field), allocatable :: q1, q2, a1, a2
-    class(member_set), allocatable  :: dom
+    class(set), allocatable  :: dom
     real(dp), allocatable           :: total(:)
 
     call demand_the_recorded_context(this, input_graph)
@@ -151,8 +151,8 @@ contains
        error stop 'partitioned action: the action reads exactly one state'
     end if
     call input_data(1) % domain(dom)
-    if (.not. dom % same_as(this % whole % vertex_set())) then
-       error stop 'partitioned action: the state must live on the global vertex carrier'
+    if (.not. dom % equals(this % whole % vertex_set())) then
+       error stop 'partitioned action: the state must live on the global vertex set'
     end if
 
     ! -- NUMERICAL OVERLAP REFRESH, from the state handed in NOW
@@ -187,14 +187,14 @@ contains
   subroutine demand_the_recorded_context(this, input_graph)
 
     class(partitioned_shifted_laplacian), intent(in) :: this
-    class(graph)                        , intent(in) :: input_graph
+    class(ordinary_graph)                        , intent(in) :: input_graph
 
-    type(counted_set) :: given, recorded
+    type(index_set) :: given, recorded
 
     given    = input_graph % vertex_set()
     recorded = this % whole % vertex_set()
 
-    if (.not. given % same_as(recorded)) then
+    if (.not. given % equals(recorded)) then
        error stop 'partitioned action: this decomposition belongs to another graph'
     end if
 
@@ -209,7 +209,7 @@ contains
   subroutine act_locally(local, part, q_part, answer)
 
     type(shifted_laplacian), intent(in)  :: local
-    class(graph)           , intent(in)  :: part
+    class(ordinary_graph)           , intent(in)  :: part
     class(graph_field)     , intent(in)  :: q_part
     class(graph_field), allocatable, intent(out) :: answer
 
@@ -229,20 +229,20 @@ contains
   !===================================================================!
   ! Assemble ONE part's local answer home and add its contribution.
   ! The assembler keeps owned members only; whether it hands back a
-  ! full global field or a subobject of the global carrier, every
+  ! full global field or a subobject of the global set, every
   ! value is placed by MEMBER.
   !===================================================================!
 
   subroutine add_owned(asm, part, answer, whole, total)
 
     type(assembler)   , intent(in)    :: asm
-    class(graph)      , intent(in)    :: part
+    class(ordinary_graph)      , intent(in)    :: part
     class(graph_field), intent(in)    :: answer
     type(stored_graph), intent(in)    :: whole
     real(dp)          , intent(inout) :: total(:)
 
     class(graph_field), allocatable :: home
-    class(member_set), allocatable  :: dom
+    class(set), allocatable  :: dom
     real(dp), allocatable           :: v(:)
     integer , allocatable           :: mem(:)
     integer                         :: i
@@ -252,7 +252,7 @@ contains
     call home % get_real_vector(v)
 
     select type (dom)
-    type is (subset_set)
+    type is (subset)
        call dom % members(mem)
        do i = 1, size(mem)
           total(mem(i)) = total(mem(i)) + v(dom % local_index(mem(i)))

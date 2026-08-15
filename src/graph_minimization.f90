@@ -4,7 +4,7 @@
 ! The first level with a goal, and its law in one line: given a
 ! residual map R : U -> Y, vary the values on the UNKNOWN domain U
 ! to drive the values on the RESIDUAL domain Y toward zero. U and Y
-! are member_set identities - never assumed to be anyone's
+! are set identities - never assumed to be anyone's
 ! vertices; the graph argument survives only as the legacy
 ! operation host the compatibility apply() signature still wants. This
 ! module holds the minimizer base - ONE family for one story:
@@ -39,8 +39,8 @@
 module graph_minimization
 
   use iso_fortran_env       , only : dp => REAL64
-  use graph_grammar         , only : graph, graph_field, graph_operation
-  use graph_carrier         , only : member_set, counted_set
+  use graph_grammar         , only : ordinary_graph, graph_field, graph_operation
+  use graph_set         , only : set, index_set
   use graph_calculus        , only : graph_functional
   use class_graph_field     , only : field
   use class_graph_reduction , only : reduction, REDUCE_SUM, REDUCE_NORM
@@ -64,7 +64,7 @@ module graph_minimization
      ! is applied, and nothing more. It is whatever the action needs
      ! to compute with - a mesh, a compatibility host, a conduit -
      ! and it carries no authority over the solver's own structure.
-     class(graph)          , allocatable :: on
+     class(ordinary_graph)          , allocatable :: on
 
      ! THE DEPENDENT-VARIABLE COUPLING. Which unknowns feed which:
      ! the stencil the structural algorithms need, and the ONLY thing
@@ -80,15 +80,15 @@ module graph_minimization
      ! to prevent: the graph an action happens to execute over is not
      ! evidence about which unknowns are coupled. Where the two really
      ! are the same graph, the CALLER says so, at its own call site.
-     class(graph)          , allocatable :: coupling
+     class(ordinary_graph)          , allocatable :: coupling
 
      ! The unknown domain U: where the answer lives, explicit at
      ! attach, identity preserved - never inferred from the host.
-     class(member_set), allocatable :: unknown_domain
+     class(set), allocatable :: unknown_domain
 
      ! The residual domain Y: what the action answers on, asked of
      ! the action itself at attach.
-     class(member_set), allocatable :: residual_domain
+     class(set), allocatable :: residual_domain
 
      ! A second seat, one member per NUMBER rather than per cell.
      ! The pairings live here: a measure carries one weight per
@@ -96,7 +96,7 @@ module graph_minimization
      ! the values themselves - the calculus says as much in its own
      ! banner. With one number per cell the two seats are the same
      ! set, and nothing changes.
-     type(counted_set) :: numbers
+     type(index_set) :: numbers
 
      ! How wide an entry is. One number per cell is the common case
      ! and the default; a state with several numbers per cell - a
@@ -162,10 +162,10 @@ contains
 
     class(minimizer)  , intent(inout) :: this
     class(graph_operation), intent(in)    :: action
-    class(graph)          , intent(in)    :: on
-    class(member_set)     , intent(in)    :: unknown_domain
+    class(ordinary_graph)          , intent(in)    :: on
+    class(set)     , intent(in)    :: unknown_domain
     integer, intent(in), optional         :: ncomp
-    class(graph)  , intent(in), optional  :: coupling
+    class(ordinary_graph)  , intent(in), optional  :: coupling
 
     real(dp), allocatable :: zero(:)
     integer :: n
@@ -195,7 +195,7 @@ contains
     call action % domain(on, this % residual_domain)
 
     n = this % unknown_domain % size()
-    this % numbers = counted_set('numbers', n * this % ncomp)
+    this % numbers = index_set('numbers', n * this % ncomp)
 
     allocate(zero(n * this % ncomp))
     zero = 0.0_dp
@@ -231,9 +231,9 @@ contains
     call this % action % apply(this % on, [state], answer)
 
     block
-      class(member_set), allocatable :: got
+      class(set), allocatable :: got
       call answer % domain(got)
-      if (.not. got % same_as(this % residual_domain)) then
+      if (.not. got % equals(this % residual_domain)) then
          error stop 'minimization: the action must answer on its stated residual domain'
       end if
     end block
@@ -391,8 +391,8 @@ contains
   subroutine solver_domain(this, input_graph, domain)
 
     class(minimizer), intent(in)       :: this
-    class(graph), intent(in)               :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(ordinary_graph), intent(in)               :: input_graph
+    class(set), allocatable, intent(out) :: domain
 
     associate (u1 => input_graph); end associate
 
@@ -404,7 +404,7 @@ contains
   subroutine solver_apply(this, input_graph, input_data, output)
 
     class(minimizer), intent(in)                   :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
@@ -421,9 +421,9 @@ contains
 
     if (present(input_data)) then
        block
-         class(member_set), allocatable :: got
+         class(set), allocatable :: got
          call input_data(1) % domain(got)
-         if (.not. got % same_as(this % residual_domain)) then
+         if (.not. got % equals(this % residual_domain)) then
             error stop 'minimization: a right-hand side lives on the residual domain'
          end if
        end block

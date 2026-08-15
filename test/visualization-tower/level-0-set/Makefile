@@ -5,11 +5,11 @@ LDFLAGS += -L../../../lib/ ../../../lib/libufvm.a -llapack
 
 all: run
 
-run: visualization_assert.o visualization_carriers_fixture.o test.o
-	$(F90) visualization_assert.o visualization_carriers_fixture.o test.o -o $@ $(LDFLAGS)
+run: visualization_assert.o visualization_sets_fixture.o test.o
+	$(F90) visualization_assert.o visualization_sets_fixture.o test.o -o $@ $(LDFLAGS)
 
-test.o: visualization_assert.o visualization_carriers_fixture.o
-visualization_carriers_fixture.o: ../common/visualization_carriers_fixture.f90
+test.o: visualization_assert.o visualization_sets_fixture.o
+visualization_sets_fixture.o: ../common/visualization_sets_fixture.f90
 	$(F90) $(F90FLAGS) -c $< -o $@
 visualization_assert.o: ../common/visualization_assert.f90
 	$(F90) $(F90FLAGS) -c $< -o $@

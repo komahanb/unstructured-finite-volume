@@ -135,11 +135,11 @@ Two choices are **load-bearing**:
 The adjoint \(\lambda\) lives on \(Y\): it is a covector on the residual
 domain, and \(R_q^{T}\) carries it to \(Q\).
 
-## Carriers and roles
+## Sets and roles
 
 ```text
-V = {p, u, v}          the variable carrier
-T = {r1, r2, f}        the target carrier
+V = {p, u, v}          the variable set
+T = {r1, r2, f}        the target set
 
 P = {p}     ↪ V        parameter
 Q = {u, v}  ↪ V        state
@@ -186,7 +186,7 @@ and, stated as sharply as possible:
 > **Equal dimensions do not imply equal domains.**
 > \(|Q|=|Y|=2\), and \(Q\) is *not* \(Y\). The minimizer may demand
 > equal value dimensions; it must never demand
-> `Q same_as Y`.
+> `Q equals Y`.
 
 **Relation orientation vs operator direction.** A support relation is
 written (row, column):
@@ -206,11 +206,11 @@ easiest way to get this tower wrong.
 
 | Level | Meaning in *this* problem | Framework abstraction | Source module | Test | New truth | Production |
 |---|---|---|---|---|---|---|
-| 0 | the four roles exist and differ | `counted_set`, `subset_set` | `graph_carrier` | `level-0-carrier/` | \(Q\neq Y\) though both size 2 | NONE |
+| 0 | the four roles exist and differ | `index_set`, `subset` | `graph_set` | `level-0-set/` | \(Q\neq Y\) though both size 2 | NONE |
 | 1 | who may participate in what | `stored_relation` | `graph_relation` | `level-1-relation/` | \(R_{\mathrm{dep}}\subseteq T\times V\), nine facts | NONE |
 | 2 | the four derivative supports | `restrict/project/compose`, `inclusion_of` | `graph_relation_algebra`, `graph_binary_relation` | `level-2-relation-algebra/` | \(J_Q,J_P,F_Q,F_P\) **derived** | NONE |
-| 3 | one owned structural model | `relational_graph` | `graph_structure` | `level-3-graph/` | six carriers, five relations, closed | NONE |
-| 4 | the implicit system is **cyclic** | `directed_adjacency_view`, `topological_order` | `graph_profile`, `graph_algorithms` | `level-4-graph-calculus/` | a topological order **refuses** | NONE |
+| 3 | one owned structural model | `related_graph` | `graph_structure` | `level-3-graph/` | six sets, five relations, closed | NONE |
+| 4 | the implicit system is **cyclic** | `directed_adjacency_view`, `topological_order` | `graph_interpretation`, `graph_algorithms` | `level-4-graph-calculus/` | a topological order **refuses** | NONE |
 | 5 | the first numbers | `field` | `class_graph_field` | `level-5-field-calculus/` | \(p=2\), \(q_0=[0,0]\); nothing fabricated | NONE |
 | 6 | operator supports and orientation | `transpose_of` | `graph_binary_relation` | `level-6-discretization/` | \(J_Q^{T}\) swaps domain **identities** | NONE |
 | 7 | primal and adjoint **solves** | `gmres` / minimizer | `class_graph_gmres` | `level-7-minimization/` | one solver family, both orientations | NONE |
@@ -298,7 +298,7 @@ Gate A asks:
 
 ## Level 0 — Domains
 
-Two parent carriers and four role subobjects:
+Two parent sets and four role subobjects:
 
 ```text
 V = {p,u,v}      T = {r1,r2,f}
@@ -307,12 +307,12 @@ Q = {u,v} ↪ V    Z = {f} ↪ T
 ```
 
 **Verified:** cardinalities; both enumeration round trips on every
-carrier; outsider rejection; all four embeddings
+set; outsider rejection; all four embeddings
 (`is_subobject_of`); and the identity separations
 
 ```text
-¬(P same_as Q)     ¬(Y same_as Z)     ¬(V same_as T)
-¬(Q same_as Y)     ← both have size 2, and they are still not the same
+¬(P equals Q)     ¬(Y equals Z)     ¬(V equals T)
+¬(Q equals Y)     ← both have size 2, and they are still not the same
 ```
 
 **Negative truth:** no relation, no graph, no field, no operator, no
@@ -376,13 +376,13 @@ right-hand inclusions are used transposed — as views, never rebuilt.
 
 ## Level 3 — Relational ownership
 
-One `relational_graph` owns the whole structural model: six carriers
+One `related_graph` owns the whole structural model: six sets
 (\(V,T,P,Q,Y,Z\)) and five relations
 (\(R_{\mathrm{dep}},J_Q,J_P,F_Q,F_P\)).
 
-**Verified:** ownership by identity for every carrier and relation;
+**Verified:** ownership by identity for every set and relation;
 signature closure — every slot of every owned relation resolves to an
-owned carrier, *including the subobject domains*; and graph identity
+owned set, *including the subobject domains*; and graph identity
 against an identically stocked twin.
 
 > The complete adjoint problem has one structural ownership environment
@@ -437,7 +437,7 @@ p  = [2]     field on P
 q0 = [0, 0]  field on Q     — deliberately wrong; the solver's job
 ```
 
-**Verified:** each field's domain is its declared `member_set` *by
+**Verified:** each field's domain is its declared `set` *by
 identity*; storage follows domain enumeration and is read through
 `local_index`.
 
@@ -462,7 +462,7 @@ J_Q^{T}\subseteq Q\times Y,
 \]
 
 **Verified:** the transpose swaps the actual **domain identities**
-(`domain(1) same_as Q`, `domain(2) same_as Y`) — stronger than
+(`domain(1) equals Q`, `domain(2) equals Y`) — stronger than
 transposing a 2×2 array; the view is *not* materialized while \(J_Q\)
 is; and no second reverse support relation exists anywhere.
 
@@ -652,7 +652,7 @@ prevent.
 
 | | **MODEL GRAPH** | **SOLVER HOST** |
 |---|---|---|
-| type | `relational_graph` | `stored_graph` (legacy) |
+| type | `related_graph` | `stored_graph` (legacy) |
 | content | \(V,T,P,Q,Y,Z\) and \(R_{\mathrm{dep}},J_Q,J_P,F_Q,F_P\) | seven vertices in a chain, unrelated to anything |
 | role | mathematical **ownership environment** | `graph_operation` **compatibility argument** |
 | supplies the supports? | **yes** — every action reads model-owned relations | no |
@@ -681,7 +681,7 @@ identity** and destroys every construction selector:
 ```text
 build dep, J_Q, J_P, F_Q, F_P  (allocatable)
     ↓ admitted to the model graph
-locate model-owned copies via relation_at + same_as
+locate model-owned copies via relation_at + equals
     ↓
 deallocate(dep, jq, jp, fq, fp)  and the four inclusions
     ↓
@@ -689,7 +689,7 @@ every number below comes from model-owned structure
 ```
 
 The test then pins that the selectors are gone, that the model still
-owns six carriers and five relations, and that each located relation
+owns six sets and five relations, and that each located relation
 still carries the signature the statement needs — \(J_Q\) on
 \(Y\times Q\), \(F_Q\) on \(Z\times Q\), and so on. This is a
 **lifetime** truth, not a repeat of Gate A's extension tests.
@@ -765,7 +765,7 @@ parameter, state, residual and response are distinguished by DOMAIN
 equal cardinality does not collapse domain identity (Q vs Y)
 one dependency relation generates all four derivative supports
 subobject inclusions carry role structure into the algebra
-one relational graph owns the complete structural model
+one related graph owns the complete structural model
 the implicit state coupling is cyclic — and the nucleus says so by
     refusing a topological order rather than inventing one
 the adjoint support is a transpose view, never a second relation
@@ -796,7 +796,7 @@ test/adjoint-tower/
 ├── check_imports.sh              fail-closed per-level allowlists
 ├── common/
 │   └── adjoint_assert.f90        constants + assertion helpers
-├── level-0-carrier/              test.f90
+├── level-0-set/              test.f90
 ├── level-1-relation/             test.f90
 ├── level-2-relation-algebra/     test.f90
 ├── level-3-graph/                test.f90
@@ -856,10 +856,10 @@ weaken their truths.
 ```text
 adjoint sensitivity tower
 ├── Gate A · structure
-│   ├── 0 carrier ................ PASS
+│   ├── 0 set ................ PASS
 │   ├── 1 relation ............... PASS
 │   ├── 2 relation algebra ....... PASS
-│   ├── 3 relational graph ....... PASS
+│   ├── 3 related graph ....... PASS
 │   ├── 4 graph calculus ......... PASS
 │   ├── 5 field calculus ......... PASS
 │   └── 6 discretization ......... PASS

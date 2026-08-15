@@ -39,7 +39,7 @@ symptom / fact:       PRESENCE IS NOT OWNERSHIP. Global vertex 3 is
                       other way round. Global edge e3 = 3->4 is
                       present in both parts and owned by exactly one.
 
-                      A part carrier therefore holds members it does
+                      A part set therefore holds members it does
                       not answer for, and no count of members can tell
                       you which is which. Only vertex_owner_part /
                       edge_owner_part can.
@@ -86,7 +86,7 @@ contextual radius:    2
 
 symptom / fact:       OVERLAP IS VISIBILITY. A full global vertex field
                       partitions to a FULL field on each part's whole
-                      vertex carrier - q1.domain same_as
+                      vertex set - q1.domain equals
                       G1.vertex_set(), four members including the
                       borrowed one - not to a field on the owned
                       subset.
@@ -98,7 +98,7 @@ exact caller:         gate-a-partition/test.f90
                       (check_vertex_transport, check_one_transport)
 
 mathematical concept: V_part = owned union borrowed as the numerical
-                      INPUT carrier
+                      INPUT set
 
 local necessity:      yes - PROVED NUMERICALLY at Gate B, not merely
                       predicted: perturbing ONLY the borrowed copy
@@ -117,10 +117,10 @@ global necessity:     unknown at larger radius (deeper stencils need
 cross-tower recurrence: first tower to need it
 
 graph role:           the part graph defines the visibility, and the
-                      field's domain is the part's carrier
+                      field's domain is the part's set
 
 comparison:           learning L5 established that a field's domain is
-                      a member_set and roles are domains; here the SAME
+                      a set and roles are domains; here the SAME
                       contract carries a subtler distinction - the
                       domain is the overlap, while the contribution
                       domain will be the owned subset
@@ -289,7 +289,7 @@ global necessity:     unknown, but the pressure only grows: more parts
 cross-tower recurrence: THIRD distinct form of the same discipline -
                       learning/derivative pinned declaration order
                       within one domain; adjoint permuted TWO domains
-                      independently; this tower has two carriers with
+                      independently; this tower has two sets with
                       genuinely different numbering systems related by
                       a map. The lesson has now appeared in three
                       independent clients in three different shapes
@@ -343,7 +343,7 @@ symptom / fact:       THE GRAPH HOST IS A REAL CONDUIT, and it is
                       that GMRES CARRIES the graph to an attached
                       operation which does. Two roles:
 
-                        minimizer     graph as conduit / context carrier
+                        minimizer     graph as conduit / context set
                         differential  graph as numerical topology
                         operation     operand
 

@@ -56,8 +56,8 @@
 module class_graph_partitioner
 
   use iso_fortran_env     , only : dp => REAL64
-  use graph_grammar       , only : graph, graph_field
-  use graph_carrier       , only : member_set, counted_set, subset_set
+  use graph_grammar       , only : ordinary_graph, graph_field
+  use graph_set       , only : set, index_set, subset
   use graph_calculus      , only : graph_partitioner
   use class_graph         , only : stored_graph
   use class_graph_field   , only : field
@@ -152,7 +152,7 @@ contains
   pure logical function defined_on_graph(this, input_graph)
 
     class(partitioner), intent(in) :: this
-    class(graph)      , intent(in) :: input_graph
+    class(ordinary_graph)      , intent(in) :: input_graph
 
     defined_on_graph = input_graph % num_vertices() > 0 .and. this % nparts >= 1
 
@@ -174,7 +174,7 @@ contains
   logical function defined_on_data(this, input_graph, input_data)
 
     class(partitioner), intent(in) :: this
-    class(graph)      , intent(in) :: input_graph
+    class(ordinary_graph)      , intent(in) :: input_graph
     class(graph_field) , intent(in) :: input_data
 
     defined_on_data = this % defined_on_graph(input_graph)
@@ -196,8 +196,8 @@ contains
   subroutine partition_graph(this, global_graph, part_graph)
 
     class(partitioner), intent(in)              :: this
-    class(graph)      , intent(in)              :: global_graph
-    class(graph)      , allocatable, intent(out) :: part_graph
+    class(ordinary_graph)      , intent(in)              :: global_graph
+    class(ordinary_graph)      , allocatable, intent(out) :: part_graph
 
     integer, allocatable :: owner(:), mine(:), whereis(:)
     integer, allocatable :: ltail(:), lhead(:), eglobal(:), eowner(:), vowner(:)
@@ -281,7 +281,7 @@ contains
   subroutine assign_owners(this, global_graph, owner)
 
     class(partitioner)  , intent(in)  :: this
-    class(graph)        , intent(in)  :: global_graph
+    class(ordinary_graph)        , intent(in)  :: global_graph
     integer, allocatable, intent(out) :: owner(:)
 
     integer :: nv
@@ -338,7 +338,7 @@ contains
 
   subroutine assign_owners_breadth_first(global_graph, nparts, owner)
 
-    class(graph), intent(in)    :: global_graph
+    class(ordinary_graph), intent(in)    :: global_graph
     integer     , intent(in)    :: nparts
     integer     , intent(inout) :: owner(:)
 
@@ -415,7 +415,7 @@ contains
 
   subroutine gather_part(global_graph, owner, part, mine, whereis)
 
-    class(graph)        , intent(in)  :: global_graph
+    class(ordinary_graph)        , intent(in)  :: global_graph
     integer             , intent(in)  :: owner(:)
     integer             , intent(in)  :: part
     integer, allocatable, intent(out) :: mine(:)
@@ -464,12 +464,12 @@ contains
   subroutine partition_data(this, global_graph, global_data, part_graph, part_data)
 
     class(partitioner), intent(in)               :: this
-    class(graph)      , intent(in)               :: global_graph
+    class(ordinary_graph)      , intent(in)               :: global_graph
     class(graph_field) , intent(in)               :: global_data
-    class(graph)      , intent(in)               :: part_graph
+    class(ordinary_graph)      , intent(in)               :: part_graph
     class(graph_field) , allocatable, intent(out) :: part_data
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
 
     associate (u1 => this); end associate
 
@@ -496,47 +496,47 @@ contains
 
   !===================================================================!
   ! One carry for both families and both coverages. A FULL field -
-  ! domain same_as the global carrier - lands on the part's own
-  ! carrier, every part member valued through the global map. A
+  ! domain equals the global set - lands on the part's own
+  ! set, every part member valued through the global map. A
   ! PROPER SUBSET travels as a subset: the part-local members whose
   ! global names the subset holds, each value fetched through the
   ! GLOBAL DOMAIN'S local_index - never by raw member arithmetic -
-  ! and seated on a new subobject of the part's carrier. A new
+  ! and seated on a new subobject of the part's set. A new
   ! ambient means a new declared subset: identity is not preserved
   ! across transport, extension and values are.
   !===================================================================!
 
-  subroutine carry_field(global_data, dom, global_carrier, part_graph, &
+  subroutine carry_field(global_data, dom, global_set, part_graph, &
        &                 on_vertices, part_data)
 
     type(field)       , intent(in)               :: global_data
-    class(member_set) , intent(in)               :: dom
-    type(counted_set) , intent(in)               :: global_carrier
-    class(graph)      , intent(in)               :: part_graph
+    class(set) , intent(in)               :: dom
+    type(index_set) , intent(in)               :: global_set
+    class(ordinary_graph)      , intent(in)               :: part_graph
     logical           , intent(in)               :: on_vertices
     class(graph_field), allocatable, intent(out) :: part_data
 
     type(field)           :: out
-    type(counted_set)     :: part_carrier
-    type(subset_set)      :: sp
+    type(index_set)     :: part_set
+    type(subset)      :: sp
     real(dp), allocatable :: fv(:), lv(:)
     integer , allocatable :: kept(:)
     integer :: nlocal, ncomp, l, c, g, n, at
 
     if (on_vertices) then
        nlocal       = part_graph % num_vertices()
-       part_carrier = part_graph % vertex_set()
+       part_set = part_graph % vertex_set()
     else
        nlocal       = part_graph % num_edges()
-       part_carrier = part_graph % edge_set()
+       part_set = part_graph % edge_set()
     end if
     ncomp = global_data % num_components()
 
     call global_data % get_real_vector(fv)
 
-    if (dom % same_as(global_carrier)) then
+    if (dom % equals(global_set)) then
 
-       ! Full coverage: the part field lives on the part's carrier.
+       ! Full coverage: the part field lives on the part's set.
        allocate(lv(nlocal * ncomp))
        lv = 0.0_dp
        do l = 1, nlocal
@@ -548,7 +548,7 @@ contains
              end do
           end if
        end do
-       out = field(global_data % name(), part_carrier, ncomp=ncomp, &
+       out = field(global_data % name(), part_set, ncomp=ncomp, &
             &      unit_name=global_data % units())
        call out % set_real_vector(lv)
 
@@ -564,7 +564,7 @@ contains
              kept(n) = l
           end if
        end do
-       sp = subset_set(dom % name(), part_carrier, kept(1:n))
+       sp = subset(dom % name(), part_set, kept(1:n))
 
        allocate(lv(n * ncomp))
        do l = 1, n
@@ -590,7 +590,7 @@ contains
 
   pure integer function global_of(part_graph, l, on_vertices)
 
-    class(graph), intent(in) :: part_graph
+    class(ordinary_graph), intent(in) :: part_graph
     integer     , intent(in) :: l
     logical     , intent(in) :: on_vertices
 

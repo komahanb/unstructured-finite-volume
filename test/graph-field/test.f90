@@ -1,6 +1,6 @@
 !=====================================================================!
 ! The field suite: the laws of the one field on the one domain kind
-! (level 5). A field lives on a member_set - ambient, subset,
+! (level 5). A field lives on a set - ambient, subset,
 ! nested, or empty - stores by domain enumeration, and carries its
 ! domain's identity wherever it is copied.
 !
@@ -10,15 +10,15 @@
 program test_graph_field
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use graph_set    , only : index_set, subset, set
   use class_graph_field, only : field
 
   implicit none
 
-  type(counted_set) :: cells
-  type(subset_set)  :: walls, hot, none
+  type(index_set) :: cells
+  type(subset)  :: walls, hot, none
   type(field)       :: q, w, h, z, copy
-  class(member_set), allocatable :: dom
+  class(set), allocatable :: dom
   real(dp), allocatable :: v(:)
   integer :: kk
   integer :: nfail
@@ -28,16 +28,16 @@ program test_graph_field
   write(*,'(1x,a)') "graph field suite (level 5)"
   write(*,'(1x,a)') "============================================="
 
-  cells = counted_set('cells', 6)
-  walls = subset_set('walls', cells, [5, 2, 6])
-  hot   = subset_set('hot'  , walls, [6, 2])
-  none  = subset_set('none' , cells, [integer ::])
+  cells = index_set('cells', 6)
+  walls = subset('walls', cells, [5, 2, 6])
+  hot   = subset('hot'  , walls, [6, 2])
+  none  = subset('none' , cells, [integer ::])
 
   q = field('q', cells, ncomp=2)
   call q % set_real_vector([(1.0_dp * kk, kk = 1, 12)])
   call q % domain(dom)
-  call report(dom % same_as(cells), &
-       & "an ambient field's domain is the carrier, by identity", nfail)
+  call report(dom % equals(cells), &
+       & "an ambient field's domain is the set, by identity", nfail)
   call report(q % num_entries() .eq. 6, &
        & "entries count the domain", nfail)
   call q % get_real_vector(v)
@@ -64,7 +64,7 @@ program test_graph_field
 
   copy = w
   call copy % domain(dom)
-  call report(dom % same_as(walls), &
+  call report(dom % equals(walls), &
        & "a copy carries its domain's identity along", nfail)
 
   write(*,'(1x,a)') "============================================="

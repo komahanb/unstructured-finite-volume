@@ -33,7 +33,7 @@
 ! T_k^T sends a member of X_(k-1) to the occurrences that READ it;
 ! H_k sends an occurrence to the member of X_k it WRITES. Composed,
 ! they send x to everything x can reach in one operator - which is
-! the dependency, derived, with the occurrence carrier forgotten on
+! the dependency, derived, with the occurrence set forgotten on
 ! the way through.
 !
 !                       WHAT `named` IS FOR, AND NOT FOR
@@ -65,7 +65,7 @@
 
 module visualization_algebra_fixture
 
-  use graph_carrier         , only : member_set
+  use graph_set         , only : set
   use graph_relation        , only : relation
   use graph_binary_relation , only : binary_relation, csr_relation
   use graph_binary_relation , only : transposed_view, transpose_of
@@ -85,7 +85,7 @@ contains
   !
   !      D_k  =  H_k o T_k^T  :  X_(k-1) -> X_k
   !
-  ! The occurrence carrier E_k is the middle domain of the
+  ! The occurrence set E_k is the middle domain of the
   ! composition, and composition is what forgets it. Two occurrences
   ! that read the same member and write the same member therefore
   ! yield ONE tuple - which is the specimen's central law, and it is
@@ -162,7 +162,7 @@ contains
     character(len=*), intent(in) :: label
     class(relation) , intent(in) :: r
 
-    class(member_set), allocatable :: first, second
+    class(set), allocatable :: first, second
     integer, allocatable           :: table(:,:)
 
     if (r % arity() .ne. 2) then
@@ -190,7 +190,7 @@ contains
     class(relation), intent(in) :: r
     class(relation), intent(in) :: s
 
-    class(member_set), allocatable :: dr, ds
+    class(set), allocatable :: dr, ds
     integer, allocatable           :: tr(:,:), ts(:,:)
     integer                        :: k, j
 
@@ -200,7 +200,7 @@ contains
     do k = 1, r % arity()
        dr = r % domain(k)
        ds = s % domain(k)
-       same_extension = same_extension .and. dr % same_as(ds)
+       same_extension = same_extension .and. dr % equals(ds)
     end do
     if (.not. same_extension) return
 

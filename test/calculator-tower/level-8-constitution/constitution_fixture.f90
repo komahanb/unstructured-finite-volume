@@ -7,7 +7,7 @@
 !      OP_PLUS  -> x + y          OP_TIMES -> x * y
 !
 ! Everything else here is structural delegation, parameterized by
-! explicit abstract contracts - class(relation), class(member_set) -
+! explicit abstract contracts - class(relation), class(set) -
 ! handed in by the caller: no global calculator singleton, no
 ! stored-type demands. The producer of a slot, the slot on a port,
 ! the located slot of a row are DISCOVERED by uniqueness scans and
@@ -23,7 +23,7 @@ module arithmetic_constitution_fixture
   use iso_fortran_env  , only : dp => REAL64
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : member_set
+  use graph_set    , only : set
   use graph_relation   , only : relation
 
   implicit none
@@ -61,7 +61,7 @@ contains
   integer function producer_of(flow, ops, x_out) result(op)
 
     class(relation)  , intent(in) :: flow
-    class(member_set), intent(in) :: ops
+    class(set), intent(in) :: ops
     integer          , intent(in) :: x_out
 
     integer :: j, n
@@ -85,7 +85,7 @@ contains
   integer function slot_for_port(flow, slots, op, port) result(slot)
 
     class(relation)  , intent(in) :: flow
-    class(member_set), intent(in) :: slots
+    class(set), intent(in) :: slots
     integer          , intent(in) :: op, port
 
     integer :: i, n
@@ -109,7 +109,7 @@ contains
   integer function located_slot(located, slots, row) result(x_out)
 
     class(relation)  , intent(in) :: located
-    class(member_set), intent(in) :: slots
+    class(set), intent(in) :: slots
     integer          , intent(in) :: row
 
     integer :: j, n
@@ -137,8 +137,8 @@ contains
        &                        known, known_values, unknown, ustate, r)
 
     class(relation)  , intent(in)      :: flow, located
-    class(member_set), intent(in)      :: slots, ops, rows
-    class(member_set), intent(in)      :: known, unknown
+    class(set), intent(in)      :: slots, ops, rows
+    class(set), intent(in)      :: known, unknown
     real(dp), intent(in)               :: known_values(:), ustate(:)
     real(dp), allocatable, intent(out) :: r(:)
 
@@ -181,7 +181,7 @@ contains
   subroutine constitution_support(flow, located, slots, ops, row, members)
 
     class(relation)  , intent(in)      :: flow, located
-    class(member_set), intent(in)      :: slots, ops
+    class(set), intent(in)      :: slots, ops
     integer          , intent(in)      :: row
     integer, allocatable, intent(out)  :: members(:)
 

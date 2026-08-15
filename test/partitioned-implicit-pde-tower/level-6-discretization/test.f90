@@ -38,8 +38,8 @@ program partitioned_pde_level_6
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : report, verdict
   use partitioned_pde_assert, only : NV, Q_EXACT, B_EXACT, L_EXACT
-  use graph_carrier    , only : counted_set, subset_set, member_set
-  use graph_grammar    , only : graph, graph_field
+  use graph_set    , only : index_set, subset, set
+  use graph_grammar    , only : ordinary_graph, graph_field
   use class_graph      , only : stored_graph
   use class_graph_field, only : field
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
@@ -53,7 +53,7 @@ program partitioned_pde_level_6
   type(stored_graph)        :: g
   type(assembler)           :: a
   type(shifted_laplacian)   :: shifted
-  class(graph), allocatable :: g1, g2
+  class(ordinary_graph), allocatable :: g1, g2
   integer                   :: nfail
 
   nfail = 0
@@ -78,7 +78,7 @@ program partitioned_pde_level_6
 contains
   subroutine cut(part, k)
 
-    class(graph), allocatable, intent(out) :: part
+    class(ordinary_graph), allocatable, intent(out) :: part
     integer                  , intent(in)  :: k
 
     type(partitioner) :: p
@@ -99,9 +99,9 @@ contains
     type(differential_operator)     :: lap
     type(field)                     :: q
     class(graph_field), allocatable :: lq, aq
-    class(member_set), allocatable  :: dom
+    class(set), allocatable  :: dom
     real(dp), allocatable           :: v(:)
-    type(counted_set)               :: vs
+    type(index_set)               :: vs
 
     vs = g % vertex_set()
     q = field('q star', vs)
@@ -117,7 +117,7 @@ contains
     call shifted % apply(g, [q], aq)
     call aq % domain(dom)
     call aq % get_real_vector(v)
-    call report(dom % same_as(vs) .and. by_member(v, vs, B_EXACT), &
+    call report(dom % equals(vs) .and. by_member(v, vs, B_EXACT), &
          & "and A q* = 2q* - Lq* = b = [1,3,7,13,21,37] on V(G)", &
          & nfail)
 
@@ -125,7 +125,7 @@ contains
   !===================================================================!
   ! The minimal re-check Gate B needs before it may trust its own
   ! inputs: the transported state lives on the PART's whole vertex
-  ! carrier, by identity, and carries the right values in the
+  ! set, by identity, and carries the right values in the
   ! part's own enumeration. Gate A owns the full ownership story;
   ! this is only the handshake.
   !===================================================================!
@@ -142,7 +142,7 @@ contains
   end subroutine check_transported_state
   subroutine one_transported_state(part, k, expect, nfail)
 
-    class(graph), intent(in)    :: part
+    class(ordinary_graph), intent(in)    :: part
     integer     , intent(in)    :: k
     real(dp)    , intent(in)    :: expect(:)
     integer     , intent(inout) :: nfail
@@ -150,9 +150,9 @@ contains
     type(partitioner)               :: p
     type(field)                     :: q
     class(graph_field), allocatable :: pd
-    class(member_set), allocatable  :: dom
+    class(set), allocatable  :: dom
     real(dp), allocatable           :: v(:)
-    type(counted_set)               :: pvs
+    type(index_set)               :: pvs
     character(len=1)                :: tag
 
     write(tag,'(i1)') k
@@ -169,9 +169,9 @@ contains
     select type (part)
     type is (stored_graph)
        pvs = part % vertex_set()
-       call report(dom % same_as(pvs), &
+       call report(dom % equals(pvs), &
             & "q" // tag // " lives on G" // tag // "'s whole vertex " // &
-            & "carrier - the overlap a stencil will read", nfail)
+            & "set - the overlap a stencil will read", nfail)
     end select
 
     call report(size(v) .eq. size(expect) .and. &
@@ -200,7 +200,7 @@ contains
   subroutine one_local_action(part, k, globals, expect_l, expect_a, &
        & borrowed_global, borrowed_says, global_says, nfail)
 
-    class(graph), intent(in)    :: part
+    class(ordinary_graph), intent(in)    :: part
     integer     , intent(in)    :: k, globals(:), borrowed_global
     real(dp)    , intent(in)    :: expect_l(:), expect_a(:)
     real(dp)    , intent(in)    :: borrowed_says, global_says
@@ -299,7 +299,7 @@ contains
   subroutine perturb_and_watch(part, k, borrowed_global, watched_global, &
        & before, after, nfail)
 
-    class(graph), intent(in)    :: part
+    class(ordinary_graph), intent(in)    :: part
     integer     , intent(in)    :: k, borrowed_global, watched_global
     real(dp)    , intent(in)    :: before, after
     integer     , intent(inout) :: nfail
@@ -353,7 +353,7 @@ contains
   ! q* transported onto this part - the overlap-complete local state.
   type(field) function local_state(part, k) result(qp)
 
-    class(graph), intent(in) :: part
+    class(ordinary_graph), intent(in) :: part
     integer     , intent(in) :: k
 
     type(partitioner)               :: p
@@ -375,13 +375,13 @@ contains
   ! Apply A on a part and add its OWNED contribution into total.
   subroutine add_local_action(part, k, total)
 
-    class(graph), intent(in)    :: part
+    class(ordinary_graph), intent(in)    :: part
     integer     , intent(in)    :: k
     real(dp)    , intent(inout) :: total(:)
 
     type(field)                     :: qp, aq_local
     class(graph_field), allocatable :: aq, fd
-    class(member_set), allocatable  :: dom
+    class(set), allocatable  :: dom
     real(dp), allocatable           :: v(:)
     integer , allocatable           :: mem(:)
     integer                         :: i
@@ -398,7 +398,7 @@ contains
     call fd % get_real_vector(v)
 
     select type (dom)
-    type is (subset_set)
+    type is (subset)
        call dom % members(mem)
        do i = 1, size(mem)
           total(mem(i)) = total(mem(i)) + v(dom % local_index(mem(i)))
@@ -413,7 +413,7 @@ contains
   ! The local seat holding this global member, or 0.
   integer function seat_of_global(part, gm)
 
-    class(graph), intent(in) :: part
+    class(ordinary_graph), intent(in) :: part
     integer     , intent(in) :: gm
 
     integer :: i
@@ -431,7 +431,7 @@ contains
   logical function by_member(v, dom, expect)
 
     real(dp)         , intent(in) :: v(:)
-    class(member_set), intent(in) :: dom
+    class(set), intent(in) :: dom
     real(dp)         , intent(in) :: expect(:)
 
     integer :: i, m

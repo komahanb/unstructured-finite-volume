@@ -30,12 +30,12 @@ program adjoint_level_1
   use adjoint_assert, only : report, verdict
   use adjoint_assert, only : VAR_P, VAR_U, VAR_V
   use adjoint_assert, only : TGT_R1, TGT_R2, TGT_F
-  use graph_carrier , only : counted_set, member_set
+  use graph_set , only : index_set, set
   use graph_relation, only : stored_relation
 
   implicit none
 
-  type(counted_set)     :: v, t
+  type(index_set)     :: v, t
   type(stored_relation) :: dep
   integer               :: table(2, 10)
   integer               :: nfail
@@ -46,8 +46,8 @@ program adjoint_level_1
   write(*,'(1x,a)') "adjoint tower . level 1 . dependency"
   write(*,'(1x,a)') "============================================="
 
-  v = counted_set('variables', 3)
-  t = counted_set('targets'  , 3)
+  v = index_set('variables', 3)
+  t = index_set('targets'  , 3)
 
   ! Nine facts - and the first handed twice.
   table(:,  1) = [TGT_R1, VAR_P]
@@ -81,17 +81,17 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
 
     call report(dep % arity() .eq. 2, &
          & "the dependency is binary", nfail)
 
     d = dep % domain(1)
-    call report(d % same_as(t) .and. .not. d % same_as(v), &
+    call report(d % equals(t) .and. .not. d % equals(v), &
          & "slot one is the targets, by identity - not merely a " // &
          & "set of size three", nfail)
     d = dep % domain(2)
-    call report(d % same_as(v) .and. .not. d % same_as(t), &
+    call report(d % equals(v) .and. .not. d % equals(t), &
          & "slot two is the variables", nfail)
 
   end subroutine check_signature
@@ -136,7 +136,7 @@ contains
   ! absence: every pair of members is a fact, so membership alone
   ! can never report a missing dependency here.
   !
-  ! It can say even less than that. The two carriers enumerate their
+  ! It can say even less than that. The two sets enumerate their
   ! members from one, so their raw ids OVERLAP - TGT_R1 and VAR_P
   ! are both the integer 1 - and a tuple written in the wrong
   ! orientation, [VAR_U, TGT_R1] = [2, 1], is therefore a perfectly
@@ -168,7 +168,7 @@ contains
          & nfail)
 
     call report(dep % has([VAR_U, TGT_R1]), &
-         & "and ids collide across carriers, so even a reversed " // &
+         & "and ids collide across sets, so even a reversed " // &
          & "pair reads as a member: orientation is the signature's " // &
          & "business, never membership's", nfail)
 

@@ -23,7 +23,7 @@
 ! tower keeps four objects apart where a looser client would keep
 ! one:
 !
-!      T                  the carrier of instants
+!      T                  the set of instants
 !      Tail/Head/A1/A2    the temporal structure over it
 !      time : T -> R      numerical coordinates
 !      h    : E -> R      numerical step sizes
@@ -38,7 +38,7 @@
 ! a time scheme. Nothing here knows about Euler, BDF, a residual or
 ! a solver.
 !
-! The carriers arrive as arguments, as they have since Level 1.
+! The sets arrive as arguments, as they have since Level 1.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -46,7 +46,7 @@
 module time_fields_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_carrier    , only : counted_set
+  use graph_set    , only : index_set
   use class_graph_field, only : field
   use time_assert      , only : NQ, NT, NE, H_STEP, TIME_COORD, Q0
 
@@ -63,7 +63,7 @@ contains
 
   type(field) function state_field(q) result(f)
 
-    type(counted_set), intent(in) :: q
+    type(index_set), intent(in) :: q
 
     f = field('state', q, ncomp=1)
     call f % set_real_vector(Q0)
@@ -76,7 +76,7 @@ contains
 
   type(field) function instant_coordinates(t) result(f)
 
-    type(counted_set), intent(in) :: t
+    type(index_set), intent(in) :: t
 
     f = field('instant coordinate', t, ncomp=1)
     call f % set_real_vector(TIME_COORD)
@@ -92,7 +92,7 @@ contains
 
   type(field) function step_sizes(e) result(f)
 
-    type(counted_set), intent(in) :: e
+    type(index_set), intent(in) :: e
 
     real(dp) :: values(NE)
 

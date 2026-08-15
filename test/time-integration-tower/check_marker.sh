@@ -19,7 +19,7 @@
 # FINITE check would be an overclaim.
 #
 # And it says NOTHING about what the numbers should be. This
-# tower's answer is q(t4) on the two-member state carrier Q; the
+# tower's answer is q(t4) on the two-member state set Q; the
 # marker carries what the program COMPUTED, unrounded. Whether
 # those numbers are 7/24 and 83/144 is the Level-9 test's business,
 # never this script's.

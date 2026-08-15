@@ -28,9 +28,9 @@
 program test_graph_mesh
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_grammar  , only : graph, graph_field
+  use graph_grammar  , only : ordinary_graph, graph_field
   use graph_calculus , only : GRAPH_SIDE_VERTEX
-  use graph_carrier         , only : member_set, counted_set, subset_set
+  use graph_set         , only : set, index_set, subset
   use class_graph_field  , only : field
   use class_graph_mesh   , only : mesh
   use class_mesh_builder , only : mesh_from_gmsh
@@ -110,7 +110,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    class(member_set), allocatable :: wall
+    class(set), allocatable :: wall
     integer, allocatable :: nbrs(:)
 
     m = hand_mesh()
@@ -197,7 +197,7 @@ contains
     type(mesh) :: m
     type(differential_operator) :: second
     type(field) :: state
-    type(counted_set) :: cells
+    type(index_set) :: cells
     class(graph_field), allocatable :: y
     real(dp), allocatable :: farea(:), fdelta(:), vol(:), got(:)
     real(dp) :: k(3), c(3)
@@ -258,7 +258,7 @@ contains
     type(mesh) :: m
     type(differential_operator) :: second
     type(field) :: state
-    type(counted_set) :: cells
+    type(index_set) :: cells
     class(graph_field), allocatable :: y
     type(field) :: fa, fd, fv
     real(dp), allocatable :: farea(:), fdelta(:), vol(:), got(:), c(:), q(:)

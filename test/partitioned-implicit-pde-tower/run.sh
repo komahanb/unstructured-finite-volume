@@ -25,7 +25,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 ( cd "$here/../.." && ./build.sh >/dev/null 2>&1 )
 
 levels=(
-  "level-0-carrier            0 carrier"
+  "level-0-set            0 set"
   "level-1-relation           1 relation"
   "level-2-relation-algebra   2 relation algebra"
   "level-3-graph              3 graph"

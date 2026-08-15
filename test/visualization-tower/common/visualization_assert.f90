@@ -5,9 +5,9 @@
 !
 !      X0 --A1--> X1 --A2--> X2 --A3--> X3
 !
-! over seven structurally distinct carriers,
+! over seven structurally distinct sets,
 !
-!      X0 = { a  b  c  d }              state / domain carriers
+!      X0 = { a  b  c  d }              state / domain sets
 !      X1 = { p  q  r }
 !      X2 = { u  v  w }
 !      X3 = { m  n }
@@ -43,13 +43,13 @@
 !
 !                       THE NAMES EARN THEIR KEEP
 !
-! Every carrier counts from one, so the member written a is 1 and so
+! Every set counts from one, so the member written a is 1 and so
 ! is p, and so is u, and so is m, and so is e11 - five different
 ! mathematical objects wearing one integer. Nothing above may write
 ! a bare integer for a member; it writes X0_A, X1_P, X2_U, X3_M,
 ! E1_1 and their kin, and the numbering lives in exactly one place.
 !
-! That the same raw integer inhabits several carriers is not an
+! That the same raw integer inhabits several sets is not an
 ! accident of the specimen to be tidied away. It is Level 0's
 ! sharpest law: identity is DECLARED, never inferred from what a
 ! member happens to be called or from how many there are.
@@ -75,8 +75,8 @@ module visualization_assert
   public :: ND1, ND2, ND3, ND21, ND31
 
   !-------------------------------------------------------------------!
-  ! The seven cardinalities. |X1| = |X2| = 3 on purpose: two carriers
-  ! of one size that are not one carrier is the first thing Level 0
+  ! The seven cardinalities. |X1| = |X2| = 3 on purpose: two sets
+  ! of one size that are not one set is the first thing Level 0
   ! must be able to say.
   !-------------------------------------------------------------------!
 

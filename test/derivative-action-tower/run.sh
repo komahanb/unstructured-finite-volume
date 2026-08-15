@@ -27,10 +27,10 @@ here="$(cd "$(dirname "$0")" && pwd)"
 ( cd "$here/../.." && ./build.sh >/dev/null 2>&1 )
 
 levels=(
-  "level-0-carrier              level 0  carriers"
+  "level-0-set              level 0  sets"
   "level-1-relation             level 1  relation"
   "level-2-relation-algebra     level 2  relation algebra"
-  "level-3-graph                level 3  relational graph"
+  "level-3-graph                level 3  related graph"
   "level-4-graph-calculus       level 4  graph calculus"
   "level-5-field-calculus       level 5  field calculus"
   "level-6-derivative-structure level 6  derivative structure"

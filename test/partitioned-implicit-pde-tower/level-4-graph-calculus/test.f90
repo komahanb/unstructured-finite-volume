@@ -51,23 +51,23 @@
 program partitioned_pde_level_4
 
   use partitioned_pde_assert , only : report, verdict
-  use graph_carrier          , only : counted_set, member_set
-  use graph_grammar          , only : graph
+  use graph_set          , only : index_set, set
+  use graph_grammar          , only : ordinary_graph
   use graph_binary_relation  , only : csr_relation
   use class_graph            , only : stored_graph
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
-  use chain_carriers_fixture , only : chain_carriers
+  use chain_sets_fixture , only : chain_sets
   use chain_relations_fixture, only : tail_relation, head_relation, &
        &                              own_relation
   use chain_algebra_fixture  , only : derive_tail_owner, derive_head_owner
 
   implicit none
 
-  type(counted_set)          :: v, e, k
+  type(index_set)          :: v, e, k
   type(csr_relation), target :: tail, head, own
   type(csr_relation)         :: tail_owner, head_owner
   type(stored_graph)         :: g
-  class(graph), allocatable  :: g1, g2
+  class(ordinary_graph), allocatable  :: g1, g2
   integer                    :: nfail
 
   nfail = 0
@@ -78,7 +78,7 @@ program partitioned_pde_level_4
 
   ! BOTH Level-2 candidate policies, re-derived here so this level
   ! selects between mathematics rather than recalling an observation.
-  call chain_carriers(v, e, k)
+  call chain_sets(v, e, k)
   tail = tail_relation(e, v)
   head = head_relation(e, v)
   own  = own_relation(k, v)
@@ -102,7 +102,7 @@ contains
 
   subroutine cut(part, kpart)
 
-    class(graph), allocatable, intent(out) :: part
+    class(ordinary_graph), allocatable, intent(out) :: part
     integer                  , intent(in)  :: kpart
 
     type(partitioner) :: p
@@ -114,7 +114,7 @@ contains
 
   subroutine check_part_identity(part, kpart, nfail)
 
-    class(graph), intent(in)    :: part
+    class(ordinary_graph), intent(in)    :: part
     integer     , intent(in)    :: kpart
     integer     , intent(inout) :: nfail
 
@@ -141,11 +141,11 @@ contains
   subroutine check_maps_and_ownership(part, kpart, globals, &
        & borrowed_global, nfail)
 
-    class(graph), intent(in)    :: part
+    class(ordinary_graph), intent(in)    :: part
     integer     , intent(in)    :: kpart, globals(:), borrowed_global
     integer     , intent(inout) :: nfail
 
-    class(member_set), allocatable :: owned, borrowed, overlap
+    class(set), allocatable :: owned, borrowed, overlap
     character(len=1) :: tag
     integer          :: i
     logical          :: ok
@@ -181,7 +181,7 @@ contains
        call report(owned % size() .eq. 3 .and. borrowed % size() .eq. 1 &
             & .and. overlap % size() .eq. part % num_vertices(), &
             & "G" // tag // ": three owned, one borrowed, and the " // &
-            & "overlap is the whole local carrier", nfail)
+            & "overlap is the whole local set", nfail)
 
        ok = .false.
        do i = 1, part % num_vertices()
@@ -256,7 +256,7 @@ contains
 
   logical function holds_global_edge(part, ge)
 
-    class(graph), intent(in) :: part
+    class(ordinary_graph), intent(in) :: part
     integer     , intent(in) :: ge
 
     integer :: i
@@ -273,7 +273,7 @@ contains
 
   integer function owner_of_global_edge(part, ge)
 
-    class(graph), intent(in) :: part
+    class(ordinary_graph), intent(in) :: part
     integer     , intent(in) :: ge
 
     integer :: i

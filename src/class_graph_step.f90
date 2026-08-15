@@ -31,8 +31,8 @@
 module class_graph_step
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_grammar      , only : graph, graph_field, graph_operation
-  use graph_carrier      , only : member_set
+  use graph_grammar      , only : ordinary_graph, graph_field, graph_operation
+  use graph_set      , only : set
   use graph_calculus     , only : discretization_operator
   use class_graph_field  , only : field
   use class_graph        , only : stored_graph
@@ -154,7 +154,7 @@ contains
   subroutine step_dependencies(this, pattern)
 
     class(step_operator), intent(in)       :: this
-    class(graph), allocatable, intent(out) :: pattern
+    class(ordinary_graph), allocatable, intent(out) :: pattern
 
     integer :: n, newest
 
@@ -203,8 +203,8 @@ contains
   subroutine step_domain(this, input_graph, domain)
 
     class(step_operator), intent(in)       :: this
-    class(graph), intent(in)               :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(ordinary_graph), intent(in)               :: input_graph
+    class(set), allocatable, intent(out) :: domain
 
     call this % action % domain(input_graph, domain)
 
@@ -214,13 +214,13 @@ contains
   ! The step's residual, on the action's own domain.
   !
   ! Three things travel with the DATA and the ACTION rather than
-  ! with the host: the domain, the component width, and the carrier
+  ! with the host: the domain, the component width, and the set
   ! the answer lands on. The state's width is read from the state -
   ! a coordinate carrying several numbers is measured whole - and
   ! never inferred by dividing by a vertex count.
   !
   ! Both domain checks are identity questions, and both are refusals
-  ! the caller wants early: a state on a foreign carrier, or an
+  ! the caller wants early: a state on an unequal domain, or an
   ! action that answers somewhere other than where it said it
   ! would, are wrong in ways that produce plausible numbers if left
   ! alone.
@@ -229,13 +229,13 @@ contains
   subroutine step_apply(this, input_graph, input_data, output)
 
     class(step_operator), intent(in)               :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
     type(field)   :: out
     class(graph_field), allocatable :: velocity
-    class(member_set), allocatable  :: expected, given
+    class(set), allocatable  :: expected, given
     real(dp), allocatable :: q(:), s(:), y(:)
     integer :: ncomp
 
@@ -244,7 +244,7 @@ contains
     if (present(input_data)) then
 
        call input_data(1) % domain(given)
-       if (.not. given % same_as(expected)) then
+       if (.not. given % equals(expected)) then
           error stop 'step: the state must live on the action''s own domain'
        end if
        ncomp = input_data(1) % num_components()
@@ -253,7 +253,7 @@ contains
 
        call this % action % apply(input_graph, input_data, velocity)
        call velocity % domain(given)
-       if (.not. given % same_as(expected)) then
+       if (.not. given % equals(expected)) then
           error stop 'step: the action must answer on its stated domain'
        end if
        call velocity % get_real_vector(s)

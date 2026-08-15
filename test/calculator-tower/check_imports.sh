@@ -17,34 +17,34 @@ intrinsics="iso_fortran_env iso_c_binding ieee_arithmetic ieee_exceptions ieee_f
 allowed_for() {
     case "$1" in
         common)                  echo "" ;;
-        level-0-carrier)         echo "calculator_assert graph_carrier" ;;
-        level-1-relation)        echo "calculator_assert graph_carrier graph_relation" ;;
-        level-2-relation-algebra) echo "calculator_assert graph_carrier graph_relation graph_relation_algebra" ;;
+        level-0-set)         echo "calculator_assert graph_set" ;;
+        level-1-relation)        echo "calculator_assert graph_set graph_relation" ;;
+        level-2-relation-algebra) echo "calculator_assert graph_set graph_relation graph_relation_algebra" ;;
         # level 3: graph_binary_relation is granted for the view
         # refusal alone (transpose_of is level-1 relation
-        # infrastructure); the profile and everything above stay
+        # infrastructure); the interpretation and everything above stay
         # forbidden.
-        level-3-graph)           echo "calculator_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_structure" ;;
-        # level 4: the profile's interpretation and the algorithms
+        level-3-graph)           echo "calculator_assert graph_set graph_relation graph_relation_algebra graph_binary_relation graph_structure" ;;
+        # level 4: the interpretation's interpretation and the algorithms
         # that walk it; the legacy graph stack, fields and all above
         # stay forbidden.
-        level-4-graph-calculus)  echo "calculator_assert graph_carrier graph_relation graph_relation_algebra graph_structure graph_profile graph_algorithms" ;;
-        # level 6: sparsity is structure - carriers, relations, the
+        level-4-graph-calculus)  echo "calculator_assert graph_set graph_relation graph_relation_algebra graph_structure graph_interpretation graph_algorithms" ;;
+        # level 6: sparsity is structure - sets, relations, the
         # algebra, and the binary transpose view; no field, no graph
         # container, no value ever needed.
-        level-6-discretization)  echo "calculator_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation" ;;
+        level-6-discretization)  echo "calculator_assert graph_set graph_relation graph_relation_algebra graph_binary_relation" ;;
         # level 7: the ordinary minimization machinery and the legacy
         # operation-host compatibility it still rides; no constitution,
         # no statement, no flow relation, no operator meanings.
-        level-7-minimization)    echo "calculator_assert graph_carrier graph_grammar graph_field_calculus class_graph_field class_graph graph_minimization class_graph_gmres affine_residual_fixture" ;;
+        level-7-minimization)    echo "calculator_assert graph_set graph_grammar graph_field_calculus class_graph_field class_graph graph_minimization class_graph_gmres affine_residual_fixture" ;;
         # level 8: constitution binds meaning to domains, relations
         # and fields - no solver, no graph host, no statement.
-        level-8-constitution)    echo "calculator_assert graph_carrier graph_relation graph_relation_algebra class_graph_field arithmetic_constitution_fixture" ;;
+        level-8-constitution)    echo "calculator_assert graph_set graph_relation graph_relation_algebra class_graph_field arithmetic_constitution_fixture" ;;
         # level 9: the composition rung - everything the statement
         # SELECTS, and nothing it would have to invent.
-        level-9-statement)       echo "calculator_assert graph_carrier graph_relation graph_relation_algebra graph_structure graph_field_calculus class_graph_field graph_grammar class_graph graph_minimization class_graph_gmres arithmetic_constitution_fixture constituted_residual_fixture" ;;
+        level-9-statement)       echo "calculator_assert graph_set graph_relation graph_relation_algebra graph_structure graph_field_calculus class_graph_field graph_grammar class_graph graph_minimization class_graph_gmres arithmetic_constitution_fixture constituted_residual_fixture" ;;
         # level 5: a field needs a domain, never a graph container.
-        level-5-field-calculus)  echo "calculator_assert graph_carrier graph_field_calculus class_graph_field" ;;
+        level-5-field-calculus)  echo "calculator_assert graph_set graph_field_calculus class_graph_field" ;;
         *)                       echo "__no_allowlist__" ;;
     esac
 }

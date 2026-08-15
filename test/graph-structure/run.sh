@@ -13,7 +13,11 @@ make -C "$here" >/dev/null
 cd "$here" && ./run
 
 declare -A reason=(
-  [foreign]="a relation must relate the graph's own member sets"
+  [unheld-domain]="a relation must relate the graph's own member sets"
+  [empty-relation-family]="a related graph declares at least one relation"
+  [map-empty-family]="a related graph declares at least one relation"
+  [map-unheld-domain]="a relation must relate the graph's own member sets"
+  [map-view]="a view cannot be owned"
   [twice]="a graph never signs twice"
   [undeclared]="a graph holds declared domains only"
   [dupset]="a graph holds each domain once"
@@ -21,7 +25,7 @@ declare -A reason=(
   [view]="a view cannot be owned"
 )
 
-for case in foreign twice undeclared dupset duprel view; do
+for case in unheld-domain empty-relation-family map-empty-family map-unheld-domain map-view twice undeclared dupset duprel view; do
     if ./refusal "$case" >refusal.out 2>&1; then
         echo " FAIL : '$case' was accepted"
         exit 1

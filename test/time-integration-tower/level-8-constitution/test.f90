@@ -16,14 +16,14 @@
 ! The specimen puts three different five-element things in one
 ! program, and the level's first duty is to keep them apart:
 !
-!      T                       the tower's instant CARRIER (L0)
+!      T                       the tower's instant SET (L0)
 !      V(H_context)            the operation host's vertices
 !      chain from instants(4)  the marcher's CONTROL CHAIN
 !
-! plus the two-member state carrier Q, which is none of them. That
+! plus the two-member state set Q, which is none of them. That
 ! all three have five elements is a coincidence of THIS specimen,
 ! and the assertions below refuse to rely on it: no two are the
-! same carrier, by identity.
+! same set, by identity.
 !
 !      H_context is the compatibility conduit the graph_operation
 !      contract requires. It is NOT the time graph.
@@ -65,7 +65,7 @@ program time_level_8
   use time_assert           , only : T0, T4, H_STEP, Q0
   use time_assert           , only : FE_TRAJECTORY, BE_TRAJECTORY, &
        &                             BDF2_TRAJECTORY
-  use graph_carrier         , only : counted_set, member_set
+  use graph_set         , only : index_set, set
   use graph_binary_relation , only : csr_relation
   use class_graph           , only : stored_graph
   use class_graph_field     , only : field
@@ -73,7 +73,7 @@ program time_level_8
   use class_graph_newton    , only : newton
   use class_graph_marcher   , only : marcher, MARCH_FORWARD, &
        &                             MARCH_BACKWARD, MARCH_BDF2
-  use time_carriers_fixture , only : time_carriers
+  use time_sets_fixture , only : time_sets
   use time_relations_fixture, only : tail_relation, head_relation
   use time_algebra_fixture  , only : derive_one_step_reach
   use time_fields_fixture   , only : step_sizes
@@ -81,7 +81,7 @@ program time_level_8
 
   implicit none
 
-  type(counted_set)          :: q, t, e
+  type(index_set)          :: q, t, e
   type(csr_relation), target :: tail, head
   type(csr_relation)         :: a1
   type(stored_graph)         :: hcontext
@@ -94,7 +94,7 @@ program time_level_8
   write(*,'(1x,a)') "time integration tower . level 8 . march"
   write(*,'(1x,a)') "============================================="
 
-  call time_carriers(q, t, e)
+  call time_sets(q, t, e)
   tail = tail_relation(e, t)
   head = head_relation(e, t)
   a1   = derive_one_step_reach(tail, head)
@@ -105,7 +105,7 @@ program time_level_8
   decay = triangular_decay(q)
 
   call check_control_chain_realizes_a1(nfail)
-  call check_the_three_carriers_stay_apart(nfail)
+  call check_the_three_sets_stay_apart(nfail)
   call check_scalar_step_specializes_the_field(nfail)
   call check_forward_march(nfail)
   call check_backward_march(nfail)
@@ -138,7 +138,7 @@ contains
          & "steps, as T and E do", nfail)
 
     ! Each control step joins the instants A1 joins, read through the
-    ! TIME carrier's own members rather than through the integers the
+    ! TIME set's own members rather than through the integers the
     ! chain happens to use.
     ok = .true.
     do i = 1, chain % num_edges()
@@ -158,40 +158,40 @@ contains
 
   !===================================================================!
   ! THREE five-element objects and one two-element one, and no two
-  ! of them are the same carrier. The coincidence of sizes is the
+  ! of them are the same set. The coincidence of sizes is the
   ! specimen's, not the mathematics'.
   !===================================================================!
 
-  subroutine check_the_three_carriers_stay_apart(nfail)
+  subroutine check_the_three_sets_stay_apart(nfail)
 
     integer, intent(inout) :: nfail
 
     type(marcher)                  :: clock
     type(stored_graph)             :: chain
-    class(member_set), allocatable :: cv, hv
+    class(set), allocatable :: cv, hv
 
     call clock % instants(NSTEPS, chain)
     cv = chain % vertex_set()
     hv = hcontext % vertex_set()
 
-    call report(.not. cv % same_as(q), &
+    call report(.not. cv % equals(q), &
          & "the control chain's vertices are NOT Q: the clock is " // &
          & "not the state", nfail)
 
-    call report(.not. cv % same_as(t), &
+    call report(.not. cv % equals(t), &
          & "nor are they T - two REALIZATIONS of one structure, and " // &
          & "agreement never made two parties one party", nfail)
 
-    call report(.not. cv % same_as(hv), &
+    call report(.not. cv % equals(hv), &
          & "nor V(H_context): THE CONTROL CHAIN IS NOT THE " // &
          & "OPERATION HOST, though both are five-element chains here", &
          & nfail)
 
-    call report(.not. hv % same_as(q) .and. q % size() .eq. NQ, &
+    call report(.not. hv % equals(q) .and. q % size() .eq. NQ, &
          & "and V(H_context) is still not Q - two members against " // &
          & "five, as at Levels 6 and 7", nfail)
 
-  end subroutine check_the_three_carriers_stay_apart
+  end subroutine check_the_three_sets_stay_apart
 
   !===================================================================!
   ! The step size: a field on E at Level 5, one scalar in the

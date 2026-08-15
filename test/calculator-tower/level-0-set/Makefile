@@ -2,7 +2,7 @@ include ../../../Makefile.in
 
 #=====================================================================#
 # Level 0: the law suite and the refusal that must die. The only
-# framework module this level may see is graph_carrier - the import
+# framework module this level may see is graph_set - the import
 # list of test.f90 is itself the level's negative truth.
 #=====================================================================#
 

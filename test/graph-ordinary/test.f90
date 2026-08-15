@@ -1,10 +1,10 @@
 !=====================================================================!
-! The ordinary profile suite (AGENTS.md, level 4, phase 4B).
+! The ordinary interpretation suite (AGENTS.md, level 4, phase 4B).
 !
 ! The ordinary directed graph is one schema over the relational
 ! container: T <= E x V total, H <= E x V partial, the boundary an
 ! absence in H. This suite's centrepiece is the compatibility law
-! (AGENTS.md 62): on every topology below, the profile - deriving
+! (AGENTS.md 62): on every topology below, the interpretation - deriving
 ! every answer from T and H alone - is held against the old
 ! stored_graph, query for query, vertex for vertex, edge for edge.
 ! One source of truth on the new road, and the old road as its
@@ -16,11 +16,11 @@
 program test_graph_ordinary
 
   use class_graph          , only : stored_graph
-  use graph_carrier        , only : counted_set
+  use graph_set        , only : index_set
   use graph_binary_relation, only : csr_relation
-  use graph_structure      , only : relational_graph, held_set, &
-       &                            held_relation
-  use graph_profile        , only : ordinary_graph_view
+  use graph_structure      , only : related_graph, declared_set, &
+       &                            declared_relation
+  use graph_interpretation        , only : ordinary_graph_view
   use listed_set_fixture   , only : listed_set
 
   implicit none
@@ -30,7 +30,7 @@ program test_graph_ordinary
   nfail = 0
 
   write(*,'(1x,a)') "============================================="
-  write(*,'(1x,a)') "graph ordinary profile suite (AGENTS phase 4B)"
+  write(*,'(1x,a)') "graph ordinary interpretation suite (AGENTS phase 4B)"
   write(*,'(1x,a)') "============================================="
 
   ! A diamond with a wall and an island: 1->2->4, 1->3->4, 4->wall,
@@ -64,9 +64,9 @@ program test_graph_ordinary
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
-     write(*,'(1x,a)') "all ordinary profile checks passed"
+     write(*,'(1x,a)') "all ordinary interpretation checks passed"
   else
-     write(*,'(1x,a,i0,a)') "FAILED: ", nfail, " ordinary profile check(s)"
+     write(*,'(1x,a,i0,a)') "FAILED: ", nfail, " ordinary interpretation check(s)"
      error stop
   end if
 
@@ -103,9 +103,9 @@ contains
     logical         , intent(in), optional :: scrambled
 
     type(stored_graph)              :: old
-    type(counted_set)               :: verts, edges
+    type(index_set)               :: verts, edges
     type(csr_relation)              :: t, h
-    type(relational_graph), target  :: g
+    type(related_graph), target  :: g
     type(ordinary_graph_view)       :: view
     integer, allocatable            :: ttab(:,:), htab(:,:)
     integer, allocatable            :: a(:), b(:)
@@ -116,8 +116,8 @@ contains
 
     old = stored_graph(nv, tails=tails, heads=heads)
 
-    verts = counted_set('vertices', nv)
-    edges = counted_set('edges'   , ne)
+    verts = index_set('vertices', nv)
+    edges = index_set('edges'   , ne)
 
     allocate(ttab(2, ne))
     nh = 0
@@ -146,9 +146,9 @@ contains
     t = csr_relation('tail', edges, verts, ttab)
     h = csr_relation('head', edges, verts, htab)
 
-    g = relational_graph('ordinary', &
-         & [held_set(verts), held_set(edges)], &
-         & [held_relation(t), held_relation(h)])
+    g = related_graph('ordinary', &
+         & [declared_set(verts), declared_set(edges)], &
+         & [declared_relation(t), declared_relation(h)])
 
     view = ordinary_graph_view(g, tail_at=1, head_at=2)
 
@@ -188,7 +188,7 @@ contains
        end do
     end do
 
-    call report(ok, "the profile matches the old graph on " // what, nfail)
+    call report(ok, "the interpretation matches the old graph on " // what, nfail)
 
   end subroutine compare_topology
 
@@ -201,24 +201,24 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)               :: verts, edges
+    type(index_set)               :: verts, edges
     type(csr_relation)              :: t, h
-    type(relational_graph), target  :: g
+    type(related_graph), target  :: g
     type(ordinary_graph_view)       :: view
     integer                         :: v
     logical                         :: ok
 
-    verts = counted_set('vertices', 3)
-    edges = counted_set('edges'   , 3)
+    verts = index_set('vertices', 3)
+    edges = index_set('edges'   , 3)
 
     t = csr_relation('tail', edges, verts, &
          & reshape([1,1,  2,2,  3,3], [2, 3]))
     h = csr_relation('head', edges, verts, &
          & reshape([1,2,  2,3], [2, 2]))
 
-    g = relational_graph('walled', &
-         & [held_set(verts), held_set(edges)], &
-         & [held_relation(t), held_relation(h)])
+    g = related_graph('walled', &
+         & [declared_set(verts), declared_set(edges)], &
+         & [declared_relation(t), declared_relation(h)])
 
     view = ordinary_graph_view(g, tail_at=1, head_at=2)
 
@@ -234,12 +234,12 @@ contains
 
     call report(.not. view % edge_has_head(3) .and. &
          &      view % edge_head(3) .eq. 0, &
-         & "and the profile reads the absence as the old zero", nfail)
+         & "and the interpretation reads the absence as the old zero", nfail)
 
   end subroutine check_wall_is_absence
 
   !===================================================================!
-  ! Canonical order is the carrier's DECLARED enumeration, not the
+  ! Canonical order is the set's DECLARED enumeration, not the
   ! members' numeric order. Edges { 30 10 20 } stand in that
   ! declared order in every derived list, however the tuples were
   ! shuffled - a numeric sort would answer 10 20 30 and be wrong.
@@ -250,14 +250,14 @@ contains
     integer, intent(inout) :: nfail
 
     type(listed_set)               :: edges
-    type(counted_set)              :: verts
+    type(index_set)              :: verts
     type(csr_relation)             :: t, h
-    type(relational_graph), target :: g
+    type(related_graph), target :: g
     type(ordinary_graph_view)      :: view
     integer, allocatable           :: idx(:)
 
     edges = listed_set('edges', [30, 10, 20])
-    verts = counted_set('vertices', 2)
+    verts = index_set('vertices', 2)
 
     ! Every edge runs 1 -> 2; tuples handed in scrambled order.
     t = csr_relation('tail', edges, verts, &
@@ -265,9 +265,9 @@ contains
     h = csr_relation('head', edges, verts, &
          & reshape([20,2,  10,2,  30,2], [2, 3]))
 
-    g = relational_graph('sparse-edged', &
-         & [held_set(verts), held_set(edges)], &
-         & [held_relation(t), held_relation(h)])
+    g = related_graph('sparse-edged', &
+         & [declared_set(verts), declared_set(edges)], &
+         & [declared_relation(t), declared_relation(h)])
 
     view = ordinary_graph_view(g, tail_at=1, head_at=2)
 

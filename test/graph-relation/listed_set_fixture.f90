@@ -1,24 +1,24 @@
 !=====================================================================!
-! A second carrier concretion, living in the tests on purpose: the
+! A second set concretion, living in the tests on purpose: the
 ! library keeps one citizen until real code needs another, but the
-! relation's claim to be generic over member_set must be PROVED, not
+! relation's claim to be generic over set must be PROVED, not
 ! asserted. This listed set stores its members outright - sparse,
 ! unordered-world indices like sensor numbers - and stands in a
-! signature slot beside a counted set.
+! signature slot beside an index set.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module listed_set_fixture
 
-  use graph_carrier, only : member_set
+  use graph_set, only : set
 
   implicit none
 
   private
   public :: listed_set
 
-  type, extends(member_set) :: listed_set
+  type, extends(set) :: listed_set
 
      integer, allocatable, private :: roll(:)
 
@@ -39,7 +39,7 @@ module listed_set_fixture
 contains
 
   !===================================================================!
-  ! A carrier is a set: a member handed in twice is in the domain
+  ! A set is a set: a member handed in twice is in the domain
   ! once, first appearance keeping its place, so enumeration stays
   ! injective and the two local_index laws hold.
   !===================================================================!

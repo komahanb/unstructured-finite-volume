@@ -2,8 +2,8 @@
 ! The adjoint tower's common ground: assertion helpers and the
 ! symbolic names of the persistent specimen,
 !
-!      V = { p  u  v }        the variable carrier
-!      T = { r1  r2  f }      the target carrier
+!      V = { p  u  v }        the variable set
+!      T = { r1  r2  f }      the target set
 !
 ! carrying the four roles as SUBOBJECTS - P = {p}, Q = {u,v} in V;
 ! Y = {r1,r2}, Z = {f} in T - for the implicit problem
@@ -33,12 +33,12 @@ module adjoint_assert
   public :: VAR_P, VAR_U, VAR_V
   public :: TGT_R1, TGT_R2, TGT_F
 
-  ! The variable carrier V: the parameter, then the state slots.
+  ! The variable set V: the parameter, then the state slots.
   integer, parameter :: VAR_P = 1
   integer, parameter :: VAR_U = 2
   integer, parameter :: VAR_V = 3
 
-  ! The target carrier T: the residual rows, then the response.
+  ! The target set T: the residual rows, then the response.
   integer, parameter :: TGT_R1 = 1
   integer, parameter :: TGT_R2 = 2
   integer, parameter :: TGT_F  = 3

@@ -25,8 +25,8 @@
 module class_graph_refiner
 
   use iso_fortran_env     , only : dp => REAL64
-  use graph_grammar       , only : graph, graph_field
-  use graph_carrier       , only : member_set
+  use graph_grammar       , only : ordinary_graph, graph_field
+  use graph_set       , only : set
   use graph_calculus      , only : graph_refiner
   use class_graph         , only : stored_graph
   use class_graph_field   , only : field
@@ -87,7 +87,7 @@ contains
   pure logical function defined_on_graph(this, input_graph)
 
     class(refiner), intent(in) :: this
-    class(graph)  , intent(in) :: input_graph
+    class(ordinary_graph)  , intent(in) :: input_graph
 
     defined_on_graph = input_graph % num_vertices() > 0 .and. this % split >= 1
 
@@ -101,7 +101,7 @@ contains
   logical function defined_on_data(this, input_graph, input_data)
 
     class(refiner)   , intent(in) :: this
-    class(graph)     , intent(in) :: input_graph
+    class(ordinary_graph)     , intent(in) :: input_graph
     class(graph_field), intent(in) :: input_data
 
     defined_on_data = this % defined_on_graph(input_graph)
@@ -109,13 +109,13 @@ contains
     select type (input_data)
     class is (field)
        block
-         class(member_set), allocatable :: dom
+         class(set), allocatable :: dom
          call input_data % domain(dom)
          ! Full coverage, not merely family: this kernel indexes
          ! every vertex densely (AGENTS.md 5B: routing is not
          ! admissibility).
          defined_on_data = defined_on_data &
-              & .and. dom % same_as(input_graph % vertex_set()) &
+              & .and. dom % equals(input_graph % vertex_set()) &
               & .and. input_data % num_entries() >= 0
        end block
     class default
@@ -132,8 +132,8 @@ contains
   subroutine refine_graph(this, coarse_graph, fine_graph)
 
     class(refiner), intent(in)               :: this
-    class(graph)  , intent(in)               :: coarse_graph
-    class(graph)  , allocatable, intent(out) :: fine_graph
+    class(ordinary_graph)  , intent(in)               :: coarse_graph
+    class(ordinary_graph)  , allocatable, intent(out) :: fine_graph
 
     integer, allocatable :: tails(:), heads(:)
     integer :: nv, ne, v, e, i, j, n, room
@@ -199,9 +199,9 @@ contains
   subroutine refine_data(this, coarse_graph, coarse_data, fine_graph, fine_data)
 
     class(refiner)   , intent(in)               :: this
-    class(graph)     , intent(in)               :: coarse_graph
+    class(ordinary_graph)     , intent(in)               :: coarse_graph
     class(graph_field), intent(in)               :: coarse_data
-    class(graph)     , intent(in)               :: fine_graph
+    class(ordinary_graph)     , intent(in)               :: fine_graph
     class(graph_field), allocatable, intent(out) :: fine_data
 
     type(field)    :: out

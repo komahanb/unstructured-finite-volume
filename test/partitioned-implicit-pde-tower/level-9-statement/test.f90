@@ -38,8 +38,8 @@ program partitioned_pde_level_9
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : report, verdict
   use partitioned_pde_assert, only : NV, Q_EXACT, B_EXACT
-  use graph_carrier    , only : counted_set, member_set
-  use graph_grammar    , only : graph, graph_field
+  use graph_set    , only : index_set, set
+  use graph_grammar    , only : ordinary_graph, graph_field
   use class_graph      , only : stored_graph
   use class_graph_field, only : field
   use class_graph_gmres, only : gmres
@@ -91,7 +91,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)     :: vs
+    type(index_set)     :: vs
     real(dp), allocatable :: gv(:)
 
     vs = g % vertex_set()
@@ -143,9 +143,9 @@ contains
     integer, intent(inout) :: nfail
 
     type(field)                     :: rhs
-    type(counted_set)               :: vs
+    type(index_set)               :: vs
     class(graph_field), allocatable :: sol
-    class(member_set), allocatable  :: dom
+    class(set), allocatable  :: dom
     real(dp), allocatable           :: v(:)
 
     vs = g % vertex_set()
@@ -158,7 +158,7 @@ contains
     call sol % get_real_vector(v)
     q_part = v(1:NV)
 
-    call report(dom % same_as(vs), &
+    call report(dom % equals(vs), &
          & "the partitioned solution is a field on V(G)", nfail)
     call report(by_member(q_part, vs, Q_EXACT), &
          & "and it is q* = [1,2,4,7,11,16], by global member", nfail)
@@ -179,7 +179,7 @@ contains
   logical function by_member(v, dom, expect)
 
     real(dp)         , intent(in) :: v(:)
-    class(member_set), intent(in) :: dom
+    class(set), intent(in) :: dom
     real(dp)         , intent(in) :: expect(:)
 
     integer :: i, m

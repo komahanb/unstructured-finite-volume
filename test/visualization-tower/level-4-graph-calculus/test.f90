@@ -17,7 +17,7 @@
 !                       THE PICTURE IS DOWNSTREAM
 !
 ! Every glyph below comes from relation % has, every axis from
-! carrier % member, every name from the object that carries it. The
+! set % member, every name from the object that carries it. The
 ! expected pictures written into this test are the ORACLE - what a
 ! person worked out on paper from the twelve occurrences. They are
 ! not an input to the drawing, and the renderer has never seen them.
@@ -35,12 +35,12 @@
 ! the composition/transpose law of Level 2, seen through a
 ! representation instead of through same_extension.
 !
-!                        THE HOSTILE CARRIER
+!                        THE HOSTILE SET
 !
-! One carrier here declares its members { 30, 10, 20 } in that order,
+! One set here declares its members { 30, 10, 20 } in that order,
 ! and the renderer must print them in that order. Nothing else in the
 ! specimen could catch a renderer that sorted, or that assumed a
-! member is its own position, because every other carrier counts from
+! member is its own position, because every other set counts from
 ! one and would look correct either way.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -54,11 +54,11 @@ program visualization_level_4
   use visualization_assert , only : X1_P, X1_Q, X1_R
   use visualization_assert , only : X2_U, X2_V, X2_W
   use visualization_assert , only : X3_M, X3_N
-  use graph_carrier        , only : counted_set, subset_set, member_set
+  use graph_set        , only : index_set, subset, set
   use graph_relation       , only : relation
   use graph_binary_relation, only : csr_relation, binary_relation
-  use graph_structure      , only : relational_graph, held_set, held_relation
-  use visualization_carriers_fixture , only : structural_carriers, label_for
+  use graph_structure      , only : related_graph, declared_set, declared_relation
+  use visualization_sets_fixture , only : structural_sets, label_for
   use visualization_relations_fixture, only : occurrences_of_a1
   use visualization_relations_fixture, only : occurrences_of_a2
   use visualization_relations_fixture, only : occurrences_of_a3
@@ -73,12 +73,12 @@ program visualization_level_4
 
   implicit none
 
-  type(counted_set)          :: x0, x1, x2, x3, e1, e2, e3
+  type(index_set)          :: x0, x1, x2, x3, e1, e2, e3
   type(csr_relation)         :: t1, h1, t2, h2, t3, h3
   type(csr_relation), target :: d1, d2, d3, d21, d31
   type(csr_relation), target :: d1t, d2t, d3t
   type(csr_relation)         :: middle, drev, d31t
-  type(relational_graph)     :: g
+  type(related_graph)     :: g
   integer                    :: nfail
 
   nfail = 0
@@ -87,17 +87,17 @@ program visualization_level_4
   write(*,'(1x,a)') "visualization tower . level 4 . structural interpretation"
   write(*,'(1x,a)') "============================================="
 
-  call structural_carriers(x0, x1, x2, x3, e1, e2, e3)
+  call structural_sets(x0, x1, x2, x3, e1, e2, e3)
   call occurrences_of_a1(e1, x0, x1, t1, h1)
   call occurrences_of_a2(e2, x1, x2, t2, h2)
   call occurrences_of_a3(e3, x2, x3, t3, h3)
 
-  g = relational_graph('the operator chain A3 o A2 o A1', &
-       & [held_set(x0), held_set(x1), held_set(x2), held_set(x3), &
-       &  held_set(e1), held_set(e2), held_set(e3)], &
-       & [held_relation(t1), held_relation(h1), &
-       &  held_relation(t2), held_relation(h2), &
-       &  held_relation(t3), held_relation(h3)])
+  g = related_graph('the operator chain A3 o A2 o A1', &
+       & [declared_set(x0), declared_set(x1), declared_set(x2), declared_set(x3), &
+       &  declared_set(e1), declared_set(e2), declared_set(e3)], &
+       & [declared_relation(t1), declared_relation(h1), &
+       &  declared_relation(t2), declared_relation(h2), &
+       &  declared_relation(t3), declared_relation(h3)])
 
   d1 = derive_dependency('D1', t1, h1)
   d2 = derive_dependency('D2', t2, h2)
@@ -165,7 +165,7 @@ contains
   end subroutine say_the_structure
 
   !===================================================================!
-  ! REPRESENTATION A. The forward chain, with every carrier name and
+  ! REPRESENTATION A. The forward chain, with every set name and
   ! every arrow read off the relations.
   !===================================================================!
 
@@ -383,8 +383,8 @@ contains
   end subroutine check_the_renderer_invents_nothing
 
   !===================================================================!
-  ! THE HOSTILE ORDER. A carrier that declares { 30, 10, 20 } must be
-  ! drawn 30, 10, 20. Every other carrier in the specimen counts from
+  ! THE HOSTILE ORDER. A set that declares { 30, 10, 20 } must be
+  ! drawn 30, 10, 20. Every other set in the specimen counts from
   ! one and would look right even to a renderer that sorted.
   !===================================================================!
 
@@ -392,13 +392,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)  :: ambient
-    type(subset_set)   :: shuffled
+    type(index_set)  :: ambient
+    type(subset)   :: shuffled
     type(csr_relation) :: probe
     type(picture)      :: pic
 
-    ambient  = counted_set('an ambient roster', 30)
-    shuffled = subset_set('declared out of order', ambient, [30, 10, 20])
+    ambient  = index_set('an ambient roster', 30)
+    shuffled = subset('declared out of order', ambient, [30, 10, 20])
 
     probe = csr_relation('P', shuffled, x3, &
          &               reshape([30, X3_M, 20, X3_N], [2, 2]))
@@ -406,7 +406,7 @@ contains
     pic = sparsity_picture(probe)
 
     call report(pic % at(2) .eq. '        30 10 20', &
-         & "a carrier declaring { 30, 10, 20 } is drawn 30 10 20 - " // &
+         & "a set declaring { 30, 10, 20 } is drawn 30 10 20 - " // &
          & "NOT SORTED", nfail)
 
     call report(pic % at(3) .eq. 'm       #  .  .' .and. &
@@ -418,7 +418,7 @@ contains
          &      shuffled % local_index(30) .eq. 1 .and. &
          &      label_for(shuffled, 30) .eq. '30', &
          & "order came from member(i) and local_index, and the label " // &
-         & "from a carrier the fixture has never heard of", nfail)
+         & "from a set the fixture has never heard of", nfail)
 
   end subroutine check_declaration_order_rules
 
@@ -430,7 +430,7 @@ contains
   ! this line is the answer, and it is yes.
   !
   ! Question two: would forcing D1 into ordinary_graph_view collapse
-  ! X0 and X1, or otherwise change its meaning? The two profiles'
+  ! X0 and X1, or otherwise change its meaning? The two interpretations'
   ! contracts are inspected rather than provoked:
   !
   !   ordinary_graph_view  requires  T <= E x V  and  H <= E x V
@@ -442,7 +442,7 @@ contains
   !                                  'a directed adjacency runs over
   !                                  one domain' otherwise
   !
-  ! Both demand a SINGLE vertex carrier. The specimen's premises are
+  ! Both demand a SINGLE vertex set. The specimen's premises are
   ! checked here; the conclusion is Gate A's to state.
   !===================================================================!
 
@@ -450,26 +450,26 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: tail_end, head_end, from, to
+    class(set), allocatable :: tail_end, head_end, from, to
     type(picture)                  :: pic
 
     ! ---- ANSWERED: the nucleus alone drew it.
     pic = sparsity_picture(d1)
     call report(pic % at(3) .eq. 'p       # # . .', &
-         & "D1 : X0 -> X1 WAS RENDERED FROM member_set, relation and " // &
+         & "D1 : X0 -> X1 WAS RENDERED FROM set, relation and " // &
          & "graph-owned structure alone - no ordinary graph was " // &
          & "required at this radius", nfail)
 
-    ! ---- The premise the ordinary profile's schema cannot satisfy.
+    ! ---- The premise the ordinary interpretation's schema cannot satisfy.
     tail_end = t1 % target()
     head_end = h1 % target()
-    call report(.not. tail_end % same_as(head_end), &
-         & "T1 lands in X0 and H1 in X1, so no SINGLE vertex carrier " // &
+    call report(.not. tail_end % equals(head_end), &
+         & "T1 lands in X0 and H1 in X1, so no SINGLE vertex set " // &
          & "V exists for ordinary_graph_view to read them over", nfail)
 
     from = d1 % source()
     to   = d1 % target()
-    call report(.not. from % same_as(to), &
+    call report(.not. from % equals(to), &
          & "and D1's two ends are two domains, which is exactly what " // &
          & "directed_adjacency_view refuses", nfail)
 
@@ -487,14 +487,14 @@ contains
     !      left to compare.
     from = d31 % source()
     to   = d31 % target()
-    call report(.not. from % same_as(to) .and. .not. same_extension(d31, d31t), &
-         & "D3:1 and D3:1^T are told apart by their TYPED CARRIERS, " // &
+    call report(.not. from % equals(to) .and. .not. same_extension(d31, d31t), &
+         & "D3:1 and D3:1^T are told apart by their TYPED SETS, " // &
          & "which a union would erase - direction would survive as " // &
          & "tuple order; the distinct source and codomain would not", nfail)
 
-    call report(g % num_member_sets() .eq. 7 .and. .not. g % holds_set(union_like()), &
+    call report(g % num_sets() .eq. 7 .and. .not. g % holds_set(union_like()), &
          & "so nothing was collapsed to make a picture: seven typed " // &
-         & "carriers went in, and seven came out", nfail)
+         & "sets went in, and seven came out", nfail)
 
   end subroutine check_the_ordinary_graph_question
 
@@ -502,9 +502,9 @@ contains
   ! Helpers.
   !===================================================================!
 
-  type(counted_set) function union_like()
+  type(index_set) function union_like()
 
-    union_like = counted_set('V = X0 u X1 u X2 u X3', 12)
+    union_like = index_set('V = X0 u X1 u X2 u X3', 12)
 
   end function union_like
 
@@ -512,11 +512,11 @@ contains
 
     class(binary_relation), intent(in) :: first, second
 
-    class(member_set), allocatable :: here, there
+    class(set), allocatable :: here, there
 
     here  = first % target()
     there = second % source()
-    legs_meet = here % same_as(there)
+    legs_meet = here % equals(there)
 
   end function legs_meet
 
@@ -524,7 +524,7 @@ contains
 
     class(relation), intent(in) :: r
 
-    class(member_set), allocatable :: cols, rows
+    class(set), allocatable :: cols, rows
     integer                        :: i, j
 
     cols = r % domain(1)
@@ -550,7 +550,7 @@ contains
 
     class(relation), intent(in) :: r
 
-    class(member_set), allocatable :: cols, rows
+    class(set), allocatable :: cols, rows
     type(picture)                  :: pic
     character(len=:), allocatable  :: line
     integer                        :: i, j, stub, wide, at
@@ -586,7 +586,7 @@ contains
 
     class(relation), intent(in) :: r
 
-    class(member_set), allocatable :: cols, rows
+    class(set), allocatable :: cols, rows
     type(picture)                  :: listing
     character(len=:), allocatable  :: said, wanted
     integer                        :: i, j
@@ -610,16 +610,16 @@ contains
 
   end function grid_agrees_with_listing
 
-  integer function label_width(carrier)
+  integer function label_width(set)
 
-    class(member_set), intent(in) :: carrier
+    class(set), intent(in) :: set
 
     integer :: k
 
     label_width = 1
-    do k = 1, carrier % size()
+    do k = 1, set % size()
        label_width = max(label_width, &
-            &            len(label_for(carrier, carrier % member(k))))
+            &            len(label_for(set, set % member(k))))
     end do
 
   end function label_width

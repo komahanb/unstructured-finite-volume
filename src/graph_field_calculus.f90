@@ -6,8 +6,8 @@
 !
 !      f : A -> V         or        f : S -> V,   S c--> A
 !
-! and its domain is ALWAYS a member_set - an ambient carrier or a
-! subset_set subobject - one domain kind, never a union, never a
+! and its domain is ALWAYS a set - an ambient set or a
+! subset subobject - one domain kind, never a union, never a
 ! side flag, never a graph (AGENTS.md 20, CALCULATOR.md 12). A
 ! field needs a domain; it does not need a graph container.
 !
@@ -35,7 +35,7 @@
 module graph_field_calculus
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_carrier   , only : member_set
+  use graph_set   , only : set
 
   implicit none
 
@@ -94,9 +94,9 @@ module graph_field_calculus
      end function field_name_interface
 
      subroutine field_domain_interface(this, domain)
-       import :: graph_field, member_set
+       import :: graph_field, set
        class(graph_field), intent(in) :: this
-       class(member_set), allocatable, intent(out) :: domain
+       class(set), allocatable, intent(out) :: domain
      end subroutine field_domain_interface
 
      pure integer function field_count_interface(this)

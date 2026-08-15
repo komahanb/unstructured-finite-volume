@@ -25,8 +25,8 @@
 module class_diffusion_statement
 
   use iso_fortran_env      , only : dp => REAL64
-  use graph_grammar        , only : graph
-  use graph_carrier         , only : member_set
+  use graph_grammar        , only : ordinary_graph
+  use graph_set         , only : set
   use graph_forms          , only : form
   use class_graph_field    , only : field
   use class_graph_mesh     , only : mesh
@@ -53,7 +53,7 @@ contains
     type(stencil_operator) :: op
 
     class(form), allocatable :: chosen
-    class(member_set), allocatable :: members
+    class(set), allocatable :: members
     type(field) :: fa
     real(dp), allocatable :: keff(:), areas(:), scales(:)
     real(dp), allocatable :: vb(:), wb(:), values(:), weights(:)

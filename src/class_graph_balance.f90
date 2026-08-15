@@ -45,8 +45,8 @@
 module class_graph_balance
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_grammar      , only : graph_operation, graph, graph_field
-  use graph_carrier      , only : member_set
+  use graph_grammar      , only : graph_operation, ordinary_graph, graph_field
+  use graph_set      , only : set
   use class_graph_field  , only : field
   use class_graph_differential_operator, only : differential_operator
 
@@ -123,8 +123,8 @@ contains
   subroutine balance_domain(this, input_graph, domain)
 
     class(balance), intent(in)             :: this
-    class(graph)  , intent(in)             :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(ordinary_graph)  , intent(in)             :: input_graph
+    class(set), allocatable, intent(out) :: domain
 
     associate (u1 => this); end associate
 
@@ -144,7 +144,7 @@ contains
   subroutine balance_apply(this, input_graph, input_data, output)
 
     class(balance)    , intent(in)                 :: this
-    class(graph)      , intent(in)                 :: input_graph
+    class(ordinary_graph)      , intent(in)                 :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 

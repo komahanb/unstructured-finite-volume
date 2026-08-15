@@ -26,7 +26,7 @@ module calculator_assert
   !===================================================================!
   ! The value slots of X, the operations of O, the ports of P -
   ! members named for the reader, stored as the small integers the
-  ! carriers count.
+  ! sets count.
   !===================================================================!
 
   integer, parameter :: SLOT_A = 1

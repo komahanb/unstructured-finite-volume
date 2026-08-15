@@ -14,9 +14,9 @@
 module vdp_fixture
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_grammar      , only : graph, graph_field, graph_operation
+  use graph_grammar      , only : ordinary_graph, graph_field, graph_operation
   use graph_calculus     , only : GRAPH_SIDE_VERTEX
-  use graph_carrier         , only : member_set, counted_set, subset_set
+  use graph_set         , only : set, index_set, subset
   use class_graph_field  , only : field
 
   implicit none
@@ -78,24 +78,24 @@ contains
 
   subroutine law_domain(this, input_graph, domain)
     class(vdp_law), intent(in) :: this
-    class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(ordinary_graph), intent(in) :: input_graph
+    class(set), allocatable, intent(out) :: domain
     associate (u1 => this); end associate
     call input_graph % all_vertices(domain)
   end subroutine law_domain
 
   subroutine law_domain2(this, input_graph, domain)
     class(vdp_tangent_law), intent(in) :: this
-    class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(ordinary_graph), intent(in) :: input_graph
+    class(set), allocatable, intent(out) :: domain
     associate (u1 => this); end associate
     call input_graph % all_vertices(domain)
   end subroutine law_domain2
 
   subroutine law_domain3(this, input_graph, domain)
     class(vdp_adjoint_law), intent(in) :: this
-    class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(ordinary_graph), intent(in) :: input_graph
+    class(set), allocatable, intent(out) :: domain
     associate (u1 => this); end associate
     call input_graph % all_vertices(domain)
   end subroutine law_domain3
@@ -103,7 +103,7 @@ contains
   subroutine law_apply(this, input_graph, input_data, output)
 
     class(vdp_law), intent(in)                     :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
@@ -126,7 +126,7 @@ contains
   subroutine tangent_apply(this, input_graph, input_data, output)
 
     class(vdp_tangent_law), intent(in)             :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
@@ -154,7 +154,7 @@ contains
   subroutine adjoint_apply(this, input_graph, input_data, output)
 
     class(vdp_adjoint_law), intent(in)             :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
@@ -177,11 +177,11 @@ contains
 
   subroutine pack_answer(input_graph, s, output)
 
-    class(graph), intent(in) :: input_graph
+    class(ordinary_graph), intent(in) :: input_graph
     real(dp), intent(in) :: s(:)
     class(graph_field), allocatable, intent(inout) :: output
 
-    type(counted_set) :: cells
+    type(index_set) :: cells
     type(field)   :: out
     integer :: v
 

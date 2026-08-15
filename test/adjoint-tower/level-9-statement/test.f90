@@ -25,12 +25,12 @@
 ! same 7 without ever having contributed to it.
 !
 ! Two graphs stand here and they are NOT interchangeable. The MODEL
-! is a relational_graph owning the mathematical structure: the
+! is a related_graph owning the mathematical structure: the
 ! external selectors are located inside it by identity and then
 ! DESTROYED, and every number below comes through model-owned
 ! relations. The HOST is a seven-vertex stored_graph that exists
 ! only because the legacy graph_operation face demands a
-! class(graph); it is provably neither Q nor Y nor their size, and
+! class(ordinary_graph); it is provably neither Q nor Y nor their size, and
 ! it contributes no domain, no coefficient and no topology.
 !
 ! And the roles are enumerated HOSTILELY on purpose - Q = {v,u},
@@ -47,12 +47,12 @@ program adjoint_level_9
   use adjoint_assert   , only : report, verdict
   use adjoint_assert   , only : VAR_P, VAR_U, VAR_V
   use adjoint_assert   , only : TGT_R1, TGT_R2, TGT_F
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use graph_set    , only : index_set, subset, set
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : compose_binary
   use graph_binary_relation , only : csr_relation, transposed_view, &
        &                             transpose_of, inclusion_of
-  use graph_structure  , only : relational_graph, held_set, held_relation
+  use graph_structure  , only : related_graph, declared_set, declared_relation
   use graph_grammar    , only : graph_field
   use class_graph      , only : stored_graph
   use class_graph_field, only : field
@@ -64,12 +64,12 @@ program adjoint_level_9
 
   implicit none
 
-  type(counted_set)                  :: v, t, hv
-  type(subset_set)                   :: p_dom, q_dom, y_dom, z_dom
+  type(index_set)                  :: v, t, hv
+  type(subset)                   :: p_dom, q_dom, y_dom, z_dom
   type(stored_relation), allocatable :: dep
   type(csr_relation)   , allocatable, target :: inc_y, inc_z, inc_q, inc_p
   type(csr_relation)   , allocatable :: jq, jp, fq, fp
-  type(relational_graph), target     :: model
+  type(related_graph), target     :: model
   type(stored_graph)                 :: host
   class(relation), pointer           :: rp   => null()
   class(relation), pointer           :: gdep => null()
@@ -81,7 +81,7 @@ program adjoint_level_9
   type(gmres)                        :: primal_solver, adjoint_solver
   type(gmres)                        :: tangent_solver
   type(field)                        :: p_field, rhs_y, rhs_q
-  class(member_set) , allocatable    :: dom, dom2
+  class(set) , allocatable    :: dom, dom2
   class(graph_field), allocatable    :: sol
   real(dp), allocatable              :: pv(:), gv(:), qv(:), lv(:), qp(:)
   real(dp)                           :: fqt(2), rp_dir(2), resp(1)
@@ -98,13 +98,13 @@ program adjoint_level_9
   write(*,'(1x,a)') "============================================="
 
   !-- the structure the statement selects, HOSTILELY enumerated -----
-  v = counted_set('variables', 3)
-  t = counted_set('targets'  , 3)
+  v = index_set('variables', 3)
+  t = index_set('targets'  , 3)
 
-  p_dom = subset_set('parameter', v, [VAR_P])
-  q_dom = subset_set('state'    , v, [VAR_V, VAR_U])   ! reversed
-  y_dom = subset_set('residual' , t, [TGT_R2, TGT_R1]) ! reversed
-  z_dom = subset_set('response' , t, [TGT_F])
+  p_dom = subset('parameter', v, [VAR_P])
+  q_dom = subset('state'    , v, [VAR_V, VAR_U])   ! reversed
+  y_dom = subset('residual' , t, [TGT_R2, TGT_R1]) ! reversed
+  z_dom = subset('response' , t, [TGT_F])
 
   table(:, 1) = [TGT_R1, VAR_P]
   table(:, 2) = [TGT_R1, VAR_U]
@@ -132,22 +132,22 @@ program adjoint_level_9
   fp = compose_binary(compose_binary(inc_z, dep), transpose_of(inc_p))
 
   !-- the MODEL graph owns the mathematics --------------------------
-  model = relational_graph('adjoint model', &
-       & [held_set(v), held_set(t), held_set(p_dom), held_set(q_dom), &
-       &  held_set(y_dom), held_set(z_dom)], &
-       & [held_relation(dep), held_relation(jq), held_relation(jp), &
-       &  held_relation(fq), held_relation(fp)])
+  model = related_graph('adjoint model', &
+       & [declared_set(v), declared_set(t), declared_set(p_dom), declared_set(q_dom), &
+       &  declared_set(y_dom), declared_set(z_dom)], &
+       & [declared_relation(dep), declared_relation(jq), declared_relation(jp), &
+       &  declared_relation(fq), declared_relation(fp)])
 
   !-- locate the model's own citizens by identity, then destroy the
   !   construction selectors: from here on the statement runs on
   !   graph-owned structure alone
   do k = 1, model % num_relations()
      rp => model % relation_at(k)
-     if (rp % same_as(dep)) gdep => rp
-     if (rp % same_as(jq))  gjq  => rp
-     if (rp % same_as(jp))  gjp  => rp
-     if (rp % same_as(fq))  gfq  => rp
-     if (rp % same_as(fp))  gfp  => rp
+     if (rp % equals(dep)) gdep => rp
+     if (rp % equals(jq))  gjq  => rp
+     if (rp % equals(jp))  gjp  => rp
+     if (rp % equals(fq))  gfq  => rp
+     if (rp % equals(fp))  gfp  => rp
   end do
 
   deallocate(dep, jq, jp, fq, fp)
@@ -193,7 +193,7 @@ contains
          &      y_dom % local_index(TGT_R1) .eq. 2, &
          & "Y is enumerated {r2, r1}: and so do the residual rows", &
          & nfail)
-    call report(.not. q_dom % same_as(y_dom) .and. &
+    call report(.not. q_dom % equals(y_dom) .and. &
          &      q_dom % size() .eq. y_dom % size(), &
          & "and they are still two different domains of equal size", &
          & nfail)
@@ -222,26 +222,26 @@ contains
          & "identity before they died", nfail)
 
     call report(model % num_relations() .eq. 5 .and. &
-         &      model % num_member_sets() .eq. 6, &
-         & "the model still owns six carriers and five relations", &
+         &      model % num_sets() .eq. 6, &
+         & "the model still owns six sets and five relations", &
          & nfail)
 
     dom  = gjq % domain(1)
     dom2 = gjq % domain(2)
-    call report(dom % same_as(y_dom) .and. dom2 % same_as(q_dom), &
+    call report(dom % equals(y_dom) .and. dom2 % equals(q_dom), &
          & "model-owned J_Q still runs Y x Q", nfail)
 
     dom  = gjp % domain(2)
-    call report(dom % same_as(p_dom), &
+    call report(dom % equals(p_dom), &
          & "model-owned J_P still answers for the parameter", nfail)
 
     dom  = gfq % domain(1)
     dom2 = gfq % domain(2)
-    call report(dom % same_as(z_dom) .and. dom2 % same_as(q_dom), &
+    call report(dom % equals(z_dom) .and. dom2 % equals(q_dom), &
          & "model-owned F_Q still runs Z x Q", nfail)
 
     dom  = gfp % domain(2)
-    call report(dom % same_as(p_dom), &
+    call report(dom % equals(p_dom), &
          & "and model-owned F_P for the parameter", nfail)
 
   end subroutine check_model_ownership
@@ -257,8 +257,8 @@ contains
 
     hv = host % vertex_set()
 
-    call report(.not. hv % same_as(q_dom) .and. &
-         &      .not. hv % same_as(y_dom), &
+    call report(.not. hv % equals(q_dom) .and. &
+         &      .not. hv % equals(y_dom), &
          & "the host's vertex set is neither Q nor Y", nfail)
     call report(host % num_vertices() .ne. q_dom % size() .and. &
          &      host % num_vertices() .ne. y_dom % size(), &
@@ -283,7 +283,7 @@ contains
     call p_field % get_real_vector(pv)
 
     call p_field % domain(dom)
-    call report(dom % same_as(p_dom) .and. &
+    call report(dom % equals(p_dom) .and. &
          &      abs(pv(p_dom % local_index(VAR_P)) - 2.0_dp) < 1.0d-14, &
          & "the statement states p = 2 on P", nfail)
 
@@ -304,7 +304,7 @@ contains
     primal_solver % max_iterations = 50
 
     call primal_solver % domain(host, dom)
-    call report(dom % same_as(q_dom), &
+    call report(dom % equals(q_dom), &
          & "the primal solver answers on Q", nfail)
 
     call primal_solver % constant(gv)
@@ -314,7 +314,7 @@ contains
 
     call sol % domain(dom)
     call sol % get_real_vector(qv)
-    call report(dom % same_as(q_dom), &
+    call report(dom % equals(q_dom), &
          & "and the state comes back as a field on Q", nfail)
     call report(abs(qv(q_dom % local_index(VAR_U)) - 2.0_dp) < 1.0d-9, &
          & "u = 2, by member", nfail)
@@ -379,7 +379,7 @@ contains
     adjoint_solver % max_iterations = 50
 
     call adjoint_solver % domain(host, dom)
-    call report(dom % same_as(y_dom), &
+    call report(dom % equals(y_dom), &
          & "the adjoint solver answers on Y - the orientation is " // &
          & "exchanged, the machinery is not", nfail)
 
@@ -394,7 +394,7 @@ contains
 
     call sol % domain(dom)
     call sol % get_real_vector(lv)
-    call report(dom % same_as(y_dom), &
+    call report(dom % equals(y_dom), &
          & "lambda comes back as a field on Y", nfail)
     call report(abs(lv(y_dom % local_index(TGT_R1)) + 0.4_dp) < 1.0d-9, &
          & "lambda(r1) = -0.4, by member", nfail)
@@ -440,7 +440,7 @@ contains
     integer, intent(inout) :: nfail
 
     call sol % domain(dom)
-    call report(dom % same_as(y_dom) .and. size(lv) .eq. size(rp_dir), &
+    call report(dom % equals(y_dom) .and. size(lv) .eq. size(rp_dir), &
          & "lambda and R_p share the residual domain: the pairing " // &
          & "is legitimate", nfail)
 

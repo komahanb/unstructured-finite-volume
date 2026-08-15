@@ -54,9 +54,9 @@ at parity with the old API; construction is faster than
 `stored_graph`'s (78 vs 100 ns per vertex). The §66 gate holds with
 room to spare, and hot Phase-4 topology should ride the views.
 
-Complexity, stated honestly: every fibre first pays the carrier's
+Complexity, stated honestly: every fibre first pays the set's
 `local_index(member)`, so T_image(a) = T_local_index(a) + O(deg a).
-Counted carriers answer local_index in O(1) — the V/E mesh path —
+Counted sets answer local_index in O(1) — the V/E mesh path —
 so the promise collapses to O(deg) exactly where it matters.
 
 ## Reading

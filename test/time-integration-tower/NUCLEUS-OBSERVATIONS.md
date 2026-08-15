@@ -50,18 +50,18 @@ chain. That is recorded in TI-16 and in the seal summary at the end.
 
 ```text
 tower:                Time Integration
-level:                0  (carrier)
+level:                0  (set)
 review gate:          A
 contextual radius:    0 (three declared sets, nothing between them)
 
-symptom / fact:       Q AND T ARE INDEPENDENT CARRIERS, and the tower
+symptom / fact:       Q AND T ARE INDEPENDENT SETS, and the tower
                       declares both before anything can conflate them.
 
                         Q = { x, y }                state coordinates
                         T = { t0 ... t4 }           time instants
                         E = { e1 ... e4 }           time steps
 
-                      Q % same_as(T) is false, and so are the other
+                      Q % equals(T) is false, and so are the other
                       two pairings. All three enumerate from one, so
                       the integer 1 is a member of each - meaning x,
                       t0 and e1 - and no count and no numeral
@@ -76,10 +76,10 @@ symptom / fact:       Q AND T ARE INDEPENDENT CARRIERS, and the tower
                       has to be refused before there is anything to
                       collapse them WITH.
 
-exact caller:         level-0-carrier/test.f90
+exact caller:         level-0-set/test.f90
                       (check_identities, check_boundaries)
 
-mathematical concept: a carrier is an identity, not a cardinality;
+mathematical concept: a set is an identity, not a cardinality;
                       two axes of one problem are two objects
 
 local necessity:      yes - nothing else distinguishes the sets
@@ -97,11 +97,11 @@ cross-tower recurrence: SECOND independent form. The partitioned
 graph role:           none yet; no graph exists at this level
 
 comparison:           the partitioned tower's L0 proved the same
-                      discipline on carriers that were all spatial.
-                      This is the first tower whose carriers span two
+                      discipline on sets that were all spatial.
+                      This is the first tower whose sets span two
                       independent axes
 
-suspected nucleus implication: none. counted_set already carries
+suspected nucleus implication: none. index_set already carries
                       identity and needed nothing.
 
 confidence:           high
@@ -141,7 +141,7 @@ symptom / fact:       TEMPORAL DIRECTION IS RELATION STRUCTURE, NOT
                       { [1,1] [2,2] [3,3] [4,4] }, tuple for tuple
                       what a six-vertex chain's tail map looked like
                       in the partitioned tower over entirely
-                      different carriers. The integers carry none of
+                      different sets. The integers carry none of
                       the meaning; the signature carries all of it.
 
 exact caller:         level-1-relation/test.f90
@@ -149,7 +149,7 @@ exact caller:         level-1-relation/test.f90
                       check_state_axis_is_untouched)
 
 mathematical concept: orientation as a pair of maps from an incidence
-                      carrier, rather than as an ordering on values
+                      set, rather than as an ordering on values
 
 local necessity:      yes
 global necessity:     unknown - production's marcher currently
@@ -258,11 +258,11 @@ action:               observe
 
 ```text
 tower:                Time Integration
-level:                3  (relational graph)
+level:                3  (related graph)
 review gate:          A
 contextual radius:    1 (a container holding both axes)
 
-symptom / fact:       THE RELATIONAL GRAPH MAY OWN A STATE CARRIER
+symptom / fact:       THE RELATED GRAPH MAY OWN A STATE SET
                       THAT NO RELATION NAMES, and this is lawful
                       rather than tolerated.
 
@@ -276,7 +276,7 @@ symptom / fact:       THE RELATIONAL GRAPH MAY OWN A STATE CARRIER
                       The law is ASYMMETRIC, and that asymmetry is
                       the finding. create_graph validates RELATIONS
                       against SETS: every slot must answer an owned
-                      carrier. It never validates sets against
+                      set. It never validates sets against
                       relations, and it should not - a relational
                       graph is a collection of member sets and typed
                       relations over them, not a connected object.
@@ -302,13 +302,13 @@ local necessity:      yes - the alternative is a fabricated relation
 global necessity:     unknown, but the pressure is legible: any client
                       with two independent axes will meet it
 
-cross-tower recurrence: FIRST tower to own a carrier no relation
+cross-tower recurrence: FIRST tower to own a set no relation
                       names. Calculator, Learning, Derivative Action
-                      and Adjoint all named every carrier they owned
+                      and Adjoint all named every set they owned
 
 graph role:           structural owner of two independent axes
 
-comparison:           the reverse review's A3 found relational_graph
+comparison:           the reverse review's A3 found related_graph
                       load-bearing as an owner across three towers and
                       recommended KEEP. This is a fourth, and a new
                       shape of the same finding: it holds correctly
@@ -347,11 +347,11 @@ symptom / fact:       CAUSALITY IS A GRAPH-CALCULUS INTERPRETATION OF
                       Nothing at Level 2 called t0 "first". A1 is a
                       relation; it does not know it is time. What
                       makes this list a CAUSAL order is the reading
-                      imposed by a profile and four algorithms that
+                      imposed by an interpretation and four algorithms that
                       would say the same things about a dependency
                       between calculator operations.
 
-                      The order comes from the carrier's declaration
+                      The order comes from the set's declaration
                       order through local_index, never from
                       arithmetic on member values - and the test
                       checks it against t % member(i) rather than
@@ -361,7 +361,7 @@ symptom / fact:       CAUSALITY IS A GRAPH-CALCULUS INTERPRETATION OF
                       meaningful.
 
                       Also pinned: A1 and A2 are DIFFERENT STRUCTURAL
-                      VIEWS OVER THE SAME T CARRIER - both
+                      VIEWS OVER THE SAME T SET - both
                       view % domain() answer T by identity. One time
                       axis, several readings of it, which is the
                       Rosetta truth a later scheme can consume.
@@ -369,7 +369,7 @@ symptom / fact:       CAUSALITY IS A GRAPH-CALCULUS INTERPRETATION OF
 exact caller:         level-4-graph-calculus/test.f90
                       (check_causal_ends, check_causal_reachability,
                       check_forward_causal_order,
-                      check_two_views_one_carrier)
+                      check_two_views_one_set)
 
 mathematical concept: interpretation as a separable layer above
                       structure; topological order as causal order
@@ -382,7 +382,7 @@ global necessity:     unknown - whether production's marcher agrees
 cross-tower recurrence: the calculator tower read a dependency this
                       way at its own Level 4, and the adjoint tower
                       after it. This is the third client, and the
-                      first whose subject is TIME - the profile and
+                      first whose subject is TIME - the interpretation and
                       the four algorithms needed no change to say
                       something true about it
 
@@ -399,7 +399,7 @@ comparison:           the calculator tower killed its selector the
                       different subject is evidence the ownership
                       contract is general, which supports A3's KEEP
 
-suspected nucleus implication: none. graph_profile and
+suspected nucleus implication: none. graph_interpretation and
                       graph_algorithms answered a subject they were
                       not designed for - time - without modification.
 
@@ -495,7 +495,7 @@ symptom / fact:       THE STATE FIELD HAS ITS OWN DOMAIN, and no
                       Each pinned by domain IDENTITY, and the three
                       domains pairwise distinct. q0 lives on Q
                       because a field is a function over one
-                      member_set - which is what production field
+                      set - which is what production field
                       calculus already says, in those words.
 
                       This is not a new capability. It is an
@@ -520,7 +520,7 @@ exact caller:         level-5-field-calculus/test.f90
                       (check_domains_by_identity,
                       check_coordinates_agree_with_structure)
 
-mathematical concept: a field is a function over a member_set; the
+mathematical concept: a field is a function over a set; the
                       domain is the mathematics, the container is not
 
 local necessity:      yes
@@ -536,7 +536,7 @@ graph role:           NONE. No graph is constructed at this level,
                       and that absence is the observation
 
 comparison:           the learning tower established that a field's
-                      domain is a member_set and roles are domains.
+                      domain is a set and roles are domains.
                       This client needed that to already be true, and
                       found it was
 
@@ -603,7 +603,7 @@ symptom / fact:       *** THE SEAM-A2 OBSERVATION. RED FIRST. ***
 
                         step_domain  answered
                                      input_graph % all_vertices(...)
-                                     - a 5-member carrier for a
+                                     - a 5-member set for a
                                      2-member unknown
 
                         step_apply   took its width as
@@ -704,7 +704,7 @@ symptom / fact:       DISCRETIZATION PRESERVES THE ACTION'S DOMAIN -
                       directly in mandelbrot_law, vdp_law,
                       vdp_tangent_law and vdp_adjoint_law - and the
                       test pins that all_vertices(H) and
-                      H % vertex_set() are the same carrier. So
+                      H % vertex_set() are the same set. So
                       delegation returns exactly what asking the graph
                       returned, and test/graph-marching passes
                       unchanged, including its two-numbers-wide cell
@@ -797,7 +797,7 @@ symptom / fact:       STRUCTURE AND SCHEME, JOINED WITHOUT BEING
                       Neither contains the other. A2's extension is
                       fixed by composition and knows no coefficient;
                       the scheme's table is fixed by accuracy order
-                      and knows no carrier. Level 2 was right to
+                      and knows no set. Level 2 was right to
                       refuse the name, and this is where the two
                       halves meet.
 
@@ -930,14 +930,14 @@ symptom / fact:       THE PRODUCTION MARCHER'S CONTROL CHAIN IS
                       clock % instants(4) generates a five-vertex,
                       four-edge chain. Step i joins instant i to
                       instant i+1 - exactly the pairs A1 holds, read
-                      through the TIME carrier's own members rather
+                      through the TIME set's own members rather
                       than through the integers the chain happens to
                       use.
 
                       The bridge is EXTENSIONAL and deliberately not
                       identity:
 
-                        chain % vertex_set()  same_as  T     NOT
+                        chain % vertex_set()  equals  T     NOT
                                                             required
                         incidence(chain)      =        A1    required
 
@@ -993,14 +993,14 @@ symptom / fact:       THE OPERATION HOST IS NOT THE TIME GRAPH, and
                       at Level 8 there are THREE five-element objects
                       in one program to keep apart:
 
-                        T                       the instant carrier
+                        T                       the instant set
                         chain from instants(4)  the marcher's own
                                                 control chain
                         V(H_context)            the operation host's
                                                 vertices
 
                       plus the two-member Q, which is none of them.
-                      No two are same_as, and the level pins all of
+                      No two are equals, and the level pins all of
                       it.
 
                       THAT ALL THREE HAVE FIVE ELEMENTS IS A
@@ -1012,7 +1012,7 @@ symptom / fact:       THE OPERATION HOST IS NOT THE TIME GRAPH, and
                       the clock.
 
 exact caller:         level-8-constitution/test.f90
-                      (check_the_three_carriers_stay_apart)
+                      (check_the_three_sets_stay_apart)
 
 mathematical concept: distinct identities behind equal cardinalities
 
@@ -1065,7 +1065,7 @@ symptom / fact:       *** SEAM-A2 RED, SECOND SITE. RED FIRST. ***
                       action carries its own domain, |Q| = 2, the
                       host has five vertices. All nine structural
                       assertions of Level 8 passed first - the
-                      control-chain bridge and the carrier
+                      control-chain bridge and the set
                       distinctions needed no production change - and
                       then the first march died.
 
@@ -1167,13 +1167,13 @@ symptom / fact:       THE MARCHER PRESERVES THE ACTION'S DOMAIN -
 
                       The equality check is by IDENTITY, not length:
                       q <- q - h s is an equation between two states,
-                      and equal length would let a foreign carrier
+                      and equal length would let an unequal domain
                       through.
 
                       REGRESSION: every action on the ordinary-graph
                       road answers input_graph % all_vertices, and
                       Level 6 pins that all_vertices and vertex_set
-                      are the same carrier. graph-marching was run
+                      are the same set. graph-marching was run
                       IMMEDIATELY after this change and passed
                       unchanged, including its two-numbers-wide cell.
 
@@ -1554,7 +1554,7 @@ graph role:           H_context is passed the whole way and is never
                       the seat of the answer
 
 comparison:           the partitioned tower's L9 returned a field on
-                      the global vertex carrier - which WAS a graph's
+                      the global vertex set - which WAS a graph's
                       vertex set, correctly, because that problem
                       lived there. This one does not, and the
                       contrast is the tower's summary in one line
@@ -1632,7 +1632,7 @@ REVERSE EVIDENCE AT SEAL
 
     A3        Another successful relational-graph ownership
               pattern - G_time owns two axes and four relations,
-              including a carrier no relation names. No production
+              including a set no relation names. No production
               change follows automatically. KEEP.
 
 WHAT THIS LEDGER DOES NOT SAY

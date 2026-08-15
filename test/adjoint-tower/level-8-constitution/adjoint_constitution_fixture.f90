@@ -39,9 +39,9 @@ module adjoint_constitution_fixture
   use iso_fortran_env  , only : dp => REAL64
   use adjoint_assert   , only : VAR_P, VAR_U, VAR_V
   use adjoint_assert   , only : TGT_R1, TGT_R2, TGT_F
-  use graph_carrier    , only : member_set
+  use graph_set    , only : set
   use graph_relation   , only : relation
-  use graph_grammar    , only : graph, graph_field, graph_operation
+  use graph_grammar    , only : ordinary_graph, graph_field, graph_operation
   use class_graph_field, only : field
 
   implicit none
@@ -62,7 +62,7 @@ module adjoint_constitution_fixture
 
   type, extends(graph_operation) :: constituted_primal
      class(relation)  , allocatable :: jq, jp
-     class(member_set), allocatable :: q_dom, y_dom, p_dom
+     class(set), allocatable :: q_dom, y_dom, p_dom
      real(dp)         , allocatable :: p_val(:)
    contains
      procedure :: name   => primal_name
@@ -72,7 +72,7 @@ module adjoint_constitution_fixture
 
   type, extends(graph_operation) :: constituted_adjoint
      class(relation)  , allocatable :: jq, fq
-     class(member_set), allocatable :: q_dom, y_dom, z_dom
+     class(set), allocatable :: q_dom, y_dom, z_dom
    contains
      procedure :: name   => adjoint_name
      procedure :: domain => adjoint_domain
@@ -81,7 +81,7 @@ module adjoint_constitution_fixture
 
   type, extends(graph_operation) :: constituted_tangent
      class(relation)  , allocatable :: jq, jp
-     class(member_set), allocatable :: q_dom, y_dom, p_dom
+     class(set), allocatable :: q_dom, y_dom, p_dom
      real(dp)         , allocatable :: dp_val(:)
    contains
      procedure :: name   => tangent_name
@@ -169,7 +169,7 @@ contains
   subroutine rq_forward(jq, y_dom, q_dom, v_q, out_y)
 
     class(relation)  , intent(in)  :: jq
-    class(member_set), intent(in)  :: y_dom, q_dom
+    class(set), intent(in)  :: y_dom, q_dom
     real(dp)         , intent(in)  :: v_q(:)
     real(dp)         , intent(out) :: out_y(:)
 
@@ -204,7 +204,7 @@ contains
   subroutine rq_reverse(jq, y_dom, q_dom, bar_y, out_q)
 
     class(relation)  , intent(in)  :: jq
-    class(member_set), intent(in)  :: y_dom, q_dom
+    class(set), intent(in)  :: y_dom, q_dom
     real(dp)         , intent(in)  :: bar_y(:)
     real(dp)         , intent(out) :: out_q(:)
 
@@ -237,7 +237,7 @@ contains
   subroutine rp_forward(jp, y_dom, p_dom, dp_p, out_y)
 
     class(relation)  , intent(in)  :: jp
-    class(member_set), intent(in)  :: y_dom, p_dom
+    class(set), intent(in)  :: y_dom, p_dom
     real(dp)         , intent(in)  :: dp_p(:)
     real(dp)         , intent(out) :: out_y(:)
 
@@ -267,7 +267,7 @@ contains
   subroutine fq_forward(fq, z_dom, q_dom, v_q, out_z)
 
     class(relation)  , intent(in)  :: fq
-    class(member_set), intent(in)  :: z_dom, q_dom
+    class(set), intent(in)  :: z_dom, q_dom
     real(dp)         , intent(in)  :: v_q(:)
     real(dp)         , intent(out) :: out_z(:)
 
@@ -292,7 +292,7 @@ contains
   subroutine fq_reverse(fq, z_dom, q_dom, bar_z, out_q)
 
     class(relation)  , intent(in)  :: fq
-    class(member_set), intent(in)  :: z_dom, q_dom
+    class(set), intent(in)  :: z_dom, q_dom
     real(dp)         , intent(in)  :: bar_z(:)
     real(dp)         , intent(out) :: out_q(:)
 
@@ -317,7 +317,7 @@ contains
   subroutine fp_forward(fp, z_dom, p_dom, dp_p, out_z)
 
     class(relation)  , intent(in)  :: fp
-    class(member_set), intent(in)  :: z_dom, p_dom
+    class(set), intent(in)  :: z_dom, p_dom
     real(dp)         , intent(in)  :: dp_p(:)
     real(dp)         , intent(out) :: out_z(:)
 
@@ -348,7 +348,7 @@ contains
        & out_y)
 
     class(relation)  , intent(in)  :: jq, jp
-    class(member_set), intent(in)  :: y_dom, q_dom, p_dom
+    class(set), intent(in)  :: y_dom, q_dom, p_dom
     real(dp)         , intent(in)  :: q_val(:), p_val(:)
     real(dp)         , intent(out) :: out_y(:)
 
@@ -364,7 +364,7 @@ contains
        & out_z)
 
     class(relation)  , intent(in)  :: fq, fp
-    class(member_set), intent(in)  :: z_dom, q_dom, p_dom
+    class(set), intent(in)  :: z_dom, q_dom, p_dom
     real(dp)         , intent(in)  :: q_val(:), p_val(:)
     real(dp)         , intent(out) :: out_z(:)
 
@@ -384,7 +384,7 @@ contains
   type(constituted_primal) function create_primal(jq, jp, q_dom, &
        & y_dom, p_dom, p_val) result(this)
     class(relation)  , intent(in) :: jq, jp
-    class(member_set), intent(in) :: q_dom, y_dom, p_dom
+    class(set), intent(in) :: q_dom, y_dom, p_dom
     real(dp)         , intent(in) :: p_val(:)
     allocate(this % jq, source=jq)
     allocate(this % jp, source=jp)
@@ -397,7 +397,7 @@ contains
   type(constituted_adjoint) function create_adjoint(jq, fq, y_dom, &
        & q_dom, z_dom) result(this)
     class(relation)  , intent(in) :: jq, fq
-    class(member_set), intent(in) :: y_dom, q_dom, z_dom
+    class(set), intent(in) :: y_dom, q_dom, z_dom
     allocate(this % jq, source=jq)
     allocate(this % fq, source=fq)
     allocate(this % y_dom, source=y_dom)
@@ -408,7 +408,7 @@ contains
   type(constituted_tangent) function create_tangent(jq, jp, q_dom, &
        & y_dom, p_dom, dp_val) result(this)
     class(relation)  , intent(in) :: jq, jp
-    class(member_set), intent(in) :: q_dom, y_dom, p_dom
+    class(set), intent(in) :: q_dom, y_dom, p_dom
     real(dp)         , intent(in) :: dp_val(:)
     allocate(this % jq, source=jq)
     allocate(this % jp, source=jp)
@@ -438,24 +438,24 @@ contains
 
   subroutine primal_domain(this, input_graph, domain)
     class(constituted_primal), intent(in) :: this
-    class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(ordinary_graph), intent(in) :: input_graph
+    class(set), allocatable, intent(out) :: domain
     associate (u1 => input_graph); end associate
     allocate(domain, source=this % y_dom)
   end subroutine primal_domain
 
   subroutine adjoint_domain(this, input_graph, domain)
     class(constituted_adjoint), intent(in) :: this
-    class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(ordinary_graph), intent(in) :: input_graph
+    class(set), allocatable, intent(out) :: domain
     associate (u1 => input_graph); end associate
     allocate(domain, source=this % q_dom)
   end subroutine adjoint_domain
 
   subroutine tangent_domain(this, input_graph, domain)
     class(constituted_tangent), intent(in) :: this
-    class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(ordinary_graph), intent(in) :: input_graph
+    class(set), allocatable, intent(out) :: domain
     associate (u1 => input_graph); end associate
     allocate(domain, source=this % y_dom)
   end subroutine tangent_domain
@@ -467,12 +467,12 @@ contains
   subroutine primal_apply(this, input_graph, input_data, output)
 
     class(constituted_primal), intent(in)          :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
     type(field)                    :: out
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
     real(dp), allocatable          :: q(:), r(:)
 
     associate (u1 => input_graph); end associate
@@ -481,7 +481,7 @@ contains
        error stop 'constitution: the residual needs a state to judge'
     end if
     call input_data(1) % domain(dom)
-    if (.not. dom % same_as(this % q_dom)) then
+    if (.not. dom % equals(this % q_dom)) then
        error stop 'constitution: the state must live on the state domain'
     end if
     call input_data(1) % get_real_vector(q)
@@ -507,12 +507,12 @@ contains
   subroutine adjoint_apply(this, input_graph, input_data, output)
 
     class(constituted_adjoint), intent(in)         :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
     type(field)                    :: out
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
     real(dp), allocatable          :: lam(:), r(:), rhs(:), seed(:)
 
     associate (u1 => input_graph); end associate
@@ -521,7 +521,7 @@ contains
        error stop 'constitution: the adjoint equation needs a covector to judge'
     end if
     call input_data(1) % domain(dom)
-    if (.not. dom % same_as(this % y_dom)) then
+    if (.not. dom % equals(this % y_dom)) then
        error stop 'constitution: the covector must live on the residual-row domain'
     end if
     call input_data(1) % get_real_vector(lam)
@@ -549,12 +549,12 @@ contains
   subroutine tangent_apply(this, input_graph, input_data, output)
 
     class(constituted_tangent), intent(in)         :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
     type(field)                    :: out
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
     real(dp), allocatable          :: qp(:), r(:), from_param(:)
 
     associate (u1 => input_graph); end associate
@@ -563,7 +563,7 @@ contains
        error stop 'constitution: the tangent equation needs a direction to judge'
     end if
     call input_data(1) % domain(dom)
-    if (.not. dom % same_as(this % q_dom)) then
+    if (.not. dom % equals(this % q_dom)) then
        error stop 'constitution: the state must live on the state domain'
     end if
     call input_data(1) % get_real_vector(qp)

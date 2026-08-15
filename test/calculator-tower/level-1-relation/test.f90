@@ -2,7 +2,7 @@
 ! CALCULATOR TOWER . LEVEL 1 . THE RELATION
 !
 ! The level answers one question: HOW MAY MEMBERS BE RELATED. The
-! three carriers stand as at Level 0, and one ternary relation
+! three sets stand as at Level 0, and one ternary relation
 ! joins them,
 !
 !      R_flow  <=  O x X x P
@@ -15,7 +15,7 @@
 ! proves it independently. The + here is only a member of O; the
 ! slots carry no values; no graph reads these tuples yet. The
 ! import list IS the negative truth: calculator_assert,
-! graph_carrier, graph_relation, and nothing above (CALCULATOR.md
+! graph_set, graph_relation, and nothing above (CALCULATOR.md
 ! 8; the ternary shape is the point - no binary reduction, no
 ! vertex, no edge).
 !
@@ -28,12 +28,12 @@ program calculator_level_1
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : counted_set, member_set
+  use graph_set    , only : index_set, set
   use graph_relation   , only : stored_relation
 
   implicit none
 
-  type(counted_set)     :: x, o, p
+  type(index_set)     :: x, o, p
   type(stored_relation) :: flow
   integer               :: table(3, 7)
   integer               :: nfail
@@ -44,9 +44,9 @@ program calculator_level_1
   write(*,'(1x,a)') "calculator tower . level 1 . relation"
   write(*,'(1x,a)') "============================================="
 
-  x = counted_set('value-slots', 5)
-  o = counted_set('operations' , 2)
-  p = counted_set('ports'      , 3)
+  x = index_set('value-slots', 5)
+  o = index_set('operations' , 2)
+  p = index_set('ports'      , 3)
 
   ! The six facts of the flow - and the first of them handed twice.
   table(:, 1) = [OP_PLUS , SLOT_A, PORT_IN1]
@@ -76,19 +76,19 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
 
     call report(flow % arity() .eq. 3, &
          & "the flow is genuinely ternary", nfail)
 
     d = flow % domain(1)
-    call report(d % same_as(o), &
+    call report(d % equals(o), &
          & "slot one is the operations", nfail)
     d = flow % domain(2)
-    call report(d % same_as(x), &
+    call report(d % equals(x), &
          & "slot two is the value slots", nfail)
     d = flow % domain(3)
-    call report(d % same_as(p), &
+    call report(d % equals(p), &
          & "slot three is the ports", nfail)
 
   end subroutine check_signature

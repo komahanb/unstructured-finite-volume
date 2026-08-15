@@ -15,13 +15,13 @@
 ! is full, or that X0 comes before X1. Every one of those facts is
 ! obtained, at the moment of drawing, by asking:
 !
-!      domain(1), domain(2)          which carriers this relation
+!      domain(1), domain(2)          which sets this relation
 !                                    relates
-!      carrier % size()              how many rows, how many columns
-!      carrier % member(i)           WHICH member stands at position i
+!      set % size()              how many rows, how many columns
+!      set % member(i)           WHICH member stands at position i
 !      relation % has([col, row])    whether this cell is filled
 !      relation % name()             what to call the picture
-!      label_for(carrier, member)    what the reader calls a member
+!      label_for(set, member)    what the reader calls a member
 !
 ! and nothing else. Point it at a relation it has never seen and it
 ! draws that one instead.
@@ -30,9 +30,9 @@
 !
 ! Every axis is walked as member(1), member(2), ..., member(n). Never
 ! sorted, never assumed to be 1..n, never read off the tuple table -
-! which is a set and has no order to read. A carrier that declares
+! which is a set and has no order to read. A set that declares
 ! its members { 30, 10, 20 } is drawn 30, 10, 20, and Level 4 checks
-! exactly that with a carrier built to be hostile.
+! exactly that with a set built to be hostile.
 !
 ! The same walk serves both representations, so the sparsity picture
 ! and the dependency listing cannot disagree: they ask the identical
@@ -61,9 +61,9 @@
 
 module structural_renderer_fixture
 
-  use graph_carrier                 , only : member_set
+  use graph_set                 , only : set
   use graph_relation                , only : relation
-  use visualization_carriers_fixture, only : label_for
+  use visualization_sets_fixture, only : label_for
 
   implicit none
 
@@ -85,7 +85,7 @@ module structural_renderer_fixture
 
   !-------------------------------------------------------------------!
   ! The narrowest the row-label stub may be. A wider label widens it;
-  ! nothing narrows it, so a one-letter carrier and a three-letter one
+  ! nothing narrows it, so a one-letter set and a three-letter one
   ! line their grids up in the same column.
   !
   ! Named MIN_STUB rather than STUB because Fortran does not
@@ -154,7 +154,7 @@ contains
 
     class(relation), intent(in) :: r
 
-    class(member_set), allocatable :: cols, rows
+    class(set), allocatable :: cols, rows
     integer                        :: stub, wide, i, j, at
 
     if (r % arity() .ne. 2) then
@@ -213,7 +213,7 @@ contains
   !
   !      X0 --D1--> X1 --D2--> X2 --D3--> X3
   !
-  ! Every carrier name and every arrow label is read off the stages;
+  ! Every set name and every arrow label is read off the stages;
   ! the reverse chain is not this line with its words swapped, it is
   ! this same routine handed the transposed relations.
   !
@@ -227,7 +227,7 @@ contains
     character(len=*), intent(in) :: title
     type(stage)     , intent(in) :: legs(:)
 
-    class(member_set), allocatable :: here, there
+    class(set), allocatable :: here, there
     character(len=:) , allocatable :: text
     integer                        :: k
 
@@ -244,17 +244,17 @@ contains
     do k = 1, size(legs) - 1
        here  = legs(k)     % leg % domain(2)
        there = legs(k + 1) % leg % domain(1)
-       if (.not. here % same_as(there)) then
+       if (.not. here % equals(there)) then
           error stop 'structural_renderer_fixture: this chain does not compose'
        end if
     end do
 
     here = legs(1) % leg % domain(1)
-    text = carrier_name(here)
+    text = set_name(here)
     do k = 1, size(legs)
        there = legs(k) % leg % domain(2)
        text  = text // ' --' // legs(k) % leg % name() // '--> ' // &
-            &  carrier_name(there)
+            &  set_name(there)
     end do
 
     allocate(pic % line(2))
@@ -281,7 +281,7 @@ contains
 
     class(relation), intent(in) :: r
 
-    class(member_set), allocatable :: cols, rows
+    class(set), allocatable :: cols, rows
     character(len=:) , allocatable :: text
     integer                        :: i, j
     logical                        :: any_reached
@@ -349,34 +349,34 @@ contains
   end subroutine emit
 
   !===================================================================!
-  ! Small mechanics. The widest label a carrier will produce, found
+  ! Small mechanics. The widest label a set will produce, found
   ! by asking about every member it has - not by guessing from its
   ! size.
   !===================================================================!
 
-  integer function widest(carrier)
+  integer function widest(set)
 
-    class(member_set), intent(in) :: carrier
+    class(set), intent(in) :: set
 
     integer :: k
 
     widest = 1
-    do k = 1, carrier % size()
-       widest = max(widest, len(label_for(carrier, carrier % member(k))))
+    do k = 1, set % size()
+       widest = max(widest, len(label_for(set, set % member(k))))
     end do
 
   end function widest
 
-  function carrier_name(carrier) result(text)
+  function set_name(set) result(text)
 
-    class(member_set), intent(in) :: carrier
+    class(set), intent(in) :: set
 
     character(len=:), allocatable :: text
 
-    text = carrier % name()
+    text = set % name()
     if (len(text) .eq. 0) text = '?'
 
-  end function carrier_name
+  end function set_name
 
   subroutine put(line, at, text)
 

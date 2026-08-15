@@ -17,32 +17,32 @@ nucleus changes.
 ```text
 tower:                Derivative Action
 gate / level:         A / 0
-contextual radius:    0 (carriers in isolation)
+contextual radius:    0 (sets in isolation)
 
 symptom / fact:       a derivative application required no new Level-0
                       ontology: V={x,y,u,z}, O={product,sum},
-                      P={in1,in2,out} are ordinary counted_sets
+                      P={in1,in2,out} are ordinary index_sets
 
-exact caller:         level-0-carrier/test.f90
+exact caller:         level-0-set/test.f90
 
 mathematical concept: symbolic member domains
 
-local necessity:      yes — every later rung stands on these carriers
+local necessity:      yes — every later rung stands on these sets
                       evidence: all Gate-A tests construct them first
 global necessity:     unknown — necessity at larger contextual radius
                       (partitioned, coupled, nested systems) is
                       untested by this gate
 
-cross-tower recurrence: third tower on the identical carrier
+cross-tower recurrence: third tower on the identical set
                       ontology — calculator, learning, derivative all
-                      begin with counted_set and nothing else
+                      begin with index_set and nothing else
 
 graph role:           none yet — no graph exists at this rung
 
 comparison:           identical to Calculator L0 and Learning L0 in
                       kind; only cardinalities differ
 
-suspected nucleus implication: carrier layer is stable across orbital
+suspected nucleus implication: set layer is stable across orbital
                       families
 
 confidence:           high
@@ -137,8 +137,8 @@ tower:                Derivative Action
 gate / level:         A / 3
 contextual radius:    0–1 (object in its owning context)
 
-symptom / fact:       relational_graph contributed structural closure
-                      and identity — owned carriers, owned relations,
+symptom / fact:       related_graph contributed structural closure
+                      and identity — owned sets, owned relations,
                       signature closure, twin-rejection — and nothing
                       else was asked of it. No tangent seat, no adjoint
                       seat, no derivative metadata.
@@ -447,7 +447,7 @@ comparison:           L is CONTEXTUAL, not universal — an instance of
 suspected nucleus implication: never bake a location relation into a
                       universal residual/response contract; let each
                       statement choose subdomain embedding or location
-                      relation as its carriers demand
+                      relation as its sets demand
 
 confidence:           high
 action:               observe
@@ -654,10 +654,10 @@ exact caller:         level-8 test (check_forward_action,
 
 mathematical concept: derivative vectors as fields on roles
 
-local necessity:      yes — some carrier had to hold seeds/results,
+local necessity:      yes — some set had to hold seeds/results,
                       and the existing one sufficed
 global necessity:     unknown — higher-order or complex-valued
-                      derivative carriers untested
+                      derivative sets untested
 
 cross-tower recurrence: extends the roles-are-domains discovery
                       (learning L5, derivative L5) to derivative
@@ -787,7 +787,7 @@ gate / level:         B / 8
 contextual radius:    0–1
 
 symptom / fact:       the graph object is not a numerical-derivative
-                      operand at this radius. The relational graph
+                      operand at this radius. The related graph
                       owns the structure and enables the derived
                       execution interpretation (order); the
                       evaluators then consume the flow relation, the

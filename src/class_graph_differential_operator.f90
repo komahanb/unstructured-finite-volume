@@ -163,8 +163,8 @@
 module class_graph_differential_operator
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_grammar      , only : graph_operation, graph, graph_field
-  use graph_carrier      , only : member_set
+  use graph_grammar      , only : graph_operation, ordinary_graph, graph_field
+  use graph_set      , only : set
   use graph_calculus     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
   use class_graph_field  , only : field
 
@@ -426,8 +426,8 @@ contains
   subroutine operator_domain(this, input_graph, domain)
 
     class(differential_operator), intent(in) :: this
-    class(graph), intent(in)                 :: input_graph
-    class(member_set), allocatable, intent(out)   :: domain
+    class(ordinary_graph), intent(in)                 :: input_graph
+    class(set), allocatable, intent(out)   :: domain
 
     if (this % landing == GRAPH_SIDE_EDGE) then
        call input_graph % all_edges(domain)
@@ -473,7 +473,7 @@ contains
 
   pure subroutine average_step(g, one_sided_by, with_c, op_c, op_cs, op_b, op_bs, q, z)
 
-    class(graph), intent(in)          :: g
+    class(ordinary_graph), intent(in)          :: g
     real(dp)    , intent(in)          :: one_sided_by   ! sign chooses the end; zero averages
     logical     , intent(in)          :: with_c
     real(dp)    , intent(in)          :: op_c
@@ -527,7 +527,7 @@ contains
 
   pure subroutine average_step_reversed(g, one_sided_by, with_c, op_c, op_cs, z, y)
 
-    class(graph), intent(in)          :: g
+    class(ordinary_graph), intent(in)          :: g
     real(dp)    , intent(in)          :: one_sided_by
     logical     , intent(in)          :: with_c
     real(dp)    , intent(in)          :: op_c
@@ -583,7 +583,7 @@ contains
 
   pure subroutine difference_step(g, with_c, op_c, op_cs, op_h, op_hs, op_b, op_bs, q, z)
 
-    class(graph), intent(in)          :: g
+    class(ordinary_graph), intent(in)          :: g
     logical     , intent(in)          :: with_c
     real(dp)    , intent(in)          :: op_c
     real(dp), allocatable, intent(in) :: op_cs(:)
@@ -629,7 +629,7 @@ contains
 
   pure subroutine difference_step_reversed(g, with_c, op_c, op_cs, op_h, op_hs, z, y)
 
-    class(graph), intent(in)          :: g
+    class(ordinary_graph), intent(in)          :: g
     logical     , intent(in)          :: with_c
     real(dp)    , intent(in)          :: op_c
     real(dp), allocatable, intent(in) :: op_cs(:)
@@ -678,7 +678,7 @@ contains
 
   pure subroutine incidence_step(g, op_m, op_ms, z, y)
 
-    class(graph), intent(in)          :: g
+    class(ordinary_graph), intent(in)          :: g
     real(dp)    , intent(in)          :: op_m
     real(dp), allocatable, intent(in) :: op_ms(:)
     real(dp)    , intent(in)          :: z(:)
@@ -715,7 +715,7 @@ contains
 
   pure subroutine incidence_step_reversed(g, op_m, op_ms, q, z)
 
-    class(graph), intent(in)          :: g
+    class(ordinary_graph), intent(in)          :: g
     real(dp)    , intent(in)          :: op_m
     real(dp), allocatable, intent(in) :: op_ms(:)
     real(dp)    , intent(in)          :: q(:)
@@ -804,7 +804,7 @@ contains
   subroutine operator_apply(this, input_graph, input_data, output)
 
     class(differential_operator), intent(in)       :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
@@ -829,7 +829,7 @@ contains
   subroutine apply_on_edges(this, input_graph, input_data, out)
 
     class(differential_operator), intent(in) :: this
-    class(graph), intent(in)                 :: input_graph
+    class(ordinary_graph), intent(in)                 :: input_graph
     class(graph_field), intent(in), optional :: input_data(:)
     type(field), intent(out)                 :: out
 
@@ -900,7 +900,7 @@ contains
   subroutine apply_on_vertices(this, input_graph, input_data, out)
 
     class(differential_operator), intent(in) :: this
-    class(graph), intent(in)                 :: input_graph
+    class(ordinary_graph), intent(in)                 :: input_graph
     class(graph_field), intent(in), optional :: input_data(:)
     type(field), intent(out)                 :: out
 
@@ -1010,7 +1010,7 @@ contains
   subroutine run_vertex_chain(order, g, q, c, cs, h, hs, m, ms, b, bs, y)
 
     integer     , intent(in)          :: order
-    class(graph), intent(in)          :: g
+    class(ordinary_graph), intent(in)          :: g
     real(dp)    , intent(in)          :: q(:)
     real(dp)    , intent(in)          :: c, h, m, b
     real(dp), allocatable, intent(in) :: cs(:), hs(:), ms(:), bs(:)
@@ -1070,7 +1070,7 @@ contains
   subroutine run_vertex_chain_reversed(order, g, q, c, cs, h, hs, m, ms, y)
 
     integer     , intent(in)          :: order
-    class(graph), intent(in)          :: g
+    class(ordinary_graph), intent(in)          :: g
     real(dp)    , intent(in)          :: q(:)
     real(dp)    , intent(in)          :: c, h, m
     real(dp), allocatable, intent(in) :: cs(:), hs(:), ms(:)
@@ -1134,12 +1134,12 @@ contains
   subroutine fetch_vertex_values(input_data, input_graph, nv, q, ncomp)
 
     class(graph_field), intent(in), optional :: input_data(:)
-    class(graph)     , intent(in)           :: input_graph
+    class(ordinary_graph)     , intent(in)           :: input_graph
     integer          , intent(in)           :: nv
     real(dp), allocatable, intent(out)      :: q(:)
     integer          , intent(out)          :: ncomp
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
 
     ncomp = 0
 
@@ -1149,7 +1149,7 @@ contains
           call state % domain(dom)
           ! Full coverage, by identity: this kernel indexes every
           ! vertex densely (routing is not admissibility).
-          if (dom % same_as(input_graph % vertex_set())) then
+          if (dom % equals(input_graph % vertex_set())) then
              ncomp = max(state % num_components(), 1)
              call state % get_real_vector(q)
              if (size(q) == nv * ncomp) return
@@ -1169,12 +1169,12 @@ contains
   subroutine fetch_edge_values(input_data, input_graph, ne, z, ncomp)
 
     class(graph_field), intent(in), optional :: input_data(:)
-    class(graph)     , intent(in)           :: input_graph
+    class(ordinary_graph)     , intent(in)           :: input_graph
     integer          , intent(in)           :: ne
     real(dp), allocatable, intent(out)      :: z(:)
     integer          , intent(out)          :: ncomp
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
 
     ncomp = 0
 
@@ -1182,7 +1182,7 @@ contains
        select type (state => input_data(1))
        class is (field)
           call state % domain(dom)
-          if (dom % same_as(input_graph % edge_set())) then
+          if (dom % equals(input_graph % edge_set())) then
              ncomp = max(state % num_components(), 1)
              call state % get_real_vector(z)
              if (size(z) == ne * ncomp) return

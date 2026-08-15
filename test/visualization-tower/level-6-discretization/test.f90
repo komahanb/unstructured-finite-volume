@@ -35,7 +35,7 @@
 !        same pixels     =>  YES
 !        same object     =>  NO
 !
-!    because production's answer stands on ONE vertex carrier where
+!    because production's answer stands on ONE vertex set where
 !    the relation stands on two, and X1 is not X2 even though both
 !    hold three members.
 !
@@ -44,7 +44,7 @@
 !    4 and 3 at once. Given 4 it can hold every edge - and it then
 !    reports a FOURTH row that the typed codomain does not have. That
 !    phantom row is the whole finding, and it is read off safely: no
-!    out-of-range index, no manufactured union carrier.
+!    out-of-range index, no manufactured union set.
 !
 ! 3. THE STEP WITNESS. The same family verb, asked of the other
 !    concrete citizen, answers on a different AXIS: the stencil on the
@@ -69,7 +69,7 @@
 !
 !      V(R1) = V(R2)   does NOT imply   R1 = R2
 !
-! when the representation V forgets carrier identity. Hence every
+! when the representation V forgets set identity. Hence every
 ! picture below carries its SIGNATURE line: the grid alone is exactly
 ! the part that cannot tell the two apart.
 !
@@ -84,13 +84,13 @@ program visualization_level_6
   use visualization_assert , only : X0_A, X0_B, X0_C, X0_D
   use visualization_assert , only : X1_P, X1_Q, X1_R
   use visualization_assert , only : X2_U, X2_V, X2_W
-  use graph_carrier        , only : counted_set, member_set
+  use graph_set        , only : index_set, set
   use graph_relation       , only : relation
   use graph_binary_relation, only : csr_relation
-  use graph_grammar        , only : graph
+  use graph_grammar        , only : ordinary_graph
   use class_graph_stencil  , only : stencil_operator
   use class_graph_step     , only : step_operator
-  use visualization_carriers_fixture , only : structural_carriers
+  use visualization_sets_fixture , only : structural_sets
   use visualization_relations_fixture, only : occurrences_of_a1
   use visualization_relations_fixture, only : occurrences_of_a2
   use visualization_relations_fixture, only : occurrences_of_a3
@@ -108,15 +108,15 @@ program visualization_level_6
 
   implicit none
 
-  type(counted_set)      :: x0, x1, x2, x3, e1, e2, e3
+  type(index_set)      :: x0, x1, x2, x3, e1, e2, e3
   type(csr_relation)     :: t1, h1, t2, h2, t3, h3
   type(csr_relation)     :: d1, d2, d3
 
   type(stencil_operator) :: sten_d2, sten_d1, sten_diag
   type(step_operator)    :: clock_d2, clock_diag
 
-  class(graph), allocatable :: pat_d2, pat_d1, pat_diag
-  class(graph), allocatable :: motif_d2, motif_diag
+  class(ordinary_graph), allocatable :: pat_d2, pat_d1, pat_diag
+  class(ordinary_graph), allocatable :: motif_d2, motif_diag
 
   integer :: nfail
 
@@ -127,7 +127,7 @@ program visualization_level_6
   write(*,'(1x,a)') "============================================="
 
   ! ---- the tower's own structure, untouched since Gate A.
-  call structural_carriers(x0, x1, x2, x3, e1, e2, e3)
+  call structural_sets(x0, x1, x2, x3, e1, e2, e3)
   call occurrences_of_a1(e1, x0, x1, t1, h1)
   call occurrences_of_a2(e2, x1, x2, t2, h2)
   call occurrences_of_a3(e3, x2, x3, t3, h3)
@@ -174,7 +174,7 @@ contains
   subroutine say_the_measurement()
 
     type(picture)     :: pic
-    type(counted_set) :: verts
+    type(index_set) :: verts
 
     write(*,'(1x,a)') "---------------------------------------------"
 
@@ -185,11 +185,11 @@ contains
     write(*,'(4x,a)') "STENCIL dependencies()"
     pic = pattern_picture(pat_d2, ''); call say_grid(pic, 2)
 
-    verts = carrier_of(pat_d2)
+    verts = set_of(pat_d2)
     call say_verdict("coordinate pattern equal", &
          &           same_coordinate_pattern(d2, pat_d2))
-    call say_verdict("typed source identity equal", verts % same_as(x1))
-    call say_verdict("typed target identity equal", verts % same_as(x2))
+    call say_verdict("typed source identity equal", verts % equals(x1))
+    call say_verdict("typed target identity equal", verts % equals(x2))
     write(*,*)
 
     write(*,'(4x,a)') "RECTANGULAR D1"
@@ -262,7 +262,7 @@ contains
          & "and 4 edges - one edge per stencil coefficient", nfail)
 
     call report(coordinate_shapes_fit(d2, pat_d2), &
-         & "and its vertex count matches BOTH of D2's carriers, so " // &
+         & "and its vertex count matches BOTH of D2's sets, so " // &
          & "the two can be laid over one another at all", nfail)
 
     call report(same_coordinate_pattern(d2, pat_d2), &
@@ -298,31 +298,31 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: from, to
-    type(counted_set)              :: verts
+    class(set), allocatable :: from, to
+    type(index_set)              :: verts
 
-    verts = carrier_of(pat_d2)
+    verts = set_of(pat_d2)
     from  = d2 % domain(1)
     to    = d2 % domain(2)
 
-    call report(.not. from % same_as(to) .and. from % same_as(x1) .and. &
-         &      to % same_as(x2), &
-         & "D2 stands on TWO declared carriers: X1 -> X2, and X1 is " // &
+    call report(.not. from % equals(to) .and. from % equals(x1) .and. &
+         &      to % equals(x2), &
+         & "D2 stands on TWO declared sets: X1 -> X2, and X1 is " // &
          & "not X2 though both hold three members", nfail)
 
-    call report(.not. verts % same_as(x1) .and. .not. verts % same_as(x2), &
-         & "production's pattern stands on a carrier that is NEITHER " // &
+    call report(.not. verts % equals(x1) .and. .not. verts % equals(x2), &
+         & "production's pattern stands on a set that is NEITHER " // &
          & "X1 NOR X2 - it declared its own", nfail)
 
     call report(signature_of_pattern(pat_d2) .eq. 'vertices -> vertices' .and. &
          &      signature_of_relation(d2) .eq. 'X1 -> X2', &
-         & "ONE carrier in both places against TWO: the signatures " // &
+         & "ONE set in both places against TWO: the signatures " // &
          & "read 'vertices -> vertices' and 'X1 -> X2'", nfail)
 
     call report(verts % size() .eq. NX1 .and. verts % size() .eq. NX2 .and. &
          &      same_coordinate_pattern(d2, pat_d2), &
          & "SAME PIXELS, NOT THE SAME TYPED STRUCTURAL OBJECT - equal " // &
-         & "occupancy, equal counts, and three distinct carriers", nfail)
+         & "occupancy, equal counts, and three distinct sets", nfail)
 
   end subroutine check_the_typed_identity_differs
 
@@ -335,7 +335,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: from, to
+    class(set), allocatable :: from, to
     type(picture)                  :: pic
     integer                        :: j
     logical                        :: phantom_empty
@@ -359,7 +359,7 @@ contains
          & "well, and one number cannot be both", nfail)
 
     ! The phantom row: vertex 4 exists as a HEAD position because the
-    ! carrier is one set, though D1's codomain has no fourth member.
+    ! set is one set, though D1's codomain has no fourth member.
     phantom_empty = .true.
     do j = 1, pat_d1 % num_vertices()
        phantom_empty = phantom_empty .and. .not. production_has(pat_d1, j, 4)
@@ -369,7 +369,7 @@ contains
     call report(pic % rows() .eq. 3 + NX0 .and. phantom_empty .and. &
          &      pic % at(7) .eq. '4       . . . .', &
          & "so the picture has a FOURTH ROW that D1's codomain does " // &
-         & "not have - empty, and present only because one carrier " // &
+         & "not have - empty, and present only because one set " // &
          & "serves both axes", nfail)
 
     call report(pic % at(4) .eq. '1       # # . .' .and. &
@@ -488,7 +488,7 @@ contains
   !
   !      V(R1) = V(R2)  does not imply  R1 = R2
   !
-  ! when V forgets carrier identity. Both halves are checked: the
+  ! when V forgets set identity. Both halves are checked: the
   ! grids agree, and the objects do not.
   !===================================================================!
 
@@ -497,7 +497,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(picture)     :: relational, production
-    type(counted_set) :: verts
+    type(index_set) :: verts
     integer           :: k
     logical           :: grids_agree
 
@@ -522,10 +522,10 @@ contains
          & "from a typed relation and the other from a production " // &
          & "graph", nfail)
 
-    verts = carrier_of(pat_d2)
-    call report(.not. verts % same_as(x1) .and. .not. verts % same_as(x2) .and. &
-         &      .not. x1 % same_as(x2), &
-         & "AND THE OBJECTS DO NOT: three declared carriers stand " // &
+    verts = set_of(pat_d2)
+    call report(.not. verts % equals(x1) .and. .not. verts % equals(x2) .and. &
+         &      .not. x1 % equals(x2), &
+         & "AND THE OBJECTS DO NOT: three declared sets stand " // &
          & "where the pictures show one shape", nfail)
 
     call report(signature_of_relation(d2) .ne. signature_of_pattern(pat_d2), &
@@ -539,13 +539,13 @@ contains
   ! Helpers.
   !===================================================================!
 
-  type(counted_set) function carrier_of(p)
+  type(index_set) function set_of(p)
 
-    class(graph), intent(in) :: p
+    class(ordinary_graph), intent(in) :: p
 
-    carrier_of = p % vertex_set()
+    set_of = p % vertex_set()
 
-  end function carrier_of
+  end function set_of
 
   !-------------------------------------------------------------------!
   ! Two production patterns, compared extensionally: same vertex
@@ -554,7 +554,7 @@ contains
 
   logical function same_production_pattern(p, q)
 
-    class(graph), intent(in) :: p, q
+    class(ordinary_graph), intent(in) :: p, q
 
     integer :: i, j
 

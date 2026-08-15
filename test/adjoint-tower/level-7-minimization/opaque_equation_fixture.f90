@@ -20,7 +20,7 @@
 ! Note the orientations. The primal takes a state on Q and answers
 ! on Y; the adjoint takes a covector on Y and answers on Q. Both
 ! domains have two members, so nothing but IDENTITY separates them,
-! and each operation checks its input with same_as before reading a
+! and each operation checks its input with equals before reading a
 ! single number. A is non-symmetric on purpose: solving the primal
 ! orientation where the transpose belongs would return [0.4, 0.2]
 ! instead of [-0.4, 0.6], and no dimension check would notice.
@@ -35,8 +35,8 @@ module opaque_equation_fixture
 
   use iso_fortran_env  , only : dp => REAL64
   use adjoint_assert   , only : VAR_U, VAR_V, TGT_R1, TGT_R2
-  use graph_carrier    , only : member_set
-  use graph_grammar    , only : graph, graph_field, graph_operation
+  use graph_set    , only : set
+  use graph_grammar    , only : ordinary_graph, graph_field, graph_operation
   use class_graph_field, only : field
 
   implicit none
@@ -49,7 +49,7 @@ module opaque_equation_fixture
   !===================================================================!
 
   type, extends(graph_operation) :: opaque_primal
-     class(member_set), allocatable :: q_dom, y_dom
+     class(set), allocatable :: q_dom, y_dom
    contains
      procedure :: name   => primal_name
      procedure :: domain => primal_domain
@@ -62,7 +62,7 @@ module opaque_equation_fixture
   !===================================================================!
 
   type, extends(graph_operation) :: opaque_adjoint
-     class(member_set), allocatable :: q_dom, y_dom
+     class(set), allocatable :: q_dom, y_dom
    contains
      procedure :: name   => adjoint_name
      procedure :: domain => adjoint_domain
@@ -80,13 +80,13 @@ module opaque_equation_fixture
 contains
 
   type(opaque_primal) function create_primal(q_dom, y_dom) result(this)
-    class(member_set), intent(in) :: q_dom, y_dom
+    class(set), intent(in) :: q_dom, y_dom
     allocate(this % q_dom, source=q_dom)
     allocate(this % y_dom, source=y_dom)
   end function create_primal
 
   type(opaque_adjoint) function create_adjoint(y_dom, q_dom) result(this)
-    class(member_set), intent(in) :: y_dom, q_dom
+    class(set), intent(in) :: y_dom, q_dom
     allocate(this % y_dom, source=y_dom)
     allocate(this % q_dom, source=q_dom)
   end function create_adjoint
@@ -105,16 +105,16 @@ contains
 
   subroutine primal_domain(this, input_graph, domain)
     class(opaque_primal), intent(in) :: this
-    class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(ordinary_graph), intent(in) :: input_graph
+    class(set), allocatable, intent(out) :: domain
     associate (u1 => input_graph); end associate
     allocate(domain, source=this % y_dom)     ! answers on Y
   end subroutine primal_domain
 
   subroutine adjoint_domain(this, input_graph, domain)
     class(opaque_adjoint), intent(in) :: this
-    class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(ordinary_graph), intent(in) :: input_graph
+    class(set), allocatable, intent(out) :: domain
     associate (u1 => input_graph); end associate
     allocate(domain, source=this % q_dom)     ! answers on Q
   end subroutine adjoint_domain
@@ -127,12 +127,12 @@ contains
   subroutine primal_apply(this, input_graph, input_data, output)
 
     class(opaque_primal), intent(in)               :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
     type(field)                    :: out
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
     real(dp), allocatable          :: q(:), r(:)
     real(dp)                       :: u, v
 
@@ -142,7 +142,7 @@ contains
        error stop 'opaque primal: the equation needs a state to judge'
     end if
     call input_data(1) % domain(dom)
-    if (.not. dom % same_as(this % q_dom)) then
+    if (.not. dom % equals(this % q_dom)) then
        error stop 'opaque primal: the state must live on the state domain'
     end if
     call input_data(1) % get_real_vector(q)
@@ -170,12 +170,12 @@ contains
   subroutine adjoint_apply(this, input_graph, input_data, output)
 
     class(opaque_adjoint), intent(in)              :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
     type(field)                    :: out
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
     real(dp), allocatable          :: lam(:), r(:)
     real(dp)                       :: l1, l2
 
@@ -185,7 +185,7 @@ contains
        error stop 'opaque adjoint: the equation needs a covector to judge'
     end if
     call input_data(1) % domain(dom)
-    if (.not. dom % same_as(this % y_dom)) then
+    if (.not. dom % equals(this % y_dom)) then
        error stop 'opaque adjoint: the covector must live on the residual-row domain'
     end if
     call input_data(1) % get_real_vector(lam)

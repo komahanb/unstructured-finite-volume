@@ -3,7 +3,7 @@ include ../../../Makefile.in
 F90FLAGS += -I../../../lib/ -I../../../src/
 LDFLAGS += -L../../../lib/ ../../../lib/libufvm.a -llapack
 
-FIXTURES = visualization_assert.o visualization_carriers_fixture.o \
+FIXTURES = visualization_assert.o visualization_sets_fixture.o \
            visualization_relations_fixture.o
 
 all: run
@@ -14,7 +14,7 @@ run: $(FIXTURES) test.o
 test.o: $(FIXTURES)
 visualization_relations_fixture.o: ../common/visualization_relations_fixture.f90 visualization_assert.o
 	$(F90) $(F90FLAGS) -c $< -o $@
-visualization_carriers_fixture.o: ../common/visualization_carriers_fixture.f90
+visualization_sets_fixture.o: ../common/visualization_sets_fixture.f90
 	$(F90) $(F90FLAGS) -c $< -o $@
 visualization_assert.o: ../common/visualization_assert.f90
 	$(F90) $(F90FLAGS) -c $< -o $@

@@ -18,7 +18,7 @@
 ! a stronger truth than constructing an empty one.
 !
 ! And the import list is the rung's own proof: a field needs a
-! domain - learning_assert, graph_carrier, class_graph_field - and
+! domain - learning_assert, graph_set, class_graph_field - and
 ! no graph topology anywhere. The model law is still unspoken:
 ! knowing x = 2 is not knowing what predict does with it.
 !
@@ -30,13 +30,13 @@ program learning_level_5
   use iso_fortran_env  , only : dp => REAL64
   use learning_assert  , only : report, verdict
   use learning_assert  , only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use graph_set    , only : index_set, subset, set
   use class_graph_field, only : field
 
   implicit none
 
-  type(counted_set) :: v
-  type(subset_set)  :: k, theta, u
+  type(index_set) :: v
+  type(subset)  :: k, theta, u
   type(field)       :: qk, theta0
   integer           :: nfail
 
@@ -46,12 +46,12 @@ program learning_level_5
   write(*,'(1x,a)') "learning tower . level 5 . field calculus"
   write(*,'(1x,a)') "============================================="
 
-  v = counted_set('value-slots', 5)
+  v = index_set('value-slots', 5)
 
   ! The three roles, declared in deliberately nonnumeric order.
-  k     = subset_set('observed' , v, [SLOT_Y, SLOT_X])
-  theta = subset_set('trainable', v, [SLOT_W])
-  u     = subset_set('computed' , v, [SLOT_E, SLOT_YHAT])
+  k     = subset('observed' , v, [SLOT_Y, SLOT_X])
+  theta = subset('trainable', v, [SLOT_W])
+  u     = subset('computed' , v, [SLOT_E, SLOT_YHAT])
 
   call check_partition(nfail)
   call check_observed_field(nfail)
@@ -115,14 +115,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
     real(dp), allocatable          :: val(:)
 
     qk = field('observations', k)
     call qk % set_real_vector([6.0_dp, 2.0_dp])
 
     call qk % domain(dom)
-    call report(dom % same_as(k), &
+    call report(dom % equals(k), &
          & "the data field's domain is K, by identity", nfail)
     call report(qk % num_entries() .eq. 2 .and. &
          &      qk % num_components() .eq. 1, &
@@ -148,14 +148,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
     real(dp), allocatable          :: val(:)
 
     theta0 = field('parameters', theta)
     call theta0 % set_real_vector([0.0_dp])
 
     call theta0 % domain(dom)
-    call report(dom % same_as(theta), &
+    call report(dom % equals(theta), &
          & "the parameter field's domain is Theta, by identity", nfail)
     call report(theta0 % num_entries() .eq. 1, &
          & "one trainable entry", nfail)
@@ -176,12 +176,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dk, dt
+    class(set), allocatable :: dk, dt
 
     call qk % domain(dk)
     call theta0 % domain(dt)
 
-    call report(.not. dk % same_as(theta) .and. .not. dt % same_as(k), &
+    call report(.not. dk % equals(theta) .and. .not. dt % equals(k), &
          & "observed and trainable are distinguished by domain alone", &
          & nfail)
 

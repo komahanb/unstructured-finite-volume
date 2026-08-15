@@ -7,7 +7,7 @@
 ! literal, no 2*w - 6 anywhere. What it holds is the STATEMENT'S
 ! furniture: the GRAPH-OWNED flow (found by identity, refused if
 ! the graph does not own it - the external selector may die), the
-! location relation L, the carriers, the role subdomains, the
+! location relation L, the sets, the role subdomains, the
 ! observed values and the DERIVED execution order handed down by
 ! the caller's own topological sort.
 !
@@ -22,10 +22,10 @@
 module constituted_residual_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_carrier    , only : member_set, counted_set, subset_set
+  use graph_set    , only : set, index_set, subset
   use graph_relation   , only : relation
-  use graph_structure  , only : relational_graph
-  use graph_grammar    , only : graph, graph_field, graph_operation
+  use graph_structure  , only : related_graph
+  use graph_grammar    , only : ordinary_graph, graph_field, graph_operation
   use class_graph_field, only : field
   use learning_constitution_fixture, only : generated_residual
 
@@ -37,8 +37,8 @@ module constituted_residual_fixture
   type, extends(graph_operation) :: constituted_learning_residual
      class(relation), allocatable :: flow      ! the GRAPH-OWNED copy
      class(relation), allocatable :: located
-     type(counted_set)            :: slots, rows
-     type(subset_set)             :: observed, trainable, computed
+     type(index_set)            :: slots, rows
+     type(subset)             :: observed, trainable, computed
      real(dp), allocatable        :: observed_values(:)
      integer , allocatable        :: order(:)  ! derived by the caller
    contains
@@ -63,10 +63,10 @@ contains
        & observed, observed_values, trainable, computed, order) &
        & result(this)
 
-    class(relational_graph), target, intent(in) :: g
+    class(related_graph), target, intent(in) :: g
     class(relation)  , intent(in) :: selector, located
-    type(counted_set), intent(in) :: slots, rows
-    type(subset_set) , intent(in) :: observed, trainable, computed
+    type(index_set), intent(in) :: slots, rows
+    type(subset) , intent(in) :: observed, trainable, computed
     real(dp)         , intent(in) :: observed_values(:)
     integer          , intent(in) :: order(:)
     type(constituted_learning_residual) :: this
@@ -78,7 +78,7 @@ contains
     found = .false.
     do kk = 1, g % num_relations()
        rp => g % relation_at(kk)
-       if (rp % same_as(selector)) then
+       if (rp % equals(selector)) then
           found = .true.
           exit
        end if
@@ -107,8 +107,8 @@ contains
 
   subroutine clr_domain(this, input_graph, domain)
     class(constituted_learning_residual), intent(in) :: this
-    class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(ordinary_graph), intent(in) :: input_graph
+    class(set), allocatable, intent(out) :: domain
     associate (u1 => input_graph); end associate
     allocate(domain, source=this % rows)
   end subroutine clr_domain
@@ -116,12 +116,12 @@ contains
   subroutine clr_apply(this, input_graph, input_data, output)
 
     class(constituted_learning_residual), intent(in) :: this
-    class(graph), intent(in)                         :: input_graph
+    class(ordinary_graph), intent(in)                         :: input_graph
     class(graph_field), intent(in), optional         :: input_data(:)
     class(graph_field), allocatable, intent(inout)   :: output
 
     type(field)                    :: out
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
     real(dp), allocatable          :: tstate(:), r(:)
 
     associate (u1 => input_graph); end associate
@@ -134,7 +134,7 @@ contains
     end if
 
     call input_data(1) % domain(dom)
-    if (.not. dom % same_as(this % trainable)) then
+    if (.not. dom % equals(this % trainable)) then
        error stop 'statement: the state must live on the trainable domain'
     end if
     call input_data(1) % get_real_vector(tstate)

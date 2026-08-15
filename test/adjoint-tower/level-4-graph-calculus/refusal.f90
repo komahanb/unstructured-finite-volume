@@ -19,24 +19,24 @@ program adjoint_level_4_refusal
 
   use adjoint_assert, only : VAR_P, VAR_U, VAR_V
   use adjoint_assert, only : TGT_R1, TGT_R2, TGT_F
-  use graph_carrier , only : counted_set, subset_set
+  use graph_set , only : index_set, subset
   use graph_relation, only : stored_relation
   use graph_relation_algebra, only : compose_binary
   use graph_binary_relation , only : csr_relation, transposed_view, &
        &                             transpose_of, inclusion_of
-  use graph_structure, only : relational_graph, held_set, held_relation
-  use graph_profile  , only : directed_adjacency_view
+  use graph_structure, only : related_graph, declared_set, declared_relation
+  use graph_interpretation  , only : directed_adjacency_view
   use graph_algorithms, only : topological_order
 
   implicit none
 
-  type(counted_set)              :: v, t
-  type(subset_set)               :: q_dom, y_dom
+  type(index_set)              :: v, t
+  type(subset)               :: q_dom, y_dom
   type(stored_relation)          :: dep
   type(csr_relation), target     :: inc_y, inc_q, jq
   type(transposed_view)          :: inc_q_t, jq_t
   type(csr_relation)             :: coupling
-  type(relational_graph), target :: g
+  type(related_graph), target :: g
   type(directed_adjacency_view)  :: view
   integer, allocatable           :: order(:)
   integer                        :: table(2, 9)
@@ -50,10 +50,10 @@ program adjoint_level_4_refusal
   select case (trim(which))
 
   case ('cyclic-order')
-     v = counted_set('variables', 3)
-     t = counted_set('targets'  , 3)
-     q_dom = subset_set('state'   , v, [VAR_U, VAR_V])
-     y_dom = subset_set('residual', t, [TGT_R1, TGT_R2])
+     v = index_set('variables', 3)
+     t = index_set('targets'  , 3)
+     q_dom = subset('state'   , v, [VAR_U, VAR_V])
+     y_dom = subset('residual', t, [TGT_R1, TGT_R2])
 
      table(:, 1) = [TGT_R1, VAR_P]
      table(:, 2) = [TGT_R1, VAR_U]
@@ -73,8 +73,8 @@ program adjoint_level_4_refusal
      jq_t     = transpose_of(jq)
      coupling = compose_binary(jq_t, jq)
 
-     g = relational_graph('state coupling', [held_set(q_dom)], &
-          & [held_relation(coupling)])
+     g = related_graph('state coupling', [declared_set(q_dom)], &
+          & [declared_relation(coupling)])
      view = directed_adjacency_view(g, coupling)
 
      call topological_order(view, order)

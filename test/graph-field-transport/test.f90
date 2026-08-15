@@ -1,7 +1,7 @@
 !=====================================================================!
 ! The domain-transport suite (phase 5B acceptance): partition and
 ! assembly must carry FIELD DOMAINS, not merely values. A six-cell
-! chain is cut linearly in two, so carrier identities differ, part
+! chain is cut linearly in two, so set identities differ, part
 ! numbering differs from global numbering, and borrowed members
 ! stand across the cut. Five laws, both families:
 !
@@ -21,8 +21,8 @@
 program test_graph_field_transport
 
   use iso_fortran_env        , only : dp => REAL64
-  use graph_carrier          , only : member_set, counted_set, subset_set
-  use graph_grammar          , only : graph, graph_field
+  use graph_set          , only : set, index_set, subset
+  use graph_grammar          , only : ordinary_graph, graph_field
   use class_graph            , only : stored_graph
   use class_graph_field      , only : field
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
@@ -89,7 +89,7 @@ contains
 
     type(field)                     :: d
     type(partitioner)               :: p
-    class(graph), allocatable       :: part
+    class(ordinary_graph), allocatable       :: part
     class(graph_field), allocatable :: pd, fd
     real(dp), allocatable           :: v(:)
     real(dp)                        :: total(n)
@@ -119,8 +119,8 @@ contains
 
   !===================================================================!
   ! Proper subsets, nonnumeric order, two components: partitioned
-  ! pieces are subobjects of the part carriers; assembled pieces
-  ! are subobjects of the global carrier; their disjoint union by
+  ! pieces are subobjects of the part sets; assembled pieces
+  ! are subobjects of the global set; their disjoint union by
   ! member reconstructs the source, values through local_index.
   !===================================================================!
 
@@ -130,24 +130,24 @@ contains
     integer, intent(in)    :: chosen(:)
     integer, intent(inout) :: nfail
 
-    type(counted_set)               :: carrier
-    type(subset_set)                :: s
+    type(index_set)               :: set
+    type(subset)                :: s
     type(field)                     :: d
     type(partitioner)               :: p
-    class(graph), allocatable       :: part
+    class(ordinary_graph), allocatable       :: part
     class(graph_field), allocatable :: pd, fd
-    class(member_set), allocatable  :: dp_, dg
+    class(set), allocatable  :: dp_, dg
     real(dp), allocatable           :: sv(:), v(:)
     integer, allocatable            :: mem(:)
     integer                         :: k, i, c, m, seen(size(chosen))
     logical                         :: ok, okp
 
     if (verts) then
-       carrier = g % vertex_set()
+       set = g % vertex_set()
     else
-       carrier = g % edge_set()
+       set = g % edge_set()
     end if
-    s = subset_set('chosen', carrier, chosen)
+    s = subset('chosen', set, chosen)
     d = field('q', s, ncomp=2)
 
     allocate(sv(2 * size(chosen)))
@@ -167,7 +167,7 @@ contains
 
        call pd % domain(dp_)
        select type (dp_)
-       type is (subset_set)
+       type is (subset)
           if (verts) then
              okp = okp .and. dp_ % is_subobject_of(part % vertex_set())
           else
@@ -180,8 +180,8 @@ contains
        call a % assemble_data(part, pd, g, fd)
        call fd % domain(dg)
        select type (dg)
-       type is (subset_set)
-          ok = ok .and. dg % is_subobject_of(carrier)
+       type is (subset)
+          ok = ok .and. dg % is_subobject_of(set)
           call dg % members(mem)
           call fd % get_real_vector(v)
           do i = 1, size(mem)
@@ -203,7 +203,7 @@ contains
 
     call report(okp, &
          & "partitioned proper " // family(verts) // &
-         & " subsets embed in the part carriers", nfail)
+         & " subsets embed in the part sets", nfail)
     call report(ok, &
          & "assembled contributions embed globally, values by member", &
          & nfail)
@@ -223,21 +223,21 @@ contains
     logical, intent(in)    :: verts
     integer, intent(inout) :: nfail
 
-    type(counted_set)               :: carrier
-    type(subset_set)                :: s
+    type(index_set)               :: set
+    type(subset)                :: s
     type(field)                     :: d
     type(partitioner)               :: p
-    class(graph), allocatable       :: part
+    class(ordinary_graph), allocatable       :: part
     class(graph_field), allocatable :: pd, fd
     real(dp), allocatable           :: v(:)
     logical                         :: ok
 
     if (verts) then
-       carrier = g % vertex_set()
+       set = g % vertex_set()
     else
-       carrier = g % edge_set()
+       set = g % edge_set()
     end if
-    s = subset_set('none', carrier, [integer ::])
+    s = subset('none', set, [integer ::])
     d = field('q', s)
     call d % set_real_vector([real(dp) ::])
 

@@ -26,15 +26,15 @@ program derivative_level_8_refusal
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : counted_set, subset_set
+  use graph_set    , only : index_set, subset
   use graph_relation   , only : stored_relation
   use derivative_constitution_fixture, only : apply_law, &
        & slot_for_port, primal_execution, tangent_action
 
   implicit none
 
-  type(counted_set)     :: v, o, p
-  type(subset_set)      :: x_dom, c
+  type(index_set)     :: v, o, p
+  type(subset)      :: x_dom, c
   type(stored_relation) :: flow, lame
   integer               :: table(3, 6), short(3, 5)
   real(dp)              :: vals(4), dots(4), zz
@@ -47,11 +47,11 @@ program derivative_level_8_refusal
   end if
   call get_command_argument(1, which)
 
-  v     = counted_set('value-slots', 4)
-  o     = counted_set('operations' , 2)
-  p     = counted_set('ports'      , 3)
-  x_dom = subset_set('independent', v, [SLOT_Y, SLOT_X])
-  c     = subset_set('computed'   , v, [SLOT_U, SLOT_Z])
+  v     = index_set('value-slots', 4)
+  o     = index_set('operations' , 2)
+  p     = index_set('ports'      , 3)
+  x_dom = subset('independent', v, [SLOT_Y, SLOT_X])
+  c     = subset('computed'   , v, [SLOT_U, SLOT_Z])
 
   table(:, 1) = [OP_PRODUCT, SLOT_X, PORT_IN1]
   table(:, 2) = [OP_PRODUCT, SLOT_Y, PORT_IN2]

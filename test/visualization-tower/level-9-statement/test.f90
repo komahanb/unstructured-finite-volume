@@ -32,16 +32,16 @@ program visualization_level_9
 
   use iso_fortran_env      , only : dp => REAL64
   use visualization_assert , only : report, verdict
-  use graph_carrier        , only : counted_set, member_set
+  use graph_set        , only : index_set, set
   use graph_relation       , only : relation
   use graph_binary_relation, only : csr_relation
-  use graph_grammar        , only : graph
+  use graph_grammar        , only : ordinary_graph
   use class_graph          , only : stored_graph
   use class_graph_field    , only : field
   use class_graph_stencil  , only : stencil_operator
   use class_graph_step     , only : step_operator, bdf
   use class_graph_jacobi   , only : jacobi
-  use visualization_carriers_fixture , only : structural_carriers
+  use visualization_sets_fixture , only : structural_sets
   use visualization_relations_fixture, only : occurrences_of_a2
   use visualization_algebra_fixture  , only : derive_dependency
   use visualization_values_fixture   , only : coefficients_of_a2
@@ -62,14 +62,14 @@ program visualization_level_9
   real(dp), parameter :: A_TIMES_ONE(N) = [5.0_dp, 7.0_dp, 7.0_dp]
 
   ! ---- the relational half, as Gate A left it
-  type(counted_set)  :: x0, x1, x2, x3, e1, e2, e3
+  type(index_set)  :: x0, x1, x2, x3, e1, e2, e3
   type(csr_relation) :: t2, h2, d2
   type(field)        :: w2
 
   ! ---- the production half
   type(stencil_operator)    :: a
   type(step_operator)       :: clock
-  class(graph), allocatable :: dependent, independent
+  class(ordinary_graph), allocatable :: dependent, independent
   type(stored_graph)        :: context
   type(jacobi)              :: solver
 
@@ -84,7 +84,7 @@ program visualization_level_9
   write(*,'(1x,a)') "visualization tower . level 9 . statement"
   write(*,'(1x,a)') "============================================="
 
-  call structural_carriers(x0, x1, x2, x3, e1, e2, e3)
+  call structural_sets(x0, x1, x2, x3, e1, e2, e3)
   call occurrences_of_a2(e2, x1, x2, t2, h2)
   d2 = derive_dependency('D2', t2, h2)
   w2 = coefficients_of_a2(e2)
@@ -199,15 +199,15 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: from, to
+    class(set), allocatable :: from, to
     type(picture)                  :: valued
 
     ! ---- structure, from relations, with no numbers in it
     from = d2 % domain(1)
     to   = d2 % domain(2)
-    call report(d2 % num_tuples() .eq. 4 .and. .not. from % same_as(to), &
+    call report(d2 % num_tuples() .eq. 4 .and. .not. from % equals(to), &
          & "RELATION -> STRUCTURE: D2 : X1 -> X2, derived from " // &
-         & "occurrences, two declared carriers", nfail)
+         & "occurrences, two declared sets", nfail)
 
     ! ---- values, inhabiting that structure without defining it
     valued = valued_sparsity_picture(d2, t2, h2, e2, w2)
@@ -261,7 +261,7 @@ contains
 
   logical function same_pattern(p, q)
 
-    class(graph), intent(in) :: p, q
+    class(ordinary_graph), intent(in) :: p, q
 
     integer :: i, j
 
@@ -280,7 +280,7 @@ contains
   logical function properly_coloured(colours, coupling)
 
     integer     , intent(in) :: colours(:)
-    class(graph), intent(in) :: coupling
+    class(ordinary_graph), intent(in) :: coupling
 
     integer :: i, j
 

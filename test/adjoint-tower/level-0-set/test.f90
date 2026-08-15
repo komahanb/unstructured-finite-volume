@@ -2,7 +2,7 @@
 ! ADJOINT TOWER . LEVEL 0 . DOMAINS
 !
 ! The level answers one question: WHAT ROLES EXIST, AND ARE THEY
-! GENUINELY DIFFERENT. Two parent carriers are declared, and four
+! GENUINELY DIFFERENT. Two parent sets are declared, and four
 ! roles are carved from them as subobjects:
 !
 !      V = { p  u  v }              T = { r1  r2  f }
@@ -21,7 +21,7 @@
 ! confused. Roles are DOMAINS - there is no parameter_field, no
 ! state_field, no residual_field, no adjoint_field - and the
 ! imports of this file ARE the negative truth: adjoint_assert,
-! graph_carrier, and nothing above.
+! graph_set, and nothing above.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -31,12 +31,12 @@ program adjoint_level_0
   use adjoint_assert, only : report, verdict
   use adjoint_assert, only : VAR_P, VAR_U, VAR_V
   use adjoint_assert, only : TGT_R1, TGT_R2, TGT_F
-  use graph_carrier , only : counted_set, subset_set, member_set
+  use graph_set , only : index_set, subset, set
 
   implicit none
 
-  type(counted_set) :: v, t
-  type(subset_set)  :: p_dom, q_dom, y_dom, z_dom
+  type(index_set) :: v, t
+  type(subset)  :: p_dom, q_dom, y_dom, z_dom
   integer           :: nfail
 
   nfail = 0
@@ -46,13 +46,13 @@ program adjoint_level_0
   write(*,'(1x,a)') "============================================="
 
   ! The two parents, and the four roles carved from them.
-  v = counted_set('variables', 3)
-  t = counted_set('targets'  , 3)
+  v = index_set('variables', 3)
+  t = index_set('targets'  , 3)
 
-  p_dom = subset_set('parameter', v, [VAR_P])
-  q_dom = subset_set('state'    , v, [VAR_U, VAR_V])
-  y_dom = subset_set('residual' , t, [TGT_R1, TGT_R2])
-  z_dom = subset_set('response' , t, [TGT_F])
+  p_dom = subset('parameter', v, [VAR_P])
+  q_dom = subset('state'    , v, [VAR_U, VAR_V])
+  y_dom = subset('residual' , t, [TGT_R1, TGT_R2])
+  z_dom = subset('response' , t, [TGT_F])
 
   call check_cardinalities(nfail)
   call check_enumeration_round_trips(nfail)
@@ -78,7 +78,7 @@ contains
   end subroutine check_cardinalities
 
   !===================================================================!
-  ! The two enumeration laws on every member of every carrier and
+  ! The two enumeration laws on every member of every set and
   ! every role: member(local_index(m)) = m and
   ! local_index(member(i)) = i. Note the deliberate offsets - v is
   ! member 3 of V but entry 2 of Q - so a raw member id is never a
@@ -152,31 +152,31 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(.not. v % same_as(t), &
+    call report(.not. v % equals(t), &
          & "V is not T", nfail)
-    call report(.not. p_dom % same_as(q_dom), &
+    call report(.not. p_dom % equals(q_dom), &
          & "the parameter domain is not the state domain", nfail)
-    call report(.not. y_dom % same_as(z_dom), &
+    call report(.not. y_dom % equals(z_dom), &
          & "the residual domain is not the response domain", nfail)
 
     call report(q_dom % size() .eq. y_dom % size() .and. &
-         &      .not. q_dom % same_as(y_dom), &
+         &      .not. q_dom % equals(y_dom), &
          & "|Q| = |Y| = 2, and Q is STILL not Y: equal dimensions " // &
          & "are not equal domains", nfail)
 
-    call report(q_dom % same_as(q_dom) .and. y_dom % same_as(y_dom), &
+    call report(q_dom % equals(q_dom) .and. y_dom % equals(y_dom), &
          & "and each role is itself", nfail)
 
   end subroutine check_role_identities
 
   !===================================================================!
-  ! Both enumeration laws, on every member of any carrier - parents
+  ! Both enumeration laws, on every member of any set - parents
   ! and subobjects alike, through the one abstract contract.
   !===================================================================!
 
   logical function round_trips(s)
 
-    class(member_set), intent(in) :: s
+    class(set), intent(in) :: s
 
     integer :: i, m
 

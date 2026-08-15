@@ -1,5 +1,5 @@
 !=====================================================================!
-! TIME INTEGRATION TOWER . LEVEL 0 . CARRIER
+! TIME INTEGRATION TOWER . LEVEL 0 . SET
 !
 ! The level answers one question: WHAT SETS EXIST BEFORE TIME HAS
 ! DIRECTION OR VALUES.
@@ -8,7 +8,7 @@
 !      T = { t0 t1 t2 t3 t4 }       time instants
 !      E = { e1 e2 e3 e4 }          time steps
 !
-! Three carriers, and nothing joins them. No step knows an instant,
+! Three sets, and nothing joins them. No step knows an instant,
 ! no instant carries a value, and the words BEFORE and AFTER have no
 ! meaning at this level - direction arrives one rung up, as relation
 ! structure.
@@ -21,11 +21,11 @@
 ! declared here, beside T, answering nothing.
 !
 ! The rung's hazard, met by a second independent specimen after the
-! partitioned tower's V/E/K: all three carriers enumerate from one,
+! partitioned tower's V/E/K: all three sets enumerate from one,
 ! so the integer 1 is simultaneously x, t0 and e1. No count and no
 ! numeral distinguishes these sets - only identity does.
 !
-! The level imports carriers and the assert module, and NOTHING
+! The level imports sets and the assert module, and NOTHING
 ! relational. Its fixture is earned here; the relation fixture one
 ! rung up is out of reach by construction, and the import gate
 ! proves that mechanically rather than by promise.
@@ -38,21 +38,21 @@ program time_level_0
   use time_assert          , only : report, verdict
   use time_assert          , only : NQ, NT, NE
   use time_assert          , only : C_X, T0, T4, E1, E4
-  use graph_carrier        , only : counted_set, member_set
-  use time_carriers_fixture, only : time_carriers
+  use graph_set        , only : index_set, set
+  use time_sets_fixture, only : time_sets
 
   implicit none
 
-  type(counted_set) :: q, t, e
+  type(index_set) :: q, t, e
   integer           :: nfail
 
   nfail = 0
 
   write(*,'(1x,a)') "============================================="
-  write(*,'(1x,a)') "time integration tower . level 0 . carrier"
+  write(*,'(1x,a)') "time integration tower . level 0 . set"
   write(*,'(1x,a)') "============================================="
 
-  call time_carriers(q, t, e)
+  call time_sets(q, t, e)
 
   call check_cardinalities(nfail)
   call check_identities(nfail)
@@ -82,11 +82,11 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(.not. q % same_as(t), &
+    call report(.not. q % equals(t), &
          & "Q is not T: a state coordinate is not a time instant", nfail)
-    call report(.not. q % same_as(e), &
+    call report(.not. q % equals(e), &
          & "Q is not E: a state coordinate is not a time step", nfail)
-    call report(.not. t % same_as(e), &
+    call report(.not. t % equals(e), &
          & "T is not E: an instant is not a step between instants", nfail)
 
     call report(q % has(1) .and. t % has(1) .and. e % has(1), &
@@ -106,12 +106,12 @@ contains
 
     call report(round_trips(q) .and. round_trips(t) .and. &
          &      round_trips(e), &
-         & "member and local_index invert on every carrier", nfail)
+         & "member and local_index invert on every set", nfail)
 
   end subroutine check_enumeration
 
   !===================================================================!
-  ! Each carrier refuses at its own edge, and the edges differ -
+  ! Each set refuses at its own edge, and the edges differ -
   ! which is one more thing a numeral cannot tell you.
   !===================================================================!
 
@@ -138,7 +138,7 @@ contains
 
   logical function round_trips(s)
 
-    class(member_set), intent(in) :: s
+    class(set), intent(in) :: s
 
     integer :: i, m
 

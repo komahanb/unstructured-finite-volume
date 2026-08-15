@@ -4,27 +4,27 @@
 !
 !      member       a tuple names a member outside its slot's domain
 !      arity        the tuple table's rows are not two
-!      undeclared   a carrier that never signed
+!      undeclared   a set that never signed
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 program binary_refusal
 
-  use graph_carrier        , only : counted_set
+  use graph_set        , only : index_set
   use graph_binary_relation, only : csr_relation
 
   implicit none
 
-  type(counted_set)  :: cells, faces, raw
+  type(index_set)  :: cells, faces, raw
   type(csr_relation) :: r
   character(len=32)  :: which
 
   which = ''
   call get_command_argument(1, which)
 
-  cells = counted_set('cells', 4)
-  faces = counted_set('faces', 5)
+  cells = index_set('cells', 4)
+  faces = index_set('faces', 5)
 
   select case (trim(which))
 

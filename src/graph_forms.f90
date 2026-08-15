@@ -42,14 +42,14 @@ module graph_forms
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_calculus     , only : GRAPH_SIDE_VERTEX
-  use graph_carrier, only : subset_set, member_set
+  use graph_set, only : subset, set
 
   implicit none
 
   private
   public :: form
 
-  type, abstract, extends(subset_set) :: form
+  type, abstract, extends(subset) :: form
 
    contains
 
@@ -97,10 +97,10 @@ contains
     class(form), intent(inout) :: this
     integer    , intent(in)    :: kept(:)
 
-    class(member_set), allocatable :: table
+    class(set), allocatable :: table
 
     table = this % ambient()
-    this % subset_set = subset_set('basis', table, kept)
+    this % subset = subset('basis', table, kept)
 
   end subroutine restrict
 

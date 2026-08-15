@@ -45,9 +45,9 @@
 program partitioned_pde_level_2
 
   use partitioned_pde_assert , only : report, verdict
-  use graph_carrier          , only : counted_set, member_set
+  use graph_set          , only : index_set, set
   use graph_binary_relation  , only : csr_relation
-  use chain_carriers_fixture , only : chain_carriers
+  use chain_sets_fixture , only : chain_sets
   use chain_relations_fixture, only : tail_relation, head_relation, &
        &                              own_relation
   use chain_algebra_fixture  , only : derive_adjacency, &
@@ -55,7 +55,7 @@ program partitioned_pde_level_2
 
   implicit none
 
-  type(counted_set)          :: v, e, k
+  type(index_set)          :: v, e, k
   type(csr_relation), target :: tail, head, own
   type(csr_relation)         :: adj, tail_owner, head_owner
   integer                    :: nfail
@@ -66,7 +66,7 @@ program partitioned_pde_level_2
   write(*,'(1x,a)') "partitioned pde tower . level 2 . algebra"
   write(*,'(1x,a)') "============================================="
 
-  call chain_carriers(v, e, k)
+  call chain_sets(v, e, k)
   tail = tail_relation(e, v)
   head = head_relation(e, v)
   own  = own_relation(k, v)
@@ -94,14 +94,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
     integer                        :: i
     logical                        :: ok
 
     d = adj % domain(1)
-    call report(d % same_as(v), "A runs from the vertices", nfail)
+    call report(d % equals(v), "A runs from the vertices", nfail)
     d = adj % domain(2)
-    call report(d % same_as(v), "back into the vertices", nfail)
+    call report(d % equals(v), "back into the vertices", nfail)
 
     ok = adj % num_tuples() .eq. 5
     do i = 1, 5
@@ -127,12 +127,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
 
     d = tail_owner % domain(1)
-    call report(d % same_as(e), "TailOwner runs from the edges", nfail)
+    call report(d % equals(e), "TailOwner runs from the edges", nfail)
     d = tail_owner % domain(2)
-    call report(d % same_as(k), "into the partition labels", nfail)
+    call report(d % equals(k), "into the partition labels", nfail)
 
     call report(tail_owner % num_tuples() .eq. 5 .and. &
          &      tail_owner % has([1, 1]) .and. &
@@ -154,12 +154,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
 
     d = head_owner % domain(1)
-    call report(d % same_as(e), "HeadOwner runs from the edges too", nfail)
+    call report(d % equals(e), "HeadOwner runs from the edges too", nfail)
     d = head_owner % domain(2)
-    call report(d % same_as(k), "into the same partition labels", nfail)
+    call report(d % equals(k), "into the same partition labels", nfail)
 
     call report(head_owner % num_tuples() .eq. 5 .and. &
          &      head_owner % has([1, 1]) .and. &
@@ -235,7 +235,7 @@ contains
   !===================================================================!
   ! A relation is a TOTAL FUNCTION E -> K when it answers the whole
   ! question, and the whole question is four things at once: it runs
-  ! between the right two carriers, it holds no fact outside them,
+  ! between the right two sets, it holds no fact outside them,
   ! every edge gets an answer, and no edge gets two. The arity check
   ! is what keeps the per-edge count honest - without it a relation
   ! could carry tuples whose first slot is not an edge at all, and
@@ -246,13 +246,13 @@ contains
 
     type(csr_relation), intent(in) :: policy
 
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
     integer                        :: i, j, m, owners
 
     d = policy % domain(1)
-    is_total_function = d % same_as(e)
+    is_total_function = d % equals(e)
     d = policy % domain(2)
-    is_total_function = is_total_function .and. d % same_as(k)
+    is_total_function = is_total_function .and. d % equals(k)
 
     ! No fact lives outside E x K: exactly one tuple per edge, and
     ! the loop below then accounts for every one of them.

@@ -101,8 +101,8 @@ program visualization_level_7
 
   use iso_fortran_env      , only : dp => REAL64
   use visualization_assert , only : report, verdict
-  use graph_carrier        , only : counted_set, member_set
-  use graph_grammar        , only : graph
+  use graph_set        , only : index_set, set
+  use graph_grammar        , only : ordinary_graph
   use class_graph          , only : stored_graph
   use class_graph_stencil  , only : stencil_operator
   use class_graph_jacobi   , only : jacobi
@@ -135,7 +135,7 @@ program visualization_level_7
   real(dp), parameter :: A_TIMES_ONE(N) = [5.0_dp, 7.0_dp, 7.0_dp]
 
   type(stencil_operator)    :: a
-  class(graph), allocatable :: pa
+  class(ordinary_graph), allocatable :: pa
   type(stored_graph)        :: h_empty
   type(jacobi)              :: on_match, on_empty
 
@@ -194,15 +194,15 @@ contains
 
   !===================================================================!
   ! Attach a jacobi to the one stencil over a given host, using that
-  ! host's own vertex carrier as the unknown domain.
+  ! host's own vertex set as the unknown domain.
   !===================================================================!
 
   subroutine attach_to(solver, on)
 
     type(jacobi), intent(out) :: solver
-    class(graph), intent(in)  :: on
+    class(ordinary_graph), intent(in)  :: on
 
-    type(counted_set) :: unknowns
+    type(index_set) :: unknowns
 
     unknowns = on % vertex_set()
 
@@ -280,7 +280,7 @@ contains
 
   subroutine say_edges(g)
 
-    class(graph), intent(in) :: g
+    class(ordinary_graph), intent(in) :: g
 
     integer :: e
 
@@ -351,7 +351,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(graph), allocatable :: again
+    class(ordinary_graph), allocatable :: again
 
     call report(pa % num_vertices() .eq. N .and. pa % num_edges() .eq. 7, &
          & "P_A has three vertices and seven arrows - one per stencil " // &
@@ -511,7 +511,7 @@ contains
 
   logical function same_pattern(p, q)
 
-    class(graph), intent(in) :: p, q
+    class(ordinary_graph), intent(in) :: p, q
 
     integer :: i, j
 
@@ -536,7 +536,7 @@ contains
   logical function properly_coloured(colours, coupling)
 
     integer     , intent(in) :: colours(:)
-    class(graph), intent(in) :: coupling
+    class(ordinary_graph), intent(in) :: coupling
 
     integer :: i, j
 

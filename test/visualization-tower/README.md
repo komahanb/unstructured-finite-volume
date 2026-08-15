@@ -50,14 +50,14 @@ is no longer asked to take its structure from the execution context.
 
 | Level | Mathematics | Framework object | Input domain | Output domain | Forward structure | Reverse structure | Representation | Exact test | Status |
 |---|---|---|---|---|---|---|---|---|---|
-| **L0** | seven declared carriers | `counted_set` | — | — | `X0 X1 X2 X3` | — | none | \|X0\|=4, \|X1\|=\|X2\|=3, \|X3\|=2, \|E1\|=5, \|E2\|=4, \|E3\|=3; all 42 ordered pairs distinct | PASS |
+| **L0** | seven declared sets | `index_set` | — | — | `X0 X1 X2 X3` | — | none | \|X0\|=4, \|X1\|=\|X2\|=3, \|X3\|=2, \|E1\|=5, \|E2\|=4, \|E3\|=3; all 42 ordered pairs distinct | PASS |
 | **L1** | typed occurrence incidence | `csr_relation` | `E_k` | `X_(k-1)`, `X_k` | `T_k <= E_k x X_(k-1)`, `H_k <= E_k x X_k` | — | none | twelve occurrences, each with exactly one tail and one head | PASS |
 | **L2** | relation algebra | `compose_binary`, `transpose_of` | `X0` | `X3` | `D_k = H_k o T_k^T`; `D2:1`; `D3:1` | `D_k^T`; `D1^T o D2^T o D3^T` | none | exact extensions; 7 walks → 6 tuples; `(D3 o D2 o D1)^T = D1^T o D2^T o D3^T` | PASS |
-| **L3** | one relational ownership environment | `relational_graph` | — | — | owns 7 carriers + 6 primitive relations | derived on demand | none | signature closure over all twelve slots; whole chain re-derived from graph-owned relations alone | PASS |
+| **L3** | one relational ownership environment | `related_graph` | — | — | owns 7 sets + 6 primitive relations | derived on demand | none | signature closure over all twelve slots; whole chain re-derived from graph-owned relations alone | PASS |
 | **L4** | structural interpretation | test-local `structural_renderer_fixture` | any binary relation | text | chain line + sparsity | chain line + sparsity | A, B, C, D, E | five generated representations, cell by cell against `relation % has` | PASS |
 | — | ===== **REVIEW GATE A** ===== | | | | | | | | |
-| **L5** | fields `w_k : E_k -> R` | `class_graph_field` / `field` | occurrence carriers `E1, E2, E3` | scalar values | structure **unchanged** | structure unchanged; **no numerical reverse** | structural sparsity **+ coefficient view** | `level-5-field-calculus/test.f90` | PASS |
-| **L6** | production dependency projection | `discretization_operator % dependencies()` → `class(graph)` | one ordinary vertex carrier | the same carrier | Boolean coordinate pattern equals `D2 : X1 -> X2` | structure unchanged; no numerical reverse | signature **+** sparsity, shown side by side | `level-6-discretization/test.f90` | PASS |
+| **L5** | fields `w_k : E_k -> R` | `class_graph_field` / `field` | occurrence sets `E1, E2, E3` | scalar values | structure **unchanged** | structure unchanged; **no numerical reverse** | structural sparsity **+ coefficient view** | `level-5-field-calculus/test.f90` | PASS |
+| **L6** | production dependency projection | `discretization_operator % dependencies()` → `class(graph)` | one ordinary vertex set | the same set | Boolean coordinate pattern equals `D2 : X1 -> X2` | structure unchanged; no numerical reverse | signature **+** sparsity, shown side by side | `level-6-discretization/test.f90` | PASS |
 | **L7** | minimizer structural provenance | `minimizer % attach(..., coupling=)`, `% sweep_order()`, `% diagonal()` | one operator, two execution contexts | colours, matvec, diagonal | coupling `P_A` is context-independent | not exercised | operator coupling **vs** execution context, side by side | `level-7-minimization/test.f90` | PASS |
 | — | ===== **REVIEW GATE B** ===== | | | | | | | | |
 | **L8** | two axes and a context, coexisting | `step % dependencies()`, `stencil % dependencies()`, `minimizer % attach(coupling=)` | one composition | three distinct structures | independent stencil fans in | not exercised | all three grids side by side | `level-8-constitution/test.f90` | PASS |
@@ -76,7 +76,7 @@ and two of those do not exist.
 
 ## The specimen
 
-Seven structurally distinct carriers. Raw integer labels overlap on
+Seven structurally distinct sets. Raw integer labels overlap on
 purpose — `a`, `p`, `u`, `m`, `e11`, `e21` and `e31` are all the
 integer `1`, and all seven are different objects.
 
@@ -153,7 +153,7 @@ and helped itself. So `check_imports.sh` carries a *numberless law*:
 no `real` or `complex` declaration, and no literal carrying a decimal
 point or an exponent, in any source **below Level 5**. Comments are
 stripped first (the prose says "real" and means the English word);
-integers are untouched, because a carrier's size is 4 and that is not
+integers are untouched, because a set's size is 4 and that is not
 a coefficient.
 
 **The law is a ceiling that lifts at exactly one rung, not a rule that
@@ -187,7 +187,7 @@ and the law the tower exists to state:
     D3:1^T  =  D1^T o D2^T o D3^T
 ```
 
-verified extensionally — domains by `same_as`, cardinality, and
+verified extensionally — domains by `equals`, cardinality, and
 membership both ways round — never by comparing tuple enumeration
 order, because a relation is a set.
 
@@ -225,7 +225,7 @@ Nothing structural. That is the finding.
 `e12` and `e13` both read `b`; they carry `-1` and `0`. A field on
 `X0` could not hold both, and a field on `X1` could not either. `E_k`
 is where the two ends meet, and it is the only one of the three
-carriers that can seat the number.
+sets that can seat the number.
 
 This is why Level 0 gave the occurrences first-class identity five
 levels before anything needed a value: **a coefficient needs somewhere
@@ -272,7 +272,7 @@ distinction away.
 The pipeline forks and rejoins exactly once:
 
 ```
-    primitive incidence                occurrence carrier E
+    primitive incidence                occurrence set E
             |                                  |
             v                                  v
     derived dependency structure          field w : E -> R
@@ -407,11 +407,11 @@ weights. Then `dependencies()` is called.
     typed target identity equal ..................... NO
 ```
 
-`D2` stands on **two** declared carriers and production's answer on
+`D2` stands on **two** declared sets and production's answer on
 **one**, which is neither of them. All three sets hold three members.
 
 > **STENCIL-B** — coordinate-equivalent to `D2`, and it loses the
-> distinct typed source and target carriers.
+> distinct typed source and target sets.
 
 ### Measurement two — the rectangular witness
 
@@ -434,13 +434,13 @@ D1's codomain does not have:
     production contract preserves this typed signature . NO
 ```
 
-The arrows survived. The **signature** did not. No union carrier was
+The arrows survived. The **signature** did not. No union set was
 manufactured, no domain was padded, and nothing was indexed out of
-range — the fourth row is simply what one carrier serving both axes
+range — the fourth row is simply what one set serving both axes
 looks like.
 
 > **RECT-B** — the ordinary-graph answer cannot intrinsically
-> represent distinct 4-member source and 3-member target carriers.
+> represent distinct 4-member source and 3-member target sets.
 
 ### Measurement three — the step witness
 
@@ -497,7 +497,7 @@ verb does not have to.
     V(R1) = V(R2)   does NOT imply   R1 = R2
 ```
 
-when the representation `V` forgets carrier identity. `D2 : X1 -> X2`
+when the representation `V` forgets set identity. `D2 : X1 -> X2`
 and `pattern : vertices -> vertices` render an identical grid and are
 different objects.
 
@@ -785,8 +785,8 @@ Every axis is walked `member(1), member(2), ..., member(n)`. Never
 sorted, never assumed to be `1..n`, never read off the tuple table —
 which is a set and has no order to read.
 
-Level 4 checks this with a carrier built to be hostile: a
-`subset_set` declaring its members `{ 30, 10, 20 }` in that order
+Level 4 checks this with a set built to be hostile: a
+`subset` declaring its members `{ 30, 10, 20 }` in that order
 renders
 
 ```
@@ -796,7 +796,7 @@ renders
     n       .  .  #
 ```
 
-and not `10 20 30`. No other carrier in the specimen could catch a
+and not `10 20 30`. No other set in the specimen could catch a
 renderer that sorted, because every other one counts from one and
 would look correct either way.
 
@@ -829,7 +829,7 @@ The renderer knows nothing about the specimen. It has never heard of
 that its first column is full. Every one of those facts is obtained,
 at the moment of drawing, by asking `domain(1)`, `domain(2)`,
 `size()`, `member(i)`, `has([col, row])`, `name()` and
-`label_for(carrier, member)` — and nothing else.
+`label_for(set, member)` — and nothing else.
 
 ### Interpreting needed strictly less of the nucleus than deriving did
 
@@ -838,8 +838,8 @@ than "the nucleus was sufficient":
 
 | Job | What it needed |
 |---|---|
-| **deriving** the structure | `binary_relation` (`source`, `target`, `transpose_of`), `compose_binary`, `relational_graph` |
-| **interpreting** it | the **root `relation`** contract (`arity`, `domain(k)`, `has`, `name`) and `member_set` (`size`, `member`, `local_index`, `name`) |
+| **deriving** the structure | `binary_relation` (`source`, `target`, `transpose_of`), `compose_binary`, `related_graph` |
+| **interpreting** it | the **root `relation`** contract (`arity`, `domain(k)`, `has`, `name`) and `set` (`size`, `member`, `local_index`, `name`) |
 
 `structural_renderer_fixture` names no binary relation at all. It never
 calls `source()`, `target()`, `image_view()` or `transpose_of()` — it
@@ -856,13 +856,13 @@ any other. Rendering a rectangular typed dependency turned out to need
   `graph_observation`, `graph_interpretation`, `graph_renderer` or
   `graph_visualizer`; no `visualize()`, `print()` or `dependencies()`
   added to `graph_operation`.
-- **No union carrier.** There is no
+- **No union set.** There is no
   `V = X0 u X1 u X2 u X3`. Level 3 asserts the graph does not hold
   one, and Level 4 shows what adopting one would cost.
 - **No production change at all.** `git diff 44ae3da -- src/`,
   `git diff 29c0ccd -- src/` and `git diff b134a1f -- src/` are all
   empty. Level 5 needed no correction — the field machinery already
-  seats a coefficient on an occurrence carrier and already answers
+  seats a coefficient on an occurrence set and already answers
   domain questions by identity. Level 6 needed none either: it is a
   measurement, and what it measured was a specialization, not a
   defect.
@@ -887,32 +887,32 @@ radius.*
 **Question two.** Would forcing `D1` into `ordinary_graph_view`
 collapse `X0` and `X1`, or otherwise change its mathematical meaning?
 
-The two profile contracts were inspected rather than provoked:
+The two interpretation contracts were inspected rather than provoked:
 
-| Profile | Schema it demands | Why the specimen cannot satisfy it |
+| Interpretation | Schema it demands | Why the specimen cannot satisfy it |
 |---|---|---|
 | `ordinary_graph_view` | `T <= E x V` and `H <= E x V`, one `V` | `T1` lands in `X0`, `H1` in `X1`; refuses with *"the head relation must share the tail's domains"* |
 | `directed_adjacency_view` | `A <= V x V`, one `V` | `D1`'s source is `X0`, its target `X1`; refuses with *"a directed adjacency runs over one domain"* |
 
-Both readings demand a **single** vertex carrier. Satisfying either
+Both readings demand a **single** vertex set. Satisfying either
 would require manufacturing `V = X0 u X1 u ...`, and it is worth being
 exact about what that costs and what it does not.
 
 **Direction survives.** An ordinary directed graph preserves
 ordered-pair direction perfectly well: `directed_adjacency_view`
 documents that "the tuple order of a same-domain binary relation IS
-the direction", and `(a, p)` in a union carrier would still be
+the direction", and `(a, p)` in a union set would still be
 distinguishable from `(p, a)`. Nothing here claims otherwise.
 
 **The typed signature does not.** What a union loses is the *intrinsic
-distinct source and codomain carriers* of the rectangular relation:
+distinct source and codomain sets* of the rectangular relation:
 
 ```
     D : X_i -> X_j        against        D^T : X_j -> X_i
 ```
 
 Under a union both become relations over one domain `V`, and the two
-declared carriers that made them different KINDS of object are gone —
+declared sets that made them different KINDS of object are gone —
 recoverable only from an offset convention the mathematics never
 stated. The first thing `same_extension` tests is domain identity, and
 after a collapse that test has nothing left to compare.
@@ -921,14 +921,14 @@ So the honest statement is:
 
 > An ordinary graph can preserve ordered-pair direction, but it does
 > not intrinsically preserve the distinct typed source/codomain
-> carriers of the rectangular relation.
+> sets of the rectangular relation.
 
-This is not a defect in the profile. It is a specialization the
-profile documents, and it is the right specialization for the mesh
+This is not a defect in the interpretation. It is a specialization the
+interpretation documents, and it is the right specialization for the mesh
 path it was written for.
 
 **Gate-A answer: C.** The relational nucleus is sufficient; the
-ordinary-graph profile is intentionally too specialized for
+ordinary-graph interpretation is intentionally too specialized for
 rectangular typed dependency.
 
 ---
@@ -940,7 +940,7 @@ fixture, with `--selftest`.
 
 | Level | Ceiling |
 |---|---|
-| L0 | `graph_carrier` |
+| L0 | `graph_set` |
 | L1 | `+ graph_relation`, `graph_binary_relation` |
 | L2 | `+ graph_relation_algebra` |
 | L3 | `+ graph_structure` |
@@ -953,7 +953,7 @@ fixture, with `--selftest`.
 
 The shared fixtures are keyed by file and classified by the first
 level that earns them: `visualization_assert` below everything,
-`visualization_carriers_fixture` at L0,
+`visualization_sets_fixture` at L0,
 `visualization_relations_fixture` at L1,
 `visualization_algebra_fixture` at L2,
 `structural_renderer_fixture` **at L4** — so no level below Level 4
@@ -991,13 +991,13 @@ Values used to be a third, and Level 5 is where it stopped being one:
    structure; the moment a level evaluates a production operator it
    has started doing arithmetic, and Level 6's "zero applies" would
    become a promise instead of a fact.
-3. **The ordinary graph** — `graph_profile`, `graph_algorithms`,
+3. **The ordinary graph** — `graph_interpretation`, `graph_algorithms`,
    `class_graph`, `class_stored_graph`. Level 5 included: values
    arrived, machinery did not.
 
 **That third refusal is load-bearing evidence, not hygiene.** Gate A
 concludes that a rectangular typed dependency needs no ordinary-graph
-reading. Because no level of this tower may name `graph_profile`, the
+reading. Because no level of this tower may name `graph_interpretation`, the
 pictures Level 4 produced cannot have leaned on one. The gate is what
 makes "no ordinary graph was required" checkable instead of promised.
 
@@ -1085,7 +1085,7 @@ test/visualization-tower/
 ├── check_imports.sh             fail-closed, per level, --selftest
 ├── common/
 │   ├── visualization_assert.f90            below everything
-│   ├── visualization_carriers_fixture.f90  earned at L0
+│   ├── visualization_sets_fixture.f90  earned at L0
 │   ├── visualization_relations_fixture.f90 earned at L1
 │   ├── visualization_algebra_fixture.f90   earned at L2
 │   ├── structural_renderer_fixture.f90     earned at L4
@@ -1093,7 +1093,7 @@ test/visualization-tower/
 │   ├── valued_renderer_fixture.f90         earned at L5
 │   ├── production_discretization_fixture.f90    earned at L6
 │   └── production_pattern_renderer_fixture.f90  earned at L6
-├── level-0-carrier/
+├── level-0-set/
 ├── level-1-relation/
 ├── level-2-relation-algebra/
 ├── level-3-graph/

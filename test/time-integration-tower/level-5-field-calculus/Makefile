@@ -5,11 +5,11 @@ LDFLAGS += -L../../../lib/ ../../../lib/libufvm.a -llapack
 
 all: run
 
-run: time_assert.o time_carriers_fixture.o time_relations_fixture.o time_fields_fixture.o test.o
-	$(F90) time_assert.o time_carriers_fixture.o time_relations_fixture.o time_fields_fixture.o test.o -o $@ $(LDFLAGS)
+run: time_assert.o time_sets_fixture.o time_relations_fixture.o time_fields_fixture.o test.o
+	$(F90) time_assert.o time_sets_fixture.o time_relations_fixture.o time_fields_fixture.o test.o -o $@ $(LDFLAGS)
 
-test.o: time_assert.o time_carriers_fixture.o time_relations_fixture.o time_fields_fixture.o
-time_carriers_fixture.o: ../common/time_carriers_fixture.f90
+test.o: time_assert.o time_sets_fixture.o time_relations_fixture.o time_fields_fixture.o
+time_sets_fixture.o: ../common/time_sets_fixture.f90
 	$(F90) $(F90FLAGS) -c $< -o $@
 time_relations_fixture.o: ../common/time_relations_fixture.f90
 	$(F90) $(F90FLAGS) -c $< -o $@

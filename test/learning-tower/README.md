@@ -37,7 +37,7 @@ The learning tower asks:
 
 The key result is not merely `w = 3`. It is that a materially different
 vertical application inhabited the same lower mathematical substrate — the
-carriers, relations, relation algebra, relational graph, views, algorithms,
+sets, relations, relation algebra, related graph, views, algorithms,
 fields, and minimizer that the calculator had already forced into
 existence — and closed with
 
@@ -59,10 +59,10 @@ it does and does not prove is stated precisely in
 
 | Level | Learning meaning | Core truth |
 |---|---|---|
-| 0 | carriers | \(V,O,P\) distinct symbolic domains |
+| 0 | sets | \(V,O,P\) distinct symbolic domains |
 | 1 | structural flow | ternary \(R_{\mathrm{flow}}\subseteq O\times V\times P\), six tuples |
 | 2 | relation algebra | \(D=\{(\mathrm{predict},\mathrm{error})\}\) **derived** |
-| 3 | relational graph | one owned structure \(G=(\mathcal S,\mathcal R)\) |
+| 3 | related graph | one owned structure \(G=(\mathcal S,\mathcal R)\) |
 | 4 | graph calculus | directed interpretation; walk \([\mathrm{predict},\mathrm{error}]\) |
 | 5 | field calculus | observed / trainable / computed **roles by domain** |
 | 6 | discretization | structural parameter→residual dependency \(J_\Theta=\{(r,w)\}\) |
@@ -88,7 +88,7 @@ w    x    ŷ    y    e         predict   error         in₁  in₂  out
 (initial)                     operation laws appear at Level 8
 ```
 
-The symbolic carriers are
+The symbolic sets are
 
 \[
 V=\{w,x,\hat y,y,e\},
@@ -135,7 +135,7 @@ flowchart LR
 
 ## The value roles
 
-At Level 5 the value carrier is partitioned extensionally into three
+At Level 5 the value set is partitioned extensionally into three
 subdomains,
 
 \[
@@ -221,7 +221,7 @@ Level 9
 
 ---
 
-# Level 0 — Carriers
+# Level 0 — Sets
 
 ## Capability
 
@@ -247,7 +247,7 @@ merely members of \(O\).
 
 ```mermaid
 flowchart TB
-    subgraph V["Carrier V — value slots"]
+    subgraph V["Set V — value slots"]
         w((w))
         x((x))
         yh((ŷ))
@@ -255,12 +255,12 @@ flowchart TB
         e((e))
     end
 
-    subgraph O["Carrier O — operations"]
+    subgraph O["Set O — operations"]
         p((predict))
         er((error))
     end
 
-    subgraph P["Carrier P — ports"]
+    subgraph P["Set P — ports"]
         i1((in₁))
         i2((in₂))
         ou((out))
@@ -269,26 +269,26 @@ flowchart TB
 
 ## Construction / implementation
 
-Three `counted_set` declarations:
+Three `index_set` declarations:
 
 ```fortran
-v = counted_set('value-slots', 5)
-o = counted_set('operations' , 2)
-p = counted_set('ports'      , 3)
+v = index_set('value-slots', 5)
+o = index_set('operations' , 2)
+p = index_set('ports'      , 3)
 ```
 
 Members are enumerated by small integers (`SLOT_W = 1`, …,
 `OP_PREDICT = 1`, …, named in `common/learning_assert.f90`), but the raw
 integers are enumeration handles, **not** semantics: equal sizes and equal
-integers buy nothing — carrier identity is structural (`same_as`), and every
-association between a member and anything else goes through the carrier's
+integers buy nothing — set identity is structural (`equals`), and every
+association between a member and anything else goes through the set's
 own maps.
 
 ## Minimal verification
 
 - cardinalities: \(|V|=5\), \(|O|=2\), \(|P|=3\);
-- distinct structural identities: \(V\neq O\neq P\) by `same_as`;
-- both enumeration round trips, on every member of every carrier:
+- distinct structural identities: \(V\neq O\neq P\) by `equals`;
+- both enumeration round trips, on every member of every set:
 
 \[
 \operatorname{member}(\operatorname{local\_index}(m))=m,
@@ -310,7 +310,7 @@ no residual
 no training
 ```
 
-The import list is itself the proof: `learning_assert`, `graph_carrier`,
+The import list is itself the proof: `learning_assert`, `graph_set`,
 and nothing above.
 
 ## What this proves
@@ -350,7 +350,7 @@ arity               = 3
 ordered signature   = [O, V, P]   answered by identity, slot by slot
 set semantics       = the test hands the constructor SEVEN tuples,
                       one duplicated on purpose; the relation holds SIX
-foreign members     = refused (see Refusals)
+unheld members      = refused (see Refusals)
 ```
 
 The three-way fact is the point: *operation consumes/produces value slot at
@@ -360,7 +360,7 @@ stays a relation with three slots.
 
 ## Minimal verification
 
-- arity is exactly 3, and each signature slot is the declared carrier
+- arity is exactly 3, and each signature slot is the declared set
   **by identity**;
 - `|R_flow| = 6` although seven tuples were handed in;
 - all six expected tuples are members (six present in a six-element set:
@@ -491,13 +491,13 @@ does not infer it.
 
 ---
 
-# Level 3 — Relational graph
+# Level 3 — Related graph
 
 ## Capability
 
 Level 3 answers:
 
-> **How do the carriers and relations coexist as one owned structure?**
+> **How do the sets and relations coexist as one owned structure?**
 
 ## New mathematical commitment
 
@@ -513,7 +513,7 @@ One relational model structure owns the learning schema.
 
 ```mermaid
 flowchart TB
-    G["learning relational_graph"]
+    G["learning related_graph"]
 
     V["V = value slots"]
     O["O = operations"]
@@ -540,9 +540,9 @@ flowchart TB
 container stores structure and re-derives nothing:
 
 ```fortran
-g = relational_graph('learning',                        &
-     & [held_set(v), held_set(o), held_set(p)],         &
-     & [held_relation(flow), held_relation(d)])
+g = related_graph('learning',                        &
+     & [declared_set(v), declared_set(o), declared_set(p)],         &
+     & [declared_relation(flow), declared_relation(d)])
 ```
 
 (`src/graph_structure.f90`). Ownership truths:
@@ -552,12 +552,12 @@ the graph owns materialized relations
 relation signatures close over graph-owned member-set identities
 duplicate set identity refused
 duplicate relation identity refused
-foreign relation domain refused
+unheld relation domain refused
 a borrowing / non-materialized view cannot be owned
 ```
 
 Relation **identity** matters, not just signature: the ownership question
-is answered by scanning `relation_at(k) % same_as(r)` — an identically
+is answered by scanning `relation_at(k) % equals(r)` — an identically
 built twin is not the same relation, and an identically stocked twin graph
 is not the same graph.
 
@@ -571,14 +571,14 @@ is not the same graph.
 - the derived dependency survives too: binary, one tuple, both slots
   \(O\);
 - signature closure: every slot of every owned relation resolves to an
-  owned carrier;
+  owned set;
 - graph identity: \(G\) is itself, and no identically stocked twin is it.
 
 ## Required negative truth
 
 \(D\) remains a plain relation in a graph: no directed edge, no source, no
 walk — interpretation is Level 4's business. Still no number anywhere.
-`relational_graph` remains free of vertex/edge vocabulary.
+`related_graph` remains free of vertex/edge vocabulary.
 
 ## What this proves
 
@@ -623,11 +623,11 @@ graph-owned D
 graph_algorithms: sources / sinks / reachable / topological_order
 ```
 
-The view (`src/graph_profile.f90`) locates the graph-owned relation that is
-`same_as` the selector and borrows **that** — the test deallocates the
+The view (`src/graph_interpretation.f90`) locates the graph-owned relation that is
+`equals` the selector and borrows **that** — the test deallocates the
 external selector `d` the moment the view exists, and every algorithm
 (`src/graph_algorithms.f90`) still answers. Algorithms remain outside
-storage; sources and sinks come back as `subset_set` subobjects of \(O\).
+storage; sources and sinks come back as `subset` subobjects of \(O\).
 
 ## Minimal verification
 
@@ -646,7 +646,7 @@ topological order         = [predict, error], exactly
 
 Execution **order** has meaning; operation **laws** do not — `predict`
 does not yet multiply, nothing is evaluated, nothing is trained, and the
-word backprop appears nowhere. No neuron, no layer, no edge carrier: the
+word backprop appears nowhere. No neuron, no layer, no edge set: the
 operations themselves are the domain walked.
 
 ## What this proves
@@ -679,7 +679,7 @@ K=\{y,x\}\hookrightarrow V,
 U=\{e,\hat y\}\hookrightarrow V,
 \]
 
-which **partition** the value carrier,
+which **partition** the value set,
 
 \[
 V=K\;\dot\cup\;\Theta\;\dot\cup\;U,
@@ -712,13 +712,13 @@ flowchart TB
 
 ## Construction / implementation
 
-The subdomains are `subset_set` subobjects
-(`src/graph_carrier.f90`), declared in deliberately non-obvious orders:
+The subdomains are `subset` subobjects
+(`src/graph_set.f90`), declared in deliberately non-obvious orders:
 
 ```fortran
-k     = subset_set('observed' , v, [SLOT_Y, SLOT_X])
-theta = subset_set('trainable', v, [SLOT_W])
-u     = subset_set('computed' , v, [SLOT_E, SLOT_YHAT])
+k     = subset('observed' , v, [SLOT_Y, SLOT_X])
+theta = subset('trainable', v, [SLOT_W])
+u     = subset('computed' , v, [SLOT_E, SLOT_YHAT])
 ```
 
 The fields are the ordinary production `field` on those domains
@@ -774,7 +774,7 @@ The model law is still unspoken: knowing \(x=2\) is not knowing what
 ## What this proves
 
 Values are separate from topology, and **role is a property of the domain,
-not of the value's type**. The general carrier/subset/field machinery
+not of the value's type**. The general set/subset/field machinery
 expresses observed/trainable/computed without new production concepts.
 
 ---
@@ -796,7 +796,7 @@ not to one data instance.
 
 ## New mathematical commitment
 
-A residual-row carrier and one location fact:
+A residual-row set and one location fact:
 
 \[
 Y=\{r\},
@@ -856,7 +856,7 @@ w\leadsto e,
 \]
 
 — `w` influences `e` **transitively**, through \(\hat y\), never by
-adjacency. \(A\) is admitted to a small relational graph holding \(V\),
+adjacency. \(A\) is admitted to a small related graph holding \(V\),
 interpreted by `directed_adjacency_view`, and walked by `reachable`.
 
 **The trainable dependency.** \(J_\Theta\subseteq Y\times\Theta\) is
@@ -994,7 +994,7 @@ The legacy operation host is deliberately irrelevant scenery: a
 seven-vertex `stored_graph` whose vertex count matches nothing —
 
 ```text
-|host vertices| = 7,  |Theta| = 1,  host.vertex_set() not same_as Theta
+|host vertices| = 7,  |Theta| = 1,  host.vertex_set() not equals Theta
 ```
 
 — proving *trainable parameter ≠ graph vertex*: minimization is
@@ -1007,8 +1007,8 @@ inherits `attach` / `constant` / `solve` from the minimizer base
 
 ```text
 solver.attach(oracle, host, Theta)
-solver.domain(host)  same_as Theta      the answer lives on Θ
-oracle.domain(host)  same_as Y          the residual lives on Y
+solver.domain(host)  equals Theta      the answer lives on Θ
+oracle.domain(host)  equals Y          the residual lives on Y
 ```
 
 **The affine split.** The existing minimizer measures
@@ -1143,7 +1143,7 @@ generated_residual(...)                  the constituted evaluation
 ```
 
 parameterized by the abstract contracts `class(relation)` and
-`class(member_set)` — no learning singleton, no stored-type demands.
+`class(set)` — no learning singleton, no stored-type demands.
 
 **Execution order is derived, never handed over.** The test walks the
 certified lower road once more:
@@ -1303,7 +1303,7 @@ contains no law, no slot name, no order literal, no \(2w-6\).
 
 **Graph ownership, proved by lifetime.** The adapter is constructed from
 the graph plus an external flow selector; it scans
-`g % relation_at(k) % same_as(selector)` to find the **graph-owned** flow,
+`g % relation_at(k) % equals(selector)` to find the **graph-owned** flow,
 retains that citizen, and refuses if the graph does not own it. Then:
 
 ```text
@@ -1441,10 +1441,10 @@ field on the trainable domain, reusable after training ends.
 
 ```mermaid
 flowchart TB
-    L0["0 — carriers<br/>V, O, P"]
+    L0["0 — sets<br/>V, O, P"]
     L1["1 — relation<br/>R_flow ⊆ O×V×P"]
     L2["2 — relation algebra<br/>D = {predict → error}"]
-    L3["3 — relational graph<br/>G = (𝒮, ℛ)"]
+    L3["3 — related graph<br/>G = (𝒮, ℛ)"]
     L4["4 — graph calculus<br/>walk: predict then error"]
     L5["5 — field calculus<br/>y=6, x=2, w₀=0; U valueless"]
     L6["6 — discretization<br/>J_Θ = {(r,w)}, structurally"]
@@ -1620,15 +1620,15 @@ Two mechanisms hold the stratification:
 
 | Level | Test directory | Principal modules exercised (per the import gate) |
 |---|---|---|
-| 0 | `level-0-carrier/` | `graph_carrier` |
+| 0 | `level-0-set/` | `graph_set` |
 | 1 | `level-1-relation/` | + `graph_relation` (with refusal suite) |
 | 2 | `level-2-relation-algebra/` | + `graph_relation_algebra` (D held as `class(relation)`) |
 | 3 | `level-3-graph/` | + `graph_structure` (`graph_binary_relation` granted for the view refusal **only**) |
-| 4 | `level-4-graph-calculus/` | + `graph_profile`, `graph_algorithms` (binary storage stays forbidden) |
-| 5 | `level-5-field-calculus/` | `graph_carrier`, `class_graph_field` — the smallest allowlist above ground |
-| 6 | `level-6-discretization/` | + `graph_binary_relation` (`csr_relation`, `transpose_of` earned), `graph_structure`, `graph_profile`, `graph_algorithms` |
-| 7 | `level-7-minimization/` | `graph_carrier`, `graph_grammar`, `class_graph_field`, `class_graph`, `class_graph_gmres` + in-file `learning_residual_fixture` |
-| 8 | `level-8-constitution/` | carriers/relations/algebra/structure/profile/algorithms, `class_graph_field` + `learning_constitution_fixture` (own file; refusal suite) |
+| 4 | `level-4-graph-calculus/` | + `graph_interpretation`, `graph_algorithms` (binary storage stays forbidden) |
+| 5 | `level-5-field-calculus/` | `graph_set`, `class_graph_field` — the smallest allowlist above ground |
+| 6 | `level-6-discretization/` | + `graph_binary_relation` (`csr_relation`, `transpose_of` earned), `graph_structure`, `graph_interpretation`, `graph_algorithms` |
+| 7 | `level-7-minimization/` | `graph_set`, `graph_grammar`, `class_graph_field`, `class_graph`, `class_graph_gmres` + in-file `learning_residual_fixture` |
+| 8 | `level-8-constitution/` | sets/relations/algebra/structure/interpretation/algorithms, `class_graph_field` + `learning_constitution_fixture` (own file; refusal suite) |
 | 9 | `level-9-statement/` | + `graph_grammar`, `class_graph`, `class_graph_gmres`, both fixtures (`constituted_residual_fixture.f90`) |
 
 Every level also imports `learning_assert`
@@ -1645,7 +1645,7 @@ test/learning-tower/
 ├── check_imports.sh                per-level allowlists, fail-closed
 ├── common/
 │   └── learning_assert.f90
-├── level-0-carrier/                test.f90
+├── level-0-set/                test.f90
 ├── level-1-relation/               test.f90 · refusal.f90 · check_refusals.sh
 ├── level-2-relation-algebra/       test.f90
 ├── level-3-graph/                  test.f90 · refusal.f90 · check_refusals.sh
@@ -1672,7 +1672,7 @@ exit.
 | 1 | `arity` | each tuple has exactly one part per slot |
 | 1 | `member` | a tuple names a member its domain does not hold |
 | 1 | `undeclared` | a signature refers to declared domains only |
-| 3 | `foreign` | a relation must relate the graph's own member sets |
+| 3 | `unheld-domain` | a relation must relate the graph's own member sets |
 | 3 | `dupset` | a graph holds each domain once |
 | 3 | `duprel` | a graph holds each relation once |
 | 3 | `view` | a view cannot be owned |
@@ -1731,8 +1731,8 @@ meaning:
 > test. Every learning-specific concept was expressible through existing
 > general mathematics plus test-local constitution and adapters.
 
-Carriers and subsets expressed the roles; relations and algebra expressed
-the model's structure and its derived dependency; the relational graph
+Sets and subsets expressed the roles; relations and algebra expressed
+the model's structure and its derived dependency; the related graph
 owned it; views and algorithms interpreted and walked it; the general
 field held the values; the existing minimizer fit the parameter.
 
@@ -1768,7 +1768,7 @@ acceptance oracles for any such refinement.
 ## Observation A — roles are domains, not ML field subclasses
 
 `observed`, `trainable`, and `computed` were represented entirely through
-subdomains (`subset_set`) of one value carrier. No `data_field`,
+subdomains (`subset`) of one value set. No `data_field`,
 `parameter_field`, or tensor type was required — the general field on a
 general domain sufficed.
 
@@ -1840,10 +1840,10 @@ will fit without new contracts.
 
 ```text
 learning tower
-├── level 0  carriers ........... PASS
+├── level 0  sets ........... PASS
 ├── level 1  relation ........... PASS
 ├── level 2  relation algebra ... PASS
-├── level 3  relational graph ... PASS
+├── level 3  related graph ... PASS
 ├── level 4  graph calculus ..... PASS
 ├── level 5  field calculus ..... PASS
 ├── level 6  discretization ..... PASS

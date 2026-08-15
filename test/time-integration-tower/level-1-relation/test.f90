@@ -23,12 +23,12 @@
 ! Inventing an incidence to attach Q to the time chain would
 ! manufacture exactly the conflation the tower exists to refuse.
 !
-! Signatures are pinned by carrier IDENTITY, because the ids collide
+! Signatures are pinned by set IDENTITY, because the ids collide
 ! across Q, T and E. And the collision here is sharper than a
 ! coincidence of small numbers: over this specimen Tail's extension
 ! is { [1,1] [2,2] [3,3] [4,4] }, which is tuple-for-tuple what a
 ! six-vertex chain's tail map looks like over entirely different
-! carriers. The integers carry none of the meaning. The signature
+! sets. The integers carry none of the meaning. The signature
 ! carries all of it.
 !
 ! Nothing here knows about q(t), a history field, a derivative, a
@@ -43,14 +43,14 @@ program time_level_1
   use time_assert           , only : NT, NE
   use time_assert           , only : T0, T1, T2, T3, T4
   use time_assert           , only : E1, E2, E3, E4
-  use graph_carrier         , only : counted_set, member_set
+  use graph_set         , only : index_set, set
   use graph_binary_relation , only : csr_relation
-  use time_carriers_fixture , only : time_carriers
+  use time_sets_fixture , only : time_sets
   use time_relations_fixture, only : tail_relation, head_relation
 
   implicit none
 
-  type(counted_set)  :: q, t, e
+  type(index_set)  :: q, t, e
   type(csr_relation) :: tail, head
   integer            :: nfail
 
@@ -60,7 +60,7 @@ program time_level_1
   write(*,'(1x,a)') "time integration tower . level 1 . relation"
   write(*,'(1x,a)') "============================================="
 
-  call time_carriers(q, t, e)
+  call time_sets(q, t, e)
   tail = tail_relation(e, t)
   head = head_relation(e, t)
 
@@ -74,7 +74,7 @@ program time_level_1
 contains
 
   !===================================================================!
-  ! Every slot answers a DECLARED carrier by identity. Sizes could
+  ! Every slot answers a DECLARED set by identity. Sizes could
   ! not do this alone: Tail and Head share both of theirs exactly.
   !===================================================================!
 
@@ -82,17 +82,17 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
 
     d = tail % domain(1)
-    call report(d % same_as(e), "Tail runs from the steps", nfail)
+    call report(d % equals(e), "Tail runs from the steps", nfail)
     d = tail % domain(2)
-    call report(d % same_as(t), "into the instants", nfail)
+    call report(d % equals(t), "into the instants", nfail)
 
     d = head % domain(1)
-    call report(d % same_as(e), "Head runs from the steps", nfail)
+    call report(d % equals(e), "Head runs from the steps", nfail)
     d = head % domain(2)
-    call report(d % same_as(t), "into the instants as well", nfail)
+    call report(d % equals(t), "into the instants as well", nfail)
 
   end subroutine check_signatures
 
@@ -168,23 +168,23 @@ contains
   !===================================================================!
   ! The absence that is content. Q was declared at Level 0 and no
   ! fact on this rung mentions it - checked by asking the relations
-  ! for their carriers rather than by reading this file's imports.
+  ! for their sets rather than by reading this file's imports.
   !===================================================================!
 
   subroutine check_state_axis_is_untouched(nfail)
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    class(set), allocatable :: d
     integer                        :: k
     logical                        :: mentions_q
 
     mentions_q = .false.
     do k = 1, tail % arity()
        d = tail % domain(k)
-       mentions_q = mentions_q .or. d % same_as(q)
+       mentions_q = mentions_q .or. d % equals(q)
        d = head % domain(k)
-       mentions_q = mentions_q .or. d % same_as(q)
+       mentions_q = mentions_q .or. d % equals(q)
     end do
 
     call report(.not. mentions_q, &
@@ -192,7 +192,7 @@ contains
          & "state coordinates exist, and NOTHING says a coordinate " // &
          & "is an instant", nfail)
 
-    call report(q % size() .eq. 2 .and. .not. q % same_as(t), &
+    call report(q % size() .eq. 2 .and. .not. q % equals(t), &
          & "Q is still there, still two, still not T - unrelated is " // &
          & "not absent", nfail)
 

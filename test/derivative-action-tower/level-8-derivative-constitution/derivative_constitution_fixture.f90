@@ -38,7 +38,7 @@
 ! workspace keeps its separate availability flags).
 !
 ! Everything is parameterized by the abstract contracts -
-! class(relation), class(member_set) - handed in by the caller: no
+! class(relation), class(set) - handed in by the caller: no
 ! derivative singleton, no stored-type demands, no graph argument.
 ! What the evaluators consume is R_flow incidences, the DERIVED
 ! order, primal values, and the law table: the structural J-pattern
@@ -52,7 +52,7 @@ module derivative_constitution_fixture
   use iso_fortran_env, only : dp => REAL64
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : member_set
+  use graph_set    , only : set
   use graph_relation   , only : relation
 
   implicit none
@@ -116,7 +116,7 @@ contains
   integer function slot_for_port(flow, slots, op, port) result(found)
 
     class(relation)  , intent(in) :: flow
-    class(member_set), intent(in) :: slots
+    class(set), intent(in) :: slots
     integer          , intent(in) :: op, port
 
     integer :: j, hits
@@ -147,10 +147,10 @@ contains
        & computed, order, values, available)
 
     class(relation)  , intent(in)  :: flow
-    class(member_set), intent(in)  :: slots      ! V
-    class(member_set), intent(in)  :: indep      ! X
+    class(set), intent(in)  :: slots      ! V
+    class(set), intent(in)  :: indep      ! X
     real(dp)         , intent(in)  :: indep_values(:)
-    class(member_set), intent(in)  :: computed   ! C
+    class(set), intent(in)  :: computed   ! C
     integer          , intent(in)  :: order(:)   ! derived by caller
     real(dp)         , intent(out) :: values(:)
     logical          , intent(out) :: available(:)
@@ -206,10 +206,10 @@ contains
        & computed, order, primal, dot, dot_available)
 
     class(relation)  , intent(in)  :: flow
-    class(member_set), intent(in)  :: slots
-    class(member_set), intent(in)  :: indep
+    class(set), intent(in)  :: slots
+    class(set), intent(in)  :: indep
     real(dp)         , intent(in)  :: seed_values(:)   ! on X
-    class(member_set), intent(in)  :: computed
+    class(set), intent(in)  :: computed
     integer          , intent(in)  :: order(:)
     real(dp)         , intent(in)  :: primal(:)        ! full V workspace
     real(dp)         , intent(out) :: dot(:)
@@ -287,11 +287,11 @@ contains
        & primal, response, seed_values, result_values, hits)
 
     class(relation)  , intent(in)  :: flow
-    class(member_set), intent(in)  :: slots
-    class(member_set), intent(in)  :: indep
+    class(set), intent(in)  :: slots
+    class(set), intent(in)  :: indep
     integer          , intent(in)  :: order(:)
     real(dp)         , intent(in)  :: primal(:)        ! full V workspace
-    class(member_set), intent(in)  :: response         ! Z
+    class(set), intent(in)  :: response         ! Z
     real(dp)         , intent(in)  :: seed_values(:)   ! on Z
     real(dp)         , intent(out) :: result_values(:) ! on X
     integer, allocatable, intent(out), optional :: hits(:)

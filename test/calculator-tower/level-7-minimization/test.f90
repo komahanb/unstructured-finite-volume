@@ -31,8 +31,8 @@ module affine_residual_fixture
 
   use iso_fortran_env  , only : dp => REAL64
   use calculator_assert, only : SLOT_C, SLOT_E
-  use graph_carrier    , only : member_set
-  use graph_grammar    , only : graph, graph_field, graph_operation
+  use graph_set    , only : set
+  use graph_grammar    , only : ordinary_graph, graph_field, graph_operation
   use class_graph_field, only : field
 
   implicit none
@@ -44,7 +44,7 @@ module affine_residual_fixture
   integer, parameter :: ROW_E = 2
 
   type, extends(graph_operation) :: affine_residual
-     class(member_set), allocatable :: u, y
+     class(set), allocatable :: u, y
    contains
      procedure :: name   => oracle_name
      procedure :: domain => oracle_domain
@@ -58,7 +58,7 @@ module affine_residual_fixture
 contains
 
   type(affine_residual) function create_oracle(u, y) result(this)
-    class(member_set), intent(in) :: u, y
+    class(set), intent(in) :: u, y
     allocate(this % u, source=u)
     allocate(this % y, source=y)
   end function create_oracle
@@ -71,8 +71,8 @@ contains
 
   subroutine oracle_domain(this, input_graph, domain)
     class(affine_residual), intent(in) :: this
-    class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(ordinary_graph), intent(in) :: input_graph
+    class(set), allocatable, intent(out) :: domain
     associate (u1 => input_graph); end associate
     allocate(domain, source=this % y)
   end subroutine oracle_domain
@@ -80,19 +80,19 @@ contains
   subroutine oracle_apply(this, input_graph, input_data, output)
 
     class(affine_residual), intent(in)             :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
     type(field)                    :: out
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
     real(dp), allocatable          :: q(:), r(:)
     real(dp)                       :: qc, qe
 
     associate (u1 => input_graph); end associate
 
     call input_data(1) % domain(dom)
-    if (.not. dom % same_as(this % u)) then
+    if (.not. dom % equals(this % u)) then
        error stop 'oracle: the state must live on the unknown domain'
     end if
     call input_data(1) % get_real_vector(q)
@@ -118,19 +118,19 @@ program calculator_level_7
 
   use iso_fortran_env  , only : dp => REAL64
   use calculator_assert, only : report, verdict, SLOT_C, SLOT_E
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use graph_set    , only : index_set, subset, set
   use class_graph      , only : stored_graph
   use class_graph_gmres, only : gmres
   use affine_residual_fixture, only : affine_residual, ROW_C, ROW_E
 
   implicit none
 
-  type(counted_set)     :: x, y, hv
-  type(subset_set)      :: u
+  type(index_set)     :: x, y, hv
+  type(subset)      :: u
   type(stored_graph)    :: host
   type(affine_residual) :: oracle
   type(gmres)           :: solver
-  class(member_set), allocatable :: dom
+  class(set), allocatable :: dom
   real(dp), allocatable :: g(:), rhs(:), q(:)
   real(dp)              :: achieved
   integer               :: nfail
@@ -140,20 +140,20 @@ program calculator_level_7
   write(*,'(1x,a)') "calculator tower . level 7 . minimization"
   write(*,'(1x,a)') "============================================="
 
-  x = counted_set('value-slots'  , 5)
-  u = subset_set('unknowns', x, [SLOT_E, SLOT_C])
-  y = counted_set('residual-rows', 2)
+  x = index_set('value-slots'  , 5)
+  u = subset('unknowns', x, [SLOT_E, SLOT_C])
+  y = index_set('residual-rows', 2)
 
   ! Seven vertices: the wrong size for everything, on purpose.
   host = stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
 
   oracle = affine_residual(u, y)
 
-  call report(.not. u % same_as(y), &
+  call report(.not. u % equals(y), &
        & "U and Y are distinct domains, cardinality notwithstanding", &
        & nfail)
   hv = host % vertex_set()
-  call report(.not. hv % same_as(u) .and. &
+  call report(.not. hv % equals(u) .and. &
        &      host % num_vertices() /= u % size(), &
        & "the host's seven vertices are nobody's unknowns", nfail)
 
@@ -162,10 +162,10 @@ program calculator_level_7
   solver % max_iterations = 50
 
   call solver % domain(host, dom)
-  call report(dom % same_as(u), &
+  call report(dom % equals(u), &
        & "the solver's answer domain is U, by identity", nfail)
   call oracle % domain(host, dom)
-  call report(dom % same_as(y), &
+  call report(dom % equals(y), &
        & "and the oracle answers on Y", nfail)
 
   call solver % constant(g)

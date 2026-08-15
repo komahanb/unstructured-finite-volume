@@ -18,9 +18,9 @@
 module cubic_statement_fixture
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_grammar  , only : graph, graph_field, graph_operation
+  use graph_grammar  , only : ordinary_graph, graph_field, graph_operation
   use graph_calculus , only : GRAPH_SIDE_VERTEX
-  use graph_carrier         , only : member_set, counted_set, subset_set
+  use graph_set         , only : set, index_set, subset
   use class_graph_field  , only : field
   use class_graph_differential_operator, only : differential_operator
 
@@ -58,19 +58,19 @@ contains
 
   subroutine cubic_domain(this, input_graph, domain)
     class(cubic_statement), intent(in)     :: this
-    class(graph), intent(in)               :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(ordinary_graph), intent(in)               :: input_graph
+    class(set), allocatable, intent(out) :: domain
     call input_graph % all_vertices(domain)
   end subroutine cubic_domain
 
   subroutine cubic_apply(this, input_graph, input_data, output)
 
     class(cubic_statement), intent(in)             :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
-    type(counted_set) :: cells
+    type(index_set) :: cells
     type(field)   :: out
     real(dp), allocatable :: q(:), y(:)
     integer :: nv, v
@@ -98,9 +98,9 @@ end module cubic_statement_fixture
 
 program test_graph_minimization
 
-  use graph_carrier, only : member_set, counted_set, subset_set
+  use graph_set, only : set, index_set, subset
   use iso_fortran_env, only : dp => REAL64
-  use graph_grammar  , only : graph
+  use graph_grammar  , only : ordinary_graph
   use class_graph_mesh   , only : mesh
   use class_mesh_builder , only : mesh_from_gmsh
   use class_robin_condition, only : robin_condition, dirichlet
@@ -210,7 +210,7 @@ contains
     real(dp), intent(in)              :: kappa
     real(dp), allocatable, intent(out) :: c(:), b(:)
 
-    class(member_set), allocatable :: members
+    class(set), allocatable :: members
     real(dp), allocatable :: cw(:), bw(:)
     integer :: k, f, e
 

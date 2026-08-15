@@ -16,7 +16,7 @@
 ! ever stands for "not yet" - absence is a separate flag.
 !
 ! Everything else is structural delegation, parameterized by the
-! abstract contracts - class(relation), class(member_set) - handed
+! abstract contracts - class(relation), class(set) - handed
 ! in by the caller: no learning singleton, no stored-type demands.
 ! The slot on a port and the located slot of a row are DISCOVERED
 ! by uniqueness scans and refused otherwise; no slot name is wired
@@ -32,7 +32,7 @@ module learning_constitution_fixture
   use iso_fortran_env, only : dp => REAL64
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier  , only : member_set
+  use graph_set  , only : set
   use graph_relation , only : relation
 
   implicit none
@@ -73,7 +73,7 @@ contains
   integer function slot_for_port(flow, slots, op, port) result(found)
 
     class(relation)  , intent(in) :: flow
-    class(member_set), intent(in) :: slots
+    class(set), intent(in) :: slots
     integer          , intent(in) :: op, port
 
     integer :: j, hits
@@ -100,7 +100,7 @@ contains
   integer function located_slot(located, slots, row) result(home)
 
     class(relation)  , intent(in) :: located
-    class(member_set), intent(in) :: slots
+    class(set), intent(in) :: slots
     integer          , intent(in) :: row
 
     integer :: j, hits
@@ -136,13 +136,13 @@ contains
        & computed, order, residual, touched, trace)
 
     class(relation)  , intent(in)  :: flow, located
-    class(member_set), intent(in)  :: slots        ! V
-    class(member_set), intent(in)  :: rows         ! Y
-    class(member_set), intent(in)  :: observed     ! K
+    class(set), intent(in)  :: slots        ! V
+    class(set), intent(in)  :: rows         ! Y
+    class(set), intent(in)  :: observed     ! K
     real(dp)         , intent(in)  :: observed_values(:)
-    class(member_set), intent(in)  :: trainable    ! Theta
+    class(set), intent(in)  :: trainable    ! Theta
     real(dp)         , intent(in)  :: trainable_values(:)
-    class(member_set), intent(in)  :: computed     ! U
+    class(set), intent(in)  :: computed     ! U
     integer          , intent(in)  :: order(:)     ! derived by caller
     real(dp)         , intent(out) :: residual(:)
     integer , allocatable, intent(out), optional :: touched(:)

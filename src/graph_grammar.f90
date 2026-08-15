@@ -3,12 +3,12 @@
 !
 ! ONCE the ground level of the old stratification; now the legacy
 ! vertex/edge compatibility contract of the relation-centered tower
-! (AGENTS.md). The NEW ground is graph_carrier; relations, algebra,
-! the relational graph, the interpretations and the field calculus
+! (AGENTS.md). The NEW ground is graph_set; relations, algebra,
+! the related graph, the interpretations and the field calculus
 ! all live in their own level modules. What remains here is the
 ! ordinary-graph vocabulary the old solvers still speak - retyped
-! onto the new ontology: named graph sets answer member_set /
-! subset_set; a field's domain IS a member_set; the field
+! onto the new ontology: named graph sets answer set /
+! subset; a field's domain IS a set; the field
 ! abstraction itself is OWNED by graph_field_calculus and only
 ! re-exported here for its remaining consumers.
 !
@@ -18,17 +18,17 @@
 !                     WHERE THIS FILE STANDS
 !
 ! The old stratification that began here is retired. The living
-! tower is the relation-centered one (AGENTS.md): carriers,
-! relations, algebra, the relational graph, its interpretations,
+! tower is the relation-centered one (AGENTS.md): sets,
+! relations, algebra, the related graph, its interpretations,
 ! and the field calculus, each in its own module. This file keeps
 ! only the ordinary-graph compatibility vocabulary the remaining
 ! legacy citizens speak - and its answers are already retyped onto
 ! the new ground:
 !
-!    named graph sets  ->  member_set objects
-!    full named sets   ->  the carrier itself
-!    restricted sets   ->  subset_set subobjects
-!    field domains     ->  member_set, owned by graph_field_calculus
+!    named graph sets  ->  set objects
+!    full named sets   ->  the set itself
+!    restricted sets   ->  subset subobjects
+!    field domains     ->  set, owned by graph_field_calculus
 !
 !=====================================================================!
 !
@@ -73,8 +73,8 @@
 !    graph_transform .. verb between  how one graph becomes another
 !
 ! A graph here is the ordinary reading: two member sets joined by
-! tail and head. Member sets themselves are carriers now, never
-! edgeless graphs; a field's domain is a member_set, full stop.
+! tail and head. Member sets themselves are sets now, never
+! edgeless graphs; a field's domain is a set, full stop.
 !
 !=====================================================================!
 !
@@ -143,7 +143,7 @@
 module graph_grammar
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_carrier      , only : member_set, counted_set
+  use graph_set      , only : set, index_set
   use graph_field_calculus, only : graph_field
   use graph_field_calculus, only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
   use graph_field_calculus, only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
@@ -153,7 +153,7 @@ module graph_grammar
 
   private
 
-  public :: graph
+  public :: ordinary_graph
   public :: graph_field
   public :: graph_operation
   public :: graph_transform
@@ -189,13 +189,13 @@ module graph_grammar
   ! boundary groups.
   !
   ! A NAMED SET IS A MEMBER SET. The full sets answer the graph's
-  ! own carrier; the restricted ones answer subset_set subobjects
+  ! own set; the restricted ones answer subset subobjects
   ! of it,
   !
   !      all_vertices           tagged_edges('wall')
-  !      the vertex carrier     subset { 11 14 19 } c--> edges
+  !      the vertex set     subset { 11 14 19 } c--> edges
   !
-  ! and membership, size, order and standing come from the carrier
+  ! and membership, size, order and standing come from the set
   ! contract - no edgeless-graph fiction anywhere.
   !
   ! THE FRAME. How a part relates to the whole it was cut from:
@@ -218,7 +218,7 @@ module graph_grammar
   ! than invent one.
   !===================================================================!
 
-  type, abstract :: graph
+  type, abstract :: ordinary_graph
 
    contains
 
@@ -227,12 +227,12 @@ module graph_grammar
      procedure(graph_count_interface) , deferred :: num_vertices
      procedure(graph_count_interface) , deferred :: num_edges
 
-     ! The carrier bridge (migration, AGENTS.md 5B): the graph's two
+     ! The set bridge (migration, AGENTS.md 5B): the graph's two
      ! persistent declared domains, for consumers that must ask
      ! where a field domain ultimately lives. This root is already
      ! explicitly the ordinary vertex/edge compatibility contract.
-     procedure(graph_carrier_interface), deferred :: vertex_set
-     procedure(graph_carrier_interface), deferred :: edge_set
+     procedure(graph_set_interface), deferred :: vertex_set
+     procedure(graph_set_interface), deferred :: edge_set
 
      ! Incidence: the two integer edge fields that ARE the structure.
      procedure(graph_edge_end_interface)     , deferred :: edge_tail
@@ -241,13 +241,13 @@ module graph_grammar
 
      ! The named sets. Each answer is itself a graph: the edgeless
      ! graph of the members.
-     procedure(graph_member_set_interface), deferred :: all_vertices
-     procedure(graph_member_set_interface), deferred :: interior_vertices
-     procedure(graph_member_set_interface), deferred :: boundary_vertices
+     procedure(graph_members_interface), deferred :: all_vertices
+     procedure(graph_members_interface), deferred :: interior_vertices
+     procedure(graph_members_interface), deferred :: boundary_vertices
      procedure(graph_tagged_set_interface), deferred :: tagged_vertices
-     procedure(graph_member_set_interface), deferred :: all_edges
-     procedure(graph_member_set_interface), deferred :: interior_edges
-     procedure(graph_member_set_interface), deferred :: boundary_edges
+     procedure(graph_members_interface), deferred :: all_edges
+     procedure(graph_members_interface), deferred :: interior_edges
+     procedure(graph_members_interface), deferred :: boundary_edges
      procedure(graph_tagged_set_interface), deferred :: tagged_edges
 
      ! The frame's sets, one part at a time.
@@ -279,10 +279,10 @@ module graph_grammar
      procedure(graph_owner_part_interface)       , deferred :: vertex_owner_part
      procedure(graph_owner_part_interface)       , deferred :: edge_owner_part
 
-  end type graph
+  end type ordinary_graph
 
   !===================================================================!
-  ! GRAPH_FIELD. The carrier of values.
+  ! GRAPH_FIELD. The set of values.
   !
   ! A field is a function: values over a domain, and the domain is a
   ! graph - a member set of some host. One value kind per field,
@@ -386,56 +386,56 @@ module graph_grammar
      !===============================================================!
 
      pure integer function graph_id_interface(this)
-       import :: graph
-       class(graph), intent(in) :: this
+       import :: ordinary_graph
+       class(ordinary_graph), intent(in) :: this
      end function graph_id_interface
 
      pure integer function graph_count_interface(this)
-       import :: graph
-       class(graph), intent(in) :: this
+       import :: ordinary_graph
+       class(ordinary_graph), intent(in) :: this
      end function graph_count_interface
 
-     pure type(counted_set) function graph_carrier_interface(this)
-       import :: graph, counted_set
-       class(graph), intent(in) :: this
-     end function graph_carrier_interface
+     pure type(index_set) function graph_set_interface(this)
+       import :: ordinary_graph, index_set
+       class(ordinary_graph), intent(in) :: this
+     end function graph_set_interface
 
      pure integer function graph_edge_end_interface(this, edge_index)
-       import :: graph
-       class(graph), intent(in) :: this
+       import :: ordinary_graph
+       class(ordinary_graph), intent(in) :: this
        integer, intent(in) :: edge_index
      end function graph_edge_end_interface
 
      pure logical function graph_edge_has_head_interface(this, edge_index)
-       import :: graph
-       class(graph), intent(in) :: this
+       import :: ordinary_graph
+       class(ordinary_graph), intent(in) :: this
        integer, intent(in) :: edge_index
      end function graph_edge_has_head_interface
 
      !===============================================================!
      ! The named sets. Called once, when an operation begins, so
-     ! each answer is a member_set - the carrier itself or a subset
+     ! each answer is a set - the set itself or a subset
      ! of it - and the cost is paid once per sweep, not per cell.
      !===============================================================!
 
-     subroutine graph_member_set_interface(this, members)
-       import :: graph, member_set
-       class(graph), intent(in) :: this
-       class(member_set), allocatable, intent(out) :: members
-     end subroutine graph_member_set_interface
+     subroutine graph_members_interface(this, members)
+       import :: ordinary_graph, set
+       class(ordinary_graph), intent(in) :: this
+       class(set), allocatable, intent(out) :: members
+     end subroutine graph_members_interface
 
      subroutine graph_tagged_set_interface(this, tag, members)
-       import :: graph, member_set
-       class(graph), intent(in) :: this
+       import :: ordinary_graph, set
+       class(ordinary_graph), intent(in) :: this
        character(len=*), intent(in) :: tag
-       class(member_set), allocatable, intent(out) :: members
+       class(set), allocatable, intent(out) :: members
      end subroutine graph_tagged_set_interface
 
      subroutine graph_part_set_interface(this, part_id, members)
-       import :: graph, member_set
-       class(graph), intent(in) :: this
+       import :: ordinary_graph, set
+       class(ordinary_graph), intent(in) :: this
        integer, intent(in) :: part_id
-       class(member_set), allocatable, intent(out) :: members
+       class(set), allocatable, intent(out) :: members
      end subroutine graph_part_set_interface
 
      !===============================================================!
@@ -443,8 +443,8 @@ module graph_grammar
      !===============================================================!
 
      pure subroutine graph_from_vertex_interface(this, vertex_index, indices)
-       import :: graph
-       class(graph), intent(in) :: this
+       import :: ordinary_graph
+       class(ordinary_graph), intent(in) :: this
        integer, intent(in) :: vertex_index
        integer, allocatable, intent(out) :: indices(:)
      end subroutine graph_from_vertex_interface
@@ -465,8 +465,8 @@ module graph_grammar
      !---------------------------------------------------------------!
 
      pure logical function graph_has_part_relation_interface(this)
-       import :: graph
-       class(graph), intent(in) :: this
+       import :: ordinary_graph
+       class(ordinary_graph), intent(in) :: this
      end function graph_has_part_relation_interface
 
      !---------------------------------------------------------------!
@@ -485,8 +485,8 @@ module graph_grammar
      !---------------------------------------------------------------!
 
      pure integer function graph_global_id_interface(this, index)
-       import :: graph
-       class(graph), intent(in) :: this
+       import :: ordinary_graph
+       class(ordinary_graph), intent(in) :: this
        integer, intent(in) :: index
      end function graph_global_id_interface
 
@@ -498,8 +498,8 @@ module graph_grammar
      !---------------------------------------------------------------!
 
      pure integer function graph_part_id_interface(this, global_index, part_id)
-       import :: graph
-       class(graph), intent(in) :: this
+       import :: ordinary_graph
+       class(ordinary_graph), intent(in) :: this
        integer, intent(in) :: global_index
        integer, intent(in) :: part_id
      end function graph_part_id_interface
@@ -515,8 +515,8 @@ module graph_grammar
      !---------------------------------------------------------------!
 
      pure integer function graph_owner_part_interface(this, index)
-       import :: graph
-       class(graph), intent(in) :: this
+       import :: ordinary_graph
+       class(ordinary_graph), intent(in) :: this
        integer, intent(in) :: index
      end function graph_owner_part_interface
 
@@ -531,16 +531,16 @@ module graph_grammar
      end function operation_name_interface
 
      subroutine operation_domain_interface(this, input_graph, domain)
-       import :: graph_operation, graph, member_set
+       import :: graph_operation, ordinary_graph, set
        class(graph_operation), intent(in) :: this
-       class(graph), intent(in) :: input_graph
-       class(member_set), allocatable, intent(out) :: domain
+       class(ordinary_graph), intent(in) :: input_graph
+       class(set), allocatable, intent(out) :: domain
      end subroutine operation_domain_interface
 
      subroutine operation_apply_interface(this, input_graph, input_data, output)
-       import :: graph_operation, graph, graph_field
+       import :: graph_operation, ordinary_graph, graph_field
        class(graph_operation), intent(in) :: this
-       class(graph), intent(in) :: input_graph
+       class(ordinary_graph), intent(in) :: input_graph
        class(graph_field), intent(in), optional :: input_data(:)
        class(graph_field), allocatable, intent(inout) :: output
      end subroutine operation_apply_interface
@@ -550,15 +550,15 @@ module graph_grammar
      !===============================================================!
 
      pure logical function transform_on_graph_interface(this, input_graph)
-       import :: graph_transform, graph
+       import :: graph_transform, ordinary_graph
        class(graph_transform), intent(in) :: this
-       class(graph), intent(in) :: input_graph
+       class(ordinary_graph), intent(in) :: input_graph
      end function transform_on_graph_interface
 
      logical function transform_on_data_interface(this, input_graph, input_data)
-       import :: graph_transform, graph, graph_field
+       import :: graph_transform, ordinary_graph, graph_field
        class(graph_transform), intent(in) :: this
-       class(graph), intent(in) :: input_graph
+       class(ordinary_graph), intent(in) :: input_graph
        class(graph_field), intent(in) :: input_data
      end function transform_on_data_interface
 

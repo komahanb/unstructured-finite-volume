@@ -36,7 +36,7 @@ Then each level gets the smallest possible test:
 
 | Level | Calculator demo | Truth to verify |
 |---|---|---|
-| **0 Carrier** | Declare \(X,O,P\) | distinct identities; `member(local_index(x)) = x` |
+| **0 Set** | Declare \(X,O,P\) | distinct identities; `member(local_index(x)) = x` |
 | **1 Relation** | \(R\subseteq O\times X\times P\) | e.g. \((+,a,in_1),(+,c,out),(\times,c,in_1)\) exist |
 | **2 Relation algebra** | Derive operation dependency by matching output→input | \(\boxed{+\rightarrow\times}\) and nothing else |
 | **3 Graph** | \(G=(\{X,O,P\},\{R,\ldots\})\) | calculator is representable with **no vertex/edge assumptions** |
@@ -127,7 +127,7 @@ The first diagram is structural. The second appears only after values and operat
 
 ---
 
-# Level 0 — Carriers
+# Level 0 — Sets
 
 ## Capability
 
@@ -149,7 +149,7 @@ Nothing is connected yet. Nothing has a numerical value yet. The symbols `+` and
 
 ```mermaid
 flowchart TB
-    subgraph X["Carrier X — value slots"]
+    subgraph X["Set X — value slots"]
         a((a))
         b((b))
         c((c))
@@ -157,12 +157,12 @@ flowchart TB
         e((e))
     end
 
-    subgraph O["Carrier O — operations"]
+    subgraph O["Set O — operations"]
         plus((+))
         times((×))
     end
 
-    subgraph P["Carrier P — ports"]
+    subgraph P["Set P — ports"]
         i1((in₁))
         i2((in₂))
         out((out))
@@ -171,7 +171,7 @@ flowchart TB
 
 ## Minimal verification
 
-For every carrier member \(x\),
+For every set member \(x\),
 
 \[
 \operatorname{member}(\operatorname{local\_index}(x))=x,
@@ -197,7 +197,7 @@ The framework can represent multiple independent domains without deciding that o
 
 Level 1 answers:
 
-> **How may members of the carriers be related?**
+> **How may members of the sets be related?**
 
 Introduce one ternary relation
 
@@ -331,13 +331,13 @@ Relations can generate useful structure through projection, restriction, join, p
 
 ---
 
-# Level 3 — Relational graph
+# Level 3 — Related graph
 
 ## Capability
 
 Level 3 answers:
 
-> **How do several carriers and relations coexist as one structure?**
+> **How do several sets and relations coexist as one structure?**
 
 Construct
 
@@ -355,7 +355,7 @@ with
 
 ```mermaid
 flowchart TB
-    G["Calculator relational_graph"]
+    G["Calculator related_graph"]
 
     X["X = value slots"]
     O["O = operations"]
@@ -380,13 +380,13 @@ flowchart TB
 
 Verify:
 
-- the graph owns exactly three carrier identities;
+- the graph owns exactly three set identities;
 - it owns the flow relation and dependency relation;
-- every relation slot points to a carrier owned by the graph;
-- two relations may coexist over the same carrier;
+- every relation slot points to a set owned by the graph;
+- two relations may coexist over the same set;
 - there is no concept of vertex or edge anywhere in the generic graph test.
 
-A useful test assertion is simply that the entire calculator is representable by `relational_graph` without importing the ordinary-graph profile.
+A useful test assertion is simply that the entire calculator is representable by `related_graph` without importing the ordinary-graph interpretation.
 
 ## What this proves
 
@@ -427,9 +427,9 @@ graph-owned D
 graph_algorithms: sources / sinks / reachable / topological_order
 ```
 
-Sources and sinks come back as `subset_set` subobjects of \(O\),
-canonical by the carrier's declaration order
-(`src/graph_profile.f90`, `src/graph_algorithms.f90`).
+Sources and sinks come back as `subset` subobjects of \(O\),
+canonical by the set's declaration order
+(`src/graph_interpretation.f90`, `src/graph_algorithms.f90`).
 
 ## Minimal verification
 
@@ -736,7 +736,7 @@ flowchart TB
     S["Statement: evaluate (2+3)×4"]
 
     S --> inputs["inputs: a=2, b=3, d=4"]
-    S --> structure["calculator relational graph"]
+    S --> structure["calculator related graph"]
     S --> laws["constitution: + and ×"]
     S --> solve["solve/evaluate"]
     solve --> result["e = 20"]
@@ -746,7 +746,7 @@ flowchart TB
 
 ```text
 statement
-  ├── chooses the calculator relational graph  (graph-owned R_flow)
+  ├── chooses the calculator related graph  (graph-owned R_flow)
   ├── chooses known K = {d,a,b} values [4,2,3]
   ├── chooses the Level-8 arithmetic constitution (reused fixture)
   ├── chooses the Level-6 residual discretization L
@@ -797,10 +797,10 @@ The complete calculator tower can be read vertically:
 
 ```mermaid
 flowchart TB
-    L0["0 — carriers<br/>X, O, P"]
+    L0["0 — sets<br/>X, O, P"]
     L1["1 — relation<br/>R_flow ⊆ O×X×P"]
     L2["2 — relation algebra<br/>D = {+ → ×}"]
-    L3["3 — relational graph<br/>G = (𝒮, ℛ)"]
+    L3["3 — related graph<br/>G = (𝒮, ℛ)"]
     L4["4 — graph calculus<br/>walk: + then ×"]
     L5["5 — field calculus<br/>q(a)=2, q(b)=3, q(d)=4"]
     L6["6 — discretization<br/>supports of r_c and r_e"]
@@ -833,7 +833,7 @@ flowchart LR
 ```text
 test/calculator-tower/
 ├── README.md
-├── level-0-carrier/
+├── level-0-set/
 │   └── test.f90
 ├── level-1-relation/
 │   └── test.f90
@@ -874,10 +874,10 @@ A successful run should read conceptually like:
 
 ```text
 calculator tower
-├── level 0  carriers .............. PASS
+├── level 0  sets .............. PASS
 ├── level 1  relation .............. PASS
 ├── level 2  relation algebra ...... PASS
-├── level 3  relational graph ...... PASS
+├── level 3  related graph ...... PASS
 ├── level 4  graph calculus ........ PASS
 ├── level 5  field calculus ........ PASS
 ├── level 6  discretization ........ PASS

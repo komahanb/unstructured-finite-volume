@@ -60,8 +60,8 @@
 module class_graph_assembler
 
   use iso_fortran_env     , only : dp => REAL64
-  use graph_grammar       , only : graph, graph_field
-  use graph_carrier       , only : member_set, counted_set, subset_set
+  use graph_grammar       , only : ordinary_graph, graph_field
+  use graph_set       , only : set, index_set, subset
   use graph_calculus      , only : graph_assembler
   use class_graph         , only : stored_graph
   use class_graph_field   , only : field
@@ -116,7 +116,7 @@ contains
   pure logical function defined_on_graph(this, input_graph)
 
     class(assembler), intent(in) :: this
-    class(graph)    , intent(in) :: input_graph
+    class(ordinary_graph)    , intent(in) :: input_graph
 
     associate (u1 => this); end associate
 
@@ -133,7 +133,7 @@ contains
   logical function defined_on_data(this, input_graph, input_data)
 
     class(assembler) , intent(in) :: this
-    class(graph)     , intent(in) :: input_graph
+    class(ordinary_graph)     , intent(in) :: input_graph
     class(graph_field), intent(in) :: input_data
 
     defined_on_data = this % defined_on_graph(input_graph)
@@ -159,8 +159,8 @@ contains
   subroutine assemble_graph(this, part_graph, global_graph)
 
     class(assembler), intent(in)               :: this
-    class(graph)    , intent(in)               :: part_graph
-    class(graph)    , allocatable, intent(out) :: global_graph
+    class(ordinary_graph)    , intent(in)               :: part_graph
+    class(ordinary_graph)    , allocatable, intent(out) :: global_graph
 
     integer, allocatable :: tails(:), heads(:)
     integer :: ne, e, nv_global, l, biggest
@@ -203,12 +203,12 @@ contains
   subroutine assemble_data(this, part_graph, part_data, global_graph, global_data)
 
     class(assembler) , intent(in)               :: this
-    class(graph)     , intent(in)               :: part_graph
+    class(ordinary_graph)     , intent(in)               :: part_graph
     class(graph_field), intent(in)               :: part_data
-    class(graph)     , intent(in)               :: global_graph
+    class(ordinary_graph)     , intent(in)               :: global_graph
     class(graph_field), allocatable, intent(out) :: global_data
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
 
     associate (u1 => this); end associate
 
@@ -236,28 +236,28 @@ contains
 
   !===================================================================!
   ! One gather for both families and both coverages. A FULL part
-  ! field lands on the GLOBAL carrier, owned members only, exactly
+  ! field lands on the GLOBAL set, owned members only, exactly
   ! the established assembly. A PROPER SUBSET maps home through the
   ! part->global map and lands on a new subobject of the global
-  ! carrier - its actual mapped subdomain, no manufactured zeros on
+  ! set - its actual mapped subdomain, no manufactured zeros on
   ! members the field never held. A new ambient means a new
   ! declared subset: extension and values return, tokens do not.
   !===================================================================!
 
-  subroutine gather_field(part_data, dom, part_graph, part_carrier, &
+  subroutine gather_field(part_data, dom, part_graph, part_set, &
        &                  global_graph, on_vertices, global_data)
 
     type(field)       , intent(in)               :: part_data
-    class(member_set) , intent(in)               :: dom
-    class(graph)      , intent(in)               :: part_graph
-    type(counted_set) , intent(in)               :: part_carrier
-    class(graph)      , intent(in)               :: global_graph
+    class(set) , intent(in)               :: dom
+    class(ordinary_graph)      , intent(in)               :: part_graph
+    type(index_set) , intent(in)               :: part_set
+    class(ordinary_graph)      , intent(in)               :: global_graph
     logical           , intent(in)               :: on_vertices
     class(graph_field), allocatable, intent(out) :: global_data
 
     type(field)           :: out
-    type(counted_set)     :: global_carrier
-    type(subset_set)      :: sg
+    type(index_set)     :: global_set
+    type(subset)      :: sg
     real(dp), allocatable :: lv(:), fv(:)
     integer , allocatable :: kept(:), came(:)
     integer :: nglobal, nlocal, ncomp, l, c, f, me, n, at
@@ -265,21 +265,21 @@ contains
     if (on_vertices) then
        nglobal        = global_graph % num_vertices()
        nlocal         = part_graph % num_vertices()
-       global_carrier = global_graph % vertex_set()
+       global_set = global_graph % vertex_set()
     else
        nglobal        = global_graph % num_edges()
        nlocal         = part_graph % num_edges()
-       global_carrier = global_graph % edge_set()
+       global_set = global_graph % edge_set()
     end if
     ncomp = part_data % num_components()
     me    = part_graph % id()
 
     call part_data % get_real_vector(lv)
 
-    if (dom % same_as(part_carrier)) then
+    if (dom % equals(part_set)) then
 
        ! Full coverage: the established dense assembly, owned only.
-       out = field(part_data % name(), global_carrier, ncomp=ncomp, &
+       out = field(part_data % name(), global_set, ncomp=ncomp, &
             &      unit_name=part_data % units())
        allocate(fv(nglobal * ncomp))
        fv = 0.0_dp
@@ -312,7 +312,7 @@ contains
           kept(n) = global_of(part_graph, at, on_vertices)
           came(n) = l
        end do
-       sg = subset_set(dom % name(), global_carrier, kept(1:n))
+       sg = subset(dom % name(), global_set, kept(1:n))
 
        allocate(fv(n * ncomp))
        do l = 1, n
@@ -332,7 +332,7 @@ contains
 
   pure integer function global_of(part_graph, l, on_vertices)
 
-    class(graph), intent(in) :: part_graph
+    class(ordinary_graph), intent(in) :: part_graph
     integer     , intent(in) :: l
     logical     , intent(in) :: on_vertices
 
@@ -346,7 +346,7 @@ contains
 
   pure integer function owner_of(part_graph, l, on_vertices)
 
-    class(graph), intent(in) :: part_graph
+    class(ordinary_graph), intent(in) :: part_graph
     integer     , intent(in) :: l
     logical     , intent(in) :: on_vertices
 

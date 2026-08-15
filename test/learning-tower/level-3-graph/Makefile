@@ -2,7 +2,7 @@ include ../../../Makefile.in
 
 #=====================================================================#
 # Learning level 3: the container suite and the refusals that must
-# die. The main test sees the carriers, the relations, the algebra
+# die. The main test sees the sets, the relations, the algebra
 # and the container; graph_binary_relation is granted for the VIEW
 # refusal alone (the production path never touches it). The import
 # gate holds the door.

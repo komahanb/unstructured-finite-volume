@@ -1,5 +1,5 @@
 !=====================================================================!
-! LEARNING TOWER . LEVEL 0 . CARRIERS
+! LEARNING TOWER . LEVEL 0 . SETS
 !
 ! The level answers one question: WHAT SYMBOLIC KINDS OF MEMBERS
 ! EXIST. Three independent domains are declared,
@@ -11,7 +11,7 @@
 ! and nothing else is true yet. No relation, no graph, no field, no
 ! minimizer, no model, no neuron: predict is only a member of O
 ! here. The imports of this file ARE the negative truth -
-! learning_assert, graph_carrier, and nothing above.
+! learning_assert, graph_set, and nothing above.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -20,23 +20,23 @@ program learning_level_0
 
   use learning_assert, only : report, verdict
   use learning_assert, only : SLOT_W, SLOT_E, OP_PREDICT, PORT_OUT
-  use graph_carrier  , only : counted_set
+  use graph_set  , only : index_set
 
   implicit none
 
-  type(counted_set) :: v, o, p
+  type(index_set) :: v, o, p
   integer           :: nfail
 
   nfail = 0
 
   write(*,'(1x,a)') "============================================="
-  write(*,'(1x,a)') "learning tower . level 0 . carriers"
+  write(*,'(1x,a)') "learning tower . level 0 . sets"
   write(*,'(1x,a)') "============================================="
 
   ! The three declarations. This is everything Level 0 may do.
-  v = counted_set('value-slots', 5)
-  o = counted_set('operations' , 2)
-  p = counted_set('ports'      , 3)
+  v = index_set('value-slots', 5)
+  o = index_set('operations' , 2)
+  p = index_set('ports'      , 3)
 
   call check_cardinalities(nfail)
   call check_distinct_identities(nfail)
@@ -64,17 +64,17 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(.not. v % same_as(o), &
+    call report(.not. v % equals(o), &
          & "V is not O", nfail)
-    call report(.not. v % same_as(p), &
+    call report(.not. v % equals(p), &
          & "V is not P", nfail)
-    call report(.not. o % same_as(p), &
+    call report(.not. o % equals(p), &
          & "O is not P", nfail)
 
   end subroutine check_distinct_identities
 
   !===================================================================!
-  ! The two enumeration laws on every member of every carrier:
+  ! The two enumeration laws on every member of every set:
   ! member(local_index(m)) = m and local_index(member(i)) = i.
   !===================================================================!
 

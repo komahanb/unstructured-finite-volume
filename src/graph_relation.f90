@@ -14,12 +14,12 @@
 !
 !                          THE SIGNATURE
 !
-! Each slot of the signature holds one carrier - ANY concretion of
-! member_set, and different concretions may stand in different slots
+! Each slot of the signature holds one set - ANY concretion of
+! set, and different concretions may stand in different domains
 ! of one relation. The signature holds copies, and a copy IS the
-! declared domain - so two relations built over one carrier answer
-! same_as across each other's slots, and no relation ever assumes
-! its domains are owned by one graph. A slot may repeat a carrier:
+! declared domain - so two relations built over one set answer
+! equals across each other's domains, and no relation ever assumes
+! its domains are owned by one graph. A slot may repeat a set:
 !
 !      R_CC  <=  cells x cells         adjacency
 !      R_CF  <=  cells x faces         incidence
@@ -48,8 +48,8 @@
 !
 ! Construction refuses, loudly: a tuple table whose row count is not
 ! the arity; a signature slot that was never declared; a tuple
-! component its slot's carrier does not hold (checked through the
-! carrier's own has - membership is a primitive, never an
+! component its slot's set does not hold (checked through the
+! set's own has - membership is a primitive, never an
 ! enumeration and a search). After construction the relation is
 ! immutable, so the laws hold for life.
 !
@@ -69,12 +69,12 @@
 module graph_relation
 
   use graph_identity, only : token, mint_token
-  use graph_carrier , only : member_set, counted_set
+  use graph_set , only : set, index_set
 
   implicit none
 
   private
-  public :: relation, stored_relation, slot
+  public :: relation, stored_relation, declared_domain
 
   !===================================================================!
   ! The abstract relation: identity, arity, ordered signature,
@@ -108,7 +108,7 @@ module graph_relation
 
      procedure :: declare
      procedure :: id
-     procedure :: same_as
+     procedure :: equals
 
      !----------------------------------------------------------------!
      ! Self-containment, FAILING CLOSED. A relation is assumed a
@@ -137,10 +137,10 @@ module graph_relation
      end function relation_arity_interface
 
      function relation_domain_interface(this, slot_index) result(domain)
-       import relation, member_set
+       import relation, set
        class(relation), intent(in)    :: this
        integer        , intent(in)    :: slot_index
-       class(member_set), allocatable :: domain
+       class(set), allocatable :: domain
      end function relation_domain_interface
 
      pure logical function relation_has_interface(this, tuple)
@@ -163,32 +163,41 @@ module graph_relation
   end interface
 
   !===================================================================!
-  ! One signature slot, holding any carrier concretion. The wrapper
-  ! exists because a Fortran array carries one dynamic type: an
-  ! array of slots is how different concretions stand side by side
-  ! in one signature. Build one with slot(carrier).
+  ! ONE DECLARED DOMAIN, standing at one position of the ordered
+  ! signature. The wrapper exists because a Fortran array carries
+  ! one dynamic type: an array of domains is how different set
+  ! realizations stand side by side in one signature.
+  !
+  ! The POSITION is the slot, and slot_index names it. THIS is what
+  ! occupies the position, and it is a domain - so a signature is an
+  ! ordered tuple of declared domains, which is what the mathematics
+  ! says it is. Build one with declared_domain(A).
+  !
+  ! A domain MAY REPEAT across positions: R <= A x A is ordinary,
+  ! and that is the law separating a signature from the collection S
+  ! of a graph, which holds each domain once.
   !===================================================================!
 
-  type :: slot
+  type :: declared_domain
 
-     class(member_set), allocatable :: carrier
+     class(set), allocatable :: set
 
-  end type slot
+  end type declared_domain
 
-  interface slot
-     module procedure create_slot
-  end interface slot
+  interface declared_domain
+     module procedure create_declared_domain
+  end interface declared_domain
 
   !===================================================================!
   ! The stored relation: the deduplicated tuple table, the signature
-  ! as carrier copies. The first inhabitant of the contract, and the
+  ! as set copies. The first inhabitant of the contract, and the
   ! validation gate of the level.
   !===================================================================!
 
   type, extends(relation) :: stored_relation
 
-     type(slot)  , allocatable, private :: signature(:)
-     integer     , allocatable, private :: entry(:,:)
+     type(declared_domain), allocatable, private :: signature(:)
+     integer              , allocatable, private :: tuple_table(:,:)
 
    contains
 
@@ -203,13 +212,13 @@ module graph_relation
 
   interface stored_relation
      module procedure create_stored
-     module procedure create_stored_counted
+     module procedure create_stored_index
   end interface stored_relation
 
 contains
 
   !===================================================================!
-  ! The identity block, one law with the carriers'.
+  ! The identity block, one law with the sets'.
   !===================================================================!
 
   subroutine declare(this, name)
@@ -239,14 +248,14 @@ contains
 
   end function id
 
-  pure logical function same_as(this, other)
+  pure logical function equals(this, other)
 
     class(relation), intent(in) :: this
     class(relation), intent(in) :: other
 
-    same_as = this % identity % matches(other % identity)
+    equals = this % identity % matches(other % identity)
 
-  end function same_as
+  end function equals
 
   pure logical function materialized(this)
 
@@ -278,24 +287,24 @@ contains
   end function name
 
   !===================================================================!
-  ! Wrap one carrier - any concretion - as a signature slot.
+  ! Wrap one set - any concretion - as a signature slot.
   !===================================================================!
 
-  type(slot) function create_slot(carrier) result(this)
+  type(declared_domain) function create_declared_domain(domain) result(this)
 
-    class(member_set), intent(in) :: carrier
+    class(set), intent(in) :: domain
 
-    allocate(this % carrier, source=carrier)
+    allocate(this % set, source=domain)
 
-  end function create_slot
+  end function create_declared_domain
 
   !===================================================================!
-  ! Declare a stored relation: a name, the ordered slots, and the
+  ! Declare a stored relation: a name, the ordered domains, and the
   ! tuple table, one column per tuple. Refusals, in the order they
   ! are checked:
   !
   !     an empty signature            k >= 1 is the definition
-  !     an undeclared carrier         a signature refers to declared
+  !     an undeclared set         a signature refers to declared
   !                                   domains only
   !     a row count off the arity     each tuple has exactly k parts
   !     a member no slot holds        domain validity, through has
@@ -304,37 +313,37 @@ contains
   ! order kept: a relation is a set.
   !===================================================================!
 
-  type(stored_relation) function create_stored(name, slots, table) &
+  type(stored_relation) function create_stored(name, domains, table) &
        & result(this)
 
     character(len=*), intent(in) :: name
-    type(slot)      , intent(in) :: slots(:)
+    type(declared_domain)      , intent(in) :: domains(:)
     integer         , intent(in) :: table(:,:)
 
     integer, allocatable :: kept(:)
     integer              :: k, j, i, nkept
     logical              :: fresh
 
-    if (size(slots) < 1) then
+    if (size(domains) < 1) then
        error stop 'graph_relation: a relation relates at least one domain'
     end if
 
-    do k = 1, size(slots)
-       if (.not. allocated(slots(k) % carrier)) then
+    do k = 1, size(domains)
+       if (.not. allocated(domains(k) % set)) then
           error stop 'graph_relation: a signature refers to declared domains only'
        end if
-       if (.not. slots(k) % carrier % same_as(slots(k) % carrier)) then
+       if (.not. domains(k) % set % equals(domains(k) % set)) then
           error stop 'graph_relation: a signature refers to declared domains only'
        end if
     end do
 
-    if (size(table, 1) /= size(slots)) then
+    if (size(table, 1) /= size(domains)) then
        error stop 'graph_relation: each tuple has exactly one part per slot'
     end if
 
     do j = 1, size(table, 2)
-       do k = 1, size(slots)
-          if (.not. slots(k) % carrier % has(table(k, j))) then
+       do k = 1, size(domains)
+          if (.not. domains(k) % set % has(table(k, j))) then
              error stop 'graph_relation: a tuple names a member its domain does not hold'
           end if
        end do
@@ -357,14 +366,14 @@ contains
        end if
     end do
 
-    allocate(this % signature(size(slots)))
-    do k = 1, size(slots)
-       allocate(this % signature(k) % carrier, source=slots(k) % carrier)
+    allocate(this % signature(size(domains)))
+    do k = 1, size(domains)
+       allocate(this % signature(k) % set, source=domains(k) % set)
     end do
 
-    allocate(this % entry(size(slots), nkept))
+    allocate(this % tuple_table(size(domains), nkept))
     do i = 1, nkept
-       this % entry(:, i) = table(:, kept(i))
+       this % tuple_table(:, i) = table(:, kept(i))
     end do
 
     call this % declare(name)
@@ -373,27 +382,27 @@ contains
 
   !===================================================================!
   ! The counted convenience: the common case, a signature of counted
-  ! domains, wrapped into slots and handed to the one gate above.
+  ! domains, wrapped into domains and handed to the one gate above.
   !===================================================================!
 
-  type(stored_relation) function create_stored_counted(name, domains, &
+  type(stored_relation) function create_stored_index(name, domains, &
        & table) result(this)
 
     character(len=*)  , intent(in) :: name
-    type(counted_set) , intent(in) :: domains(:)
+    type(index_set)   , intent(in) :: domains(:)
     integer           , intent(in) :: table(:,:)
 
-    type(slot), allocatable :: slots(:)
-    integer                 :: k
+    type(declared_domain), allocatable :: signature(:)
+    integer                            :: k
 
-    allocate(slots(size(domains)))
+    allocate(signature(size(domains)))
     do k = 1, size(domains)
-       allocate(slots(k) % carrier, source=domains(k))
+       allocate(signature(k) % set, source=domains(k))
     end do
 
-    this = create_stored(name, slots, table)
+    this = create_stored(name, signature, table)
 
-  end function create_stored_counted
+  end function create_stored_index
 
   pure integer function stored_arity(this)
 
@@ -404,7 +413,7 @@ contains
   end function stored_arity
 
   !===================================================================!
-  ! The slot's carrier, as a copy - which is to say, as the same
+  ! The slot's set, as a copy - which is to say, as the same
   ! declared domain.
   !===================================================================!
 
@@ -412,9 +421,9 @@ contains
 
     class(stored_relation), intent(in) :: this
     integer               , intent(in) :: slot_index
-    class(member_set), allocatable     :: domain
+    class(set), allocatable     :: domain
 
-    allocate(domain, source=this % signature(slot_index) % carrier)
+    allocate(domain, source=this % signature(slot_index) % set)
 
   end function stored_domain
 
@@ -434,8 +443,8 @@ contains
 
     if (size(tuple) /= size(this % signature)) return
 
-    do j = 1, size(this % entry, 2)
-       if (all(this % entry(:, j) == tuple)) then
+    do j = 1, size(this % tuple_table, 2)
+       if (all(this % tuple_table(:, j) == tuple)) then
           stored_has = .true.
           return
        end if
@@ -447,7 +456,7 @@ contains
 
     class(stored_relation), intent(in) :: this
 
-    stored_num_tuples = size(this % entry, 2)
+    stored_num_tuples = size(this % tuple_table, 2)
 
   end function stored_num_tuples
 
@@ -456,7 +465,7 @@ contains
     class(stored_relation), intent(in)  :: this
     integer, allocatable  , intent(out) :: table(:,:)
 
-    allocate(table, source=this % entry)
+    allocate(table, source=this % tuple_table)
 
   end subroutine stored_tuples
 

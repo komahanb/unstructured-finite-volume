@@ -12,7 +12,7 @@
 ! it reads and not to the member it writes. e12 and e13 both read b;
 ! they carry -1 and 0. A field on X0 could not hold both, and a field
 ! on X1 could not either. E_k is where the two ends meet, and it is
-! the only carrier of the three that can seat the number.
+! the only set of the three that can seat the number.
 !
 ! This is why Level 0 gave the occurrences first-class identity five
 ! levels before anything needed a value: a coefficient needs somewhere
@@ -51,7 +51,7 @@
 module visualization_values_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_carrier    , only : member_set
+  use graph_set    , only : set
   use class_graph_field, only : field
 
   implicit none
@@ -62,7 +62,7 @@ module visualization_values_fixture
   public :: COEFF_A1, COEFF_A2, COEFF_A3, COEFF_A1_ALT, TOL
 
   !-------------------------------------------------------------------!
-  ! The twelve coefficients, in each occurrence carrier's own
+  ! The twelve coefficients, in each occurrence set's own
   ! declaration order.
   !
   !      w1(e11) =  2      e11 : a -> p
@@ -91,14 +91,14 @@ contains
 
   !===================================================================!
   ! One coefficient field per operator, on that operator's own
-  ! occurrence carrier. The field takes its entry count from the
+  ! occurrence set. The field takes its entry count from the
   ! domain, so a value vector of the wrong length is refused by the
   ! nucleus rather than by this file.
   !===================================================================!
 
   type(field) function coefficients_of_a1(e1) result(w)
 
-    class(member_set), intent(in) :: e1
+    class(set), intent(in) :: e1
 
     w = field('w1', e1, ncomp=1)
     call w % set_real_vector(COEFF_A1)
@@ -107,7 +107,7 @@ contains
 
   type(field) function coefficients_of_a2(e2) result(w)
 
-    class(member_set), intent(in) :: e2
+    class(set), intent(in) :: e2
 
     w = field('w2', e2, ncomp=1)
     call w % set_real_vector(COEFF_A2)
@@ -116,7 +116,7 @@ contains
 
   type(field) function coefficients_of_a3(e3) result(w)
 
-    class(member_set), intent(in) :: e3
+    class(set), intent(in) :: e3
 
     w = field('w3', e3, ncomp=1)
     call w % set_real_vector(COEFF_A3)
@@ -130,7 +130,7 @@ contains
 
   type(field) function alternate_coefficients_of_a1(e1) result(w)
 
-    class(member_set), intent(in) :: e1
+    class(set), intent(in) :: e1
 
     w = field('w1-alt', e1, ncomp=1)
     call w % set_real_vector(COEFF_A1_ALT)

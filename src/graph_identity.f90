@@ -1,8 +1,8 @@
 !=====================================================================!
 ! THE IDENTITY . INFRASTRUCTURE BENEATH THE TOWER
 !
-! Not a level: a service every identified citizen draws on. Carriers
-! have identity; relations have identity; the relational graph will
+! Not a level: a service every identified citizen draws on. Sets
+! have identity; relations have identity; the related graph will
 ! be the third to sign. What they share is not mathematics but LAW,
 ! and the law lives here once:
 !

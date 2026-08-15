@@ -41,24 +41,24 @@ program adjoint_level_4
   use adjoint_assert, only : report, verdict
   use adjoint_assert, only : VAR_P, VAR_U, VAR_V
   use adjoint_assert, only : TGT_R1, TGT_R2, TGT_F
-  use graph_carrier , only : counted_set, subset_set, member_set
+  use graph_set , only : index_set, subset, set
   use graph_relation, only : stored_relation, relation
   use graph_relation_algebra, only : compose_binary
   use graph_binary_relation , only : csr_relation, transposed_view, &
        &                             transpose_of, inclusion_of
-  use graph_structure, only : relational_graph, held_set, held_relation
-  use graph_profile  , only : directed_adjacency_view
+  use graph_structure, only : related_graph, declared_set, declared_relation
+  use graph_interpretation  , only : directed_adjacency_view
   use graph_algorithms, only : reachable, sources, sinks
 
   implicit none
 
-  type(counted_set)              :: v, t
-  type(subset_set)               :: p_dom, q_dom, y_dom, z_dom
+  type(index_set)              :: v, t
+  type(subset)               :: p_dom, q_dom, y_dom, z_dom
   type(stored_relation)          :: dep
   type(csr_relation), target     :: inc_y, inc_q, jq
   type(transposed_view)          :: inc_q_t, jq_t
   type(csr_relation)             :: coupling
-  type(relational_graph), target :: g
+  type(related_graph), target :: g
   type(directed_adjacency_view)  :: view
   integer                        :: table(2, 9)
   integer                        :: nfail
@@ -69,13 +69,13 @@ program adjoint_level_4
   write(*,'(1x,a)') "adjoint tower . level 4 . implicit coupling"
   write(*,'(1x,a)') "============================================="
 
-  v = counted_set('variables', 3)
-  t = counted_set('targets'  , 3)
+  v = index_set('variables', 3)
+  t = index_set('targets'  , 3)
 
-  p_dom = subset_set('parameter', v, [VAR_P])
-  q_dom = subset_set('state'    , v, [VAR_U, VAR_V])
-  y_dom = subset_set('residual' , t, [TGT_R1, TGT_R2])
-  z_dom = subset_set('response' , t, [TGT_F])
+  p_dom = subset('parameter', v, [VAR_P])
+  q_dom = subset('state'    , v, [VAR_U, VAR_V])
+  y_dom = subset('residual' , t, [TGT_R1, TGT_R2])
+  z_dom = subset('response' , t, [TGT_F])
 
   table(:, 1) = [TGT_R1, VAR_P]
   table(:, 2) = [TGT_R1, VAR_U]
@@ -98,8 +98,8 @@ program adjoint_level_4
   jq_t     = transpose_of(jq)
   coupling = compose_binary(jq_t, jq)
 
-  g = relational_graph('state coupling', [held_set(q_dom)], &
-       & [held_relation(coupling)])
+  g = related_graph('state coupling', [declared_set(q_dom)], &
+       & [declared_relation(coupling)])
   view = directed_adjacency_view(g, coupling)
 
   call check_coupling_extension(nfail)
@@ -125,13 +125,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
 
     dom = coupling % domain(1)
-    call report(dom % same_as(q_dom), &
+    call report(dom % equals(q_dom), &
          & "the coupling runs from the state slots", nfail)
     dom = coupling % domain(2)
-    call report(dom % same_as(q_dom), &
+    call report(dom % equals(q_dom), &
          & "back into the state slots", nfail)
 
     call report(coupling % num_tuples() .eq. 4 .and. &
@@ -153,10 +153,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
 
     dom = view % domain()
-    call report(dom % same_as(q_dom) .and. dom % size() .eq. 2, &
+    call report(dom % equals(q_dom) .and. dom % size() .eq. 2, &
          & "the view is valid and walks the state slots", nfail)
 
   end subroutine check_view_is_valid
@@ -199,7 +199,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(subset_set) :: src, snk
+    type(subset) :: src, snk
 
     src = sources(view)
     snk = sinks(view)

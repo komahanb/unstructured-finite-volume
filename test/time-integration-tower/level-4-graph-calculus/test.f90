@@ -12,7 +12,7 @@
 !
 ! That last list is the FORWARD CAUSAL ORDER, and it is worth being
 ! exact about where it comes from: the walk takes the first READY
-! member in the carrier's own declaration order, through
+! member in the set's own declaration order, through
 ! local_index, and never compares member values arithmetically.
 ! Time's order here is a consequence of structure, not of integers
 ! happening to ascend.
@@ -21,7 +21,7 @@
 !
 ! A1 is a relation; it does not know it is time. Nothing in Level 2
 ! called t0 "first". What makes this a CAUSAL order is the reading
-! imposed here, by a profile and four algorithms that would say the
+! imposed here, by an interpretation and four algorithms that would say the
 ! same things about a dependency between calculator operations. The
 ! interpretation is the level's content, and it is separable from
 ! the structure it interprets.
@@ -38,10 +38,10 @@
 ! will find the ordering already here, and will not have to invent
 ! it alongside the mathematics.
 !
-!                    TWO VIEWS, ONE CARRIER
+!                    TWO VIEWS, ONE SET
 !
 ! A2 is interpreted the same way, over the SAME T. That is the
-! Rosetta truth a later scheme can consume - one instant carrier,
+! Rosetta truth a later scheme can consume - one instant set,
 ! several structural readings of it - and it is checked here
 ! together with the refusal that keeps A2 honest: t0 does NOT reach
 ! t3 under two-step traversal.
@@ -59,26 +59,26 @@ program time_level_4
   use time_assert           , only : report, verdict
   use time_assert           , only : NT
   use time_assert           , only : T0, T1, T2, T3, T4
-  use graph_carrier         , only : counted_set, subset_set, member_set
+  use graph_set         , only : index_set, subset, set
   use graph_relation        , only : relation
   use graph_binary_relation , only : csr_relation
-  use graph_structure       , only : relational_graph, held_set, &
-       &                             held_relation
-  use graph_profile         , only : directed_adjacency_view
+  use graph_structure       , only : related_graph, declared_set, &
+       &                             declared_relation
+  use graph_interpretation         , only : directed_adjacency_view
   use graph_algorithms      , only : sources, sinks, reachable, &
        &                             topological_order
-  use time_carriers_fixture , only : time_carriers
+  use time_sets_fixture , only : time_sets
   use time_relations_fixture, only : tail_relation, head_relation
   use time_algebra_fixture  , only : derive_one_step_reach, &
        &                             derive_two_step_reach
 
   implicit none
 
-  type(counted_set)              :: q, t, e
+  type(index_set)              :: q, t, e
   type(csr_relation), target     :: tail, head, a1
   type(csr_relation)             :: a2
   class(relation), allocatable   :: sel_a1, sel_a2
-  type(relational_graph), target :: g
+  type(related_graph), target :: g
   type(directed_adjacency_view)  :: view_a1, view_a2
   integer                        :: nfail
 
@@ -88,16 +88,16 @@ program time_level_4
   write(*,'(1x,a)') "time integration tower . level 4 . calculus"
   write(*,'(1x,a)') "============================================="
 
-  call time_carriers(q, t, e)
+  call time_sets(q, t, e)
   tail = tail_relation(e, t)
   head = head_relation(e, t)
   a1   = derive_one_step_reach(tail, head)
   a2   = derive_two_step_reach(a1)
 
-  g = relational_graph('time', &
-       & [held_set(q), held_set(t), held_set(e)], &
-       & [held_relation(tail), held_relation(head), &
-       &  held_relation(a1), held_relation(a2)])
+  g = related_graph('time', &
+       & [declared_set(q), declared_set(t), declared_set(e)], &
+       & [declared_relation(tail), declared_relation(head), &
+       &  declared_relation(a1), declared_relation(a2)])
 
   ! The interpretations read GRAPH-OWNED relations. A SELECTOR IS AN
   ! IDENTITY, NOT A THING: these two are separate objects that merely
@@ -115,7 +115,7 @@ program time_level_4
   call check_causal_reachability(nfail)
   call check_forward_causal_order(nfail)
   call check_two_step_view(nfail)
-  call check_two_views_one_carrier(nfail)
+  call check_two_views_one_set(nfail)
 
   call verdict(nfail, "level 4")
 
@@ -131,7 +131,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(subset_set) :: src, snk
+    type(subset) :: src, snk
 
     src = sources(view_a1)
     snk = sinks(view_a1)
@@ -175,7 +175,7 @@ contains
   end subroutine check_causal_reachability
 
   !===================================================================!
-  ! THE rung's order. Checked against the CARRIER's declaration
+  ! THE rung's order. Checked against the SET's declaration
   ! order through member(), never against a written [1,2,3,4,5]: the
   ! two coincide here, and a literal would hide the dependency that
   ! makes the coincidence meaningful.
@@ -197,7 +197,7 @@ contains
     end do
     call report(ok, &
          & "topological_order(A1) = [t0 t1 t2 t3 t4], read from the " // &
-         & "carrier's own declaration order - THE FORWARD CAUSAL " // &
+         & "set's own declaration order - THE FORWARD CAUSAL " // &
          & "ORDER", nfail)
 
     ! The order is causal, not merely a permutation: every edge of
@@ -260,31 +260,31 @@ contains
   end subroutine check_two_step_view
 
   !===================================================================!
-  ! THE Rosetta truth a later scheme can consume: not two carriers
-  ! and not two graphs, but two readings of ONE instant carrier.
+  ! THE Rosetta truth a later scheme can consume: not two sets
+  ! and not two graphs, but two readings of ONE instant set.
   !===================================================================!
 
-  subroutine check_two_views_one_carrier(nfail)
+  subroutine check_two_views_one_set(nfail)
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d1, d2
+    class(set), allocatable :: d1, d2
 
     d1 = view_a1 % domain()
     d2 = view_a2 % domain()
 
-    call report(d1 % same_as(t) .and. d2 % same_as(t), &
+    call report(d1 % equals(t) .and. d2 % equals(t), &
          & "both views run over T itself, by identity", nfail)
 
-    call report(d1 % same_as(d2), &
+    call report(d1 % equals(d2), &
          & "so A1 and A2 are DIFFERENT STRUCTURAL VIEWS OVER THE " // &
-         & "SAME CARRIER - one time axis, several readings of it", &
+         & "SAME SET - one time axis, several readings of it", &
          & nfail)
 
-    call report(.not. d1 % same_as(q) .and. .not. d1 % same_as(e), &
+    call report(.not. d1 % equals(q) .and. .not. d1 % equals(e), &
          & "and neither reading has quietly become the state axis " // &
          & "or the steps", nfail)
 
-  end subroutine check_two_views_one_carrier
+  end subroutine check_two_views_one_set
 
 end program time_level_4

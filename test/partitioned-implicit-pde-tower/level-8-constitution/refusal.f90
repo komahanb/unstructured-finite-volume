@@ -8,8 +8,8 @@
 ! the earliest honest contract point rather than deep inside a
 ! matvec with a chain-derived decomposition.
 !
-!   foreign-host-apply ..... A_part.apply(G_alt, ...)
-!   foreign-host-attach .... gmres.attach(A_part, G_alt, V(G_alt))
+!   unequal-host-apply ..... A_part.apply(G_alt, ...)
+!   unequal-host-attach .... gmres.attach(A_part, G_alt, V(G_alt))
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -46,13 +46,13 @@ program partitioned_pde_level_8_refusal
 
   select case (trim(which))
 
-  case ('foreign-host-apply')
+  case ('unequal-host-apply')
      q = field('state on the star', g_alt % vertex_set())
      call q % set_real_vector(Q_EXACT)
      call composite % apply(g_alt, [q], out)
      write(*,*) 'a chain decomposition acted on the star'
 
-  case ('foreign-host-attach')
+  case ('unequal-host-attach')
      ! attach asks the action for its domain; the guard fires there.
      call solver % attach(composite, g_alt, g_alt % vertex_set())
      write(*,*) 'a chain decomposition was attached to a star host'

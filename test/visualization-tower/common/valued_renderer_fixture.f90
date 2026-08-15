@@ -75,11 +75,11 @@
 module valued_renderer_fixture
 
   use iso_fortran_env               , only : dp => REAL64
-  use graph_carrier                 , only : member_set
+  use graph_set                 , only : set
   use graph_relation                , only : relation
   use graph_field_calculus          , only : GRAPH_FIELD_REAL
   use class_graph_field             , only : field
-  use visualization_carriers_fixture, only : label_for
+  use visualization_sets_fixture, only : label_for
   use structural_renderer_fixture   , only : picture, sparsity_picture
   use structural_renderer_fixture   , only : glyph_at
 
@@ -105,7 +105,7 @@ contains
   ! Do these coefficients belong to these occurrences.
   !
   ! Asked by IDENTITY - the field's declared domain must BE the
-  ! occurrence carrier, not merely count the same. |X0| = |E2| = 4 in
+  ! occurrence set, not merely count the same. |X0| = |E2| = 4 in
   ! this specimen, and a four-valued field on X0 is not a coefficient
   ! field for E2.
   !
@@ -118,13 +118,13 @@ contains
   logical function coefficients_fit(w, occurrences)
 
     class(field)     , intent(in) :: w
-    class(member_set), intent(in) :: occurrences
+    class(set), intent(in) :: occurrences
 
-    class(member_set), allocatable :: on
+    class(set), allocatable :: on
 
     call w % domain(on)
 
-    coefficients_fit = on % same_as(occurrences)
+    coefficients_fit = on % equals(occurrences)
     coefficients_fit = coefficients_fit .and. (w % num_components() .eq. 1)
     coefficients_fit = coefficients_fit .and. &
          &             (w % value_kind() .eq. GRAPH_FIELD_REAL)
@@ -134,7 +134,7 @@ contains
   !===================================================================!
   ! The occurrence that joins x to y, or zero if none does.
   !
-  ! Found by walking the occurrence carrier in ITS declaration order
+  ! Found by walking the occurrence set in ITS declaration order
   ! and asking the two primitive relations - never by arithmetic on
   ! raw member integers, and never by assuming an occurrence's number
   ! is a position in a grid.
@@ -143,7 +143,7 @@ contains
   integer function occurrence_joining(tail, head, occurrences, from, to)
 
     class(relation)  , intent(in) :: tail, head
-    class(member_set), intent(in) :: occurrences
+    class(set), intent(in) :: occurrences
     integer          , intent(in) :: from, to
 
     integer :: k, e
@@ -169,7 +169,7 @@ contains
   integer function occurrences_joining(tail, head, occurrences, from, to)
 
     class(relation)  , intent(in) :: tail, head
-    class(member_set), intent(in) :: occurrences
+    class(set), intent(in) :: occurrences
     integer          , intent(in) :: from, to
 
     integer :: k, e
@@ -195,7 +195,7 @@ contains
   real(dp) function value_at(w, occurrences, member)
 
     class(field)     , intent(in) :: w
-    class(member_set), intent(in) :: occurrences
+    class(set), intent(in) :: occurrences
     integer          , intent(in) :: member
 
     real(dp), allocatable :: values(:)
@@ -257,11 +257,11 @@ contains
 
     class(relation)  , intent(in) :: d
     class(relation)  , intent(in) :: tail, head
-    class(member_set), intent(in) :: occurrences
+    class(set), intent(in) :: occurrences
     class(field)     , intent(in) :: w
 
     type(picture)                  :: page
-    class(member_set), allocatable :: cols, rows
+    class(set), allocatable :: cols, rows
     character(len=:) , allocatable :: cell
     real(dp)         , allocatable :: values(:)
     integer :: stub, wide, i, j, at, e, seat, width
@@ -359,16 +359,16 @@ contains
 
   end function right
 
-  integer function widest_label(carrier)
+  integer function widest_label(set)
 
-    class(member_set), intent(in) :: carrier
+    class(set), intent(in) :: set
 
     integer :: k
 
     widest_label = 1
-    do k = 1, carrier % size()
+    do k = 1, set % size()
        widest_label = max(widest_label, &
-            &             len(label_for(carrier, carrier % member(k))))
+            &             len(label_for(set, set % member(k))))
     end do
 
   end function widest_label

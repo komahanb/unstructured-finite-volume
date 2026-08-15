@@ -2,7 +2,7 @@
 ! PARTITIONED IMPLICIT PDE TOWER . LEVEL 5 . FIELD CALCULUS
 !
 ! The level answers one question: HOW DO VALUES MOVE BETWEEN THE
-! WHOLE AND ITS PART CARRIERS. Level 4 established what the parts
+! WHOLE AND ITS PART SETS. Level 4 established what the parts
 ! ARE; this level establishes what may be read from them and what
 ! may be written back:
 !
@@ -10,7 +10,7 @@
 !      WRITE-BACK AUTHORITY  = owned
 !
 ! A full global field becomes a FULL field on each part's whole
-! vertex carrier - borrowed member included - because that is the
+! vertex set - borrowed member included - because that is the
 ! shape a stencil will need one level above. But assembling a part
 ! home contributes only what that part OWNS, so the two
 ! contributions tile the whole exactly and no borrowed copy is
@@ -38,8 +38,8 @@ program partitioned_pde_level_5
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : report, verdict
   use partitioned_pde_assert, only : NV, NE, Q_EXACT
-  use graph_carrier    , only : counted_set, subset_set, member_set
-  use graph_grammar    , only : graph, graph_field
+  use graph_set    , only : index_set, subset, set
+  use graph_grammar    , only : ordinary_graph, graph_field
   use class_graph      , only : stored_graph
   use class_graph_field, only : field
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
@@ -49,7 +49,7 @@ program partitioned_pde_level_5
 
   type(stored_graph)        :: g
   type(assembler)           :: a
-  class(graph), allocatable :: g1, g2
+  class(ordinary_graph), allocatable :: g1, g2
   integer                   :: nfail
 
   nfail = 0
@@ -77,7 +77,7 @@ contains
 
   subroutine cut(part, kpart)
 
-    class(graph), allocatable, intent(out) :: part
+    class(ordinary_graph), allocatable, intent(out) :: part
     integer                  , intent(in)  :: kpart
 
     type(partitioner) :: p
@@ -156,15 +156,15 @@ contains
   subroutine check_one_transport(q, part, k, globals, expect, nfail)
 
     type(field)      , intent(in)    :: q
-    class(graph)     , intent(in)    :: part
+    class(ordinary_graph)     , intent(in)    :: part
     integer          , intent(in)    :: k, globals(:)
     real(dp)         , intent(in)    :: expect(:)
     integer          , intent(inout) :: nfail
 
     type(partitioner)               :: p
     class(graph_field), allocatable :: pd
-    class(member_set), allocatable  :: dom
-    type(counted_set)               :: pvs
+    class(set), allocatable  :: dom
+    type(index_set)               :: pvs
     real(dp), allocatable           :: v(:)
     character(len=1)                :: tag
     integer                         :: i
@@ -173,7 +173,7 @@ contains
     write(tag,'(i1)') k
 
     ! The data is transported onto THIS part - not onto a second cut
-    ! of the same graph, which would be a different carrier with a
+    ! of the same graph, which would be a different set with a
     ! different identity.
     p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
     call p % partition_data(g, q, part, pd)
@@ -182,9 +182,9 @@ contains
     select type (part)
     type is (stored_graph)
        pvs = part % vertex_set()
-       call report(dom % same_as(pvs) .and. dom % size() .eq. 4, &
+       call report(dom % equals(pvs) .and. dom % size() .eq. 4, &
             & "q" // tag // " lives on G" // tag // "'s whole vertex " // &
-            & "carrier: a full field becomes a full OVERLAP field", &
+            & "set: a full field becomes a full OVERLAP field", &
             & nfail)
     end select
 
@@ -251,13 +251,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)               :: vs
-    type(subset_set)                :: s
+    type(index_set)               :: vs
+    type(subset)                :: s
     type(field)                     :: d
     type(partitioner)               :: p
-    class(graph), allocatable       :: part
+    class(ordinary_graph), allocatable       :: part
     class(graph_field), allocatable :: pd, fd
-    class(member_set), allocatable  :: dom
+    class(set), allocatable  :: dom
     real(dp), allocatable           :: v(:)
     integer , allocatable           :: mem(:)
     real(dp)                        :: total(NV)
@@ -265,7 +265,7 @@ contains
     logical                         :: ok, seen(NV)
 
     vs = g % vertex_set()
-    s = subset_set('probe', vs, [6, 3, 4])      ! non-global order
+    s = subset('probe', vs, [6, 3, 4])      ! non-global order
     d = field('subset probe', s)
     call d % set_real_vector([600.0_dp, 300.0_dp, 400.0_dp])
 
@@ -299,16 +299,16 @@ contains
             & "this part can see", nfail)
 
        ! The assembled piece is a proper SUBOBJECT of the global
-       ! carrier, so its storage is its own - read every value
+       ! set, so its storage is its own - read every value
        ! through the assembled domain's own local_index.
        call a % assemble_data(part, pd, g, fd)
        call fd % domain(dom)
        call fd % get_real_vector(v)
        select type (dom)
-       type is (subset_set)
+       type is (subset)
           call report(dom % is_subobject_of(vs), &
                & "the assembled piece embeds in the global vertex " // &
-               & "carrier", nfail)
+               & "set", nfail)
           call dom % members(mem)
           do i = 1, size(mem)
              total(mem(i)) = total(mem(i)) + v(dom % local_index(mem(i)))
@@ -316,7 +316,7 @@ contains
        class default
           call report(.false., &
                & "the assembled piece embeds in the global vertex " // &
-               & "carrier", nfail)
+               & "set", nfail)
        end select
     end do
 
@@ -345,7 +345,7 @@ contains
     real(dp)   , intent(inout) :: total(:)
 
     type(partitioner)               :: p
-    class(graph), allocatable       :: part
+    class(ordinary_graph), allocatable       :: part
     class(graph_field), allocatable :: pd, fd
     real(dp), allocatable           :: v(:)
 
@@ -360,7 +360,7 @@ contains
   real(dp) function value_at(d, dom, member)
 
     type(field)      , intent(in) :: d
-    class(member_set), intent(in) :: dom
+    class(set), intent(in) :: dom
     integer          , intent(in) :: member
 
     real(dp), allocatable :: v(:)

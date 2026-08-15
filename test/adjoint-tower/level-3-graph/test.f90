@@ -6,7 +6,7 @@
 !
 !      G = ( { V, T, P, Q, Y, Z }, { R_dep, J_Q, J_P, F_Q, F_P } )
 !
-! six carriers - two parents and their four role subobjects, seated
+! six sets - two parents and their four role subobjects, seated
 ! side by side as the ordinary member sets they are - and five
 ! relations, the source and the four blocks DERIVED once more by
 ! the certified Level-2 road and then admitted. The container
@@ -14,7 +14,7 @@
 !
 ! The rung's real work is signature closure over a MIXED ownership:
 ! R_dep's slots resolve to the parents, while J_Q's resolve to the
-! subobjects, and every one of them must be a carrier the graph
+! subobjects, and every one of them must be a set the graph
 ! holds. A subobject is not a lesser citizen here - it is a domain
 ! with its own identity, and relations over it close exactly as
 ! relations over its parent do.
@@ -34,22 +34,22 @@ program adjoint_level_3
   use adjoint_assert, only : report, verdict
   use adjoint_assert, only : VAR_P, VAR_U, VAR_V
   use adjoint_assert, only : TGT_R1, TGT_R2, TGT_F
-  use graph_carrier , only : counted_set, subset_set, member_set
+  use graph_set , only : index_set, subset, set, unrelated_graph
   use graph_relation, only : stored_relation, relation
   use graph_relation_algebra, only : compose_binary
   use graph_binary_relation , only : csr_relation, transposed_view, &
        &                             transpose_of, inclusion_of
-  use graph_structure, only : relational_graph, held_set, held_relation
+  use graph_structure, only : related_graph, declared_set, declared_relation
 
   implicit none
 
-  type(counted_set)              :: v, t
-  type(subset_set)               :: p_dom, q_dom, y_dom, z_dom
+  type(index_set)              :: v, t
+  type(subset)               :: p_dom, q_dom, y_dom, z_dom
   type(stored_relation)          :: dep
   type(csr_relation), target     :: inc_y, inc_z, inc_q, inc_p
   type(transposed_view)          :: inc_q_t, inc_p_t
   type(csr_relation)             :: jq, jp, fq, fp
-  type(relational_graph), target :: g
+  type(related_graph), target :: g
   integer                        :: table(2, 9)
   integer                        :: nfail
 
@@ -59,13 +59,13 @@ program adjoint_level_3
   write(*,'(1x,a)') "adjoint tower . level 3 . ownership"
   write(*,'(1x,a)') "============================================="
 
-  v = counted_set('variables', 3)
-  t = counted_set('targets'  , 3)
+  v = index_set('variables', 3)
+  t = index_set('targets'  , 3)
 
-  p_dom = subset_set('parameter', v, [VAR_P])
-  q_dom = subset_set('state'    , v, [VAR_U, VAR_V])
-  y_dom = subset_set('residual' , t, [TGT_R1, TGT_R2])
-  z_dom = subset_set('response' , t, [TGT_F])
+  p_dom = subset('parameter', v, [VAR_P])
+  q_dom = subset('state'    , v, [VAR_U, VAR_V])
+  y_dom = subset('residual' , t, [TGT_R1, TGT_R2])
+  z_dom = subset('response' , t, [TGT_F])
 
   table(:, 1) = [TGT_R1, VAR_P]
   table(:, 2) = [TGT_R1, VAR_U]
@@ -91,11 +91,11 @@ program adjoint_level_3
   fq = compose_binary(compose_binary(inc_z, dep), inc_q_t)
   fp = compose_binary(compose_binary(inc_z, dep), inc_p_t)
 
-  g = relational_graph('adjoint specimen', &
-       & [held_set(v), held_set(t), held_set(p_dom), held_set(q_dom), &
-       &  held_set(y_dom), held_set(z_dom)], &
-       & [held_relation(dep), held_relation(jq), held_relation(jp), &
-       &  held_relation(fq), held_relation(fp)])
+  g = related_graph('adjoint specimen', &
+       & [declared_set(v), declared_set(t), declared_set(p_dom), declared_set(q_dom), &
+       &  declared_set(y_dom), declared_set(z_dom)], &
+       & [declared_relation(dep), declared_relation(jq), declared_relation(jp), &
+       &  declared_relation(fq), declared_relation(fp)])
 
   call check_ownership(nfail)
   call check_roles_are_citizens(nfail)
@@ -108,14 +108,14 @@ program adjoint_level_3
 contains
 
   !===================================================================!
-  ! Six carriers and five relations, owned by identity.
+  ! Six sets and five relations, owned by identity.
   !===================================================================!
 
   subroutine check_ownership(nfail)
 
     integer, intent(inout) :: nfail
 
-    call report(g % num_member_sets() .eq. 6 .and. &
+    call report(g % num_sets() .eq. 6 .and. &
          &      g % num_relations() .eq. 5, &
          & "the graph owns six member sets and five relations", nfail)
 
@@ -143,10 +143,10 @@ contains
 
     call report(g % holds_set(p_dom) .and. g % holds_set(q_dom) .and. &
          &      g % holds_set(y_dom) .and. g % holds_set(z_dom), &
-         & "all four role subdomains are seated as carriers", nfail)
+         & "all four role subdomains are seated as sets", nfail)
 
     call report(g % holds_set(q_dom) .and. g % holds_set(y_dom) .and. &
-         &      .not. q_dom % same_as(y_dom), &
+         &      .not. q_dom % equals(y_dom), &
          & "Q and Y sit side by side, still not one another", nfail)
 
   end subroutine check_roles_are_citizens
@@ -161,25 +161,25 @@ contains
     integer, intent(inout) :: nfail
 
     class(relation), pointer       :: rp
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
     integer                        :: k
 
     do k = 1, g % num_relations()
        rp => g % relation_at(k)
-       if (rp % same_as(jq)) then
+       if (rp % equals(jq)) then
           call report(rp % num_tuples() .eq. 4 .and. &
                &      rp % has([TGT_R1, VAR_U]) .and. &
                &      rp % has([TGT_R2, VAR_V]), &
                & "the owned J_Q still holds its four derived facts", &
                & nfail)
           dom = rp % domain(1)
-          call report(dom % same_as(y_dom), &
+          call report(dom % equals(y_dom), &
                & "its first slot is still the residual rows", nfail)
           dom = rp % domain(2)
-          call report(dom % same_as(q_dom), &
+          call report(dom % equals(q_dom), &
                & "and its second still the state", nfail)
        end if
-       if (rp % same_as(dep)) then
+       if (rp % equals(dep)) then
           call report(rp % num_tuples() .eq. 9, &
                & "and the dense source survives with all nine", nfail)
        end if
@@ -190,7 +190,7 @@ contains
   !===================================================================!
   ! Signature closure over MIXED ownership: R_dep resolves to the
   ! parents, the four blocks to the subobjects, and every slot of
-  ! every owned relation lands on a carrier the graph holds.
+  ! every owned relation lands on a set the graph holds.
   !===================================================================!
 
   subroutine check_signature_closure(nfail)
@@ -198,7 +198,7 @@ contains
     integer, intent(inout) :: nfail
 
     class(relation), pointer       :: rp
-    class(member_set), allocatable :: dom
+    class(set), allocatable :: dom
     integer                        :: k, s
     logical                        :: ok
 
@@ -212,7 +212,7 @@ contains
     end do
     call report(ok, &
          & "every slot of every owned relation resolves to an owned " // &
-         & "carrier - parents and subobjects alike", nfail)
+         & "set - parents and subobjects alike", nfail)
 
   end subroutine check_signature_closure
 
@@ -225,15 +225,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(relational_graph) :: g2
-    type(held_relation)    :: none(0)
+    type(unrelated_graph) :: g2
 
-    call report(g % same_as(g), &
+    call report(g % equals(g), &
          & "the specimen graph is itself", nfail)
 
-    g2 = relational_graph('adjoint specimen again', &
-         & [held_set(v), held_set(t)], none)
-    call report(.not. g % same_as(g2), &
+    g2 = unrelated_graph('adjoint specimen again', &
+         & [declared_set(v), declared_set(t)])
+    call report(.not. g % equals(g2), &
          & "and no identically stocked twin is it", nfail)
 
   end subroutine check_graph_identity
@@ -245,7 +244,7 @@ contains
 
   logical function graph_holds_relation(g, r)
 
-    type(relational_graph), target, intent(in) :: g
+    type(related_graph), target, intent(in) :: g
     class(relation)               , intent(in) :: r
 
     class(relation), pointer :: rp
@@ -254,7 +253,7 @@ contains
     graph_holds_relation = .false.
     do k = 1, g % num_relations()
        rp => g % relation_at(k)
-       if (rp % same_as(r)) graph_holds_relation = .true.
+       if (rp % equals(r)) graph_holds_relation = .true.
     end do
 
   end function graph_holds_relation

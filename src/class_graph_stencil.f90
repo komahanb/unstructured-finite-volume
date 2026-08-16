@@ -33,11 +33,11 @@
 module class_graph_stencil
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_ordinary_view, only : graph
+  use graph_ordinary_view, only : ordinary_graph
   use graph_field_calculus, only : graph_field
   use graph_calculus     , only : discretization_operator
   use class_graph_field  , only : field
-  use class_graph        , only : stored_graph
+  use class_graph        , only : ordinary_stored_graph
   use fractal_graph      , only : set_graph => graph
 
   implicit none
@@ -47,7 +47,7 @@ module class_graph_stencil
 
   type, extends(discretization_operator) :: stencil_operator
 
-     type(stored_graph) :: pattern
+     type(ordinary_stored_graph) :: pattern
 
      type(field) :: weights
      type(field) :: constants
@@ -88,7 +88,7 @@ contains
 
     nv = size(constant)
 
-    this % pattern = stored_graph(nv, tails=columns, heads=rows)
+    this % pattern = ordinary_stored_graph(nv, tails=columns, heads=rows)
 
     this % weights   = field('stencil weights', this % pattern % edge_set(), this % pattern % num_edges())
     call this % weights % set_real_vector(weights)
@@ -115,7 +115,7 @@ contains
   subroutine stencil_domain(this, input_graph, domain, nentries)
 
     class(stencil_operator), intent(in)    :: this
-    class(graph), intent(in)               :: input_graph
+    class(ordinary_graph), intent(in)               :: input_graph
     type(set_graph), intent(out) :: domain
     integer        , intent(out) :: nentries
 
@@ -134,7 +134,7 @@ contains
   subroutine stencil_apply(this, input_graph, input_data, output)
 
     class(stencil_operator), intent(in)            :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
@@ -171,7 +171,7 @@ contains
   subroutine stencil_dependencies(this, pattern)
 
     class(stencil_operator), intent(in)    :: this
-    class(graph), allocatable, intent(out) :: pattern
+    class(ordinary_graph), allocatable, intent(out) :: pattern
 
     allocate(pattern, source=this % pattern)
 

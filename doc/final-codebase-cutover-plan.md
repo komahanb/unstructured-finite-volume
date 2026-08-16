@@ -97,7 +97,7 @@ below moves them.
 | `graph_epistemic_view` | \((Q,R)\) — data and residual | `has_data`, `data_of`, `residual_of` |
 | `graph_profile` | the ordinary directed graph as a **schema over two relations** \(T,H \subseteq E\times V\) | `ordinary_graph_view`, `directed_adjacency_view` |
 | `graph_field_calculus` | a domain carrying values | `graph_field`, the five `GRAPH_FIELD_*` kinds, `set_graph` |
-| `graph_ordinary_view` | the ordinary binary graph — vertices, edges, incidence, named sets, neighbourhoods | `graph` (abstract). **Added by PR2**, carved from `graph_grammar`; carries the legacy partition frame, marked, until PR3 |
+| `graph_ordinary_view` | the ordinary binary graph — vertices, edges, incidence, named sets, neighbourhoods | `ordinary_graph` (abstract). **Added by PR2**, carved from `graph_grammar`; renamed by PR3; carries the legacy partition frame, marked |
 | `graph_operation_view` | the two verbs — within a graph, and between graphs | `graph_operation`, `graph_transform` (abstract). **Added by PR2**; the last of `graph_grammar` |
 
 ### algorithm — 7
@@ -564,6 +564,100 @@ way §1 requires: consumers rewritten until nothing imported it.
 
 ---
 
+## 6.6 PR3: the last public non-ontology `graph`
+
+The abstract type `graph_ordinary_view :: graph` is now
+`ordinary_graph`, and the concrete `class_graph :: stored_graph` is
+`ordinary_stored_graph`.
+
+### What made the rename safe
+
+Three facts, established before a byte moved, each of which cut the
+surface:
+
+**The name resolves per program unit, not per file.** Every file was
+split at `module`/`program` boundaries and its `graph` traced to the
+module that supplies it:
+
+    56 files   `graph` is graph_ordinary_view's      -> renamed
+    62 files   `graph` is fractal_graph's            -> untouched
+     2 files   `graph` is interface_graph's          -> untouched (island)
+     0 files   two modules supply the name at once
+
+Zero mixed files is the fact that made a file-wide rewrite legal.
+
+**And the trap in that method, which caught this rename.** Keying on the
+LOCAL name misses an import that renames at the door. Two files said
+
+    use graph_ordinary_view, only : grammar_graph => graph
+
+so their local name was `grammar_graph`, not `graph`, and they fell
+outside the 56 — untouched by the rewrite, and broken by it, because the
+module they import from no longer exported `graph`. `src` built clean
+because both files are tests; two suites failed and named the line. The
+alias existed only to dodge the collision the rename removes, so both
+were collapsed to `only : ordinary_graph`.
+
+The lesson is the method's, not the rename's: **classify by the symbol
+imported, not by the name it is bound to locally.** The `stored_graph`
+rename was checked for aliases before it ran, and had none.
+
+**The ordinary type is abstract, so `type(graph)` can never name it.**
+Of 370 `type(graph)` sites, **none** is in the 56 — they are all the
+kernel, and a hit inside the 56 would have been a compile error today,
+not work. The rename surface is `class(`, `extends(` and `import ::`
+alone.
+
+**Only one `extends(graph)` in `src/` is the ordinary one.** The four
+sites split cleanly:
+
+    class_graph          extends the ordinary abstract   -> renamed
+    class_mesh           extends interface_graph's       -> untouched
+    class_stored_graph   extends interface_graph's       -> untouched
+    interface_graph      digraph extends its own         -> untouched
+
+This is the one edit the compiler might not have caught, because both
+names exist; it was enumerated rather than pattern-matched.
+
+### The `stored_graph` collision is resolved
+
+43 files import `stored_graph` from `class_graph`, one
+(`class_mesh`) from `class_stored_graph`, and **no file imports both**.
+The 43 were renamed — 125 declaration sites, 75 constructor calls, and
+their imports. `class_stored_graph` still exports `stored_graph`, and
+is now the only module that does.
+
+The *module* rename was deferred: `class_graph` keeps its name. The
+collision was between two public **types**, and that is what step 2
+existed to remove.
+
+### The goal, and the one thing that does not reach it
+
+> after PR3, the only public type named `graph` should be the ontology
+
+Two remain:
+
+    fractal_graph  :: graph      the ontology - the intended survivor
+    interface_graph:: graph      the mesh-loader island
+
+The second is excluded by the ruling that the island is not to be
+touched, and the exclusion is safe rather than merely permitted: no
+file in the repository imports `graph` from two sources, so the
+ambiguity is **dormant, not active**. It dies with the island, in the
+mesh-measurement work — which is where the ruling put it.
+
+### Not done, deliberately
+
+The partition frame did not move. Its marker now reads
+
+    LEGACY PARTITION FRAME - MOVES IN THE NEXT FRAME PR
+
+as the ruling's correction instructs. Moving it stays scoped to
+`class_graph`, `class_graph_partitioner`, `class_graph_assembler` and
+the tests that assert frame laws — §6.2's measurement, unchanged.
+
+---
+
 ## 7. Verification record
 
 One clean rebuild per suite, at every commit recorded here:
@@ -572,6 +666,7 @@ One clean rebuild per suite, at every commit recorded here:
     re-export redirect       32 of 32 suites PASS, 0 FAIL
     graph_ordinary_view      32 of 32 suites PASS, 0 FAIL
     graph_grammar deleted    32 of 32 suites PASS, 0 FAIL
+    ordinary_graph rename    32 of 32 suites PASS, 0 FAIL
 
 Seven tower import gates were re-asserted, not relaxed: a level that read
 the field through the grammar is granted `graph_field_calculus` by name,

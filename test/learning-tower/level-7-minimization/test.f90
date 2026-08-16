@@ -48,7 +48,7 @@ module learning_residual_fixture
   use graph_set_representation, only : set_representation
   use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_operation_view, only : graph_operation
-  use graph_ordinary_view, only : graph
+  use graph_ordinary_view, only : ordinary_graph
   use graph_field_calculus, only : graph_field
   use class_graph_field, only : field
 
@@ -100,7 +100,7 @@ contains
 
   subroutine oracle_domain(this, input_graph, domain, nentries)
     class(affine_learning_residual), intent(in) :: this
-    class(graph), intent(in) :: input_graph
+    class(ordinary_graph), intent(in) :: input_graph
     type(set_graph), intent(out) :: domain
     integer        , intent(out) :: nentries
     integer         :: n_y
@@ -112,7 +112,7 @@ contains
   subroutine oracle_apply(this, input_graph, input_data, output)
 
     class(affine_learning_residual), intent(in)    :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
@@ -152,7 +152,7 @@ program learning_level_7
   use learning_assert  , only : report, verdict, SLOT_W
   use graph_field_calculus, only : graph_field
   use class_graph_field, only : field
-  use class_graph      , only : stored_graph
+  use class_graph      , only : ordinary_stored_graph
   use class_graph_gmres, only : gmres
   use fractal_graph        , only : set_graph => graph
   use graph_set_representation, only : counted_set_representation, &
@@ -165,7 +165,7 @@ program learning_level_7
 
   type(set_graph)     :: v, y, hv
   type(set_graph)      :: theta
-  type(stored_graph)    :: host
+  type(ordinary_stored_graph)    :: host
   type(affine_learning_residual) :: oracle, witness
   type(gmres)           :: solver, fitter
   type(field)           :: state
@@ -192,7 +192,7 @@ program learning_level_7
   call sets % bind(y, counted_set_representation(1))
 
   ! Seven vertices: the wrong size for everything, on purpose.
-  host = stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
+  host = ordinary_stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
 
   ! The primary training problem: (x, y) = (2, 6), supplied as data.
   oracle = affine_learning_residual(theta, y, sets, 2.0_dp, 6.0_dp)

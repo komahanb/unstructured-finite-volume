@@ -54,7 +54,7 @@ program learning_level_9
   use graph_profile  , only : directed_adjacency_view
   use graph_algorithms, only : topological_order
   use graph_field_calculus, only : graph_field
-  use class_graph    , only : stored_graph
+  use class_graph    , only : ordinary_stored_graph
   use class_graph_field, only : field
   use class_graph_gmres, only : gmres
   use learning_constitution_fixture, only : apply_law, slot_for_port
@@ -81,7 +81,7 @@ program learning_level_9
   type(relational_binding)         :: bnd
   integer                          :: kcell
   type(directed_adjacency_view)      :: view
-  type(stored_graph)                 :: host
+  type(ordinary_stored_graph)                 :: host
   type(constituted_learning_residual) :: residual_op
   type(gmres)                        :: solver
   type(field)                        :: q_k, rhsf
@@ -193,7 +193,7 @@ program learning_level_9
   deallocate(flow)
 
   ! -- the compatibility scenery: seven vertices, nobody's trainables
-  host = stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
+  host = ordinary_stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
 
   call check_structure(nfail, "before training")
 

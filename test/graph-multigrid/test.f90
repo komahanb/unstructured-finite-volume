@@ -18,7 +18,7 @@
 program test_graph_multigrid
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_ordinary_view, only : graph
+  use graph_ordinary_view, only : ordinary_graph
   use class_graph_mesh   , only : mesh
   use class_graph_stencil, only : stencil_operator
   use class_fitted_balance, only : fitted_balance_stencil

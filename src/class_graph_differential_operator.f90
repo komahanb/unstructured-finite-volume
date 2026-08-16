@@ -164,7 +164,7 @@ module class_graph_differential_operator
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_operation_view, only : graph_operation
-  use graph_ordinary_view, only : graph
+  use graph_ordinary_view, only : ordinary_graph
   use graph_field_calculus, only : graph_field
   use fractal_graph      , only : set_graph => graph
   use graph_calculus     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
@@ -428,7 +428,7 @@ contains
   subroutine operator_domain(this, input_graph, domain, nentries)
 
     class(differential_operator), intent(in) :: this
-    class(graph), intent(in)                 :: input_graph
+    class(ordinary_graph), intent(in)                 :: input_graph
     type(set_graph), intent(out) :: domain
     integer        , intent(out) :: nentries
 
@@ -478,7 +478,7 @@ contains
 
   pure subroutine average_step(g, one_sided_by, with_c, op_c, op_cs, op_b, op_bs, q, z)
 
-    class(graph), intent(in)          :: g
+    class(ordinary_graph), intent(in)          :: g
     real(dp)    , intent(in)          :: one_sided_by   ! sign chooses the end; zero averages
     logical     , intent(in)          :: with_c
     real(dp)    , intent(in)          :: op_c
@@ -532,7 +532,7 @@ contains
 
   pure subroutine average_step_reversed(g, one_sided_by, with_c, op_c, op_cs, z, y)
 
-    class(graph), intent(in)          :: g
+    class(ordinary_graph), intent(in)          :: g
     real(dp)    , intent(in)          :: one_sided_by
     logical     , intent(in)          :: with_c
     real(dp)    , intent(in)          :: op_c
@@ -588,7 +588,7 @@ contains
 
   pure subroutine difference_step(g, with_c, op_c, op_cs, op_h, op_hs, op_b, op_bs, q, z)
 
-    class(graph), intent(in)          :: g
+    class(ordinary_graph), intent(in)          :: g
     logical     , intent(in)          :: with_c
     real(dp)    , intent(in)          :: op_c
     real(dp), allocatable, intent(in) :: op_cs(:)
@@ -634,7 +634,7 @@ contains
 
   pure subroutine difference_step_reversed(g, with_c, op_c, op_cs, op_h, op_hs, z, y)
 
-    class(graph), intent(in)          :: g
+    class(ordinary_graph), intent(in)          :: g
     logical     , intent(in)          :: with_c
     real(dp)    , intent(in)          :: op_c
     real(dp), allocatable, intent(in) :: op_cs(:)
@@ -683,7 +683,7 @@ contains
 
   pure subroutine incidence_step(g, op_m, op_ms, z, y)
 
-    class(graph), intent(in)          :: g
+    class(ordinary_graph), intent(in)          :: g
     real(dp)    , intent(in)          :: op_m
     real(dp), allocatable, intent(in) :: op_ms(:)
     real(dp)    , intent(in)          :: z(:)
@@ -720,7 +720,7 @@ contains
 
   pure subroutine incidence_step_reversed(g, op_m, op_ms, q, z)
 
-    class(graph), intent(in)          :: g
+    class(ordinary_graph), intent(in)          :: g
     real(dp)    , intent(in)          :: op_m
     real(dp), allocatable, intent(in) :: op_ms(:)
     real(dp)    , intent(in)          :: q(:)
@@ -809,7 +809,7 @@ contains
   subroutine operator_apply(this, input_graph, input_data, output)
 
     class(differential_operator), intent(in)       :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
@@ -834,7 +834,7 @@ contains
   subroutine apply_on_edges(this, input_graph, input_data, out)
 
     class(differential_operator), intent(in) :: this
-    class(graph), intent(in)                 :: input_graph
+    class(ordinary_graph), intent(in)                 :: input_graph
     class(graph_field), intent(in), optional :: input_data(:)
     type(field), intent(out)                 :: out
 
@@ -905,7 +905,7 @@ contains
   subroutine apply_on_vertices(this, input_graph, input_data, out)
 
     class(differential_operator), intent(in) :: this
-    class(graph), intent(in)                 :: input_graph
+    class(ordinary_graph), intent(in)                 :: input_graph
     class(graph_field), intent(in), optional :: input_data(:)
     type(field), intent(out)                 :: out
 
@@ -1015,7 +1015,7 @@ contains
   subroutine run_vertex_chain(order, g, q, c, cs, h, hs, m, ms, b, bs, y)
 
     integer     , intent(in)          :: order
-    class(graph), intent(in)          :: g
+    class(ordinary_graph), intent(in)          :: g
     real(dp)    , intent(in)          :: q(:)
     real(dp)    , intent(in)          :: c, h, m, b
     real(dp), allocatable, intent(in) :: cs(:), hs(:), ms(:), bs(:)
@@ -1075,7 +1075,7 @@ contains
   subroutine run_vertex_chain_reversed(order, g, q, c, cs, h, hs, m, ms, y)
 
     integer     , intent(in)          :: order
-    class(graph), intent(in)          :: g
+    class(ordinary_graph), intent(in)          :: g
     real(dp)    , intent(in)          :: q(:)
     real(dp)    , intent(in)          :: c, h, m
     real(dp), allocatable, intent(in) :: cs(:), hs(:), ms(:)
@@ -1139,7 +1139,7 @@ contains
   subroutine fetch_vertex_values(input_data, input_graph, nv, q, ncomp)
 
     class(graph_field), intent(in), optional :: input_data(:)
-    class(graph)     , intent(in)           :: input_graph
+    class(ordinary_graph)     , intent(in)           :: input_graph
     integer          , intent(in)           :: nv
     real(dp), allocatable, intent(out)      :: q(:)
     integer          , intent(out)          :: ncomp
@@ -1176,7 +1176,7 @@ contains
   subroutine fetch_edge_values(input_data, input_graph, ne, z, ncomp)
 
     class(graph_field), intent(in), optional :: input_data(:)
-    class(graph)     , intent(in)           :: input_graph
+    class(ordinary_graph)     , intent(in)           :: input_graph
     integer          , intent(in)           :: ne
     real(dp), allocatable, intent(out)      :: z(:)
     integer          , intent(out)          :: ncomp

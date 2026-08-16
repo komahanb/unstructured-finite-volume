@@ -38,8 +38,8 @@ program visualization_level_9
   use graph_label_map      , only : label_map
   use graph_relation       , only : relation
   use graph_binary_relation, only : csr_relation
-  use graph_ordinary_view  , only : graph
-  use class_graph          , only : stored_graph
+  use graph_ordinary_view  , only : ordinary_graph
+  use class_graph          , only : ordinary_stored_graph
   use class_graph_field    , only : field
   use class_graph_stencil  , only : stencil_operator
   use class_graph_step     , only : step_operator, bdf
@@ -74,8 +74,8 @@ program visualization_level_9
   ! ---- the production half
   type(stencil_operator)    :: a
   type(step_operator)       :: clock
-  class(graph), allocatable :: dependent, independent
-  type(stored_graph)        :: context
+  class(ordinary_graph), allocatable :: dependent, independent
+  type(ordinary_stored_graph)        :: context
   type(jacobi)              :: solver
 
   integer , allocatable :: colours(:)
@@ -127,7 +127,7 @@ program visualization_level_9
   if (.not. labels % labelled(independent % edge_set())) &
        & call labels % bind(independent % edge_set(), 'edges')
 
-  context = stored_graph(N, tails=[integer ::], heads=[integer ::])
+  context = ordinary_stored_graph(N, tails=[integer ::], heads=[integer ::])
   if (.not. sets % describes(context % vertex_set())) &
        & call sets % bind(context % vertex_set(), &
        &      counted_set_representation(context % num_vertices()))
@@ -298,7 +298,7 @@ contains
 
   logical function same_pattern(p, q)
 
-    class(graph), intent(in) :: p, q
+    class(ordinary_graph), intent(in) :: p, q
 
     integer :: i, j
 
@@ -317,7 +317,7 @@ contains
   logical function properly_coloured(colours, coupling)
 
     integer     , intent(in) :: colours(:)
-    class(graph), intent(in) :: coupling
+    class(ordinary_graph), intent(in) :: coupling
 
     integer :: i, j
 

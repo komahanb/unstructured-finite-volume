@@ -56,7 +56,7 @@
 module class_graph_partitioner
 
   use iso_fortran_env     , only : dp => REAL64
-  use graph_ordinary_view , only : graph
+  use graph_ordinary_view , only : ordinary_graph
   use graph_field_calculus, only : graph_field
   use fractal_graph      , only : set_graph => graph
   use graph_set_map      , only : set_map
@@ -64,7 +64,7 @@ module class_graph_partitioner
   use graph_inclusion_map, only : inclusion_map, declared_subobject
   use graph_set_representation, only : listed_set_representation
   use graph_calculus      , only : graph_partitioner
-  use class_graph         , only : stored_graph
+  use class_graph         , only : ordinary_stored_graph
   use class_graph_field   , only : field
   use class_graph_walk    , only : walk, WALK_VISIT_ORDER
 
@@ -157,7 +157,7 @@ contains
   pure logical function defined_on_graph(this, input_graph)
 
     class(partitioner), intent(in) :: this
-    class(graph)      , intent(in) :: input_graph
+    class(ordinary_graph)      , intent(in) :: input_graph
 
     defined_on_graph = input_graph % num_vertices() > 0 .and. this % nparts >= 1
 
@@ -179,7 +179,7 @@ contains
   logical function defined_on_data(this, input_graph, input_data)
 
     class(partitioner), intent(in) :: this
-    class(graph)      , intent(in) :: input_graph
+    class(ordinary_graph)      , intent(in) :: input_graph
     class(graph_field) , intent(in) :: input_data
 
     defined_on_data = this % defined_on_graph(input_graph)
@@ -201,8 +201,8 @@ contains
   subroutine partition_graph(this, global_graph, part_graph)
 
     class(partitioner), intent(in)              :: this
-    class(graph)      , intent(in)              :: global_graph
-    class(graph)      , allocatable, intent(out) :: part_graph
+    class(ordinary_graph)      , intent(in)              :: global_graph
+    class(ordinary_graph)      , allocatable, intent(out) :: part_graph
 
     integer, allocatable :: owner(:), mine(:), whereis(:)
     integer, allocatable :: ltail(:), lhead(:), eglobal(:), eowner(:), vowner(:)
@@ -269,7 +269,7 @@ contains
     ! its frame after birth would answer one question two ways in
     ! one lifetime.
     allocate(part_graph, source = &
-         & stored_graph(size(mine), tails=ltail(1:nkeep), heads=lhead(1:nkeep), &
+         & ordinary_stored_graph(size(mine), tails=ltail(1:nkeep), heads=lhead(1:nkeep), &
          &              number  = this % part,   &
          &              nparts  = this % nparts, &
          &              vglobal = mine,          &
@@ -286,7 +286,7 @@ contains
   subroutine assign_owners(this, global_graph, owner)
 
     class(partitioner)  , intent(in)  :: this
-    class(graph)        , intent(in)  :: global_graph
+    class(ordinary_graph)        , intent(in)  :: global_graph
     integer, allocatable, intent(out) :: owner(:)
 
     integer :: nv
@@ -343,11 +343,11 @@ contains
 
   subroutine assign_owners_breadth_first(global_graph, nparts, owner)
 
-    class(graph), intent(in)    :: global_graph
+    class(ordinary_graph), intent(in)    :: global_graph
     integer     , intent(in)    :: nparts
     integer     , intent(inout) :: owner(:)
 
-    type(stored_graph) :: untaken
+    type(ordinary_stored_graph) :: untaken
     type(walk)         :: visit
     class(graph_field), allocatable :: reached
     integer, allocatable :: locals(:), whereis(:), tails(:), heads(:), order(:)
@@ -387,7 +387,7 @@ contains
           end if
        end do
 
-       untaken = stored_graph(n, tails=tails(1:m), heads=heads(1:m))
+       untaken = ordinary_stored_graph(n, tails=tails(1:m), heads=heads(1:m))
 
        ! The first unclaimed cell seeds the part; the visit order
        ! says who its share of the ring is.
@@ -420,7 +420,7 @@ contains
 
   subroutine gather_part(global_graph, owner, part, mine, whereis)
 
-    class(graph)        , intent(in)  :: global_graph
+    class(ordinary_graph)        , intent(in)  :: global_graph
     integer             , intent(in)  :: owner(:)
     integer             , intent(in)  :: part
     integer, allocatable, intent(out) :: mine(:)
@@ -470,9 +470,9 @@ contains
        & sets, labels, inclusions, part_data)
 
     class(partitioner), intent(in)               :: this
-    class(graph)      , intent(in)               :: global_graph
+    class(ordinary_graph)      , intent(in)               :: global_graph
     class(graph_field) , intent(in)               :: global_data
-    class(graph)      , intent(in)               :: part_graph
+    class(ordinary_graph)      , intent(in)               :: part_graph
     type(set_map)      , intent(inout)            :: sets
     type(label_map)    , intent(inout)            :: labels
     type(inclusion_map), intent(inout)            :: inclusions
@@ -529,7 +529,7 @@ contains
     integer            , intent(in)               :: n_dom
     type(set_graph)    , intent(in)               :: global_carrier
     integer            , intent(in)               :: n_global_carrier
-    class(graph)       , intent(in)               :: part_graph
+    class(ordinary_graph)       , intent(in)               :: part_graph
     logical            , intent(in)               :: on_vertices
     type(set_map)      , intent(inout)            :: sets
     type(label_map)    , intent(inout)            :: labels
@@ -620,7 +620,7 @@ contains
 
   pure integer function global_of(part_graph, l, on_vertices)
 
-    class(graph), intent(in) :: part_graph
+    class(ordinary_graph), intent(in) :: part_graph
     integer     , intent(in) :: l
     logical     , intent(in) :: on_vertices
 

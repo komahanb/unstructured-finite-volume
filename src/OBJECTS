@@ -1,6 +1,7 @@
 objects= \
 graph_identity.o \
 fractal_graph.o \
+graph_sequence_view.o \
 graph_epistemic_view.o \
 graph_carrier.o \
 graph_relation.o \

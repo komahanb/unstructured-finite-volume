@@ -1,7 +1,7 @@
 !=====================================================================!
 ! EPISTEMIC VIEW
 !
-! One reading of a graph, in which the two branches are interpreted as
+! One view of a graph, in which the two branches are interpreted as
 !
 !     branch(1) = Q     the data
 !     branch(2) = R     the residual/operator governing it
@@ -17,7 +17,7 @@
 !     (UNKNOWN, KNOWN  )   operator
 !     (KNOWN  , KNOWN  )   realized
 !
-! NULL is outside that domain. The reading has no name for a branch
+! NULL is outside that domain. The view has no name for a branch
 ! that is definitely absent, and the 3x3 state space is not forced
 ! back into the old 2x2: epistemic_defined answers whether a name
 ! exists, and epistemic_name refuses when one does not.
@@ -30,7 +30,7 @@
 ! empty Q: a Q that references a graph with no members is KNOWN.
 !
 ! No host. A graph does not ride on a graph of another kind; where a
-! reading needs another graph it references it, or an external map
+! view needs another graph it references it, or an external map
 ! associates the two.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -50,7 +50,7 @@ module graph_epistemic_view
 contains
 
   !===================================================================!
-  ! The two primitive questions of this reading.
+  ! The two primitive questions of this view.
   !===================================================================!
 
   logical function has_data(g)
@@ -70,7 +70,7 @@ contains
   end function has_operator
 
   !===================================================================!
-  ! Is this graph in the domain of the reading: are both branches
+  ! Is this graph in the domain of the view: are both branches
   ! UNKNOWN or KNOWN.
   !===================================================================!
 

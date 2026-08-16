@@ -1,72 +1,70 @@
 !=====================================================================!
-! The computational-state refusals, each EXPECTED TO DIE for its
-! stated reason:
+! THE EPISTEMIC VIEW REFUSALS
 !
-!      databottom       asking data of a bottom data seat
-!      residualbottom   asking residual of a bottom residual seat
-!      unhosted         asking structure of a graph riding nothing
-!      twice            a second signing of a declared graph
-!      fifth            asking the name of a state that is not one
-!                       of the four
+! Three laws, each of which must terminate the program with its own
+! message. The retired suite also refused a second identity assignment
+! and a fifth state; those belong to the kernel and to its own suite
+! now, and are not restated here.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-program state_refusal
+program refusal
 
-  use graph_structure, only : relational_graph
-  use graph_state    , only : computational_graph, state_name, &
-       &                      void_graph, data_graph
+  use fractal_graph       , only : graph, null_branch, unknown_branch, known_branch
+  use graph_epistemic_view, only : epistemic_name, data_of, residual_of
 
   implicit none
 
-  type :: observed_values
+  character(len=32)    :: which
+  type(graph), pointer :: p
 
-     real, allocatable :: entries(:)
-
-  end type observed_values
-
-  type(observed_values)              :: q
-  type(computational_graph), target  :: g
-  class(*), pointer                  :: seat
-  class(relational_graph), pointer   :: host
-  character(len=:), allocatable      :: said
-  character(len=32)                  :: which
-
-  which = ''
   call get_command_argument(1, which)
 
   select case (trim(which))
 
-  case ('databottom')
-     g = void_graph('empty-handed')
-     seat => g % data()
+     !================================================================!
+     ! Neither NULL nor UNKNOWN is a value; no accessor manufactures
+     ! one.
+     !================================================================!
 
-  case ('residualbottom')
-     allocate(q % entries, source=[1.0])
-     g = data_graph('data only', q)
-     seat => g % residual()
+  case ('dataunknown')
+     block
+       type(graph), target :: g
+       call g % declare()
+       g % branch = [unknown_branch(), unknown_branch()]
+       p => data_of(g)
+     end block
 
-  case ('unhosted')
-     g = void_graph('adrift')
-     host => g % structure()
-     write(*,'(1x,a)') host % name()
+  case ('residualunknown')
+     block
+       type(graph), target :: g, q
+       call g % declare(); call q % declare()
+       g % branch = [known_branch(q), unknown_branch()]
+       p => residual_of(g)
+     end block
 
-  case ('twice')
-     g = void_graph('signed')
-     call g % declare('signed-again')
+     !================================================================!
+     ! NULL is outside the reading's domain. The 3x3 state space is
+     ! not forced back into the 2x2 classification.
+     !================================================================!
 
-  case ('fifth')
-     said = state_name(5)
+  case ('nullname')
+     block
+       type(graph), target :: g, q
+       character(len=:), allocatable :: said
+       call g % declare(); call q % declare()
+       g % branch = [known_branch(q), null_branch()]
+       said = epistemic_name(g)
+       print *, said
+     end block
 
   case default
-     write(*,'(1x,a)') &
-          & "usage: refusal databottom|residualbottom|unhosted|twice|fifth"
-     error stop 'no case chosen'
+     error stop 'refusal: no such case'
 
   end select
 
-  ! Reaching this line is the failure.
-  write(*,'(1x,a,a)') "REACHED PAST THE REFUSAL: ", trim(which)
+  print *, 'refusal: unreachable'
+  error stop 1
 
-end program state_refusal
+end program refusal

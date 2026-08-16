@@ -1,361 +1,231 @@
 !=====================================================================!
-! The computational graph suite: the laws of the epistemic pair
-! (COMPUTATIONAL-GRAPH.md).
+! THE EPISTEMIC VIEW SUITE
 !
-! G = (Q, R): two seats, four states, one type. The checks below
-! hold the classifier to exactly-one, keep bottom distinct from
-! empty - an allocated zero-length payload is REALIZED data - keep
-! void distinct from structurally empty - a void graph rides a
-! whole GAMMA = (S, P) untroubled - and keep realized distinct
-! from solved: an inconsistent pair is a realized graph, and this
-! module cannot tell, by design.
+! One graph ontology, read as the pair (Q, R):
+!
+!     branch(1) = Q     branch(2) = R
+!
+! The type under test is fractal_graph's graph. graph_state and its
+! computational_graph are retired: the seats were the branches all
+! along, the four states were four of nine, and the borrowed host was
+! a privilege no kernel should hold.
+!
+! What the retired suite proved, and this one still proves:
+!
+!     realized is not solved
+!     UNKNOWN is not empty, and UNKNOWN is not NULL
+!     identity is independent of branch state
+!
+! What is new: NULL is a third primitive state, all nine combinations
+! are instantiated, and the reading names only the four it defines.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-program test_graph_state
+program test
 
-  use graph_carrier  , only : counted_set
-  use graph_relation , only : stored_relation, slot
-  use graph_structure, only : relational_graph, held_set, &
-       &                      held_relation
-  use graph_state    , only : computational_graph, &
-       &                      GRAPH_STATE_VOID, GRAPH_STATE_DATA, &
-       &                      GRAPH_STATE_OPERATOR, &
-       &                      GRAPH_STATE_REALIZED, state_name, &
-       &                      void_graph, data_graph, operator_graph, &
-       &                      realized_graph
+  use graph_identity     , only : token
+  use fractal_graph      , only : graph, GRAPH_NULL, GRAPH_UNKNOWN, GRAPH_KNOWN, &
+       & null_branch, unknown_branch, known_branch
+  use graph_epistemic_view, only : has_data, has_operator, &
+       & epistemic_defined, epistemic_name, data_of, residual_of
 
   implicit none
 
+  integer :: failures = 0
+
+  write(*,'(1x,a)') "epistemic view suite (AGENTS.md, The graph ontology)"
+
   !===================================================================!
-  ! The payloads. Q is not one field and R is not graph_operation:
-  ! any realized knowledge may take a seat, so the fixtures are
-  ! deliberately nobody's production types.
+  ! The four named readings, each built from branch values.
   !===================================================================!
 
-  type :: observed_values
+  named_block: block
 
-     real, allocatable :: entries(:)
+    type(graph), target  :: q, r
+    type(graph), target  :: void, dat, op, realized
+    type(graph), pointer :: pq, pr
 
-  end type observed_values
+    call q % declare(); call r % declare()
+    call void % declare(); call dat % declare()
+    call op % declare(); call realized % declare()
 
-  type :: residual_stub
+    void     % branch = [unknown_branch()  , unknown_branch()]
+    dat      % branch = [known_branch(q)   , unknown_branch()]
+    op       % branch = [unknown_branch()  , known_branch(r) ]
+    realized % branch = [known_branch(q)   , known_branch(r) ]
 
-     character(len=:), allocatable :: law
+    call check('void     = (UNKNOWN, UNKNOWN)', epistemic_name(void)     .eq. 'void')
+    call check('data     = (KNOWN  , UNKNOWN)', epistemic_name(dat)      .eq. 'data')
+    call check('operator = (UNKNOWN, KNOWN  )', epistemic_name(op)       .eq. 'operator')
+    call check('realized = (KNOWN  , KNOWN  )', epistemic_name(realized) .eq. 'realized')
 
-  end type residual_stub
+    call check('exactly one name holds: has_data and has_operator decide it', &
+         & (.not. has_data(void))     .and. (.not. has_operator(void))     .and. &
+         & (      has_data(dat))      .and. (.not. has_operator(dat))      .and. &
+         & (.not. has_data(op))       .and. (      has_operator(op))       .and. &
+         & (      has_data(realized)) .and. (      has_operator(realized)))
 
-  integer :: nfail
+    pq => data_of(realized)
+    pr => residual_of(realized)
+    call check('Q and R are graphs, reached by reference', &
+         & pq % same_as(q) .and. pr % same_as(r))
 
-  nfail = 0
+  end block named_block
 
-  write(*,'(1x,a)') "============================================="
-  write(*,'(1x,a)') "computational graph suite (COMPUTATIONAL-GRAPH.md)"
-  write(*,'(1x,a)') "============================================="
+  !===================================================================!
+  ! REALIZED IS NOT SOLVED. Occupancy of both branches says nothing
+  ! about R(Q) = 0. Two realized graphs, one consistent pair and one
+  ! deliberately inconsistent, are indistinguishable to this reading.
+  !===================================================================!
 
-  call check_four_states(nfail)
-  call check_exactly_one(nfail)
-  call check_bottom_is_not_empty(nfail)
-  call check_void_is_not_topological(nfail)
-  call check_realized_is_not_solved(nfail)
-  call check_canonical_names(nfail)
-  call check_seats_answer_what_was_handed(nfail)
-  call check_graph_identity(nfail)
+  realized_block: block
 
-  write(*,'(1x,a)') "============================================="
-  if (nfail .eq. 0) then
-     write(*,'(1x,a)') "all computational-state checks passed"
+    type(graph), target :: q, r, consistent, inconsistent
+
+    call q % declare(); call r % declare()
+    call consistent % declare(); call inconsistent % declare()
+
+    consistent   % branch = [known_branch(q), known_branch(r)]
+    inconsistent % branch = [known_branch(r), known_branch(q)]   ! Q and R swapped
+
+    call check('both are realized; the reading cannot tell them apart', &
+         & epistemic_name(consistent)   .eq. 'realized' .and. &
+         & epistemic_name(inconsistent) .eq. 'realized')
+    call check('and they are different graphs', &
+         & .not. consistent % same_as(inconsistent))
+
+  end block realized_block
+
+  !===================================================================!
+  ! UNKNOWN IS NOT EMPTY. A Q that references a graph with no members
+  ! is KNOWN; only an unrealized branch is UNKNOWN.
+  !===================================================================!
+
+  bottom_block: block
+
+    type(graph), target :: empty_q, holds_empty, holds_nothing
+
+    call empty_q % declare()                     ! (NULL, NULL): an atom
+    call holds_empty % declare(); call holds_nothing % declare()
+
+    holds_empty   % branch = [known_branch(empty_q), unknown_branch()]
+    holds_nothing % branch = [unknown_branch()     , unknown_branch()]
+
+    call check('a Q with no members is still KNOWN', has_data(holds_empty))
+    call check('an unrealized Q is UNKNOWN, and that is a different absence', &
+         & .not. has_data(holds_nothing))
+    call check('the two readings differ: data /= void', &
+         & epistemic_name(holds_empty) .ne. epistemic_name(holds_nothing))
+
+  end block bottom_block
+
+  !===================================================================!
+  ! IDENTITY IS INDEPENDENT OF BRANCH STATE.
+  !===================================================================!
+
+  identity_block: block
+
+    type(graph), target :: g, q, r
+    type(token)         :: before, after
+
+    call g % declare(); call q % declare(); call r % declare()
+
+    g % branch = [unknown_branch(), unknown_branch()]
+    before = g % id()
+    g % branch = [known_branch(q), known_branch(r)]
+    after = g % id()
+
+    call check('void becomes realized under one identity', &
+         & before % matches(after) .and. epistemic_name(g) .eq. 'realized')
+    call check('two void graphs are still two graphs', &
+         & .not. q % same_as(r))
+
+  end block identity_block
+
+  !===================================================================!
+  ! ALL NINE COMBINATIONS. Four are named; the five involving NULL are
+  ! outside the reading's domain and are reported as such, not forced
+  ! into a name.
+  !===================================================================!
+
+  nine_block: block
+
+    type(graph), target :: ref
+    type(graph), target :: nn, nu, nk, un, uu, uk, kn, ku, kk
+
+    call ref % declare()
+    call nn % declare(); call nu % declare(); call nk % declare()
+    call un % declare(); call uu % declare(); call uk % declare()
+    call kn % declare(); call ku % declare(); call kk % declare()
+
+    nn % branch = [null_branch()    , null_branch()    ]
+    nu % branch = [null_branch()    , unknown_branch() ]
+    nk % branch = [null_branch()    , known_branch(ref)]
+    un % branch = [unknown_branch() , null_branch()    ]
+    uu % branch = [unknown_branch() , unknown_branch() ]
+    uk % branch = [unknown_branch() , known_branch(ref)]
+    kn % branch = [known_branch(ref), null_branch()    ]
+    ku % branch = [known_branch(ref), unknown_branch() ]
+    kk % branch = [known_branch(ref), known_branch(ref)]
+
+    call state('(N,N)', nn, GRAPH_NULL   , GRAPH_NULL   , .false.)
+    call state('(N,U)', nu, GRAPH_NULL   , GRAPH_UNKNOWN, .false.)
+    call state('(N,K)', nk, GRAPH_NULL   , GRAPH_KNOWN  , .false.)
+    call state('(U,N)', un, GRAPH_UNKNOWN, GRAPH_NULL   , .false.)
+    call state('(U,U)', uu, GRAPH_UNKNOWN, GRAPH_UNKNOWN, .true. )
+    call state('(U,K)', uk, GRAPH_UNKNOWN, GRAPH_KNOWN  , .true. )
+    call state('(K,N)', kn, GRAPH_KNOWN  , GRAPH_NULL   , .false.)
+    call state('(K,U)', ku, GRAPH_KNOWN  , GRAPH_UNKNOWN, .true. )
+    call state('(K,K)', kk, GRAPH_KNOWN  , GRAPH_KNOWN  , .true. )
+
+    call check('four of nine combinations carry an epistemic name', &
+         & count([epistemic_defined(nn), epistemic_defined(nu), epistemic_defined(nk), &
+         &        epistemic_defined(un), epistemic_defined(uu), epistemic_defined(uk), &
+         &        epistemic_defined(kn), epistemic_defined(ku), epistemic_defined(kk)]) .eq. 4)
+
+  end block nine_block
+
+  !===================================================================!
+
+  if (failures .eq. 0) then
+     print *, ''
+     print *, ' ALL PROPOSITIONS HOLD'
   else
-     write(*,'(1x,a,i0,a)') "FAILED: ", nfail, " state check(s)"
-     error stop
+     print *, ''
+     print *, ' FAILURES :', failures
+     error stop 'test: a proposition failed'
   end if
 
 contains
 
-  subroutine report(ok, label, nfail)
+  subroutine check(label, ok)
 
-    logical         , intent(in)    :: ok
-    character(len=*), intent(in)    :: label
-    integer         , intent(inout) :: nfail
+    character(len=*), intent(in) :: label
+    logical         , intent(in) :: ok
 
     if (ok) then
-       write(*,'(1x,a,a)') "PASS : ", label
+       print *, ' PASS : ', label
     else
-       write(*,'(1x,a,a)') "FAIL : ", label
-       nfail = nfail + 1
+       print *, ' FAIL : ', label
+       failures = failures + 1
     end if
 
-  end subroutine report
+  end subroutine check
 
-  !===================================================================!
-  ! Two seats, four states: each constructor lands its graph in the
-  ! state its name promises, and the two queries agree with it.
-  !===================================================================!
+  subroutine state(label, g, s1, s2, defined)
 
-  subroutine check_four_states(nfail)
+    character(len=*), intent(in) :: label
+    type(graph)     , intent(in) :: g
+    integer         , intent(in) :: s1, s2
+    logical         , intent(in) :: defined
 
-    integer, intent(inout) :: nfail
+    logical :: ok
 
-    type(observed_values)     :: q
-    type(residual_stub)       :: r
-    type(computational_graph) :: g00, g10, g01, g11
+    ok = g % branch(1) % status() .eq. s1 .and. g % branch(2) % status() .eq. s2
+    ok = ok .and. (epistemic_defined(g) .eqv. defined)
+    call check(label, ok)
 
-    allocate(q % entries, source=[2.0, 0.0])
-    r % law = 'qdot + S(q) = 0'
+  end subroutine state
 
-    g00 = void_graph('nothing yet')
-    g10 = data_graph('measurements', q)
-    g01 = operator_graph('governing law', r)
-    g11 = realized_graph('candidate pair', q, r)
-
-    call report(.not. g00 % has_data() .and. &
-         &      .not. g00 % has_operator() .and. &
-         &      g00 % state() .eq. GRAPH_STATE_VOID, &
-         & "the void graph: neither seat, and it says so", nfail)
-
-    call report(g10 % has_data() .and. &
-         &      .not. g10 % has_operator() .and. &
-         &      g10 % state() .eq. GRAPH_STATE_DATA, &
-         & "the data graph: Q realized, R bottom", nfail)
-
-    call report(.not. g01 % has_data() .and. &
-         &      g01 % has_operator() .and. &
-         &      g01 % state() .eq. GRAPH_STATE_OPERATOR, &
-         & "the operator graph: R realized, Q bottom", nfail)
-
-    call report(g11 % has_data() .and. &
-         &      g11 % has_operator() .and. &
-         &      g11 % state() .eq. GRAPH_STATE_REALIZED, &
-         & "the realized graph: both seats occupied", nfail)
-
-  end subroutine check_four_states
-
-  !===================================================================!
-  ! The classifier is a partition: for every construction, exactly
-  ! one of the four constants answers, and each state constant is
-  ! equivalent to its row of the truth table.
-  !===================================================================!
-
-  subroutine check_exactly_one(nfail)
-
-    integer, intent(inout) :: nfail
-
-    type(observed_values)     :: q
-    type(residual_stub)       :: r
-    type(computational_graph) :: gs(4)
-    integer                   :: states(4)
-    integer                   :: k
-    logical                   :: one, rows
-
-    allocate(q % entries, source=[1.0])
-    r % law = 'R(q) = 0'
-
-    gs(1) = void_graph('g00')
-    gs(2) = data_graph('g10', q)
-    gs(3) = operator_graph('g01', r)
-    gs(4) = realized_graph('g11', q, r)
-
-    states = [GRAPH_STATE_VOID, GRAPH_STATE_DATA, &
-         &    GRAPH_STATE_OPERATOR, GRAPH_STATE_REALIZED]
-
-    one  = .true.
-    rows = .true.
-    do k = 1, 4
-       one = one .and. (count(states .eq. gs(k) % state()) .eq. 1)
-       rows = rows .and. &
-            & ((gs(k) % state() .eq. GRAPH_STATE_VOID) .eqv. &
-            &  (.not. gs(k) % has_data() .and. &
-            &   .not. gs(k) % has_operator())) .and. &
-            & ((gs(k) % state() .eq. GRAPH_STATE_DATA) .eqv. &
-            &  (gs(k) % has_data() .and. &
-            &   .not. gs(k) % has_operator())) .and. &
-            & ((gs(k) % state() .eq. GRAPH_STATE_OPERATOR) .eqv. &
-            &  (.not. gs(k) % has_data() .and. &
-            &   gs(k) % has_operator())) .and. &
-            & ((gs(k) % state() .eq. GRAPH_STATE_REALIZED) .eqv. &
-            &  (gs(k) % has_data() .and. gs(k) % has_operator()))
-    end do
-
-    call report(one, &
-         & "exactly one state holds, for every construction", nfail)
-    call report(rows, &
-         & "and each state is its row of the truth table, no other", &
-         & nfail)
-
-  end subroutine check_exactly_one
-
-  !===================================================================!
-  ! Bottom is not empty. An allocated payload with zero entries is
-  ! realized knowledge whose content happens to be small; an
-  ! unallocated seat is no knowledge at all.
-  !===================================================================!
-
-  subroutine check_bottom_is_not_empty(nfail)
-
-    integer, intent(inout) :: nfail
-
-    type(observed_values)     :: none_measured
-    type(computational_graph) :: honest, ignorant
-
-    allocate(none_measured % entries(0))
-
-    honest   = data_graph('an empty run, honestly recorded', &
-         &                none_measured)
-    ignorant = void_graph('no run at all')
-
-    call report(honest % has_data() .and. &
-         &      honest % state() .eq. GRAPH_STATE_DATA, &
-         & "an allocated zero-length payload is realized data", nfail)
-
-    call report(.not. ignorant % has_data() .and. &
-         &      ignorant % state() .eq. GRAPH_STATE_VOID, &
-         & "an unallocated seat is bottom, not a small value", nfail)
-
-  end subroutine check_bottom_is_not_empty
-
-  !===================================================================!
-  ! Void speaks of knowledge, never topology: a void computational
-  ! graph rides a whole, materialized GAMMA = (S, P) - the
-  ! calculator of AGENTS.md 8.2 - and stays void.
-  !===================================================================!
-
-  subroutine check_void_is_not_topological(nfail)
-
-    integer, intent(inout) :: nfail
-
-    type(counted_set)                :: ops, vals, ports
-    type(stored_relation)            :: flow
-    type(relational_graph), target   :: gamma
-    type(computational_graph)        :: g
-    class(relational_graph), pointer :: host
-
-    ops   = counted_set('operations', 3)
-    vals  = counted_set('values'    , 5)
-    ports = counted_set('ports'     , 2)
-
-    flow = stored_relation('flow', &
-         & [slot(ops), slot(vals), slot(ports)], &
-         & reshape([1,2,1,  1,3,1,  1,5,2,  2,5,1,  2,4,2], [3, 5]))
-
-    gamma = relational_graph('calculator', &
-         & [held_set(ops), held_set(vals), held_set(ports)], &
-         & [held_relation(flow)])
-
-    g = void_graph('all unknowns', structure=gamma)
-
-    host => g % structure()
-    call report(g % state() .eq. GRAPH_STATE_VOID .and. &
-         &      host % same_as(gamma), &
-         & "a void graph rides a whole structure, and stays void", &
-         & nfail)
-
-  end subroutine check_void_is_not_topological
-
-  !===================================================================!
-  ! Realized is not solved: the constructor asserts occupancy and
-  ! nothing else, so a deliberately inconsistent pair seats itself
-  ! without complaint. Satisfied, consistent, converged are other
-  ! words, asserted elsewhere.
-  !===================================================================!
-
-  subroutine check_realized_is_not_solved(nfail)
-
-    integer, intent(inout) :: nfail
-
-    type(observed_values)     :: q
-    type(residual_stub)       :: r
-    type(computational_graph) :: g
-
-    allocate(q % entries, source=[1.0, 2.0])
-    r % law = 'q = 0'
-
-    g = realized_graph('deliberately inconsistent', q, r)
-
-    call report(g % state() .eq. GRAPH_STATE_REALIZED, &
-         & "an inconsistent pair is realized - solved is another word", &
-         & nfail)
-
-  end subroutine check_realized_is_not_solved
-
-  !===================================================================!
-  ! The canonical names, and no synonyms: void, data, operator,
-  ! realized.
-  !===================================================================!
-
-  subroutine check_canonical_names(nfail)
-
-    integer, intent(inout) :: nfail
-
-    call report(state_name(GRAPH_STATE_VOID)     == 'void graph' &
-         & .and. state_name(GRAPH_STATE_DATA)     == 'data graph' &
-         & .and. state_name(GRAPH_STATE_OPERATOR) == 'operator graph' &
-         & .and. state_name(GRAPH_STATE_REALIZED) == 'realized graph', &
-         & "the four states answer their canonical names", nfail)
-
-  end subroutine check_canonical_names
-
-  !===================================================================!
-  ! A seat answers what it was handed: the accessors reference the
-  ! owned occupants, recovered whole across the polymorphic seat.
-  !===================================================================!
-
-  subroutine check_seats_answer_what_was_handed(nfail)
-
-    integer, intent(inout) :: nfail
-
-    type(observed_values)             :: q
-    type(residual_stub)               :: r
-    type(computational_graph), target :: g
-    class(*), pointer                 :: seat
-    logical                           :: ok
-
-    allocate(q % entries, source=[2.0, 0.0])
-    r % law = 'qdot + S(q) = 0'
-
-    g = realized_graph('candidate pair', q, r)
-
-    ok = .false.
-    seat => g % data()
-    select type (seat)
-    type is (observed_values)
-       ok = size(seat % entries) .eq. 2 .and. &
-            & all(seat % entries .eq. [2.0, 0.0])
-    end select
-    call report(ok, "the data seat answers the payload it was handed", &
-         & nfail)
-
-    ok = .false.
-    seat => g % residual()
-    select type (seat)
-    type is (residual_stub)
-       ok = seat % law == 'qdot + S(q) = 0'
-    end select
-    call report(ok, "and the residual seat answers its law", nfail)
-
-  end subroutine check_seats_answer_what_was_handed
-
-  !===================================================================!
-  ! The fourth citizen on the identity roll.
-  !===================================================================!
-
-  subroutine check_graph_identity(nfail)
-
-    integer, intent(inout) :: nfail
-
-    type(computational_graph) :: g, h, copy
-
-    g = void_graph('one')
-    h = void_graph('two')
-
-    call report(.not. g % same_as(h), &
-         & "two declarations are two graphs", nfail)
-    copy = g
-    call report(copy % same_as(g), &
-         & "a copy is the same declared graph", nfail)
-    call report(g % name() == 'one', &
-         & "and the name is the reader's, as everywhere", nfail)
-
-  end subroutine check_graph_identity
-
-end program test_graph_state
+end program test

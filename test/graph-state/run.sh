@@ -1,7 +1,6 @@
 #!/bin/bash
-# build the library and the computational-state suite, run the laws,
-# then run every refusal and assert that each dies for its stated
-# reason.
+# build the library and the epistemic-view suite, run the laws, then
+# run every refusal and assert that each dies for its stated reason.
 set -e
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -14,22 +13,20 @@ make -C "$here" >/dev/null
 cd "$here" && ./run
 
 declare -A reason=(
-  [databottom]="the data seat is bottom - unknown is not a value"
-  [residualbottom]="the residual seat is bottom - unknown is not a value"
-  [unhosted]="rides on no declared structure"
-  [twice]="a computational graph never signs twice"
-  [fifth]="there is no fifth state"
+  [dataunknown]="Q is not KNOWN"
+  [residualunknown]="R is not KNOWN"
+  [nullname]="NULL has no epistemic name"
 )
 
-for case in databottom residualbottom unhosted twice fifth; do
+for case in dataunknown residualunknown nullname; do
     if ./refusal "$case" >refusal.out 2>&1; then
         echo " FAIL : '$case' was accepted"
         exit 1
     fi
     if grep -q "${reason[$case]}" refusal.out; then
-        echo " PASS : '$case' is refused, loudly"
+        echo " PASS : '$case' is refused"
     else
-        echo " FAIL : '$case' died for the wrong reason"
+        echo " FAIL : '$case' is refused for a different reason"
         cat refusal.out
         exit 1
     fi

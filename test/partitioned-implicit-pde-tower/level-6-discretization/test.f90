@@ -43,9 +43,9 @@ program partitioned_pde_level_6
   use graph_set_map        , only : set_map
   use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_label_map      , only : label_map
-  use graph_ordinary_view, only : ordinary_graph
+  use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
-  use class_graph      , only : ordinary_stored_graph
+  use class_graph      , only : directed_stored_graph
   use class_graph_field, only : field
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
   use class_graph_assembler  , only : assembler
@@ -55,10 +55,10 @@ program partitioned_pde_level_6
 
   implicit none
 
-  type(ordinary_stored_graph)        :: g
+  type(directed_stored_graph)        :: g
   type(assembler)           :: a
   type(shifted_laplacian)   :: shifted
-  class(ordinary_graph), allocatable :: g1, g2
+  class(directed_graph), allocatable :: g1, g2
   integer                   :: nfail
   type(set_map)     :: sets
 
@@ -68,7 +68,7 @@ program partitioned_pde_level_6
   write(*,'(1x,a)') "partitioned pde tower . level 6 . operator"
   write(*,'(1x,a)') "============================================="
 
-  g = ordinary_stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  g = directed_stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
   call sets % bind(g % vertex_set(), &
        & counted_set_representation(g % num_vertices()))
   call sets % bind(g % edge_set(), &
@@ -88,7 +88,7 @@ program partitioned_pde_level_6
 contains
   subroutine cut(part, k)
 
-    class(ordinary_graph), allocatable, intent(out) :: part
+    class(directed_graph), allocatable, intent(out) :: part
     integer                  , intent(in)  :: k
 
     type(partitioner) :: p
@@ -154,7 +154,7 @@ contains
   end subroutine check_transported_state
   subroutine one_transported_state(part, k, expect, nfail)
 
-    class(ordinary_graph), intent(in)    :: part
+    class(directed_graph), intent(in)    :: part
     integer     , intent(in)    :: k
     real(dp)    , intent(in)    :: expect(:)
     integer     , intent(inout) :: nfail
@@ -181,7 +181,7 @@ contains
     call pd % get_real_vector(v)
 
     select type (part)
-    type is (ordinary_stored_graph)
+    type is (directed_stored_graph)
        pvs = part % vertex_set()
        call report(dom % same_as(pvs), &
             & "q" // tag // " lives on G" // tag // "'s whole vertex " // &
@@ -214,7 +214,7 @@ contains
   subroutine one_local_action(part, k, globals, expect_l, expect_a, &
        & borrowed_global, borrowed_says, global_says, nfail)
 
-    class(ordinary_graph), intent(in)    :: part
+    class(directed_graph), intent(in)    :: part
     integer     , intent(in)    :: k, globals(:), borrowed_global
     real(dp)    , intent(in)    :: expect_l(:), expect_a(:)
     real(dp)    , intent(in)    :: borrowed_says, global_says
@@ -315,7 +315,7 @@ contains
   subroutine perturb_and_watch(part, k, borrowed_global, watched_global, &
        & before, after, nfail)
 
-    class(ordinary_graph), intent(in)    :: part
+    class(directed_graph), intent(in)    :: part
     integer     , intent(in)    :: k, borrowed_global, watched_global
     real(dp)    , intent(in)    :: before, after
     integer     , intent(inout) :: nfail
@@ -372,7 +372,7 @@ contains
   type(field) function local_state(part, k, sets, labels, inclusions) &
        & result(qp)
 
-    class(ordinary_graph)       , intent(in)    :: part
+    class(directed_graph)       , intent(in)    :: part
     integer            , intent(in)    :: k
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
@@ -397,7 +397,7 @@ contains
   ! Apply A on a part and add its OWNED contribution into total.
   subroutine add_local_action(part, k, total)
 
-    class(ordinary_graph), intent(in)    :: part
+    class(directed_graph), intent(in)    :: part
     integer     , intent(in)    :: k
     real(dp)    , intent(inout) :: total(:)
 
@@ -430,14 +430,14 @@ contains
   ! The local seat holding this global member, or 0.
   integer function seat_of_global(part, gm)
 
-    class(ordinary_graph), intent(in) :: part
+    class(directed_graph), intent(in) :: part
     integer     , intent(in) :: gm
 
     integer :: i
 
     seat_of_global = 0
     select type (part)
-    type is (ordinary_stored_graph)
+    type is (directed_stored_graph)
        do i = 1, part % num_vertices()
           if (part % global_vertex_index(i) .eq. gm) seat_of_global = i
        end do

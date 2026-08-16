@@ -90,7 +90,7 @@ program visualization_level_6
   use graph_label_map      , only : label_map
   use graph_relation       , only : relation
   use graph_binary_relation, only : csr_relation
-  use graph_ordinary_view  , only : ordinary_graph
+  use graph_directed_view  , only : directed_graph
   use class_graph_stencil  , only : stencil_operator
   use class_graph_step     , only : step_operator
   use visualization_carriers_fixture , only : structural_carriers
@@ -120,8 +120,8 @@ program visualization_level_6
   type(stencil_operator) :: sten_d2, sten_d1, sten_diag
   type(step_operator)    :: clock_d2, clock_diag
 
-  class(ordinary_graph), allocatable :: pat_d2, pat_d1, pat_diag
-  class(ordinary_graph), allocatable :: motif_d2, motif_diag
+  class(directed_graph), allocatable :: pat_d2, pat_d1, pat_diag
+  class(directed_graph), allocatable :: motif_d2, motif_diag
 
   integer :: nfail
 
@@ -601,7 +601,7 @@ contains
 
   type(set_graph) function carrier_of(p)
 
-    class(ordinary_graph), intent(in) :: p
+    class(directed_graph), intent(in) :: p
 
     carrier_of = p % vertex_set()
 
@@ -614,7 +614,7 @@ contains
 
   logical function same_production_pattern(p, q)
 
-    class(ordinary_graph), intent(in) :: p, q
+    class(directed_graph), intent(in) :: p, q
 
     integer :: i, j
 

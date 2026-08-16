@@ -41,9 +41,9 @@ program partitioned_pde_level_9
   use fractal_graph        , only : set_graph => graph
   use graph_set_representation, only : counted_set_representation
   use graph_set_map        , only : set_map
-  use graph_ordinary_view, only : ordinary_graph
+  use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
-  use class_graph      , only : ordinary_stored_graph
+  use class_graph      , only : directed_stored_graph
   use class_graph_field, only : field
   use class_graph_gmres, only : gmres
   use shifted_laplacian_fixture, only : shifted_laplacian
@@ -59,7 +59,7 @@ program partitioned_pde_level_9
   real(dp), parameter :: E4(NV) = &
        & [0.0_dp, 0.0_dp, 0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp]
 
-  type(ordinary_stored_graph)                  :: g
+  type(directed_stored_graph)                  :: g
   type(shifted_laplacian)             :: direct
   type(partitioned_shifted_laplacian) :: composite
   type(gmres)                         :: solver_global, solver_part
@@ -73,7 +73,7 @@ program partitioned_pde_level_9
   write(*,'(1x,a)') "partitioned pde tower . level 9 . statement"
   write(*,'(1x,a)') "============================================="
 
-  g = ordinary_stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  g = directed_stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
   call sets % bind(g % vertex_set(), &
        & counted_set_representation(g % num_vertices()))
   call sets % bind(g % edge_set(), &

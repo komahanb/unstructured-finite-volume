@@ -20,7 +20,7 @@ program ordinary_refusal
   use graph_set_map           , only : set_map
   use graph_relation       , only : stored_relation
   use graph_binary_relation, only : csr_relation
-  use graph_profile        , only : ordinary_graph_view
+  use graph_profile        , only : directed_incidence_view
   use fractal_graph        , only : graph, known_branch
   use graph_relational_view, only : relational_binding
 
@@ -30,7 +30,7 @@ program ordinary_refusal
   type(set_map)         :: sets
   type(csr_relation)        :: t, h
   type(stored_relation)     :: fat
-  type(ordinary_graph_view) :: view
+  type(directed_incidence_view) :: view
   character(len=32)         :: which
 
   type(graph)             , target :: g
@@ -141,7 +141,7 @@ program ordinary_refusal
   g % branch(1) = known_branch(scell(1))
   g % branch(2) = known_branch(rcell(1))
 
-  view = ordinary_graph_view(g, bnd, sets, tail_at=1, head_at=2)
+  view = directed_incidence_view(g, bnd, sets, tail_at=1, head_at=2)
 
   ! Reaching this line is the failure.
   write(*,'(1x,a,a)') "REACHED PAST THE REFUSAL: ", trim(which)

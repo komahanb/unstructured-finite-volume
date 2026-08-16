@@ -50,10 +50,10 @@ frees, no leaks, 0 errors.
 ## 5. graph_profile signatures
 ```fortran
 ! before
-ordinary_graph_view(g, tail_at, head_at)          class(relational_graph), target
+directed_incidence_view(g, tail_at, head_at)          class(relational_graph), target
 directed_adjacency_view(g, selector)              class(relational_graph), target
 ! after
-ordinary_graph_view(g, binding, tail_at, head_at) type(graph), type(relational_binding)
+directed_incidence_view(g, binding, tail_at, head_at) type(graph), type(relational_binding)
 directed_adjacency_view(g, binding, selector)     type(graph), type(relational_binding)
 ```
 Semantics unchanged: same three refusals, same fibre reading, same borrowed binary relations.

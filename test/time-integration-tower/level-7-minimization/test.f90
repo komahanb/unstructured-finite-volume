@@ -59,9 +59,9 @@ program time_level_7
   use time_assert           , only : H_STEP, Q0, Q_BE1, Q_BDF2
   use fractal_graph        , only : set_graph => graph
   use graph_set_map        , only : set_map
-  use graph_ordinary_view   , only : ordinary_graph
+  use graph_directed_view   , only : directed_graph
   use graph_field_calculus  , only : graph_field
-  use class_graph           , only : ordinary_stored_graph
+  use class_graph           , only : directed_stored_graph
   use class_graph_field     , only : field
   use class_graph_step      , only : step_operator, backward_euler, bdf
   use class_graph_gmres     , only : gmres
@@ -72,7 +72,7 @@ program time_level_7
 
   type(set_graph)      :: q, t, e
   type(set_map)      :: sets
-  type(ordinary_stored_graph)     :: ht
+  type(directed_stored_graph)     :: ht
   type(triangular_decay) :: decay
   integer                :: nfail
 
@@ -85,7 +85,7 @@ program time_level_7
   call time_carriers(sets, q, t, e)
 
   ! The same compatibility host as Level 6: five vertices, and not Q.
-  ht = ordinary_stored_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
+  ht = directed_stored_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
 
   decay = triangular_decay(q, NQ)
 

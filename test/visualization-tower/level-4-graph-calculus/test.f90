@@ -169,7 +169,7 @@ program visualization_level_4
   call check_representation_e_reverse_sparsity(nfail)
   call check_the_renderer_invents_nothing(nfail)
   call check_declaration_order_rules(nfail)
-  call check_the_ordinary_graph_question(nfail)
+  call check_the_directed_incidence_question(nfail)
 
   call verdict(nfail, "level 4")
 
@@ -479,11 +479,11 @@ contains
   ! rendered directly from the relational nucleus? Everything above
   ! this line is the answer, and it is yes.
   !
-  ! Question two: would forcing D1 into ordinary_graph_view collapse
+  ! Question two: would forcing D1 into directed_incidence_view collapse
   ! X0 and X1, or otherwise change its meaning? The two profiles'
   ! contracts are inspected rather than provoked:
   !
-  !   ordinary_graph_view  requires  T <= E x V  and  H <= E x V
+  !   directed_incidence_view  requires  T <= E x V  and  H <= E x V
   !                                  with ONE V, and refuses with
   !                                  'the head relation must share
   !                                  the tail''s domains' otherwise
@@ -496,7 +496,7 @@ contains
   ! checked here; the conclusion is Gate A's to state.
   !===================================================================!
 
-  subroutine check_the_ordinary_graph_question(nfail)
+  subroutine check_the_directed_incidence_question(nfail)
 
     integer, intent(inout) :: nfail
 
@@ -515,7 +515,7 @@ contains
     head_end = h1 % target()
     call report(.not. tail_end % same_as(head_end), &
          & "T1 lands in X0 and H1 in X1, so no SINGLE vertex carrier " // &
-         & "V exists for ordinary_graph_view to read them over", nfail)
+         & "V exists for directed_incidence_view to read them over", nfail)
 
     from = d1 % source()
     to   = d1 % target()
@@ -546,7 +546,7 @@ contains
          & "so nothing was collapsed to make a picture: seven typed " // &
          & "carriers went in, and seven came out", nfail)
 
-  end subroutine check_the_ordinary_graph_question
+  end subroutine check_the_directed_incidence_question
 
   !===================================================================!
   ! Helpers.

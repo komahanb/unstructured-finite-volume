@@ -27,16 +27,16 @@ program test_graph_field_transport
   use graph_set_map           , only : set_map
   use graph_label_map         , only : label_map
   use graph_inclusion_map     , only : inclusion_map, declared_subobject
-  use graph_ordinary_view    , only : ordinary_graph
+  use graph_directed_view    , only : directed_graph
   use graph_field_calculus   , only : graph_field
-  use class_graph            , only : ordinary_stored_graph
+  use class_graph            , only : directed_stored_graph
   use class_graph_field      , only : field
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
   use class_graph_assembler  , only : assembler
 
   implicit none
 
-  type(ordinary_stored_graph) :: g
+  type(directed_stored_graph) :: g
   type(assembler)    :: a
   integer            :: nfail
 
@@ -45,7 +45,7 @@ program test_graph_field_transport
   write(*,'(1x,a)') "graph field transport suite (phase 5B)"
   write(*,'(1x,a)') "============================================="
 
-  g = ordinary_stored_graph(6, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  g = directed_stored_graph(6, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
   a = assembler()
 
   call check_full(.true. , 6, nfail)
@@ -95,7 +95,7 @@ contains
 
     type(field)                     :: d
     type(partitioner)               :: p
-    class(ordinary_graph), allocatable       :: part
+    class(directed_graph), allocatable       :: part
     class(graph_field), allocatable :: pd, fd
     type(set_map)                   :: sets
     type(label_map)                 :: labels
@@ -153,7 +153,7 @@ contains
     type(inclusion_map)             :: inclusions
     type(field)                     :: d
     type(partitioner)               :: p
-    class(ordinary_graph), allocatable       :: part
+    class(directed_graph), allocatable       :: part
     class(graph_field), allocatable :: pd, fd
     type(set_graph)                 :: dp_, dg
     real(dp), allocatable           :: sv(:), v(:)
@@ -260,7 +260,7 @@ contains
     type(inclusion_map)             :: inclusions
     type(field)                     :: d
     type(partitioner)               :: p
-    class(ordinary_graph), allocatable       :: part
+    class(directed_graph), allocatable       :: part
     class(graph_field), allocatable :: pd, fd
     real(dp), allocatable           :: v(:)
     logical                         :: ok

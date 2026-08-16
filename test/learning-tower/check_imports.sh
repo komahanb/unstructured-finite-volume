@@ -45,7 +45,7 @@ allowed_for() {
         # the list; the relation/algebra/profile stack is not needed
         # at all - the solver sees an opaque R : Theta -> Y. The
         # named fixture is the level's own test-local oracle.
-        level-7-minimization)    echo "learning_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map graph_operation_view graph_ordinary_view graph_field_calculus class_graph_field class_graph class_graph_gmres learning_residual_fixture" ;;
+        level-7-minimization)    echo "learning_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map graph_operation_view graph_directed_view graph_field_calculus class_graph_field class_graph class_graph_gmres learning_residual_fixture" ;;
         # level 8: the meaning rung. Structure derives the order,
         # the test-local constitution supplies the laws, L supplies
         # the home - no solver, no legacy host, no minimization, no
@@ -56,7 +56,7 @@ allowed_for() {
         # named fixtures; Level 7's affine oracle is deliberately
         # absent, and graph_minimization stays off: gmres inherits
         # the minimizer face. No new mathematics enters here.
-        level-9-statement)       echo "learning_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map graph_relation graph_relation_algebra graph_profile graph_algorithms graph_operation_view graph_ordinary_view graph_field_calculus class_graph class_graph_field class_graph_gmres learning_constitution_fixture constituted_residual_fixture fractal_graph graph_relational_view" ;;
+        level-9-statement)       echo "learning_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map graph_relation graph_relation_algebra graph_profile graph_algorithms graph_operation_view graph_directed_view graph_field_calculus class_graph class_graph_field class_graph_gmres learning_constitution_fixture constituted_residual_fixture fractal_graph graph_relational_view" ;;
         *)                       echo "__no_allowlist__" ;;
     esac
 }

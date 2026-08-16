@@ -52,7 +52,7 @@ program time_level_9
   use time_assert           , only : TIME_COORD, BDF2_TRAJECTORY
   use fractal_graph        , only : set_graph => graph
   use graph_set_map        , only : set_map
-  use class_graph           , only : ordinary_stored_graph
+  use class_graph           , only : directed_stored_graph
   use class_graph_field     , only : field
   use class_graph_gmres     , only : gmres
   use class_graph_newton    , only : newton
@@ -65,7 +65,7 @@ program time_level_9
 
   type(set_graph)      :: q, t, e
   type(set_map)      :: sets
-  type(ordinary_stored_graph)     :: hcontext
+  type(directed_stored_graph)     :: hcontext
   type(triangular_decay) :: decay
   type(marcher)          :: clock
   type(field)            :: q_initial, q_final, tcoord
@@ -79,7 +79,7 @@ program time_level_9
   write(*,'(1x,a)') "============================================="
 
   call time_carriers(sets, q, t, e)
-  hcontext = ordinary_stored_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
+  hcontext = directed_stored_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
   decay    = triangular_decay(q, NQ)
   tcoord   = instant_coordinates(t)
 
@@ -151,7 +151,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(ordinary_stored_graph)    :: chain
+    type(directed_stored_graph)    :: chain
     real(dp), allocatable :: tv(:)
     integer               :: here, i
     logical               :: ok

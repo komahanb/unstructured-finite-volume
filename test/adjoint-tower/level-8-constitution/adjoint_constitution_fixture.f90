@@ -45,7 +45,7 @@ module adjoint_constitution_fixture
        & set_representation
   use graph_relation   , only : relation
   use graph_operation_view, only : graph_operation
-  use graph_ordinary_view, only : ordinary_graph
+  use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
   use class_graph_field, only : field
 
@@ -482,7 +482,7 @@ contains
 
   subroutine primal_domain(this, input_graph, domain, nentries)
     class(constituted_primal), intent(in) :: this
-    class(ordinary_graph), intent(in) :: input_graph
+    class(directed_graph), intent(in) :: input_graph
     type(set_graph), intent(out) :: domain
     integer        , intent(out) :: nentries
     associate (u1 => input_graph); end associate
@@ -492,7 +492,7 @@ contains
 
   subroutine adjoint_domain(this, input_graph, domain, nentries)
     class(constituted_adjoint), intent(in) :: this
-    class(ordinary_graph), intent(in) :: input_graph
+    class(directed_graph), intent(in) :: input_graph
     type(set_graph), intent(out) :: domain
     integer        , intent(out) :: nentries
     associate (u1 => input_graph); end associate
@@ -502,7 +502,7 @@ contains
 
   subroutine tangent_domain(this, input_graph, domain, nentries)
     class(constituted_tangent), intent(in) :: this
-    class(ordinary_graph), intent(in) :: input_graph
+    class(directed_graph), intent(in) :: input_graph
     type(set_graph), intent(out) :: domain
     integer        , intent(out) :: nentries
     associate (u1 => input_graph); end associate
@@ -517,7 +517,7 @@ contains
   subroutine primal_apply(this, input_graph, input_data, output)
 
     class(constituted_primal), intent(in)          :: this
-    class(ordinary_graph), intent(in)                       :: input_graph
+    class(directed_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
@@ -568,7 +568,7 @@ contains
   subroutine adjoint_apply(this, input_graph, input_data, output)
 
     class(constituted_adjoint), intent(in)         :: this
-    class(ordinary_graph), intent(in)                       :: input_graph
+    class(directed_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
@@ -621,7 +621,7 @@ contains
   subroutine tangent_apply(this, input_graph, input_data, output)
 
     class(constituted_tangent), intent(in)         :: this
-    class(ordinary_graph), intent(in)                       :: input_graph
+    class(directed_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 

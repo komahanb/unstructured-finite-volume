@@ -46,7 +46,7 @@ program adjoint_level_7
   use graph_set_map        , only : set_map
   use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_field_calculus, only : graph_field
-  use class_graph      , only : ordinary_stored_graph
+  use class_graph      , only : directed_stored_graph
   use class_graph_field, only : field
   use class_graph_gmres, only : gmres
   use opaque_equation_fixture, only : opaque_primal, opaque_adjoint
@@ -55,7 +55,7 @@ program adjoint_level_7
 
   type(set_graph)               :: v, t, hv
   type(set_graph)                :: q_dom, y_dom
-  type(ordinary_stored_graph)              :: host
+  type(directed_stored_graph)              :: host
   type(opaque_primal)             :: primal_eq
   type(opaque_adjoint)            :: adjoint_eq
   type(gmres)                     :: primal_solver, adjoint_solver
@@ -85,7 +85,7 @@ program adjoint_level_7
   call inclusions % include_in(y_dom, t)
 
   ! The compatibility host: five vertices, nobody's domain.
-  host = ordinary_stored_graph(5, tails=[1,2,3,4], heads=[2,3,4,5])
+  host = directed_stored_graph(5, tails=[1,2,3,4], heads=[2,3,4,5])
 
   primal_eq  = opaque_primal(q_dom, y_dom, sets)
   adjoint_eq = opaque_adjoint(y_dom, q_dom, sets)

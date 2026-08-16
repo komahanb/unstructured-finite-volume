@@ -457,7 +457,7 @@ symptom / fact:       AN ORDINARY-GRAPH INTERPRETATION IS NOT REQUIRED
                       Both profile readings demand a SINGLE vertex
                       carrier:
 
-                        ordinary_graph_view      T <= E x V
+                        directed_incidence_view      T <= E x V
                                                  H <= E x V
                           refuses with 'the head relation must share
                           the tail''s domains'
@@ -499,7 +499,7 @@ symptom / fact:       AN ORDINARY-GRAPH INTERPRETATION IS NOT REQUIRED
                       for the mesh path it was written for.
 
 exact caller:         test/visualization-tower/level-4-graph-calculus/
-                      test.f90  check_the_ordinary_graph_question,
+                      test.f90  check_the_directed_incidence_question,
                       against src/graph_profile.f90 create_view and
                       create_adjacency_view
 

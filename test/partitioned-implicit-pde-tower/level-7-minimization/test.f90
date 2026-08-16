@@ -39,16 +39,16 @@ program partitioned_pde_level_7
   use fractal_graph        , only : set_graph => graph
   use graph_set_representation, only : counted_set_representation
   use graph_set_map        , only : set_map
-  use graph_ordinary_view, only : ordinary_graph
+  use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
-  use class_graph      , only : ordinary_stored_graph
+  use class_graph      , only : directed_stored_graph
   use class_graph_field, only : field
   use class_graph_gmres, only : gmres
   use shifted_laplacian_fixture, only : shifted_laplacian
 
   implicit none
 
-  type(ordinary_stored_graph)      :: g, g_alt
+  type(directed_stored_graph)      :: g, g_alt
   type(shifted_laplacian) :: shifted
   integer                 :: nfail
   type(set_map)     :: sets
@@ -59,7 +59,7 @@ program partitioned_pde_level_7
   write(*,'(1x,a)') "partitioned pde tower . level 7 . minimization"
   write(*,'(1x,a)') "============================================="
 
-  g = ordinary_stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  g = directed_stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
   call sets % bind(g % vertex_set(), &
        & counted_set_representation(g % num_vertices()))
   call sets % bind(g % edge_set(), &
@@ -138,7 +138,7 @@ contains
     integer         :: n_vs_alt
 
     ! Same counts, different shape: a star, not a chain.
-    g_alt = ordinary_stored_graph(NV, tails=[1,1,1,1,1], heads=[2,3,4,5,6])
+    g_alt = directed_stored_graph(NV, tails=[1,1,1,1,1], heads=[2,3,4,5,6])
     call sets % bind(g_alt % vertex_set(), &
          & counted_set_representation(g_alt % num_vertices()))
     call sets % bind(g_alt % edge_set(), &

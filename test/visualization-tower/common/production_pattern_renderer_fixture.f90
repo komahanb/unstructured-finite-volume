@@ -74,7 +74,7 @@ module production_pattern_renderer_fixture
   use graph_set_map        , only : set_map
   use graph_label_map      , only : label_map
   use graph_relation                , only : relation
-  use graph_ordinary_view           , only : ordinary_graph
+  use graph_directed_view           , only : directed_graph
   use visualization_carriers_fixture, only : label_for
   use structural_renderer_fixture   , only : picture
 
@@ -102,7 +102,7 @@ contains
 
   logical function production_has(p, from, to)
 
-    class(ordinary_graph), intent(in) :: p
+    class(directed_graph), intent(in) :: p
     integer     , intent(in) :: from, to
 
     integer :: e
@@ -125,7 +125,7 @@ contains
 
   function signature_of_pattern(p, labels) result(text)
 
-    class(ordinary_graph), intent(in) :: p
+    class(directed_graph), intent(in) :: p
     type(label_map), intent(in) :: labels
 
     character(len=:), allocatable :: text
@@ -167,7 +167,7 @@ contains
   logical function coordinate_shapes_fit(r, p, sets)
 
     class(relation), intent(in) :: r
-    class(ordinary_graph)   , intent(in) :: p
+    class(directed_graph)   , intent(in) :: p
     type(set_map)  , intent(in) :: sets
 
     type(set_graph) :: cols, rows
@@ -191,7 +191,7 @@ contains
   logical function same_coordinate_pattern(r, p, sets)
 
     class(relation), intent(in) :: r
-    class(ordinary_graph)   , intent(in) :: p
+    class(directed_graph)   , intent(in) :: p
     type(set_map)  , intent(in) :: sets
 
     type(set_graph) :: cols, rows
@@ -229,7 +229,7 @@ contains
 
   type(picture) function pattern_picture(p, title, sets, labels) result(pic)
 
-    class(ordinary_graph)    , intent(in) :: p
+    class(directed_graph)    , intent(in) :: p
     character(len=*), intent(in) :: title
     type(set_map)  , intent(in) :: sets
     type(label_map), intent(in) :: labels

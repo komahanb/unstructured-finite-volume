@@ -1,16 +1,28 @@
 !=====================================================================!
-! LEVEL 4 OF THE NEW TOWER . THE ORDINARY GRAPH PROFILE
+! LEVEL 4 OF THE NEW TOWER . THE DIRECTED GRAPH PROFILE
 !
-! The container is general; the ordinary directed graph is ONE
-! SCHEMA read over it (AGENTS.md 16). The schema this profile
-! demands is two binary relations over one pair of domains,
+! The container is general; the directed graph is ONE SCHEMA read
+! over it (AGENTS.md 16). The two views here are named for the
+! relation each one holds, because that is what distinguishes them:
+!
+!     directed_incidence_view   T, H <= E x V   incidence, and every
+!     |                                         neighbourhood question
+!     |                                         as a composition of it
+!     directed_adjacency_view   A <= V x V      one stored adjacency
+!
+! The first answers D = (V, E, tail, head) read off relations, where
+! class_graph answers the same D read off stored arrays. Neither is
+! `ordinary`; that word named no role and is gone from public names.
+!
+! The schema this profile demands is two binary relations over one
+! pair of domains,
 !
 !      T  <=  E x V        the tail: every edge, exactly one
 !      H  <=  E x V        the head: at most one - a boundary
 !                          half-edge is an ABSENCE in H, not an
 !                          imaginary member anywhere
 !
-! and from those two alone the whole ordinary vocabulary is
+! and from those two alone the whole directed vocabulary is
 ! derived:
 !
 !      edge_tail(e)        the one member of T's fibre at e
@@ -42,7 +54,7 @@
 ! Hand T and H their tuples shuffled and every answer stands.
 !
 ! TWO SCHEMA LAWS BEYOND THE FIBRES. E and V are distinct declared
-! domains - an ordinary graph whose edges ARE its vertices is a
+! domains - a directed graph whose edges ARE its vertices is a
 ! category error, refused. And a self-loop is adjacent to nothing
 ! new: the old adjacency excluded the vertex itself (other /= v),
 ! and so does this one, while incident_edges still counts the loop
@@ -65,9 +77,9 @@ module graph_profile
   implicit none
 
   private
-  public :: ordinary_graph_view, directed_adjacency_view
+  public :: directed_incidence_view, directed_adjacency_view
 
-  type :: ordinary_graph_view
+  type :: directed_incidence_view
 
      !----------------------------------------------------------------!
      ! Which two domains, and how many of each. The edge NUMBERING is
@@ -103,15 +115,15 @@ module graph_profile
      procedure :: outgoing_vertices
      procedure :: incoming_vertices
 
-  end type ordinary_graph_view
+  end type directed_incidence_view
 
-  interface ordinary_graph_view
+  interface directed_incidence_view
      module procedure create_view
-  end interface ordinary_graph_view
+  end interface directed_incidence_view
 
   !===================================================================!
   ! THE DIRECTED ADJACENCY: the second schema this level reads, and
-  ! a smaller one. Where the ordinary view wants E, V and two
+  ! a smaller one. Where the incidence view wants E, V and two
   ! endpoint relations, this one interprets a single binary
   ! relation whose two slots are ONE declared domain,
   !
@@ -164,7 +176,7 @@ contains
   !      a two-headed edge     at most one head
   !===================================================================!
 
-  type(ordinary_graph_view) function create_view(g, binding, sets, &
+  type(directed_incidence_view) function create_view(g, binding, sets, &
        & tail_at, head_at) result(this)
 
     type(graph)             , intent(in) :: g
@@ -230,7 +242,7 @@ contains
 
   pure integer function num_vertices(this)
 
-    class(ordinary_graph_view), intent(in) :: this
+    class(directed_incidence_view), intent(in) :: this
 
     num_vertices = this % nverts
 
@@ -238,7 +250,7 @@ contains
 
   pure integer function num_edges(this)
 
-    class(ordinary_graph_view), intent(in) :: this
+    class(directed_incidence_view), intent(in) :: this
 
     num_edges = this % nedges
 
@@ -251,7 +263,7 @@ contains
 
   integer function edge_tail(this, edge_index)
 
-    class(ordinary_graph_view), intent(in) :: this
+    class(directed_incidence_view), intent(in) :: this
     integer                   , intent(in) :: edge_index
 
     integer, pointer :: f(:)
@@ -263,7 +275,7 @@ contains
 
   integer function edge_head(this, edge_index)
 
-    class(ordinary_graph_view), intent(in) :: this
+    class(directed_incidence_view), intent(in) :: this
     integer                   , intent(in) :: edge_index
 
     integer, pointer :: f(:)
@@ -279,7 +291,7 @@ contains
 
   logical function edge_has_head(this, edge_index)
 
-    class(ordinary_graph_view), intent(in) :: this
+    class(directed_incidence_view), intent(in) :: this
     integer                   , intent(in) :: edge_index
 
     integer, pointer :: f(:)
@@ -295,7 +307,7 @@ contains
 
   subroutine outgoing_edges(this, vertex_index, indices)
 
-    class(ordinary_graph_view), intent(in)  :: this
+    class(directed_incidence_view), intent(in)  :: this
     integer                   , intent(in)  :: vertex_index
     integer, allocatable      , intent(out) :: indices(:)
 
@@ -306,7 +318,7 @@ contains
 
   subroutine incoming_edges(this, vertex_index, indices)
 
-    class(ordinary_graph_view), intent(in)  :: this
+    class(directed_incidence_view), intent(in)  :: this
     integer                   , intent(in)  :: vertex_index
     integer, allocatable      , intent(out) :: indices(:)
 
@@ -326,7 +338,7 @@ contains
 
   pure subroutine canonical(this, list)
 
-    class(ordinary_graph_view), intent(in)    :: this
+    class(directed_incidence_view), intent(in)    :: this
     integer                   , intent(inout) :: list(:)
 
     integer :: i, j, key, keypos
@@ -353,7 +365,7 @@ contains
 
   subroutine incident_edges(this, vertex_index, indices)
 
-    class(ordinary_graph_view), intent(in)  :: this
+    class(directed_incidence_view), intent(in)  :: this
     integer                   , intent(in)  :: vertex_index
     integer, allocatable      , intent(out) :: indices(:)
 
@@ -397,7 +409,7 @@ contains
 
   subroutine adjacent_vertices(this, vertex_index, indices)
 
-    class(ordinary_graph_view), intent(in)  :: this
+    class(directed_incidence_view), intent(in)  :: this
     integer                   , intent(in)  :: vertex_index
     integer, allocatable      , intent(out) :: indices(:)
 
@@ -431,7 +443,7 @@ contains
 
   subroutine outgoing_vertices(this, vertex_index, indices)
 
-    class(ordinary_graph_view), intent(in)  :: this
+    class(directed_incidence_view), intent(in)  :: this
     integer                   , intent(in)  :: vertex_index
     integer, allocatable      , intent(out) :: indices(:)
 
@@ -455,7 +467,7 @@ contains
 
   subroutine incoming_vertices(this, vertex_index, indices)
 
-    class(ordinary_graph_view), intent(in)  :: this
+    class(directed_incidence_view), intent(in)  :: this
     integer                   , intent(in)  :: vertex_index
     integer, allocatable      , intent(out) :: indices(:)
 

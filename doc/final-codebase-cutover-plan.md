@@ -53,7 +53,7 @@ consumers; none can be harvested by finding an orphan.
 The counts are as measured for PR1, over 63 modules. PR2 has since
 carved two modules out of `graph_grammar` and deleted it:
 
-    + graph_ordinary_view      view
+    + graph_directed_view      view
     + graph_operation_view     view
     - graph_grammar            legacy-compatibility
 
@@ -95,9 +95,9 @@ below moves them.
 | `graph_sequence_view` | a finite sequence | `sequence_size`, `sequence_element`, … |
 | `graph_relational_view` | \((\mathcal S,\mathcal P)\) | `relational_binding`, `member_set_at`, `relation_at` |
 | `graph_epistemic_view` | \((Q,R)\) — data and residual | `has_data`, `data_of`, `residual_of` |
-| `graph_profile` | the ordinary directed graph as a **schema over two relations** \(T,H \subseteq E\times V\) | `ordinary_graph_view`, `directed_adjacency_view` |
+| `graph_profile` | the directed graph as a **schema over two relations** \(T,H \subseteq E\times V\) | `directed_incidence_view`, `directed_adjacency_view` |
 | `graph_field_calculus` | a domain carrying values | `graph_field`, the five `GRAPH_FIELD_*` kinds, `set_graph` |
-| `graph_ordinary_view` | the ordinary binary graph — vertices, edges, incidence, named sets, neighbourhoods | `ordinary_graph` (abstract). **Added by PR2**, carved from `graph_grammar`; renamed by PR3; carries the legacy partition frame, marked |
+| `graph_directed_view` | the ordinary binary graph — vertices, edges, incidence, named sets, neighbourhoods | `directed_graph` (abstract). **Added by PR2**, carved from `graph_grammar`; renamed by PR3; carries the legacy partition frame, marked |
 | `graph_operation_view` | the two verbs — within a graph, and between graphs | `graph_operation`, `graph_transform` (abstract). **Added by PR2**; the last of `graph_grammar` |
 
 ### algorithm — 7
@@ -218,7 +218,7 @@ the two homes that already answer them:
     owner            an integer field on the global vertex set
 
 The frame therefore leaves the view in **PR3**, not PR2. PR2 must carry
-all eight bindings into `graph_ordinary_view` unchanged, or it will
+all eight bindings into `graph_directed_view` unchanged, or it will
 strand `class_graph_partitioner` and `class_graph_assembler` mid-flight.
 
 ### 3.4 Two unrelated `graph` hierarchies, and two types called `stored_graph`
@@ -295,7 +295,7 @@ discovered during it.
 - **Role.** The ordinary binary-graph vocabulary, retyped onto the new
   ontology: abstract `graph`, `graph_operation`, `graph_transform`, plus
   re-exports of `graph_field`, `set_graph` and five kind constants.
-- **Successors.** `graph_ordinary_view` ← `graph` (+ the frame, until
+- **Successors.** `graph_directed_view` ← `graph` (+ the frame, until
   PR3). `graph_operation_view` ← `graph_operation`.
   `graph_transform_view` ← `graph_transform`. `graph_field_view` **needs
   no new module** — it is `graph_field_calculus`, today. `set_graph` goes
@@ -388,7 +388,7 @@ discovered during it.
          |          (graph_field, set_graph, GRAPH_FIELD_*)
          |          -> graph_field_calculus / fractal_graph
          |-- DONE:  measure what is left, and classify it   (6.1, 6.2)
-         |-- DONE:  graph_ordinary_view, 59 imports, frame carried
+         |-- DONE:  graph_directed_view, 59 imports, frame carried
          |          UNCHANGED and marked                    (6.4)
          `-- DONE:  graph_operation_view, holding BOTH verbs. The
                     measurement said one commit, and the ruling said
@@ -429,7 +429,7 @@ the phase named.
 
 | symbol | files | src | test | successor |
 |---|---|---|---|---|
-| `graph` | 57 | 21 | 36 | `graph_ordinary_view`, carrying the frame marked |
+| `graph` | 57 | 21 | 36 | `graph_directed_view`, carrying the frame marked |
 | `graph_operation` | 25 | 9 | 16 | `graph_operation_view` |
 | `graph_transform` | 1 | 1 | 0 | `graph_transform_view` |
 | **true legacy forwarding** | **0** | **0** | **0** | — nothing left to forward |
@@ -477,7 +477,7 @@ files that speak the ordinary graph.
 `test/visualization-tower/common/production_discretization_fixture.f90`
 is the only consumer that imports `graph_operation` without also naming
 `graph`. Every other operation consumer needs both, so
-`graph_operation_view` cannot be split from `graph_ordinary_view` by
+`graph_operation_view` cannot be split from `graph_directed_view` by
 import surgery alone — the `apply` interface is written in `class(graph)`
 and will import it from wherever the ordinary view lands.
 
@@ -486,7 +486,7 @@ smallest boundary in the cutover.
 
 ### 6.4 After the ordinary view left
 
-`graph_ordinary_view` now holds the abstract `graph`: 36 deferred
+`graph_directed_view` now holds the abstract `graph`: 36 deferred
 bindings and the 13 interfaces they name, moved verbatim. The eight
 frame relations are carried **unchanged** and marked
 
@@ -537,7 +537,7 @@ have been ceremony.
     --------------------------  -----------------------------------
     graph_field, GRAPH_FIELD_*  graph_field_calculus  (commit 1)
     set_graph                   fractal_graph         (commit 1)
-    graph                       graph_ordinary_view   (commit 3)
+    graph                       graph_directed_view   (commit 3)
     graph_operation             graph_operation_view  (commit 4)
     graph_transform             graph_operation_view  (commit 4)
 
@@ -545,8 +545,8 @@ Prose is not imported, so nothing forced its survival — but four blocks
 of tower law lived only in that file's header and would have died with
 it. They went where their subject went:
 
-    WHAT A GRAPH IS MADE OF      -> graph_ordinary_view
-    CAN A GRAPH CHANGE?          -> graph_ordinary_view
+    WHAT A GRAPH IS MADE OF      -> graph_directed_view
+    CAN A GRAPH CHANGE?          -> graph_directed_view
     THE ADMISSION LAW            -> graph_operation_view
     WHAT apply DOES TO A BUFFER  -> graph_operation_view
     THE FOUR ROLES               -> graph_operation_view, restated as
@@ -566,9 +566,47 @@ way §1 requires: consumers rewritten until nothing imported it.
 
 ## 6.6 PR3: the last public non-ontology `graph`
 
-The abstract type `graph_ordinary_view :: graph` is now
-`ordinary_graph`, and the concrete `class_graph :: stored_graph` is
-`ordinary_stored_graph`.
+> **Naming amended after PR3 merged.** `ordinary` names no mathematical
+> role. The three names were renamed again, in a follow-up:
+>
+>     graph_ordinary_view    ->  graph_directed_view
+>     ordinary_graph         ->  directed_graph
+>     ordinary_stored_graph  ->  directed_stored_graph
+>
+> The hierarchy the vocabulary now states:
+>
+>     fractal_graph :: graph                 ontology, G=(B1,B2)
+>     graph_directed_view :: directed_graph  the view D=(V,E,tail,head)
+>     class_graph :: directed_stored_graph   one stored realization
+>
+> `directed` is what the structure IS — two finite domains and two maps
+> tail, head : E -> V — where `ordinary` only said it was not exotic.
+> The section below has been rewritten in the new names; the *evidence*
+> it reports is unchanged, because a rename does not move an import.
+>
+> The last public name carrying the word went with them.
+> `graph_profile :: ordinary_graph_view` is now
+> `directed_incidence_view`, named for the relation it holds:
+>
+>     directed_incidence_view   T, H <= E x V   incidence, and every
+>     |                                         neighbourhood question
+>     |                                         as a composition of it
+>     directed_adjacency_view   A <= V x V      one stored adjacency
+>
+> The pair names its own primitive now. The first answers
+> D = (V, E, tail, head) read off **relations**; `class_graph` answers
+> the same D read off **stored arrays** — two realizations of one
+> contract, which is what the vocabulary should have said all along.
+>
+> `ordinary` survives in `src/` in exactly two comments that explain the
+> ban and two that use the English word ("an ordinary linear question").
+> The suite directory `test/graph-ordinary/` still carries it; renaming
+> it would dangle two historical doc references, so it is flagged here
+> rather than changed.
+
+The abstract type `graph_directed_view :: graph` (then `ordinary_graph`) is now
+`directed_graph`, and the concrete `class_graph :: stored_graph` is
+`directed_stored_graph`.
 
 ### What made the rename safe
 
@@ -579,7 +617,7 @@ surface:
 split at `module`/`program` boundaries and its `graph` traced to the
 module that supplies it:
 
-    56 files   `graph` is graph_ordinary_view's      -> renamed
+    56 files   `graph` is graph_directed_view's      -> renamed
     62 files   `graph` is fractal_graph's            -> untouched
      2 files   `graph` is interface_graph's          -> untouched (island)
      0 files   two modules supply the name at once
@@ -589,14 +627,14 @@ Zero mixed files is the fact that made a file-wide rewrite legal.
 **And the trap in that method, which caught this rename.** Keying on the
 LOCAL name misses an import that renames at the door. Two files said
 
-    use graph_ordinary_view, only : grammar_graph => graph
+    use graph_directed_view, only : grammar_graph => graph
 
 so their local name was `grammar_graph`, not `graph`, and they fell
 outside the 56 — untouched by the rewrite, and broken by it, because the
 module they import from no longer exported `graph`. `src` built clean
 because both files are tests; two suites failed and named the line. The
 alias existed only to dodge the collision the rename removes, so both
-were collapsed to `only : ordinary_graph`.
+were collapsed to `only : directed_graph`.
 
 The lesson is the method's, not the rename's: **classify by the symbol
 imported, not by the name it is bound to locally.** The `stored_graph`
@@ -664,9 +702,10 @@ One clean rebuild per suite, at every commit recorded here:
 
     inventory (PR1)          32 of 32 suites PASS, 0 FAIL
     re-export redirect       32 of 32 suites PASS, 0 FAIL
-    graph_ordinary_view      32 of 32 suites PASS, 0 FAIL
+    graph_directed_view      32 of 32 suites PASS, 0 FAIL   (as graph_ordinary_view)
     graph_grammar deleted    32 of 32 suites PASS, 0 FAIL
-    ordinary_graph rename    32 of 32 suites PASS, 0 FAIL
+    directed_graph rename    32 of 32 suites PASS, 0 FAIL   (as ordinary_graph)
+    ordinary -> directed     32 of 32 suites PASS, 0 FAIL
 
 Seven tower import gates were re-asserted, not relaxed: a level that read
 the field through the grammar is granted `graph_field_calculus` by name,

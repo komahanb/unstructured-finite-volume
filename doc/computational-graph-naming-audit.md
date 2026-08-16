@@ -255,7 +255,7 @@ as much.
 | `graph_identity.f90` | THE IDENTITY . INFRASTRUCTURE BENEATH THE TOWER | `token` | type | **STRUCTURE** |
 | `graph_identity.f90` | THE IDENTITY . INFRASTRUCTURE BENEATH THE TOWER | `mint_token` | procedure | **STRUCTURE** |
 | `graph_minimization.f90` | LEVEL 7 OF THE NEW TOWER . THE MINIMIZATION | `minimizer` | type | **INFERENCE** |
-| `graph_profile.f90` | LEVEL 4 OF THE NEW TOWER . THE ORDINARY GRAPH PROFILE | `ordinary_graph_view` | type | **VIEW** |
+| `graph_profile.f90` | LEVEL 4 OF THE NEW TOWER . THE ORDINARY GRAPH PROFILE | `directed_incidence_view` | type | **VIEW** |
 | `graph_profile.f90` | LEVEL 4 OF THE NEW TOWER . THE ORDINARY GRAPH PROFILE | `directed_adjacency_view` | type | **VIEW** |
 | `graph_relation.f90` | LEVEL 1 OF THE NEW TOWER . THE RELATIONS | `relation` | type | **STRUCTURE** |
 | `graph_relation.f90` | LEVEL 1 OF THE NEW TOWER . THE RELATIONS | `stored_relation` | type | **STRUCTURE** |
@@ -572,7 +572,7 @@ total      158
 
 ### graph_profile.f90
 
-- `ordinary_graph_view` (type) — **VIEW**: An interpretation that reads the two-relation T/H schema off a relational graph and answers the ordinary directed-graph vocabulary (tails, heads, incidence, adjacency) with no storage of its own; constructor rides the same-named interface.
+- `directed_incidence_view` (type) — **VIEW**: An interpretation that reads the two-relation T/H schema off a relational graph and answers the ordinary directed-graph vocabulary (tails, heads, incidence, adjacency) with no storage of its own; constructor rides the same-named interface.
 - `directed_adjacency_view` (type) — **VIEW**: An interpretation that reads one graph-owned same-domain binary relation as a directed adjacency (successors/predecessors), borrowing storage and computing nothing; constructor rides the same-named interface.
 
 ### graph_relation.f90

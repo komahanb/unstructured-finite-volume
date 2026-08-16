@@ -42,7 +42,7 @@ module class_graph_mesh
 
   use iso_fortran_env    , only : dp => REAL64, error_unit
   use class_graph_field  , only : field
-  use class_graph        , only : ordinary_stored_graph
+  use class_graph        , only : directed_stored_graph
   use fractal_graph      , only : set_graph => graph
 
   implicit none
@@ -54,7 +54,7 @@ module class_graph_mesh
   ! One mesh: the inherited structure, plus seven measurements.
   !===================================================================!
 
-  type, extends(ordinary_stored_graph) :: mesh
+  type, extends(directed_stored_graph) :: mesh
 
      type(field) :: volumes
      type(field) :: cell_centers
@@ -112,7 +112,7 @@ contains
     integer :: ne
 
     ! The structure first, through the parent's own constructor.
-    this % ordinary_stored_graph = ordinary_stored_graph(nv, tails=tails, heads=heads, &
+    this % directed_stored_graph = directed_stored_graph(nv, tails=tails, heads=heads, &
          & vtags=vtags, etags=etags, number=number)
 
     ne = this % num_edges()

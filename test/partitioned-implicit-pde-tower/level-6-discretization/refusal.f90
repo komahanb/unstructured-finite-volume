@@ -23,13 +23,13 @@ program partitioned_pde_level_6_refusal
   use graph_set_representation, only : counted_set_representation
   use graph_set_map        , only : set_map
   use graph_field_calculus, only : graph_field
-  use class_graph      , only : ordinary_stored_graph
+  use class_graph      , only : directed_stored_graph
   use class_graph_field, only : field
   use shifted_laplacian_fixture, only : shifted_laplacian
 
   implicit none
 
-  type(ordinary_stored_graph)              :: g
+  type(directed_stored_graph)              :: g
   type(set_graph)                 :: foreign
   type(set_map)                   :: sets
   type(shifted_laplacian)         :: shifted
@@ -42,7 +42,7 @@ program partitioned_pde_level_6_refusal
   end if
   call get_command_argument(1, which)
 
-  g = ordinary_stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  g = directed_stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
   call sets % bind(g % vertex_set(), &
        & counted_set_representation(g % num_vertices()))
   call sets % bind(g % edge_set(), &

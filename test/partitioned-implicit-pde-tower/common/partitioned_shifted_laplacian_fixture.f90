@@ -51,9 +51,9 @@ module partitioned_shifted_laplacian_fixture
   use graph_label_map    , only : label_map
   use graph_inclusion_map, only : inclusion_map
   use graph_operation_view, only : graph_operation
-  use graph_ordinary_view, only : ordinary_graph
+  use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
-  use class_graph      , only : ordinary_stored_graph
+  use class_graph      , only : directed_stored_graph
   use class_graph_field, only : field
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
   use class_graph_assembler  , only : assembler
@@ -67,8 +67,8 @@ module partitioned_shifted_laplacian_fixture
   type, extends(graph_operation) :: partitioned_shifted_laplacian
 
      ! STRUCTURE, cut once and never rebuilt.
-     type(ordinary_stored_graph)        :: whole
-     class(ordinary_graph), allocatable :: g1, g2
+     type(directed_stored_graph)        :: whole
+     class(directed_graph), allocatable :: g1, g2
      type(partitioner)         :: p1, p2
      type(assembler)           :: asm
      type(shifted_laplacian)   :: local
@@ -95,7 +95,7 @@ contains
   type(partitioned_shifted_laplacian) function create_partitioned(g) &
        & result(this)
 
-    type(ordinary_stored_graph), intent(in) :: g
+    type(directed_stored_graph), intent(in) :: g
 
     this % whole = g
     this % p1 = partitioner(PARTITION_LINEAR, nparts=2, part=1)
@@ -122,7 +122,7 @@ contains
   subroutine part_domain(this, input_graph, domain, nentries)
 
     class(partitioned_shifted_laplacian), intent(in) :: this
-    class(ordinary_graph)   , intent(in)  :: input_graph
+    class(directed_graph)   , intent(in)  :: input_graph
     type(set_graph), intent(out) :: domain
     integer        , intent(out) :: nentries
 
@@ -142,7 +142,7 @@ contains
   subroutine part_apply(this, input_graph, input_data, output)
 
     class(partitioned_shifted_laplacian), intent(in) :: this
-    class(ordinary_graph), intent(in)                       :: input_graph
+    class(directed_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
@@ -221,7 +221,7 @@ contains
   subroutine demand_the_recorded_context(this, input_graph)
 
     class(partitioned_shifted_laplacian), intent(in) :: this
-    class(ordinary_graph)                        , intent(in) :: input_graph
+    class(directed_graph)                        , intent(in) :: input_graph
 
     type(set_graph) :: given, recorded
 
@@ -243,7 +243,7 @@ contains
   subroutine act_locally(local, part, q_part, answer)
 
     type(shifted_laplacian), intent(in)  :: local
-    class(ordinary_graph)           , intent(in)  :: part
+    class(directed_graph)           , intent(in)  :: part
     class(graph_field)     , intent(in)  :: q_part
     class(graph_field), allocatable, intent(out) :: answer
 
@@ -270,9 +270,9 @@ contains
   subroutine add_owned(asm, part, answer, whole, sets, labels, inclusions, total)
 
     type(assembler)   , intent(in)    :: asm
-    class(ordinary_graph)      , intent(in)    :: part
+    class(directed_graph)      , intent(in)    :: part
     class(graph_field), intent(in)    :: answer
-    type(ordinary_stored_graph), intent(in)    :: whole
+    type(directed_stored_graph), intent(in)    :: whole
     type(set_map)     , intent(inout) :: sets
     type(label_map)   , intent(inout) :: labels
     type(inclusion_map), intent(inout) :: inclusions
@@ -312,7 +312,7 @@ contains
   subroutine bind_part(sets, g)
 
     type(set_map), intent(inout) :: sets
-    class(ordinary_graph) , intent(in)    :: g
+    class(directed_graph) , intent(in)    :: g
 
     call sets % bind(g % vertex_set(), &
          & counted_set_representation(g % num_vertices()))

@@ -28,7 +28,7 @@
 ! is a graph read as (S, P), with a binding to the objects its
 ! elements denote, and it carries the mathematical structure: the
 ! external selectors are located inside it by identity and then
-! DESTROYED, and every number below comes through bound relations. The HOST is a seven-vertex ordinary_stored_graph that exists
+! DESTROYED, and every number below comes through bound relations. The HOST is a seven-vertex directed_stored_graph that exists
 ! only because the legacy graph_operation face demands a
 ! class(graph); it is provably neither Q nor Y nor their size, and
 ! it contributes no domain, no coefficient and no topology.
@@ -62,7 +62,7 @@ program adjoint_level_9
        & num_member_sets, member_set_at, num_relations, relation_at, &
        & holds_set
   use graph_field_calculus, only : graph_field
-  use class_graph      , only : ordinary_stored_graph
+  use class_graph      , only : directed_stored_graph
   use class_graph_field, only : field
   use class_graph_gmres, only : gmres
   use adjoint_constitution_fixture, only : constituted_primal, &
@@ -82,7 +82,7 @@ program adjoint_level_9
   type(graph)             , target :: rcell(5), relem(5)
   type(relational_binding)         :: bnd
   integer                          :: kcell
-  type(ordinary_stored_graph)                 :: host
+  type(directed_stored_graph)                 :: host
   class(relation), pointer           :: rp   => null()
   class(relation), pointer           :: gdep => null()
   class(relation), pointer           :: gjq => null(), gjp => null()
@@ -210,7 +210,7 @@ program adjoint_level_9
   deallocate(inc_y, inc_z, inc_q, inc_p)
 
   !-- the compatibility host: nobody's domain -----------------------
-  host = ordinary_stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
+  host = directed_stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
 
   call check_hostile_enumeration(nfail)
   call check_model_ownership(nfail)

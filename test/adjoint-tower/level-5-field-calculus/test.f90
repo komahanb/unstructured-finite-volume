@@ -33,15 +33,21 @@ program adjoint_level_5
   use iso_fortran_env  , only : dp => REAL64
   use adjoint_assert   , only : report, verdict
   use adjoint_assert   , only : VAR_P, VAR_U, VAR_V
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use class_graph_field, only : field
 
   implicit none
 
-  type(counted_set) :: v
-  type(subset_set)  :: p_dom, q_dom
+  type(set_graph) :: v
+  type(set_graph)  :: p_dom, q_dom
   type(field)       :: p_field, q0
   integer           :: nfail
+  type(set_map)     :: sets
+  type(inclusion_map)     :: inclusions
 
   nfail = 0
 
@@ -49,9 +55,14 @@ program adjoint_level_5
   write(*,'(1x,a)') "adjoint tower . level 5 . fields"
   write(*,'(1x,a)') "============================================="
 
-  v     = counted_set('variables', 3)
-  p_dom = subset_set('parameter', v, [VAR_P])
-  q_dom = subset_set('state'    , v, [VAR_U, VAR_V])
+  call v % declare()
+  call sets % bind(v, counted_set_representation(3))
+  call p_dom % declare()
+  call sets       % bind(p_dom, listed_set_representation([VAR_P]))
+  call inclusions % include_in(p_dom, v)
+  call q_dom % declare()
+  call sets       % bind(q_dom, listed_set_representation([VAR_U, VAR_V]))
+  call inclusions % include_in(q_dom, v)
 
   call check_parameter(nfail)
   call check_initial_state(nfail)
@@ -72,20 +83,20 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
     real(dp), allocatable          :: val(:)
 
-    p_field = field('parameter', p_dom)
+    p_field = field('parameter', p_dom, sets % size_of(p_dom))
     call p_field % set_real_vector([2.0_dp])
 
-    call p_field % domain(dom)
+    dom = p_field % domain()
     call report(dom % same_as(p_dom), &
          & "the parameter field's domain is P, by identity", nfail)
     call report(p_field % num_entries() .eq. 1, &
          & "one parameter entry", nfail)
 
     call p_field % get_real_vector(val)
-    call report(abs(val(p_dom % local_index(VAR_P)) - 2.0_dp) &
+    call report(abs(val(sets % index_in(p_dom, VAR_P)) - 2.0_dp) &
          &      < 1.0d-14, &
          & "p = 2, read through the domain map", nfail)
 
@@ -100,13 +111,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
     real(dp), allocatable          :: val(:)
 
-    q0 = field('initial state', q_dom)
+    q0 = field('initial state', q_dom, sets % size_of(q_dom))
     call q0 % set_real_vector([0.0_dp, 0.0_dp])
 
-    call q0 % domain(dom)
+    dom = q0 % domain()
     call report(dom % same_as(q_dom), &
          & "the state field's domain is Q, by identity", nfail)
     call report(q0 % num_entries() .eq. 2 .and. &
@@ -114,13 +125,13 @@ contains
          & "two state entries, one component", nfail)
 
     call q0 % get_real_vector(val)
-    call report(abs(val(q_dom % local_index(VAR_U))) < 1.0d-14 .and. &
-         &      abs(val(q_dom % local_index(VAR_V))) < 1.0d-14, &
+    call report(abs(val(sets % index_in(q_dom, VAR_U))) < 1.0d-14 .and. &
+         &      abs(val(sets % index_in(q_dom, VAR_V))) < 1.0d-14, &
          & "q0 = [0, 0]: a starting point, not an answer", nfail)
 
-    call report(q_dom % local_index(VAR_U) .eq. 1 .and. &
-         &      q_dom % local_index(VAR_V) .eq. 2 .and. &
-         &      v % local_index(VAR_V) .eq. 3, &
+    call report(sets % index_in(q_dom, VAR_U) .eq. 1 .and. &
+         &      sets % index_in(q_dom, VAR_V) .eq. 2 .and. &
+         &      sets % index_in(v, VAR_V) .eq. 3, &
          & "storage follows Q's enumeration, not the variable ids", &
          & nfail)
 
@@ -135,16 +146,16 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dp_, dq
+    type(set_graph) :: dp_, dq
 
-    call p_field % domain(dp_)
-    call q0 % domain(dq)
+    dp_ = p_field % domain()
+    dq = q0 % domain()
 
     call report(.not. dp_ % same_as(q_dom) .and. &
          &      .not. dq % same_as(p_dom), &
          & "parameter and state are distinguished by domain alone", &
          & nfail)
-    call report(dp_ % size() .ne. dq % size(), &
+    call report(sets % size_of(dp_) .ne. sets % size_of(dq), &
          & "and here even their sizes differ - though sizes are " // &
          & "never what settles it", nfail)
 

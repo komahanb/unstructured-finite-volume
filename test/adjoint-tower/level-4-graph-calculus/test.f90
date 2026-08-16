@@ -13,7 +13,7 @@
 !      C_Q = J_Q o J_Q^T  <=  Q x Q            the path Q -> Y -> Q
 !          = { (u,u), (u,v), (v,u), (v,v) }
 !
-! written in code as compose_binary(J_Q^T, J_Q); as a Boolean
+! written in code as compose_binary(J_Q^T, J_Q, sets); as a Boolean
 ! matrix pattern the same object reads J_Q^T J_Q. The two state
 ! slots share both residual rows, so each depends on the OTHER: the
 ! off-diagonal pair (u,v) and (v,u) is what makes the coupling
@@ -41,7 +41,12 @@ program adjoint_level_4
   use adjoint_assert, only : report, verdict
   use adjoint_assert, only : VAR_P, VAR_U, VAR_V
   use adjoint_assert, only : TGT_R1, TGT_R2, TGT_F
-  use graph_carrier , only : counted_set, subset_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation, only : stored_relation, relation
   use graph_relation_algebra, only : compose_binary
   use graph_binary_relation , only : csr_relation, transposed_view, &
@@ -56,8 +61,8 @@ program adjoint_level_4
   implicit none
 
 
-  type(counted_set)              :: v, t
-  type(subset_set)               :: p_dom, q_dom, y_dom, z_dom
+  type(set_graph)              :: v, t
+  type(set_graph)               :: p_dom, q_dom, y_dom, z_dom
   type(stored_relation)          :: dep
   type(csr_relation), target     :: inc_y, inc_q, jq
   type(transposed_view)          :: inc_q_t, jq_t
@@ -70,6 +75,9 @@ program adjoint_level_4
   type(directed_adjacency_view)  :: view
   integer                        :: table(2, 9)
   integer                        :: nfail
+  type(set_map)     :: sets
+  type(inclusion_map)     :: inclusions
+  type(label_map)     :: labels
 
   nfail = 0
 
@@ -77,13 +85,23 @@ program adjoint_level_4
   write(*,'(1x,a)') "adjoint tower . level 4 . implicit coupling"
   write(*,'(1x,a)') "============================================="
 
-  v = counted_set('variables', 3)
-  t = counted_set('targets'  , 3)
+  call v % declare()
+  call sets % bind(v, counted_set_representation(3))
+  call t % declare()
+  call sets % bind(t, counted_set_representation(3))
 
-  p_dom = subset_set('parameter', v, [VAR_P])
-  q_dom = subset_set('state'    , v, [VAR_U, VAR_V])
-  y_dom = subset_set('residual' , t, [TGT_R1, TGT_R2])
-  z_dom = subset_set('response' , t, [TGT_F])
+  call p_dom % declare()
+  call sets       % bind(p_dom, listed_set_representation([VAR_P]))
+  call inclusions % include_in(p_dom, v)
+  call q_dom % declare()
+  call sets       % bind(q_dom, listed_set_representation([VAR_U, VAR_V]))
+  call inclusions % include_in(q_dom, v)
+  call y_dom % declare()
+  call sets       % bind(y_dom, listed_set_representation([TGT_R1, TGT_R2]))
+  call inclusions % include_in(y_dom, t)
+  call z_dom % declare()
+  call sets       % bind(z_dom, listed_set_representation([TGT_F]))
+  call inclusions % include_in(z_dom, t)
 
   table(:, 1) = [TGT_R1, VAR_P]
   table(:, 2) = [TGT_R1, VAR_U]
@@ -94,17 +112,17 @@ program adjoint_level_4
   table(:, 7) = [TGT_F , VAR_P]
   table(:, 8) = [TGT_F , VAR_U]
   table(:, 9) = [TGT_F , VAR_V]
-  dep = stored_relation('dependency', [t, v], table)
+  dep = stored_relation('dependency', [t, v], table, sets)
 
-  inc_y   = inclusion_of(y_dom)
-  inc_q   = inclusion_of(q_dom)
+  inc_y   = inclusion_of(y_dom, t, sets, labels)
+  inc_q   = inclusion_of(q_dom, v, sets, labels)
   inc_q_t = transpose_of(inc_q)
-  jq      = compose_binary(compose_binary(inc_y, dep), inc_q_t)
+  jq      = compose_binary(compose_binary(inc_y, dep, sets), inc_q_t, sets)
 
   ! The coupling, derived from the SAME J_Q - state to residual row
   ! and back again. No second structure is authored for it.
   jq_t     = transpose_of(jq)
-  coupling = compose_binary(jq_t, jq)
+  coupling = compose_binary(jq_t, jq, sets)
 
   ! 'state coupling': (S, P) as one sequence on each branch.
   call g % declare()
@@ -133,7 +151,7 @@ program adjoint_level_4
 
   g % branch(1) = known_branch(scell(1))
   g % branch(2) = known_branch(rcell(1))
-  view = directed_adjacency_view(g, bnd, coupling)
+  view = directed_adjacency_view(g, bnd, sets, coupling)
 
   call check_coupling_extension(nfail)
   call check_view_is_valid(nfail)
@@ -158,7 +176,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
 
     dom = coupling % domain(1)
     call report(dom % same_as(q_dom), &
@@ -186,10 +204,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
 
     dom = view % domain()
-    call report(dom % same_as(q_dom) .and. dom % size() .eq. 2, &
+    call report(dom % same_as(q_dom) .and. sets % size_of(dom) .eq. 2, &
          & "the view is valid and walks the state slots", nfail)
 
   end subroutine check_view_is_valid
@@ -210,8 +228,8 @@ contains
          &      coupling % has([VAR_V, VAR_U]), &
          & "the off-diagonal pair stands: u depends on v and v on " // &
          & "u - THAT is the mutual coupling", nfail)
-    call report(reachable(view, VAR_U, VAR_V) .and. &
-         &      reachable(view, VAR_V, VAR_U), &
+    call report(reachable(view, sets, VAR_U, VAR_V) .and. &
+         &      reachable(view, sets, VAR_V, VAR_U), &
          & "and each reaches the other, so the walk finds a cycle", &
          & nfail)
     call report(coupling % has([VAR_U, VAR_U]) .and. &
@@ -232,12 +250,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(subset_set) :: src, snk
+    type(set_graph) :: src, snk
 
-    src = sources(view)
-    snk = sinks(view)
+    call sources(view, sets, labels, inclusions, src)
+    call sinks(view, sets, labels, inclusions, snk)
 
-    call report(src % size() .eq. 0 .and. snk % size() .eq. 0, &
+    call report(sets % size_of(src) .eq. 0 .and. sets % size_of(snk) .eq. 0, &
          & "the state coupling has no source or sink state slot: " // &
          & "nowhere for a walk to begin", nfail)
 

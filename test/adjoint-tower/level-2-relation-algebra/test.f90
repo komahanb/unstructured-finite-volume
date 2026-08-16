@@ -14,7 +14,7 @@
 !
 ! written as relational composition, read right to left. In code the
 ! same road runs left to right, because this repository reads
-! compose_binary(P_AB, P_BC) = P_BC o P_AB.
+! compose_binary(P_AB, P_BC, sets) = P_BC o P_AB.
 !
 ! The inclusion nearest R_dep on the right selects which targets the
 ! block answers ON; the transposed inclusion on the left - borrowed
@@ -36,7 +36,12 @@ program adjoint_level_2
   use adjoint_assert, only : report, verdict
   use adjoint_assert, only : VAR_P, VAR_U, VAR_V
   use adjoint_assert, only : TGT_R1, TGT_R2, TGT_F
-  use graph_carrier , only : counted_set, subset_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation, only : stored_relation, relation
   use graph_relation_algebra, only : compose_binary
   use graph_binary_relation , only : csr_relation, transposed_view, &
@@ -44,8 +49,8 @@ program adjoint_level_2
 
   implicit none
 
-  type(counted_set)          :: v, t
-  type(subset_set)           :: p_dom, q_dom, y_dom, z_dom
+  type(set_graph)          :: v, t
+  type(set_graph)           :: p_dom, q_dom, y_dom, z_dom
   type(stored_relation)      :: dep
   type(csr_relation), target :: inc_y, inc_z, inc_q, inc_p
   type(transposed_view)      :: inc_q_t, inc_p_t
@@ -53,6 +58,9 @@ program adjoint_level_2
   type(csr_relation)         :: jq, jp, fq, fp
   integer                    :: table(2, 9)
   integer                    :: nfail
+  type(set_map)     :: sets
+  type(label_map)     :: labels
+  type(inclusion_map)     :: inclusions
 
   nfail = 0
 
@@ -60,13 +68,23 @@ program adjoint_level_2
   write(*,'(1x,a)') "adjoint tower . level 2 . derived supports"
   write(*,'(1x,a)') "============================================="
 
-  v = counted_set('variables', 3)
-  t = counted_set('targets'  , 3)
+  call v % declare()
+  call sets % bind(v, counted_set_representation(3))
+  call t % declare()
+  call sets % bind(t, counted_set_representation(3))
 
-  p_dom = subset_set('parameter', v, [VAR_P])
-  q_dom = subset_set('state'    , v, [VAR_U, VAR_V])
-  y_dom = subset_set('residual' , t, [TGT_R1, TGT_R2])
-  z_dom = subset_set('response' , t, [TGT_F])
+  call p_dom % declare()
+  call sets       % bind(p_dom, listed_set_representation([VAR_P]))
+  call inclusions % include_in(p_dom, v)
+  call q_dom % declare()
+  call sets       % bind(q_dom, listed_set_representation([VAR_U, VAR_V]))
+  call inclusions % include_in(q_dom, v)
+  call y_dom % declare()
+  call sets       % bind(y_dom, listed_set_representation([TGT_R1, TGT_R2]))
+  call inclusions % include_in(y_dom, t)
+  call z_dom % declare()
+  call sets       % bind(z_dom, listed_set_representation([TGT_F]))
+  call inclusions % include_in(z_dom, t)
 
   table(:, 1) = [TGT_R1, VAR_P]
   table(:, 2) = [TGT_R1, VAR_U]
@@ -77,26 +95,26 @@ program adjoint_level_2
   table(:, 7) = [TGT_F , VAR_P]
   table(:, 8) = [TGT_F , VAR_U]
   table(:, 9) = [TGT_F , VAR_V]
-  dep = stored_relation('dependency', [t, v], table)
+  dep = stored_relation('dependency', [t, v], table, sets)
 
   ! The roles' own relational faces - membership, stated as algebra.
-  inc_y = inclusion_of(y_dom)
-  inc_z = inclusion_of(z_dom)
-  inc_q = inclusion_of(q_dom)
-  inc_p = inclusion_of(p_dom)
+  inc_y = inclusion_of(y_dom, t, sets, labels)
+  inc_z = inclusion_of(z_dom, t, sets, labels)
+  inc_q = inclusion_of(q_dom, v, sets, labels)
+  inc_p = inclusion_of(p_dom, v, sets, labels)
 
   ! Borrowed, never rebuilt: the right-hand selectors act reversed.
   inc_q_t = transpose_of(inc_q)
   inc_p_t = transpose_of(inc_p)
 
   ! Restrict the targets, then the variables.
-  on_y = compose_binary(inc_y, dep)      ! Y -> T -> V
-  on_z = compose_binary(inc_z, dep)      ! Z -> T -> V
+  on_y = compose_binary(inc_y, dep, sets)      ! Y -> T -> V
+  on_z = compose_binary(inc_z, dep, sets)      ! Z -> T -> V
 
-  jq = compose_binary(on_y, inc_q_t)     ! Y -> V -> Q
-  jp = compose_binary(on_y, inc_p_t)     ! Y -> V -> P
-  fq = compose_binary(on_z, inc_q_t)     ! Z -> V -> Q
-  fp = compose_binary(on_z, inc_p_t)     ! Z -> V -> P
+  jq = compose_binary(on_y, inc_q_t, sets)     ! Y -> V -> Q
+  jp = compose_binary(on_y, inc_p_t, sets)     ! Y -> V -> P
+  fq = compose_binary(on_z, inc_q_t, sets)     ! Z -> V -> Q
+  fp = compose_binary(on_z, inc_p_t, sets)     ! Z -> V -> P
 
   call check_inclusions(nfail)
   call check_restriction_to_targets(nfail)
@@ -118,7 +136,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
 
     dom = inc_q % domain(1)
     call report(dom % same_as(q_dom), &
@@ -153,7 +171,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
 
     dom = on_y % domain(1)
     call report(dom % same_as(y_dom), &
@@ -183,7 +201,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
 
     dom = jq % domain(1)
     call report(dom % same_as(y_dom), &
@@ -211,7 +229,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
 
     dom = jp % domain(1)
     call report(dom % same_as(y_dom), &
@@ -238,7 +256,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
 
     dom = fq % domain(1)
     call report(dom % same_as(z_dom), &
@@ -271,7 +289,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: a, b
+    type(set_graph) :: a, b
 
     a = jq % domain(1)
     b = fq % domain(1)

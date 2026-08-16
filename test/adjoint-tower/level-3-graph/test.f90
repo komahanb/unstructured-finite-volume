@@ -34,7 +34,12 @@ program adjoint_level_3
   use adjoint_assert, only : report, verdict
   use adjoint_assert, only : VAR_P, VAR_U, VAR_V
   use adjoint_assert, only : TGT_R1, TGT_R2, TGT_F
-  use graph_carrier , only : counted_set, subset_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation, only : stored_relation, relation
   use graph_relation_algebra, only : compose_binary
   use graph_binary_relation , only : csr_relation, transposed_view, &
@@ -46,8 +51,8 @@ program adjoint_level_3
 
   implicit none
 
-  type(counted_set)              :: v, t
-  type(subset_set)               :: p_dom, q_dom, y_dom, z_dom
+  type(set_graph)              :: v, t
+  type(set_graph)               :: p_dom, q_dom, y_dom, z_dom
   type(stored_relation)          :: dep
   type(csr_relation), target     :: inc_y, inc_z, inc_q, inc_p
   type(transposed_view)          :: inc_q_t, inc_p_t
@@ -59,6 +64,9 @@ program adjoint_level_3
   integer                          :: k
   integer                        :: table(2, 9)
   integer                        :: nfail
+  type(set_map)     :: sets
+  type(label_map)     :: labels
+  type(inclusion_map)     :: inclusions
 
   nfail = 0
 
@@ -66,13 +74,23 @@ program adjoint_level_3
   write(*,'(1x,a)') "adjoint tower . level 3 . ownership"
   write(*,'(1x,a)') "============================================="
 
-  v = counted_set('variables', 3)
-  t = counted_set('targets'  , 3)
+  call v % declare()
+  call sets % bind(v, counted_set_representation(3))
+  call t % declare()
+  call sets % bind(t, counted_set_representation(3))
 
-  p_dom = subset_set('parameter', v, [VAR_P])
-  q_dom = subset_set('state'    , v, [VAR_U, VAR_V])
-  y_dom = subset_set('residual' , t, [TGT_R1, TGT_R2])
-  z_dom = subset_set('response' , t, [TGT_F])
+  call p_dom % declare()
+  call sets       % bind(p_dom, listed_set_representation([VAR_P]))
+  call inclusions % include_in(p_dom, v)
+  call q_dom % declare()
+  call sets       % bind(q_dom, listed_set_representation([VAR_U, VAR_V]))
+  call inclusions % include_in(q_dom, v)
+  call y_dom % declare()
+  call sets       % bind(y_dom, listed_set_representation([TGT_R1, TGT_R2]))
+  call inclusions % include_in(y_dom, t)
+  call z_dom % declare()
+  call sets       % bind(z_dom, listed_set_representation([TGT_F]))
+  call inclusions % include_in(z_dom, t)
 
   table(:, 1) = [TGT_R1, VAR_P]
   table(:, 2) = [TGT_R1, VAR_U]
@@ -83,20 +101,20 @@ program adjoint_level_3
   table(:, 7) = [TGT_F , VAR_P]
   table(:, 8) = [TGT_F , VAR_U]
   table(:, 9) = [TGT_F , VAR_V]
-  dep = stored_relation('dependency', [t, v], table)
+  dep = stored_relation('dependency', [t, v], table, sets)
 
   ! The certified Level-2 road, walked once more.
-  inc_y = inclusion_of(y_dom)
-  inc_z = inclusion_of(z_dom)
-  inc_q = inclusion_of(q_dom)
-  inc_p = inclusion_of(p_dom)
+  inc_y = inclusion_of(y_dom, t, sets, labels)
+  inc_z = inclusion_of(z_dom, t, sets, labels)
+  inc_q = inclusion_of(q_dom, v, sets, labels)
+  inc_p = inclusion_of(p_dom, v, sets, labels)
   inc_q_t = transpose_of(inc_q)
   inc_p_t = transpose_of(inc_p)
 
-  jq = compose_binary(compose_binary(inc_y, dep), inc_q_t)
-  jp = compose_binary(compose_binary(inc_y, dep), inc_p_t)
-  fq = compose_binary(compose_binary(inc_z, dep), inc_q_t)
-  fp = compose_binary(compose_binary(inc_z, dep), inc_p_t)
+  jq = compose_binary(compose_binary(inc_y, dep, sets), inc_q_t, sets)
+  jp = compose_binary(compose_binary(inc_y, dep, sets), inc_p_t, sets)
+  fq = compose_binary(compose_binary(inc_z, dep, sets), inc_q_t, sets)
+  fp = compose_binary(compose_binary(inc_z, dep, sets), inc_p_t, sets)
 
   ! 'adjoint specimen': (S, P) as one sequence on each branch.
   call g % declare()
@@ -199,7 +217,7 @@ contains
     integer, intent(inout) :: nfail
 
     class(relation), pointer       :: rp
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
     integer                        :: k
 
     do k = 1, num_relations(g)
@@ -236,7 +254,7 @@ contains
     integer, intent(inout) :: nfail
 
     class(relation), pointer       :: rp
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
     integer                        :: k, s
     logical                        :: ok
 

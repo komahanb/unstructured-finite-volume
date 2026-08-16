@@ -39,7 +39,10 @@ module adjoint_constitution_fixture
   use iso_fortran_env  , only : dp => REAL64
   use adjoint_assert   , only : VAR_P, VAR_U, VAR_V
   use adjoint_assert   , only : TGT_R1, TGT_R2, TGT_F
-  use graph_carrier    , only : member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
+  use graph_set_representation, only : counted_set_representation, &
+       & set_representation
   use graph_relation   , only : relation
   use graph_grammar    , only : graph, graph_field, graph_operation
   use class_graph_field, only : field
@@ -62,7 +65,12 @@ module adjoint_constitution_fixture
 
   type, extends(graph_operation) :: constituted_primal
      class(relation)  , allocatable :: jq, jp
-     class(member_set), allocatable :: q_dom, y_dom, p_dom
+     type(set_graph) :: q_dom, y_dom, p_dom
+     integer         :: n_q_dom = 0, n_y_dom = 0
+     integer         :: n_p_dom = 0, n_z_dom = 0
+     ! The domains here are LISTED, so a member is not its
+     ! position: the action keeps its own coordinates.
+     class(set_representation), allocatable :: c_q, c_y, c_p, c_z
      real(dp)         , allocatable :: p_val(:)
    contains
      procedure :: name   => primal_name
@@ -72,7 +80,12 @@ module adjoint_constitution_fixture
 
   type, extends(graph_operation) :: constituted_adjoint
      class(relation)  , allocatable :: jq, fq
-     class(member_set), allocatable :: q_dom, y_dom, z_dom
+     type(set_graph) :: q_dom, y_dom, z_dom
+     integer         :: n_q_dom = 0, n_y_dom = 0
+     integer         :: n_p_dom = 0, n_z_dom = 0
+     ! The domains here are LISTED, so a member is not its
+     ! position: the action keeps its own coordinates.
+     class(set_representation), allocatable :: c_q, c_y, c_p, c_z
    contains
      procedure :: name   => adjoint_name
      procedure :: domain => adjoint_domain
@@ -81,7 +94,12 @@ module adjoint_constitution_fixture
 
   type, extends(graph_operation) :: constituted_tangent
      class(relation)  , allocatable :: jq, jp
-     class(member_set), allocatable :: q_dom, y_dom, p_dom
+     type(set_graph) :: q_dom, y_dom, p_dom
+     integer         :: n_q_dom = 0, n_y_dom = 0
+     integer         :: n_p_dom = 0, n_z_dom = 0
+     ! The domains here are LISTED, so a member is not its
+     ! position: the action keeps its own coordinates.
+     class(set_representation), allocatable :: c_q, c_y, c_p, c_z
      real(dp)         , allocatable :: dp_val(:)
    contains
      procedure :: name   => tangent_name
@@ -166,29 +184,30 @@ contains
   ! The forward state action: Rq v, walking J_Q.
   !===================================================================!
 
-  subroutine rq_forward(jq, y_dom, q_dom, v_q, out_y)
+  subroutine rq_forward(jq, y_dom, q_dom, sets, v_q, out_y)
 
     class(relation)  , intent(in)  :: jq
-    class(member_set), intent(in)  :: y_dom, q_dom
+    type(set_graph), intent(in)  :: y_dom, q_dom
+    type(set_map)  , intent(in)  :: sets
     real(dp)         , intent(in)  :: v_q(:)
     real(dp)         , intent(out) :: out_y(:)
 
     integer :: i, j, row, col
 
-    if (size(v_q) .ne. q_dom % size() .or. &
-         & size(out_y) .ne. y_dom % size()) then
+    if (size(v_q) .ne. sets % size_of(q_dom) .or. &
+         & size(out_y) .ne. sets % size_of(y_dom)) then
        error stop 'constitution: every vector is sized by its domain'
     end if
 
     out_y = 0.0_dp
-    do i = 1, y_dom % size()
-       row = y_dom % member(i)
-       do j = 1, q_dom % size()
-          col = q_dom % member(j)
+    do i = 1, sets % size_of(y_dom)
+       row = sets % member_of(y_dom, i)
+       do j = 1, sets % size_of(q_dom)
+          col = sets % member_of(q_dom, j)
           if (jq % has([row, col])) then
-             out_y(y_dom % local_index(row)) = &
-                  & out_y(y_dom % local_index(row)) + &
-                  & coeff_state(row, col) * v_q(q_dom % local_index(col))
+             out_y(sets % index_in(y_dom, row)) = &
+                  & out_y(sets % index_in(y_dom, row)) + &
+                  & coeff_state(row, col) * v_q(sets % index_in(q_dom, col))
           end if
        end do
     end do
@@ -201,29 +220,30 @@ contains
   ! transposed table exists to disagree with the forward one.
   !===================================================================!
 
-  subroutine rq_reverse(jq, y_dom, q_dom, bar_y, out_q)
+  subroutine rq_reverse(jq, y_dom, q_dom, sets, bar_y, out_q)
 
     class(relation)  , intent(in)  :: jq
-    class(member_set), intent(in)  :: y_dom, q_dom
+    type(set_graph), intent(in)  :: y_dom, q_dom
+    type(set_map)  , intent(in)  :: sets
     real(dp)         , intent(in)  :: bar_y(:)
     real(dp)         , intent(out) :: out_q(:)
 
     integer :: i, j, row, col
 
-    if (size(bar_y) .ne. y_dom % size() .or. &
-         & size(out_q) .ne. q_dom % size()) then
+    if (size(bar_y) .ne. sets % size_of(y_dom) .or. &
+         & size(out_q) .ne. sets % size_of(q_dom)) then
        error stop 'constitution: every vector is sized by its domain'
     end if
 
     out_q = 0.0_dp
-    do i = 1, y_dom % size()
-       row = y_dom % member(i)
-       do j = 1, q_dom % size()
-          col = q_dom % member(j)
+    do i = 1, sets % size_of(y_dom)
+       row = sets % member_of(y_dom, i)
+       do j = 1, sets % size_of(q_dom)
+          col = sets % member_of(q_dom, j)
           if (jq % has([row, col])) then
-             out_q(q_dom % local_index(col)) = &
-                  & out_q(q_dom % local_index(col)) + &
-                  & coeff_state(row, col) * bar_y(y_dom % local_index(row))
+             out_q(sets % index_in(q_dom, col)) = &
+                  & out_q(sets % index_in(q_dom, col)) + &
+                  & coeff_state(row, col) * bar_y(sets % index_in(y_dom, row))
           end if
        end do
     end do
@@ -234,24 +254,25 @@ contains
   ! The parameter action: Rp dp, walking J_P.
   !===================================================================!
 
-  subroutine rp_forward(jp, y_dom, p_dom, dp_p, out_y)
+  subroutine rp_forward(jp, y_dom, p_dom, sets, dp_p, out_y)
 
     class(relation)  , intent(in)  :: jp
-    class(member_set), intent(in)  :: y_dom, p_dom
+    type(set_graph), intent(in)  :: y_dom, p_dom
+    type(set_map)  , intent(in)  :: sets
     real(dp)         , intent(in)  :: dp_p(:)
     real(dp)         , intent(out) :: out_y(:)
 
     integer :: i, j, row, col
 
     out_y = 0.0_dp
-    do i = 1, y_dom % size()
-       row = y_dom % member(i)
-       do j = 1, p_dom % size()
-          col = p_dom % member(j)
+    do i = 1, sets % size_of(y_dom)
+       row = sets % member_of(y_dom, i)
+       do j = 1, sets % size_of(p_dom)
+          col = sets % member_of(p_dom, j)
           if (jp % has([row, col])) then
-             out_y(y_dom % local_index(row)) = &
-                  & out_y(y_dom % local_index(row)) + &
-                  & coeff_param(row, col) * dp_p(p_dom % local_index(col))
+             out_y(sets % index_in(y_dom, row)) = &
+                  & out_y(sets % index_in(y_dom, row)) + &
+                  & coeff_param(row, col) * dp_p(sets % index_in(p_dom, col))
           end if
        end do
     end do
@@ -264,75 +285,78 @@ contains
   ! obtained without ever writing f_q^T down.
   !===================================================================!
 
-  subroutine fq_forward(fq, z_dom, q_dom, v_q, out_z)
+  subroutine fq_forward(fq, z_dom, q_dom, sets, v_q, out_z)
 
     class(relation)  , intent(in)  :: fq
-    class(member_set), intent(in)  :: z_dom, q_dom
+    type(set_graph), intent(in)  :: z_dom, q_dom
+    type(set_map)  , intent(in)  :: sets
     real(dp)         , intent(in)  :: v_q(:)
     real(dp)         , intent(out) :: out_z(:)
 
     integer :: i, j, row, col
 
     out_z = 0.0_dp
-    do i = 1, z_dom % size()
-       row = z_dom % member(i)
-       do j = 1, q_dom % size()
-          col = q_dom % member(j)
+    do i = 1, sets % size_of(z_dom)
+       row = sets % member_of(z_dom, i)
+       do j = 1, sets % size_of(q_dom)
+          col = sets % member_of(q_dom, j)
           if (fq % has([row, col])) then
-             out_z(z_dom % local_index(row)) = &
-                  & out_z(z_dom % local_index(row)) + &
+             out_z(sets % index_in(z_dom, row)) = &
+                  & out_z(sets % index_in(z_dom, row)) + &
                   & coeff_response_state(row, col) * &
-                  & v_q(q_dom % local_index(col))
+                  & v_q(sets % index_in(q_dom, col))
           end if
        end do
     end do
 
   end subroutine fq_forward
 
-  subroutine fq_reverse(fq, z_dom, q_dom, bar_z, out_q)
+  subroutine fq_reverse(fq, z_dom, q_dom, sets, bar_z, out_q)
 
     class(relation)  , intent(in)  :: fq
-    class(member_set), intent(in)  :: z_dom, q_dom
+    type(set_graph), intent(in)  :: z_dom, q_dom
+    type(set_map)  , intent(in)  :: sets
     real(dp)         , intent(in)  :: bar_z(:)
     real(dp)         , intent(out) :: out_q(:)
 
     integer :: i, j, row, col
 
     out_q = 0.0_dp
-    do i = 1, z_dom % size()
-       row = z_dom % member(i)
-       do j = 1, q_dom % size()
-          col = q_dom % member(j)
+    do i = 1, sets % size_of(z_dom)
+       row = sets % member_of(z_dom, i)
+       do j = 1, sets % size_of(q_dom)
+          col = sets % member_of(q_dom, j)
           if (fq % has([row, col])) then
-             out_q(q_dom % local_index(col)) = &
-                  & out_q(q_dom % local_index(col)) + &
+             out_q(sets % index_in(q_dom, col)) = &
+                  & out_q(sets % index_in(q_dom, col)) + &
                   & coeff_response_state(row, col) * &
-                  & bar_z(z_dom % local_index(row))
+                  & bar_z(sets % index_in(z_dom, row))
           end if
        end do
     end do
 
   end subroutine fq_reverse
 
-  subroutine fp_forward(fp, z_dom, p_dom, dp_p, out_z)
+  subroutine fp_forward(fp, z_dom, p_dom, sets, dp_p, out_z)
 
     class(relation)  , intent(in)  :: fp
-    class(member_set), intent(in)  :: z_dom, p_dom
+    type(set_graph), intent(in)  :: z_dom, p_dom
+    type(set_map)  , intent(in)  :: sets
     real(dp)         , intent(in)  :: dp_p(:)
     real(dp)         , intent(out) :: out_z(:)
 
     integer :: i, j, row, col
 
     out_z = 0.0_dp
-    do i = 1, z_dom % size()
-       row = z_dom % member(i)
-       do j = 1, p_dom % size()
-          col = p_dom % member(j)
+    do i = 1, sets % size_of(z_dom)
+       row = sets % member_of(z_dom, i)
+       do j = 1, sets % size_of(p_dom)
+          col = sets % member_of(p_dom, j)
           if (fp % has([row, col])) then
-             out_z(z_dom % local_index(row)) = &
-                  & out_z(z_dom % local_index(row)) + &
+             out_z(sets % index_in(z_dom, row)) = &
+                  & out_z(sets % index_in(z_dom, row)) + &
                   & coeff_response_param(row, col) * &
-                  & dp_p(p_dom % local_index(col))
+                  & dp_p(sets % index_in(p_dom, col))
           end if
        end do
     end do
@@ -344,34 +368,40 @@ contains
   ! f(q,p) = c^T q + dp, both assembled from the same actions.
   !===================================================================!
 
-  subroutine residual_of(jq, jp, y_dom, q_dom, p_dom, q_val, p_val, &
+  subroutine residual_of(jq, jp, y_dom, q_dom, p_dom, sets, q_val, p_val, &
        & out_y)
 
-    class(relation)  , intent(in)  :: jq, jp
-    class(member_set), intent(in)  :: y_dom, q_dom, p_dom
-    real(dp)         , intent(in)  :: q_val(:), p_val(:)
-    real(dp)         , intent(out) :: out_y(:)
+    class(relation), intent(in)  :: jq, jp
+    type(set_graph), intent(in)  :: y_dom, q_dom, p_dom
+    type(set_map)  , intent(in)  :: sets
+    real(dp)       , intent(in)  :: q_val(:), p_val(:)
+    real(dp)       , intent(out) :: out_y(:)
 
-    real(dp) :: from_state(y_dom % size()), from_param(y_dom % size())
+    real(dp), allocatable :: from_state(:), from_param(:)
 
-    call rq_forward(jq, y_dom, q_dom, q_val, from_state)
-    call rp_forward(jp, y_dom, p_dom, p_val, from_param)
+    allocate(from_state(sets % size_of(y_dom)), from_param(sets % size_of(y_dom)))
+    call rq_forward(jq, y_dom, q_dom, sets, q_val, from_state)
+    call rp_forward(jp, y_dom, p_dom, sets, p_val, from_param)
     out_y = from_state + from_param
 
   end subroutine residual_of
 
-  subroutine response_of(fq, fp, z_dom, q_dom, p_dom, q_val, p_val, &
+  subroutine response_of(fq, fp, z_dom, q_dom, p_dom, sets, q_val, p_val, &
        & out_z)
 
-    class(relation)  , intent(in)  :: fq, fp
-    class(member_set), intent(in)  :: z_dom, q_dom, p_dom
-    real(dp)         , intent(in)  :: q_val(:), p_val(:)
+    class(relation), intent(in)  :: fq, fp
+    type(set_graph), intent(in)  :: z_dom, q_dom, p_dom
+    type(set_map)  , intent(in)  :: sets
+    real(dp)       , intent(in)  :: q_val(:), p_val(:)
     real(dp)         , intent(out) :: out_z(:)
 
-    real(dp) :: from_state(z_dom % size()), from_param(z_dom % size())
+    real(dp), allocatable :: from_state(:), from_param(:)
 
-    call fq_forward(fq, z_dom, q_dom, q_val, from_state)
-    call fp_forward(fp, z_dom, p_dom, p_val, from_param)
+    allocate(from_state(sets % size_of(z_dom)), &
+         &   from_param(sets % size_of(z_dom)))
+
+    call fq_forward(fq, z_dom, q_dom, sets, q_val, from_state)
+    call fp_forward(fp, z_dom, p_dom, sets, p_val, from_param)
     out_z = from_state + from_param
 
   end subroutine response_of
@@ -382,39 +412,51 @@ contains
   !===================================================================!
 
   type(constituted_primal) function create_primal(jq, jp, q_dom, &
-       & y_dom, p_dom, p_val) result(this)
+       & y_dom, p_dom, p_val, sets) result(this)
     class(relation)  , intent(in) :: jq, jp
-    class(member_set), intent(in) :: q_dom, y_dom, p_dom
+    type(set_graph), intent(in) :: q_dom, y_dom, p_dom
+    type(set_map)  , intent(in) :: sets
     real(dp)         , intent(in) :: p_val(:)
     allocate(this % jq, source=jq)
     allocate(this % jp, source=jp)
-    allocate(this % q_dom, source=q_dom)
-    allocate(this % y_dom, source=y_dom)
-    allocate(this % p_dom, source=p_dom)
+    this % q_dom = q_dom ; this % n_q_dom = sets % size_of(q_dom)
+    call sets % extent_of(q_dom, this % c_q)
+    this % y_dom = y_dom ; this % n_y_dom = sets % size_of(y_dom)
+    call sets % extent_of(y_dom, this % c_y)
+    this % p_dom = p_dom ; this % n_p_dom = sets % size_of(p_dom)
+    call sets % extent_of(p_dom, this % c_p)
     this % p_val = p_val
   end function create_primal
 
   type(constituted_adjoint) function create_adjoint(jq, fq, y_dom, &
-       & q_dom, z_dom) result(this)
+       & q_dom, z_dom, sets) result(this)
     class(relation)  , intent(in) :: jq, fq
-    class(member_set), intent(in) :: y_dom, q_dom, z_dom
+    type(set_graph), intent(in) :: y_dom, q_dom, z_dom
+    type(set_map)  , intent(in) :: sets
     allocate(this % jq, source=jq)
     allocate(this % fq, source=fq)
-    allocate(this % y_dom, source=y_dom)
-    allocate(this % q_dom, source=q_dom)
-    allocate(this % z_dom, source=z_dom)
+    this % y_dom = y_dom ; this % n_y_dom = sets % size_of(y_dom)
+    call sets % extent_of(y_dom, this % c_y)
+    this % q_dom = q_dom ; this % n_q_dom = sets % size_of(q_dom)
+    call sets % extent_of(q_dom, this % c_q)
+    this % z_dom = z_dom ; this % n_z_dom = sets % size_of(z_dom)
+    call sets % extent_of(z_dom, this % c_z)
   end function create_adjoint
 
   type(constituted_tangent) function create_tangent(jq, jp, q_dom, &
-       & y_dom, p_dom, dp_val) result(this)
-    class(relation)  , intent(in) :: jq, jp
-    class(member_set), intent(in) :: q_dom, y_dom, p_dom
-    real(dp)         , intent(in) :: dp_val(:)
+       & y_dom, p_dom, dp_val, sets) result(this)
+    class(relation), intent(in) :: jq, jp
+    type(set_graph), intent(in) :: q_dom, y_dom, p_dom
+    type(set_map)  , intent(in) :: sets
+    real(dp)       , intent(in) :: dp_val(:)
     allocate(this % jq, source=jq)
     allocate(this % jp, source=jp)
-    allocate(this % q_dom, source=q_dom)
-    allocate(this % y_dom, source=y_dom)
-    allocate(this % p_dom, source=p_dom)
+    this % q_dom = q_dom ; this % n_q_dom = sets % size_of(q_dom)
+    call sets % extent_of(q_dom, this % c_q)
+    this % y_dom = y_dom ; this % n_y_dom = sets % size_of(y_dom)
+    call sets % extent_of(y_dom, this % c_y)
+    this % p_dom = p_dom ; this % n_p_dom = sets % size_of(p_dom)
+    call sets % extent_of(p_dom, this % c_p)
     this % dp_val = dp_val
   end function create_tangent
 
@@ -436,28 +478,34 @@ contains
     name = 'constituted tangent equation'
   end function tangent_name
 
-  subroutine primal_domain(this, input_graph, domain)
+  subroutine primal_domain(this, input_graph, domain, nentries)
     class(constituted_primal), intent(in) :: this
     class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
     associate (u1 => input_graph); end associate
-    allocate(domain, source=this % y_dom)
+    domain   = this % y_dom
+    nentries = this % n_y_dom
   end subroutine primal_domain
 
-  subroutine adjoint_domain(this, input_graph, domain)
+  subroutine adjoint_domain(this, input_graph, domain, nentries)
     class(constituted_adjoint), intent(in) :: this
     class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
     associate (u1 => input_graph); end associate
-    allocate(domain, source=this % q_dom)
+    domain   = this % q_dom
+    nentries = this % n_q_dom
   end subroutine adjoint_domain
 
-  subroutine tangent_domain(this, input_graph, domain)
+  subroutine tangent_domain(this, input_graph, domain, nentries)
     class(constituted_tangent), intent(in) :: this
     class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
     associate (u1 => input_graph); end associate
-    allocate(domain, source=this % y_dom)
+    domain   = this % y_dom
+    nentries = this % n_y_dom
   end subroutine tangent_domain
 
   !===================================================================!
@@ -472,25 +520,36 @@ contains
     class(graph_field), allocatable, intent(inout) :: output
 
     type(field)                    :: out
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
     real(dp), allocatable          :: q(:), r(:)
 
+    !--------------------------------------------------------------!
+    ! The action's own coordinates, rebound locally for this call.
+    ! Every constituted domain here enumerates 1..n.
+    !--------------------------------------------------------------!
+
+    type(set_map) :: mine
+
     associate (u1 => input_graph); end associate
+
+    call mine % bind(this % q_dom, this % c_q)
+    call mine % bind(this % y_dom, this % c_y)
+    call mine % bind(this % p_dom, this % c_p)
 
     if (.not. present(input_data)) then
        error stop 'constitution: the residual needs a state to judge'
     end if
-    call input_data(1) % domain(dom)
+    dom = input_data(1) % domain()
     if (.not. dom % same_as(this % q_dom)) then
        error stop 'constitution: the state must live on the state domain'
     end if
     call input_data(1) % get_real_vector(q)
 
-    allocate(r(this % y_dom % size()))
+    allocate(r(this % n_y_dom))
     call residual_of(this % jq, this % jp, this % y_dom, this % q_dom, &
-         & this % p_dom, q, this % p_val, r)
+         & this % p_dom, mine, q, this % p_val, r)
 
-    out = field('residual', this % y_dom)
+    out = field('residual', this % y_dom, this % n_y_dom)
     call out % set_real_vector(r)
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
@@ -512,29 +571,40 @@ contains
     class(graph_field), allocatable, intent(inout) :: output
 
     type(field)                    :: out
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
     real(dp), allocatable          :: lam(:), r(:), rhs(:), seed(:)
 
+    !--------------------------------------------------------------!
+    ! The action's own coordinates, rebound locally for this call.
+    ! Every constituted domain here enumerates 1..n.
+    !--------------------------------------------------------------!
+
+    type(set_map) :: mine
+
     associate (u1 => input_graph); end associate
+
+    call mine % bind(this % q_dom, this % c_q)
+    call mine % bind(this % y_dom, this % c_y)
+    call mine % bind(this % z_dom, this % c_z)
 
     if (.not. present(input_data)) then
        error stop 'constitution: the adjoint equation needs a covector to judge'
     end if
-    call input_data(1) % domain(dom)
+    dom = input_data(1) % domain()
     if (.not. dom % same_as(this % y_dom)) then
        error stop 'constitution: the covector must live on the residual-row domain'
     end if
     call input_data(1) % get_real_vector(lam)
 
-    allocate(r(this % q_dom % size()), rhs(this % q_dom % size()))
-    allocate(seed(this % z_dom % size()))
+    allocate(r(this % n_q_dom), rhs(this % n_q_dom))
+    allocate(seed(this % n_z_dom))
 
-    call rq_reverse(this % jq, this % y_dom, this % q_dom, lam, r)
+    call rq_reverse(this % jq, this % y_dom, this % q_dom, mine, lam, r)
 
     seed = 1.0_dp
-    call fq_reverse(this % fq, this % z_dom, this % q_dom, seed, rhs)
+    call fq_reverse(this % fq, this % z_dom, this % q_dom, mine, seed, rhs)
 
-    out = field('adjoint residual', this % q_dom)
+    out = field('adjoint residual', this % q_dom, this % n_q_dom)
     call out % set_real_vector(r - rhs)
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
@@ -554,27 +624,38 @@ contains
     class(graph_field), allocatable, intent(inout) :: output
 
     type(field)                    :: out
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
     real(dp), allocatable          :: qp(:), r(:), from_param(:)
 
+    !--------------------------------------------------------------!
+    ! The action's own coordinates, rebound locally for this call.
+    ! Every constituted domain here enumerates 1..n.
+    !--------------------------------------------------------------!
+
+    type(set_map) :: mine
+
     associate (u1 => input_graph); end associate
+
+    call mine % bind(this % q_dom, this % c_q)
+    call mine % bind(this % y_dom, this % c_y)
+    call mine % bind(this % p_dom, this % c_p)
 
     if (.not. present(input_data)) then
        error stop 'constitution: the tangent equation needs a direction to judge'
     end if
-    call input_data(1) % domain(dom)
+    dom = input_data(1) % domain()
     if (.not. dom % same_as(this % q_dom)) then
        error stop 'constitution: the state must live on the state domain'
     end if
     call input_data(1) % get_real_vector(qp)
 
-    allocate(r(this % y_dom % size()), from_param(this % y_dom % size()))
+    allocate(r(this % n_y_dom), from_param(this % n_y_dom))
 
-    call rq_forward(this % jq, this % y_dom, this % q_dom, qp, r)
-    call rp_forward(this % jp, this % y_dom, this % p_dom, &
+    call rq_forward(this % jq, this % y_dom, this % q_dom, mine, qp, r)
+    call rp_forward(this % jp, this % y_dom, this % p_dom, mine, &
          & this % dp_val, from_param)
 
-    out = field('tangent residual', this % y_dom)
+    out = field('tangent residual', this % y_dom, this % n_y_dom)
     call out % set_real_vector(r + from_param)
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)

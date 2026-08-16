@@ -30,15 +30,19 @@ program adjoint_level_1
   use adjoint_assert, only : report, verdict
   use adjoint_assert, only : VAR_P, VAR_U, VAR_V
   use adjoint_assert, only : TGT_R1, TGT_R2, TGT_F
-  use graph_carrier , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
   use graph_relation, only : stored_relation
 
   implicit none
 
-  type(counted_set)     :: v, t
+  type(set_graph)     :: v, t
   type(stored_relation) :: dep
   integer               :: table(2, 10)
   integer               :: nfail
+  type(set_map)     :: sets
 
   nfail = 0
 
@@ -46,8 +50,10 @@ program adjoint_level_1
   write(*,'(1x,a)') "adjoint tower . level 1 . dependency"
   write(*,'(1x,a)') "============================================="
 
-  v = counted_set('variables', 3)
-  t = counted_set('targets'  , 3)
+  call v % declare()
+  call sets % bind(v, counted_set_representation(3))
+  call t % declare()
+  call sets % bind(t, counted_set_representation(3))
 
   ! Nine facts - and the first handed twice.
   table(:,  1) = [TGT_R1, VAR_P]
@@ -61,7 +67,7 @@ program adjoint_level_1
   table(:,  9) = [TGT_F , VAR_V]
   table(:, 10) = [TGT_R1, VAR_P]
 
-  dep = stored_relation('dependency', [t, v], table)
+  dep = stored_relation('dependency', [t, v], table, sets)
 
   call check_signature(nfail)
   call check_complete_extension(nfail)
@@ -81,7 +87,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
 
     call report(dep % arity() .eq. 2, &
          & "the dependency is binary", nfail)
@@ -113,9 +119,9 @@ contains
          & "ten handed, nine held: a relation is a set", nfail)
 
     ok = .true.
-    do i = 1, t % size()
-       do j = 1, v % size()
-          ok = ok .and. dep % has([t % member(i), v % member(j)])
+    do i = 1, sets % size_of(t)
+       do j = 1, sets % size_of(v)
+          ok = ok .and. dep % has([sets % member_of(t, i), sets % member_of(v, j)])
        end do
     end do
     call report(ok, &
@@ -157,10 +163,10 @@ contains
     logical :: any_absent
 
     any_absent = .false.
-    do i = 1, t % size()
-       do j = 1, v % size()
+    do i = 1, sets % size_of(t)
+       do j = 1, sets % size_of(v)
           any_absent = any_absent .or. &
-               & .not. dep % has([t % member(i), v % member(j)])
+               & .not. dep % has([sets % member_of(t, i), sets % member_of(v, j)])
        end do
     end do
     call report(.not. any_absent, &

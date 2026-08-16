@@ -105,8 +105,8 @@ program visualization_level_7
   use iso_fortran_env      , only : dp => REAL64
   use visualization_assert , only : report, verdict
   use fractal_graph        , only : set_graph => graph
-  use graph_ordinary_view  , only : graph
-  use class_graph          , only : stored_graph
+  use graph_ordinary_view  , only : ordinary_graph
+  use class_graph          , only : ordinary_stored_graph
   use class_graph_stencil  , only : stencil_operator
   use class_graph_jacobi   , only : jacobi
   use production_pattern_renderer_fixture, only : pattern_picture
@@ -138,8 +138,8 @@ program visualization_level_7
   real(dp), parameter :: A_TIMES_ONE(N) = [5.0_dp, 7.0_dp, 7.0_dp]
 
   type(stencil_operator)    :: a
-  class(graph), allocatable :: pa
-  type(stored_graph)        :: h_empty
+  class(ordinary_graph), allocatable :: pa
+  type(ordinary_stored_graph)        :: h_empty
   type(jacobi)              :: on_match, on_empty
   type(set_map)     :: sets
   type(label_map)     :: labels
@@ -182,7 +182,7 @@ program visualization_level_7
   ! ---- two hosts, both of the right numerical dimension.
   !      H_match IS P_A - the most favourable host there is.
   !      H_empty has the same three vertices and no edges at all.
-  h_empty = stored_graph(N, tails=[integer ::], heads=[integer ::])
+  h_empty = ordinary_stored_graph(N, tails=[integer ::], heads=[integer ::])
   if (.not. sets % describes(h_empty % vertex_set())) &
        & call sets % bind(h_empty % vertex_set(), &
        &      counted_set_representation(h_empty % num_vertices()))
@@ -226,7 +226,7 @@ contains
   subroutine attach_to(solver, on)
 
     type(jacobi), intent(out) :: solver
-    class(graph), intent(in)  :: on
+    class(ordinary_graph), intent(in)  :: on
 
     type(set_graph) :: unknowns
 
@@ -311,7 +311,7 @@ contains
 
   subroutine say_edges(g)
 
-    class(graph), intent(in) :: g
+    class(ordinary_graph), intent(in) :: g
 
     integer :: e
 
@@ -382,7 +382,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(graph), allocatable :: again
+    class(ordinary_graph), allocatable :: again
 
     call report(pa % num_vertices() .eq. N .and. pa % num_edges() .eq. 7, &
          & "P_A has three vertices and seven arrows - one per stencil " // &
@@ -553,7 +553,7 @@ contains
 
   logical function same_pattern(p, q)
 
-    class(graph), intent(in) :: p, q
+    class(ordinary_graph), intent(in) :: p, q
 
     integer :: i, j
 
@@ -578,7 +578,7 @@ contains
   logical function properly_coloured(colours, coupling)
 
     integer     , intent(in) :: colours(:)
-    class(graph), intent(in) :: coupling
+    class(ordinary_graph), intent(in) :: coupling
 
     integer :: i, j
 

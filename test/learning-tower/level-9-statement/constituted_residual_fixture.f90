@@ -26,14 +26,13 @@ module constituted_residual_fixture
   use graph_set_map        , only : set_map
   use graph_set_representation, only : set_representation
   use graph_relation   , only : relation
-  ! graph_ordinary_view exports a type named graph too; the kernel
-  ! keeps the name and the ordinary view's is renamed at the door.
-  ! That collision is migration debt, recorded at its source.
+  ! The kernel's graph and the ordinary view's ordinary_graph are two
+  ! types with two names now, so nothing is renamed at this door.
   use fractal_graph        , only : graph
   use graph_relational_view, only : relational_binding, &
        & num_relations, relation_at
   use graph_operation_view, only : graph_operation
-  use graph_ordinary_view, only : grammar_graph => graph
+  use graph_ordinary_view, only : ordinary_graph
   use graph_field_calculus, only : graph_field
   use class_graph_field, only : field
   use learning_constitution_fixture, only : generated_residual
@@ -142,7 +141,7 @@ contains
 
   subroutine clr_domain(this, input_graph, domain, nentries)
     class(constituted_learning_residual), intent(in) :: this
-    class(grammar_graph), intent(in) :: input_graph
+    class(ordinary_graph), intent(in) :: input_graph
     type(set_graph), intent(out) :: domain
     integer        , intent(out) :: nentries
     integer         :: n_rows
@@ -154,7 +153,7 @@ contains
   subroutine clr_apply(this, input_graph, input_data, output)
 
     class(constituted_learning_residual), intent(in) :: this
-    class(grammar_graph), intent(in)                 :: input_graph
+    class(ordinary_graph), intent(in)                 :: input_graph
     class(graph_field), intent(in), optional         :: input_data(:)
     class(graph_field), allocatable, intent(inout)   :: output
 

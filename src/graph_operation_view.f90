@@ -101,13 +101,14 @@ module graph_operation_view
   !     |                                  calls it `graph` too
   !     graph_field  graph_field_calculus  the values it moves
   !
-  ! The rename survives here for one reason only: graph_ordinary_view
-  ! still calls its abstract type `graph`, so a module spelling
-  ! signatures in both must tell them apart at the door. When PR3
-  ! renames that type, this rename goes with it.
+  ! The rename survives here as a convenience, not a disambiguation:
+  ! graph_ordinary_view's abstract type is `ordinary_graph` now, so
+  ! nothing this module imports competes for the word `graph`. The
+  ! kernel's type is still renamed at the door because a signature
+  ! that says set_graph says WHICH question it is asking.
   !===================================================================!
 
-  use graph_ordinary_view , only : graph
+  use graph_ordinary_view , only : ordinary_graph
   use fractal_graph       , only : set_graph => graph
   use graph_field_calculus, only : graph_field
 
@@ -213,17 +214,17 @@ module graph_operation_view
 
      subroutine operation_domain_interface(this, input_graph, domain, &
           & nentries)
-       import :: graph_operation, graph, set_graph
+       import :: graph_operation, ordinary_graph, set_graph
        class(graph_operation), intent(in)  :: this
-       class(graph)          , intent(in)  :: input_graph
+       class(ordinary_graph)          , intent(in)  :: input_graph
        type(set_graph)       , intent(out) :: domain
        integer               , intent(out) :: nentries
      end subroutine operation_domain_interface
 
      subroutine operation_apply_interface(this, input_graph, input_data, output)
-       import :: graph_operation, graph, graph_field
+       import :: graph_operation, ordinary_graph, graph_field
        class(graph_operation), intent(in) :: this
-       class(graph), intent(in) :: input_graph
+       class(ordinary_graph), intent(in) :: input_graph
        class(graph_field), intent(in), optional :: input_data(:)
        class(graph_field), allocatable, intent(inout) :: output
      end subroutine operation_apply_interface
@@ -233,15 +234,15 @@ module graph_operation_view
      !===============================================================!
 
      pure logical function transform_on_graph_interface(this, input_graph)
-       import :: graph_transform, graph
+       import :: graph_transform, ordinary_graph
        class(graph_transform), intent(in) :: this
-       class(graph), intent(in) :: input_graph
+       class(ordinary_graph), intent(in) :: input_graph
      end function transform_on_graph_interface
 
      logical function transform_on_data_interface(this, input_graph, input_data)
-       import :: graph_transform, graph, graph_field
+       import :: graph_transform, ordinary_graph, graph_field
        class(graph_transform), intent(in) :: this
-       class(graph), intent(in) :: input_graph
+       class(ordinary_graph), intent(in) :: input_graph
        class(graph_field), intent(in) :: input_data
      end function transform_on_data_interface
 

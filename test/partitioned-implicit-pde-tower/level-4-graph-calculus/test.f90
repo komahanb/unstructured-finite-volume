@@ -56,9 +56,9 @@ program partitioned_pde_level_4
   use graph_set_map        , only : set_map
   use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_label_map      , only : label_map
-  use graph_ordinary_view    , only : graph
+  use graph_ordinary_view    , only : ordinary_graph
   use graph_binary_relation  , only : csr_relation
-  use class_graph            , only : stored_graph
+  use class_graph            , only : ordinary_stored_graph
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
   use chain_carriers_fixture , only : chain_carriers
   use chain_relations_fixture, only : tail_relation, head_relation, &
@@ -71,8 +71,8 @@ program partitioned_pde_level_4
   type(set_map)          :: sets
   type(csr_relation), target :: tail, head, own
   type(csr_relation)         :: tail_owner, head_owner
-  type(stored_graph)         :: g
-  class(graph), allocatable  :: g1, g2
+  type(ordinary_stored_graph)         :: g
+  class(ordinary_graph), allocatable  :: g1, g2
   integer                    :: nfail
 
   nfail = 0
@@ -90,7 +90,7 @@ program partitioned_pde_level_4
   tail_owner = derive_tail_owner(tail, own, sets)
   head_owner = derive_head_owner(head, own, sets)
 
-  g = stored_graph(6, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  g = ordinary_stored_graph(6, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
   call sets % bind(g % vertex_set(), &
        & counted_set_representation(g % num_vertices()))
   call sets % bind(g % edge_set(), &
@@ -111,7 +111,7 @@ contains
 
   subroutine cut(part, kpart)
 
-    class(graph), allocatable, intent(out) :: part
+    class(ordinary_graph), allocatable, intent(out) :: part
     integer                  , intent(in)  :: kpart
 
     type(partitioner) :: p
@@ -123,7 +123,7 @@ contains
 
   subroutine check_part_identity(part, kpart, nfail)
 
-    class(graph), intent(in)    :: part
+    class(ordinary_graph), intent(in)    :: part
     integer     , intent(in)    :: kpart
     integer     , intent(inout) :: nfail
 
@@ -132,7 +132,7 @@ contains
     write(tag,'(i1)') kpart
 
     select type (part)
-    type is (stored_graph)
+    type is (ordinary_stored_graph)
        call report(part % has_part_relation() .and. &
             &      part % num_parts() .eq. 2 .and. &
             &      part % id() .eq. kpart, &
@@ -150,7 +150,7 @@ contains
   subroutine check_maps_and_ownership(part, kpart, globals, &
        & borrowed_global, nfail)
 
-    class(graph), intent(in)    :: part
+    class(ordinary_graph), intent(in)    :: part
     integer     , intent(in)    :: kpart, globals(:), borrowed_global
     integer     , intent(inout) :: nfail
 
@@ -164,7 +164,7 @@ contains
     write(tag,'(i1)') kpart
 
     select type (part)
-    type is (stored_graph)
+    type is (ordinary_stored_graph)
 
        ok = part % num_vertices() .eq. size(globals)
        do i = 1, min(part % num_vertices(), size(globals))
@@ -267,14 +267,14 @@ contains
 
   logical function holds_global_edge(part, ge)
 
-    class(graph), intent(in) :: part
+    class(ordinary_graph), intent(in) :: part
     integer     , intent(in) :: ge
 
     integer :: i
 
     holds_global_edge = .false.
     select type (part)
-    type is (stored_graph)
+    type is (ordinary_stored_graph)
        do i = 1, part % num_edges()
           if (part % global_edge_index(i) .eq. ge) holds_global_edge = .true.
        end do
@@ -284,14 +284,14 @@ contains
 
   integer function owner_of_global_edge(part, ge)
 
-    class(graph), intent(in) :: part
+    class(ordinary_graph), intent(in) :: part
     integer     , intent(in) :: ge
 
     integer :: i
 
     owner_of_global_edge = 0
     select type (part)
-    type is (stored_graph)
+    type is (ordinary_stored_graph)
        do i = 1, part % num_edges()
           if (part % global_edge_index(i) .eq. ge) then
              owner_of_global_edge = part % edge_owner_part(i)

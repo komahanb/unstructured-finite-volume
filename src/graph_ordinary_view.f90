@@ -59,12 +59,12 @@ module graph_ordinary_view
   !===================================================================!
   ! THE DOMAIN IS A GRAPH, AND ITS INTERPRETATION IS THE CALLER'S.
   !
-  ! set_graph is the kernel's graph, renamed on import because the
-  ! abstract type below already owns the word `graph` in this module.
-  ! That collision is the last piece of migration debt in this file,
-  ! and it is a PR3 question: the type wants a name of its own, and
-  ! renaming it reaches every declaration site, which is redesign and
-  ! not this phase.
+  ! set_graph is the kernel's graph, renamed on import for one reason
+  ! only: this module and the kernel both speak of graphs, and a
+  ! reader of a signature must be able to tell which. The COLLISION is
+  ! gone - the abstract type below is `ordinary_graph` now, and no
+  ! other module lends a type called `graph` to anyone who reads this
+  ! one. What remains is a convenience rename, not a disambiguation.
   !
   ! A domain-producing symbol here answers WHICH set. Where the answer
   ! is a set the graph already holds, that is all it answers, and the
@@ -84,7 +84,7 @@ module graph_ordinary_view
 
   private
 
-  public :: graph
+  public :: ordinary_graph
 
   !===================================================================!
   ! GRAPH. The reader of structure.
@@ -149,7 +149,7 @@ module graph_ordinary_view
   ! concretion. The existing one is the contract's reason to exist.
   !===================================================================!
 
-  type, abstract :: graph
+  type, abstract :: ordinary_graph
 
    contains
 
@@ -207,7 +207,7 @@ module graph_ordinary_view
      procedure(graph_from_vertex_interface), deferred :: incoming_vertices
 
      !----------------------------------------------------------------!
-     ! LEGACY PARTITION FRAME - MOVES IN PR3.
+     ! LEGACY PARTITION FRAME - MOVES IN THE NEXT FRAME PR.
      !
      ! The frame's relations: counts, ownership, and the index maps
      ! both ways between a part and its whole. These eight are the
@@ -234,7 +234,7 @@ module graph_ordinary_view
      procedure(graph_owner_part_interface)       , deferred :: vertex_owner_part
      procedure(graph_owner_part_interface)       , deferred :: edge_owner_part
 
-  end type graph
+  end type ordinary_graph
 
   abstract interface
      !===============================================================!
@@ -242,13 +242,13 @@ module graph_ordinary_view
      !===============================================================!
 
      pure integer function graph_id_interface(this)
-       import :: graph
-       class(graph), intent(in) :: this
+       import :: ordinary_graph
+       class(ordinary_graph), intent(in) :: this
      end function graph_id_interface
 
      pure integer function graph_count_interface(this)
-       import :: graph
-       class(graph), intent(in) :: this
+       import :: ordinary_graph
+       class(ordinary_graph), intent(in) :: this
      end function graph_count_interface
 
      !---------------------------------------------------------------!
@@ -262,19 +262,19 @@ module graph_ordinary_view
      ! one out of an INTENT(IN) dummy is barred from a pure subprogram
      ! (F2018 C1594). Identity is still answered by value.
      type(set_graph) function set_graph_interface(this)
-       import :: graph, set_graph
-       class(graph), intent(in) :: this
+       import :: ordinary_graph, set_graph
+       class(ordinary_graph), intent(in) :: this
      end function set_graph_interface
 
      pure integer function graph_edge_end_interface(this, edge_index)
-       import :: graph
-       class(graph), intent(in) :: this
+       import :: ordinary_graph
+       class(ordinary_graph), intent(in) :: this
        integer, intent(in) :: edge_index
      end function graph_edge_end_interface
 
      pure logical function graph_edge_has_head_interface(this, edge_index)
-       import :: graph
-       class(graph), intent(in) :: this
+       import :: ordinary_graph
+       class(ordinary_graph), intent(in) :: this
        integer, intent(in) :: edge_index
      end function graph_edge_has_head_interface
 
@@ -302,8 +302,8 @@ module graph_ordinary_view
 
      subroutine graph_carved_set_interface(this, sets, labels, &
           & inclusions, members)
-       import :: graph, set_graph, set_map, label_map, inclusion_map
-       class(graph)       , intent(in)    :: this
+       import :: ordinary_graph, set_graph, set_map, label_map, inclusion_map
+       class(ordinary_graph)       , intent(in)    :: this
        type(set_map)      , intent(inout) :: sets
        type(label_map)    , intent(inout) :: labels
        type(inclusion_map), intent(inout) :: inclusions
@@ -312,8 +312,8 @@ module graph_ordinary_view
 
      subroutine graph_tagged_set_interface(this, tag, sets, labels, &
           & inclusions, members)
-       import :: graph, set_graph, set_map, label_map, inclusion_map
-       class(graph)       , intent(in)    :: this
+       import :: ordinary_graph, set_graph, set_map, label_map, inclusion_map
+       class(ordinary_graph)       , intent(in)    :: this
        character(len=*)   , intent(in)    :: tag
        type(set_map)      , intent(inout) :: sets
        type(label_map)    , intent(inout) :: labels
@@ -323,8 +323,8 @@ module graph_ordinary_view
 
      subroutine graph_part_set_interface(this, part_id, sets, labels, &
           & inclusions, members)
-       import :: graph, set_graph, set_map, label_map, inclusion_map
-       class(graph)       , intent(in)    :: this
+       import :: ordinary_graph, set_graph, set_map, label_map, inclusion_map
+       class(ordinary_graph)       , intent(in)    :: this
        integer            , intent(in)    :: part_id
        type(set_map)      , intent(inout) :: sets
        type(label_map)    , intent(inout) :: labels
@@ -337,8 +337,8 @@ module graph_ordinary_view
      !===============================================================!
 
      pure subroutine graph_from_vertex_interface(this, vertex_index, indices)
-       import :: graph
-       class(graph), intent(in) :: this
+       import :: ordinary_graph
+       class(ordinary_graph), intent(in) :: this
        integer, intent(in) :: vertex_index
        integer, allocatable, intent(out) :: indices(:)
      end subroutine graph_from_vertex_interface
@@ -359,8 +359,8 @@ module graph_ordinary_view
      !---------------------------------------------------------------!
 
      pure logical function graph_has_part_relation_interface(this)
-       import :: graph
-       class(graph), intent(in) :: this
+       import :: ordinary_graph
+       class(ordinary_graph), intent(in) :: this
      end function graph_has_part_relation_interface
 
      !---------------------------------------------------------------!
@@ -379,8 +379,8 @@ module graph_ordinary_view
      !---------------------------------------------------------------!
 
      pure integer function graph_global_id_interface(this, index)
-       import :: graph
-       class(graph), intent(in) :: this
+       import :: ordinary_graph
+       class(ordinary_graph), intent(in) :: this
        integer, intent(in) :: index
      end function graph_global_id_interface
 
@@ -392,8 +392,8 @@ module graph_ordinary_view
      !---------------------------------------------------------------!
 
      pure integer function graph_part_id_interface(this, global_index, part_id)
-       import :: graph
-       class(graph), intent(in) :: this
+       import :: ordinary_graph
+       class(ordinary_graph), intent(in) :: this
        integer, intent(in) :: global_index
        integer, intent(in) :: part_id
      end function graph_part_id_interface
@@ -409,8 +409,8 @@ module graph_ordinary_view
      !---------------------------------------------------------------!
 
      pure integer function graph_owner_part_interface(this, index)
-       import :: graph
-       class(graph), intent(in) :: this
+       import :: ordinary_graph
+       class(ordinary_graph), intent(in) :: this
        integer, intent(in) :: index
      end function graph_owner_part_interface
   end interface

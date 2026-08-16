@@ -22,9 +22,9 @@
 
 program test_graph_robustness
 
-  use class_graph, only : stored_graph
+  use class_graph, only : ordinary_stored_graph
   use iso_fortran_env, only : dp => REAL64
-  use graph_ordinary_view, only : graph
+  use graph_ordinary_view, only : ordinary_graph
   use graph_field_calculus, only : graph_field
   use graph_calculus , only : GRAPH_SIDE_VERTEX
   use fractal_graph  , only : set_graph => graph
@@ -155,12 +155,12 @@ contains
     integer, intent(inout) :: nfail
 
     type(fit) :: fitting
-    type(stored_graph) :: pair
+    type(ordinary_stored_graph) :: pair
     type(field)   :: positions
     class(graph_field), allocatable :: answer
     real(dp), allocatable :: w(:)
 
-    pair = stored_graph(2, tails=[integer ::], heads=[integer ::])
+    pair = ordinary_stored_graph(2, tails=[integer ::], heads=[integer ::])
     positions = field('positions', pair % vertex_set(), pair % num_vertices(), ncomp=3)
     call positions % set_real_vector([0.0_dp, 0.0_dp, 0.0_dp, &
          &                            0.5_dp, 0.0_dp, 0.0_dp])
@@ -198,7 +198,7 @@ contains
     type(fit)    :: wave
     type(fit)    :: poly
     type(pruner) :: gardener
-    type(stored_graph) :: trio, pair
+    type(ordinary_stored_graph) :: trio, pair
     type(field)   :: positions
     class(graph_field), allocatable :: answer
     real(dp), allocatable :: w(:)
@@ -211,7 +211,7 @@ contains
          & 0.4_dp, 0.0_dp, 0.0_dp, &
          & 0.8_dp, 0.0_dp, 0.0_dp]
 
-    trio = stored_graph(3, tails=[integer ::], heads=[integer ::])
+    trio = ordinary_stored_graph(3, tails=[integer ::], heads=[integer ::])
     positions = field('positions', trio % vertex_set(), trio % num_vertices(), ncomp=3)
     call positions % set_real_vector(pts)
 
@@ -233,7 +233,7 @@ contains
 
     ! Two collinear points: the pruner strikes what they cannot see,
     ! and the fit still lands the two-point theorem.
-    pair = stored_graph(2, tails=[integer ::], heads=[integer ::])
+    pair = ordinary_stored_graph(2, tails=[integer ::], heads=[integer ::])
     positions = field('positions', pair % vertex_set(), pair % num_vertices(), ncomp=3)
     call positions % set_real_vector([0.0_dp, 0.0_dp, 0.0_dp, &
          &                            0.5_dp, 0.0_dp, 0.0_dp])

@@ -18,7 +18,7 @@ module nonlinear_sample_support
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_operation_view, only : graph_operation
-  use graph_ordinary_view, only : graph
+  use graph_ordinary_view, only : ordinary_graph
   use graph_field_calculus, only : graph_field
   use graph_calculus     , only : GRAPH_SIDE_VERTEX
   ! An operation names a domain and counts it. It asks no membership,
@@ -49,7 +49,7 @@ contains
 
   subroutine nonlinear_sample_domain(this, input_graph, domain, nentries)
     class(nonlinear_sample), intent(in)    :: this
-    class(graph), intent(in)               :: input_graph
+    class(ordinary_graph), intent(in)               :: input_graph
     type(set_graph), intent(out) :: domain
     integer        , intent(out) :: nentries
     domain   = input_graph % all_edges()
@@ -59,7 +59,7 @@ contains
   subroutine nonlinear_sample_apply(this, input_graph, input_data, output)
 
     class(nonlinear_sample), intent(in)                 :: this
-    class(graph), intent(in)                            :: input_graph
+    class(ordinary_graph), intent(in)                            :: input_graph
     class(graph_field), intent(in), optional             :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
@@ -209,7 +209,7 @@ program test_graph_contract
   use graph_field_calculus  , only : GRAPH_FIELD_CHARACTER
   use graph_calculus        , only : GRAPH_SIDE_VERTEX
   use graph_calculus        , only : graph_functional
-  use class_graph           , only : stored_graph
+  use class_graph           , only : ordinary_stored_graph
   use class_graph_field     , only : field
   use class_graph_functional, only : functional
   use class_graph_reduction , only : reduction
@@ -220,7 +220,7 @@ program test_graph_contract
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
   use class_graph_partitioner, only : PARTITION_BREADTH_FIRST, PARTITION_ADOPTED
   use class_graph_assembler , only : assembler
-  use graph_ordinary_view   , only : graph
+  use graph_ordinary_view   , only : ordinary_graph
   use graph_field_calculus  , only : graph_field
   use class_graph_coarsener , only : coarsener, COARSEN_PAIRWISE, COARSEN_ADOPTED
   use class_graph_refiner   , only : refiner
@@ -316,7 +316,7 @@ contains
   subroutine describe(sets, g)
 
     type(set_map), intent(inout) :: sets
-    class(graph) , intent(in)    :: g
+    class(ordinary_graph) , intent(in)    :: g
 
     if (.not. sets % describes(g % vertex_set())) &
          & call sets % bind(g % vertex_set(), &
@@ -347,12 +347,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(stored_graph) :: g, h
+    type(ordinary_stored_graph) :: g, h
     type(set_graph)    :: vs, es, vs2
     type(set_map)      :: sets
 
-    g = stored_graph(3, tails=[1, 2], heads=[2, 3])
-    h = stored_graph(3, tails=[1, 2], heads=[2, 3])
+    g = ordinary_stored_graph(3, tails=[1, 2], heads=[2, 3])
+    h = ordinary_stored_graph(3, tails=[1, 2], heads=[2, 3])
 
     vs = g % vertex_set()
     es = g % edge_set()
@@ -659,9 +659,9 @@ contains
   ! and no imaginary cell sits on the far side of it.
   !===================================================================!
 
-  type(stored_graph) function diamond() result(g)
+  type(ordinary_stored_graph) function diamond() result(g)
 
-    g = stored_graph(4, tails=[1, 1, 2, 3, 4], heads=[2, 3, 4, 4, 0], &
+    g = ordinary_stored_graph(4, tails=[1, 1, 2, 3, 4], heads=[2, 3, 4, 4, 0], &
          &           etags=['none', 'none', 'none', 'none', 'wall'])
 
   end function diamond
@@ -674,7 +674,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(stored_graph) :: g
+    type(ordinary_stored_graph) :: g
     type(set_map)     :: sets
 
     g = diamond()
@@ -704,7 +704,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(stored_graph)                       :: g
+    type(ordinary_stored_graph)                       :: g
     type(set_graph) :: vs
     type(set_graph) :: es
     integer, allocatable                     :: indices(:)
@@ -770,7 +770,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(stored_graph)   :: g
+    type(ordinary_stored_graph)   :: g
     integer, allocatable :: indices(:)
     type(set_map)     :: sets
 
@@ -828,7 +828,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(stored_graph)                       :: g
+    type(ordinary_stored_graph)                       :: g
     type(set_graph) :: vs
     integer, allocatable                     :: indices(:)
     type(set_map)     :: sets
@@ -873,7 +873,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(stored_graph)                   :: g
+    type(ordinary_stored_graph)                   :: g
     type(set_graph)                 :: on
     type(field)                   :: f, vol
     type(reduction)                      :: rule
@@ -994,7 +994,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(stored_graph)                   :: g
+    type(ordinary_stored_graph)                   :: g
     type(set_graph)                 :: s1, s2
     type(field)                   :: f1, f2
     type(reduction)                      :: rule
@@ -1056,9 +1056,9 @@ contains
   ! long enough that a cut has somewhere to fall.
   !===================================================================!
 
-  type(stored_graph) function chain_of_six() result(g)
+  type(ordinary_stored_graph) function chain_of_six() result(g)
 
-    g = stored_graph(6, tails=[1, 2, 3, 4, 5], heads=[2, 3, 4, 5, 6])
+    g = ordinary_stored_graph(6, tails=[1, 2, 3, 4, 5], heads=[2, 3, 4, 5, 6])
 
   end function chain_of_six
 
@@ -1081,10 +1081,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(stored_graph)             :: g
+    type(ordinary_stored_graph)             :: g
     type(partitioner)              :: p
     type(assembler)                :: a
-    class(graph), allocatable      :: part, back
+    class(ordinary_graph), allocatable      :: part, back
     class(graph_field), allocatable :: pd, fd
     type(set_graph)           :: on
     type(field)             :: d
@@ -1162,9 +1162,9 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(stored_graph)                       :: g
+    type(ordinary_stored_graph)                       :: g
     type(partitioner)                        :: p
-    class(graph), allocatable                :: part
+    class(ordinary_graph), allocatable                :: part
     type(set_graph) :: vs
     integer, allocatable                     :: indices(:)
     integer                                  :: k, l, f, times(6)
@@ -1223,12 +1223,12 @@ contains
 
   logical function covers_once(g, rule, nparts) result(ok)
 
-    type(stored_graph), intent(in) :: g
+    type(ordinary_stored_graph), intent(in) :: g
     integer           , intent(in) :: rule
     integer           , intent(in) :: nparts
 
     type(partitioner)                        :: p
-    class(graph), allocatable                :: part
+    class(ordinary_graph), allocatable                :: part
     type(set_graph) :: vs
     integer, allocatable                     :: indices(:)
     integer                                  :: times(g % num_vertices())
@@ -1276,10 +1276,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(stored_graph)             :: g
+    type(ordinary_stored_graph)             :: g
     type(partitioner)              :: p
     type(assembler)                :: a
-    class(graph), allocatable      :: part
+    class(ordinary_graph), allocatable      :: part
     class(graph_field), allocatable :: pd, fd
     type(set_graph)           :: on
     type(field)             :: d
@@ -1338,10 +1338,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(stored_graph)                       :: g
+    type(ordinary_stored_graph)                       :: g
     type(partitioner)                        :: p
     type(reduction)                          :: rule
-    class(graph), allocatable                :: part
+    class(ordinary_graph), allocatable                :: part
     class(graph_field), allocatable           :: pd
     type(set_graph) :: vs
     class(graph_functional), allocatable     :: whole, piece, running, joined
@@ -1429,10 +1429,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(stored_graph)             :: g
+    type(ordinary_stored_graph)             :: g
     type(coarsener)                :: c
     type(refiner)                  :: r
-    class(graph), allocatable      :: coarse, fine
+    class(ordinary_graph), allocatable      :: coarse, fine
     class(graph_field), allocatable :: cd, fd
     type(set_graph)           :: on
     type(field)             :: d
@@ -1515,16 +1515,16 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(stored_graph)             :: one_cell, g
+    type(ordinary_stored_graph)             :: one_cell, g
     type(coarsener)                :: c
     type(assembler)                :: a
     type(partitioner)              :: p
-    class(graph), allocatable      :: out, part, back
+    class(ordinary_graph), allocatable      :: out, part, back
     integer, allocatable           :: no_edges(:)
     type(set_map)     :: sets
 
     allocate(no_edges(0))
-    one_cell = stored_graph(1, tails=no_edges, heads=no_edges)
+    one_cell = ordinary_stored_graph(1, tails=no_edges, heads=no_edges)
     call describe(sets, one_cell)
 
     ! A single cell is as coarse as a graph gets.
@@ -1587,7 +1587,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(stored_graph)                       :: ring, open_chain
+    type(ordinary_stored_graph)                       :: ring, open_chain
     type(differential_operator)         :: edge_term
     type(balance)                            :: bal
     class(graph_field), allocatable   :: y
@@ -1599,7 +1599,7 @@ contains
     type(set_map)     :: sets
 
     ! A closed ring: four cells, four faces, not a wall in sight.
-    ring = stored_graph(4, tails=[1, 2, 3, 4], heads=[2, 3, 4, 1])
+    ring = ordinary_stored_graph(4, tails=[1, 2, 3, 4], heads=[2, 3, 4, 1])
     call describe(sets, ring)
 
     edge_term = gradient(coefficient=1.0_dp)
@@ -1654,7 +1654,7 @@ contains
     ! faces are walls and their numbers leave the mesh. If the closed
     ! case passed only because the balance was returning zeros, this
     ! catches it.
-    open_chain = stored_graph(4, tails=[1, 2, 3, 4], heads=[2, 3, 4, 0])
+    open_chain = ordinary_stored_graph(4, tails=[1, 2, 3, 4], heads=[2, 3, 4, 0])
     call describe(sets, open_chain)
     ! Domains are identities now: the state must ride the graph it
     ! is applied against.
@@ -1679,7 +1679,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(stored_graph)                     :: g, split_mesh
+    type(ordinary_stored_graph)                     :: g, split_mesh
     type(walk)                             :: w
     class(graph_field), allocatable :: f
     integer, allocatable                   :: c(:)
@@ -1711,7 +1711,7 @@ contains
 
     ! The same must hold on a ring, where a naive alternating colouring
     ! would fail at the join if the count is odd.
-    split_mesh = stored_graph(5, tails=[1, 2, 3, 4, 5], heads=[2, 3, 4, 5, 1])
+    split_mesh = ordinary_stored_graph(5, tails=[1, 2, 3, 4, 5], heads=[2, 3, 4, 5, 1])
     call describe(sets, split_mesh)
     call w % apply(split_mesh, output=f)
     call f % get_integer_vector(c)
@@ -1746,7 +1746,7 @@ contains
 
     ! A mesh in two halves says so, and the unreachable half is not
     ! given a distance it does not have.
-    split_mesh = stored_graph(4, tails=[1, 3], heads=[2, 4])
+    split_mesh = ordinary_stored_graph(4, tails=[1, 3], heads=[2, 4])
     call describe(sets, split_mesh)
     call w % apply(split_mesh, output=f)
     call f % get_integer_vector(c)
@@ -1772,7 +1772,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(stored_graph)                     :: g7, g3, ring
+    type(ordinary_stored_graph)                     :: g7, g3, ring
     type(differential_operator)     :: op
     class(graph_field), allocatable :: yf
     type(set_graph)                   :: on
@@ -1785,7 +1785,7 @@ contains
     logical                                :: ok
     type(set_map)     :: sets
 
-    g7 = stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
+    g7 = ordinary_stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
     call describe(sets, g7)
     on = g7 % vertex_set()
     q  = field('q', on, sets % size_of(on))
@@ -1874,7 +1874,7 @@ contains
 
     ! Per-edge coefficients: three cells, weights 2 and 5, values
     ! 1, 2, 4. At the middle: 5*(4-2) - 2*(2-1) = 10 - 2 = 8.
-    g3 = stored_graph(3, tails=[1, 2], heads=[2, 3])
+    g3 = ordinary_stored_graph(3, tails=[1, 2], heads=[2, 3])
     call describe(sets, g3)
     q  = field('q', g3 % vertex_set(), g3 % num_vertices())
     call q % set_real_vector([1.0_dp, 2.0_dp, 4.0_dp])
@@ -1886,7 +1886,7 @@ contains
 
     ! Divergence of a given edge field: a ring with samples 1,2,3,4.
     ! Out minus in at each vertex: -3, 1, 1, 1.
-    ring = stored_graph(4, tails=[1,2,3,4], heads=[2,3,4,1])
+    ring = ordinary_stored_graph(4, tails=[1,2,3,4], heads=[2,3,4,1])
     call describe(sets, ring)
     eon = ring % edge_set()
     zf   = field('z', eon, sets % size_of(eon))
@@ -1931,7 +1931,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(stored_graph)                     :: g7
+    type(ordinary_stored_graph)                     :: g7
     type(differential_operator)     :: fwd, rev
     class(graph_field), allocatable :: yf
     type(set_graph)                   :: on
@@ -1941,7 +1941,7 @@ contains
     integer                                :: v
     type(set_map)     :: sets
 
-    g7 = stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
+    g7 = ordinary_stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
     call describe(sets, g7)
     on = g7 % vertex_set()
     qf = field('q', on, sets % size_of(on))
@@ -2007,7 +2007,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(stored_graph)                     :: border
+    type(ordinary_stored_graph)                     :: border
     type(differential_operator)     :: reduce_edges
     class(graph_field), allocatable :: yf
     type(set_graph)                     :: eon
@@ -2020,7 +2020,7 @@ contains
     ! a..d, vertex 5 for the face; every border edge points at the
     ! face, and every square edge agrees with the walk, so every
     ! orientation coefficient is one.
-    border = stored_graph(5, tails=[1, 2, 3, 4], heads=[5, 5, 5, 5])
+    border = ordinary_stored_graph(5, tails=[1, 2, 3, 4], heads=[5, 5, 5, 5])
     call describe(sets, border)
     eon = border % edge_set()
     zf     = field('z', eon, sets % size_of(eon))
@@ -2066,7 +2066,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(stored_graph)                     :: g7
+    type(ordinary_stored_graph)                     :: g7
     type(differential_operator)     :: op, fwd, rev
     class(graph_field), allocatable :: yf
     type(set_graph)                   :: on
@@ -2077,7 +2077,7 @@ contains
     logical                                :: ok
     type(set_map)     :: sets
 
-    g7 = stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
+    g7 = ordinary_stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
     call describe(sets, g7)
     on = g7 % vertex_set()
     qf = field('q', on, sets % size_of(on), ncomp=2)
@@ -2141,7 +2141,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(stored_graph)                     :: g
+    type(ordinary_stored_graph)                     :: g
     type(differential_operator)     :: fwd, rev
     class(graph_field), allocatable :: yf
     type(set_graph)                   :: on
@@ -2155,7 +2155,7 @@ contains
 
     ! Five vertices, four interior edges, and one boundary edge
     ! hanging off the last vertex.
-    g = stored_graph(5, tails=[1,2,3,4,5], heads=[2,3,4,5,0])
+    g = ordinary_stored_graph(5, tails=[1,2,3,4,5], heads=[2,3,4,5,0])
     call describe(sets, g)
     on = g % vertex_set()
     unit = field('e', on, sets % size_of(on))
@@ -2222,7 +2222,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(stored_graph)                     :: ring
+    type(ordinary_stored_graph)                     :: ring
     type(nonlinear_sample)                 :: formula
     type(differential_operator)     :: reduce_edges
     class(graph_field), allocatable   :: zf
@@ -2236,7 +2236,7 @@ contains
     integer                                :: e, t, h
     type(set_map)     :: sets
 
-    ring = stored_graph(4, tails=[1,2,3,4], heads=[2,3,4,1])
+    ring = ordinary_stored_graph(4, tails=[1,2,3,4], heads=[2,3,4,1])
     call describe(sets, ring)
     on = ring % vertex_set()
     qf   = field('q', on, sets % size_of(on))
@@ -2299,7 +2299,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(stored_graph)                     :: chain
+    type(ordinary_stored_graph)                     :: chain
     type(set_graph)                   :: on
     type(set_graph)                     :: eon
     type(field)                     :: uf, vf, wf
@@ -2315,7 +2315,7 @@ contains
     type(set_map)     :: sets
     complex(dp)                            :: cx
 
-    chain = stored_graph(4, tails=[1, 2, 3], heads=[2, 3, 4])
+    chain = ordinary_stored_graph(4, tails=[1, 2, 3], heads=[2, 3, 4])
     call describe(sets, chain)
     on = chain % vertex_set()
     eon = chain % edge_set()

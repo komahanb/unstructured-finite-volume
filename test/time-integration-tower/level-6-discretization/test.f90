@@ -71,10 +71,10 @@ program time_level_6
   use time_assert           , only : action_of
   use fractal_graph        , only : set_graph => graph
   use graph_set_map        , only : set_map
-  use graph_ordinary_view   , only : graph
+  use graph_ordinary_view   , only : ordinary_graph
   use graph_field_calculus  , only : graph_field
   use graph_binary_relation , only : csr_relation
-  use class_graph           , only : stored_graph
+  use class_graph           , only : ordinary_stored_graph
   use class_graph_field     , only : field
   use class_graph_step      , only : step_operator, backward_euler, bdf
   use time_carriers_fixture , only : time_carriers
@@ -90,7 +90,7 @@ program time_level_6
   type(set_map)          :: sets
   type(csr_relation), target :: tail, head, a1
   type(csr_relation)         :: a2
-  type(stored_graph)         :: ht
+  type(ordinary_stored_graph)         :: ht
   type(triangular_decay)     :: decay
   type(field)                :: qf
   integer                    :: nfail
@@ -109,7 +109,7 @@ program time_level_6
 
   ! The COMPATIBILITY HOST: five vertices, four edges, a chain -
   ! the same temporal extension as T, and emphatically not Q.
-  ht = stored_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
+  ht = ordinary_stored_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
 
   decay = triangular_decay(q, NQ)
   qf    = state_field(q)

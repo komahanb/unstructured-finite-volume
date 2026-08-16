@@ -19,7 +19,7 @@ program partitioned_pde_level_8_refusal
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : NV, Q_EXACT
   use graph_field_calculus, only : graph_field
-  use class_graph      , only : stored_graph
+  use class_graph      , only : ordinary_stored_graph
   use class_graph_field, only : field
   use class_graph_gmres, only : gmres
   use partitioned_shifted_laplacian_fixture, only : &
@@ -27,7 +27,7 @@ program partitioned_pde_level_8_refusal
 
   implicit none
 
-  type(stored_graph)                  :: g, g_alt
+  type(ordinary_stored_graph)                  :: g, g_alt
   type(partitioned_shifted_laplacian) :: composite
   type(gmres)                         :: solver
   type(field)                         :: q
@@ -39,8 +39,8 @@ program partitioned_pde_level_8_refusal
   end if
   call get_command_argument(1, which)
 
-  g     = stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
-  g_alt = stored_graph(NV, tails=[1,1,1,1,1], heads=[2,3,4,5,6])
+  g     = ordinary_stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  g_alt = ordinary_stored_graph(NV, tails=[1,1,1,1,1], heads=[2,3,4,5,6])
 
   composite = partitioned_shifted_laplacian(g)
 

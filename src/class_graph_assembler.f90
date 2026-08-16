@@ -60,7 +60,7 @@
 module class_graph_assembler
 
   use iso_fortran_env     , only : dp => REAL64
-  use graph_ordinary_view , only : graph
+  use graph_ordinary_view , only : ordinary_graph
   use graph_field_calculus, only : graph_field
   use fractal_graph      , only : set_graph => graph
   use graph_set_map      , only : set_map
@@ -68,7 +68,7 @@ module class_graph_assembler
   use graph_inclusion_map, only : inclusion_map, declared_subobject
   use graph_set_representation, only : listed_set_representation
   use graph_calculus      , only : graph_assembler
-  use class_graph         , only : stored_graph
+  use class_graph         , only : ordinary_stored_graph
   use class_graph_field   , only : field
 
   implicit none
@@ -121,7 +121,7 @@ contains
   pure logical function defined_on_graph(this, input_graph)
 
     class(assembler), intent(in) :: this
-    class(graph)    , intent(in) :: input_graph
+    class(ordinary_graph)    , intent(in) :: input_graph
 
     associate (u1 => this); end associate
 
@@ -138,7 +138,7 @@ contains
   logical function defined_on_data(this, input_graph, input_data)
 
     class(assembler) , intent(in) :: this
-    class(graph)     , intent(in) :: input_graph
+    class(ordinary_graph)     , intent(in) :: input_graph
     class(graph_field), intent(in) :: input_data
 
     defined_on_data = this % defined_on_graph(input_graph)
@@ -164,8 +164,8 @@ contains
   subroutine assemble_graph(this, part_graph, global_graph)
 
     class(assembler), intent(in)               :: this
-    class(graph)    , intent(in)               :: part_graph
-    class(graph)    , allocatable, intent(out) :: global_graph
+    class(ordinary_graph)    , intent(in)               :: part_graph
+    class(ordinary_graph)    , allocatable, intent(out) :: global_graph
 
     integer, allocatable :: tails(:), heads(:)
     integer :: ne, e, nv_global, l, biggest
@@ -193,7 +193,7 @@ contains
     end do
 
     allocate(global_graph, source = &
-         & stored_graph(nv_global, tails=tails, heads=heads, number=part_graph % id()))
+         & ordinary_stored_graph(nv_global, tails=tails, heads=heads, number=part_graph % id()))
 
   end subroutine assemble_graph
 
@@ -209,9 +209,9 @@ contains
        & sets, labels, inclusions, global_data)
 
     class(assembler) , intent(in)               :: this
-    class(graph)     , intent(in)               :: part_graph
+    class(ordinary_graph)     , intent(in)               :: part_graph
     class(graph_field), intent(in)               :: part_data
-    class(graph)     , intent(in)               :: global_graph
+    class(ordinary_graph)     , intent(in)               :: global_graph
     type(set_map)      , intent(inout)            :: sets
     type(label_map)    , intent(inout)            :: labels
     type(inclusion_map), intent(inout)            :: inclusions
@@ -264,10 +264,10 @@ contains
     type(field)        , intent(in)               :: part_data
     type(set_graph)    , intent(in)               :: dom
     integer            , intent(in)               :: n_dom
-    class(graph)       , intent(in)               :: part_graph
+    class(ordinary_graph)       , intent(in)               :: part_graph
     type(set_graph)    , intent(in)               :: part_carrier
     integer            , intent(in)               :: n_part_carrier
-    class(graph)       , intent(in)               :: global_graph
+    class(ordinary_graph)       , intent(in)               :: global_graph
     logical            , intent(in)               :: on_vertices
     type(set_map)      , intent(inout)            :: sets
     type(label_map)    , intent(inout)            :: labels
@@ -361,7 +361,7 @@ contains
 
   pure integer function global_of(part_graph, l, on_vertices)
 
-    class(graph), intent(in) :: part_graph
+    class(ordinary_graph), intent(in) :: part_graph
     integer     , intent(in) :: l
     logical     , intent(in) :: on_vertices
 
@@ -375,7 +375,7 @@ contains
 
   pure integer function owner_of(part_graph, l, on_vertices)
 
-    class(graph), intent(in) :: part_graph
+    class(ordinary_graph), intent(in) :: part_graph
     integer     , intent(in) :: l
     logical     , intent(in) :: on_vertices
 

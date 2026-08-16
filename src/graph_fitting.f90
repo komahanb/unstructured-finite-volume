@@ -37,7 +37,7 @@ module graph_fitting
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_operation_view, only : graph_operation
-  use graph_ordinary_view, only : graph
+  use graph_ordinary_view, only : ordinary_graph
   use graph_field_calculus, only : graph_field
   use fractal_graph      , only : set_graph => graph
   use graph_forms        , only : form
@@ -131,7 +131,7 @@ contains
   subroutine fit_domain(this, input_graph, domain, nentries)
 
     class(fit), intent(in)                 :: this
-    class(graph), intent(in)               :: input_graph
+    class(ordinary_graph), intent(in)               :: input_graph
     type(set_graph), intent(out) :: domain
     integer        , intent(out) :: nentries
 
@@ -150,7 +150,7 @@ contains
   subroutine fit_apply(this, input_graph, input_data, output)
 
     class(fit), intent(in)                         :: this
-    class(graph), intent(in)                       :: input_graph
+    class(ordinary_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 

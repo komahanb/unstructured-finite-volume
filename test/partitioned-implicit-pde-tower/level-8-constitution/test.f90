@@ -37,9 +37,9 @@ program partitioned_pde_level_8
   use partitioned_pde_assert, only : report, verdict
   use partitioned_pde_assert, only : NV, Q_EXACT
   use fractal_graph        , only : set_graph => graph
-  use graph_ordinary_view, only : graph
+  use graph_ordinary_view, only : ordinary_graph
   use graph_field_calculus, only : graph_field
-  use class_graph      , only : stored_graph
+  use class_graph      , only : ordinary_stored_graph
   use class_graph_field, only : field
   use shifted_laplacian_fixture, only : shifted_laplacian
   use partitioned_shifted_laplacian_fixture, only : &
@@ -54,7 +54,7 @@ program partitioned_pde_level_8
   real(dp), parameter :: E4(NV) = &
        & [0.0_dp, 0.0_dp, 0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp]
 
-  type(stored_graph)                  :: g
+  type(ordinary_stored_graph)                  :: g
   type(shifted_laplacian)             :: direct
   type(partitioned_shifted_laplacian) :: composite
   integer                             :: nfail
@@ -64,7 +64,7 @@ program partitioned_pde_level_8
   write(*,'(1x,a)') "partitioned pde tower . level 8 . constitution"
   write(*,'(1x,a)') "============================================="
 
-  g = stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  g = ordinary_stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
 
   ! STRUCTURAL PARTITION - once, here, and never again.
   composite = partitioned_shifted_laplacian(g)

@@ -23,12 +23,12 @@ program test_graph_marching
 
   use iso_fortran_env, only : dp => REAL64
   use graph_operation_view, only : graph_operation
-  use graph_ordinary_view, only : graph
+  use graph_ordinary_view, only : ordinary_graph
   use graph_field_calculus, only : graph_field
   use graph_calculus , only : GRAPH_SIDE_VERTEX
   use fractal_graph         , only : set_graph => graph
   use class_graph_field  , only : field
-  use class_graph        , only : stored_graph
+  use class_graph        , only : ordinary_stored_graph
   use class_graph_differential_operator, only : vertex_differential_operator
   use class_graph_differential_operator, only : differential_operator
   use class_graph_marcher, only : marcher, MARCH_BACKWARD, MARCH_BDF2
@@ -86,7 +86,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(marcher) :: clock
-    type(stored_graph) :: chain
+    type(ordinary_stored_graph) :: chain
     logical :: ordered
     integer :: e
 
@@ -115,12 +115,12 @@ contains
 
     type(marcher) :: clock
     type(set_graph) :: cells
-    type(stored_graph) :: lone
+    type(ordinary_stored_graph) :: lone
     type(differential_operator) :: decay
     real(dp) :: q(1), expected
     integer :: v
 
-    lone = stored_graph(1, tails=[integer ::], heads=[integer ::])
+    lone = ordinary_stored_graph(1, tails=[integer ::], heads=[integer ::])
     associate (u1 => cells, u2 => v)
     end associate
 
@@ -150,7 +150,7 @@ contains
 
     type(marcher) :: clock
     type(mandelbrot_law) :: law
-    type(stored_graph) :: points
+    type(ordinary_stored_graph) :: points
     type(set_graph) :: cells
     type(field) :: escape_field
     real(dp), allocatable :: q(:)
@@ -159,7 +159,7 @@ contains
     integer, parameter :: nv = 5, nmax = 30
 
     ! The five points, as a graph of lone cells.
-    points = stored_graph(nv, tails=[integer ::], heads=[integer ::])
+    points = ordinary_stored_graph(nv, tails=[integer ::], heads=[integer ::])
 
     law % creal = [0.0_dp, -1.0_dp, 1.0_dp, -2.0_dp, 0.0_dp]
     law % cimag = [0.0_dp,  0.0_dp, 0.0_dp,  0.0_dp, 2.0_dp]
@@ -211,11 +211,11 @@ contains
     integer, intent(inout) :: nfail
 
     type(marcher) :: clock
-    type(stored_graph) :: lone
+    type(ordinary_stored_graph) :: lone
     type(differential_operator) :: decay
     real(dp) :: q(1), expected, coarse_error, fine_error, ratio
 
-    lone  = stored_graph(1, tails=[integer ::], heads=[integer ::])
+    lone  = ordinary_stored_graph(1, tails=[integer ::], heads=[integer ::])
     decay = vertex_differential_operator(order=0, coefficient=1.0_dp)
 
     clock % rule = MARCH_BACKWARD
@@ -268,12 +268,12 @@ contains
     integer, intent(inout) :: nfail
 
     type(marcher) :: clock
-    type(stored_graph) :: pair, lone
+    type(ordinary_stored_graph) :: pair, lone
     type(differential_operator) :: decay
     real(dp) :: wide(2), tall(2), expected(2)
 
-    pair = stored_graph(2, tails=[integer ::], heads=[integer ::])
-    lone = stored_graph(1, tails=[integer ::], heads=[integer ::])
+    pair = ordinary_stored_graph(2, tails=[integer ::], heads=[integer ::])
+    lone = ordinary_stored_graph(1, tails=[integer ::], heads=[integer ::])
     decay = vertex_differential_operator(order=0, coefficient=1.0_dp)
 
     clock % rule = MARCH_BACKWARD
@@ -314,7 +314,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(marcher) :: clock
-    type(stored_graph) :: trio
+    type(ordinary_stored_graph) :: trio
     type(stencil_operator) :: forward_action, transposed
     real(dp) :: q(3), lambda(3), before, after
     integer , parameter :: rows(6) = [1, 1, 2, 2, 3, 3]
@@ -323,7 +323,7 @@ contains
          &                         0.3_dp, 0.7_dp]
     real(dp), parameter :: zeros(3) = [0.0_dp, 0.0_dp, 0.0_dp]
 
-    trio = stored_graph(3, tails=[integer ::], heads=[integer ::])
+    trio = ordinary_stored_graph(3, tails=[integer ::], heads=[integer ::])
 
     ! An unsymmetric statement and its transpose: rows and columns
     ! swapped, the stencil's own adjoint.
@@ -368,7 +368,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(marcher) :: clock
-    type(stored_graph) :: cell
+    type(ordinary_stored_graph) :: cell
     type(vdp_law)         :: law
     type(vdp_tangent_law) :: tangent
     type(vdp_adjoint_law) :: transposed
@@ -378,7 +378,7 @@ contains
     integer , parameter :: nsteps = 100
     integer :: n, i
 
-    cell = stored_graph(1, tails=[integer ::], heads=[integer ::])
+    cell = ordinary_stored_graph(1, tails=[integer ::], heads=[integer ::])
     clock % rule = 1
     clock % step = h
 

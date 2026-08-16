@@ -24,8 +24,8 @@
 program partition_law
 
   use iso_fortran_env      , only : dp => REAL64
-  use class_graph          , only : stored_graph
-  use graph_ordinary_view  , only : graph
+  use class_graph          , only : ordinary_stored_graph
+  use graph_ordinary_view  , only : ordinary_graph
   use graph_field_calculus , only : graph_field
   use class_graph_field    , only : field
   use fractal_graph      , only : set_graph => graph
@@ -70,9 +70,9 @@ program partition_law
 
 contains
 
-  type(stored_graph) function chain_of_six() result(g)
+  type(ordinary_stored_graph) function chain_of_six() result(g)
 
-    g = stored_graph(6, tails=[1, 2, 3, 4, 5], heads=[2, 3, 4, 5, 6])
+    g = ordinary_stored_graph(6, tails=[1, 2, 3, 4, 5], heads=[2, 3, 4, 5, 6])
 
   end function chain_of_six
 
@@ -93,10 +93,10 @@ contains
 
     integer, intent(in) :: nparts
 
-    type(stored_graph)        :: g
+    type(ordinary_stored_graph)        :: g
     type(partitioner)         :: p
     type(assembler)           :: a
-    class(graph), allocatable :: part, back
+    class(ordinary_graph), allocatable :: part, back
     integer                   :: k, e, f
     integer                   :: seen(5)
     logical                   :: sound
@@ -138,7 +138,7 @@ contains
 
   integer function whole_edge(g, t, h) result(which)
 
-    type(stored_graph), intent(in) :: g
+    type(ordinary_stored_graph), intent(in) :: g
     integer           , intent(in) :: t, h
 
     integer :: e
@@ -167,10 +167,10 @@ contains
 
     integer, intent(in) :: nparts
 
-    type(stored_graph)              :: g
+    type(ordinary_stored_graph)              :: g
     type(partitioner)               :: p
     type(assembler)                 :: a
-    class(graph), allocatable       :: part
+    class(ordinary_graph), allocatable       :: part
     class(graph_field), allocatable :: pd, fd
     type(set_graph)                 :: on
     type(field)                     :: d
@@ -245,10 +245,10 @@ contains
 
     integer, intent(in) :: nparts
 
-    type(stored_graph)              :: g
+    type(ordinary_stored_graph)              :: g
     type(partitioner)               :: p
     type(assembler)                 :: a
-    class(graph), allocatable       :: part
+    class(ordinary_graph), allocatable       :: part
     class(graph_field), allocatable :: pd, fd
     type(set_graph)                 :: on
     type(field)                     :: d
@@ -334,9 +334,9 @@ contains
 
     integer, intent(in) :: nparts
 
-    type(stored_graph)             :: g
+    type(ordinary_stored_graph)             :: g
     type(partitioner)              :: p
-    class(graph), allocatable      :: part
+    class(ordinary_graph), allocatable      :: part
     type(set_graph)                :: owned, borrowed
     type(set_map)                  :: sets
     type(label_map)                :: labels
@@ -398,10 +398,10 @@ contains
 
   subroutine one_part_is_restricted_identity()
 
-    type(stored_graph)        :: g
+    type(ordinary_stored_graph)        :: g
     type(partitioner)         :: p
     type(assembler)           :: a
-    class(graph), allocatable :: part, back
+    class(ordinary_graph), allocatable :: part, back
     integer                   :: e
     logical                   :: same, some_part_is_short
 

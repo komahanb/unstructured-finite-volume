@@ -55,13 +55,19 @@ program visualization_level_0
   use visualization_assert , only : X2_U, X2_V, X2_W
   use visualization_assert , only : X3_M, X3_N
   use visualization_assert , only : E1_1, E1_5, E2_1, E2_4, E3_1, E3_3
-  use graph_carrier        , only : counted_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
   use visualization_carriers_fixture, only : structural_carriers, label_for
 
   implicit none
 
-  type(counted_set) :: x0, x1, x2, x3, e1, e2, e3
-  type(counted_set) :: roll(7)
+  type(set_graph) :: x0, x1, x2, x3, e1, e2, e3
+  type(set_graph) :: roll(7)
+  type(set_map)     :: sets
+  type(label_map)     :: labels
   integer           :: nfail
 
   nfail = 0
@@ -70,7 +76,7 @@ program visualization_level_0
   write(*,'(1x,a)') "visualization tower . level 0 . carriers"
   write(*,'(1x,a)') "============================================="
 
-  call structural_carriers(x0, x1, x2, x3, e1, e2, e3)
+  call structural_carriers(x0, x1, x2, x3, e1, e2, e3, sets, labels)
   roll = [x0, x1, x2, x3, e1, e2, e3]
 
   call check_the_seven_exist(nfail)
@@ -95,17 +101,17 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(x0 % size() .eq. NX0 .and. x1 % size() .eq. NX1 .and. &
-         &      x2 % size() .eq. NX2 .and. x3 % size() .eq. NX3, &
+    call report(sets % size_of(x0) .eq. NX0 .and. sets % size_of(x1) .eq. NX1 .and. &
+         &      sets % size_of(x2) .eq. NX2 .and. sets % size_of(x3) .eq. NX3, &
          & "|X0|=4  |X1|=3  |X2|=3  |X3|=2 - the four state carriers " // &
          & "of the operator chain", nfail)
 
-    call report(e1 % size() .eq. NE1 .and. e2 % size() .eq. NE2 .and. &
-         &      e3 % size() .eq. NE3, &
+    call report(sets % size_of(e1) .eq. NE1 .and. sets % size_of(e2) .eq. NE2 .and. &
+         &      sets % size_of(e3) .eq. NE3, &
          & "|E1|=5  |E2|=4  |E3|=3 - the dependency OCCURRENCES, " // &
          & "first-class before any coefficient exists", nfail)
 
-    call report(x0 % name() .eq. 'X0' .and. e3 % name() .eq. 'E3', &
+    call report(labels % label_of(x0) .eq. 'X0' .and. labels % label_of(e3) .eq. 'E3', &
          & "each carrier carries the name it was declared with - " // &
          & "metadata for the reader, and no part of the mathematics", nfail)
 
@@ -151,12 +157,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(x1 % size() .eq. x2 % size() .and. &
+    call report(sets % size_of(x1) .eq. sets % size_of(x2) .and. &
          &      .not. x1 % same_as(x2), &
          & "|X1| = |X2| = 3, AND X1 IS NOT X2 - counting the same " // &
          & "is not being the same", nfail)
 
-    call report(x0 % size() .eq. e2 % size() .and. &
+    call report(sets % size_of(x0) .eq. sets % size_of(e2) .and. &
          &      .not. x0 % same_as(e2), &
          & "|X0| = |E2| = 4, and a state carrier is still not an " // &
          & "occurrence carrier", nfail)
@@ -178,7 +184,7 @@ contains
 
     everywhere = .true.
     do i = 1, 7
-       everywhere = everywhere .and. roll(i) % has(1)
+       everywhere = everywhere .and. sets % has_in(roll(i), 1)
     end do
 
     call report(everywhere, &
@@ -190,14 +196,14 @@ contains
          & "a, p, u, m, e11, e21 and e31 are all written 1 - SEVEN " // &
          & "OBJECTS WEARING ONE INTEGER", nfail)
 
-    call report(.not. x0 % has(NX0 + 1) .and. .not. x3 % has(NX3 + 1) .and. &
-         &      .not. e3 % has(NE3 + 1), &
+    call report(.not. sets % has_in(x0, NX0 + 1) .and. .not. sets % has_in(x3, NX3 + 1) .and. &
+         &      .not. sets % has_in(e3, NE3 + 1), &
          & "and each carrier refuses the member just past its last: " // &
          & "membership is the carrier's own answer", nfail)
 
-    call report(x0 % has(X0_D) .and. x1 % has(X1_R) .and. &
-         &      x2 % has(X2_W) .and. x3 % has(X3_N) .and. &
-         &      e1 % has(E1_5) .and. e2 % has(E2_4) .and. e3 % has(E3_3), &
+    call report(sets % has_in(x0, X0_D) .and. sets % has_in(x1, X1_R) .and. &
+         &      sets % has_in(x2, X2_W) .and. sets % has_in(x3, X3_N) .and. &
+         &      sets % has_in(e1, E1_5) .and. sets % has_in(e2, E2_4) .and. sets % has_in(e3, E3_3), &
          & "every named member of the specimen is held by the carrier " // &
          & "that names it", nfail)
 
@@ -219,11 +225,11 @@ contains
     forward  = .true.
     backward = .true.
     do i = 1, 7
-       do k = 1, roll(i) % size()
+       do k = 1, sets % size_of(roll(i))
           forward  = forward .and. &
-               &     (roll(i) % local_index(roll(i) % member(k)) .eq. k)
+               &     (sets % index_in(roll(i), sets % member_of(roll(i), k)) .eq. k)
           backward = backward .and. &
-               &     (roll(i) % member(roll(i) % local_index(k)) .eq. k)
+               &     (sets % member_of(roll(i), sets % index_in(roll(i), k)) .eq. k)
        end do
     end do
 
@@ -235,7 +241,7 @@ contains
          & "member(local_index(a)) = a on all seven carriers - and so " // &
          & "position and member determine each other", nfail)
 
-    call report(x0 % local_index(NX0 + 1) .eq. 0, &
+    call report(sets % index_in(x0, NX0 + 1) .eq. 0, &
          & "an outsider stands nowhere: local_index answers zero " // &
          & "rather than guessing", nfail)
 
@@ -252,25 +258,26 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set) :: nameless
+    type(set_graph) :: nameless
 
-    call report(label_for(x0, X0_A) .eq. 'a' .and. &
-         &      label_for(x0, X0_D) .eq. 'd' .and. &
-         &      label_for(x1, X1_Q) .eq. 'q' .and. &
-         &      label_for(x2, X2_W) .eq. 'w' .and. &
-         &      label_for(x3, X3_N) .eq. 'n', &
+    call report(label_for(x0, X0_A, labels) .eq. 'a' .and. &
+         &      label_for(x0, X0_D, labels) .eq. 'd' .and. &
+         &      label_for(x1, X1_Q, labels) .eq. 'q' .and. &
+         &      label_for(x2, X2_W, labels) .eq. 'w' .and. &
+         &      label_for(x3, X3_N, labels) .eq. 'n', &
          & "the state members are called a b c d / p q r / u v w / m n", &
          & nfail)
 
-    call report(label_for(e1, E1_5) .eq. 'e15' .and. &
-         &      label_for(e2, E2_4) .eq. 'e24' .and. &
-         &      label_for(e3, E3_3) .eq. 'e33', &
+    call report(label_for(e1, E1_5, labels) .eq. 'e15' .and. &
+         &      label_for(e2, E2_4, labels) .eq. 'e24' .and. &
+         &      label_for(e3, E3_3, labels) .eq. 'e33', &
          & "and the occurrences are called e11..e15 / e21..e24 / e31..e33", &
          & nfail)
 
-    nameless = counted_set('somewhere else', 3)
-    call report(label_for(nameless, 2) .eq. '2' .and. &
-         &      label_for(x0, NX0 + 1) .eq. '5', &
+    call nameless % declare()
+    call sets % bind(nameless, counted_set_representation(3))
+    call report(label_for(nameless, 2, labels) .eq. '2' .and. &
+         &      label_for(x0, NX0 + 1, labels) .eq. '5', &
          & "a carrier the fixture does not know gets its member " // &
          & "printed as the integer it is - nothing is invented", nfail)
 

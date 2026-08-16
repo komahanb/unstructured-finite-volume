@@ -70,7 +70,9 @@
 
 module production_pattern_renderer_fixture
 
-  use graph_carrier                 , only : member_set, counted_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
   use graph_relation                , only : relation
   use graph_grammar                 , only : graph
   use visualization_carriers_fixture, only : label_for
@@ -121,15 +123,16 @@ contains
   ! carrier, standing in both places, named as it named itself.
   !===================================================================!
 
-  function signature_of_pattern(p) result(text)
+  function signature_of_pattern(p, labels) result(text)
 
     class(graph), intent(in) :: p
+    type(label_map), intent(in) :: labels
 
     character(len=:), allocatable :: text
-    type(counted_set)             :: v
+    type(set_graph)             :: v
 
     v    = p % vertex_set()
-    text = carrier_name(v) // ' -> ' // carrier_name(v)
+    text = carrier_name(v, labels) // ' -> ' // carrier_name(v, labels)
 
   end function signature_of_pattern
 
@@ -138,16 +141,17 @@ contains
   ! may or may not be the same one.
   !===================================================================!
 
-  function signature_of_relation(r) result(text)
+  function signature_of_relation(r, labels) result(text)
 
     class(relation), intent(in) :: r
+    type(label_map), intent(in) :: labels
 
     character(len=:), allocatable  :: text
-    class(member_set), allocatable :: from, to
+    type(set_graph) :: from, to
 
     from = r % domain(1)
     to   = r % domain(2)
-    text = carrier_name(from) // ' -> ' // carrier_name(to)
+    text = carrier_name(from, labels) // ' -> ' // carrier_name(to, labels)
 
   end function signature_of_relation
 
@@ -160,12 +164,13 @@ contains
   ! it cannot, because |V| is a single number.
   !===================================================================!
 
-  logical function coordinate_shapes_fit(r, p)
+  logical function coordinate_shapes_fit(r, p, sets)
 
     class(relation), intent(in) :: r
     class(graph)   , intent(in) :: p
+    type(set_map)  , intent(in) :: sets
 
-    class(member_set), allocatable :: cols, rows
+    type(set_graph) :: cols, rows
 
     coordinate_shapes_fit = .false.
     if (r % arity() .ne. 2) return
@@ -173,8 +178,8 @@ contains
     cols = r % domain(1)
     rows = r % domain(2)
 
-    coordinate_shapes_fit = (cols % size() .eq. p % num_vertices()) .and. &
-         &                  (rows % size() .eq. p % num_vertices())
+    coordinate_shapes_fit = (sets % size_of(cols) .eq. p % num_vertices()) .and. &
+         &                  (sets % size_of(rows) .eq. p % num_vertices())
 
   end function coordinate_shapes_fit
 
@@ -183,27 +188,28 @@ contains
   ! proves ONLY that, and never that the two are the same object.
   !===================================================================!
 
-  logical function same_coordinate_pattern(r, p)
+  logical function same_coordinate_pattern(r, p, sets)
 
     class(relation), intent(in) :: r
     class(graph)   , intent(in) :: p
+    type(set_map)  , intent(in) :: sets
 
-    class(member_set), allocatable :: cols, rows
-    type(counted_set)              :: verts
+    type(set_graph) :: cols, rows
+    type(set_graph)              :: verts
     integer                        :: i, j
 
-    same_coordinate_pattern = coordinate_shapes_fit(r, p)
+    same_coordinate_pattern = coordinate_shapes_fit(r, p, sets)
     if (.not. same_coordinate_pattern) return
 
     cols  = r % domain(1)
     rows  = r % domain(2)
     verts = p % vertex_set()
 
-    do j = 1, cols % size()
-       do i = 1, rows % size()
+    do j = 1, sets % size_of(cols)
+       do i = 1, sets % size_of(rows)
           same_coordinate_pattern = same_coordinate_pattern .and. &
-               & (r % has([cols % member(j), rows % member(i)]) .eqv. &
-               &  production_has(p, verts % member(j), verts % member(i)))
+               & (r % has([sets % member_of(cols, j), sets % member_of(rows, i)]) .eqv. &
+               &  production_has(p, sets % member_of(verts, j), sets % member_of(verts, i)))
        end do
     end do
 
@@ -221,36 +227,38 @@ contains
   ! grid so no reader can mistake this for a typed relation.
   !===================================================================!
 
-  type(picture) function pattern_picture(p, title) result(pic)
+  type(picture) function pattern_picture(p, title, sets, labels) result(pic)
 
     class(graph)    , intent(in) :: p
     character(len=*), intent(in) :: title
+    type(set_map)  , intent(in) :: sets
+    type(label_map), intent(in) :: labels
 
-    type(counted_set) :: verts
+    type(set_graph) :: verts
     integer           :: stub, wide, i, j, at, n
 
     verts = p % vertex_set()
-    n     = verts % size()
+    n     = sets % size_of(verts)
 
-    stub = max(widest(verts), MIN_STUB) + 2
-    wide = widest(verts) + 1
+    stub = max(widest(verts, sets, labels), MIN_STUB) + 2
+    wide = widest(verts, sets, labels) + 1
 
     allocate(pic % line(3 + n))
     pic % line = repeat(' ', len(pic % line))
 
     call put(pic % line(1), 1, title)
-    call put(pic % line(2), 1, 'signature: ' // signature_of_pattern(p))
+    call put(pic % line(2), 1, 'signature: ' // signature_of_pattern(p, labels))
 
     do j = 1, n
        at = stub + (j - 1) * wide
-       call put(pic % line(3), at, label_for(verts, verts % member(j)))
+       call put(pic % line(3), at, label_for(verts, sets % member_of(verts, j), labels))
     end do
 
     do i = 1, n
-       call put(pic % line(3 + i), 1, label_for(verts, verts % member(i)))
+       call put(pic % line(3 + i), 1, label_for(verts, sets % member_of(verts, i), labels))
        do j = 1, n
           at = stub + (j - 1) * wide
-          if (production_has(p, verts % member(j), verts % member(i))) then
+          if (production_has(p, sets % member_of(verts, j), sets % member_of(verts, i))) then
              call put(pic % line(3 + i), at, FILLED)
           else
              call put(pic % line(3 + i), at, EMPTY)
@@ -264,26 +272,29 @@ contains
   ! Small mechanics, kept local so Level 4 need not export any.
   !===================================================================!
 
-  integer function widest(carrier)
+  integer function widest(carrier, sets, labels)
 
-    class(member_set), intent(in) :: carrier
+    type(set_graph), intent(in) :: carrier
+    type(set_map)  , intent(in) :: sets
+    type(label_map), intent(in) :: labels
 
     integer :: k
 
     widest = 1
-    do k = 1, carrier % size()
-       widest = max(widest, len(label_for(carrier, carrier % member(k))))
+    do k = 1, sets % size_of(carrier)
+       widest = max(widest, len(label_for(carrier, sets % member_of(carrier, k), labels)))
     end do
 
   end function widest
 
-  function carrier_name(carrier) result(text)
+  function carrier_name(carrier, labels) result(text)
 
-    class(member_set), intent(in) :: carrier
+    type(set_graph), intent(in) :: carrier
+    type(label_map), intent(in) :: labels
 
     character(len=:), allocatable :: text
 
-    text = carrier % name()
+    text = labels % label_of(carrier)
     if (len(text) .eq. 0) text = '?'
 
   end function carrier_name

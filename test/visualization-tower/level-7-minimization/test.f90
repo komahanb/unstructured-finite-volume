@@ -99,9 +99,12 @@
 
 program visualization_level_7
 
+  use graph_set_representation, only : counted_set_representation
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
   use iso_fortran_env      , only : dp => REAL64
   use visualization_assert , only : report, verdict
-  use graph_carrier        , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
   use graph_grammar        , only : graph
   use class_graph          , only : stored_graph
   use class_graph_stencil  , only : stencil_operator
@@ -138,6 +141,8 @@ program visualization_level_7
   class(graph), allocatable :: pa
   type(stored_graph)        :: h_empty
   type(jacobi)              :: on_match, on_empty
+  type(set_map)     :: sets
+  type(label_map)     :: labels
 
   integer , allocatable :: col_match(:), col_empty(:)
   real(dp), allocatable :: mv_match(:), mv_empty(:)
@@ -162,11 +167,32 @@ program visualization_level_7
 
   ! ---- the operator's OWN dependency structure, from production.
   call a % dependencies(pa)
+  if (.not. sets % describes(pa % vertex_set())) &
+       & call sets % bind(pa % vertex_set(), &
+       &      counted_set_representation(pa % num_vertices()))
+  if (.not. sets % describes(pa % edge_set())) &
+       & call sets % bind(pa % edge_set(), &
+       &      counted_set_representation(pa % num_edges()))
+  ! the production graph names its own two domains
+  if (.not. labels % labelled(pa % vertex_set())) &
+       & call labels % bind(pa % vertex_set(), 'vertices')
+  if (.not. labels % labelled(pa % edge_set())) &
+       & call labels % bind(pa % edge_set(), 'edges')
 
   ! ---- two hosts, both of the right numerical dimension.
   !      H_match IS P_A - the most favourable host there is.
   !      H_empty has the same three vertices and no edges at all.
   h_empty = stored_graph(N, tails=[integer ::], heads=[integer ::])
+  if (.not. sets % describes(h_empty % vertex_set())) &
+       & call sets % bind(h_empty % vertex_set(), &
+       &      counted_set_representation(h_empty % num_vertices()))
+  if (.not. sets % describes(h_empty % edge_set())) &
+       & call sets % bind(h_empty % edge_set(), &
+       &      counted_set_representation(h_empty % num_edges()))
+  if (.not. labels % labelled(h_empty % vertex_set())) &
+       & call labels % bind(h_empty % vertex_set(), 'vertices')
+  if (.not. labels % labelled(h_empty % edge_set())) &
+       & call labels % bind(h_empty % edge_set(), 'edges')
 
   call attach_to(on_match, pa)
   call attach_to(on_empty, h_empty)
@@ -202,14 +228,19 @@ contains
     type(jacobi), intent(out) :: solver
     class(graph), intent(in)  :: on
 
-    type(counted_set) :: unknowns
+    type(set_graph) :: unknowns
 
+    ! `on` is a production host whose carriers this scope must
+    ! describe before it can size anything on them.
     unknowns = on % vertex_set()
+    if (.not. sets % describes(unknowns)) &
+         & call sets % bind(unknowns, &
+         &      counted_set_representation(on % num_vertices()))
 
     ! Two seats, and the experiment varies only the first. `on` is
     ! where the action executes; `coupling` is which unknowns feed
     ! which, and the caller knows the stencil owns that axis.
-    call solver % attach(a, on, unknowns, coupling = pa)
+    call solver % attach(a, on, unknowns, sets % size_of(unknowns), coupling = pa)
 
   end subroutine attach_to
 
@@ -232,7 +263,7 @@ contains
     write(*,*)
 
     write(*,'(4x,a)') "OPERATOR DEPENDENCY P_A   (stencil % dependencies())"
-    pic = pattern_picture(pa, ''); call say_grid(pic)
+    pic = pattern_picture(pa, '', sets, labels); call say_grid(pic)
 
     write(*,'(4x,a)') "HOST H_match  = P_A"
     call say_edges(pa)
@@ -367,6 +398,17 @@ contains
          & "everything else is", nfail)
 
     call a % dependencies(again)
+    if (.not. sets % describes(again % vertex_set())) &
+         & call sets % bind(again % vertex_set(), &
+         &      counted_set_representation(again % num_vertices()))
+    if (.not. sets % describes(again % edge_set())) &
+         & call sets % bind(again % edge_set(), &
+         &      counted_set_representation(again % num_edges()))
+    ! the production graph names its own two domains
+    if (.not. labels % labelled(again % vertex_set())) &
+         & call labels % bind(again % vertex_set(), 'vertices')
+    if (.not. labels % labelled(again % edge_set())) &
+         & call labels % bind(again % edge_set(), 'edges')
     call report(same_pattern(pa, again), &
          & "P_A DOES NOT DEPEND ON A HOST - dependencies() reads the " // &
          & "stencil's own stored pattern, and answers the same twice", &

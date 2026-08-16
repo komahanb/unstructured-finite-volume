@@ -17,11 +17,11 @@
 !
 !      domain(1), domain(2)          which carriers this relation
 !                                    relates
-!      carrier % size()              how many rows, how many columns
-!      carrier % member(i)           WHICH member stands at position i
+!      sets % size_of(carrier)              how many rows, how many columns
+!      sets % member_of(carrier, i)           WHICH member stands at position i
 !      relation % has([col, row])    whether this cell is filled
 !      relation % name()             what to call the picture
-!      label_for(carrier, member)    what the reader calls a member
+!      label_for(carrier, member, labels)    what the reader calls a member
 !
 ! and nothing else. Point it at a relation it has never seen and it
 ! draws that one instead.
@@ -61,7 +61,9 @@
 
 module structural_renderer_fixture
 
-  use graph_carrier                 , only : member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
   use graph_relation                , only : relation
   use visualization_carriers_fixture, only : label_for
 
@@ -150,11 +152,13 @@ contains
   ! says which relation it is a picture of.
   !===================================================================!
 
-  type(picture) function sparsity_picture(r) result(pic)
+  type(picture) function sparsity_picture(r, sets, labels) result(pic)
 
     class(relation), intent(in) :: r
+    type(set_map)  , intent(in) :: sets
+    type(label_map), intent(in) :: labels
 
-    class(member_set), allocatable :: cols, rows
+    type(set_graph) :: cols, rows
     integer                        :: stub, wide, i, j, at
 
     if (r % arity() .ne. 2) then
@@ -164,27 +168,27 @@ contains
     cols = r % domain(1)
     rows = r % domain(2)
 
-    stub = max(widest(rows), MIN_STUB) + 2
-    wide = widest(cols) + 1
+    stub = max(widest(rows, sets, labels), MIN_STUB) + 2
+    wide = widest(cols, sets, labels) + 1
 
-    allocate(pic % line(2 + rows % size()))
+    allocate(pic % line(2 + sets % size_of(rows)))
     pic % line = repeat(' ', LINE)
 
     call put(pic % line(1), 1, r % name())
 
     ! The header: the domain's members, at their own positions.
-    do j = 1, cols % size()
+    do j = 1, sets % size_of(cols)
        at = stub + (j - 1) * wide
-       call put(pic % line(2), at, label_for(cols, cols % member(j)))
+       call put(pic % line(2), at, label_for(cols, sets % member_of(cols, j), labels))
     end do
 
     ! One line per member of the codomain, in its own order.
-    do i = 1, rows % size()
-       call put(pic % line(2 + i), 1, label_for(rows, rows % member(i)))
-       do j = 1, cols % size()
+    do i = 1, sets % size_of(rows)
+       call put(pic % line(2 + i), 1, label_for(rows, sets % member_of(rows, i), labels))
+       do j = 1, sets % size_of(cols)
           at = stub + (j - 1) * wide
           call put(pic % line(2 + i), at, &
-               &   glyph_at(r, cols % member(j), rows % member(i)))
+               &   glyph_at(r, sets % member_of(cols, j), sets % member_of(rows, i)))
        end do
     end do
 
@@ -222,12 +226,13 @@ contains
   ! which would happily let X1 hand over to X2.
   !===================================================================!
 
-  type(picture) function chain_picture(title, legs) result(pic)
+  type(picture) function chain_picture(title, legs, labels) result(pic)
 
     character(len=*), intent(in) :: title
     type(stage)     , intent(in) :: legs(:)
+    type(label_map), intent(in) :: labels
 
-    class(member_set), allocatable :: here, there
+    type(set_graph) :: here, there
     character(len=:) , allocatable :: text
     integer                        :: k
 
@@ -250,11 +255,11 @@ contains
     end do
 
     here = legs(1) % leg % domain(1)
-    text = carrier_name(here)
+    text = carrier_name(here, labels)
     do k = 1, size(legs)
        there = legs(k) % leg % domain(2)
        text  = text // ' --' // legs(k) % leg % name() // '--> ' // &
-            &  carrier_name(there)
+            &  carrier_name(there, labels)
     end do
 
     allocate(pic % line(2))
@@ -277,11 +282,13 @@ contains
   ! representations cannot tell different stories.
   !===================================================================!
 
-  type(picture) function dependency_listing(r) result(pic)
+  type(picture) function dependency_listing(r, sets, labels) result(pic)
 
     class(relation), intent(in) :: r
+    type(set_map)  , intent(in) :: sets
+    type(label_map), intent(in) :: labels
 
-    class(member_set), allocatable :: cols, rows
+    type(set_graph) :: cols, rows
     character(len=:) , allocatable :: text
     integer                        :: i, j
     logical                        :: any_reached
@@ -293,17 +300,17 @@ contains
     cols = r % domain(1)
     rows = r % domain(2)
 
-    allocate(pic % line(1 + cols % size()))
+    allocate(pic % line(1 + sets % size_of(cols)))
     pic % line = repeat(' ', LINE)
 
     call put(pic % line(1), 1, r % name())
 
-    do j = 1, cols % size()
-       text        = label_for(cols, cols % member(j)) // ' ->'
+    do j = 1, sets % size_of(cols)
+       text        = label_for(cols, sets % member_of(cols, j), labels) // ' ->'
        any_reached = .false.
-       do i = 1, rows % size()
-          if (r % has([cols % member(j), rows % member(i)])) then
-             text        = text // ' ' // label_for(rows, rows % member(i))
+       do i = 1, sets % size_of(rows)
+          if (r % has([sets % member_of(cols, j), sets % member_of(rows, i)])) then
+             text        = text // ' ' // label_for(rows, sets % member_of(rows, i), labels)
              any_reached = .true.
           end if
        end do
@@ -354,26 +361,29 @@ contains
   ! size.
   !===================================================================!
 
-  integer function widest(carrier)
+  integer function widest(carrier, sets, labels)
 
-    class(member_set), intent(in) :: carrier
+    type(set_graph), intent(in) :: carrier
+    type(set_map)  , intent(in) :: sets
+    type(label_map), intent(in) :: labels
 
     integer :: k
 
     widest = 1
-    do k = 1, carrier % size()
-       widest = max(widest, len(label_for(carrier, carrier % member(k))))
+    do k = 1, sets % size_of(carrier)
+       widest = max(widest, len(label_for(carrier, sets % member_of(carrier, k), labels)))
     end do
 
   end function widest
 
-  function carrier_name(carrier) result(text)
+  function carrier_name(carrier, labels) result(text)
 
-    class(member_set), intent(in) :: carrier
+    type(set_graph), intent(in) :: carrier
+    type(label_map), intent(in) :: labels
 
     character(len=:), allocatable :: text
 
-    text = carrier % name()
+    text = labels % label_of(carrier)
     if (len(text) .eq. 0) text = '?'
 
   end function carrier_name

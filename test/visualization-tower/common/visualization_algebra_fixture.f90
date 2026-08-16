@@ -11,18 +11,18 @@
 ! The repository's composition reads its arguments in the order the
 ! data flows, and its result in the order mathematics writes it:
 !
-!      compose_binary(P_AB, P_BC)  =  P_BC o P_AB
+!      compose_binary(P_AB, P_BC, sets)  =  P_BC o P_AB
 !
 ! so the FIRST argument is applied FIRST. Written out for the three
 ! derivations this tower needs:
 !
 !   mathematics                          Fortran
 !   -----------------------------------  ---------------------------
-!   D_k    = H_k o T_k^T                 compose_binary(T_k^T, H_k)
-!   D_2:1  = D_2 o D_1                   compose_binary(D_1, D_2)
+!   D_k    = H_k o T_k^T                 compose_binary(T_k^T, H_k, sets)
+!   D_2:1  = D_2 o D_1                   compose_binary(D_1, D_2, sets)
 !   D_rev  = D_1^T o D_2^T o D_3^T       compose_binary(
 !                                          compose_binary(D_3^T, D_2^T),
-!                                          D_1^T)
+!                                          D_1^T, sets)
 !
 ! The two directions of reading are genuinely opposite, and this
 ! comment is the only place in the tower where that is allowed to be
@@ -65,7 +65,8 @@
 
 module visualization_algebra_fixture
 
-  use graph_carrier         , only : member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
   use graph_relation        , only : relation
   use graph_binary_relation , only : binary_relation, csr_relation
   use graph_binary_relation , only : transposed_view, transpose_of
@@ -92,38 +93,40 @@ contains
   ! the nucleus's constructor that enforces it, not this file.
   !===================================================================!
 
-  type(csr_relation) function derive_dependency(label, tail, head) &
+  type(csr_relation) function derive_dependency(label, tail, head, sets) &
        & result(d)
 
     character(len=*)              , intent(in) :: label
     class(binary_relation), target, intent(in) :: tail
     class(relation)               , intent(in) :: head
+    type(set_map)  , intent(in) :: sets
 
     type(transposed_view) :: reads
 
     reads = transpose_of(tail)
-    d     = named(label, compose_binary(reads, head))
+    d     = named(label, compose_binary(reads, head, sets), sets)
 
   end function derive_dependency
 
   !===================================================================!
   ! One dependency after another:
   !
-  !      derive_composition(name, first, second)  =  second o first
+  !      derive_composition(name, first, second, sets)  =  second o first
   !
   ! The argument order is the order of TRAVERSAL, matching
   ! compose_binary; the name says so, so no caller has to remember
   ! which way the circle points.
   !===================================================================!
 
-  type(csr_relation) function derive_composition(label, first, second) &
+  type(csr_relation) function derive_composition(label, first, second, sets) &
        & result(d)
 
     character(len=*), intent(in) :: label
     class(relation) , intent(in) :: first
     class(relation) , intent(in) :: second
+    type(set_map)  , intent(in) :: sets
 
-    d = named(label, compose_binary(first, second))
+    d = named(label, compose_binary(first, second, sets), sets)
 
   end function derive_composition
 
@@ -140,15 +143,16 @@ contains
   ! ownership, and Level 2 checks that nothing else was.
   !===================================================================!
 
-  type(csr_relation) function materialized_transpose(label, r) result(rt)
+  type(csr_relation) function materialized_transpose(label, r, sets) result(rt)
 
     character(len=*)              , intent(in) :: label
     class(binary_relation), target, intent(in) :: r
+    type(set_map)  , intent(in) :: sets
 
     type(transposed_view) :: reversed
 
     reversed = transpose_of(r)
-    rt       = named(label, reversed)
+    rt       = named(label, reversed, sets)
 
   end function materialized_transpose
 
@@ -157,12 +161,13 @@ contains
   ! own domains, from its own tuples.
   !===================================================================!
 
-  type(csr_relation) function named(label, r) result(copy)
+  type(csr_relation) function named(label, r, sets) result(copy)
 
     character(len=*), intent(in) :: label
     class(relation) , intent(in) :: r
+    type(set_map)  , intent(in) :: sets
 
-    class(member_set), allocatable :: first, second
+    type(set_graph) :: first, second
     integer, allocatable           :: table(:,:)
 
     if (r % arity() .ne. 2) then
@@ -173,7 +178,7 @@ contains
     second = r % domain(2)
     call r % tuples(table)
 
-    copy = csr_relation(label, first, second, table)
+    copy = csr_relation(label, first, second, table, sets)
 
   end function named
 
@@ -190,7 +195,7 @@ contains
     class(relation), intent(in) :: r
     class(relation), intent(in) :: s
 
-    class(member_set), allocatable :: dr, ds
+    type(set_graph) :: dr, ds
     integer, allocatable           :: tr(:,:), ts(:,:)
     integer                        :: k, j
 

@@ -32,7 +32,10 @@ program visualization_level_9
 
   use iso_fortran_env      , only : dp => REAL64
   use visualization_assert , only : report, verdict
-  use graph_carrier        , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
   use graph_relation       , only : relation
   use graph_binary_relation, only : csr_relation
   use graph_grammar        , only : graph
@@ -62,7 +65,9 @@ program visualization_level_9
   real(dp), parameter :: A_TIMES_ONE(N) = [5.0_dp, 7.0_dp, 7.0_dp]
 
   ! ---- the relational half, as Gate A left it
-  type(counted_set)  :: x0, x1, x2, x3, e1, e2, e3
+  type(set_graph)  :: x0, x1, x2, x3, e1, e2, e3
+  type(set_map)     :: sets
+  type(label_map)     :: labels
   type(csr_relation) :: t2, h2, d2
   type(field)        :: w2
 
@@ -84,10 +89,10 @@ program visualization_level_9
   write(*,'(1x,a)') "visualization tower . level 9 . statement"
   write(*,'(1x,a)') "============================================="
 
-  call structural_carriers(x0, x1, x2, x3, e1, e2, e3)
-  call occurrences_of_a2(e2, x1, x2, t2, h2)
-  d2 = derive_dependency('D2', t2, h2)
-  w2 = coefficients_of_a2(e2)
+  call structural_carriers(x0, x1, x2, x3, e1, e2, e3, sets, labels)
+  call occurrences_of_a2(e2, x1, x2, t2, h2, sets)
+  d2 = derive_dependency('D2', t2, h2, sets)
+  w2 = coefficients_of_a2(e2, sets)
 
   a = stencil_operator(rows     = [1, 2, 3, 1, 2, 2, 3], &
        &               columns  = [1, 2, 3, 2, 1, 3, 2], &
@@ -96,14 +101,46 @@ program visualization_level_9
        &               constant = [0.0_dp, 0.0_dp, 0.0_dp], &
        &               label    = 'A')
   call a % dependencies(dependent)
+  if (.not. sets % describes(dependent % vertex_set())) &
+       & call sets % bind(dependent % vertex_set(), &
+       &      counted_set_representation(dependent % num_vertices()))
+  if (.not. sets % describes(dependent % edge_set())) &
+       & call sets % bind(dependent % edge_set(), &
+       &      counted_set_representation(dependent % num_edges()))
+  ! the production graph names its own two domains
+  if (.not. labels % labelled(dependent % vertex_set())) &
+       & call labels % bind(dependent % vertex_set(), 'vertices')
+  if (.not. labels % labelled(dependent % edge_set())) &
+       & call labels % bind(dependent % edge_set(), 'edges')
 
   clock = bdf(2, a, 0.5_dp)
   call clock % dependencies(independent)
+  if (.not. sets % describes(independent % vertex_set())) &
+       & call sets % bind(independent % vertex_set(), &
+       &      counted_set_representation(independent % num_vertices()))
+  if (.not. sets % describes(independent % edge_set())) &
+       & call sets % bind(independent % edge_set(), &
+       &      counted_set_representation(independent % num_edges()))
+  ! the production graph names its own two domains
+  if (.not. labels % labelled(independent % vertex_set())) &
+       & call labels % bind(independent % vertex_set(), 'vertices')
+  if (.not. labels % labelled(independent % edge_set())) &
+       & call labels % bind(independent % edge_set(), 'edges')
 
   context = stored_graph(N, tails=[integer ::], heads=[integer ::])
+  if (.not. sets % describes(context % vertex_set())) &
+       & call sets % bind(context % vertex_set(), &
+       &      counted_set_representation(context % num_vertices()))
+  if (.not. sets % describes(context % edge_set())) &
+       & call sets % bind(context % edge_set(), &
+       &      counted_set_representation(context % num_edges()))
+  if (.not. labels % labelled(context % vertex_set())) &
+       & call labels % bind(context % vertex_set(), 'vertices')
+  if (.not. labels % labelled(context % edge_set())) &
+       & call labels % bind(context % edge_set(), 'edges')
 
   call solver % attach(a, context, context % vertex_set(), &
-       &               coupling = dependent)
+       &               context % num_vertices(), coupling = dependent)
   call solver % matvec(X_PROBE, mv)
   call solver % sweep_order(colours)
   call solver % diagonal(d)
@@ -123,17 +160,17 @@ contains
     write(*,'(1x,a)') "---------------------------------------------"
 
     write(*,'(4x,a)') "INDEPENDENT-VARIABLE STENCIL"
-    pic = pattern_picture(independent, ''); call say_grid(pic, 2)
+    pic = pattern_picture(independent, '', sets, labels); call say_grid(pic, 2)
 
     write(*,'(4x,a)') "DEPENDENT-VARIABLE STENCIL"
-    pic = pattern_picture(dependent, ''); call say_grid(pic, 2)
+    pic = pattern_picture(dependent, '', sets, labels); call say_grid(pic, 2)
 
     write(*,'(4x,a)') "DEPENDENT-VARIABLE VALUES"
-    write(*,'(4x,a)') "signature: " // signature_of_relation(d2)
-    pic = valued_sparsity_picture(d2, t2, h2, e2, w2); call say_grid(pic, 2)
+    write(*,'(4x,a)') "signature: " // signature_of_relation(d2, labels)
+    pic = valued_sparsity_picture(d2, t2, h2, e2, w2, sets, labels); call say_grid(pic, 2)
 
     write(*,'(4x,a)') "EXECUTION CONTEXT"
-    pic = pattern_picture(context, ''); call say_grid(pic, 2)
+    pic = pattern_picture(context, '', sets, labels); call say_grid(pic, 2)
 
     write(*,'(4x,a)') "SOLVER STRUCTURE"
     write(*,'(8x,a)') "coupling ............ dependent-variable stencil"
@@ -199,7 +236,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: from, to
+    type(set_graph) :: from, to
     type(picture)                  :: valued
 
     ! ---- structure, from relations, with no numbers in it
@@ -210,7 +247,7 @@ contains
          & "occurrences, two declared carriers", nfail)
 
     ! ---- values, inhabiting that structure without defining it
-    valued = valued_sparsity_picture(d2, t2, h2, e2, w2)
+    valued = valued_sparsity_picture(d2, t2, h2, e2, w2, sets, labels)
     call report(valued % at(4) .eq. 'v          .   -2    .' .and. &
          &      d2 % has([2, 2]), &
          & "FIELD -> VALUES: the coefficients sit on the occurrences, " // &

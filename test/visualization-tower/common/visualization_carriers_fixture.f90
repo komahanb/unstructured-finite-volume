@@ -47,7 +47,11 @@
 
 module visualization_carriers_fixture
 
-  use graph_carrier, only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
 
   implicit none
 
@@ -62,19 +66,35 @@ contains
   ! and X1 is still not X2.
   !===================================================================!
 
-  subroutine structural_carriers(x0, x1, x2, x3, e1, e2, e3)
+  subroutine structural_carriers(x0, x1, x2, x3, e1, e2, e3, sets, labels)
 
-    type(counted_set), intent(out) :: x0, x1, x2, x3
-    type(counted_set), intent(out) :: e1, e2, e3
+    type(set_graph), intent(out)   :: x0, x1, x2, x3
+    type(set_graph), intent(out)   :: e1, e2, e3
+    type(set_map)  , intent(inout) :: sets
+    type(label_map), intent(inout) :: labels
 
-    x0 = counted_set('X0', 4)
-    x1 = counted_set('X1', 3)
-    x2 = counted_set('X2', 3)
-    x3 = counted_set('X3', 2)
+    call x0 % declare()
+    call sets   % bind(x0, counted_set_representation(4))
+    call labels % bind(x0, 'X0')
+    call x1 % declare()
+    call sets   % bind(x1, counted_set_representation(3))
+    call labels % bind(x1, 'X1')
+    call x2 % declare()
+    call sets   % bind(x2, counted_set_representation(3))
+    call labels % bind(x2, 'X2')
+    call x3 % declare()
+    call sets   % bind(x3, counted_set_representation(2))
+    call labels % bind(x3, 'X3')
 
-    e1 = counted_set('E1', 5)
-    e2 = counted_set('E2', 4)
-    e3 = counted_set('E3', 3)
+    call e1 % declare()
+    call sets   % bind(e1, counted_set_representation(5))
+    call labels % bind(e1, 'E1')
+    call e2 % declare()
+    call sets   % bind(e2, counted_set_representation(4))
+    call labels % bind(e2, 'E2')
+    call e3 % declare()
+    call sets   % bind(e3, counted_set_representation(3))
+    call labels % bind(e3, 'E3')
 
   end subroutine structural_carriers
 
@@ -82,15 +102,16 @@ contains
   ! What the reader calls one member of one carrier. Display only.
   !===================================================================!
 
-  function label_for(carrier, member) result(text)
+  function label_for(carrier, member, labels) result(text)
 
-    class(member_set), intent(in) :: carrier
-    integer          , intent(in) :: member
+    type(set_graph), intent(in) :: carrier
+    integer        , intent(in) :: member
+    type(label_map), intent(in) :: labels
 
     character(len=:), allocatable :: text
     character(len=12)             :: buf
 
-    select case (carrier % name())
+    select case (labels % label_of(carrier))
     case ('X0'); text = pick(['a', 'b', 'c', 'd'], member)
     case ('X1'); text = pick(['p', 'q', 'r'], member)
     case ('X2'); text = pick(['u', 'v', 'w'], member)

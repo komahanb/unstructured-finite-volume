@@ -44,7 +44,8 @@
 
 module visualization_relations_fixture
 
-  use graph_carrier        , only : member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
   use graph_binary_relation, only : csr_relation
   use visualization_assert , only : X0_A, X0_B, X0_C, X0_D
   use visualization_assert , only : X1_P, X1_Q, X1_R
@@ -69,24 +70,25 @@ contains
   !      e13 : b -> q
   !===================================================================!
 
-  subroutine occurrences_of_a1(e1, x0, x1, tail, head)
+  subroutine occurrences_of_a1(e1, x0, x1, tail, head, sets)
 
-    class(member_set) , intent(in)  :: e1, x0, x1
+    type(set_graph) , intent(in)  :: e1, x0, x1
     type(csr_relation), intent(out) :: tail, head
+    type(set_map)  , intent(in) :: sets
 
     tail = csr_relation('T1', e1, x0, reshape( &
          & [E1_1, X0_A, &
          &  E1_2, X0_B, &
          &  E1_3, X0_B, &
          &  E1_4, X0_C, &
-         &  E1_5, X0_D], [2, 5]))
+         &  E1_5, X0_D], [2, 5]), sets)
 
     head = csr_relation('H1', e1, x1, reshape( &
          & [E1_1, X1_P, &
          &  E1_2, X1_P, &
          &  E1_3, X1_Q, &
          &  E1_4, X1_Q, &
-         &  E1_5, X1_R], [2, 5]))
+         &  E1_5, X1_R], [2, 5]), sets)
 
   end subroutine occurrences_of_a1
 
@@ -97,22 +99,23 @@ contains
   !      e22 : q -> u        e24 : r -> w
   !===================================================================!
 
-  subroutine occurrences_of_a2(e2, x1, x2, tail, head)
+  subroutine occurrences_of_a2(e2, x1, x2, tail, head, sets)
 
-    class(member_set) , intent(in)  :: e2, x1, x2
+    type(set_graph) , intent(in)  :: e2, x1, x2
     type(csr_relation), intent(out) :: tail, head
+    type(set_map)  , intent(in) :: sets
 
     tail = csr_relation('T2', e2, x1, reshape( &
          & [E2_1, X1_P, &
          &  E2_2, X1_Q, &
          &  E2_3, X1_Q, &
-         &  E2_4, X1_R], [2, 4]))
+         &  E2_4, X1_R], [2, 4]), sets)
 
     head = csr_relation('H2', e2, x2, reshape( &
          & [E2_1, X2_U, &
          &  E2_2, X2_U, &
          &  E2_3, X2_V, &
-         &  E2_4, X2_W], [2, 4]))
+         &  E2_4, X2_W], [2, 4]), sets)
 
   end subroutine occurrences_of_a2
 
@@ -123,20 +126,21 @@ contains
   !      e32 : v -> n
   !===================================================================!
 
-  subroutine occurrences_of_a3(e3, x2, x3, tail, head)
+  subroutine occurrences_of_a3(e3, x2, x3, tail, head, sets)
 
-    class(member_set) , intent(in)  :: e3, x2, x3
+    type(set_graph) , intent(in)  :: e3, x2, x3
     type(csr_relation), intent(out) :: tail, head
+    type(set_map)  , intent(in) :: sets
 
     tail = csr_relation('T3', e3, x2, reshape( &
          & [E3_1, X2_U, &
          &  E3_2, X2_V, &
-         &  E3_3, X2_W], [2, 3]))
+         &  E3_3, X2_W], [2, 3]), sets)
 
     head = csr_relation('H3', e3, x3, reshape( &
          & [E3_1, X3_M, &
          &  E3_2, X3_N, &
-         &  E3_3, X3_N], [2, 3]))
+         &  E3_3, X3_N], [2, 3]), sets)
 
   end subroutine occurrences_of_a3
 

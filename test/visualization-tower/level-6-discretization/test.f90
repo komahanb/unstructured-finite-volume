@@ -84,7 +84,10 @@ program visualization_level_6
   use visualization_assert , only : X0_A, X0_B, X0_C, X0_D
   use visualization_assert , only : X1_P, X1_Q, X1_R
   use visualization_assert , only : X2_U, X2_V, X2_W
-  use graph_carrier        , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
   use graph_relation       , only : relation
   use graph_binary_relation, only : csr_relation
   use graph_grammar        , only : graph
@@ -108,7 +111,9 @@ program visualization_level_6
 
   implicit none
 
-  type(counted_set)      :: x0, x1, x2, x3, e1, e2, e3
+  type(set_graph)      :: x0, x1, x2, x3, e1, e2, e3
+  type(set_map)     :: sets
+  type(label_map)     :: labels
   type(csr_relation)     :: t1, h1, t2, h2, t3, h3
   type(csr_relation)     :: d1, d2, d3
 
@@ -127,29 +132,84 @@ program visualization_level_6
   write(*,'(1x,a)') "============================================="
 
   ! ---- the tower's own structure, untouched since Gate A.
-  call structural_carriers(x0, x1, x2, x3, e1, e2, e3)
-  call occurrences_of_a1(e1, x0, x1, t1, h1)
-  call occurrences_of_a2(e2, x1, x2, t2, h2)
-  call occurrences_of_a3(e3, x2, x3, t3, h3)
+  call structural_carriers(x0, x1, x2, x3, e1, e2, e3, sets, labels)
+  call occurrences_of_a1(e1, x0, x1, t1, h1, sets)
+  call occurrences_of_a2(e2, x1, x2, t2, h2, sets)
+  call occurrences_of_a3(e3, x2, x3, t3, h3, sets)
 
-  d1 = derive_dependency('D1', t1, h1)
-  d2 = derive_dependency('D2', t2, h2)
-  d3 = derive_dependency('D3', t3, h3)
+  d1 = derive_dependency('D1', t1, h1, sets)
+  d2 = derive_dependency('D2', t2, h2, sets)
+  d3 = derive_dependency('D3', t3, h3, sets)
 
   ! ---- production. CONSTRUCTED AND INTERROGATED, NEVER APPLIED.
   sten_d2   = d2_coordinate_stencil()
   sten_d1   = d1_coordinate_stencil()
   sten_diag = diagonal_stencil()
 
-  call sten_d2   % dependencies(pat_d2)
-  call sten_d1   % dependencies(pat_d1)
+  call sten_d2 % dependencies(pat_d2)
+  if (.not. sets % describes(pat_d2 % vertex_set())) &
+       & call sets % bind(pat_d2 % vertex_set(), &
+       &      counted_set_representation(pat_d2 % num_vertices()))
+  if (.not. sets % describes(pat_d2 % edge_set())) &
+       & call sets % bind(pat_d2 % edge_set(), &
+       &      counted_set_representation(pat_d2 % num_edges()))
+  ! the production graph names its own two domains
+  if (.not. labels % labelled(pat_d2 % vertex_set())) &
+       & call labels % bind(pat_d2 % vertex_set(), 'vertices')
+  if (.not. labels % labelled(pat_d2 % edge_set())) &
+       & call labels % bind(pat_d2 % edge_set(), 'edges')
+  call sten_d1 % dependencies(pat_d1)
+  if (.not. sets % describes(pat_d1 % vertex_set())) &
+       & call sets % bind(pat_d1 % vertex_set(), &
+       &      counted_set_representation(pat_d1 % num_vertices()))
+  if (.not. sets % describes(pat_d1 % edge_set())) &
+       & call sets % bind(pat_d1 % edge_set(), &
+       &      counted_set_representation(pat_d1 % num_edges()))
+  ! the production graph names its own two domains
+  if (.not. labels % labelled(pat_d1 % vertex_set())) &
+       & call labels % bind(pat_d1 % vertex_set(), 'vertices')
+  if (.not. labels % labelled(pat_d1 % edge_set())) &
+       & call labels % bind(pat_d1 % edge_set(), 'edges')
   call sten_diag % dependencies(pat_diag)
+  if (.not. sets % describes(pat_diag % vertex_set())) &
+       & call sets % bind(pat_diag % vertex_set(), &
+       &      counted_set_representation(pat_diag % num_vertices()))
+  if (.not. sets % describes(pat_diag % edge_set())) &
+       & call sets % bind(pat_diag % edge_set(), &
+       &      counted_set_representation(pat_diag % num_edges()))
+  ! the production graph names its own two domains
+  if (.not. labels % labelled(pat_diag % vertex_set())) &
+       & call labels % bind(pat_diag % vertex_set(), 'vertices')
+  if (.not. labels % labelled(pat_diag % edge_set())) &
+       & call labels % bind(pat_diag % edge_set(), 'edges')
 
   clock_d2   = bdf2_around(sten_d2)
   clock_diag = bdf2_around(sten_diag)
 
-  call clock_d2   % dependencies(motif_d2)
+  call clock_d2 % dependencies(motif_d2)
+  if (.not. sets % describes(motif_d2 % vertex_set())) &
+       & call sets % bind(motif_d2 % vertex_set(), &
+       &      counted_set_representation(motif_d2 % num_vertices()))
+  if (.not. sets % describes(motif_d2 % edge_set())) &
+       & call sets % bind(motif_d2 % edge_set(), &
+       &      counted_set_representation(motif_d2 % num_edges()))
+  ! the production graph names its own two domains
+  if (.not. labels % labelled(motif_d2 % vertex_set())) &
+       & call labels % bind(motif_d2 % vertex_set(), 'vertices')
+  if (.not. labels % labelled(motif_d2 % edge_set())) &
+       & call labels % bind(motif_d2 % edge_set(), 'edges')
   call clock_diag % dependencies(motif_diag)
+  if (.not. sets % describes(motif_diag % vertex_set())) &
+       & call sets % bind(motif_diag % vertex_set(), &
+       &      counted_set_representation(motif_diag % num_vertices()))
+  if (.not. sets % describes(motif_diag % edge_set())) &
+       & call sets % bind(motif_diag % edge_set(), &
+       &      counted_set_representation(motif_diag % num_edges()))
+  ! the production graph names its own two domains
+  if (.not. labels % labelled(motif_diag % vertex_set())) &
+       & call labels % bind(motif_diag % vertex_set(), 'vertices')
+  if (.not. labels % labelled(motif_diag % edge_set())) &
+       & call labels % bind(motif_diag % edge_set(), 'edges')
 
   call say_the_measurement()
 
@@ -174,38 +234,38 @@ contains
   subroutine say_the_measurement()
 
     type(picture)     :: pic
-    type(counted_set) :: verts
+    type(set_graph) :: verts
 
     write(*,'(1x,a)') "---------------------------------------------"
 
     write(*,'(4x,a)') "RELATIONAL D2"
-    write(*,'(4x,a)') "signature: " // signature_of_relation(d2)
-    pic = sparsity_picture(d2); call say_grid(pic, 2)
+    write(*,'(4x,a)') "signature: " // signature_of_relation(d2, labels)
+    pic = sparsity_picture(d2, sets, labels); call say_grid(pic, 2)
 
     write(*,'(4x,a)') "STENCIL dependencies()"
-    pic = pattern_picture(pat_d2, ''); call say_grid(pic, 2)
+    pic = pattern_picture(pat_d2, '', sets, labels); call say_grid(pic, 2)
 
     verts = carrier_of(pat_d2)
     call say_verdict("coordinate pattern equal", &
-         &           same_coordinate_pattern(d2, pat_d2))
+         &           same_coordinate_pattern(d2, pat_d2, sets))
     call say_verdict("typed source identity equal", verts % same_as(x1))
     call say_verdict("typed target identity equal", verts % same_as(x2))
     write(*,*)
 
     write(*,'(4x,a)') "RECTANGULAR D1"
-    write(*,'(4x,a)') "signature: " // signature_of_relation(d1)
+    write(*,'(4x,a)') "signature: " // signature_of_relation(d1, labels)
     write(*,'(4x,a,i0,a,i0,a)') "shape: ", NX1, " rows x ", NX0, " columns"
-    pic = sparsity_picture(d1); call say_grid(pic, 2)
+    pic = sparsity_picture(d1, sets, labels); call say_grid(pic, 2)
 
     write(*,'(4x,a)') "STENCIL dependencies() for the same occupancy"
-    pic = pattern_picture(pat_d1, ''); call say_grid(pic, 2)
+    pic = pattern_picture(pat_d1, '', sets, labels); call say_grid(pic, 2)
 
     call say_verdict("production contract preserves this typed signature", &
-         &           coordinate_shapes_fit(d1, pat_d1))
+         &           coordinate_shapes_fit(d1, pat_d1, sets))
     write(*,*)
 
     write(*,'(4x,a)') "BDF2 dependencies()"
-    pic = pattern_picture(motif_d2, ''); call say_grid(pic, 2)
+    pic = pattern_picture(motif_d2, '', sets, labels); call say_grid(pic, 2)
 
     call say_verdict("wrapped state pattern equal", &
          &           same_production_pattern(motif_d2, pat_d2))
@@ -261,15 +321,15 @@ contains
          & "production's dependencies() answers a graph of 3 vertices " // &
          & "and 4 edges - one edge per stencil coefficient", nfail)
 
-    call report(coordinate_shapes_fit(d2, pat_d2), &
+    call report(coordinate_shapes_fit(d2, pat_d2, sets), &
          & "and its vertex count matches BOTH of D2's carriers, so " // &
          & "the two can be laid over one another at all", nfail)
 
-    call report(same_coordinate_pattern(d2, pat_d2), &
+    call report(same_coordinate_pattern(d2, pat_d2, sets), &
          & "SAME COORDINATE PATTERN as D2 : X1 -> X2, cell by cell, " // &
          & "columns and rows in declaration order", nfail)
 
-    pic = pattern_picture(pat_d2, 'STENCIL')
+    pic = pattern_picture(pat_d2, 'STENCIL', sets, labels)
     call report(pic % at(3) .eq. '        1 2 3' .and. &
          &      pic % at(4) .eq. '1       # # .' .and. &
          &      pic % at(5) .eq. '2       . # .' .and. &
@@ -298,8 +358,8 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: from, to
-    type(counted_set)              :: verts
+    type(set_graph) :: from, to
+    type(set_graph)              :: verts
 
     verts = carrier_of(pat_d2)
     from  = d2 % domain(1)
@@ -314,13 +374,13 @@ contains
          & "production's pattern stands on a carrier that is NEITHER " // &
          & "X1 NOR X2 - it declared its own", nfail)
 
-    call report(signature_of_pattern(pat_d2) .eq. 'vertices -> vertices' .and. &
-         &      signature_of_relation(d2) .eq. 'X1 -> X2', &
+    call report(signature_of_pattern(pat_d2, labels) .eq. 'vertices -> vertices' .and. &
+         &      signature_of_relation(d2, labels) .eq. 'X1 -> X2', &
          & "ONE carrier in both places against TWO: the signatures " // &
          & "read 'vertices -> vertices' and 'X1 -> X2'", nfail)
 
-    call report(verts % size() .eq. NX1 .and. verts % size() .eq. NX2 .and. &
-         &      same_coordinate_pattern(d2, pat_d2), &
+    call report(sets % size_of(verts) .eq. NX1 .and. sets % size_of(verts) .eq. NX2 .and. &
+         &      same_coordinate_pattern(d2, pat_d2, sets), &
          & "SAME PIXELS, NOT THE SAME TYPED STRUCTURAL OBJECT - equal " // &
          & "occupancy, equal counts, and three distinct carriers", nfail)
 
@@ -335,7 +395,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: from, to
+    type(set_graph) :: from, to
     type(picture)                  :: pic
     integer                        :: j
     logical                        :: phantom_empty
@@ -343,7 +403,7 @@ contains
     from = d1 % domain(1)
     to   = d1 % domain(2)
 
-    call report(from % size() .eq. NX0 .and. to % size() .eq. NX1 .and. &
+    call report(sets % size_of(from) .eq. NX0 .and. sets % size_of(to) .eq. NX1 .and. &
          &      NX0 .ne. NX1, &
          & "D1 : X0 -> X1 is RECTANGULAR - four columns, three rows", &
          & nfail)
@@ -354,7 +414,7 @@ contains
          & "vertex count of 4, the only count that fits the columns", &
          & nfail)
 
-    call report(.not. coordinate_shapes_fit(d1, pat_d1), &
+    call report(.not. coordinate_shapes_fit(d1, pat_d1, sets), &
          & "AND THE SHAPES DO NOT FIT: |V| = 4 would have to be 3 as " // &
          & "well, and one number cannot be both", nfail)
 
@@ -365,7 +425,7 @@ contains
        phantom_empty = phantom_empty .and. .not. production_has(pat_d1, j, 4)
     end do
 
-    pic = pattern_picture(pat_d1, 'STENCIL')
+    pic = pattern_picture(pat_d1, 'STENCIL', sets, labels)
     call report(pic % rows() .eq. 3 + NX0 .and. phantom_empty .and. &
          &      pic % at(7) .eq. '4       . . . .', &
          & "so the picture has a FOURTH ROW that D1's codomain does " // &
@@ -378,7 +438,7 @@ contains
          & "its first three rows do carry D1's occupancy - the " // &
          & "arrows survived; the SIGNATURE did not", nfail)
 
-    call report(.not. same_coordinate_pattern(d1, pat_d1), &
+    call report(.not. same_coordinate_pattern(d1, pat_d1, sets), &
          & "and same_coordinate_pattern refuses the comparison rather " // &
          & "than padding D1 to make it fit", nfail)
 
@@ -408,7 +468,7 @@ contains
          & "and its arrows FAN IN on the newest instant: 1->3, 2->3, " // &
          & "3->3 - what the residual actually reads", nfail)
 
-    pic = pattern_picture(motif_d2, 'BDF2')
+    pic = pattern_picture(motif_d2, 'BDF2', sets, labels)
     call report(pic % at(4) .eq. '1       . . .' .and. &
          &      pic % at(5) .eq. '2       . . .' .and. &
          &      pic % at(6) .eq. '3       # # #', &
@@ -497,12 +557,12 @@ contains
     integer, intent(inout) :: nfail
 
     type(picture)     :: relational, production
-    type(counted_set) :: verts
+    type(set_graph) :: verts
     integer           :: k
     logical           :: grids_agree
 
-    relational = sparsity_picture(d2)
-    production = pattern_picture(pat_d2, 'STENCIL')
+    relational = sparsity_picture(d2, sets, labels)
+    production = pattern_picture(pat_d2, 'STENCIL', sets, labels)
 
     ! The relational picture is name + header + rows; the production
     ! one is title + signature + header + rows. Compare the ROWS,
@@ -528,7 +588,7 @@ contains
          & "AND THE OBJECTS DO NOT: three declared carriers stand " // &
          & "where the pictures show one shape", nfail)
 
-    call report(signature_of_relation(d2) .ne. signature_of_pattern(pat_d2), &
+    call report(signature_of_relation(d2, labels) .ne. signature_of_pattern(pat_d2, labels), &
          & "which is why every Level-6 picture carries its SIGNATURE " // &
          & "- the grid alone is exactly the part that cannot tell " // &
          & "them apart", nfail)
@@ -539,7 +599,7 @@ contains
   ! Helpers.
   !===================================================================!
 
-  type(counted_set) function carrier_of(p)
+  type(set_graph) function carrier_of(p)
 
     class(graph), intent(in) :: p
 

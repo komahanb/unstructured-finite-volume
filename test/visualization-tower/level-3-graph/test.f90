@@ -50,7 +50,12 @@ program visualization_level_3
   use visualization_assert , only : X1_P, X1_Q, X1_R
   use visualization_assert , only : X2_U, X2_V, X2_W
   use visualization_assert , only : X3_M, X3_N
-  use graph_carrier        , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation       , only : relation
   use graph_binary_relation, only : csr_relation, binary_relation
   use graph_binary_relation, only : transposed_view, transpose_of
@@ -69,7 +74,9 @@ program visualization_level_3
 
   implicit none
 
-  type(counted_set)              :: x0, x1, x2, x3, e1, e2, e3
+  type(set_graph)              :: x0, x1, x2, x3, e1, e2, e3
+  type(set_map)     :: sets
+  type(label_map)     :: labels
   type(csr_relation)     , target :: t1, h1, t2, h2, t3, h3
   type(graph)             , target :: g
   type(graph)             , target :: scell(7), selem(7)
@@ -84,10 +91,10 @@ program visualization_level_3
   write(*,'(1x,a)') "visualization tower . level 3 . relational graph"
   write(*,'(1x,a)') "============================================="
 
-  call structural_carriers(x0, x1, x2, x3, e1, e2, e3)
-  call occurrences_of_a1(e1, x0, x1, t1, h1)
-  call occurrences_of_a2(e2, x1, x2, t2, h2)
-  call occurrences_of_a3(e3, x2, x3, t3, h3)
+  call structural_carriers(x0, x1, x2, x3, e1, e2, e3, sets, labels)
+  call occurrences_of_a1(e1, x0, x1, t1, h1, sets)
+  call occurrences_of_a2(e2, x1, x2, t2, h2, sets)
+  call occurrences_of_a3(e3, x2, x3, t3, h3, sets)
 
   ! 'the operator chain A3 o A2 o A1': (S, P) as one sequence on each branch.
   call g % declare()
@@ -202,7 +209,7 @@ contains
     integer, intent(inout) :: nfail
 
     class(relation)  , pointer     :: r
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
     integer                        :: k, s
     logical                        :: closed
 
@@ -234,7 +241,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), pointer :: a, b
+    type(set_graph), pointer :: a, b
     integer                    :: i, j
     logical                    :: apart
 
@@ -269,16 +276,19 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set) :: union_like
+    type(set_graph) :: union_like
 
-    union_like = counted_set('V = X0 u X1 u X2 u X3', &
-         &                   NX0 + NX1 + NX2 + NX3)
+    ! A manufactured carrier: declared and described here so the
+    ! test can ask its size, and NOT held by the graph.
+    call union_like % declare()
+    call sets % bind(union_like, &
+         & counted_set_representation(NX0 + NX1 + NX2 + NX3))
 
     call report(.not. holds_set(g, bnd, union_like), &
          & "a manufactured twelve-member vertex carrier IS NOT HELD - " // &
          & "the chain was not collapsed to make it renderable", nfail)
 
-    call report(num_member_sets(g) .eq. 7 .and. union_like % size() .eq. 12, &
+    call report(num_member_sets(g) .eq. 7 .and. sets % size_of(union_like) .eq. 12, &
          & "the graph keeps seven typed domains where an ordinary " // &
          & "graph would want one untyped set of twelve", nfail)
 
@@ -337,12 +347,12 @@ contains
     gt2 => owned_binary(t2); gh2 => owned_binary(h2)
     gt3 => owned_binary(t3); gh3 => owned_binary(h3)
 
-    gd1 = derive_dependency('D1', gt1, gh1)
-    gd2 = derive_dependency('D2', gt2, gh2)
-    gd3 = derive_dependency('D3', gt3, gh3)
+    gd1 = derive_dependency('D1', gt1, gh1, sets)
+    gd2 = derive_dependency('D2', gt2, gh2, sets)
+    gd3 = derive_dependency('D3', gt3, gh3, sets)
 
-    gd21 = derive_composition('D2:1', gd1,  gd2)
-    gd31 = derive_composition('D3:1', gd21, gd3)
+    gd21 = derive_composition('D2:1', gd1,  gd2, sets)
+    gd31 = derive_composition('D3:1', gd21, gd3, sets)
 
     call report(gd1 % num_tuples() .eq. ND1 .and. &
          &      gd2 % num_tuples() .eq. ND2 .and. &
@@ -363,12 +373,12 @@ contains
          & "the chain without storing it", nfail)
 
     ! The reverse chain too, from the same owned primitives.
-    gd1t = materialized_transpose('D1^T', gd1)
-    gd2t = materialized_transpose('D2^T', gd2)
-    gd3t = materialized_transpose('D3^T', gd3)
-    gmid = derive_composition('D2^T o D3^T', gd3t, gd2t)
-    grev = derive_composition('Drev', gmid, gd1t)
-    gd31t = materialized_transpose('D3:1^T', gd31)
+    gd1t = materialized_transpose('D1^T', gd1, sets)
+    gd2t = materialized_transpose('D2^T', gd2, sets)
+    gd3t = materialized_transpose('D3^T', gd3, sets)
+    gmid = derive_composition('D2^T o D3^T', gd3t, gd2t, sets)
+    grev = derive_composition('Drev', gmid, gd1t, sets)
+    gd31t = materialized_transpose('D3:1^T', gd31, sets)
 
     call report(same_extension(grev, gd31t), &
          & "and the reverse chain closes on the graph's own relations " // &
@@ -423,14 +433,14 @@ contains
 
   logical function sizes_kept()
 
-    class(member_set), pointer :: c
+    type(set_graph), pointer :: c
     integer                    :: want(7), k
 
     want = [NX0, NX1, NX2, NX3, NE1, NE2, NE3]
     sizes_kept = .true.
     do k = 1, 7
        c => member_set_at(g, bnd, k)
-       sizes_kept = sizes_kept .and. (c % size() .eq. want(k))
+       sizes_kept = sizes_kept .and. (sets % size_of(c) .eq. want(k))
     end do
 
   end function sizes_kept
@@ -473,7 +483,7 @@ contains
 
     class(relation), intent(in) :: r
 
-    class(member_set), allocatable :: first, second
+    type(set_graph) :: first, second
 
     runs_between_states = .false.
     if (r % arity() .ne. 2) return

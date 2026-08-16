@@ -54,7 +54,12 @@ program visualization_level_4
   use visualization_assert , only : X1_P, X1_Q, X1_R
   use visualization_assert , only : X2_U, X2_V, X2_W
   use visualization_assert , only : X3_M, X3_N
-  use graph_carrier        , only : counted_set, subset_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation       , only : relation
   use graph_binary_relation, only : csr_relation, binary_relation
   use fractal_graph        , only : graph, known_branch, null_branch
@@ -76,7 +81,9 @@ program visualization_level_4
 
   implicit none
 
-  type(counted_set)          :: x0, x1, x2, x3, e1, e2, e3
+  type(set_graph)          :: x0, x1, x2, x3, e1, e2, e3
+  type(set_map)     :: sets
+  type(label_map)     :: labels
   type(csr_relation)         :: t1, h1, t2, h2, t3, h3
   type(csr_relation), target :: d1, d2, d3, d21, d31
   type(csr_relation), target :: d1t, d2t, d3t
@@ -94,10 +101,10 @@ program visualization_level_4
   write(*,'(1x,a)') "visualization tower . level 4 . structural interpretation"
   write(*,'(1x,a)') "============================================="
 
-  call structural_carriers(x0, x1, x2, x3, e1, e2, e3)
-  call occurrences_of_a1(e1, x0, x1, t1, h1)
-  call occurrences_of_a2(e2, x1, x2, t2, h2)
-  call occurrences_of_a3(e3, x2, x3, t3, h3)
+  call structural_carriers(x0, x1, x2, x3, e1, e2, e3, sets, labels)
+  call occurrences_of_a1(e1, x0, x1, t1, h1, sets)
+  call occurrences_of_a2(e2, x1, x2, t2, h2, sets)
+  call occurrences_of_a3(e3, x2, x3, t3, h3, sets)
 
   ! 'the operator chain A3 o A2 o A1': (S, P) as one sequence on each branch.
   call g % declare()
@@ -138,20 +145,20 @@ program visualization_level_4
   g % branch(1) = known_branch(scell(1))
   g % branch(2) = known_branch(rcell(1))
 
-  d1 = derive_dependency('D1', t1, h1)
-  d2 = derive_dependency('D2', t2, h2)
-  d3 = derive_dependency('D3', t3, h3)
+  d1 = derive_dependency('D1', t1, h1, sets)
+  d2 = derive_dependency('D2', t2, h2, sets)
+  d3 = derive_dependency('D3', t3, h3, sets)
 
-  d21 = derive_composition('D2:1', d1,  d2)
-  d31 = derive_composition('D3:1', d21, d3)
+  d21 = derive_composition('D2:1', d1,  d2, sets)
+  d31 = derive_composition('D3:1', d21, d3, sets)
 
-  d1t = materialized_transpose('D1^T', d1)
-  d2t = materialized_transpose('D2^T', d2)
-  d3t = materialized_transpose('D3^T', d3)
+  d1t = materialized_transpose('D1^T', d1, sets)
+  d2t = materialized_transpose('D2^T', d2, sets)
+  d3t = materialized_transpose('D3^T', d3, sets)
 
-  middle = derive_composition('D2^T o D3^T', d3t, d2t)
-  drev   = derive_composition('D1^T o D2^T o D3^T', middle, d1t)
-  d31t   = materialized_transpose('D3:1^T', d31)
+  middle = derive_composition('D2^T o D3^T', d3t, d2t, sets)
+  drev   = derive_composition('D1^T o D2^T o D3^T', middle, d1t, sets)
+  d31t   = materialized_transpose('D3:1^T', d31, sets)
 
   call say_the_structure()
 
@@ -179,25 +186,25 @@ contains
 
     write(*,'(1x,a)') "---------------------------------------------"
 
-    pic = chain_picture('FORWARD CHAIN', [stage(d1), stage(d2), stage(d3)])
+    pic = chain_picture('FORWARD CHAIN', [stage(d1), stage(d2), stage(d3)], labels)
     call pic % emit()
     write(*,*)
 
-    pic = sparsity_picture(d1);   call pic % emit(); write(*,*)
-    pic = sparsity_picture(d2);   call pic % emit(); write(*,*)
-    pic = sparsity_picture(d3);   call pic % emit(); write(*,*)
-    pic = sparsity_picture(d21);  call pic % emit(); write(*,*)
-    pic = sparsity_picture(d31);  call pic % emit(); write(*,*)
+    pic = sparsity_picture(d1, sets, labels);   call pic % emit(); write(*,*)
+    pic = sparsity_picture(d2, sets, labels);   call pic % emit(); write(*,*)
+    pic = sparsity_picture(d3, sets, labels);   call pic % emit(); write(*,*)
+    pic = sparsity_picture(d21, sets, labels);  call pic % emit(); write(*,*)
+    pic = sparsity_picture(d31, sets, labels);  call pic % emit(); write(*,*)
 
     pic = chain_picture('STRUCTURAL REVERSE', &
-         &              [stage(d3t), stage(d2t), stage(d1t)])
+         &              [stage(d3t), stage(d2t), stage(d1t)], labels)
     call pic % emit()
     write(*,*)
 
-    pic = sparsity_picture(d31t); call pic % emit(); write(*,*)
-    pic = sparsity_picture(drev); call pic % emit(); write(*,*)
+    pic = sparsity_picture(d31t, sets, labels); call pic % emit(); write(*,*)
+    pic = sparsity_picture(drev, sets, labels); call pic % emit(); write(*,*)
 
-    pic = dependency_listing(d31); call pic % emit()
+    pic = dependency_listing(d31, sets, labels); call pic % emit()
 
     write(*,'(1x,a)') "---------------------------------------------"
 
@@ -214,18 +221,18 @@ contains
 
     type(picture) :: pic
 
-    pic = chain_picture('FORWARD CHAIN', [stage(d1), stage(d2), stage(d3)])
+    pic = chain_picture('FORWARD CHAIN', [stage(d1), stage(d2), stage(d3)], labels)
 
     call report(pic % at(2) .eq. 'X0 --D1--> X1 --D2--> X2 --D3--> X3', &
          & "FORWARD : X0 --D1--> X1 --D2--> X2 --D3--> X3", nfail)
 
-    pic = dependency_listing(d1)
+    pic = dependency_listing(d1, sets, labels)
     call report(pic % at(2) .eq. 'a -> p' .and. pic % at(3) .eq. 'b -> p q' .and. &
          &      pic % at(4) .eq. 'c -> q' .and. pic % at(5) .eq. 'd -> r', &
          & "and the same structure as a deterministic listing: " // &
          & "a->p, b->p q, c->q, d->r", nfail)
 
-    pic = dependency_listing(d31)
+    pic = dependency_listing(d31, sets, labels)
     call report(pic % at(2) .eq. 'a -> m' .and. pic % at(3) .eq. 'b -> m n' .and. &
          &      pic % at(4) .eq. 'c -> m n' .and. pic % at(5) .eq. 'd -> n', &
          & "the chain's whole reach, listed: a->m, b->m n, c->m n, d->n", &
@@ -245,14 +252,14 @@ contains
     type(picture) :: pic
 
     pic = chain_picture('STRUCTURAL REVERSE', &
-         &              [stage(d3t), stage(d2t), stage(d1t)])
+         &              [stage(d3t), stage(d2t), stage(d1t)], labels)
 
     call report(pic % at(2) .eq. 'X3 --D3^T--> X2 --D2^T--> X1 --D1^T--> X0', &
          & "REVERSE : X3 --D3^T--> X2 --D2^T--> X1 --D1^T--> X0 - " // &
          & "drawn from the transposed relations, not from the " // &
          & "forward line read backwards", nfail)
 
-    pic = dependency_listing(d1t)
+    pic = dependency_listing(d1t, sets, labels)
     call report(pic % at(2) .eq. 'p -> a b' .and. pic % at(3) .eq. 'q -> b c' .and. &
          &      pic % at(4) .eq. 'r -> d', &
          & "and D1^T listed: p is reached from a and b, q from b and " // &
@@ -271,7 +278,7 @@ contains
 
     type(picture) :: pic
 
-    pic = sparsity_picture(d1)
+    pic = sparsity_picture(d1, sets, labels)
     call report(pic % rows() .eq. 5 .and. &
          &      pic % at(1) .eq. 'D1' .and. &
          &      pic % at(2) .eq. '        a b c d' .and. &
@@ -281,7 +288,7 @@ contains
          & "D1 renders exactly the sparsity of { a->p, b->p, b->q, " // &
          & "c->q, d->r }", nfail)
 
-    pic = sparsity_picture(d2)
+    pic = sparsity_picture(d2, sets, labels)
     call report(pic % at(1) .eq. 'D2' .and. &
          &      pic % at(2) .eq. '        p q r' .and. &
          &      pic % at(3) .eq. 'u       # # .' .and. &
@@ -290,7 +297,7 @@ contains
          & "D2 renders exactly the sparsity of { p->u, q->u, q->v, " // &
          & "r->w }", nfail)
 
-    pic = sparsity_picture(d3)
+    pic = sparsity_picture(d3, sets, labels)
     call report(pic % at(1) .eq. 'D3' .and. &
          &      pic % at(2) .eq. '        u v w' .and. &
          &      pic % at(3) .eq. 'm       # . .' .and. &
@@ -303,8 +310,8 @@ contains
     ! wanted it square.
     block
       type(picture) :: one, three
-      one   = sparsity_picture(d1)
-      three = sparsity_picture(d3)
+      one   = sparsity_picture(d1, sets, labels)
+      three = sparsity_picture(d3, sets, labels)
       call report(one % rows() .eq. 2 + 3 .and. three % rows() .eq. 2 + 2, &
            & "and each picture is |codomain| rows by |domain| columns - " // &
            & "RECTANGULAR, as the typed dependency is", nfail)
@@ -323,7 +330,7 @@ contains
 
     type(picture) :: pic
 
-    pic = sparsity_picture(d21)
+    pic = sparsity_picture(d21, sets, labels)
     call report(pic % at(2) .eq. '        a b c d' .and. &
          &      pic % at(3) .eq. 'u       # # # .' .and. &
          &      pic % at(4) .eq. 'v       . # # .' .and. &
@@ -331,7 +338,7 @@ contains
          & "D2:1 renders the two-operator skeleton - and b->u fills " // &
          & "ONE cell though two walks reach it", nfail)
 
-    pic = sparsity_picture(d31)
+    pic = sparsity_picture(d31, sets, labels)
     call report(pic % rows() .eq. 4 .and. &
          &      pic % at(1) .eq. 'D3:1' .and. &
          &      pic % at(2) .eq. '        a b c d' .and. &
@@ -359,7 +366,7 @@ contains
     integer       :: k
     logical       :: agree
 
-    from_transpose = sparsity_picture(d31t)
+    from_transpose = sparsity_picture(d31t, sets, labels)
 
     call report(from_transpose % rows() .eq. 6 .and. &
          &      from_transpose % at(1) .eq. 'D3:1^T' .and. &
@@ -371,7 +378,7 @@ contains
          & "D3:1^T renders the reverse skeleton: a from m; b and c " // &
          & "from both; d from n", nfail)
 
-    from_reverse_chain = sparsity_picture(drev)
+    from_reverse_chain = sparsity_picture(drev, sets, labels)
 
     agree = (from_transpose % rows() .eq. from_reverse_chain % rows())
     do k = 2, from_transpose % rows()
@@ -431,18 +438,22 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)  :: ambient
-    type(subset_set)   :: shuffled
+    type(set_graph)  :: ambient
+    type(set_graph)   :: shuffled
     type(csr_relation) :: probe
     type(picture)      :: pic
+    type(inclusion_map)     :: inclusions
 
-    ambient  = counted_set('an ambient roster', 30)
-    shuffled = subset_set('declared out of order', ambient, [30, 10, 20])
+    call ambient % declare()
+    call sets % bind(ambient, counted_set_representation(30))
+    call shuffled % declare()
+    call sets       % bind(shuffled, listed_set_representation([30, 10, 20]))
+    call inclusions % include_in(shuffled, ambient)
 
     probe = csr_relation('P', shuffled, x3, &
-         &               reshape([30, X3_M, 20, X3_N], [2, 2]))
+         &               reshape([30, X3_M, 20, X3_N], [2, 2]), sets)
 
-    pic = sparsity_picture(probe)
+    pic = sparsity_picture(probe, sets, labels)
 
     call report(pic % at(2) .eq. '        30 10 20', &
          & "a carrier declaring { 30, 10, 20 } is drawn 30 10 20 - " // &
@@ -453,9 +464,9 @@ contains
          & "and the glyphs follow the same order: 30 reaches m, 20 " // &
          & "reaches n, and the columns say so", nfail)
 
-    call report(shuffled % member(1) .eq. 30 .and. &
-         &      shuffled % local_index(30) .eq. 1 .and. &
-         &      label_for(shuffled, 30) .eq. '30', &
+    call report(sets % member_of(shuffled, 1) .eq. 30 .and. &
+         &      sets % index_in(shuffled, 30) .eq. 1 .and. &
+         &      label_for(shuffled, 30, labels) .eq. '30', &
          & "order came from member(i) and local_index, and the label " // &
          & "from a carrier the fixture has never heard of", nfail)
 
@@ -489,11 +500,11 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: tail_end, head_end, from, to
+    type(set_graph) :: tail_end, head_end, from, to
     type(picture)                  :: pic
 
     ! ---- ANSWERED: the nucleus alone drew it.
-    pic = sparsity_picture(d1)
+    pic = sparsity_picture(d1, sets, labels)
     call report(pic % at(3) .eq. 'p       # # . .', &
          & "D1 : X0 -> X1 WAS RENDERED FROM member_set, relation and " // &
          & "graph-owned structure alone - no ordinary graph was " // &
@@ -541,9 +552,15 @@ contains
   ! Helpers.
   !===================================================================!
 
-  type(counted_set) function union_like()
+  !===================================================================!
+  ! A manufactured twelve-member carrier, declared here and NOT held
+  ! by the graph. It needs no representation: the only question asked
+  ! of it is whether the graph holds it, and that is identity.
+  !===================================================================!
 
-    union_like = counted_set('V = X0 u X1 u X2 u X3', 12)
+  type(set_graph) function union_like()
+
+    call union_like % declare()
 
   end function union_like
 
@@ -551,7 +568,7 @@ contains
 
     class(binary_relation), intent(in) :: first, second
 
-    class(member_set), allocatable :: here, there
+    type(set_graph) :: here, there
 
     here  = first % target()
     there = second % source()
@@ -563,16 +580,16 @@ contains
 
     class(relation), intent(in) :: r
 
-    class(member_set), allocatable :: cols, rows
+    type(set_graph) :: cols, rows
     integer                        :: i, j
 
     cols = r % domain(1)
     rows = r % domain(2)
 
     filled_cells = 0
-    do j = 1, cols % size()
-       do i = 1, rows % size()
-          if (glyph_at(r, cols % member(j), rows % member(i)) .eq. '#') then
+    do j = 1, sets % size_of(cols)
+       do i = 1, sets % size_of(rows)
+          if (glyph_at(r, sets % member_of(cols, j), sets % member_of(rows, i)) .eq. '#') then
              filled_cells = filled_cells + 1
           end if
        end do
@@ -589,7 +606,7 @@ contains
 
     class(relation), intent(in) :: r
 
-    class(member_set), allocatable :: cols, rows
+    type(set_graph) :: cols, rows
     type(picture)                  :: pic
     character(len=:), allocatable  :: line
     integer                        :: i, j, stub, wide, at
@@ -597,19 +614,19 @@ contains
 
     cols = r % domain(1)
     rows = r % domain(2)
-    pic  = sparsity_picture(r)
+    pic  = sparsity_picture(r, sets, labels)
 
     stub = max(label_width(rows), 7) + 2
     wide = label_width(cols) + 1
 
     cells_match_membership = .true.
-    do i = 1, rows % size()
+    do i = 1, sets % size_of(rows)
        line = pic % at(2 + i)
-       do j = 1, cols % size()
+       do j = 1, sets % size_of(cols)
           at    = stub + (j - 1) * wide
           drawn = (line(at:at) .eq. '#')
           cells_match_membership = cells_match_membership .and. &
-               & (drawn .eqv. r % has([cols % member(j), rows % member(i)]))
+               & (drawn .eqv. r % has([sets % member_of(cols, j), sets % member_of(rows, i)]))
        end do
     end do
 
@@ -625,21 +642,21 @@ contains
 
     class(relation), intent(in) :: r
 
-    class(member_set), allocatable :: cols, rows
+    type(set_graph) :: cols, rows
     type(picture)                  :: listing
     character(len=:), allocatable  :: said, wanted
     integer                        :: i, j
 
     cols    = r % domain(1)
     rows    = r % domain(2)
-    listing = dependency_listing(r)
+    listing = dependency_listing(r, sets, labels)
 
     grid_agrees_with_listing = .true.
-    do j = 1, cols % size()
-       wanted = label_for(cols, cols % member(j)) // ' ->'
-       do i = 1, rows % size()
-          if (glyph_at(r, cols % member(j), rows % member(i)) .eq. '#') then
-             wanted = wanted // ' ' // label_for(rows, rows % member(i))
+    do j = 1, sets % size_of(cols)
+       wanted = label_for(cols, sets % member_of(cols, j), labels) // ' ->'
+       do i = 1, sets % size_of(rows)
+          if (glyph_at(r, sets % member_of(cols, j), sets % member_of(rows, i)) .eq. '#') then
+             wanted = wanted // ' ' // label_for(rows, sets % member_of(rows, i), labels)
           end if
        end do
        said = listing % at(1 + j)
@@ -651,14 +668,14 @@ contains
 
   integer function label_width(carrier)
 
-    class(member_set), intent(in) :: carrier
+    type(set_graph), intent(in) :: carrier
 
     integer :: k
 
     label_width = 1
-    do k = 1, carrier % size()
+    do k = 1, sets % size_of(carrier)
        label_width = max(label_width, &
-            &            len(label_for(carrier, carrier % member(k))))
+            &            len(label_for(carrier, sets % member_of(carrier, k), labels)))
     end do
 
   end function label_width

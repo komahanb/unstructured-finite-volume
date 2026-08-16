@@ -70,7 +70,9 @@ program visualization_level_5
   use visualization_assert , only : X3_M, X3_N
   use visualization_assert , only : E1_1, E1_2, E1_3, E1_4, E1_5
   use visualization_assert , only : E2_1, E2_4, E3_1, E3_2, E3_3
-  use graph_carrier        , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
   use graph_relation       , only : relation
   use graph_binary_relation, only : csr_relation
   use graph_field_calculus , only : GRAPH_FIELD_REAL
@@ -99,7 +101,9 @@ program visualization_level_5
 
   implicit none
 
-  type(counted_set)          :: x0, x1, x2, x3, e1, e2, e3
+  type(set_graph)          :: x0, x1, x2, x3, e1, e2, e3
+  type(set_map)     :: sets
+  type(label_map)     :: labels
   type(csr_relation)         :: t1, h1, t2, h2, t3, h3
   type(csr_relation), target :: d1, d2, d3, d21, d31
   type(field)                :: w1, w2, w3, w1_alt, decoy
@@ -113,33 +117,33 @@ program visualization_level_5
   write(*,'(1x,a)') "============================================="
 
   ! ---- the persistent structure, exactly as Gate A left it.
-  call structural_carriers(x0, x1, x2, x3, e1, e2, e3)
-  call occurrences_of_a1(e1, x0, x1, t1, h1)
-  call occurrences_of_a2(e2, x1, x2, t2, h2)
-  call occurrences_of_a3(e3, x2, x3, t3, h3)
+  call structural_carriers(x0, x1, x2, x3, e1, e2, e3, sets, labels)
+  call occurrences_of_a1(e1, x0, x1, t1, h1, sets)
+  call occurrences_of_a2(e2, x1, x2, t2, h2, sets)
+  call occurrences_of_a3(e3, x2, x3, t3, h3, sets)
 
-  d1 = derive_dependency('D1', t1, h1)
-  d2 = derive_dependency('D2', t2, h2)
-  d3 = derive_dependency('D3', t3, h3)
+  d1 = derive_dependency('D1', t1, h1, sets)
+  d2 = derive_dependency('D2', t2, h2, sets)
+  d3 = derive_dependency('D3', t3, h3, sets)
 
   ! ---- the structural pictures, taken BEFORE any number exists.
-  before_d1 = sparsity_picture(d1)
-  before_d2 = sparsity_picture(d2)
-  before_d3 = sparsity_picture(d3)
+  before_d1 = sparsity_picture(d1, sets, labels)
+  before_d2 = sparsity_picture(d2, sets, labels)
+  before_d3 = sparsity_picture(d3, sets, labels)
 
   ! ---- and now the numbers arrive.
-  w1     = coefficients_of_a1(e1)
-  w2     = coefficients_of_a2(e2)
-  w3     = coefficients_of_a3(e3)
-  w1_alt = alternate_coefficients_of_a1(e1)
+  w1     = coefficients_of_a1(e1, sets)
+  w2     = coefficients_of_a2(e2, sets)
+  w3     = coefficients_of_a3(e3, sets)
+  w1_alt = alternate_coefficients_of_a1(e1, sets)
 
   ! A perfectly valid field that is simply not about E2. |X0| = |E2|.
-  decoy = field('four numbers on X0', x0, ncomp=1)
+  decoy = field('four numbers on X0', x0, sets % size_of(x0), ncomp=1)
   call decoy % set_real_vector([7.0_dp, 7.0_dp, 7.0_dp, 7.0_dp])
 
   ! ---- the compositions, derived AFTER the fields exist.
-  d21 = derive_composition('D2:1', d1,  d2)
-  d31 = derive_composition('D3:1', d21, d3)
+  d21 = derive_composition('D2:1', d1,  d2, sets)
+  d31 = derive_composition('D3:1', d21, d3, sets)
 
   call say_the_structure_and_the_values()
 
@@ -171,16 +175,16 @@ contains
     write(*,'(1x,a)') "---------------------------------------------"
 
     write(*,'(4x,a)') "D1 STRUCTURE"
-    pic = sparsity_picture(d1); call say_grid(pic)
+    pic = sparsity_picture(d1, sets, labels); call say_grid(pic)
 
     write(*,'(4x,a)') "D1 VALUES"
-    pic = valued_sparsity_picture(d1, t1, h1, e1, w1); call say_grid(pic)
+    pic = valued_sparsity_picture(d1, t1, h1, e1, w1, sets, labels); call say_grid(pic)
 
     write(*,'(4x,a)') "D2 VALUES"
-    pic = valued_sparsity_picture(d2, t2, h2, e2, w2); call say_grid(pic)
+    pic = valued_sparsity_picture(d2, t2, h2, e2, w2, sets, labels); call say_grid(pic)
 
     write(*,'(4x,a)') "D3 VALUES"
-    pic = valued_sparsity_picture(d3, t3, h3, e3, w3); call say_grid(pic)
+    pic = valued_sparsity_picture(d3, t3, h3, e3, w3, sets, labels); call say_grid(pic)
 
     write(*,'(4x,a)') "ZERO IS NOT ABSENCE"
     call say_one_cell(X0_B, X1_Q)
@@ -188,7 +192,7 @@ contains
     write(*,*)
 
     write(*,'(4x,a)') "THE SAME STRUCTURE, DIFFERENT NUMBERS"
-    pic = valued_sparsity_picture(d1, t1, h1, e1, w1_alt); call say_grid(pic)
+    pic = valued_sparsity_picture(d1, t1, h1, e1, w1_alt, sets, labels); call say_grid(pic)
 
     write(*,'(1x,a)') "---------------------------------------------"
 
@@ -222,14 +226,14 @@ contains
 
     integer :: e
 
-    write(*,'(6x,a)') "(" // label_for(x0, from) // "," // &
-         &            label_for(x1, to) // ") in X0 x X1:"
+    write(*,'(6x,a)') "(" // label_for(x0, from, labels) // "," // &
+         &            label_for(x1, to, labels) // ") in X0 x X1:"
 
     if (d1 % has([from, to])) then
-       e = occurrence_joining(t1, h1, e1, from, to)
+       e = occurrence_joining(t1, h1, e1, from, to, sets)
        write(*,'(10x,a)') "structural = PRESENT"
-       write(*,'(10x,a)') "occurrence = " // label_for(e1, e)
-       write(*,'(10x,a)') "value      = " // value_token(value_at(w1, e1, e))
+       write(*,'(10x,a)') "occurrence = " // label_for(e1, e, labels)
+       write(*,'(10x,a)') "value      = " // value_token(value_at(w1, e1, e, sets))
     else
        write(*,'(10x,a)') "structural = ABSENT"
        write(*,'(10x,a)') "value      = " // ABSENT // &
@@ -246,9 +250,9 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(w1 % num_entries() .eq. e1 % size() .and. &
-         &      w2 % num_entries() .eq. e2 % size() .and. &
-         &      w3 % num_entries() .eq. e3 % size(), &
+    call report(w1 % num_entries() .eq. sets % size_of(e1) .and. &
+         &      w2 % num_entries() .eq. sets % size_of(e2) .and. &
+         &      w3 % num_entries() .eq. sets % size_of(e3), &
          & "w1, w2, w3 have one entry per occurrence: 5, 4, 3 - the " // &
          & "field takes its count from the domain it lives on", nfail)
 
@@ -275,15 +279,15 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(near(value_at(w1, e1, E1_1), COEFF_A1(1)) .and. &
-         &      near(value_at(w1, e1, E1_2), COEFF_A1(2)) .and. &
-         &      near(value_at(w1, e1, E1_3), COEFF_A1(3)) .and. &
-         &      near(value_at(w1, e1, E1_4), COEFF_A1(4)) .and. &
-         &      near(value_at(w1, e1, E1_5), COEFF_A1(5)), &
+    call report(near(value_at(w1, e1, E1_1, sets), COEFF_A1(1)) .and. &
+         &      near(value_at(w1, e1, E1_2, sets), COEFF_A1(2)) .and. &
+         &      near(value_at(w1, e1, E1_3, sets), COEFF_A1(3)) .and. &
+         &      near(value_at(w1, e1, E1_4, sets), COEFF_A1(4)) .and. &
+         &      near(value_at(w1, e1, E1_5, sets), COEFF_A1(5)), &
          & "w1 = [2, -1, 0, 3, 4] on e11..e15", nfail)
 
-    call report(near(value_at(w2, e2, E2_1), COEFF_A2(1)) .and. &
-         &      near(value_at(w2, e2, E2_4), COEFF_A2(4)) .and. &
+    call report(near(value_at(w2, e2, E2_1, sets), COEFF_A2(1)) .and. &
+         &      near(value_at(w2, e2, E2_4, sets), COEFF_A2(4)) .and. &
          &      all_values_recovered(w2, e2, COEFF_A2), &
          & "w2 = [1, 5, -2, 2] on e21..e24", nfail)
 
@@ -309,17 +313,17 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: on
+    type(set_graph) :: on
 
-    call w1 % domain(on)
+    on = w1 % domain()
     call report(on % same_as(e1) .and. .not. on % same_as(x0) .and. &
          &      .not. on % same_as(x1), &
          & "domain(w1) IS E1 - not X0 which it reads, and not X1 " // &
          & "which it writes", nfail)
 
-    call w2 % domain(on)
+    on = w2 % domain()
     call report(on % same_as(e2), "domain(w2) is E2", nfail)
-    call w3 % domain(on)
+    on = w3 % domain()
     call report(on % same_as(e3), "domain(w3) is E3", nfail)
 
     call report(coefficients_fit(w1, e1) .and. coefficients_fit(w2, e2) .and. &
@@ -361,8 +365,8 @@ contains
          & "every tuple of D1, D2, D3 is joined by EXACTLY ONE " // &
          & "occurrence, and every absent pair by none", nfail)
 
-    call report(occurrence_joining(t1, h1, e1, X0_B, X1_Q) .eq. E1_3 .and. &
-         &      occurrence_joining(t1, h1, e1, X0_A, X1_Q) .eq. 0, &
+    call report(occurrence_joining(t1, h1, e1, X0_B, X1_Q, sets) .eq. E1_3 .and. &
+         &      occurrence_joining(t1, h1, e1, X0_A, X1_Q, sets) .eq. 0, &
          & "b->q is seated at e13; a->q is seated nowhere, because " // &
          & "a->q is not a dependency", nfail)
 
@@ -379,7 +383,7 @@ contains
     call report(t1 % has([E1_3, X0_B]) .and. h1 % has([E1_3, X1_Q]), &
          & "e13 reads b and writes q - T1(e13) = b, H1(e13) = q", nfail)
 
-    call report(abs(value_at(w1, e1, E1_3)) .lt. TOL, &
+    call report(abs(value_at(w1, e1, E1_3, sets)) .lt. TOL, &
          & "w1(e13) = 0 EXACTLY", nfail)
 
     call report(d1 % has([X0_B, X1_Q]), &
@@ -406,7 +410,7 @@ contains
 
     type(picture) :: pic
 
-    pic = valued_sparsity_picture(d1, t1, h1, e1, w1)
+    pic = valued_sparsity_picture(d1, t1, h1, e1, w1, sets, labels)
 
     call report(pic % at(1) .eq. 'D1 VALUES' .and. &
          &      pic % at(2) .eq. '           a    b    c    d' .and. &
@@ -422,7 +426,7 @@ contains
          & "the q row carries BOTH a zero and a dot, in different " // &
          & "columns: they are different facts", nfail)
 
-    pic = valued_sparsity_picture(d2, t2, h2, e2, w2)
+    pic = valued_sparsity_picture(d2, t2, h2, e2, w2, sets, labels)
     call report(pic % at(2) .eq. '           p    q    r' .and. &
          &      pic % at(3) .eq. 'u          1    5    .' .and. &
          &      pic % at(4) .eq. 'v          .   -2    .' .and. &
@@ -430,7 +434,7 @@ contains
          & "D2's coefficient picture carries [1, 5, -2, 2] at its " // &
          & "four seats", nfail)
 
-    pic = valued_sparsity_picture(d3, t3, h3, e3, w3)
+    pic = valued_sparsity_picture(d3, t3, h3, e3, w3, sets, labels)
     call report(pic % at(2) .eq. '           u    v    w' .and. &
          &      pic % at(3) .eq. 'm          3    .    .' .and. &
          &      pic % at(4) .eq. 'n          .   -1    4', &
@@ -474,7 +478,7 @@ contains
 
     type(picture) :: after
 
-    after = sparsity_picture(d1)
+    after = sparsity_picture(d1, sets, labels)
     call report(same_picture(before_d1, after) .and. &
          &      after % at(2) .eq. '        a b c d' .and. &
          &      after % at(3) .eq. 'p       # # . .' .and. &
@@ -483,12 +487,12 @@ contains
          & "D1's STRUCTURAL picture is the same string it was before " // &
          & "w1 existed, and the same one Gate A sealed", nfail)
 
-    after = sparsity_picture(d2)
+    after = sparsity_picture(d2, sets, labels)
     call report(same_picture(before_d2, after) .and. &
          &      after % at(3) .eq. 'u       # # .', &
          & "D2's structural picture is unchanged", nfail)
 
-    after = sparsity_picture(d3)
+    after = sparsity_picture(d3, sets, labels)
     call report(same_picture(before_d3, after) .and. &
          &      after % at(4) .eq. 'n       . # #', &
          & "D3's structural picture is unchanged", nfail)
@@ -508,11 +512,11 @@ contains
     type(csr_relation), target :: again1, again2, again3, again21, again31
     type(csr_relation)         :: d31t
 
-    again1 = derive_dependency('D1', t1, h1)
-    again2 = derive_dependency('D2', t2, h2)
-    again3 = derive_dependency('D3', t3, h3)
-    again21 = derive_composition('D2:1', again1,  again2)
-    again31 = derive_composition('D3:1', again21, again3)
+    again1 = derive_dependency('D1', t1, h1, sets)
+    again2 = derive_dependency('D2', t2, h2, sets)
+    again3 = derive_dependency('D3', t3, h3, sets)
+    again21 = derive_composition('D2:1', again1,  again2, sets)
+    again31 = derive_composition('D3:1', again21, again3, sets)
 
     call report(same_extension(again1, d1) .and. same_extension(again2, d2) .and. &
          &      same_extension(again3, d3), &
@@ -533,7 +537,7 @@ contains
          & nfail)
 
     ! The reverse stays value-free, exactly as Gate A left it.
-    d31t = materialized_transpose('D3:1^T', again31)
+    d31t = materialized_transpose('D3:1^T', again31, sets)
     call report(d31t % num_tuples() .eq. ND31 .and. &
          &      .not. same_extension(again31, d31t), &
          & "and the structural reverse is untouched: no w^T was " // &
@@ -550,21 +554,21 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: on
+    type(set_graph) :: on
     type(picture)                  :: with_w1, with_alt, structural
 
-    call w1_alt % domain(on)
+    on = w1_alt % domain()
     call report(on % same_as(e1) .and. coefficients_fit(w1_alt, e1), &
          & "w1_alt lives on the SAME E1 - the probe changes the " // &
          & "numbers and nothing else", nfail)
 
-    structural = sparsity_picture(d1)
+    structural = sparsity_picture(d1, sets, labels)
     call report(same_picture(structural, before_d1), &
          & "the structural picture of D1 is what it always was, with " // &
          & "either field in the program", nfail)
 
-    with_w1  = valued_sparsity_picture(d1, t1, h1, e1, w1)
-    with_alt = valued_sparsity_picture(d1, t1, h1, e1, w1_alt)
+    with_w1  = valued_sparsity_picture(d1, t1, h1, e1, w1, sets, labels)
+    with_alt = valued_sparsity_picture(d1, t1, h1, e1, w1_alt, sets, labels)
 
     call report(.not. same_picture(with_w1, with_alt), &
          & "AND THE COEFFICIENT PICTURES DIFFER - so D1 does not " // &
@@ -576,8 +580,8 @@ contains
          & "the probe writes 7 where w1 wrote 0, and '.' in exactly " // &
          & "the same places - SO w1 DOES NOT DETERMINE D1", nfail)
 
-    call report(near(value_at(w1, e1, E1_3), 0.0_dp) .and. &
-         &      near(value_at(w1_alt, e1, E1_3), 7.0_dp) .and. &
+    call report(near(value_at(w1, e1, E1_3, sets), 0.0_dp) .and. &
+         &      near(value_at(w1_alt, e1, E1_3, sets), 7.0_dp) .and. &
          &      d1 % has([X0_B, X1_Q]), &
          & "e13 carries 0 in one field and 7 in the other, and b->q " // &
          & "is a dependency in both", nfail)
@@ -599,15 +603,15 @@ contains
   logical function all_values_recovered(w, occurrences, want)
 
     class(field)     , intent(in) :: w
-    class(member_set), intent(in) :: occurrences
+    type(set_graph), intent(in) :: occurrences
     real(dp)         , intent(in) :: want(:)
 
     integer :: k
 
-    all_values_recovered = (occurrences % size() .eq. size(want))
-    do k = 1, occurrences % size()
+    all_values_recovered = (sets % size_of(occurrences) .eq. size(want))
+    do k = 1, sets % size_of(occurrences)
        all_values_recovered = all_values_recovered .and. &
-            & near(value_at(w, occurrences, occurrences % member(k)), want(k))
+            & near(value_at(w, occurrences, sets % member_of(occurrences, k), sets), want(k))
     end do
 
   end function all_values_recovered
@@ -620,25 +624,25 @@ contains
   logical function seats_are_unique(d, tail, head, occurrences)
 
     class(relation)  , intent(in) :: d, tail, head
-    class(member_set), intent(in) :: occurrences
+    type(set_graph), intent(in) :: occurrences
 
-    class(member_set), allocatable :: cols, rows
+    type(set_graph) :: cols, rows
     integer                        :: i, j, want
 
     cols = d % domain(1)
     rows = d % domain(2)
 
     seats_are_unique = .true.
-    do j = 1, cols % size()
-       do i = 1, rows % size()
-          if (d % has([cols % member(j), rows % member(i)])) then
+    do j = 1, sets % size_of(cols)
+       do i = 1, sets % size_of(rows)
+          if (d % has([sets % member_of(cols, j), sets % member_of(rows, i)])) then
              want = 1
           else
              want = 0
           end if
           seats_are_unique = seats_are_unique .and. &
                & (occurrences_joining(tail, head, occurrences, &
-               &                      cols % member(j), rows % member(i)) &
+               &                      sets % member_of(cols, j), sets % member_of(rows, i), sets) &
                &  .eq. want)
        end do
     end do
@@ -663,10 +667,10 @@ contains
   logical function views_agree(d, tail, head, occurrences, w)
 
     class(relation)  , intent(in) :: d, tail, head
-    class(member_set), intent(in) :: occurrences
+    type(set_graph), intent(in) :: occurrences
     class(field)     , intent(in) :: w
 
-    class(member_set), allocatable :: cols, rows
+    type(set_graph) :: cols, rows
     type(picture)                  :: structural, valued
     character(len=32)              :: sbit(16), vbit(16)
     integer :: i, j, ns, nv
@@ -675,24 +679,24 @@ contains
     cols = d % domain(1)
     rows = d % domain(2)
 
-    structural = sparsity_picture(d)
-    valued     = valued_sparsity_picture(d, tail, head, occurrences, w)
+    structural = sparsity_picture(d, sets, labels)
+    valued     = valued_sparsity_picture(d, tail, head, occurrences, w, sets, labels)
 
     views_agree = .true.
-    do i = 1, rows % size()
+    do i = 1, sets % size_of(rows)
 
        call split(structural % at(2 + i), sbit, ns)
        call split(valued     % at(2 + i), vbit, nv)
 
        ! One row label plus one token per column, in both.
-       views_agree = views_agree .and. (ns .eq. cols % size() + 1) &
-            &                    .and. (nv .eq. cols % size() + 1)
+       views_agree = views_agree .and. (ns .eq. sets % size_of(cols) + 1) &
+            &                    .and. (nv .eq. sets % size_of(cols) + 1)
        if (.not. views_agree) return
 
-       do j = 1, cols % size()
+       do j = 1, sets % size_of(cols)
           in_structure = (trim(sbit(j + 1)) .eq. '#')
           in_values    = (trim(vbit(j + 1)) .ne. ABSENT)
-          in_relation  = d % has([cols % member(j), rows % member(i)])
+          in_relation  = d % has([sets % member_of(cols, j), sets % member_of(rows, i)])
 
           views_agree = views_agree .and. (in_structure .eqv. in_relation) &
                &                    .and. (in_values    .eqv. in_relation)

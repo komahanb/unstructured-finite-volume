@@ -75,7 +75,9 @@
 module valued_renderer_fixture
 
   use iso_fortran_env               , only : dp => REAL64
-  use graph_carrier                 , only : member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
   use graph_relation                , only : relation
   use graph_field_calculus          , only : GRAPH_FIELD_REAL
   use class_graph_field             , only : field
@@ -118,11 +120,11 @@ contains
   logical function coefficients_fit(w, occurrences)
 
     class(field)     , intent(in) :: w
-    class(member_set), intent(in) :: occurrences
+    type(set_graph), intent(in) :: occurrences
 
-    class(member_set), allocatable :: on
+    type(set_graph) :: on
 
-    call w % domain(on)
+    on = w % domain()
 
     coefficients_fit = on % same_as(occurrences)
     coefficients_fit = coefficients_fit .and. (w % num_components() .eq. 1)
@@ -140,17 +142,18 @@ contains
   ! is a position in a grid.
   !===================================================================!
 
-  integer function occurrence_joining(tail, head, occurrences, from, to)
+  integer function occurrence_joining(tail, head, occurrences, from, to, sets)
 
     class(relation)  , intent(in) :: tail, head
-    class(member_set), intent(in) :: occurrences
+    type(set_map)  , intent(in) :: sets
+    type(set_graph), intent(in) :: occurrences
     integer          , intent(in) :: from, to
 
     integer :: k, e
 
     occurrence_joining = 0
-    do k = 1, occurrences % size()
-       e = occurrences % member(k)
+    do k = 1, sets % size_of(occurrences)
+       e = sets % member_of(occurrences, k)
        if (tail % has([e, from]) .and. head % has([e, to])) then
           occurrence_joining = e
           return
@@ -166,17 +169,18 @@ contains
   ! is unique.
   !===================================================================!
 
-  integer function occurrences_joining(tail, head, occurrences, from, to)
+  integer function occurrences_joining(tail, head, occurrences, from, to, sets)
 
     class(relation)  , intent(in) :: tail, head
-    class(member_set), intent(in) :: occurrences
+    type(set_graph), intent(in) :: occurrences
     integer          , intent(in) :: from, to
+    type(set_map)  , intent(in) :: sets
 
     integer :: k, e
 
     occurrences_joining = 0
-    do k = 1, occurrences % size()
-       e = occurrences % member(k)
+    do k = 1, sets % size_of(occurrences)
+       e = sets % member_of(occurrences, k)
        if (tail % has([e, from]) .and. head % has([e, to])) then
           occurrences_joining = occurrences_joining + 1
        end if
@@ -192,18 +196,19 @@ contains
   ! intends.
   !===================================================================!
 
-  real(dp) function value_at(w, occurrences, member)
+  real(dp) function value_at(w, occurrences, member, sets)
 
     class(field)     , intent(in) :: w
-    class(member_set), intent(in) :: occurrences
+    type(set_graph), intent(in) :: occurrences
     integer          , intent(in) :: member
+    type(set_map)  , intent(in) :: sets
 
     real(dp), allocatable :: values(:)
     integer               :: seat
 
     call w % get_real_vector(values)
 
-    seat = occurrences % local_index(member)
+    seat = sets % index_in(occurrences, member)
     if (seat .lt. 1 .or. seat .gt. size(values)) then
        error stop 'valued_renderer_fixture: that member has no seat in this field'
     end if
@@ -253,15 +258,17 @@ contains
   !===================================================================!
 
   type(picture) function valued_sparsity_picture(d, tail, head, &
-       & occurrences, w) result(pic)
+       & occurrences, w, sets, labels) result(pic)
 
     class(relation)  , intent(in) :: d
     class(relation)  , intent(in) :: tail, head
-    class(member_set), intent(in) :: occurrences
+    type(set_graph), intent(in) :: occurrences
     class(field)     , intent(in) :: w
+    type(set_map)  , intent(in) :: sets
+    type(label_map), intent(in) :: labels
 
     type(picture)                  :: page
-    class(member_set), allocatable :: cols, rows
+    type(set_graph) :: cols, rows
     character(len=:) , allocatable :: cell
     real(dp)         , allocatable :: values(:)
     integer :: stub, wide, i, j, at, e, seat, width
@@ -279,40 +286,40 @@ contains
     ! The page, and where its first column stands - taken from a
     ! STRUCTURAL picture of this same relation rather than from a
     ! measurement copied out of Level 4.
-    page  = sparsity_picture(d)
+    page  = sparsity_picture(d, sets, labels)
     width = len(page % line)
     stub  = first_nonblank(page % line(2))
 
     call w % get_real_vector(values)
 
-    wide = max(widest_label(cols), widest_value(values)) + 3
+    wide = max(widest_label(cols, sets, labels), widest_value(values)) + 3
 
-    allocate(character(len=width) :: pic % line(2 + rows % size()))
+    allocate(character(len=width) :: pic % line(2 + sets % size_of(rows)))
     pic % line = repeat(' ', width)
 
     call put(pic % line(1), 1, d % name() // ' VALUES')
 
-    do j = 1, cols % size()
+    do j = 1, sets % size_of(cols)
        at = stub + (j - 1) * wide
        call put(pic % line(2), at, &
-            &   right(label_for(cols, cols % member(j)), wide - 1))
+            &   right(label_for(cols, sets % member_of(cols, j), labels), wide - 1))
     end do
 
-    do i = 1, rows % size()
-       call put(pic % line(2 + i), 1, label_for(rows, rows % member(i)))
-       do j = 1, cols % size()
+    do i = 1, sets % size_of(rows)
+       call put(pic % line(2 + i), 1, label_for(rows, sets % member_of(rows, i), labels))
+       do j = 1, sets % size_of(cols)
           at = stub + (j - 1) * wide
 
           ! FIRST the structural question, asked of the relation.
-          if (glyph_at(d, cols % member(j), rows % member(i)) .eq. '#') then
+          if (glyph_at(d, sets % member_of(cols, j), sets % member_of(rows, i)) .eq. '#') then
 
              ! ONLY THEN the value question.
              e = occurrence_joining(tail, head, occurrences, &
-                  &                 cols % member(j), rows % member(i))
+                  &                 sets % member_of(cols, j), sets % member_of(rows, i), sets)
              if (e .eq. 0) then
                 error stop 'valued_renderer_fixture: a present dependency with no occurrence to seat it'
              end if
-             seat = occurrences % local_index(e)
+             seat = sets % index_in(occurrences, e)
              cell = value_token(values(seat))
           else
              cell = ABSENT
@@ -359,16 +366,18 @@ contains
 
   end function right
 
-  integer function widest_label(carrier)
+  integer function widest_label(carrier, sets, labels)
 
-    class(member_set), intent(in) :: carrier
+    type(set_graph), intent(in) :: carrier
+    type(set_map)  , intent(in) :: sets
+    type(label_map), intent(in) :: labels
 
     integer :: k
 
     widest_label = 1
-    do k = 1, carrier % size()
+    do k = 1, sets % size_of(carrier)
        widest_label = max(widest_label, &
-            &             len(label_for(carrier, carrier % member(k))))
+            &             len(label_for(carrier, sets % member_of(carrier, k), labels)))
     end do
 
   end function widest_label

@@ -58,7 +58,9 @@ program visualization_level_2
   use visualization_assert , only : X1_P, X1_Q, X1_R
   use visualization_assert , only : X2_U, X2_V, X2_W
   use visualization_assert , only : X3_M, X3_N
-  use graph_carrier        , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
   use graph_relation       , only : relation
   use graph_binary_relation, only : csr_relation, binary_relation
   use graph_binary_relation, only : transposed_view, transpose_of
@@ -73,7 +75,9 @@ program visualization_level_2
 
   implicit none
 
-  type(counted_set)          :: x0, x1, x2, x3, e1, e2, e3
+  type(set_graph)          :: x0, x1, x2, x3, e1, e2, e3
+  type(set_map)     :: sets
+  type(label_map)     :: labels
   type(csr_relation)         :: t1, h1, t2, h2, t3, h3
   type(csr_relation), target :: d1, d2, d3, d21, d31
   type(csr_relation), target :: d1t, d2t, d3t
@@ -86,29 +90,29 @@ program visualization_level_2
   write(*,'(1x,a)') "visualization tower . level 2 . relation algebra"
   write(*,'(1x,a)') "============================================="
 
-  call structural_carriers(x0, x1, x2, x3, e1, e2, e3)
-  call occurrences_of_a1(e1, x0, x1, t1, h1)
-  call occurrences_of_a2(e2, x1, x2, t2, h2)
-  call occurrences_of_a3(e3, x2, x3, t3, h3)
+  call structural_carriers(x0, x1, x2, x3, e1, e2, e3, sets, labels)
+  call occurrences_of_a1(e1, x0, x1, t1, h1, sets)
+  call occurrences_of_a2(e2, x1, x2, t2, h2, sets)
+  call occurrences_of_a3(e3, x2, x3, t3, h3, sets)
 
-  ! ---- FORWARD. D_k = H_k o T_k^T, spelled compose_binary(T_k^T, H_k).
-  d1 = derive_dependency('D1', t1, h1)
-  d2 = derive_dependency('D2', t2, h2)
-  d3 = derive_dependency('D3', t3, h3)
+  ! ---- FORWARD. D_k = H_k o T_k^T, spelled compose_binary(T_k^T, H_k, sets).
+  d1 = derive_dependency('D1', t1, h1, sets)
+  d2 = derive_dependency('D2', t2, h2, sets)
+  d3 = derive_dependency('D3', t3, h3, sets)
 
   ! ---- and along the chain. D_2:1 = D_2 o D_1, then D_3 after that.
-  d21 = derive_composition('D2:1', d1,  d2)
-  d31 = derive_composition('D3:1', d21, d3)
+  d21 = derive_composition('D2:1', d1,  d2, sets)
+  d31 = derive_composition('D3:1', d21, d3, sets)
 
   ! ---- REVERSE. Every arrow turned, then composed the other way.
-  d1t = materialized_transpose('D1^T', d1)
-  d2t = materialized_transpose('D2^T', d2)
-  d3t = materialized_transpose('D3^T', d3)
+  d1t = materialized_transpose('D1^T', d1, sets)
+  d2t = materialized_transpose('D2^T', d2, sets)
+  d3t = materialized_transpose('D3^T', d3, sets)
 
-  middle = derive_composition('D2^T o D3^T', d3t, d2t)
-  drev   = derive_composition('Drev'       , middle, d1t)
+  middle = derive_composition('D2^T o D3^T', d3t, d2t, sets)
+  drev   = derive_composition('Drev'       , middle, d1t, sets)
 
-  d31t = materialized_transpose('D3:1^T', d31)
+  d31t = materialized_transpose('D3:1^T', d31, sets)
 
   call check_the_three_dependencies(nfail)
   call check_the_intermediate_composition(nfail)
@@ -238,7 +242,7 @@ contains
     ! Composition is associative, and the tower may as well check it
     ! rather than assume the order it happened to bracket in.
     other_way = derive_composition('D3:1 the other way', &
-         &                         d1, derive_composition('D3 o D2', d2, d3))
+         &                         d1, derive_composition('D3 o D2', d2, d3, sets), sets)
     call report(same_extension(d31, other_way), &
          & "(D3 o D2) o D1 = D3 o (D2 o D1) - the bracketing of the " // &
          & "chain is not part of its structure", nfail)
@@ -292,7 +296,7 @@ contains
          & "and the owned transpose equals transpose_of(D1) exactly - " // &
          & "materializing a view adds ownership and nothing else", nfail)
 
-    call report(same_extension(materialized_transpose('back again', d1t), d1), &
+    call report(same_extension(materialized_transpose('back again', d1t, sets), d1), &
          & "(D1^T)^T = D1 extensionally - an involution about " // &
          & "content, never about identity stamps", nfail)
 
@@ -343,8 +347,8 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(same_extension(named('call it something else', d31), d31) .and. &
-         &      same_extension(named('or this', d1), d1), &
+    call report(same_extension(named('call it something else', d31, sets), d31) .and. &
+         &      same_extension(named('or this', d1, sets), d1), &
          & "naming a relation changes its label and nothing else", nfail)
 
     call report(d1 % name() .eq. 'D1' .and. d31 % name() .eq. 'D3:1' .and. &
@@ -361,9 +365,9 @@ contains
   logical function runs_from_to(r, first, second)
 
     class(binary_relation), intent(in) :: r
-    class(member_set)     , intent(in) :: first, second
+    type(set_graph)     , intent(in) :: first, second
 
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
 
     d = r % source()
     runs_from_to = d % same_as(first)
@@ -395,9 +399,9 @@ contains
   logical function mentions(r, carrier)
 
     class(relation)  , intent(in) :: r
-    class(member_set), intent(in) :: carrier
+    type(set_graph), intent(in) :: carrier
 
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
     integer                        :: k
 
     mentions = .false.
@@ -437,13 +441,13 @@ contains
     class(binary_relation), intent(in) :: first, second
     integer               , intent(in) :: from, to
 
-    class(member_set), allocatable :: middle
+    type(set_graph) :: middle
     integer                        :: k, y
 
     middle    = first % target()
     witnesses = 0
-    do k = 1, middle % size()
-       y = middle % member(k)
+    do k = 1, sets % size_of(middle)
+       y = sets % member_of(middle, k)
        if (first % has([from, y]) .and. second % has([y, to])) then
           witnesses = witnesses + 1
        end if
@@ -455,16 +459,16 @@ contains
 
     class(binary_relation), intent(in) :: first, second
 
-    class(member_set), allocatable :: start, finish
+    type(set_graph) :: start, finish
     integer                        :: i, j
 
     start  = first % source()
     finish = second % target()
     walks  = 0
-    do i = 1, start % size()
-       do j = 1, finish % size()
+    do i = 1, sets % size_of(start)
+       do j = 1, sets % size_of(finish)
           walks = walks + witnesses(first, second, &
-               &                    start % member(i), finish % member(j))
+               &                    sets % member_of(start, i), sets % member_of(finish, j))
        end do
     end do
 

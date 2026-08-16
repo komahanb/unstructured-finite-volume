@@ -51,7 +51,8 @@
 module visualization_values_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_carrier    , only : member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
   use class_graph_field, only : field
 
   implicit none
@@ -96,29 +97,32 @@ contains
   ! nucleus rather than by this file.
   !===================================================================!
 
-  type(field) function coefficients_of_a1(e1) result(w)
+  type(field) function coefficients_of_a1(e1, sets) result(w)
 
-    class(member_set), intent(in) :: e1
+    type(set_graph), intent(in) :: e1
+    type(set_map)  , intent(in) :: sets
 
-    w = field('w1', e1, ncomp=1)
+    w = field('w1', e1, sets % size_of(e1), ncomp=1)
     call w % set_real_vector(COEFF_A1)
 
   end function coefficients_of_a1
 
-  type(field) function coefficients_of_a2(e2) result(w)
+  type(field) function coefficients_of_a2(e2, sets) result(w)
 
-    class(member_set), intent(in) :: e2
+    type(set_graph), intent(in) :: e2
+    type(set_map)  , intent(in) :: sets
 
-    w = field('w2', e2, ncomp=1)
+    w = field('w2', e2, sets % size_of(e2), ncomp=1)
     call w % set_real_vector(COEFF_A2)
 
   end function coefficients_of_a2
 
-  type(field) function coefficients_of_a3(e3) result(w)
+  type(field) function coefficients_of_a3(e3, sets) result(w)
 
-    class(member_set), intent(in) :: e3
+    type(set_graph), intent(in) :: e3
+    type(set_map)  , intent(in) :: sets
 
-    w = field('w3', e3, ncomp=1)
+    w = field('w3', e3, sets % size_of(e3), ncomp=1)
     call w % set_real_vector(COEFF_A3)
 
   end function coefficients_of_a3
@@ -128,11 +132,12 @@ contains
   ! value in common with the first and no zero among them.
   !===================================================================!
 
-  type(field) function alternate_coefficients_of_a1(e1) result(w)
+  type(field) function alternate_coefficients_of_a1(e1, sets) result(w)
 
-    class(member_set), intent(in) :: e1
+    type(set_graph), intent(in) :: e1
+    type(set_map)  , intent(in) :: sets
 
-    w = field('w1-alt', e1, ncomp=1)
+    w = field('w1-alt', e1, sets % size_of(e1), ncomp=1)
     call w % set_real_vector(COEFF_A1_ALT)
 
   end function alternate_coefficients_of_a1

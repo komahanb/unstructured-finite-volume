@@ -47,7 +47,9 @@ program visualization_level_1
   use visualization_assert , only : X1_P, X1_Q, X1_R
   use visualization_assert , only : X2_U, X2_V, X2_W
   use visualization_assert , only : X3_M, X3_N
-  use graph_carrier        , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
   use graph_binary_relation, only : csr_relation, binary_relation
   use visualization_carriers_fixture, only : structural_carriers, label_for
   use visualization_relations_fixture, only : occurrences_of_a1
@@ -56,7 +58,9 @@ program visualization_level_1
 
   implicit none
 
-  type(counted_set)  :: x0, x1, x2, x3, e1, e2, e3
+  type(set_graph)  :: x0, x1, x2, x3, e1, e2, e3
+  type(set_map)     :: sets
+  type(label_map)     :: labels
   type(csr_relation) :: t1, h1, t2, h2, t3, h3
   integer            :: nfail
 
@@ -66,10 +70,10 @@ program visualization_level_1
   write(*,'(1x,a)') "visualization tower . level 1 . relation"
   write(*,'(1x,a)') "============================================="
 
-  call structural_carriers(x0, x1, x2, x3, e1, e2, e3)
-  call occurrences_of_a1(e1, x0, x1, t1, h1)
-  call occurrences_of_a2(e2, x1, x2, t2, h2)
-  call occurrences_of_a3(e3, x2, x3, t3, h3)
+  call structural_carriers(x0, x1, x2, x3, e1, e2, e3, sets, labels)
+  call occurrences_of_a1(e1, x0, x1, t1, h1, sets)
+  call occurrences_of_a2(e2, x1, x2, t2, h2, sets)
+  call occurrences_of_a3(e3, x2, x3, t3, h3, sets)
 
   call check_the_signatures_are_typed(nfail)
   call check_the_signatures_are_rectangular(nfail)
@@ -116,7 +120,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: tail_end, head_end
+    type(set_graph) :: tail_end, head_end
 
     tail_end = t1 % target()
     head_end = h1 % target()
@@ -239,9 +243,9 @@ contains
   logical function signed(r, first, second)
 
     class(binary_relation), intent(in) :: r
-    class(member_set)     , intent(in) :: first, second
+    type(set_graph)     , intent(in) :: first, second
 
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
 
     d = r % source()
     signed = d % same_as(first)
@@ -253,7 +257,7 @@ contains
   logical function relates(r, first, second)
 
     class(binary_relation), intent(in) :: r
-    class(member_set)     , intent(in) :: first, second
+    type(set_graph)     , intent(in) :: first, second
 
     relates = signed(r, first, second)
 
@@ -262,9 +266,9 @@ contains
   logical function about_an_occurrence(r, occurrences)
 
     class(binary_relation), intent(in) :: r
-    class(member_set)     , intent(in) :: occurrences
+    type(set_graph)     , intent(in) :: occurrences
 
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
 
     d = r % source()
     about_an_occurrence = d % same_as(occurrences)
@@ -274,14 +278,14 @@ contains
   logical function exactly_one_end_each(tail, head, occurrences)
 
     class(binary_relation), target, intent(in) :: tail, head
-    class(member_set)             , intent(in) :: occurrences
+    type(set_graph)             , intent(in) :: occurrences
 
     integer, pointer :: fibre(:)
     integer          :: k, e
 
     exactly_one_end_each = .true.
-    do k = 1, occurrences % size()
-       e = occurrences % member(k)
+    do k = 1, sets % size_of(occurrences)
+       e = sets % member_of(occurrences, k)
        fibre => tail % image_view(e)
        exactly_one_end_each = exactly_one_end_each .and. (size(fibre) .eq. 1)
        fibre => head % image_view(e)

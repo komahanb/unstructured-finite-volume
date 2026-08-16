@@ -36,9 +36,12 @@
 
 program visualization_level_8
 
+  use graph_set_representation, only : counted_set_representation
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
   use iso_fortran_env      , only : dp => REAL64
   use visualization_assert , only : report, verdict
-  use graph_carrier        , only : counted_set
+  use fractal_graph        , only : set_graph => graph
   use graph_grammar        , only : graph
   use class_graph          , only : stored_graph
   use class_graph_stencil  , only : stencil_operator
@@ -63,6 +66,8 @@ program visualization_level_8
   class(graph), allocatable :: dependent, independent, independent_be
   type(stored_graph)        :: context
   type(jacobi)              :: solver
+  type(set_map)     :: sets
+  type(label_map)     :: labels
 
   integer , allocatable :: colours(:)
   real(dp), allocatable :: mv(:), d(:)
@@ -83,20 +88,63 @@ program visualization_level_8
        &               constant = [0.0_dp, 0.0_dp, 0.0_dp], &
        &               label    = 'A')
   call a % dependencies(dependent)
+  if (.not. sets % describes(dependent % vertex_set())) &
+       & call sets % bind(dependent % vertex_set(), &
+       &      counted_set_representation(dependent % num_vertices()))
+  if (.not. sets % describes(dependent % edge_set())) &
+       & call sets % bind(dependent % edge_set(), &
+       &      counted_set_representation(dependent % num_edges()))
+  ! the production graph names its own two domains
+  if (.not. labels % labelled(dependent % vertex_set())) &
+       & call labels % bind(dependent % vertex_set(), 'vertices')
+  if (.not. labels % labelled(dependent % edge_set())) &
+       & call labels % bind(dependent % edge_set(), 'edges')
 
   ! ---- the independent axis: BDF2 around that same action.
   clock = bdf(2, a, H_PROBE)
   call clock % dependencies(independent)
+  if (.not. sets % describes(independent % vertex_set())) &
+       & call sets % bind(independent % vertex_set(), &
+       &      counted_set_representation(independent % num_vertices()))
+  if (.not. sets % describes(independent % edge_set())) &
+       & call sets % bind(independent % edge_set(), &
+       &      counted_set_representation(independent % num_edges()))
+  ! the production graph names its own two domains
+  if (.not. labels % labelled(independent % vertex_set())) &
+       & call labels % bind(independent % vertex_set(), 'vertices')
+  if (.not. labels % labelled(independent % edge_set())) &
+       & call labels % bind(independent % edge_set(), 'edges')
 
   euler = backward_euler(a, H_PROBE)
   call euler % dependencies(independent_be)
+  if (.not. sets % describes(independent_be % vertex_set())) &
+       & call sets % bind(independent_be % vertex_set(), &
+       &      counted_set_representation(independent_be % num_vertices()))
+  if (.not. sets % describes(independent_be % edge_set())) &
+       & call sets % bind(independent_be % edge_set(), &
+       &      counted_set_representation(independent_be % num_edges()))
+  ! the production graph names its own two domains
+  if (.not. labels % labelled(independent_be % vertex_set())) &
+       & call labels % bind(independent_be % vertex_set(), 'vertices')
+  if (.not. labels % labelled(independent_be % edge_set())) &
+       & call labels % bind(independent_be % edge_set(), 'edges')
 
   ! ---- the execution context, deliberately neither of them.
   context = stored_graph(N, tails=[integer ::], heads=[integer ::])
+  if (.not. sets % describes(context % vertex_set())) &
+       & call sets % bind(context % vertex_set(), &
+       &      counted_set_representation(context % num_vertices()))
+  if (.not. sets % describes(context % edge_set())) &
+       & call sets % bind(context % edge_set(), &
+       &      counted_set_representation(context % num_edges()))
+  if (.not. labels % labelled(context % vertex_set())) &
+       & call labels % bind(context % vertex_set(), 'vertices')
+  if (.not. labels % labelled(context % edge_set())) &
+       & call labels % bind(context % edge_set(), 'edges')
 
   ! ---- the solver, handed the DEPENDENT axis and nothing else.
   call solver % attach(a, context, context % vertex_set(), &
-       &               coupling = dependent)
+       &               context % num_vertices(), coupling = dependent)
 
   call solver % matvec(X_PROBE, mv)
   call solver % sweep_order(colours)
@@ -120,13 +168,13 @@ contains
     write(*,'(1x,a)') "---------------------------------------------"
 
     write(*,'(4x,a)') "INDEPENDENT-VARIABLE STENCIL   step % dependencies()"
-    pic = pattern_picture(independent, ''); call say_grid(pic)
+    pic = pattern_picture(independent, '', sets, labels); call say_grid(pic)
 
     write(*,'(4x,a)') "DEPENDENT-VARIABLE STENCIL     stencil % dependencies()"
-    pic = pattern_picture(dependent, ''); call say_grid(pic)
+    pic = pattern_picture(dependent, '', sets, labels); call say_grid(pic)
 
     write(*,'(4x,a)') "EXECUTION CONTEXT              handed to apply"
-    pic = pattern_picture(context, ''); call say_grid(pic)
+    pic = pattern_picture(context, '', sets, labels); call say_grid(pic)
 
     write(*,'(4x,a)') "SOLVER"
     write(*,'(8x,a)') "coupling ............ dependent-variable stencil"

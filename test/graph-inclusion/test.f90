@@ -135,7 +135,6 @@ program inclusion_suite
     type(graph), target :: a, s
     type(set_map)       :: sets
     type(inclusion_map) :: inc
-    type(graph)         :: host
     integer             :: k
     logical             :: same_value, position_differs
 
@@ -160,9 +159,15 @@ program inclusion_suite
          & set_local_index(s, sets, 5) .eq. 2 .and. &
          &  set_local_index(a, sets, 5) .eq. 5)
 
-    host = inc % ambient_of(s)
-    call check('3  the ambient answers as the same declared set', &
-         & host % same_as(a) .and. .not. host % same_as(s))
+    !----------------------------------------------------------------!
+    ! The ambient is asked about, not asked for. The map stores the
+    ! directed pair id(S) -> id(A) and answers the predicate; it
+    ! never rebuilds a graph object from a stored identity, because
+    ! an identity says WHICH set, not what that set is now.
+    !----------------------------------------------------------------!
+
+    call check('3  A is the declared ambient of S, and S is not', &
+         & inc % declared_into(s, a) .and. .not. inc % declared_into(s, s))
 
   end block coordinates_block
 

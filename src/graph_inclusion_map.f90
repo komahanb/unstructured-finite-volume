@@ -39,12 +39,51 @@
 ! declared subobject of A alone. This module answers only the second,
 ! and never infers an edge from the first.
 !
+!               THE MAP OWNS ITS KEYS, AND ONLY ITS KEYS
+!
+! A declared embedding is nothing but a directed pair of identities,
+!
+!     id(S) -> id(A)
+!
+! so a row stores two identities BY VALUE. It once stored two graph
+! pointers, and that made the map a borrower of the very objects it
+! was supposed to be an association between - stored outside both, and
+! reaching back into both. With the declaring graphs destroyed, the
+! walk read freed storage and answered correctly anyway; valgrind
+! counted the reads.
+!
+!     identity map owns its keys by value;
+!     it borrows no graph object merely to recognize it.
+!
+! Every question here - included, declared_into, and the transitive
+! order - is a comparison of identities, so all of them are answerable
+! from the stored pairs alone. The walk never leaves this map.
+!
+!                  WHY THERE IS NO ambient_of
+!
+! An ambient_of(S) -> type(graph) would have to rebuild a graph OBJECT
+! from a stored identity, and an identity is not a graph: it says which
+! one, not what it is now. Reconstructing the object needs a registry
+! of every declared graph, and a global table is a heavier thing than
+! the question deserves.
+!
+! So the question was checked rather than assumed. No production caller
+! wanted the object; the one caller in the tower asked
+!
+!     host = m % ambient_of(s);  host % same_as(a)
+!
+! which is not a request for a graph at all - it is the identity
+! predicate, written in two steps. declared_into answers it in one, and
+! the operation that would have needed a registry is gone rather than
+! served.
+!
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module graph_inclusion_map
 
-  use fractal_graph, only : graph
+  use fractal_graph , only : graph
+  use graph_identity, only : token
 
   implicit none
 
@@ -52,12 +91,12 @@ module graph_inclusion_map
   public :: inclusion_map, declared_subobject
 
   !===================================================================!
-  ! One declared embedding.
+  ! One declared embedding: which part, which ambient, by value.
   !===================================================================!
 
   type :: inclusion_row
-     type(graph), pointer :: part    => null()
-     type(graph), pointer :: ambient => null()
+     type(token) :: part
+     type(token) :: ambient
   end type inclusion_row
 
   type :: inclusion_map
@@ -68,7 +107,7 @@ module graph_inclusion_map
 
      procedure :: include_in
      procedure :: included
-     procedure :: ambient_of
+     procedure :: declared_into
 
   end type inclusion_map
 
@@ -82,23 +121,27 @@ contains
 
   subroutine include_in(this, part, ambient)
 
-    class(inclusion_map), intent(inout)      :: this
-    type(graph)         , intent(in), target :: part
-    type(graph)         , intent(in), target :: ambient
+    class(inclusion_map), intent(inout) :: this
+    type(graph)         , intent(in)    :: part
+    type(graph)         , intent(in)    :: ambient
 
     type(inclusion_row), allocatable :: grown(:)
+    type(token)                      :: below, above
     integer                          :: n
 
+    below = part % id()
+    above = ambient % id()
+
     ! An undeclared token does not match itself.
-    if (.not. part % same_as(part) .or. .not. ambient % same_as(ambient)) then
+    if (.not. below % matches(below) .or. .not. above % matches(above)) then
        error stop 'graph_inclusion_map: an inclusion is keyed on assigned identity'
     end if
 
-    if (part % same_as(ambient)) then
+    if (below % matches(above)) then
        error stop 'graph_inclusion_map: a set is not declared into itself'
     end if
 
-    if (this % included(part)) then
+    if (row_at(this, below) /= 0) then
        error stop 'graph_inclusion_map: a set is carved from one domain'
     end if
 
@@ -106,16 +149,21 @@ contains
     n = size(this % rows)
     allocate(grown(n + 1))
     grown(1:n) = this % rows
-    grown(n + 1) % part    => part
-    grown(n + 1) % ambient => ambient
+    grown(n + 1) % part    = below
+    grown(n + 1) % ambient = above
     call move_alloc(grown, this % rows)
 
   end subroutine include_in
 
-  pure integer function row_of(this, part) result(at)
+  !===================================================================!
+  ! Where the row for an identity is, or zero. The whole of lookup:
+  ! the walk below steps in identities, so it needs no other form.
+  !===================================================================!
+
+  pure integer function row_at(this, below) result(at)
 
     class(inclusion_map), intent(in) :: this
-    type(graph)         , intent(in) :: part
+    type(token)         , intent(in) :: below
 
     integer :: k
 
@@ -123,44 +171,52 @@ contains
     if (.not. allocated(this % rows)) return
 
     do k = 1, size(this % rows)
-       if (this % rows(k) % part % same_as(part)) then
+       if (this % rows(k) % part % matches(below)) then
           at = k
           return
        end if
     end do
 
-  end function row_of
+  end function row_at
 
   pure logical function included(this, part)
 
     class(inclusion_map), intent(in) :: this
     type(graph)         , intent(in) :: part
 
-    included = row_of(this, part) /= 0
+    type(token) :: below
+
+    below = part % id()
+    included = row_at(this, below) /= 0
 
   end function included
 
   !===================================================================!
-  ! The declared ambient, as a copy - which is to say, as the same
-  ! declared set: a copy carries the token. Nothing is lent.
+  ! The declared edge itself: was S carved from exactly this A. One
+  ! step, not the transitive order - S c--> S' c--> A answers false
+  ! here and true to declared_subobject, and the difference is the
+  ! reason both exist.
   !===================================================================!
 
-  function ambient_of(this, part) result(host)
+  pure logical function declared_into(this, part, ambient) result(carved)
 
     class(inclusion_map), intent(in) :: this
     type(graph)         , intent(in) :: part
-    type(graph)                      :: host
+    type(graph)         , intent(in) :: ambient
 
-    integer :: at
+    type(token) :: below, above
+    integer     :: at
 
-    at = row_of(this, part)
-    if (at == 0) then
-       error stop 'graph_inclusion_map: that set was not declared into anything'
-    end if
+    carved = .false.
 
-    host = this % rows(at) % ambient
+    below = part % id()
+    at    = row_at(this, below)
+    if (at == 0) return
 
-  end function ambient_of
+    above  = ambient % id()
+    carved = this % rows(at) % ambient % matches(above)
+
+  end function declared_into
 
   !===================================================================!
   ! THE SUBOBJECT ORDER: reflexive, and transitive along declared
@@ -172,6 +228,11 @@ contains
   ! The walk is bounded by the number of declared inclusions, because a
   ! chain that revisits a set is a cycle and no set is carved from
   ! itself twice removed.
+  !
+  ! It steps in IDENTITIES. Each step reads one stored row and compares
+  ! two tokens, so the closure of the order needs no graph object other
+  ! than the two the caller named - and needs those only to ask for
+  ! their tokens.
   !===================================================================!
 
   logical function declared_subobject(part, ancestor, m) result(below)
@@ -180,24 +241,27 @@ contains
     type(graph)        , intent(in) :: ancestor
     type(inclusion_map), intent(in) :: m
 
-    type(graph) :: here
-    integer     :: steps, bound
+    type(token) :: here, target_id
+    integer     :: steps, bound, at
 
-    below = part % same_as(ancestor)
+    here      = part % id()
+    target_id = ancestor % id()
+
+    below = here % matches(target_id)
     if (below) return
 
     bound = 0
     if (allocated(m % rows)) bound = size(m % rows)
 
-    here = part
     do steps = 1, bound
-       if (.not. m % included(here)) return
-       here  = m % ambient_of(here)
-       below = here % same_as(ancestor)
+       at = row_at(m, here)
+       if (at == 0) return
+       here  = m % rows(at) % ambient
+       below = here % matches(target_id)
        if (below) return
     end do
 
-    if (m % included(here)) then
+    if (row_at(m, here) /= 0) then
        error stop 'graph_inclusion_map: an inclusion chain is finite'
     end if
 

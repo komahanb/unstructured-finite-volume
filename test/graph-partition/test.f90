@@ -27,7 +27,11 @@ program partition_law
   use class_graph          , only : stored_graph
   use graph_grammar        , only : graph, graph_field
   use class_graph_field    , only : field
-  use graph_carrier        , only : counted_set, member_set
+  use graph_grammar      , only : set_graph
+  use graph_set_representation, only : counted_set_representation
+  use graph_set_map      , only : set_map
+  use graph_label_map    , only : label_map
+  use graph_inclusion_map, only : inclusion_map
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR, &
        &                              PARTITION_BREADTH_FIRST
   use class_graph_assembler, only : assembler
@@ -167,8 +171,19 @@ contains
     type(assembler)                 :: a
     class(graph), allocatable       :: part
     class(graph_field), allocatable :: pd, fd
-    type(counted_set)               :: on
+    type(set_graph)                 :: on
     type(field)                     :: d
+
+    !----------------------------------------------------------------!
+    ! The transport CARVES: a part field lands on a domain that did
+    ! not exist before the call, and the round trip carves again on
+    ! the way home. These maps outlive both calls because the answers
+    ! do.
+    !----------------------------------------------------------------!
+
+    type(set_map)                   :: sets
+    type(label_map)                 :: labels
+    type(inclusion_map)             :: inclusions
     real(dp)                        :: want(6), total(6)
     real(dp), allocatable           :: v(:)
     integer                         :: k
@@ -178,16 +193,32 @@ contains
     a    = assembler()
     want = [10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp]
 
+    !----------------------------------------------------------------!
+    ! The whole graph's domains, described before anything transports
+    ! data across them: the transform asks WHERE a global member
+    ! stands, and only a representation can say.
+    !----------------------------------------------------------------!
+
     on = g % vertex_set()
-    d  = field('q', on)
+    call sets % bind(on, counted_set_representation(g % num_vertices()))
+
+    d  = field('q', on, g % num_vertices())
     call d % set_real_vector(want)
 
     total = 0.0_dp
     do k = 1, nparts
        p = partitioner(PARTITION_LINEAR, nparts=nparts, part=k)
        call p % partition_graph(g, part)
-       call p % partition_data(g, d, part, pd)
-       call a % assemble_data(part, pd, g, fd)
+
+       ! Each part is a new graph, so its own carriers are new domains
+       ! and must be described before a field can be seated on them.
+       call sets % bind(part % vertex_set(), &
+            & counted_set_representation(part % num_vertices()))
+       call sets % bind(part % edge_set(), &
+            & counted_set_representation(part % num_edges()))
+
+       call p % partition_data(g, d, part, sets, labels, inclusions, pd)
+       call a % assemble_data(part, pd, g, sets, labels, inclusions, fd)
 
        select type (fd)
        class is (field)
@@ -218,8 +249,19 @@ contains
     type(assembler)                 :: a
     class(graph), allocatable       :: part
     class(graph_field), allocatable :: pd, fd
-    type(counted_set)               :: on
+    type(set_graph)                 :: on
     type(field)                     :: d
+
+    !----------------------------------------------------------------!
+    ! The transport CARVES: a part field lands on a domain that did
+    ! not exist before the call, and the round trip carves again on
+    ! the way home. These maps outlive both calls because the answers
+    ! do.
+    !----------------------------------------------------------------!
+
+    type(set_map)                   :: sets
+    type(label_map)                 :: labels
+    type(inclusion_map)             :: inclusions
     real(dp)                        :: want(5), total(5)
     real(dp), allocatable           :: v(:)
     integer                         :: k
@@ -230,8 +272,16 @@ contains
     a    = assembler()
     want = [1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp, 5.0_dp]
 
+    !----------------------------------------------------------------!
+    ! The whole graph's domains, described before anything transports
+    ! data across them: the transform asks WHERE a global member
+    ! stands, and only a representation can say.
+    !----------------------------------------------------------------!
+
     on = g % edge_set()
-    d  = field('w', on)
+    call sets % bind(on, counted_set_representation(g % num_edges()))
+
+    d  = field('w', on, g % num_edges())
     call d % set_real_vector(want)
 
     total       = 0.0_dp
@@ -239,8 +289,16 @@ contains
     do k = 1, nparts
        p = partitioner(PARTITION_LINEAR, nparts=nparts, part=k)
        call p % partition_graph(g, part)
-       call p % partition_data(g, d, part, pd)
-       call a % assemble_data(part, pd, g, fd)
+
+       ! Each part is a new graph, so its own carriers are new domains
+       ! and must be described before a field can be seated on them.
+       call sets % bind(part % vertex_set(), &
+            & counted_set_representation(part % num_vertices()))
+       call sets % bind(part % edge_set(), &
+            & counted_set_representation(part % num_edges()))
+
+       call p % partition_data(g, d, part, sets, labels, inclusions, pd)
+       call a % assemble_data(part, pd, g, sets, labels, inclusions, fd)
 
        select type (fd)
        class is (field)
@@ -278,7 +336,10 @@ contains
     type(stored_graph)             :: g
     type(partitioner)              :: p
     class(graph), allocatable      :: part
-    class(member_set), allocatable :: owned, borrowed
+    type(set_graph)                :: owned, borrowed
+    type(set_map)                  :: sets
+    type(label_map)                :: labels
+    type(inclusion_map)            :: inclusions
     integer                        :: times(6), k, l
     integer, allocatable           :: idx(:)
     logical                        :: borrows
@@ -292,15 +353,15 @@ contains
        p = partitioner(PARTITION_LINEAR, nparts=nparts, part=k)
        call p % partition_graph(g, part)
 
-       call part % owned_vertices(k, owned)
-       call roster(owned, idx)
+       call part % owned_vertices(k, sets, labels, inclusions, owned)
+       call roster(sets, owned, idx)
        do l = 1, size(idx)
           times(part % global_vertex_index(idx(l))) = &
                & times(part % global_vertex_index(idx(l))) + 1
        end do
 
-       call part % borrowed_vertices(k, borrowed)
-       if (borrowed % size() .gt. 0) borrows = .true.
+       call part % borrowed_vertices(k, sets, labels, inclusions, borrowed)
+       if (sets % size_of(borrowed) .gt. 0) borrows = .true.
     end do
 
     write(what, '(a,i0,a)') "D  nparts = ", nparts, &
@@ -313,16 +374,17 @@ contains
 
   end subroutine ownership_law
 
-  subroutine roster(s, idx)
+  subroutine roster(sets, s, idx)
 
-    class(member_set)   , intent(in)  :: s
+    type(set_map)       , intent(in)  :: sets
+    type(set_graph)     , intent(in)  :: s
     integer, allocatable, intent(out) :: idx(:)
 
     integer :: k
 
-    allocate(idx(s % size()))
-    do k = 1, s % size()
-       idx(k) = s % member(k)
+    allocate(idx(sets % size_of(s)))
+    do k = 1, sets % size_of(s)
+       idx(k) = sets % member_of(s, k)
     end do
 
   end subroutine roster

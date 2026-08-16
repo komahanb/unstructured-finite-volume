@@ -155,7 +155,8 @@ contains
 
     allocate(mg % smoother, source=jacobi())
     allocate(mg % coarse  , source=gmres())
-    call mg % attach(chain_statement(m), m)
+    call mg % attach(chain_statement(m), m, m % vertex_set(), &
+         & m % num_vertices())
     call mg % setup(assignment)
     mg % coarse % tolerance = 1.0d-13
 
@@ -207,7 +208,8 @@ contains
 
     allocate(mg % smoother, source=jacobi())
     allocate(mg % coarse  , source=gmres())
-    call mg % attach(chain_statement(m), m)
+    call mg % attach(chain_statement(m), m, m % vertex_set(), &
+         & m % num_vertices())
     call mg % setup(assignment)
 
     mg % smoother % max_iterations = 3
@@ -230,7 +232,8 @@ contains
     call report(achieved < 1.0d-9, &
          & 'the two-grid cycle closes the chain statement', nfail)
 
-    call direct % attach(chain_statement(m), m)
+    call direct % attach(chain_statement(m), m, m % vertex_set(), &
+         & m % num_vertices())
     direct % tolerance = 1.0d-12
     allocate(xd(8))
     xd = 0.0_dp
@@ -238,6 +241,45 @@ contains
 
     call report(all(abs(x - xd) < 1.0d-7), &
          & 'two roads, one answer: the cycle meets the direct solve', nfail)
+
+    !----------------------------------------------------------------!
+    ! TWO REGRESSIONS, PINNED WHERE THEY BROKE.
+    !
+    ! ATTACH IS RE-ENTERABLE. Newton calls it once per iteration, and
+    ! it declares the solver's number domain each time - which a graph
+    ! refuses, because a graph signs ONCE. The old counted_set
+    ! constructor minted a fresh number domain per attach, so that is
+    ! the semantics kept: reset to an unsigned graph, then declare.
+    ! Attaching twice must therefore succeed and answer the same.
+    !----------------------------------------------------------------!
+
+    call direct % attach(chain_statement(m), m, m % vertex_set(), &
+         & m % num_vertices())
+    xd = 0.0_dp
+    call direct % solve(rhs, xd, achieved)
+
+    call report(all(abs(x - xd) < 1.0d-7), &
+         & 'attach is re-enterable: the second attach solves the same', &
+         & nfail)
+
+    !----------------------------------------------------------------!
+    ! A COUNT COMPONENT NEEDS A DEFAULT. jacobi() and gmres() name no
+    ! component, so every component of minimizer must have a value
+    ! without being named - a count with no value is not a different
+    ! kind of thing from a count of zero.
+    !----------------------------------------------------------------!
+
+    unnamed_components: block
+      type(jacobi) :: j
+      type(gmres)  :: q
+      j = jacobi()
+      q = gmres()
+      call report(j % n_unknown_domain .eq. 0 .and. &
+           &      q % n_unknown_domain .eq. 0 .and. &
+           &      j % n_residual_domain .eq. 0, &
+           & 'an unattached solver counts no unknowns, and says so', &
+           & nfail)
+    end block unnamed_components
 
   end subroutine check_two_roads_one_answer
 

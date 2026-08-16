@@ -47,8 +47,7 @@
 module class_graph_walk
 
   use graph_grammar      , only : graph_operation, graph, graph_field
-  use graph_calculus     , only : GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
+  use graph_grammar      , only : set_graph
   use class_graph_field  , only : field
 
   implicit none
@@ -132,15 +131,17 @@ contains
   !      depth          a distance per vertex
   !===================================================================!
 
-  subroutine walk_domain(this, input_graph, domain)
+  subroutine walk_domain(this, input_graph, domain, nentries)
 
     class(walk) , intent(in)               :: this
     class(graph), intent(in)               :: input_graph
-    class(graph), allocatable, intent(out) :: domain
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
 
     associate (u1 => this); end associate
 
-    call input_graph % all_vertices(domain)
+    domain   = input_graph % all_vertices()
+    nentries = input_graph % num_vertices()
 
   end subroutine walk_domain
 
@@ -159,21 +160,14 @@ contains
     class(graph_field), allocatable, intent(inout) :: output
 
     type(field)           :: out
-    type(support)         :: on
-    integer , allocatable :: mark(:), indices(:)
-    integer :: nv, v
+    integer , allocatable :: mark(:)
+    integer :: nv
 
     associate (u1 => present(input_data)); end associate
 
     nv = input_graph % num_vertices()
 
-    allocate(indices(nv))
-    do v = 1, nv
-       indices(v) = v
-    end do
-
-    on  = support(GRAPH_SIDE_VERTEX, indices)
-    out = field(this % name(), on)
+    out = field(this % name(), input_graph % vertex_set(), input_graph % num_vertices())
 
     select case (this % rule)
     case (WALK_VISIT_ORDER)

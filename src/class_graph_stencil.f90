@@ -35,10 +35,9 @@ module class_graph_stencil
   use iso_fortran_env    , only : dp => REAL64
   use graph_grammar      , only : graph, graph_field
   use graph_calculus     , only : discretization_operator
-  use graph_calculus     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
-  use class_graph_support, only : support
   use class_graph_field  , only : field
   use class_graph        , only : stored_graph
+  use graph_grammar      , only : set_graph
 
   implicit none
 
@@ -84,19 +83,15 @@ contains
     real(dp), intent(in) :: constant(:)
     character(len=*), intent(in), optional :: label
 
-    type(support) :: on_edges, on_cells
-    integer :: e, v, nv
+    integer :: nv
 
     nv = size(constant)
 
     this % pattern = stored_graph(nv, tails=columns, heads=rows)
 
-    on_edges = support(GRAPH_SIDE_EDGE  , [(e, e = 1, size(weights))])
-    on_cells = support(GRAPH_SIDE_VERTEX, [(v, v = 1, nv)])
-
-    this % weights   = field('stencil weights', on_edges)
+    this % weights   = field('stencil weights', this % pattern % edge_set(), this % pattern % num_edges())
     call this % weights % set_real_vector(weights)
-    this % constants = field('stencil constants', on_cells)
+    this % constants = field('stencil constants', this % pattern % vertex_set(), this % pattern % num_vertices())
     call this % constants % set_real_vector(constant)
 
     if (present(label)) then
@@ -116,15 +111,17 @@ contains
 
   end function stencil_name
 
-  subroutine stencil_domain(this, input_graph, domain)
+  subroutine stencil_domain(this, input_graph, domain, nentries)
 
     class(stencil_operator), intent(in)    :: this
     class(graph), intent(in)               :: input_graph
-    class(graph), allocatable, intent(out) :: domain
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
 
     associate (u1 => this); end associate
 
-    call input_graph % all_vertices(domain)
+    domain   = input_graph % all_vertices()
+    nentries = input_graph % num_vertices()
 
   end subroutine stencil_domain
 
@@ -140,10 +137,9 @@ contains
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
-    type(support) :: cells
     type(field)   :: out
     real(dp), allocatable :: q(:), y(:), w(:)
-    integer :: nv, e, v
+    integer :: nv, e
 
     nv = input_graph % num_vertices()
 
@@ -159,8 +155,7 @@ contains
        end do
     end if
 
-    cells = support(GRAPH_SIDE_VERTEX, [(v, v = 1, nv)])
-    out = field(this % label, cells)
+    out = field(this % label, input_graph % vertex_set(), input_graph % num_vertices())
     call out % set_real_vector(y)
 
     if (allocated(output)) deallocate(output)

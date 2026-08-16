@@ -38,8 +38,6 @@ module class_graph_multigrid
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_grammar      , only : graph
-  use graph_calculus     , only : GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
   use class_graph_stencil, only : stencil_operator
   use graph_minimization , only : minimizer
 
@@ -89,7 +87,6 @@ contains
     integer, intent(in) :: aggregates(:)
 
     type(stencil_operator) :: block_statement
-    type(support) :: blocks
     integer , allocatable :: rows(:), columns(:)
     real(dp), allocatable :: weights(:), zeros(:)
     integer :: e, ne, b
@@ -123,10 +120,20 @@ contains
 
     end select
 
-    call this % smoother % attach(this % action, this % on)
+    ! The smoother is a STRUCTURED one - jacobi, gauss-seidel - so it
+    ! is handed the dependent-variable coupling explicitly. On this
+    ! path the mesh the action executes over IS the coupling of its
+    ! unknowns, and saying so here makes that a caller's statement
+    ! rather than the minimizer's assumption.
+    call this % smoother % attach(this % action, this % on, &
+         & this % unknown_domain, this % n_unknown_domain, coupling = this % on)
 
-    blocks = support(GRAPH_SIDE_VERTEX, [(b, b = 1, this % nblocks)])
-    call this % coarse % attach(block_statement, blocks)
+    ! The coarse statement carries its own stencil, and that stencil
+    ! is exactly the coupling of the coarse unknowns.
+    call this % coarse % attach(block_statement, block_statement % pattern, &
+         & block_statement % pattern % vertex_set(), &
+         & block_statement % pattern % num_vertices(), &
+         & coupling = block_statement % pattern)
 
   end subroutine setup
 

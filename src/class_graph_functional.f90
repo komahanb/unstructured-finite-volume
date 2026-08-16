@@ -40,8 +40,8 @@ module class_graph_functional
   use graph_grammar      , only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
   use graph_grammar      , only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
   use graph_grammar      , only : GRAPH_FIELD_CHARACTER
-  use graph_calculus     , only : graph_functional, GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
+  use graph_calculus     , only : graph_functional
+  use graph_grammar      , only : set_graph
 
   implicit none
 
@@ -53,6 +53,10 @@ module class_graph_functional
   !===================================================================!
 
   type, extends(graph_functional) :: functional
+
+     ! The one-entry home, declared at construction so domain()
+     ! answers one stable identity for the life of the functional.
+     type(set_graph), private :: home
 
      character(len=:), allocatable :: label
      character(len=:), allocatable :: unit_name
@@ -132,7 +136,7 @@ contains
   ! Build a functional that holds nothing yet.
   !===================================================================!
 
-  pure type(functional) function create(label, unit_name) result(this)
+  type(functional) function create(label, unit_name) result(this)
 
     character(len=*), intent(in), optional :: label
     character(len=*), intent(in), optional :: unit_name
@@ -149,6 +153,8 @@ contains
        this % unit_name = '-'
     end if
 
+
+    call this % home % declare()
   end function create
 
   !===================================================================!
@@ -187,16 +193,13 @@ contains
   ! convention, and nothing downstream reads it.
   !===================================================================!
 
-  subroutine functional_domain(this, domain)
+  type(set_graph) function functional_domain(this) result(domain)
 
-    class(functional), intent(in)          :: this
-    class(graph), allocatable, intent(out) :: domain
+    class(functional), intent(in) :: this
 
-    associate (u1 => this); end associate
+    domain = this % home
 
-    allocate(domain, source=support(GRAPH_SIDE_VERTEX, [1]))
-
-  end subroutine functional_domain
+  end function functional_domain
 
   !===================================================================!
   ! Shape: one entry, one component, one live kind.

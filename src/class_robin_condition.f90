@@ -46,6 +46,10 @@ module class_robin_condition
 
   use iso_fortran_env , only : dp => REAL64
   use graph_grammar   , only : graph
+  use graph_grammar      , only : set_graph
+  use graph_set_map      , only : set_map
+  use graph_label_map    , only : label_map
+  use graph_inclusion_map, only : inclusion_map
   use class_graph_field, only : field
   use class_graph_mesh, only : mesh
 
@@ -118,17 +122,25 @@ contains
   end function neumann
 
   !===================================================================!
-  ! The tag resolved, once: the member set of this condition's
-  ! faces. The indices name edges of the mesh.
+  ! The tag resolved, once: WHICH edges this condition speaks for.
+  !
+  ! The answer is a carved set, so it is a new declared domain, and
+  ! the caller's maps are where it says who belongs, what it is called
+  ! and what it was carved from. They are arguments because the answer
+  ! outlives this call - a set the caller cannot interpret would be no
+  ! answer at all.
   !===================================================================!
 
-  subroutine faces(this, m, members)
+  subroutine faces(this, m, sets, labels, inclusions, members)
 
-    class(robin_condition), intent(in)     :: this
-    type(mesh), intent(in)                 :: m
-    class(graph), allocatable, intent(out) :: members
+    class(robin_condition), intent(in)    :: this
+    type(mesh)            , intent(in)    :: m
+    type(set_map)         , intent(inout) :: sets
+    type(label_map)       , intent(inout) :: labels
+    type(inclusion_map)   , intent(inout) :: inclusions
+    type(set_graph)       , intent(out)   :: members
 
-    call m % tagged_edges(this % tag, members)
+    call m % tagged_edges(this % tag, sets, labels, inclusions, members)
 
   end subroutine faces
 
@@ -311,23 +323,33 @@ contains
     real(dp), allocatable, intent(out) :: area(:)
     real(dp), allocatable, intent(out) :: delta(:)
 
-    class(graph), allocatable :: members
+    !----------------------------------------------------------------!
+    ! The carved set is born and dies inside this call, so its
+    ! interpretation does too: these maps are locals, not a hidden
+    ! environment. Nothing that needs them escapes.
+    !----------------------------------------------------------------!
+
+    type(set_graph)     :: members
+    type(set_map)       :: sets
+    type(label_map)     :: labels
+    type(inclusion_map) :: inclusions
+
     type(field) :: fa, fd
     real(dp), allocatable :: all_areas(:), all_deltas(:)
     integer :: f, e
 
-    call m % tagged_edges(this % tag, members)
+    call m % tagged_edges(this % tag, sets, labels, inclusions, members)
 
     fa = m % face_area()
     call fa % get_real_vector(all_areas)
     fd = m % face_delta()
     call fd % get_real_vector(all_deltas)
 
-    allocate(area(members % num_vertices()))
-    allocate(delta(members % num_vertices()))
+    allocate(area(sets % size_of(members)))
+    allocate(delta(sets % size_of(members)))
 
     do f = 1, size(area)
-       e = members % global_vertex_index(f)
+       e = sets % member_of(members, f)
        area(f)  = all_areas(e)
        delta(f) = all_deltas(e)
     end do

@@ -1,18 +1,17 @@
 !=====================================================================!
-! LEVEL 1 OF THE STRATIFICATION . THE CALCULUS
+! THE LEGACY COMPATIBILITY CALCULUS
 !
-! The first level above the ground. This module answers one question
-! and no other: HOW QUANTITIES RELATE on a graph. It holds the eight
-! named citizens of graph mathematics, each one a partial concretion
-! of a grammar role - one bound parameter per name, and nothing else
-! new.
+! Once level 1 of the old stratification; now the compatibility
+! module holding the named citizens the remaining legacy operations
+! still speak - functional, reduction, broadcast and their kin. The
+! living tower is the relation-centered one (AGENTS.md); nothing
+! here defines domains, supports, or field ontology any more.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 !
 !                      THE TEN CONCRETIONS
 !
-!    graph -----[edge count = 0]----------> graph_support
 !    field -----[domain size = 1]---------> graph_functional
 !    operation -[answer domain = 1]-------> graph_reduction
 !    operation -[source domain = 1]-------> graph_broadcast
@@ -70,7 +69,10 @@
 
 module graph_calculus
 
-  use iso_fortran_env, only : dp => REAL64
+  use iso_fortran_env    , only : dp => REAL64
+  use graph_set_map      , only : set_map
+  use graph_label_map    , only : label_map
+  use graph_inclusion_map, only : inclusion_map
   use graph_grammar  , only : graph, graph_field, graph_operation, &
        &                      graph_transform
 
@@ -78,7 +80,6 @@ module graph_calculus
 
   private
 
-  public :: graph_support
   public :: graph_functional
   public :: graph_reduction
   public :: graph_broadcast
@@ -92,36 +93,16 @@ module graph_calculus
   public :: GRAPH_SIDE_VERTEX
   public :: GRAPH_SIDE_EDGE
 
-  ! Which side of its host a support references. A finite axis,
-  ! absorbed: it rides as an answer, never as a pair of types.
+  ! GRAPH_SIDE_VERTEX / GRAPH_SIDE_EDGE are the legacy differential
+  ! operator's output-LANDING choices - which side its answer lands
+  ! on - and nothing else. They are not field-domain identity, not
+  ! support identity, not a support side: domains are set graph
+  ! identities, and the support-as-edgeless-graph ontology is
+  ! retired.
   integer, parameter :: GRAPH_SIDE_VERTEX = 1
   integer, parameter :: GRAPH_SIDE_EDGE   = 2
 
-  !===================================================================!
-  ! GRAPH_SUPPORT. The grammar's graph at edge count zero: pure
-  ! membership, no incidence.
-  !
-  !      all_vertices           tagged_edges('wall')
-  !      +-------------+        +-------------+
-  !      | 1 2 3 4 5 6 |        |  11  14  19 |
-  !      +-------------+        +-------------+
-  !
-  ! Almost everything a membership list is asked, the inherited
-  ! grammar already answers: its size is num_vertices, its members
-  ! are its global indices, its identity is its id. One question has
-  ! no inherited answer, and it is the one symbol added here: which
-  ! SIDE of the host graph the members reference - its vertices or
-  ! its edges. An index list cannot say this about itself, and the
-  ! graph no longer carries data that could.
-  !===================================================================!
 
-  type, abstract, extends(graph) :: graph_support
-
-   contains
-
-     procedure(support_side_interface), deferred :: side
-
-  end type graph_support
 
   !===================================================================!
   ! GRAPH_FUNCTIONAL. The grammar's field at domain size one: a
@@ -229,9 +210,33 @@ module graph_calculus
   ! What every member owes by contract: its dependency PATTERN, as a
   ! graph. The support is to a field what this pattern is to a
   ! derived operator - values sit on members, arithmetic flows on
-  ! pairs. The minimizers one level up interrogate the pattern - the
+  ! pairs.
+  !
+  !                    THE PATTERN IS AXIS-RELATIVE
+  !
+  ! One meaning, read on whichever axis the concrete type represents:
+  !
+  !      dependencies() = the stencil on this operator's own axis
+  !
+  ! so a stencil_operator answers the stencil on the DEPENDENT
+  ! variable - which unknown feeds which - and a step_operator answers
+  ! the stencil on the INDEPENDENT variable - which instants the
+  ! residual reads. The independent axis need not be time: a
+  ! continuation coordinate, a parameter, a spatial sweep direction
+  ! all take the same seat. The type carries that context; the verb
+  ! does not have to.
+  !
+  ! And a stencil is not a chronology. Succession - which instant
+  ! follows which - is a different and equally real relation, and it
+  ! is not what this contract answers.
+  !
+  ! WHO CONSUMES IT. A minimizer's structural algorithms - the
   ! diagonal, the colouring, the triangularity, the Galerkin road -
-  ! so it is exposed by law, never by inspection.
+  ! need the DEPENDENT-variable stencil, and they are handed it
+  ! explicitly at attach by a caller that knows which object owns that
+  ! axis. They do not reach in and ask an operation for it, because
+  ! nothing here can tell them which axis a given operation's answer
+  ! belongs to.
   !===================================================================!
 
   type, abstract, extends(graph_operation) :: discretization_operator
@@ -348,13 +353,8 @@ module graph_calculus
   abstract interface
 
      !===============================================================!
-     ! The support's one question.
-     !===============================================================!
+          !===============================================================!
 
-     pure integer function support_side_interface(this)
-       import :: graph_support
-       class(graph_support), intent(in) :: this
-     end function support_side_interface
 
      !===============================================================!
      ! The reduction's four steps and its one-call form. The state is
@@ -456,13 +456,32 @@ module graph_calculus
        class(graph), allocatable, intent(out) :: part_graph
      end subroutine partition_graph_interface
 
+     !--------------------------------------------------------------!
+     ! CARRYING DATA ONTO A PART, WITH ITS DEPENDENCIES STATED.
+     !
+     ! This transform reads a field's domain and then asks it every
+     ! question there is: who belongs, where a member stands, what it
+     ! was carved from, what it is called. Those are four different
+     ! maps' business and none of them is the graph's, so all three
+     ! arrive here as arguments.
+     !
+     ! They are INOUT because the answer is a new carved domain: the
+     ! part field lives somewhere that did not exist before the call,
+     ! and a caller that could not interpret it would have no answer.
+     ! The transform writes into the caller's maps and keeps nothing.
+     !--------------------------------------------------------------!
+
      subroutine partition_data_interface(this, global_graph, global_data, &
-          & part_graph, part_data)
-       import :: graph_partitioner, graph, graph_field
+          & part_graph, sets, labels, inclusions, part_data)
+       import :: graph_partitioner, graph, graph_field, &
+            & set_map, label_map, inclusion_map
        class(graph_partitioner), intent(in) :: this
        class(graph), intent(in) :: global_graph
        class(graph_field), intent(in) :: global_data
        class(graph), intent(in) :: part_graph
+       type(set_map), intent(inout) :: sets
+       type(label_map), intent(inout) :: labels
+       type(inclusion_map), intent(inout) :: inclusions
        class(graph_field), allocatable, intent(out) :: part_data
      end subroutine partition_data_interface
 
@@ -474,12 +493,16 @@ module graph_calculus
      end subroutine assemble_graph_interface
 
      subroutine assemble_data_interface(this, part_graph, part_data, &
-          & global_graph, global_data)
-       import :: graph_assembler, graph, graph_field
+          & global_graph, sets, labels, inclusions, global_data)
+       import :: graph_assembler, graph, graph_field, &
+            & set_map, label_map, inclusion_map
        class(graph_assembler), intent(in) :: this
        class(graph), intent(in) :: part_graph
        class(graph_field), intent(in) :: part_data
        class(graph), intent(in) :: global_graph
+       type(set_map), intent(inout) :: sets
+       type(label_map), intent(inout) :: labels
+       type(inclusion_map), intent(inout) :: inclusions
        class(graph_field), allocatable, intent(out) :: global_data
      end subroutine assemble_data_interface
 
@@ -526,3 +549,4 @@ module graph_calculus
   end interface
 
 end module graph_calculus
+

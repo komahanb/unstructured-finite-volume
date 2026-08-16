@@ -46,9 +46,8 @@ module class_fitted_balance
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_grammar      , only : graph, graph_field
-  use graph_calculus     , only : GRAPH_SIDE_VERTEX
+  use class_graph        , only : stored_graph
   use graph_forms        , only : form
-  use class_graph_support, only : support
   use class_graph_field  , only : field
   use class_graph_mesh   , only : mesh
   use class_graph_stencil, only : stencil_operator
@@ -90,7 +89,7 @@ contains
 
     type(field) :: fa, fn, fc, fcc
     type(fit) :: fitting
-    type(support) :: constellation
+    type(stored_graph) :: constellation
     type(field)   :: positions
     class(graph_field), allocatable :: answer
     real(dp), allocatable :: areas(:), normals(:), fcenters(:), centers(:)
@@ -135,8 +134,9 @@ contains
        xf = fcenters(3 * e - 2 : 3 * e)
        if (h == 0) pts(3 * npts - 2 : 3 * npts) = xf
 
-       constellation = support(GRAPH_SIDE_VERTEX, [(j, j = 1, npts)])
-       positions = field('positions', constellation, ncomp=3)
+       constellation = stored_graph(npts, tails=[integer ::], heads=[integer ::])
+       positions = field('positions', constellation % vertex_set(), &
+            & constellation % num_vertices(), ncomp=3)
        call positions % set_real_vector(pts)
 
        ! Algebra: one apply, aimed along the normal at the face.

@@ -11,3 +11,10 @@ make -C "$here" clean >/dev/null 2>&1 || true
 make -C "$here" >/dev/null
 
 cd "$here" && ./run
+
+if ./refusal >refusal.out 2>&1; then
+    echo " FAIL : a lopsided system was accepted"
+    exit 1
+fi
+grep -q "equal" refusal.out && echo " PASS : the square family refuses a lopsided system" || { cat refusal.out; exit 1; }
+rm -f refusal.out

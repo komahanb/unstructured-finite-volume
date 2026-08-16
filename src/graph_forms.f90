@@ -1,19 +1,27 @@
 !=====================================================================!
 ! LEVEL 1 . THE FORMS
 !
-! A form is a family of functions of position - a basis shape - and
-! the tower now says what that IS: a support whose members are basis
-! functions. Concretion continued in the graph direction, abstraction
-! reopened in the evaluation direction - the zoom, done deliberately:
+! A form is a family of functions of position - a basis shape. It is
+! two independent things held together, and it HAS them rather than
+! being either:
 !
-!      graph -> graph_support -> support -> form -> polynomial | wave
+!      evaluation      size_of, values, slopes - the concretion's
+!                      own table of functions, read whole
+!      active basis    WHICH table entries stand, as a declared set:
+!                      an identity, and a representation listing them
 !
-! Everything a roster once did, membership does: the standing basis
-! members ARE the support's members, indices into the concretion's
-! own table of functions. Pruning a form is building a smaller
-! member set - a graph act, owned by the form sector one level up.
-! No active(:) array survives; a set does not need a second list to
-! say who belongs to it.
+! It once EXTENDED subset_set, which said a form IS a set of basis
+! functions. That inheritance bought one method - members() - and
+! charged for the whole carrier contract: a form answered has(),
+! local_index() and ambient() that nothing asked, and could not be a
+! set of anything else without becoming a different type. Composition
+! buys the same method and charges for nothing.
+!
+! Everything a roster once did, the representation does: the standing
+! basis members ARE the listed representation's members, indices into
+! the concretion's own table. Pruning a form is relisting them. No
+! second active(:) array survives, for the same reason as before - a
+! set does not need two lists to say who belongs to it.
 !
 ! What the form adds beyond membership is only its evaluation
 ! symbols, read over the FULL table, membership saying who stands:
@@ -42,14 +50,23 @@ module graph_forms
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_calculus     , only : GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
+  use fractal_graph      , only : set_graph => graph
+  use graph_set_representation, only : listed_set_representation
 
   implicit none
 
   private
   public :: form
 
-  type, abstract, extends(support) :: form
+  type, abstract :: form
+
+     !----------------------------------------------------------------!
+     ! WHICH basis, and WHO stands in it. The identity is declared once
+     ! by the concretion; the representation is what restrict replaces.
+     !----------------------------------------------------------------!
+
+     type(set_graph)                , private :: basis
+     type(listed_set_representation), private :: active
 
    contains
 
@@ -57,6 +74,9 @@ module graph_forms
      procedure(form_values_interface), deferred :: values
      procedure(form_slopes_interface), deferred :: slopes
 
+     procedure :: declare_basis
+     procedure :: basis_set
+     procedure :: members
      procedure :: restrict
 
   end type form
@@ -87,17 +107,67 @@ module graph_forms
 contains
 
   !===================================================================!
-  ! Stand only these table entries. The kept indices name members of
-  ! the concretion's own table, and membership is the whole roster -
-  ! a set says who belongs by holding them.
+  ! A concretion declares its basis once, standing every entry of its
+  ! table. The identity is minted here so no concretion has to
+  ! remember to; the roster starts full because an unrestricted form
+  ! stands whole.
   !===================================================================!
 
-  pure subroutine restrict(this, kept)
+  subroutine declare_basis(this, width)
+
+    class(form), intent(inout) :: this
+    integer    , intent(in)    :: width
+
+    integer :: m
+
+    call this % basis % declare()
+    this % active = listed_set_representation([(m, m = 1, width)])
+
+  end subroutine declare_basis
+
+  !===================================================================!
+  ! WHICH basis this form's standing members belong to. The identity
+  ! survives restriction: restricting a form narrows who stands, and
+  ! does not make it a different basis.
+  !===================================================================!
+
+  type(set_graph) function basis_set(this) result(b)
+
+    class(form), intent(in) :: this
+
+    b = this % basis
+
+  end function basis_set
+
+  !===================================================================!
+  ! Who stands, in declaration order.
+  !===================================================================!
+
+  pure subroutine members(this, standing)
+
+    class(form)         , intent(in)  :: this
+    integer, allocatable, intent(out) :: standing(:)
+
+    call this % active % members(standing)
+
+  end subroutine members
+
+  !===================================================================!
+  ! Stand only these table entries. The kept indices name entries of
+  ! the concretion's own table, and the roster is the whole statement
+  ! of who belongs.
+  !
+  ! It MUTATES, as it always has. Making restriction functional - a
+  ! new form, a new basis identity - is a separate transformation and
+  ! is not smuggled in behind a type change.
+  !===================================================================!
+
+  subroutine restrict(this, kept)
 
     class(form), intent(inout) :: this
     integer    , intent(in)    :: kept(:)
 
-    this % support = support(GRAPH_SIDE_VERTEX, kept)
+    this % active = listed_set_representation(kept)
 
   end subroutine restrict
 

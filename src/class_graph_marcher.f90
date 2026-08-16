@@ -46,8 +46,7 @@ module class_graph_marcher
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_grammar      , only : graph, graph_field, graph_operation
-  use graph_calculus     , only : GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
+  use graph_grammar      , only : set_graph
   use class_graph_field  , only : field
   use class_graph        , only : stored_graph
   use class_graph_step   , only : step_operator, bdf
@@ -114,9 +113,11 @@ contains
 
     type(stored_graph) :: chain
     type(step_operator) :: statement
+    type(set_graph) :: state_domain
+    integer         :: n_state_domain
     real(dp), allocatable :: s(:), qold(:), qolder(:), zeros(:)
     real(dp) :: answered
-    integer :: e
+    integer :: e, ncomp
 
     call this % instants(nsteps, chain)
 
@@ -135,6 +136,12 @@ contains
     ! the time shelf; the per-edge state and the bdf2 start are
     ! written onto it as the walk proceeds.
     statement = bdf(1, action, this % step)
+
+    ! The unknown of every governed solve is the state, so it lives
+    ! where the state lives - the action's domain, asked once here
+    ! and used for both the seat and the width.
+    call state_seat(action, on, q, state_domain, n_state_domain, ncomp)
+
     allocate(zeros(size(q)))
     zeros = 0.0_dp
 
@@ -158,10 +165,11 @@ contains
        statement % hs   = this % step
        statement % qold = qold
 
-       ! The state's width travels with it: a cell carrying several
-       ! numbers is measured whole, not by its first stripe.
-       call this % inner % attach(statement, on, &
-            & ncomp = size(q) / max(on % num_vertices(), 1))
+       ! The state's width travels with it: a member carrying several
+       ! numbers is measured whole, not by its first stripe. And the
+       ! unknown domain is the state's own, never the host's.
+       call this % inner % attach(statement, on, state_domain, &
+            & n_state_domain, ncomp = ncomp)
        call this % inner % solve(zeros, q, answered)
 
        qolder = qold
@@ -218,6 +226,51 @@ contains
   ! One read of a statement at the standing state.
   !===================================================================!
 
+  !===================================================================!
+  ! THE EVOLVING STATE LIVES WHERE THE ACTION SAYS IT LIVES.
+  !
+  ! A march is a repeated application of one action, so the thing
+  ! being marched inhabits that action's domain - never the host's
+  ! vertex carrier, which is the conduit the action is reached
+  ! through and not the seat of the mathematics.
+  !
+  ! For every action that reads its domain off the graph - which is
+  ! all of them on the ordinary-graph road - this asks the action
+  ! and receives exactly the vertex set asking the graph would have
+  ! returned. For an action that carries its own domain it receives
+  ! that domain, which asking the graph never could.
+  !
+  ! The width travels with the STATE: a coordinate carrying several
+  ! numbers is marched whole, and the count is a division that must
+  ! come out even.
+  !===================================================================!
+
+  subroutine state_seat(action, on, q, state_domain, n_state_domain, ncomp)
+
+    class(graph_operation), intent(in)  :: action
+    class(graph)          , intent(in)  :: on
+    real(dp)              , intent(in)  :: q(:)
+    type(set_graph)       , intent(out) :: state_domain
+    integer               , intent(out) :: n_state_domain
+    integer               , intent(out) :: ncomp
+
+    integer :: n
+
+    call action % domain(on, state_domain, n_state_domain)
+
+    n = n_state_domain
+    if (n <= 0) then
+       error stop 'marcher: the action''s state domain is empty'
+    end if
+    if (mod(size(q), n) /= 0) then
+       error stop 'marcher: the state must carry a whole number per member &
+            &of the action''s domain'
+    end if
+
+    ncomp = size(q) / n
+
+  end subroutine state_seat
+
   subroutine read_statement(action, on, q, s)
 
     class(graph_operation), intent(in) :: action
@@ -225,20 +278,32 @@ contains
     real(dp), intent(in)               :: q(:)
     real(dp), allocatable, intent(out) :: s(:)
 
-    type(support) :: cells
     type(field)   :: state
     class(graph_field), allocatable :: answer
-    integer :: nv, ncomp, v
+    type(set_graph) :: state_domain, given
+    integer         :: n_state_domain, n_given
+    integer :: ncomp
 
-    nv    = on % num_vertices()
-    ncomp = size(q) / max(nv, 1)
+    call state_seat(action, on, q, state_domain, n_state_domain, ncomp)
 
-    cells = support(GRAPH_SIDE_VERTEX, [(v, v = 1, nv)])
-    state = field('state', cells, ncomp=ncomp)
+    state = field('state', state_domain, n_state_domain, ncomp=ncomp)
     call state % set_real_vector(q)
 
     call action % apply(on, [state], answer)
+
+    ! q <- q - h s is an equation between two states, so the answer
+    ! must inhabit the domain the state does. Equal length is not
+    ! the same claim, and would let a foreign carrier through.
+    given   = answer % domain()
+    n_given = answer % num_entries()
+    if (.not. given % same_as(state_domain)) then
+       error stop 'marcher: the action must answer on the domain its state lives on'
+    end if
+
     call answer % get_real_vector(s)
+    if (size(s) /= size(q)) then
+       error stop 'marcher: the action''s answer must match the state''s width'
+    end if
 
   end subroutine read_statement
 

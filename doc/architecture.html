@@ -1,0 +1,271 @@
+<title>The type tree</title>
+<style>
+  .viz-root{
+    color-scheme: light;
+    --surface-1:#fcfcfb; --surface-2:#f4f4f1;
+    --text-primary:#0b0b0b; --text-secondary:#52514e; --text-muted:#77766f;
+    --rule:#e2e1dc;
+    --support:#2a78d6; --field:#eb6834; --map:#1baf7a;
+    --support-wash:#eaf2fc; --field-wash:#fdeee7; --map-wash:#e7f6f0;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:where(:not([data-theme="light"])) .viz-root{
+      color-scheme: dark;
+      --surface-1:#1a1a19; --surface-2:#232322;
+      --text-primary:#ffffff; --text-secondary:#c3c2b7; --text-muted:#9a998f;
+      --rule:#38383600;
+      --rule:#383836;
+      --support:#3987e5; --field:#d95926; --map:#199e70;
+      --support-wash:#12233a; --field-wash:#33190f; --map-wash:#0e2a21;
+    }
+  }
+  :root[data-theme="dark"] .viz-root{
+    color-scheme: dark;
+    --surface-1:#1a1a19; --surface-2:#232322;
+    --text-primary:#ffffff; --text-secondary:#c3c2b7; --text-muted:#9a998f;
+    --rule:#383836;
+    --support:#3987e5; --field:#d95926; --map:#199e70;
+    --support-wash:#12233a; --field-wash:#33190f; --map-wash:#0e2a21;
+  }
+
+  .viz-root{
+    background:var(--surface-1); color:var(--text-primary);
+    font:15px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+    padding:28px 24px 48px; max-width:1180px; margin:0 auto;
+  }
+  h1{font-size:22px; font-weight:650; margin:0 0 6px; letter-spacing:-.01em}
+  .sub{color:var(--text-secondary); margin:0 0 22px; max-width:62ch}
+
+  .legend{display:flex; flex-wrap:wrap; gap:8px 20px; align-items:center;
+          padding:12px 14px; border:1px solid var(--rule); border-radius:10px;
+          background:var(--surface-2); margin-bottom:26px; font-size:13.5px}
+  .key{display:flex; align-items:center; gap:7px; color:var(--text-secondary)}
+  .swatch{width:12px; height:12px; border-radius:3px; flex:none}
+  .chip{display:inline-block; padding:1px 7px; border-radius:5px; font-size:11.5px;
+        letter-spacing:.03em; text-transform:uppercase; border:1px dashed currentColor;
+        color:var(--text-muted)}
+  .chip.solid{border-style:solid}
+
+  .columns{display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:26px}
+  .col{border:1px solid var(--rule); border-radius:12px; background:var(--surface-2);
+       padding:16px 16px 18px}
+  .col > h2{font-size:13px; letter-spacing:.06em; text-transform:uppercase;
+            color:var(--text-muted); margin:0 0 14px; font-weight:600}
+
+  ul.tree, ul.tree ul{list-style:none; margin:0; padding:0}
+  ul.tree ul{margin-left:15px; padding-left:15px; border-left:1px solid var(--rule)}
+  ul.tree li{position:relative; margin:2px 0}
+  ul.tree ul > li::before{content:""; position:absolute; left:-15px; top:17px;
+                          width:11px; height:1px; background:var(--rule)}
+
+  .node{display:flex; align-items:baseline; gap:9px; flex-wrap:wrap;
+        padding:5px 9px; border-radius:7px; border:1.5px solid transparent;
+        cursor:default; background:transparent; width:100%; text-align:left;
+        font:inherit; color:inherit}
+  .node:hover,.node:focus-visible{background:var(--wash); outline:none;
+        border-color:var(--hue)}
+  .node .dot{width:9px; height:9px; border-radius:50%; flex:none; background:var(--hue);
+             align-self:center}
+  .node.abstract .dot{background:transparent; border:2px solid var(--hue)}
+  .node .name{font-weight:560; letter-spacing:-.005em}
+  .node .what{color:var(--text-secondary); font-size:13px}
+  .node .tag{font-size:10.5px; letter-spacing:.05em; text-transform:uppercase;
+             color:var(--text-muted); border:1px dashed var(--text-muted);
+             border-radius:4px; padding:0 5px; align-self:center}
+
+  .orphans{margin-top:26px; border:1.5px dashed var(--text-muted); border-radius:12px;
+           padding:14px 16px 16px; background:var(--surface-2)}
+  .orphans h2{font-size:13px; letter-spacing:.06em; text-transform:uppercase;
+              color:var(--text-primary); margin:0 0 4px; font-weight:600}
+  .orphans p{margin:0 0 12px; color:var(--text-secondary); font-size:13.5px}
+  .orphans ul{list-style:none; margin:0; padding:0; display:flex; flex-wrap:wrap; gap:8px}
+  .orphans li{border:1px solid var(--rule); border-radius:6px; padding:4px 10px;
+              font-size:13.5px; background:var(--surface-1)}
+  .orphans li small{color:var(--text-muted)}
+
+  .counts{display:flex; gap:28px; flex-wrap:wrap; margin:26px 0 0}
+  .stat .n{font-size:30px; font-weight:600; line-height:1.1; letter-spacing:-.02em}
+  .stat .l{font-size:12.5px; color:var(--text-secondary)}
+
+  details{margin-top:26px; border-top:1px solid var(--rule); padding-top:16px}
+  summary{cursor:pointer; font-size:13.5px; color:var(--text-secondary)}
+  table{border-collapse:collapse; width:100%; margin-top:12px; font-size:13.5px}
+  th,td{text-align:left; padding:6px 10px; border-bottom:1px solid var(--rule);
+        vertical-align:top}
+  th{color:var(--text-muted); font-weight:600; font-size:12px;
+     letter-spacing:.04em; text-transform:uppercase}
+  td.kind{color:var(--text-secondary); white-space:nowrap}
+</style>
+
+<div class="viz-root">
+
+<h1>The type tree</h1>
+<p class="sub">Three roots. A type is abstract only where there is more than one way to be
+the thing, which is why there are four abstract types and not seven. Hover any type to see
+what it holds or what it does.</p>
+
+<div class="legend">
+  <span class="key"><span class="swatch" style="background:var(--support)"></span> support &mdash; a set of members</span>
+  <span class="key"><span class="swatch" style="background:var(--field)"></span> field &mdash; values on a support</span>
+  <span class="key"><span class="swatch" style="background:var(--map)"></span> map &mdash; a thing in, a thing out</span>
+  <span class="key"><span class="chip">abstract</span> hollow dot</span>
+  <span class="key"><span class="chip solid">concrete</span> filled dot</span>
+</div>
+
+<div class="columns">
+
+  <div class="col" style="--hue:var(--support); --wash:var(--support-wash)">
+    <h2>support</h2>
+    <ul class="tree">
+      <li><button class="node" title="Holds the member list. Members may name vertices or edges of a host.">
+          <span class="dot"></span><span class="name">support</span>
+          <span class="what">a set of members</span></button>
+        <ul>
+          <li><button class="node abstract" title="A support whose members are basis functions. Adds evaluation: values and slopes at a point.">
+              <span class="dot"></span><span class="name">form</span>
+              <span class="tag">abstract</span>
+              <span class="what">members are basis functions</span></button>
+            <ul>
+              <li><button class="node" title="The constant and the three coordinates, reckoned about a point."><span class="dot"></span><span class="name">polynomial_form</span></button></li>
+              <li><button class="node" title="One wave and the constant. Differentiates its own waves exactly."><span class="dot"></span><span class="name">harmonic_form</span></button></li>
+            </ul>
+          </li>
+          <li><button class="node" title="Adds an edge support and two fields, tail and head, each one vertex index per edge. Works out the adjacency once and keeps it.">
+              <span class="dot"></span><span class="name">topology</span>
+              <span class="what">+ edges, tail and head</span></button>
+            <ul>
+              <li><button class="node" title="A topology carrying further fields, guaranteed to match the size of the supports they sit on.">
+                  <span class="dot"></span><span class="name">bundle</span>
+                  <span class="what">+ more fields</span></button>
+                <ul>
+                  <li><button class="node" title="Cells, faces, and the measurements on them: volumes, centres, areas, deltas, normals, weights."><span class="dot"></span><span class="name">mesh</span><span class="what">measurements</span></button></li>
+                  <li><button class="node" title="Rows, columns, and the weights on them. A matrix written as a graph."><span class="dot"></span><span class="name">stencil</span><span class="what">weights</span></button></li>
+                  <li><button class="node" title="One instant of a time recurrence and its coefficients."><span class="dot"></span><span class="name">step</span><span class="what">one instant</span></button></li>
+                  <li><button class="node" title="The whole recurrence on the chain of instants. Every row reads its own instant and ones behind it, never ahead."><span class="dot"></span><span class="name">chain</span><span class="what">the recurrence</span></button></li>
+                </ul>
+              </li>
+            </ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+  </div>
+
+  <div class="col" style="--hue:var(--field); --wash:var(--field-wash)">
+    <h2>field</h2>
+    <ul class="tree">
+      <li><button class="node" title="Values on a support: one number per member, or several.">
+          <span class="dot"></span><span class="name">field</span>
+          <span class="what">values on a support</span></button>
+        <ul>
+          <li><button class="node" title="A field whose support has exactly one member. A single answer, with the whole battery of a field still available to read it.">
+              <span class="dot"></span><span class="name">functional</span>
+              <span class="what">one member</span></button></li>
+        </ul>
+      </li>
+    </ul>
+  </div>
+
+  <div class="col" style="--hue:var(--map); --wash:var(--map-wash)">
+    <h2>map</h2>
+    <ul class="tree">
+      <li><button class="node abstract" title="Takes a thing and gives back a thing.">
+          <span class="dot"></span><span class="name">map</span>
+          <span class="tag">abstract</span>
+          <span class="what">a thing in, a thing out</span></button>
+        <ul>
+          <li><button class="node abstract" title="Keeps the members and changes only the values on them.">
+              <span class="dot"></span><span class="name">operator</span>
+              <span class="tag">abstract</span>
+              <span class="what">keeps the members</span></button>
+            <ul>
+              <li><button class="node" title="Reads the structure alone and answers a whole number per member: a colouring, a visit order, a depth."><span class="dot"></span><span class="name">walk</span></button></li>
+              <li><button class="node" title="What a cell has left over: every edge gives its number to one end and takes it from the other, exactly once."><span class="dot"></span><span class="name">balance</span></button></li>
+              <li><button class="node" title="Derivatives read off the incidence at every apply. The interpreted road."><span class="dot"></span><span class="name">differential</span></button></li>
+              <li><button class="node" title="The tangent of a statement at a frozen state, bought with two residuals and a difference."><span class="dot"></span><span class="name">difference_linearization</span></button></li>
+              <li><button class="node" title="Drives a residual to zero. One type; jacobi, gmres, multigrid, newton and substitution are points in its four-argument space."><span class="dot"></span><span class="name">fit_optimizer</span><span class="what">varies values</span></button></li>
+            </ul>
+          </li>
+          <li><button class="node abstract" title="Changes which members exist, and must say what happens to the values riding on them.">
+              <span class="dot"></span><span class="name">transform</span>
+              <span class="tag">abstract</span>
+              <span class="what">changes the members</span></button>
+            <ul>
+              <li><button class="node" title="Cuts the whole into parts, cutting where few edges cross."><span class="dot"></span><span class="name">partitioner</span></button></li>
+              <li><button class="node" title="Puts a part back in whole order. Only owned values are collected."><span class="dot"></span><span class="name">assembler</span></button></li>
+              <li><button class="node" title="Glues members into blocks: same whole, less detail."><span class="dot"></span><span class="name">coarsener</span></button></li>
+              <li><button class="node" title="Splits one member into several."><span class="dot"></span><span class="name">refiner</span></button></li>
+              <li><button class="node" title="Strikes the basis members the data cannot support, and hands back a smaller form."><span class="dot"></span><span class="name">form_optimizer</span><span class="what">varies structure</span></button></li>
+              <li><button class="node" title="Many values become one. The member count goes to one."><span class="dot"></span><span class="name">reduction</span><span class="what">members become one</span></button></li>
+              <li><button class="node" title="One value fills many. The member count comes from one."><span class="dot"></span><span class="name">broadcast</span><span class="what">members come from one</span></button></li>
+            </ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+  </div>
+
+</div>
+
+<div class="orphans">
+  <h2>&#9888; Outside the tree</h2>
+  <p>Three types extend nothing, and two files declare no type at all. This is the whole
+  of what is unresolved.</p>
+  <ul>
+    <li>conduction <small>&mdash; no parent</small></li>
+    <li>advection <small>&mdash; no parent</small></li>
+    <li>robin_condition <small>&mdash; no parent</small></li>
+    <li>diffusion_statement <small>&mdash; not a type</small></li>
+    <li>fitted_balance <small>&mdash; not a type</small></li>
+  </ul>
+</div>
+
+<div class="counts">
+  <div class="stat"><div class="n">3</div><div class="l">roots</div></div>
+  <div class="stat"><div class="n">4</div><div class="l">abstract types</div></div>
+  <div class="stat"><div class="n">18</div><div class="l">concrete types</div></div>
+  <div class="stat"><div class="n">5</div><div class="l">outside the tree</div></div>
+</div>
+
+<details>
+  <summary>Table view &mdash; every type, its parent, and what it holds or does</summary>
+  <table>
+    <thead><tr><th>Type</th><th>Kind</th><th>Extends</th><th>What it holds, or does</th></tr></thead>
+    <tbody>
+      <tr><td>support</td><td class="kind">concrete</td><td>&mdash;</td><td>a set of members</td></tr>
+      <tr><td>form</td><td class="kind">abstract</td><td>support</td><td>members are basis functions</td></tr>
+      <tr><td>polynomial_form</td><td class="kind">concrete</td><td>form</td><td>the constant and the three coordinates</td></tr>
+      <tr><td>harmonic_form</td><td class="kind">concrete</td><td>form</td><td>one wave and the constant</td></tr>
+      <tr><td>topology</td><td class="kind">concrete</td><td>support</td><td>an edge support, plus the tail and head fields</td></tr>
+      <tr><td>bundle</td><td class="kind">concrete</td><td>topology</td><td>further fields, sized to their supports</td></tr>
+      <tr><td>mesh</td><td class="kind">concrete</td><td>bundle</td><td>fields are measurements</td></tr>
+      <tr><td>stencil</td><td class="kind">concrete</td><td>bundle</td><td>fields are weights</td></tr>
+      <tr><td>step</td><td class="kind">concrete</td><td>bundle</td><td>fields are one instant's coefficients</td></tr>
+      <tr><td>chain</td><td class="kind">concrete</td><td>bundle</td><td>fields are the whole recurrence</td></tr>
+      <tr><td>field</td><td class="kind">concrete</td><td>&mdash;</td><td>values on a support</td></tr>
+      <tr><td>functional</td><td class="kind">concrete</td><td>field</td><td>a field with one member</td></tr>
+      <tr><td>map</td><td class="kind">abstract</td><td>&mdash;</td><td>a thing in, a thing out</td></tr>
+      <tr><td>operator</td><td class="kind">abstract</td><td>map</td><td>keeps the members, changes the values</td></tr>
+      <tr><td>walk</td><td class="kind">concrete</td><td>operator</td><td>a whole number per member from the structure alone</td></tr>
+      <tr><td>balance</td><td class="kind">concrete</td><td>operator</td><td>what a cell has left over</td></tr>
+      <tr><td>differential</td><td class="kind">concrete</td><td>operator</td><td>derivatives read off the incidence</td></tr>
+      <tr><td>difference_linearization</td><td class="kind">concrete</td><td>operator</td><td>the tangent at a frozen state</td></tr>
+      <tr><td>fit_optimizer</td><td class="kind">concrete</td><td>operator</td><td>drives a residual to zero by varying values</td></tr>
+      <tr><td>transform</td><td class="kind">abstract</td><td>map</td><td>changes the members, carries the values along</td></tr>
+      <tr><td>partitioner</td><td class="kind">concrete</td><td>transform</td><td>the whole becomes parts</td></tr>
+      <tr><td>assembler</td><td class="kind">concrete</td><td>transform</td><td>the parts become the whole</td></tr>
+      <tr><td>coarsener</td><td class="kind">concrete</td><td>transform</td><td>members glue into blocks</td></tr>
+      <tr><td>refiner</td><td class="kind">concrete</td><td>transform</td><td>one member becomes several</td></tr>
+      <tr><td>form_optimizer</td><td class="kind">concrete</td><td>transform</td><td>varies which basis members stand</td></tr>
+      <tr><td>reduction</td><td class="kind">concrete</td><td>transform</td><td>the member count goes to one</td></tr>
+      <tr><td>broadcast</td><td class="kind">concrete</td><td>transform</td><td>the member count comes from one</td></tr>
+      <tr><td>conduction</td><td class="kind">concrete</td><td><b>nothing</b></td><td>outside the tree</td></tr>
+      <tr><td>advection</td><td class="kind">concrete</td><td><b>nothing</b></td><td>outside the tree</td></tr>
+      <tr><td>robin_condition</td><td class="kind">concrete</td><td><b>nothing</b></td><td>outside the tree</td></tr>
+      <tr><td>diffusion_statement</td><td class="kind">&mdash;</td><td><b>not a type</b></td><td>a function that builds a stencil</td></tr>
+      <tr><td>fitted_balance</td><td class="kind">&mdash;</td><td><b>not a type</b></td><td>a function that builds a stencil</td></tr>
+    </tbody>
+  </table>
+</details>
+
+</div>

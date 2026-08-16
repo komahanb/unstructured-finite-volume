@@ -1,37 +1,36 @@
 !=====================================================================!
-! LEVEL 0 OF THE STRATIFICATION . THE GRAMMAR
+! THE LEGACY ORDINARY-GRAPH COMPATIBILITY CONTRACT
 !
-! The ground level of the tower. This module answers one question and
-! no other: WHAT MAY EXIST. It holds four abstract roles and their
-! operation symbols - no mathematics, no algorithms, no physics.
-! Those arrive on the levels above, each one a partial concretion of
-! what stands here.
+! ONCE the ground level of the old stratification; now the legacy
+! vertex/edge compatibility contract of the relation-centered tower
+! (AGENTS.md). The NEW ground is the set modules; relations, algebra,
+! the relational graph, the interpretations and the field calculus
+! all live in their own level modules. What remains here is the
+! ordinary-graph vocabulary the old solvers still speak - retyped
+! onto the new ontology: a named graph set answers a set GRAPH, and
+! its interpretation belongs to whoever asked; a field's domain is a
+! set graph and a frozen count; the field abstraction itself is OWNED
+! by graph_field_calculus and only re-exported here for its remaining
+! consumers.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 !
-!                         THE STRATIFICATION
+!                     WHERE THIS FILE STANDS
 !
-! The codebase is a tower of levels. Walking down an edge of the
-! tower binds a parameter of an abstraction (concretion); walking up
-! unbinds it (abstraction); the retired name survives as an argument
-! value (absorption). One module per level; the extends edge carries
-! the level; no level number ever enters a name.
+! The old stratification that began here is retired. The living
+! tower is the relation-centered one (AGENTS.md): carriers,
+! relations, algebra, the relational graph, its interpretations,
+! and the field calculus, each in its own module. This file keeps
+! only the ordinary-graph compatibility vocabulary the remaining
+! legacy citizens speak - and its answers are already retyped onto
+! the new ground:
 !
-!    level 0   the grammar        what may exist          THIS FILE
-!    level 1   the calculus       how quantities relate
-!    level 2   the minimization   how answers are found
-!    level 3   the constitution   what the material says
-!    level 4   the statement      what is asked
-!
-! Level 1 concretes these roles into the named citizens of graph
-! mathematics, one bound parameter per name:
-!
-!    graph -----[edge count = 0]----------> support
-!    field -----[domain size = 1]---------> functional
-!    operation -[answer on the one entry]-> reduction
-!    operation -[input from the one entry]> broadcast
-!    transform -[verb = partition | assemble | coarsen | refine]
+!    named graph sets  ->  set graph identities
+!    full named sets   ->  the carrier itself, one stable identity
+!    carved sets       ->  a fresh identity, bound into the caller's
+!                          set / label / inclusion maps
+!    field domains     ->  a set graph and a frozen count
 !
 !=====================================================================!
 !
@@ -75,10 +74,9 @@
 !    graph_operation .. verb within   how data becomes other data
 !    graph_transform .. verb between  how one graph becomes another
 !
-! The definition is self-hosting. A graph is two member sets and two
-! integer edge fields, tail and head. A member set is itself a graph
-! with no edges. A field's domain is such a graph. Structure is
-! data, and the grammar closes on itself.
+! A graph here is the ordinary reading: two finite domains joined by
+! tail and head. A domain is a set graph now, never an edgeless
+! graph; a field's domain is an identity and a count, full stop.
 !
 !=====================================================================!
 !
@@ -146,7 +144,33 @@
 
 module graph_grammar
 
-  use iso_fortran_env, only : dp => REAL64
+  use iso_fortran_env    , only : dp => REAL64
+
+  !===================================================================!
+  ! THE DOMAIN IS A GRAPH, AND ITS INTERPRETATION IS THE CALLER'S.
+  !
+  ! set_graph is the kernel's graph, renamed on import because the
+  ! abstract type below already owns the word `graph` in this module.
+  ! The rename is the whole of the collision: one is the ontology, the
+  ! other is the legacy structure interface awaiting migration onto it.
+  !
+  ! A domain-producing symbol here answers WHICH set. Where the answer
+  ! is a set the graph already holds, that is all it answers, and the
+  ! caller reconstructs the extension from a count it can already read.
+  ! Where the answer is a set CARVED on demand, the symbol must also
+  ! say how its members are stored, what it is called, and what it was
+  ! carved from - so it takes the three maps and binds into them. The
+  ! graph does not own them. It never learns what a set means.
+  !===================================================================!
+
+  use fractal_graph       , only : set_graph => graph
+  use graph_set_map       , only : set_map
+  use graph_label_map     , only : label_map
+  use graph_inclusion_map , only : inclusion_map
+  use graph_field_calculus, only : graph_field
+  use graph_field_calculus, only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
+  use graph_field_calculus, only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
+  use graph_field_calculus, only : GRAPH_FIELD_CHARACTER
 
   implicit none
 
@@ -156,6 +180,11 @@ module graph_grammar
   public :: graph_field
   public :: graph_operation
   public :: graph_transform
+
+  ! Re-exported so a consumer of this contract names the kernel graph
+  ! once, the same way, rather than each file inventing its own rename
+  ! for the collision this module already resolved.
+  public :: set_graph
 
   public :: GRAPH_FIELD_INTEGER
   public :: GRAPH_FIELD_REAL
@@ -167,11 +196,6 @@ module graph_grammar
   ! absorbed axis. Integer for a colouring or a part number, real for
   ! the ordinary state, complex for a complex-step derivative,
   ! logical for a mask, character for boundary and material names.
-  integer, parameter :: GRAPH_FIELD_INTEGER   = 1
-  integer, parameter :: GRAPH_FIELD_REAL      = 2
-  integer, parameter :: GRAPH_FIELD_COMPLEX   = 3
-  integer, parameter :: GRAPH_FIELD_LOGICAL   = 4
-  integer, parameter :: GRAPH_FIELD_CHARACTER = 5
 
   !===================================================================!
   ! GRAPH. The reader of structure.
@@ -192,18 +216,17 @@ module graph_grammar
   ! it originates outside the code, in the mesh file that named its
   ! boundary groups.
   !
-  ! A NAMED SET IS ITSELF A GRAPH: the edgeless graph of its members,
-  ! whose global indices point back into the graph that named them.
+  ! A NAMED SET IS A SET GRAPH. The full sets answer the graph's own
+  ! carrier - one stable identity, asked twice, answering once; the
+  ! carved ones answer a FRESH identity and bind what it means into
+  ! the caller's maps,
   !
   !      all_vertices           tagged_edges('wall')
-  !      +-------------+        +-------------+
-  !      | 1 2 3 4 5 6 |        |  11  14  19 |     no edges:
-  !      +-------------+        +-------------+     pure membership
+  !      the vertex carrier     a new set { 11 14 19 } c--> edges
   !
-  ! Level 1 names this degenerate case the support; here it needs no
-  ! name, because an edgeless graph already answers every question a
-  ! membership list is ever asked: its size is num_vertices, its
-  ! members are its global indices.
+  ! and membership, size, order and standing are questions for the
+  ! representation the caller holds - not for the graph, which knows
+  ! only which set it named.
   !
   ! THE FRAME. How a part relates to the whole it was cut from:
   !
@@ -225,6 +248,13 @@ module graph_grammar
   ! than invent one.
   !===================================================================!
 
+  !===================================================================!
+  ! MIGRATION DEBT. This abstract type is named graph but is not the
+  ! graph ontology. The ontology is G=(B1,B2) in src/fractal_graph.f90;
+  ! what follows is a legacy interface awaiting migration to a view
+  ! over it. Do not present it as ontology, and do not extend it.
+  !===================================================================!
+
   type, abstract :: graph
 
    contains
@@ -234,20 +264,34 @@ module graph_grammar
      procedure(graph_count_interface) , deferred :: num_vertices
      procedure(graph_count_interface) , deferred :: num_edges
 
+     ! The carrier bridge (migration, AGENTS.md 5B): the graph's two
+     ! persistent declared domains, for consumers that must ask
+     ! where a field domain ultimately lives. This root is already
+     ! explicitly the ordinary vertex/edge compatibility contract.
+     procedure(set_graph_interface), deferred :: vertex_set
+     procedure(set_graph_interface), deferred :: edge_set
+
      ! Incidence: the two integer edge fields that ARE the structure.
      procedure(graph_edge_end_interface)     , deferred :: edge_tail
      procedure(graph_edge_end_interface)     , deferred :: edge_head
      procedure(graph_edge_has_head_interface), deferred :: edge_has_head
 
-     ! The named sets. Each answer is itself a graph: the edgeless
-     ! graph of the members.
-     procedure(graph_member_set_interface), deferred :: all_vertices
-     procedure(graph_member_set_interface), deferred :: interior_vertices
-     procedure(graph_member_set_interface), deferred :: boundary_vertices
+     ! The named sets, split by whether the answer already exists.
+     !
+     !   all_*        IS the carrier - stable identity, no binding
+     !   the rest     CARVED on demand - a fresh set each call, so
+     !                each call binds its extension, its label and
+     !                its declared embedding into the caller's maps
+     !
+     ! The split is not cosmetic: the first kind may be asked twice
+     ! and answer one set, the second kind answers two.
+     procedure(set_graph_interface)   , deferred :: all_vertices
+     procedure(graph_carved_set_interface), deferred :: interior_vertices
+     procedure(graph_carved_set_interface), deferred :: boundary_vertices
      procedure(graph_tagged_set_interface), deferred :: tagged_vertices
-     procedure(graph_member_set_interface), deferred :: all_edges
-     procedure(graph_member_set_interface), deferred :: interior_edges
-     procedure(graph_member_set_interface), deferred :: boundary_edges
+     procedure(set_graph_interface)   , deferred :: all_edges
+     procedure(graph_carved_set_interface), deferred :: interior_edges
+     procedure(graph_carved_set_interface), deferred :: boundary_edges
      procedure(graph_tagged_set_interface), deferred :: tagged_edges
 
      ! The frame's sets, one part at a time.
@@ -307,34 +351,6 @@ module graph_grammar
   ! priced convenience for call sites, recorded here so nobody
   ! mistakes it for a generator.
   !===================================================================!
-
-  type, abstract :: graph_field
-
-   contains
-
-     ! Identity: what it is called and what unit it carries.
-     procedure(field_name_interface), deferred :: name
-     procedure(field_name_interface), deferred :: units
-
-     ! Where it lives and how it is shaped.
-     procedure(field_domain_interface), deferred :: domain
-     procedure(field_count_interface) , deferred :: num_components
-     procedure(field_count_interface) , deferred :: num_entries
-     procedure(field_count_interface) , deferred :: value_kind
-
-     ! The plain-vector adapters, one pair per value kind.
-     procedure(field_get_integer_interface)  , deferred :: get_integer_vector
-     procedure(field_set_integer_interface)  , deferred :: set_integer_vector
-     procedure(field_get_real_interface)     , deferred :: get_real_vector
-     procedure(field_set_real_interface)     , deferred :: set_real_vector
-     procedure(field_get_complex_interface)  , deferred :: get_complex_vector
-     procedure(field_set_complex_interface)  , deferred :: set_complex_vector
-     procedure(field_get_logical_interface)  , deferred :: get_logical_vector
-     procedure(field_set_logical_interface)  , deferred :: set_logical_vector
-     procedure(field_get_character_interface), deferred :: get_character_vector
-     procedure(field_set_character_interface), deferred :: set_character_vector
-
-  end type graph_field
 
   !===================================================================!
   ! GRAPH_OPERATION. The verb within a graph: data in, data out.
@@ -423,6 +439,21 @@ module graph_grammar
        class(graph), intent(in) :: this
      end function graph_count_interface
 
+     !---------------------------------------------------------------!
+     ! A domain the graph already holds: identity, and nothing else.
+     ! The extension is 1..num_vertices() or 1..num_edges(), which the
+     ! caller can already read, so a counted representation is one
+     ! constructor call away and no map need travel with the answer.
+     !---------------------------------------------------------------!
+
+     ! Not pure: a set graph carries a pointer component, so copying
+     ! one out of an INTENT(IN) dummy is barred from a pure subprogram
+     ! (F2018 C1594). Identity is still answered by value.
+     type(set_graph) function set_graph_interface(this)
+       import :: graph, set_graph
+       class(graph), intent(in) :: this
+     end function set_graph_interface
+
      pure integer function graph_edge_end_interface(this, edge_index)
        import :: graph
        class(graph), intent(in) :: this
@@ -436,29 +467,57 @@ module graph_grammar
      end function graph_edge_has_head_interface
 
      !===============================================================!
-     ! The named sets. Called once, when an operation begins, so each
-     ! answer is a whole graph - the edgeless graph of the members -
-     ! and the cost is paid once per sweep, not once per cell.
+     ! THE CARVED SETS. Called once, when an operation begins, so the
+     ! cost is paid per sweep and not per cell.
+     !
+     ! Each call declares a NEW set - a fresh identity - because that
+     ! is what these have always done: the old code built a fresh
+     ! subset_set per call, and a subset signs its own identity. Two
+     ! calls to boundary_vertices() were never one domain, and are not
+     ! one domain now.
+     !
+     ! What the answer needs beyond identity, it binds:
+     !
+     !     sets         the listed extension - who belongs
+     !     labels       the name the old subset carried
+     !     inclusions   the embedding into the graph's own carrier,
+     !                  without which subobject questions go silent
+     !
+     ! All three are the CALLER'S, borrowed for the duration of the
+     ! call and never stored. That is the difference between stating a
+     ! dependency and hiding one.
      !===============================================================!
 
-     subroutine graph_member_set_interface(this, members)
-       import :: graph
-       class(graph), intent(in) :: this
-       class(graph), allocatable, intent(out) :: members
-     end subroutine graph_member_set_interface
+     subroutine graph_carved_set_interface(this, sets, labels, &
+          & inclusions, members)
+       import :: graph, set_graph, set_map, label_map, inclusion_map
+       class(graph)       , intent(in)    :: this
+       type(set_map)      , intent(inout) :: sets
+       type(label_map)    , intent(inout) :: labels
+       type(inclusion_map), intent(inout) :: inclusions
+       type(set_graph)    , intent(out)   :: members
+     end subroutine graph_carved_set_interface
 
-     subroutine graph_tagged_set_interface(this, tag, members)
-       import :: graph
-       class(graph), intent(in) :: this
-       character(len=*), intent(in) :: tag
-       class(graph), allocatable, intent(out) :: members
+     subroutine graph_tagged_set_interface(this, tag, sets, labels, &
+          & inclusions, members)
+       import :: graph, set_graph, set_map, label_map, inclusion_map
+       class(graph)       , intent(in)    :: this
+       character(len=*)   , intent(in)    :: tag
+       type(set_map)      , intent(inout) :: sets
+       type(label_map)    , intent(inout) :: labels
+       type(inclusion_map), intent(inout) :: inclusions
+       type(set_graph)    , intent(out)   :: members
      end subroutine graph_tagged_set_interface
 
-     subroutine graph_part_set_interface(this, part_id, members)
-       import :: graph
-       class(graph), intent(in) :: this
-       integer, intent(in) :: part_id
-       class(graph), allocatable, intent(out) :: members
+     subroutine graph_part_set_interface(this, part_id, sets, labels, &
+          & inclusions, members)
+       import :: graph, set_graph, set_map, label_map, inclusion_map
+       class(graph)       , intent(in)    :: this
+       integer            , intent(in)    :: part_id
+       type(set_map)      , intent(inout) :: sets
+       type(label_map)    , intent(inout) :: labels
+       type(inclusion_map), intent(inout) :: inclusions
+       type(set_graph)    , intent(out)   :: members
      end subroutine graph_part_set_interface
 
      !===============================================================!
@@ -544,91 +603,6 @@ module graph_grammar
      end function graph_owner_part_interface
 
      !===============================================================!
-     ! Value: identity, domain, shape.
-     !===============================================================!
-
-     pure function field_name_interface(this) result(name)
-       import :: graph_field
-       class(graph_field), intent(in) :: this
-       character(len=:), allocatable :: name
-     end function field_name_interface
-
-     subroutine field_domain_interface(this, domain)
-       import :: graph_field, graph
-       class(graph_field), intent(in) :: this
-       class(graph), allocatable, intent(out) :: domain
-     end subroutine field_domain_interface
-
-     pure integer function field_count_interface(this)
-       import :: graph_field
-       class(graph_field), intent(in) :: this
-     end function field_count_interface
-
-     !===============================================================!
-     ! Value: the plain-vector adapters, one pair per kind.
-     !===============================================================!
-
-     pure subroutine field_get_integer_interface(this, values)
-       import :: graph_field
-       class(graph_field), intent(in) :: this
-       integer, allocatable, intent(out) :: values(:)
-     end subroutine field_get_integer_interface
-
-     pure subroutine field_set_integer_interface(this, values)
-       import :: graph_field
-       class(graph_field), intent(inout) :: this
-       integer, intent(in) :: values(:)
-     end subroutine field_set_integer_interface
-
-     pure subroutine field_get_real_interface(this, values)
-       import :: graph_field, dp
-       class(graph_field), intent(in) :: this
-       real(dp), allocatable, intent(out) :: values(:)
-     end subroutine field_get_real_interface
-
-     pure subroutine field_set_real_interface(this, values)
-       import :: graph_field, dp
-       class(graph_field), intent(inout) :: this
-       real(dp), intent(in) :: values(:)
-     end subroutine field_set_real_interface
-
-     pure subroutine field_get_complex_interface(this, values)
-       import :: graph_field, dp
-       class(graph_field), intent(in) :: this
-       complex(dp), allocatable, intent(out) :: values(:)
-     end subroutine field_get_complex_interface
-
-     pure subroutine field_set_complex_interface(this, values)
-       import :: graph_field, dp
-       class(graph_field), intent(inout) :: this
-       complex(dp), intent(in) :: values(:)
-     end subroutine field_set_complex_interface
-
-     pure subroutine field_get_logical_interface(this, values)
-       import :: graph_field
-       class(graph_field), intent(in) :: this
-       logical, allocatable, intent(out) :: values(:)
-     end subroutine field_get_logical_interface
-
-     pure subroutine field_set_logical_interface(this, values)
-       import :: graph_field
-       class(graph_field), intent(inout) :: this
-       logical, intent(in) :: values(:)
-     end subroutine field_set_logical_interface
-
-     pure subroutine field_get_character_interface(this, values)
-       import :: graph_field
-       class(graph_field), intent(in) :: this
-       character(len=:), allocatable, intent(out) :: values(:)
-     end subroutine field_get_character_interface
-
-     pure subroutine field_set_character_interface(this, values)
-       import :: graph_field
-       class(graph_field), intent(inout) :: this
-       character(len=*), intent(in) :: values(:)
-     end subroutine field_set_character_interface
-
-     !===============================================================!
      ! Verb within: name, domain, apply.
      !===============================================================!
 
@@ -638,11 +612,23 @@ module graph_grammar
        character(len=:), allocatable :: name
      end function operation_name_interface
 
-     subroutine operation_domain_interface(this, input_graph, domain)
-       import :: graph_operation, graph
-       class(graph_operation), intent(in) :: this
-       class(graph), intent(in) :: input_graph
-       class(graph), allocatable, intent(out) :: domain
+     !---------------------------------------------------------------!
+     ! Where the answer lives: WHICH set, and HOW MANY entries it has.
+     !
+     ! The count travels beside the identity because every caller of
+     ! this symbol wants exactly those two things - to check the
+     ! domain matches, and to size a field. Neither is a question
+     ! about membership, so neither needs a map, and an operation that
+     ! carries a domain carries an integer rather than an extension.
+     !---------------------------------------------------------------!
+
+     subroutine operation_domain_interface(this, input_graph, domain, &
+          & nentries)
+       import :: graph_operation, graph, set_graph
+       class(graph_operation), intent(in)  :: this
+       class(graph)          , intent(in)  :: input_graph
+       type(set_graph)       , intent(out) :: domain
+       integer               , intent(out) :: nentries
      end subroutine operation_domain_interface
 
      subroutine operation_apply_interface(this, input_graph, input_data, output)
@@ -663,7 +649,7 @@ module graph_grammar
        class(graph), intent(in) :: input_graph
      end function transform_on_graph_interface
 
-     pure logical function transform_on_data_interface(this, input_graph, input_data)
+     logical function transform_on_data_interface(this, input_graph, input_data)
        import :: graph_transform, graph, graph_field
        class(graph_transform), intent(in) :: this
        class(graph), intent(in) :: input_graph

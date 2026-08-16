@@ -32,9 +32,8 @@ module class_graph_step
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_grammar      , only : graph, graph_field, graph_operation
+  use graph_grammar      , only : set_graph
   use graph_calculus     , only : discretization_operator
-  use graph_calculus     , only : GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
   use class_graph_field  , only : field
   use class_graph        , only : stored_graph
 
@@ -121,8 +120,35 @@ contains
   end function bdf
 
   !===================================================================!
-  ! The contract's answer: the motif - a chain of reach + 1
-  ! instants, each edge one look further back.
+  ! The contract's answer: THE STENCIL ON THE INDEPENDENT AXIS.
+  !
+  ! A step's residual at the newest instant reads every instant its
+  ! table reaches back to,
+  !
+  !      R_n = a0 q_n + a1 q_(n-1) + a2 q_(n-2) + h S(q_n)
+  !
+  ! so the dependency is a FAN-IN onto the instant being solved for -
+  ! reach + 1 instants, every one of them an arrow into the last:
+  !
+  !      backward euler        bdf-2
+  !          1 --> 2               1 --> 3
+  !          2 --> 2               2 --> 3
+  !                                3 --> 3
+  !
+  ! A STENCIL IS NOT A CHRONOLOGY. The succession
+  !
+  !      1 -> 2 -> 3
+  !
+  ! is a true and useful relation - it is what the time integration
+  ! tower's instants and control chain describe - but it says which
+  ! instant FOLLOWS which, not which instants the residual READS. This
+  ! contract owes the second. The self-arrow is the implicit part, and
+  ! it is what makes the newest instant an unknown rather than data.
+  !
+  ! The axis here is the INDEPENDENT variable; a stencil_operator's
+  ! answer to the same verb is the stencil on the DEPENDENT variable.
+  ! One contract, one meaning - the stencil on whichever axis the
+  ! concrete type represents.
   !===================================================================!
 
   subroutine step_dependencies(this, pattern)
@@ -130,11 +156,13 @@ contains
     class(step_operator), intent(in)       :: this
     class(graph), allocatable, intent(out) :: pattern
 
-    integer :: n
+    integer :: n, newest
 
-    allocate(pattern, source=stored_graph(this % reach + 1, &
-         & tails=[(n, n = 1, this % reach)], &
-         & heads=[(n + 1, n = 1, this % reach)]))
+    newest = this % reach + 1
+
+    allocate(pattern, source=stored_graph(newest, &
+         & tails=[(n, n = 1, newest)], &
+         & heads=[(newest, n = 1, newest)]))
 
   end subroutine step_dependencies
 
@@ -153,17 +181,51 @@ contains
 
   end function step_name
 
-  subroutine step_domain(this, input_graph, domain)
+  !===================================================================!
+  ! THE DOMAIN OF A STEP IS THE DOMAIN OF THE ACTION IT DISCRETIZES.
+  !
+  ! A step is an operation BUILT FROM another operation, and its
+  ! residual
+  !
+  !      a0 q + a1 qold + a2 qolder + h S(q)
+  !
+  ! is a statement about the same unknown S is a statement about.
+  ! So the question is delegated: the action answers, and the host
+  ! is the conduit that carries it there.
+  !
+  ! For every action that reads its domain off the graph - which is
+  ! all of them on the ordinary-graph road - this returns exactly
+  ! what asking the graph returned, so no marching caller sees a
+  ! change. For an action that carries its own domain, it returns
+  ! that domain, which asking the graph never could.
+  !===================================================================!
+
+  subroutine step_domain(this, input_graph, domain, nentries)
 
     class(step_operator), intent(in)       :: this
     class(graph), intent(in)               :: input_graph
-    class(graph), allocatable, intent(out) :: domain
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
 
-    associate (u1 => this); end associate
-
-    call input_graph % all_vertices(domain)
+    call this % action % domain(input_graph, domain, nentries)
 
   end subroutine step_domain
+
+  !===================================================================!
+  ! The step's residual, on the action's own domain.
+  !
+  ! Three things travel with the DATA and the ACTION rather than
+  ! with the host: the domain, the component width, and the carrier
+  ! the answer lands on. The state's width is read from the state -
+  ! a coordinate carrying several numbers is measured whole - and
+  ! never inferred by dividing by a vertex count.
+  !
+  ! Both domain checks are identity questions, and both are refusals
+  ! the caller wants early: a state on a foreign carrier, or an
+  ! action that answers somewhere other than where it said it
+  ! would, are wrong in ways that produce plausible numbers if left
+  ! alone.
+  !===================================================================!
 
   subroutine step_apply(this, input_graph, input_data, output)
 
@@ -172,19 +234,32 @@ contains
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
-    type(support) :: cells
     type(field)   :: out
     class(graph_field), allocatable :: velocity
+    type(set_graph) :: expected, given
+    integer         :: n_expected, n_given
     real(dp), allocatable :: q(:), s(:), y(:)
-    integer :: nv, ncomp, v
+    integer :: ncomp
 
-    nv = input_graph % num_vertices()
+    call this % action % domain(input_graph, expected, n_expected)
 
     if (present(input_data)) then
+
+       given   = input_data(1) % domain()
+       n_given = input_data(1) % num_entries()
+       if (.not. given % same_as(expected)) then
+          error stop 'step: the state must live on the action''s own domain'
+       end if
+       ncomp = input_data(1) % num_components()
 
        call input_data(1) % get_real_vector(q)
 
        call this % action % apply(input_graph, input_data, velocity)
+       given   = velocity % domain()
+       n_given = velocity % num_entries()
+       if (.not. given % same_as(expected)) then
+          error stop 'step: the action must answer on its stated domain'
+       end if
        call velocity % get_real_vector(s)
 
        y = this % a0 * q + this % a1 * this % qold + this % hs * s
@@ -193,13 +268,12 @@ contains
        end if
 
     else
-       allocate(y(nv))
+       ncomp = 1
+       allocate(y(n_expected))
        y = 0.0_dp
     end if
 
-    ncomp = size(y) / max(nv, 1)
-    cells = support(GRAPH_SIDE_VERTEX, [(v, v = 1, nv)])
-    out = field('step residual', cells, ncomp=ncomp)
+    out = field('step residual', expected, n_expected, ncomp=ncomp)
     call out % set_real_vector(y)
 
     if (allocated(output)) deallocate(output)

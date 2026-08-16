@@ -13,8 +13,7 @@
 module class_harmonic_form
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_calculus     , only : GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
+  use graph_grammar      , only : set_graph
   use graph_forms        , only : form
 
   implicit none
@@ -41,14 +40,14 @@ module class_harmonic_form
 contains
 
   ! Born with every table entry standing: the members are the three.
-  pure type(harmonic_form) function create(wavenumber) result(this)
+  type(harmonic_form) function create(wavenumber) result(this)
 
     real(dp), intent(in) :: wavenumber(3)
 
     integer :: m
 
     this % wavenumber = wavenumber
-    this % support = support(GRAPH_SIDE_VERTEX, [(m, m = 1, 3)])
+    call this % declare_basis(3)
 
   end function create
 

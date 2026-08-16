@@ -9,8 +9,7 @@
 module class_polynomial_form
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_calculus     , only : GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
+  use graph_grammar      , only : set_graph
   use graph_forms        , only : form
 
   implicit none
@@ -35,11 +34,9 @@ module class_polynomial_form
 contains
 
   ! Born with every table entry standing: the members are the four.
-  pure type(polynomial_form) function create() result(this)
+  type(polynomial_form) function create() result(this)
 
-    integer :: m
-
-    this % support = support(GRAPH_SIDE_VERTEX, [(m, m = 1, 4)])
+    call this % declare_basis(4)
 
   end function create
 

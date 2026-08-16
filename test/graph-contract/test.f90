@@ -18,8 +18,11 @@ module nonlinear_sample_support
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_grammar      , only : graph_operation, graph, graph_field
-  use graph_calculus     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
-  use class_graph_support, only : support
+  use graph_calculus     , only : GRAPH_SIDE_VERTEX
+  ! An operation names a domain and counts it. It asks no membership,
+  ! so it imports no map: identity and count is the whole of what an
+  ! operation is entitled to see.
+  use fractal_graph      , only : set_graph => graph
   use class_graph_field  , only : field
 
   implicit none
@@ -42,11 +45,13 @@ contains
     name = 'nonlinear sample'
   end function nonlinear_sample_name
 
-  subroutine nonlinear_sample_domain(this, input_graph, domain)
+  subroutine nonlinear_sample_domain(this, input_graph, domain, nentries)
     class(nonlinear_sample), intent(in)    :: this
     class(graph), intent(in)               :: input_graph
-    class(graph), allocatable, intent(out) :: domain
-    call input_graph % all_edges(domain)
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
+    domain   = input_graph % all_edges()
+    nentries = input_graph % num_edges()
   end subroutine nonlinear_sample_domain
 
   subroutine nonlinear_sample_apply(this, input_graph, input_data, output)
@@ -57,19 +62,14 @@ contains
     class(graph_field), allocatable, intent(inout) :: output
 
     type(field)      :: out
-    type(support)    :: on
+    type(set_graph)    :: on
     real(dp), allocatable :: q(:), z(:)
-    integer , allocatable :: indices(:)
     real(dp)              :: qt, qh
     integer               :: ne, e, t, h
 
     ne = input_graph % num_edges()
-    allocate(indices(ne))
-    do e = 1, ne
-       indices(e) = e
-    end do
-    on  = support(GRAPH_SIDE_EDGE, indices)
-    out = field(this % name(), on)
+    on = input_graph % edge_set()
+    out = field(this % name(), on, ne)
 
     allocate(z(ne))
     z = 0.0_dp
@@ -181,6 +181,14 @@ end module nonlinear_sample_support
 !      and the sum stops cancelling, which is the negative control -
 !      without it the check would also pass on a balance that returned
 !      nothing but zeros.
+!  21. A concrete graph mints its two carrier identities once, at
+!      construction, and hands out the SAME identity at every asking.
+!      Its two sides are two identities, and a graph built from
+!      identical numbers owns its own. This is the law the whole
+!      cutover rests on: a domain is WHICH set, and the graph is the
+!      only thing that says which. Inherited from the retired carrier
+!      suite, whose other laws now live in graph-set-view,
+!      graph-inclusion and fractal-graph.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -188,12 +196,17 @@ end module nonlinear_sample_support
 program test_graph_contract
 
   use iso_fortran_env       , only : dp => REAL64
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_grammar         , only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
   use graph_grammar         , only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
   use graph_grammar         , only : GRAPH_FIELD_CHARACTER
-  use graph_calculus        , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
+  use graph_calculus        , only : GRAPH_SIDE_VERTEX
   use graph_calculus        , only : graph_functional
-  use class_graph_support   , only : support
   use class_graph           , only : stored_graph
   use class_graph_field     , only : field
   use class_graph_functional, only : functional
@@ -228,6 +241,7 @@ program test_graph_contract
   write(*,'(1x,a)') "graph contract suite"
   write(*,'(1x,a)') "============================================="
 
+  call check_graph_mints_its_carriers(nfail)
   call check_supports(nfail)
   call check_ordering_law(nfail)
   call check_value_kind_rule(nfail)
@@ -287,40 +301,116 @@ contains
   end subroutine report
 
   !===================================================================!
+  ! A concrete graph mints its own carrier identities and says how
+  ! many members each holds, but it binds no representation - it owns
+  ! no map. So the scope that holds the map describes them, once, at
+  ! the point the graph enters that scope: both carriers are {1..n}.
+  !
+  ! Idempotent on purpose. A graph handed round several checks is
+  ! still one identity, and an identity is described once.
+  !===================================================================!
+
+  subroutine describe(sets, g)
+
+    type(set_map), intent(inout) :: sets
+    class(graph) , intent(in)    :: g
+
+    if (.not. sets % describes(g % vertex_set())) &
+         & call sets % bind(g % vertex_set(), &
+         &      counted_set_representation(g % num_vertices()))
+    if (.not. sets % describes(g % edge_set())) &
+         & call sets % bind(g % edge_set(), &
+         &      counted_set_representation(g % num_edges()))
+
+  end subroutine describe
+
+  !===================================================================!
+  ! A concrete graph mints its two carrier identities at construction
+  ! and hands out the SAME one at every asking. Nothing else in the
+  ! library can say WHICH set a field or an operation is over, so if
+  ! this ever answers a fresh identity per call, every question asked
+  ! of a map afterwards is asked of the wrong set - and the map, being
+  ! keyed on identity, would answer "nobody describes that" rather
+  ! than answer wrongly. The map holds no opinion: the graph is the
+  ! only source.
+  !
+  ! Inherited from the retired carrier suite. What it does NOT claim
+  ! is as much of the ruling as what it does: the graph binds no
+  ! representation and no label, so the count comes from the graph
+  ! itself and the size only after a map has been told.
+  !===================================================================!
+
+  subroutine check_graph_mints_its_carriers(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_graph) :: g, h
+    type(set_graph)    :: vs, es, vs2
+    type(set_map)      :: sets
+
+    g = stored_graph(3, tails=[1, 2], heads=[2, 3])
+    h = stored_graph(3, tails=[1, 2], heads=[2, 3])
+
+    vs = g % vertex_set()
+    es = g % edge_set()
+
+    call report(.not. vs % same_as(es), &
+         & "a graph's two sides are two sets", nfail)
+
+    vs2 = g % vertex_set()
+    call report(vs % same_as(vs2), &
+         & "asked twice, the graph answers the same set", nfail)
+
+    call report(.not. vs % same_as(h % vertex_set()), &
+         & "an identical twin graph still owns its own sets", nfail)
+
+    ! The count is the graph's own answer, and a map agrees with it
+    ! only once it has been told - the graph binds nothing.
+    call describe(sets, g)
+    call report(sets % size_of(vs) .eq. g % num_vertices() .and. &
+         &      sets % size_of(es) .eq. g % num_edges(), &
+         & "and once described, the map counts what the graph counts", nfail)
+
+  end subroutine check_graph_mints_its_carriers
+
+  !===================================================================!
   ! A support is a set of indices. It returns what it was given,
   ! reports its size, and reports which kind of index it holds.
   !===================================================================!
 
   subroutine check_supports(nfail)
 
+    ! REWRITTEN at phase 5B: the support is a subobject S c--> A,
+    ! itself a member set - the edgeless-graph fiction is retired.
+
     integer, intent(inout) :: nfail
 
-    type(support)  :: vs, empty
-    type(support)    :: es
-    integer, allocatable  :: got(:)
+    type(set_graph)    :: host
+    type(set_graph)     :: vs, empty
+    integer, allocatable :: got(:)
+    type(set_map)     :: sets
+    type(inclusion_map)     :: inclusions
 
-    vs = support(GRAPH_SIDE_VERTEX, [7, 3, 11])
-    es = support(GRAPH_SIDE_EDGE, [2, 5])
+    call host % declare()
+    call sets % bind(host, counted_set_representation(12))
+    call vs % declare()
+    call sets       % bind(vs, listed_set_representation([7, 3, 11]))
+    call inclusions % include_in(vs, host)
 
-    call members_of(vs, got)
-    call report(size(got) .eq. 3, "vertex support keeps its count", nfail)
+    call sets % members_of(vs, got)
+    call report(size(got) .eq. 3, "a subset keeps its count", nfail)
     call report(all(got .eq. [7, 3, 11]), &
-         & "vertex support keeps its indices, in order", nfail)
-    call report(vs % num_vertices() .eq. 3, "vertex support reports its size", nfail)
-    call report(vs % side() .eq. GRAPH_SIDE_VERTEX, &
-         & "a vertex support reports the vertex kind", nfail)
+         & "and its members, in declaration order", nfail)
+    call report(declared_subobject(vs, host, inclusions), &
+         & "and stands embedded in its ambient", nfail)
+    call report(sets % has_in(vs, 11) .and. .not. sets % has_in(vs, 5), &
+         & "membership answers the chosen family alone", nfail)
 
-    call members_of(es, got)
-    call report(all(got .eq. [2, 5]), "edge support keeps its indices", nfail)
-    call report(es % side() .eq. GRAPH_SIDE_EDGE, &
-         & "an edge support reports the edge kind", nfail)
-
-    ! An untouched support has nothing in it, and must still return a
-    ! zero-length array, so a loop over it requires no prior check.
-    call report(empty % num_vertices() .eq. 0, "an empty support has size zero", nfail)
-    call members_of(empty, got)
-    call report(allocated(got) .and. size(got) .eq. 0, &
-         & "an empty support returns a zero-length array", nfail)
+    call empty % declare()
+    call sets       % bind(empty, listed_set_representation([integer ::]))
+    call inclusions % include_in(empty, host)
+    call report(sets % size_of(empty) .eq. 0, &
+         & "the empty subset is a domain", nfail)
 
   end subroutine check_supports
 
@@ -351,14 +441,16 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(support)  :: on
+    type(set_graph)  :: on
     type(field)    :: f
     real(dp), allocatable :: got(:)
     integer               :: entry_position, component, position
     logical               :: ok
+    type(set_map)     :: sets
 
-    on = support(GRAPH_SIDE_VERTEX, [7, 3, 11])
-    f  = field('q', on, ncomp=2)
+    call on % declare()
+    call sets % bind(on, counted_set_representation(3))
+    f  = field('q', on, sets % size_of(on), ncomp=2)
 
     call f % set_real_vector([71.0_dp, 72.0_dp, 31.0_dp, 32.0_dp, 111.0_dp, 112.0_dp])
 
@@ -410,13 +502,15 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(support)  :: on
+    type(set_graph)  :: on
     type(field)    :: f
     real(dp), allocatable :: r(:)
     integer , allocatable :: i(:)
+    type(set_map)     :: sets
 
-    on = support(GRAPH_SIDE_VERTEX, [1, 2])
-    f  = field('q', on)
+    call on % declare()
+    call sets % bind(on, counted_set_representation(2))
+    f  = field('q', on, sets % size_of(on))
 
     call f % set_real_vector([1.0_dp, 2.0_dp])
     call report(f % value_kind() .eq. GRAPH_FIELD_REAL, &
@@ -451,16 +545,18 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(support)                :: on
+    type(set_graph)                :: on
     type(field)                  :: f
     integer         , allocatable     :: i(:)
     real(dp)        , allocatable     :: r(:)
     complex(dp)     , allocatable     :: c(:)
     logical         , allocatable     :: l(:)
     character(len=:), allocatable     :: s(:)
+    type(set_map)     :: sets
 
-    on = support(GRAPH_SIDE_EDGE, [1, 2])
-    f  = field('F', on)
+    call on % declare()
+    call sets % bind(on, counted_set_representation(2))
+    f  = field('F', on, sets % size_of(on))
 
     call f % set_integer_vector([3, 4])
     call f % get_integer_vector(i)
@@ -576,8 +672,10 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph) :: g
+    type(set_map)     :: sets
 
     g = diamond()
+    call describe(sets, g)
 
     call report(g % num_vertices() .eq. 4, "the graph counts its vertices", nfail)
     call report(g % num_edges() .eq. 5, "the graph counts its edges", nfail)
@@ -604,54 +702,58 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                       :: g
-    class(graph), allocatable :: vs
-    class(graph), allocatable :: es
+    type(set_graph) :: vs
+    type(set_graph) :: es
     integer, allocatable                     :: indices(:)
+    type(set_map)     :: sets
+    type(label_map)     :: labels
+    type(inclusion_map)     :: inclusions
 
     g = diamond()
+    call describe(sets, g)
 
-    call g % all_vertices(vs)
-    call members_of(vs, indices)
+    vs = g % all_vertices()
+    call members_of(sets, vs, indices)
     call report(size(indices) .eq. 4 .and. all(indices .eq. [1, 2, 3, 4]), &
          & "all_vertices is every cell", nfail)
 
-    call g % boundary_vertices(vs)
-    call members_of(vs, indices)
+    call g % boundary_vertices(sets, labels, inclusions, vs)
+    call members_of(sets, vs, indices)
     call report(size(indices) .eq. 1 .and. indices(1) .eq. 4, &
          & "only the cell behind the wall is a boundary cell", nfail)
 
-    call g % interior_vertices(vs)
-    call members_of(vs, indices)
+    call g % interior_vertices(sets, labels, inclusions, vs)
+    call members_of(sets, vs, indices)
     call report(size(indices) .eq. 3 .and. all(indices .eq. [1, 2, 3]), &
          & "the other three are interior", nfail)
 
-    call g % all_edges(es)
-    call members_of(es, indices)
+    es = g % all_edges()
+    call members_of(sets, es, indices)
     call report(size(indices) .eq. 5, "all_edges is every face", nfail)
 
-    call g % boundary_edges(es)
-    call members_of(es, indices)
+    call g % boundary_edges(sets, labels, inclusions, es)
+    call members_of(sets, es, indices)
     call report(size(indices) .eq. 1 .and. indices(1) .eq. 5, &
          & "the headless face is the boundary face", nfail)
 
-    call g % interior_edges(es)
-    call members_of(es, indices)
+    call g % interior_edges(sets, labels, inclusions, es)
+    call members_of(sets, es, indices)
     call report(size(indices) .eq. 4, "the other four are interior faces", nfail)
 
-    call g % tagged_edges('wall', es)
-    call members_of(es, indices)
+    call g % tagged_edges('wall', sets, labels, inclusions, es)
+    call members_of(sets, es, indices)
     call report(size(indices) .eq. 1 .and. indices(1) .eq. 5, &
          & "tagged_edges of wall returns the wall face", nfail)
 
-    call g % tagged_edges('inlet', es)
-    call members_of(es, indices)
+    call g % tagged_edges('inlet', sets, labels, inclusions, es)
+    call members_of(sets, es, indices)
     call report(size(indices) .eq. 0, &
          & "an unknown tag returns an empty set, not a failure", nfail)
 
     ! Nothing was tagged on the vertices, so every vertex query by
     ! name must come back empty rather than reaching into thin air.
-    call g % tagged_vertices('heater', vs)
-    call members_of(vs, indices)
+    call g % tagged_vertices('heater', sets, labels, inclusions, vs)
+    call members_of(sets, vs, indices)
     call report(size(indices) .eq. 0, &
          & "an untagged graph returns an empty set for every vertex tag", nfail)
 
@@ -667,8 +769,10 @@ contains
 
     type(stored_graph)   :: g
     integer, allocatable :: indices(:)
+    type(set_map)     :: sets
 
     g = diamond()
+    call describe(sets, g)
 
     call g % incident_edges(1, indices)
     call report(size(indices) .eq. 2 .and. all(indices .eq. [1, 2]), &
@@ -722,21 +826,25 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                       :: g
-    class(graph), allocatable :: vs
+    type(set_graph) :: vs
     integer, allocatable                     :: indices(:)
+    type(set_map)     :: sets
+    type(label_map)     :: labels
+    type(inclusion_map)     :: inclusions
 
     g = diamond()
+    call describe(sets, g)
 
     call report(.not. g % has_part_relation(), &
          & "an uncut graph reports no partition record", nfail)
     call report(g % num_parts() .eq. 1, "an uncut graph is one part", nfail)
 
-    call g % owned_vertices(1, vs)
-    call members_of(vs, indices)
+    call g % owned_vertices(1, sets, labels, inclusions, vs)
+    call members_of(sets, vs, indices)
     call report(size(indices) .eq. 4, "and it owns every cell in it", nfail)
 
-    call g % borrowed_vertices(1, vs)
-    call members_of(vs, indices)
+    call g % borrowed_vertices(1, sets, labels, inclusions, vs)
+    call members_of(sets, vs, indices)
     call report(size(indices) .eq. 0, "and borrows none", nfail)
 
     call report(g % vertex_owner_part(3) .eq. 1, &
@@ -763,7 +871,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                   :: g
-    type(support)                 :: on
+    type(set_graph)                 :: on
     type(field)                   :: f, vol
     type(reduction)                      :: rule
     class(graph_functional), allocatable :: j
@@ -771,11 +879,16 @@ contains
     complex(dp)                          :: c
     logical                              :: l
     integer                              :: i
+    type(set_map)     :: sets
+    type(set_graph) :: pair_pair
+    type(set_graph) :: pair_quad
 
-    g  = diamond()
-    on = support(GRAPH_SIDE_VERTEX, [1, 2, 3, 4])
+    g = diamond()
+    call describe(sets, g)
+    call on % declare()
+    call sets % bind(on, counted_set_representation(4))
 
-    f = field('q', on)
+    f = field('q', on, sets % size_of(on))
     call f % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
 
     rule = reduction(REDUCE_SUM)
@@ -786,7 +899,7 @@ contains
     ! With a measure the same rule becomes an integral. Each cell is
     ! weighted by its volume, so the answer stops depending on how
     ! finely the mesh was cut.
-    vol = field('cell_volume', on)
+    vol = field('cell_volume', on, sets % size_of(on))
     call vol % set_real_vector([2.0_dp, 2.0_dp, 2.0_dp, 2.0_dp])
     call rule % reduce(f, j, measure=vol)
     call value_real(j, r)
@@ -804,12 +917,20 @@ contains
     call report(abs(r - 4.0_dp) < 1.0d-13, "maximum finds the largest", nfail)
 
     ! Three-four-five, so the root is exact.
+    ! The shape law now refuses reusing a four-cell field for two
+    ! values: the norm check gets its own two-entry domain.
+    call pair_pair % declare()
+    call sets % bind(pair_pair, counted_set_representation(2))
+    f = field('q', pair_pair, 2)
     call f % set_real_vector([3.0_dp, 4.0_dp])
     rule = reduction(REDUCE_NORM)
     call rule % reduce(f, j)
     call value_real(j, r)
     call report(abs(r - 5.0_dp) < 1.0d-13, "the two-norm takes its root once", nfail)
 
+    call pair_quad % declare()
+    call sets % bind(pair_quad, counted_set_representation(4))
+    f = field('q', pair_quad, 4)
     call f % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
     rule = reduction(REDUCE_COUNT)
     call rule % reduce(f, j)
@@ -835,6 +956,9 @@ contains
 
     ! The complex-step road. The imaginary parts are tiny on purpose:
     ! a reduction that rounded through a real would return zero.
+    ! The two-entry domain is the one already signed above: an identity
+    ! is assigned once, and {1,2} is the same set both times.
+    f = field('q', pair_pair, 2)
     call f % set_complex_vector([(1.0_dp, 1.0d-20), (2.0_dp, 3.0d-20)])
     rule = reduction(REDUCE_SUM)
     call rule % reduce(f, j)
@@ -868,21 +992,26 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                   :: g
-    type(support)                 :: s1, s2
+    type(set_graph)                 :: s1, s2
     type(field)                   :: f1, f2
     type(reduction)                      :: rule
     class(graph_functional), allocatable :: a, b, both, j
     real(dp)                             :: r
+    type(set_map)     :: sets
 
-    g    = diamond()
+    g = diamond()
+    call describe(sets, g)
     rule = reduction(REDUCE_AVERAGE)
 
-    s1 = support(GRAPH_SIDE_VERTEX, [1, 2, 3])
-    f1 = field('q', s1)
+    ! Two part-sized domains: three cells here, two there.
+    call s1 % declare()
+    call sets % bind(s1, counted_set_representation(3))
+    f1 = field('q', s1, sets % size_of(s1))
     call f1 % set_real_vector([2.0_dp, 2.0_dp, 2.0_dp])
 
-    s2 = support(GRAPH_SIDE_VERTEX, [1, 2])
-    f2 = field('q', s2)
+    call s2 % declare()
+    call sets % bind(s2, counted_set_representation(2))
+    f2 = field('q', s2, sets % size_of(s2))
     call f2 % set_real_vector([5.0_dp, 9.0_dp])
 
     ! Each part accumulates on its own, and neither one divides.
@@ -954,19 +1083,24 @@ contains
     type(assembler)                :: a
     class(graph), allocatable      :: part, back
     class(graph_field), allocatable :: pd, fd
-    type(support)           :: on
+    type(set_graph)           :: on
     type(field)             :: d
     real(dp), allocatable          :: v(:)
     integer                        :: e
     logical                        :: same
+    type(set_map)     :: sets
+    type(label_map)     :: labels
+    type(inclusion_map)     :: inclusions
 
     g = chain_of_six()
+    call describe(sets, g)
     p = partitioner(PARTITION_LINEAR, nparts=1, part=1)
     a = assembler()
 
     call report(p % defined_on_graph(g), "a partitioner accepts a real graph", nfail)
 
     call p % partition_graph(g, part)
+    call describe(sets, part)
     call report(part % num_vertices() .eq. 6, &
          & "cut into one, the piece has every cell", nfail)
     call report(part % num_edges() .eq. 5, "and every face", nfail)
@@ -975,6 +1109,7 @@ contains
          & "the piece holds its relation to the whole", nfail)
 
     call a % assemble_graph(part, back)
+    call describe(sets, back)
     call report(back % num_vertices() .eq. g % num_vertices(), &
          & "assemble(partition(G)) has G's cells", nfail)
     call report(back % num_edges() .eq. g % num_edges(), &
@@ -988,12 +1123,12 @@ contains
     call report(same, "and every face runs between the same two cells", nfail)
 
     ! Now the same round trip with values riding along.
-    on = support(GRAPH_SIDE_VERTEX, [1, 2, 3, 4, 5, 6])
-    d  = field('q', on)
+    on = g % vertex_set()
+    d  = field('q', on, sets % size_of(on))
     call d % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp])
 
-    call p % partition_data(g, d, part, pd)
-    call a % assemble_data(part, pd, g, fd)
+    call p % partition_data(g, d, part, sets, labels, inclusions, pd)
+    call a % assemble_data(part, pd, g, sets, labels, inclusions, fd)
 
     select type (fd)
     class is (field)
@@ -1027,24 +1162,29 @@ contains
     type(stored_graph)                       :: g
     type(partitioner)                        :: p
     class(graph), allocatable                :: part
-    class(graph), allocatable :: vs
+    type(set_graph) :: vs
     integer, allocatable                     :: indices(:)
     integer                                  :: k, l, f, times(6)
+    type(set_map)     :: sets
+    type(label_map)     :: labels
+    type(inclusion_map)     :: inclusions
 
     g     = chain_of_six()
+    call describe(sets, g)
     times = 0
 
     do k = 1, 2
        p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
        call p % partition_graph(g, part)
+       call describe(sets, part)
 
        call report(part % has_part_relation(), &
             & "has_part_relation is true on a cut piece", nfail)
        call report(part % num_parts() .eq. 2, "and how many pieces there are", nfail)
 
        ! Count how often each whole-graph cell is owned.
-       call part % owned_vertices(k, vs)
-       call members_of(vs, indices)
+       call part % owned_vertices(k, sets, labels, inclusions, vs)
+       call members_of(sets, vs, indices)
        do l = 1, size(indices)
           f = part % global_vertex_index(indices(l))
           times(f) = times(f) + 1
@@ -1052,8 +1192,8 @@ contains
 
        ! Each piece should also have borrowed the one cell across the
        ! cut, so a face term there has a value on both sides.
-       call part % borrowed_vertices(k, vs)
-       call members_of(vs, indices)
+       call part % borrowed_vertices(k, sets, labels, inclusions, vs)
+       call members_of(sets, vs, indices)
        call report(size(indices) .eq. 1, &
             & "each piece borrows exactly one cell across the cut", nfail)
     end do
@@ -1086,18 +1226,22 @@ contains
 
     type(partitioner)                        :: p
     class(graph), allocatable                :: part
-    class(graph), allocatable :: vs
+    type(set_graph) :: vs
     integer, allocatable                     :: indices(:)
     integer                                  :: times(g % num_vertices())
     integer                                  :: k, l, f
+    type(set_map)     :: sets
+    type(label_map)     :: labels
+    type(inclusion_map)     :: inclusions
 
     times = 0
 
     do k = 1, nparts
        p = partitioner(rule, nparts=nparts, part=k)
        call p % partition_graph(g, part)
-       call part % owned_vertices(k, vs)
-       call members_of(vs, indices)
+       call describe(sets, part)
+       call part % owned_vertices(k, sets, labels, inclusions, vs)
+       call members_of(sets, vs, indices)
        do l = 1, size(indices)
           f = part % global_vertex_index(indices(l))
           times(f) = times(f) + 1
@@ -1134,17 +1278,21 @@ contains
     type(assembler)                :: a
     class(graph), allocatable      :: part
     class(graph_field), allocatable :: pd, fd
-    type(support)           :: on
+    type(set_graph)           :: on
     type(field)             :: d
     real(dp), allocatable          :: v(:)
     real(dp)                       :: total(6)
     integer                        :: k
+    type(set_map)     :: sets
+    type(label_map)     :: labels
+    type(inclusion_map)     :: inclusions
 
     g = chain_of_six()
+    call describe(sets, g)
     a = assembler()
 
-    on = support(GRAPH_SIDE_VERTEX, [1, 2, 3, 4, 5, 6])
-    d  = field('q', on)
+    on = g % vertex_set()
+    d  = field('q', on, sets % size_of(on))
     call d % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp])
 
     total = 0.0_dp
@@ -1152,8 +1300,9 @@ contains
     do k = 1, 2
        p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
        call p % partition_graph(g, part)
-       call p % partition_data(g, d, part, pd)
-       call a % assemble_data(part, pd, g, fd)
+       call describe(sets, part)
+       call p % partition_data(g, d, part, sets, labels, inclusions, pd)
+       call a % assemble_data(part, pd, g, sets, labels, inclusions, fd)
 
        select type (fd)
        class is (field)
@@ -1191,20 +1340,27 @@ contains
     type(reduction)                          :: rule
     class(graph), allocatable                :: part
     class(graph_field), allocatable           :: pd
-    class(graph), allocatable :: vs
+    type(set_graph) :: vs
     class(graph_functional), allocatable     :: whole, piece, running, joined
-    type(support)                     :: on, owned_only
+    type(set_graph)                        :: on
+    ! Two parts, two owned sets: an identity is assigned once, so the
+    ! loop cannot re-sign one name. They are different sets anyway.
+    type(set_graph)                         :: owned_only(2)
     type(field)                       :: d, owned_values
     real(dp), allocatable                    :: v(:), pick(:)
     integer, allocatable                     :: indices(:)
     real(dp)                                 :: a_whole, a_parts
     integer                                  :: k, l
+    type(set_map)     :: sets
+    type(label_map)     :: labels
+    type(inclusion_map)     :: inclusions
 
     g    = chain_of_six()
+    call describe(sets, g)
     rule = reduction(REDUCE_SUM)
 
-    on = support(GRAPH_SIDE_VERTEX, [1, 2, 3, 4, 5, 6])
-    d  = field('q', on)
+    on = g % vertex_set()
+    d  = field('q', on, sets % size_of(on))
     call d % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp])
 
     ! A on the whole.
@@ -1219,11 +1375,12 @@ contains
     do k = 1, 2
        p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
        call p % partition_graph(g, part)
-       call p % partition_data(g, d, part, pd)
+       call describe(sets, part)
+       call p % partition_data(g, d, part, sets, labels, inclusions, pd)
 
        ! Accumulate this piece's owned cells only.
-       call part % owned_vertices(k, vs)
-       call members_of(vs, indices)
+       call part % owned_vertices(k, sets, labels, inclusions, vs)
+       call members_of(sets, vs, indices)
 
        select type (pd)
        class is (field)
@@ -1234,8 +1391,10 @@ contains
           end do
        end select
 
-       owned_only   = support(GRAPH_SIDE_VERTEX, indices)
-       owned_values = field('q', owned_only)
+       call owned_only(k) % declare()
+       call sets       % bind(owned_only(k), listed_set_representation(indices))
+       call inclusions % include_in(owned_only(k), part % vertex_set())
+       owned_values = field('q', owned_only(k), sets % size_of(owned_only(k)))
        call owned_values % set_real_vector(pick)
        deallocate(pick)
 
@@ -1272,16 +1431,19 @@ contains
     type(refiner)                  :: r
     class(graph), allocatable      :: coarse, fine
     class(graph_field), allocatable :: cd, fd
-    type(support)           :: on
+    type(set_graph)           :: on
     type(field)             :: d
     real(dp), allocatable          :: v(:)
+    type(set_map)     :: sets
 
     g = chain_of_six()
+    call describe(sets, g)
     c = coarsener(COARSEN_PAIRWISE)
 
     call report(c % defined_on_graph(g), "a coarsener accepts a graph with room to shrink", nfail)
 
     call c % coarsen_graph(g, coarse)
+    call describe(sets, coarse)
     call report(coarse % num_vertices() .eq. 3, &
          & "six cells glued in pairs make three blocks", nfail)
     call report(coarse % num_edges() .lt. g % num_edges(), &
@@ -1289,8 +1451,8 @@ contains
 
     ! Averaging onto the blocks. Cells 1 and 2 hold 10 and 20, so
     ! their block holds 15.
-    on = support(GRAPH_SIDE_VERTEX, [1, 2, 3, 4, 5, 6])
-    d  = field('q', on)
+    on = g % vertex_set()
+    d  = field('q', on, sets % size_of(on))
     call d % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp])
 
     call c % coarsen_data(g, d, coarse, cd)
@@ -1319,6 +1481,7 @@ contains
     ! And back down. Every child starts from its parent's value.
     r = refiner(2)
     call r % refine_graph(coarse, fine)
+    call describe(sets, fine)
     call report(fine % num_vertices() .eq. 6, &
          & "splitting three blocks in two gives six cells back", nfail)
 
@@ -1355,9 +1518,11 @@ contains
     type(partitioner)              :: p
     class(graph), allocatable      :: out, part, back
     integer, allocatable           :: no_edges(:)
+    type(set_map)     :: sets
 
     allocate(no_edges(0))
     one_cell = stored_graph(1, tails=no_edges, heads=no_edges)
+    call describe(sets, one_cell)
 
     ! A single cell is as coarse as a graph gets.
     c = coarsener(COARSEN_PAIRWISE)
@@ -1365,22 +1530,26 @@ contains
          & "a coarsener accepts a graph already at one cell", nfail)
 
     call c % coarsen_graph(one_cell, out)
+    call describe(sets, out)
     call report(out % num_vertices() .eq. 1, &
          & "it returns the same single cell", nfail)
 
     ! A graph that was never cut is already assembled.
     g = chain_of_six()
+    call describe(sets, g)
     a = assembler()
     call report(a % defined_on_graph(g), &
          & "an assembler accepts a graph that was never cut", nfail)
 
     call a % assemble_graph(g, back)
+    call describe(sets, back)
     call report(back % num_vertices() .eq. 6 .and. back % num_edges() .eq. 5, &
          & "it returns the same graph", nfail)
 
     ! And cutting into one piece is the same story from the other end.
     p = partitioner(PARTITION_LINEAR, nparts=1, part=1)
     call p % partition_graph(g, part)
+    call describe(sets, part)
     call report(part % num_vertices() .eq. 6, &
          & "cutting into one piece returns the whole graph", nfail)
 
@@ -1419,20 +1588,22 @@ contains
     type(differential_operator)         :: edge_term
     type(balance)                            :: bal
     class(graph_field), allocatable   :: y
-    type(support)                     :: on
+    type(set_graph)                     :: on
     type(field)                       :: q
     real(dp), allocatable                    :: v(:)
     real(dp)                                 :: total
     logical                                  :: ok
+    type(set_map)     :: sets
 
     ! A closed ring: four cells, four faces, not a wall in sight.
     ring = stored_graph(4, tails=[1, 2, 3, 4], heads=[2, 3, 4, 1])
+    call describe(sets, ring)
 
     edge_term = gradient(coefficient=1.0_dp)
     bal       = balance(edge_terms=[edge_term])
 
-    on = support(GRAPH_SIDE_VERTEX, [1, 2, 3, 4])
-    q  = field('q', on)
+    on = ring % vertex_set()
+    q  = field('q', on, sets % size_of(on))
 
     ok = .true.
 
@@ -1481,6 +1652,11 @@ contains
     ! case passed only because the balance was returning zeros, this
     ! catches it.
     open_chain = stored_graph(4, tails=[1, 2, 3, 4], heads=[2, 3, 4, 0])
+    call describe(sets, open_chain)
+    ! Domains are identities now: the state must ride the graph it
+    ! is applied against.
+    q = field('q', open_chain % vertex_set(), open_chain % num_vertices())
+    call q % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
     call bal % apply(open_chain, [q], y)
     call y % get_real_vector(v)
     call report(abs(sum(v)) > 1.0d-12, &
@@ -1506,8 +1682,10 @@ contains
     integer, allocatable                   :: c(:)
     integer                                :: e, t, h
     logical                                :: ok
+    type(set_map)     :: sets
 
     g = chain_of_six()
+    call describe(sets, g)
 
     ! COLOURING. The promise is not "few colours" - it is that no face
     ! has the same colour at both ends. That is what makes a colour
@@ -1531,6 +1709,7 @@ contains
     ! The same must hold on a ring, where a naive alternating colouring
     ! would fail at the join if the count is odd.
     split_mesh = stored_graph(5, tails=[1, 2, 3, 4, 5], heads=[2, 3, 4, 5, 1])
+    call describe(sets, split_mesh)
     call w % apply(split_mesh, output=f)
     call f % get_integer_vector(c)
     ok = .true.
@@ -1565,6 +1744,7 @@ contains
     ! A mesh in two halves says so, and the unreachable half is not
     ! given a distance it does not have.
     split_mesh = stored_graph(4, tails=[1, 3], heads=[2, 4])
+    call describe(sets, split_mesh)
     call w % apply(split_mesh, output=f)
     call f % get_integer_vector(c)
     call report(c(1) .eq. c(2) .and. c(3) .eq. c(4) .and. c(1) /= c(3), &
@@ -1592,18 +1772,20 @@ contains
     type(stored_graph)                     :: g7, g3, ring
     type(differential_operator)     :: op
     class(graph_field), allocatable :: yf
-    type(support)                   :: on
+    type(set_graph)                   :: on
     type(field)                     :: q
-    type(support)                     :: eon
+    type(set_graph)                     :: eon
     type(field)                       :: zf
     real(dp), allocatable                  :: y(:)
     real(dp)                               :: qv(7)
     integer                                :: v
     logical                                :: ok
+    type(set_map)     :: sets
 
     g7 = stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
-    on = support(GRAPH_SIDE_VERTEX, [(v, v = 1, 7)])
-    q  = field('q', on)
+    call describe(sets, g7)
+    on = g7 % vertex_set()
+    q  = field('q', on, sets % size_of(on))
 
     ! Order 0 is the term itself, coefficient and all.
     do v = 1, 7
@@ -1690,8 +1872,8 @@ contains
     ! Per-edge coefficients: three cells, weights 2 and 5, values
     ! 1, 2, 4. At the middle: 5*(4-2) - 2*(2-1) = 10 - 2 = 8.
     g3 = stored_graph(3, tails=[1, 2], heads=[2, 3])
-    on = support(GRAPH_SIDE_VERTEX, [1, 2, 3])
-    q  = field('q', on)
+    call describe(sets, g3)
+    q  = field('q', g3 % vertex_set(), g3 % num_vertices())
     call q % set_real_vector([1.0_dp, 2.0_dp, 4.0_dp])
     op = laplacian(coefficients=[2.0_dp, 5.0_dp])
     call op % apply(g3, [q], yf)
@@ -1702,8 +1884,9 @@ contains
     ! Divergence of a given edge field: a ring with samples 1,2,3,4.
     ! Out minus in at each vertex: -3, 1, 1, 1.
     ring = stored_graph(4, tails=[1,2,3,4], heads=[2,3,4,1])
-    eon  = support(GRAPH_SIDE_EDGE, [1, 2, 3, 4])
-    zf   = field('z', eon)
+    call describe(sets, ring)
+    eon = ring % edge_set()
+    zf   = field('z', eon, sets % size_of(eon))
     call zf % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
     op = divergence()
     call op % apply(ring, [zf], yf)
@@ -1748,16 +1931,18 @@ contains
     type(stored_graph)                     :: g7
     type(differential_operator)     :: fwd, rev
     class(graph_field), allocatable :: yf
-    type(support)                   :: on
+    type(set_graph)                   :: on
     type(field)                     :: qf, pf
     real(dp), allocatable                  :: aq(:), ap(:)
     real(dp)                               :: q(7), p(7), left, right
     integer                                :: v
+    type(set_map)     :: sets
 
     g7 = stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
-    on = support(GRAPH_SIDE_VERTEX, [(v, v = 1, 7)])
-    qf = field('q', on)
-    pf = field('p', on)
+    call describe(sets, g7)
+    on = g7 % vertex_set()
+    qf = field('q', on, sets % size_of(on))
+    pf = field('p', on, sets % size_of(on))
 
     ! Two fields with nothing special about them.
     do v = 1, 7
@@ -1822,18 +2007,20 @@ contains
     type(stored_graph)                     :: border
     type(differential_operator)     :: reduce_edges
     class(graph_field), allocatable :: yf
-    type(support)                     :: eon
+    type(set_graph)                     :: eon
     type(field)                       :: zf
     real(dp), allocatable                  :: y(:)
     real(dp)                               :: qsq(4)
+    type(set_map)     :: sets
 
     ! The border graph: vertices 1..4 stand for the square's edges
     ! a..d, vertex 5 for the face; every border edge points at the
     ! face, and every square edge agrees with the walk, so every
     ! orientation coefficient is one.
     border = stored_graph(5, tails=[1, 2, 3, 4], heads=[5, 5, 5, 5])
-    eon    = support(GRAPH_SIDE_EDGE, [1, 2, 3, 4])
-    zf     = field('z', eon)
+    call describe(sets, border)
+    eon = border % edge_set()
+    zf     = field('z', eon, sets % size_of(eon))
     reduce_edges = divergence()
 
     ! A difference field around the square: values q at the corners,
@@ -1879,16 +2066,18 @@ contains
     type(stored_graph)                     :: g7
     type(differential_operator)     :: op, fwd, rev
     class(graph_field), allocatable :: yf
-    type(support)                   :: on
+    type(set_graph)                   :: on
     type(field)                     :: qf, pf
     real(dp), allocatable                  :: y(:), aq(:), ap(:)
     real(dp)                               :: q(14), p(14)
     integer                                :: v
     logical                                :: ok
+    type(set_map)     :: sets
 
     g7 = stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
-    on = support(GRAPH_SIDE_VERTEX, [(v, v = 1, 7)])
-    qf = field('q', on, ncomp=2)
+    call describe(sets, g7)
+    on = g7 % vertex_set()
+    qf = field('q', on, sets % size_of(on), ncomp=2)
 
     do v = 1, 7
        q(2*v - 1) = 10.0_dp * v          ! component one: a line
@@ -1913,7 +2102,7 @@ contains
 
     ! The adjoint pairing on the whole interleaved vector: with two
     ! components aboard, the sums must still balance.
-    pf = field('p', on, ncomp=2)
+    pf = field('p', on, sets % size_of(on), ncomp=2)
     do v = 1, 14
        p(v) = real(v, dp)**2 - 5.0_dp * v
     end do
@@ -1952,19 +2141,21 @@ contains
     type(stored_graph)                     :: g
     type(differential_operator)     :: fwd, rev
     class(graph_field), allocatable :: yf
-    type(support)                   :: on
+    type(set_graph)                   :: on
     type(field)                     :: unit
     real(dp), allocatable                  :: col(:)
     real(dp)                               :: a(5,5), at(5,5), e(5)
     real(dp)                               :: cs(5)
     integer                                :: order, i, j
     logical                                :: ok
+    type(set_map)     :: sets
 
     ! Five vertices, four interior edges, and one boundary edge
     ! hanging off the last vertex.
-    g  = stored_graph(5, tails=[1,2,3,4,5], heads=[2,3,4,5,0])
-    on = support(GRAPH_SIDE_VERTEX, [1, 2, 3, 4, 5])
-    unit = field('e', on)
+    g = stored_graph(5, tails=[1,2,3,4,5], heads=[2,3,4,5,0])
+    call describe(sets, g)
+    on = g % vertex_set()
+    unit = field('e', on, sets % size_of(on))
 
     ! Per-edge coefficients, so the transpose is tested with weights
     ! aboard, not just with ones.
@@ -2033,17 +2224,19 @@ contains
     type(differential_operator)     :: reduce_edges
     class(graph_field), allocatable   :: zf
     class(graph_field), allocatable :: yf
-    type(support)                   :: on
+    type(set_graph)                   :: on
     type(field)                     :: qf
-    type(support)                     :: eon
+    type(set_graph)                     :: eon
     type(field)                       :: samples
     real(dp), allocatable                  :: z(:), y(:)
     real(dp)                               :: q(4), c(4)
     integer                                :: e, t, h
+    type(set_map)     :: sets
 
     ring = stored_graph(4, tails=[1,2,3,4], heads=[2,3,4,1])
-    on   = support(GRAPH_SIDE_VERTEX, [1, 2, 3, 4])
-    qf   = field('q', on)
+    call describe(sets, ring)
+    on = ring % vertex_set()
+    qf   = field('q', on, sets % size_of(on))
 
     q = [3.0_dp, -1.0_dp, 4.0_dp, 1.5_dp]
     call qf % set_real_vector(q)
@@ -2058,8 +2251,8 @@ contains
     ! over a closed ring sums to zero, this formula included. (The
     ! samples ride in a concrete field; gfortran 11 cannot build an
     ! array constructor from a polymorphic item.)
-    eon     = support(GRAPH_SIDE_EDGE, [1, 2, 3, 4])
-    samples = field('z', eon)
+    eon = ring % edge_set()
+    samples = field('z', eon, sets % size_of(eon))
     call samples % set_real_vector(z)
     reduce_edges = divergence()
     call reduce_edges % apply(ring, [samples], yf)
@@ -2104,8 +2297,8 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_graph)                     :: chain
-    type(support)                   :: on
-    type(support)                     :: eon
+    type(set_graph)                   :: on
+    type(set_graph)                     :: eon
     type(field)                     :: uf, vf, wf
     type(field)                       :: zf, guf
     type(differential_operator)     :: opposite
@@ -2116,14 +2309,16 @@ contains
     class(graph_field), allocatable   :: work_e
     real(dp), allocatable                  :: values(:)
     real(dp)                               :: x, left, right
+    type(set_map)     :: sets
     complex(dp)                            :: cx
 
     chain = stored_graph(4, tails=[1, 2, 3], heads=[2, 3, 4])
-    on    = support(GRAPH_SIDE_VERTEX, [1, 2, 3, 4])
-    eon   = support(GRAPH_SIDE_EDGE, [1, 2, 3])
+    call describe(sets, chain)
+    on = chain % vertex_set()
+    eon = chain % edge_set()
 
-    uf = field('u', on)
-    vf = field('v', on)
+    uf = field('u', on, sets % size_of(on))
+    vf = field('v', on, sets % size_of(on))
     call uf % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
     call vf % set_real_vector([2.0_dp, 1.0_dp, 0.0_dp, 3.0_dp])
 
@@ -2137,13 +2332,13 @@ contains
     ! Integration by parts. G reads the slope of u onto the edges,
     ! D gathers z back onto the vertices, and the two products
     ! cancel: the transpose of G is minus D.
-    zf = field('z', eon)
+    zf = field('z', eon, sets % size_of(eon))
     call zf % set_real_vector([2.0_dp, 0.0_dp, 1.0_dp])
 
     slope = gradient()
     call slope % apply(chain, [uf], work_e)
     call work_e % get_real_vector(values)
-    guf = field('Gu', eon)
+    guf = field('Gu', eon, sets % size_of(eon))
     call guf % set_real_vector(values)
 
     call total % reduce(zf, answer, measure=guf)
@@ -2152,7 +2347,7 @@ contains
     opposite = divergence()
     call opposite % apply(chain, [zf], work_v)
     call work_v % get_real_vector(values)
-    wf = field('Dz', on)
+    wf = field('Dz', on, sets % size_of(on))
     call wf % set_real_vector(values)
 
     call total % reduce(wf, answer, measure=uf)
@@ -2167,7 +2362,7 @@ contains
     call uf % set_real_vector([0.0_dp, 1.0_dp, 3.0_dp, 6.0_dp])
     call slope % apply(chain, [uf], work_e)
     call work_e % get_real_vector(values)
-    guf = field('Gu', eon)
+    guf = field('Gu', eon, sets % size_of(eon))
     call guf % set_real_vector(values)
     call total % reduce(guf, answer, measure=guf)
     call value_real(answer, x)
@@ -2198,18 +2393,20 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(support)                 :: on
+    type(set_graph)                 :: on
     type(field)                   :: f, uf
     type(functional)                     :: seed
     type(broadcast)                      :: copy_rule, share_rule
     type(reduction)                      :: total
     class(graph_functional), allocatable :: answer
     real(dp)                             :: x
+    type(set_map)     :: sets
     complex(dp)                          :: cx
 
-    on = support(GRAPH_SIDE_VERTEX, [1, 2, 3, 4])
-    f  = field('seed', on)
-    uf = field('u', on)
+    call on % declare()
+    call sets % bind(on, counted_set_representation(4))
+    f  = field('seed', on, sets % size_of(on))
+    uf = field('u', on, sets % size_of(on))
 
     copy_rule  % rule = BROADCAST_COPY
     share_rule % rule = BROADCAST_SHARE
@@ -2258,14 +2455,13 @@ contains
   ! contract's vector adapters.
   !===================================================================!
 
-  subroutine members_of(g, indices)
-    class(graph), intent(in) :: g
+  ! The map is a DUMMY, not a local: the identity handed in is
+  ! described there and nowhere else.
+  subroutine members_of(sets, g, indices)
+    type(set_map)       , intent(in)  :: sets
+    type(set_graph)     , intent(in)  :: g
     integer, allocatable, intent(out) :: indices(:)
-    integer :: p
-    allocate(indices(g % num_vertices()))
-    do p = 1, size(indices)
-       indices(p) = g % global_vertex_index(p)
-    end do
+    call sets % members_of(g, indices)
   end subroutine members_of
 
   subroutine value_integer(f, x)

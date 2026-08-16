@@ -26,7 +26,7 @@ module mandelbrot_law_fixture
   use iso_fortran_env    , only : dp => REAL64
   use graph_grammar      , only : graph, graph_field, graph_operation
   use graph_calculus     , only : GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
+  use graph_grammar         , only : set_graph
   use class_graph_field  , only : field
 
   implicit none
@@ -56,12 +56,14 @@ contains
     name = 'mandelbrot law'
   end function law_name
 
-  subroutine law_domain(this, input_graph, domain)
+  subroutine law_domain(this, input_graph, domain, nentries)
     class(mandelbrot_law), intent(in)      :: this
     class(graph), intent(in)               :: input_graph
-    class(graph), allocatable, intent(out) :: domain
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
     associate (u1 => this); end associate
-    call input_graph % all_vertices(domain)
+    domain   = input_graph % all_vertices()
+    nentries = input_graph % num_vertices()
   end subroutine law_domain
 
   subroutine law_apply(this, input_graph, input_data, output)
@@ -71,7 +73,7 @@ contains
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
-    type(support) :: cells
+    type(set_graph) :: cells
     type(field)   :: out
     real(dp), allocatable :: q(:), s(:)
     real(dp) :: u, v
@@ -91,8 +93,8 @@ contains
        end do
     end if
 
-    cells = support(GRAPH_SIDE_VERTEX, [(k, k = 1, nv)])
-    out = field('velocity', cells, ncomp=2)
+    cells = input_graph % vertex_set()
+    out = field('velocity', cells, input_graph % num_vertices(), ncomp=2)
     call out % set_real_vector(s)
 
     if (allocated(output)) deallocate(output)

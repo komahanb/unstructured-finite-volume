@@ -46,8 +46,7 @@ module class_graph_balance
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_grammar      , only : graph_operation, graph, graph_field
-  use graph_calculus     , only : GRAPH_SIDE_VERTEX
-  use class_graph_support, only : support
+  use graph_grammar      , only : set_graph
   use class_graph_field  , only : field
   use class_graph_differential_operator, only : differential_operator
 
@@ -121,15 +120,17 @@ contains
   ! caller wanting only part of one hands it only part of one.
   !===================================================================!
 
-  subroutine balance_domain(this, input_graph, domain)
+  subroutine balance_domain(this, input_graph, domain, nentries)
 
     class(balance), intent(in)             :: this
     class(graph)  , intent(in)             :: input_graph
-    class(graph), allocatable, intent(out) :: domain
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
 
     associate (u1 => this); end associate
 
-    call input_graph % all_vertices(domain)
+    domain   = input_graph % all_vertices()
+    nentries = input_graph % num_vertices()
 
   end subroutine balance_domain
 
@@ -152,21 +153,13 @@ contains
     class(graph_field), allocatable :: edge_values
 
     type(field)           :: out
-    type(support)         :: on
     real(dp), allocatable :: y(:), z(:)
-    integer , allocatable :: indices(:)
     integer               :: nv, ne, v, e, t, h, k
 
     nv = input_graph % num_vertices()
     ne = input_graph % num_edges()
 
-    allocate(indices(nv))
-    do v = 1, nv
-       indices(v) = v
-    end do
-
-    on  = support(GRAPH_SIDE_VERTEX, indices)
-    out = field('balance', on)
+    out = field('balance', input_graph % vertex_set(), input_graph % num_vertices())
 
     allocate(y(nv))
     y = this % source

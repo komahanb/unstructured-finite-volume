@@ -41,8 +41,12 @@
 program lifetime
 
   use fractal_graph        , only : graph, null_branch, known_branch
-  use graph_carrier        , only : member_set, counted_set
-  use graph_relation       , only : relation, stored_relation, slot
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
+  use graph_relation       , only : relation, stored_relation
   use graph_binary_relation, only : binary_relation, csr_relation
   use graph_relational_view, only : relational_binding, relation_at, &
        & member_set_at
@@ -63,14 +67,16 @@ program lifetime
 
     type(graph), target      :: e1, e2, e3
     type(relational_binding) :: b
-    type(counted_set)        :: s
+    type(set_graph)        :: s
     type(stored_relation)    :: r1, r2
     class(relation), pointer :: p, q
+    type(set_map)     :: sets
 
     call e1 % declare(); call e2 % declare(); call e3 % declare()
-    s  = counted_set('E', 4)
-    r1 = stored_relation('R1', [slot(s)], reshape([1, 2], [1, 2]))
-    r2 = stored_relation('R2', [slot(s)], reshape([3, 4], [1, 2]))
+    call s % declare()
+    call sets % bind(s, counted_set_representation(4))
+    r1 = stored_relation('R1', [s], reshape([1, 2], [1, 2]), sets)
+    r2 = stored_relation('R2', [s], reshape([3, 4], [1, 2]), sets)
 
     call b % bind_relation(e1, r1)
     p => b % relation_for(e1)
@@ -100,15 +106,17 @@ program lifetime
 
     type(graph), target      :: e1, e2, e3
     type(relational_binding) :: b, d
-    type(counted_set)        :: s
+    type(set_graph)        :: s
     type(stored_relation)    :: r1, r2, r3
     class(relation), pointer :: p, q
+    type(set_map)     :: sets
 
     call e1 % declare(); call e2 % declare(); call e3 % declare()
-    s  = counted_set('E', 4)
-    r1 = stored_relation('R1', [slot(s)], reshape([1, 2], [1, 2]))
-    r2 = stored_relation('R2', [slot(s)], reshape([3, 4], [1, 2]))
-    r3 = stored_relation('R3', [slot(s)], reshape([1, 4], [1, 2]))
+    call s % declare()
+    call sets % bind(s, counted_set_representation(4))
+    r1 = stored_relation('R1', [s], reshape([1, 2], [1, 2]), sets)
+    r2 = stored_relation('R2', [s], reshape([3, 4], [1, 2]), sets)
+    r3 = stored_relation('R3', [s], reshape([1, 4], [1, 2]), sets)
 
     call b % bind_relation(e1, r1)
     call d % bind_relation(e2, r2)
@@ -134,22 +142,25 @@ program lifetime
 
     type(graph), target             :: g, rcell(2), relem(2), scell, selem
     type(relational_binding)        :: b
-    type(counted_set)               :: e, v
+    type(set_graph)               :: e, v
     type(csr_relation)              :: t
     type(stored_relation)           :: extra
     class(relation), pointer        :: p
     class(binary_relation), pointer :: tails
     integer                         :: i
+    type(set_map)     :: sets
 
     call g % declare(); call scell % declare(); call selem % declare()
     do i = 1, 2
        call rcell(i) % declare(); call relem(i) % declare()
     end do
 
-    e = counted_set('E', 2)
-    v = counted_set('V', 3)
-    t     = csr_relation('T', e, v, reshape([1, 1, 2, 2], [2, 2]))
-    extra = stored_relation('X', [slot(e)], reshape([1, 2], [1, 2]))
+    call e % declare()
+    call sets % bind(e, counted_set_representation(2))
+    call v % declare()
+    call sets % bind(v, counted_set_representation(3))
+    t     = csr_relation('T', e, v, reshape([1, 1, 2, 2], [2, 2]), sets)
+    extra = stored_relation('X', [e], reshape([1, 2], [1, 2]), sets)
 
     call b % bind_set(selem, e)
     call b % bind_relation(relem(1), t)
@@ -188,16 +199,18 @@ program lifetime
 
     type(graph), target        :: g, scell, selem, rcell, relem
     type(relational_binding)   :: b                  ! no TARGET
-    type(counted_set)          :: e
+    type(set_graph)          :: e
     type(stored_relation)      :: p
     class(relation), pointer   :: rp
-    class(member_set), pointer :: sp
+    type(set_graph), pointer :: sp
+    type(set_map)     :: sets
 
     call g % declare(); call scell % declare(); call selem % declare()
     call rcell % declare(); call relem % declare()
 
-    e = counted_set('E', 2)
-    p = stored_relation('P', [slot(e)], reshape([1, 2], [1, 2]))
+    call e % declare()
+    call sets % bind(e, counted_set_representation(2))
+    p = stored_relation('P', [e], reshape([1, 2], [1, 2]), sets)
 
     call b % bind_set(selem, e)
     call b % bind_relation(relem, p)

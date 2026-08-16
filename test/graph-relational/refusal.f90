@@ -14,8 +14,12 @@
 program refusal
 
   use fractal_graph        , only : graph
-  use graph_carrier        , only : member_set, counted_set
-  use graph_relation       , only : relation, stored_relation, slot
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
+  use graph_relation       , only : relation, stored_relation
   use graph_binary_relation, only : csr_relation, transposed_view, &
        &                            transpose_of
   use graph_relational_view, only : relational_binding
@@ -36,25 +40,31 @@ program refusal
      block
        type(graph), target        :: e1, e2
        type(relational_binding)   :: b
-       type(counted_set)          :: s
-       class(member_set), pointer :: p
+       type(set_graph)          :: s
+       type(set_graph), pointer :: p
+       type(set_map)     :: sets
+       type(label_map)     :: labels
        call e1 % declare(); call e2 % declare()
-       s = counted_set('E', 4)
+       call s % declare()
+       call sets % bind(s, counted_set_representation(4))
        call b % bind_set(e1, s)
        p => b % set_for(e2)
-       print *, p % name()
+       print *, labels % label_of(p)
      end block
 
   case ('norelationbound')
      block
        type(graph), target      :: e1, e2
        type(relational_binding) :: b
-       type(counted_set)        :: s
+       type(set_graph)        :: s
        type(stored_relation)    :: r1
        class(relation), pointer :: p
+       type(set_map)     :: sets
+       type(label_map)     :: labels
        call e1 % declare(); call e2 % declare()
-       s  = counted_set('E', 4)
-       r1 = stored_relation('R1', [slot(s)], reshape([1, 2], [1, 2]))
+       call s % declare()
+       call sets % bind(s, counted_set_representation(4))
+       r1 = stored_relation('R1', [s], reshape([1, 2], [1, 2]), sets)
        call b % bind_relation(e1, r1)
        p => b % relation_for(e2)
        print *, p % name()
@@ -71,13 +81,16 @@ program refusal
      block
        type(graph), target      :: e1, e2
        type(relational_binding) :: b, d
-       type(counted_set)        :: s
+       type(set_graph)        :: s
        type(stored_relation)    :: r1, r2
        class(relation), pointer :: p
+       type(set_map)     :: sets
+       type(label_map)     :: labels
        call e1 % declare(); call e2 % declare()
-       s  = counted_set('E', 4)
-       r1 = stored_relation('R1', [slot(s)], reshape([1, 2], [1, 2]))
-       r2 = stored_relation('R2', [slot(s)], reshape([3, 4], [1, 2]))
+       call s % declare()
+       call sets % bind(s, counted_set_representation(4))
+       r1 = stored_relation('R1', [s], reshape([1, 2], [1, 2]), sets)
+       r2 = stored_relation('R2', [s], reshape([3, 4], [1, 2]), sets)
        call b % bind_relation(e1, r1)
        call d % bind_relation(e2, r2)
        p => b % relation_for(e1)                      ! b has lent
@@ -95,7 +108,7 @@ program refusal
      block
        type(graph), target      :: e1
        type(relational_binding) :: b
-       type(counted_set)        :: raw
+       type(set_graph)        :: raw
        call e1 % declare()
        call b % bind_set(e1, raw)
      end block
@@ -120,12 +133,15 @@ program refusal
      block
        type(graph), target        :: e1
        type(relational_binding)   :: b
-       type(counted_set)          :: ops
+       type(set_graph)          :: ops
        type(csr_relation), target :: dep
        type(transposed_view)      :: flipped
+       type(set_map)     :: sets
+       type(label_map)     :: labels
        call e1 % declare()
-       ops     = counted_set('operations', 3)
-       dep     = csr_relation('feeds', ops, ops, reshape([1, 2], [2, 1]))
+       call ops % declare()
+       call sets % bind(ops, counted_set_representation(3))
+       dep     = csr_relation('feeds', ops, ops, reshape([1, 2], [2, 1]), sets)
        flipped = transpose_of(dep)
        call b % bind_relation(e1, flipped)
      end block

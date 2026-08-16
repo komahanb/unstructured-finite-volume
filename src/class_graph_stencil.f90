@@ -33,7 +33,7 @@
 module class_graph_stencil
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_grammar      , only : graph
+  use graph_ordinary_view, only : graph
   use graph_field_calculus, only : graph_field
   use graph_calculus     , only : discretization_operator
   use class_graph_field  , only : field

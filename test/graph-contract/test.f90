@@ -17,7 +17,8 @@
 module nonlinear_sample_support
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_grammar      , only : graph_operation, graph
+  use graph_grammar      , only : graph_operation
+  use graph_ordinary_view, only : graph
   use graph_field_calculus, only : graph_field
   use graph_calculus     , only : GRAPH_SIDE_VERTEX
   ! An operation names a domain and counts it. It asks no membership,
@@ -219,7 +220,7 @@ program test_graph_contract
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
   use class_graph_partitioner, only : PARTITION_BREADTH_FIRST, PARTITION_ADOPTED
   use class_graph_assembler , only : assembler
-  use graph_grammar         , only : graph
+  use graph_ordinary_view   , only : graph
   use graph_field_calculus  , only : graph_field
   use class_graph_coarsener , only : coarsener, COARSEN_PAIRWISE, COARSEN_ADOPTED
   use class_graph_refiner   , only : refiner

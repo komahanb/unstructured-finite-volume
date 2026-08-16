@@ -74,7 +74,7 @@ module production_pattern_renderer_fixture
   use graph_set_map        , only : set_map
   use graph_label_map      , only : label_map
   use graph_relation                , only : relation
-  use graph_grammar                 , only : graph
+  use graph_ordinary_view           , only : graph
   use visualization_carriers_fixture, only : label_for
   use structural_renderer_fixture   , only : picture
 

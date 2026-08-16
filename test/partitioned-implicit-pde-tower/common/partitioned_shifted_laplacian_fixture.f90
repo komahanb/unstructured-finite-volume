@@ -50,7 +50,8 @@ module partitioned_shifted_laplacian_fixture
   use graph_set_map      , only : set_map
   use graph_label_map    , only : label_map
   use graph_inclusion_map, only : inclusion_map
-  use graph_grammar    , only : graph, graph_operation
+  use graph_grammar    , only : graph_operation
+  use graph_ordinary_view, only : graph
   use graph_field_calculus, only : graph_field
   use class_graph      , only : stored_graph
   use class_graph_field, only : field

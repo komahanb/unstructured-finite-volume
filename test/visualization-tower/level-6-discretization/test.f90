@@ -90,7 +90,7 @@ program visualization_level_6
   use graph_label_map      , only : label_map
   use graph_relation       , only : relation
   use graph_binary_relation, only : csr_relation
-  use graph_grammar        , only : graph
+  use graph_ordinary_view  , only : graph
   use class_graph_stencil  , only : stencil_operator
   use class_graph_step     , only : step_operator
   use visualization_carriers_fixture , only : structural_carriers

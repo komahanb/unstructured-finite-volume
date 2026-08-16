@@ -26,12 +26,14 @@ module constituted_residual_fixture
   use graph_set_map        , only : set_map
   use graph_set_representation, only : set_representation
   use graph_relation   , only : relation
-  ! graph_grammar exports a type named graph too; the kernel keeps
-  ! the name and the grammar's is renamed at the door.
+  ! graph_ordinary_view exports a type named graph too; the kernel
+  ! keeps the name and the ordinary view's is renamed at the door.
+  ! That collision is migration debt, recorded at its source.
   use fractal_graph        , only : graph
   use graph_relational_view, only : relational_binding, &
        & num_relations, relation_at
-  use graph_grammar    , only : grammar_graph => graph, graph_operation
+  use graph_grammar    , only : graph_operation
+  use graph_ordinary_view, only : grammar_graph => graph
   use graph_field_calculus, only : graph_field
   use class_graph_field, only : field
   use learning_constitution_fixture, only : generated_residual

@@ -39,7 +39,7 @@ program partitioned_pde_level_7
   use fractal_graph        , only : set_graph => graph
   use graph_set_representation, only : counted_set_representation
   use graph_set_map        , only : set_map
-  use graph_grammar    , only : graph
+  use graph_ordinary_view, only : graph
   use graph_field_calculus, only : graph_field
   use class_graph      , only : stored_graph
   use class_graph_field, only : field

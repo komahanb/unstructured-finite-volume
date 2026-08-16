@@ -25,7 +25,7 @@
 module class_diffusion_statement
 
   use iso_fortran_env      , only : dp => REAL64
-  use graph_grammar        , only : graph
+  use graph_ordinary_view  , only : graph
   use fractal_graph      , only : set_graph => graph
   use graph_set_map      , only : set_map
   use graph_label_map    , only : label_map

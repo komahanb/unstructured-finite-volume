@@ -43,12 +43,16 @@ consumers; none can be harvested by finding an orphan.
     core                       3   the kernel, and the laws every
                                    identified citizen draws on
     map                        3   identity -> answer, stored outside
-    view                       6   an interpretation; stores nothing
+    view                       7   an interpretation; stores nothing
     algorithm                  7   acts on structure, is not structure
     representation            11   how something is stored HERE
     system                    25   PDE, solve, discretization, statement
     legacy-compatibility       8   the ordinary-graph layer to retire
     dead                       0   (empty, and proven so)
+
+The counts are as measured for PR1, over 63 modules. PR2 has since added
+one — `graph_ordinary_view`, carved out of `graph_grammar` — so `view` is
+7 and the total is 64. No module has changed bucket.
 
 ### core — 3
 
@@ -77,7 +81,7 @@ consumers; none can be harvested by finding an orphan.
 These three are already exactly what the target calls maps. No phase
 below moves them.
 
-### view — 6
+### view — 7 (6 at PR1, plus graph_ordinary_view)
 
 | module | reads the graph as | publics |
 |---|---|---|
@@ -87,6 +91,7 @@ below moves them.
 | `graph_epistemic_view` | \((Q,R)\) — data and residual | `has_data`, `data_of`, `residual_of` |
 | `graph_profile` | the ordinary directed graph as a **schema over two relations** \(T,H \subseteq E\times V\) | `ordinary_graph_view`, `directed_adjacency_view` |
 | `graph_field_calculus` | a domain carrying values | `graph_field`, the five `GRAPH_FIELD_*` kinds, `set_graph` |
+| `graph_ordinary_view` | the ordinary binary graph — vertices, edges, incidence, named sets, neighbourhoods | `graph` (abstract). **Added by PR2**, carved from `graph_grammar`; carries the legacy partition frame, marked, until PR3 |
 
 ### algorithm — 7
 
@@ -366,15 +371,17 @@ discovered during it.
 
 ## 5. What the evidence permits each remaining phase to do
 
-    PR2  graph_grammar
-         |-- FIRST, alone:  redirect the 99 re-export imports
-         |                  (graph_field, set_graph, GRAPH_FIELD_*)
-         |                  -> graph_field_calculus / fractal_graph
-         |-- THEN:          graph_transform_view      1 consumer
-         |-- THEN:          graph_operation_view     24 imports
-         |-- LAST:          graph_ordinary_view      59 imports, and it
-         |                  carries the frame UNCHANGED (finding 3.3)
-         `-- graph_calculus follows, it does not lead (finding 3.6)
+    PR2  graph_grammar                                    [in progress]
+         |-- DONE:  redirect the 99 re-export imports
+         |          (graph_field, set_graph, GRAPH_FIELD_*)
+         |          -> graph_field_calculus / fractal_graph
+         |-- DONE:  measure what is left, and classify it   (6.1, 6.2)
+         |-- DONE:  graph_ordinary_view, 59 imports, frame carried
+         |          UNCHANGED and marked                    (6.4)
+         `-- LEFT:  graph_operation_view + graph_transform_view, which
+                    the measurement showed is ONE commit, not two
+                    phases; graph_calculus follows them, and only then
+                    does graph_grammar reach `use` count zero
 
     PR3  the frame leaves the ordinary view: inclusion_map + set_map +
          an owner field. Only then can class_graph become
@@ -422,6 +429,8 @@ and each can leave in its own commit.
 58 files still import it, down from 68. The ten that left named nothing
 but re-exports.
 
+*(§6.4 records what happened when the first of the three left.)*
+
 ### 6.2 The frame's real reach is eight files, not fifty-eight
 
 Every call site of the 36 deferred bindings was measured across all 58
@@ -461,6 +470,42 @@ and will import it from wherever the ordinary view lands.
 `graph_transform`'s single consumer (`graph_calculus`) remains the
 smallest boundary in the cutover.
 
+### 6.4 After the ordinary view left
+
+`graph_ordinary_view` now holds the abstract `graph`: 36 deferred
+bindings and the 13 interfaces they name, moved verbatim. The eight
+frame relations are carried **unchanged** and marked
+
+    LEGACY PARTITION FRAME - MOVES IN PR3
+
+with the successor for each written beside it. The six frame *sets* are
+not marked, because §6.2 measured them as carve-and-bind, which a view
+may do. `class_graph`, which implements the contract, changed its import
+and nothing else — no rename, no frame move, both out of scope here.
+
+What is left of `graph_grammar`:
+
+    symbol            files  src  test   successor
+    ----------------  -----  ---  ----   ---------------------------
+    graph_operation      25    9    16   graph_operation_view
+    graph_transform       1    1     0   graph_transform_view
+
+    68 files -> 58 -> 25.  Two contracts, one module, no re-exports.
+
+**The remaining split is a two-line decision, not two phases.** With the
+ordinary view gone there is nothing left in `graph_grammar` to
+disentangle the two verbs from: they share a file and nothing else. Both
+are already written against `graph` imported from the view. Whoever takes
+them can move both in one commit and delete the module in the same
+breath, or leave them together under a truer name — that is a naming
+question, and it no longer has a dependency in it.
+
+The one thing PR2 did **not** resolve, and deliberately: the abstract
+type is still called `graph`, which is why `set_graph => graph` is still
+written at every door. The module name now says view; the type name does
+not. Renaming it reaches every `class(graph)`, `type(graph)`,
+`extends(graph)` and `import ::` site — redesign, and PR3's to make.
+
 ---
 
 ## 7. Verification record
@@ -469,6 +514,7 @@ One clean rebuild per suite, at every commit recorded here:
 
     inventory (PR1)          32 of 32 suites PASS, 0 FAIL
     re-export redirect       32 of 32 suites PASS, 0 FAIL
+    graph_ordinary_view      32 of 32 suites PASS, 0 FAIL
 
 Seven tower import gates were re-asserted, not relaxed: a level that read
 the field through the grammar is granted `graph_field_calculus` by name,

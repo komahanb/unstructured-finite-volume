@@ -36,7 +36,7 @@
 module class_graph_functional
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_grammar      , only : graph
+  use graph_ordinary_view, only : graph
   use graph_field_calculus, only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
   use graph_field_calculus, only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
   use graph_field_calculus, only : GRAPH_FIELD_CHARACTER

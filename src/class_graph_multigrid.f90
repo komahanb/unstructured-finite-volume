@@ -37,7 +37,7 @@
 module class_graph_multigrid
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_grammar      , only : graph
+  use graph_ordinary_view, only : graph
   use class_graph_stencil, only : stencil_operator
   use graph_minimization , only : minimizer
 

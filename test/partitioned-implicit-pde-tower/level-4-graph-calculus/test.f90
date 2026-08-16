@@ -56,7 +56,7 @@ program partitioned_pde_level_4
   use graph_set_map        , only : set_map
   use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_label_map      , only : label_map
-  use graph_grammar          , only : graph
+  use graph_ordinary_view    , only : graph
   use graph_binary_relation  , only : csr_relation
   use class_graph            , only : stored_graph
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR

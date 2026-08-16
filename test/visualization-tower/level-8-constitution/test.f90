@@ -42,7 +42,7 @@ program visualization_level_8
   use iso_fortran_env      , only : dp => REAL64
   use visualization_assert , only : report, verdict
   use fractal_graph        , only : set_graph => graph
-  use graph_grammar        , only : graph
+  use graph_ordinary_view  , only : graph
   use class_graph          , only : stored_graph
   use class_graph_stencil  , only : stencil_operator
   use class_graph_step     , only : step_operator, bdf, backward_euler

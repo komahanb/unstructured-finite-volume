@@ -163,7 +163,8 @@
 module class_graph_differential_operator
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_grammar      , only : graph_operation, graph
+  use graph_grammar      , only : graph_operation
+  use graph_ordinary_view, only : graph
   use graph_field_calculus, only : graph_field
   use fractal_graph      , only : set_graph => graph
   use graph_calculus     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE

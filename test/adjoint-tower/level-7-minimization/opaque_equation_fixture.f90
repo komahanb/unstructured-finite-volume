@@ -38,7 +38,8 @@ module opaque_equation_fixture
   use fractal_graph        , only : set_graph => graph
   use graph_set_map        , only : set_map
   use graph_set_representation, only : set_representation
-  use graph_grammar    , only : graph, graph_operation
+  use graph_grammar    , only : graph_operation
+  use graph_ordinary_view, only : graph
   use graph_field_calculus, only : graph_field
   use class_graph_field, only : field
 

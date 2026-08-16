@@ -45,7 +45,7 @@
 #    levels below Level 5 must remain unable to reach a coefficient -
 #    which is a ceiling that lifted, not a refusal that was deleted.
 #
-# 2. OPERATORS. graph_grammar, class_graph_stencil, class_graph_step
+# 2. OPERATORS. graph_ordinary_view, class_graph_stencil, class_graph_step
 #    and everything that solves, steps, linearizes or marches. The
 #    types the brief names explicitly - discretization_operator and
 #    stencil_operator - live inside class_graph_stencil,
@@ -115,7 +115,7 @@ allowed_for() {
         common/visualization_values_fixture.f90) echo "fractal_graph graph_set_map  class_graph_field" ;;
         common/valued_renderer_fixture.f90) echo "fractal_graph graph_set_map graph_label_map visualization_carriers_fixture structural_renderer_fixture graph_relation graph_binary_relation graph_field_calculus class_graph_field" ;;
         common/production_discretization_fixture.f90) echo "fractal_graph graph_grammar class_graph_stencil class_graph_step" ;;
-        common/production_pattern_renderer_fixture.f90) echo "fractal_graph graph_set_map graph_label_map visualization_carriers_fixture structural_renderer_fixture graph_relation graph_grammar" ;;
+        common/production_pattern_renderer_fixture.f90) echo "fractal_graph graph_set_map graph_label_map visualization_carriers_fixture structural_renderer_fixture graph_relation graph_ordinary_view" ;;
         common)            echo "__no_allowlist__" ;;
 
         # ---- L0: carriers only. NOTHING relational - not the relation
@@ -148,7 +148,7 @@ allowed_for() {
         #          stored graph directly, and a ceiling permits what is
         #          used rather than what is nearby. graph_fitting is
         #          refused outright, and so is everything that solves.
-        level-6-discretization) echo "fractal_graph graph_set_representation graph_set_map graph_label_map visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_discretization_fixture production_pattern_renderer_fixture graph_relation graph_binary_relation graph_relation_algebra graph_grammar class_graph_stencil class_graph_step" ;;
+        level-6-discretization) echo "fractal_graph graph_set_representation graph_set_map graph_label_map visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_discretization_fixture production_pattern_renderer_fixture graph_relation graph_binary_relation graph_relation_algebra graph_ordinary_view class_graph_stencil class_graph_step" ;;
 
         # ---- L7: + MINIMIZATION, and only the concrete the
         #          experiment uses. graph_minimization itself is not
@@ -157,14 +157,14 @@ allowed_for() {
         #          census rather than run. Nothing that solves beyond
         #          jacobi: no gmres, no newton, no multigrid, no
         #          marcher, no linearization.
-        level-7-minimization) echo "fractal_graph graph_set_representation graph_set_map graph_label_map visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_pattern_renderer_fixture graph_relation graph_binary_relation graph_relation_algebra graph_grammar class_graph class_graph_stencil class_graph_jacobi" ;;
+        level-7-minimization) echo "fractal_graph graph_set_representation graph_set_map graph_label_map visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_pattern_renderer_fixture graph_relation graph_binary_relation graph_relation_algebra graph_ordinary_view class_graph class_graph_stencil class_graph_jacobi" ;;
 
         # ---- L8: the constitution. Both axes and the context at once,
         #          on the vocabulary Levels 6 and 7 already earned.
-        level-8-constitution) echo "fractal_graph graph_set_representation graph_set_map graph_label_map visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_pattern_renderer_fixture graph_relation graph_binary_relation graph_relation_algebra graph_grammar class_graph class_graph_stencil class_graph_step class_graph_jacobi" ;;
+        level-8-constitution) echo "fractal_graph graph_set_representation graph_set_map graph_label_map visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_pattern_renderer_fixture graph_relation graph_binary_relation graph_relation_algebra graph_ordinary_view class_graph class_graph_stencil class_graph_step class_graph_jacobi" ;;
         # ---- L9: the statement, on the same constitution plus the
         #          coefficient view Level 5 earned.
-        level-9-statement) echo "fractal_graph graph_set_representation graph_set_map graph_label_map visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture valued_renderer_fixture visualization_values_fixture production_pattern_renderer_fixture graph_relation graph_binary_relation graph_relation_algebra graph_grammar graph_field_calculus class_graph class_graph_field class_graph_stencil class_graph_step class_graph_jacobi" ;;
+        level-9-statement) echo "fractal_graph graph_set_representation graph_set_map graph_label_map visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture valued_renderer_fixture visualization_values_fixture production_pattern_renderer_fixture graph_relation graph_binary_relation graph_relation_algebra graph_ordinary_view graph_field_calculus class_graph class_graph_field class_graph_stencil class_graph_step class_graph_jacobi" ;;
 
         *)                 echo "__no_allowlist__" ;;
     esac
@@ -357,6 +357,7 @@ if [ "$1" = "--selftest" ]; then
     #      linearizes, marches, or owns dependencies().
     for lvl in $with_five; do
         refuses "$lvl" graph_grammar
+        refuses "$lvl" graph_ordinary_view
         refuses "$lvl" class_graph_stencil
         refuses "$lvl" class_graph_step
         refuses "$lvl" graph_calculus
@@ -413,6 +414,7 @@ if [ "$1" = "--selftest" ]; then
     refuses level-5-field-calculus class_graph_step
     refuses level-5-field-calculus class_graph_stencil
     refuses level-5-field-calculus graph_grammar
+    refuses level-5-field-calculus graph_ordinary_view
     refuses level-5-field-calculus class_graph_linearization
 
     # The valued renderer stands ON the structural one, never inside
@@ -427,7 +429,7 @@ if [ "$1" = "--selftest" ]; then
     # ---- L6 earns production discretization, and only what it uses.
     permits level-6-discretization class_graph_stencil
     permits level-6-discretization class_graph_step
-    permits level-6-discretization graph_grammar
+    permits level-6-discretization graph_ordinary_view
     permits level-6-discretization production_discretization_fixture
     permits level-6-discretization production_pattern_renderer_fixture
     permits level-6-discretization structural_renderer_fixture
@@ -435,6 +437,7 @@ if [ "$1" = "--selftest" ]; then
         refuses "$lvl" class_graph_stencil
         refuses "$lvl" class_graph_step
         refuses "$lvl" graph_grammar
+        refuses "$lvl" graph_ordinary_view
         refuses "$lvl" graph_calculus
         refuses "$lvl" production_discretization_fixture
         refuses "$lvl" production_pattern_renderer_fixture
@@ -457,10 +460,11 @@ if [ "$1" = "--selftest" ]; then
 
     # The production fixtures stand where they are earned, and the
     # Level-4 renderer still knows nothing of production.
-    permits common/production_pattern_renderer_fixture.f90 graph_grammar
+    permits common/production_pattern_renderer_fixture.f90 graph_ordinary_view
     permits common/production_pattern_renderer_fixture.f90 structural_renderer_fixture
     permits common/production_discretization_fixture.f90 class_graph_stencil
     refuses common/structural_renderer_fixture.f90 graph_grammar
+    refuses common/structural_renderer_fixture.f90 graph_ordinary_view
     refuses common/structural_renderer_fixture.f90 class_graph_stencil
     refuses common/valued_renderer_fixture.f90 class_graph_step
     refuses common/production_pattern_renderer_fixture.f90 class_graph_stencil

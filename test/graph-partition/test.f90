@@ -25,7 +25,7 @@ program partition_law
 
   use iso_fortran_env      , only : dp => REAL64
   use class_graph          , only : stored_graph
-  use graph_grammar        , only : graph
+  use graph_ordinary_view  , only : graph
   use graph_field_calculus , only : graph_field
   use class_graph_field    , only : field
   use fractal_graph      , only : set_graph => graph

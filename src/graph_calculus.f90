@@ -73,7 +73,8 @@ module graph_calculus
   use graph_set_map      , only : set_map
   use graph_label_map    , only : label_map
   use graph_inclusion_map, only : inclusion_map
-  use graph_grammar  , only : graph, graph_operation, graph_transform
+  use graph_grammar  , only : graph_operation, graph_transform
+  use graph_ordinary_view, only : graph
   use graph_field_calculus, only : graph_field
 
   implicit none

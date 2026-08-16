@@ -1,42 +1,34 @@
 !=====================================================================!
-! THE LEGACY ORDINARY-GRAPH COMPATIBILITY CONTRACT
+! THE LEGACY VERB CONTRACTS: OPERATION AND TRANSFORM
 !
-! ONCE the ground level of the old stratification; now the legacy
-! vertex/edge compatibility contract of the relation-centered tower
-! (AGENTS.md). The NEW ground is the set modules; relations, algebra,
-! the relational graph, the interpretations and the field calculus
-! all live in their own level modules. What remains here is the
-! ordinary-graph vocabulary the old solvers still speak - retyped
-! onto the new ontology: a named graph set answers a set GRAPH, and
-! its interpretation belongs to whoever asked; a field's domain is a
-! set graph and a frozen count.
+! ONCE the ground level of the old stratification, then the one place
+! everything legacy met. What is left is two abstract verbs:
 !
-! The module is now being DRAINED, and the first draught is taken:
-! it lends no name it did not define. The field abstraction and its
-! five value kinds are graph_field_calculus's, the set graph is the
-! kernel's, and consumers ask those modules directly. What is left
-! to remove is three abstract types, and the module goes with the
-! last of them.
+!     graph_operation    the verb WITHIN a graph: data in, data out
+!     graph_transform    the verb BETWEEN graphs
+!
+! Everything else has gone to the module that owns it. This one is
+! being drained, and two draughts are taken
+! (doc/final-codebase-cutover-plan.md, PR2):
+!
+!     graph_field, GRAPH_FIELD_*  ->  graph_field_calculus, which
+!     |                               defines them
+!     set_graph                   ->  fractal_graph, which mints it
+!     `-- graph                   ->  graph_ordinary_view, which is
+!                                     what that contract always was
+!
+! It lends no name it did not define. graph, set_graph and graph_field
+! are still IMPORTED, because the two interfaces below are written in
+! them - a verb within a graph must name the graph, the domain it
+! answers on, and the data it moves. Importing a name to spell a
+! signature is not lending it onward, and none of the three is public
+! here.
+!
+! The module is deleted when `use graph_grammar` is empty - not
+! before, and not by renaming it to something that sounds newer. Two
+! contracts remain, in 25 files, and both have a home named for them.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
-!=====================================================================!
-!
-!                     WHERE THIS FILE STANDS
-!
-! The old stratification that began here is retired. The living
-! tower is the relation-centered one (AGENTS.md): carriers,
-! relations, algebra, the relational graph, its interpretations,
-! and the field calculus, each in its own module. This file keeps
-! only the ordinary-graph compatibility vocabulary the remaining
-! legacy citizens speak - and its answers are already retyped onto
-! the new ground:
-!
-!    named graph sets  ->  set graph identities
-!    full named sets   ->  the carrier itself, one stable identity
-!    carved sets       ->  a fresh identity, bound into the caller's
-!                          set / label / inclusion maps
-!    field domains     ->  a set graph and a frozen count
-!
 !=====================================================================!
 !
 !                         THE ADMISSION LAW
@@ -149,29 +141,28 @@
 
 module graph_grammar
 
-  use iso_fortran_env    , only : dp => REAL64
 
   !===================================================================!
-  ! THE DOMAIN IS A GRAPH, AND ITS INTERPRETATION IS THE CALLER'S.
+  ! THREE NAMES ARRIVE, AND ALL THREE ARE SOMEONE ELSE'S.
   !
-  ! set_graph is the kernel's graph, renamed on import because the
-  ! abstract type below already owns the word `graph` in this module.
-  ! The rename is the whole of the collision: one is the ontology, the
-  ! other is the legacy structure interface awaiting migration onto it.
+  ! A verb within a graph names three things in its signature and
+  ! defines none of them: the graph it acts on, the domain its answer
+  ! lands on, and the data it moves. Each comes from its owner.
   !
-  ! A domain-producing symbol here answers WHICH set. Where the answer
-  ! is a set the graph already holds, that is all it answers, and the
-  ! caller reconstructs the extension from a count it can already read.
-  ! Where the answer is a set CARVED on demand, the symbol must also
-  ! say how its members are stored, what it is called, and what it was
-  ! carved from - so it takes the three maps and binds into them. The
-  ! graph does not own them. It never learns what a set means.
+  !     graph        graph_ordinary_view   the structure it reads
+  !     set_graph    fractal_graph         the domain it answers on,
+  !     |                                  renamed because the kernel
+  !     |                                  calls it `graph` too
+  !     graph_field  graph_field_calculus  the values it moves
+  !
+  ! The collision that forced the set_graph rename is now in
+  ! graph_ordinary_view, where the type named `graph` actually lives;
+  ! here it survives only because this module still spells signatures
+  ! in both.
   !===================================================================!
 
+  use graph_ordinary_view , only : graph
   use fractal_graph       , only : set_graph => graph
-  use graph_set_map       , only : set_map
-  use graph_label_map     , only : label_map
-  use graph_inclusion_map , only : inclusion_map
   use graph_field_calculus, only : graph_field
 
   implicit none
@@ -181,154 +172,18 @@ module graph_grammar
   !===================================================================!
   ! WHAT THIS MODULE OWNS, AND IT IS ONLY THIS.
   !
-  ! Three abstract types, and no symbol that belongs to someone else.
-  ! The re-exports are gone: a consumer wanting the kernel graph says
-  ! so to the kernel, and one wanting the field says so to the field
-  ! calculus. set_graph and graph_field are still IMPORTED, because
-  ! the interfaces below are written in them, but importing a name to
-  ! spell a signature is not the same act as lending it onward.
-  !
-  !     set_graph        -> fractal_graph, which mints it
-  !     graph_field      -> graph_field_calculus, which defines it
-  !     GRAPH_FIELD_*    -> graph_field_calculus, which absorbs the
-  !                         five-road value axis into constants
-  !
-  ! Each of the three below leaves in its own commit, and this module
-  ! is deleted when `use graph_grammar` is empty - not before, and not
-  ! by renaming it to something that sounds newer.
+  ! Two abstract types. Nothing imported above is public here, and
+  ! that is the rule the drain is following: a module lends only what
+  ! it defines. Both survivors have a home named for them -
+  ! graph_operation_view and graph_transform_view - and the split
+  ! between them is now a two-line decision rather than two phases,
+  ! because after the ordinary view left there is nothing else here to
+  ! disentangle them from.
   !===================================================================!
 
-  public :: graph
   public :: graph_operation
   public :: graph_transform
 
-  !===================================================================!
-  ! GRAPH. The reader of structure.
-  !
-  ! Thirty-four symbols, all queries: identity, counts, incidence,
-  ! named sets, neighbourhoods, and the frame. A graph answers; it
-  ! never acts. Algorithms act on it from the levels above, which is
-  ! what keeps this contract small.
-  !
-  ! THE GRAPH CARRIES NO VALUES. A field references its domain; the
-  ! reference never points the other way. What an operation reads it
-  ! is handed at construction, as a field argument the compiler can
-  ! see - a name passed as a string would hide the same binding until
-  ! run time. Vocabulary that names particular data (a cell volume,
-  ! a face normal) belongs to the level that owns those words, as
-  ! typed procedures on its concretes, never as string keys here.
-  ! The one string below is the tag, and it is data, not a symbol:
-  ! it originates outside the code, in the mesh file that named its
-  ! boundary groups.
-  !
-  ! A NAMED SET IS A SET GRAPH. The full sets answer the graph's own
-  ! carrier - one stable identity, asked twice, answering once; the
-  ! carved ones answer a FRESH identity and bind what it means into
-  ! the caller's maps,
-  !
-  !      all_vertices           tagged_edges('wall')
-  !      the vertex carrier     a new set { 11 14 19 } c--> edges
-  !
-  ! and membership, size, order and standing are questions for the
-  ! representation the caller holds - not for the graph, which knows
-  ! only which set it named.
-  !
-  ! THE FRAME. How a part relates to the whole it was cut from:
-  !
-  !    owned      this part answers for the value here
-  !    borrowed   this part only reads it; someone else owns it
-  !    overlap    everything this part must see to finish what it owns
-  !
-  !            part 1                        part 2
-  !       +---------------+            +---------------+
-  !       |  o    o    o  |            |  o    o    o  |
-  !       |  o    o    o--|------------|--b    o    o  |
-  !       +---------------+            +---------------+
-  !                    \______________/
-  !                       the overlap of part 1
-  !
-  ! A part graph is still a graph. It holds the relation back to the
-  ! whole - how many parts, which part owns what, and the index maps
-  ! both ways - because an assembler must read that relation rather
-  ! than invent one.
-  !===================================================================!
-
-  !===================================================================!
-  ! MIGRATION DEBT. This abstract type is named graph but is not the
-  ! graph ontology. The ontology is G=(B1,B2) in src/fractal_graph.f90;
-  ! what follows is a legacy interface awaiting migration to a view
-  ! over it. Do not present it as ontology, and do not extend it.
-  !===================================================================!
-
-  type, abstract :: graph
-
-   contains
-
-     ! Identity and size.
-     procedure(graph_id_interface)    , deferred :: id
-     procedure(graph_count_interface) , deferred :: num_vertices
-     procedure(graph_count_interface) , deferred :: num_edges
-
-     ! The carrier bridge (migration, AGENTS.md 5B): the graph's two
-     ! persistent declared domains, for consumers that must ask
-     ! where a field domain ultimately lives. This root is already
-     ! explicitly the ordinary vertex/edge compatibility contract.
-     procedure(set_graph_interface), deferred :: vertex_set
-     procedure(set_graph_interface), deferred :: edge_set
-
-     ! Incidence: the two integer edge fields that ARE the structure.
-     procedure(graph_edge_end_interface)     , deferred :: edge_tail
-     procedure(graph_edge_end_interface)     , deferred :: edge_head
-     procedure(graph_edge_has_head_interface), deferred :: edge_has_head
-
-     ! The named sets, split by whether the answer already exists.
-     !
-     !   all_*        IS the carrier - stable identity, no binding
-     !   the rest     CARVED on demand - a fresh set each call, so
-     !                each call binds its extension, its label and
-     !                its declared embedding into the caller's maps
-     !
-     ! The split is not cosmetic: the first kind may be asked twice
-     ! and answer one set, the second kind answers two.
-     procedure(set_graph_interface)   , deferred :: all_vertices
-     procedure(graph_carved_set_interface), deferred :: interior_vertices
-     procedure(graph_carved_set_interface), deferred :: boundary_vertices
-     procedure(graph_tagged_set_interface), deferred :: tagged_vertices
-     procedure(set_graph_interface)   , deferred :: all_edges
-     procedure(graph_carved_set_interface), deferred :: interior_edges
-     procedure(graph_carved_set_interface), deferred :: boundary_edges
-     procedure(graph_tagged_set_interface), deferred :: tagged_edges
-
-     ! The frame's sets, one part at a time.
-     procedure(graph_part_set_interface), deferred :: owned_vertices
-     procedure(graph_part_set_interface), deferred :: borrowed_vertices
-     procedure(graph_part_set_interface), deferred :: overlap_vertices
-     procedure(graph_part_set_interface), deferred :: owned_edges
-     procedure(graph_part_set_interface), deferred :: borrowed_edges
-     procedure(graph_part_set_interface), deferred :: overlap_edges
-
-     ! Neighbourhoods. Called inside loops, so the answers are bare
-     ! indices and the procedures are pure; handing back a graph here
-     ! would allocate three times per neighbour query.
-     procedure(graph_from_vertex_interface), deferred :: incident_edges
-     procedure(graph_from_vertex_interface), deferred :: adjacent_vertices
-     procedure(graph_from_vertex_interface), deferred :: outgoing_edges
-     procedure(graph_from_vertex_interface), deferred :: incoming_edges
-     procedure(graph_from_vertex_interface), deferred :: outgoing_vertices
-     procedure(graph_from_vertex_interface), deferred :: incoming_vertices
-
-     ! The frame's relations: counts, ownership, and the index maps
-     ! both ways between a part and its whole.
-     procedure(graph_count_interface)            , deferred :: num_parts
-     procedure(graph_has_part_relation_interface), deferred :: has_part_relation
-     procedure(graph_global_id_interface)        , deferred :: global_vertex_index
-     procedure(graph_global_id_interface)        , deferred :: global_edge_index
-     procedure(graph_part_id_interface)          , deferred :: part_vertex_index
-     procedure(graph_part_id_interface)          , deferred :: part_edge_index
-     procedure(graph_owner_part_interface)       , deferred :: vertex_owner_part
-     procedure(graph_owner_part_interface)       , deferred :: edge_owner_part
-
-  end type graph
 
   !===================================================================!
   ! GRAPH_FIELD. The carrier of values.
@@ -429,183 +284,6 @@ module graph_grammar
   end type graph_transform
 
   abstract interface
-
-     !===============================================================!
-     ! Structure: identity, counts, incidence.
-     !===============================================================!
-
-     pure integer function graph_id_interface(this)
-       import :: graph
-       class(graph), intent(in) :: this
-     end function graph_id_interface
-
-     pure integer function graph_count_interface(this)
-       import :: graph
-       class(graph), intent(in) :: this
-     end function graph_count_interface
-
-     !---------------------------------------------------------------!
-     ! A domain the graph already holds: identity, and nothing else.
-     ! The extension is 1..num_vertices() or 1..num_edges(), which the
-     ! caller can already read, so a counted representation is one
-     ! constructor call away and no map need travel with the answer.
-     !---------------------------------------------------------------!
-
-     ! Not pure: a set graph carries a pointer component, so copying
-     ! one out of an INTENT(IN) dummy is barred from a pure subprogram
-     ! (F2018 C1594). Identity is still answered by value.
-     type(set_graph) function set_graph_interface(this)
-       import :: graph, set_graph
-       class(graph), intent(in) :: this
-     end function set_graph_interface
-
-     pure integer function graph_edge_end_interface(this, edge_index)
-       import :: graph
-       class(graph), intent(in) :: this
-       integer, intent(in) :: edge_index
-     end function graph_edge_end_interface
-
-     pure logical function graph_edge_has_head_interface(this, edge_index)
-       import :: graph
-       class(graph), intent(in) :: this
-       integer, intent(in) :: edge_index
-     end function graph_edge_has_head_interface
-
-     !===============================================================!
-     ! THE CARVED SETS. Called once, when an operation begins, so the
-     ! cost is paid per sweep and not per cell.
-     !
-     ! Each call declares a NEW set - a fresh identity - because that
-     ! is what these have always done: the old code built a fresh
-     ! subset_set per call, and a subset signs its own identity. Two
-     ! calls to boundary_vertices() were never one domain, and are not
-     ! one domain now.
-     !
-     ! What the answer needs beyond identity, it binds:
-     !
-     !     sets         the listed extension - who belongs
-     !     labels       the name the old subset carried
-     !     inclusions   the embedding into the graph's own carrier,
-     !                  without which subobject questions go silent
-     !
-     ! All three are the CALLER'S, borrowed for the duration of the
-     ! call and never stored. That is the difference between stating a
-     ! dependency and hiding one.
-     !===============================================================!
-
-     subroutine graph_carved_set_interface(this, sets, labels, &
-          & inclusions, members)
-       import :: graph, set_graph, set_map, label_map, inclusion_map
-       class(graph)       , intent(in)    :: this
-       type(set_map)      , intent(inout) :: sets
-       type(label_map)    , intent(inout) :: labels
-       type(inclusion_map), intent(inout) :: inclusions
-       type(set_graph)    , intent(out)   :: members
-     end subroutine graph_carved_set_interface
-
-     subroutine graph_tagged_set_interface(this, tag, sets, labels, &
-          & inclusions, members)
-       import :: graph, set_graph, set_map, label_map, inclusion_map
-       class(graph)       , intent(in)    :: this
-       character(len=*)   , intent(in)    :: tag
-       type(set_map)      , intent(inout) :: sets
-       type(label_map)    , intent(inout) :: labels
-       type(inclusion_map), intent(inout) :: inclusions
-       type(set_graph)    , intent(out)   :: members
-     end subroutine graph_tagged_set_interface
-
-     subroutine graph_part_set_interface(this, part_id, sets, labels, &
-          & inclusions, members)
-       import :: graph, set_graph, set_map, label_map, inclusion_map
-       class(graph)       , intent(in)    :: this
-       integer            , intent(in)    :: part_id
-       type(set_map)      , intent(inout) :: sets
-       type(label_map)    , intent(inout) :: labels
-       type(inclusion_map), intent(inout) :: inclusions
-       type(set_graph)    , intent(out)   :: members
-     end subroutine graph_part_set_interface
-
-     !===============================================================!
-     ! Neighbourhoods. Bare indices, pure, loop-safe.
-     !===============================================================!
-
-     pure subroutine graph_from_vertex_interface(this, vertex_index, indices)
-       import :: graph
-       class(graph), intent(in) :: this
-       integer, intent(in) :: vertex_index
-       integer, allocatable, intent(out) :: indices(:)
-     end subroutine graph_from_vertex_interface
-
-     !===============================================================!
-     ! The frame: how a part relates to the whole.
-     !===============================================================!
-
-     !---------------------------------------------------------------!
-     ! Does this graph hold a partition record?
-     !
-     !      straight off a mesh file  ->  no
-     !      out of a partitioner      ->  yes
-     !
-     ! An assembler checks this first. Without the relation there is
-     ! no way back to whole-graph order, and this check reports that
-     ! rather than assuming a map.
-     !---------------------------------------------------------------!
-
-     pure logical function graph_has_part_relation_interface(this)
-       import :: graph
-       class(graph), intent(in) :: this
-     end function graph_has_part_relation_interface
-
-     !---------------------------------------------------------------!
-     ! What was this cell called in the whole graph?
-     !
-     !      whole    1   2   3   4   5   6   7   8
-     !                       |   |           |
-     !      part 2           1   2           3
-     !
-     !      global_vertex_index(2) = 4
-     !
-     ! Read that as: the part numbers this cell 2; the whole graph it
-     ! was cut from numbered it 4. For an uncut graph the result
-     ! equals the argument, because the graph is its own whole. The
-     ! same map on an edgeless member set is what names the members.
-     !---------------------------------------------------------------!
-
-     pure integer function graph_global_id_interface(this, index)
-       import :: graph
-       class(graph), intent(in) :: this
-       integer, intent(in) :: index
-     end function graph_global_id_interface
-
-     !---------------------------------------------------------------!
-     ! The same map read backwards: where does whole-graph vertex 4
-     ! sit inside part 2? The part is named because the partition is
-     ! replicated - every image builds every part, so one image
-     ! regularly queries a part it does not own.
-     !---------------------------------------------------------------!
-
-     pure integer function graph_part_id_interface(this, global_index, part_id)
-       import :: graph
-       class(graph), intent(in) :: this
-       integer, intent(in) :: global_index
-       integer, intent(in) :: part_id
-     end function graph_part_id_interface
-
-     !---------------------------------------------------------------!
-     ! Whose job is this one?
-     !
-     !      vertex_owner_part(4) = 2       part 2 answers for it;
-     !                                     everyone else only reads it
-     !
-     ! This is what stops a shared cell being counted twice when the
-     ! parts are added back together.
-     !---------------------------------------------------------------!
-
-     pure integer function graph_owner_part_interface(this, index)
-       import :: graph
-       class(graph), intent(in) :: this
-       integer, intent(in) :: index
-     end function graph_owner_part_interface
 
      !===============================================================!
      ! Verb within: name, domain, apply.

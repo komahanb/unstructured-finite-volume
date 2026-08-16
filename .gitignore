@@ -47,3 +47,5 @@ test/visualization-tower/*/run.out
 test/graph-partition/run
 test/graph-set-view/run
 test/graph-set-view/refusal
+test/graph-inclusion/run
+test/graph-inclusion/refusal

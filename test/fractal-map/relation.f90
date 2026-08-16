@@ -93,8 +93,13 @@ program relation_map
 
   use fractal_graph        , only : graph, null_branch, known_branch
   use graph_sequence_view  , only : sequence_size, sequence_element
-  use graph_carrier        , only : member_set, counted_set
-  use graph_relation       , only : relation, stored_relation, slot
+  use fractal_graph           , only : graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map           , only : set_map
+  use graph_label_map         , only : label_map
+  use graph_inclusion_map     , only : inclusion_map, declared_subobject
+  use graph_relation       , only : relation, stored_relation
   use graph_binary_relation, only : binary_relation, csr_relation, &
        & transposed_view, transpose_of
   use graph_relational_view, only : relational_binding
@@ -236,22 +241,28 @@ program relation_map
 
     type(graph), target      :: r
     type(relational_binding) :: table_of, csr_of
-    type(counted_set)        :: e, v
+    type(graph)        :: e, v
     type(stored_relation)    :: t
     type(csr_relation)       :: c
     class(relation), pointer :: pt, pc
     integer                  :: pairs(2, 3)
     logical                  :: agree
     integer                  :: k
+    type(set_map)       :: sets
+    type(label_map)     :: labels
 
     call r % declare()
 
-    e = counted_set('E', 3)
-    v = counted_set('V', 4)
+    call e % declare()
+    call sets % bind(e, counted_set_representation(3))
+    call labels % bind(e, 'E')
+    call v % declare()
+    call sets % bind(v, counted_set_representation(4))
+    call labels % bind(v, 'V')
     pairs = reshape([1, 2,  2, 3,  3, 1], [2, 3])
 
-    t = stored_relation('R', [slot(e), slot(v)], pairs)
-    c = csr_relation('R', e, v, pairs)
+    t = stored_relation('R', [e, v], pairs, sets)
+    c = csr_relation('R', e, v, pairs, sets)
 
     call table_of % bind_relation(r, t)      ! one binding per storage
     call csr_of   % bind_relation(r, c)
@@ -286,7 +297,7 @@ program relation_map
   transpose_block: block
 
     type(graph), target        :: r
-    type(counted_set)          :: e, v
+    type(graph)          :: e, v
     type(csr_relation), target :: c
     type(transposed_view), target :: ct
     type(transposed_view)      :: ctt
@@ -295,12 +306,18 @@ program relation_map
     integer, allocatable       :: back(:,:)
     logical                    :: same_extension
     integer                    :: k
+    type(set_map)       :: sets
+    type(label_map)     :: labels
 
     call r % declare()
-    e = counted_set('E', 3)
-    v = counted_set('V', 4)
+    call e % declare()
+    call sets % bind(e, counted_set_representation(3))
+    call labels % bind(e, 'E')
+    call v % declare()
+    call sets % bind(v, counted_set_representation(4))
+    call labels % bind(v, 'V')
     pairs = reshape([1, 2,  2, 3,  3, 1], [2, 3])
-    c = csr_relation('R', e, v, pairs)
+    c = csr_relation('R', e, v, pairs, sets)
 
     ct  = transpose_of(c)
     ctt = transpose_of(ct)

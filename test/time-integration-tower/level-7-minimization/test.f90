@@ -59,7 +59,8 @@ program time_level_7
   use time_assert           , only : H_STEP, Q0, Q_BE1, Q_BDF2
   use fractal_graph        , only : set_graph => graph
   use graph_set_map        , only : set_map
-  use graph_grammar         , only : graph, graph_field
+  use graph_grammar         , only : graph
+  use graph_field_calculus  , only : graph_field
   use class_graph           , only : stored_graph
   use class_graph_field     , only : field
   use class_graph_step      , only : step_operator, backward_euler, bdf

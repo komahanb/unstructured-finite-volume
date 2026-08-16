@@ -108,9 +108,11 @@ allowed_for() {
         common/time_algebra_fixture.f90) echo "fractal_graph graph_set_map graph_relation graph_relation_algebra graph_binary_relation" ;;
         common/time_fields_fixture.f90) echo "fractal_graph graph_field_calculus class_graph_field time_assert" ;;
         # The action stores an identity and a count, so it needs
-        # neither a representation nor a map: set_graph arrives on
-        # graph_grammar's own re-export.
-        common/triangular_decay_fixture.f90) echo "graph_grammar graph_field_calculus class_graph_field" ;;
+        # neither a representation nor a map. set_graph arrives from
+        # the KERNEL, which owns it, not from graph_grammar's retired
+        # re-export; graph_grammar is granted for the ordinary graph
+        # and the operation contract, and for nothing else.
+        common/triangular_decay_fixture.f90) echo "fractal_graph graph_grammar graph_field_calculus class_graph_field" ;;
         common)            echo "__no_allowlist__" ;;
 
         # ---- L0: sets only. NOTHING relational - not the relation

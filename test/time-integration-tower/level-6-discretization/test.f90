@@ -71,7 +71,8 @@ program time_level_6
   use time_assert           , only : action_of
   use fractal_graph        , only : set_graph => graph
   use graph_set_map        , only : set_map
-  use graph_grammar         , only : graph, graph_field
+  use graph_grammar         , only : graph
+  use graph_field_calculus  , only : graph_field
   use graph_binary_relation , only : csr_relation
   use class_graph           , only : stored_graph
   use class_graph_field     , only : field

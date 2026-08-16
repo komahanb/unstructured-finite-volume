@@ -18,7 +18,7 @@ program partitioned_pde_level_8_refusal
 
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : NV, Q_EXACT
-  use graph_grammar    , only : graph_field
+  use graph_field_calculus, only : graph_field
   use class_graph      , only : stored_graph
   use class_graph_field, only : field
   use class_graph_gmres, only : gmres

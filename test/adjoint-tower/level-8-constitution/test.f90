@@ -56,7 +56,7 @@ program adjoint_level_8
   use graph_relation_algebra, only : compose_binary
   use graph_binary_relation , only : csr_relation, transposed_view, &
        &                             transpose_of, inclusion_of
-  use graph_grammar    , only : graph_field
+  use graph_field_calculus, only : graph_field
   use class_graph      , only : stored_graph
   use class_graph_field, only : field
   use class_graph_gmres, only : gmres

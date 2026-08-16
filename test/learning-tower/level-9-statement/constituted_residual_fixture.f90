@@ -31,7 +31,8 @@ module constituted_residual_fixture
   use fractal_graph        , only : graph
   use graph_relational_view, only : relational_binding, &
        & num_relations, relation_at
-  use graph_grammar    , only : grammar_graph => graph, graph_field, graph_operation
+  use graph_grammar    , only : grammar_graph => graph, graph_operation
+  use graph_field_calculus, only : graph_field
   use class_graph_field, only : field
   use learning_constitution_fixture, only : generated_residual
 

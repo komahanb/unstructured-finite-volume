@@ -45,8 +45,8 @@ module constituted_residual_fixture
   use graph_relational_view, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
        & holds_set
-  use graph_grammar    , only : grammar_graph => graph, graph_field, &
-       &                        graph_operation
+  use graph_grammar    , only : grammar_graph => graph, graph_operation
+  use graph_field_calculus, only : graph_field
   use class_graph_field, only : field
   use arithmetic_constitution_fixture, only : generated_residual
 
@@ -219,7 +219,7 @@ program calculator_level_9
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_grammar    , only : graph_field
+  use graph_field_calculus, only : graph_field
   use graph_relation   , only : stored_relation, relation
   use fractal_graph        , only : graph, set_graph => graph, &
        & known_branch, null_branch

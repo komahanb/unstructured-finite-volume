@@ -9,9 +9,14 @@
 ! ordinary-graph vocabulary the old solvers still speak - retyped
 ! onto the new ontology: a named graph set answers a set GRAPH, and
 ! its interpretation belongs to whoever asked; a field's domain is a
-! set graph and a frozen count; the field abstraction itself is OWNED
-! by graph_field_calculus and only re-exported here for its remaining
-! consumers.
+! set graph and a frozen count.
+!
+! The module is now being DRAINED, and the first draught is taken:
+! it lends no name it did not define. The field abstraction and its
+! five value kinds are graph_field_calculus's, the set graph is the
+! kernel's, and consumers ask those modules directly. What is left
+! to remove is three abstract types, and the module goes with the
+! last of them.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -168,34 +173,34 @@ module graph_grammar
   use graph_label_map     , only : label_map
   use graph_inclusion_map , only : inclusion_map
   use graph_field_calculus, only : graph_field
-  use graph_field_calculus, only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
-  use graph_field_calculus, only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
-  use graph_field_calculus, only : GRAPH_FIELD_CHARACTER
 
   implicit none
 
   private
 
+  !===================================================================!
+  ! WHAT THIS MODULE OWNS, AND IT IS ONLY THIS.
+  !
+  ! Three abstract types, and no symbol that belongs to someone else.
+  ! The re-exports are gone: a consumer wanting the kernel graph says
+  ! so to the kernel, and one wanting the field says so to the field
+  ! calculus. set_graph and graph_field are still IMPORTED, because
+  ! the interfaces below are written in them, but importing a name to
+  ! spell a signature is not the same act as lending it onward.
+  !
+  !     set_graph        -> fractal_graph, which mints it
+  !     graph_field      -> graph_field_calculus, which defines it
+  !     GRAPH_FIELD_*    -> graph_field_calculus, which absorbs the
+  !                         five-road value axis into constants
+  !
+  ! Each of the three below leaves in its own commit, and this module
+  ! is deleted when `use graph_grammar` is empty - not before, and not
+  ! by renaming it to something that sounds newer.
+  !===================================================================!
+
   public :: graph
-  public :: graph_field
   public :: graph_operation
   public :: graph_transform
-
-  ! Re-exported so a consumer of this contract names the kernel graph
-  ! once, the same way, rather than each file inventing its own rename
-  ! for the collision this module already resolved.
-  public :: set_graph
-
-  public :: GRAPH_FIELD_INTEGER
-  public :: GRAPH_FIELD_REAL
-  public :: GRAPH_FIELD_COMPLEX
-  public :: GRAPH_FIELD_LOGICAL
-  public :: GRAPH_FIELD_CHARACTER
-
-  ! The kind of value a field holds. Five roads, one field: an
-  ! absorbed axis. Integer for a colouring or a part number, real for
-  ! the ordinary state, complex for a complex-step derivative,
-  ! logical for a mask, character for boundary and material names.
 
   !===================================================================!
   ! GRAPH. The reader of structure.

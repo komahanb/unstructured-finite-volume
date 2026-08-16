@@ -53,7 +53,8 @@
 
 module class_graph
 
-  use graph_grammar      , only : graph, set_graph
+  use graph_grammar      , only : graph
+  use fractal_graph      , only : set_graph => graph
   use graph_calculus     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
   use graph_set_representation, only : counted_set_representation, &
        & listed_set_representation

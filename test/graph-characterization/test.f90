@@ -27,7 +27,8 @@ program test_graph_characterization
 
   use iso_fortran_env        , only : dp => REAL64
   use graph_calculus         , only : GRAPH_SIDE_VERTEX
-  use graph_grammar          , only : graph, graph_field
+  use graph_grammar          , only : graph
+  use graph_field_calculus   , only : graph_field
   use fractal_graph           , only : set_graph => graph
   use graph_set_representation, only : counted_set_representation, &
        & listed_set_representation

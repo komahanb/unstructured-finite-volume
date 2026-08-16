@@ -77,10 +77,11 @@
 module class_graph_reduction
 
   use iso_fortran_env       , only : dp => REAL64
-  use graph_grammar         , only : graph, graph_field
-  use graph_grammar      , only : set_graph
-  use graph_grammar         , only : GRAPH_FIELD_REAL, GRAPH_FIELD_COMPLEX
-  use graph_grammar         , only : GRAPH_FIELD_LOGICAL
+  use graph_grammar         , only : graph
+  use graph_field_calculus  , only : graph_field
+  use fractal_graph      , only : set_graph => graph
+  use graph_field_calculus  , only : GRAPH_FIELD_REAL, GRAPH_FIELD_COMPLEX
+  use graph_field_calculus  , only : GRAPH_FIELD_LOGICAL
   use graph_calculus        , only : graph_reduction, graph_broadcast
   use graph_calculus        , only : graph_functional
   use graph_calculus        , only : GRAPH_SIDE_VERTEX

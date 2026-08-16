@@ -28,8 +28,9 @@
 module class_graph_coarsener
 
   use iso_fortran_env     , only : dp => REAL64
-  use graph_grammar       , only : graph, graph_field
-  use graph_grammar      , only : set_graph
+  use graph_grammar       , only : graph
+  use graph_field_calculus, only : graph_field
+  use fractal_graph      , only : set_graph => graph
   use graph_calculus      , only : graph_coarsener
   use class_graph         , only : stored_graph
   use class_graph_field   , only : field

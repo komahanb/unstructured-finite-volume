@@ -26,7 +26,7 @@ program test_graph_robustness
   use iso_fortran_env, only : dp => REAL64
   use graph_grammar  , only : graph, graph_field
   use graph_calculus , only : GRAPH_SIDE_VERTEX
-  use graph_carrier         , only : member_set, counted_set, subset_set
+  use graph_grammar  , only : set_graph
   use class_graph_field  , only : field
   use class_graph_mesh   , only : mesh
   use class_graph_differential_operator, only : edge_differential_operator
@@ -160,7 +160,7 @@ contains
     real(dp), allocatable :: w(:)
 
     pair = stored_graph(2, tails=[integer ::], heads=[integer ::])
-    positions = field('positions', pair % vertex_set(), ncomp=3)
+    positions = field('positions', pair % vertex_set(), pair % num_vertices(), ncomp=3)
     call positions % set_real_vector([0.0_dp, 0.0_dp, 0.0_dp, &
          &                            0.5_dp, 0.0_dp, 0.0_dp])
 
@@ -211,7 +211,7 @@ contains
          & 0.8_dp, 0.0_dp, 0.0_dp]
 
     trio = stored_graph(3, tails=[integer ::], heads=[integer ::])
-    positions = field('positions', trio % vertex_set(), ncomp=3)
+    positions = field('positions', trio % vertex_set(), trio % num_vertices(), ncomp=3)
     call positions % set_real_vector(pts)
 
     wave = fit(harmonic_form([2.5_dp, 0.0_dp, 0.0_dp]), &
@@ -233,7 +233,7 @@ contains
     ! Two collinear points: the pruner strikes what they cannot see,
     ! and the fit still lands the two-point theorem.
     pair = stored_graph(2, tails=[integer ::], heads=[integer ::])
-    positions = field('positions', pair % vertex_set(), ncomp=3)
+    positions = field('positions', pair % vertex_set(), pair % num_vertices(), ncomp=3)
     call positions % set_real_vector([0.0_dp, 0.0_dp, 0.0_dp, &
          &                            0.5_dp, 0.0_dp, 0.0_dp])
 
@@ -265,7 +265,7 @@ contains
     type(mesh) :: m
     type(differential_operator) :: slope
     type(field) :: state, fd
-    type(counted_set) :: cells
+    type(set_graph) :: cells
     class(graph_field), allocatable :: z
     real(dp), allocatable :: got(:), deltas(:), q(:)
     real(dp) :: exact_flux(4), worst
@@ -274,7 +274,7 @@ contains
     m = skewed_mesh()
 
     cells = m % vertex_set()
-    state = field('q', cells)
+    state = field('q', cells, m % num_vertices())
     q = [exact_at(0.0_dp, 0.0_dp), exact_at(1.0_dp, 0.45_dp), &
          & exact_at(0.15_dp, 1.1_dp), exact_at(1.3_dp, 1.6_dp)]
     call state % set_real_vector(q)
@@ -316,7 +316,7 @@ contains
     type(mesh) :: m
     type(stencil_operator) :: op
     type(field) :: state
-    type(counted_set) :: cells
+    type(set_graph) :: cells
     class(graph_field), allocatable :: y
     real(dp), allocatable :: got(:), q(:), vb(:), centers(:)
     type(field) :: fc
@@ -344,7 +344,7 @@ contains
     end block
 
     cells = m % vertex_set()
-    state = field('q', cells)
+    state = field('q', cells, m % num_vertices())
     q = [exact_at(0.0_dp, 0.0_dp), exact_at(1.0_dp, 0.45_dp), &
          & exact_at(0.15_dp, 1.1_dp), exact_at(1.3_dp, 1.6_dp)]
     call state % set_real_vector(q)
@@ -396,7 +396,7 @@ contains
            & boundary_values=vb)
     end block
 
-    call gm % attach(op, m, m % vertex_set())
+    call gm % attach(op, m, m % vertex_set(), m % num_vertices())
     gm % tolerance = 1.0d-12
 
     call gm % constant(g)

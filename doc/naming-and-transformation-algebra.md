@@ -53,7 +53,7 @@ in this pass; **medium** = argued, not yet built; **low** = the shape is clear, 
 | `inclusion_of` | I_S ⊆ S × A | algorithm → representation | derivable; build only on demand | medium | defer |
 | `relational_binding` | element ↦ legacy object | map | `graph_object_map` (name low) | medium | defer |
 | `graph_profile` | the T/H schema reading | view | `graph_incidence_view` | medium | defer |
-| `ordinary_graph_view` | V/E graph over T,H | view | `graph_ordinary_view` | low | defer |
+| `directed_incidence_view` | V/E graph over T,H | view | `graph_ordinary_view` | low | defer |
 | `directed_adjacency_view` | A ⊆ V×V reading | view | `graph_adjacency_view` | medium | defer |
 | `partitioner` | constructs ρ + parts | algorithm | `graph_partition_algorithm` | medium | defer |
 | `assembler` | traverses ρ backwards | algorithm | `graph_assembly_algorithm` | medium | defer |

@@ -196,7 +196,7 @@ contains
   ! is the conduit that carries it there.
   !
   ! For every action that reads its domain off the graph - which is
-  ! all of them on the ordinary-graph road - this returns exactly
+  ! all of them on the directed-graph road - this returns exactly
   ! what asking the graph returned, so no marching caller sees a
   ! change. For an action that carries its own domain, it returns
   ! that domain, which asking the graph never could.

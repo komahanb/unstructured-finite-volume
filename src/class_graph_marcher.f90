@@ -237,7 +237,7 @@ contains
   ! through and not the seat of the mathematics.
   !
   ! For every action that reads its domain off the graph - which is
-  ! all of them on the ordinary-graph road - this asks the action
+  ! all of them on the directed-graph road - this asks the action
   ! and receives exactly the vertex set asking the graph would have
   ! returned. For an action that carries its own domain it receives
   ! that domain, which asking the graph never could.

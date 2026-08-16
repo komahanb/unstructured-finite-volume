@@ -20,7 +20,7 @@ program test_graph_ordinary
        & listed_set_representation
   use graph_set_map           , only : set_map
   use graph_binary_relation, only : csr_relation
-  use graph_profile        , only : ordinary_graph_view
+  use graph_profile        , only : directed_incidence_view
   use fractal_graph        , only : graph, known_branch
   use graph_relational_view, only : relational_binding
 
@@ -110,7 +110,7 @@ contains
     type(graph)            , target :: g
     type(graph)            , target :: scell(2), selem(2), rcell(2), relem(2)
     type(relational_binding)        :: bnd
-    type(ordinary_graph_view)       :: view
+    type(directed_incidence_view)       :: view
     integer, allocatable            :: ttab(:,:), htab(:,:)
     integer, allocatable            :: a(:), b(:)
     integer                         :: ne, nh, e, v, q, k
@@ -176,7 +176,7 @@ contains
     g % branch(1) = known_branch(scell(1))
     g % branch(2) = known_branch(rcell(1))
 
-    view = ordinary_graph_view(g, bnd, sets, tail_at=1, head_at=2)
+    view = directed_incidence_view(g, bnd, sets, tail_at=1, head_at=2)
 
     ok = (view % num_vertices() .eq. old % num_vertices()) .and. &
          & (view % num_edges() .eq. old % num_edges())
@@ -233,7 +233,7 @@ contains
     type(graph)            , target :: g
     type(graph)            , target :: scell(2), selem(2), rcell(2), relem(2)
     type(relational_binding)        :: bnd
-    type(ordinary_graph_view)       :: view
+    type(directed_incidence_view)       :: view
     integer                         :: v, k
     logical                         :: ok
 
@@ -270,7 +270,7 @@ contains
     g % branch(1) = known_branch(scell(1))
     g % branch(2) = known_branch(rcell(1))
 
-    view = ordinary_graph_view(g, bnd, sets, tail_at=1, head_at=2)
+    view = directed_incidence_view(g, bnd, sets, tail_at=1, head_at=2)
 
     call report(h % num_tuples() .eq. 2 .and. t % num_tuples() .eq. 3, &
          & "the wall edge stands in T and is an absence in H", nfail)
@@ -306,7 +306,7 @@ contains
     type(graph)            , target :: g
     type(graph)            , target :: scell(2), selem(2), rcell(2), relem(2)
     type(relational_binding)        :: bnd
-    type(ordinary_graph_view)       :: view
+    type(directed_incidence_view)       :: view
     integer, allocatable            :: idx(:)
     integer                         :: k
 
@@ -348,7 +348,7 @@ contains
     g % branch(1) = known_branch(scell(1))
     g % branch(2) = known_branch(rcell(1))
 
-    view = ordinary_graph_view(g, bnd, sets, tail_at=1, head_at=2)
+    view = directed_incidence_view(g, bnd, sets, tail_at=1, head_at=2)
 
     call view % outgoing_edges(1, idx)
     call report(all(idx .eq. [30, 10, 20]), &

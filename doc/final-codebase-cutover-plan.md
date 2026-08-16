@@ -95,7 +95,7 @@ below moves them.
 | `graph_sequence_view` | a finite sequence | `sequence_size`, `sequence_element`, … |
 | `graph_relational_view` | \((\mathcal S,\mathcal P)\) | `relational_binding`, `member_set_at`, `relation_at` |
 | `graph_epistemic_view` | \((Q,R)\) — data and residual | `has_data`, `data_of`, `residual_of` |
-| `graph_profile` | the ordinary directed graph as a **schema over two relations** \(T,H \subseteq E\times V\) | `ordinary_graph_view`, `directed_adjacency_view` |
+| `graph_profile` | the directed graph as a **schema over two relations** \(T,H \subseteq E\times V\) | `directed_incidence_view`, `directed_adjacency_view` |
 | `graph_field_calculus` | a domain carrying values | `graph_field`, the five `GRAPH_FIELD_*` kinds, `set_graph` |
 | `graph_directed_view` | the ordinary binary graph — vertices, edges, incidence, named sets, neighbourhoods | `directed_graph` (abstract). **Added by PR2**, carved from `graph_grammar`; renamed by PR3; carries the legacy partition frame, marked |
 | `graph_operation_view` | the two verbs — within a graph, and between graphs | `graph_operation`, `graph_transform` (abstract). **Added by PR2**; the last of `graph_grammar` |
@@ -584,12 +584,27 @@ way §1 requires: consumers rewritten until nothing imported it.
 > The section below has been rewritten in the new names; the *evidence*
 > it reports is unchanged, because a rename does not move an import.
 >
-> One public name still carries the word and is **not** covered by that
-> amendment: `graph_profile :: ordinary_graph_view`, a different type in
-> a different module — the relational-schema reading of T, H ⊆ E × V.
-> Surface: 1 src module, 6 test files, 4 docs. It awaits a ruling.
+> The last public name carrying the word went with them.
+> `graph_profile :: ordinary_graph_view` is now
+> `directed_incidence_view`, named for the relation it holds:
+>
+>     directed_incidence_view   T, H <= E x V   incidence, and every
+>     |                                         neighbourhood question
+>     |                                         as a composition of it
+>     directed_adjacency_view   A <= V x V      one stored adjacency
+>
+> The pair names its own primitive now. The first answers
+> D = (V, E, tail, head) read off **relations**; `class_graph` answers
+> the same D read off **stored arrays** — two realizations of one
+> contract, which is what the vocabulary should have said all along.
+>
+> `ordinary` survives in `src/` in exactly two comments that explain the
+> ban and two that use the English word ("an ordinary linear question").
+> The suite directory `test/graph-ordinary/` still carries it; renaming
+> it would dangle two historical doc references, so it is flagged here
+> rather than changed.
 
-The abstract type `graph_directed_view :: graph` is now
+The abstract type `graph_directed_view :: graph` (then `ordinary_graph`) is now
 `directed_graph`, and the concrete `class_graph :: stored_graph` is
 `directed_stored_graph`.
 

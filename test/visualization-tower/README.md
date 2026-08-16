@@ -884,14 +884,14 @@ be rendered directly from the relational nucleus?
 *ordinary graph not required for structural visualization at this
 radius.*
 
-**Question two.** Would forcing `D1` into `ordinary_graph_view`
+**Question two.** Would forcing `D1` into `directed_incidence_view`
 collapse `X0` and `X1`, or otherwise change its mathematical meaning?
 
 The two profile contracts were inspected rather than provoked:
 
 | Profile | Schema it demands | Why the specimen cannot satisfy it |
 |---|---|---|
-| `ordinary_graph_view` | `T <= E x V` and `H <= E x V`, one `V` | `T1` lands in `X0`, `H1` in `X1`; refuses with *"the head relation must share the tail's domains"* |
+| `directed_incidence_view` | `T <= E x V` and `H <= E x V`, one `V` | `T1` lands in `X0`, `H1` in `X1`; refuses with *"the head relation must share the tail's domains"* |
 | `directed_adjacency_view` | `A <= V x V`, one `V` | `D1`'s source is `X0`, its target `X1`; refuses with *"a directed adjacency runs over one domain"* |
 
 Both readings demand a **single** vertex carrier. Satisfying either

@@ -135,7 +135,7 @@ contains
   ! never the seat of it.
   !
   ! For every operation that reads its domain off the graph - which
-  ! is all of them on the ordinary-graph road - the domain asked for
+  ! is all of them on the directed-graph road - the domain asked for
   ! here is exactly the vertex set that was being used before, so
   ! nothing a graph-based caller sees changes.
   !

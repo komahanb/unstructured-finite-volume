@@ -36,7 +36,7 @@ program partitioned_pde_level_8
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : report, verdict
   use partitioned_pde_assert, only : NV, Q_EXACT
-  use graph_carrier    , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
   use graph_grammar    , only : graph, graph_field
   use class_graph      , only : stored_graph
   use class_graph_field, only : field
@@ -57,7 +57,6 @@ program partitioned_pde_level_8
   type(shifted_laplacian)             :: direct
   type(partitioned_shifted_laplacian) :: composite
   integer                             :: nfail
-
   nfail = 0
 
   write(*,'(1x,a)') "============================================="
@@ -85,11 +84,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
-    type(counted_set)              :: vs
+    type(set_graph) :: dom
+    type(set_graph)              :: vs
+    integer         :: n_dom
 
     vs = g % vertex_set()
-    call composite % domain(g, dom)
+    call composite % domain(g, dom, n_dom)
     call report(dom % same_as(vs), &
          & "the composite maps V(G) -> V(G), by identity", nfail)
 
@@ -175,7 +175,7 @@ contains
 
     type(field) :: q
 
-    q = field('probe', g % vertex_set())
+    q = field('probe', g % vertex_set(), g % num_vertices())
     call q % set_real_vector(v)
     call direct % apply(g, [q], answer)
 
@@ -187,7 +187,7 @@ contains
 
     type(field) :: q
 
-    q = field('probe', g % vertex_set())
+    q = field('probe', g % vertex_set(), g % num_vertices())
     call q % set_real_vector(v)
     call composite % apply(g, [q], answer)
 

@@ -39,7 +39,7 @@
 module shifted_laplacian_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_carrier    , only : member_set
+  use graph_grammar    , only : set_graph
   use graph_grammar    , only : graph, graph_field, graph_operation
   use class_graph_field, only : field
   use class_graph_differential_operator, only : differential_operator, &
@@ -70,13 +70,15 @@ contains
   ! no domain of its own.
   !===================================================================!
 
-  subroutine shifted_domain(this, input_graph, domain)
+  subroutine shifted_domain(this, input_graph, domain, nentries)
 
     class(shifted_laplacian), intent(in) :: this
     class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
 
-    allocate(domain, source=input_graph % vertex_set())
+    domain   = input_graph % vertex_set()
+    nentries = input_graph % num_vertices()
 
   end subroutine shifted_domain
 
@@ -97,7 +99,7 @@ contains
     type(differential_operator)     :: lap
     type(field)                     :: out
     class(graph_field), allocatable :: lq
-    class(member_set), allocatable  :: dom
+    type(set_graph) :: dom
     real(dp), allocatable           :: q(:), l(:)
 
     if (.not. present(input_data)) then
@@ -107,7 +109,7 @@ contains
        error stop 'shifted laplacian: the action reads exactly one state'
     end if
 
-    call input_data(1) % domain(dom)
+    dom = input_data(1) % domain()
     if (.not. dom % same_as(input_graph % vertex_set())) then
        error stop 'shifted laplacian: the state must live on this graph''s vertex carrier'
     end if
@@ -119,7 +121,7 @@ contains
     call input_data(1) % get_real_vector(q)
     call lq % get_real_vector(l)
 
-    out = field('shifted laplacian', input_graph % vertex_set())
+    out = field('shifted laplacian', input_graph % vertex_set(), input_graph % num_vertices())
     call out % set_real_vector(2.0_dp * q - l)
 
     if (allocated(output)) deallocate(output)

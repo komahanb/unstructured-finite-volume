@@ -45,7 +45,8 @@
 program partitioned_pde_level_2
 
   use partitioned_pde_assert , only : report, verdict
-  use graph_carrier          , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
   use graph_binary_relation  , only : csr_relation
   use chain_carriers_fixture , only : chain_carriers
   use chain_relations_fixture, only : tail_relation, head_relation, &
@@ -55,7 +56,8 @@ program partitioned_pde_level_2
 
   implicit none
 
-  type(counted_set)          :: v, e, k
+  type(set_graph)          :: v, e, k
+  type(set_map)          :: sets
   type(csr_relation), target :: tail, head, own
   type(csr_relation)         :: adj, tail_owner, head_owner
   integer                    :: nfail
@@ -66,14 +68,14 @@ program partitioned_pde_level_2
   write(*,'(1x,a)') "partitioned pde tower . level 2 . algebra"
   write(*,'(1x,a)') "============================================="
 
-  call chain_carriers(v, e, k)
-  tail = tail_relation(e, v)
-  head = head_relation(e, v)
-  own  = own_relation(k, v)
+  call chain_carriers(sets, v, e, k)
+  tail = tail_relation(e, v, sets)
+  head = head_relation(e, v, sets)
+  own  = own_relation(k, v, sets)
 
-  adj        = derive_adjacency(tail, head)
-  tail_owner = derive_tail_owner(tail, own)
-  head_owner = derive_head_owner(head, own)
+  adj        = derive_adjacency(tail, head, sets)
+  tail_owner = derive_tail_owner(tail, own, sets)
+  head_owner = derive_head_owner(head, own, sets)
 
   call check_adjacency(nfail)
   call check_tail_owner(nfail)
@@ -94,7 +96,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
     integer                        :: i
     logical                        :: ok
 
@@ -127,7 +129,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
 
     d = tail_owner % domain(1)
     call report(d % same_as(e), "TailOwner runs from the edges", nfail)
@@ -154,7 +156,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
 
     d = head_owner % domain(1)
     call report(d % same_as(e), "HeadOwner runs from the edges too", nfail)
@@ -246,7 +248,7 @@ contains
 
     type(csr_relation), intent(in) :: policy
 
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
     integer                        :: i, j, m, owners
 
     d = policy % domain(1)
@@ -257,13 +259,13 @@ contains
     ! No fact lives outside E x K: exactly one tuple per edge, and
     ! the loop below then accounts for every one of them.
     is_total_function = is_total_function .and. &
-         & (policy % num_tuples() .eq. e % size())
+         & (policy % num_tuples() .eq. sets % size_of(e))
 
-    do i = 1, e % size()
-       m = e % member(i)
+    do i = 1, sets % size_of(e)
+       m = sets % member_of(e, i)
        owners = 0
-       do j = 1, k % size()
-          if (policy % has([m, k % member(j)])) owners = owners + 1
+       do j = 1, sets % size_of(k)
+          if (policy % has([m, sets % member_of(k, j)])) owners = owners + 1
        end do
        is_total_function = is_total_function .and. (owners .eq. 1)
     end do
@@ -277,8 +279,8 @@ contains
     integer :: j, m
 
     same_owner = .true.
-    do j = 1, k % size()
-       m = k % member(j)
+    do j = 1, sets % size_of(k)
+       m = sets % member_of(k, j)
        same_owner = same_owner .and. &
             & (tail_owner % has([ge, m]) .eqv. head_owner % has([ge, m]))
     end do

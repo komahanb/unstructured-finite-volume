@@ -38,7 +38,9 @@ program partitioned_pde_level_9
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : report, verdict
   use partitioned_pde_assert, only : NV, Q_EXACT, B_EXACT
-  use graph_carrier    , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation
+  use graph_set_map        , only : set_map
   use graph_grammar    , only : graph, graph_field
   use class_graph      , only : stored_graph
   use class_graph_field, only : field
@@ -62,6 +64,7 @@ program partitioned_pde_level_9
   type(gmres)                         :: solver_global, solver_part
   real(dp)                            :: q_part(NV), q_global(NV)
   integer                             :: nfail
+  type(set_map)     :: sets
 
   nfail = 0
 
@@ -70,6 +73,10 @@ program partitioned_pde_level_9
   write(*,'(1x,a)') "============================================="
 
   g = stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  call sets % bind(g % vertex_set(), &
+       & counted_set_representation(g % num_vertices()))
+  call sets % bind(g % edge_set(), &
+       & counted_set_representation(g % num_edges()))
   composite = partitioned_shifted_laplacian(g)
 
   call check_solver_matvec_equivalence(nfail)
@@ -91,13 +98,15 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)     :: vs
+    type(set_graph)     :: vs
     real(dp), allocatable :: gv(:)
+    integer         :: n_vs
 
     vs = g % vertex_set()
+    n_vs = g % num_vertices()
 
-    call solver_global % attach(direct, g, vs)
-    call solver_part % attach(composite, g, vs)
+    call solver_global % attach(direct, g, vs, n_vs)
+    call solver_part % attach(composite, g, vs, n_vs)
     solver_global % tolerance      = 1.0d-12
     solver_global % max_iterations = 200
     solver_part % tolerance        = 1.0d-12
@@ -143,24 +152,26 @@ contains
     integer, intent(inout) :: nfail
 
     type(field)                     :: rhs
-    type(counted_set)               :: vs
+    type(set_graph)               :: vs
     class(graph_field), allocatable :: sol
-    class(member_set), allocatable  :: dom
+    type(set_graph)  :: dom
     real(dp), allocatable           :: v(:)
+    integer         :: n_vs
 
     vs = g % vertex_set()
-    rhs = field('b', vs)
+    n_vs = g % num_vertices()
+    rhs = field('b', vs, n_vs)
     call rhs % set_real_vector(B_EXACT)
 
     ! The partitioned road - the tower's own.
     call solver_part % apply(g, [rhs], sol)
-    call sol % domain(dom)
+    dom = sol % domain()
     call sol % get_real_vector(v)
     q_part = v(1:NV)
 
     call report(dom % same_as(vs), &
          & "the partitioned solution is a field on V(G)", nfail)
-    call report(by_member(q_part, vs, Q_EXACT), &
+    call report(by_member(sets, q_part, vs, Q_EXACT), &
          & "and it is q* = [1,2,4,7,11,16], by global member", nfail)
 
     ! The global baseline, run independently.
@@ -168,7 +179,7 @@ contains
     call sol % get_real_vector(v)
     q_global = v(1:NV)
 
-    call report(by_member(q_global, vs, Q_EXACT), &
+    call report(by_member(sets, q_global, vs, Q_EXACT), &
          & "the global solve independently reaches q* as well", nfail)
     call report(maxval(abs(q_part - q_global)) < 1.0d-9, &
          & "q_partitioned = q_global = q*: the decomposition changed " // &
@@ -176,19 +187,20 @@ contains
 
   end subroutine check_the_two_solves
 
-  logical function by_member(v, dom, expect)
+  logical function by_member(sets, v, dom, expect)
 
-    real(dp)         , intent(in) :: v(:)
-    class(member_set), intent(in) :: dom
-    real(dp)         , intent(in) :: expect(:)
+    type(set_map)  , intent(in) :: sets
+    real(dp)       , intent(in) :: v(:)
+    type(set_graph), intent(in) :: dom
+    real(dp)       , intent(in) :: expect(:)
 
     integer :: i, m
 
     by_member = .true.
-    do i = 1, dom % size()
-       m = dom % member(i)
+    do i = 1, sets % size_of(dom)
+       m = sets % member_of(dom, i)
        by_member = by_member .and. &
-            & (abs(v(dom % local_index(m)) - expect(m)) < 1.0d-9)
+            & (abs(v(sets % index_in(dom, m)) - expect(m)) < 1.0d-9)
     end do
 
   end function by_member

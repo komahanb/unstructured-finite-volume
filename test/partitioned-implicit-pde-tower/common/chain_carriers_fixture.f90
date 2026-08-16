@@ -29,7 +29,9 @@
 
 module chain_carriers_fixture
 
-  use graph_carrier, only : counted_set
+  use fractal_graph           , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation
+  use graph_set_map           , only : set_map
 
   implicit none
 
@@ -42,13 +44,18 @@ contains
   ! The three carriers, declared and nothing more.
   !===================================================================!
 
-  subroutine chain_carriers(v, e, k)
+  subroutine chain_carriers(sets, v, e, k)
 
-    type(counted_set), intent(out) :: v, e, k
+    type(set_map)  , intent(inout) :: sets
+    type(set_graph), intent(out)   :: v, e, k
 
-    v = counted_set('global vertices', 6)
-    e = counted_set('global edges'   , 5)
-    k = counted_set('partition labels', 2)
+    call v % declare()      ! global vertices
+    call e % declare()      ! global edges
+    call k % declare()      ! partition labels
+
+    call sets % bind(v, counted_set_representation(6))
+    call sets % bind(e, counted_set_representation(5))
+    call sets % bind(k, counted_set_representation(2))
 
   end subroutine chain_carriers
 

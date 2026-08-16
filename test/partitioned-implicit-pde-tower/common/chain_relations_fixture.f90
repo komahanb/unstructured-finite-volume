@@ -30,7 +30,8 @@
 
 module chain_relations_fixture
 
-  use graph_carrier        , only : counted_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
   use graph_binary_relation, only : csr_relation
 
   implicit none
@@ -44,16 +45,17 @@ contains
   ! Tail <= E x V : which vertex each edge leaves.
   !===================================================================!
 
-  type(csr_relation) function tail_relation(e, v) result(tail)
+  type(csr_relation) function tail_relation(e, v, sets) result(tail)
 
-    type(counted_set), intent(in) :: e, v
+    type(set_graph), intent(in) :: e, v
+    type(set_map)  , intent(in) :: sets
 
     integer :: table(2, 5), i
 
     do i = 1, 5
        table(:, i) = [i, i]
     end do
-    tail = csr_relation('tail', e, v, table)
+    tail = csr_relation('tail', e, v, table, sets)
 
   end function tail_relation
 
@@ -61,16 +63,17 @@ contains
   ! Head <= E x V : which vertex each edge enters.
   !===================================================================!
 
-  type(csr_relation) function head_relation(e, v) result(head)
+  type(csr_relation) function head_relation(e, v, sets) result(head)
 
-    type(counted_set), intent(in) :: e, v
+    type(set_graph), intent(in) :: e, v
+    type(set_map)  , intent(in) :: sets
 
     integer :: table(2, 5), i
 
     do i = 1, 5
        table(:, i) = [i, i + 1]
     end do
-    head = csr_relation('head', e, v, table)
+    head = csr_relation('head', e, v, table, sets)
 
   end function head_relation
 
@@ -79,9 +82,10 @@ contains
   ! partitioner exists to realize it.
   !===================================================================!
 
-  type(csr_relation) function own_relation(k, v) result(own)
+  type(csr_relation) function own_relation(k, v, sets) result(own)
 
-    type(counted_set), intent(in) :: k, v
+    type(set_graph), intent(in) :: k, v
+    type(set_map)  , intent(in) :: sets
 
     integer :: table(2, 6)
 
@@ -91,7 +95,7 @@ contains
     table(:, 4) = [2, 4]
     table(:, 5) = [2, 5]
     table(:, 6) = [2, 6]
-    own = csr_relation('owns', k, v, table)
+    own = csr_relation('owns', k, v, table, sets)
 
   end function own_relation
 

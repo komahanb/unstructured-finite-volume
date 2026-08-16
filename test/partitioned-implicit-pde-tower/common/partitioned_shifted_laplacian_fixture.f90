@@ -45,7 +45,11 @@
 module partitioned_shifted_laplacian_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use fractal_graph      , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation
+  use graph_set_map      , only : set_map
+  use graph_label_map    , only : label_map
+  use graph_inclusion_map, only : inclusion_map
   use graph_grammar    , only : graph, graph_field, graph_operation
   use class_graph      , only : stored_graph
   use class_graph_field, only : field
@@ -113,14 +117,17 @@ contains
   ! host dies here rather than deep inside a matvec.
   !===================================================================!
 
-  subroutine part_domain(this, input_graph, domain)
+  subroutine part_domain(this, input_graph, domain, nentries)
 
     class(partitioned_shifted_laplacian), intent(in) :: this
-    class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(graph)   , intent(in)  :: input_graph
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
 
     call demand_the_recorded_context(this, input_graph)
-    allocate(domain, source=this % whole % vertex_set())
+
+    domain   = this % whole % vertex_set()
+    nentries = this % whole % num_vertices()
 
   end subroutine part_domain
 
@@ -139,8 +146,18 @@ contains
 
     type(field)                     :: out
     class(graph_field), allocatable :: q1, q2, a1, a2
-    class(member_set), allocatable  :: dom
+    type(set_graph)                 :: dom
     real(dp), allocatable           :: total(:)
+
+    !----------------------------------------------------------------!
+    ! The interpretation environment of this call. Everything carved
+    ! below is consumed below, so it lives and dies here and no map
+    ! enters the operation's own type.
+    !----------------------------------------------------------------!
+
+    type(set_map)                   :: sets
+    type(label_map)                 :: labels
+    type(inclusion_map)             :: inclusions
 
     call demand_the_recorded_context(this, input_graph)
 
@@ -150,16 +167,28 @@ contains
     if (size(input_data) /= 1) then
        error stop 'partitioned action: the action reads exactly one state'
     end if
-    call input_data(1) % domain(dom)
+    dom = input_data(1) % domain()
     if (.not. dom % same_as(this % whole % vertex_set())) then
        error stop 'partitioned action: the state must live on the global vertex carrier'
     end if
 
+    !----------------------------------------------------------------!
+    ! The transports CARVE. Everything carved here is consumed here,
+    ! so the interpretation is local to the call and no map enters
+    ! this operation's type - which holds an identity and a count and
+    ! nothing else, like every other action in the tower.
+    !----------------------------------------------------------------!
+
+    call sets % bind(this % whole % vertex_set(), &
+         & counted_set_representation(this % whole % num_vertices()))
+    call bind_part(sets, this % g1)
+    call bind_part(sets, this % g2)
+
     ! -- NUMERICAL OVERLAP REFRESH, from the state handed in NOW
     call this % p1 % partition_data(this % whole, input_data(1), &
-         & this % g1, q1)
+         & this % g1, sets, labels, inclusions, q1)
     call this % p2 % partition_data(this % whole, input_data(1), &
-         & this % g2, q2)
+         & this % g2, sets, labels, inclusions, q2)
 
     ! -- LOCAL TOPOLOGY ACTIONS, each on its own part
     call act_locally(this % local, this % g1, q1, a1)
@@ -168,10 +197,13 @@ contains
     ! -- OWNED ASSEMBLY, and the sum of the two contributions
     allocate(total(this % whole % num_vertices()))
     total = 0.0_dp
-    call add_owned(this % asm, this % g1, a1, this % whole, total)
-    call add_owned(this % asm, this % g2, a2, this % whole, total)
+    call add_owned(this % asm, this % g1, a1, this % whole, &
+         & sets, labels, inclusions, total)
+    call add_owned(this % asm, this % g2, a2, this % whole, &
+         & sets, labels, inclusions, total)
 
-    out = field('partitioned action', this % whole % vertex_set())
+    out = field('partitioned action', this % whole % vertex_set(), &
+         & this % whole % num_vertices())
     call out % set_real_vector(total)
 
     if (allocated(output)) deallocate(output)
@@ -189,7 +221,7 @@ contains
     class(partitioned_shifted_laplacian), intent(in) :: this
     class(graph)                        , intent(in) :: input_graph
 
-    type(counted_set) :: given, recorded
+    type(set_graph) :: given, recorded
 
     given    = input_graph % vertex_set()
     recorded = this % whole % vertex_set()
@@ -218,7 +250,7 @@ contains
     real(dp), allocatable           :: v(:)
 
     call q_part % get_real_vector(v)
-    qf = field('local state', part % vertex_set())
+    qf = field('local state', part % vertex_set(), part % num_vertices())
     call qf % set_real_vector(v)
 
     call local % apply(part, [qf], out)
@@ -233,36 +265,58 @@ contains
   ! value is placed by MEMBER.
   !===================================================================!
 
-  subroutine add_owned(asm, part, answer, whole, total)
+  subroutine add_owned(asm, part, answer, whole, sets, labels, inclusions, total)
 
     type(assembler)   , intent(in)    :: asm
     class(graph)      , intent(in)    :: part
     class(graph_field), intent(in)    :: answer
     type(stored_graph), intent(in)    :: whole
+    type(set_map)     , intent(inout) :: sets
+    type(label_map)   , intent(inout) :: labels
+    type(inclusion_map), intent(inout) :: inclusions
     real(dp)          , intent(inout) :: total(:)
 
     class(graph_field), allocatable :: home
-    class(member_set), allocatable  :: dom
+    type(set_graph)                 :: dom
     real(dp), allocatable           :: v(:)
     integer , allocatable           :: mem(:)
     integer                         :: i
 
-    call asm % assemble_data(part, answer, whole, home)
-    call home % domain(dom)
+    call asm % assemble_data(part, answer, whole, sets, labels, &
+         & inclusions, home)
+    dom = home % domain()
     call home % get_real_vector(v)
 
-    select type (dom)
-    type is (subset_set)
-       call dom % members(mem)
-       do i = 1, size(mem)
-          total(mem(i)) = total(mem(i)) + v(dom % local_index(mem(i)))
-       end do
-    class default
-       do i = 1, size(total)
-          total(i) = total(i) + v(i)
-       end do
-    end select
+    !----------------------------------------------------------------!
+    ! The select type asked whether the assembled domain was a subset
+    ! TYPE, and wrote the same arithmetic twice. It is one branch now,
+    ! and not by approximation: for a counted domain members are
+    ! 1..n and local_index is the identity, so the subset arm REDUCES
+    ! to the full arm exactly.
+    !----------------------------------------------------------------!
+
+    call sets % members_of(dom, mem)
+    do i = 1, size(mem)
+       total(mem(i)) = total(mem(i)) + v(sets % index_in(dom, mem(i)))
+    end do
 
   end subroutine add_owned
+
+  !===================================================================!
+  ! A part is a new graph, so its carriers are new domains and must be
+  ! described before a field can be seated on them.
+  !===================================================================!
+
+  subroutine bind_part(sets, g)
+
+    type(set_map), intent(inout) :: sets
+    class(graph) , intent(in)    :: g
+
+    call sets % bind(g % vertex_set(), &
+         & counted_set_representation(g % num_vertices()))
+    call sets % bind(g % edge_set(), &
+         & counted_set_representation(g % num_edges()))
+
+  end subroutine bind_part
 
 end module partitioned_shifted_laplacian_fixture

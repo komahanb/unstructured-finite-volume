@@ -36,7 +36,9 @@ program partitioned_pde_level_7
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : report, verdict
   use partitioned_pde_assert, only : NV, Q_EXACT, B_EXACT
-  use graph_carrier    , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation
+  use graph_set_map        , only : set_map
   use graph_grammar    , only : graph, graph_field
   use class_graph      , only : stored_graph
   use class_graph_field, only : field
@@ -48,6 +50,7 @@ program partitioned_pde_level_7
   type(stored_graph)      :: g, g_alt
   type(shifted_laplacian) :: shifted
   integer                 :: nfail
+  type(set_map)     :: sets
 
   nfail = 0
 
@@ -56,6 +59,10 @@ program partitioned_pde_level_7
   write(*,'(1x,a)') "============================================="
 
   g = stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  call sets % bind(g % vertex_set(), &
+       & counted_set_representation(g % num_vertices()))
+  call sets % bind(g % edge_set(), &
+       & counted_set_representation(g % num_edges()))
 
   call check_global_solve(nfail)
   call check_host_is_load_bearing(nfail)
@@ -73,21 +80,24 @@ contains
 
     type(gmres)                     :: solver
     type(field)                     :: rhs
-    class(member_set), allocatable  :: dom
+    type(set_graph)  :: dom
     class(graph_field), allocatable :: sol
     real(dp), allocatable           :: gv(:), v(:)
-    type(counted_set)               :: vs
+    type(set_graph)               :: vs
+    integer         :: n_dom
+    integer         :: n_vs
 
     vs = g % vertex_set()
+    n_vs = g % num_vertices()
 
-    call solver % attach(shifted, g, vs)
+    call solver % attach(shifted, g, vs, n_vs)
     solver % tolerance      = 1.0d-12
     solver % max_iterations = 200
 
-    call solver % domain(g, dom)
+    call solver % domain(g, dom, n_dom)
     call report(dom % same_as(vs), &
          & "the solver answers on V(G)", nfail)
-    call shifted % domain(g, dom)
+    call shifted % domain(g, dom, n_dom)
     call report(dom % same_as(vs), &
          & "and so does its action: unknown and residual domains " // &
          & "coincide here, both being V(G)", nfail)
@@ -96,15 +106,15 @@ contains
     call report(maxval(abs(gv)) < 1.0d-12, &
          & "the affine constant is zero: A is linear", nfail)
 
-    rhs = field('b', vs)
+    rhs = field('b', vs, n_vs)
     call rhs % set_real_vector(B_EXACT)
     call solver % apply(g, [rhs], sol)
 
-    call sol % domain(dom)
+    dom = sol % domain()
     call sol % get_real_vector(v)
     call report(dom % same_as(vs), &
          & "the solution is a field on V(G)", nfail)
-    call report(by_member(v, vs, Q_EXACT), &
+    call report(by_member(sets, v, vs, Q_EXACT), &
          & "and A q = b solves to q* = [1,2,4,7,11,16], by member", &
          & nfail)
 
@@ -121,13 +131,21 @@ contains
     integer, intent(inout) :: nfail
 
     type(gmres)           :: solver_g, solver_alt
-    type(counted_set)     :: vs, vs_alt
+    type(set_graph)     :: vs, vs_alt
     real(dp), allocatable :: y(:), y_alt(:)
+    integer         :: n_vs
+    integer         :: n_vs_alt
 
     ! Same counts, different shape: a star, not a chain.
     g_alt = stored_graph(NV, tails=[1,1,1,1,1], heads=[2,3,4,5,6])
+    call sets % bind(g_alt % vertex_set(), &
+         & counted_set_representation(g_alt % num_vertices()))
+    call sets % bind(g_alt % edge_set(), &
+         & counted_set_representation(g_alt % num_edges()))
     vs     = g % vertex_set()
+    n_vs = g % num_vertices()
     vs_alt = g_alt % vertex_set()
+    n_vs_alt = g_alt % num_vertices()
 
     call report(g_alt % num_vertices() .eq. g % num_vertices() .and. &
          &      g_alt % num_edges() .eq. g % num_edges() .and. &
@@ -135,8 +153,8 @@ contains
          & "G_alt is a star: same six vertices, same five edges, " // &
          & "different topology", nfail)
 
-    call solver_g % attach(shifted, g, vs)
-    call solver_alt % attach(shifted, g_alt, vs_alt)
+    call solver_g % attach(shifted, g, vs, n_vs)
+    call solver_alt % attach(shifted, g_alt, vs_alt, n_vs_alt)
 
     ! The SAME operation object, the SAME probe, two hosts.
     call solver_g % matvec(Q_EXACT, y)
@@ -154,19 +172,20 @@ contains
 
   end subroutine check_host_is_load_bearing
   ! Values compared through the domain's own map, never by position.
-  logical function by_member(v, dom, expect)
+  logical function by_member(sets, v, dom, expect)
 
-    real(dp)         , intent(in) :: v(:)
-    class(member_set), intent(in) :: dom
-    real(dp)         , intent(in) :: expect(:)
+    type(set_map)  , intent(in) :: sets
+    real(dp)       , intent(in) :: v(:)
+    type(set_graph), intent(in) :: dom
+    real(dp)       , intent(in) :: expect(:)
 
     integer :: i, m
 
     by_member = .true.
-    do i = 1, dom % size()
-       m = dom % member(i)
+    do i = 1, sets % size_of(dom)
+       m = sets % member_of(dom, i)
        by_member = by_member .and. &
-            & (abs(v(dom % local_index(m)) - expect(m)) < 1.0d-12)
+            & (abs(v(sets % index_in(dom, m)) - expect(m)) < 1.0d-12)
     end do
 
   end function by_member

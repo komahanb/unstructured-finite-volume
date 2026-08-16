@@ -47,14 +47,14 @@ program partitioned_pde_level_8_refusal
   select case (trim(which))
 
   case ('foreign-host-apply')
-     q = field('state on the star', g_alt % vertex_set())
+     q = field('state on the star', g_alt % vertex_set(), g_alt % num_vertices())
      call q % set_real_vector(Q_EXACT)
      call composite % apply(g_alt, [q], out)
      write(*,*) 'a chain decomposition acted on the star'
 
   case ('foreign-host-attach')
      ! attach asks the action for its domain; the guard fires there.
-     call solver % attach(composite, g_alt, g_alt % vertex_set())
+     call solver % attach(composite, g_alt, g_alt % vertex_set(), g_alt % num_vertices())
      write(*,*) 'a chain decomposition was attached to a star host'
 
   case default

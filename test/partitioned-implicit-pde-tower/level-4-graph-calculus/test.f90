@@ -51,7 +51,11 @@
 program partitioned_pde_level_4
 
   use partitioned_pde_assert , only : report, verdict
-  use graph_carrier          , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation
+  use graph_set_map        , only : set_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
+  use graph_label_map      , only : label_map
   use graph_grammar          , only : graph
   use graph_binary_relation  , only : csr_relation
   use class_graph            , only : stored_graph
@@ -63,7 +67,8 @@ program partitioned_pde_level_4
 
   implicit none
 
-  type(counted_set)          :: v, e, k
+  type(set_graph)          :: v, e, k
+  type(set_map)          :: sets
   type(csr_relation), target :: tail, head, own
   type(csr_relation)         :: tail_owner, head_owner
   type(stored_graph)         :: g
@@ -78,14 +83,18 @@ program partitioned_pde_level_4
 
   ! BOTH Level-2 candidate policies, re-derived here so this level
   ! selects between mathematics rather than recalling an observation.
-  call chain_carriers(v, e, k)
-  tail = tail_relation(e, v)
-  head = head_relation(e, v)
-  own  = own_relation(k, v)
-  tail_owner = derive_tail_owner(tail, own)
-  head_owner = derive_head_owner(head, own)
+  call chain_carriers(sets, v, e, k)
+  tail = tail_relation(e, v, sets)
+  head = head_relation(e, v, sets)
+  own  = own_relation(k, v, sets)
+  tail_owner = derive_tail_owner(tail, own, sets)
+  head_owner = derive_head_owner(head, own, sets)
 
   g = stored_graph(6, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  call sets % bind(g % vertex_set(), &
+       & counted_set_representation(g % num_vertices()))
+  call sets % bind(g % edge_set(), &
+       & counted_set_representation(g % num_edges()))
   call cut(g1, 1)
   call cut(g2, 2)
 
@@ -145,7 +154,9 @@ contains
     integer     , intent(in)    :: kpart, globals(:), borrowed_global
     integer     , intent(inout) :: nfail
 
-    class(member_set), allocatable :: owned, borrowed, overlap
+    type(set_graph) :: owned, borrowed, overlap
+    type(label_map)     :: labels
+    type(inclusion_map)     :: inclusions
     character(len=1) :: tag
     integer          :: i
     logical          :: ok
@@ -175,17 +186,17 @@ contains
             & "G" // tag // " owns every local vertex but the one it " // &
             & "borrows: PRESENCE IS NOT OWNERSHIP", nfail)
 
-       call part % owned_vertices(kpart, owned)
-       call part % borrowed_vertices(kpart, borrowed)
-       call part % overlap_vertices(kpart, overlap)
-       call report(owned % size() .eq. 3 .and. borrowed % size() .eq. 1 &
-            & .and. overlap % size() .eq. part % num_vertices(), &
+       call part % owned_vertices(kpart, sets, labels, inclusions, owned)
+       call part % borrowed_vertices(kpart, sets, labels, inclusions, borrowed)
+       call part % overlap_vertices(kpart, sets, labels, inclusions, overlap)
+       call report(sets % size_of(owned) .eq. 3 .and. sets % size_of(borrowed) .eq. 1 &
+            & .and. sets % size_of(overlap) .eq. part % num_vertices(), &
             & "G" // tag // ": three owned, one borrowed, and the " // &
             & "overlap is the whole local carrier", nfail)
 
        ok = .false.
        do i = 1, part % num_vertices()
-          if (borrowed % has(i)) then
+          if (sets % has_in(borrowed, i)) then
              ok = part % global_vertex_index(i) .eq. borrowed_global
           end if
        end do

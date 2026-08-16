@@ -38,7 +38,12 @@ program partitioned_pde_level_5
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : report, verdict
   use partitioned_pde_assert, only : NV, NE, Q_EXACT
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
+  use graph_label_map      , only : label_map
   use graph_grammar    , only : graph, graph_field
   use class_graph      , only : stored_graph
   use class_graph_field, only : field
@@ -51,6 +56,7 @@ program partitioned_pde_level_5
   type(assembler)           :: a
   class(graph), allocatable :: g1, g2
   integer                   :: nfail
+  type(set_map)     :: sets
 
   nfail = 0
 
@@ -59,6 +65,10 @@ program partitioned_pde_level_5
   write(*,'(1x,a)') "============================================="
 
   g = stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  call sets % bind(g % vertex_set(), &
+       & counted_set_representation(g % num_vertices()))
+  call sets % bind(g % edge_set(), &
+       & counted_set_representation(g % num_edges()))
   a = assembler()
   call cut(g1, 1)
   call cut(g2, 2)
@@ -85,6 +95,13 @@ contains
     p = partitioner(PARTITION_LINEAR, nparts=2, part=kpart)
     call p % partition_graph(g, part)
 
+    ! A part is a NEW graph, so its carriers are new declared domains
+    ! and must be described before anything is seated on them.
+    call sets % bind(part % vertex_set(), &
+         & counted_set_representation(part % num_vertices()))
+    call sets % bind(part % edge_set(), &
+         & counted_set_representation(part % num_edges()))
+
   end subroutine cut
   !===================================================================!
   ! THE LAW, imposed before any inspection: partition an edge probe
@@ -102,14 +119,16 @@ contains
          & [10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp]
     type(field)           :: z
     real(dp), allocatable :: total(:), got(:)
+    type(label_map)     :: labels
+    type(inclusion_map)     :: inclusions
 
-    z = field('edge probe', g % edge_set())
+    z = field('edge probe', g % edge_set(), g % num_edges())
     call z % set_real_vector(PROBE)
 
     allocate(total(NE))
     total = 0.0_dp
-    call add_round_trip(z, 1, total)
-    call add_round_trip(z, 2, total)
+    call add_round_trip(z, 1, sets, labels, inclusions, total)
+    call add_round_trip(z, 2, sets, labels, inclusions, total)
 
     call report(maxval(abs(total - PROBE)) < 1.0d-13, &
          & "every global edge is assembled exactly once: the probe " // &
@@ -122,10 +141,10 @@ contains
     deallocate(total)
     allocate(total(NV))
     total = 0.0_dp
-    z = field('vertex probe', g % vertex_set())
+    z = field('vertex probe', g % vertex_set(), g % num_vertices())
     call z % set_real_vector(Q_EXACT)
-    call add_round_trip(z, 1, total)
-    call add_round_trip(z, 2, total)
+    call add_round_trip(z, 1, sets, labels, inclusions, total)
+    call add_round_trip(z, 2, sets, labels, inclusions, total)
     call report(maxval(abs(total - Q_EXACT)) < 1.0d-13, &
          & "and every global vertex likewise, borrowed copies " // &
          & "notwithstanding", nfail)
@@ -144,7 +163,7 @@ contains
 
     type(field) :: q
 
-    q = field('q star', g % vertex_set())
+    q = field('q star', g % vertex_set(), g % num_vertices())
     call q % set_real_vector(Q_EXACT)
 
     call check_one_transport(q, g1, 1, [1,2,3,4], &
@@ -163,8 +182,10 @@ contains
 
     type(partitioner)               :: p
     class(graph_field), allocatable :: pd
-    class(member_set), allocatable  :: dom
-    type(counted_set)               :: pvs
+    type(set_graph)  :: dom
+    type(inclusion_map)  :: inclusions
+    type(label_map)  :: labels
+    type(set_graph)               :: pvs
     real(dp), allocatable           :: v(:)
     character(len=1)                :: tag
     integer                         :: i
@@ -176,13 +197,13 @@ contains
     ! of the same graph, which would be a different carrier with a
     ! different identity.
     p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
-    call p % partition_data(g, q, part, pd)
+    call p % partition_data(g, q, part, sets, labels, inclusions, pd)
 
-    call pd % domain(dom)
+    dom = pd % domain()
     select type (part)
     type is (stored_graph)
        pvs = part % vertex_set()
-       call report(dom % same_as(pvs) .and. dom % size() .eq. 4, &
+       call report(dom % same_as(pvs) .and. sets % size_of(dom) .eq. 4, &
             & "q" // tag // " lives on G" // tag // "'s whole vertex " // &
             & "carrier: a full field becomes a full OVERLAP field", &
             & nfail)
@@ -214,14 +235,16 @@ contains
 
     type(field)           :: q
     real(dp)              :: from1(NV), from2(NV), total(NV)
+    type(label_map)     :: labels
+    type(inclusion_map)     :: inclusions
 
-    q = field('q star', g % vertex_set())
+    q = field('q star', g % vertex_set(), g % num_vertices())
     call q % set_real_vector(Q_EXACT)
 
     from1 = 0.0_dp
     from2 = 0.0_dp
-    call add_round_trip(q, 1, from1)
-    call add_round_trip(q, 2, from2)
+    call add_round_trip(q, 1, sets, labels, inclusions, from1)
+    call add_round_trip(q, 2, sets, labels, inclusions, from2)
 
     call report(abs(from1(1) - 1.0_dp) < 1.0d-13 .and. &
          &      abs(from1(3) - 4.0_dp) < 1.0d-13 .and. &
@@ -251,13 +274,15 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)               :: vs
-    type(subset_set)                :: s
+    type(set_graph)               :: vs
+    type(set_graph)                :: s
     type(field)                     :: d
     type(partitioner)               :: p
     class(graph), allocatable       :: part
     class(graph_field), allocatable :: pd, fd
-    class(member_set), allocatable  :: dom
+    type(set_graph)  :: dom
+    type(label_map)     :: labels
+    type(inclusion_map)     :: inclusions
     real(dp), allocatable           :: v(:)
     integer , allocatable           :: mem(:)
     real(dp)                        :: total(NV)
@@ -265,12 +290,14 @@ contains
     logical                         :: ok, seen(NV)
 
     vs = g % vertex_set()
-    s = subset_set('probe', vs, [6, 3, 4])      ! non-global order
-    d = field('subset probe', s)
+    call s % declare()      ! non-global order
+    call sets       % bind(s, listed_set_representation([6, 3, 4]))
+    call inclusions % include_in(s, vs)
+    d = field('subset probe', s, 3)
     call d % set_real_vector([600.0_dp, 300.0_dp, 400.0_dp])
 
-    call report(abs(600.0_dp - value_at(d, s, 6)) < 1.0d-13 .and. &
-         &      abs(300.0_dp - value_at(d, s, 3)) < 1.0d-13, &
+    call report(abs(600.0_dp - value_at(sets, d, s, 6)) < 1.0d-13 .and. &
+         &      abs(300.0_dp - value_at(sets, d, s, 3)) < 1.0d-13, &
          & "S = {6,3,4} carries its values in DECLARATION order", &
          & nfail)
 
@@ -279,15 +306,15 @@ contains
     do k = 1, 2
        p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
        call p % partition_graph(g, part)
-       call p % partition_data(g, d, part, pd)
+       call p % partition_data(g, d, part, sets, labels, inclusions, pd)
 
        ! Each part receives only the members it can see.
-       call pd % domain(dom)
+       dom = pd % domain()
        select type (pp => part)
        type is (stored_graph)
           ok = .true.
           do i = 1, pp % num_vertices()
-             if (dom % has(i)) then
+             if (sets % has_in(dom, i)) then
                 gm = pp % global_vertex_index(i)
                 ok = ok .and. (gm .eq. 6 .or. gm .eq. 3 .or. gm .eq. 4)
                 seen(gm) = .true.
@@ -301,23 +328,16 @@ contains
        ! The assembled piece is a proper SUBOBJECT of the global
        ! carrier, so its storage is its own - read every value
        ! through the assembled domain's own local_index.
-       call a % assemble_data(part, pd, g, fd)
-       call fd % domain(dom)
+       call a % assemble_data(part, pd, g, sets, labels, inclusions, fd)
+       dom = fd % domain()
        call fd % get_real_vector(v)
-       select type (dom)
-       type is (subset_set)
-          call report(dom % is_subobject_of(vs), &
+          call report(declared_subobject(dom, vs, inclusions), &
                & "the assembled piece embeds in the global vertex " // &
                & "carrier", nfail)
-          call dom % members(mem)
+          call sets % members_of(dom, mem)
           do i = 1, size(mem)
-             total(mem(i)) = total(mem(i)) + v(dom % local_index(mem(i)))
+             total(mem(i)) = total(mem(i)) + v(sets % index_in(dom, mem(i)))
           end do
-       class default
-          call report(.false., &
-               & "the assembled piece embeds in the global vertex " // &
-               & "carrier", nfail)
-       end select
     end do
 
     call report(seen(3) .and. seen(4) .and. seen(6), &
@@ -338,11 +358,14 @@ contains
   !===================================================================!
 
   ! Partition d to part k, assemble it home, add it into total.
-  subroutine add_round_trip(d, k, total)
+  subroutine add_round_trip(d, k, sets, labels, inclusions, total)
 
-    type(field), intent(in)    :: d
-    integer    , intent(in)    :: k
-    real(dp)   , intent(inout) :: total(:)
+    type(field)        , intent(in)    :: d
+    integer            , intent(in)    :: k
+    type(set_map)      , intent(inout) :: sets
+    type(label_map)    , intent(inout) :: labels
+    type(inclusion_map), intent(inout) :: inclusions
+    real(dp)           , intent(inout) :: total(:)
 
     type(partitioner)               :: p
     class(graph), allocatable       :: part
@@ -351,22 +374,27 @@ contains
 
     p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
     call p % partition_graph(g, part)
-    call p % partition_data(g, d, part, pd)
-    call a % assemble_data(part, pd, g, fd)
+    call sets % bind(part % vertex_set(), &
+         & counted_set_representation(part % num_vertices()))
+    call sets % bind(part % edge_set(), &
+         & counted_set_representation(part % num_edges()))
+    call p % partition_data(g, d, part, sets, labels, inclusions, pd)
+    call a % assemble_data(part, pd, g, sets, labels, inclusions, fd)
     call fd % get_real_vector(v)
     total = total + v(1:size(total))
 
   end subroutine add_round_trip
-  real(dp) function value_at(d, dom, member)
+  real(dp) function value_at(sets, d, dom, member)
 
-    type(field)      , intent(in) :: d
-    class(member_set), intent(in) :: dom
-    integer          , intent(in) :: member
+    type(set_map)  , intent(in) :: sets
+    type(field)    , intent(in) :: d
+    type(set_graph), intent(in) :: dom
+    integer        , intent(in) :: member
 
     real(dp), allocatable :: v(:)
 
     call d % get_real_vector(v)
-    value_at = v(dom % local_index(member))
+    value_at = v(sets % index_in(dom, member))
 
   end function value_at
 end program partitioned_pde_level_5

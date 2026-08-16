@@ -5,14 +5,14 @@
 ! from the Level-1 primitives by transpose and composition alone,
 ! reading the repository's convention
 !
-!      compose_binary(P_AB, P_BC) = P_BC o P_AB.
+!      compose_binary(P_AB, P_BC, sets) = P_BC o P_AB.
 !
 ! ADJACENCY.  A vertex follows another when an edge leaves the first
 ! and enters the second:
 !
 !      A = Head o Tail^T : V -> V         v -> e -> head(e)
 !
-! written in code as compose_binary(Tail^T, Head).
+! written in code as compose_binary(Tail^T, Head, sets).
 !
 ! CANDIDATE EDGE-OWNERSHIP POLICIES.  An edge has two vertices, and
 ! each of them has an owner. Composing through either one gives a
@@ -21,8 +21,8 @@
 !      TailOwner = Own^T o Tail : E -> K   e -> tail(e) -> owner
 !      HeadOwner = Own^T o Head : E -> K   e -> head(e) -> owner
 !
-! written in code as compose_binary(Tail, Own^T) and
-! compose_binary(Head, Own^T).
+! written in code as compose_binary(Tail, Own^T, sets) and
+! compose_binary(Head, Own^T, sets).
 !
 ! Both are total. Both are single-valued. Both therefore satisfy the
 ! reconstruction law - one edge, one owner - and on this chain they
@@ -42,6 +42,8 @@
 module chain_algebra_fixture
 
   use graph_relation        , only : relation
+  use fractal_graph         , only : set_graph => graph
+  use graph_set_map         , only : set_map
   use graph_relation_algebra, only : compose_binary
   use graph_binary_relation , only : binary_relation, csr_relation, &
        &                             transposed_view, transpose_of
@@ -57,14 +59,15 @@ contains
   ! A = Head o Tail^T : V -> V, through the edges.
   !===================================================================!
 
-  type(csr_relation) function derive_adjacency(tail, head) result(adj)
+  type(csr_relation) function derive_adjacency(tail, head, sets) result(adj)
 
     class(binary_relation), intent(in), target :: tail, head
+    type(set_map)         , intent(in)         :: sets
 
     type(transposed_view) :: tail_t
 
     tail_t = transpose_of(tail)          ! V -> E
-    adj    = compose_binary(tail_t, head) ! V -> E -> V
+    adj    = compose_binary(tail_t, head, sets) ! V -> E -> V
 
   end function derive_adjacency
 
@@ -73,14 +76,15 @@ contains
   ! edge LEAVES. A candidate policy, not the policy.
   !===================================================================!
 
-  type(csr_relation) function derive_tail_owner(tail, own) result(eo)
+  type(csr_relation) function derive_tail_owner(tail, own, sets) result(eo)
 
     class(binary_relation), intent(in), target :: tail, own
+    type(set_map)         , intent(in)         :: sets
 
     type(transposed_view) :: own_t
 
     own_t = transpose_of(own)          ! V -> K
-    eo    = compose_binary(tail, own_t) ! E -> V -> K
+    eo    = compose_binary(tail, own_t, sets) ! E -> V -> K
 
   end function derive_tail_owner
 
@@ -91,14 +95,15 @@ contains
   ! cut falls.
   !===================================================================!
 
-  type(csr_relation) function derive_head_owner(head, own) result(eo)
+  type(csr_relation) function derive_head_owner(head, own, sets) result(eo)
 
     class(binary_relation), intent(in), target :: head, own
+    type(set_map)         , intent(in)         :: sets
 
     type(transposed_view) :: own_t
 
     own_t = transpose_of(own)          ! V -> K
-    eo    = compose_binary(head, own_t) ! E -> V -> K
+    eo    = compose_binary(head, own_t, sets) ! E -> V -> K
 
   end function derive_head_owner
 

@@ -42,7 +42,8 @@
 program partitioned_pde_level_1
 
   use partitioned_pde_assert , only : report, verdict
-  use graph_carrier          , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
   use graph_binary_relation  , only : csr_relation
   use chain_carriers_fixture , only : chain_carriers
   use chain_relations_fixture, only : tail_relation, head_relation, &
@@ -50,7 +51,8 @@ program partitioned_pde_level_1
 
   implicit none
 
-  type(counted_set)  :: v, e, k
+  type(set_graph)  :: v, e, k
+  type(set_map)  :: sets
   type(csr_relation) :: tail, head, own
   integer            :: nfail
 
@@ -60,10 +62,10 @@ program partitioned_pde_level_1
   write(*,'(1x,a)') "partitioned pde tower . level 1 . relation"
   write(*,'(1x,a)') "============================================="
 
-  call chain_carriers(v, e, k)
-  tail = tail_relation(e, v)
-  head = head_relation(e, v)
-  own  = own_relation(k, v)
+  call chain_carriers(sets, v, e, k)
+  tail = tail_relation(e, v, sets)
+  head = head_relation(e, v, sets)
+  own  = own_relation(k, v, sets)
 
   call check_signatures(nfail)
   call check_incidence_extension(nfail)
@@ -84,7 +86,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
 
     d = tail % domain(1)
     call report(d % same_as(e), "Tail runs from the edges", nfail)
@@ -151,10 +153,10 @@ contains
     ! Every vertex has exactly one owner - the law that will make
     ! reconstruction possible three levels above this one.
     ok = .true.
-    do i = 1, v % size()
+    do i = 1, sets % size_of(v)
        count_owners = 0
-       if (own % has([1, v % member(i)])) count_owners = count_owners + 1
-       if (own % has([2, v % member(i)])) count_owners = count_owners + 1
+       if (own % has([1, sets % member_of(v, i)])) count_owners = count_owners + 1
+       if (own % has([2, sets % member_of(v, i)])) count_owners = count_owners + 1
        ok = ok .and. (count_owners .eq. 1)
     end do
     call report(ok, &

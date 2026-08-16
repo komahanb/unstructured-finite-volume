@@ -16,6 +16,8 @@ program refusal
   use fractal_graph        , only : graph
   use graph_carrier        , only : member_set, counted_set
   use graph_relation       , only : relation, stored_relation, slot
+  use graph_binary_relation, only : csr_relation, transposed_view, &
+       &                            transpose_of
   use graph_relational_view, only : relational_binding
 
   implicit none
@@ -81,6 +83,51 @@ program refusal
        p => b % relation_for(e1)                      ! b has lent
        b = d
        print *, p % name()
+     end block
+
+     !================================================================!
+     ! The binding stores identified objects. An undeclared object
+     ! does not match itself, so nothing the view asks about it can be
+     ! answered - not membership, not distinctness.
+     !================================================================!
+
+  case ('unsignedset')
+     block
+       type(graph), target      :: e1
+       type(relational_binding) :: b
+       type(counted_set)        :: raw
+       call e1 % declare()
+       call b % bind_set(e1, raw)
+     end block
+
+  case ('unsignedrelation')
+     block
+       type(graph), target      :: e1
+       type(relational_binding) :: b
+       type(stored_relation)    :: raw
+       call e1 % declare()
+       call b % bind_relation(e1, raw)
+     end block
+
+     !================================================================!
+     ! The binding owns whole relations. Copying a borrowing view into
+     ! owned storage copies a reference to a base the binding does not
+     ! keep alive: it would own the view and not what makes it true.
+     ! A view rides above a bound relation, never inside one.
+     !================================================================!
+
+  case ('boundview')
+     block
+       type(graph), target        :: e1
+       type(relational_binding)   :: b
+       type(counted_set)          :: ops
+       type(csr_relation), target :: dep
+       type(transposed_view)      :: flipped
+       call e1 % declare()
+       ops     = counted_set('operations', 3)
+       dep     = csr_relation('feeds', ops, ops, reshape([1, 2], [2, 1]))
+       flipped = transpose_of(dep)
+       call b % bind_relation(e1, flipped)
      end block
 
   case default

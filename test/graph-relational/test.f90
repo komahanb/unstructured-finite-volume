@@ -29,6 +29,7 @@ program test
   use fractal_graph        , only : graph, null_branch, known_branch
   use graph_carrier        , only : member_set, counted_set
   use graph_relation       , only : relation, stored_relation, slot
+  use graph_binary_relation, only : csr_relation
   use graph_relational_view, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
        & holds_set, relational_valid
@@ -232,6 +233,143 @@ program test
          & .not. relational_valid(g, b))
 
   end block relations_only_block
+
+  !===================================================================!
+  ! S and P are sets. A sequence may repeat what a set cannot, so
+  ! repetition is representable and invalid - answered, not refused.
+  ! One member set, denoted by two distinct element graphs.
+  !===================================================================!
+
+  repeated_set_block: block
+
+    type(graph), target      :: g, scell(2), selem(2)
+    type(relational_binding) :: b
+    type(counted_set)        :: e
+    integer                  :: i
+
+    call g % declare()
+    do i = 1, 2
+       call scell(i) % declare(); call selem(i) % declare()
+    end do
+
+    e = counted_set('E', 2)
+
+    call b % bind_set(selem(1), e)
+    call b % bind_set(selem(2), e)               ! the same member set
+
+    scell(1) % branch(1) = known_branch(selem(1))
+    scell(1) % branch(2) = known_branch(scell(2))
+    scell(2) % branch(1) = known_branch(selem(2))
+
+    g % branch(1) = known_branch(scell(1))
+    g % branch(2) = null_branch()
+
+    call check('a repeated member set is representable: |S| = 2', &
+         & num_member_sets(g) .eq. 2)
+    call check('but S is a set, so the graph is INVALID', &
+         & .not. relational_valid(g, b))
+
+  end block repeated_set_block
+
+  repeated_relation_block: block
+
+    type(graph), target      :: g, scell, selem, rcell(2), relem(2)
+    type(relational_binding) :: b
+    type(counted_set)        :: e
+    type(stored_relation)    :: p
+    integer                  :: i
+
+    call g % declare(); call scell % declare(); call selem % declare()
+    do i = 1, 2
+       call rcell(i) % declare(); call relem(i) % declare()
+    end do
+
+    e = counted_set('E', 2)
+    p = stored_relation('P', [slot(e)], reshape([1, 2], [1, 2]))
+
+    call b % bind_set(selem, e)
+    call b % bind_relation(relem(1), p)
+    call b % bind_relation(relem(2), p)          ! the same relation
+
+    scell % branch(1) = known_branch(selem)
+    rcell(1) % branch(1) = known_branch(relem(1))
+    rcell(1) % branch(2) = known_branch(rcell(2))
+    rcell(2) % branch(1) = known_branch(relem(2))
+
+    g % branch(1) = known_branch(scell)
+    g % branch(2) = known_branch(rcell(1))
+
+    call check('a repeated relation is representable: |P| = 2', &
+         & num_relations(g) .eq. 2)
+    call check('but P is a set, so the graph is INVALID', &
+         & .not. relational_valid(g, b))
+
+  end block repeated_relation_block
+
+  !===================================================================!
+  ! Identity is the address, never the signature: two relations over
+  ! the same slots coexist, each keeping its own tuples. A ternary
+  ! relation sits beside a binary one, untroubled.
+  !===================================================================!
+
+  signature_block: block
+
+    type(graph), target      :: g, scell(2), selem(2), rcell(3), relem(3)
+    type(relational_binding) :: b
+    type(counted_set)        :: ops, vals
+    type(csr_relation)       :: physical, scheduled
+    type(stored_relation)    :: flow
+    class(relation), pointer :: r1, r2, r3
+    integer                  :: i
+
+    call g % declare()
+    do i = 1, 2
+       call scell(i) % declare(); call selem(i) % declare()
+    end do
+    do i = 1, 3
+       call rcell(i) % declare(); call relem(i) % declare()
+    end do
+
+    ops  = counted_set('operations', 3)
+    vals = counted_set('values'    , 5)
+
+    physical  = csr_relation('feeds' , ops, ops, reshape([1, 2], [2, 1]))
+    scheduled = csr_relation('awaits', ops, ops, reshape([2, 3], [2, 1]))
+    flow      = stored_relation('flow', [slot(ops), slot(vals), slot(ops)], &
+         & reshape([1, 2, 1,  2, 4, 3], [3, 2]))
+
+    call b % bind_set(selem(1), ops)
+    call b % bind_set(selem(2), vals)
+    call b % bind_relation(relem(1), physical)
+    call b % bind_relation(relem(2), scheduled)
+    call b % bind_relation(relem(3), flow)
+
+    scell(1) % branch(1) = known_branch(selem(1))
+    scell(1) % branch(2) = known_branch(scell(2))
+    scell(2) % branch(1) = known_branch(selem(2))
+
+    do i = 1, 3
+       rcell(i) % branch(1) = known_branch(relem(i))
+       if (i .lt. 3) rcell(i) % branch(2) = known_branch(rcell(i + 1))
+    end do
+
+    g % branch(1) = known_branch(scell(1))
+    g % branch(2) = known_branch(rcell(1))
+
+    r1 => relation_at(g, b, 1)
+    r2 => relation_at(g, b, 2)
+    r3 => relation_at(g, b, 3)
+
+    call check('same signature, two relations - no collision', &
+         & .not. r1 % same_as(r2))
+    call check('and each keeps its own tuples', &
+         & r1 % has([1, 2]) .and. .not. r2 % has([1, 2]))
+    call check('a ternary relation sits beside two binary ones', &
+         & r3 % arity() .eq. 3 .and. r1 % arity() .eq. 2)
+    call check('and the whole is valid: every domain is held', &
+         & relational_valid(g, b))
+
+  end block signature_block
 
   !===================================================================!
   ! Identity. A view has none of its own.

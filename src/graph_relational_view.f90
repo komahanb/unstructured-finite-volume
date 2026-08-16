@@ -53,19 +53,31 @@
 ! Sequence behaviour is delegated to graph_sequence_view. Nothing here
 ! traverses a spine.
 !
-! TWO FAILURES, STRUCTURALLY APART.
+! THREE FAILURES, STRUCTURALLY APART.
 !
 !     malformed sequence   refused, by graph_sequence_view
+!     unstorable object    refused, by bind_set / bind_relation
 !     relationally invalid answered .false. by relational_valid
 !
 ! A view over an existing graph reports invalidity; it does not refuse
 ! a graph it did not construct. The old create_graph refused at
-! construction because it was a constructor; this is not one.
+! construction because it was a constructor; this is not one. What the
+! binding refuses is not the view but the storage: an object with no
+! identity cannot be compared, and a borrowing view cannot be owned,
+! because copying it into owned storage copies a reference to a base
+! the binding does not keep alive.
 !
-! THE VALIDITY LAW, unchanged in content:
+! THE VALIDITY LAW:
 !
-!     G is relationally valid iff every domain of every relation in the
-!     relation sequence is a member set in the member-set sequence.
+!     G is relationally valid iff
+!       (i)   no member set occurs twice in the member-set sequence,
+!       (ii)  no relation occurs twice in the relation sequence, and
+!       (iii) every domain of every relation is a member set of G.
+!
+! S and P are SETS; the branches represent them as sequences, and a
+! sequence may repeat what a set cannot. (i) and (ii) are that gap,
+! answered rather than refused, because repetition is a property of a
+! graph already built.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -124,6 +136,12 @@ contains
   !===================================================================!
   ! Binding. The object is copied into owned storage; the element is
   ! referenced.
+  !
+  ! What may be stored: an object with an assigned identity, because
+  ! the view compares objects and nothing else; and, for a relation,
+  ! one that is materialized, because a borrowing view copied into
+  ! owned storage carries a reference to a base the binding does not
+  ! keep alive. A view rides above a bound relation, never inside one.
   !===================================================================!
 
   subroutine bind_set(this, element, object)
@@ -134,6 +152,11 @@ contains
 
     type(bound_set), allocatable :: grown(:)
     integer                      :: n
+
+    ! An undeclared token does not match itself.
+    if (.not. object % same_as(object)) then
+       error stop 'graph_relational_view: a binding stores identified objects'
+    end if
 
     if (.not. allocated(this % sets)) allocate(this % sets(0))
     n = size(this % sets)
@@ -153,6 +176,14 @@ contains
 
     type(bound_relation), allocatable :: grown(:)
     integer                           :: n
+
+    if (.not. object % same_as(object)) then
+       error stop 'graph_relational_view: a binding stores identified objects'
+    end if
+
+    if (.not. object % materialized()) then
+       error stop 'graph_relational_view: a binding owns whole relations; a view cannot be bound'
+    end if
 
     if (.not. allocated(this % relations)) allocate(this % relations(0))
     n = size(this % relations)
@@ -330,8 +361,8 @@ contains
   end function holds_set
 
   !===================================================================!
-  ! The validity law. Every domain of every relation is a member set
-  ! of this graph.
+  ! The validity law. S and P are sets, and every domain of every
+  ! relation is a member set of this graph.
   !===================================================================!
 
   logical function relational_valid(g, b) result(ok)
@@ -339,21 +370,38 @@ contains
     type(graph)             , intent(in) :: g
     type(relational_binding), intent(in) :: b
 
-    class(relation), pointer       :: r
+    class(member_set), pointer     :: s, s_earlier
+    class(relation)  , pointer     :: r, r_earlier
     class(member_set), allocatable :: d
     integer                        :: k, j
 
-    ok = .true.
-    do k = 1, num_relations(g)
+    ok = .false.
+
+    do k = 1, num_member_sets(g)                     ! (i) S is a set
+       s => member_set_at(g, b, k)
+       do j = 1, k - 1
+          s_earlier => member_set_at(g, b, j)
+          if (s % same_as(s_earlier)) return
+       end do
+    end do
+
+    do k = 1, num_relations(g)                       ! (ii) P is a set
+       r => relation_at(g, b, k)
+       do j = 1, k - 1
+          r_earlier => relation_at(g, b, j)
+          if (r % same_as(r_earlier)) return
+       end do
+    end do
+
+    do k = 1, num_relations(g)                       ! (iii) closure
        r => relation_at(g, b, k)
        do j = 1, r % arity()
           d = r % domain(j)
-          if (.not. holds_set(g, b, d)) then
-             ok = .false.
-             return
-          end if
+          if (.not. holds_set(g, b, d)) return
        end do
     end do
+
+    ok = .true.
 
   end function relational_valid
 

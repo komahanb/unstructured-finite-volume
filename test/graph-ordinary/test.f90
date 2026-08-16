@@ -18,19 +18,12 @@ program test_graph_ordinary
   use class_graph          , only : stored_graph
   use graph_carrier        , only : counted_set
   use graph_binary_relation, only : csr_relation
-  use graph_structure      , only : relational_graph, held_set, &
-       &                            held_relation
   use graph_profile        , only : ordinary_graph_view
   use listed_set_fixture   , only : listed_set
-  use fractal_graph        , only : graph
+  use fractal_graph        , only : graph, known_branch
   use graph_relational_view, only : relational_binding
-  use relational_fixture   , only : fractal_fixture
 
   implicit none
-
-  type(fractal_fixture)             :: fx_
-  type(graph)             , pointer :: fg_
-  type(relational_binding), pointer :: fb_
 
   integer :: nfail
 
@@ -112,11 +105,13 @@ contains
     type(stored_graph)              :: old
     type(counted_set)               :: verts, edges
     type(csr_relation)              :: t, h
-    type(relational_graph), target  :: g
+    type(graph)            , target :: g
+    type(graph)            , target :: scell(2), selem(2), rcell(2), relem(2)
+    type(relational_binding)        :: bnd
     type(ordinary_graph_view)       :: view
     integer, allocatable            :: ttab(:,:), htab(:,:)
     integer, allocatable            :: a(:), b(:)
-    integer                         :: ne, nh, e, v, q
+    integer                         :: ne, nh, e, v, q, k
     logical                         :: ok
 
     ne = size(tails)
@@ -153,12 +148,31 @@ contains
     t = csr_relation('tail', edges, verts, ttab)
     h = csr_relation('head', edges, verts, htab)
 
-    g = relational_graph('ordinary', &
-         & [held_set(verts), held_set(edges)], &
-         & [held_relation(t), held_relation(h)])
+    ! (S, P) = ({V, E}, {T, H}), one sequence on each branch.
+    call g % declare()
+    do k = 1, 2
+       call scell(k) % declare(); call selem(k) % declare()
+       call rcell(k) % declare(); call relem(k) % declare()
+    end do
 
-    call fx_ % to_fractal(g, fg_, fb_)
-    view = ordinary_graph_view(fg_, fb_, tail_at=1, head_at=2)
+    call bnd % bind_set(selem(1), verts)
+    call bnd % bind_set(selem(2), edges)
+    call bnd % bind_relation(relem(1), t)
+    call bnd % bind_relation(relem(2), h)
+
+    do k = 1, 2
+       scell(k) % branch(1) = known_branch(selem(k))
+       rcell(k) % branch(1) = known_branch(relem(k))
+       if (k .lt. 2) then
+          scell(k) % branch(2) = known_branch(scell(k + 1))
+          rcell(k) % branch(2) = known_branch(rcell(k + 1))
+       end if
+    end do
+
+    g % branch(1) = known_branch(scell(1))
+    g % branch(2) = known_branch(rcell(1))
+
+    view = ordinary_graph_view(g, bnd, tail_at=1, head_at=2)
 
     ok = (view % num_vertices() .eq. old % num_vertices()) .and. &
          & (view % num_edges() .eq. old % num_edges())
@@ -211,9 +225,11 @@ contains
 
     type(counted_set)               :: verts, edges
     type(csr_relation)              :: t, h
-    type(relational_graph), target  :: g
+    type(graph)            , target :: g
+    type(graph)            , target :: scell(2), selem(2), rcell(2), relem(2)
+    type(relational_binding)        :: bnd
     type(ordinary_graph_view)       :: view
-    integer                         :: v
+    integer                         :: v, k
     logical                         :: ok
 
     verts = counted_set('vertices', 3)
@@ -224,12 +240,30 @@ contains
     h = csr_relation('head', edges, verts, &
          & reshape([1,2,  2,3], [2, 2]))
 
-    g = relational_graph('walled', &
-         & [held_set(verts), held_set(edges)], &
-         & [held_relation(t), held_relation(h)])
+    call g % declare()
+    do k = 1, 2
+       call scell(k) % declare(); call selem(k) % declare()
+       call rcell(k) % declare(); call relem(k) % declare()
+    end do
 
-    call fx_ % to_fractal(g, fg_, fb_)
-    view = ordinary_graph_view(fg_, fb_, tail_at=1, head_at=2)
+    call bnd % bind_set(selem(1), verts)
+    call bnd % bind_set(selem(2), edges)
+    call bnd % bind_relation(relem(1), t)
+    call bnd % bind_relation(relem(2), h)
+
+    do k = 1, 2
+       scell(k) % branch(1) = known_branch(selem(k))
+       rcell(k) % branch(1) = known_branch(relem(k))
+       if (k .lt. 2) then
+          scell(k) % branch(2) = known_branch(scell(k + 1))
+          rcell(k) % branch(2) = known_branch(rcell(k + 1))
+       end if
+    end do
+
+    g % branch(1) = known_branch(scell(1))
+    g % branch(2) = known_branch(rcell(1))
+
+    view = ordinary_graph_view(g, bnd, tail_at=1, head_at=2)
 
     call report(h % num_tuples() .eq. 2 .and. t % num_tuples() .eq. 3, &
          & "the wall edge stands in T and is an absence in H", nfail)
@@ -258,12 +292,15 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(listed_set)               :: edges
-    type(counted_set)              :: verts
-    type(csr_relation)             :: t, h
-    type(relational_graph), target :: g
-    type(ordinary_graph_view)      :: view
-    integer, allocatable           :: idx(:)
+    type(listed_set)                :: edges
+    type(counted_set)               :: verts
+    type(csr_relation)              :: t, h
+    type(graph)            , target :: g
+    type(graph)            , target :: scell(2), selem(2), rcell(2), relem(2)
+    type(relational_binding)        :: bnd
+    type(ordinary_graph_view)       :: view
+    integer, allocatable            :: idx(:)
+    integer                         :: k
 
     edges = listed_set('edges', [30, 10, 20])
     verts = counted_set('vertices', 2)
@@ -274,12 +311,30 @@ contains
     h = csr_relation('head', edges, verts, &
          & reshape([20,2,  10,2,  30,2], [2, 3]))
 
-    g = relational_graph('sparse-edged', &
-         & [held_set(verts), held_set(edges)], &
-         & [held_relation(t), held_relation(h)])
+    call g % declare()
+    do k = 1, 2
+       call scell(k) % declare(); call selem(k) % declare()
+       call rcell(k) % declare(); call relem(k) % declare()
+    end do
 
-    call fx_ % to_fractal(g, fg_, fb_)
-    view = ordinary_graph_view(fg_, fb_, tail_at=1, head_at=2)
+    call bnd % bind_set(selem(1), verts)
+    call bnd % bind_set(selem(2), edges)
+    call bnd % bind_relation(relem(1), t)
+    call bnd % bind_relation(relem(2), h)
+
+    do k = 1, 2
+       scell(k) % branch(1) = known_branch(selem(k))
+       rcell(k) % branch(1) = known_branch(relem(k))
+       if (k .lt. 2) then
+          scell(k) % branch(2) = known_branch(scell(k + 1))
+          rcell(k) % branch(2) = known_branch(rcell(k + 1))
+       end if
+    end do
+
+    g % branch(1) = known_branch(scell(1))
+    g % branch(2) = known_branch(rcell(1))
+
+    view = ordinary_graph_view(g, bnd, tail_at=1, head_at=2)
 
     call view % outgoing_edges(1, idx)
     call report(all(idx .eq. [30, 10, 20]), &

@@ -8,6 +8,9 @@
 !      mismatched   H over domains T does not share
 !      selfsame     one domain playing both edges and vertices
 !
+! Each case binds the member sets and the two relations it means; the
+! representation is then wired once, below, and the profile reads it.
+!
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
@@ -16,28 +19,33 @@ program ordinary_refusal
   use graph_carrier        , only : counted_set
   use graph_relation       , only : stored_relation, slot
   use graph_binary_relation, only : csr_relation
-  use graph_structure      , only : relational_graph, held_set, &
-       &                            held_relation
   use graph_profile        , only : ordinary_graph_view
-  use fractal_graph        , only : graph
+  use fractal_graph        , only : graph, known_branch
   use graph_relational_view, only : relational_binding
-  use relational_fixture   , only : fractal_fixture
 
   implicit none
 
-  type(fractal_fixture)             :: fx_
-  type(graph)             , pointer :: fg_
-  type(relational_binding), pointer :: fb_
+  type(counted_set)         :: verts, edges, other, roles
+  type(csr_relation)        :: t, h
+  type(stored_relation)     :: fat
+  type(ordinary_graph_view) :: view
+  character(len=32)         :: which
 
-  type(counted_set)              :: verts, edges, other, roles
-  type(csr_relation)             :: t, h
-  type(stored_relation)          :: fat
-  type(relational_graph), target :: g
-  type(ordinary_graph_view)      :: view
-  character(len=32)              :: which
+  type(graph)             , target :: g
+  type(graph)             , target :: scell(3), selem(3), rcell(2), relem(2)
+  type(relational_binding)         :: bnd
+  integer                          :: ns, k
 
   which = ''
   call get_command_argument(1, which)
+
+  call g % declare()
+  do k = 1, 3
+     call scell(k) % declare(); call selem(k) % declare()
+  end do
+  do k = 1, 2
+     call rcell(k) % declare(); call relem(k) % declare()
+  end do
 
   verts = counted_set('vertices', 3)
   edges = counted_set('edges'   , 2)
@@ -47,29 +55,32 @@ program ordinary_refusal
   case ('tailless')
      t = csr_relation('tail', edges, verts, reshape([1, 1], [2, 1]))
      h = csr_relation('head', edges, verts, reshape([1, 2], [2, 1]))
-     g = relational_graph('bad', [held_set(verts), held_set(edges)], &
-          & [held_relation(t), held_relation(h)])
-     call fx_ % to_fractal(g, fg_, fb_)
-     view = ordinary_graph_view(fg_, fb_, tail_at=1, head_at=2)
+     ns = 2
+     call bnd % bind_set(selem(1), verts)
+     call bnd % bind_set(selem(2), edges)
+     call bnd % bind_relation(relem(1), t)
+     call bnd % bind_relation(relem(2), h)
 
   case ('twotailed')
      t = csr_relation('tail', edges, verts, &
           & reshape([1,1,  1,2,  2,2], [2, 3]))
      h = csr_relation('head', edges, verts, reshape([1, 2], [2, 1]))
-     g = relational_graph('bad', [held_set(verts), held_set(edges)], &
-          & [held_relation(t), held_relation(h)])
-     call fx_ % to_fractal(g, fg_, fb_)
-     view = ordinary_graph_view(fg_, fb_, tail_at=1, head_at=2)
+     ns = 2
+     call bnd % bind_set(selem(1), verts)
+     call bnd % bind_set(selem(2), edges)
+     call bnd % bind_relation(relem(1), t)
+     call bnd % bind_relation(relem(2), h)
 
   case ('twoheaded')
      t = csr_relation('tail', edges, verts, &
           & reshape([1,1,  2,2], [2, 2]))
      h = csr_relation('head', edges, verts, &
           & reshape([1,2,  1,3,  2,3], [2, 3]))
-     g = relational_graph('bad', [held_set(verts), held_set(edges)], &
-          & [held_relation(t), held_relation(h)])
-     call fx_ % to_fractal(g, fg_, fb_)
-     view = ordinary_graph_view(fg_, fb_, tail_at=1, head_at=2)
+     ns = 2
+     call bnd % bind_set(selem(1), verts)
+     call bnd % bind_set(selem(2), edges)
+     call bnd % bind_relation(relem(1), t)
+     call bnd % bind_relation(relem(2), h)
 
   case ('ternary')
      roles = counted_set('roles', 2)
@@ -77,30 +88,32 @@ program ordinary_refusal
           & [slot(edges), slot(verts), slot(roles)], &
           & reshape([1,1,1,  2,2,1], [3, 2]))
      h = csr_relation('head', edges, verts, reshape([1, 2], [2, 1]))
-     g = relational_graph('bad', &
-          & [held_set(verts), held_set(edges), held_set(roles)], &
-          & [held_relation(fat), held_relation(h)])
-     call fx_ % to_fractal(g, fg_, fb_)
-     view = ordinary_graph_view(fg_, fb_, tail_at=1, head_at=2)
+     ns = 3
+     call bnd % bind_set(selem(1), verts)
+     call bnd % bind_set(selem(2), edges)
+     call bnd % bind_set(selem(3), roles)
+     call bnd % bind_relation(relem(1), fat)
+     call bnd % bind_relation(relem(2), h)
 
   case ('mismatched')
      other = counted_set('elsewhere', 3)
      t = csr_relation('tail', edges, verts, &
           & reshape([1,1,  2,2], [2, 2]))
      h = csr_relation('head', edges, other, reshape([1, 2], [2, 1]))
-     g = relational_graph('bad', &
-          & [held_set(verts), held_set(edges), held_set(other)], &
-          & [held_relation(t), held_relation(h)])
-     call fx_ % to_fractal(g, fg_, fb_)
-     view = ordinary_graph_view(fg_, fb_, tail_at=1, head_at=2)
+     ns = 3
+     call bnd % bind_set(selem(1), verts)
+     call bnd % bind_set(selem(2), edges)
+     call bnd % bind_set(selem(3), other)
+     call bnd % bind_relation(relem(1), t)
+     call bnd % bind_relation(relem(2), h)
 
   case ('selfsame')
      t = csr_relation('tail', edges, edges, reshape([1, 2], [2, 1]))
      h = csr_relation('head', edges, edges, reshape([2, 1], [2, 1]))
-     g = relational_graph('bad', [held_set(edges)], &
-          & [held_relation(t), held_relation(h)])
-     call fx_ % to_fractal(g, fg_, fb_)
-     view = ordinary_graph_view(fg_, fb_, tail_at=1, head_at=2)
+     ns = 1
+     call bnd % bind_set(selem(1), edges)
+     call bnd % bind_relation(relem(1), t)
+     call bnd % bind_relation(relem(2), h)
 
   case default
      write(*,'(1x,a)') &
@@ -108,6 +121,21 @@ program ordinary_refusal
      error stop 'no case chosen'
 
   end select
+
+  do k = 1, ns
+     scell(k) % branch(1) = known_branch(selem(k))
+     if (k .lt. ns) scell(k) % branch(2) = known_branch(scell(k + 1))
+  end do
+
+  do k = 1, 2
+     rcell(k) % branch(1) = known_branch(relem(k))
+     if (k .lt. 2) rcell(k) % branch(2) = known_branch(rcell(k + 1))
+  end do
+
+  g % branch(1) = known_branch(scell(1))
+  g % branch(2) = known_branch(rcell(1))
+
+  view = ordinary_graph_view(g, bnd, tail_at=1, head_at=2)
 
   ! Reaching this line is the failure.
   write(*,'(1x,a,a)') "REACHED PAST THE REFUSAL: ", trim(which)

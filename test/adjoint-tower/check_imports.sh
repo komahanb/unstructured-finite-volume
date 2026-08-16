@@ -26,7 +26,7 @@ allowed_for() {
         # level 2: the algebra, and the binary citizen for the
         # subobjects' own inclusions and their transposed use.
         level-2-relation-algebra) echo "adjoint_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation" ;;
-        level-3-graph)            echo "adjoint_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_structure" ;;
+        level-3-graph)            echo "adjoint_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation fractal_graph graph_relational_view" ;;
         # level 4: the profile and the algorithms - which are here to
         # REFUSE an order, not to produce one.
         level-4-graph-calculus)   echo "adjoint_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_structure graph_profile graph_algorithms fractal_graph graph_relational_view relational_fixture" ;;

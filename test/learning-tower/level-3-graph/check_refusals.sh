@@ -2,13 +2,14 @@
 set -e
 here="$(cd "$(dirname "$0")" && pwd)"
 cd "$here"
+# A foreign carrier, a domain seated twice and a relation seated twice
+# are now answered .false. by relational_valid, in test.f90: they are
+# properties of a representation already built. What remains a refusal
+# is the storage law.
 declare -A reason=(
-  [foreign]="a relation must relate the graph's own member sets"
-  [dupset]="a graph holds each domain once"
-  [duprel]="a graph holds each relation once"
-  [view]="a view cannot be owned"
+  [view]="a view cannot be bound"
 )
-for case in foreign dupset duprel view; do
+for case in view; do
     if ./refusal "$case" >refusal.out 2>&1; then
         echo " FAIL : '$case' was accepted"
         exit 1

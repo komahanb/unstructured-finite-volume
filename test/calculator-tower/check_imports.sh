@@ -28,7 +28,7 @@ allowed_for() {
         # refusal alone (transpose_of is level-1 relation
         # infrastructure); the profile and everything above stay
         # forbidden.
-        level-3-graph)           echo "calculator_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_structure" ;;
+        level-3-graph)           echo "calculator_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation fractal_graph graph_relational_view" ;;
         # level 4: the profile's interpretation and the algorithms
         # that walk it; the legacy graph stack, fields and all above
         # stay forbidden.

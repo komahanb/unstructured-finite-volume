@@ -49,8 +49,10 @@ program time_level_3
   use graph_carrier         , only : counted_set, member_set
   use graph_relation        , only : relation
   use graph_binary_relation , only : csr_relation
-  use graph_structure       , only : relational_graph, held_set, &
-       &                             held_relation
+  use fractal_graph        , only : graph, known_branch, null_branch
+  use graph_relational_view, only : relational_binding, &
+       & num_member_sets, member_set_at, num_relations, relation_at, &
+       & holds_set
   use time_carriers_fixture , only : time_carriers
   use time_relations_fixture, only : tail_relation, head_relation
   use time_algebra_fixture  , only : derive_one_step_reach, &
@@ -61,7 +63,11 @@ program time_level_3
   type(counted_set)              :: q, t, e
   type(csr_relation), target     :: tail, head, a1
   type(csr_relation)             :: a2
-  type(relational_graph), target :: g
+  type(graph)             , target :: g
+  type(graph)             , target :: scell(3), selem(3)
+  type(graph)             , target :: rcell(4), relem(4)
+  type(relational_binding)         :: bnd
+  integer                          :: k
   integer                        :: nfail
 
   nfail = 0
@@ -76,10 +82,38 @@ program time_level_3
   a1   = derive_one_step_reach(tail, head)
   a2   = derive_two_step_reach(a1)
 
-  g = relational_graph('time', &
-       & [held_set(q), held_set(t), held_set(e)], &
-       & [held_relation(tail), held_relation(head), &
-       &  held_relation(a1), held_relation(a2)])
+  ! 'time': (S, P) as one sequence on each branch.
+  call g % declare()
+  do k = 1, 3
+     call scell(k) % declare()
+     call selem(k) % declare()
+  end do
+  do k = 1, 4
+     call rcell(k) % declare()
+     call relem(k) % declare()
+  end do
+
+  call bnd % bind_set(selem(1), q)
+  call bnd % bind_set(selem(2), t)
+  call bnd % bind_set(selem(3), e)
+  call bnd % bind_relation(relem(1), tail)
+  call bnd % bind_relation(relem(2), head)
+  call bnd % bind_relation(relem(3), a1)
+  call bnd % bind_relation(relem(4), a2)
+
+  do k = 1, 3
+     scell(k) % branch(1) = known_branch(selem(k))
+     if (k .lt. 3) scell(k) % branch(2) = &
+          & known_branch(scell(k + 1))
+  end do
+  do k = 1, 4
+     rcell(k) % branch(1) = known_branch(relem(k))
+     if (k .lt. 4) rcell(k) % branch(2) = &
+          & known_branch(rcell(k + 1))
+  end do
+
+  g % branch(1) = known_branch(scell(1))
+  g % branch(2) = known_branch(rcell(1))
 
   call check_ownership(nfail)
   call check_signature_closure(nfail)
@@ -100,13 +134,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(g % num_member_sets() .eq. 3, &
+    call report(num_member_sets(g) .eq. 3, &
          & "G_time owns three member sets", nfail)
-    call report(g % num_relations() .eq. 4, &
+    call report(num_relations(g) .eq. 4, &
          & "and four relations", nfail)
 
-    call report(g % holds_set(q) .and. g % holds_set(t) .and. &
-         &      g % holds_set(e), &
+    call report(holds_set(g, bnd, q) .and. holds_set(g, bnd, t) .and. &
+         &      holds_set(g, bnd, e), &
          & "it holds Q, T and E - both axes and the steps between " // &
          & "them, in one structure", nfail)
 
@@ -134,13 +168,13 @@ contains
     logical                        :: ok, found
 
     ok = .true.
-    do k = 1, g % num_relations()
-       r => g % relation_at(k)
+    do k = 1, num_relations(g)
+       r => relation_at(g, bnd, k)
        do slot = 1, r % arity()
           d = r % domain(slot)
           found = .false.
-          do s = 1, g % num_member_sets()
-             found = found .or. d % same_as(g % member_set_at(s))
+          do s = 1, num_member_sets(g)
+             found = found .or. d % same_as(member_set_at(g, bnd, s))
           end do
           ok = ok .and. found
        end do
@@ -192,24 +226,24 @@ contains
     logical                        :: named
 
     named = .false.
-    do k = 1, g % num_relations()
-       r => g % relation_at(k)
+    do k = 1, num_relations(g)
+       r => relation_at(g, bnd, k)
        do slot = 1, r % arity()
           d = r % domain(slot)
           named = named .or. d % same_as(q)
        end do
     end do
 
-    call report(g % holds_set(q) .and. .not. named, &
+    call report(holds_set(g, bnd, q) .and. .not. named, &
          & "Q IS OWNED AND NO RELATION NAMES IT - the container " // &
          & "validates relations against sets, never sets against " // &
          & "relations", nfail)
 
-    call report(.not. named .and. g % num_relations() .eq. 4, &
+    call report(.not. named .and. num_relations(g) .eq. 4, &
          & "and no relation was invented to attach it: a relational " // &
          & "structure need not be connected", nfail)
 
-    call report(g % holds_set(t) .and. .not. q % same_as(t) .and. &
+    call report(holds_set(g, bnd, t) .and. .not. q % same_as(t) .and. &
          &      .not. q % same_as(e), &
          & "both axes live in one structure, and neither has become " // &
          & "the other", nfail)
@@ -228,8 +262,8 @@ contains
     integer                  :: k
 
     owns_relation = .false.
-    do k = 1, g % num_relations()
-       held => g % relation_at(k)
+    do k = 1, num_relations(g)
+       held => relation_at(g, bnd, k)
        owns_relation = owns_relation .or. held % same_as(r)
     end do
 
@@ -245,8 +279,8 @@ contains
     integer                        :: k
 
     owned_runs = .false.
-    do k = 1, g % num_relations()
-       held => g % relation_at(k)
+    do k = 1, num_relations(g)
+       held => relation_at(g, bnd, k)
        if (held % same_as(selector)) then
           d = held % domain(1)
           owned_runs = d % same_as(from)
@@ -267,8 +301,8 @@ contains
     integer                  :: k
 
     holds_fact = .false.
-    do k = 1, g % num_relations()
-       held => g % relation_at(k)
+    do k = 1, num_relations(g)
+       held => relation_at(g, bnd, k)
        if (held % same_as(selector)) holds_fact = held % has(tuple)
     end do
 

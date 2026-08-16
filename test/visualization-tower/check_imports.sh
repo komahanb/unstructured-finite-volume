@@ -98,7 +98,7 @@ allowed_for() {
         # ---- L2: + relation algebra. Where D1, D2, D3 are DERIVED.
         level-2-relation-algebra) echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra" ;;
         # ---- L3: + the relational graph container
-        level-3-graph)     echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra graph_structure" ;;
+        level-3-graph)     echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra fractal_graph graph_relational_view" ;;
         # ---- L4: + the renderer, and NOTHING ELSE. No graph_profile:
         #          the level's conclusion is that the ordinary graph
         #          was not required, and the gate is what makes that
@@ -280,22 +280,23 @@ if [ "$1" = "--selftest" ]; then
     refuses level-0-carrier visualization_algebra_fixture
     refuses level-0-carrier graph_relation
     refuses level-0-carrier graph_binary_relation
-    refuses level-0-carrier graph_structure
+    refuses level-0-carrier graph_relational_view
 
     # L1 stands on L0's fixture and adds its own; L2's is still above it.
     permits level-1-relation visualization_relations_fixture
     permits level-1-relation graph_binary_relation
     refuses level-1-relation visualization_algebra_fixture
     refuses level-1-relation graph_relation_algebra
-    refuses level-1-relation graph_structure
+    refuses level-1-relation graph_relational_view
 
     # L2 earns the algebra; the container is still one rung up.
     permits level-2-relation-algebra visualization_algebra_fixture
     permits level-2-relation-algebra graph_relation_algebra
-    refuses level-2-relation-algebra graph_structure
+    refuses level-2-relation-algebra graph_relational_view
 
     # L3 earns the container.
-    permits level-3-graph graph_structure
+    permits level-3-graph fractal_graph
+    permits level-3-graph graph_relational_view
 
     # ---- STAGED: the renderer, earned at Level 4 and nowhere below.
     #      A tower that could draw before it could derive would never
@@ -305,7 +306,7 @@ if [ "$1" = "--selftest" ]; then
         refuses "$lvl" structural_renderer_fixture
     done
     for lvl in $before_three; do
-        refuses "$lvl" graph_structure
+        refuses "$lvl" graph_relational_view
     done
     for lvl in $before_two; do
         refuses "$lvl" graph_relation_algebra
@@ -361,10 +362,10 @@ if [ "$1" = "--selftest" ]; then
     refuses common/visualization_carriers_fixture.f90 visualization_assert
     refuses common/visualization_assert.f90 graph_carrier
     permits common/structural_renderer_fixture.f90 visualization_carriers_fixture
-    refuses common/structural_renderer_fixture.f90 graph_structure
+    refuses common/structural_renderer_fixture.f90 graph_relational_view
     refuses common/structural_renderer_fixture.f90 graph_profile
     refuses common/visualization_relations_fixture.f90 graph_relation_algebra
-    refuses common/visualization_algebra_fixture.f90 graph_structure
+    refuses common/visualization_algebra_fixture.f90 graph_relational_view
 
     # ---- L5 earns the field nucleus and its two coefficient
     #      fixtures. Nothing below it may reach any of them.

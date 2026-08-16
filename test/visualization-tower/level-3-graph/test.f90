@@ -54,7 +54,10 @@ program visualization_level_3
   use graph_relation       , only : relation
   use graph_binary_relation, only : csr_relation, binary_relation
   use graph_binary_relation, only : transposed_view, transpose_of
-  use graph_structure      , only : relational_graph, held_set, held_relation
+  use fractal_graph        , only : graph, known_branch, null_branch
+  use graph_relational_view, only : relational_binding, &
+       & num_member_sets, member_set_at, num_relations, relation_at, &
+       & holds_set
   use visualization_carriers_fixture , only : structural_carriers
   use visualization_relations_fixture, only : occurrences_of_a1
   use visualization_relations_fixture, only : occurrences_of_a2
@@ -68,7 +71,11 @@ program visualization_level_3
 
   type(counted_set)              :: x0, x1, x2, x3, e1, e2, e3
   type(csr_relation)     , target :: t1, h1, t2, h2, t3, h3
-  type(relational_graph) , target :: g
+  type(graph)             , target :: g
+  type(graph)             , target :: scell(7), selem(7)
+  type(graph)             , target :: rcell(6), relem(6)
+  type(relational_binding)         :: bnd
+  integer                          :: k
   integer                         :: nfail
 
   nfail = 0
@@ -82,12 +89,44 @@ program visualization_level_3
   call occurrences_of_a2(e2, x1, x2, t2, h2)
   call occurrences_of_a3(e3, x2, x3, t3, h3)
 
-  g = relational_graph('the operator chain A3 o A2 o A1', &
-       & [held_set(x0), held_set(x1), held_set(x2), held_set(x3), &
-       &  held_set(e1), held_set(e2), held_set(e3)], &
-       & [held_relation(t1), held_relation(h1), &
-       &  held_relation(t2), held_relation(h2), &
-       &  held_relation(t3), held_relation(h3)])
+  ! 'the operator chain A3 o A2 o A1': (S, P) as one sequence on each branch.
+  call g % declare()
+  do k = 1, 7
+     call scell(k) % declare()
+     call selem(k) % declare()
+  end do
+  do k = 1, 6
+     call rcell(k) % declare()
+     call relem(k) % declare()
+  end do
+
+  call bnd % bind_set(selem(1), x0)
+  call bnd % bind_set(selem(2), x1)
+  call bnd % bind_set(selem(3), x2)
+  call bnd % bind_set(selem(4), x3)
+  call bnd % bind_set(selem(5), e1)
+  call bnd % bind_set(selem(6), e2)
+  call bnd % bind_set(selem(7), e3)
+  call bnd % bind_relation(relem(1), t1)
+  call bnd % bind_relation(relem(2), h1)
+  call bnd % bind_relation(relem(3), t2)
+  call bnd % bind_relation(relem(4), h2)
+  call bnd % bind_relation(relem(5), t3)
+  call bnd % bind_relation(relem(6), h3)
+
+  do k = 1, 7
+     scell(k) % branch(1) = known_branch(selem(k))
+     if (k .lt. 7) scell(k) % branch(2) = &
+          & known_branch(scell(k + 1))
+  end do
+  do k = 1, 6
+     rcell(k) % branch(1) = known_branch(relem(k))
+     if (k .lt. 6) rcell(k) % branch(2) = &
+          & known_branch(rcell(k + 1))
+  end do
+
+  g % branch(1) = known_branch(scell(1))
+  g % branch(2) = known_branch(rcell(1))
 
   call check_the_seven_carriers_are_owned(nfail)
   call check_the_six_primitives_are_owned(nfail)
@@ -110,14 +149,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(g % num_member_sets() .eq. 7, &
+    call report(num_member_sets(g) .eq. 7, &
          & "the graph holds SEVEN member sets - four state carriers " // &
          & "and three occurrence carriers", nfail)
 
-    call report(g % holds_set(x0) .and. g % holds_set(x1) .and. &
-         &      g % holds_set(x2) .and. g % holds_set(x3) .and. &
-         &      g % holds_set(e1) .and. g % holds_set(e2) .and. &
-         &      g % holds_set(e3), &
+    call report(holds_set(g, bnd, x0) .and. holds_set(g, bnd, x1) .and. &
+         &      holds_set(g, bnd, x2) .and. holds_set(g, bnd, x3) .and. &
+         &      holds_set(g, bnd, e1) .and. holds_set(g, bnd, e2) .and. &
+         &      holds_set(g, bnd, e3), &
          & "and each of X0 X1 X2 X3 E1 E2 E3 answers same_as against " // &
          & "one of them: OWNERSHIP IS IDENTITY", nfail)
 
@@ -136,7 +175,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(g % num_relations() .eq. 6, &
+    call report(num_relations(g) .eq. 6, &
          & "the graph holds SIX relations - the two ends of each of " // &
          & "the three operators' occurrences", nfail)
 
@@ -168,11 +207,11 @@ contains
     logical                        :: closed
 
     closed = .true.
-    do k = 1, g % num_relations()
-       r => g % relation_at(k)
+    do k = 1, num_relations(g)
+       r => relation_at(g, bnd, k)
        do s = 1, r % arity()
           d = r % domain(s)
-          closed = closed .and. g % holds_set(d)
+          closed = closed .and. holds_set(g, bnd, d)
        end do
     end do
 
@@ -180,7 +219,7 @@ contains
          & "EVERY SLOT OF EVERY OWNED RELATION RESOLVES TO AN OWNED " // &
          & "CARRIER - the graph is closed under its own signatures", nfail)
 
-    call report(g % num_relations() .eq. 6 .and. all_binary(), &
+    call report(num_relations(g) .eq. 6 .and. all_binary(), &
          & "all twelve slots come from six binary relations, so the " // &
          & "closure covers twelve slot resolutions", nfail)
 
@@ -200,11 +239,11 @@ contains
     logical                    :: apart
 
     apart = .true.
-    do i = 1, g % num_member_sets()
-       a => g % member_set_at(i)
-       do j = 1, g % num_member_sets()
+    do i = 1, num_member_sets(g)
+       a => member_set_at(g, bnd, i)
+       do j = 1, num_member_sets(g)
           if (i .eq. j) cycle
-          b => g % member_set_at(j)
+          b => member_set_at(g, bnd, j)
           apart = apart .and. (.not. a % same_as(b))
        end do
     end do
@@ -213,8 +252,8 @@ contains
          & "no two OWNED carriers are the same domain - X0 X1 X2 X3 " // &
          & "stay distinct, and so do E1 E2 E3", nfail)
 
-    call report(.not. x1 % same_as(x2) .and. g % holds_set(x1) .and. &
-         &      g % holds_set(x2), &
+    call report(.not. x1 % same_as(x2) .and. holds_set(g, bnd, x1) .and. &
+         &      holds_set(g, bnd, x2), &
          & "the graph holds both three-member state carriers, and " // &
          & "still tells X1 from X2", nfail)
 
@@ -235,11 +274,11 @@ contains
     union_like = counted_set('V = X0 u X1 u X2 u X3', &
          &                   NX0 + NX1 + NX2 + NX3)
 
-    call report(.not. g % holds_set(union_like), &
+    call report(.not. holds_set(g, bnd, union_like), &
          & "a manufactured twelve-member vertex carrier IS NOT HELD - " // &
          & "the chain was not collapsed to make it renderable", nfail)
 
-    call report(g % num_member_sets() .eq. 7 .and. union_like % size() .eq. 12, &
+    call report(num_member_sets(g) .eq. 7 .and. union_like % size() .eq. 12, &
          & "the graph keeps seven typed domains where an ordinary " // &
          & "graph would want one untyped set of twelve", nfail)
 
@@ -261,8 +300,8 @@ contains
     logical :: any_dependency
 
     any_dependency = .false.
-    do k = 1, g % num_relations()
-       r => g % relation_at(k)
+    do k = 1, num_relations(g)
+       r => relation_at(g, bnd, k)
        any_dependency = any_dependency .or. runs_between_states(r)
     end do
 
@@ -354,8 +393,8 @@ contains
     integer                  :: k
 
     seat_of = 0
-    do k = 1, g % num_relations()
-       r => g % relation_at(k)
+    do k = 1, num_relations(g)
+       r => relation_at(g, bnd, k)
        if (r % same_as(selector)) then
           seat_of = k
           return
@@ -372,7 +411,7 @@ contains
     class(relation), pointer :: r
 
     rp => null()
-    r  => g % relation_at(seat_of(selector))
+    r  => relation_at(g, bnd, seat_of(selector))
     select type (r)
     class is (binary_relation)
        rp => r
@@ -390,7 +429,7 @@ contains
     want = [NX0, NX1, NX2, NX3, NE1, NE2, NE3]
     sizes_kept = .true.
     do k = 1, 7
-       c => g % member_set_at(k)
+       c => member_set_at(g, bnd, k)
        sizes_kept = sizes_kept .and. (c % size() .eq. want(k))
     end do
 
@@ -402,8 +441,8 @@ contains
     integer                  :: k
 
     all_binary = .true.
-    do k = 1, g % num_relations()
-       r => g % relation_at(k)
+    do k = 1, num_relations(g)
+       r => relation_at(g, bnd, k)
        all_binary = all_binary .and. (r % arity() .eq. 2)
     end do
 
@@ -415,8 +454,8 @@ contains
     integer                  :: k
 
     counted_occurrences = 0
-    do k = 1, g % num_relations()
-       r => g % relation_at(k)
+    do k = 1, num_relations(g)
+       r => relation_at(g, bnd, k)
        if (r % name() .eq. 'T1' .or. r % name() .eq. 'T2' .or. &
             & r % name() .eq. 'T3') then
           counted_occurrences = counted_occurrences + r % num_tuples()

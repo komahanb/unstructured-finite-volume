@@ -23,7 +23,7 @@ allowed_for() {
         level-0-carrier)          echo "derivative_assert graph_carrier" ;;
         level-1-relation)         echo "derivative_assert graph_carrier graph_relation" ;;
         level-2-relation-algebra) echo "derivative_assert graph_carrier graph_relation graph_relation_algebra" ;;
-        level-3-graph)            echo "derivative_assert graph_carrier graph_relation graph_relation_algebra graph_structure" ;;
+        level-3-graph)            echo "derivative_assert graph_carrier graph_relation graph_relation_algebra fractal_graph graph_relational_view" ;;
         level-4-graph-calculus)   echo "derivative_assert graph_carrier graph_relation graph_relation_algebra graph_structure graph_profile graph_algorithms fractal_graph graph_relational_view relational_fixture" ;;
         # level 5: primal values need domains, not graphs - and no
         # tangent/cotangent/seed type exists to be imported.

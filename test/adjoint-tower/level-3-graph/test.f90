@@ -39,7 +39,10 @@ program adjoint_level_3
   use graph_relation_algebra, only : compose_binary
   use graph_binary_relation , only : csr_relation, transposed_view, &
        &                             transpose_of, inclusion_of
-  use graph_structure, only : relational_graph, held_set, held_relation
+  use fractal_graph        , only : graph, known_branch, null_branch
+  use graph_relational_view, only : relational_binding, &
+       & num_member_sets, member_set_at, num_relations, relation_at, &
+       & holds_set
 
   implicit none
 
@@ -49,7 +52,11 @@ program adjoint_level_3
   type(csr_relation), target     :: inc_y, inc_z, inc_q, inc_p
   type(transposed_view)          :: inc_q_t, inc_p_t
   type(csr_relation)             :: jq, jp, fq, fp
-  type(relational_graph), target :: g
+  type(graph)             , target :: g
+  type(graph)             , target :: scell(6), selem(6)
+  type(graph)             , target :: rcell(5), relem(5)
+  type(relational_binding)         :: bnd
+  integer                          :: k
   integer                        :: table(2, 9)
   integer                        :: nfail
 
@@ -91,11 +98,42 @@ program adjoint_level_3
   fq = compose_binary(compose_binary(inc_z, dep), inc_q_t)
   fp = compose_binary(compose_binary(inc_z, dep), inc_p_t)
 
-  g = relational_graph('adjoint specimen', &
-       & [held_set(v), held_set(t), held_set(p_dom), held_set(q_dom), &
-       &  held_set(y_dom), held_set(z_dom)], &
-       & [held_relation(dep), held_relation(jq), held_relation(jp), &
-       &  held_relation(fq), held_relation(fp)])
+  ! 'adjoint specimen': (S, P) as one sequence on each branch.
+  call g % declare()
+  do k = 1, 6
+     call scell(k) % declare()
+     call selem(k) % declare()
+  end do
+  do k = 1, 5
+     call rcell(k) % declare()
+     call relem(k) % declare()
+  end do
+
+  call bnd % bind_set(selem(1), v)
+  call bnd % bind_set(selem(2), t)
+  call bnd % bind_set(selem(3), p_dom)
+  call bnd % bind_set(selem(4), q_dom)
+  call bnd % bind_set(selem(5), y_dom)
+  call bnd % bind_set(selem(6), z_dom)
+  call bnd % bind_relation(relem(1), dep)
+  call bnd % bind_relation(relem(2), jq)
+  call bnd % bind_relation(relem(3), jp)
+  call bnd % bind_relation(relem(4), fq)
+  call bnd % bind_relation(relem(5), fp)
+
+  do k = 1, 6
+     scell(k) % branch(1) = known_branch(selem(k))
+     if (k .lt. 6) scell(k) % branch(2) = &
+          & known_branch(scell(k + 1))
+  end do
+  do k = 1, 5
+     rcell(k) % branch(1) = known_branch(relem(k))
+     if (k .lt. 5) rcell(k) % branch(2) = &
+          & known_branch(rcell(k + 1))
+  end do
+
+  g % branch(1) = known_branch(scell(1))
+  g % branch(2) = known_branch(rcell(1))
 
   call check_ownership(nfail)
   call check_roles_are_citizens(nfail)
@@ -115,19 +153,19 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(g % num_member_sets() .eq. 6 .and. &
-         &      g % num_relations() .eq. 5, &
+    call report(num_member_sets(g) .eq. 6 .and. &
+         &      num_relations(g) .eq. 5, &
          & "the graph owns six member sets and five relations", nfail)
 
-    call report(g % holds_set(v) .and. g % holds_set(t), &
+    call report(holds_set(g, bnd, v) .and. holds_set(g, bnd, t), &
          & "the two parents are its own, by identity", nfail)
 
-    call report(graph_holds_relation(g, dep), &
+    call report(graph_holds_relation(g, bnd, dep), &
          & "the dependency source is owned", nfail)
-    call report(graph_holds_relation(g, jq) .and. &
-         &      graph_holds_relation(g, jp) .and. &
-         &      graph_holds_relation(g, fq) .and. &
-         &      graph_holds_relation(g, fp), &
+    call report(graph_holds_relation(g, bnd, jq) .and. &
+         &      graph_holds_relation(g, bnd, jp) .and. &
+         &      graph_holds_relation(g, bnd, fq) .and. &
+         &      graph_holds_relation(g, bnd, fp), &
          & "and so are all four derived blocks", nfail)
 
   end subroutine check_ownership
@@ -141,11 +179,11 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(g % holds_set(p_dom) .and. g % holds_set(q_dom) .and. &
-         &      g % holds_set(y_dom) .and. g % holds_set(z_dom), &
+    call report(holds_set(g, bnd, p_dom) .and. holds_set(g, bnd, q_dom) .and. &
+         &      holds_set(g, bnd, y_dom) .and. holds_set(g, bnd, z_dom), &
          & "all four role subdomains are seated as carriers", nfail)
 
-    call report(g % holds_set(q_dom) .and. g % holds_set(y_dom) .and. &
+    call report(holds_set(g, bnd, q_dom) .and. holds_set(g, bnd, y_dom) .and. &
          &      .not. q_dom % same_as(y_dom), &
          & "Q and Y sit side by side, still not one another", nfail)
 
@@ -164,8 +202,8 @@ contains
     class(member_set), allocatable :: dom
     integer                        :: k
 
-    do k = 1, g % num_relations()
-       rp => g % relation_at(k)
+    do k = 1, num_relations(g)
+       rp => relation_at(g, bnd, k)
        if (rp % same_as(jq)) then
           call report(rp % num_tuples() .eq. 4 .and. &
                &      rp % has([TGT_R1, VAR_U]) .and. &
@@ -203,11 +241,11 @@ contains
     logical                        :: ok
 
     ok = .true.
-    do k = 1, g % num_relations()
-       rp => g % relation_at(k)
+    do k = 1, num_relations(g)
+       rp => relation_at(g, bnd, k)
        do s = 1, rp % arity()
           dom = rp % domain(s)
-          ok = ok .and. g % holds_set(dom)
+          ok = ok .and. holds_set(g, bnd, dom)
        end do
     end do
     call report(ok, &
@@ -225,14 +263,32 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(relational_graph) :: g2
-    type(held_relation)    :: none(0)
+    type(graph)             , target :: g2
+    type(graph)             , target :: scell2(2), selem2(2)
+    type(relational_binding)         :: bnd2
+    integer                          :: k2
 
     call report(g % same_as(g), &
          & "the specimen graph is itself", nfail)
 
-    g2 = relational_graph('adjoint specimen again', &
-         & [held_set(v), held_set(t)], none)
+    ! 'adjoint specimen again': (S, P) as one sequence on each branch.
+    call g2 % declare()
+    do k2 = 1, 2
+       call scell2(k2) % declare()
+       call selem2(k2) % declare()
+    end do
+
+    call bnd2 % bind_set(selem2(1), v)
+    call bnd2 % bind_set(selem2(2), t)
+
+    do k2 = 1, 2
+       scell2(k2) % branch(1) = known_branch(selem2(k2))
+       if (k2 .lt. 2) scell2(k2) % branch(2) = &
+            & known_branch(scell2(k2 + 1))
+    end do
+
+    g2 % branch(1) = known_branch(scell2(1))
+    g2 % branch(2) = null_branch()
     call report(.not. g % same_as(g2), &
          & "and no identically stocked twin is it", nfail)
 
@@ -243,17 +299,18 @@ contains
   ! num_relations and relation_at, no convenience API.
   !===================================================================!
 
-  logical function graph_holds_relation(g, r)
+  logical function graph_holds_relation(g, b, r)
 
-    type(relational_graph), target, intent(in) :: g
-    class(relation)               , intent(in) :: r
+    type(graph)             , intent(in) :: g
+    type(relational_binding), intent(in) :: b
+    class(relation)         , intent(in) :: r
 
     class(relation), pointer :: rp
     integer                  :: k
 
     graph_holds_relation = .false.
-    do k = 1, g % num_relations()
-       rp => g % relation_at(k)
+    do k = 1, num_relations(g)
+       rp => relation_at(g, b, k)
        if (rp % same_as(r)) graph_holds_relation = .true.
     end do
 

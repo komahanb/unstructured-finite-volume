@@ -99,7 +99,7 @@ allowed_for() {
         # ---- L2: + relation algebra
         level-2-relation-algebra) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture graph_carrier graph_relation graph_relation_algebra graph_binary_relation" ;;
         # ---- L3: + the relational graph container
-        level-3-graph)     echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_structure" ;;
+        level-3-graph)     echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture graph_carrier graph_relation graph_relation_algebra graph_binary_relation fractal_graph graph_relational_view" ;;
         # ---- L4: + the profile and its algorithms. No marcher.
         level-4-graph-calculus) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_structure graph_profile graph_algorithms fractal_graph graph_relational_view relational_fixture" ;;
 
@@ -189,22 +189,23 @@ if [ "$1" = "--selftest" ]; then
     refuses level-0-carrier time_algebra_fixture
     refuses level-0-carrier graph_relation
     refuses level-0-carrier graph_binary_relation
-    refuses level-0-carrier graph_structure
+    refuses level-0-carrier graph_relational_view
 
     # L1 stands on L0's fixture and adds its own; L2's is still above it.
     permits level-1-relation time_carriers_fixture
     permits level-1-relation time_relations_fixture
     refuses level-1-relation time_algebra_fixture
-    refuses level-1-relation graph_structure
+    refuses level-1-relation graph_relational_view
 
     # L2 earns the algebra; the container is still one rung up.
     permits level-2-relation-algebra time_algebra_fixture
     permits level-2-relation-algebra graph_relation_algebra
-    refuses level-2-relation-algebra graph_structure
+    refuses level-2-relation-algebra graph_relational_view
 
     # L3 earns the container; the profile and its algorithms are not
     # its business.
-    permits level-3-graph graph_structure
+    permits level-3-graph fractal_graph
+    permits level-3-graph graph_relational_view
     refuses level-3-graph graph_profile
     refuses level-3-graph graph_algorithms
 

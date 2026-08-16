@@ -30,7 +30,10 @@ program learning_level_3
   use graph_relation , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_structure, only : relational_graph, held_set, held_relation
+  use fractal_graph        , only : graph, known_branch, null_branch
+  use graph_relational_view, only : relational_binding, &
+       & num_member_sets, member_set_at, num_relations, relation_at, &
+       & holds_set, relational_valid
 
   implicit none
 
@@ -39,7 +42,11 @@ program learning_level_3
   type(stored_relation)          :: flow, t_out3, t_in3
   type(stored_relation)          :: produces, consumes
   class(relation), allocatable   :: d
-  type(relational_graph), target :: g
+  type(graph)             , target :: g
+  type(graph)             , target :: scell(3), selem(3)
+  type(graph)             , target :: rcell(2), relem(2)
+  type(relational_binding)         :: bnd
+  integer                          :: k
   integer                        :: table(3, 6)
   integer                        :: nfail
 
@@ -71,15 +78,43 @@ program learning_level_3
   consumes = project_slots(t_in3 , [2, 1])
   d        = compose_binary(produces, consumes)
 
-  g = relational_graph('learning', &
-       & [held_set(v), held_set(o), held_set(p)], &
-       & [held_relation(flow), held_relation(d)])
+  ! 'learning': (S, P) as one sequence on each branch.
+  call g % declare()
+  do k = 1, 3
+     call scell(k) % declare()
+     call selem(k) % declare()
+  end do
+  do k = 1, 2
+     call rcell(k) % declare()
+     call relem(k) % declare()
+  end do
+
+  call bnd % bind_set(selem(1), v)
+  call bnd % bind_set(selem(2), o)
+  call bnd % bind_set(selem(3), p)
+  call bnd % bind_relation(relem(1), flow)
+  call bnd % bind_relation(relem(2), d)
+
+  do k = 1, 3
+     scell(k) % branch(1) = known_branch(selem(k))
+     if (k .lt. 3) scell(k) % branch(2) = &
+          & known_branch(scell(k + 1))
+  end do
+  do k = 1, 2
+     rcell(k) % branch(1) = known_branch(relem(k))
+     if (k .lt. 2) rcell(k) % branch(2) = &
+          & known_branch(rcell(k + 1))
+  end do
+
+  g % branch(1) = known_branch(scell(1))
+  g % branch(2) = known_branch(rcell(1))
 
   call check_ownership(nfail)
   call check_ternary_survives(nfail)
   call check_dependency_survives(nfail)
   call check_signature_closure(nfail)
   call check_graph_identity(nfail)
+  call check_validity(nfail)
 
   call verdict(nfail, "level 3")
 
@@ -95,17 +130,17 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(g % num_member_sets() .eq. 3 .and. &
-         &      g % num_relations() .eq. 2, &
+    call report(num_member_sets(g) .eq. 3 .and. &
+         &      num_relations(g) .eq. 2, &
          & "the graph owns three member sets and two relations", nfail)
 
-    call report(g % holds_set(v) .and. g % holds_set(o) .and. &
-         &      g % holds_set(p), &
+    call report(holds_set(g, bnd, v) .and. holds_set(g, bnd, o) .and. &
+         &      holds_set(g, bnd, p), &
          & "V, O and P are its own, by identity", nfail)
 
-    call report(graph_holds_relation(g, flow), &
+    call report(graph_holds_relation(g, bnd, flow), &
          & "the flow is owned, the same declared relation", nfail)
-    call report(graph_holds_relation(g, d), &
+    call report(graph_holds_relation(g, bnd, d), &
          & "and so is the derived dependency", nfail)
 
   end subroutine check_ownership
@@ -123,8 +158,8 @@ contains
     class(relation), pointer :: rp
     integer                  :: k
 
-    do k = 1, g % num_relations()
-       rp => g % relation_at(k)
+    do k = 1, num_relations(g)
+       rp => relation_at(g, bnd, k)
        if (rp % same_as(flow)) then
           call report(rp % arity() .eq. 3 .and. &
                &      rp % num_tuples() .eq. 6 .and. &
@@ -152,8 +187,8 @@ contains
     class(member_set), allocatable :: dom
     integer                        :: k
 
-    do k = 1, g % num_relations()
-       rp => g % relation_at(k)
+    do k = 1, num_relations(g)
+       rp => relation_at(g, bnd, k)
        if (rp % same_as(d)) then
           call report(rp % arity() .eq. 2 .and. &
                &      rp % num_tuples() .eq. 1 .and. &
@@ -186,11 +221,11 @@ contains
     logical                        :: ok
 
     ok = .true.
-    do k = 1, g % num_relations()
-       rp => g % relation_at(k)
+    do k = 1, num_relations(g)
+       rp => relation_at(g, bnd, k)
        do s = 1, rp % arity()
           dom = rp % domain(s)
-          ok = ok .and. g % holds_set(dom)
+          ok = ok .and. holds_set(g, bnd, dom)
        end do
     end do
     call report(ok, &
@@ -207,14 +242,33 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(relational_graph) :: g2
-    type(held_relation)    :: none(0)
+    type(graph)             , target :: g2
+    type(graph)             , target :: scell2(3), selem2(3)
+    type(relational_binding)         :: bnd2
+    integer                          :: k2
 
     call report(g % same_as(g), &
          & "the learning graph is itself", nfail)
 
-    g2 = relational_graph('learning again', &
-         & [held_set(v), held_set(o), held_set(p)], none)
+    ! 'learning again': (S, P) as one sequence on each branch.
+    call g2 % declare()
+    do k2 = 1, 3
+       call scell2(k2) % declare()
+       call selem2(k2) % declare()
+    end do
+
+    call bnd2 % bind_set(selem2(1), v)
+    call bnd2 % bind_set(selem2(2), o)
+    call bnd2 % bind_set(selem2(3), p)
+
+    do k2 = 1, 3
+       scell2(k2) % branch(1) = known_branch(selem2(k2))
+       if (k2 .lt. 3) scell2(k2) % branch(2) = &
+            & known_branch(scell2(k2 + 1))
+    end do
+
+    g2 % branch(1) = known_branch(scell2(1))
+    g2 % branch(2) = null_branch()
     call report(.not. g % same_as(g2), &
          & "and no identically stocked twin is it", nfail)
 
@@ -225,17 +279,78 @@ contains
   ! num_relations and relation_at, no convenience API.
   !===================================================================!
 
-  logical function graph_holds_relation(g, r)
+  !===================================================================!
+  ! Validity, ANSWERED. The specimen is valid; three malformations of
+  ! it are representable and invalid. These were refusals while a
+  ! constructor enforced them; a view over a graph it did not build
+  ! reports instead.
+  !
+  !     foreign   a relation over a carrier the graph does not hold
+  !     dupset    one domain seated twice
+  !     duprel    one relation seated twice
+  !===================================================================!
 
-    type(relational_graph), target, intent(in) :: g
-    class(relation)               , intent(in) :: r
+  subroutine check_validity(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(graph), target      :: h, scell(2), selem(2), rcell(2), relem(2)
+    type(relational_binding) :: b
+    type(stored_relation)    :: uses
+    integer                  :: j
+
+    call report(relational_valid(g, bnd), &
+         & "the specimen is a valid relational graph", nfail)
+
+    uses = stored_relation('uses', [o, v], &
+         & reshape([OP_PREDICT, SLOT_W], [2, 1]))
+
+    ! O alone, and a relation reaching V: a foreign domain.
+    call h % declare()
+    do j = 1, 2
+       call scell(j) % declare(); call selem(j) % declare()
+       call rcell(j) % declare(); call relem(j) % declare()
+    end do
+
+    call b % bind_set(selem(1), o)
+    call b % bind_set(selem(2), o)          ! and the same domain twice
+    call b % bind_relation(relem(1), uses)
+    call b % bind_relation(relem(2), uses)  ! and the same relation twice
+
+    scell(1) % branch(1) = known_branch(selem(1))
+    rcell(1) % branch(1) = known_branch(relem(1))
+    h % branch(1) = known_branch(scell(1))
+    h % branch(2) = known_branch(rcell(1))
+
+    call report(.not. relational_valid(h, b), &
+         & "a relation over a carrier the graph lacks: INVALID", nfail)
+
+    scell(1) % branch(2) = known_branch(scell(2))
+    scell(2) % branch(1) = known_branch(selem(2))
+    call report(.not. relational_valid(h, b), &
+         & "one domain seated twice: INVALID, S is a set", nfail)
+
+    rcell(1) % branch(2) = known_branch(rcell(2))
+    rcell(2) % branch(1) = known_branch(relem(2))
+    call report(.not. relational_valid(h, b), &
+         & "one relation seated twice: INVALID, P is a set", nfail)
+
+  end subroutine check_validity
+
+  !===================================================================!
+
+  logical function graph_holds_relation(g, b, r)
+
+    type(graph)             , intent(in) :: g
+    type(relational_binding), intent(in) :: b
+    class(relation)         , intent(in) :: r
 
     class(relation), pointer :: rp
     integer                  :: k
 
     graph_holds_relation = .false.
-    do k = 1, g % num_relations()
-       rp => g % relation_at(k)
+    do k = 1, num_relations(g)
+       rp => relation_at(g, b, k)
        if (rp % same_as(r)) graph_holds_relation = .true.
     end do
 

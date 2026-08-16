@@ -26,7 +26,10 @@ program test_graph_constitution
   use iso_fortran_env, only : dp => REAL64
   use graph_grammar  , only : graph, graph_field
   use graph_calculus , only : GRAPH_SIDE_VERTEX
-  use graph_carrier         , only : member_set, counted_set, subset_set
+  use graph_grammar  , only : set_graph
+  use graph_set_map  , only : set_map
+  use graph_label_map, only : label_map
+  use graph_inclusion_map, only : inclusion_map
   use class_graph_field  , only : field
   use class_graph_mesh   , only : mesh
   use class_robin_condition, only : robin_condition, robin, dirichlet, neumann
@@ -112,15 +115,24 @@ contains
 
     type(mesh) :: m
     type(robin_condition) :: bc
-    class(member_set), allocatable :: members
+
+    !----------------------------------------------------------------!
+    ! The tagged faces are carved, asked and dropped inside this
+    ! check, so their interpretation is local to it.
+    !----------------------------------------------------------------!
+
+    type(set_graph)     :: members
+    type(set_map)       :: sets
+    type(label_map)     :: labels
+    type(inclusion_map) :: inclusions
 
     m  = hand_mesh()
     bc = dirichlet('in', 5.0_dp)
 
-    call bc % faces(m, members)
-    call report(members % size() == 1, &
+    call bc % faces(m, sets, labels, inclusions, members)
+    call report(sets % size_of(members) == 1, &
          & 'the tag names one face', nfail)
-    call report(members % member(1) == 2, &
+    call report(sets % member_of(members, 1) == 2, &
          & 'and it is the second face', nfail)
 
   end subroutine check_tag_resolves_once
@@ -204,7 +216,7 @@ contains
     type(robin_condition) :: bc
     type(differential_operator) :: with_wall, without
     type(field) :: state
-    type(counted_set) :: cells
+    type(set_graph) :: cells
     class(graph_field), allocatable :: y
     real(dp), allocatable :: cin(:), bin(:), rows_with(:), rows_without(:)
     real(dp) :: c(3), b(3), expected
@@ -223,7 +235,7 @@ contains
     b = [0.0_dp, bin(1), 0.0_dp]
 
     cells = m % vertex_set()
-    state = field('q', cells)
+    state = field('q', cells, m % num_vertices())
     call state % set_real_vector([q1, q2])
 
     with_wall = vertex_differential_operator(order=2, coefficients=c, &
@@ -309,7 +321,7 @@ contains
     type(advection) :: flow
     type(balance) :: sums
     type(field) :: state
-    type(counted_set) :: cells
+    type(set_graph) :: cells
     class(graph_field), allocatable :: y
     real(dp), allocatable :: vn(:), c(:), got(:)
     real(dp), parameter :: q1 = 2.0_dp, q2 = 4.0_dp
@@ -320,7 +332,7 @@ contains
     area = 2.0_dp
 
     cells = m % vertex_set()
-    state = field('q', cells)
+    state = field('q', cells, m % num_vertices())
     call state % set_real_vector([q1, q2])
 
     flow = advection([1.5_dp, 0.0_dp, 0.0_dp])
@@ -393,7 +405,7 @@ contains
     op = diffusion_statement(m, conduction(1.7_dp), &
          & [dirichlet('in', 0.0_dp), dirichlet('out', 10.0_dp)])
 
-    call gm % attach(op, m, m % vertex_set())
+    call gm % attach(op, m, m % vertex_set(), m % num_vertices())
     gm % tolerance = 1.0d-12
 
     call gm % constant(g)
@@ -480,7 +492,7 @@ contains
     type(gmres) :: gm
     real(dp), allocatable :: g(:), rhs(:)
 
-    call gm % attach(op, m, m % vertex_set())
+    call gm % attach(op, m, m % vertex_set(), m % num_vertices())
     gm % tolerance      = 1.0d-12
     gm % max_iterations = 200
 

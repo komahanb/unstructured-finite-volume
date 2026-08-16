@@ -44,3 +44,4 @@ test/time-integration-tower/*/run.out
 test/visualization-tower/*/run
 test/visualization-tower/*/refusal
 test/visualization-tower/*/run.out
+test/graph-partition/run

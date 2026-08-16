@@ -32,6 +32,7 @@ program test_graph_carrier
   call check_structural_identity(nfail)
   call check_subsets(nfail)
   call check_embedding_order(nfail)
+  call check_declared_provenance(nfail)
   call check_empty_subset(nfail)
   call check_graph_hands_out_carriers(nfail)
 
@@ -286,6 +287,61 @@ contains
          & "no chain reaches a domain it was never carved from", nfail)
 
   end subroutine check_embedding_order
+
+  !===================================================================!
+  ! DECLARED PROVENANCE, isolated. The subobject order is decided by
+  ! WHERE A SUBSET WAS CARVED FROM, never by where its members happen
+  ! to fit.
+  !
+  ! A and B are extensionally identical - both 1..8 - and are two
+  ! domains. Every member of S belongs to B just as it belongs to A,
+  ! so an implementation deciding subobject status by
+  !
+  !     every member of S belongs to A
+  !
+  ! would answer S <= B, and would be wrong. This regression fixes
+  ! that law before any of it is re-rooted onto graph identity: the
+  ! inclusion is declared at construction and is not recoverable from
+  ! the two extensions.
+  !===================================================================!
+
+  subroutine check_declared_provenance(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(counted_set) :: a, b
+    type(subset_set)  :: s, t
+    integer           :: k
+    logical           :: fits
+
+    a = counted_set('A', 8)
+    b = counted_set('B', 8)
+    s = subset_set('S', a, [2, 5, 6])
+    t = subset_set('T', s, [5])
+
+    call report(.not. a % same_as(b), &
+         & "A and B are two domains, equal extensions notwithstanding", nfail)
+
+    ! Every member of S is a member of B: the trap is real, not hypothetical.
+    fits = .true.
+    do k = 1, s % size()
+       fits = fits .and. b % has(s % member(k))
+    end do
+    call report(fits, &
+         & "every member of S fits inside B - extensionally, S c-- B", nfail)
+
+    call report(s % is_subobject_of(s), "S <= S", nfail)
+    call report(s % is_subobject_of(a), "S <= A, where it was carved", nfail)
+    call report(.not. s % is_subobject_of(b), &
+         & "S is NOT <= B, though every member fits", nfail)
+
+    call report(t % is_subobject_of(t), "T <= T", nfail)
+    call report(t % is_subobject_of(s), "T <= S", nfail)
+    call report(t % is_subobject_of(a), "T <= A, transitively", nfail)
+    call report(.not. t % is_subobject_of(b), &
+         & "T is NOT <= B: no chain reaches it", nfail)
+
+  end subroutine check_declared_provenance
 
   !===================================================================!
   ! The empty subset is a valid domain: declared, counted at zero,

@@ -34,6 +34,7 @@ program test_graph_binary
   call check_fibre_views(nfail)
   call check_sparse_source(nfail)
   call check_inclusion(nfail)
+  call check_inclusion_provenance(nfail)
   call check_transpose_view(nfail)
   call check_involution_is_extensional(nfail)
 
@@ -260,6 +261,56 @@ contains
          & "an ambient member outside the subset has no preimage", nfail)
 
   end subroutine check_inclusion
+
+  !===================================================================!
+  ! WHAT THE INCLUSION'S TUPLES DO NOT SAY.
+  !
+  ! The extension of I_S is (s,s) for s in S, which is derivable from
+  ! S's own roster and carries no translation. The DECLARED AMBIENT is
+  ! carried by the SIGNATURE, and by nothing else.
+  !
+  ! Two ambients with identical extensions make the point exactly: two
+  ! subsets of the same members, carved from A and from B, have the
+  ! SAME TUPLES and DIFFERENT SIGNATURES. So the tuple extension may be
+  ! derived or discarded at will; the S -> A association may not.
+  !===================================================================!
+
+  subroutine check_inclusion_provenance(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(counted_set)              :: a, b
+    type(subset_set)               :: sa, sb
+    type(csr_relation)             :: ia, ib
+    class(member_set), allocatable :: d
+    integer, allocatable           :: ta(:,:), tb(:,:)
+
+    a  = counted_set('A', 8)
+    b  = counted_set('B', 8)
+    sa = subset_set('S in A', a, [2, 5, 6])
+    sb = subset_set('S in B', b, [2, 5, 6])
+
+    ia = inclusion_of(sa)
+    ib = inclusion_of(sb)
+
+    call ia % tuples(ta)
+    call ib % tuples(tb)
+
+    call report(size(ta, 1) .eq. size(tb, 1) .and. &
+         &      size(ta, 2) .eq. size(tb, 2) .and. all(ta .eq. tb), &
+         & "two inclusions into two ambients have identical tuples", nfail)
+
+    d = ia % domain(2)
+    call report(d % same_as(a) .and. .not. d % same_as(b), &
+         & "yet one names A as its ambient", nfail)
+    d = ib % domain(2)
+    call report(d % same_as(b) .and. .not. d % same_as(a), &
+         & "and the other names B", nfail)
+
+    call report(.not. ia % same_as(ib), &
+         & "so the ambient rides the signature, never the extension", nfail)
+
+  end subroutine check_inclusion_provenance
 
   !===================================================================!
   ! The transpose view: O(1) to make, nothing copied, every answer

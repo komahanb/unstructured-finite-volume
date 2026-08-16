@@ -6,6 +6,7 @@ graph_set_representation.o \
 graph_set_map.o \
 graph_set_view.o \
 graph_inclusion_map.o \
+graph_label_map.o \
 graph_epistemic_view.o \
 graph_carrier.o \
 graph_relation.o \

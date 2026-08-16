@@ -1,84 +1,26 @@
 !=====================================================================!
-! THE LEGACY ORDINARY-GRAPH COMPATIBILITY CONTRACT
+! THE ORDINARY GRAPH, AS A VIEW
 !
-! ONCE the ground level of the old stratification; now the legacy
-! vertex/edge compatibility contract of the relation-centered tower
-! (AGENTS.md). The NEW ground is the set modules; relations, algebra,
-! the relational graph, the interpretations and the field calculus
-! all live in their own level modules. What remains here is the
-! ordinary-graph vocabulary the old solvers still speak - retyped
-! onto the new ontology: a named graph set answers a set GRAPH, and
-! its interpretation belongs to whoever asked; a field's domain is a
-! set graph and a frozen count; the field abstraction itself is OWNED
-! by graph_field_calculus and only re-exported here for its remaining
-! consumers.
+! One reading of the kernel graph: the ordinary binary graph the old
+! solvers speak - vertices, edges, incidence, named sets,
+! neighbourhoods. It is a VIEW and not an ontology, and the module
+! name now says so where the type name still cannot.
+!
+! This module was carved out of graph_grammar, which had become the
+! one place everything legacy met. Nothing here is new: the contract
+! is moved verbatim, so that its consumers import the thing they
+! actually use and the compatibility module can be drained to
+! nothing (doc/final-codebase-cutover-plan.md, PR2).
+!
+! WHAT IT LENDS. One name: the abstract type. set_graph is imported
+! to spell the signatures below and is NOT re-exported - a consumer
+! wanting the kernel graph asks the kernel, which mints it. Importing
+! a name to write a declaration is not the same act as lending it on.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 !
-!                     WHERE THIS FILE STANDS
-!
-! The old stratification that began here is retired. The living
-! tower is the relation-centered one (AGENTS.md): carriers,
-! relations, algebra, the relational graph, its interpretations,
-! and the field calculus, each in its own module. This file keeps
-! only the ordinary-graph compatibility vocabulary the remaining
-! legacy citizens speak - and its answers are already retyped onto
-! the new ground:
-!
-!    named graph sets  ->  set graph identities
-!    full named sets   ->  the carrier itself, one stable identity
-!    carved sets       ->  a fresh identity, bound into the caller's
-!                          set / label / inclusion maps
-!    field domains     ->  a set graph and a frozen count
-!
-!=====================================================================!
-!
-!                         THE ADMISSION LAW
-!
-! Nothing enters this contract, at any level, except through four
-! rules:
-!
-!    ABSORPTION     a choice from a finite list (vertex or edge, sum
-!                   or max, real or complex) rides as an argument or
-!                   a constant, never as a type. A type is earned
-!                   only when the ROLE of an argument changes.
-!
-!    GENERATION     a question whose answer composes from other
-!                   answers earns no procedure. Only generators
-!                   enter; compositions are written at call sites.
-!
-!    COMMUTATION    two choices are independent axes only if applying
-!                   them in either order gives one result. If the
-!                   order matters they are one coupled concern and
-!                   are handled in one place.
-!
-!    INHABITATION   no abstract type without a concrete citizen that
-!                   answers every symbol meaningfully. Empty types
-!                   and dead procedures are structural defects.
-!
-! Under these rules the minimum is exactly the four roles below. A
-! fifth role always either absorbs into one of the four or forces
-! dead procedures somewhere. The census of this level: four roles,
-! fifty-five operation symbols.
-!
-!=====================================================================!
-!
-!                           THE FOUR ROLES
-!
-! Every citizen of every level is one of these, and each answers a
-! different question:
-!
-!    graph ............ structure     what is joined to what
-!    graph_field ...... value         what the members carry
-!    graph_operation .. verb within   how data becomes other data
-!    graph_transform .. verb between  how one graph becomes another
-!
-! A graph here is the ordinary reading: two finite domains joined by
-! tail and head. A domain is a set graph now, never an edgeless
-! graph; a field's domain is an identity and a count, full stop.
-!
-!=====================================================================!
+!                      WHAT A GRAPH IS MADE OF
 !
 !                      WHAT A GRAPH IS MADE OF
 !
@@ -97,34 +39,10 @@
 ! face, and this is how it is written without inventing an imaginary
 ! cell on the far side of the wall.
 !
+!
 !=====================================================================!
 !
-!                           THE THREE RULES
-!
-! Three questions come up over and over in the procedures below:
-! where does a value sit in a field, can a graph change after it is
-! built, and what does apply do to a buffer it is handed? Each has
-! one answer, fixed here, and the whole tower is written assuming it.
-!
-! WHERE A VALUE SITS. Suppose a domain lists three cells in the
-! order 7, 3, 11, and a field on that domain holds two components
-! per entry. The field keeps its values in that same order, with the
-! components of each entry side by side:
-!
-!        cell            7        7        3        3      ...
-!        component       1        2        1        2
-!                     +--------+--------+--------+--------+--
-!        values       |  v(1)  |  v(2)  |  v(3)  |  v(4)  |
-!                     +--------+--------+--------+--------+--
-!
-! So if a cell is the p-th entry of the domain, its component c is
-! the number at position
-!
-!        (p - 1) * num_components + c
-!
-! and anyone holding the flat vector finds any value by this formula
-! alone. Once the layout is fixed, degree counting and vector
-! numbering are one-line formulas, and a formula needs no procedure.
+!                        CAN A GRAPH CHANGE?
 !
 ! CAN A GRAPH CHANGE? No. Everything a graph holds - structure,
 ! tags, its relation to the whole it came from - goes in at
@@ -134,25 +52,19 @@
 ! a graph the same question twice and it gives the same answer twice,
 ! no matter what ran in between.
 !
-! WHAT apply DOES TO A LENT BUFFER. It writes the result into it and
-! never adds to what was there. The output argument is intent(inout)
-! for one reason only: a caller that already holds a buffer of the
-! right shape can lend it and save an allocation. Lending changes the
-! cost of the call, not its meaning.
-!
 !=====================================================================!
 
-module graph_grammar
-
-  use iso_fortran_env    , only : dp => REAL64
+module graph_ordinary_view
 
   !===================================================================!
   ! THE DOMAIN IS A GRAPH, AND ITS INTERPRETATION IS THE CALLER'S.
   !
   ! set_graph is the kernel's graph, renamed on import because the
   ! abstract type below already owns the word `graph` in this module.
-  ! The rename is the whole of the collision: one is the ontology, the
-  ! other is the legacy structure interface awaiting migration onto it.
+  ! That collision is the last piece of migration debt in this file,
+  ! and it is a PR3 question: the type wants a name of its own, and
+  ! renaming it reaches every declaration site, which is redesign and
+  ! not this phase.
   !
   ! A domain-producing symbol here answers WHICH set. Where the answer
   ! is a set the graph already holds, that is all it answers, and the
@@ -167,40 +79,17 @@ module graph_grammar
   use graph_set_map       , only : set_map
   use graph_label_map     , only : label_map
   use graph_inclusion_map , only : inclusion_map
-  use graph_field_calculus, only : graph_field
-  use graph_field_calculus, only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
-  use graph_field_calculus, only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
-  use graph_field_calculus, only : GRAPH_FIELD_CHARACTER
 
   implicit none
 
   private
 
   public :: graph
-  public :: graph_field
-  public :: graph_operation
-  public :: graph_transform
-
-  ! Re-exported so a consumer of this contract names the kernel graph
-  ! once, the same way, rather than each file inventing its own rename
-  ! for the collision this module already resolved.
-  public :: set_graph
-
-  public :: GRAPH_FIELD_INTEGER
-  public :: GRAPH_FIELD_REAL
-  public :: GRAPH_FIELD_COMPLEX
-  public :: GRAPH_FIELD_LOGICAL
-  public :: GRAPH_FIELD_CHARACTER
-
-  ! The kind of value a field holds. Five roads, one field: an
-  ! absorbed axis. Integer for a colouring or a part number, real for
-  ! the ordinary state, complex for a complex-step derivative,
-  ! logical for a mask, character for boundary and material names.
 
   !===================================================================!
   ! GRAPH. The reader of structure.
   !
-  ! Thirty-four symbols, all queries: identity, counts, incidence,
+  ! Thirty-six symbols, all queries: identity, counts, incidence,
   ! named sets, neighbourhoods, and the frame. A graph answers; it
   ! never acts. Algorithms act on it from the levels above, which is
   ! what keeps this contract small.
@@ -249,10 +138,15 @@ module graph_grammar
   !===================================================================!
 
   !===================================================================!
-  ! MIGRATION DEBT. This abstract type is named graph but is not the
-  ! graph ontology. The ontology is G=(B1,B2) in src/fractal_graph.f90;
-  ! what follows is a legacy interface awaiting migration to a view
-  ! over it. Do not present it as ontology, and do not extend it.
+  ! MIGRATION DEBT, AND WHAT IS LEFT OF IT. This abstract type is
+  ! named graph but is not the graph ontology. The ontology is
+  ! G=(B1,B2) in src/fractal_graph.f90; this is a view over it. The
+  ! module name has been fixed; the TYPE name has not, and that is the
+  ! whole of the remaining debt. Do not present it as ontology.
+  !
+  ! The line this note replaces said "do not extend it", which read
+  ! oddly beside class_graph, which does. It always meant: no NEW
+  ! concretion. The existing one is the contract's reason to exist.
   !===================================================================!
 
   type, abstract :: graph
@@ -312,8 +206,25 @@ module graph_grammar
      procedure(graph_from_vertex_interface), deferred :: outgoing_vertices
      procedure(graph_from_vertex_interface), deferred :: incoming_vertices
 
+     !----------------------------------------------------------------!
+     ! LEGACY PARTITION FRAME - MOVES IN PR3.
+     !
      ! The frame's relations: counts, ownership, and the index maps
-     ! both ways between a part and its whole.
+     ! both ways between a part and its whole. These eight are the
+     ! only bindings on this type that are not a view question. Read
+     ! for what they are, they are already spoken for elsewhere:
+     !
+     !     global_*_index    the EXTENSION of a subobject   set_map
+     !     part_*_index      the same map read backwards    set_map
+     !     has_part_relation, num_parts    provenance       inclusion_map
+     !     *_owner_part      an integer field on the set    a field
+     !
+     ! They are carried here UNCHANGED, and deliberately: moving them
+     ! in this phase would strand class_graph_partitioner and
+     ! class_graph_assembler, which are their only two consumers
+     ! outside the implementation. The six frame SETS above are NOT
+     ! part of this - they carve and bind, which a view may do.
+     !----------------------------------------------------------------!
      procedure(graph_count_interface)            , deferred :: num_parts
      procedure(graph_has_part_relation_interface), deferred :: has_part_relation
      procedure(graph_global_id_interface)        , deferred :: global_vertex_index
@@ -325,106 +236,7 @@ module graph_grammar
 
   end type graph
 
-  !===================================================================!
-  ! GRAPH_FIELD. The carrier of values.
-  !
-  ! A field is a function: values over a domain, and the domain is a
-  ! graph - a member set of some host. One value kind per field,
-  ! num_components values per entry, laid out by the formula in the
-  ! header.
-  !
-  !      field  ---get--->  [ v1 v2 v3 v4 ]  ---> a solver, a file
-  !                                               writer, an outside
-  !      field  <--set----  [ v1 v2 v3 v4 ]  <--- library; the answer
-  !                                               coming back
-  !
-  ! Fetch once, work in plain arrays where the arithmetic is free,
-  ! write back once. Scaling and adding are not graph theory and have
-  ! no procedures here on purpose. One get/set pair per value kind:
-  ! the five roads of one absorbed axis.
-  !
-  ! A field whose domain has ONE entry is a single number. Level 1
-  ! names that case the functional; nothing in this role depends on
-  ! the size of the domain, which is why the name can wait.
-  !
-  ! num_entries repeats the size of the domain. That repetition is a
-  ! priced convenience for call sites, recorded here so nobody
-  ! mistakes it for a generator.
-  !===================================================================!
-
-  !===================================================================!
-  ! GRAPH_OPERATION. The verb within a graph: data in, data out.
-  !
-  !      input_graph, input_data(:)  --- apply --->  output
-  !
-  ! Three symbols. name says what it is. domain says where the answer
-  ! lives: a member set of the input graph. apply does the work,
-  ! under the lent-buffer rule of the header.
-  !
-  ! A concrete operation is handed the fields it reads when it is
-  ! constructed - a coefficient, a measure, a geometry field arrives
-  ! as an argument the compiler checks, and apply fetches nothing by
-  ! name. This is what keeps the call structure visible from
-  ! construction to result.
-  !
-  ! The concretions of this role, arriving on level 1, split by
-  ! order: first-order kernels act on fields (a differential
-  ! operator, a balance), and the one higher-order citizen acts on
-  ! operators (the walk, a traversal whose kernel is not yet bound).
-  ! The maps that touch the one-entry domain - the reduction and the
-  ! broadcast - stand beside this role rather than under it, one
-  ! deliberate deviation, recorded where they are declared.
-  !===================================================================!
-
-  type, abstract :: graph_operation
-
-   contains
-
-     procedure(operation_name_interface)  , deferred :: name
-     procedure(operation_domain_interface), deferred :: domain
-     procedure(operation_apply_interface) , deferred :: apply
-
-  end type graph_operation
-
-  !===================================================================!
-  ! GRAPH_TRANSFORM. The verb between graphs.
-  !
-  ! Two symbols at this level, both admissibility questions: may this
-  ! transform act on that graph, and on that data riding on it. The
-  ! maps themselves are verbs, and verbs are level-1 concretions -
-  ! partition, assemble, coarsen, refine - each pair judged by its
-  ! round-trip law:
-  !
-  !      exact        assemble(partition(G)) = G      both ways
-  !      one-sided    coarsen(refine(G)) = G          one way only
-  !
-  ! The central law of the whole tower is a sentence about this role:
-  ! split a graph into parts, work on the parts, put the answer back
-  ! together.
-  !
-  !        G'  =  P^-1 ( A ( P ( G ) ) )
-  !
-  !             G            P(G)           A(P(G))          G'
-  !             |             |                |              |
-  !             +-----P------>+-------A------->+----P^-1----->+
-  !             |             |                |              |
-  !        whole graph    the parts      worked-on parts  whole again
-  !
-  ! P is a transform and nothing else. P^-1 is a transform and
-  ! nothing else. A is an operation and does neither.
-  !===================================================================!
-
-  type, abstract :: graph_transform
-
-   contains
-
-     procedure(transform_on_graph_interface), deferred :: defined_on_graph
-     procedure(transform_on_data_interface) , deferred :: defined_on_data
-
-  end type graph_transform
-
   abstract interface
-
      !===============================================================!
      ! Structure: identity, counts, incidence.
      !===============================================================!
@@ -601,61 +413,6 @@ module graph_grammar
        class(graph), intent(in) :: this
        integer, intent(in) :: index
      end function graph_owner_part_interface
-
-     !===============================================================!
-     ! Verb within: name, domain, apply.
-     !===============================================================!
-
-     pure function operation_name_interface(this) result(name)
-       import :: graph_operation
-       class(graph_operation), intent(in) :: this
-       character(len=:), allocatable :: name
-     end function operation_name_interface
-
-     !---------------------------------------------------------------!
-     ! Where the answer lives: WHICH set, and HOW MANY entries it has.
-     !
-     ! The count travels beside the identity because every caller of
-     ! this symbol wants exactly those two things - to check the
-     ! domain matches, and to size a field. Neither is a question
-     ! about membership, so neither needs a map, and an operation that
-     ! carries a domain carries an integer rather than an extension.
-     !---------------------------------------------------------------!
-
-     subroutine operation_domain_interface(this, input_graph, domain, &
-          & nentries)
-       import :: graph_operation, graph, set_graph
-       class(graph_operation), intent(in)  :: this
-       class(graph)          , intent(in)  :: input_graph
-       type(set_graph)       , intent(out) :: domain
-       integer               , intent(out) :: nentries
-     end subroutine operation_domain_interface
-
-     subroutine operation_apply_interface(this, input_graph, input_data, output)
-       import :: graph_operation, graph, graph_field
-       class(graph_operation), intent(in) :: this
-       class(graph), intent(in) :: input_graph
-       class(graph_field), intent(in), optional :: input_data(:)
-       class(graph_field), allocatable, intent(inout) :: output
-     end subroutine operation_apply_interface
-
-     !===============================================================!
-     ! Verb between: the two admissibility questions.
-     !===============================================================!
-
-     pure logical function transform_on_graph_interface(this, input_graph)
-       import :: graph_transform, graph
-       class(graph_transform), intent(in) :: this
-       class(graph), intent(in) :: input_graph
-     end function transform_on_graph_interface
-
-     logical function transform_on_data_interface(this, input_graph, input_data)
-       import :: graph_transform, graph, graph_field
-       class(graph_transform), intent(in) :: this
-       class(graph), intent(in) :: input_graph
-       class(graph_field), intent(in) :: input_data
-     end function transform_on_data_interface
-
   end interface
 
-end module graph_grammar
+end module graph_ordinary_view

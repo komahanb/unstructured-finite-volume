@@ -53,7 +53,7 @@ program learning_level_9
        &                             compose_binary
   use graph_profile  , only : directed_adjacency_view
   use graph_algorithms, only : topological_order
-  use graph_grammar  , only : graph_field
+  use graph_field_calculus, only : graph_field
   use class_graph    , only : stored_graph
   use class_graph_field, only : field
   use class_graph_gmres, only : gmres

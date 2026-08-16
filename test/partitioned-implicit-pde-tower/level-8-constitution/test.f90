@@ -37,7 +37,8 @@ program partitioned_pde_level_8
   use partitioned_pde_assert, only : report, verdict
   use partitioned_pde_assert, only : NV, Q_EXACT
   use fractal_graph        , only : set_graph => graph
-  use graph_grammar    , only : graph, graph_field
+  use graph_ordinary_view, only : graph
+  use graph_field_calculus, only : graph_field
   use class_graph      , only : stored_graph
   use class_graph_field, only : field
   use shifted_laplacian_fixture, only : shifted_laplacian

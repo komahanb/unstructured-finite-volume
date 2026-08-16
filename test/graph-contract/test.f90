@@ -17,7 +17,9 @@
 module nonlinear_sample_support
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_grammar      , only : graph_operation, graph, graph_field
+  use graph_operation_view, only : graph_operation
+  use graph_ordinary_view, only : graph
+  use graph_field_calculus, only : graph_field
   use graph_calculus     , only : GRAPH_SIDE_VERTEX
   ! An operation names a domain and counts it. It asks no membership,
   ! so it imports no map: identity and count is the whole of what an
@@ -202,9 +204,9 @@ program test_graph_contract
   use graph_set_map        , only : set_map
   use graph_label_map      , only : label_map
   use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use graph_grammar         , only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
-  use graph_grammar         , only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
-  use graph_grammar         , only : GRAPH_FIELD_CHARACTER
+  use graph_field_calculus  , only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
+  use graph_field_calculus  , only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
+  use graph_field_calculus  , only : GRAPH_FIELD_CHARACTER
   use graph_calculus        , only : GRAPH_SIDE_VERTEX
   use graph_calculus        , only : graph_functional
   use class_graph           , only : stored_graph
@@ -218,7 +220,8 @@ program test_graph_contract
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
   use class_graph_partitioner, only : PARTITION_BREADTH_FIRST, PARTITION_ADOPTED
   use class_graph_assembler , only : assembler
-  use graph_grammar         , only : graph, graph_field
+  use graph_ordinary_view   , only : graph
+  use graph_field_calculus  , only : graph_field
   use class_graph_coarsener , only : coarsener, COARSEN_PAIRWISE, COARSEN_ADOPTED
   use class_graph_refiner   , only : refiner
   use class_graph_differential_operator, only : differential_operator

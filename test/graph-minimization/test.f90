@@ -18,7 +18,9 @@
 module cubic_statement_fixture
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_grammar  , only : graph, graph_field, graph_operation
+  use graph_operation_view, only : graph_operation
+  use graph_ordinary_view, only : graph
+  use graph_field_calculus, only : graph_field
   use graph_calculus , only : GRAPH_SIDE_VERTEX
   ! An action names a domain and counts it. It asks no membership,
   ! so it holds no map: identity and count is the whole of it.
@@ -107,7 +109,7 @@ program test_graph_minimization
   use graph_set_map  , only : set_map
   use graph_label_map, only : label_map
   use graph_inclusion_map, only : inclusion_map
-  use graph_grammar  , only : graph
+  use graph_ordinary_view, only : graph
   use class_graph_mesh   , only : mesh
   use class_mesh_builder , only : mesh_from_gmsh
   use class_robin_condition, only : robin_condition, dirichlet

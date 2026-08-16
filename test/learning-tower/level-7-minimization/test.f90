@@ -47,7 +47,9 @@ module learning_residual_fixture
   use graph_set_map        , only : set_map
   use graph_set_representation, only : set_representation
   use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use graph_grammar    , only : graph, graph_field, graph_operation
+  use graph_operation_view, only : graph_operation
+  use graph_ordinary_view, only : graph
+  use graph_field_calculus, only : graph_field
   use class_graph_field, only : field
 
   implicit none
@@ -148,7 +150,7 @@ program learning_level_7
 
   use iso_fortran_env  , only : dp => REAL64
   use learning_assert  , only : report, verdict, SLOT_W
-  use graph_grammar    , only : graph_field
+  use graph_field_calculus, only : graph_field
   use class_graph_field, only : field
   use class_graph      , only : stored_graph
   use class_graph_gmres, only : gmres

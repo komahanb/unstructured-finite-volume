@@ -24,9 +24,10 @@ program test_graph_robustness
 
   use class_graph, only : stored_graph
   use iso_fortran_env, only : dp => REAL64
-  use graph_grammar  , only : graph, graph_field
+  use graph_ordinary_view, only : graph
+  use graph_field_calculus, only : graph_field
   use graph_calculus , only : GRAPH_SIDE_VERTEX
-  use graph_grammar  , only : set_graph
+  use fractal_graph  , only : set_graph => graph
   use class_graph_field  , only : field
   use class_graph_mesh   , only : mesh
   use class_graph_differential_operator, only : edge_differential_operator

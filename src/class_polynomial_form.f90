@@ -9,7 +9,7 @@
 module class_polynomial_form
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_grammar      , only : set_graph
+  use fractal_graph      , only : set_graph => graph
   use graph_forms        , only : form
 
   implicit none

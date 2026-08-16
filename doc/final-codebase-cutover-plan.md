@@ -43,12 +43,22 @@ consumers; none can be harvested by finding an orphan.
     core                       3   the kernel, and the laws every
                                    identified citizen draws on
     map                        3   identity -> answer, stored outside
-    view                       6   an interpretation; stores nothing
+    view                       7   an interpretation; stores nothing
     algorithm                  7   acts on structure, is not structure
     representation            11   how something is stored HERE
     system                    25   PDE, solve, discretization, statement
     legacy-compatibility       8   the ordinary-graph layer to retire
     dead                       0   (empty, and proven so)
+
+The counts are as measured for PR1, over 63 modules. PR2 has since
+carved two modules out of `graph_grammar` and deleted it:
+
+    + graph_ordinary_view      view
+    + graph_operation_view     view
+    - graph_grammar            legacy-compatibility
+
+so `view` is 8, `legacy-compatibility` is 7, and the total is 64. No
+module has changed bucket.
 
 ### core — 3
 
@@ -77,7 +87,7 @@ consumers; none can be harvested by finding an orphan.
 These three are already exactly what the target calls maps. No phase
 below moves them.
 
-### view — 6
+### view — 8 (6 at PR1, plus the two carved from `graph_grammar`)
 
 | module | reads the graph as | publics |
 |---|---|---|
@@ -87,6 +97,8 @@ below moves them.
 | `graph_epistemic_view` | \((Q,R)\) — data and residual | `has_data`, `data_of`, `residual_of` |
 | `graph_profile` | the ordinary directed graph as a **schema over two relations** \(T,H \subseteq E\times V\) | `ordinary_graph_view`, `directed_adjacency_view` |
 | `graph_field_calculus` | a domain carrying values | `graph_field`, the five `GRAPH_FIELD_*` kinds, `set_graph` |
+| `graph_ordinary_view` | the ordinary binary graph — vertices, edges, incidence, named sets, neighbourhoods | `graph` (abstract). **Added by PR2**, carved from `graph_grammar`; carries the legacy partition frame, marked, until PR3 |
+| `graph_operation_view` | the two verbs — within a graph, and between graphs | `graph_operation`, `graph_transform` (abstract). **Added by PR2**; the last of `graph_grammar` |
 
 ### algorithm — 7
 
@@ -124,17 +136,25 @@ concretions: graph-to-graph verbs with no PDE semantics of their own.
 `class_form_pruner`, `class_fitted_balance`, `class_diffusion_statement`,
 `class_conduction`, `class_advection`, `class_robin_condition`.
 
-### legacy-compatibility — 8
+### legacy-compatibility — 7 (8 at PR1, less `graph_grammar`)
 
-`graph_grammar`, `graph_calculus`, `class_graph`, `class_graph_mesh`,
-`interface_graph`, `class_stored_graph`, `class_mesh`,
-`class_mesh_builder`. Each has its own ledger entry in §4.
+`graph_calculus`, `class_graph`, `class_graph_mesh`, `interface_graph`,
+`class_stored_graph`, `class_mesh`, `class_mesh_builder`. Each has its
+own ledger entry in §4.
+
+~~`graph_grammar`~~ — **deleted in PR2**, once `use graph_grammar`
+reached zero. It is the first module the cutover has retired, and it was
+retired the way §1 says every deletion must be: by rewriting its
+consumers until nothing imported it, never by finding it orphaned.
 
 ---
 
 ## 3. Six findings, four of which correct the plan
 
 ### 3.1 `graph_grammar` is 54% re-export
+
+*(The reading that opened PR2. It has since been acted on — §6 measures
+what is left.)*
 
 Every `use graph_grammar, only :` clause in `src/` and `test/` was tallied
 by symbol. 183 symbol-imports across 68 files:
@@ -363,15 +383,19 @@ discovered during it.
 
 ## 5. What the evidence permits each remaining phase to do
 
-    PR2  graph_grammar
-         |-- FIRST, alone:  redirect the 99 re-export imports
-         |                  (graph_field, set_graph, GRAPH_FIELD_*)
-         |                  -> graph_field_calculus / fractal_graph
-         |-- THEN:          graph_transform_view      1 consumer
-         |-- THEN:          graph_operation_view     24 imports
-         |-- LAST:          graph_ordinary_view      59 imports, and it
-         |                  carries the frame UNCHANGED (finding 3.3)
-         `-- graph_calculus follows, it does not lead (finding 3.6)
+    PR2  graph_grammar                                    [in progress]
+         |-- DONE:  redirect the 99 re-export imports
+         |          (graph_field, set_graph, GRAPH_FIELD_*)
+         |          -> graph_field_calculus / fractal_graph
+         |-- DONE:  measure what is left, and classify it   (6.1, 6.2)
+         |-- DONE:  graph_ordinary_view, 59 imports, frame carried
+         |          UNCHANGED and marked                    (6.4)
+         `-- DONE:  graph_operation_view, holding BOTH verbs. The
+                    measurement said one commit, and the ruling said
+                    one MODULE: a transform is a graph-to-graph
+                    operation contract, and two modules would have been
+                    ceremony. graph_grammar reached zero and was
+                    DELETED.                                    (6.5)
 
     PR3  the frame leaves the ordinary view: inclusion_map + set_map +
          an owner field. Only then can class_graph become
@@ -395,14 +419,163 @@ discovered during it.
 
 ---
 
-## 6. Verification record
+## 6. PR2 measurement, after the re-exports were redirected
 
-Taken on the tree this document's parent commit produces — master plus
-the benchmark repair — with one clean rebuild per suite:
+Taken after the first draught (`graph_grammar` lends no name it did not
+define). Every remaining symbol is classified into the five categories
+the phase named.
 
-    32 of 32 suites PASS, 0 FAIL
+### 6.1 What is left, and where each symbol goes
 
-The reading survives either merge order, because this document adds no
-code, changes no import, and is the only thing in its own commit.
+| symbol | files | src | test | successor |
+|---|---|---|---|---|
+| `graph` | 57 | 21 | 36 | `graph_ordinary_view`, carrying the frame marked |
+| `graph_operation` | 25 | 9 | 16 | `graph_operation_view` |
+| `graph_transform` | 1 | 1 | 0 | `graph_transform_view` |
+| **true legacy forwarding** | **0** | **0** | **0** | — nothing left to forward |
+
+**The fifth category is empty, and that is the result.** Before the
+redirect, `graph_grammar` was 54% a forwarding shell. It is now 0%: all
+three remaining symbols are abstract types the module itself defines. It
+is no longer a shell to drain but three contracts awaiting three homes,
+and each can leave in its own commit.
+
+58 files still import it, down from 68. The ten that left named nothing
+but re-exports.
+
+*(§6.4 records what happened when the first of the three left.)*
+
+### 6.2 The frame's real reach is eight files, not fifty-eight
+
+Every call site of the 36 deferred bindings was measured across all 58
+consumers. The eight frame relations — the bindings PR1 §3.3 found are
+not a view question — are named in **8 files**, and only three of them
+in `src/`:
+
+    src/class_graph.f90              all eight        IMPLEMENTS them
+    src/class_graph_assembler.f90    six             num_parts, has_part_relation,
+    |                                                global_*_index, *_owner_part
+    src/class_graph_partitioner.f90  two             global_vertex_index,
+    |                                                global_edge_index
+    test/graph-contract               five
+    test/graph-partition              one
+    partitioned-pde L4 / L5 / L6      six / one / one
+
+    50 of 58 consumers touch no frame binding at all.
+
+The six *frame sets* (`owned_`/`borrowed_`/`overlap_` vertices and edges)
+are named in four files. They are carve-and-bind, which is an allowed
+view capability, so they are **not** part of the PR3 move; only the eight
+relations are.
+
+This narrows PR3 sharply. Rehoming the frame is a change to one
+implementer and **two** consuming algorithms, not to the fifty-eight
+files that speak the ordinary graph.
+
+### 6.3 The one clean seam
+
+`test/visualization-tower/common/production_discretization_fixture.f90`
+is the only consumer that imports `graph_operation` without also naming
+`graph`. Every other operation consumer needs both, so
+`graph_operation_view` cannot be split from `graph_ordinary_view` by
+import surgery alone — the `apply` interface is written in `class(graph)`
+and will import it from wherever the ordinary view lands.
+
+`graph_transform`'s single consumer (`graph_calculus`) remains the
+smallest boundary in the cutover.
+
+### 6.4 After the ordinary view left
+
+`graph_ordinary_view` now holds the abstract `graph`: 36 deferred
+bindings and the 13 interfaces they name, moved verbatim. The eight
+frame relations are carried **unchanged** and marked
+
+    LEGACY PARTITION FRAME - MOVES IN PR3
+
+with the successor for each written beside it. The six frame *sets* are
+not marked, because §6.2 measured them as carve-and-bind, which a view
+may do. `class_graph`, which implements the contract, changed its import
+and nothing else — no rename, no frame move, both out of scope here.
+
+What is left of `graph_grammar`:
+
+    symbol            files  src  test   successor
+    ----------------  -----  ---  ----   ---------------------------
+    graph_operation      25    9    16   graph_operation_view
+    graph_transform       1    1     0   graph_transform_view
+
+    68 files -> 58 -> 25.  Two contracts, one module, no re-exports.
+
+**The remaining split is a two-line decision, not two phases.** With the
+ordinary view gone there is nothing left in `graph_grammar` to
+disentangle the two verbs from: they share a file and nothing else. Both
+are already written against `graph` imported from the view. Whoever takes
+them can move both in one commit and delete the module in the same
+breath, or leave them together under a truer name — that is a naming
+question, and it no longer has a dependency in it.
+
+The one thing PR2 did **not** resolve, and deliberately: the abstract
+type is still called `graph`, which is why `set_graph => graph` is still
+written at every door. The module name now says view; the type name does
+not. Renaming it reaches every `class(graph)`, `type(graph)`,
+`extends(graph)` and `import ::` site — redesign, and PR3's to make.
+
+### 6.5 The grammar is deleted
+
+`graph_operation_view` holds `graph_operation` and `graph_transform`
+together, and that is a ruling, not an oversight. A transform *is* a
+graph-to-graph operation contract; the two are named in the same files,
+written against the same three imported names, and after the ordinary
+view left there was nothing to disentangle them from. Two modules would
+have been ceremony.
+
+    graph_grammar, over PR2
+    ---------------------------------------------------------------
+    68 files  ->  58  ->  25  ->  0        and then deleted
+
+    what it held                where it went
+    --------------------------  -----------------------------------
+    graph_field, GRAPH_FIELD_*  graph_field_calculus  (commit 1)
+    set_graph                   fractal_graph         (commit 1)
+    graph                       graph_ordinary_view   (commit 3)
+    graph_operation             graph_operation_view  (commit 4)
+    graph_transform             graph_operation_view  (commit 4)
+
+Prose is not imported, so nothing forced its survival — but four blocks
+of tower law lived only in that file's header and would have died with
+it. They went where their subject went:
+
+    WHAT A GRAPH IS MADE OF      -> graph_ordinary_view
+    CAN A GRAPH CHANGE?          -> graph_ordinary_view
+    THE ADMISSION LAW            -> graph_operation_view
+    WHAT apply DOES TO A BUFFER  -> graph_operation_view
+    THE FOUR ROLES               -> graph_operation_view, restated as
+                                    a map of where each role now lives
+
+One block was NOT carried: `GRAPH_FIELD. The carrier of values.`
+`graph_field_calculus` already states the same shape invariant and the
+same interleaving formula, so carrying it would have made two homes for
+one law. That module's own header claimed the grammar "now re-exports
+them" — no longer true after commit 1, and false in a stronger sense
+now, so it says what is true instead.
+
+**This is the cutover's first deleted module**, and it was earned the
+way §1 requires: consumers rewritten until nothing imported it.
+
+---
+
+## 7. Verification record
+
+One clean rebuild per suite, at every commit recorded here:
+
+    inventory (PR1)          32 of 32 suites PASS, 0 FAIL
+    re-export redirect       32 of 32 suites PASS, 0 FAIL
+    graph_ordinary_view      32 of 32 suites PASS, 0 FAIL
+    graph_grammar deleted    32 of 32 suites PASS, 0 FAIL
+
+Seven tower import gates were re-asserted, not relaxed: a level that read
+the field through the grammar is granted `graph_field_calculus` by name,
+and adjoint level 9, which no longer imports `graph_grammar` at all, had
+its grant withdrawn.
 
 `src/fractal_graph.f90` is byte-identical to master.

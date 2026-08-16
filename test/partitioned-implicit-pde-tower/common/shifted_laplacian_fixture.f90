@@ -39,8 +39,10 @@
 module shifted_laplacian_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_grammar    , only : set_graph
-  use graph_grammar    , only : graph, graph_field, graph_operation
+  use fractal_graph    , only : set_graph => graph
+  use graph_operation_view, only : graph_operation
+  use graph_ordinary_view, only : graph
+  use graph_field_calculus, only : graph_field
   use class_graph_field, only : field
   use class_graph_differential_operator, only : differential_operator, &
        &                                        laplacian

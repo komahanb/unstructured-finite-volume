@@ -30,9 +30,10 @@
 ! from holding N copies of its extension.
 !
 ! This module is the REHOMED field ontology: the one abstract
-! graph_field and its value-kind constants, moved here from the old
-! grammar, which now re-exports them for its remaining consumers
-! but no longer owns them. One abstract field, one concrete field
+! graph_field and its value-kind constants. They came from the old
+! grammar, which re-exported them for a while and was drained and
+! deleted in PR2; every consumer now asks here, which is where they
+! are defined. One abstract field, one concrete field
 ! (class_graph_field), before and after the move.
 !
 ! THE SHAPE INVARIANT, now that the domain is mathematically real:

@@ -38,7 +38,7 @@ program visualization_level_9
   use graph_label_map      , only : label_map
   use graph_relation       , only : relation
   use graph_binary_relation, only : csr_relation
-  use graph_grammar        , only : graph
+  use graph_ordinary_view  , only : graph
   use class_graph          , only : stored_graph
   use class_graph_field    , only : field
   use class_graph_stencil  , only : stencil_operator

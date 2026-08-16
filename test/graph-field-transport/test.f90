@@ -21,13 +21,14 @@
 program test_graph_field_transport
 
   use iso_fortran_env        , only : dp => REAL64
-  use graph_grammar           , only : set_graph
+  use fractal_graph           , only : set_graph => graph
   use graph_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use graph_set_map           , only : set_map
   use graph_label_map         , only : label_map
   use graph_inclusion_map     , only : inclusion_map, declared_subobject
-  use graph_grammar          , only : graph, graph_field
+  use graph_ordinary_view    , only : graph
+  use graph_field_calculus   , only : graph_field
   use class_graph            , only : stored_graph
   use class_graph_field      , only : field
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR

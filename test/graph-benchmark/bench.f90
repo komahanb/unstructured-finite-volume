@@ -23,7 +23,8 @@
 program bench_graph_traversal
 
   use iso_fortran_env        , only : dp => REAL64, int64
-  use graph_grammar          , only : graph, graph_field
+  use graph_ordinary_view    , only : graph
+  use graph_field_calculus   , only : graph_field
   use fractal_graph          , only : set_graph => graph
   use graph_set_representation, only : counted_set_representation
   use graph_set_map          , only : set_map

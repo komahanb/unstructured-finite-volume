@@ -40,13 +40,13 @@ allowed_for() {
         # level 7: the ordinary minimization machinery and the legacy
         # operation-host compatibility it still rides; no constitution,
         # no statement, no flow relation, no operator meanings.
-        level-7-minimization)    echo "calculator_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map graph_grammar graph_field_calculus class_graph_field class_graph graph_minimization class_graph_gmres affine_residual_fixture" ;;
+        level-7-minimization)    echo "calculator_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map graph_operation_view graph_ordinary_view graph_field_calculus class_graph_field class_graph graph_minimization class_graph_gmres affine_residual_fixture" ;;
         # level 8: constitution binds meaning to domains, relations
         # and fields - no solver, no graph host, no statement.
         level-8-constitution)    echo "calculator_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map graph_relation graph_relation_algebra class_graph_field arithmetic_constitution_fixture" ;;
         # level 9: the composition rung - everything the statement
         # SELECTS, and nothing it would have to invent.
-        level-9-statement)       echo "calculator_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map graph_relation graph_relation_algebra graph_field_calculus class_graph_field graph_grammar class_graph graph_minimization class_graph_gmres arithmetic_constitution_fixture constituted_residual_fixture fractal_graph graph_relational_view" ;;
+        level-9-statement)       echo "calculator_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map graph_relation graph_relation_algebra graph_field_calculus class_graph_field graph_operation_view graph_ordinary_view class_graph graph_minimization class_graph_gmres arithmetic_constitution_fixture constituted_residual_fixture fractal_graph graph_relational_view" ;;
         # level 5: a field needs a domain, never a graph container.
         level-5-field-calculus)  echo "calculator_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map graph_field_calculus class_graph_field" ;;
         *)                       echo "__no_allowlist__" ;;

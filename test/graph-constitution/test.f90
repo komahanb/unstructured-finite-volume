@@ -24,9 +24,10 @@
 program test_graph_constitution
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_grammar  , only : graph, graph_field
+  use graph_ordinary_view, only : graph
+  use graph_field_calculus, only : graph_field
   use graph_calculus , only : GRAPH_SIDE_VERTEX
-  use graph_grammar  , only : set_graph
+  use fractal_graph  , only : set_graph => graph
   use graph_set_map  , only : set_map
   use graph_label_map, only : label_map
   use graph_inclusion_map, only : inclusion_map

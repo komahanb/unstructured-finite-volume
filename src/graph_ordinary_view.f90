@@ -108,8 +108,11 @@ module graph_ordinary_view
   ! named graph but is not the graph ontology. The ontology is
   ! G=(B1,B2) in src/fractal_graph.f90; this is a view over it. The
   ! module name has been fixed; the TYPE name has not, and that is the
-  ! whole of the remaining debt. Do not present it as ontology, and do
-  ! not extend it.
+  ! whole of the remaining debt. Do not present it as ontology.
+  !
+  ! The line this note replaces said "do not extend it", which read
+  ! oddly beside class_graph, which does. It always meant: no NEW
+  ! concretion. The existing one is the contract's reason to exist.
   !===================================================================!
 
   type, abstract :: graph

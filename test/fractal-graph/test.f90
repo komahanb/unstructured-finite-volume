@@ -1,9 +1,13 @@
 !=====================================================================!
 ! KERNEL AND VIEW TESTS
 !
-! A-H are the required constructions; I and J are the evidence for the
-! realization-model comparison. One graph type throughout; no subtype
-! of graph is declared anywhere below.
+! A-H are the required constructions, INV the invariant closure, I and
+! J the evidence for the realization-model comparison. One graph type
+! throughout; no subtype of graph is declared anywhere below.
+!
+! Navigation past one function reference is not a data-ref in Fortran,
+! so a traversal deeper than one level binds a pointer or an ASSOCIATE
+! name. Both forms appear below.
 !
 ! Lifetime discipline: every graph is declared TARGET in the scope
 ! that owns it, and no procedure returns a pointer to a graph it
@@ -36,12 +40,12 @@ program test
     call b % declare()
 
     call check('A  (NULL,NULL) holds by default initialization', &
-         & a % branch(1) % status .eq. GRAPH_NULL .and. &
-         & a % branch(2) % status .eq. GRAPH_NULL)
+         & a % branch(1) % status() .eq. GRAPH_NULL .and. &
+         & a % branch(2) % status() .eq. GRAPH_NULL)
     call check('A  a same_as a', a % same_as(a))
     call check('A  a /= b although both are (NULL,NULL)', .not. a % same_as(b))
-    call check('A  NULL implies .not. associated(known)', &
-         & .not. associated(a % branch(1) % known))
+    call check('A  NULL implies .not. associated(known())', &
+         & .not. associated(a % branch(1) % known()))
 
   end block atom_block
 
@@ -51,7 +55,8 @@ program test
 
   sharing_block: block
 
-    type(graph), target :: a, b
+    type(graph), target  :: a, b
+    type(graph), pointer :: x, y
 
     call a % declare()
     call b % declare()
@@ -59,15 +64,18 @@ program test
     a % branch(1) = known_branch(b)
     a % branch(2) = known_branch(b)
 
-    call check('B  associated(a%branch(1)%known, a%branch(2)%known)', &
-         & associated(a % branch(1) % known, a % branch(2) % known))
-    call check('B  a%branch(1)%known same_as a%branch(2)%known', &
-         & a % branch(1) % known % same_as(a % branch(2) % known))
+    call check('B  associated(a%branch(1)%known(), a%branch(2)%known())', &
+         & associated(a % branch(1) % known(), a % branch(2) % known()))
+
+    x => a % branch(1) % known()
+    y => a % branch(2) % known()
+    call check('B  a%branch(1)%known() same_as a%branch(2)%known() same_as b', &
+         & x % same_as(b) .and. y % same_as(b))
 
     b % branch(1) = unknown_branch()
     call check('B  a change to b is observed on both branches: no copy', &
-         & a % branch(1) % known % branch(1) % status .eq. GRAPH_UNKNOWN .and. &
-         & a % branch(2) % known % branch(1) % status .eq. GRAPH_UNKNOWN)
+         & x % branch(1) % status() .eq. GRAPH_UNKNOWN .and. &
+         & y % branch(1) % status() .eq. GRAPH_UNKNOWN)
 
   end block sharing_block
 
@@ -77,7 +85,8 @@ program test
 
   cycle_block: block
 
-    type(graph), target :: a, b
+    type(graph), target  :: a, b
+    type(graph), pointer :: x, y
 
     call a % declare()
     call b % declare()
@@ -85,14 +94,74 @@ program test
     a % branch(1) = known_branch(b)
     b % branch(1) = known_branch(a)
 
-    call check('C  a%branch(1)%known same_as b', a % branch(1) % known % same_as(b))
-    call check('C  b%branch(1)%known same_as a', b % branch(1) % known % same_as(a))
-    call check('C  a%branch(1)%known%branch(1)%known same_as a', &
-         & a % branch(1) % known % branch(1) % known % same_as(a))
-    call check('C  and associated with a: closure by reference, not by copy', &
-         & associated(a % branch(1) % known % branch(1) % known, a))
+    x => a % branch(1) % known()
+    y => x % branch(1) % known()
+
+    call check('C  a%branch(1)%known() same_as b', x % same_as(b))
+    call check('C  b%branch(1)%known() same_as a', y % same_as(a))
+    call check('C  two traversals return to a, by identity', y % same_as(a))
+    call check('C  and by reference: closure without copy', associated(y, a))
 
   end block cycle_block
+
+  !===================================================================!
+  ! INV . Invariant closure.
+  !
+  !     status() == GRAPH_KNOWN  iff  associated(known())
+  !
+  ! Compile-time protection is asserted by run.sh against the negative
+  ! fixtures in fortran-recursion/: no external scope can assign
+  ! status_, rebind known_, or invoke the structure constructor.
+  !===================================================================!
+
+  invariant_block: block
+
+    type(graph), target  :: ref, g(3)
+    type(graph), pointer :: x
+    integer              :: i, s
+    logical              :: iff
+
+    call ref % declare()
+    do i = 1, 3
+       call g(i) % declare()
+    end do
+
+    g(1) % branch = [null_branch()      , null_branch()      ]
+    g(2) % branch = [unknown_branch()   , unknown_branch()   ]
+    g(3) % branch = [known_branch(ref)  , known_branch(ref)  ]
+
+    call check('INV KNOWN implies associated(known())', &
+         & associated(g(3) % branch(1) % known()) .and. &
+         & associated(g(3) % branch(2) % known()))
+    call check('INV NULL implies .not. associated(known())', &
+         & .not. associated(g(1) % branch(1) % known()) .and. &
+         & .not. associated(g(1) % branch(2) % known()))
+    call check('INV UNKNOWN implies .not. associated(known())', &
+         & .not. associated(g(2) % branch(1) % known()) .and. &
+         & .not. associated(g(2) % branch(2) % known()))
+
+    iff = .true.
+    do i = 1, 3
+       do s = 1, 2
+          iff = iff .and. ((g(i) % branch(s) % status() .eq. GRAPH_KNOWN) &
+               &     .eqv. associated(g(i) % branch(s) % known()))
+       end do
+    end do
+    call check('INV status()==KNOWN .eqv. associated(known()), every branch', iff)
+
+    ! Navigation remains concise at depth through ASSOCIATE.
+    associate (r => g(3) % branch(1) % known())
+      call check('INV g%branch(1)%known() then %branch(2)%status() reads directly', &
+           & r % same_as(ref) .and. r % branch(2) % status() .eq. GRAPH_NULL)
+    end associate
+
+    ! A whole branch value may be replaced; the iff survives it.
+    g(3) % branch(1) = null_branch()
+    call check('INV whole-branch replacement preserves the iff', &
+         & g(3) % branch(1) % status() .eq. GRAPH_NULL .and. &
+         & .not. associated(g(3) % branch(1) % known()))
+
+  end block invariant_block
 
   !===================================================================!
   ! D . Expression view. (2 + 3) * 4 = 20, with 2, 3, 4, + and *
@@ -119,8 +188,8 @@ program test
     call m % bind(times, symbol = '*')
 
     call check('D  the operands are (NULL,NULL): structure does not encode 2 or 3', &
-         & two % branch(1) % status .eq. GRAPH_NULL .and. &
-         & three % branch(1) % status .eq. GRAPH_NULL)
+         & two % branch(1) % status() .eq. GRAPH_NULL .and. &
+         & three % branch(1) % status() .eq. GRAPH_NULL)
     call check('D  evaluate(times) = 20', evaluate(times, m) .eq. 20.0_dp)
     call check('D  evaluate(plus) = 5', evaluate(plus, m) .eq. 5.0_dp)
 
@@ -192,8 +261,8 @@ program test
 
     ! G . connectivity, boundary by NULL
     call check('G  a boundary face has a NULL member', &
-         & f(1) % branch(1) % status .eq. GRAPH_NULL .and. &
-         & f(4) % branch(2) % status .eq. GRAPH_NULL)
+         & f(1) % branch(1) % status() .eq. GRAPH_NULL .and. &
+         & f(4) % branch(2) % status() .eq. GRAPH_NULL)
     call check('G  only a NULL member maps to index 0', &
          & left(1) .eq. 0 .and. right(4) .eq. 0)
 
@@ -250,9 +319,9 @@ program test
     call state('H  (K,K)', kk, GRAPH_KNOWN  , GRAPH_KNOWN  )
 
     call check('H  NULL /= UNKNOWN by status, both disassociated', &
-         & nu % branch(1) % status .ne. nu % branch(2) % status .and. &
-         & .not. associated(nu % branch(1) % known) .and. &
-         & .not. associated(nu % branch(2) % known))
+         & nu % branch(1) % status() .ne. nu % branch(2) % status() .and. &
+         & .not. associated(nu % branch(1) % known()) .and. &
+         & .not. associated(nu % branch(2) % known()))
 
   end block states_block
 
@@ -291,8 +360,9 @@ program test
 
   persistent_block: block
 
-    type(graph), target :: a, b, c, b1, a1
-    type(graph), target :: p, q
+    type(graph), target  :: a, b, c, b1, a1
+    type(graph), target  :: p, q
+    type(graph), pointer :: x, y
 
     call a % declare(); call b % declare(); call c % declare()
 
@@ -302,25 +372,27 @@ program test
     call b1 % declare()                     ! b with the branch realized
     b1 % branch(1) = known_branch(c)
 
+    x => a % branch(1) % known()
     call check('J  b1 /= b', .not. b1 % same_as(b))
-    call check('J  a%branch(1)%known same_as b, still UNKNOWN', &
-         & a % branch(1) % known % same_as(b) .and. &
-         & a % branch(1) % known % branch(1) % status .eq. GRAPH_UNKNOWN)
+    call check('J  a%branch(1)%known() same_as b, still UNKNOWN', &
+         & x % same_as(b) .and. x % branch(1) % status() .eq. GRAPH_UNKNOWN)
 
     call a1 % declare()                     ! so a must be rebuilt as a1
     a1 % branch(1) = known_branch(b1)
 
-    call check('J  a1 /= a and a1%branch(1)%known same_as b1', &
-         & .not. a1 % same_as(a) .and. &
-         & a1 % branch(1) % known % same_as(b1))
+    x => a1 % branch(1) % known()
+    call check('J  a1 /= a and a1%branch(1)%known() same_as b1', &
+         & .not. a1 % same_as(a) .and. x % same_as(b1))
 
     call p % declare(); call q % declare()  ! propagation around a cycle
     p % branch(1) = known_branch(q)
     q % branch(1) = known_branch(p)
     q % branch(2) = unknown_branch()
 
-    call check('J  q%branch(1)%known%branch(1)%known same_as q: q1 requires q1', &
-         & q % branch(1) % known % branch(1) % known % same_as(q))
+    x => q % branch(1) % known()
+    y => x % branch(1) % known()
+    call check('J  two traversals from q return to q: q1 requires q1', &
+         & y % same_as(q))
 
   end block persistent_block
 
@@ -359,9 +431,9 @@ contains
 
     logical :: ok
 
-    ok = g % branch(1) % status .eq. s1 .and. g % branch(2) % status .eq. s2
-    ok = ok .and. (associated(g % branch(1) % known) .eqv. (s1 .eq. GRAPH_KNOWN))
-    ok = ok .and. (associated(g % branch(2) % known) .eqv. (s2 .eq. GRAPH_KNOWN))
+    ok = g % branch(1) % status() .eq. s1 .and. g % branch(2) % status() .eq. s2
+    ok = ok .and. (associated(g % branch(1) % known()) .eqv. (s1 .eq. GRAPH_KNOWN))
+    ok = ok .and. (associated(g % branch(2) % known()) .eqv. (s2 .eq. GRAPH_KNOWN))
     call check(label, ok)
 
   end subroutine state

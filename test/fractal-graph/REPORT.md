@@ -1,19 +1,17 @@
-# Two-type fractal graph kernel
+# Invariant closure
+Spike only; `src/` is unchanged. Run by `test/fractal-graph/run.sh` (gfortran-15, `-std=f2023`).
+Every claim is a fixture in `fortran-recursion/`, compiled against the shipped kernel, not a copy.
 
-Spike only. `src/` is unchanged, the tower is unrelevelled, no module is deleted.
-Built and run by `test/fractal-graph/run.sh` (gfortran-15, `-std=f2023`).
-
-**Kernel size**, `fractal_graph.f90`, by `grep -c -v -E '^[[:space:]]*(!|$)'` and its
-complement — **54 code lines**, 35 comment, 43 blank.
-
-## 1. Declarations of graph and graph_branch
-
+## 1. Final declarations
 ```fortran
 integer, parameter :: GRAPH_NULL = 0, GRAPH_UNKNOWN = 1, GRAPH_KNOWN = 2
 
 type :: graph_branch
-   integer              :: status = GRAPH_NULL
-   type(graph), pointer :: known  => null()
+   private
+   integer              :: status_ = GRAPH_NULL
+   type(graph), pointer :: known_  => null()
+ contains
+   procedure :: status, known
 end type graph_branch
 
 type :: graph
@@ -24,170 +22,99 @@ type :: graph
 end type graph
 ```
 
-Two types; no third type stands between them. `branch` is public, so
-`g % branch(1) % known % branch(2) % known` traverses directly at any depth (test C).
+## 2. Which components are private
+`graph_branch % status_`, `graph_branch % known_`, `graph % identity`. Both branch components
+must be private: public `status_` admits `status = KNOWN` with no reference, public `known_`
+admits `nullify` under a KNOWN status.
 
-## 2. Does direct recursive referencing work?
+`graph % branch` stays **public**: every value a caller can place there is lawful, since the
+structure constructor is unavailable outside the module (`private_structure_constructor`) and the
+three constructors are total on the invariant. Private `branch` would cost an accessor and, since
+a function result cannot be a part-ref base (Q4), worsen navigation.
 
-Yes, subject to a declaration-order constraint. The three representations are in
-`fortran-recursion/` and `run.sh` compiles all three on every run with the compiler and
-standard the kernel is built with:
+## 3. Public navigation syntax
+```fortran
+g % branch(i)                              ! public component
+g % branch(i) % status()                   ! branch state
+g % branch(i) % known()                    ! reference; disassociated unless KNOWN
+p => g % branch(i) % known()                ! pointer binding, for depth
+associate (x => g % branch(i) % known())    ! ASSOCIATE name, for depth
+associated(g % branch(1) % known(), g % branch(2) % known())
+```
+`encapsulated_navigation` compiles all of these against the kernel.
 
-| representation | gfortran-15 `-std=f2023` |
+## 4. Can chained recursive navigation compile?
+**No**, and the obstruction is Fortran's. A function reference is not a part-ref, so no data-ref
+may be built on one:
+
+| form | gfortran-15 `-std=f2023` |
 |---|---|
-| `branch_before_graph` — `type(graph), pointer :: known` | **compiles**; used by the kernel |
-| `polymorphic_known` — `class(graph), pointer :: known` | compiles; unused, nothing extends `graph` |
-| `graph_before_branch` | **rejected** — *Derived type at (1) has not been previously defined and so cannot appear in a derived type definition* |
+| `null_branch() % status()` | *The leftmost part-ref in a data-ref cannot be a function reference* |
+| `g % branch(1) % known() % branch(1) % status()` | *Unclassifiable statement* — same rule, from the parser |
 
-The constraint is on declaration order, not on the ontology. One further constraint:
-`known_branch` cannot be `pure`, since pointer assignment to an `INTENT(IN)` target is
-prohibited in a pure procedure (F2018 C1594). `null_branch` and `unknown_branch` are pure.
+Depth is reached by a pointer or an ASSOCIATE name, one level at a time. Not the flattening §16
+rejects: `branch` stays in the public structure, `type(graph_branch) :: branch(2)` stands in the
+declaration, `g % branch(i) % status()` / `% known()` remain the navigation; only a multi-level
+chain *within one expression* is unavailable. `graph_views` is unaffected — it passes
+`g % branch(s) % known()` as an argument, one function reference, not a chain.
 
-The obstruction found by the previous spike is an obstruction to **ownership**
-(`class(graph), allocatable`), not to the two-type ontology. Reference removes it.
-
-## 3. Lifetime rules
-
-1. A branch references; it does not own its target. A graph must outlive every branch that
-   references it. The kernel allocates and deallocates nothing.
-2. `TARGET` must be on the actual argument, not only the dummy: pointers set into a `TARGET`
-   dummy remain associated after return only if the actual argument is also `TARGET` and is
-   not an array section with a vector subscript (F2018 15.5.2.4). Every graph in this spike is
-   declared `type(graph), target` in the scope that owns it, and no procedure returns a pointer
-   to a graph it constructed.
-3. A `graph` is never returned by value from a procedure that assigned branches referencing its
-   own local variables: intrinsic assignment copies `branch(2)` shallowly, so the copy would
-   reference deallocated storage. Construction is `call g % declare()` in place; there is no
-   graph-returning constructor.
-4. Storage reclamation is by region, not by ownership. A cyclic reference structure admits no
-   ownership discipline; the caller releases its storage as a whole. The kernel names no storage
-   type, so this stays outside the ontology (§9).
-
-## 4. Can sharing be represented?
-
-Yes (test B). Both branches of `a` are assigned `known_branch(b)`, and three propositions hold:
-`associated(a%branch(1)%known, a%branch(2)%known)`;
-`a%branch(1)%known % same_as(a%branch(2)%known)`; and a mutation of `b` is observed on both
-branches, which excludes a copy.
-
-## 5. Can cycles be represented?
-
-Yes (test C). `a -> b -> a`, verified by identity (`same_as`) and by reference
-(`associated(a%branch(1)%known%branch(1)%known, a)`). The structure is a graph, not a tree.
-
-## 6. Is mutation required for cycles?
-
-**Required, and it is construction mutation.** Each of the two pointer assignments requires the
-address of the other graph, so no order exists in which both are established when their graph is
-created; the second assignment writes into an existing object. Fortran provides no recursive
-binding form and no laziness. Mutation *after publication* is not required: in test C the cycle
-closes before either graph is read.
-
-## 7. Recommended realization model
-
-**Construction-mutable, publication-immutable.** Mutation is confined to construction; after
-publication the branch states are fixed and identity is stable. Not implemented — §10 says do not
-legislate — but the enforcement point is a single `seal` operation shaped like `declare`.
-
-| criterion | A. mutable | B. persistent (new identity per change) |
-|---|---|---|
-| sharing | holds — one graph, many references (test B) | **degrades** — untouched substructure stays shared, but every path to a changed graph is rebuilt, and until it is, predecessors reference the previous graph (test J) |
-| cycles | holds (test C) | **no fixpoint** — rebuilding `q` requires `p1`, which requires `q1` (test J) |
-| caching on identity | **unsound after publication** — the view value changes, identity does not (test I) | sound — a changed graph is a new key |
-| immutable views | unsound while mutation is admitted | sound |
-| CSR compilation | valid only against fixed branch states | sound; recompiled per version |
-| checkpoint/restart | *argued, not tested* — one version to serialize; restart re-mints identity | *argued, not tested* — all versions persist |
-| adjoint snapshots | *argued, not tested* — snapshots require explicit copies | *argued, not tested* — versions are the snapshots |
-
-A is sound where structure is constructed; B is sound where structure is read. The boundary
-between the two is publication, which is the recommendation. Tests I and J measure the two costs:
-I the cost of mutating after publication, J the cost of never mutating.
-
-## 8. How values are kept outside the kernel
-
-The kernel declares no `carries_value`, no `payload`, no `value()`. Its code lines contain none
-of `real`, `field`, `coordinate`, `symbol`, `payload`, `arena`, `handle`, `node`, `storage`. A
-graph carries `branch(2)` and an identity.
-
-Attributes are bound in `graph_views.f90`, in a partial map keyed by identity:
-
+## 5. How legal branches are constructed
+```fortran
+null_branch()       status = NULL      known disassociated
+unknown_branch()    status = UNKNOWN   known disassociated
+known_branch(g)     status = KNOWN     known associated with g; refuses undeclared g
 ```
-attribute_map : identity -> (number, symbol, index)
-```
+
+The only introductions of a branch value; `graph_branch(...)` is rejected outside the module, so
+status and reference cannot be set independently. A branch is replaced whole,
+`g % branch(1) = known_branch(h)`; `known_branch` cannot be `pure` (F2018 C1594).
+
+## 6. How cycles are closed
+By whole-branch assignment once both graphs exist — the construction mutation the previous report
+established as necessary:
 
 ```fortran
-call m % bind(two,   number = 2.0_dp)
-call m % bind(three, number = 3.0_dp)
-call m % bind(plus,  symbol = '+')
+call a % declare(); call b % declare()
+a % branch(1) = known_branch(b)          ! a -> b
+b % branch(1) = known_branch(a)          ! b -> a
 ```
 
-`(2 + 3) * 4 = 20` evaluates from that map (test D); the operands are `(NULL,NULL)` graphs whose
-branch states encode nothing of 2 or 3. A further column adds no character to the graph type.
+No cycle-closing operation is introduced; sharing is the same act applied twice to one target.
+Both survive encapsulation (tests B and C, `associated` included, so no copy).
 
-`id()` returns the token by value rather than requiring callers to key on
-`type(graph), pointer`. A token is serializable and independent of the referent's lifetime, which
-the checkpoint/restart row requires; a pointer key would bind every attribute map to graph
-lifetime.
+## 7. Can published graphs be corrupted externally?
+**The invariant, no. The shape, yes — deliberately.**
 
-## 9. How CSR compiles without changing the ontology
+- `status_` and `known_` cannot be assigned, rebound, or constructed from outside; three fixtures
+  assert the rejection and its reason. Every reachable branch satisfies
+  `status() == GRAPH_KNOWN .eqv. associated(known())`, asserted over all nine states.
+- A whole branch **can** still be replaced after publication (`g % branch(1) = null_branch()`) —
+  semantic mutation, not invariant violation, since the replacement is lawful. §7 declines to
+  police it here; the recommendation stays construction-mutable, publication-immutable.
+- Lifetime is unchanged: branches do not own targets, `TARGET` belongs on the actual argument,
+  reclamation is by region.
 
-`compile_csr` traverses the graph and returns
+## 8. Kernel code lines
+54 → **67** code (comment 35 → 49, blank 43 → 54), by
+`grep -c -v -E '^[[:space:]]*(!|$)' fractal_graph.f90`. +13 against a limit of 80, for `private`
+and two accessors. No type was added.
 
-```fortran
-type :: csr
-   integer, allocatable :: rowptr(:), colidx(:)
-end type csr
-```
+## 9. Counts
+| | before | after |
+|---|---:|---:|
+| compile-time fixtures | 3 | **9** — 3 admitted, 6 rejected with their reason |
+| runtime assertions | 39 | **45** — all 39 retained, 6 added for the invariant |
+| runtime refusals | 8 | 8 |
+| total PASS | 50 | **62**, 0 FAIL |
 
-which does not extend `graph`, declares no branch, and is not named by the kernel: the module
-dependency is `graph_views -> fractal_graph` and not the reverse. Test 11 compiles the
-finite-volume face sequence to `rowptr = [1,2,4,5]`, `colidx = [2,1,3,2]`, then verifies that
-every tuple of the relation view appears in the compiled rows. Semantic representation and
-compiled representation are related by a traversal, not by a type.
+The three invariant protections are compile-time refusals — they never link, so they cannot join
+`./refusal`; they are asserted as `graph_before_branch` is, by required failure with a diagnostic.
 
-One sequence carries four views and no additional type: `relation_view`, `residual`
-(`R(Q) = 0` for `Q` constant), `compile_csr`, and — the same pair-and-sequence encoding —
-`evaluate`. §12 holds: relational, computational, ordinary and mesh are views, not types.
+## 10. Recommendation
+Adopt. Two types, no third; `branch(2)` public and visible; `status_`/`known_` private — the
+smallest change that closes `KNOWN iff associated(known)`, at compile time rather than by
+convention. Its one cost, a multi-level traversal needing a pointer or an ASSOCIATE name, is a
+Fortran rule about function results, held by two fixtures that fail if it ever changes.
 
-## 10. Public kernel API
-
-| symbol | why it is not derived |
-|---|---|
-| `graph`, `graph_branch` | the ontology and its recurring component |
-| `graph % branch(2)` (public) | the self-similar structure; traversal is direct |
-| `graph_branch % status` (public) | the state, explicit, never inferred from association |
-| `graph_branch % known` (public) | the reference to `graph` |
-| `GRAPH_NULL`, `GRAPH_UNKNOWN`, `GRAPH_KNOWN` | the three admissible branch states |
-| `null_branch()`, `unknown_branch()`, `known_branch(g)` | the only admitted branch constructions; `known_branch` is where §4's validity condition is enforced |
-| `declare()` | identity is minted, not chosen |
-| `id()` | exports identity so attributes can be bound outside (§8) |
-| `same_as(other)` | *derivable* from `id`; retained because §5 and §13 state the comparison in it |
-
-Eight module-level names and three type-bound procedures. Evaluation, relations, residuals, CSR,
-numbers, symbols and indices are outside. A graph label is outside too: a label is an attribute,
-so `declare` takes no argument and the kernel declares no `label`.
-
-Two refusals are kernel laws: `twice` (*graph identity is assigned once*) and `undeclared`
-(*KNOWN requires a graph with assigned identity*, enforcing §4). Six are view laws, two of them
-because §4 is easy to violate one level up: a view answering "absent" for a graph outside the
-map's domain, or for an UNKNOWN member, would merge UNKNOWN into NULL. `noindex` and
-`unknownmember` refuse instead.
-
-**One admitted weakness.** §2 requires `g % branch(i) % known % branch(j)` to traverse, so
-`status` and `known` are public, so `g % branch(1) % status = GRAPH_KNOWN` can be assigned
-directly, producing a KNOWN branch with a disassociated reference. The three branch constructors
-are the only admitted constructions and cannot produce that state. The alternative — private
-components behind `status(side)` and `known(side)` — is the interface §2 prohibits.
-
-## §16. Visual acceptance
-
-```fortran
-type :: graph
-   type(graph_branch)   :: branch(2)
-   type(token), private :: identity
-end type graph
-```
-
-and `graph_branch` declares `type(graph), pointer :: known`. Therefore graph -> branch -> graph
-is visible in the declarations themselves. `(NULL,NULL)` is the default initialization of the
-type, so §3's "an atom is a graph" requires no code.
+Rejected here against §14 and §17: private `branch`, a realize operation, lifecycle machinery.
+The next question is `seal`, closing semantic mutation and making caching on identity sound.

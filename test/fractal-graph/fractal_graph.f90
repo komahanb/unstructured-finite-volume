@@ -1,5 +1,5 @@
 !=====================================================================!
-! GRAPH KERNEL
+! FRACTAL GRAPH
 !
 !     G = (B1, B2)
 !     B in { NULL, UNKNOWN, KNOWN -> G }
@@ -7,7 +7,7 @@
 ! LAWS
 !
 !     graph -> branch -> graph, and no type stands between them
-!     KNOWN implies associated(known)
+!     status == KNOWN iff associated(known)
 !     NULL and UNKNOWN imply .not. associated(known)
 !     NULL and UNKNOWN are distinct by status, not by association
 !     (NULL, NULL) is a graph
@@ -15,8 +15,16 @@
 !     branch references do not own their targets
 !     identity is assigned once, and is not chosen
 !
-! The kernel carries structure and identity only. Numbers, symbols,
-! indices and every other attribute are bound in graph_views.
+! The status and the reference are private, so no caller can set one
+! without the other. A branch enters existence only through the three
+! constructors below, each of which establishes the iff.
+!
+! branch(2) stays a public component: assigning a whole branch value
+! cannot break the iff, and the recursion stays visible in the
+! declarations and in every navigation.
+!
+! The kernel carries shape, status, reference and identity. Numbers,
+! symbols and indices are bound in graph_views.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -43,8 +51,14 @@ module fractal_graph
 
   type :: graph_branch
 
-     integer              :: status = GRAPH_NULL
-     type(graph), pointer :: known  => null()
+     private
+     integer              :: status_ = GRAPH_NULL
+     type(graph), pointer :: known_  => null()
+
+   contains
+
+     procedure :: status
+     procedure :: known
 
   end type graph_branch
 
@@ -64,22 +78,46 @@ module fractal_graph
 contains
 
   !===================================================================!
-  ! Branch constructors. The only admitted constructions, and hence
-  ! the point at which the association laws hold by construction.
+  ! Branch queries. known answers a disassociated pointer whenever
+  ! the status is NULL or UNKNOWN, so the iff is directly observable.
   !
-  ! known_branch is not pure: pointer assignment to an INTENT(IN)
-  ! target is prohibited in a pure procedure (F2018 C1594).
+  ! known is not pure: a pure function result may not be associated
+  ! with a target reached through an INTENT(IN) dummy (F2018 C1594).
+  !===================================================================!
+
+  pure integer function status(this)
+
+    class(graph_branch), intent(in) :: this
+
+    status = this % status_
+
+  end function status
+
+  function known(this) result(g)
+
+    class(graph_branch), intent(in) :: this
+    type(graph), pointer            :: g
+
+    g => this % known_
+
+  end function known
+
+  !===================================================================!
+  ! Branch constructors. The only admitted introductions of a branch
+  ! value, and hence the only place the iff can be established. The
+  ! structure constructor is unavailable outside this module because
+  ! both components are private.
   !===================================================================!
 
   pure type(graph_branch) function null_branch() result(this)
 
-    this % status = GRAPH_NULL
+    this % status_ = GRAPH_NULL
 
   end function null_branch
 
   pure type(graph_branch) function unknown_branch() result(this)
 
-    this % status = GRAPH_UNKNOWN
+    this % status_ = GRAPH_UNKNOWN
 
   end function unknown_branch
 
@@ -91,8 +129,8 @@ contains
        error stop 'fractal_graph: KNOWN requires a graph with assigned identity'
     end if
 
-    this % status = GRAPH_KNOWN
-    this % known  => that
+    this % status_ = GRAPH_KNOWN
+    this % known_  => that
 
   end function known_branch
 

@@ -194,23 +194,23 @@ contains
 
     character(len=1) :: op
 
-    if (g % branch(1) % status .eq. GRAPH_NULL .and. &
-         & g % branch(2) % status .eq. GRAPH_NULL) then
+    if (g % branch(1) % status() .eq. GRAPH_NULL .and. &
+         & g % branch(2) % status() .eq. GRAPH_NULL) then
        v = m % number_of(g)
        return
     end if
 
-    if (g % branch(1) % status .ne. GRAPH_KNOWN .or. &
-         & g % branch(2) % status .ne. GRAPH_KNOWN) then
+    if (g % branch(1) % status() .ne. GRAPH_KNOWN .or. &
+         & g % branch(2) % status() .ne. GRAPH_KNOWN) then
        error stop 'graph_views: UNKNOWN branch has no value'
     end if
 
     op = m % symbol_of(g)
     select case (op)
     case ('+')
-       v = evaluate(g % branch(1) % known, m) + evaluate(g % branch(2) % known, m)
+       v = evaluate(g % branch(1) % known(), m) + evaluate(g % branch(2) % known(), m)
     case ('*')
-       v = evaluate(g % branch(1) % known, m) * evaluate(g % branch(2) % known, m)
+       v = evaluate(g % branch(1) % known(), m) * evaluate(g % branch(2) % known(), m)
     case default
        error stop 'graph_views: no operator defined for this symbol'
     end select
@@ -228,16 +228,16 @@ contains
 
     integer :: s
 
-    if (g % branch(1) % status .eq. GRAPH_NULL .and. &
-         & g % branch(2) % status .eq. GRAPH_NULL) then
+    if (g % branch(1) % status() .eq. GRAPH_NULL .and. &
+         & g % branch(2) % status() .eq. GRAPH_NULL) then
        n = 1
        return
     end if
 
     n = 0
     do s = 1, 2
-       if (g % branch(s) % status .eq. GRAPH_KNOWN) then
-          n = n + num_atoms(g % branch(s) % known)
+       if (g % branch(s) % status() .eq. GRAPH_KNOWN) then
+          n = n + num_atoms(g % branch(s) % known())
        end if
     end do
 
@@ -264,17 +264,17 @@ contains
 
     node => sequence
     do
-       if (node % branch(1) % status .ne. GRAPH_KNOWN) then
+       if (node % branch(1) % status() .ne. GRAPH_KNOWN) then
           error stop 'graph_views: sequence node requires a KNOWN element'
        end if
-       pair => node % branch(1) % known
+       pair => node % branch(1) % known()
        left  = [left , member(pair, 1)]
        right = [right, member(pair, 2)]
-       if (node % branch(2) % status .eq. GRAPH_NULL) exit
-       if (node % branch(2) % status .ne. GRAPH_KNOWN) then
+       if (node % branch(2) % status() .eq. GRAPH_NULL) exit
+       if (node % branch(2) % status() .ne. GRAPH_KNOWN) then
           error stop 'graph_views: sequence tail must be KNOWN or NULL'
        end if
-       node => node % branch(2) % known
+       node => node % branch(2) % known()
     end do
 
   contains
@@ -282,11 +282,11 @@ contains
     integer function member(p, s)
       type(graph), intent(in) :: p
       integer    , intent(in) :: s
-      select case (p % branch(s) % status)
+      select case (p % branch(s) % status())
       case (GRAPH_NULL)
          member = 0
       case (GRAPH_KNOWN)
-         member = m % index_of(p % branch(s) % known)
+         member = m % index_of(p % branch(s) % known())
       case default
          error stop 'graph_views: UNKNOWN member is not NULL; only NULL denotes absence'
       end select

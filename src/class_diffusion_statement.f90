@@ -26,7 +26,10 @@ module class_diffusion_statement
 
   use iso_fortran_env      , only : dp => REAL64
   use graph_grammar        , only : graph
-  use graph_carrier         , only : member_set
+  use graph_grammar      , only : set_graph
+  use graph_set_map      , only : set_map
+  use graph_label_map    , only : label_map
+  use graph_inclusion_map, only : inclusion_map
   use graph_forms          , only : form
   use class_graph_field    , only : field
   use class_graph_mesh     , only : mesh
@@ -53,7 +56,18 @@ contains
     type(stencil_operator) :: op
 
     class(form), allocatable :: chosen
-    class(member_set), allocatable :: members
+    !----------------------------------------------------------------!
+    ! Each condition's faces are carved, read and dropped inside this
+    ! call, so their interpretation is local too. A fresh identity per
+    ! call is what lets one map hold every condition's faces without
+    ! two of them claiming to describe one set.
+    !----------------------------------------------------------------!
+
+    type(set_graph)     :: members
+    type(set_map)       :: sets
+    type(label_map)     :: labels
+    type(inclusion_map) :: inclusions
+
     type(field) :: fa
     real(dp), allocatable :: keff(:), areas(:), scales(:)
     real(dp), allocatable :: vb(:), wb(:), values(:), weights(:)
@@ -75,10 +89,10 @@ contains
     vb = 0.0_dp
     wb = 1.0_dp
     do k = 1, size(conditions)
-       call conditions(k) % faces(m, members)
+       call conditions(k) % faces(m, sets, labels, inclusions, members)
        call conditions(k) % wall_relation(m, weights, values)
-       do f = 1, members % size()
-          e = members % member(f)
+       do f = 1, sets % size_of(members)
+          e = sets % member_of(members, f)
           wb(e) = weights(f)
           vb(e) = values(f)
        end do

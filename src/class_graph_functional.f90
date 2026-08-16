@@ -41,7 +41,7 @@ module class_graph_functional
   use graph_grammar      , only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
   use graph_grammar      , only : GRAPH_FIELD_CHARACTER
   use graph_calculus     , only : graph_functional
-  use graph_carrier      , only : member_set, counted_set
+  use graph_grammar      , only : set_graph
 
   implicit none
 
@@ -54,9 +54,9 @@ module class_graph_functional
 
   type, extends(graph_functional) :: functional
 
-     ! The one-entry home, minted at construction so domain()
-     ! stays pure.
-     type(counted_set), private :: home
+     ! The one-entry home, declared at construction so domain()
+     ! answers one stable identity for the life of the functional.
+     type(set_graph), private :: home
 
      character(len=:), allocatable :: label
      character(len=:), allocatable :: unit_name
@@ -154,7 +154,7 @@ contains
     end if
 
 
-    this % home = counted_set('functional', 1)
+    call this % home % declare()
   end function create
 
   !===================================================================!
@@ -193,14 +193,13 @@ contains
   ! convention, and nothing downstream reads it.
   !===================================================================!
 
-  subroutine functional_domain(this, domain)
+  type(set_graph) function functional_domain(this) result(domain)
 
-    class(functional), intent(in)               :: this
-    class(member_set), allocatable, intent(out) :: domain
+    class(functional), intent(in) :: this
 
-    allocate(domain, source=this % home)
+    domain = this % home
 
-  end subroutine functional_domain
+  end function functional_domain
 
   !===================================================================!
   ! Shape: one entry, one component, one live kind.

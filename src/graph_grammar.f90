@@ -7,10 +7,11 @@
 ! the relational graph, the interpretations and the field calculus
 ! all live in their own level modules. What remains here is the
 ! ordinary-graph vocabulary the old solvers still speak - retyped
-! onto the new ontology: named graph sets answer member_set /
-! subset_set; a field's domain IS a member_set; the field
-! abstraction itself is OWNED by graph_field_calculus and only
-! re-exported here for its remaining consumers.
+! onto the new ontology: a named graph set answers a set GRAPH, and
+! its interpretation belongs to whoever asked; a field's domain is a
+! set graph and a frozen count; the field abstraction itself is OWNED
+! by graph_field_calculus and only re-exported here for its remaining
+! consumers.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -25,10 +26,11 @@
 ! legacy citizens speak - and its answers are already retyped onto
 ! the new ground:
 !
-!    named graph sets  ->  member_set objects
-!    full named sets   ->  the carrier itself
-!    restricted sets   ->  subset_set subobjects
-!    field domains     ->  member_set, owned by graph_field_calculus
+!    named graph sets  ->  set graph identities
+!    full named sets   ->  the carrier itself, one stable identity
+!    carved sets       ->  a fresh identity, bound into the caller's
+!                          set / label / inclusion maps
+!    field domains     ->  a set graph and a frozen count
 !
 !=====================================================================!
 !
@@ -72,9 +74,9 @@
 !    graph_operation .. verb within   how data becomes other data
 !    graph_transform .. verb between  how one graph becomes another
 !
-! A graph here is the ordinary reading: two member sets joined by
-! tail and head. Member sets themselves are carriers now, never
-! edgeless graphs; a field's domain is a member_set, full stop.
+! A graph here is the ordinary reading: two finite domains joined by
+! tail and head. A domain is a set graph now, never an edgeless
+! graph; a field's domain is an identity and a count, full stop.
 !
 !=====================================================================!
 !
@@ -143,7 +145,28 @@
 module graph_grammar
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_carrier      , only : member_set, counted_set
+
+  !===================================================================!
+  ! THE DOMAIN IS A GRAPH, AND ITS INTERPRETATION IS THE CALLER'S.
+  !
+  ! set_graph is the kernel's graph, renamed on import because the
+  ! abstract type below already owns the word `graph` in this module.
+  ! The rename is the whole of the collision: one is the ontology, the
+  ! other is the legacy structure interface awaiting migration onto it.
+  !
+  ! A domain-producing symbol here answers WHICH set. Where the answer
+  ! is a set the graph already holds, that is all it answers, and the
+  ! caller reconstructs the extension from a count it can already read.
+  ! Where the answer is a set CARVED on demand, the symbol must also
+  ! say how its members are stored, what it is called, and what it was
+  ! carved from - so it takes the three maps and binds into them. The
+  ! graph does not own them. It never learns what a set means.
+  !===================================================================!
+
+  use fractal_graph       , only : set_graph => graph
+  use graph_set_map       , only : set_map
+  use graph_label_map     , only : label_map
+  use graph_inclusion_map , only : inclusion_map
   use graph_field_calculus, only : graph_field
   use graph_field_calculus, only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
   use graph_field_calculus, only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
@@ -157,6 +180,11 @@ module graph_grammar
   public :: graph_field
   public :: graph_operation
   public :: graph_transform
+
+  ! Re-exported so a consumer of this contract names the kernel graph
+  ! once, the same way, rather than each file inventing its own rename
+  ! for the collision this module already resolved.
+  public :: set_graph
 
   public :: GRAPH_FIELD_INTEGER
   public :: GRAPH_FIELD_REAL
@@ -188,15 +216,17 @@ module graph_grammar
   ! it originates outside the code, in the mesh file that named its
   ! boundary groups.
   !
-  ! A NAMED SET IS A MEMBER SET. The full sets answer the graph's
-  ! own carrier; the restricted ones answer subset_set subobjects
-  ! of it,
+  ! A NAMED SET IS A SET GRAPH. The full sets answer the graph's own
+  ! carrier - one stable identity, asked twice, answering once; the
+  ! carved ones answer a FRESH identity and bind what it means into
+  ! the caller's maps,
   !
   !      all_vertices           tagged_edges('wall')
-  !      the vertex carrier     subset { 11 14 19 } c--> edges
+  !      the vertex carrier     a new set { 11 14 19 } c--> edges
   !
-  ! and membership, size, order and standing come from the carrier
-  ! contract - no edgeless-graph fiction anywhere.
+  ! and membership, size, order and standing are questions for the
+  ! representation the caller holds - not for the graph, which knows
+  ! only which set it named.
   !
   ! THE FRAME. How a part relates to the whole it was cut from:
   !
@@ -246,15 +276,22 @@ module graph_grammar
      procedure(graph_edge_end_interface)     , deferred :: edge_head
      procedure(graph_edge_has_head_interface), deferred :: edge_has_head
 
-     ! The named sets. Each answer is itself a graph: the edgeless
-     ! graph of the members.
-     procedure(graph_member_set_interface), deferred :: all_vertices
-     procedure(graph_member_set_interface), deferred :: interior_vertices
-     procedure(graph_member_set_interface), deferred :: boundary_vertices
+     ! The named sets, split by whether the answer already exists.
+     !
+     !   all_*        IS the carrier - stable identity, no binding
+     !   the rest     CARVED on demand - a fresh set each call, so
+     !                each call binds its extension, its label and
+     !                its declared embedding into the caller's maps
+     !
+     ! The split is not cosmetic: the first kind may be asked twice
+     ! and answer one set, the second kind answers two.
+     procedure(graph_carrier_interface)   , deferred :: all_vertices
+     procedure(graph_carved_set_interface), deferred :: interior_vertices
+     procedure(graph_carved_set_interface), deferred :: boundary_vertices
      procedure(graph_tagged_set_interface), deferred :: tagged_vertices
-     procedure(graph_member_set_interface), deferred :: all_edges
-     procedure(graph_member_set_interface), deferred :: interior_edges
-     procedure(graph_member_set_interface), deferred :: boundary_edges
+     procedure(graph_carrier_interface)   , deferred :: all_edges
+     procedure(graph_carved_set_interface), deferred :: interior_edges
+     procedure(graph_carved_set_interface), deferred :: boundary_edges
      procedure(graph_tagged_set_interface), deferred :: tagged_edges
 
      ! The frame's sets, one part at a time.
@@ -402,8 +439,18 @@ module graph_grammar
        class(graph), intent(in) :: this
      end function graph_count_interface
 
-     pure type(counted_set) function graph_carrier_interface(this)
-       import :: graph, counted_set
+     !---------------------------------------------------------------!
+     ! A domain the graph already holds: identity, and nothing else.
+     ! The extension is 1..num_vertices() or 1..num_edges(), which the
+     ! caller can already read, so a counted representation is one
+     ! constructor call away and no map need travel with the answer.
+     !---------------------------------------------------------------!
+
+     ! Not pure: a set graph carries a pointer component, so copying
+     ! one out of an INTENT(IN) dummy is barred from a pure subprogram
+     ! (F2018 C1594). Identity is still answered by value.
+     type(set_graph) function graph_carrier_interface(this)
+       import :: graph, set_graph
        class(graph), intent(in) :: this
      end function graph_carrier_interface
 
@@ -420,29 +467,57 @@ module graph_grammar
      end function graph_edge_has_head_interface
 
      !===============================================================!
-     ! The named sets. Called once, when an operation begins, so
-     ! each answer is a member_set - the carrier itself or a subset
-     ! of it - and the cost is paid once per sweep, not per cell.
+     ! THE CARVED SETS. Called once, when an operation begins, so the
+     ! cost is paid per sweep and not per cell.
+     !
+     ! Each call declares a NEW set - a fresh identity - because that
+     ! is what these have always done: the old code built a fresh
+     ! subset_set per call, and a subset signs its own identity. Two
+     ! calls to boundary_vertices() were never one domain, and are not
+     ! one domain now.
+     !
+     ! What the answer needs beyond identity, it binds:
+     !
+     !     sets         the listed extension - who belongs
+     !     labels       the name the old subset carried
+     !     inclusions   the embedding into the graph's own carrier,
+     !                  without which subobject questions go silent
+     !
+     ! All three are the CALLER'S, borrowed for the duration of the
+     ! call and never stored. That is the difference between stating a
+     ! dependency and hiding one.
      !===============================================================!
 
-     subroutine graph_member_set_interface(this, members)
-       import :: graph, member_set
-       class(graph), intent(in) :: this
-       class(member_set), allocatable, intent(out) :: members
-     end subroutine graph_member_set_interface
+     subroutine graph_carved_set_interface(this, sets, labels, &
+          & inclusions, members)
+       import :: graph, set_graph, set_map, label_map, inclusion_map
+       class(graph)       , intent(in)    :: this
+       type(set_map)      , intent(inout) :: sets
+       type(label_map)    , intent(inout) :: labels
+       type(inclusion_map), intent(inout) :: inclusions
+       type(set_graph)    , intent(out)   :: members
+     end subroutine graph_carved_set_interface
 
-     subroutine graph_tagged_set_interface(this, tag, members)
-       import :: graph, member_set
-       class(graph), intent(in) :: this
-       character(len=*), intent(in) :: tag
-       class(member_set), allocatable, intent(out) :: members
+     subroutine graph_tagged_set_interface(this, tag, sets, labels, &
+          & inclusions, members)
+       import :: graph, set_graph, set_map, label_map, inclusion_map
+       class(graph)       , intent(in)    :: this
+       character(len=*)   , intent(in)    :: tag
+       type(set_map)      , intent(inout) :: sets
+       type(label_map)    , intent(inout) :: labels
+       type(inclusion_map), intent(inout) :: inclusions
+       type(set_graph)    , intent(out)   :: members
      end subroutine graph_tagged_set_interface
 
-     subroutine graph_part_set_interface(this, part_id, members)
-       import :: graph, member_set
-       class(graph), intent(in) :: this
-       integer, intent(in) :: part_id
-       class(member_set), allocatable, intent(out) :: members
+     subroutine graph_part_set_interface(this, part_id, sets, labels, &
+          & inclusions, members)
+       import :: graph, set_graph, set_map, label_map, inclusion_map
+       class(graph)       , intent(in)    :: this
+       integer            , intent(in)    :: part_id
+       type(set_map)      , intent(inout) :: sets
+       type(label_map)    , intent(inout) :: labels
+       type(inclusion_map), intent(inout) :: inclusions
+       type(set_graph)    , intent(out)   :: members
      end subroutine graph_part_set_interface
 
      !===============================================================!
@@ -537,11 +612,23 @@ module graph_grammar
        character(len=:), allocatable :: name
      end function operation_name_interface
 
-     subroutine operation_domain_interface(this, input_graph, domain)
-       import :: graph_operation, graph, member_set
-       class(graph_operation), intent(in) :: this
-       class(graph), intent(in) :: input_graph
-       class(member_set), allocatable, intent(out) :: domain
+     !---------------------------------------------------------------!
+     ! Where the answer lives: WHICH set, and HOW MANY entries it has.
+     !
+     ! The count travels beside the identity because every caller of
+     ! this symbol wants exactly those two things - to check the
+     ! domain matches, and to size a field. Neither is a question
+     ! about membership, so neither needs a map, and an operation that
+     ! carries a domain carries an integer rather than an extension.
+     !---------------------------------------------------------------!
+
+     subroutine operation_domain_interface(this, input_graph, domain, &
+          & nentries)
+       import :: graph_operation, graph, set_graph
+       class(graph_operation), intent(in)  :: this
+       class(graph)          , intent(in)  :: input_graph
+       type(set_graph)       , intent(out) :: domain
+       integer               , intent(out) :: nentries
      end subroutine operation_domain_interface
 
      subroutine operation_apply_interface(this, input_graph, input_data, output)

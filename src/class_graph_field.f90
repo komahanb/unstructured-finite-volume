@@ -2,11 +2,26 @@
 ! The concrete field: values over a domain.
 !
 ! One concrete type serves every field in the tower. Its domain is a
-! member_set - an ambient carrier or a subset subobject - and the
-! domain's identity is the only thing that ever distinguishes a
-! cell field from a face field; the field carries no side flag. Because there is
-! exactly one concrete field, a plain Fortran array can hold a
-! collection of them.
+! set GRAPH, and the domain's identity is the only thing that ever
+! distinguishes a cell field from a face field; the field carries no
+! side flag. Because there is exactly one concrete field, a plain
+! Fortran array can hold a collection of them.
+!
+!                  WHAT THE FIELD KEEPS OF ITS DOMAIN
+!
+!      type(graph) :: on          which set        O(1)
+!      integer     :: nentries    how many         O(1)
+!
+! and nothing else. It once kept a COPY of the whole domain object,
+! which for a listed domain meant a copy of the member roll: 40 fields
+! on a 200 000-member domain carried 28.7 MB of duplicated extension,
+! measured, against 30.5 MB predicted for exactly that duplication.
+! The extension now lives once, in whatever set map the caller holds.
+!
+! Nothing was lost with it. A field only ever answered two questions
+! about its domain - WHICH and HOW MANY - and both survive by value.
+! The copy already froze the count, so freezing it explicitly changes
+! no behaviour; it only stops the copy from being O(N_extent).
 !
 !=====================================================================!
 !
@@ -60,8 +75,7 @@
 module class_graph_field
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_carrier       , only : member_set
-  use graph_field_calculus, only : graph_field
+  use graph_field_calculus, only : graph_field, set_graph
   use graph_field_calculus, only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
   use graph_field_calculus, only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
   use graph_field_calculus, only : GRAPH_FIELD_CHARACTER
@@ -80,10 +94,11 @@ module class_graph_field
      character(len=:), allocatable :: label
      character(len=:), allocatable :: unit_name
 
-     ! The one domain: an ambient carrier or a subset subobject,
-     ! copied at construction so its identity travels. Private, so
-     ! consumers ask through domain() rather than inspecting on.
-     class(member_set), allocatable, private :: on
+     ! The one domain: which set, and how many entries it had when
+     ! this field was built. Private, so consumers ask through
+     ! domain() and num_entries() rather than inspecting on.
+     type(set_graph), private :: on
+     integer        , private :: nentries = 0
 
      integer :: ncomp = 1
      integer :: vkind = GRAPH_FIELD_REAL
@@ -147,10 +162,12 @@ contains
   ! repeat the fact.
   !===================================================================!
 
-  type(field) function create(label, on, ncomp, unit_name) result(this)
+  type(field) function create(label, on, nentries, ncomp, unit_name) &
+       & result(this)
 
     character(len=*), intent(in)           :: label
-    class(member_set), intent(in)          :: on
+    type(set_graph) , intent(in)           :: on
+    integer         , intent(in)           :: nentries
     integer         , intent(in), optional :: ncomp
     character(len=*), intent(in), optional :: unit_name
 
@@ -158,8 +175,13 @@ contains
        error stop 'class_graph_field: a field needs a declared domain'
     end if
 
-    this % label = label
-    allocate(this % on, source=on)
+    if (nentries < 0) then
+       error stop 'class_graph_field: a domain does not have fewer than no entries'
+    end if
+
+    this % label    = label
+    this % on       = on
+    this % nentries = nentries
 
     if (present(ncomp)) then
        this % ncomp = ncomp
@@ -210,21 +232,22 @@ contains
   end function field_units
 
   !===================================================================!
-  ! The member_set domain the values live on.
+  ! WHICH set the values live on. A copy carries the token, so the
+  ! answer is the same declared domain; nothing is lent.
   !===================================================================!
 
-  subroutine field_domain(this, domain)
+  type(set_graph) function field_domain(this) result(domain)
 
-    class(field), intent(in)                    :: this
-    class(member_set), allocatable, intent(out) :: domain
+    class(field), intent(in) :: this
 
-    allocate(domain, source=this % on)
+    domain = this % on
 
-  end subroutine field_domain
+  end function field_domain
 
   !===================================================================!
-  ! Shape and kind. The entry count comes from the domain, so a
-  ! field cannot disagree with the set it lives on.
+  ! Shape and kind. The entry count was taken from the domain at
+  ! construction and frozen there - the copy this field used to keep
+  ! froze it just as firmly, and far more expensively.
   !===================================================================!
 
   pure integer function field_num_components(this)
@@ -239,7 +262,7 @@ contains
 
     class(field), intent(in) :: this
 
-    field_num_entries = this % on % size()
+    field_num_entries = this % nentries
 
   end function field_num_entries
 
@@ -275,7 +298,7 @@ contains
     class(field), intent(inout) :: this
     integer     , intent(in)    :: values(:)
 
-    if (size(values) /= this % on % size() * this % ncomp) then
+    if (size(values) /= this % nentries * this % ncomp) then
        error stop 'class_graph_field: a value vector must fill its domain exactly'
     end if
     this % ivals = values
@@ -301,7 +324,7 @@ contains
     class(field), intent(inout) :: this
     real(dp)    , intent(in)    :: values(:)
 
-    if (size(values) /= this % on % size() * this % ncomp) then
+    if (size(values) /= this % nentries * this % ncomp) then
        error stop 'class_graph_field: a value vector must fill its domain exactly'
     end if
     this % rvals = values
@@ -332,7 +355,7 @@ contains
     class(field), intent(inout) :: this
     complex(dp) , intent(in)    :: values(:)
 
-    if (size(values) /= this % on % size() * this % ncomp) then
+    if (size(values) /= this % nentries * this % ncomp) then
        error stop 'class_graph_field: a value vector must fill its domain exactly'
     end if
     this % cvals = values
@@ -358,7 +381,7 @@ contains
     class(field), intent(inout) :: this
     logical     , intent(in)    :: values(:)
 
-    if (size(values) /= this % on % size() * this % ncomp) then
+    if (size(values) /= this % nentries * this % ncomp) then
        error stop 'class_graph_field: a value vector must fill its domain exactly'
     end if
     this % lvals = values
@@ -384,7 +407,7 @@ contains
     class(field), intent(inout)  :: this
     character(len=*), intent(in) :: values(:)
 
-    if (size(values) /= this % on % size() * this % ncomp) then
+    if (size(values) /= this % nentries * this % ncomp) then
        error stop 'class_graph_field: a value vector must fill its domain exactly'
     end if
     this % svals = values

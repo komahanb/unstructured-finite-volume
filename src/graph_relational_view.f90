@@ -85,7 +85,7 @@
 module graph_relational_view
 
   use fractal_graph      , only : graph
-  use graph_carrier      , only : member_set
+  use fractal_graph      , only : set_graph => graph
   use graph_relation     , only : relation
   use graph_sequence_view, only : sequence_size, sequence_element, &
        & sequence_contains
@@ -104,7 +104,7 @@ module graph_relational_view
 
   type :: bound_set
      type(graph)      , pointer :: element => null()
-     class(member_set), pointer :: object  => null()
+     type(set_graph)  , pointer :: object  => null()
   end type bound_set
 
   type :: bound_relation
@@ -148,7 +148,7 @@ contains
 
     class(relational_binding), intent(inout)        :: this
     type(graph)              , intent(in) , target  :: element
-    class(member_set)        , intent(in)           :: object
+    type(set_graph)          , intent(in)           :: object
 
     type(bound_set), allocatable :: grown(:)
     integer                      :: n
@@ -204,7 +204,7 @@ contains
 
     class(relational_binding), intent(in) :: this
     type(graph)              , intent(in) :: element
-    class(member_set), pointer            :: s
+    type(set_graph), pointer              :: s
 
     integer :: k
 
@@ -311,7 +311,7 @@ contains
     type(graph)             , intent(in) :: g
     type(relational_binding), intent(in) :: b
     integer                 , intent(in) :: k
-    class(member_set), pointer           :: s
+    type(set_graph), pointer             :: s
 
     type(graph), pointer :: element
 
@@ -344,7 +344,7 @@ contains
 
     type(graph)             , intent(in) :: g
     type(relational_binding), intent(in) :: b
-    class(member_set)       , intent(in) :: s
+    type(set_graph)         , intent(in) :: s
 
     integer :: k
 
@@ -370,9 +370,9 @@ contains
     type(graph)             , intent(in) :: g
     type(relational_binding), intent(in) :: b
 
-    class(member_set), pointer     :: s, s_earlier
+    type(set_graph)  , pointer     :: s, s_earlier
     class(relation)  , pointer     :: r, r_earlier
-    class(member_set), allocatable :: d
+    type(set_graph)                :: d
     integer                        :: k, j
 
     ok = .false.

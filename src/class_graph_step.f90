@@ -32,7 +32,7 @@ module class_graph_step
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_grammar      , only : graph, graph_field, graph_operation
-  use graph_carrier      , only : member_set
+  use graph_grammar      , only : set_graph
   use graph_calculus     , only : discretization_operator
   use class_graph_field  , only : field
   use class_graph        , only : stored_graph
@@ -200,13 +200,14 @@ contains
   ! that domain, which asking the graph never could.
   !===================================================================!
 
-  subroutine step_domain(this, input_graph, domain)
+  subroutine step_domain(this, input_graph, domain, nentries)
 
     class(step_operator), intent(in)       :: this
     class(graph), intent(in)               :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
 
-    call this % action % domain(input_graph, domain)
+    call this % action % domain(input_graph, domain, nentries)
 
   end subroutine step_domain
 
@@ -235,15 +236,17 @@ contains
 
     type(field)   :: out
     class(graph_field), allocatable :: velocity
-    class(member_set), allocatable  :: expected, given
+    type(set_graph) :: expected, given
+    integer         :: n_expected, n_given
     real(dp), allocatable :: q(:), s(:), y(:)
     integer :: ncomp
 
-    call this % action % domain(input_graph, expected)
+    call this % action % domain(input_graph, expected, n_expected)
 
     if (present(input_data)) then
 
-       call input_data(1) % domain(given)
+       given   = input_data(1) % domain()
+       n_given = input_data(1) % num_entries()
        if (.not. given % same_as(expected)) then
           error stop 'step: the state must live on the action''s own domain'
        end if
@@ -252,7 +255,8 @@ contains
        call input_data(1) % get_real_vector(q)
 
        call this % action % apply(input_graph, input_data, velocity)
-       call velocity % domain(given)
+       given   = velocity % domain()
+       n_given = velocity % num_entries()
        if (.not. given % same_as(expected)) then
           error stop 'step: the action must answer on its stated domain'
        end if
@@ -265,11 +269,11 @@ contains
 
     else
        ncomp = 1
-       allocate(y(expected % size()))
+       allocate(y(n_expected))
        y = 0.0_dp
     end if
 
-    out = field('step residual', expected, ncomp=ncomp)
+    out = field('step residual', expected, n_expected, ncomp=ncomp)
     call out % set_real_vector(y)
 
     if (allocated(output)) deallocate(output)

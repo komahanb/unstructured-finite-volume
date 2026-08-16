@@ -135,7 +135,8 @@ contains
        if (h == 0) pts(3 * npts - 2 : 3 * npts) = xf
 
        constellation = stored_graph(npts, tails=[integer ::], heads=[integer ::])
-       positions = field('positions', constellation % vertex_set(), ncomp=3)
+       positions = field('positions', constellation % vertex_set(), &
+            & constellation % num_vertices(), ncomp=3)
        call positions % set_real_vector(pts)
 
        ! Algebra: one apply, aimed along the normal at the face.

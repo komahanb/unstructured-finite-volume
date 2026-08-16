@@ -47,7 +47,7 @@
 module class_graph_walk
 
   use graph_grammar      , only : graph_operation, graph, graph_field
-  use graph_carrier      , only : member_set
+  use graph_grammar      , only : set_graph
   use class_graph_field  , only : field
 
   implicit none
@@ -131,15 +131,17 @@ contains
   !      depth          a distance per vertex
   !===================================================================!
 
-  subroutine walk_domain(this, input_graph, domain)
+  subroutine walk_domain(this, input_graph, domain, nentries)
 
     class(walk) , intent(in)               :: this
     class(graph), intent(in)               :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
 
     associate (u1 => this); end associate
 
-    call input_graph % all_vertices(domain)
+    domain   = input_graph % all_vertices()
+    nentries = input_graph % num_vertices()
 
   end subroutine walk_domain
 
@@ -165,7 +167,7 @@ contains
 
     nv = input_graph % num_vertices()
 
-    out = field(this % name(), input_graph % vertex_set())
+    out = field(this % name(), input_graph % vertex_set(), input_graph % num_vertices())
 
     select case (this % rule)
     case (WALK_VISIT_ORDER)

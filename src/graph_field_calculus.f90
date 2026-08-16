@@ -2,14 +2,32 @@
 ! LEVEL 5 OF THE NEW TOWER . THE FIELD CALCULUS
 !
 ! The level answers one question: WHAT VALUES LIVE ON A DOMAIN. A
-! field is a function over one member set,
+! field is a function over one finite domain,
 !
 !      f : A -> V         or        f : S -> V,   S c--> A
 !
-! and its domain is ALWAYS a member_set - an ambient carrier or a
-! subset_set subobject - one domain kind, never a union, never a
-! side flag, never a graph (AGENTS.md 20, CALCULATOR.md 12). A
-! field needs a domain; it does not need a graph container.
+! and that domain is named by a SET GRAPH: one identity, never a
+! union, never a side flag (AGENTS.md 20, CALCULATOR.md 12). A field
+! needs a domain; it does not need a graph container.
+!
+!             WHAT A FIELD KEEPS, AND WHAT IT ASKS FOR
+!
+! Identity and a frozen count, and nothing else about the domain:
+!
+!      domain()        WHICH set - a set graph, by value
+!      num_entries()   HOW MANY - the count taken at construction
+!
+! Those are the only two questions every field caller asks, and
+! neither is a question about membership, so neither needs a map.
+! Whoever wants to know WHO belongs, WHERE a member stands, or WHAT
+! the domain is called asks the set map, the inclusion map or the
+! label map - explicitly, holding them, at the call site.
+!
+! The count is frozen because it always was: a field has held a COPY
+! of its domain since the first version, so num_entries never tracked
+! later mutation of the caller's set. Storing the integer says out
+! loud what copying said in private, and stops N fields on one domain
+! from holding N copies of its extension.
 !
 ! This module is the REHOMED field ontology: the one abstract
 ! graph_field and its value-kind constants, moved here from the old
@@ -35,12 +53,13 @@
 module graph_field_calculus
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_carrier   , only : member_set
+  use fractal_graph  , only : set_graph => graph
 
   implicit none
 
   private
   public :: graph_field
+  public :: set_graph
   public :: GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL, GRAPH_FIELD_COMPLEX
   public :: GRAPH_FIELD_LOGICAL, GRAPH_FIELD_CHARACTER
 
@@ -57,7 +76,7 @@ module graph_field_calculus
   !===================================================================!
   ! The abstract field: identity, domain, shape, and the
   ! plain-vector adapters - fetch once, work in arrays, write back
-  ! once. num_entries repeats domain % size(), a priced convenience.
+  ! once. num_entries is the construction snapshot, not a query.
   !===================================================================!
 
   type, abstract :: graph_field
@@ -93,11 +112,16 @@ module graph_field_calculus
        character(len=:), allocatable :: name
      end function field_name_interface
 
-     subroutine field_domain_interface(this, domain)
-       import :: graph_field, member_set
+     !--------------------------------------------------------------!
+     ! WHICH set the values live on, by value. A copy of a set graph
+     ! carries its token, so the answer IS the domain - same_as
+     ! decides, and nothing is lent.
+     !--------------------------------------------------------------!
+
+     type(set_graph) function field_domain_interface(this)
+       import :: graph_field, set_graph
        class(graph_field), intent(in) :: this
-       class(member_set), allocatable, intent(out) :: domain
-     end subroutine field_domain_interface
+     end function field_domain_interface
 
      pure integer function field_count_interface(this)
        import :: graph_field

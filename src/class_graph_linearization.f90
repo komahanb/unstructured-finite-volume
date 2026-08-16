@@ -27,7 +27,7 @@ module class_graph_linearization
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_grammar      , only : graph, graph_field, graph_operation
-  use graph_carrier      , only : member_set
+  use graph_grammar      , only : set_graph
   use graph_calculus     , only : linearization_operator
   use class_graph_field  , only : field
 
@@ -107,13 +107,14 @@ contains
 
   end function derivative_name
 
-  subroutine derivative_domain(this, input_graph, domain)
+  subroutine derivative_domain(this, input_graph, domain, nentries)
 
     class(difference_linearization), intent(in) :: this
     class(graph), intent(in)                    :: input_graph
-    class(member_set), allocatable, intent(out)      :: domain
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
 
-    call this % of % domain(input_graph, domain)
+    call this % of % domain(input_graph, domain, nentries)
 
   end subroutine derivative_domain
 
@@ -151,13 +152,14 @@ contains
 
     type(field)   :: state
     class(graph_field), allocatable :: pushed
-    class(member_set), allocatable  :: on, given
+    type(set_graph) :: on, given
+    integer         :: n_on, n_given
     real(dp), allocatable :: v(:), y(:), base(:)
     integer :: n, ncomp
 
-    call this % of % domain(input_graph, on)
+    call this % of % domain(input_graph, on, n_on)
 
-    n = on % size()
+    n = n_on
     if (n <= 0) then
        error stop 'linearization: the operation''s domain is empty'
     end if
@@ -171,7 +173,8 @@ contains
     ncomp = max(size(this % at) / n, 1)
 
     if (present(input_data)) then
-       call input_data(1) % domain(given)
+       given   = input_data(1) % domain()
+       n_given = input_data(1) % num_entries()
        if (.not. given % same_as(on)) then
           error stop 'linearization: the direction must live on the operation''s domain'
        end if
@@ -189,14 +192,14 @@ contains
     if (allocated(this % base)) then
        base = this % base
     else
-       state = field('state', on, ncomp=ncomp)
+       state = field('state', on, n_on, ncomp=ncomp)
        call state % set_real_vector(this % at)
        call this % of % apply(input_graph, [state], pushed)
        call answered_on(pushed, on)
        call pushed % get_real_vector(base)
     end if
 
-    state = field('state', on, ncomp=ncomp)
+    state = field('state', on, n_on, ncomp=ncomp)
     call state % set_real_vector(this % at + this % step * v)
 
     call this % of % apply(input_graph, [state], pushed)
@@ -205,7 +208,7 @@ contains
 
     y = (y - base) / this % step
 
-    state = field('J v', on, ncomp=ncomp)
+    state = field('J v', on, n_on, ncomp=ncomp)
     call state % set_real_vector(y)
     if (allocated(output)) deallocate(output)
     allocate(output, source=state)
@@ -220,11 +223,11 @@ contains
   subroutine answered_on(answer, expected)
 
     class(graph_field), intent(in) :: answer
-    class(member_set) , intent(in) :: expected
+    type(set_graph)   , intent(in) :: expected
 
-    class(member_set), allocatable :: got
+    type(set_graph) :: got
 
-    call answer % domain(got)
+    got = answer % domain()
     if (.not. got % same_as(expected)) then
        error stop 'linearization: the operation must answer on its stated domain'
     end if

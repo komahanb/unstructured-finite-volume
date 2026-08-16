@@ -164,7 +164,7 @@ module class_graph_differential_operator
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_grammar      , only : graph_operation, graph, graph_field
-  use graph_carrier      , only : member_set
+  use graph_grammar      , only : set_graph
   use graph_calculus     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
   use class_graph_field  , only : field
 
@@ -423,16 +423,19 @@ contains
   ! is a second instance handed that subset's graph.
   !===================================================================!
 
-  subroutine operator_domain(this, input_graph, domain)
+  subroutine operator_domain(this, input_graph, domain, nentries)
 
     class(differential_operator), intent(in) :: this
     class(graph), intent(in)                 :: input_graph
-    class(member_set), allocatable, intent(out)   :: domain
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
 
     if (this % landing == GRAPH_SIDE_EDGE) then
-       call input_graph % all_edges(domain)
+       domain   = input_graph % all_edges()
+       nentries = input_graph % num_edges()
     else
-       call input_graph % all_vertices(domain)
+       domain   = input_graph % all_vertices()
+       nentries = input_graph % num_vertices()
     end if
 
   end subroutine operator_domain
@@ -841,7 +844,7 @@ contains
 
     call fetch_vertex_values(input_data, input_graph, nv, q, nc)
 
-    out = field(this % name(), input_graph % edge_set(), ncomp=max(nc, 1))
+    out = field(this % name(), input_graph % edge_set(), input_graph % num_edges(), ncomp=max(nc, 1))
 
     allocate(z(ne * max(nc, 1)))
     z = 0.0_dp
@@ -919,7 +922,7 @@ contains
     call fetch_vertex_values(input_data, input_graph, nv, q, nc)
     if (nc == 0) call fetch_edge_values(input_data, input_graph, ne, z, nc)
 
-    out = field(this % name(), input_graph % vertex_set(), ncomp=max(nc, 1))
+    out = field(this % name(), input_graph % vertex_set(), input_graph % num_vertices(), ncomp=max(nc, 1))
 
     allocate(y(nv * max(nc, 1)))
     y = 0.0_dp
@@ -1139,14 +1142,16 @@ contains
     real(dp), allocatable, intent(out)      :: q(:)
     integer          , intent(out)          :: ncomp
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
+    integer         :: n_dom
 
     ncomp = 0
 
     if (present(input_data)) then
        select type (state => input_data(1))
        class is (field)
-          call state % domain(dom)
+          dom   = state % domain()
+          n_dom = state % num_entries()
           ! Full coverage, by identity: this kernel indexes every
           ! vertex densely (routing is not admissibility).
           if (dom % same_as(input_graph % vertex_set())) then
@@ -1174,14 +1179,16 @@ contains
     real(dp), allocatable, intent(out)      :: z(:)
     integer          , intent(out)          :: ncomp
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
+    integer         :: n_dom
 
     ncomp = 0
 
     if (present(input_data)) then
        select type (state => input_data(1))
        class is (field)
-          call state % domain(dom)
+          dom   = state % domain()
+          n_dom = state % num_entries()
           if (dom % same_as(input_graph % edge_set())) then
              ncomp = max(state % num_components(), 1)
              call state % get_real_vector(z)

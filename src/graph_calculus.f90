@@ -69,7 +69,10 @@
 
 module graph_calculus
 
-  use iso_fortran_env, only : dp => REAL64
+  use iso_fortran_env    , only : dp => REAL64
+  use graph_set_map      , only : set_map
+  use graph_label_map    , only : label_map
+  use graph_inclusion_map, only : inclusion_map
   use graph_grammar  , only : graph, graph_field, graph_operation, &
        &                      graph_transform
 
@@ -453,13 +456,32 @@ module graph_calculus
        class(graph), allocatable, intent(out) :: part_graph
      end subroutine partition_graph_interface
 
+     !--------------------------------------------------------------!
+     ! CARRYING DATA ONTO A PART, WITH ITS DEPENDENCIES STATED.
+     !
+     ! This transform reads a field's domain and then asks it every
+     ! question there is: who belongs, where a member stands, what it
+     ! was carved from, what it is called. Those are four different
+     ! maps' business and none of them is the graph's, so all three
+     ! arrive here as arguments.
+     !
+     ! They are INOUT because the answer is a new carved domain: the
+     ! part field lives somewhere that did not exist before the call,
+     ! and a caller that could not interpret it would have no answer.
+     ! The transform writes into the caller's maps and keeps nothing.
+     !--------------------------------------------------------------!
+
      subroutine partition_data_interface(this, global_graph, global_data, &
-          & part_graph, part_data)
-       import :: graph_partitioner, graph, graph_field
+          & part_graph, sets, labels, inclusions, part_data)
+       import :: graph_partitioner, graph, graph_field, &
+            & set_map, label_map, inclusion_map
        class(graph_partitioner), intent(in) :: this
        class(graph), intent(in) :: global_graph
        class(graph_field), intent(in) :: global_data
        class(graph), intent(in) :: part_graph
+       type(set_map), intent(inout) :: sets
+       type(label_map), intent(inout) :: labels
+       type(inclusion_map), intent(inout) :: inclusions
        class(graph_field), allocatable, intent(out) :: part_data
      end subroutine partition_data_interface
 
@@ -471,12 +493,16 @@ module graph_calculus
      end subroutine assemble_graph_interface
 
      subroutine assemble_data_interface(this, part_graph, part_data, &
-          & global_graph, global_data)
-       import :: graph_assembler, graph, graph_field
+          & global_graph, sets, labels, inclusions, global_data)
+       import :: graph_assembler, graph, graph_field, &
+            & set_map, label_map, inclusion_map
        class(graph_assembler), intent(in) :: this
        class(graph), intent(in) :: part_graph
        class(graph_field), intent(in) :: part_data
        class(graph), intent(in) :: global_graph
+       type(set_map), intent(inout) :: sets
+       type(label_map), intent(inout) :: labels
+       type(inclusion_map), intent(inout) :: inclusions
        class(graph_field), allocatable, intent(out) :: global_data
      end subroutine assemble_data_interface
 

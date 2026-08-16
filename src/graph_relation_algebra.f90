@@ -68,8 +68,10 @@
 
 module graph_relation_algebra
 
-  use graph_carrier        , only : member_set
-  use graph_relation       , only : relation, stored_relation, slot
+  use fractal_graph      , only : set_graph => graph
+  use graph_relation       , only : relation, stored_relation
+  use graph_set_map        , only : set_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_binary_relation, only : csr_relation
 
   implicit none
@@ -89,45 +91,53 @@ contains
   !      an allowed domain that does not embed in the slot
   !===================================================================!
 
-  type(stored_relation) function restrict_slot(r, slot_index, allowed) &
-       & result(narrowed)
+  type(stored_relation) function restrict_slot(r, slot_index, allowed, &
+       & sets, inclusions) result(narrowed)
 
-    class(relation)  , intent(in) :: r
-    integer          , intent(in) :: slot_index
-    class(member_set), intent(in) :: allowed
+    class(relation)    , intent(in) :: r
+    integer            , intent(in) :: slot_index
+    type(set_graph)    , intent(in) :: allowed
+    type(set_map)      , intent(in) :: sets
+    type(inclusion_map), intent(in) :: inclusions
 
-    type(slot), allocatable        :: seats(:)
-    class(member_set), allocatable :: d
-    integer, allocatable           :: table(:,:), kept(:,:)
-    integer                        :: k, j, n
+    type(set_graph), allocatable :: seats(:)
+    type(set_graph)              :: d
+    integer, allocatable         :: table(:,:), kept(:,:)
+    integer                      :: k, j, n
 
     if (slot_index < 1 .or. slot_index > r % arity()) then
        error stop 'graph_relation_algebra: a slot index must name a slot of the relation'
     end if
 
+    !----------------------------------------------------------------!
+    ! The embedding is a DECLARED question, so it goes to the
+    ! inclusion map; the membership below is an extensional one, so it
+    ! goes to the set map. Two questions, two maps, and neither is the
+    ! graph's business.
+    !----------------------------------------------------------------!
+
     d = r % domain(slot_index)
-    if (.not. allowed % is_subobject_of(d)) then
+    if (.not. declared_subobject(allowed, d, inclusions)) then
        error stop 'graph_relation_algebra: a restriction domain must embed in the slot it restricts'
     end if
 
     allocate(seats(r % arity()))
     do k = 1, r % arity()
-       d = r % domain(k)
-       seats(k) = slot(d)
+       seats(k) = r % domain(k)
     end do
 
     call r % tuples(table)
     allocate(kept(size(table, 1), size(table, 2)))
     n = 0
     do j = 1, size(table, 2)
-       if (allowed % has(table(slot_index, j))) then
+       if (sets % has_in(allowed, table(slot_index, j))) then
           n = n + 1
           kept(:, n) = table(:, j)
        end if
     end do
 
     narrowed = stored_relation(r % name() // ' restricted', &
-         &                     seats, kept(:, 1:n))
+         &                     seats, kept(:, 1:n), sets)
 
   end function restrict_slot
 
@@ -143,16 +153,16 @@ contains
   !      a different operation, and is not quietly interpreted
   !===================================================================!
 
-  type(stored_relation) function project_slots(r, slot_indices) &
+  type(stored_relation) function project_slots(r, slot_indices, sets) &
        & result(image)
 
     class(relation), intent(in) :: r
     integer        , intent(in) :: slot_indices(:)
+    type(set_map)  , intent(in) :: sets
 
-    type(slot), allocatable        :: seats(:)
-    class(member_set), allocatable :: d
-    integer, allocatable           :: table(:,:), proj(:,:)
-    integer                        :: k, l, j, m
+    type(set_graph), allocatable :: seats(:)
+    integer, allocatable         :: table(:,:), proj(:,:)
+    integer                      :: k, l, j, m
 
     m = size(slot_indices)
 
@@ -172,8 +182,7 @@ contains
 
     allocate(seats(m))
     do k = 1, m
-       d = r % domain(slot_indices(k))
-       seats(k) = slot(d)
+       seats(k) = r % domain(slot_indices(k))
     end do
 
     call r % tuples(table)
@@ -185,7 +194,7 @@ contains
     end do
 
     image = stored_relation(r % name() // ' projected', &
-         &                  seats, proj)
+         &                  seats, proj, sets)
 
   end function project_slots
 
@@ -203,14 +212,15 @@ contains
   !      middle domains that are not one domain
   !===================================================================!
 
-  type(csr_relation) function compose_binary(r_ab, r_bc) result(chained)
+  type(csr_relation) function compose_binary(r_ab, r_bc, sets) result(chained)
 
     class(relation), intent(in) :: r_ab
     class(relation), intent(in) :: r_bc
+    type(set_map)  , intent(in) :: sets
 
-    class(member_set), allocatable :: da, db, db2, dc
-    integer, allocatable           :: tab(:,:), tbc(:,:), pairs(:,:)
-    integer                        :: i, j, n
+    type(set_graph)      :: da, db, db2, dc
+    integer, allocatable :: tab(:,:), tbc(:,:), pairs(:,:)
+    integer              :: i, j, n
 
     if (r_ab % arity() /= 2 .or. r_bc % arity() /= 2) then
        error stop 'graph_relation_algebra: composition takes two binary relations'
@@ -240,7 +250,7 @@ contains
     dc = r_bc % domain(2)
 
     chained = csr_relation(r_ab % name() // ' then ' // r_bc % name(), &
-         &                 da, dc, pairs(:, 1:n))
+         &                 da, dc, pairs(:, 1:n), sets)
 
   end function compose_binary
 

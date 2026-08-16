@@ -40,7 +40,7 @@ module graph_minimization
 
   use iso_fortran_env       , only : dp => REAL64
   use graph_grammar         , only : graph, graph_field, graph_operation
-  use graph_carrier         , only : member_set, counted_set
+  use graph_grammar      , only : set_graph
   use graph_calculus        , only : graph_functional
   use class_graph_field     , only : field
   use class_graph_reduction , only : reduction, REDUCE_SUM, REDUCE_NORM
@@ -84,11 +84,13 @@ module graph_minimization
 
      ! The unknown domain U: where the answer lives, explicit at
      ! attach, identity preserved - never inferred from the host.
-     class(member_set), allocatable :: unknown_domain
+     type(set_graph) :: unknown_domain
+     integer         :: n_unknown_domain
 
      ! The residual domain Y: what the action answers on, asked of
      ! the action itself at attach.
-     class(member_set), allocatable :: residual_domain
+     type(set_graph) :: residual_domain
+     integer         :: n_residual_domain
 
      ! A second seat, one member per NUMBER rather than per cell.
      ! The pairings live here: a measure carries one weight per
@@ -96,7 +98,8 @@ module graph_minimization
      ! the values themselves - the calculus says as much in its own
      ! banner. With one number per cell the two seats are the same
      ! set, and nothing changes.
-     type(counted_set) :: numbers
+     type(set_graph) :: numbers
+     integer         :: n_numbers = 0
 
      ! How wide an entry is. One number per cell is the common case
      ! and the default; a state with several numbers per cell - a
@@ -158,12 +161,14 @@ contains
   ! its boundary values and sources say by themselves.
   !===================================================================!
 
-  subroutine attach(this, action, on, unknown_domain, ncomp, coupling)
+  subroutine attach(this, action, on, unknown_domain, n_unknown_domain, &
+       & ncomp, coupling)
 
     class(minimizer)  , intent(inout) :: this
     class(graph_operation), intent(in)    :: action
     class(graph)          , intent(in)    :: on
-    class(member_set)     , intent(in)    :: unknown_domain
+    type(set_graph)       , intent(in)    :: unknown_domain
+    integer               , intent(in)    :: n_unknown_domain
     integer, intent(in), optional         :: ncomp
     class(graph)  , intent(in), optional  :: coupling
 
@@ -188,14 +193,15 @@ contains
     ! The unknown domain arrives EXPLICIT and identity-preserving.
     ! No hidden fallback to the host's vertices: a caller that
     ! means vertices says so at its own call site.
-    if (allocated(this % unknown_domain)) deallocate(this % unknown_domain)
-    allocate(this % unknown_domain, source=unknown_domain)
+    this % unknown_domain   = unknown_domain
+    this % n_unknown_domain = n_unknown_domain
 
     ! The residual domain is the action's own answer.
-    call action % domain(on, this % residual_domain)
+    call action % domain(on, this % residual_domain, this % n_residual_domain)
 
-    n = this % unknown_domain % size()
-    this % numbers = counted_set('numbers', n * this % ncomp)
+    n = this % n_unknown_domain
+    call this % numbers % declare()
+    this % n_numbers = n * this % ncomp
 
     allocate(zero(n * this % ncomp))
     zero = 0.0_dp
@@ -225,14 +231,16 @@ contains
     type(field) :: state
     class(graph_field), allocatable :: answer
 
-    state = field('state', this % unknown_domain, ncomp=this % ncomp)
+    state = field('state', this % unknown_domain, this % n_unknown_domain, ncomp=this % ncomp)
     call state % set_real_vector(x)
 
     call this % action % apply(this % on, [state], answer)
 
     block
-      class(member_set), allocatable :: got
-      call answer % domain(got)
+      type(set_graph) :: got
+      integer         :: n_got
+      got   = answer % domain()
+      n_got = answer % num_entries()
       if (.not. got % same_as(this % residual_domain)) then
          error stop 'minimization: the action must answer on its stated residual domain'
       end if
@@ -267,9 +275,9 @@ contains
     class(graph_functional), allocatable :: answer
     real(dp), allocatable :: got(:)
 
-    uf = field('u', this % numbers)
+    uf = field('u', this % numbers, this % n_numbers)
     call uf % set_real_vector(u)
-    vf = field('v', this % numbers)
+    vf = field('v', this % numbers, this % n_numbers)
     call vf % set_real_vector(v)
 
     total = reduction(REDUCE_SUM)
@@ -290,7 +298,7 @@ contains
     class(graph_functional), allocatable :: answer
     real(dp), allocatable :: got(:)
 
-    uf = field('u', this % numbers)
+    uf = field('u', this % numbers, this % n_numbers)
     call uf % set_real_vector(u)
 
     measure_of = reduction(REDUCE_NORM)
@@ -388,16 +396,18 @@ contains
   ! The operation face.
   !===================================================================!
 
-  subroutine solver_domain(this, input_graph, domain)
+  subroutine solver_domain(this, input_graph, domain, nentries)
 
     class(minimizer), intent(in)       :: this
     class(graph), intent(in)               :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
 
     associate (u1 => input_graph); end associate
 
     ! The solver's answer is a solution on U.
-    allocate(domain, source=this % unknown_domain)
+    domain   = this % unknown_domain
+    nentries = this % n_unknown_domain
 
   end subroutine solver_domain
 
@@ -416,13 +426,15 @@ contains
     associate (u1 => input_graph); end associate
 
     ! x IS a state on the unknown domain; say so.
-    allocate(x(this % unknown_domain % size() * this % ncomp))
+    allocate(x(this % n_unknown_domain * this % ncomp))
     x = 0.0_dp
 
     if (present(input_data)) then
        block
-         class(member_set), allocatable :: got
-         call input_data(1) % domain(got)
+         type(set_graph) :: got
+         integer         :: n_got
+         got   = input_data(1) % domain()
+         n_got = input_data(1) % num_entries()
          if (.not. got % same_as(this % residual_domain)) then
             error stop 'minimization: a right-hand side lives on the residual domain'
          end if
@@ -432,7 +444,7 @@ contains
        call worker % solve(rhs, x, achieved)
     end if
 
-    out = field('solution', this % unknown_domain, ncomp=this % ncomp)
+    out = field('solution', this % unknown_domain, this % n_unknown_domain, ncomp=this % ncomp)
     call out % set_real_vector(x)
 
     if (allocated(output)) deallocate(output)

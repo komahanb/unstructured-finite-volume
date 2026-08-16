@@ -78,7 +78,7 @@ module class_graph_reduction
 
   use iso_fortran_env       , only : dp => REAL64
   use graph_grammar         , only : graph, graph_field
-  use graph_carrier         , only : member_set, counted_set
+  use graph_grammar      , only : set_graph
   use graph_grammar         , only : GRAPH_FIELD_REAL, GRAPH_FIELD_COMPLEX
   use graph_grammar         , only : GRAPH_FIELD_LOGICAL
   use graph_calculus        , only : graph_reduction, graph_broadcast
@@ -116,6 +116,15 @@ module class_graph_reduction
 
      integer  :: rule  = REDUCE_SUM
      real(dp) :: power = 2.0_dp     ! which norm, when the rule is a norm
+
+     !----------------------------------------------------------------!
+     ! The one-entry home the answer lands on, declared once at
+     ! construction. Minting it per call to domain() would make two
+     ! calls two domains, and a functional built on the first would
+     ! not answer same_as against the second.
+     !----------------------------------------------------------------!
+
+     type(set_graph), private :: home
 
    contains
 
@@ -186,7 +195,7 @@ contains
   ! Build a reduction that follows one rule.
   !===================================================================!
 
-  pure type(reduction) function create(rule, power) result(this)
+  type(reduction) function create(rule, power) result(this)
 
     integer , intent(in)           :: rule
     real(dp), intent(in), optional :: power
@@ -194,6 +203,8 @@ contains
     this % rule = rule
 
     if (present(power)) this % power = power
+
+    call this % home % declare()
 
   end function create
 
@@ -544,16 +555,18 @@ contains
 
   end function reduction_name
 
-  subroutine reduction_domain(this, input_graph, domain)
+  subroutine reduction_domain(this, input_graph, domain, nentries)
 
     class(reduction), intent(in)           :: this
     class(graph), intent(in)               :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
 
-    associate (u1 => this, u2 => input_graph); end associate
+    associate (u1 => input_graph); end associate
 
-    ! The answer's home is the one-entry domain.
-    allocate(domain, source=counted_set('answer', 1))
+    ! The answer's home is this reduction's own one-entry domain.
+    domain   = this % home
+    nentries = 1
 
   end subroutine reduction_domain
 
@@ -615,15 +628,17 @@ contains
 
   end function broadcast_name
 
-  subroutine broadcast_domain(this, input_graph, domain)
+  subroutine broadcast_domain(this, input_graph, domain, nentries)
 
     class(broadcast), intent(in)           :: this
     class(graph), intent(in)               :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
 
     associate (u1 => this); end associate
 
-    call input_graph % all_vertices(domain)
+    domain   = input_graph % all_vertices()
+    nentries = input_graph % num_vertices()
 
   end subroutine broadcast_domain
 
@@ -636,7 +651,7 @@ contains
 
     type(plain_field) :: out
 
-    out = plain_field('broadcast', input_graph % vertex_set())
+    out = plain_field('broadcast', input_graph % vertex_set(), input_graph % num_vertices())
 
     if (present(input_data)) then
        select type (f => input_data(1))

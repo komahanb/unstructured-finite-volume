@@ -19,7 +19,7 @@
 !
 !                    SUBOBJECTS, NOT INTEGER LISTS
 !
-! Sources and sinks are answered as subset_set subobjects of the
+! Sources and sinks are answered as carved subobjects of the
 ! view's own domain - so they carry identity, membership, size and
 ! local_index for free, and their enumeration is CANONICAL BY THE
 ! DOMAIN'S DECLARATION ORDER: the scan walks V by local index, and a
@@ -41,7 +41,7 @@
 ! m = |A|, and the carrier's own lookup cost T_idx:
 !
 !      sources/sinks       O(n) fibre borrows, each paying T_idx -
-!                          and then the subset_set construction,
+!                          and then the carved-set declaration,
 !                          which validates every kept member against
 !                          the ambient (T_has each) and dedupes with
 !                          its current quadratic worst-case check
@@ -58,8 +58,12 @@
 
 module graph_algorithms
 
-  use graph_carrier, only : member_set, subset_set
-  use graph_profile, only : directed_adjacency_view
+  use fractal_graph           , only : set_graph => graph
+  use graph_profile           , only : directed_adjacency_view
+  use graph_set_map           , only : set_map
+  use graph_label_map         , only : label_map
+  use graph_inclusion_map     , only : inclusion_map
+  use graph_set_representation, only : listed_set_representation
 
   implicit none
 
@@ -73,21 +77,26 @@ contains
   ! the domain's own order.
   !===================================================================!
 
-  function sources(view) result(chosen)
+  subroutine sources(view, sets, labels, inclusions, chosen)
 
-    type(directed_adjacency_view), intent(in) :: view
-    type(subset_set)                          :: chosen
+    type(directed_adjacency_view), intent(in)    :: view
+    type(set_map)                , intent(inout) :: sets
+    type(label_map)              , intent(inout) :: labels
+    type(inclusion_map)          , intent(inout) :: inclusions
+    type(set_graph)              , intent(out)   :: chosen
 
-    class(member_set), allocatable :: dom
-    integer, allocatable           :: keep(:)
-    integer, pointer               :: fibre(:)
-    integer                        :: i, n, m
+    type(set_graph)      :: dom
+    integer, allocatable :: keep(:)
+    integer, pointer     :: fibre(:)
+    integer              :: i, n, m, size_of_dom
 
-    dom = view % domain()
-    allocate(keep(dom % size()))
+    dom         = view % domain()
+    size_of_dom = sets % size_of(dom)
+
+    allocate(keep(size_of_dom))
     n = 0
-    do i = 1, dom % size()
-       m = dom % member(i)
+    do i = 1, size_of_dom
+       m = sets % member_of(dom, i)
        fibre => view % predecessors_view(m)
        if (size(fibre) == 0) then
           n = n + 1
@@ -95,29 +104,34 @@ contains
        end if
     end do
 
-    chosen = subset_set('sources', dom, keep(1:n))
+    call carve(chosen, keep(1:n), 'sources', dom, sets, labels, inclusions)
 
-  end function sources
+  end subroutine sources
 
   !===================================================================!
   ! The members that point at nothing, likewise.
   !===================================================================!
 
-  function sinks(view) result(chosen)
+  subroutine sinks(view, sets, labels, inclusions, chosen)
 
-    type(directed_adjacency_view), intent(in) :: view
-    type(subset_set)                          :: chosen
+    type(directed_adjacency_view), intent(in)    :: view
+    type(set_map)                , intent(inout) :: sets
+    type(label_map)              , intent(inout) :: labels
+    type(inclusion_map)          , intent(inout) :: inclusions
+    type(set_graph)              , intent(out)   :: chosen
 
-    class(member_set), allocatable :: dom
-    integer, allocatable           :: keep(:)
-    integer, pointer               :: fibre(:)
-    integer                        :: i, n, m
+    type(set_graph)      :: dom
+    integer, allocatable :: keep(:)
+    integer, pointer     :: fibre(:)
+    integer              :: i, n, m, size_of_dom
 
-    dom = view % domain()
-    allocate(keep(dom % size()))
+    dom         = view % domain()
+    size_of_dom = sets % size_of(dom)
+
+    allocate(keep(size_of_dom))
     n = 0
-    do i = 1, dom % size()
-       m = dom % member(i)
+    do i = 1, size_of_dom
+       m = sets % member_of(dom, i)
        fibre => view % successors_view(m)
        if (size(fibre) == 0) then
           n = n + 1
@@ -125,9 +139,9 @@ contains
        end if
     end do
 
-    chosen = subset_set('sinks', dom, keep(1:n))
+    call carve(chosen, keep(1:n), 'sinks', dom, sets, labels, inclusions)
 
-  end function sinks
+  end subroutine sinks
 
   !===================================================================!
   ! Is there a directed path. Every member reaches itself by the
@@ -136,35 +150,37 @@ contains
   ! stamped by local index.
   !===================================================================!
 
-  logical function reachable(view, from, to)
+  logical function reachable(view, sets, from, to)
 
     type(directed_adjacency_view), intent(in) :: view
+    type(set_map)                , intent(in) :: sets
     integer                      , intent(in) :: from
     integer                      , intent(in) :: to
 
-    class(member_set), allocatable :: dom
-    logical, allocatable           :: visited(:)
-    integer, allocatable           :: queue(:)
-    integer, pointer               :: fibre(:)
-    integer                        :: head, tail, v, j, s
+    type(set_graph)      :: dom
+    logical, allocatable :: visited(:)
+    integer, allocatable :: queue(:)
+    integer, pointer     :: fibre(:)
+    integer              :: head, tail, v, j, s, n
 
     reachable = .false.
 
     dom = view % domain()
-    if (.not. (dom % has(from) .and. dom % has(to))) return
+    if (.not. (sets % has_in(dom, from) .and. sets % has_in(dom, to))) return
 
     if (from == to) then
        reachable = .true.
        return
     end if
 
-    allocate(visited(dom % size()), queue(dom % size()))
+    n = sets % size_of(dom)
+    allocate(visited(n), queue(n))
     visited = .false.
 
     head = 1
     tail = 1
     queue(1) = from
-    visited(dom % local_index(from)) = .true.
+    visited(sets % index_in(dom, from)) = .true.
 
     do while (head <= tail)
        v = queue(head)
@@ -176,8 +192,8 @@ contains
              reachable = .true.
              return
           end if
-          if (.not. visited(dom % local_index(s))) then
-             visited(dom % local_index(s)) = .true.
+          if (.not. visited(sets % index_in(dom, s))) then
+             visited(sets % index_in(dom, s)) = .true.
              tail = tail + 1
              queue(tail) = s
           end if
@@ -194,24 +210,25 @@ contains
   ! the walk is done, and the walk refuses.
   !===================================================================!
 
-  subroutine topological_order(view, order)
+  subroutine topological_order(view, sets, order)
 
     type(directed_adjacency_view), intent(in)  :: view
+    type(set_map)                , intent(in)  :: sets
     integer, allocatable         , intent(out) :: order(:)
 
-    class(member_set), allocatable :: dom
-    integer, allocatable           :: indegree(:)
-    logical, allocatable           :: placed(:)
-    integer, pointer               :: fibre(:)
-    integer                        :: n, i, j, round, pick
+    type(set_graph)      :: dom
+    integer, allocatable :: indegree(:)
+    logical, allocatable :: placed(:)
+    integer, pointer     :: fibre(:)
+    integer              :: n, i, j, round, pick
 
     dom = view % domain()
-    n   = dom % size()
+    n   = sets % size_of(dom)
 
     allocate(indegree(n), placed(n), order(n))
     placed = .false.
     do i = 1, n
-       fibre => view % predecessors_view(dom % member(i))
+       fibre => view % predecessors_view(sets % member_of(dom, i))
        indegree(i) = size(fibre)
     end do
 
@@ -228,15 +245,39 @@ contains
        end if
 
        placed(pick) = .true.
-       order(round) = dom % member(pick)
+       order(round) = sets % member_of(dom, pick)
 
-       fibre => view % successors_view(dom % member(pick))
+       fibre => view % successors_view(sets % member_of(dom, pick))
        do j = 1, size(fibre)
-          i = dom % local_index(fibre(j))
+          i = sets % index_in(dom, fibre(j))
           indegree(i) = indegree(i) - 1
        end do
     end do
 
   end subroutine topological_order
+
+  !===================================================================!
+  ! CARVE. The same atomic declaration class_graph states in full: a
+  ! carved set mints its identity and binds its extension, its label
+  ! and its embedding together, so no half-described set escapes.
+  !===================================================================!
+
+  subroutine carve(members, roll, label, ambient, sets, labels, inclusions)
+
+    type(set_graph)    , intent(out)   :: members
+    integer            , intent(in)    :: roll(:)
+    character(len=*)   , intent(in)    :: label
+    type(set_graph)    , intent(in)    :: ambient
+    type(set_map)      , intent(inout) :: sets
+    type(label_map)    , intent(inout) :: labels
+    type(inclusion_map), intent(inout) :: inclusions
+
+    call members % declare()
+
+    call sets       % bind(members, listed_set_representation(roll))
+    call labels     % bind(members, label)
+    call inclusions % include_in(members, ambient)
+
+  end subroutine carve
 
 end module graph_algorithms

@@ -46,7 +46,7 @@ module class_graph_marcher
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_grammar      , only : graph, graph_field, graph_operation
-  use graph_carrier      , only : member_set
+  use graph_grammar      , only : set_graph
   use class_graph_field  , only : field
   use class_graph        , only : stored_graph
   use class_graph_step   , only : step_operator, bdf
@@ -113,7 +113,8 @@ contains
 
     type(stored_graph) :: chain
     type(step_operator) :: statement
-    class(member_set), allocatable :: state_domain
+    type(set_graph) :: state_domain
+    integer         :: n_state_domain
     real(dp), allocatable :: s(:), qold(:), qolder(:), zeros(:)
     real(dp) :: answered
     integer :: e, ncomp
@@ -139,7 +140,7 @@ contains
     ! The unknown of every governed solve is the state, so it lives
     ! where the state lives - the action's domain, asked once here
     ! and used for both the seat and the width.
-    call state_seat(action, on, q, state_domain, ncomp)
+    call state_seat(action, on, q, state_domain, n_state_domain, ncomp)
 
     allocate(zeros(size(q)))
     zeros = 0.0_dp
@@ -168,7 +169,7 @@ contains
        ! numbers is measured whole, not by its first stripe. And the
        ! unknown domain is the state's own, never the host's.
        call this % inner % attach(statement, on, state_domain, &
-            & ncomp = ncomp)
+            & n_state_domain, ncomp = ncomp)
        call this % inner % solve(zeros, q, answered)
 
        qolder = qold
@@ -244,19 +245,20 @@ contains
   ! come out even.
   !===================================================================!
 
-  subroutine state_seat(action, on, q, state_domain, ncomp)
+  subroutine state_seat(action, on, q, state_domain, n_state_domain, ncomp)
 
-    class(graph_operation), intent(in) :: action
-    class(graph), intent(in)           :: on
-    real(dp), intent(in)               :: q(:)
-    class(member_set), allocatable, intent(out) :: state_domain
-    integer, intent(out)               :: ncomp
+    class(graph_operation), intent(in)  :: action
+    class(graph)          , intent(in)  :: on
+    real(dp)              , intent(in)  :: q(:)
+    type(set_graph)       , intent(out) :: state_domain
+    integer               , intent(out) :: n_state_domain
+    integer               , intent(out) :: ncomp
 
     integer :: n
 
-    call action % domain(on, state_domain)
+    call action % domain(on, state_domain, n_state_domain)
 
-    n = state_domain % size()
+    n = n_state_domain
     if (n <= 0) then
        error stop 'marcher: the action''s state domain is empty'
     end if
@@ -278,12 +280,13 @@ contains
 
     type(field)   :: state
     class(graph_field), allocatable :: answer
-    class(member_set), allocatable  :: state_domain, given
+    type(set_graph) :: state_domain, given
+    integer         :: n_state_domain, n_given
     integer :: ncomp
 
-    call state_seat(action, on, q, state_domain, ncomp)
+    call state_seat(action, on, q, state_domain, n_state_domain, ncomp)
 
-    state = field('state', state_domain, ncomp=ncomp)
+    state = field('state', state_domain, n_state_domain, ncomp=ncomp)
     call state % set_real_vector(q)
 
     call action % apply(on, [state], answer)
@@ -291,7 +294,8 @@ contains
     ! q <- q - h s is an equation between two states, so the answer
     ! must inhabit the domain the state does. Equal length is not
     ! the same claim, and would let a foreign carrier through.
-    call answer % domain(given)
+    given   = answer % domain()
+    n_given = answer % num_entries()
     if (.not. given % same_as(state_domain)) then
        error stop 'marcher: the action must answer on the domain its state lives on'
     end if

@@ -53,9 +53,13 @@
 
 module class_graph
 
-  use graph_grammar      , only : graph
+  use graph_grammar      , only : graph, set_graph
   use graph_calculus     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
-  use graph_carrier      , only : counted_set, subset_set, member_set
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map      , only : set_map
+  use graph_label_map    , only : label_map
+  use graph_inclusion_map, only : inclusion_map
 
   implicit none
 
@@ -114,14 +118,20 @@ module class_graph
 
      !----------------------------------------------------------------!
      ! The graph's two carriers (AGENTS.md, phase 1): its vertices
-     ! and its edges as declared member sets, stamped once at
+     ! and its edges as declared set GRAPHS, stamped once at
      ! construction and handed out beside the old vocabulary. Every
      ! call to vertex_set answers the SAME domain, so a relation
      ! signature can hold onto the identity.
+     !
+     ! Identity only. The extension is 1..nv and 1..ne, which the
+     ! graph already answers through num_vertices/num_edges, so
+     ! storing a representation here would store a second copy of a
+     ! fact - and storing a map would make the graph a registry of
+     ! interpretations, which it is not.
      !----------------------------------------------------------------!
 
-     type(counted_set) :: vset
-     type(counted_set) :: eset
+     type(set_graph) :: vset
+     type(set_graph) :: eset
 
    contains
 
@@ -139,6 +149,7 @@ module class_graph
 
      procedure :: vertex_set
      procedure :: edge_set
+     procedure :: name_carriers
 
      !----------------------------------------------------------------!
      ! Where an edge goes.
@@ -255,8 +266,8 @@ contains
 
     ! Declare the two domains once, here, so every later answer
     ! carries one identity per side for this graph's whole life.
-    this % vset = counted_set('vertices', this % nv)
-    this % eset = counted_set('edges'   , this % ne)
+    call this % vset % declare()
+    call this % eset % declare()
 
     if (present(number)) this % number = number
 
@@ -498,7 +509,7 @@ contains
   ! the same set (AGENTS.md, phase 1).
   !===================================================================!
 
-  pure type(counted_set) function vertex_set(this)
+  type(set_graph) function vertex_set(this)
 
     class(stored_graph), intent(in) :: this
 
@@ -506,13 +517,29 @@ contains
 
   end function vertex_set
 
-  pure type(counted_set) function edge_set(this)
+  type(set_graph) function edge_set(this)
 
     class(stored_graph), intent(in) :: this
 
     edge_set = this % eset
 
   end function edge_set
+
+  !===================================================================!
+  ! What this graph calls its own two domains, bound into the CALLER'S
+  ! label map. The graph knows the names; it does not keep the map, so
+  ! a caller that names nothing never calls this and carries nothing.
+  !===================================================================!
+
+  subroutine name_carriers(this, labels)
+
+    class(stored_graph), intent(in)    :: this
+    type(label_map)    , intent(inout) :: labels
+
+    call labels % bind(this % vset, 'vertices')
+    call labels % bind(this % eset, 'edges')
+
+  end subroutine name_carriers
 
   !===================================================================!
   ! How many edges.
@@ -572,25 +599,25 @@ contains
   ! boundary edge; an interior vertex is one that does not.
   !===================================================================!
 
-  subroutine all_vertices(this, members)
+  type(set_graph) function all_vertices(this) result(members)
 
-    class(stored_graph), intent(in)                       :: this
-    class(member_set), allocatable, intent(out) :: members
+    class(stored_graph), intent(in) :: this
 
-    integer :: v
+    members = this % vset
 
-    allocate(members, source=this % vset)
-
-  end subroutine all_vertices
+  end function all_vertices
 
   !===================================================================!
   ! The vertices that touch no boundary edge.
   !===================================================================!
 
-  subroutine interior_vertices(this, members)
+  subroutine interior_vertices(this, sets, labels, inclusions, members)
 
-    class(stored_graph), intent(in)                       :: this
-    class(member_set), allocatable, intent(out) :: members
+    class(stored_graph), intent(in)    :: this
+    type(set_map)      , intent(inout) :: sets
+    type(label_map)    , intent(inout) :: labels
+    type(inclusion_map), intent(inout) :: inclusions
+    type(set_graph)    , intent(out)   :: members
 
     integer, allocatable :: pick(:)
     integer :: v, n
@@ -604,7 +631,8 @@ contains
        end if
     end do
 
-    allocate(members, source=subset_set('interior_vertices', this % vset, pick(1:n)))
+    call carve(members, pick(1:n), 'interior_vertices', &
+         & this % vset, sets, labels, inclusions)
 
   end subroutine interior_vertices
 
@@ -612,10 +640,13 @@ contains
   ! The vertices that touch a boundary edge.
   !===================================================================!
 
-  subroutine boundary_vertices(this, members)
+  subroutine boundary_vertices(this, sets, labels, inclusions, members)
 
-    class(stored_graph), intent(in)                       :: this
-    class(member_set), allocatable, intent(out) :: members
+    class(stored_graph), intent(in)    :: this
+    type(set_map)      , intent(inout) :: sets
+    type(label_map)    , intent(inout) :: labels
+    type(inclusion_map), intent(inout) :: inclusions
+    type(set_graph)    , intent(out)   :: members
 
     integer, allocatable :: pick(:)
     integer :: v, n
@@ -629,7 +660,8 @@ contains
        end if
     end do
 
-    allocate(members, source=subset_set('boundary_vertices', this % vset, pick(1:n)))
+    call carve(members, pick(1:n), 'boundary_vertices', &
+         & this % vset, sets, labels, inclusions)
 
   end subroutine boundary_vertices
 
@@ -638,11 +670,14 @@ contains
   ! here.
   !===================================================================!
 
-  subroutine tagged_vertices(this, tag, members)
+  subroutine tagged_vertices(this, tag, sets, labels, inclusions, members)
 
-    class(stored_graph), intent(in)                       :: this
-    character(len=*), intent(in)                          :: tag
-    class(member_set), allocatable, intent(out) :: members
+    class(stored_graph), intent(in)    :: this
+    character(len=*)   , intent(in)    :: tag
+    type(set_map)      , intent(inout) :: sets
+    type(label_map)    , intent(inout) :: labels
+    type(inclusion_map), intent(inout) :: inclusions
+    type(set_graph)    , intent(out)   :: members
 
     integer, allocatable :: pick(:)
     integer :: v, n
@@ -658,9 +693,49 @@ contains
        end do
     end if
 
-    allocate(members, source=subset_set('tagged_vertices', this % vset, pick(1:n)))
+    call carve(members, pick(1:n), 'tagged_vertices', &
+         & this % vset, sets, labels, inclusions)
 
   end subroutine tagged_vertices
+
+  !===================================================================!
+  ! CARVE. The one gate every named subset passes through.
+  !
+  ! A carved set is a NEW set - it signs a fresh identity, exactly as
+  ! the subset_set it replaces did - and three things must be said
+  ! about it or it is not usable:
+  !
+  !     its extension     which members, in this order
+  !     its label         what the old subset called itself
+  !     its embedding     which carrier it was carved from
+  !
+  ! They are bound together HERE rather than at each of the twelve
+  ! call sites, because the third is the one an author forgets: a
+  ! missing representation stops the program at the first query, and a
+  ! missing label answers '', but a missing inclusion answers FALSE to
+  ! is_subobject_of - quietly, and only on a real mesh.
+  !
+  ! The maps are the caller's. This routine writes into them and keeps
+  ! nothing.
+  !===================================================================!
+
+  subroutine carve(members, roll, label, ambient, sets, labels, inclusions)
+
+    type(set_graph)    , intent(out)   :: members
+    integer            , intent(in)    :: roll(:)
+    character(len=*)   , intent(in)    :: label
+    type(set_graph)    , intent(in)    :: ambient
+    type(set_map)      , intent(inout) :: sets
+    type(label_map)    , intent(inout) :: labels
+    type(inclusion_map), intent(inout) :: inclusions
+
+    call members % declare()
+
+    call sets       % bind(members, listed_set_representation(roll))
+    call labels     % bind(members, label)
+    call inclusions % include_in(members, ambient)
+
+  end subroutine carve
 
   !===================================================================!
   ! Does any edge touching this vertex stop here rather than holding
@@ -688,25 +763,25 @@ contains
   ! The named edge sets. A boundary edge is one with no head.
   !===================================================================!
 
-  subroutine all_edges(this, members)
+  type(set_graph) function all_edges(this) result(members)
 
-    class(stored_graph), intent(in)                     :: this
-    class(member_set), allocatable, intent(out) :: members
+    class(stored_graph), intent(in) :: this
 
-    integer :: e
+    members = this % eset
 
-    allocate(members, source=this % eset)
-
-  end subroutine all_edges
+  end function all_edges
 
   !===================================================================!
   ! The edges with a head: both ends real.
   !===================================================================!
 
-  subroutine interior_edges(this, members)
+  subroutine interior_edges(this, sets, labels, inclusions, members)
 
-    class(stored_graph), intent(in)                     :: this
-    class(member_set), allocatable, intent(out) :: members
+    class(stored_graph), intent(in)    :: this
+    type(set_map)      , intent(inout) :: sets
+    type(label_map)    , intent(inout) :: labels
+    type(inclusion_map), intent(inout) :: inclusions
+    type(set_graph)    , intent(out)   :: members
 
     integer, allocatable :: pick(:)
     integer :: e, n
@@ -720,7 +795,8 @@ contains
        end if
     end do
 
-    allocate(members, source=subset_set('interior_edges', this % eset, pick(1:n)))
+    call carve(members, pick(1:n), 'interior_edges', &
+         & this % eset, sets, labels, inclusions)
 
   end subroutine interior_edges
 
@@ -728,10 +804,13 @@ contains
   ! The edges with no head - the open ends of the graph.
   !===================================================================!
 
-  subroutine boundary_edges(this, members)
+  subroutine boundary_edges(this, sets, labels, inclusions, members)
 
-    class(stored_graph), intent(in)                     :: this
-    class(member_set), allocatable, intent(out) :: members
+    class(stored_graph), intent(in)    :: this
+    type(set_map)      , intent(inout) :: sets
+    type(label_map)    , intent(inout) :: labels
+    type(inclusion_map), intent(inout) :: inclusions
+    type(set_graph)    , intent(out)   :: members
 
     integer, allocatable :: pick(:)
     integer :: e, n
@@ -745,7 +824,8 @@ contains
        end if
     end do
 
-    allocate(members, source=subset_set('boundary_edges', this % eset, pick(1:n)))
+    call carve(members, pick(1:n), 'boundary_edges', &
+         & this % eset, sets, labels, inclusions)
 
   end subroutine boundary_edges
 
@@ -754,11 +834,14 @@ contains
   ! here.
   !===================================================================!
 
-  subroutine tagged_edges(this, tag, members)
+  subroutine tagged_edges(this, tag, sets, labels, inclusions, members)
 
-    class(stored_graph), intent(in)                     :: this
-    character(len=*), intent(in)                        :: tag
-    class(member_set), allocatable, intent(out) :: members
+    class(stored_graph), intent(in)    :: this
+    character(len=*)   , intent(in)    :: tag
+    type(set_map)      , intent(inout) :: sets
+    type(label_map)    , intent(inout) :: labels
+    type(inclusion_map), intent(inout) :: inclusions
+    type(set_graph)    , intent(out)   :: members
 
     integer, allocatable :: pick(:)
     integer :: e, n
@@ -774,7 +857,8 @@ contains
        end do
     end if
 
-    allocate(members, source=subset_set('tagged_edges', this % eset, pick(1:n)))
+    call carve(members, pick(1:n), 'tagged_edges', &
+         & this % eset, sets, labels, inclusions)
 
   end subroutine tagged_edges
 
@@ -786,13 +870,17 @@ contains
   ! arrays and these answers become real.
   !===================================================================!
 
-  subroutine owned_vertices(this, part_id, members)
+  subroutine owned_vertices(this, part_id, sets, labels, inclusions, members)
 
-    class(stored_graph), intent(in)                       :: this
-    integer, intent(in)                                   :: part_id
-    class(member_set), allocatable, intent(out) :: members
+    class(stored_graph), intent(in)    :: this
+    integer            , intent(in)    :: part_id
+    type(set_map)      , intent(inout) :: sets
+    type(label_map)    , intent(inout) :: labels
+    type(inclusion_map), intent(inout) :: inclusions
+    type(set_graph)    , intent(out)   :: members
 
-    allocate(members, source=subset_set('owned_vertices', this % vset, owner_matches(this % vowner, this % nv, part_id, this % cut, .true.)))
+    call carve(members, owner_matches(this % vowner, this % nv, part_id, this % cut, .true.), 'owned_vertices', &
+         & this % vset, sets, labels, inclusions)
 
   end subroutine owned_vertices
 
@@ -801,13 +889,17 @@ contains
   ! cells along the cut.
   !===================================================================!
 
-  subroutine borrowed_vertices(this, part_id, members)
+  subroutine borrowed_vertices(this, part_id, sets, labels, inclusions, members)
 
-    class(stored_graph), intent(in)                       :: this
-    integer, intent(in)                                   :: part_id
-    class(member_set), allocatable, intent(out) :: members
+    class(stored_graph), intent(in)    :: this
+    integer            , intent(in)    :: part_id
+    type(set_map)      , intent(inout) :: sets
+    type(label_map)    , intent(inout) :: labels
+    type(inclusion_map), intent(inout) :: inclusions
+    type(set_graph)    , intent(out)   :: members
 
-    allocate(members, source=subset_set('borrowed_vertices', this % vset, owner_matches(this % vowner, this % nv, part_id, this % cut, .false.)))
+    call carve(members, owner_matches(this % vowner, this % nv, part_id, this % cut, .false.), 'borrowed_vertices', &
+         & this % vset, sets, labels, inclusions)
 
   end subroutine borrowed_vertices
 
@@ -816,18 +908,22 @@ contains
   ! owns: what it owns, plus what it borrows.
   !===================================================================!
 
-  subroutine overlap_vertices(this, part_id, members)
+  subroutine overlap_vertices(this, part_id, sets, labels, inclusions, members)
 
-    class(stored_graph), intent(in)                       :: this
-    integer, intent(in)                                   :: part_id
-    class(member_set), allocatable, intent(out) :: members
+    class(stored_graph), intent(in)    :: this
+    integer            , intent(in)    :: part_id
+    type(set_map)      , intent(inout) :: sets
+    type(label_map)    , intent(inout) :: labels
+    type(inclusion_map), intent(inout) :: inclusions
+    type(set_graph)    , intent(out)   :: members
 
     integer, allocatable :: owned(:), borrowed(:)
 
     allocate(owned   , source=owner_matches(this % vowner, this % nv, part_id, this % cut, .true.))
     allocate(borrowed, source=owner_matches(this % vowner, this % nv, part_id, this % cut, .false.))
 
-    allocate(members, source=subset_set('overlap_vertices', this % vset, [owned, borrowed]))
+    call carve(members, [owned, borrowed], 'overlap_vertices', &
+         & this % vset, sets, labels, inclusions)
 
   end subroutine overlap_vertices
 
@@ -835,13 +931,17 @@ contains
   ! The edges whose keeper is this part.
   !===================================================================!
 
-  subroutine owned_edges(this, part_id, members)
+  subroutine owned_edges(this, part_id, sets, labels, inclusions, members)
 
-    class(stored_graph), intent(in)                     :: this
-    integer, intent(in)                                 :: part_id
-    class(member_set), allocatable, intent(out) :: members
+    class(stored_graph), intent(in)    :: this
+    integer            , intent(in)    :: part_id
+    type(set_map)      , intent(inout) :: sets
+    type(label_map)    , intent(inout) :: labels
+    type(inclusion_map), intent(inout) :: inclusions
+    type(set_graph)    , intent(out)   :: members
 
-    allocate(members, source=subset_set('owned_edges', this % eset, owner_matches(this % eowner, this % ne, part_id, this % cut, .true.)))
+    call carve(members, owner_matches(this % eowner, this % ne, part_id, this % cut, .true.), 'owned_edges', &
+         & this % eset, sets, labels, inclusions)
 
   end subroutine owned_edges
 
@@ -849,13 +949,17 @@ contains
   ! The edges this part reads but does not own.
   !===================================================================!
 
-  subroutine borrowed_edges(this, part_id, members)
+  subroutine borrowed_edges(this, part_id, sets, labels, inclusions, members)
 
-    class(stored_graph), intent(in)                     :: this
-    integer, intent(in)                                 :: part_id
-    class(member_set), allocatable, intent(out) :: members
+    class(stored_graph), intent(in)    :: this
+    integer            , intent(in)    :: part_id
+    type(set_map)      , intent(inout) :: sets
+    type(label_map)    , intent(inout) :: labels
+    type(inclusion_map), intent(inout) :: inclusions
+    type(set_graph)    , intent(out)   :: members
 
-    allocate(members, source=subset_set('borrowed_edges', this % eset, owner_matches(this % eowner, this % ne, part_id, this % cut, .false.)))
+    call carve(members, owner_matches(this % eowner, this % ne, part_id, this % cut, .false.), 'borrowed_edges', &
+         & this % eset, sets, labels, inclusions)
 
   end subroutine borrowed_edges
 
@@ -863,18 +967,22 @@ contains
   ! Owned and borrowed together: every edge this part can see.
   !===================================================================!
 
-  subroutine overlap_edges(this, part_id, members)
+  subroutine overlap_edges(this, part_id, sets, labels, inclusions, members)
 
-    class(stored_graph), intent(in)                     :: this
-    integer, intent(in)                                 :: part_id
-    class(member_set), allocatable, intent(out) :: members
+    class(stored_graph), intent(in)    :: this
+    integer            , intent(in)    :: part_id
+    type(set_map)      , intent(inout) :: sets
+    type(label_map)    , intent(inout) :: labels
+    type(inclusion_map), intent(inout) :: inclusions
+    type(set_graph)    , intent(out)   :: members
 
     integer, allocatable :: owned(:), borrowed(:)
 
     allocate(owned   , source=owner_matches(this % eowner, this % ne, part_id, this % cut, .true.))
     allocate(borrowed, source=owner_matches(this % eowner, this % ne, part_id, this % cut, .false.))
 
-    allocate(members, source=subset_set('overlap_edges', this % eset, [owned, borrowed]))
+    call carve(members, [owned, borrowed], 'overlap_edges', &
+         & this % eset, sets, labels, inclusions)
 
   end subroutine overlap_edges
 

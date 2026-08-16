@@ -37,7 +37,7 @@ module graph_fitting
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_grammar      , only : graph, graph_field, graph_operation
-  use graph_carrier      , only : member_set
+  use graph_grammar      , only : set_graph
   use graph_forms        , only : form
   use class_graph_field  , only : field
   use class_graph_stencil, only : stencil_operator
@@ -126,15 +126,17 @@ contains
 
   end function fit_name
 
-  subroutine fit_domain(this, input_graph, domain)
+  subroutine fit_domain(this, input_graph, domain, nentries)
 
     class(fit), intent(in)                 :: this
     class(graph), intent(in)               :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
 
     associate (u1 => this); end associate
 
-    call input_graph % all_vertices(domain)
+    domain   = input_graph % all_vertices()
+    nentries = input_graph % num_vertices()
 
   end subroutine fit_domain
 
@@ -230,7 +232,8 @@ contains
        dual = stencil_operator(rows, columns, entries, &
             & [(0.0_dp, i = 1, nc)], label='fitting dual')
 
-       call solver % attach(dual, dual % pattern, dual % pattern % vertex_set())
+       call solver % attach(dual, dual % pattern, dual % pattern % vertex_set(), &
+            & dual % pattern % num_vertices())
        solver % tolerance      = 1.0d-14
        solver % max_iterations = 50
 
@@ -247,7 +250,7 @@ contains
 
     end if
 
-    out = field('fit weights', input_graph % vertex_set())
+    out = field('fit weights', input_graph % vertex_set(), input_graph % num_vertices())
     call out % set_real_vector(w)
 
     if (allocated(output)) deallocate(output)

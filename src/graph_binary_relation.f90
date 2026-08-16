@@ -97,8 +97,11 @@
 
 module graph_binary_relation
 
-  use graph_carrier , only : member_set, subset_set
-  use graph_relation, only : relation, slot
+  use fractal_graph           , only : set_graph => graph
+  use graph_relation          , only : relation
+  use graph_set_map           , only : set_map
+  use graph_set_representation, only : set_representation
+  use graph_label_map         , only : label_map
 
   implicit none
 
@@ -154,9 +157,34 @@ module graph_binary_relation
   ! an O(degree) slice.
   !===================================================================!
 
+  !===================================================================!
+  ! TWO QUESTIONS, TWO STORES, AND THEY DO NOT MEET.
+  !
+  !     signature      WHICH domains        semantic, identities
+  !     coordinates    WHICH ROW a member   compiled, numbering only
+  !
+  ! The signature answers domain(k) and nothing else; the coordinates
+  ! answer local_index and nothing else. A coordinate representation
+  ! carries NO identity - it cannot say which set it numbers, and does
+  ! not need to, because the signature beside it already did.
+  !
+  ! The coordinates are held BY VALUE, copied out of the caller's set
+  ! map at construction. That is deliberate and is not the field's
+  ! situation: many fields share one domain, so copying an extent per
+  ! field was measured harmful; a CSR relation's row numbering is part
+  ! of its own compiled execution contract, and the hot path may not go
+  ! looking for it. So it is here, and image/preimage/has reach it
+  ! directly - no map row scan, no graph traversal, no label lookup.
+  !===================================================================!
+
   type, extends(binary_relation) :: csr_relation
 
-     type(slot), allocatable, private :: signature(:)
+     ! Semantic: which two domains.
+     type(set_graph), allocatable, private :: signature(:)
+
+     ! Compiled: how a member value becomes a row, each direction.
+     class(set_representation), allocatable, private :: source_coords
+     class(set_representation), allocatable, private :: target_coords
 
      integer             , private :: nnz = 0
      integer, allocatable, private :: xfwd(:), tgt(:)
@@ -223,19 +251,17 @@ contains
   ! The two ends of the signature, named as arity two names them.
   !===================================================================!
 
-  function source(this) result(domain)
+  type(set_graph) function source(this) result(domain)
 
     class(binary_relation), intent(in) :: this
-    class(member_set), allocatable     :: domain
 
     domain = this % domain(1)
 
   end function source
 
-  function target(this) result(domain)
+  type(set_graph) function target(this) result(domain)
 
     class(binary_relation), intent(in) :: this
-    class(member_set), allocatable     :: domain
 
     domain = this % domain(2)
 
@@ -279,13 +305,14 @@ contains
   !      backward build    the same, mirrored
   !===================================================================!
 
-  type(csr_relation) function create_csr(name, source, target, table) &
+  type(csr_relation) function create_csr(name, source, target, table, sets) &
        & result(this)
 
-    character(len=*) , intent(in) :: name
-    class(member_set), intent(in) :: source
-    class(member_set), intent(in) :: target
-    integer          , intent(in) :: table(:,:)
+    character(len=*), intent(in) :: name
+    type(set_graph) , intent(in) :: source
+    type(set_graph) , intent(in) :: target
+    integer         , intent(in) :: table(:,:)
+    type(set_map)   , intent(in) :: sets
 
     integer, allocatable :: aloc(:), bloc(:), order(:), fill(:), stamp(:)
     integer, allocatable :: keepa(:), keepb(:)
@@ -298,23 +325,33 @@ contains
     end if
 
     if (size(table, 1) /= 2) then
-       error stop 'graph_binary_relation: each tuple has exactly one part per slot'
+       error stop 'graph_binary_relation: each tuple has exactly one part per position'
     end if
 
-    na = source % size()
-    nb = target % size()
+    !----------------------------------------------------------------!
+    ! COMPILATION. The map is read here and only here: the two extents
+    ! are copied in, and from this line on the relation numbers its own
+    ! rows. Nothing below, and nothing in image, preimage or has, asks
+    ! the map anything.
+    !----------------------------------------------------------------!
+
+    call sets % extent_of(source, this % source_coords)
+    call sets % extent_of(target, this % target_coords)
+
+    na = this % source_coords % size()
+    nb = this % target_coords % size()
     nt = size(table, 2)
 
-    ! Validate through the carriers' own membership, and read every
-    ! member's row through the carriers' own inverse enumeration.
+    ! Validate through the coordinates' own membership, and read every
+    ! member's row through their own inverse enumeration.
     allocate(aloc(nt), bloc(nt))
     do j = 1, nt
-       if (.not. source % has(table(1, j)) .or. &
-            & .not. target % has(table(2, j))) then
+       if (.not. this % source_coords % has(table(1, j)) .or. &
+            & .not. this % target_coords % has(table(2, j))) then
           error stop 'graph_binary_relation: a tuple names a member its domain does not hold'
        end if
-       aloc(j) = source % local_index(table(1, j))
-       bloc(j) = target % local_index(table(2, j))
+       aloc(j) = this % source_coords % local_index(table(1, j))
+       bloc(j) = this % target_coords % local_index(table(2, j))
     end do
 
     ! Forward: count per source row, prefix-sum, place - duplicates
@@ -375,20 +412,19 @@ contains
     end do
 
     allocate(this % signature(2))
-    allocate(this % signature(1) % carrier, source=source)
-    allocate(this % signature(2) % carrier, source=target)
+    this % signature(1) = source
+    this % signature(2) = target
 
     call this % declare(name)
 
   end function create_csr
 
-  function csr_domain(this, slot_index) result(domain)
+  type(set_graph) function csr_domain(this, position) result(domain)
 
     class(csr_relation), intent(in) :: this
-    integer            , intent(in) :: slot_index
-    class(member_set), allocatable  :: domain
+    integer            , intent(in) :: position
 
-    allocate(domain, source=this % signature(slot_index) % carrier)
+    domain = this % signature(position)
 
   end function csr_domain
 
@@ -407,7 +443,7 @@ contains
 
     integer :: row
 
-    row = this % signature(1) % carrier % local_index(member)
+    row = this % source_coords % local_index(member)
     if (row == 0) then
        fibre => this % tgt(1:0)
        return
@@ -425,7 +461,7 @@ contains
 
     integer :: row
 
-    row = this % signature(2) % carrier % local_index(member)
+    row = this % target_coords % local_index(member)
     if (row == 0) then
        fibre => this % src(1:0)
        return
@@ -450,7 +486,7 @@ contains
 
     if (size(tuple) /= 2) return
 
-    row = this % signature(1) % carrier % local_index(tuple(1))
+    row = this % source_coords % local_index(tuple(1))
     if (row == 0) return
 
     do j = this % xfwd(row), this % xfwd(row + 1) - 1
@@ -483,7 +519,7 @@ contains
 
     allocate(table(2, this % nnz))
     do row = 1, size(this % xfwd) - 1
-       a = this % signature(1) % carrier % member(row)
+       a = this % source_coords % member(row)
        do j = this % xfwd(row), this % xfwd(row + 1) - 1
           table(1, j) = a
           table(2, j) = this % tgt(j)
@@ -512,13 +548,12 @@ contains
   ! The view's answers: everything through the base, ends swapped.
   !===================================================================!
 
-  function view_domain(this, slot_index) result(domain)
+  type(set_graph) function view_domain(this, position) result(domain)
 
     class(transposed_view), intent(in) :: this
-    integer               , intent(in) :: slot_index
-    class(member_set), allocatable     :: domain
+    integer               , intent(in) :: position
 
-    domain = this % base % domain(3 - slot_index)
+    domain = this % base % domain(3 - position)
 
   end function view_domain
 
@@ -596,23 +631,26 @@ contains
   ! composition with its inclusion.
   !===================================================================!
 
-  type(csr_relation) function inclusion_of(s) result(inclusion)
+  type(csr_relation) function inclusion_of(s, host, sets, labels) &
+       & result(inclusion)
 
-    class(subset_set), intent(in) :: s
+    type(set_graph) , intent(in) :: s
+    type(set_graph) , intent(in) :: host
+    type(set_map)   , intent(in) :: sets
+    type(label_map) , intent(in) :: labels
 
-    class(member_set), allocatable :: host
-    integer, allocatable           :: table(:,:)
-    integer                        :: k
+    integer, allocatable :: table(:,:)
+    integer              :: k, n
 
-    host = s % ambient()
+    n = sets % size_of(s)
 
-    allocate(table(2, s % size()))
-    do k = 1, s % size()
-       table(:, k) = [s % member(k), s % member(k)]
+    allocate(table(2, n))
+    do k = 1, n
+       table(:, k) = [sets % member_of(s, k), sets % member_of(s, k)]
     end do
 
-    inclusion = csr_relation(s % name() // ' in ' // host % name(), &
-         &                   s, host, table)
+    inclusion = csr_relation(labels % label_of(s) // ' in ' // &
+         &                   labels % label_of(host), s, host, table, sets)
 
   end function inclusion_of
 

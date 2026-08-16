@@ -29,7 +29,7 @@ module class_graph_coarsener
 
   use iso_fortran_env     , only : dp => REAL64
   use graph_grammar       , only : graph, graph_field
-  use graph_carrier       , only : member_set
+  use graph_grammar      , only : set_graph
   use graph_calculus      , only : graph_coarsener
   use class_graph         , only : stored_graph
   use class_graph_field   , only : field
@@ -161,8 +161,10 @@ contains
     select type (input_data)
     class is (field)
        block
-         class(member_set), allocatable :: dom
-         call input_data % domain(dom)
+         type(set_graph) :: dom
+         integer         :: n_dom
+         dom   = input_data % domain()
+         n_dom = input_data % num_entries()
          ! Full coverage, not merely family: this kernel indexes
          ! every vertex densely (AGENTS.md 5B: routing is not
          ! admissibility).
@@ -329,7 +331,7 @@ contains
        nv    = fine_graph % num_vertices()
        ncomp = fine_data % num_components()
 
-       out = field(fine_data % name(), coarse_graph % vertex_set(), &
+       out = field(fine_data % name(), coarse_graph % vertex_set(), coarse_graph % num_vertices(), &
             &             ncomp=ncomp, unit_name=fine_data % units())
 
        call fine_data % get_real_vector(fv)

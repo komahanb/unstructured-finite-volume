@@ -13,7 +13,7 @@
 module class_harmonic_form
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_carrier, only : subset_set, counted_set
+  use graph_grammar      , only : set_graph
   use graph_forms        , only : form
 
   implicit none
@@ -47,7 +47,7 @@ contains
     integer :: m
 
     this % wavenumber = wavenumber
-    this % subset_set = subset_set('harmonic-basis', counted_set('harmonic-table', 3), [(m, m = 1, 3)])
+    call this % declare_basis(3)
 
   end function create
 

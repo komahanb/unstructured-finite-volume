@@ -57,7 +57,11 @@ module class_graph_partitioner
 
   use iso_fortran_env     , only : dp => REAL64
   use graph_grammar       , only : graph, graph_field
-  use graph_carrier       , only : member_set, counted_set, subset_set
+  use graph_grammar      , only : set_graph
+  use graph_set_map      , only : set_map
+  use graph_label_map    , only : label_map
+  use graph_inclusion_map, only : inclusion_map, declared_subobject
+  use graph_set_representation, only : listed_set_representation
   use graph_calculus      , only : graph_partitioner
   use class_graph         , only : stored_graph
   use class_graph_field   , only : field
@@ -461,29 +465,38 @@ contains
   ! cannot drift out of step with the structure.
   !===================================================================!
 
-  subroutine partition_data(this, global_graph, global_data, part_graph, part_data)
+  subroutine partition_data(this, global_graph, global_data, part_graph, &
+       & sets, labels, inclusions, part_data)
 
     class(partitioner), intent(in)               :: this
     class(graph)      , intent(in)               :: global_graph
     class(graph_field) , intent(in)               :: global_data
     class(graph)      , intent(in)               :: part_graph
+    type(set_map)      , intent(inout)            :: sets
+    type(label_map)    , intent(inout)            :: labels
+    type(inclusion_map), intent(inout)            :: inclusions
     class(graph_field) , allocatable, intent(out) :: part_data
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
+    integer         :: n_dom
 
     associate (u1 => this); end associate
 
     select type (global_data)
 
     class is (field)
-       call global_data % domain(dom)
-       ! Classify by embedding; coverage decides the carry inside.
-       if (dom % is_subobject_of(global_graph % vertex_set())) then
-          call carry_field(global_data, dom, &
-               & global_graph % vertex_set(), part_graph, .true., part_data)
-       else if (dom % is_subobject_of(global_graph % edge_set())) then
-          call carry_field(global_data, dom, &
-               & global_graph % edge_set(), part_graph, .false., part_data)
+       dom   = global_data % domain()
+       n_dom = global_data % num_entries()
+       ! Classify by embedding - a DECLARED question, so the inclusion
+       ! map answers it. Coverage decides the carry inside.
+       if (declared_subobject(dom, global_graph % vertex_set(), inclusions)) then
+          call carry_field(global_data, dom, n_dom, &
+               & global_graph % vertex_set(), global_graph % num_vertices(), &
+               & part_graph, .true., sets, labels, inclusions, part_data)
+       else if (declared_subobject(dom, global_graph % edge_set(), inclusions)) then
+          call carry_field(global_data, dom, n_dom, &
+               & global_graph % edge_set(), global_graph % num_edges(), &
+               & part_graph, .false., sets, labels, inclusions, part_data)
        else
           error stop 'partition: this field does not live on this graph''s domains'
        end if
@@ -506,19 +519,25 @@ contains
   ! across transport, extension and values are.
   !===================================================================!
 
-  subroutine carry_field(global_data, dom, global_carrier, part_graph, &
-       &                 on_vertices, part_data)
+  subroutine carry_field(global_data, dom, n_dom, global_carrier, &
+       &                 n_global_carrier, part_graph, on_vertices, &
+       &                 sets, labels, inclusions, part_data)
 
-    type(field)       , intent(in)               :: global_data
-    class(member_set) , intent(in)               :: dom
-    type(counted_set) , intent(in)               :: global_carrier
-    class(graph)      , intent(in)               :: part_graph
-    logical           , intent(in)               :: on_vertices
-    class(graph_field), allocatable, intent(out) :: part_data
+    type(field)        , intent(in)               :: global_data
+    type(set_graph)    , intent(in)               :: dom
+    integer            , intent(in)               :: n_dom
+    type(set_graph)    , intent(in)               :: global_carrier
+    integer            , intent(in)               :: n_global_carrier
+    class(graph)       , intent(in)               :: part_graph
+    logical            , intent(in)               :: on_vertices
+    type(set_map)      , intent(inout)            :: sets
+    type(label_map)    , intent(inout)            :: labels
+    type(inclusion_map), intent(inout)            :: inclusions
+    class(graph_field) , allocatable, intent(out) :: part_data
 
     type(field)           :: out
-    type(counted_set)     :: part_carrier
-    type(subset_set)      :: sp
+    type(set_graph)       :: part_carrier
+    type(set_graph)       :: sp
     real(dp), allocatable :: fv(:), lv(:)
     integer , allocatable :: kept(:)
     integer :: nlocal, ncomp, l, c, g, n, at
@@ -541,14 +560,14 @@ contains
        lv = 0.0_dp
        do l = 1, nlocal
           g = global_of(part_graph, l, on_vertices)
-          at = dom % local_index(g)
+          at = sets % index_in(dom, g)
           if (at >= 1) then
              do c = 1, ncomp
                 lv((l - 1) * ncomp + c) = fv((at - 1) * ncomp + c)
              end do
           end if
        end do
-       out = field(global_data % name(), part_carrier, ncomp=ncomp, &
+       out = field(global_data % name(), part_carrier, nlocal, ncomp=ncomp, &
             &      unit_name=global_data % units())
        call out % set_real_vector(lv)
 
@@ -559,22 +578,32 @@ contains
        n = 0
        do l = 1, nlocal
           g = global_of(part_graph, l, on_vertices)
-          if (dom % has(g)) then
+          if (sets % has_in(dom, g)) then
              n = n + 1
              kept(n) = l
           end if
        end do
-       sp = subset_set(dom % name(), part_carrier, kept(1:n))
+       !-------------------------------------------------------------!
+       ! A new ambient means a new declared subset, so this is a carve
+       ! and obeys the carve law: identity, extension, label and
+       ! embedding, together. The label is the one the global domain
+       ! carried - transport renames nothing.
+       !-------------------------------------------------------------!
+
+       call sp % declare()
+       call sets       % bind(sp, listed_set_representation(kept(1:n)))
+       call labels     % bind(sp, labels % label_of(dom))
+       call inclusions % include_in(sp, part_carrier)
 
        allocate(lv(n * ncomp))
        do l = 1, n
           g  = global_of(part_graph, kept(l), on_vertices)
-          at = dom % local_index(g)
+          at = sets % index_in(dom, g)
           do c = 1, ncomp
              lv((l - 1) * ncomp + c) = fv((at - 1) * ncomp + c)
           end do
        end do
-       out = field(global_data % name(), sp, ncomp=ncomp, &
+       out = field(global_data % name(), sp, n, ncomp=ncomp, &
             &      unit_name=global_data % units())
        call out % set_real_vector(lv)
 

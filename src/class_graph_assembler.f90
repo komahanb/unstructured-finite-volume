@@ -61,7 +61,11 @@ module class_graph_assembler
 
   use iso_fortran_env     , only : dp => REAL64
   use graph_grammar       , only : graph, graph_field
-  use graph_carrier       , only : member_set, counted_set, subset_set
+  use graph_grammar      , only : set_graph
+  use graph_set_map      , only : set_map
+  use graph_label_map    , only : label_map
+  use graph_inclusion_map, only : inclusion_map, declared_subobject
+  use graph_set_representation, only : listed_set_representation
   use graph_calculus      , only : graph_assembler
   use class_graph         , only : stored_graph
   use class_graph_field   , only : field
@@ -200,30 +204,38 @@ contains
   ! the answers from every part rebuilds the whole field exactly once.
   !===================================================================!
 
-  subroutine assemble_data(this, part_graph, part_data, global_graph, global_data)
+  subroutine assemble_data(this, part_graph, part_data, global_graph, &
+       & sets, labels, inclusions, global_data)
 
     class(assembler) , intent(in)               :: this
     class(graph)     , intent(in)               :: part_graph
     class(graph_field), intent(in)               :: part_data
     class(graph)     , intent(in)               :: global_graph
+    type(set_map)      , intent(inout)            :: sets
+    type(label_map)    , intent(inout)            :: labels
+    type(inclusion_map), intent(inout)            :: inclusions
     class(graph_field), allocatable, intent(out) :: global_data
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
+    integer         :: n_dom
 
     associate (u1 => this); end associate
 
     select type (part_data)
 
     class is (field)
-       call part_data % domain(dom)
-       if (dom % is_subobject_of(part_graph % vertex_set())) then
-          call gather_field(part_data, dom, part_graph, &
-               & part_graph % vertex_set(), global_graph, .true., &
-               & global_data)
-       else if (dom % is_subobject_of(part_graph % edge_set())) then
-          call gather_field(part_data, dom, part_graph, &
-               & part_graph % edge_set(), global_graph, .false., &
-               & global_data)
+       dom   = part_data % domain()
+       n_dom = part_data % num_entries()
+       ! Classify by embedding - a DECLARED question, so the inclusion
+       ! map answers it, never the extension and never the graph.
+       if (declared_subobject(dom, part_graph % vertex_set(), inclusions)) then
+          call gather_field(part_data, dom, n_dom, part_graph, &
+               & part_graph % vertex_set(), part_graph % num_vertices(), &
+               & global_graph, .true., sets, labels, inclusions, global_data)
+       else if (declared_subobject(dom, part_graph % edge_set(), inclusions)) then
+          call gather_field(part_data, dom, n_dom, part_graph, &
+               & part_graph % edge_set(), part_graph % num_edges(), &
+               & global_graph, .false., sets, labels, inclusions, global_data)
        else
           error stop 'assemble: this field does not live on this part''s domains'
        end if
@@ -244,20 +256,26 @@ contains
   ! declared subset: extension and values return, tokens do not.
   !===================================================================!
 
-  subroutine gather_field(part_data, dom, part_graph, part_carrier, &
-       &                  global_graph, on_vertices, global_data)
+  subroutine gather_field(part_data, dom, n_dom, part_graph, part_carrier, &
+       &                  n_part_carrier, global_graph, on_vertices, &
+       &                  sets, labels, inclusions, global_data)
 
-    type(field)       , intent(in)               :: part_data
-    class(member_set) , intent(in)               :: dom
-    class(graph)      , intent(in)               :: part_graph
-    type(counted_set) , intent(in)               :: part_carrier
-    class(graph)      , intent(in)               :: global_graph
-    logical           , intent(in)               :: on_vertices
-    class(graph_field), allocatable, intent(out) :: global_data
+    type(field)        , intent(in)               :: part_data
+    type(set_graph)    , intent(in)               :: dom
+    integer            , intent(in)               :: n_dom
+    class(graph)       , intent(in)               :: part_graph
+    type(set_graph)    , intent(in)               :: part_carrier
+    integer            , intent(in)               :: n_part_carrier
+    class(graph)       , intent(in)               :: global_graph
+    logical            , intent(in)               :: on_vertices
+    type(set_map)      , intent(inout)            :: sets
+    type(label_map)    , intent(inout)            :: labels
+    type(inclusion_map), intent(inout)            :: inclusions
+    class(graph_field) , allocatable, intent(out) :: global_data
 
     type(field)           :: out
-    type(counted_set)     :: global_carrier
-    type(subset_set)      :: sg
+    type(set_graph)       :: global_carrier
+    type(set_graph)       :: sg
     real(dp), allocatable :: lv(:), fv(:)
     integer , allocatable :: kept(:), came(:)
     integer :: nglobal, nlocal, ncomp, l, c, f, me, n, at
@@ -279,7 +297,7 @@ contains
     if (dom % same_as(part_carrier)) then
 
        ! Full coverage: the established dense assembly, owned only.
-       out = field(part_data % name(), global_carrier, ncomp=ncomp, &
+       out = field(part_data % name(), global_carrier, nglobal, ncomp=ncomp, &
             &      unit_name=part_data % units())
        allocate(fv(nglobal * ncomp))
        fv = 0.0_dp
@@ -301,10 +319,10 @@ contains
     else
 
        ! Proper subset: carry the members home and keep only them.
-       allocate(kept(dom % size()), came(dom % size()))
+       allocate(kept(n_dom), came(n_dom))
        n = 0
-       do l = 1, dom % size()
-          at = dom % member(l)              ! part-local member
+       do l = 1, n_dom
+          at = sets % member_of(dom, l)      ! part-local member
           if (part_graph % has_part_relation()) then
              if (owner_of(part_graph, at, on_vertices) /= me) cycle
           end if
@@ -312,7 +330,17 @@ contains
           kept(n) = global_of(part_graph, at, on_vertices)
           came(n) = l
        end do
-       sg = subset_set(dom % name(), global_carrier, kept(1:n))
+       !-------------------------------------------------------------!
+       ! A new ambient means a new declared subset, so this is a carve
+       ! and obeys the carve law: identity, extension, label and
+       ! embedding, together. Extension and values return home; tokens
+       ! do not, and the label does.
+       !-------------------------------------------------------------!
+
+       call sg % declare()
+       call sets       % bind(sg, listed_set_representation(kept(1:n)))
+       call labels     % bind(sg, labels % label_of(dom))
+       call inclusions % include_in(sg, global_carrier)
 
        allocate(fv(n * ncomp))
        do l = 1, n
@@ -320,7 +348,7 @@ contains
              fv((l - 1) * ncomp + c) = lv((came(l) - 1) * ncomp + c)
           end do
        end do
-       out = field(part_data % name(), sg, ncomp=ncomp, &
+       out = field(part_data % name(), sg, n, ncomp=ncomp, &
             &      unit_name=part_data % units())
        call out % set_real_vector(fv)
 

@@ -102,6 +102,20 @@ module graph_set_map
      procedure :: has_in
      procedure :: index_in
 
+     !----------------------------------------------------------------!
+     ! The extent itself, COPIED. This is how a compiled representation
+     ! - a CSR relation's row numbering - takes the coordinates it will
+     ! need for life, at the one moment a map is in scope.
+     !
+     ! It is not the borrowed accessor the header warns about: the
+     ! answer is a fresh allocatable, so the caller owns it and the map
+     ! may grow, move or die without touching it. Lending is what would
+     ! need a gate. Copying needs only a reason, and compiling one is
+     ! the reason.
+     !----------------------------------------------------------------!
+
+     procedure :: extent_of
+
   end type set_map
 
 contains
@@ -242,6 +256,21 @@ contains
     has_in = this % rows(at) % extent % has(value)
 
   end function has_in
+
+  subroutine extent_of(this, element, extent)
+
+    class(set_map)                        , intent(in)  :: this
+    type(graph)                           , intent(in)  :: element
+    class(set_representation), allocatable, intent(out) :: extent
+
+    integer :: at
+
+    at = row_of(this, element)
+    if (at == 0) error stop 'graph_set_map: no representation describes that set'
+
+    allocate(extent, source=this % rows(at) % extent)
+
+  end subroutine extent_of
 
   integer function index_in(this, element, value)
 

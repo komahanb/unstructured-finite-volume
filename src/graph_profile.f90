@@ -53,12 +53,14 @@
 
 module graph_profile
 
-  use graph_carrier        , only : member_set
+  use fractal_graph      , only : set_graph => graph
   use graph_relation       , only : relation
   use graph_binary_relation, only : binary_relation
   use fractal_graph        , only : graph
   use graph_relational_view, only : relational_binding, &
        & num_relations, relation_at
+  use graph_set_map        , only : set_map
+  use graph_set_representation, only : set_representation
 
   implicit none
 
@@ -67,8 +69,20 @@ module graph_profile
 
   type :: ordinary_graph_view
 
-     class(member_set), allocatable, private :: verts
-     class(member_set), allocatable, private :: edges
+     !----------------------------------------------------------------!
+     ! Which two domains, and how many of each. The edge NUMBERING is
+     ! kept by value beside them, because the fibre orderings below
+     ! ask local_index per query - a compiled view carries its own
+     ! coordinates for the same reason a CSR relation does, and for
+     ! the same reason neither goes looking for a map.
+     !----------------------------------------------------------------!
+
+     type(set_graph), private :: verts
+     type(set_graph), private :: edges
+     integer        , private :: nverts = 0
+     integer        , private :: nedges = 0
+
+     class(set_representation), allocatable, private :: edge_coords
 
      class(binary_relation), pointer, private :: tails => null()
      class(binary_relation), pointer, private :: heads => null()
@@ -121,7 +135,8 @@ module graph_profile
 
   type :: directed_adjacency_view
 
-     class(member_set)     , allocatable, private :: over
+     type(set_graph)       , private :: over
+     integer               , private :: nover = 0
      class(binary_relation), pointer    , private :: adjacency => null()
 
    contains
@@ -149,18 +164,19 @@ contains
   !      a two-headed edge     at most one head
   !===================================================================!
 
-  type(ordinary_graph_view) function create_view(g, binding, tail_at, &
-       & head_at) result(this)
+  type(ordinary_graph_view) function create_view(g, binding, sets, &
+       & tail_at, head_at) result(this)
 
     type(graph)             , intent(in) :: g
     type(relational_binding), intent(in) :: binding
+    type(set_map)           , intent(in) :: sets
     integer                 , intent(in) :: tail_at
     integer                 , intent(in) :: head_at
 
-    class(relation), pointer       :: r
-    class(member_set), allocatable :: d
-    integer, pointer               :: f(:)
-    integer                        :: k, e
+    class(relation), pointer :: r
+    type(set_graph)          :: d
+    integer, pointer         :: f(:)
+    integer                  :: k, e
 
     r => relation_at(g, binding, tail_at)
     select type (r)
@@ -181,6 +197,10 @@ contains
     this % edges = this % tails % source()
     this % verts = this % tails % target()
 
+    call sets % extent_of(this % edges, this % edge_coords)
+    this % nedges = this % edge_coords % size()
+    this % nverts = sets % size_of(this % verts)
+
     if (this % edges % same_as(this % verts)) then
        error stop 'graph_profile: edges and vertices are distinct domains'
     end if
@@ -194,8 +214,8 @@ contains
        error stop 'graph_profile: the head relation must share the tail''s domains'
     end if
 
-    do k = 1, this % edges % size()
-       e = this % edges % member(k)
+    do k = 1, this % nedges
+       e = this % edge_coords % member(k)
        f => this % tails % image_view(e)
        if (size(f) /= 1) then
           error stop 'graph_profile: every edge has exactly one tail'
@@ -212,7 +232,7 @@ contains
 
     class(ordinary_graph_view), intent(in) :: this
 
-    num_vertices = this % verts % size()
+    num_vertices = this % nverts
 
   end function num_vertices
 
@@ -220,7 +240,7 @@ contains
 
     class(ordinary_graph_view), intent(in) :: this
 
-    num_edges = this % edges % size()
+    num_edges = this % nedges
 
   end function num_edges
 
@@ -313,10 +333,10 @@ contains
 
     do i = 2, size(list)
        key    = list(i)
-       keypos = this % edges % local_index(key)
+       keypos = this % edge_coords % local_index(key)
        j      = i - 1
        do while (j >= 1)
-          if (this % edges % local_index(list(j)) <= keypos) exit
+          if (this % edge_coords % local_index(list(j)) <= keypos) exit
           list(j + 1) = list(j)
           j = j - 1
        end do
@@ -356,8 +376,8 @@ contains
        else if (i > size(out_f)) then
           indices(n) = in_f(j)
           j = j + 1
-       else if (this % edges % local_index(out_f(i)) <= &
-            &   this % edges % local_index(in_f(j))) then
+       else if (this % edge_coords % local_index(out_f(i)) <= &
+            &   this % edge_coords % local_index(in_f(j))) then
           indices(n) = out_f(i)
           i = i + 1
        else
@@ -466,16 +486,17 @@ contains
   !===================================================================!
 
   type(directed_adjacency_view) function create_adjacency_view(g, &
-       & binding, selector) result(this)
+       & binding, sets, selector) result(this)
 
     type(graph)             , intent(in) :: g
     type(relational_binding), intent(in) :: binding
+    type(set_map)           , intent(in) :: sets
     class(relation)         , intent(in) :: selector
 
-    class(relation), pointer       :: rp
-    class(member_set), allocatable :: s, t
-    integer                        :: k
-    logical                        :: found
+    class(relation), pointer :: rp
+    type(set_graph)          :: s, t
+    integer                  :: k
+    logical                  :: found
 
     found = .false.
     do k = 1, num_relations(g)
@@ -502,7 +523,8 @@ contains
        error stop 'graph_profile: a directed adjacency runs over one domain'
     end if
 
-    allocate(this % over, source=s)
+    this % over  = s
+    this % nover = sets % size_of(s)
 
   end function create_adjacency_view
 
@@ -510,12 +532,11 @@ contains
   ! The one domain, as a copy - the same declared domain.
   !===================================================================!
 
-  function adjacency_domain(this) result(domain)
+  type(set_graph) function adjacency_domain(this) result(domain)
 
     class(directed_adjacency_view), intent(in) :: this
-    class(member_set), allocatable             :: domain
 
-    allocate(domain, source=this % over)
+    domain = this % over
 
   end function adjacency_domain
 

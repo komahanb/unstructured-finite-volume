@@ -136,6 +136,9 @@ concretions: graph-to-graph verbs with no PDE semantics of their own.
 
 ### 3.1 `graph_grammar` is 54% re-export
 
+*(The reading that opened PR2. It has since been acted on — §6 measures
+what is left.)*
+
 Every `use graph_grammar, only :` clause in `src/` and `test/` was tallied
 by symbol. 183 symbol-imports across 68 files:
 
@@ -395,14 +398,81 @@ discovered during it.
 
 ---
 
-## 6. Verification record
+## 6. PR2 measurement, after the re-exports were redirected
 
-Taken on the tree this document's parent commit produces — master plus
-the benchmark repair — with one clean rebuild per suite:
+Taken after the first draught (`graph_grammar` lends no name it did not
+define). Every remaining symbol is classified into the five categories
+the phase named.
 
-    32 of 32 suites PASS, 0 FAIL
+### 6.1 What is left, and where each symbol goes
 
-The reading survives either merge order, because this document adds no
-code, changes no import, and is the only thing in its own commit.
+| symbol | files | src | test | successor |
+|---|---|---|---|---|
+| `graph` | 57 | 21 | 36 | `graph_ordinary_view`, carrying the frame marked |
+| `graph_operation` | 25 | 9 | 16 | `graph_operation_view` |
+| `graph_transform` | 1 | 1 | 0 | `graph_transform_view` |
+| **true legacy forwarding** | **0** | **0** | **0** | — nothing left to forward |
+
+**The fifth category is empty, and that is the result.** Before the
+redirect, `graph_grammar` was 54% a forwarding shell. It is now 0%: all
+three remaining symbols are abstract types the module itself defines. It
+is no longer a shell to drain but three contracts awaiting three homes,
+and each can leave in its own commit.
+
+58 files still import it, down from 68. The ten that left named nothing
+but re-exports.
+
+### 6.2 The frame's real reach is eight files, not fifty-eight
+
+Every call site of the 36 deferred bindings was measured across all 58
+consumers. The eight frame relations — the bindings PR1 §3.3 found are
+not a view question — are named in **8 files**, and only three of them
+in `src/`:
+
+    src/class_graph.f90              all eight        IMPLEMENTS them
+    src/class_graph_assembler.f90    six             num_parts, has_part_relation,
+    |                                                global_*_index, *_owner_part
+    src/class_graph_partitioner.f90  two             global_vertex_index,
+    |                                                global_edge_index
+    test/graph-contract               five
+    test/graph-partition              one
+    partitioned-pde L4 / L5 / L6      six / one / one
+
+    50 of 58 consumers touch no frame binding at all.
+
+The six *frame sets* (`owned_`/`borrowed_`/`overlap_` vertices and edges)
+are named in four files. They are carve-and-bind, which is an allowed
+view capability, so they are **not** part of the PR3 move; only the eight
+relations are.
+
+This narrows PR3 sharply. Rehoming the frame is a change to one
+implementer and **two** consuming algorithms, not to the fifty-eight
+files that speak the ordinary graph.
+
+### 6.3 The one clean seam
+
+`test/visualization-tower/common/production_discretization_fixture.f90`
+is the only consumer that imports `graph_operation` without also naming
+`graph`. Every other operation consumer needs both, so
+`graph_operation_view` cannot be split from `graph_ordinary_view` by
+import surgery alone — the `apply` interface is written in `class(graph)`
+and will import it from wherever the ordinary view lands.
+
+`graph_transform`'s single consumer (`graph_calculus`) remains the
+smallest boundary in the cutover.
+
+---
+
+## 7. Verification record
+
+One clean rebuild per suite, at every commit recorded here:
+
+    inventory (PR1)          32 of 32 suites PASS, 0 FAIL
+    re-export redirect       32 of 32 suites PASS, 0 FAIL
+
+Seven tower import gates were re-asserted, not relaxed: a level that read
+the field through the grammar is granted `graph_field_calculus` by name,
+and adjoint level 9, which no longer imports `graph_grammar` at all, had
+its grant withdrawn.
 
 `src/fractal_graph.f90` is byte-identical to master.

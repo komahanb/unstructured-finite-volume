@@ -47,7 +47,11 @@ program derivative_level_9
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
@@ -64,8 +68,8 @@ program derivative_level_9
   implicit none
 
 
-  type(counted_set)                  :: v, o, p
-  type(subset_set)                   :: x_dom, c, z_dom, p_in, p_out
+  type(set_graph)                  :: v, o, p
+  type(set_graph)                   :: x_dom, c, z_dom, p_in, p_out
   type(stored_relation), allocatable :: flow
   class(relation), allocatable       :: d
   class(relation), pointer           :: gflow => null()
@@ -77,7 +81,7 @@ program derivative_level_9
   integer                          :: kcell
   type(directed_adjacency_view)      :: view
   type(field)                        :: qx, zbar_f, grad_f, vseed_f
-  class(member_set), allocatable     :: dom
+  type(set_graph)     :: dom
   integer, allocatable               :: order(:)
   real(dp), allocatable              :: obs(:), gradient(:), gvals(:)
   real(dp), allocatable              :: seed1(:), vdir(:), base(:), dot(:)
@@ -85,6 +89,8 @@ program derivative_level_9
   real(dp)                           :: jv, lhs, rhs
   integer                            :: table(3, 6)
   integer                            :: nfail, i
+  type(set_map)     :: sets
+  type(inclusion_map)     :: inclusions
 
   nfail = 0
 
@@ -93,12 +99,21 @@ program derivative_level_9
   write(*,'(1x,a)') "============================================="
 
   ! -- the structure the statement selects
-  v     = counted_set('value-slots', 4)
-  o     = counted_set('operations' , 2)
-  p     = counted_set('ports'      , 3)
-  x_dom = subset_set('independent', v, [SLOT_Y, SLOT_X])
-  c     = subset_set('computed'   , v, [SLOT_U, SLOT_Z])
-  z_dom = subset_set('response'   , c, [SLOT_Z])
+  call v % declare()
+  call sets % bind(v, counted_set_representation(4))
+  call o % declare()
+  call sets % bind(o, counted_set_representation(2))
+  call p % declare()
+  call sets % bind(p, counted_set_representation(3))
+  call x_dom % declare()
+  call sets       % bind(x_dom, listed_set_representation([SLOT_Y, SLOT_X]))
+  call inclusions % include_in(x_dom, v)
+  call c % declare()
+  call sets       % bind(c, listed_set_representation([SLOT_U, SLOT_Z]))
+  call inclusions % include_in(c, v)
+  call z_dom % declare()
+  call sets       % bind(z_dom, listed_set_representation([SLOT_Z]))
+  call inclusions % include_in(z_dom, c)
 
   table(:, 1) = [OP_PRODUCT, SLOT_X, PORT_IN1]
   table(:, 2) = [OP_PRODUCT, SLOT_Y, PORT_IN2]
@@ -107,14 +122,18 @@ program derivative_level_9
   table(:, 5) = [OP_SUM    , SLOT_Y, PORT_IN2]
   table(:, 6) = [OP_SUM    , SLOT_Z, PORT_OUT]
   allocate(flow)
-  flow = stored_relation('flow', [o, v, p], table)
+  flow = stored_relation('flow', [o, v, p], table, sets)
 
-  p_in  = subset_set('input-ports', p, [PORT_IN1, PORT_IN2])
-  p_out = subset_set('output-port', p, [PORT_OUT])
+  call p_in % declare()
+  call sets       % bind(p_in, listed_set_representation([PORT_IN1, PORT_IN2]))
+  call inclusions % include_in(p_in, p)
+  call p_out % declare()
+  call sets       % bind(p_out, listed_set_representation([PORT_OUT]))
+  call inclusions % include_in(p_out, p)
 
   d = compose_binary( &
-       & project_slots(restrict_slot(flow, 3, p_out), [1, 2]), &
-       & project_slots(restrict_slot(flow, 3, p_in ), [2, 1]))
+       & project_slots(restrict_slot(flow, 3, p_out, sets, inclusions), [1, 2], sets), &
+       & project_slots(restrict_slot(flow, 3, p_in , sets, inclusions), [2, 1], sets), sets)
 
   ! 'derivative specimen': (S, P) as one sequence on each branch.
   call g % declare()
@@ -149,9 +168,9 @@ program derivative_level_9
 
   ! -- the order comes from the graph's own dependency: the view is
   !    made, the dependency selector dies, and the walk still answers
-  view = directed_adjacency_view(g, bnd, d)
+  view = directed_adjacency_view(g, bnd, sets, d)
   deallocate(d)
-  call topological_order(view, order)
+  call topological_order(view, sets, order)
 
   ! -- the statement keeps the GRAPH-OWNED flow, located by identity;
   !    then the external selector dies too
@@ -164,9 +183,9 @@ program derivative_level_9
   end if
   deallocate(flow)
 
-  allocate(base(v % size()), avail(v % size()))
-  allocate(dot(v % size()), davail(v % size()))
-  allocate(gradient(x_dom % size()))
+  allocate(base(sets % size_of(v)), avail(sets % size_of(v)))
+  allocate(dot(sets % size_of(v)), davail(sets % size_of(v)))
+  allocate(gradient(sets % size_of(x_dom)))
 
   call check_selection(nfail)
   call check_primal(nfail)
@@ -182,7 +201,7 @@ program derivative_level_9
   !    rounded image of it. No integer conversion lives on this path.
   call grad_f % get_real_vector(gvals)
   write(*,'(1x,a)', advance='no') "DERIVATIVE_RESULT ="
-  do i = 1, x_dom % size()
+  do i = 1, sets % size_of(x_dom)
      write(*,'(es24.16)', advance='no') gvals(i)
   end do
   write(*,'(a)') ""
@@ -221,15 +240,15 @@ contains
 
     integer, intent(inout) :: nfail
 
-    qx = field('base point', x_dom)
+    qx = field('base point', x_dom, sets % size_of(x_dom))
     call qx % set_real_vector([3.0_dp, 2.0_dp])
     call qx % get_real_vector(obs)
 
-    call primal_execution(gflow, v, x_dom, obs, c, order, base, avail)
+    call primal_execution(gflow, v, sets, x_dom, obs, c, order, base, avail)
 
-    call report(abs(base(v % local_index(SLOT_U)) - 6.0_dp) &
+    call report(abs(base(sets % index_in(v, SLOT_U)) - 6.0_dp) &
          &      < 1.0d-12 .and. &
-         &      abs(base(v % local_index(SLOT_Z)) - 9.0_dp) &
+         &      abs(base(sets % index_in(v, SLOT_Z)) - 9.0_dp) &
          &      < 1.0d-12, &
          & "the primal answers u = 6 and z = 9", nfail)
 
@@ -245,24 +264,24 @@ contains
 
     integer, intent(inout) :: nfail
 
-    zbar_f = field('reverse seed', z_dom)
+    zbar_f = field('reverse seed', z_dom, sets % size_of(z_dom))
     call zbar_f % set_real_vector([1.0_dp])
     call zbar_f % get_real_vector(seed1)
 
-    call reverse_action(gflow, v, x_dom, order, base, z_dom, &
+    call reverse_action(gflow, v, sets, x_dom, order, base, z_dom, &
          & seed1, gradient)
 
-    grad_f = field('derivative of z on X', x_dom)
+    grad_f = field('derivative of z on X', x_dom, sets % size_of(x_dom))
     call grad_f % set_real_vector(gradient)
 
-    call grad_f % domain(dom)
+    dom = grad_f % domain()
     call report(dom % same_as(x_dom), &
          & "the derivative is a field on X, by identity - not a " // &
          & "raw array, not a matrix", nfail)
-    call report(abs(gradient(x_dom % local_index(SLOT_Y)) - 3.0_dp) &
+    call report(abs(gradient(sets % index_in(x_dom, SLOT_Y)) - 3.0_dp) &
          &      < 1.0d-12, &
          & "dz/dy = 3, read through the domain map", nfail)
-    call report(abs(gradient(x_dom % local_index(SLOT_X)) - 3.0_dp) &
+    call report(abs(gradient(sets % index_in(x_dom, SLOT_X)) - 3.0_dp) &
          &      < 1.0d-12, &
          & "dz/dx = 3", nfail)
     call report(grad_f % num_entries() .eq. 2, &
@@ -285,20 +304,20 @@ contains
     real(dp) :: jy, jx
 
     ! X = { y, x }: the y basis is [1, 0], the x basis is [0, 1]
-    call tangent_action(gflow, v, x_dom, [1.0_dp, 0.0_dp], c, order, &
+    call tangent_action(gflow, v, sets, x_dom, [1.0_dp, 0.0_dp], c, order, &
          & base, dot, davail)
-    jy = dot(v % local_index(SLOT_Z))
+    jy = dot(sets % index_in(v, SLOT_Z))
 
-    call tangent_action(gflow, v, x_dom, [0.0_dp, 1.0_dp], c, order, &
+    call tangent_action(gflow, v, sets, x_dom, [0.0_dp, 1.0_dp], c, order, &
          & base, dot, davail)
-    jx = dot(v % local_index(SLOT_Z))
+    jx = dot(sets % index_in(v, SLOT_Z))
 
     call report(abs(jy - 3.0_dp) < 1.0d-12 .and. &
          &      abs(jx - 3.0_dp) < 1.0d-12, &
          & "forward probes: J e_y = 3 and J e_x = 3", nfail)
-    call report(abs(jy - gradient(x_dom % local_index(SLOT_Y))) &
+    call report(abs(jy - gradient(sets % index_in(x_dom, SLOT_Y))) &
          &      < 1.0d-12 .and. &
-         &      abs(jx - gradient(x_dom % local_index(SLOT_X))) &
+         &      abs(jx - gradient(sets % index_in(x_dom, SLOT_X))) &
          &      < 1.0d-12, &
          & "and each agrees with the component the one reverse " // &
          & "pass returned", nfail)
@@ -316,13 +335,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    vseed_f = field('tangent direction', x_dom)
+    vseed_f = field('tangent direction', x_dom, sets % size_of(x_dom))
     call vseed_f % set_real_vector([-1.0_dp, 4.0_dp])
     call vseed_f % get_real_vector(vdir)
 
-    call tangent_action(gflow, v, x_dom, vdir, c, order, base, &
+    call tangent_action(gflow, v, sets, x_dom, vdir, c, order, base, &
          & dot, davail)
-    jv = dot(v % local_index(SLOT_Z))
+    jv = dot(sets % index_in(v, SLOT_Z))
 
     call report(abs(jv - 9.0_dp) < 1.0d-12, &
          & "Jv = 9 for v = [-1, 4]", nfail)
@@ -344,13 +363,13 @@ contains
     real(dp), allocatable :: xbar2(:), seed2(:)
     type(field)           :: zbar2_f
 
-    allocate(xbar2(x_dom % size()))
+    allocate(xbar2(sets % size_of(x_dom)))
 
-    zbar2_f = field('reverse seed two', z_dom)
+    zbar2_f = field('reverse seed two', z_dom, sets % size_of(z_dom))
     call zbar2_f % set_real_vector([2.0_dp])
     call zbar2_f % get_real_vector(seed2)
 
-    call reverse_action(gflow, v, x_dom, order, base, z_dom, &
+    call reverse_action(gflow, v, sets, x_dom, order, base, z_dom, &
          & seed2, xbar2)
 
     lhs = seed2(1) * jv

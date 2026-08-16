@@ -52,7 +52,8 @@ module derivative_constitution_fixture
   use iso_fortran_env, only : dp => REAL64
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
   use graph_relation   , only : relation
 
   implicit none
@@ -113,20 +114,21 @@ contains
   ! many. The facts live in the relation, never in the evaluators.
   !===================================================================!
 
-  integer function slot_for_port(flow, slots, op, port) result(found)
+  integer function slot_for_port(flow, slots, sets, op, port) result(found)
 
     class(relation)  , intent(in) :: flow
-    class(member_set), intent(in) :: slots
+    type(set_graph), intent(in) :: slots
+    type(set_map)  , intent(in) :: sets
     integer          , intent(in) :: op, port
 
     integer :: j, hits
 
     hits  = 0
     found = 0
-    do j = 1, slots % size()
-       if (flow % has([op, slots % member(j), port])) then
+    do j = 1, sets % size_of(slots)
+       if (flow % has([op, sets % member_of(slots, j), port])) then
           hits  = hits + 1
-          found = slots % member(j)
+          found = sets % member_of(slots, j)
        end if
     end do
     if (hits .ne. 1) then
@@ -143,54 +145,55 @@ contains
   ! the base point at which local linearizations are evaluated.
   !===================================================================!
 
-  subroutine primal_execution(flow, slots, indep, indep_values, &
+  subroutine primal_execution(flow, slots, sets, indep, indep_values, &
        & computed, order, values, available)
 
     class(relation)  , intent(in)  :: flow
-    class(member_set), intent(in)  :: slots      ! V
-    class(member_set), intent(in)  :: indep      ! X
+    type(set_graph), intent(in)  :: slots      ! V
+    type(set_map)  , intent(in) :: sets
+    type(set_graph), intent(in)  :: indep      ! X
     real(dp)         , intent(in)  :: indep_values(:)
-    class(member_set), intent(in)  :: computed   ! C
+    type(set_graph), intent(in)  :: computed   ! C
     integer          , intent(in)  :: order(:)   ! derived by caller
     real(dp)         , intent(out) :: values(:)
     logical          , intent(out) :: available(:)
 
     integer :: i, m, op, in1, in2, out
 
-    if (size(indep_values) .ne. indep % size() .or. &
-         & size(values) .ne. slots % size() .or. &
-         & size(available) .ne. slots % size()) then
+    if (size(indep_values) .ne. sets % size_of(indep) .or. &
+         & size(values) .ne. sets % size_of(slots) .or. &
+         & size(available) .ne. sets % size_of(slots)) then
        error stop 'derivative constitution: every vector is sized by its domain'
     end if
 
     available = .false.
     values    = 0.0_dp
 
-    do i = 1, indep % size()
-       m = indep % member(i)
-       values(slots % local_index(m)) = &
-            & indep_values(indep % local_index(m))
-       available(slots % local_index(m)) = .true.
+    do i = 1, sets % size_of(indep)
+       m = sets % member_of(indep, i)
+       values(sets % index_in(slots, m)) = &
+            & indep_values(sets % index_in(indep, m))
+       available(sets % index_in(slots, m)) = .true.
     end do
 
     do i = 1, size(order)
        op  = order(i)
-       in1 = slot_for_port(flow, slots, op, PORT_IN1)
-       in2 = slot_for_port(flow, slots, op, PORT_IN2)
-       out = slot_for_port(flow, slots, op, PORT_OUT)
+       in1 = slot_for_port(flow, slots, sets, op, PORT_IN1)
+       in2 = slot_for_port(flow, slots, sets, op, PORT_IN2)
+       out = slot_for_port(flow, slots, sets, op, PORT_OUT)
 
-       if (.not. available(slots % local_index(in1)) .or. &
-            & .not. available(slots % local_index(in2))) then
+       if (.not. available(sets % index_in(slots, in1)) .or. &
+            & .not. available(sets % index_in(slots, in2))) then
           error stop 'derivative constitution: an operation was scheduled before its primal inputs exist'
        end if
-       if (.not. computed % has(out)) then
+       if (.not. sets % has_in(computed, out)) then
           error stop 'derivative constitution: an operation must produce a computed slot'
        end if
 
-       values(slots % local_index(out)) = apply_law(op, &
-            & values(slots % local_index(in1)), &
-            & values(slots % local_index(in2)))
-       available(slots % local_index(out)) = .true.
+       values(sets % index_in(slots, out)) = apply_law(op, &
+            & values(sets % index_in(slots, in1)), &
+            & values(sets % index_in(slots, in2)))
+       available(sets % index_in(slots, out)) = .true.
     end do
 
   end subroutine primal_execution
@@ -202,14 +205,15 @@ contains
   ! A tangent may not be read before it is established.
   !===================================================================!
 
-  subroutine tangent_action(flow, slots, indep, seed_values, &
+  subroutine tangent_action(flow, slots, sets, indep, seed_values, &
        & computed, order, primal, dot, dot_available)
 
     class(relation)  , intent(in)  :: flow
-    class(member_set), intent(in)  :: slots
-    class(member_set), intent(in)  :: indep
+    type(set_graph), intent(in)  :: slots
+    type(set_map)  , intent(in) :: sets
+    type(set_graph), intent(in)  :: indep
     real(dp)         , intent(in)  :: seed_values(:)   ! on X
-    class(member_set), intent(in)  :: computed
+    type(set_graph), intent(in)  :: computed
     integer          , intent(in)  :: order(:)
     real(dp)         , intent(in)  :: primal(:)        ! full V workspace
     real(dp)         , intent(out) :: dot(:)
@@ -218,45 +222,45 @@ contains
     real(dp) :: coeff(2)
     integer  :: i, m, op, in1, in2, out
 
-    if (size(seed_values) .ne. indep % size() .or. &
-         & size(primal) .ne. slots % size() .or. &
-         & size(dot) .ne. slots % size() .or. &
-         & size(dot_available) .ne. slots % size()) then
+    if (size(seed_values) .ne. sets % size_of(indep) .or. &
+         & size(primal) .ne. sets % size_of(slots) .or. &
+         & size(dot) .ne. sets % size_of(slots) .or. &
+         & size(dot_available) .ne. sets % size_of(slots)) then
        error stop 'derivative constitution: every vector is sized by its domain'
     end if
 
     dot_available = .false.
     dot           = 0.0_dp
 
-    do i = 1, indep % size()
-       m = indep % member(i)
-       dot(slots % local_index(m)) = &
-            & seed_values(indep % local_index(m))
-       dot_available(slots % local_index(m)) = .true.
+    do i = 1, sets % size_of(indep)
+       m = sets % member_of(indep, i)
+       dot(sets % index_in(slots, m)) = &
+            & seed_values(sets % index_in(indep, m))
+       dot_available(sets % index_in(slots, m)) = .true.
     end do
 
     do i = 1, size(order)
        op  = order(i)
-       in1 = slot_for_port(flow, slots, op, PORT_IN1)
-       in2 = slot_for_port(flow, slots, op, PORT_IN2)
-       out = slot_for_port(flow, slots, op, PORT_OUT)
+       in1 = slot_for_port(flow, slots, sets, op, PORT_IN1)
+       in2 = slot_for_port(flow, slots, sets, op, PORT_IN2)
+       out = slot_for_port(flow, slots, sets, op, PORT_OUT)
 
-       if (.not. dot_available(slots % local_index(in1)) .or. &
-            & .not. dot_available(slots % local_index(in2))) then
+       if (.not. dot_available(sets % index_in(slots, in1)) .or. &
+            & .not. dot_available(sets % index_in(slots, in2))) then
           error stop 'derivative constitution: a tangent was demanded before its input tangents exist'
        end if
-       if (.not. computed % has(out)) then
+       if (.not. sets % has_in(computed, out)) then
           error stop 'derivative constitution: an operation must produce a computed slot'
        end if
 
        coeff = local_linearization(op, &
-            & primal(slots % local_index(in1)), &
-            & primal(slots % local_index(in2)))
+            & primal(sets % index_in(slots, in1)), &
+            & primal(sets % index_in(slots, in2)))
 
-       dot(slots % local_index(out)) = &
-            & coeff(1) * dot(slots % local_index(in1)) + &
-            & coeff(2) * dot(slots % local_index(in2))
-       dot_available(slots % local_index(out)) = .true.
+       dot(sets % index_in(slots, out)) = &
+            & coeff(1) * dot(sets % index_in(slots, in1)) + &
+            & coeff(2) * dot(sets % index_in(slots, in2))
+       dot_available(sets % index_in(slots, out)) = .true.
     end do
 
   end subroutine tangent_action
@@ -283,27 +287,29 @@ contains
   ! the forward action was never a mathematical necessity.
   !===================================================================!
 
-  subroutine reverse_action(flow, slots, indep, order, &
+  subroutine reverse_action(flow, slots, sets, indep, order, &
        & primal, response, seed_values, result_values, hits)
 
     class(relation)  , intent(in)  :: flow
-    class(member_set), intent(in)  :: slots
-    class(member_set), intent(in)  :: indep
+    type(set_graph), intent(in)  :: slots
+    type(set_map)  , intent(in) :: sets
+    type(set_graph), intent(in)  :: indep
     integer          , intent(in)  :: order(:)
     real(dp)         , intent(in)  :: primal(:)        ! full V workspace
-    class(member_set), intent(in)  :: response         ! Z
+    type(set_graph), intent(in)  :: response         ! Z
     real(dp)         , intent(in)  :: seed_values(:)   ! on Z
     real(dp)         , intent(out) :: result_values(:) ! on X
     integer, allocatable, intent(out), optional :: hits(:)
 
-    real(dp) :: bar(slots % size())
-    integer  :: nhits(slots % size())
+    real(dp), allocatable :: bar(:)
+    integer, allocatable  :: nhits(:)
     real(dp) :: coeff(2)
     integer  :: i, m, op, in1, in2, out
 
-    if (size(seed_values) .ne. response % size() .or. &
-         & size(primal) .ne. slots % size() .or. &
-         & size(result_values) .ne. indep % size()) then
+    allocate(bar(sets % size_of(slots)), nhits(sets % size_of(slots)))
+    if (size(seed_values) .ne. sets % size_of(response) .or. &
+         & size(primal) .ne. sets % size_of(slots) .or. &
+         & size(result_values) .ne. sets % size_of(indep)) then
        error stop 'derivative constitution: every vector is sized by its domain'
     end if
 
@@ -312,39 +318,39 @@ contains
     bar   = 0.0_dp
     nhits = 0
 
-    do i = 1, response % size()
-       m = response % member(i)
-       bar(slots % local_index(m)) = &
-            & seed_values(response % local_index(m))
+    do i = 1, sets % size_of(response)
+       m = sets % member_of(response, i)
+       bar(sets % index_in(slots, m)) = &
+            & seed_values(sets % index_in(response, m))
     end do
 
     do i = size(order), 1, -1
        op  = order(i)
-       in1 = slot_for_port(flow, slots, op, PORT_IN1)
-       in2 = slot_for_port(flow, slots, op, PORT_IN2)
-       out = slot_for_port(flow, slots, op, PORT_OUT)
+       in1 = slot_for_port(flow, slots, sets, op, PORT_IN1)
+       in2 = slot_for_port(flow, slots, sets, op, PORT_IN2)
+       out = slot_for_port(flow, slots, sets, op, PORT_OUT)
 
        coeff = local_linearization(op, &
-            & primal(slots % local_index(in1)), &
-            & primal(slots % local_index(in2)))
+            & primal(sets % index_in(slots, in1)), &
+            & primal(sets % index_in(slots, in2)))
 
-       bar(slots % local_index(in1)) = &
-            & bar(slots % local_index(in1)) + &
-            & coeff(1) * bar(slots % local_index(out))
-       nhits(slots % local_index(in1)) = &
-            & nhits(slots % local_index(in1)) + 1
+       bar(sets % index_in(slots, in1)) = &
+            & bar(sets % index_in(slots, in1)) + &
+            & coeff(1) * bar(sets % index_in(slots, out))
+       nhits(sets % index_in(slots, in1)) = &
+            & nhits(sets % index_in(slots, in1)) + 1
 
-       bar(slots % local_index(in2)) = &
-            & bar(slots % local_index(in2)) + &
-            & coeff(2) * bar(slots % local_index(out))
-       nhits(slots % local_index(in2)) = &
-            & nhits(slots % local_index(in2)) + 1
+       bar(sets % index_in(slots, in2)) = &
+            & bar(sets % index_in(slots, in2)) + &
+            & coeff(2) * bar(sets % index_in(slots, out))
+       nhits(sets % index_in(slots, in2)) = &
+            & nhits(sets % index_in(slots, in2)) + 1
     end do
 
-    do i = 1, indep % size()
-       m = indep % member(i)
-       result_values(indep % local_index(m)) = &
-            & bar(slots % local_index(m))
+    do i = 1, sets % size_of(indep)
+       m = sets % member_of(indep, i)
+       result_values(sets % index_in(indep, m)) = &
+            & bar(sets % index_in(slots, m))
     end do
 
     if (present(hits)) hits = nhits

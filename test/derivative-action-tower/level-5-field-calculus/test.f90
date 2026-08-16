@@ -30,15 +30,21 @@ program derivative_level_5
   use iso_fortran_env  , only : dp => REAL64
   use derivative_assert, only : report, verdict
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use class_graph_field, only : field
 
   implicit none
 
-  type(counted_set) :: v
-  type(subset_set)  :: x_dom, c
+  type(set_graph) :: v
+  type(set_graph)  :: x_dom, c
   type(field)       :: qx
   integer           :: nfail
+  type(set_map)     :: sets
+  type(inclusion_map)     :: inclusions
 
   nfail = 0
 
@@ -46,11 +52,16 @@ program derivative_level_5
   write(*,'(1x,a)') "derivative action tower . level 5 . fields"
   write(*,'(1x,a)') "============================================="
 
-  v = counted_set('value-slots', 4)
+  call v % declare()
+  call sets % bind(v, counted_set_representation(4))
 
   ! The two roles, declared in deliberately nonsemantic order.
-  x_dom = subset_set('independent', v, [SLOT_Y, SLOT_X])
-  c     = subset_set('computed'   , v, [SLOT_U, SLOT_Z])
+  call x_dom % declare()
+  call sets       % bind(x_dom, listed_set_representation([SLOT_Y, SLOT_X]))
+  call inclusions % include_in(x_dom, v)
+  call c % declare()
+  call sets       % bind(c, listed_set_representation([SLOT_U, SLOT_Z]))
+  call inclusions % include_in(c, v)
 
   call check_partition(nfail)
   call check_base_point(nfail)
@@ -76,21 +87,21 @@ contains
     integer :: i, m, homes
     logical :: ok
 
-    call report(x_dom % size() .eq. 2 .and. x_dom % has(SLOT_Y) .and. &
-         &      x_dom % has(SLOT_X) .and. .not. x_dom % has(SLOT_U), &
+    call report(sets % size_of(x_dom) .eq. 2 .and. sets % has_in(x_dom, SLOT_Y) .and. &
+         &      sets % has_in(x_dom, SLOT_X) .and. .not. sets % has_in(x_dom, SLOT_U), &
          & "X = { y, x }, the independent inputs", nfail)
-    call report(c % size() .eq. 2 .and. c % has(SLOT_U) .and. &
-         &      c % has(SLOT_Z) .and. .not. c % has(SLOT_X), &
+    call report(sets % size_of(c) .eq. 2 .and. sets % has_in(c, SLOT_U) .and. &
+         &      sets % has_in(c, SLOT_Z) .and. .not. sets % has_in(c, SLOT_X), &
          & "C = { u, z }, where answers will one day live", nfail)
 
-    call report(x_dom % is_subobject_of(v) .and. &
-         &      c % is_subobject_of(v), &
+    call report(declared_subobject(x_dom, v, inclusions) .and. &
+         &      declared_subobject(c, v, inclusions), &
          & "both stand embedded in the value slots", nfail)
 
     ok = .true.
-    do i = 1, v % size()
-       m = v % member(i)
-       homes = count([x_dom % has(m), c % has(m)])
+    do i = 1, sets % size_of(v)
+       m = sets % member_of(v, i)
+       homes = count([sets % has_in(x_dom, m), sets % has_in(c, m)])
        ok = ok .and. (homes .eq. 1)
     end do
     call report(ok, &
@@ -108,13 +119,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
     real(dp), allocatable          :: val(:)
 
-    qx = field('base point', x_dom)
+    qx = field('base point', x_dom, sets % size_of(x_dom))
     call qx % set_real_vector([3.0_dp, 2.0_dp])
 
-    call qx % domain(dom)
+    dom = qx % domain()
     call report(dom % same_as(x_dom), &
          & "the base field's domain is X, by identity", nfail)
     call report(qx % num_entries() .eq. 2 .and. &
@@ -122,10 +133,10 @@ contains
          & "two entries, one component", nfail)
 
     call qx % get_real_vector(val)
-    call report(abs(val(x_dom % local_index(SLOT_Y)) - 3.0_dp) &
+    call report(abs(val(sets % index_in(x_dom, SLOT_Y)) - 3.0_dp) &
          &      < 1.0d-14, &
          & "y = 3, read through the domain map", nfail)
-    call report(abs(val(x_dom % local_index(SLOT_X)) - 2.0_dp) &
+    call report(abs(val(sets % index_in(x_dom, SLOT_X)) - 2.0_dp) &
          &      < 1.0d-14, &
          & "x = 2", nfail)
     call report(abs(val(1) - 3.0_dp) < 1.0d-14 .and. &

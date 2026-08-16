@@ -32,15 +32,19 @@ program derivative_level_1
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
   use graph_relation   , only : stored_relation
 
   implicit none
 
-  type(counted_set)     :: v, o, p
+  type(set_graph)     :: v, o, p
   type(stored_relation) :: flow
   integer               :: table(3, 7)
   integer               :: nfail
+  type(set_map)     :: sets
 
   nfail = 0
 
@@ -48,9 +52,12 @@ program derivative_level_1
   write(*,'(1x,a)') "derivative action tower . level 1 . relation"
   write(*,'(1x,a)') "============================================="
 
-  v = counted_set('value-slots', 4)
-  o = counted_set('operations' , 2)
-  p = counted_set('ports'      , 3)
+  call v % declare()
+  call sets % bind(v, counted_set_representation(4))
+  call o % declare()
+  call sets % bind(o, counted_set_representation(2))
+  call p % declare()
+  call sets % bind(p, counted_set_representation(3))
 
   ! The six facts of the specimen's flow - and the first handed twice.
   table(:, 1) = [OP_PRODUCT, SLOT_X, PORT_IN1]
@@ -61,7 +68,7 @@ program derivative_level_1
   table(:, 6) = [OP_SUM    , SLOT_Z, PORT_OUT]
   table(:, 7) = [OP_PRODUCT, SLOT_X, PORT_IN1]
 
-  flow = stored_relation('flow', [o, v, p], table)
+  flow = stored_relation('flow', [o, v, p], table, sets)
 
   call check_signature(nfail)
   call check_complete_extension(nfail)
@@ -81,7 +88,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
 
     call report(flow % arity() .eq. 3, &
          & "the flow is genuinely ternary", nfail)

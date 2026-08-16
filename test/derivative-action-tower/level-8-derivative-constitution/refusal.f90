@@ -26,32 +26,45 @@ program derivative_level_8_refusal
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : counted_set, subset_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation   , only : stored_relation
   use derivative_constitution_fixture, only : apply_law, &
        & slot_for_port, primal_execution, tangent_action
 
   implicit none
 
-  type(counted_set)     :: v, o, p
-  type(subset_set)      :: x_dom, c
+  type(set_graph)     :: v, o, p
+  type(set_graph)      :: x_dom, c
   type(stored_relation) :: flow, lame
   integer               :: table(3, 6), short(3, 5)
   real(dp)              :: vals(4), dots(4), zz
   logical               :: got(4), dgot(4)
   integer               :: found
   character(len=32)     :: which
+  type(set_map)     :: sets
+  type(inclusion_map)     :: inclusions
 
   if (command_argument_count() .lt. 1) then
      error stop 'usage: refusal <case>'
   end if
   call get_command_argument(1, which)
 
-  v     = counted_set('value-slots', 4)
-  o     = counted_set('operations' , 2)
-  p     = counted_set('ports'      , 3)
-  x_dom = subset_set('independent', v, [SLOT_Y, SLOT_X])
-  c     = subset_set('computed'   , v, [SLOT_U, SLOT_Z])
+  call v % declare()
+  call sets % bind(v, counted_set_representation(4))
+  call o % declare()
+  call sets % bind(o, counted_set_representation(2))
+  call p % declare()
+  call sets % bind(p, counted_set_representation(3))
+  call x_dom % declare()
+  call sets       % bind(x_dom, listed_set_representation([SLOT_Y, SLOT_X]))
+  call inclusions % include_in(x_dom, v)
+  call c % declare()
+  call sets       % bind(c, listed_set_representation([SLOT_U, SLOT_Z]))
+  call inclusions % include_in(c, v)
 
   table(:, 1) = [OP_PRODUCT, SLOT_X, PORT_IN1]
   table(:, 2) = [OP_PRODUCT, SLOT_Y, PORT_IN2]
@@ -71,23 +84,23 @@ program derivative_level_8_refusal
      short(:, 1:3) = table(:, 1:3)
      short(:, 4)   = table(:, 4)
      short(:, 5)   = table(:, 6)
-     lame = stored_relation('flow missing a port', [o, v, p], short)
-     found = slot_for_port(lame, v, OP_SUM, PORT_IN2)
+     lame = stored_relation('flow missing a port', [o, v, p], short, sets)
+     found = slot_for_port(lame, v, sets, OP_SUM, PORT_IN2)
      write(*,*) 'a missing port named slot', found
 
   case ('primal-starvation')
-     flow = stored_relation('flow', [o, v, p], table)
+     flow = stored_relation('flow', [o, v, p], table, sets)
      ! The wrong order, on purpose: sum before product.
-     call primal_execution(flow, v, x_dom, [3.0_dp, 2.0_dp], c, &
+     call primal_execution(flow, v, sets, x_dom, [3.0_dp, 2.0_dp], c, &
           & [OP_SUM, OP_PRODUCT], vals, got)
      write(*,*) 'a starved operation computed', vals
 
   case ('tangent-starvation')
-     flow = stored_relation('flow', [o, v, p], table)
-     call primal_execution(flow, v, x_dom, [3.0_dp, 2.0_dp], c, &
+     flow = stored_relation('flow', [o, v, p], table, sets)
+     call primal_execution(flow, v, sets, x_dom, [3.0_dp, 2.0_dp], c, &
           & [OP_PRODUCT, OP_SUM], vals, got)
      ! Primal is honest; the tangent order is not.
-     call tangent_action(flow, v, x_dom, [1.0_dp, 0.0_dp], c, &
+     call tangent_action(flow, v, sets, x_dom, [1.0_dp, 0.0_dp], c, &
           & [OP_SUM, OP_PRODUCT], vals, dots, dgot)
      write(*,*) 'a starved tangent computed', dots
 

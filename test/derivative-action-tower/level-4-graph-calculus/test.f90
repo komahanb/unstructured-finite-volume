@@ -29,7 +29,12 @@ program derivative_level_4
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
@@ -44,8 +49,8 @@ program derivative_level_4
   implicit none
 
 
-  type(counted_set)              :: v, o, p
-  type(subset_set)               :: p_out, p_in
+  type(set_graph)              :: v, o, p
+  type(set_graph)               :: p_out, p_in
   type(stored_relation)          :: flow
   class(relation), allocatable   :: d
   type(graph)             , target :: g
@@ -56,6 +61,8 @@ program derivative_level_4
   type(directed_adjacency_view)  :: view
   integer                        :: table(3, 6)
   integer                        :: nfail
+  type(set_map)     :: sets
+  type(inclusion_map)     :: inclusions
 
   nfail = 0
 
@@ -63,9 +70,12 @@ program derivative_level_4
   write(*,'(1x,a)') "derivative action tower . level 4 . calculus"
   write(*,'(1x,a)') "============================================="
 
-  v = counted_set('value-slots', 4)
-  o = counted_set('operations' , 2)
-  p = counted_set('ports'      , 3)
+  call v % declare()
+  call sets % bind(v, counted_set_representation(4))
+  call o % declare()
+  call sets % bind(o, counted_set_representation(2))
+  call p % declare()
+  call sets % bind(p, counted_set_representation(3))
 
   table(:, 1) = [OP_PRODUCT, SLOT_X, PORT_IN1]
   table(:, 2) = [OP_PRODUCT, SLOT_Y, PORT_IN2]
@@ -73,13 +83,17 @@ program derivative_level_4
   table(:, 4) = [OP_SUM    , SLOT_U, PORT_IN1]
   table(:, 5) = [OP_SUM    , SLOT_Y, PORT_IN2]
   table(:, 6) = [OP_SUM    , SLOT_Z, PORT_OUT]
-  flow = stored_relation('flow', [o, v, p], table)
+  flow = stored_relation('flow', [o, v, p], table, sets)
 
-  p_out = subset_set('output-port', p, [PORT_OUT])
-  p_in  = subset_set('input-ports', p, [PORT_IN1, PORT_IN2])
+  call p_out % declare()
+  call sets       % bind(p_out, listed_set_representation([PORT_OUT]))
+  call inclusions % include_in(p_out, p)
+  call p_in % declare()
+  call sets       % bind(p_in, listed_set_representation([PORT_IN1, PORT_IN2]))
+  call inclusions % include_in(p_in, p)
   d = compose_binary( &
-       & project_slots(restrict_slot(flow, 3, p_out), [1, 2]), &
-       & project_slots(restrict_slot(flow, 3, p_in ), [2, 1]))
+       & project_slots(restrict_slot(flow, 3, p_out, sets, inclusions), [1, 2], sets), &
+       & project_slots(restrict_slot(flow, 3, p_in , sets, inclusions), [2, 1], sets), sets)
 
   ! 'derivative specimen': (S, P) as one sequence on each branch.
   call g % declare()
@@ -113,7 +127,7 @@ program derivative_level_4
   g % branch(2) = known_branch(rcell(1))
 
   ! The interpretive jump, made explicitly.
-  view = directed_adjacency_view(g, bnd, d)
+  view = directed_adjacency_view(g, bnd, sets, d)
 
   call check_view_domain(nfail)
   call check_sources_and_sinks(nfail)
@@ -133,10 +147,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
 
     dom = view % domain()
-    call report(dom % same_as(o) .and. dom % size() .eq. 2, &
+    call report(dom % same_as(o) .and. sets % size_of(dom) .eq. 2, &
          & "the view walks the operations, and nothing invented", nfail)
 
   end subroutine check_view_domain
@@ -149,19 +163,20 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(subset_set) :: src, snk
+    type(set_graph) :: src, snk
+    type(label_map)     :: labels
 
-    src = sources(view)
-    snk = sinks(view)
+    call sources(view, sets, labels, inclusions, src)
+    call sinks(view, sets, labels, inclusions, snk)
 
-    call report(src % size() .eq. 1 .and. src % has(OP_PRODUCT) .and. &
-         &      .not. src % has(OP_SUM), &
+    call report(sets % size_of(src) .eq. 1 .and. sets % has_in(src, OP_PRODUCT) .and. &
+         &      .not. sets % has_in(src, OP_SUM), &
          & "sources = { product }", nfail)
-    call report(snk % size() .eq. 1 .and. snk % has(OP_SUM) .and. &
-         &      .not. snk % has(OP_PRODUCT), &
+    call report(sets % size_of(snk) .eq. 1 .and. sets % has_in(snk, OP_SUM) .and. &
+         &      .not. sets % has_in(snk, OP_PRODUCT), &
          & "sinks = { sum }", nfail)
 
-    call report(src % is_subobject_of(o) .and. snk % is_subobject_of(o), &
+    call report(declared_subobject(src, o, inclusions) .and. declared_subobject(snk, o, inclusions), &
          & "both answers stand embedded in the operations", nfail)
 
   end subroutine check_sources_and_sinks
@@ -175,12 +190,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(reachable(view, OP_PRODUCT, OP_SUM), &
-         & "reachable(product, sum) = true", nfail)
-    call report(.not. reachable(view, OP_SUM, OP_PRODUCT), &
-         & "reachable(sum, product) = false", nfail)
-    call report(reachable(view, OP_PRODUCT, OP_PRODUCT) .and. &
-         &      reachable(view, OP_SUM, OP_SUM), &
+    call report(reachable(view, sets, OP_PRODUCT, OP_SUM), &
+         & "reachable(product, sets, sum) = true", nfail)
+    call report(.not. reachable(view, sets, OP_SUM, OP_PRODUCT), &
+         & "reachable(sum, sets, product) = false", nfail)
+    call report(reachable(view, sets, OP_PRODUCT, OP_PRODUCT) .and. &
+         &      reachable(view, sets, OP_SUM, OP_SUM), &
          & "each operation reaches itself by the zero-length path", nfail)
 
   end subroutine check_reachability
@@ -197,7 +212,7 @@ contains
 
     integer, allocatable :: order(:)
 
-    call topological_order(view, order)
+    call topological_order(view, sets, order)
 
     call report(size(order) .eq. 2 .and. &
          &      order(1) .eq. OP_PRODUCT .and. order(2) .eq. OP_SUM, &

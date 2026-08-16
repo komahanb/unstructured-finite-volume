@@ -29,7 +29,11 @@ program derivative_level_3
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
@@ -40,8 +44,8 @@ program derivative_level_3
 
   implicit none
 
-  type(counted_set)              :: v, o, p
-  type(subset_set)               :: p_out, p_in
+  type(set_graph)              :: v, o, p
+  type(set_graph)               :: p_out, p_in
   type(stored_relation)          :: flow
   class(relation), allocatable   :: d
   type(graph)             , target :: g
@@ -51,6 +55,8 @@ program derivative_level_3
   integer                          :: k
   integer                        :: table(3, 6)
   integer                        :: nfail
+  type(set_map)     :: sets
+  type(inclusion_map)     :: inclusions
 
   nfail = 0
 
@@ -58,9 +64,12 @@ program derivative_level_3
   write(*,'(1x,a)') "derivative action tower . level 3 . graph"
   write(*,'(1x,a)') "============================================="
 
-  v = counted_set('value-slots', 4)
-  o = counted_set('operations' , 2)
-  p = counted_set('ports'      , 3)
+  call v % declare()
+  call sets % bind(v, counted_set_representation(4))
+  call o % declare()
+  call sets % bind(o, counted_set_representation(2))
+  call p % declare()
+  call sets % bind(p, counted_set_representation(3))
 
   table(:, 1) = [OP_PRODUCT, SLOT_X, PORT_IN1]
   table(:, 2) = [OP_PRODUCT, SLOT_Y, PORT_IN2]
@@ -68,15 +77,19 @@ program derivative_level_3
   table(:, 4) = [OP_SUM    , SLOT_U, PORT_IN1]
   table(:, 5) = [OP_SUM    , SLOT_Y, PORT_IN2]
   table(:, 6) = [OP_SUM    , SLOT_Z, PORT_OUT]
-  flow = stored_relation('flow', [o, v, p], table)
+  flow = stored_relation('flow', [o, v, p], table, sets)
 
   ! The certified Level-2 road, walked once more; the graph admits
   ! what the algebra derived.
-  p_out = subset_set('output-port', p, [PORT_OUT])
-  p_in  = subset_set('input-ports', p, [PORT_IN1, PORT_IN2])
+  call p_out % declare()
+  call sets       % bind(p_out, listed_set_representation([PORT_OUT]))
+  call inclusions % include_in(p_out, p)
+  call p_in % declare()
+  call sets       % bind(p_in, listed_set_representation([PORT_IN1, PORT_IN2]))
+  call inclusions % include_in(p_in, p)
   d = compose_binary( &
-       & project_slots(restrict_slot(flow, 3, p_out), [1, 2]), &
-       & project_slots(restrict_slot(flow, 3, p_in ), [2, 1]))
+       & project_slots(restrict_slot(flow, 3, p_out, sets, inclusions), [1, 2], sets), &
+       & project_slots(restrict_slot(flow, 3, p_in , sets, inclusions), [2, 1], sets), sets)
 
   ! 'derivative specimen': (S, P) as one sequence on each branch.
   call g % declare()
@@ -181,7 +194,7 @@ contains
     integer, intent(inout) :: nfail
 
     class(relation), pointer       :: rp
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
     integer                        :: k
 
     do k = 1, num_relations(g)
@@ -213,7 +226,7 @@ contains
     integer, intent(inout) :: nfail
 
     class(relation), pointer       :: rp
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
     integer                        :: k, s
     logical                        :: ok
 

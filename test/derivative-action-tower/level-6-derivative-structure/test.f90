@@ -48,7 +48,11 @@ program derivative_level_6
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
@@ -64,8 +68,8 @@ program derivative_level_6
   implicit none
 
 
-  type(counted_set)              :: v, o, p
-  type(subset_set)               :: x_dom, c, z, p_in, p_out
+  type(set_graph)              :: v, o, p
+  type(set_graph)               :: x_dom, c, z, p_in, p_out
   type(stored_relation)          :: flow, backwards
   type(stored_relation)          :: consumes, produces
   type(csr_relation)             :: a, a2
@@ -84,6 +88,8 @@ program derivative_level_6
   type(directed_adjacency_view)  :: dep_view, dep_view2
   integer                        :: table(3, 6)
   integer                        :: nfail
+  type(set_map)     :: sets
+  type(inclusion_map)     :: inclusions
 
   nfail = 0
 
@@ -91,13 +97,22 @@ program derivative_level_6
   write(*,'(1x,a)') "derivative action tower . level 6 . structure"
   write(*,'(1x,a)') "============================================="
 
-  v = counted_set('value-slots', 4)
-  o = counted_set('operations' , 2)
-  p = counted_set('ports'      , 3)
+  call v % declare()
+  call sets % bind(v, counted_set_representation(4))
+  call o % declare()
+  call sets % bind(o, counted_set_representation(2))
+  call p % declare()
+  call sets % bind(p, counted_set_representation(3))
 
-  x_dom = subset_set('independent', v, [SLOT_Y, SLOT_X])
-  c     = subset_set('computed'   , v, [SLOT_U, SLOT_Z])
-  z     = subset_set('response'   , c, [SLOT_Z])
+  call x_dom % declare()
+  call sets       % bind(x_dom, listed_set_representation([SLOT_Y, SLOT_X]))
+  call inclusions % include_in(x_dom, v)
+  call c % declare()
+  call sets       % bind(c, listed_set_representation([SLOT_U, SLOT_Z]))
+  call inclusions % include_in(c, v)
+  call z % declare()
+  call sets       % bind(z, listed_set_representation([SLOT_Z]))
+  call inclusions % include_in(z, c)
 
   table(:, 1) = [OP_PRODUCT, SLOT_X, PORT_IN1]
   table(:, 2) = [OP_PRODUCT, SLOT_Y, PORT_IN2]
@@ -105,10 +120,14 @@ program derivative_level_6
   table(:, 4) = [OP_SUM    , SLOT_U, PORT_IN1]
   table(:, 5) = [OP_SUM    , SLOT_Y, PORT_IN2]
   table(:, 6) = [OP_SUM    , SLOT_Z, PORT_OUT]
-  flow = stored_relation('flow', [o, v, p], table)
+  flow = stored_relation('flow', [o, v, p], table, sets)
 
-  p_in  = subset_set('input-ports', p, [PORT_IN1, PORT_IN2])
-  p_out = subset_set('output-port', p, [PORT_OUT])
+  call p_in % declare()
+  call sets       % bind(p_in, listed_set_representation([PORT_IN1, PORT_IN2]))
+  call inclusions % include_in(p_in, p)
+  call p_out % declare()
+  call sets       % bind(p_out, listed_set_representation([PORT_OUT]))
+  call inclusions % include_in(p_out, p)
 
   a = derive_direct(flow)
   ! 'value dependency': (S, P) as one sequence on each branch.
@@ -138,7 +157,7 @@ program derivative_level_6
 
   g_a % branch(1) = known_branch(scell(1))
   g_a % branch(2) = known_branch(rcell(1))
-  dep_view = directed_adjacency_view(g_a, bnd, a)
+  dep_view = directed_adjacency_view(g_a, bnd, sets, a)
 
   j_zx = derive_jacobian(dep_view)
 
@@ -168,9 +187,9 @@ contains
 
     type(stored_relation) :: cons, prod
 
-    cons = project_slots(restrict_slot(t_flow, 3, p_in ), [2, 1])
-    prod = project_slots(restrict_slot(t_flow, 3, p_out), [1, 2])
-    dep  = compose_binary(cons, prod)
+    cons = project_slots(restrict_slot(t_flow, 3, p_in , sets, inclusions), [2, 1], sets)
+    prod = project_slots(restrict_slot(t_flow, 3, p_out, sets, inclusions), [1, 2], sets)
+    dep  = compose_binary(cons, prod, sets)
 
     ! keep the participations visible for their own checks
     consumes = cons
@@ -190,21 +209,24 @@ contains
     type(directed_adjacency_view), intent(in) :: dv
     type(csr_relation)                        :: jac
 
-    integer :: pairs(2, z % size() * x_dom % size())
+    integer, allocatable :: pairs(:,:)
     integer :: npairs, zi, xi
 
+    allocate(pairs(2, sets % size_of(z) * sets % size_of(x_dom)))
+
     npairs = 0
-    do zi = 1, z % size()
-       do xi = 1, x_dom % size()
-          if (reachable(dv, x_dom % member(xi), z % member(zi))) then
+    do zi = 1, sets % size_of(z)
+       do xi = 1, sets % size_of(x_dom)
+          if (reachable(dv, sets, sets % member_of(x_dom, xi), &
+               &        sets % member_of(z, zi))) then
              npairs = npairs + 1
-             pairs(:, npairs) = [z % member(zi), x_dom % member(xi)]
+             pairs(:, npairs) = [sets % member_of(z, zi), sets % member_of(x_dom, xi)]
           end if
        end do
     end do
 
     jac = csr_relation('structural jacobian', z, x_dom, &
-         & pairs(:, 1:npairs))
+         & pairs(:, 1:npairs), sets)
 
   end function derive_jacobian
 
@@ -219,10 +241,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(z % size() .eq. 1 .and. z % has(SLOT_Z) .and. &
-         &      .not. z % has(SLOT_U), &
+    call report(sets % size_of(z) .eq. 1 .and. sets % has_in(z, SLOT_Z) .and. &
+         &      .not. sets % has_in(z, SLOT_U), &
          & "Z = { z }, the response", nfail)
-    call report(z % is_subobject_of(c) .and. z % is_subobject_of(v), &
+    call report(declared_subobject(z, c, inclusions) .and. declared_subobject(z, v, inclusions), &
          & "embedded in the computed slots, and through them in V - " // &
          & "no location relation needed", nfail)
 
@@ -237,7 +259,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
 
     dom = consumes % domain(1)
     call report(dom % same_as(v), "I runs from the value slots", nfail)
@@ -271,7 +293,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
 
     dom = a % domain(1)
     call report(dom % same_as(v), "A_V runs from the value slots", nfail)
@@ -308,10 +330,10 @@ contains
          & "and y -> u -> z stands beside it: two routes to one " // &
          & "response", nfail)
     call report(.not. a % has([SLOT_X, SLOT_Z]) .and. &
-         &      reachable(dep_view, SLOT_X, SLOT_Z), &
+         &      reachable(dep_view, sets, SLOT_X, SLOT_Z), &
          & "x -> u -> z: transitive only, hard-coded never", nfail)
-    call report(.not. reachable(dep_view, SLOT_Z, SLOT_X) .and. &
-         &      .not. reachable(dep_view, SLOT_Z, SLOT_Y), &
+    call report(.not. reachable(dep_view, sets, SLOT_Z, SLOT_X) .and. &
+         &      .not. reachable(dep_view, sets, SLOT_Z, SLOT_Y), &
          & "nothing flows back out of the response", nfail)
 
   end subroutine check_two_path_truth
@@ -325,7 +347,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
 
     dom = j_zx % domain(1)
     call report(dom % same_as(z), &
@@ -407,7 +429,7 @@ contains
     do k = 1, 6
        rev(:, k) = table(:, 7 - k)
     end do
-    backwards = stored_relation('flow backwards', [o, v, p], rev)
+    backwards = stored_relation('flow backwards', [o, v, p], rev, sets)
 
     a2 = derive_direct(backwards)
     ! 'value dependency again': (S, P) as one sequence on each branch.
@@ -437,7 +459,7 @@ contains
 
     g_a2 % branch(1) = known_branch(scell2(1))
     g_a2 % branch(2) = known_branch(rcell2(1))
-    dep_view2 = directed_adjacency_view(g_a2, bnd2, a2)
+    dep_view2 = directed_adjacency_view(g_a2, bnd2, sets, a2)
     j_zx2 = derive_jacobian(dep_view2)
     jt2 = transpose_of(j_zx2)
 

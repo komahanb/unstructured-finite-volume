@@ -41,7 +41,11 @@ program derivative_level_8
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
@@ -59,8 +63,8 @@ program derivative_level_8
   implicit none
 
 
-  type(counted_set)              :: v, o, p
-  type(subset_set)               :: x_dom, c, z_dom, p_in, p_out
+  type(set_graph)              :: v, o, p
+  type(set_graph)               :: x_dom, c, z_dom, p_in, p_out
   type(stored_relation)          :: flow, backwards
   class(relation), allocatable   :: d, d2, av
   type(graph)             , target :: g
@@ -87,6 +91,8 @@ program derivative_level_8
   real(dp)                       :: jv
   integer                        :: table(3, 6)
   integer                        :: nfail
+  type(set_map)     :: sets
+  type(inclusion_map)     :: inclusions
 
   nfail = 0
 
@@ -94,12 +100,21 @@ program derivative_level_8
   write(*,'(1x,a)') "derivative action tower . level 8 . action"
   write(*,'(1x,a)') "============================================="
 
-  v     = counted_set('value-slots', 4)
-  o     = counted_set('operations' , 2)
-  p     = counted_set('ports'      , 3)
-  x_dom = subset_set('independent', v, [SLOT_Y, SLOT_X])
-  c     = subset_set('computed'   , v, [SLOT_U, SLOT_Z])
-  z_dom = subset_set('response'   , c, [SLOT_Z])
+  call v % declare()
+  call sets % bind(v, counted_set_representation(4))
+  call o % declare()
+  call sets % bind(o, counted_set_representation(2))
+  call p % declare()
+  call sets % bind(p, counted_set_representation(3))
+  call x_dom % declare()
+  call sets       % bind(x_dom, listed_set_representation([SLOT_Y, SLOT_X]))
+  call inclusions % include_in(x_dom, v)
+  call c % declare()
+  call sets       % bind(c, listed_set_representation([SLOT_U, SLOT_Z]))
+  call inclusions % include_in(c, v)
+  call z_dom % declare()
+  call sets       % bind(z_dom, listed_set_representation([SLOT_Z]))
+  call inclusions % include_in(z_dom, c)
 
   table(:, 1) = [OP_PRODUCT, SLOT_X, PORT_IN1]
   table(:, 2) = [OP_PRODUCT, SLOT_Y, PORT_IN2]
@@ -107,15 +122,19 @@ program derivative_level_8
   table(:, 4) = [OP_SUM    , SLOT_U, PORT_IN1]
   table(:, 5) = [OP_SUM    , SLOT_Y, PORT_IN2]
   table(:, 6) = [OP_SUM    , SLOT_Z, PORT_OUT]
-  flow = stored_relation('flow', [o, v, p], table)
+  flow = stored_relation('flow', [o, v, p], table, sets)
 
-  p_in  = subset_set('input-ports', p, [PORT_IN1, PORT_IN2])
-  p_out = subset_set('output-port', p, [PORT_OUT])
+  call p_in % declare()
+  call sets       % bind(p_in, listed_set_representation([PORT_IN1, PORT_IN2]))
+  call inclusions % include_in(p_in, p)
+  call p_out % declare()
+  call sets       % bind(p_out, listed_set_representation([PORT_OUT]))
+  call inclusions % include_in(p_out, p)
 
   ! The lower road, walked again: the structure supplies the order.
   d = compose_binary( &
-       & project_slots(restrict_slot(flow, 3, p_out), [1, 2]), &
-       & project_slots(restrict_slot(flow, 3, p_in ), [2, 1]))
+       & project_slots(restrict_slot(flow, 3, p_out, sets, inclusions), [1, 2], sets), &
+       & project_slots(restrict_slot(flow, 3, p_in , sets, inclusions), [2, 1], sets), sets)
   ! 'derivative specimen': (S, P) as one sequence on each branch.
   call g % declare()
   do kcell = 1, 3
@@ -146,12 +165,12 @@ program derivative_level_8
 
   g % branch(1) = known_branch(scell(1))
   g % branch(2) = known_branch(rcell(1))
-  view = directed_adjacency_view(g, bnd, d)
-  call topological_order(view, order)
+  view = directed_adjacency_view(g, bnd, sets, d)
+  call topological_order(view, sets, order)
 
-  allocate(base(v % size()), avail(v % size()))
-  allocate(dot(v % size()), davail(v % size()))
-  allocate(xbar(x_dom % size()))
+  allocate(base(sets % size_of(v)), avail(sets % size_of(v)))
+  allocate(dot(sets % size_of(v)), davail(sets % size_of(v)))
+  allocate(xbar(sets % size_of(x_dom)))
 
   call check_derived_order(nfail)
   call check_laws(nfail)
@@ -270,19 +289,19 @@ contains
 
     integer, intent(inout) :: nfail
 
-    qx = field('base point', x_dom)
+    qx = field('base point', x_dom, sets % size_of(x_dom))
     call qx % set_real_vector([3.0_dp, 2.0_dp])
     call qx % get_real_vector(obs)
 
-    call primal_execution(flow, v, x_dom, obs, c, order, base, avail)
+    call primal_execution(flow, v, sets, x_dom, obs, c, order, base, avail)
 
-    call report(abs(base(v % local_index(SLOT_U)) - 6.0_dp) &
+    call report(abs(base(sets % index_in(v, SLOT_U)) - 6.0_dp) &
          &      < 1.0d-12, &
          & "u = 6, computed into the workspace", nfail)
-    call report(abs(base(v % local_index(SLOT_Z)) - 9.0_dp) &
+    call report(abs(base(sets % index_in(v, SLOT_Z)) - 9.0_dp) &
          &      < 1.0d-12, &
          & "z = 9: the base point stands complete", nfail)
-    call report(count(avail) .eq. v % size(), &
+    call report(count(avail) .eq. sets % size_of(v), &
          & "every slot is available after execution", nfail)
 
   end subroutine check_primal
@@ -297,28 +316,28 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
     real(dp), allocatable          :: out_val(:)
 
-    vx = field('tangent seed', x_dom)
+    vx = field('tangent seed', x_dom, sets % size_of(x_dom))
     call vx % set_real_vector([-1.0_dp, 4.0_dp])
     call vx % get_real_vector(seedv)
 
-    call tangent_action(flow, v, x_dom, seedv, c, order, base, &
+    call tangent_action(flow, v, sets, x_dom, seedv, c, order, base, &
          & dot, davail)
 
-    call report(abs(dot(v % local_index(SLOT_U)) - 10.0_dp) &
+    call report(abs(dot(sets % index_in(v, SLOT_U)) - 10.0_dp) &
          &      < 1.0d-12, &
          & "du = 3(4) + 2(-1) = 10, by the local shadow", nfail)
 
-    jv = dot(v % local_index(SLOT_Z))
-    jv_f = field('tangent response', z_dom)
+    jv = dot(sets % index_in(v, SLOT_Z))
+    jv_f = field('tangent response', z_dom, sets % size_of(z_dom))
     call jv_f % set_real_vector([jv])
 
-    call jv_f % domain(dom)
+    dom = jv_f % domain()
     call jv_f % get_real_vector(out_val)
     call report(dom % same_as(z_dom) .and. &
-         &      abs(out_val(z_dom % local_index(SLOT_Z)) - 9.0_dp) &
+         &      abs(out_val(sets % index_in(z_dom, SLOT_Z)) - 9.0_dp) &
          &      < 1.0d-12, &
          & "Jv = 9, an ordinary field on Z", nfail)
 
@@ -334,25 +353,25 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
 
-    zbar_f = field('reverse seed', z_dom)
+    zbar_f = field('reverse seed', z_dom, sets % size_of(z_dom))
     call zbar_f % set_real_vector([2.0_dp])
     call zbar_f % get_real_vector(zseed)
 
-    call reverse_action(flow, v, x_dom, order, base, z_dom, &
+    call reverse_action(flow, v, sets, x_dom, order, base, z_dom, &
          & zseed, xbar, hits)
 
-    call report(abs(xbar(x_dom % local_index(SLOT_Y)) - 6.0_dp) &
+    call report(abs(xbar(sets % index_in(x_dom, SLOT_Y)) - 6.0_dp) &
          &      < 1.0d-12, &
          & "ybar = 2 + 2(2) = 6: two contributions, one slot", nfail)
-    call report(abs(xbar(x_dom % local_index(SLOT_X)) - 6.0_dp) &
+    call report(abs(xbar(sets % index_in(x_dom, SLOT_X)) - 6.0_dp) &
          &      < 1.0d-12, &
          & "xbar = 3(2) = 6", nfail)
 
-    xbar_f = field('reverse result', x_dom)
+    xbar_f = field('reverse result', x_dom, sets % size_of(x_dom))
     call xbar_f % set_real_vector(xbar)
-    call xbar_f % domain(dom)
+    dom = xbar_f % domain()
     call report(dom % same_as(x_dom), &
          & "J^T zbar is an ordinary field on X, by identity", nfail)
 
@@ -376,12 +395,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(hits(v % local_index(SLOT_Y)) .eq. 2, &
+    call report(hits(sets % index_in(v, SLOT_Y)) .eq. 2, &
          & "y took two input-port incidence accumulation events", &
          & nfail)
-    call report(hits(v % local_index(SLOT_X)) .eq. 1 .and. &
-         &      hits(v % local_index(SLOT_U)) .eq. 1 .and. &
-         &      hits(v % local_index(SLOT_Z)) .eq. 0, &
+    call report(hits(sets % index_in(v, SLOT_X)) .eq. 1 .and. &
+         &      hits(sets % index_in(v, SLOT_U)) .eq. 1 .and. &
+         &      hits(sets % index_in(v, SLOT_Z)) .eq. 0, &
          & "x and u one event each, the response none: " // &
          & "incidence-local +=, never path counting", nfail)
 
@@ -425,8 +444,8 @@ contains
     logical :: ok
 
     av = compose_binary( &
-         & project_slots(restrict_slot(flow, 3, p_in ), [2, 1]), &
-         & project_slots(restrict_slot(flow, 3, p_out), [1, 2]))
+         & project_slots(restrict_slot(flow, 3, p_in , sets, inclusions), [2, 1], sets), &
+         & project_slots(restrict_slot(flow, 3, p_out, sets, inclusions), [1, 2], sets), sets)
     ! 'value dependency': (S, P) as one sequence on each branch.
     call g_av % declare()
     do kcell2 = 1, 1
@@ -454,13 +473,13 @@ contains
 
     g_av % branch(1) = known_branch(scell2(1))
     g_av % branch(2) = known_branch(rcell2(1))
-    dep_view = directed_adjacency_view(g_av, bnd2, av)
+    dep_view = directed_adjacency_view(g_av, bnd2, sets, av)
 
     ok = .true.
-    do i = 1, x_dom % size()
-       m = x_dom % member(i)
-       ok = ok .and. (reachable(dep_view, m, SLOT_Z) .eqv. &
-            &         (hits(v % local_index(m)) .gt. 0))
+    do i = 1, sets % size_of(x_dom)
+       m = sets % member_of(x_dom, i)
+       ok = ok .and. (reachable(dep_view, sets, m, SLOT_Z) .eqv. &
+            &         (hits(sets % index_in(v, m)) .gt. 0))
     end do
     call report(ok, &
          & "the structural support agrees with the action's " // &
@@ -483,35 +502,35 @@ contains
     real(dp)              :: jv2, lhs, rhs
     type(field)           :: qx2
 
-    allocate(base2(v % size()), avail2(v % size()))
-    allocate(dot2(v % size()), davail2(v % size()))
-    allocate(xbar2(x_dom % size()))
+    allocate(base2(sets % size_of(v)), avail2(sets % size_of(v)))
+    allocate(dot2(sets % size_of(v)), davail2(sets % size_of(v)))
+    allocate(xbar2(sets % size_of(x_dom)))
 
-    qx2 = field('base point two', x_dom)
+    qx2 = field('base point two', x_dom, sets % size_of(x_dom))
     call qx2 % set_real_vector([2.0_dp, 4.0_dp])
     call qx2 % get_real_vector(obs2)
 
-    call primal_execution(flow, v, x_dom, obs2, c, order, &
+    call primal_execution(flow, v, sets, x_dom, obs2, c, order, &
          & base2, avail2)
-    call report(abs(base2(v % local_index(SLOT_U)) - 8.0_dp) &
+    call report(abs(base2(sets % index_in(v, SLOT_U)) - 8.0_dp) &
          &      < 1.0d-12 .and. &
-         &      abs(base2(v % local_index(SLOT_Z)) - 10.0_dp) &
+         &      abs(base2(sets % index_in(v, SLOT_Z)) - 10.0_dp) &
          &      < 1.0d-12, &
          & "second base: u = 8, z = 10", nfail)
 
     ! dy = 5, dx = -3 on X = { y, x }
-    call tangent_action(flow, v, x_dom, [5.0_dp, -3.0_dp], c, &
+    call tangent_action(flow, v, sets, x_dom, [5.0_dp, -3.0_dp], c, &
          & order, base2, dot2, davail2)
-    jv2 = dot2(v % local_index(SLOT_Z))
-    call report(abs(dot2(v % local_index(SLOT_U)) - 14.0_dp) &
+    jv2 = dot2(sets % index_in(v, SLOT_Z))
+    call report(abs(dot2(sets % index_in(v, SLOT_U)) - 14.0_dp) &
          &      < 1.0d-12 .and. abs(jv2 - 19.0_dp) < 1.0d-12, &
          & "du = 2(-3) + 4(5) = 14 and Jv = 19", nfail)
 
-    call reverse_action(flow, v, x_dom, order, base2, z_dom, &
+    call reverse_action(flow, v, sets, x_dom, order, base2, z_dom, &
          & [-2.0_dp], xbar2)
-    call report(abs(xbar2(x_dom % local_index(SLOT_Y)) + 10.0_dp) &
+    call report(abs(xbar2(sets % index_in(x_dom, SLOT_Y)) + 10.0_dp) &
          &      < 1.0d-12 .and. &
-         &      abs(xbar2(x_dom % local_index(SLOT_X)) + 4.0_dp) &
+         &      abs(xbar2(sets % index_in(x_dom, SLOT_X)) + 4.0_dp) &
          &      < 1.0d-12, &
          & "J^T(-2) = [-10, -4] on { y, x }", nfail)
 
@@ -523,23 +542,23 @@ contains
 
     ! Unit tangent seeds: independent action probes, never an
     ! assembled Jacobian.
-    call tangent_action(flow, v, x_dom, [0.0_dp, 1.0_dp], c, &
+    call tangent_action(flow, v, sets, x_dom, [0.0_dp, 1.0_dp], c, &
          & order, base2, dot2, davail2)
-    call report(abs(dot2(v % local_index(SLOT_Z)) - 2.0_dp) &
+    call report(abs(dot2(sets % index_in(v, SLOT_Z)) - 2.0_dp) &
          &      < 1.0d-12, &
          & "x-basis seed: Jv = 2 = dz/dx", nfail)
 
-    call tangent_action(flow, v, x_dom, [1.0_dp, 0.0_dp], c, &
+    call tangent_action(flow, v, sets, x_dom, [1.0_dp, 0.0_dp], c, &
          & order, base2, dot2, davail2)
-    call report(abs(dot2(v % local_index(SLOT_Z)) - 5.0_dp) &
+    call report(abs(dot2(sets % index_in(v, SLOT_Z)) - 5.0_dp) &
          &      < 1.0d-12, &
          & "y-basis seed: Jv = 5 = dz/dy", nfail)
 
-    call reverse_action(flow, v, x_dom, order, base2, z_dom, &
+    call reverse_action(flow, v, sets, x_dom, order, base2, z_dom, &
          & [1.0_dp], xbar2)
-    call report(abs(xbar2(x_dom % local_index(SLOT_Y)) - 5.0_dp) &
+    call report(abs(xbar2(sets % index_in(x_dom, SLOT_Y)) - 5.0_dp) &
          &      < 1.0d-12 .and. &
-         &      abs(xbar2(x_dom % local_index(SLOT_X)) - 2.0_dp) &
+         &      abs(xbar2(sets % index_in(x_dom, SLOT_X)) - 2.0_dp) &
          &      < 1.0d-12, &
          & "unit reverse seed: J^T(1) = [5, 2] - the gradient row, " // &
          & "one backward pass", nfail)
@@ -561,18 +580,18 @@ contains
     logical , allocatable :: availb(:), davailb(:)
     real(dp)              :: jvb, lhs, rhs
 
-    allocate(baseb(v % size()), availb(v % size()))
-    allocate(dotb(v % size()), davailb(v % size()))
-    allocate(xbarb(x_dom % size()))
+    allocate(baseb(sets % size_of(v)), availb(sets % size_of(v)))
+    allocate(dotb(sets % size_of(v)), davailb(sets % size_of(v)))
+    allocate(xbarb(sets % size_of(x_dom)))
 
     do k = 1, 6
        rev(:, k) = table(:, 7 - k)
     end do
-    backwards = stored_relation('flow backwards', [o, v, p], rev)
+    backwards = stored_relation('flow backwards', [o, v, p], rev, sets)
 
     d2 = compose_binary( &
-         & project_slots(restrict_slot(backwards, 3, p_out), [1, 2]), &
-         & project_slots(restrict_slot(backwards, 3, p_in ), [2, 1]))
+         & project_slots(restrict_slot(backwards, 3, p_out, sets, inclusions), [1, 2], sets), &
+         & project_slots(restrict_slot(backwards, 3, p_in , sets, inclusions), [2, 1], sets), sets)
     ! 'derivative specimen backwards': (S, P) as one sequence on each branch.
     call g2 % declare()
     do kcell3 = 1, 3
@@ -603,30 +622,30 @@ contains
 
     g2 % branch(1) = known_branch(scell3(1))
     g2 % branch(2) = known_branch(rcell3(1))
-    view2 = directed_adjacency_view(g2, bnd3, d2)
-    call topological_order(view2, order2)
+    view2 = directed_adjacency_view(g2, bnd3, sets, d2)
+    call topological_order(view2, sets, order2)
 
-    call primal_execution(backwards, v, x_dom, obs, c, order2, &
+    call primal_execution(backwards, v, sets, x_dom, obs, c, order2, &
          & baseb, availb)
-    call tangent_action(backwards, v, x_dom, seedv, c, order2, &
+    call tangent_action(backwards, v, sets, x_dom, seedv, c, order2, &
          & baseb, dotb, davailb)
-    jvb = dotb(v % local_index(SLOT_Z))
-    call reverse_action(backwards, v, x_dom, order2, baseb, &
+    jvb = dotb(sets % index_in(v, SLOT_Z))
+    call reverse_action(backwards, v, sets, x_dom, order2, baseb, &
          & z_dom, zseed, xbarb)
 
     lhs = zseed(1) * jvb
     rhs = dot_product(xbarb, seedv)
 
-    call report(abs(baseb(v % local_index(SLOT_U)) - 6.0_dp) &
+    call report(abs(baseb(sets % index_in(v, SLOT_U)) - 6.0_dp) &
          &      < 1.0d-12 .and. &
-         &      abs(baseb(v % local_index(SLOT_Z)) - 9.0_dp) &
+         &      abs(baseb(sets % index_in(v, SLOT_Z)) - 9.0_dp) &
          &      < 1.0d-12, &
          & "backwards facts, same primal: u = 6, z = 9", nfail)
     call report(abs(jvb - 9.0_dp) < 1.0d-12, &
          & "same tangent action: Jv = 9", nfail)
-    call report(abs(xbarb(x_dom % local_index(SLOT_Y)) - 6.0_dp) &
+    call report(abs(xbarb(sets % index_in(x_dom, SLOT_Y)) - 6.0_dp) &
          &      < 1.0d-12 .and. &
-         &      abs(xbarb(x_dom % local_index(SLOT_X)) - 6.0_dp) &
+         &      abs(xbarb(sets % index_in(x_dom, SLOT_X)) - 6.0_dp) &
          &      < 1.0d-12, &
          & "same reverse action: [6, 6]", nfail)
     call report(abs(lhs - rhs) < 1.0d-12, &

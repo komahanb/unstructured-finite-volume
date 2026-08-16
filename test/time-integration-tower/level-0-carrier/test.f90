@@ -38,12 +38,14 @@ program time_level_0
   use time_assert          , only : report, verdict
   use time_assert          , only : NQ, NT, NE
   use time_assert          , only : C_X, T0, T4, E1, E4
-  use graph_carrier        , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
   use time_carriers_fixture, only : time_carriers
 
   implicit none
 
-  type(counted_set) :: q, t, e
+  type(set_graph) :: q, t, e
+  type(set_map) :: sets
   integer           :: nfail
 
   nfail = 0
@@ -52,7 +54,7 @@ program time_level_0
   write(*,'(1x,a)') "time integration tower . level 0 . carrier"
   write(*,'(1x,a)') "============================================="
 
-  call time_carriers(q, t, e)
+  call time_carriers(sets, q, t, e)
 
   call check_cardinalities(nfail)
   call check_identities(nfail)
@@ -67,9 +69,9 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(q % size() .eq. NQ, "Q counts two state coordinates", nfail)
-    call report(t % size() .eq. NT, "T counts five time instants", nfail)
-    call report(e % size() .eq. NE, "E counts four time steps", nfail)
+    call report(sets % size_of(q) .eq. NQ, "Q counts two state coordinates", nfail)
+    call report(sets % size_of(t) .eq. NT, "T counts five time instants", nfail)
+    call report(sets % size_of(e) .eq. NE, "E counts four time steps", nfail)
 
   end subroutine check_cardinalities
 
@@ -89,7 +91,7 @@ contains
     call report(.not. t % same_as(e), &
          & "T is not E: an instant is not a step between instants", nfail)
 
-    call report(q % has(1) .and. t % has(1) .and. e % has(1), &
+    call report(sets % has_in(q, 1) .and. sets % has_in(t, 1) .and. sets % has_in(e, 1), &
          & "and the integer 1 is a member of ALL THREE - it is x, " // &
          & "t0 and e1 at once: identity does this work, never the " // &
          & "numerals", nfail)
@@ -104,8 +106,8 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(round_trips(q) .and. round_trips(t) .and. &
-         &      round_trips(e), &
+    call report(round_trips(sets, q) .and. round_trips(sets, t) .and. &
+         &      round_trips(sets, e), &
          & "member and local_index invert on every carrier", nfail)
 
   end subroutine check_enumeration
@@ -119,35 +121,42 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(.not. q % has(0) .and. .not. q % has(NQ + 1), &
+    call report(.not. sets % has_in(q, 0) .and. .not. sets % has_in(q, NQ + 1), &
          & "an outsider is rejected by Q", nfail)
-    call report(.not. t % has(0) .and. .not. t % has(NT + 1), &
+    call report(.not. sets % has_in(t, 0) .and. .not. sets % has_in(t, NT + 1), &
          & "and by T, at its own edge", nfail)
-    call report(.not. e % has(0) .and. .not. e % has(NE + 1), &
+    call report(.not. sets % has_in(e, 0) .and. .not. sets % has_in(e, NE + 1), &
          & "and by E, at another", nfail)
 
-    call report(t % has(T4) .and. .not. e % has(T4) .and. &
-         &      .not. q % has(T4), &
+    call report(sets % has_in(t, T4) .and. .not. sets % has_in(e, T4) .and. &
+         &      .not. sets % has_in(q, T4), &
          & "the last instant t4 is a member of T alone - E and Q " // &
          & "are not that long", nfail)
-    call report(e % has(E4) .and. t % has(E4) .and. .not. q % has(E4), &
+    call report(sets % has_in(e, E4) .and. sets % has_in(t, E4) .and. .not. sets % has_in(q, E4), &
          & "while e4's numeral IS a member of T, meaning t3, and " // &
          & "means nothing at all in Q", nfail)
 
   end subroutine check_boundaries
 
-  logical function round_trips(s)
+  !===================================================================!
+  ! The two enumeration laws, asked of the map that answers them. The
+  ! map is a dummy, not a local: the identity handed in is described
+  ! THERE and nowhere else, and a second map would describe nothing.
+  !===================================================================!
 
-    class(member_set), intent(in) :: s
+  logical function round_trips(sets, s)
+
+    type(set_map)  , intent(in) :: sets
+    type(set_graph), intent(in) :: s
 
     integer :: i, m
 
     round_trips = .true.
-    do i = 1, s % size()
-       m = s % member(i)
+    do i = 1, sets % size_of(s)
+       m = sets % member_of(s, i)
        round_trips = round_trips .and. &
-            & (s % member(s % local_index(m)) .eq. m)
-       round_trips = round_trips .and. (s % local_index(m) .eq. i)
+            & (sets % member_of(s, sets % index_in(s, m)) .eq. m)
+       round_trips = round_trips .and. (sets % index_in(s, m) .eq. i)
     end do
 
   end function round_trips

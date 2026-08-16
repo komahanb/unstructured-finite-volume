@@ -65,7 +65,8 @@ program time_level_8
   use time_assert           , only : T0, T4, H_STEP, Q0
   use time_assert           , only : FE_TRAJECTORY, BE_TRAJECTORY, &
        &                             BDF2_TRAJECTORY
-  use graph_carrier         , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
   use graph_binary_relation , only : csr_relation
   use class_graph           , only : stored_graph
   use class_graph_field     , only : field
@@ -81,7 +82,8 @@ program time_level_8
 
   implicit none
 
-  type(counted_set)          :: q, t, e
+  type(set_graph)          :: q, t, e
+  type(set_map)          :: sets
   type(csr_relation), target :: tail, head
   type(csr_relation)         :: a1
   type(stored_graph)         :: hcontext
@@ -94,15 +96,15 @@ program time_level_8
   write(*,'(1x,a)') "time integration tower . level 8 . march"
   write(*,'(1x,a)') "============================================="
 
-  call time_carriers(q, t, e)
-  tail = tail_relation(e, t)
-  head = head_relation(e, t)
-  a1   = derive_one_step_reach(tail, head)
+  call time_carriers(sets, q, t, e)
+  tail = tail_relation(e, t, sets)
+  head = head_relation(e, t, sets)
+  a1   = derive_one_step_reach(tail, head, sets)
 
   ! The OPERATION HOST - the conduit, not the clock.
   hcontext = stored_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
 
-  decay = triangular_decay(q)
+  decay = triangular_decay(q, NQ)
 
   call check_control_chain_realizes_a1(nfail)
   call check_the_three_carriers_stay_apart(nfail)
@@ -144,7 +146,7 @@ contains
     do i = 1, chain % num_edges()
        ok = ok .and. (chain % edge_tail(i) .eq. i)
        ok = ok .and. (chain % edge_head(i) .eq. i + 1)
-       ok = ok .and. a1 % has([t % member(i), t % member(i + 1)])
+       ok = ok .and. a1 % has([sets % member_of(t, i), sets % member_of(t, i + 1)])
     end do
     call report(ok, &
          & "and step i joins instant i to instant i+1 - exactly the " // &
@@ -168,7 +170,7 @@ contains
 
     type(marcher)                  :: clock
     type(stored_graph)             :: chain
-    class(member_set), allocatable :: cv, hv
+    type(set_graph) :: cv, hv
 
     call clock % instants(NSTEPS, chain)
     cv = chain % vertex_set()
@@ -187,7 +189,7 @@ contains
          & "OPERATION HOST, though both are five-element chains here", &
          & nfail)
 
-    call report(.not. hv % same_as(q) .and. q % size() .eq. NQ, &
+    call report(.not. hv % same_as(q) .and. sets % size_of(q) .eq. NQ, &
          & "and V(H_context) is still not Q - two members against " // &
          & "five, as at Levels 6 and 7", nfail)
 
@@ -215,9 +217,9 @@ contains
     call h % get_real_vector(hv)
 
     ok = .true.
-    do i = 1, e % size()
+    do i = 1, sets % size_of(e)
        ok = ok .and. &
-            & (abs(hv(e % local_index(e % member(i))) - clock % step) &
+            & (abs(hv(sets % index_in(e, sets % member_of(e, i))) - clock % step) &
             &  .lt. TOL)
     end do
     call report(ok, &

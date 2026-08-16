@@ -69,7 +69,8 @@ program time_level_6
   use time_assert           , only : T0, T1, T2
   use time_assert           , only : H_STEP, Q0, Q_FE1, Q_BE1, Q_BDF2
   use time_assert           , only : action_of
-  use graph_carrier         , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
   use graph_grammar         , only : graph, graph_field
   use graph_binary_relation , only : csr_relation
   use class_graph           , only : stored_graph
@@ -84,7 +85,8 @@ program time_level_6
 
   implicit none
 
-  type(counted_set)          :: q, t, e
+  type(set_graph)          :: q, t, e
+  type(set_map)          :: sets
   type(csr_relation), target :: tail, head, a1
   type(csr_relation)         :: a2
   type(stored_graph)         :: ht
@@ -98,17 +100,17 @@ program time_level_6
   write(*,'(1x,a)') "time integration tower . level 6 . scheme"
   write(*,'(1x,a)') "============================================="
 
-  call time_carriers(q, t, e)
-  tail = tail_relation(e, t)
-  head = head_relation(e, t)
-  a1   = derive_one_step_reach(tail, head)
-  a2   = derive_two_step_reach(a1)
+  call time_carriers(sets, q, t, e)
+  tail = tail_relation(e, t, sets)
+  head = head_relation(e, t, sets)
+  a1   = derive_one_step_reach(tail, head, sets)
+  a2   = derive_two_step_reach(a1, sets)
 
   ! The COMPATIBILITY HOST: five vertices, four edges, a chain -
   ! the same temporal extension as T, and emphatically not Q.
   ht = stored_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
 
-  decay = triangular_decay(q)
+  decay = triangular_decay(q, NQ)
   qf    = state_field(q)
 
   call check_host_is_not_the_state_domain(nfail)
@@ -134,11 +136,11 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: hv
+    type(set_graph) :: hv
 
     hv = ht % vertex_set()
 
-    call report(ht % num_vertices() .eq. NT .and. q % size() .eq. NQ, &
+    call report(ht % num_vertices() .eq. NT .and. sets % size_of(q) .eq. NQ, &
          & "the compatibility host H_t has five vertices; Q has two", &
          & nfail)
 
@@ -162,10 +164,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d, hv
+    type(set_graph) :: d, hv
+    integer        :: n_d
 
     hv = ht % vertex_set()
-    call ht % all_vertices(d)
+    d   = ht % all_vertices()
+    n_d = ht % num_vertices()
     call report(d % same_as(hv), &
          & "all_vertices(H_t) and H_t % vertex_set() are the same " // &
          & "carrier - so delegating a domain question changes no " // &
@@ -184,16 +188,17 @@ contains
     integer, intent(inout) :: nfail
 
     class(graph_field), allocatable :: answer
-    class(member_set), allocatable  :: d
+    type(set_graph)  :: d
+    integer         :: n_d
     real(dp), allocatable           :: s(:)
 
-    call decay % domain(ht, d)
+    call decay % domain(ht, d, n_d)
     call report(d % same_as(q), &
          & "the ACTION answers Q when asked its domain, though it " // &
          & "was handed a five-vertex host", nfail)
 
     call decay % apply(ht, [qf], answer)
-    call answer % domain(d)
+    d = answer % domain()
     call report(d % same_as(q), &
          & "and it ANSWERS on Q: graph host and state domain are " // &
          & "independent concepts in this specimen", nfail)
@@ -254,11 +259,12 @@ contains
     integer, intent(inout) :: nfail
 
     type(step_operator)            :: step
-    class(member_set), allocatable :: d, hv
+    type(set_graph) :: d, hv
+    integer         :: n_d
 
     step = backward_euler(decay, H_STEP)
 
-    call step % domain(ht, d)
+    call step % domain(ht, d, n_d)
 
     call report(d % same_as(q), &
          & "the backward-euler STEP answers Q when asked its " // &
@@ -289,18 +295,18 @@ contains
     type(step_operator)             :: step
     type(field)                     :: state
     class(graph_field), allocatable :: r
-    class(member_set), allocatable  :: d
+    type(set_graph)  :: d
     real(dp), allocatable           :: v(:)
 
     step = backward_euler(decay, H_STEP)
     step % qold = Q0
 
     ! At the exact backward-euler state the residual vanishes.
-    state = field('trial', q, ncomp=1)
+    state = field('trial', q, NQ, ncomp=1)
     call state % set_real_vector(Q_BE1)
     call step % apply(ht, [state], r)
 
-    call r % domain(d)
+    d = r % domain()
     call report(d % same_as(q), &
          & "the backward-euler RESIDUAL lands on Q, not on the " // &
          & "host's vertices", nfail)
@@ -375,18 +381,18 @@ contains
     type(step_operator)             :: step
     type(field)                     :: state
     class(graph_field), allocatable :: r
-    class(member_set), allocatable  :: d
+    type(set_graph)  :: d
     real(dp), allocatable           :: v(:)
 
     step = bdf(2, decay, H_STEP)
     step % qold   = Q_BE1
     step % qolder = Q0
 
-    state = field('trial', q, ncomp=1)
+    state = field('trial', q, NQ, ncomp=1)
     call state % set_real_vector(Q_BDF2)
     call step % apply(ht, [state], r)
 
-    call r % domain(d)
+    d = r % domain()
     call report(d % same_as(q), &
          & "the bdf-2 RESIDUAL lands on Q as well - a two-step " // &
          & "scheme changes the coefficients, never the domain", nfail)

@@ -47,6 +47,8 @@
 
 module time_algebra_fixture
 
+  use fractal_graph         , only : set_graph => graph
+  use graph_set_map         , only : set_map
   use graph_relation        , only : relation
   use graph_relation_algebra, only : compose_binary
   use graph_binary_relation , only : binary_relation, csr_relation, &
@@ -63,14 +65,16 @@ contains
   ! A1 = Head o Tail^T : T -> T, through the steps.
   !===================================================================!
 
-  type(csr_relation) function derive_one_step_reach(tail, head) result(a1)
+  type(csr_relation) function derive_one_step_reach(tail, head, sets) &
+       & result(a1)
 
     class(binary_relation), intent(in), target :: tail, head
+    type(set_map)         , intent(in)         :: sets
 
     type(transposed_view) :: tail_t
 
-    tail_t = transpose_of(tail)          ! T -> E
-    a1     = compose_binary(tail_t, head) ! T -> E -> T
+    tail_t = transpose_of(tail)                 ! T -> E
+    a1     = compose_binary(tail_t, head, sets) ! T -> E -> T
 
   end function derive_one_step_reach
 
@@ -79,11 +83,12 @@ contains
   ! that.
   !===================================================================!
 
-  type(csr_relation) function derive_two_step_reach(a1) result(a2)
+  type(csr_relation) function derive_two_step_reach(a1, sets) result(a2)
 
     class(binary_relation), intent(in), target :: a1
+    type(set_map)         , intent(in)         :: sets
 
-    a2 = compose_binary(a1, a1)          ! T -> T -> T
+    a2 = compose_binary(a1, a1, sets)    ! T -> T -> T
 
   end function derive_two_step_reach
 

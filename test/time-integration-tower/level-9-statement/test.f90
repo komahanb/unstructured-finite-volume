@@ -50,7 +50,8 @@ program time_level_9
   use time_assert           , only : NQ, NT, NSTEPS, TOL, TOL_MARCH
   use time_assert           , only : T0, T4, C_X, C_Y, H_STEP
   use time_assert           , only : TIME_COORD, BDF2_TRAJECTORY
-  use graph_carrier         , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
   use class_graph           , only : stored_graph
   use class_graph_field     , only : field
   use class_graph_gmres     , only : gmres
@@ -62,7 +63,8 @@ program time_level_9
 
   implicit none
 
-  type(counted_set)      :: q, t, e
+  type(set_graph)      :: q, t, e
+  type(set_map)      :: sets
   type(stored_graph)     :: hcontext
   type(triangular_decay) :: decay
   type(marcher)          :: clock
@@ -76,9 +78,9 @@ program time_level_9
   write(*,'(1x,a)') "time integration tower . level 9 . statement"
   write(*,'(1x,a)') "============================================="
 
-  call time_carriers(q, t, e)
+  call time_carriers(sets, q, t, e)
   hcontext = stored_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
-  decay    = triangular_decay(q)
+  decay    = triangular_decay(q, NQ)
   tcoord   = instant_coordinates(t)
 
   ! ---- the statement's near end: a FIELD on Q.
@@ -99,7 +101,7 @@ program time_level_9
   call q_initial % get_real_vector(state)
   call clock % march(decay, hcontext, state, NSTEPS)
 
-  q_final = field('q(t4)', q, ncomp=1)
+  q_final = field('q(t4)', q, NQ, ncomp=1)
   call q_final % set_real_vector(state)
 
   call check_the_statement_s_two_ends(nfail)
@@ -121,13 +123,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
 
-    call q_initial % domain(d)
+    d = q_initial % domain()
     call report(d % same_as(q), &
          & "the statement's initial state is a FIELD ON Q", nfail)
 
-    call q_final % domain(d)
+    d = q_final % domain()
     call report(d % same_as(q), &
          & "and its answer is a FIELD ON Q - asked and answered in " // &
          & "the same terms", nfail)
@@ -156,8 +158,8 @@ contains
 
     call tcoord % get_real_vector(tv)
 
-    call report(abs(tv(t % local_index(T0))) .lt. TOL .and. &
-         &      abs(tv(t % local_index(T4)) - 2.0_dp) .lt. TOL, &
+    call report(abs(tv(sets % index_in(t, T0))) .lt. TOL .and. &
+         &      abs(tv(sets % index_in(t, T4)) - 2.0_dp) .lt. TOL, &
          & "time(t0) = 0 and time(t4) = 2 - the span the statement " // &
          & "names, read from the Level-5 coordinate field", nfail)
 
@@ -175,7 +177,7 @@ contains
          & "instant, followed through incidence rather than indexed", &
          & nfail)
 
-    call report(here .eq. t % local_index(T4) .and. &
+    call report(here .eq. sets % index_in(t, T4) .and. &
          &      abs(tv(here) - TIME_COORD(NT)) .lt. TOL, &
          & "which corresponds to t4, at coordinate 2: FOUR STEPS OF " // &
          & "1/2 FROM 0", nfail)
@@ -198,8 +200,8 @@ contains
          & "q(t4) = [7/24, 83/144] - the complete initial-value " // &
          & "problem, answered on the domain it was posed on", nfail)
 
-    call report(abs(v(q % local_index(C_X)) - 7.0_dp/24.0_dp) .lt. TOL_MARCH &
-         & .and. abs(v(q % local_index(C_Y)) - 83.0_dp/144.0_dp) .lt. TOL_MARCH, &
+    call report(abs(v(sets % index_in(q, C_X)) - 7.0_dp/24.0_dp) .lt. TOL_MARCH &
+         & .and. abs(v(sets % index_in(q, C_Y)) - 83.0_dp/144.0_dp) .lt. TOL_MARCH, &
          & "read coordinate by coordinate at Q's local positions: " // &
          & "x = 7/24, y = 83/144", nfail)
 
@@ -218,7 +220,7 @@ contains
     call q_final % get_real_vector(v)
 
     write(*,'(1x,a,2(1x,es23.16))') "TIME_INTEGRATION_RESULT =", &
-         & v(q % local_index(C_X)), v(q % local_index(C_Y))
+         & v(sets % index_in(q, C_X)), v(sets % index_in(q, C_Y))
 
   end subroutine say_the_result
 

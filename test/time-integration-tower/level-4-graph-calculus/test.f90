@@ -6,8 +6,8 @@
 !
 !      sources(A1)           = { t0 }
 !      sinks(A1)             = { t4 }
-!      reachable(t0, t4)     = true
-!      reachable(t4, t0)     = false
+!      reachable(t0, sets, t4)     = true
+!      reachable(t4, sets, t0)     = false
 !      topological_order(A1) = [ t0 t1 t2 t3 t4 ]
 !
 ! That last list is the FORWARD CAUSAL ORDER, and it is worth being
@@ -59,7 +59,10 @@ program time_level_4
   use time_assert           , only : report, verdict
   use time_assert           , only : NT
   use time_assert           , only : T0, T1, T2, T3, T4
-  use graph_carrier         , only : counted_set, subset_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation        , only : relation
   use graph_binary_relation , only : csr_relation
   use graph_profile         , only : directed_adjacency_view
@@ -77,7 +80,13 @@ program time_level_4
   implicit none
 
 
-  type(counted_set)              :: q, t, e
+  type(set_graph)              :: q, t, e
+  type(set_map)              :: sets
+  type(inclusion_map)              :: inclusions
+  ! sources/sinks CARVE, and a carve binds extension,
+  ! label and embedding together - so a label map is
+  ! held here although nothing in this tower reads one.
+  type(label_map)              :: labels
   type(csr_relation), target     :: tail, head, a1
   type(csr_relation)             :: a2
   class(relation), allocatable   :: sel_a1, sel_a2
@@ -95,11 +104,11 @@ program time_level_4
   write(*,'(1x,a)') "time integration tower . level 4 . calculus"
   write(*,'(1x,a)') "============================================="
 
-  call time_carriers(q, t, e)
-  tail = tail_relation(e, t)
-  head = head_relation(e, t)
-  a1   = derive_one_step_reach(tail, head)
-  a2   = derive_two_step_reach(a1)
+  call time_carriers(sets, q, t, e)
+  tail = tail_relation(e, t, sets)
+  head = head_relation(e, t, sets)
+  a1   = derive_one_step_reach(tail, head, sets)
+  a2   = derive_two_step_reach(a1, sets)
 
   ! 'time': (S, P) as one sequence on each branch.
   call g % declare()
@@ -141,8 +150,8 @@ program time_level_4
   ! question is asked of the views.
   allocate(sel_a1, source=a1)
   allocate(sel_a2, source=a2)
-  view_a1 = directed_adjacency_view(g, bnd, sel_a1)
-  view_a2 = directed_adjacency_view(g, bnd, sel_a2)
+  view_a1 = directed_adjacency_view(g, bnd, sets, sel_a1)
+  view_a2 = directed_adjacency_view(g, bnd, sets, sel_a2)
   deallocate(sel_a1)
   deallocate(sel_a2)
 
@@ -166,18 +175,18 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(subset_set) :: src, snk
+    type(set_graph) :: src, snk
 
-    src = sources(view_a1)
-    snk = sinks(view_a1)
+    call sources(view_a1, sets, labels, inclusions, src)
+    call sinks(view_a1, sets, labels, inclusions, snk)
 
-    call report(src % size() .eq. 1 .and. src % has(T0), &
+    call report(sets % size_of(src) .eq. 1 .and. sets % has_in(src, T0), &
          & "sources(A1) = { t0 }: one instant nothing leads to, the " // &
          & "selector long dead", nfail)
-    call report(snk % size() .eq. 1 .and. snk % has(T4), &
+    call report(sets % size_of(snk) .eq. 1 .and. sets % has_in(snk, T4), &
          & "sinks(A1) = { t4 }: one instant leading nowhere", nfail)
 
-    call report(src % is_subobject_of(t) .and. snk % is_subobject_of(t), &
+    call report(declared_subobject(src, t, inclusions) .and. declared_subobject(snk, t, inclusions), &
          & "and both stand embedded in T - the ends of time are " // &
          & "instants, not a new kind of thing", nfail)
 
@@ -192,18 +201,18 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(reachable(view_a1, T0, T4), &
+    call report(reachable(view_a1, sets, T0, T4), &
          & "t0 reaches t4 along the causal chain", nfail)
-    call report(.not. reachable(view_a1, T4, T0), &
+    call report(.not. reachable(view_a1, sets, T4, T0), &
          & "and t4 reaches t0 not at all: THE ASYMMETRY IS " // &
          & "STRUCTURAL, not a convention about which way to loop", &
          & nfail)
 
-    call report(reachable(view_a1, T2, T2), &
+    call report(reachable(view_a1, sets, T2, T2), &
          & "every instant reaches itself by the zero-length path", &
          & nfail)
-    call report(reachable(view_a1, T1, T3) .and. &
-         &      .not. reachable(view_a1, T3, T1), &
+    call report(reachable(view_a1, sets, T1, T3) .and. &
+         &      .not. reachable(view_a1, sets, T3, T1), &
          & "and the asymmetry holds in the interior too, not only " // &
          & "at the ends", nfail)
 
@@ -224,11 +233,11 @@ contains
     integer              :: i
     logical              :: ok
 
-    call topological_order(view_a1, order)
+    call topological_order(view_a1, sets, order)
 
     ok = size(order) .eq. NT
-    do i = 1, min(size(order), t % size())
-       ok = ok .and. (order(i) .eq. t % member(i))
+    do i = 1, min(size(order), sets % size_of(t))
+       ok = ok .and. (order(i) .eq. sets % member_of(t, i))
     end do
     call report(ok, &
          & "topological_order(A1) = [t0 t1 t2 t3 t4], read from the " // &
@@ -239,7 +248,7 @@ contains
     ! A1 runs forwards in it.
     ok = .true.
     do i = 1, size(order) - 1
-       ok = ok .and. .not. reachable(view_a1, order(i + 1), order(i))
+       ok = ok .and. .not. reachable(view_a1, sets, order(i + 1), order(i))
     end do
     call report(ok, &
          & "and no later instant reaches an earlier one: the order " // &
@@ -251,7 +260,7 @@ contains
     ok = .true.
     do i = 1, size(order)
        ok = ok .and. (order(size(order) - i + 1) .eq. &
-            &         t % member(t % size() - i + 1))
+            &         sets % member_of(t, sets % size_of(t) - i + 1))
     end do
     call report(ok, &
          & "and read backwards it is [t4 t3 t2 t1 t0]: REVERSE " // &
@@ -283,11 +292,11 @@ contains
     call report(ok, &
          & "successors under A2: t0->{t2}, t1->{t3}, t2->{t4}", nfail)
 
-    call report(reachable(view_a2, T0, T4), &
+    call report(reachable(view_a2, sets, T0, T4), &
          & "t0 reaches t4 under repeated two-step traversal, by way " // &
          & "of t2", nfail)
 
-    call report(.not. reachable(view_a2, T0, T3), &
+    call report(.not. reachable(view_a2, sets, T0, T3), &
          & "but t0 does NOT reach t3: two-step reach lands only on " // &
          & "even offsets - REACH IS NOT A SCHEME, and a BDF2 " // &
          & "dependency would have had to see t3", nfail)
@@ -303,7 +312,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d1, d2
+    type(set_graph) :: d1, d2
 
     d1 = view_a1 % domain()
     d2 = view_a2 % domain()

@@ -57,7 +57,8 @@ program time_level_7
   use time_assert           , only : report, verdict
   use time_assert           , only : NQ, NT, TOL
   use time_assert           , only : H_STEP, Q0, Q_BE1, Q_BDF2
-  use graph_carrier         , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
   use graph_grammar         , only : graph, graph_field
   use class_graph           , only : stored_graph
   use class_graph_field     , only : field
@@ -68,7 +69,8 @@ program time_level_7
 
   implicit none
 
-  type(counted_set)      :: q, t, e
+  type(set_graph)      :: q, t, e
+  type(set_map)      :: sets
   type(stored_graph)     :: ht
   type(triangular_decay) :: decay
   integer                :: nfail
@@ -79,12 +81,12 @@ program time_level_7
   write(*,'(1x,a)') "time integration tower . level 7 . solve"
   write(*,'(1x,a)') "============================================="
 
-  call time_carriers(q, t, e)
+  call time_carriers(sets, q, t, e)
 
   ! The same compatibility host as Level 6: five vertices, and not Q.
   ht = stored_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
 
-  decay = triangular_decay(q)
+  decay = triangular_decay(q, NQ)
 
   call check_the_host_is_still_not_q(nfail)
   call check_backward_euler_solve(nfail)
@@ -104,11 +106,11 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: hv
+    type(set_graph) :: hv
 
     hv = ht % vertex_set()
 
-    call report(ht % num_vertices() .eq. NT .and. q % size() .eq. NQ &
+    call report(ht % num_vertices() .eq. NT .and. sets % size_of(q) .eq. NQ &
          &      .and. .not. hv % same_as(q), &
          & "the host still has five vertices and Q still has two: " // &
          & "the solve below is not a coincidence of sizes", nfail)
@@ -127,15 +129,16 @@ contains
     type(gmres)                     :: solver
     type(field)                     :: rhs
     class(graph_field), allocatable :: answer
-    class(member_set), allocatable  :: d
+    type(set_graph)  :: d
+    integer         :: n_d
     real(dp), allocatable           :: c(:), v(:)
 
     step = backward_euler(decay, H_STEP)
     step % qold = Q0
 
-    call solver % attach(step, ht, q, ncomp=1)
+    call solver % attach(step, ht, q, NQ, ncomp=1)
 
-    call solver % domain(ht, d)
+    call solver % domain(ht, d, n_d)
     call report(d % same_as(q), &
          & "the SOLVER answers Q when asked its domain, on a " // &
          & "five-vertex host", nfail)
@@ -148,12 +151,12 @@ contains
          & "measured rather than assumed", nfail)
 
     ! ... so the linear statement is (I + hM) q1 = q0.
-    rhs = field('rhs', q, ncomp=1)
+    rhs = field('rhs', q, NQ, ncomp=1)
     call rhs % set_real_vector(Q0)
 
     call solver % apply(ht, [rhs], answer)
 
-    call answer % domain(d)
+    d = answer % domain()
     call report(d % same_as(q), &
          & "and the SOLUTION lands on Q, through the operation " // &
          & "face, with the host present and unread", nfail)
@@ -178,7 +181,7 @@ contains
     type(gmres)                     :: solver
     type(field)                     :: rhs
     class(graph_field), allocatable :: answer
-    class(member_set), allocatable  :: d
+    type(set_graph)  :: d
     real(dp), allocatable           :: c(:), v(:)
     real(dp)                        :: expected_rhs(NQ)
 
@@ -186,7 +189,7 @@ contains
     step % qold   = Q_BE1
     step % qolder = Q0
 
-    call solver % attach(step, ht, q, ncomp=1)
+    call solver % attach(step, ht, q, NQ, ncomp=1)
 
     ! c = -2 q1 + (1/2) q0, so the linear right-hand side is -c.
     expected_rhs = 2.0_dp * Q_BE1 - 0.5_dp * Q0
@@ -202,12 +205,12 @@ contains
          & "which is the oracle, arrived at from the history rather " // &
          & "than copied in", nfail)
 
-    rhs = field('rhs', q, ncomp=1)
+    rhs = field('rhs', q, NQ, ncomp=1)
     call rhs % set_real_vector(expected_rhs)
 
     call solver % apply(ht, [rhs], answer)
 
-    call answer % domain(d)
+    d = answer % domain()
     call report(d % same_as(q), &
          & "the bdf-2 solution lands on Q as well", nfail)
 
@@ -235,13 +238,14 @@ contains
 
     type(step_operator)            :: step
     type(gmres)                    :: solver
-    class(member_set), allocatable :: d, hv
+    type(set_graph) :: d, hv
+    integer         :: n_d
 
     step = backward_euler(decay, H_STEP)
     step % qold = Q0
 
-    call solver % attach(step, ht, q, ncomp=1)
-    call solver % domain(ht, d)
+    call solver % attach(step, ht, q, NQ, ncomp=1)
+    call solver % domain(ht, d, n_d)
     hv = ht % vertex_set()
 
     call report(d % same_as(q) .and. .not. d % same_as(hv), &
@@ -252,7 +256,7 @@ contains
     ! the action's own, which is why attach agreed to exist at all:
     ! a five-member residual against a two-member unknown would have
     ! been refused as a rectangular problem.
-    call step % domain(ht, d)
+    call step % domain(ht, d, n_d)
     call report(d % same_as(q), &
          & "and the residual domain it validates against is the " // &
          & "step's, which is the action's: 2 unknowns, 2 residuals, " // &

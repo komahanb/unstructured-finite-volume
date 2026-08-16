@@ -53,7 +53,8 @@ program time_level_5
   use time_assert           , only : NQ, NT, NE, TOL
   use time_assert           , only : C_X, C_Y, T0, T2, T4, E1
   use time_assert           , only : H_STEP, TIME_COORD, Q0
-  use graph_carrier         , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
   use graph_binary_relation , only : csr_relation
   use class_graph_field     , only : field
   use time_carriers_fixture , only : time_carriers
@@ -63,7 +64,8 @@ program time_level_5
 
   implicit none
 
-  type(counted_set)  :: q, t, e
+  type(set_graph)  :: q, t, e
+  type(set_map)  :: sets
   type(csr_relation) :: tail, head
   type(field)        :: qf, tf, hf
   integer            :: nfail
@@ -74,9 +76,9 @@ program time_level_5
   write(*,'(1x,a)') "time integration tower . level 5 . fields"
   write(*,'(1x,a)') "============================================="
 
-  call time_carriers(q, t, e)
-  tail = tail_relation(e, t)
-  head = head_relation(e, t)
+  call time_carriers(sets, q, t, e)
+  tail = tail_relation(e, t, sets)
+  head = head_relation(e, t, sets)
 
   qf = state_field(q)
   tf = instant_coordinates(t)
@@ -101,18 +103,18 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
 
-    call qf % domain(d)
+    d = qf % domain()
     call report(d % same_as(q), &
          & "domain(q0) IS Q - the state field lives on the state " // &
          & "carrier, and no graph was built in this program", nfail)
 
-    call tf % domain(d)
+    d = tf % domain()
     call report(d % same_as(t), &
          & "domain(time) IS T", nfail)
 
-    call hf % domain(d)
+    d = hf % domain()
     call report(d % same_as(e), &
          & "domain(h) IS E - one step size per step", nfail)
 
@@ -134,11 +136,11 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dq, dt, de
+    type(set_graph) :: dq, dt, de
 
-    call qf % domain(dq)
-    call tf % domain(dt)
-    call hf % domain(de)
+    dq = qf % domain()
+    dt = tf % domain()
+    de = hf % domain()
 
     call report(.not. dq % same_as(dt), &
          & "domain(q0) is NOT domain(time): the state axis is not " // &
@@ -170,24 +172,24 @@ contains
     ! literal retyped here - a test that spells its own expected
     ! value twice has only proved it can copy.
     call qf % get_real_vector(v)
-    call report(abs(v(q % local_index(C_X)) - Q0(1)) .lt. TOL .and. &
-         &      abs(v(q % local_index(C_Y)) - Q0(2)) .lt. TOL, &
+    call report(abs(v(sets % index_in(q, C_X)) - Q0(1)) .lt. TOL .and. &
+         &      abs(v(sets % index_in(q, C_Y)) - Q0(2)) .lt. TOL, &
          & "q0(x) = 2 and q0(y) = 0, read at Q's local positions", &
          & nfail)
 
     call tf % get_real_vector(v)
-    call report(abs(v(t % local_index(T0)) - TIME_COORD(1)) .lt. TOL .and. &
-         &      abs(v(t % local_index(T2)) - TIME_COORD(3)) .lt. TOL .and. &
-         &      abs(v(t % local_index(T4)) - TIME_COORD(5)) .lt. TOL, &
+    call report(abs(v(sets % index_in(t, T0)) - TIME_COORD(1)) .lt. TOL .and. &
+         &      abs(v(sets % index_in(t, T2)) - TIME_COORD(3)) .lt. TOL .and. &
+         &      abs(v(sets % index_in(t, T4)) - TIME_COORD(5)) .lt. TOL, &
          & "time(t0) = 0, time(t2) = 1, time(t4) = 2", nfail)
 
     call hf % get_real_vector(v)
     ok = .true.
-    do i = 1, e % size()
-       ok = ok .and. (abs(v(e % local_index(e % member(i))) - H_STEP) &
+    do i = 1, sets % size_of(e)
+       ok = ok .and. (abs(v(sets % index_in(e, sets % member_of(e, i))) - H_STEP) &
             & .lt. TOL)
     end do
-    call report(ok .and. abs(v(e % local_index(E1)) - 0.5_dp) .lt. TOL, &
+    call report(ok .and. abs(v(sets % index_in(e, E1)) - 0.5_dp) .lt. TOL, &
          & "h(e) = 1/2 at every step - and the uniformity is a " // &
          & "property of the VALUES, not of the type holding them", &
          & nfail)
@@ -217,16 +219,16 @@ contains
     call hf % get_real_vector(hv)
 
     ok = .true.
-    do i = 1, e % size()
-       m    = e % member(i)
+    do i = 1, sets % size_of(e)
+       m    = sets % member_of(e, i)
        from = instant_of(tail, m)
        into = instant_of(head, m)
        ok = ok .and. (from .ne. 0) .and. (into .ne. 0)
        if (from .ne. 0 .and. into .ne. 0) then
           ok = ok .and. &
-               & (abs((tv(t % local_index(into)) - &
-               &       tv(t % local_index(from))) - &
-               &      hv(e % local_index(m))) .lt. TOL)
+               & (abs((tv(sets % index_in(t, into)) - &
+               &       tv(sets % index_in(t, from))) - &
+               &      hv(sets % index_in(e, m))) .lt. TOL)
        end if
     end do
 
@@ -238,7 +240,7 @@ contains
     ! The same statement, refused where it should be: the first
     ! instant's coordinate is not a step size, and no arithmetic on
     ! members produced any of this.
-    call report(abs(tv(t % local_index(T4)) - tv(t % local_index(T0)) &
+    call report(abs(tv(sets % index_in(t, T4)) - tv(sets % index_in(t, T0)) &
          &          - real(NE, dp) * H_STEP) .lt. TOL, &
          & "and the whole span t4 - t0 is four steps of 1/2 - two, " // &
          & "as the specimen says", nfail)
@@ -258,8 +260,8 @@ contains
     integer :: j, m
 
     instant_of = 0
-    do j = 1, t % size()
-       m = t % member(j)
+    do j = 1, sets % size_of(t)
+       m = sets % member_of(t, j)
        if (r % has([step, m])) instant_of = m
     end do
 

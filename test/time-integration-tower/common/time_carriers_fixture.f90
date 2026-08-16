@@ -25,15 +25,19 @@
 ! respectively. No count and no numeral separates them; only
 ! identity does.
 !
-! This file imports graph_carrier and nothing else. It is the only
-! place in the tower where the three carriers are constructed.
+! This file is the only place in the tower where the three carriers are
+! constructed, and so the only place granted a representation. They
+! ESCAPE it, so the map that says what they contain escapes with them:
+! a domain nobody described is a domain nobody can ask anything of.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module time_carriers_fixture
 
-  use graph_carrier, only : counted_set
+  use fractal_graph           , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation
+  use graph_set_map           , only : set_map
 
   implicit none
 
@@ -47,13 +51,18 @@ contains
   ! incidence, no value, no step size, no graph.
   !===================================================================!
 
-  subroutine time_carriers(q, t, e)
+  subroutine time_carriers(sets, q, t, e)
 
-    type(counted_set), intent(out) :: q, t, e
+    type(set_map)  , intent(inout) :: sets
+    type(set_graph), intent(out)   :: q, t, e
 
-    q = counted_set('state coordinates', 2)
-    t = counted_set('time instants'    , 5)
-    e = counted_set('time steps'       , 4)
+    call q % declare()      ! state coordinates
+    call t % declare()      ! time instants
+    call e % declare()      ! time steps
+
+    call sets % bind(q, counted_set_representation(2))
+    call sets % bind(t, counted_set_representation(5))
+    call sets % bind(e, counted_set_representation(4))
 
   end subroutine time_carriers
 

@@ -46,7 +46,8 @@ program time_level_3
 
   use time_assert           , only : report, verdict
   use time_assert           , only : T0, T1, T2, E1
-  use graph_carrier         , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
   use graph_relation        , only : relation
   use graph_binary_relation , only : csr_relation
   use fractal_graph        , only : graph, known_branch, null_branch
@@ -60,7 +61,8 @@ program time_level_3
 
   implicit none
 
-  type(counted_set)              :: q, t, e
+  type(set_graph)              :: q, t, e
+  type(set_map)              :: sets
   type(csr_relation), target     :: tail, head, a1
   type(csr_relation)             :: a2
   type(graph)             , target :: g
@@ -76,11 +78,11 @@ program time_level_3
   write(*,'(1x,a)') "time integration tower . level 3 . graph"
   write(*,'(1x,a)') "============================================="
 
-  call time_carriers(q, t, e)
-  tail = tail_relation(e, t)
-  head = head_relation(e, t)
-  a1   = derive_one_step_reach(tail, head)
-  a2   = derive_two_step_reach(a1)
+  call time_carriers(sets, q, t, e)
+  tail = tail_relation(e, t, sets)
+  head = head_relation(e, t, sets)
+  a1   = derive_one_step_reach(tail, head, sets)
+  a2   = derive_two_step_reach(a1, sets)
 
   ! 'time': (S, P) as one sequence on each branch.
   call g % declare()
@@ -163,7 +165,7 @@ contains
     integer, intent(inout) :: nfail
 
     class(relation)  , pointer     :: r
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
     integer                        :: k, slot, s
     logical                        :: ok, found
 
@@ -221,7 +223,7 @@ contains
     integer, intent(inout) :: nfail
 
     class(relation)  , pointer     :: r
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
     integer                        :: k, slot
     logical                        :: named
 
@@ -272,10 +274,10 @@ contains
   logical function owned_runs(selector, from, into)
 
     class(relation)  , intent(in) :: selector
-    class(member_set), intent(in) :: from, into
+    type(set_graph), intent(in) :: from, into
 
     class(relation)  , pointer     :: held
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
     integer                        :: k
 
     owned_runs = .false.

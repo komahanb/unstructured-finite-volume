@@ -83,46 +83,81 @@ allowed_for() {
         # and builds the representation itself. Granted per level, in
         # review; the list is an assertion, not a history.
         # ---- shared fixtures, keyed by the level that earns them
+        #
+        # 2026-08-16: graph_carrier is retired as a domain source. A
+        # domain is now a set GRAPH plus a representation held in a
+        # map, so the single carrier grant splits into three, and each
+        # source gets only the part it uses:
+        #
+        #     fractal_graph            WHICH set - identity, always
+        #     graph_set_representation HOW its members are stored -
+        #                              only where one is CONSTRUCTED
+        #     graph_set_map            the association - only where a
+        #                              domain is described or queried
+        #     graph_inclusion_map      provenance - only where an
+        #                              embedding is ASSERTED
+        #
+        # No level constructs a representation: they all take their
+        # domains from the carrier fixture, so graph_set_representation
+        # is granted THERE and nowhere else. And no label map appears
+        # anywhere in this tower, because nothing in it asks a domain
+        # what it is called.
         common/time_assert.f90) echo "" ;;
-        common/time_carriers_fixture.f90) echo "graph_carrier" ;;
-        common/time_relations_fixture.f90) echo "graph_carrier graph_relation graph_binary_relation" ;;
-        common/time_algebra_fixture.f90) echo "graph_carrier graph_relation graph_relation_algebra graph_binary_relation" ;;
-        common/time_fields_fixture.f90) echo "graph_carrier graph_field_calculus class_graph_field time_assert" ;;
-        common/triangular_decay_fixture.f90) echo "graph_carrier graph_grammar graph_field_calculus class_graph_field" ;;
+        common/time_carriers_fixture.f90) echo "fractal_graph graph_set_representation graph_set_map" ;;
+        common/time_relations_fixture.f90) echo "fractal_graph graph_set_map graph_relation graph_binary_relation" ;;
+        common/time_algebra_fixture.f90) echo "fractal_graph graph_set_map graph_relation graph_relation_algebra graph_binary_relation" ;;
+        common/time_fields_fixture.f90) echo "fractal_graph graph_field_calculus class_graph_field time_assert" ;;
+        # The action stores an identity and a count, so it needs
+        # neither a representation nor a map: set_graph arrives on
+        # graph_grammar's own re-export.
+        common/triangular_decay_fixture.f90) echo "graph_grammar graph_field_calculus class_graph_field" ;;
         common)            echo "__no_allowlist__" ;;
 
-        # ---- L0: carriers only. NOTHING relational - not the
-        #          relation nucleus, and not the Level-1 fixture.
-        level-0-carrier)   echo "time_assert time_carriers_fixture graph_carrier" ;;
+        # ---- L0: sets only. NOTHING relational - not the relation
+        #          nucleus, and not the Level-1 fixture.
+        level-0-carrier)   echo "time_assert time_carriers_fixture fractal_graph graph_set_map" ;;
         # ---- L1: + the relation nucleus
-        level-1-relation)  echo "time_assert time_carriers_fixture time_relations_fixture graph_carrier graph_relation graph_binary_relation" ;;
+        level-1-relation)  echo "time_assert time_carriers_fixture time_relations_fixture fractal_graph graph_set_map graph_relation graph_binary_relation" ;;
         # ---- L2: + relation algebra
-        level-2-relation-algebra) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture graph_carrier graph_relation graph_relation_algebra graph_binary_relation" ;;
+        level-2-relation-algebra) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture fractal_graph graph_set_map graph_relation graph_relation_algebra graph_binary_relation" ;;
         # ---- L3: + the relational graph container
-        level-3-graph)     echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture graph_carrier graph_relation graph_relation_algebra graph_binary_relation fractal_graph graph_relational_view" ;;
+        level-3-graph)     echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture fractal_graph graph_set_map graph_relation graph_relation_algebra graph_binary_relation graph_relational_view" ;;
         # ---- L4: + the profile and its algorithms. No marcher.
-        level-4-graph-calculus) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_profile graph_algorithms fractal_graph graph_relational_view" ;;
+        #
+        #          This is the ONE level granted graph_inclusion_map:
+        #          it is the only level that ASSERTS an embedding, and
+        #          it asserts it of the sets sources/sinks carve.
+        #
+        #          It is also the one level granted graph_label_map,
+        #          and NOT because it asks a domain its name - nothing
+        #          in this tower ever does. sources/sinks CARVE, and a
+        #          carve binds extension, label and embedding TOGETHER
+        #          so that no half-described set escapes. A caller of
+        #          a carving operation must therefore HOLD a label map
+        #          even where it will never read one. The grant records
+        #          that cost rather than hiding it: held, not queried.
+        level-4-graph-calculus) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture fractal_graph graph_set_map graph_label_map graph_inclusion_map graph_relation graph_relation_algebra graph_binary_relation graph_profile graph_algorithms graph_relational_view" ;;
 
         # ===== REVIEW GATE A =====
 
         # ---- L5: + fields. Values, and nothing that steps or solves.
-        level-5-field-calculus) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_field_calculus class_graph_field" ;;
+        level-5-field-calculus) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture fractal_graph graph_set_map graph_relation graph_relation_algebra graph_binary_relation graph_field_calculus class_graph_field" ;;
         # ---- L6: + the ordinary graph (the compatibility host), the
         #          operation contract, and the step operators. NO
         #          minimizer: the scheme is tested before the solve.
-        level-6-discretization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_carrier graph_grammar graph_relation graph_relation_algebra graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step" ;;
+        level-6-discretization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture fractal_graph graph_set_map graph_grammar graph_relation graph_relation_algebra graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step" ;;
         # ---- L7: + minimization and its gmres concretion. Still no
         #          marcher.
-        level-7-minimization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_carrier graph_grammar graph_relation graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step graph_minimization class_graph_gmres" ;;
+        level-7-minimization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture fractal_graph graph_set_map graph_grammar graph_relation graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step graph_minimization class_graph_gmres" ;;
 
         # ===== REVIEW GATE B =====
 
         # ---- L8: + the marcher and newton, the constituted citizens
         #          under test. NOT class_graph_linearization: newton
         #          reaches it, and the tower may not.
-        level-8-constitution) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_carrier graph_grammar graph_relation graph_relation_algebra graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step graph_minimization class_graph_gmres class_graph_newton class_graph_marcher" ;;
+        level-8-constitution) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture fractal_graph graph_set_map graph_grammar graph_relation graph_relation_algebra graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step graph_minimization class_graph_gmres class_graph_newton class_graph_marcher" ;;
         # ---- L9: the statement, on the same constitution.
-        level-9-statement) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_carrier graph_grammar graph_relation graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step graph_minimization class_graph_gmres class_graph_newton class_graph_marcher" ;;
+        level-9-statement) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture fractal_graph graph_set_map graph_grammar graph_relation graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step graph_minimization class_graph_gmres class_graph_newton class_graph_marcher" ;;
 
         *)                 echo "__no_allowlist__" ;;
     esac
@@ -183,8 +218,15 @@ if [ "$1" = "--selftest" ]; then
     # L0 earns carriers and the carrier fixture, and NOTHING relational.
     permits level-0-carrier time_carriers_fixture
     permits level-0-carrier time_assert
-    permits level-0-carrier graph_carrier
+    permits level-0-carrier fractal_graph
+    permits level-0-carrier graph_set_map
     permits level-0-carrier iso_fortran_env
+    refuses level-0-carrier graph_carrier            # the retired source
+    # A level takes its domains from the fixture, so it never builds a
+    # representation and is not granted the module that makes one.
+    refuses level-0-carrier graph_set_representation
+    # Provenance is asserted at Level 4 alone.
+    refuses level-0-carrier graph_inclusion_map
     refuses level-0-carrier time_relations_fixture   # the fixture ladder
     refuses level-0-carrier time_algebra_fixture
     refuses level-0-carrier graph_relation
@@ -253,17 +295,37 @@ if [ "$1" = "--selftest" ]; then
         refuses "$lvl" adjoint_fixture
     done
 
-    # The fixtures themselves are keyed per file.
-    permits common/time_carriers_fixture.f90 graph_carrier
+    # The fixtures themselves are keyed per file. The carrier fixture
+    # is the ONE source that builds a representation, so it is the one
+    # source granted the module that makes them.
+    permits common/time_carriers_fixture.f90 fractal_graph
+    permits common/time_carriers_fixture.f90 graph_set_representation
+    permits common/time_carriers_fixture.f90 graph_set_map
     refuses common/time_carriers_fixture.f90 graph_binary_relation
-    refuses common/time_assert.f90 graph_carrier
+    refuses common/time_carriers_fixture.f90 graph_inclusion_map
+    refuses common/time_assert.f90 fractal_graph
+    # The action holds an identity and a count, and asks its domain
+    # nothing else - so no map reaches it, at any rung.
+    refuses common/triangular_decay_fixture.f90 graph_set_map
+    refuses common/triangular_decay_fixture.f90 graph_set_representation
+    # Provenance is Level 4's alone: no other level may assert an
+    # embedding, and no fixture may.
+    refuses level-5-field-calculus graph_inclusion_map
+    refuses level-9-statement graph_inclusion_map
+    # The label map is Level 4's alone, and only because carving
+    # compels holding one - no other level carves, so no other level
+    # may hold it.
+    permits level-4-graph-calculus graph_label_map
+    refuses level-0-carrier graph_label_map
+    refuses level-5-field-calculus graph_label_map
+    refuses level-9-statement graph_label_map
     permits common/triangular_decay_fixture.f90 graph_grammar
     refuses common/triangular_decay_fixture.f90 class_graph_step
     refuses common/triangular_decay_fixture.f90 class_graph_marcher
 
     # An unclassified source still fails closed rather than silently
     # open - the ten levels are named, and nothing else is.
-    allows level-10-nowhere graph_carrier
+    allows level-10-nowhere fractal_graph
     if [ "$?" -ne 2 ]; then
         echo " FAIL : an undeclared level did not fail closed"
         fail=1

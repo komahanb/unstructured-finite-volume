@@ -52,7 +52,7 @@ module triangular_decay_fixture
 
   use iso_fortran_env  , only : dp => REAL64
   use graph_grammar    , only : graph, graph_field, graph_operation
-  use graph_carrier    , only : member_set
+  use graph_grammar    , only : set_graph
   use class_graph_field, only : field
 
   implicit none
@@ -67,7 +67,12 @@ module triangular_decay_fixture
 
   type, extends(graph_operation) :: triangular_decay
 
-     class(member_set), allocatable :: state
+     ! WHICH domain, and how many coordinates stand in it. Both of
+     ! the action's questions are answered from these two, so no map
+     ! enters this type - an operation that asks nothing about
+     ! membership carries nothing that answers it.
+     type(set_graph) :: state
+     integer         :: n_state = 0
 
    contains
 
@@ -87,14 +92,17 @@ contains
   ! Built FROM the state domain, and from nothing else.
   !===================================================================!
 
-  type(triangular_decay) function create_decay(state) result(this)
+  type(triangular_decay) function create_decay(state, n_state) result(this)
 
-    class(member_set), intent(in) :: state
+    type(set_graph), intent(in) :: state
+    integer        , intent(in) :: n_state
 
     if (.not. state % same_as(state)) then
        error stop 'triangular_decay: an action needs a declared state domain'
     end if
-    allocate(this % state, source=state)
+
+    this % state   = state
+    this % n_state = n_state
 
   end function create_decay
 
@@ -115,15 +123,17 @@ contains
   ! contract says so, and is not consulted.
   !===================================================================!
 
-  subroutine decay_domain(this, input_graph, domain)
+  subroutine decay_domain(this, input_graph, domain, nentries)
 
-    class(triangular_decay), intent(in)         :: this
-    class(graph)           , intent(in)         :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    class(triangular_decay), intent(in)  :: this
+    class(graph)           , intent(in)  :: input_graph
+    type(set_graph)        , intent(out) :: domain
+    integer                , intent(out) :: nentries
 
     associate (u1 => input_graph); end associate
 
-    allocate(domain, source=this % state)
+    domain   = this % state
+    nentries = this % n_state
 
   end subroutine decay_domain
 
@@ -142,8 +152,8 @@ contains
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
-    class(member_set), allocatable :: given
-    type(field)                    :: out
+    type(set_graph)       :: given
+    type(field)           :: out
     real(dp), allocatable          :: q(:), s(:)
 
     associate (u1 => input_graph); end associate
@@ -152,13 +162,13 @@ contains
        error stop 'triangular_decay: the action needs a state to act on'
     end if
 
-    call input_data(1) % domain(given)
+    given = input_data(1) % domain()
     if (.not. given % same_as(this % state)) then
        error stop 'triangular_decay: the state must live on the action''s own domain'
     end if
 
     call input_data(1) % get_real_vector(q)
-    if (size(q) /= this % state % size()) then
+    if (size(q) /= this % n_state) then
        error stop 'triangular_decay: one number per state coordinate'
     end if
 
@@ -166,7 +176,7 @@ contains
     s(1) = q(1)
     s(2) = q(2) - q(1)
 
-    out = field('triangular decay', this % state, ncomp=1)
+    out = field('triangular decay', this % state, this % n_state, ncomp=1)
     call out % set_real_vector(s)
 
     if (allocated(output)) deallocate(output)

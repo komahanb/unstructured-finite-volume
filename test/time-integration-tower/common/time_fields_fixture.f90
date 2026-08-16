@@ -46,7 +46,7 @@
 module time_fields_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_carrier    , only : counted_set
+  use fractal_graph    , only : set_graph => graph
   use class_graph_field, only : field
   use time_assert      , only : NQ, NT, NE, H_STEP, TIME_COORD, Q0
 
@@ -63,9 +63,9 @@ contains
 
   type(field) function state_field(q) result(f)
 
-    type(counted_set), intent(in) :: q
+    type(set_graph), intent(in) :: q
 
-    f = field('state', q, ncomp=1)
+    f = field('state', q, NQ, ncomp=1)
     call f % set_real_vector(Q0)
 
   end function state_field
@@ -76,9 +76,9 @@ contains
 
   type(field) function instant_coordinates(t) result(f)
 
-    type(counted_set), intent(in) :: t
+    type(set_graph), intent(in) :: t
 
-    f = field('instant coordinate', t, ncomp=1)
+    f = field('instant coordinate', t, NT, ncomp=1)
     call f % set_real_vector(TIME_COORD)
 
   end function instant_coordinates
@@ -92,12 +92,12 @@ contains
 
   type(field) function step_sizes(e) result(f)
 
-    type(counted_set), intent(in) :: e
+    type(set_graph), intent(in) :: e
 
     real(dp) :: values(NE)
 
     values = H_STEP
-    f = field('step size', e, ncomp=1)
+    f = field('step size', e, NE, ncomp=1)
     call f % set_real_vector(values)
 
   end function step_sizes

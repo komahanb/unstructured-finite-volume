@@ -43,7 +43,8 @@ program time_level_2
   use time_assert           , only : report, verdict
   use time_assert           , only : NT
   use time_assert           , only : T0, T1, T2, T3, T4
-  use graph_carrier         , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
   use graph_binary_relation , only : csr_relation
   use time_carriers_fixture , only : time_carriers
   use time_relations_fixture, only : tail_relation, head_relation
@@ -52,7 +53,8 @@ program time_level_2
 
   implicit none
 
-  type(counted_set)          :: q, t, e
+  type(set_graph)          :: q, t, e
+  type(set_map)          :: sets
   type(csr_relation), target :: tail, head, a1
   type(csr_relation)         :: a2
   integer                    :: nfail
@@ -63,12 +65,12 @@ program time_level_2
   write(*,'(1x,a)') "time integration tower . level 2 . algebra"
   write(*,'(1x,a)') "============================================="
 
-  call time_carriers(q, t, e)
-  tail = tail_relation(e, t)
-  head = head_relation(e, t)
+  call time_carriers(sets, q, t, e)
+  tail = tail_relation(e, t, sets)
+  head = head_relation(e, t, sets)
 
-  a1 = derive_one_step_reach(tail, head)
-  a2 = derive_two_step_reach(a1)
+  a1 = derive_one_step_reach(tail, head, sets)
+  a2 = derive_two_step_reach(a1, sets)
 
   call check_one_step_reach(nfail)
   call check_two_step_reach(nfail)
@@ -88,7 +90,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
     logical                        :: ok
 
     d = a1 % domain(1)
@@ -118,7 +120,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
     logical                        :: ok
 
     d = a2 % domain(1)
@@ -187,8 +189,8 @@ contains
     ! relation: these are chains, and reach along a chain is a
     ! partial function.
     ok = .true.
-    do i = 1, t % size()
-       m = t % member(i)
+    do i = 1, sets % size_of(t)
+       m = sets % member_of(t, i)
        reached = count_images(a2, m)
        ok = ok .and. (reached .le. 1)
     end do
@@ -206,8 +208,8 @@ contains
     integer :: j
 
     count_images = 0
-    do j = 1, t % size()
-       if (r % has([m, t % member(j)])) count_images = count_images + 1
+    do j = 1, sets % size_of(t)
+       if (r % has([m, sets % member_of(t, j)])) count_images = count_images + 1
     end do
 
   end function count_images

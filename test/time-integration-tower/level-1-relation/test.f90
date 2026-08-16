@@ -43,14 +43,16 @@ program time_level_1
   use time_assert           , only : NT, NE
   use time_assert           , only : T0, T1, T2, T3, T4
   use time_assert           , only : E1, E2, E3, E4
-  use graph_carrier         , only : counted_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
   use graph_binary_relation , only : csr_relation
   use time_carriers_fixture , only : time_carriers
   use time_relations_fixture, only : tail_relation, head_relation
 
   implicit none
 
-  type(counted_set)  :: q, t, e
+  type(set_graph)  :: q, t, e
+  type(set_map)  :: sets
   type(csr_relation) :: tail, head
   integer            :: nfail
 
@@ -60,9 +62,9 @@ program time_level_1
   write(*,'(1x,a)') "time integration tower . level 1 . relation"
   write(*,'(1x,a)') "============================================="
 
-  call time_carriers(q, t, e)
-  tail = tail_relation(e, t)
-  head = head_relation(e, t)
+  call time_carriers(sets, q, t, e)
+  tail = tail_relation(e, t, sets)
+  head = head_relation(e, t, sets)
 
   call check_signatures(nfail)
   call check_incidence_extension(nfail)
@@ -82,7 +84,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
 
     d = tail % domain(1)
     call report(d % same_as(e), "Tail runs from the steps", nfail)
@@ -140,19 +142,19 @@ contains
 
     ok       = .true.
     disagree = .true.
-    do i = 1, e % size()
-       m = e % member(i)
+    do i = 1, sets % size_of(e)
+       m = sets % member_of(e, i)
        tails = 0
        heads = 0
-       do j = 1, t % size()
-          if (tail % has([m, t % member(j)])) tails = tails + 1
-          if (head % has([m, t % member(j)])) heads = heads + 1
+       do j = 1, sets % size_of(t)
+          if (tail % has([m, sets % member_of(t, j)])) tails = tails + 1
+          if (head % has([m, sets % member_of(t, j)])) heads = heads + 1
        end do
        ok = ok .and. (tails .eq. 1) .and. (heads .eq. 1)
 
-       do j = 1, t % size()
-          if (tail % has([m, t % member(j)]) .and. &
-              & head % has([m, t % member(j)])) disagree = .false.
+       do j = 1, sets % size_of(t)
+          if (tail % has([m, sets % member_of(t, j)]) .and. &
+              & head % has([m, sets % member_of(t, j)])) disagree = .false.
        end do
     end do
 
@@ -175,7 +177,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
     integer                        :: k
     logical                        :: mentions_q
 
@@ -192,7 +194,7 @@ contains
          & "state coordinates exist, and NOTHING says a coordinate " // &
          & "is an instant", nfail)
 
-    call report(q % size() .eq. 2 .and. .not. q % same_as(t), &
+    call report(sets % size_of(q) .eq. 2 .and. .not. q % same_as(t), &
          & "Q is still there, still two, still not T - unrelated is " // &
          & "not absent", nfail)
 

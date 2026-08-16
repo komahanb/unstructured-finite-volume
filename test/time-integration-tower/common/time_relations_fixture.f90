@@ -41,7 +41,8 @@
 
 module time_relations_fixture
 
-  use graph_carrier        , only : counted_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
   use graph_binary_relation, only : csr_relation
 
   implicit none
@@ -60,16 +61,17 @@ contains
   ! that is the pair [i, i].
   !===================================================================!
 
-  type(csr_relation) function tail_relation(e, t) result(tail)
+  type(csr_relation) function tail_relation(e, t, sets) result(tail)
 
-    type(counted_set), intent(in) :: e, t
+    type(set_graph), intent(in) :: e, t
+    type(set_map)  , intent(in) :: sets
 
     integer :: table(2, 4), i
 
     do i = 1, 4
        table(:, i) = [i, i]
     end do
-    tail = csr_relation('tail', e, t, table)
+    tail = csr_relation('tail', e, t, table, sets)
 
   end function tail_relation
 
@@ -81,16 +83,17 @@ contains
   ! the pair [i, i+1] in the carriers' numbering.
   !===================================================================!
 
-  type(csr_relation) function head_relation(e, t) result(head)
+  type(csr_relation) function head_relation(e, t, sets) result(head)
 
-    type(counted_set), intent(in) :: e, t
+    type(set_graph), intent(in) :: e, t
+    type(set_map)  , intent(in) :: sets
 
     integer :: table(2, 4), i
 
     do i = 1, 4
        table(:, i) = [i, i + 1]
     end do
-    head = csr_relation('head', e, t, table)
+    head = csr_relation('head', e, t, table, sets)
 
   end function head_relation
 

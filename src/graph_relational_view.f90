@@ -17,8 +17,10 @@
 ! objects, because a borrowed pointer handed to a caller outlives
 ! whatever lent it.
 !
-! THE STORAGE LAW. A borrowed pointer stays valid for the life of the
-! binding, across any number of later bindings.
+! THE STORAGE LAW.
+!
+!     relational_binding is not assignable; bind_* preserves every
+!     outstanding object pointer until the binding is destroyed.
 !
 ! That law is not free. A row holds a POINTER to an individually
 ! allocated object, never the object itself: when the row array grows,
@@ -28,14 +30,16 @@
 ! reads freed storage: silently wrong first, fatal next. See
 ! test/graph-relational/lifetime.f90, which holds this law on every run.
 !
-! Individual allocation has two consequences the binding must carry:
+! ASSIGNMENT IS REFUSED, at run time, because no Fortran mechanism
+! prohibits it at compile time; four were compiled and measured in
+! test/graph-relational/fortran-assignment. Extension and replacement
+! are different operations: bind_* extends a binding and preserves what
+! it lent, and there is no replacement that can.
 !
-!     it frees its objects when it dies          final :: release
-!     it deep-copies on assignment               assignment(=)
-!
-! without which a copied binding would free objects the original still
-! lends. Both are storage machinery. Neither is ontology, and neither
-! appears in fractal_graph.
+! The refusing procedure takes its left-hand side INTENT(INOUT), not
+! INTENT(OUT), because an INTENT(OUT) dummy of a finalizable type is
+! finalized on entry - which would destroy the lender before refusing
+! to destroy it.
 !
 ! Because a row holds a pointer rather than the object, the pointer
 ! this module returns does not point into the binding. The binding
@@ -108,8 +112,8 @@ module graph_relational_view
      procedure :: set_for
      procedure :: relation_for
 
-     procedure, private :: copy_binding
-     generic :: assignment(=) => copy_binding
+     procedure, private :: refuse_assignment
+     generic :: assignment(=) => refuse_assignment
 
      final :: release_binding
 
@@ -208,34 +212,19 @@ contains
   end function relation_for
 
   !===================================================================!
-  ! Deep copy. A copied binding owns copies, so freeing it never
-  ! touches an object the original still lends.
+  ! Refusal. Replacing a binding cannot preserve what it lent, so it is
+  ! not an operation. INTENT(INOUT): an INTENT(OUT) dummy would be
+  ! finalized before this body ran.
   !===================================================================!
 
-  subroutine copy_binding(lhs, rhs)
+  subroutine refuse_assignment(lhs, rhs)
 
-    class(relational_binding), intent(out) :: lhs
-    type(relational_binding) , intent(in)  :: rhs
+    class(relational_binding), intent(inout) :: lhs
+    type(relational_binding) , intent(in)    :: rhs
 
-    integer :: k
+    error stop 'graph_relational_view: a relational_binding is not assignable'
 
-    if (allocated(rhs % sets)) then
-       allocate(lhs % sets(size(rhs % sets)))
-       do k = 1, size(rhs % sets)
-          lhs % sets(k) % element => rhs % sets(k) % element
-          allocate(lhs % sets(k) % object, source=rhs % sets(k) % object)
-       end do
-    end if
-
-    if (allocated(rhs % relations)) then
-       allocate(lhs % relations(size(rhs % relations)))
-       do k = 1, size(rhs % relations)
-          lhs % relations(k) % element => rhs % relations(k) % element
-          allocate(lhs % relations(k) % object, source=rhs % relations(k) % object)
-       end do
-    end if
-
-  end subroutine copy_binding
+  end subroutine refuse_assignment
 
   !===================================================================!
   ! Release. Individually allocated objects are individually freed.

@@ -5,23 +5,35 @@
 ! graph_profile keeps such a pointer for the life of its view. This
 ! suite holds the storage law that makes that safe:
 !
-!     a borrowed pointer stays valid for the life of the binding,
-!     across any number of later bindings.
+!     relational_binding is not assignable; bind_* preserves every
+!     outstanding object pointer until the binding is destroyed.
 !
 ! The law is a property of the STORAGE, not of graph. A graph mutates
 ! freely under stable identity; an object that lends pointers may
 ! impose stricter conditions than the graph does.
 !
-! WHAT WAS MEASURED AND REJECTED. With the object held in the row as an
-! allocatable component, growth relocates the row array and a borrowed
-! pointer then reads freed storage. The measurement, before the fix:
+! Extension is here; refusal of replacement is in refusal.f90.
+!
+! WHAT WAS MEASURED AND REJECTED, twice.
+!
+! First, the object held in the row as an allocatable component. Growth
+! relocates the row array, and a borrowed pointer then reads freed
+! storage:
 !
 !     A before growth : same_as = T, name = R1
 !     B after  growth : same_as = F              <- silently wrong
 !       name through the same pointer            <- SIGSEGV
 !
-! Silently wrong first, fatal second. Every case below would have been
-! a corrupted graph_profile had the cutover gone first.
+! Second, a deep copy on assignment. It finalizes its left-hand side
+! first, so overwriting a lender freed what the lender had lent:
+!
+!     b = d, then read p borrowed from b
+!       native   : associated, and answers R2    <- silently wrong
+!       valgrind : invalid read of a freed block, and answers R1
+!
+! Two allocators, two different wrong answers, and the first is one no
+! tool reports. No caller assigned a binding, so the copy that made
+! this reachable is gone and assignment refuses.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -79,69 +91,42 @@ program lifetime
   end block growth_block
 
   !===================================================================!
-  ! D . The binding is intrinsically assigned to another binding. The
-  ! copy owns copies, so the original's borrowers are untouched and
-  ! nothing is freed twice.
+  ! D . Two bindings coexist, each lending. Each owns its own objects,
+  ! so growth in one is invisible to the other's borrowers. This is the
+  ! whole of what replacement was ever wanted for.
   !===================================================================!
 
-  assignment_block: block
+  independent_block: block
 
-    type(graph), target      :: e1
-    type(relational_binding) :: b, c
+    type(graph), target      :: e1, e2, e3
+    type(relational_binding) :: b, d
     type(counted_set)        :: s
-    type(stored_relation)    :: r1
-    class(relation), pointer :: p, pc
+    type(stored_relation)    :: r1, r2, r3
+    class(relation), pointer :: p, q
 
-    call e1 % declare()
-    s  = counted_set('E', 4)
-    r1 = stored_relation('R1', [slot(s)], reshape([1, 2], [1, 2]))
-
-    call b % bind_relation(e1, r1)
-    p => b % relation_for(e1)
-
-    c = b
-    call check('D  the pointer into the original survives the assignment', &
-         & p % same_as(r1) .and. p % name() .eq. 'R1')
-
-    pc => c % relation_for(e1)
-    call check('D  the copy denotes an equal object in its own storage', &
-         & pc % same_as(r1) .and. .not. associated(pc, p))
-
-  end block assignment_block
-
-  !===================================================================!
-  ! E . The binding variable is overwritten by a second assignment.
-  ! The overwritten binding's own storage is released, and the storage
-  ! borrowed from the surviving one is not.
-  !===================================================================!
-
-  overwrite_block: block
-
-    type(graph), target      :: e1, e2
-    type(relational_binding) :: b, c, d
-    type(counted_set)        :: s
-    type(stored_relation)    :: r1, r2
-    class(relation), pointer :: p
-
-    call e1 % declare(); call e2 % declare()
+    call e1 % declare(); call e2 % declare(); call e3 % declare()
     s  = counted_set('E', 4)
     r1 = stored_relation('R1', [slot(s)], reshape([1, 2], [1, 2]))
     r2 = stored_relation('R2', [slot(s)], reshape([3, 4], [1, 2]))
+    r3 = stored_relation('R3', [slot(s)], reshape([1, 4], [1, 2]))
 
     call b % bind_relation(e1, r1)
     call d % bind_relation(e2, r2)
-
-    c = b
     p => b % relation_for(e1)
-    c = d                                            ! c is overwritten
+    q => d % relation_for(e2)
 
-    call check('E  the pointer into b is unaffected by overwriting c', &
-         & p % same_as(r1) .and. p % name() .eq. 'R1')
+    call check('D  two bindings lend distinct storage', &
+         & .not. associated(p, q) .and. p % name() .eq. 'R1' &
+         & .and. q % name() .eq. 'R2')
 
-  end block overwrite_block
+    call d % bind_relation(e3, r3)                   ! only d grows
+    call check('D  growth in one binding is invisible to the other', &
+         & p % name() .eq. 'R1' .and. q % name() .eq. 'R2')
+
+  end block independent_block
 
   !===================================================================!
-  ! F . The graph_profile pattern: borrow, narrow the dynamic type,
+  ! E . The graph_profile pattern: borrow, narrow the dynamic type,
   ! keep the narrowed pointer, then grow the binding.
   !===================================================================!
 
@@ -180,20 +165,20 @@ program lifetime
     class is (binary_relation)
        tails => p
     class default
-       call check('F  the bound relation is binary', .false.)
+       call check('E  the bound relation is binary', .false.)
     end select
 
-    call check('F  the narrowed pointer answers before growth', &
+    call check('E  the narrowed pointer answers before growth', &
          & tails % same_as(t) .and. tails % arity() .eq. 2)
 
     call b % bind_relation(relem(2), extra)          ! growth after narrowing
-    call check('F  and after growth: this is the graph_profile pattern', &
+    call check('E  and after growth: this is the graph_profile pattern', &
          & tails % same_as(t) .and. tails % arity() .eq. 2)
 
   end block profile_pattern_block
 
   !===================================================================!
-  ! G . TARGET. A row holds a pointer to the object, so the pointer
+  ! F . TARGET. A row holds a pointer to the object, so the pointer
   ! returned does not point into the binding: it survives the return
   ! whether or not the actual argument has TARGET. Both are exercised;
   ! neither declares the binding TARGET.
@@ -224,12 +209,12 @@ program lifetime
 
     rp => relation_at(g, b, 1)                       ! through the view
     sp => member_set_at(g, b, 1)
-    call check('G  relation_at survives return with no TARGET on the binding', &
+    call check('F  relation_at survives return with no TARGET on the binding', &
          & rp % same_as(p))
-    call check('G  member_set_at likewise', sp % same_as(e))
+    call check('F  member_set_at likewise', sp % same_as(e))
 
     rp => b % relation_for(relem)                    ! directly
-    call check('G  relation_for likewise', rp % same_as(p))
+    call check('F  relation_for likewise', rp % same_as(p))
 
   end block target_block
 

@@ -32,7 +32,8 @@ module learning_constitution_fixture
   use iso_fortran_env, only : dp => REAL64
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier  , only : member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
   use graph_relation , only : relation
 
   implicit none
@@ -70,20 +71,21 @@ contains
   ! many. The facts live in the relation, never in the evaluator.
   !===================================================================!
 
-  integer function slot_for_port(flow, slots, op, port) result(found)
+  integer function slot_for_port(flow, slots, sets, op, port) result(found)
 
     class(relation)  , intent(in) :: flow
-    class(member_set), intent(in) :: slots
+    type(set_graph), intent(in) :: slots
+    type(set_map)  , intent(in) :: sets
     integer          , intent(in) :: op, port
 
     integer :: j, hits
 
     hits  = 0
     found = 0
-    do j = 1, slots % size()
-       if (flow % has([op, slots % member(j), port])) then
+    do j = 1, sets % size_of(slots)
+       if (flow % has([op, sets % member_of(slots, j), port])) then
           hits  = hits + 1
-          found = slots % member(j)
+          found = sets % member_of(slots, j)
        end if
     end do
     if (hits .ne. 1) then
@@ -97,20 +99,21 @@ contains
   ! relation by scanning the value slots - exactly one, or refusal.
   !===================================================================!
 
-  integer function located_slot(located, slots, row) result(home)
+  integer function located_slot(located, slots, sets, row) result(home)
 
     class(relation)  , intent(in) :: located
-    class(member_set), intent(in) :: slots
+    type(set_graph), intent(in) :: slots
+    type(set_map)  , intent(in) :: sets
     integer          , intent(in) :: row
 
     integer :: j, hits
 
     hits = 0
     home = 0
-    do j = 1, slots % size()
-       if (located % has([row, slots % member(j)])) then
+    do j = 1, sets % size_of(slots)
+       if (located % has([row, sets % member_of(slots, j)])) then
           hits = hits + 1
-          home = slots % member(j)
+          home = sets % member_of(slots, j)
        end if
     end do
     if (hits .ne. 1) then
@@ -131,31 +134,35 @@ contains
   ! against Level 6's structural one.
   !===================================================================!
 
-  subroutine generated_residual(flow, located, slots, rows, &
+  subroutine generated_residual(flow, located, slots, sets, rows, &
        & observed, observed_values, trainable, trainable_values, &
        & computed, order, residual, touched, trace)
 
     class(relation)  , intent(in)  :: flow, located
-    class(member_set), intent(in)  :: slots        ! V
-    class(member_set), intent(in)  :: rows         ! Y
-    class(member_set), intent(in)  :: observed     ! K
+    type(set_graph), intent(in)  :: slots        ! V
+    type(set_map)  , intent(in) :: sets
+    type(set_graph), intent(in)  :: rows         ! Y
+    type(set_graph), intent(in)  :: observed     ! K
     real(dp)         , intent(in)  :: observed_values(:)
-    class(member_set), intent(in)  :: trainable    ! Theta
+    type(set_graph), intent(in)  :: trainable    ! Theta
     real(dp)         , intent(in)  :: trainable_values(:)
-    class(member_set), intent(in)  :: computed     ! U
+    type(set_graph), intent(in)  :: computed     ! U
     integer          , intent(in)  :: order(:)     ! derived by caller
     real(dp)         , intent(out) :: residual(:)
     integer , allocatable, intent(out), optional :: touched(:)
     real(dp), allocatable, intent(out), optional :: trace(:)
 
-    real(dp) :: values(slots % size())
-    logical  :: available(slots % size())
-    integer  :: reads(trainable % size())
+    real(dp), allocatable :: values(:)
+    logical, allocatable  :: available(:)
+    integer, allocatable  :: reads(:)
     integer  :: nreads, i, m, op, in1, in2, out
 
-    if (size(observed_values) .ne. observed % size() .or. &
-         & size(trainable_values) .ne. trainable % size() .or. &
-         & size(residual) .ne. rows % size()) then
+    allocate(reads(sets % size_of(trainable)))
+    allocate(available(sets % size_of(slots)))
+    allocate(values(sets % size_of(slots)))
+    if (size(observed_values) .ne. sets % size_of(observed) .or. &
+         & size(trainable_values) .ne. sets % size_of(trainable) .or. &
+         & size(residual) .ne. sets % size_of(rows)) then
        error stop 'constitution: every vector is sized by its domain'
     end if
 
@@ -166,57 +173,57 @@ contains
     nreads    = 0
 
     ! Seed the observed state through K's own enumeration.
-    do i = 1, observed % size()
-       m = observed % member(i)
-       values(slots % local_index(m)) = &
-            & observed_values(observed % local_index(m))
-       available(slots % local_index(m)) = .true.
+    do i = 1, sets % size_of(observed)
+       m = sets % member_of(observed, i)
+       values(sets % index_in(slots, m)) = &
+            & observed_values(sets % index_in(observed, m))
+       available(sets % index_in(slots, m)) = .true.
     end do
 
     ! Seed the trainable state through Theta's own enumeration -
     ! an INPUT to evaluation, never modified here.
-    do i = 1, trainable % size()
-       m = trainable % member(i)
-       values(slots % local_index(m)) = &
-            & trainable_values(trainable % local_index(m))
-       available(slots % local_index(m)) = .true.
+    do i = 1, sets % size_of(trainable)
+       m = sets % member_of(trainable, i)
+       values(sets % index_in(slots, m)) = &
+            & trainable_values(sets % index_in(trainable, m))
+       available(sets % index_in(slots, m)) = .true.
     end do
 
     ! Execute the derived order: discover, demand, compute, admit.
     do i = 1, size(order)
        op  = order(i)
-       in1 = slot_for_port(flow, slots, op, PORT_IN1)
-       in2 = slot_for_port(flow, slots, op, PORT_IN2)
-       out = slot_for_port(flow, slots, op, PORT_OUT)
+       in1 = slot_for_port(flow, slots, sets, op, PORT_IN1)
+       in2 = slot_for_port(flow, slots, sets, op, PORT_IN2)
+       out = slot_for_port(flow, slots, sets, op, PORT_OUT)
 
-       if (.not. available(slots % local_index(in1)) .or. &
-            & .not. available(slots % local_index(in2))) then
+       if (.not. available(sets % index_in(slots, in1)) .or. &
+            & .not. available(sets % index_in(slots, in2))) then
           error stop 'constitution: an operation was scheduled before its inputs exist'
        end if
 
        ! The learning schema law: operations produce the slots the
        ! partition classified as computed.
-       if (.not. computed % has(out)) then
+       if (.not. sets % has_in(computed, out)) then
           error stop 'constitution: an operation must produce a computed slot'
        end if
 
        call note_read(in1)
        call note_read(in2)
 
-       values(slots % local_index(out)) = apply_law(op, &
-            & values(slots % local_index(in1)), &
-            & values(slots % local_index(in2)))
-       available(slots % local_index(out)) = .true.
+       values(sets % index_in(slots, out)) = apply_law(op, &
+            & values(sets % index_in(slots, in1)), &
+            & values(sets % index_in(slots, in2)))
+       available(sets % index_in(slots, out)) = .true.
     end do
 
     ! The learning residual rule, complete: the value at the home.
-    do i = 1, rows % size()
-       m = located_slot(located, slots, rows % member(i))
-       if (.not. available(slots % local_index(m))) then
+    do i = 1, sets % size_of(rows)
+       m = located_slot(located, slots, sets, sets % member_of(rows, i))
+       if (.not. available(sets % index_in(slots, m))) then
           error stop 'constitution: a residual home was never computed'
        end if
-       residual(rows % local_index(rows % member(i))) = &
-            & values(slots % local_index(m))
+       residual(sets % index_in(rows, sets % member_of(rows, i))) = &
+            & values(sets % index_in(slots, m))
     end do
 
     if (present(touched)) touched = reads(1:nreads)
@@ -226,7 +233,7 @@ contains
 
     subroutine note_read(slot)
       integer, intent(in) :: slot
-      if (trainable % has(slot)) then
+      if (sets % has_in(trainable, slot)) then
          if (.not. any(reads(1:nreads) .eq. slot)) then
             nreads        = nreads + 1
             reads(nreads) = slot

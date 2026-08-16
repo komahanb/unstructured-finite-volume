@@ -22,7 +22,9 @@
 module constituted_residual_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_carrier    , only : member_set, counted_set, subset_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
+  use graph_set_representation, only : set_representation
   use graph_relation   , only : relation
   ! graph_grammar exports a type named graph too; the kernel keeps
   ! the name and the grammar's is renamed at the door.
@@ -41,8 +43,15 @@ module constituted_residual_fixture
   type, extends(graph_operation) :: constituted_learning_residual
      class(relation), allocatable :: flow      ! the GRAPH-OWNED copy
      class(relation), allocatable :: located
-     type(counted_set)            :: slots, rows
-     type(subset_set)             :: observed, trainable, computed
+     ! Identities, counts, and the action's OWN coordinates. A
+     ! representation carries no identity, so holding one keeps this
+     ! type free of any caller's map.
+     type(set_graph)            :: slots, rows
+     type(set_graph)             :: observed, trainable, computed
+     integer :: n_slots = 0, n_rows = 0
+     integer :: n_observed = 0, n_trainable = 0, n_computed = 0
+     class(set_representation), allocatable :: c_slots, c_rows
+     class(set_representation), allocatable :: c_observed, c_trainable, c_computed
      real(dp), allocatable        :: observed_values(:)
      integer , allocatable        :: order(:)  ! derived by the caller
    contains
@@ -63,15 +72,16 @@ contains
   ! not own it.
   !===================================================================!
 
-  function create_adapter(g, b, selector, located, slots, rows, &
+  function create_adapter(g, b, selector, located, slots, rows, sets, &
        & observed, observed_values, trainable, computed, order) &
        & result(this)
 
     type(graph)             , intent(in) :: g
     type(relational_binding), intent(in) :: b
     class(relation)  , intent(in) :: selector, located
-    type(counted_set), intent(in) :: slots, rows
-    type(subset_set) , intent(in) :: observed, trainable, computed
+    type(set_graph), intent(in) :: slots, rows
+    type(set_map)  , intent(in) :: sets
+    type(set_graph) , intent(in) :: observed, trainable, computed
     real(dp)         , intent(in) :: observed_values(:)
     integer          , intent(in) :: order(:)
     type(constituted_learning_residual) :: this
@@ -79,6 +89,11 @@ contains
     class(relation), pointer :: rp
     integer :: kk
     logical :: found
+    integer         :: n_computed
+    integer         :: n_observed
+    integer         :: n_rows
+    integer         :: n_slots
+    integer         :: n_trainable
 
     found = .false.
     do kk = 1, num_relations(g)
@@ -102,6 +117,18 @@ contains
     this % observed_values = observed_values
     this % order           = order
 
+    this % n_slots     = sets % size_of(slots)
+    this % n_rows      = sets % size_of(rows)
+    this % n_observed  = sets % size_of(observed)
+    this % n_trainable = sets % size_of(trainable)
+    this % n_computed  = sets % size_of(computed)
+
+    call sets % extent_of(slots,     this % c_slots)
+    call sets % extent_of(rows,      this % c_rows)
+    call sets % extent_of(observed,  this % c_observed)
+    call sets % extent_of(trainable, this % c_trainable)
+    call sets % extent_of(computed,  this % c_computed)
+
   end function create_adapter
 
   pure function clr_name(this) result(name)
@@ -110,12 +137,15 @@ contains
     name = 'constituted learning residual'
   end function clr_name
 
-  subroutine clr_domain(this, input_graph, domain)
+  subroutine clr_domain(this, input_graph, domain, nentries)
     class(constituted_learning_residual), intent(in) :: this
     class(grammar_graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
+    integer         :: n_rows
     associate (u1 => input_graph); end associate
-    allocate(domain, source=this % rows)
+    domain   = this % rows
+    nentries = this % n_rows
   end subroutine clr_domain
 
   subroutine clr_apply(this, input_graph, input_data, output)
@@ -126,10 +156,25 @@ contains
     class(graph_field), allocatable, intent(inout)   :: output
 
     type(field)                    :: out
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
     real(dp), allocatable          :: tstate(:), r(:)
 
+    !----------------------------------------------------------------!
+    ! The action's own coordinates, rebound into a LOCAL map for the
+    ! duration of the call. The representations belong to the action;
+    ! the map is a temporary and never leaves this scope.
+    !----------------------------------------------------------------!
+
+    type(set_map) :: mine
+    integer         :: n_rows
+
     associate (u1 => input_graph); end associate
+
+    call mine % bind(this % slots,     this % c_slots)
+    call mine % bind(this % rows,      this % c_rows)
+    call mine % bind(this % observed,  this % c_observed)
+    call mine % bind(this % trainable, this % c_trainable)
+    call mine % bind(this % computed,  this % c_computed)
 
     if (.not. present(input_data)) then
        error stop 'statement: the residual needs a state to judge'
@@ -138,20 +183,20 @@ contains
        error stop 'statement: the residual needs a state to judge'
     end if
 
-    call input_data(1) % domain(dom)
+    dom = input_data(1) % domain()
     if (.not. dom % same_as(this % trainable)) then
        error stop 'statement: the state must live on the trainable domain'
     end if
     call input_data(1) % get_real_vector(tstate)
 
-    allocate(r(this % rows % size()))
+    allocate(r(this % n_rows))
     call generated_residual(this % flow, this % located, &
-         & this % slots, this % rows, &
+         & this % slots, mine, this % rows, &
          & this % observed, this % observed_values, &
          & this % trainable, tstate, &
          & this % computed, this % order, r)
 
-    out = field('residual', this % rows)
+    out = field('residual', this % rows, this % n_rows)
     call out % set_real_vector(r)
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)

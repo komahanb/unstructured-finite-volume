@@ -43,7 +43,11 @@ program learning_level_9
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier  , only : counted_set, subset_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
@@ -65,8 +69,8 @@ program learning_level_9
 
   integer, parameter :: ROW_R = 1
 
-  type(counted_set)                  :: v, o, p, y
-  type(subset_set)                   :: k, theta, u, p_in, p_out
+  type(set_graph)                  :: v, o, p, y
+  type(set_graph)                   :: k, theta, u, p_in, p_out
   type(stored_relation), allocatable :: flow
   type(stored_relation)              :: located, consumes, produces
   class(relation), allocatable       :: d
@@ -81,13 +85,16 @@ program learning_level_9
   type(constituted_learning_residual) :: residual_op
   type(gmres)                        :: solver
   type(field)                        :: q_k, rhsf
-  class(member_set), allocatable     :: dom
+  type(set_graph)     :: dom
+  integer     :: n_dom
   class(graph_field), allocatable    :: sol, rf
   integer, allocatable               :: order(:)
   real(dp), allocatable              :: obs(:), gv(:), solval(:), rv(:)
   real(dp)                           :: w_learned
   integer                            :: table(3, 6)
   integer                            :: nfail
+  type(inclusion_map)     :: inclusions
+  type(set_map)     :: sets
 
   nfail = 0
 
@@ -96,13 +103,23 @@ program learning_level_9
   write(*,'(1x,a)') "============================================="
 
   ! -- the structure, and its one relational model graph
-  v     = counted_set('value-slots'  , 5)
-  o     = counted_set('operations'   , 2)
-  p     = counted_set('ports'        , 3)
-  y     = counted_set('residual-rows', 1)
-  k     = subset_set('observed' , v, [SLOT_Y, SLOT_X])
-  theta = subset_set('trainable', v, [SLOT_W])
-  u     = subset_set('computed' , v, [SLOT_E, SLOT_YHAT])
+  call v % declare()
+  call sets % bind(v, counted_set_representation(5))
+  call o % declare()
+  call sets % bind(o, counted_set_representation(2))
+  call p % declare()
+  call sets % bind(p, counted_set_representation(3))
+  call y % declare()
+  call sets % bind(y, counted_set_representation(1))
+  call k % declare()
+  call sets       % bind(k, listed_set_representation([SLOT_Y, SLOT_X]))
+  call inclusions % include_in(k, v)
+  call theta % declare()
+  call sets       % bind(theta, listed_set_representation([SLOT_W]))
+  call inclusions % include_in(theta, v)
+  call u % declare()
+  call sets       % bind(u, listed_set_representation([SLOT_E, SLOT_YHAT]))
+  call inclusions % include_in(u, v)
 
   table(:, 1) = [OP_PREDICT, SLOT_W   , PORT_IN1]
   table(:, 2) = [OP_PREDICT, SLOT_X   , PORT_IN2]
@@ -111,13 +128,17 @@ program learning_level_9
   table(:, 5) = [OP_ERROR  , SLOT_Y   , PORT_IN2]
   table(:, 6) = [OP_ERROR  , SLOT_E   , PORT_OUT]
   allocate(flow)
-  flow = stored_relation('flow', [o, v, p], table)
+  flow = stored_relation('flow', [o, v, p], table, sets)
 
-  p_in     = subset_set('input-ports', p, [PORT_IN1, PORT_IN2])
-  p_out    = subset_set('output-port', p, [PORT_OUT])
-  consumes = project_slots(restrict_slot(flow, 3, p_in ), [2, 1])
-  produces = project_slots(restrict_slot(flow, 3, p_out), [1, 2])
-  d        = compose_binary(produces, consumes)
+  call p_in % declare()
+  call sets       % bind(p_in, listed_set_representation([PORT_IN1, PORT_IN2]))
+  call inclusions % include_in(p_in, p)
+  call p_out % declare()
+  call sets       % bind(p_out, listed_set_representation([PORT_OUT]))
+  call inclusions % include_in(p_out, p)
+  consumes = project_slots(restrict_slot(flow, 3, p_in , sets, inclusions), [2, 1], sets)
+  produces = project_slots(restrict_slot(flow, 3, p_out, sets, inclusions), [1, 2], sets)
+  d        = compose_binary(produces, consumes, sets)
 
   ! 'learning': (S, P) as one sequence on each branch.
   call g % declare()
@@ -152,23 +173,23 @@ program learning_level_9
 
   ! -- the discretization, distinct from the graph on purpose
   located = stored_relation('located', [y, v], &
-       & reshape([ROW_R, SLOT_E], [2, 1]))
+       & reshape([ROW_R, SLOT_E], [2, 1]), sets)
 
   ! -- the execution order, from structure - never from the adapter
-  view = directed_adjacency_view(g, bnd, d)
-  call topological_order(view, order)
+  view = directed_adjacency_view(g, bnd, sets, d)
+  call topological_order(view, sets, order)
   call report(size(order) .eq. 2 .and. &
        &      order(1) .eq. OP_PREDICT .and. order(2) .eq. OP_ERROR, &
        & "the derived order is [predict, error], exactly", nfail)
 
   ! -- the observation: Level 5's field on K, and NO field on U
-  q_k = field('observations', k)
+  q_k = field('observations', k, sets % size_of(k))
   call q_k % set_real_vector([6.0_dp, 2.0_dp])
   call q_k % get_real_vector(obs)
 
   ! -- the adapter keeps the GRAPH-OWNED flow; the selector dies.
   residual_op = constituted_learning_residual(g, bnd, flow, located, &
-       & v, y, k, obs, theta, u, order)
+       & v, y, sets, k, obs, theta, u, order)
   deallocate(flow)
 
   ! -- the compatibility scenery: seven vertices, nobody's trainables
@@ -177,14 +198,14 @@ program learning_level_9
   call check_structure(nfail, "before training")
 
   ! -- the ordinary solver, through its own operation face
-  call solver % attach(residual_op, host, theta)
+  call solver % attach(residual_op, host, theta, sets % size_of(theta))
   solver % tolerance      = 1.0d-12
   solver % max_iterations = 50
 
-  call solver % domain(host, dom)
+  call solver % domain(host, dom, n_dom)
   call report(dom % same_as(theta), &
        & "the solver answers on Theta, by identity", nfail)
-  call residual_op % domain(host, dom)
+  call residual_op % domain(host, dom, n_dom)
   call report(dom % same_as(y) .and. .not. dom % same_as(theta), &
        & "the residual answers on Y - and Y is not Theta", nfail)
 
@@ -194,7 +215,7 @@ program learning_level_9
        & "R(0) = -6: the full model evaluated at the untrained w", &
        & nfail)
 
-  rhsf = field('rhs', y)
+  rhsf = field('rhs', y, sets % size_of(y))
   call rhsf % set_real_vector(-gv)
 
   ! -- the solve: rhs on Y in, solution on Theta out; the internal
@@ -202,12 +223,12 @@ program learning_level_9
   !    initial parameter - never injected.
   call solver % apply(host, [rhsf], sol)
 
-  call sol % domain(dom)
+  dom = sol % domain()
   call report(dom % same_as(theta), &
        & "the learned state is a field on Theta, by identity", nfail)
 
   call sol % get_real_vector(solval)
-  w_learned = solval(theta % local_index(SLOT_W))
+  w_learned = solval(sets % index_in(theta, SLOT_W))
   call report(abs(w_learned - 3.0_dp) < 1.0d-9, &
        & "learned w = 3, read through Theta's enumeration", nfail)
   call report(abs(w_learned) > 1.0_dp, &
@@ -267,11 +288,11 @@ contains
        end if
     end do
 
-    roles_ok = theta % size() .eq. 1 .and. theta % has(SLOT_W)  .and. &
-         &     k % size() .eq. 2 .and. k % has(SLOT_Y)          .and. &
-         &     k % has(SLOT_X)                                  .and. &
-         &     u % size() .eq. 2 .and. u % has(SLOT_E)          .and. &
-         &     u % has(SLOT_YHAT)
+    roles_ok = sets % size_of(theta) .eq. 1 .and. sets % has_in(theta, SLOT_W)  .and. &
+         &     sets % size_of(k) .eq. 2 .and. sets % has_in(k, SLOT_Y)          .and. &
+         &     sets % has_in(k, SLOT_X)                                  .and. &
+         &     sets % size_of(u) .eq. 2 .and. sets % has_in(u, SLOT_E)          .and. &
+         &     sets % has_in(u, SLOT_YHAT)
 
     call report(flow_ok .and. d_ok .and. roles_ok, &
          & "six facts, one dependency, three roles - intact " // when, &
@@ -296,9 +317,9 @@ contains
     real(dp) :: a1, a2, prediction
     real(dp), parameter :: xstar = 4.0_dp
 
-    in1  = slot_for_port(gflow, v, OP_PREDICT, PORT_IN1)
-    in2  = slot_for_port(gflow, v, OP_PREDICT, PORT_IN2)
-    out1 = slot_for_port(gflow, v, OP_PREDICT, PORT_OUT)
+    in1  = slot_for_port(gflow, v, sets, OP_PREDICT, PORT_IN1)
+    in2  = slot_for_port(gflow, v, sets, OP_PREDICT, PORT_IN2)
+    out1 = slot_for_port(gflow, v, sets, OP_PREDICT, PORT_OUT)
 
     call report(in1 .eq. SLOT_W .and. in2 .eq. SLOT_X .and. &
          &      out1 .eq. SLOT_YHAT, &
@@ -308,12 +329,12 @@ contains
     ! Positions dictated by the discovered ports; roles decide the
     ! values: the trainable slot carries the learned state, the
     ! other carries the fresh input.
-    if (theta % has(in1)) then
+    if (sets % has_in(theta, in1)) then
        a1 = w_learned
     else
        a1 = xstar
     end if
-    if (theta % has(in2)) then
+    if (sets % has_in(theta, in2)) then
        a2 = w_learned
     else
        a2 = xstar

@@ -21,7 +21,11 @@ program learning_level_8_refusal
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier  , only : counted_set, subset_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation , only : stored_relation
   use learning_constitution_fixture, only : apply_law, generated_residual
 
@@ -29,12 +33,14 @@ program learning_level_8_refusal
 
   integer, parameter :: ROW_R = 1
 
-  type(counted_set)     :: v, o, p, y
-  type(subset_set)      :: k, theta, u
+  type(set_graph)     :: v, o, p, y
+  type(set_graph)      :: k, theta, u
   type(stored_relation) :: flow, located
   integer               :: table(3, 6)
   real(dp)              :: r(1), z
   character(len=32)     :: which
+  type(set_map)     :: sets
+  type(inclusion_map)     :: inclusions
 
   if (command_argument_count() .lt. 1) then
      error stop 'usage: refusal <case>'
@@ -48,13 +54,23 @@ program learning_level_8_refusal
      write(*,*) 'a lawless symbol computed', z
 
   case ('starved-input')
-     v     = counted_set('value-slots'  , 5)
-     o     = counted_set('operations'   , 2)
-     p     = counted_set('ports'        , 3)
-     y     = counted_set('residual-rows', 1)
-     k     = subset_set('observed' , v, [SLOT_Y, SLOT_X])
-     theta = subset_set('trainable', v, [SLOT_W])
-     u     = subset_set('computed' , v, [SLOT_E, SLOT_YHAT])
+     call v % declare()
+     call sets % bind(v, counted_set_representation(5))
+     call o % declare()
+     call sets % bind(o, counted_set_representation(2))
+     call p % declare()
+     call sets % bind(p, counted_set_representation(3))
+     call y % declare()
+     call sets % bind(y, counted_set_representation(1))
+     call k % declare()
+     call sets       % bind(k, listed_set_representation([SLOT_Y, SLOT_X]))
+     call inclusions % include_in(k, v)
+     call theta % declare()
+     call sets       % bind(theta, listed_set_representation([SLOT_W]))
+     call inclusions % include_in(theta, v)
+     call u % declare()
+     call sets       % bind(u, listed_set_representation([SLOT_E, SLOT_YHAT]))
+     call inclusions % include_in(u, v)
 
      table(:, 1) = [OP_PREDICT, SLOT_W   , PORT_IN1]
      table(:, 2) = [OP_PREDICT, SLOT_X   , PORT_IN2]
@@ -62,13 +78,13 @@ program learning_level_8_refusal
      table(:, 4) = [OP_ERROR  , SLOT_YHAT, PORT_IN1]
      table(:, 5) = [OP_ERROR  , SLOT_Y   , PORT_IN2]
      table(:, 6) = [OP_ERROR  , SLOT_E   , PORT_OUT]
-     flow = stored_relation('flow', [o, v, p], table)
+     flow = stored_relation('flow', [o, v, p], table, sets)
 
      located = stored_relation('located', [y, v], &
-          & reshape([ROW_R, SLOT_E], [2, 1]))
+          & reshape([ROW_R, SLOT_E], [2, 1]), sets)
 
      ! The wrong order, on purpose: error before predict.
-     call generated_residual(flow, located, v, y, &
+     call generated_residual(flow, located, v, sets, y, &
           & k, [6.0_dp, 2.0_dp], theta, [0.0_dp], u, &
           & [OP_ERROR, OP_PREDICT], r)
      write(*,*) 'a starved operation computed', r

@@ -36,7 +36,11 @@ program learning_level_6
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier  , only : counted_set, subset_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
@@ -55,8 +59,8 @@ program learning_level_6
   ! Residual rows exist only from this level upward.
   integer, parameter :: ROW_R = 1
 
-  type(counted_set)              :: v, o, p, y
-  type(subset_set)               :: theta, p_in, p_out
+  type(set_graph)              :: v, o, p, y
+  type(set_graph)               :: theta, p_in, p_out
   type(stored_relation)          :: flow, backwards, located
   type(stored_relation)          :: consumes, produces
   type(csr_relation)             :: a, a2
@@ -75,6 +79,8 @@ program learning_level_6
   type(directed_adjacency_view)  :: view, view2
   integer                        :: table(3, 6)
   integer                        :: nfail
+  type(set_map)     :: sets
+  type(inclusion_map)     :: inclusions
 
   nfail = 0
 
@@ -82,11 +88,17 @@ program learning_level_6
   write(*,'(1x,a)') "learning tower . level 6 . discretization"
   write(*,'(1x,a)') "============================================="
 
-  v     = counted_set('value-slots'  , 5)
-  o     = counted_set('operations'   , 2)
-  p     = counted_set('ports'        , 3)
-  y     = counted_set('residual-rows', 1)
-  theta = subset_set('trainable', v, [SLOT_W])
+  call v % declare()
+  call sets % bind(v, counted_set_representation(5))
+  call o % declare()
+  call sets % bind(o, counted_set_representation(2))
+  call p % declare()
+  call sets % bind(p, counted_set_representation(3))
+  call y % declare()
+  call sets % bind(y, counted_set_representation(1))
+  call theta % declare()
+  call sets       % bind(theta, listed_set_representation([SLOT_W]))
+  call inclusions % include_in(theta, v)
 
   table(:, 1) = [OP_PREDICT, SLOT_W   , PORT_IN1]
   table(:, 2) = [OP_PREDICT, SLOT_X   , PORT_IN2]
@@ -94,14 +106,18 @@ program learning_level_6
   table(:, 4) = [OP_ERROR  , SLOT_YHAT, PORT_IN1]
   table(:, 5) = [OP_ERROR  , SLOT_Y   , PORT_IN2]
   table(:, 6) = [OP_ERROR  , SLOT_E   , PORT_OUT]
-  flow = stored_relation('flow', [o, v, p], table)
+  flow = stored_relation('flow', [o, v, p], table, sets)
 
   ! THE one new level-6 fact: where the residual row is located.
   located = stored_relation('located', [y, v], &
-       & reshape([ROW_R, SLOT_E], [2, 1]))
+       & reshape([ROW_R, SLOT_E], [2, 1]), sets)
 
-  p_in  = subset_set('input-ports', p, [PORT_IN1, PORT_IN2])
-  p_out = subset_set('output-port', p, [PORT_OUT])
+  call p_in % declare()
+  call sets       % bind(p_in, listed_set_representation([PORT_IN1, PORT_IN2]))
+  call inclusions % include_in(p_in, p)
+  call p_out % declare()
+  call sets       % bind(p_out, listed_set_representation([PORT_OUT]))
+  call inclusions % include_in(p_out, p)
 
   a = derive_direct(flow)
   ! 'value dependency': (S, P) as one sequence on each branch.
@@ -131,7 +147,7 @@ program learning_level_6
 
   g % branch(1) = known_branch(scell(1))
   g % branch(2) = known_branch(rcell(1))
-  view = directed_adjacency_view(g, bnd, a)
+  view = directed_adjacency_view(g, bnd, sets, a)
 
   j_theta = derive_trainable(view)
 
@@ -162,9 +178,9 @@ contains
 
     type(stored_relation) :: cons, prod
 
-    cons = project_slots(restrict_slot(t_flow, 3, p_in ), [2, 1])
-    prod = project_slots(restrict_slot(t_flow, 3, p_out), [1, 2])
-    dep  = compose_binary(cons, prod)
+    cons = project_slots(restrict_slot(t_flow, 3, p_in , sets, inclusions), [2, 1], sets)
+    prod = project_slots(restrict_slot(t_flow, 3, p_out, sets, inclusions), [1, 2], sets)
+    dep  = compose_binary(cons, prod, sets)
 
     ! keep the participations visible for their own checks
     consumes = cons
@@ -186,10 +202,10 @@ contains
 
     hits = 0
     home = 0
-    do jv = 1, v % size()
-       if (located % has([row, v % member(jv)])) then
+    do jv = 1, sets % size_of(v)
+       if (located % has([row, sets % member_of(v, jv)])) then
           hits = hits + 1
-          home = v % member(jv)
+          home = sets % member_of(v, jv)
        end if
     end do
     if (hits .ne. 1) then
@@ -209,22 +225,24 @@ contains
     type(directed_adjacency_view), intent(in) :: dep_view
     type(csr_relation)                        :: jth
 
-    integer :: pairs(2, y % size() * theta % size())
+    integer, allocatable :: pairs(:,:)
     integer :: npairs, ri, ti, row
 
+    allocate(pairs(2, sets % size_of(y) * sets % size_of(theta)))
+
     npairs = 0
-    do ri = 1, y % size()
-       row = y % member(ri)
-       do ti = 1, theta % size()
-          if (reachable(dep_view, theta % member(ti), home_of(row))) then
+    do ri = 1, sets % size_of(y)
+       row = sets % member_of(y, ri)
+       do ti = 1, sets % size_of(theta)
+          if (reachable(dep_view, sets, sets % member_of(theta, ti), home_of(row))) then
              npairs = npairs + 1
-             pairs(:, npairs) = [row, theta % member(ti)]
+             pairs(:, npairs) = [row, sets % member_of(theta, ti)]
           end if
        end do
     end do
 
     jth = csr_relation('trainable dependency', y, theta, &
-         & pairs(:, 1:npairs))
+         & pairs(:, 1:npairs), sets)
 
   end function derive_trainable
 
@@ -237,7 +255,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
 
     dom = consumes % domain(1)
     call report(dom % same_as(v), "I runs from the value slots", nfail)
@@ -271,7 +289,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
 
     dom = a % domain(1)
     call report(dom % same_as(v), "A runs from the value slots", nfail)
@@ -302,24 +320,24 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
 
     dom = view % domain()
     call report(dom % same_as(v), &
          & "the interpretation walks the value slots", nfail)
 
-    call report(reachable(view, SLOT_W   , SLOT_E) .and. &
-         &      reachable(view, SLOT_X   , SLOT_E) .and. &
-         &      reachable(view, SLOT_YHAT, SLOT_E) .and. &
-         &      reachable(view, SLOT_Y   , SLOT_E), &
+    call report(reachable(view, sets, SLOT_W   , SLOT_E) .and. &
+         &      reachable(view, sets, SLOT_X   , SLOT_E) .and. &
+         &      reachable(view, sets, SLOT_YHAT, SLOT_E) .and. &
+         &      reachable(view, sets, SLOT_Y   , SLOT_E), &
          & "w, x, yhat and y all reach e", nfail)
-    call report(.not. reachable(view, SLOT_E, SLOT_W), &
-         & "reachable(e, w) = false: nothing flows back", nfail)
+    call report(.not. reachable(view, sets, SLOT_E, SLOT_W), &
+         & "reachable(e, sets, w) = false: nothing flows back", nfail)
 
     call report(a % has([SLOT_W, SLOT_YHAT]) .and. &
          &      a % has([SLOT_YHAT, SLOT_E]) .and. &
          &      .not. a % has([SLOT_W, SLOT_E]) .and. &
-         &      reachable(view, SLOT_W, SLOT_E), &
+         &      reachable(view, sets, SLOT_W, SLOT_E), &
          & "w -> yhat -> e: adjacent twice, transitive once, " // &
          & "hard-coded never", nfail)
 
@@ -352,7 +370,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
 
     dom = j_theta % domain(1)
     call report(dom % same_as(y), &
@@ -378,22 +396,25 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(subset_set) :: sr
+    type(set_graph) :: sr
     integer          :: ti, n
-    integer          :: kept(theta % size())
+    integer, allocatable          :: kept(:)
 
+    allocate(kept(sets % size_of(theta)))
     n = 0
-    do ti = 1, theta % size()
-       if (j_theta % has([ROW_R, theta % member(ti)])) then
+    do ti = 1, sets % size_of(theta)
+       if (j_theta % has([ROW_R, sets % member_of(theta, ti)])) then
           n = n + 1
-          kept(n) = theta % member(ti)
+          kept(n) = sets % member_of(theta, ti)
        end if
     end do
-    sr = subset_set('trainable support of r', theta, kept(1:n))
+    call sr % declare()
+    call sets       % bind(sr, listed_set_representation(kept(1:n)))
+    call inclusions % include_in(sr, theta)
 
-    call report(sr % size() .eq. 1 .and. sr % has(SLOT_W), &
+    call report(sets % size_of(sr) .eq. 1 .and. sets % has_in(sr, SLOT_W), &
          & "support(r) = { w }, composed, not stored", nfail)
-    call report(sr % is_subobject_of(theta), &
+    call report(declared_subobject(sr, theta, inclusions), &
          & "and it stands embedded in the trainable domain", nfail)
 
   end subroutine check_trainable_support
@@ -438,7 +459,7 @@ contains
     do k = 1, 6
        rev(:, k) = table(:, 7 - k)
     end do
-    backwards = stored_relation('flow backwards', [o, v, p], rev)
+    backwards = stored_relation('flow backwards', [o, v, p], rev, sets)
 
     a2 = derive_direct(backwards)
     ! 'value dependency again': (S, P) as one sequence on each branch.
@@ -468,7 +489,7 @@ contains
 
     g2 % branch(1) = known_branch(scell2(1))
     g2 % branch(2) = known_branch(rcell2(1))
-    view2 = directed_adjacency_view(g2, bnd2, a2)
+    view2 = directed_adjacency_view(g2, bnd2, sets, a2)
     j_theta2 = derive_trainable(view2)
 
     call report(a2 % num_tuples() .eq. a % num_tuples(), &

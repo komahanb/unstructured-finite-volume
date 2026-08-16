@@ -20,7 +20,10 @@
 program learning_level_3_refusal
 
   use learning_assert      , only : OP_PREDICT, OP_ERROR
-  use graph_carrier        , only : counted_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
   use graph_binary_relation, only : csr_relation, transposed_view, &
        &                            transpose_of
   use fractal_graph        , only : graph
@@ -28,24 +31,26 @@ program learning_level_3_refusal
 
   implicit none
 
-  type(counted_set)          :: o
+  type(set_graph)          :: o
   type(csr_relation), target :: dep
   type(transposed_view)      :: flipped
   type(graph)       , target :: elem
   type(relational_binding)   :: bnd
   character(len=32)          :: which
+  type(set_map)     :: sets
 
   which = ''
   call get_command_argument(1, which)
 
-  o = counted_set('operations', 2)
+  call o % declare()
+  call sets % bind(o, counted_set_representation(2))
   call elem % declare()
 
   select case (trim(which))
 
   case ('view')
      dep = csr_relation('precedes', o, o, &
-          & reshape([OP_PREDICT, OP_ERROR], [2, 1]))
+          & reshape([OP_PREDICT, OP_ERROR], [2, 1]), sets)
      flipped = transpose_of(dep)
      call bnd % bind_relation(elem, flipped)
 

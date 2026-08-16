@@ -27,7 +27,12 @@ program learning_level_4
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier  , only : counted_set, subset_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
@@ -42,8 +47,8 @@ program learning_level_4
   implicit none
 
 
-  type(counted_set)              :: v, o, p
-  type(subset_set)               :: p_out, p_in
+  type(set_graph)              :: v, o, p
+  type(set_graph)               :: p_out, p_in
   type(stored_relation)          :: flow, t_out3, t_in3
   type(stored_relation)          :: produces, consumes
   class(relation), allocatable   :: d
@@ -55,6 +60,8 @@ program learning_level_4
   type(directed_adjacency_view)  :: view
   integer                        :: table(3, 6)
   integer                        :: nfail
+  type(set_map)     :: sets
+  type(inclusion_map)     :: inclusions
 
   nfail = 0
 
@@ -62,9 +69,12 @@ program learning_level_4
   write(*,'(1x,a)') "learning tower . level 4 . graph calculus"
   write(*,'(1x,a)') "============================================="
 
-  v = counted_set('value-slots', 5)
-  o = counted_set('operations' , 2)
-  p = counted_set('ports'      , 3)
+  call v % declare()
+  call sets % bind(v, counted_set_representation(5))
+  call o % declare()
+  call sets % bind(o, counted_set_representation(2))
+  call p % declare()
+  call sets % bind(p, counted_set_representation(3))
 
   table(:, 1) = [OP_PREDICT, SLOT_W   , PORT_IN1]
   table(:, 2) = [OP_PREDICT, SLOT_X   , PORT_IN2]
@@ -72,15 +82,19 @@ program learning_level_4
   table(:, 4) = [OP_ERROR  , SLOT_YHAT, PORT_IN1]
   table(:, 5) = [OP_ERROR  , SLOT_Y   , PORT_IN2]
   table(:, 6) = [OP_ERROR  , SLOT_E   , PORT_OUT]
-  flow = stored_relation('flow', [o, v, p], table)
+  flow = stored_relation('flow', [o, v, p], table, sets)
 
-  p_out    = subset_set('output-port', p, [PORT_OUT])
-  p_in     = subset_set('input-ports', p, [PORT_IN1, PORT_IN2])
-  t_out3   = restrict_slot(flow, 3, p_out)
-  t_in3    = restrict_slot(flow, 3, p_in)
-  produces = project_slots(t_out3, [1, 2])
-  consumes = project_slots(t_in3 , [2, 1])
-  d        = compose_binary(produces, consumes)
+  call p_out % declare()
+  call sets       % bind(p_out, listed_set_representation([PORT_OUT]))
+  call inclusions % include_in(p_out, p)
+  call p_in % declare()
+  call sets       % bind(p_in, listed_set_representation([PORT_IN1, PORT_IN2]))
+  call inclusions % include_in(p_in, p)
+  t_out3   = restrict_slot(flow, 3, p_out, sets, inclusions)
+  t_in3    = restrict_slot(flow, 3, p_in, sets, inclusions)
+  produces = project_slots(t_out3, [1, 2], sets)
+  consumes = project_slots(t_in3 , [2, 1], sets)
+  d        = compose_binary(produces, consumes, sets)
 
   ! 'learning': (S, P) as one sequence on each branch.
   call g % declare()
@@ -115,7 +129,7 @@ program learning_level_4
 
   ! The interpretive jump, made explicitly - and the selector dies
   ! the moment the reading exists.
-  view = directed_adjacency_view(g, bnd, d)
+  view = directed_adjacency_view(g, bnd, sets, d)
   deallocate(d)
 
   call check_view_domain(nfail)
@@ -136,10 +150,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
 
     dom = view % domain()
-    call report(dom % same_as(o) .and. dom % size() .eq. 2, &
+    call report(dom % same_as(o) .and. sets % size_of(dom) .eq. 2, &
          & "the view walks the operations, and nothing invented", nfail)
 
   end subroutine check_view_domain
@@ -153,19 +167,20 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(subset_set) :: src, snk
+    type(set_graph) :: src, snk
+    type(label_map)     :: labels
 
-    src = sources(view)
-    snk = sinks(view)
+    call sources(view, sets, labels, inclusions, src)
+    call sinks(view, sets, labels, inclusions, snk)
 
-    call report(src % size() .eq. 1 .and. src % has(OP_PREDICT) .and. &
-         &      .not. src % has(OP_ERROR), &
+    call report(sets % size_of(src) .eq. 1 .and. sets % has_in(src, OP_PREDICT) .and. &
+         &      .not. sets % has_in(src, OP_ERROR), &
          & "sources = { predict }, the selector long dead", nfail)
-    call report(snk % size() .eq. 1 .and. snk % has(OP_ERROR) .and. &
-         &      .not. snk % has(OP_PREDICT), &
+    call report(sets % size_of(snk) .eq. 1 .and. sets % has_in(snk, OP_ERROR) .and. &
+         &      .not. sets % has_in(snk, OP_PREDICT), &
          & "sinks = { error }", nfail)
 
-    call report(src % is_subobject_of(o) .and. snk % is_subobject_of(o), &
+    call report(declared_subobject(src, o, inclusions) .and. declared_subobject(snk, o, inclusions), &
          & "both answers stand embedded in the operations", nfail)
 
   end subroutine check_sources_and_sinks
@@ -179,14 +194,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(reachable(view, OP_PREDICT, OP_ERROR), &
-         & "reachable(predict, error) = true", nfail)
-    call report(.not. reachable(view, OP_ERROR, OP_PREDICT), &
-         & "reachable(error, predict) = false", nfail)
-    call report(reachable(view, OP_PREDICT, OP_PREDICT) .and. &
-         &      reachable(view, OP_ERROR, OP_ERROR), &
+    call report(reachable(view, sets, OP_PREDICT, OP_ERROR), &
+         & "reachable(predict, sets, error) = true", nfail)
+    call report(.not. reachable(view, sets, OP_ERROR, OP_PREDICT), &
+         & "reachable(error, sets, predict) = false", nfail)
+    call report(reachable(view, sets, OP_PREDICT, OP_PREDICT) .and. &
+         &      reachable(view, sets, OP_ERROR, OP_ERROR), &
          & "each operation reaches itself by the zero-length path", nfail)
-    call report(.not. reachable(view, 7, OP_ERROR), &
+    call report(.not. reachable(view, sets, 7, OP_ERROR), &
          & "an outsider reaches nothing", nfail)
 
   end subroutine check_reachability
@@ -202,7 +217,7 @@ contains
 
     integer, allocatable :: order(:)
 
-    call topological_order(view, order)
+    call topological_order(view, sets, order)
 
     call report(size(order) .eq. 2 .and. &
          &      order(1) .eq. OP_PREDICT .and. order(2) .eq. OP_ERROR, &

@@ -33,7 +33,11 @@ program learning_level_8
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier  , only : counted_set, subset_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
@@ -53,8 +57,8 @@ program learning_level_8
   ! Residual rows exist only from Level 6 upward.
   integer, parameter :: ROW_R = 1
 
-  type(counted_set)              :: v, o, p, y
-  type(subset_set)               :: k, theta, u, p_in, p_out
+  type(set_graph)              :: v, o, p, y
+  type(set_graph)               :: k, theta, u, p_in, p_out
   type(stored_relation)          :: flow, backwards, located
   type(stored_relation)          :: consumes, produces
   class(relation), allocatable   :: d, a, d2
@@ -79,6 +83,8 @@ program learning_level_8
   real(dp), allocatable          :: obs(:)
   integer                        :: table(3, 6)
   integer                        :: nfail
+  type(set_map)     :: sets
+  type(inclusion_map)     :: inclusions
 
   nfail = 0
 
@@ -86,13 +92,23 @@ program learning_level_8
   write(*,'(1x,a)') "learning tower . level 8 . constitution"
   write(*,'(1x,a)') "============================================="
 
-  v     = counted_set('value-slots'  , 5)
-  o     = counted_set('operations'   , 2)
-  p     = counted_set('ports'        , 3)
-  y     = counted_set('residual-rows', 1)
-  k     = subset_set('observed' , v, [SLOT_Y, SLOT_X])
-  theta = subset_set('trainable', v, [SLOT_W])
-  u     = subset_set('computed' , v, [SLOT_E, SLOT_YHAT])
+  call v % declare()
+  call sets % bind(v, counted_set_representation(5))
+  call o % declare()
+  call sets % bind(o, counted_set_representation(2))
+  call p % declare()
+  call sets % bind(p, counted_set_representation(3))
+  call y % declare()
+  call sets % bind(y, counted_set_representation(1))
+  call k % declare()
+  call sets       % bind(k, listed_set_representation([SLOT_Y, SLOT_X]))
+  call inclusions % include_in(k, v)
+  call theta % declare()
+  call sets       % bind(theta, listed_set_representation([SLOT_W]))
+  call inclusions % include_in(theta, v)
+  call u % declare()
+  call sets       % bind(u, listed_set_representation([SLOT_E, SLOT_YHAT]))
+  call inclusions % include_in(u, v)
 
   table(:, 1) = [OP_PREDICT, SLOT_W   , PORT_IN1]
   table(:, 2) = [OP_PREDICT, SLOT_X   , PORT_IN2]
@@ -100,26 +116,30 @@ program learning_level_8
   table(:, 4) = [OP_ERROR  , SLOT_YHAT, PORT_IN1]
   table(:, 5) = [OP_ERROR  , SLOT_Y   , PORT_IN2]
   table(:, 6) = [OP_ERROR  , SLOT_E   , PORT_OUT]
-  flow = stored_relation('flow', [o, v, p], table)
+  flow = stored_relation('flow', [o, v, p], table, sets)
 
   located = stored_relation('located', [y, v], &
-       & reshape([ROW_R, SLOT_E], [2, 1]))
+       & reshape([ROW_R, SLOT_E], [2, 1]), sets)
 
-  p_in  = subset_set('input-ports', p, [PORT_IN1, PORT_IN2])
-  p_out = subset_set('output-port', p, [PORT_OUT])
+  call p_in % declare()
+  call sets       % bind(p_in, listed_set_representation([PORT_IN1, PORT_IN2]))
+  call inclusions % include_in(p_in, p)
+  call p_out % declare()
+  call sets       % bind(p_out, listed_set_representation([PORT_OUT]))
+  call inclusions % include_in(p_out, p)
 
   ! The Level-5 observed field, carried forward: [6, 2] on K = {y, x}
   ! in declaration order. U gets NO field - before evaluation the
   ! computed domain owns no numbers, and that stays true.
-  q_k = field('observations', k)
+  q_k = field('observations', k, sets % size_of(k))
   call q_k % set_real_vector([6.0_dp, 2.0_dp])
   call q_k % get_real_vector(obs)
 
   ! The lower road, walked again: D derived, admitted, interpreted,
   ! sorted - the structure supplies the execution order.
-  consumes = project_slots(restrict_slot(flow, 3, p_in ), [2, 1])
-  produces = project_slots(restrict_slot(flow, 3, p_out), [1, 2])
-  d = compose_binary(produces, consumes)
+  consumes = project_slots(restrict_slot(flow, 3, p_in , sets, inclusions), [2, 1], sets)
+  produces = project_slots(restrict_slot(flow, 3, p_out, sets, inclusions), [1, 2], sets)
+  d = compose_binary(produces, consumes, sets)
   ! 'learning': (S, P) as one sequence on each branch.
   call g % declare()
   do kcell = 1, 3
@@ -150,8 +170,8 @@ program learning_level_8
 
   g % branch(1) = known_branch(scell(1))
   g % branch(2) = known_branch(rcell(1))
-  view = directed_adjacency_view(g, bnd, d)
-  call topological_order(view, order)
+  view = directed_adjacency_view(g, bnd, sets, d)
+  call topological_order(view, sets, order)
 
   call check_derived_order(nfail)
   call check_laws(nfail)
@@ -211,8 +231,8 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(abs(obs(k % local_index(SLOT_Y)) - 6.0_dp) < 1.0d-14 &
-         & .and. abs(obs(k % local_index(SLOT_X)) - 2.0_dp) < 1.0d-14, &
+    call report(abs(obs(sets % index_in(k, SLOT_Y)) - 6.0_dp) < 1.0d-14 &
+         & .and. abs(obs(sets % index_in(k, SLOT_X)) - 2.0_dp) < 1.0d-14, &
          & "K still answers y = 6 and x = 2, by enumeration", nfail)
 
   end subroutine check_observed_readback
@@ -230,22 +250,22 @@ contains
 
     real(dp) :: r(1)
 
-    call generated_residual(flow, located, v, y, k, obs, &
+    call generated_residual(flow, located, v, sets, y, k, obs, &
          & theta, [0.0_dp], u, order, r)
     call report(abs(r(1) + 6.0_dp) < 1.0d-12, &
          & "w = 0 generates r = -6: Level 7's affine constant", nfail)
 
-    call generated_residual(flow, located, v, y, k, obs, &
+    call generated_residual(flow, located, v, sets, y, k, obs, &
          & theta, [1.0_dp], u, order, r)
     call report(abs(r(1) + 4.0_dp) < 1.0d-12, &
          & "w = 1 generates r = -4", nfail)
 
-    call generated_residual(flow, located, v, y, k, obs, &
+    call generated_residual(flow, located, v, sets, y, k, obs, &
          & theta, [-1.0_dp], u, order, r)
     call report(abs(r(1) + 8.0_dp) < 1.0d-12, &
          & "w = -1 generates r = -8", nfail)
 
-    call generated_residual(flow, located, v, y, k, obs, &
+    call generated_residual(flow, located, v, sets, y, k, obs, &
          & theta, [3.0_dp], u, order, r)
     call report(abs(r(1)) < 1.0d-12, &
          & "w = 3 generates r = 0: the solution, evaluated - " // &
@@ -266,13 +286,13 @@ contains
     real(dp)              :: r(1)
     real(dp), allocatable :: trace(:)
 
-    call generated_residual(flow, located, v, y, k, obs, &
+    call generated_residual(flow, located, v, sets, y, k, obs, &
          & theta, [3.0_dp], u, order, r, trace=trace)
 
-    call report(abs(trace(v % local_index(SLOT_YHAT)) - 6.0_dp) &
+    call report(abs(trace(sets % index_in(v, SLOT_YHAT)) - 6.0_dp) &
          &      < 1.0d-12, &
          & "the laws computed yhat = 6 on the computed domain", nfail)
-    call report(abs(trace(v % local_index(SLOT_E))) < 1.0d-12, &
+    call report(abs(trace(sets % index_in(v, SLOT_E))) < 1.0d-12, &
          & "and e = 0 - produced, never preseeded", nfail)
 
   end subroutine check_intermediates
@@ -291,11 +311,12 @@ contains
 
     real(dp)             :: r(1)
     integer, allocatable :: touched(:)
-    integer              :: sup(theta % size())
+    integer, allocatable              :: sup(:)
     integer              :: ti, nsup, home
     logical              :: same
 
-    a = compose_binary(consumes, produces)
+    allocate(sup(sets % size_of(theta)))
+    a = compose_binary(consumes, produces, sets)
     ! 'value dependency': (S, P) as one sequence on each branch.
     call g_a % declare()
     do kcell2 = 1, 1
@@ -323,21 +344,21 @@ contains
 
     g_a % branch(1) = known_branch(scell2(1))
     g_a % branch(2) = known_branch(rcell2(1))
-    dep_view = directed_adjacency_view(g_a, bnd2, a)
+    dep_view = directed_adjacency_view(g_a, bnd2, sets, a)
 
-    home = located_slot(located, v, ROW_R)
+    home = located_slot(located, v, sets, ROW_R)
     nsup = 0
-    do ti = 1, theta % size()
-       if (reachable(dep_view, theta % member(ti), home)) then
+    do ti = 1, sets % size_of(theta)
+       if (reachable(dep_view, sets, sets % member_of(theta, ti), home)) then
           nsup      = nsup + 1
-          sup(nsup) = theta % member(ti)
+          sup(nsup) = sets % member_of(theta, ti)
        end if
     end do
 
     call report(nsup .eq. 1 .and. sup(1) .eq. SLOT_W, &
          & "the structural support of r is { w }, re-derived", nfail)
 
-    call generated_residual(flow, located, v, y, k, obs, &
+    call generated_residual(flow, located, v, sets, y, k, obs, &
          & theta, [1.0_dp], u, order, r, touched=touched)
 
     call report(size(touched) .eq. 1 .and. touched(1) .eq. SLOT_W, &
@@ -368,16 +389,16 @@ contains
     real(dp)              :: r(1)
     real(dp), allocatable :: obs2(:)
 
-    q_k2 = field('observations again', k)
+    q_k2 = field('observations again', k, sets % size_of(k))
     call q_k2 % set_real_vector([8.0_dp, 4.0_dp])
     call q_k2 % get_real_vector(obs2)
 
-    call generated_residual(flow, located, v, y, k, obs2, &
+    call generated_residual(flow, located, v, sets, y, k, obs2, &
          & theta, [2.0_dp], u, order, r)
     call report(abs(r(1)) < 1.0d-12, &
          & "with (y, x) = (8, 4): w = 2 generates r = 0", nfail)
 
-    call generated_residual(flow, located, v, y, k, obs2, &
+    call generated_residual(flow, located, v, sets, y, k, obs2, &
          & theta, [1.0_dp], u, order, r)
     call report(abs(r(1) + 4.0_dp) < 1.0d-12, &
          & "and w = 1 generates r = -4: data changed, " // &
@@ -402,11 +423,11 @@ contains
     do j = 1, 6
        rev(:, j) = table(:, 7 - j)
     end do
-    backwards = stored_relation('flow backwards', [o, v, p], rev)
+    backwards = stored_relation('flow backwards', [o, v, p], rev, sets)
 
     d2 = compose_binary( &
-         & project_slots(restrict_slot(backwards, 3, p_out), [1, 2]), &
-         & project_slots(restrict_slot(backwards, 3, p_in ), [2, 1]))
+         & project_slots(restrict_slot(backwards, 3, p_out, sets, inclusions), [1, 2], sets), &
+         & project_slots(restrict_slot(backwards, 3, p_in , sets, inclusions), [2, 1], sets), sets)
     ! 'learning backwards': (S, P) as one sequence on each branch.
     call g2 % declare()
     do kcell3 = 1, 3
@@ -437,12 +458,12 @@ contains
 
     g2 % branch(1) = known_branch(scell3(1))
     g2 % branch(2) = known_branch(rcell3(1))
-    view2 = directed_adjacency_view(g2, bnd3, d2)
-    call topological_order(view2, order2)
+    view2 = directed_adjacency_view(g2, bnd3, sets, d2)
+    call topological_order(view2, sets, order2)
 
-    call generated_residual(flow, located, v, y, k, obs, &
+    call generated_residual(flow, located, v, sets, y, k, obs, &
          & theta, [-2.0_dp], u, order, r_fwd, touched=touched)
-    call generated_residual(backwards, located, v, y, k, obs, &
+    call generated_residual(backwards, located, v, sets, y, k, obs, &
          & theta, [-2.0_dp], u, order2, r_back, touched=touched2)
 
     call report(abs(r_fwd(1) - r_back(1)) < 1.0d-14 .and. &

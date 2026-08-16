@@ -30,15 +30,21 @@ program learning_level_5
   use iso_fortran_env  , only : dp => REAL64
   use learning_assert  , only : report, verdict
   use learning_assert  , only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use class_graph_field, only : field
 
   implicit none
 
-  type(counted_set) :: v
-  type(subset_set)  :: k, theta, u
+  type(set_graph) :: v
+  type(set_graph)  :: k, theta, u
   type(field)       :: qk, theta0
   integer           :: nfail
+  type(set_map)     :: sets
+  type(inclusion_map)     :: inclusions
 
   nfail = 0
 
@@ -46,12 +52,19 @@ program learning_level_5
   write(*,'(1x,a)') "learning tower . level 5 . field calculus"
   write(*,'(1x,a)') "============================================="
 
-  v = counted_set('value-slots', 5)
+  call v % declare()
+  call sets % bind(v, counted_set_representation(5))
 
   ! The three roles, declared in deliberately nonnumeric order.
-  k     = subset_set('observed' , v, [SLOT_Y, SLOT_X])
-  theta = subset_set('trainable', v, [SLOT_W])
-  u     = subset_set('computed' , v, [SLOT_E, SLOT_YHAT])
+  call k % declare()
+  call sets       % bind(k, listed_set_representation([SLOT_Y, SLOT_X]))
+  call inclusions % include_in(k, v)
+  call theta % declare()
+  call sets       % bind(theta, listed_set_representation([SLOT_W]))
+  call inclusions % include_in(theta, v)
+  call u % declare()
+  call sets       % bind(u, listed_set_representation([SLOT_E, SLOT_YHAT]))
+  call inclusions % include_in(u, v)
 
   call check_partition(nfail)
   call check_observed_field(nfail)
@@ -79,25 +92,25 @@ contains
     integer :: i, m, homes
     logical :: ok
 
-    call report(k % size() .eq. 2 .and. k % has(SLOT_Y) .and. &
-         &      k % has(SLOT_X) .and. .not. k % has(SLOT_W), &
+    call report(sets % size_of(k) .eq. 2 .and. sets % has_in(k, SLOT_Y) .and. &
+         &      sets % has_in(k, SLOT_X) .and. .not. sets % has_in(k, SLOT_W), &
          & "K = { y, x }, the observations", nfail)
-    call report(theta % size() .eq. 1 .and. theta % has(SLOT_W) .and. &
-         &      .not. theta % has(SLOT_X), &
+    call report(sets % size_of(theta) .eq. 1 .and. sets % has_in(theta, SLOT_W) .and. &
+         &      .not. sets % has_in(theta, SLOT_X), &
          & "Theta = { w }, the one trainable", nfail)
-    call report(u % size() .eq. 2 .and. u % has(SLOT_E) .and. &
-         &      u % has(SLOT_YHAT) .and. .not. u % has(SLOT_Y), &
+    call report(sets % size_of(u) .eq. 2 .and. sets % has_in(u, SLOT_E) .and. &
+         &      sets % has_in(u, SLOT_YHAT) .and. .not. sets % has_in(u, SLOT_Y), &
          & "U = { e, yhat }, where answers will one day live", nfail)
 
-    call report(k % is_subobject_of(v) .and. &
-         &      theta % is_subobject_of(v) .and. &
-         &      u % is_subobject_of(v), &
+    call report(declared_subobject(k, v, inclusions) .and. &
+         &      declared_subobject(theta, v, inclusions) .and. &
+         &      declared_subobject(u, v, inclusions), &
          & "all three stand embedded in the value slots", nfail)
 
     ok = .true.
-    do i = 1, v % size()
-       m = v % member(i)
-       homes = count([k % has(m), theta % has(m), u % has(m)])
+    do i = 1, sets % size_of(v)
+       m = sets % member_of(v, i)
+       homes = count([sets % has_in(k, m), sets % has_in(theta, m), sets % has_in(u, m)])
        ok = ok .and. (homes .eq. 1)
     end do
     call report(ok, &
@@ -115,13 +128,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
     real(dp), allocatable          :: val(:)
 
-    qk = field('observations', k)
+    qk = field('observations', k, sets % size_of(k))
     call qk % set_real_vector([6.0_dp, 2.0_dp])
 
-    call qk % domain(dom)
+    dom = qk % domain()
     call report(dom % same_as(k), &
          & "the data field's domain is K, by identity", nfail)
     call report(qk % num_entries() .eq. 2 .and. &
@@ -129,9 +142,9 @@ contains
          & "two entries, one component", nfail)
 
     call qk % get_real_vector(val)
-    call report(abs(val(k % local_index(SLOT_Y)) - 6.0_dp) < 1.0d-14, &
+    call report(abs(val(sets % index_in(k, SLOT_Y)) - 6.0_dp) < 1.0d-14, &
          & "y = 6, read through the domain map", nfail)
-    call report(abs(val(k % local_index(SLOT_X)) - 2.0_dp) < 1.0d-14, &
+    call report(abs(val(sets % index_in(k, SLOT_X)) - 2.0_dp) < 1.0d-14, &
          & "x = 2", nfail)
     call report(abs(val(1) - 6.0_dp) < 1.0d-14 .and. &
          &      abs(val(2) - 2.0_dp) < 1.0d-14, &
@@ -148,20 +161,20 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
     real(dp), allocatable          :: val(:)
 
-    theta0 = field('parameters', theta)
+    theta0 = field('parameters', theta, sets % size_of(theta))
     call theta0 % set_real_vector([0.0_dp])
 
-    call theta0 % domain(dom)
+    dom = theta0 % domain()
     call report(dom % same_as(theta), &
          & "the parameter field's domain is Theta, by identity", nfail)
     call report(theta0 % num_entries() .eq. 1, &
          & "one trainable entry", nfail)
 
     call theta0 % get_real_vector(val)
-    call report(abs(val(theta % local_index(SLOT_W))) < 1.0d-14, &
+    call report(abs(val(sets % index_in(theta, SLOT_W))) < 1.0d-14, &
          & "w = 0: training has not happened, and nothing pretends it has", &
          & nfail)
 
@@ -176,10 +189,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dk, dt
+    type(set_graph) :: dk, dt
 
-    call qk % domain(dk)
-    call theta0 % domain(dt)
+    dk = qk % domain()
+    dt = theta0 % domain()
 
     call report(.not. dk % same_as(theta) .and. .not. dt % same_as(k), &
          & "observed and trainable are distinguished by domain alone", &

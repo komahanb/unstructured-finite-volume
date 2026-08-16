@@ -41,7 +41,12 @@ module learning_residual_fixture
 
   use iso_fortran_env  , only : dp => REAL64
   use learning_assert  , only : SLOT_W
-  use graph_carrier    , only : member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_set_representation, only : set_representation
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_grammar    , only : graph, graph_field, graph_operation
   use class_graph_field, only : field
 
@@ -53,7 +58,12 @@ module learning_residual_fixture
   integer, parameter :: ROW_R = 1
 
   type, extends(graph_operation) :: affine_learning_residual
-     class(member_set), allocatable :: theta, y
+     ! Identity, count, and the action's OWN coordinates: a
+     ! representation carries no identity, so holding one keeps this
+     ! type free of any caller's map.
+     type(set_graph) :: theta, y
+     integer         :: n_theta = 0, n_y = 0
+     class(set_representation), allocatable :: c_theta, c_y
      real(dp)                       :: x_data, y_data
    contains
      procedure :: name   => oracle_name
@@ -67,12 +77,15 @@ module learning_residual_fixture
 
 contains
 
-  type(affine_learning_residual) function create_oracle(theta, y, &
+  type(affine_learning_residual) function create_oracle(theta, y, sets, &
        & x_data, y_data) result(this)
-    class(member_set), intent(in) :: theta, y
-    real(dp)         , intent(in) :: x_data, y_data
-    allocate(this % theta, source=theta)
-    allocate(this % y    , source=y)
+    type(set_graph), intent(in) :: theta, y
+    type(set_map)  , intent(in) :: sets
+    real(dp)       , intent(in) :: x_data, y_data
+    this % theta = theta ; this % n_theta = sets % size_of(theta)
+    this % y     = y     ; this % n_y     = sets % size_of(y)
+    call sets % extent_of(theta, this % c_theta)
+    call sets % extent_of(y    , this % c_y)
     this % x_data = x_data
     this % y_data = y_data
   end function create_oracle
@@ -83,12 +96,15 @@ contains
     name = 'affine learning residual oracle'
   end function oracle_name
 
-  subroutine oracle_domain(this, input_graph, domain)
+  subroutine oracle_domain(this, input_graph, domain, nentries)
     class(affine_learning_residual), intent(in) :: this
     class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
+    integer         :: n_y
     associate (u1 => input_graph); end associate
-    allocate(domain, source=this % y)
+    domain   = this % y
+    nentries = this % n_y
   end subroutine oracle_domain
 
   subroutine oracle_apply(this, input_graph, input_data, output)
@@ -99,13 +115,14 @@ contains
     class(graph_field), allocatable, intent(inout) :: output
 
     type(field)                    :: out
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
     real(dp), allocatable          :: q(:), r(:)
     real(dp)                       :: w
+    integer         :: n_y
 
     associate (u1 => input_graph); end associate
 
-    call input_data(1) % domain(dom)
+    dom = input_data(1) % domain()
     if (.not. dom % same_as(this % theta)) then
        error stop 'oracle: the state must live on the trainable domain'
     end if
@@ -113,12 +130,12 @@ contains
 
     ! The parameter, through Theta's own enumeration - never by
     ! assuming member integer = vector position.
-    w = q(this % theta % local_index(SLOT_W))
+    w = q(this % c_theta % local_index(SLOT_W))
 
     allocate(r(1))
-    r(this % y % local_index(ROW_R)) = this % x_data * w - this % y_data
+    r(this % c_y % local_index(ROW_R)) = this % x_data * w - this % y_data
 
-    out = field('residual', this % y)
+    out = field('residual', this % y, this % n_y)
     call out % set_real_vector(r)
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
@@ -131,58 +148,69 @@ program learning_level_7
 
   use iso_fortran_env  , only : dp => REAL64
   use learning_assert  , only : report, verdict, SLOT_W
-  use graph_carrier    , only : counted_set, subset_set, member_set
   use graph_grammar    , only : graph_field
   use class_graph_field, only : field
   use class_graph      , only : stored_graph
   use class_graph_gmres, only : gmres
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use learning_residual_fixture, only : affine_learning_residual, ROW_R
 
   implicit none
 
-  type(counted_set)     :: v, y, hv
-  type(subset_set)      :: theta
+  type(set_graph)     :: v, y, hv
+  type(set_graph)      :: theta
   type(stored_graph)    :: host
   type(affine_learning_residual) :: oracle, witness
   type(gmres)           :: solver, fitter
   type(field)           :: state
   class(graph_field), allocatable :: resid
-  class(member_set), allocatable  :: dom
+  type(set_graph)  :: dom
   real(dp), allocatable :: g(:), rhs(:), w_state(:), rr(:)
   real(dp)              :: achieved
   integer               :: nfail
+  type(inclusion_map)     :: inclusions
+  integer         :: n_dom
+  type(set_map)     :: sets
 
   nfail = 0
   write(*,'(1x,a)') "============================================="
   write(*,'(1x,a)') "learning tower . level 7 . minimization"
   write(*,'(1x,a)') "============================================="
 
-  v     = counted_set('value-slots'  , 5)
-  theta = subset_set('trainable', v, [SLOT_W])
-  y     = counted_set('residual-rows', 1)
+  call v % declare()
+  call sets % bind(v, counted_set_representation(5))
+  call theta % declare()
+  call sets       % bind(theta, listed_set_representation([SLOT_W]))
+  call inclusions % include_in(theta, v)
+  call y % declare()
+  call sets % bind(y, counted_set_representation(1))
 
   ! Seven vertices: the wrong size for everything, on purpose.
   host = stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
 
   ! The primary training problem: (x, y) = (2, 6), supplied as data.
-  oracle = affine_learning_residual(theta, y, 2.0_dp, 6.0_dp)
+  oracle = affine_learning_residual(theta, y, sets, 2.0_dp, 6.0_dp)
 
   call report(.not. theta % same_as(y), &
        & "Theta and Y are distinct domains, cardinality " // &
        & "notwithstanding", nfail)
   hv = host % vertex_set()
   call report(.not. hv % same_as(theta) .and. &
-       &      host % num_vertices() /= theta % size(), &
+       &      host % num_vertices() /= sets % size_of(theta), &
        & "the host's seven vertices are nobody's trainables", nfail)
 
-  call solver % attach(oracle, host, theta)
+  call solver % attach(oracle, host, theta, sets % size_of(theta))
   solver % tolerance      = 1.0d-12
   solver % max_iterations = 50
 
-  call solver % domain(host, dom)
+  call solver % domain(host, dom, n_dom)
   call report(dom % same_as(theta), &
        & "the solver's answer domain is Theta, by identity", nfail)
-  call oracle % domain(host, dom)
+  call oracle % domain(host, dom, n_dom)
   call report(dom % same_as(y), &
        & "and the oracle answers on Y", nfail)
 
@@ -201,15 +229,15 @@ program learning_level_7
 
   call report(achieved < 1.0d-10, &
        & "the residual is driven below tolerance", nfail)
-  call report(abs(w_state(theta % local_index(SLOT_W)) - 3.0_dp) &
+  call report(abs(w_state(sets % index_in(theta, SLOT_W)) - 3.0_dp) &
        &      < 1.0d-9, &
        & "learned w = 3, read through Theta's enumeration", nfail)
-  call report(abs(w_state(theta % local_index(SLOT_W))) > 1.0_dp, &
+  call report(abs(w_state(sets % index_in(theta, SLOT_W))) > 1.0_dp, &
        & "and the parameter actually MOVED: w = 3 is not w0 = 0", &
        & nfail)
 
   ! Direct confirmation through the oracle itself: R(w_learned) = 0.
-  state = field('state', theta)
+  state = field('state', theta, sets % size_of(theta))
   call state % set_real_vector(w_state)
   call oracle % apply(host, [state], resid)
   call resid % get_real_vector(rr)
@@ -220,8 +248,8 @@ program learning_level_7
   ! The anti-hardcode witness: the SAME fixture, the SAME solver
   ! path, handed (x, y) = (4, 8) - and it fits w = 2, because the
   ! machinery solves x*w = y; it never recites 3.
-  witness = affine_learning_residual(theta, y, 4.0_dp, 8.0_dp)
-  call fitter % attach(witness, host, theta)
+  witness = affine_learning_residual(theta, y, sets, 4.0_dp, 8.0_dp)
+  call fitter % attach(witness, host, theta, sets % size_of(theta))
   fitter % tolerance      = 1.0d-12
   fitter % max_iterations = 50
 
@@ -231,7 +259,7 @@ program learning_level_7
   call fitter % solve(rhs, w_state, achieved)
 
   call report(achieved < 1.0d-10 .and. &
-       &      abs(w_state(theta % local_index(SLOT_W)) - 2.0_dp) &
+       &      abs(w_state(sets % index_in(theta, SLOT_W)) - 2.0_dp) &
        &      < 1.0d-9, &
        & "(x,y) = (4,8) fits w = 2: fitted, never recited", nfail)
 

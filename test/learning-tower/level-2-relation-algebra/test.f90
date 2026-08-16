@@ -26,20 +26,26 @@ program learning_level_2
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier  , only : counted_set, subset_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
 
   implicit none
 
-  type(counted_set)            :: v, o, p
-  type(subset_set)             :: p_out, p_in
+  type(set_graph)            :: v, o, p
+  type(set_graph)             :: p_out, p_in
   type(stored_relation)        :: flow, backwards
   type(stored_relation)        :: t_out3, t_in3, produces, consumes
   class(relation), allocatable :: d, d2
   integer                      :: table(3, 6)
   integer                      :: nfail
+  type(set_map)     :: sets
+  type(inclusion_map)     :: inclusions
 
   nfail = 0
 
@@ -47,9 +53,12 @@ program learning_level_2
   write(*,'(1x,a)') "learning tower . level 2 . relation algebra"
   write(*,'(1x,a)') "============================================="
 
-  v = counted_set('value-slots', 5)
-  o = counted_set('operations' , 2)
-  p = counted_set('ports'      , 3)
+  call v % declare()
+  call sets % bind(v, counted_set_representation(5))
+  call o % declare()
+  call sets % bind(o, counted_set_representation(2))
+  call p % declare()
+  call sets % bind(p, counted_set_representation(3))
 
   table(:, 1) = [OP_PREDICT, SLOT_W   , PORT_IN1]
   table(:, 2) = [OP_PREDICT, SLOT_X   , PORT_IN2]
@@ -57,11 +66,15 @@ program learning_level_2
   table(:, 4) = [OP_ERROR  , SLOT_YHAT, PORT_IN1]
   table(:, 5) = [OP_ERROR  , SLOT_Y   , PORT_IN2]
   table(:, 6) = [OP_ERROR  , SLOT_E   , PORT_OUT]
-  flow = stored_relation('flow', [o, v, p], table)
+  flow = stored_relation('flow', [o, v, p], table, sets)
 
   ! The structural selectors: which ports mean leaving, arriving.
-  p_out = subset_set('output-port', p, [PORT_OUT])
-  p_in  = subset_set('input-ports', p, [PORT_IN1, PORT_IN2])
+  call p_out % declare()
+  call sets       % bind(p_out, listed_set_representation([PORT_OUT]))
+  call inclusions % include_in(p_out, p)
+  call p_in % declare()
+  call sets       % bind(p_in, listed_set_representation([PORT_IN1, PORT_IN2]))
+  call inclusions % include_in(p_in, p)
 
   call check_restrictions(nfail)
   call check_projections(nfail)
@@ -80,8 +93,8 @@ contains
 
     integer, intent(inout) :: nfail
 
-    t_out3 = restrict_slot(flow, 3, p_out)
-    t_in3  = restrict_slot(flow, 3, p_in)
+    t_out3 = restrict_slot(flow, 3, p_out, sets, inclusions)
+    t_in3  = restrict_slot(flow, 3, p_in, sets, inclusions)
 
     call report(t_out3 % num_tuples() .eq. 2 .and. &
          &      t_out3 % has([OP_PREDICT, SLOT_YHAT, PORT_OUT]) .and. &
@@ -107,10 +120,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
 
-    produces = project_slots(t_out3, [1, 2])
-    consumes = project_slots(t_in3 , [2, 1])
+    produces = project_slots(t_out3, [1, 2], sets)
+    consumes = project_slots(t_in3 , [2, 1], sets)
 
     dom = produces % domain(1)
     call report(dom % same_as(o), &
@@ -149,14 +162,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
 
     call report(produces % has([OP_PREDICT, SLOT_YHAT]) .and. &
          &      consumes % has([SLOT_YHAT, OP_ERROR]), &
          & "the witness: predict produces yhat and error consumes it", &
          & nfail)
 
-    d = compose_binary(produces, consumes)
+    d = compose_binary(produces, consumes, sets)
 
     dom = d % domain(1)
     call report(dom % same_as(o), &
@@ -189,7 +202,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_relation)          :: out2, in2, prod2, cons2
-    class(member_set), allocatable :: da, db
+    type(set_graph) :: da, db
     integer                        :: rev(3, 6), j
     integer, allocatable           :: dt(:,:), dt2(:,:)
     logical                        :: ok
@@ -197,13 +210,13 @@ contains
     do j = 1, 6
        rev(:, j) = table(:, 7 - j)
     end do
-    backwards = stored_relation('flow backwards', [o, v, p], rev)
+    backwards = stored_relation('flow backwards', [o, v, p], rev, sets)
 
-    out2  = restrict_slot(backwards, 3, p_out)
-    in2   = restrict_slot(backwards, 3, p_in)
-    prod2 = project_slots(out2, [1, 2])
-    cons2 = project_slots(in2 , [2, 1])
-    d2    = compose_binary(prod2, cons2)
+    out2  = restrict_slot(backwards, 3, p_out, sets, inclusions)
+    in2   = restrict_slot(backwards, 3, p_in, sets, inclusions)
+    prod2 = project_slots(out2, [1, 2], sets)
+    cons2 = project_slots(in2 , [2, 1], sets)
+    d2    = compose_binary(prod2, cons2, sets)
 
     call report(d2 % num_tuples() .eq. d % num_tuples(), &
          & "|D1| = |D2|", nfail)

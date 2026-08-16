@@ -311,9 +311,9 @@ contains
     integer                         :: k
 
     ! A listed domain: sparse, unordered-world indices. It was a
-    ! second member_set concretion once, to prove the relation generic
-    ! over carriers; the generality now lives in the representation,
-    ! so the fixture is gone and this is one bind.
+    ! second set subtype once, to prove the relation generic over
+    ! carriers; the generality now lives in the representation, so
+    ! the fixture is gone and this is one bind.
     call edges % declare()
     call sets  % bind(edges, listed_set_representation([30, 10, 20]))
     call verts % declare()

@@ -38,7 +38,7 @@
 ! workspace keeps its separate availability flags).
 !
 ! Everything is parameterized by the abstract contracts -
-! class(relation), class(member_set) - handed in by the caller: no
+! class(relation), set identities - handed in by the caller: no
 ! derivative singleton, no stored-type demands, no graph argument.
 ! What the evaluators consume is T_flow incidences, the DERIVED
 ! order, primal values, and the law table: the structural J-pattern

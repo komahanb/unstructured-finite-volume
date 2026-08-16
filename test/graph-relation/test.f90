@@ -11,8 +11,8 @@
 ! as readings of one primitive, the boundary written with no
 ! imaginary far-side member, SET semantics at the interface (a
 ! duplicate tuple collapses), and a signature genuinely generic
-! over member_set - proved by mixing a counted carrier with the
-! listed fixture in one relation.
+! over the REPRESENTATION - proved by mixing a counted set with a
+! listed one in one relation.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -224,9 +224,9 @@ contains
   end subroutine check_carrier_set_semantics
 
   !===================================================================!
-  ! The signature is generic over member_set, proved: a counted set
-  ! and a listed fixture stand in one signature, each slot judging
-  ! membership by its own law and answering its own identity.
+  ! The signature is generic over the representation, proved: a
+  ! counted set and a listed one stand in one signature, each slot
+  ! judged by its own representation and answering its own identity.
   !===================================================================!
 
   subroutine check_mixed_carriers(nfail)

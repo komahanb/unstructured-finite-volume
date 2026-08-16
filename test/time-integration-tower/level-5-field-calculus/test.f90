@@ -13,8 +13,8 @@
 !      STATE VALUES LIVE ON Q, INDEPENDENTLY OF ANY GRAPH.
 !
 ! No graph is constructed at this level. None is needed: production
-! field calculus already says a field is a function over one
-! member_set, and Q is a member_set. That capability is not
+! field calculus already says a field is a function over one set
+! identity, and Q is one. That capability is not
 ! discovered here - it is EXERCISED here, by a client whose state
 ! domain is emphatically not anybody's vertex set.
 !

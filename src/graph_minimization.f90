@@ -4,7 +4,7 @@
 ! The first level with a goal, and its law in one line: given a
 ! residual map R : U -> Y, vary the values on the UNKNOWN domain U
 ! to drive the values on the RESIDUAL domain Y toward zero. U and Y
-! are member_set identities - never assumed to be anyone's
+! are set graph identities - never assumed to be anyone's
 ! vertices; the graph argument survives only as the legacy
 ! operation host the compatibility apply() signature still wants. This
 ! module holds the minimizer base - ONE family for one story:

@@ -506,7 +506,7 @@ contains
     ! ---- ANSWERED: the nucleus alone drew it.
     pic = sparsity_picture(d1, sets, labels)
     call report(pic % at(3) .eq. 'p       # # . .', &
-         & "D1 : X0 -> X1 WAS RENDERED FROM member_set, relation and " // &
+         & "D1 : X0 -> X1 WAS RENDERED FROM set, relation and " // &
          & "graph-owned structure alone - no ordinary graph was " // &
          & "required at this radius", nfail)
 

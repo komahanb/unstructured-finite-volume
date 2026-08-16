@@ -96,7 +96,7 @@ module graph_calculus
   ! GRAPH_SIDE_VERTEX / GRAPH_SIDE_EDGE are the legacy differential
   ! operator's output-LANDING choices - which side its answer lands
   ! on - and nothing else. They are not field-domain identity, not
-  ! support identity, not a support side: domains are member_set
+  ! support identity, not a support side: domains are set graph
   ! identities, and the support-as-edgeless-graph ontology is
   ! retired.
   integer, parameter :: GRAPH_SIDE_VERTEX = 1

@@ -16,7 +16,7 @@
 ! ever stands for "not yet" - absence is a separate flag.
 !
 ! Everything else is structural delegation, parameterized by the
-! abstract contracts - class(relation), class(member_set) - handed
+! abstract contracts - class(relation), set identities - handed
 ! in by the caller: no learning singleton, no stored-type demands.
 ! The slot on a port and the located slot of a row are DISCOVERED
 ! by uniqueness scans and refused otherwise; no slot name is wired

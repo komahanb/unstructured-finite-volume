@@ -7,7 +7,7 @@
 !      OP_PLUS  -> x + y          OP_TIMES -> x * y
 !
 ! Everything else here is structural delegation, parameterized by
-! explicit abstract contracts - class(relation), class(member_set) -
+! explicit abstract contracts - class(relation), and set identities -
 ! handed in by the caller: no global calculator singleton, no
 ! stored-type demands. The producer of a slot, the slot on a port,
 ! the located slot of a row are DISCOVERED by uniqueness scans and

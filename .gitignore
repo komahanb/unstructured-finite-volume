@@ -45,3 +45,5 @@ test/visualization-tower/*/run
 test/visualization-tower/*/refusal
 test/visualization-tower/*/run.out
 test/graph-partition/run
+test/graph-set-view/run
+test/graph-set-view/refusal

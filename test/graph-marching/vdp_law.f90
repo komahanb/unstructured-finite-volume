@@ -16,7 +16,7 @@ module vdp_fixture
   use iso_fortran_env    , only : dp => REAL64
   use graph_grammar      , only : graph, graph_field, graph_operation
   use graph_calculus     , only : GRAPH_SIDE_VERTEX
-  use graph_carrier         , only : member_set, counted_set, subset_set
+  use graph_grammar         , only : set_graph
   use class_graph_field  , only : field
 
   implicit none
@@ -76,28 +76,34 @@ contains
     name = 'van der pol, transposed'
   end function adjoint_name
 
-  subroutine law_domain(this, input_graph, domain)
+  subroutine law_domain(this, input_graph, domain, nentries)
     class(vdp_law), intent(in) :: this
     class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
     associate (u1 => this); end associate
-    call input_graph % all_vertices(domain)
+    domain   = input_graph % all_vertices()
+    nentries = input_graph % num_vertices()
   end subroutine law_domain
 
-  subroutine law_domain2(this, input_graph, domain)
+  subroutine law_domain2(this, input_graph, domain, nentries)
     class(vdp_tangent_law), intent(in) :: this
     class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
     associate (u1 => this); end associate
-    call input_graph % all_vertices(domain)
+    domain   = input_graph % all_vertices()
+    nentries = input_graph % num_vertices()
   end subroutine law_domain2
 
-  subroutine law_domain3(this, input_graph, domain)
+  subroutine law_domain3(this, input_graph, domain, nentries)
     class(vdp_adjoint_law), intent(in) :: this
     class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
     associate (u1 => this); end associate
-    call input_graph % all_vertices(domain)
+    domain   = input_graph % all_vertices()
+    nentries = input_graph % num_vertices()
   end subroutine law_domain3
 
   subroutine law_apply(this, input_graph, input_data, output)
@@ -181,12 +187,12 @@ contains
     real(dp), intent(in) :: s(:)
     class(graph_field), allocatable, intent(inout) :: output
 
-    type(counted_set) :: cells
+    type(set_graph) :: cells
     type(field)   :: out
     integer :: v
 
     cells = input_graph % vertex_set()
-    out = field('velocity', cells, ncomp=size(s))
+    out = field('velocity', cells, input_graph % num_vertices(), ncomp=size(s))
     call out % set_real_vector(s)
 
     if (allocated(output)) deallocate(output)

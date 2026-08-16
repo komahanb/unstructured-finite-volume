@@ -199,8 +199,23 @@ contains
     ! The residual domain is the action's own answer.
     call action % domain(on, this % residual_domain, this % n_residual_domain)
 
+    !----------------------------------------------------------------!
+    ! attach is re-enterable - Newton calls it once per iteration - and
+    ! a graph signs ONCE. The old counted_set constructor minted a
+    ! fresh number domain on every attach, so a fresh one is minted
+    ! here too, by resetting the component to an unsigned graph before
+    ! declaring it. Signing the same variable twice is refused, and
+    ! rightly; this says which of the two meanings was intended.
+    !----------------------------------------------------------------!
+
     n = this % n_unknown_domain
+
+    block
+      type(set_graph) :: unsigned
+      this % numbers = unsigned
+    end block
     call this % numbers % declare()
+
     this % n_numbers = n * this % ncomp
 
     allocate(zero(n * this % ncomp))

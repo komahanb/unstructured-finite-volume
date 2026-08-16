@@ -20,7 +20,9 @@ module cubic_statement_fixture
   use iso_fortran_env, only : dp => REAL64
   use graph_grammar  , only : graph, graph_field, graph_operation
   use graph_calculus , only : GRAPH_SIDE_VERTEX
-  use graph_carrier         , only : member_set, counted_set, subset_set
+  ! An action names a domain and counts it. It asks no membership,
+  ! so it holds no map: identity and count is the whole of it.
+  use fractal_graph      , only : set_graph => graph
   use class_graph_field  , only : field
   use class_graph_differential_operator, only : differential_operator
 
@@ -56,11 +58,13 @@ contains
     name = 'cubic statement'
   end function cubic_name
 
-  subroutine cubic_domain(this, input_graph, domain)
+  subroutine cubic_domain(this, input_graph, domain, nentries)
     class(cubic_statement), intent(in)     :: this
     class(graph), intent(in)               :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
-    call input_graph % all_vertices(domain)
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
+    domain   = input_graph % all_vertices()
+    nentries = input_graph % num_vertices()
   end subroutine cubic_domain
 
   subroutine cubic_apply(this, input_graph, input_data, output)
@@ -70,7 +74,7 @@ contains
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
-    type(counted_set) :: cells
+    type(set_graph)   :: cells
     type(field)   :: out
     real(dp), allocatable :: q(:), y(:)
     integer :: nv, v
@@ -87,7 +91,7 @@ contains
     end if
 
     cells = input_graph % vertex_set()
-    out = field('cubic', cells)
+    out = field('cubic', cells, nv)
     call out % set_real_vector(y)
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
@@ -98,8 +102,11 @@ end module cubic_statement_fixture
 
 program test_graph_minimization
 
-  use graph_carrier, only : member_set, counted_set, subset_set
   use iso_fortran_env, only : dp => REAL64
+  use fractal_graph  , only : set_graph => graph
+  use graph_set_map  , only : set_map
+  use graph_label_map, only : label_map
+  use graph_inclusion_map, only : inclusion_map
   use graph_grammar  , only : graph
   use class_graph_mesh   , only : mesh
   use class_mesh_builder , only : mesh_from_gmsh
@@ -210,7 +217,11 @@ contains
     real(dp), intent(in)              :: kappa
     real(dp), allocatable, intent(out) :: c(:), b(:)
 
-    class(member_set), allocatable :: members
+    type(set_graph)       :: members
+    type(set_map)         :: sets
+    type(label_map)       :: labels
+    type(inclusion_map)   :: inclusions
+    integer , allocatable :: face(:)
     real(dp), allocatable :: cw(:), bw(:)
     integer :: k, f, e
 
@@ -219,11 +230,12 @@ contains
     b = 0.0_dp
 
     do k = 1, size(conditions)
-       call conditions(k) % faces(m, members)
+       call conditions(k) % faces(m, sets, labels, inclusions, members)
        call conditions(k) % operator_coefficients(m, kappa, cw)
        call conditions(k) % boundary_values(m, bw)
-       do f = 1, members % size()
-          e = members % member(f)
+       call sets % members_of(members, face)
+       do f = 1, size(face)
+          e = face(f)
           c(e) = cw(f)
           b(e) = bw(f)
        end do
@@ -249,7 +261,7 @@ contains
     integer :: v, i
 
     m = chain_mesh()
-    call js % attach(chain_operator(m), m, m % vertex_set(), coupling = m)
+    call js % attach(chain_operator(m), m, m % vertex_set(), m % num_vertices(), coupling = m)
 
     call js % diagonal(d)
     call report(all(abs(d - [-3.0_dp, -2.0_dp, -3.0_dp]) < 1.0d-12), &
@@ -289,7 +301,7 @@ contains
     real(dp), parameter :: exact(3) = [5.0_dp/3.0_dp, 5.0_dp, 25.0_dp/3.0_dp]
 
     m = chain_mesh()
-    call js % attach(chain_operator(m), m, m % vertex_set(), coupling = m)
+    call js % attach(chain_operator(m), m, m % vertex_set(), m % num_vertices(), coupling = m)
     js % max_iterations = 5000
     js % tolerance      = 1.0d-12
 
@@ -343,7 +355,8 @@ contains
     end block
 
     call cg % attach(vertex_differential_operator(order=2, &
-         & coefficients=c, spacings=deltas), m, m % vertex_set())
+         & coefficients=c, spacings=deltas), m, m % vertex_set(), &
+         & m % num_vertices())
     cg % max_iterations = 2000
     cg % tolerance      = 1.0d-10
 
@@ -382,7 +395,7 @@ contains
     real(dp), parameter :: exact(3) = [5.0_dp/3.0_dp, 5.0_dp, 25.0_dp/3.0_dp]
 
     m = chain_mesh()
-    call gs % attach(chain_operator(m), m, m % vertex_set(), coupling = m)
+    call gs % attach(chain_operator(m), m, m % vertex_set(), m % num_vertices(), coupling = m)
     gs % max_iterations = 2000
     gs % tolerance      = 1.0d-12
 
@@ -423,7 +436,7 @@ contains
 
     m = chain_mesh()
 
-    call gm % attach(chain_operator(m), m, m % vertex_set())
+    call gm % attach(chain_operator(m), m, m % vertex_set(), m % num_vertices())
     gm % tolerance = 1.0d-12
     call gm % constant(g)
     rhs = -g
@@ -443,7 +456,7 @@ contains
          &      coefficients=[0.4_dp, 0.4_dp, 0.0_dp, 0.0_dp], &
          &      one_sided=.true.)])
 
-    call gm % attach(statement, m, m % vertex_set())
+    call gm % attach(statement, m, m % vertex_set(), m % num_vertices())
     call gm % constant(g)
     rhs = -g
     x = 0.0_dp
@@ -451,7 +464,7 @@ contains
     call report(achieved < 1.0d-10, &
          & 'gmres closes the unsymmetric statement', nfail)
 
-    call js % attach(statement, m, m % vertex_set(), coupling = m)
+    call js % attach(statement, m, m % vertex_set(), m % num_vertices(), coupling = m)
     js % max_iterations = 5000
     js % tolerance      = 1.0d-12
     allocate(xj(3))
@@ -488,7 +501,7 @@ contains
     ns % inner % tolerance = 1.0d-12
     ns % tolerance = 1.0d-7
 
-    call ns % attach(action, m, m % vertex_set())
+    call ns % attach(action, m, m % vertex_set(), m % num_vertices())
 
     allocate(q(3))
     q = 0.0_dp

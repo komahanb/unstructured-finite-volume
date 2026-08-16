@@ -5,14 +5,17 @@
 !=====================================================================!
 module lopsided_fixture
   use iso_fortran_env  , only : dp => REAL64
-  use graph_carrier    , only : member_set, counted_set
+  ! An action names a domain and counts it. It holds no map: the
+  ! identity and the count are the whole of what it is entitled to.
+  use fractal_graph    , only : set_graph => graph
   use graph_grammar    , only : graph, graph_field, graph_operation
   use class_graph_field, only : field
   implicit none
   private
   public :: lopsided
   type, extends(graph_operation) :: lopsided
-     type(counted_set) :: y
+     type(set_graph) :: y
+     integer         :: n_y = 0
    contains
      procedure :: name => l_name
      procedure :: domain => l_domain
@@ -24,12 +27,14 @@ contains
     character(len=:), allocatable :: name
     name = 'lopsided'
   end function l_name
-  subroutine l_domain(this, input_graph, domain)
+  subroutine l_domain(this, input_graph, domain, nentries)
     class(lopsided), intent(in) :: this
     class(graph), intent(in) :: input_graph
-    class(member_set), allocatable, intent(out) :: domain
+    type(set_graph), intent(out) :: domain
+    integer        , intent(out) :: nentries
     associate (u => input_graph); end associate
-    allocate(domain, source=this % y)
+    domain   = this % y
+    nentries = this % n_y
   end subroutine l_domain
   subroutine l_apply(this, input_graph, input_data, output)
     class(lopsided), intent(in) :: this
@@ -38,7 +43,7 @@ contains
     class(graph_field), allocatable, intent(inout) :: output
     type(field) :: out
     associate (u => input_graph, u2 => input_data); end associate
-    out = field('r', this % y)
+    out = field('r', this % y, this % n_y)
     call out % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp])
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
@@ -46,20 +51,30 @@ contains
 end module lopsided_fixture
 
 program minimization_refusal
-  use graph_carrier    , only : counted_set, subset_set
+  use fractal_graph           , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map           , only : set_map
+  use graph_inclusion_map     , only : inclusion_map
   use class_graph      , only : stored_graph
   use class_graph_gmres, only : gmres
   use lopsided_fixture , only : lopsided
   implicit none
-  type(stored_graph) :: host
-  type(counted_set)  :: x
-  type(subset_set)   :: u
-  type(lopsided)     :: action
-  type(gmres)        :: solver
+  type(stored_graph)  :: host
+  type(set_graph)     :: x, u
+  type(lopsided)      :: action
+  type(gmres)         :: solver
+  type(set_map)       :: sets
+  type(inclusion_map) :: inclusions
   host = stored_graph(4, tails=[1,2,3], heads=[2,3,4])
-  x = counted_set('slots', 5)
-  u = subset_set('unknowns', x, [5, 1])       ! two unknowns
-  action % y = counted_set('rows', 3)          ! three residuals
-  call solver % attach(action, host, u)
+  call x % declare()
+  call sets % bind(x, counted_set_representation(5))
+  call u % declare()
+  call sets       % bind(u, listed_set_representation([5, 1])) ! two unknowns
+  call inclusions % include_in(u, x)
+  call action % y % declare()
+  call sets % bind(action % y, counted_set_representation(3))  ! three residuals
+  action % n_y = 3
+  call solver % attach(action, host, u, sets % size_of(u))
   write(*,'(1x,a)') "REACHED PAST THE REFUSAL"
 end program minimization_refusal

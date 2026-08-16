@@ -46,7 +46,7 @@
 
 module class_graph_walk
 
-  use graph_grammar      , only : graph_operation
+  use graph_operation_view, only : graph_operation
   use graph_ordinary_view, only : graph
   use graph_field_calculus, only : graph_field
   use fractal_graph      , only : set_graph => graph

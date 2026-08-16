@@ -19,6 +19,40 @@
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
+!
+!                      WHAT A GRAPH IS MADE OF
+!
+!                      WHAT A GRAPH IS MADE OF
+!
+! A vertex is a thing. An edge joins two of them, tail to head.
+!
+!                            e
+!                     i ----------> j       edge_tail(e) = i
+!                                           edge_head(e) = j
+!                                           edge_has_head(e) = .true.
+!
+!                            b
+!                     i ----------o         edge_tail(b) = i
+!                                           edge_has_head(b) = .false.
+!
+! The second edge is attached to vertex i alone. That is a boundary
+! face, and this is how it is written without inventing an imaginary
+! cell on the far side of the wall.
+!
+!
+!=====================================================================!
+!
+!                        CAN A GRAPH CHANGE?
+!
+! CAN A GRAPH CHANGE? No. Everything a graph holds - structure,
+! tags, its relation to the whole it came from - goes in at
+! construction, and no procedure below accepts data afterwards.
+! When an operation computes something new, the result leaves through
+! that operation's output argument. The reason is repeatability: ask
+! a graph the same question twice and it gives the same answer twice,
+! no matter what ran in between.
+!
+!=====================================================================!
 
 module graph_ordinary_view
 

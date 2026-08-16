@@ -52,7 +52,7 @@
 module production_discretization_fixture
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_grammar      , only : graph_operation
+  use graph_operation_view, only : graph_operation
   use class_graph_stencil, only : stencil_operator
   use class_graph_step   , only : step_operator, bdf
 

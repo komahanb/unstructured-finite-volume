@@ -111,9 +111,10 @@ allowed_for() {
         # neither a representation nor a map. Each name comes from
         # its owner: set_graph from the KERNEL, the ordinary graph
         # from graph_ordinary_view, the field from the field
-        # calculus. graph_grammar is granted for the operation
-        # contract alone, which is all it still defines.
-        common/triangular_decay_fixture.f90) echo "fractal_graph graph_grammar graph_ordinary_view graph_field_calculus class_graph_field" ;;
+        # calculus, and the operation contract from
+        # graph_operation_view. graph_grammar, which once lent all
+        # four, is deleted.
+        common/triangular_decay_fixture.f90) echo "fractal_graph graph_operation_view graph_ordinary_view graph_field_calculus class_graph_field" ;;
         common)            echo "__no_allowlist__" ;;
 
         # ---- L0: sets only. NOTHING relational - not the relation
@@ -322,7 +323,7 @@ if [ "$1" = "--selftest" ]; then
     refuses level-0-carrier graph_label_map
     refuses level-5-field-calculus graph_label_map
     refuses level-9-statement graph_label_map
-    permits common/triangular_decay_fixture.f90 graph_grammar
+    permits common/triangular_decay_fixture.f90 graph_operation_view
     refuses common/triangular_decay_fixture.f90 class_graph_step
     refuses common/triangular_decay_fixture.f90 class_graph_marcher
 

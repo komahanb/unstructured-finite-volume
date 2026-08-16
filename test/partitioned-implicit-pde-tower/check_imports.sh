@@ -74,12 +74,12 @@ allowed_for() {
         common/chain_relations_fixture.f90) echo "fractal_graph graph_set_map graph_relation graph_binary_relation" ;;
         common/chain_algebra_fixture.f90) echo "fractal_graph graph_set_map graph_relation graph_relation_algebra graph_binary_relation" ;;
         # The operation holds an identity and a count. No map.
-        common/shifted_laplacian_fixture.f90) echo "fractal_graph graph_grammar graph_ordinary_view graph_field_calculus class_graph_field class_graph_differential_operator" ;;
+        common/shifted_laplacian_fixture.f90) echo "fractal_graph graph_operation_view graph_ordinary_view graph_field_calculus class_graph_field class_graph_differential_operator" ;;
         # Calls partition_data and assemble_data - both carve - and
         # queries the domains it transports. It also DESCRIBES the
         # part carriers it transports onto, so it constructs
         # representations and earns the module that makes them.
-        common/partitioned_shifted_laplacian_fixture.f90) echo "fractal_graph graph_set_representation graph_set_map graph_label_map graph_inclusion_map graph_grammar graph_ordinary_view graph_field_calculus class_graph class_graph_field class_graph_partitioner class_graph_assembler shifted_laplacian_fixture" ;;
+        common/partitioned_shifted_laplacian_fixture.f90) echo "fractal_graph graph_set_representation graph_set_map graph_label_map graph_inclusion_map graph_operation_view graph_ordinary_view graph_field_calculus class_graph class_graph_field class_graph_partitioner class_graph_assembler shifted_laplacian_fixture" ;;
         common)            echo "__no_allowlist__" ;;
 
         # ---- L0: sets only. NOTHING relational.

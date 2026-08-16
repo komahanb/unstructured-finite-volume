@@ -16,7 +16,7 @@ graph_profile.o \
 graph_algorithms.o \
 graph_field_calculus.o \
 graph_ordinary_view.o \
-graph_grammar.o \
+graph_operation_view.o \
 graph_calculus.o \
 class_graph_field.o \
 class_graph_functional.o \

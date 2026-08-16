@@ -114,7 +114,7 @@ allowed_for() {
         common/structural_renderer_fixture.f90) echo "fractal_graph graph_set_map graph_label_map visualization_carriers_fixture graph_relation graph_binary_relation" ;;
         common/visualization_values_fixture.f90) echo "fractal_graph graph_set_map  class_graph_field" ;;
         common/valued_renderer_fixture.f90) echo "fractal_graph graph_set_map graph_label_map visualization_carriers_fixture structural_renderer_fixture graph_relation graph_binary_relation graph_field_calculus class_graph_field" ;;
-        common/production_discretization_fixture.f90) echo "fractal_graph graph_grammar class_graph_stencil class_graph_step" ;;
+        common/production_discretization_fixture.f90) echo "fractal_graph graph_operation_view class_graph_stencil class_graph_step" ;;
         common/production_pattern_renderer_fixture.f90) echo "fractal_graph graph_set_map graph_label_map visualization_carriers_fixture structural_renderer_fixture graph_relation graph_ordinary_view" ;;
         common)            echo "__no_allowlist__" ;;
 
@@ -356,7 +356,7 @@ if [ "$1" = "--selftest" ]; then
     # ---- UNIVERSAL 2: OPERATORS. Nothing that steps, solves,
     #      linearizes, marches, or owns dependencies().
     for lvl in $with_five; do
-        refuses "$lvl" graph_grammar
+        refuses "$lvl" graph_operation_view
         refuses "$lvl" graph_ordinary_view
         refuses "$lvl" class_graph_stencil
         refuses "$lvl" class_graph_step
@@ -413,7 +413,7 @@ if [ "$1" = "--selftest" ]; then
     refuses level-5-field-calculus graph_algorithms
     refuses level-5-field-calculus class_graph_step
     refuses level-5-field-calculus class_graph_stencil
-    refuses level-5-field-calculus graph_grammar
+    refuses level-5-field-calculus graph_operation_view
     refuses level-5-field-calculus graph_ordinary_view
     refuses level-5-field-calculus class_graph_linearization
 
@@ -436,7 +436,7 @@ if [ "$1" = "--selftest" ]; then
     for lvl in $with_five; do
         refuses "$lvl" class_graph_stencil
         refuses "$lvl" class_graph_step
-        refuses "$lvl" graph_grammar
+        refuses "$lvl" graph_operation_view
         refuses "$lvl" graph_ordinary_view
         refuses "$lvl" graph_calculus
         refuses "$lvl" production_discretization_fixture
@@ -463,7 +463,7 @@ if [ "$1" = "--selftest" ]; then
     permits common/production_pattern_renderer_fixture.f90 graph_ordinary_view
     permits common/production_pattern_renderer_fixture.f90 structural_renderer_fixture
     permits common/production_discretization_fixture.f90 class_graph_stencil
-    refuses common/structural_renderer_fixture.f90 graph_grammar
+    refuses common/structural_renderer_fixture.f90 graph_operation_view
     refuses common/structural_renderer_fixture.f90 graph_ordinary_view
     refuses common/structural_renderer_fixture.f90 class_graph_stencil
     refuses common/valued_renderer_fixture.f90 class_graph_step

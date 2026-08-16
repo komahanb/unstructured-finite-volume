@@ -87,7 +87,7 @@ module has changed bucket.
 These three are already exactly what the target calls maps. No phase
 below moves them.
 
-### view — 7 (6 at PR1, plus graph_ordinary_view)
+### view — 8 (6 at PR1, plus the two carved from `graph_grammar`)
 
 | module | reads the graph as | publics |
 |---|---|---|

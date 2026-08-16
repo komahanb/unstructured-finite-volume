@@ -1,5 +1,6 @@
 objects= \
 graph_identity.o \
+fractal_graph.o \
 graph_carrier.o \
 graph_relation.o \
 graph_binary_relation.o \

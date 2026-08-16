@@ -10,19 +10,21 @@ LDFLAGS  += -L../../lib/ ../../lib/libufvm.a
 
 all: run refusal mutation
 
-run: fractal_graph.o graph_views.o test.o
-	$(F90) fractal_graph.o graph_views.o test.o -o $@ $(LDFLAGS)
+# fractal_graph now lives in src and arrives through libufvm.a; this
+# directory builds only the views and the programs over them.
 
-refusal: fractal_graph.o graph_views.o refusal.o
-	$(F90) fractal_graph.o graph_views.o refusal.o -o $@ $(LDFLAGS)
+run: graph_views.o test.o
+	$(F90) graph_views.o test.o -o $@ $(LDFLAGS)
 
-mutation: fractal_graph.o graph_views.o mutation.o
-	$(F90) fractal_graph.o graph_views.o mutation.o -o $@ $(LDFLAGS)
+refusal: graph_views.o refusal.o
+	$(F90) graph_views.o refusal.o -o $@ $(LDFLAGS)
 
-test.o: graph_views.o fractal_graph.o
-refusal.o: graph_views.o fractal_graph.o
-mutation.o: graph_views.o fractal_graph.o
-graph_views.o: fractal_graph.o
+mutation: graph_views.o mutation.o
+	$(F90) graph_views.o mutation.o -o $@ $(LDFLAGS)
+
+test.o: graph_views.o
+refusal.o: graph_views.o
+mutation.o: graph_views.o
 
 clean:
 	@rm -f *.o *.mod *.so run refusal mutation

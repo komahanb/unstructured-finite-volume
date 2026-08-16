@@ -11,13 +11,13 @@ here="$(cd "$(dirname "$0")" && pwd)"
 F90="$(make -C "$here" -s print-f90)"
 FSTD="$(make -C "$here" -s print-std)"
 KERNEL="-fcoarray=single -I$here -I$here/../../lib"
-LINK="$here/fractal_graph.o $here/../../lib/libufvm.a"
+LINK="$here/../../lib/libufvm.a"
 
 make -C "$here" clean >/dev/null 2>&1 || true
 make -C "$here" >/dev/null
 
 admit () {
-    if $F90 -std=$FSTD -I"$here" -fsyntax-only "$1.f90" 2>probe.out; then
+    if $F90 -std=$FSTD -I"$here" -I"$here/../../lib" -fsyntax-only "$1.f90" 2>probe.out; then
         echo " PASS : $1 compiles"
     else
         echo " FAIL : $1 does not compile"; cat probe.out; exit 1
@@ -25,7 +25,7 @@ admit () {
 }
 
 reject () {
-    if $F90 -std=$FSTD -I"$here" -fsyntax-only "$1.f90" 2>probe.out; then
+    if $F90 -std=$FSTD -I"$here" -I"$here/../../lib" -fsyntax-only "$1.f90" 2>probe.out; then
         echo " FAIL : $1 compiled; the reported constraint does not hold"
         exit 1
     fi
@@ -47,7 +47,7 @@ execute () {
 
 #---------------------------------------------------------------------
 # Declaration order, navigation, and the branch invariant. Compiled
-# against the shipped kernel, not a copy of it.
+# against the production kernel in src, not a copy of it.
 #---------------------------------------------------------------------
 
 echo " FIXTURES ($F90 -std=$FSTD)"
@@ -125,7 +125,7 @@ done
 rm -f refusal.out
 
 echo ''
-echo " KERNEL SIZE (fractal_graph.f90)"
-printf '   code    : %s lines\n' "$(grep -c -v -E '^[[:space:]]*(!|$)' fractal_graph.f90)"
-printf '   comment : %s lines\n' "$(grep -c -E '^[[:space:]]*!'        fractal_graph.f90)"
-printf '   blank   : %s lines\n' "$(grep -c -E '^[[:space:]]*$'        fractal_graph.f90)"
+echo " KERNEL SIZE (src/fractal_graph.f90)"
+printf '   code    : %s lines\n' "$(grep -c -v -E '^[[:space:]]*(!|$)' ../../src/fractal_graph.f90)"
+printf '   comment : %s lines\n' "$(grep -c -E '^[[:space:]]*!'        ../../src/fractal_graph.f90)"
+printf '   blank   : %s lines\n' "$(grep -c -E '^[[:space:]]*$'        ../../src/fractal_graph.f90)"

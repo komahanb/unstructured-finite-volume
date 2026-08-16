@@ -8,7 +8,7 @@ include ../../Makefile.in
 F90FLAGS += -I../../lib/ -Wtarget-lifetime
 LDFLAGS  += -L../../lib/ ../../lib/libufvm.a
 
-all: run refusal
+all: run refusal mutation
 
 run: fractal_graph.o graph_views.o test.o
 	$(F90) fractal_graph.o graph_views.o test.o -o $@ $(LDFLAGS)
@@ -16,12 +16,17 @@ run: fractal_graph.o graph_views.o test.o
 refusal: fractal_graph.o graph_views.o refusal.o
 	$(F90) fractal_graph.o graph_views.o refusal.o -o $@ $(LDFLAGS)
 
+mutation: fractal_graph.o graph_views.o mutation.o
+	$(F90) fractal_graph.o graph_views.o mutation.o -o $@ $(LDFLAGS)
+
 test.o: graph_views.o fractal_graph.o
 refusal.o: graph_views.o fractal_graph.o
+mutation.o: graph_views.o fractal_graph.o
 graph_views.o: fractal_graph.o
 
 clean:
-	@rm -f *.o *.mod *.so run refusal fortran-recursion/*.mod
+	@rm -f *.o *.mod *.so run refusal mutation
+	@rm -f fortran-recursion/*.mod fortran-mutation/*.mod
 
 # run.sh compiles the declaration-order probes with this compiler and
 # this standard.

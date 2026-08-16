@@ -1,7 +1,7 @@
 #!/bin/bash
-# Build the library and the spike, compile the declaration-order and
-# invariant fixtures, run the test suite, run every refusal, and
-# measure the kernel.
+# Build the library and the spike; compile the language fixtures and
+# the immutability candidates; run the law suite, the mutation
+# experiments and every refusal; measure the kernel.
 set -e
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -10,22 +10,11 @@ here="$(cd "$(dirname "$0")" && pwd)"
 
 F90="$(make -C "$here" -s print-f90)"
 FSTD="$(make -C "$here" -s print-std)"
+KERNEL="-fcoarray=single -I$here -I$here/../../lib"
+LINK="$here/fractal_graph.o $here/../../lib/libufvm.a"
 
 make -C "$here" clean >/dev/null 2>&1 || true
 make -C "$here" >/dev/null
-
-#---------------------------------------------------------------------
-# Declaration order. Two representations must compile and one must be
-# rejected, with the compiler and standard the kernel is built with.
-#
-# Encapsulation and navigation. Compiled against the shipped kernel,
-# not a copy of it: what these fixtures establish, they establish
-# about fractal_graph.f90 itself.
-#---------------------------------------------------------------------
-
-echo " FIXTURES ($F90 -std=$FSTD)"
-cd "$here/fortran-recursion"
-rm -f ./*.mod
 
 admit () {
     if $F90 -std=$FSTD -I"$here" -fsyntax-only "$1.f90" 2>probe.out; then
@@ -48,6 +37,23 @@ reject () {
     fi
 }
 
+execute () {
+    if ! $F90 -std=$FSTD $KERNEL "$1.f90" "${@:2}" $LINK -o candidate 2>probe.out; then
+        echo " FAIL : $1 does not build"; cat probe.out; exit 1
+    fi
+    ./candidate
+    echo " PASS : $1 builds and runs"
+}
+
+#---------------------------------------------------------------------
+# Declaration order, navigation, and the branch invariant. Compiled
+# against the shipped kernel, not a copy of it.
+#---------------------------------------------------------------------
+
+echo " FIXTURES ($F90 -std=$FSTD)"
+cd "$here/fortran-recursion"
+rm -f ./*.mod
+
 admit branch_before_graph
 admit polymorphic_known
 admit encapsulated_navigation
@@ -59,12 +65,36 @@ reject private_reference_write      "known_.* is a PRIVATE component"
 reject private_structure_constructor "status_.* is a PRIVATE component"
 
 rm -f probe.out ./*.mod
+echo ''
+
+#---------------------------------------------------------------------
+# Candidate mechanisms for publication immutability. Each is either
+# rejected by the compiler, or built and run to show what it fails to
+# prevent.
+#---------------------------------------------------------------------
+
+echo " IMMUTABILITY CANDIDATES ($F90 -std=$FSTD)"
+cd "$here/fortran-mutation"
+rm -f ./*.mod ./*.o candidate
+
+$F90 -std=$FSTD -c accessor_candidates.f90 -o accessor_candidates.o
+
+execute seal_parent_assignment
+execute seal_branch_assignment
+execute pointer_accessor_assignment accessor_candidates.o
+execute transitive_mutation
+reject  value_accessor_assignment "must have the pointer attribute"
+reject  accessor_navigation       "Invalid character in name"
+
+rm -f probe.out ./*.mod ./*.o candidate
 cd "$here"
 echo ''
 
 #---------------------------------------------------------------------
 
 ./run
+echo ''
+./mutation
 
 declare -A message=(
   [twice]="graph identity is assigned once"

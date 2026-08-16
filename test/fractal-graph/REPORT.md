@@ -1,120 +1,119 @@
-# Invariant closure
-Spike only; `src/` is unchanged. Run by `test/fractal-graph/run.sh` (gfortran-15, `-std=f2023`).
-Every claim is a fixture in `fortran-recursion/`, compiled against the shipped kernel, not a copy.
+# Identity and mutation
+Spike only; `src/` is unchanged, and `fractal_graph.f90` is unchanged by this pass — still 67
+code lines. The previous report, on the branch invariant, is at commit `073451d`.
+Run by `run.sh`: 86 PASS, 0 FAIL. Fixtures compile against the shipped kernel, not a copy.
 
-## 1. Final declarations
-```fortran
-integer, parameter :: GRAPH_NULL = 0, GRAPH_UNKNOWN = 1, GRAPH_KNOWN = 2
+## 1. Is graph identity object identity or value identity?
+**Object identity.** `declare` mints a token per object; `same_as` compares tokens and nothing
+else. This is not a preference. Value identity would be structural equality, and structural
+equality on a graph with cycles is not a component comparison — it is a bisimulation over the
+reachable set, an algorithm the kernel does not contain and §13 would not admit. `same_as`
+answers in constant time; value equality cannot. Model C therefore presupposes an equality this
+ontology cannot compute.
 
-type :: graph_branch
-   private
-   integer              :: status_ = GRAPH_NULL
-   type(graph), pointer :: known_  => null()
- contains
-   procedure :: status, known
-end type graph_branch
+Identity answers *which graph*. `status()` answers *what is this graph now*. The kernel keeps
+them apart, and nothing below forces them together.
 
-type :: graph
-   type(graph_branch)   :: branch(2)
-   type(token), private :: identity
- contains
-   procedure :: declare, id, same_as
-end type graph
-```
+## 2. Does lawful branch mutation preserve identity?
+**Yes.** `id(g)` is unchanged across every one of the nine branch transitions (`mutation.f90`, T)
+and across mutation of both branches (I). `g % same_as(g)` holds throughout.
 
-## 2. Which components are private
-`graph_branch % status_`, `graph_branch % known_`, `graph % identity`. Both branch components
-must be private: public `status_` admits `status = KNOWN` with no reference, public `known_`
-admits `nullify` under a KNOWN status.
+## 3. Is publication immutability mathematically necessary?
+**No.** The previous pass argued it from caching. Two things dissolve that argument:
 
-`graph % branch` stays **public**: every value a caller can place there is lawful, since the
-structure constructor is unavailable outside the module (`private_structure_constructor`) and the
-three constructors are total on the invariant. Private `branch` would cost an accessor and, since
-a function result cannot be a part-ref base (Q4), worsen navigation.
+- A compiled representation is a **snapshot** (Q9): `C0` stays valid when `G` mutates, and `C1`
+  is a second, independent value. Nothing about CSR requires `G` to stop changing.
+- A cache that needs invalidation can carry whatever key it needs. That belongs to the cache,
+  which knows its own validity conditions, not to a kernel that does not.
 
-## 3. Public navigation syntax
-```fortran
-g % branch(i)                              ! public component
-g % branch(i) % status()                   ! branch state
-g % branch(i) % known()                    ! reference; disassociated unless KNOWN
-p => g % branch(i) % known()                ! pointer binding, for depth
-associate (x => g % branch(i) % known())    ! ASSOCIATE name, for depth
-associated(g % branch(1) % known(), g % branch(2) % known())
-```
-`encapsulated_navigation` compiles all of these against the kernel.
+Q5 then shows the cost is not local: immutability is a property of an entire reachable set, not
+of one graph. Nothing in the ontology requires paying that.
 
-## 4. Can chained recursive navigation compile?
-**No**, and the obstruction is Fortran's. A function reference is not a part-ref, so no data-ref
-may be built on one:
+## 4. Can publication immutability be enforced while keeping public `branch(2)`?
+**No.** Four candidate mechanisms, each built or rejected on every run (`fortran-mutation/`):
 
-| form | gfortran-15 `-std=f2023` |
+| candidate | result |
 |---|---|
-| `null_branch() % status()` | *The leftmost part-ref in a data-ref cannot be a function reference* |
-| `g % branch(1) % known() % branch(1) % status()` | *Unclassifiable statement* — same rule, from the parser |
+| graph-level defined assignment | **not invoked** by component assignment — a sealed graph had `branch(1)` assigned anyway |
+| branch-level defined assignment | invoked, but its dummy arguments are two branches; no argument, host association or inquiry yields the owning graph, so the seal cannot be consulted |
+| private branch, value-returning accessor | assignment **rejected** — *The function result on the lhs of the assignment must have the pointer attribute*. This does enforce it |
+| private branch, pointer-returning accessor | assignment **accepted** — a pointer function result is a definable variable. Enforces nothing |
 
-Depth is reached by a pointer or an ASSOCIATE name, one level at a time. Not the flattening §16
-rejects: `branch` stays in the public structure, `type(graph_branch) :: branch(2)` stands in the
-declaration, `g % branch(i) % status()` / `% known()` remain the navigation; only a multi-level
-chain *within one expression* is unavailable. `graph_views` is unaffected — it passes
-`g % branch(s) % known()` as an argument, one function reference, not a chain.
+Only the value-returning accessor enforces anything, and the same language rule that enforces it
+removes the navigation: with `branch` private, `g % branch(i) % status()` chains past a function
+reference and is rejected (`accessor_navigation`; gfortran words the diagnostic by form, but the
+rule is one — a function result is not a part-ref). Constness and the fractal API are not
+separable trade-offs here; they are one rule read twice. §9 applies without being invoked.
 
-## 5. How legal branches are constructed
-```fortran
-null_branch()       status = NULL      known disassociated
-unknown_branch()    status = UNKNOWN   known disassociated
-known_branch(g)     status = KNOWN     known associated with g; refuses undeclared g
-```
+Fortran's lack of a const reference is the conclusion, not a gap to be papered over.
 
-The only introductions of a branch value; `graph_branch(...)` is rejected outside the module, so
-status and reference cannot be set independently. A branch is replaced whole,
-`g % branch(1) = known_branch(h)`; `known_branch` cannot be `pure` (F2018 C1594).
+## 5. Can a graph reached through `known()` be mutated transitively?
+**Yes**, on the shipped kernel (`transitive_mutation`): `p => a % branch(1) % known()` then
+`p % branch(1) = known_branch(c)` mutates `b`, whose identity is intact. Blocking this would
+require every graph in the reachable set to refuse independently — the full cost of Q4's
+value-accessor design paid on every graph, not on the one that was sealed.
 
-## 6. How cycles are closed
-By whole-branch assignment once both graphs exist — the construction mutation the previous report
-established as necessary:
+## 6. Is `declare` identity assignment, publication, or both?
+**Identity assignment only.** Cycle construction wires branches *after* both graphs declare:
 
 ```fortran
 call a % declare(); call b % declare()
-a % branch(1) = known_branch(b)          ! a -> b
-b % branch(1) = known_branch(a)          ! b -> a
+a % branch(1) = known_branch(b)
+b % branch(1) = known_branch(a)
 ```
 
-No cycle-closing operation is introduced; sharing is the same act applied twice to one target.
-Both survive encapsulation (tests B and C, `associated` included, so no copy).
+If `declare` froze the graph, that sequence could not exist. *Publication* does not name anything
+the current architecture does, and this report does not use the word for `declare`.
 
-## 7. Can published graphs be corrupted externally?
-**The invariant, no. The shape, yes — deliberately.**
+## 7. Should `known_branch` require an already-declared graph?
+**Yes, keep the requirement.** An undeclared token matches nothing, including itself, so an
+undeclared graph is **not `same_as` itself** (`mutation.f90`, R). A KNOWN branch to such a graph
+would put a non-reflexive element into the reachable set: equality would fail on it, and a map
+keyed on identity would never find it while silently accepting new rows for it. Wiring before
+declaring buys a construction-order convenience and costs reflexivity.
 
-- `status_` and `known_` cannot be assigned, rebound, or constructed from outside; three fixtures
-  assert the rejection and its reason. Every reachable branch satisfies
-  `status() == GRAPH_KNOWN .eqv. associated(known())`, asserted over all nine states.
-- A whole branch **can** still be replaced after publication (`g % branch(1) = null_branch()`) —
-  semantic mutation, not invariant violation, since the replacement is lawful. §7 declines to
-  police it here; the recommendation stays construction-mutable, publication-immutable.
-- Lifetime is unchanged: branches do not own targets, `TARGET` belongs on the actual argument,
-  reclamation is by region.
+## 8. Are branch-state transitions unrestricted, monotone, or interpretation-dependent?
+**Unrestricted in the kernel; monotone only where an interpretation says so.** All nine
+transitions apply, each leaving the invariant and the identity intact (T). `KNOWN -> UNKNOWN` and
+`KNOWN -> NULL` both execute — the adaptive example (X) attaches a cell so a boundary face
+becomes interior (`NULL -> KNOWN`), then detaches it (`KNOWN -> NULL`), one face identity
+throughout. A monotone-knowledge law would forbid the second transition, and the second
+transition runs. The ontology states three states and no transition law; there is no evidence for
+inventing one.
 
-## 8. Kernel code lines
-54 → **67** code (comment 35 → 49, blank 43 → 54), by
-`grep -c -v -E '^[[:space:]]*(!|$)' fractal_graph.f90`. +13 against a limit of 80, for `private`
-and two accessors. No type was added.
+Calling that face *the same face in a later state* is coherent: its identity is what makes the
+two states comparable at all.
 
-## 9. Counts
-| | before | after |
-|---|---:|---:|
-| compile-time fixtures | 3 | **9** — 3 admitted, 6 rejected with their reason |
-| runtime assertions | 39 | **45** — all 39 retained, 6 added for the invariant |
-| runtime refusals | 8 | 8 |
-| total PASS | 50 | **62**, 0 FAIL |
+## 9. Does CSR need graph immutability, or is CSR simply a snapshot?
+**A snapshot** (`mutation.f90`, S). `G` compiles to `C0 = [1,2,4,5,5]`; `G` gains a connection;
+`G` compiles to `C1 = [1,2,4,6,7]`. `C0` is unchanged, internally consistent, and does not follow
+`G`. Neither carries a version, because neither needs one: each is the value compilation returned
+when it ran. Versioning, if a client ever needs it, belongs to that client.
 
-The three invariant protections are compile-time refusals — they never link, so they cannot join
-`./refusal`; they are asserted as `graph_before_branch` is, by required failure with a diagnostic.
+## 10. Does the kernel need any change?
+**No.** `fractal_graph.f90` is byte-identical to `073451d` — 67 code lines. No `epoch`,
+`generation`, `version`, `dirty`, `seal` or `frozen` field was added, and no counterexample
+appeared that could not be handled outside it.
 
-## 10. Recommendation
-Adopt. Two types, no third; `branch(2)` public and visible; `status_`/`known_` private — the
-smallest change that closes `KNOWN iff associated(known)`, at compile time rather than by
-convention. Its one cost, a multi-level traversal needing a pointer or an ASSOCIATE name, is a
-Fortran rule about function results, held by two fixtures that fail if it ever changes.
+## Comparison
+`t` tested by a fixture or assertion here; `a` argued.
 
-Rejected here against §14 and §17: private `branch`, a realize operation, lifecycle machinery.
-The next question is `seal`, closing semantic mutation and making caching on identity sound.
+| | A mutable | B sealed | C persistent |
+|---|---|---|---|
+| sharing | holds `t` | holds while constructing, frozen after `a` | degrades: every path to a change is rebuilt `t` |
+| cycles | holds `t` | holds while constructing `a` | no fixpoint `t` |
+| identity | stable object identity `t` | stable, plus a phase `a` | changes per mutation; needs an equality the kernel cannot compute `a` |
+| direct branch API | `g % branch(i) % status()` `t` | requires private branch; navigation rejected `t` | as B `t` |
+| caching | cache carries its own validity `a` | identity alone suffices `a` | each version is a new key `a` |
+| CSR | snapshot `t` | snapshot `t` | snapshot per version `a` |
+| adaptive graph | same graph, later state `t` | forbidden after the freeze `a` | rebuild per change `a` |
+| implementation cost | **zero kernel change** `t` | private branch + seal field + checked setter + value accessor, on **every** graph in the reachable set, and navigation lost `t` | B's cost plus a computable value equality that does not exist `a` |
+
+## Conclusion
+Adopt **A**. A graph is a mutable object with stable identity; compiled representations are
+snapshots; immutability and versioning belong to the clients that need them; `fractal_graph.f90`
+requires no change.
+
+B is not refuted as a *semantics* — it is refuted as something this language can enforce without
+destroying the public fractal, and it was never shown necessary. C is refuted at the root: it
+needs a value equality the ontology cannot compute.

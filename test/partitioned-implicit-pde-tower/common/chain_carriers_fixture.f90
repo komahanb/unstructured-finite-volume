@@ -19,7 +19,7 @@
 ! edge AND a part. No count and no numeral separates these sets -
 ! only identity does.
 !
-! This file imports graph_carrier and nothing else. It is the only
+! This file imports the set modules and nothing else. It is the only
 ! place in the tower where the three carriers are constructed, and
 ! every level from 0 upward takes them from here rather than
 ! declaring its own.

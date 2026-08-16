@@ -13,7 +13,7 @@
 ! only a member of O here. Nothing about a DERIVATIVE application
 ! required a new Level-0 ontology - the ordinary carriers suffice,
 ! and the imports of this file ARE the negative truth:
-! derivative_assert, graph_carrier, and nothing above.
+! derivative_assert, the set modules, and nothing above.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!

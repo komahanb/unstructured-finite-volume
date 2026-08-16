@@ -3,7 +3,7 @@
 !
 ! ONCE the ground level of the old stratification; now the legacy
 ! vertex/edge compatibility contract of the relation-centered tower
-! (AGENTS.md). The NEW ground is graph_carrier; relations, algebra,
+! (AGENTS.md). The NEW ground is the set modules; relations, algebra,
 ! the relational graph, the interpretations and the field calculus
 ! all live in their own level modules. What remains here is the
 ! ordinary-graph vocabulary the old solvers still speak - retyped

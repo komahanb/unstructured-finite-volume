@@ -10,7 +10,7 @@
 !
 ! and nothing else is true yet. No relation, no graph, no value, no
 ! arithmetic: the symbol + is only a member of O here. The imports
-! of this file ARE the negative truth of the level - graph_carrier
+! of this file ARE the negative truth of the level - the set modules
 ! and nothing above it (CALCULATOR.md 7).
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)

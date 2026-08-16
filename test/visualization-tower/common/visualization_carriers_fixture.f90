@@ -11,7 +11,7 @@
 !      E2 = { e21 e22 e23 e24 }
 !      E3 = { e31 e32 e33 }
 !
-! Its framework dependency is graph_carrier and nothing else. Level 0
+! Its framework dependency is the set modules and nothing else. Level 0
 ! knows about members; it does not know that a relation exists, or an
 ! operator, or a graph, or a picture.
 !
@@ -26,9 +26,9 @@
 ! first, 'e23' for E2's third - and every level above uses it for
 ! display only. Three properties keep it honest:
 !
-!   1. It is keyed by the carrier's DECLARED NAME, which graph_carrier
-!      already states is metadata carried for the reader and no part
-!      of the mathematics. No law reads it.
+!   1. It is keyed by the carrier's DECLARED NAME, which the label map
+!      states is metadata carried for the reader and no part of the
+!      mathematics. No law reads it.
 !
 !   2. It is keyed by MEMBER VALUE, never by position. A caller must
 !      already hold the member - which it can only have got by asking

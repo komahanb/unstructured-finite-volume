@@ -8,7 +8,6 @@ graph_set_view.o \
 graph_inclusion_map.o \
 graph_label_map.o \
 graph_epistemic_view.o \
-graph_carrier.o \
 graph_relation.o \
 graph_relational_view.o \
 graph_binary_relation.o \

@@ -2,7 +2,7 @@ include ../../../Makefile.in
 
 #=====================================================================#
 # Learning level 5: the value suite. A field needs a domain, not a
-# graph: this rung sees learning_assert, graph_carrier and
+# graph: this rung sees learning_assert, the set modules and
 # class_graph_field - no relation, no container, no profile, no
 # minimizer. The import gate holds the door.
 #=====================================================================#

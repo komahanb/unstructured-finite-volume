@@ -18,7 +18,7 @@
 ! mean w*x, error does NOT yet mean yhat-y - structure before
 ! meaning, the learning tower's first real proof of it. No neuron,
 ! no layer, no network object anywhere: the import list IS the
-! negative truth - learning_assert, graph_carrier, graph_relation,
+! negative truth - learning_assert, the set modules, graph_relation,
 ! and nothing above.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)

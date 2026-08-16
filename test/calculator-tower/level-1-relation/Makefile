@@ -2,7 +2,7 @@ include ../../../Makefile.in
 
 #=====================================================================#
 # Level 1: the law suite and the refusals that must die. The
-# framework modules this level may see: graph_carrier and
+# framework modules this level may see: the set modules and
 # graph_relation - the import gate holds the door.
 #=====================================================================#
 

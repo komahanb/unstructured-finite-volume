@@ -2,8 +2,8 @@ include ../../../Makefile.in
 
 #=====================================================================#
 # Learning level 0: the law suite. The only framework module this
-# level may see is graph_carrier - the import list of test.f90 is
-# itself the level's negative truth.
+# grant this level holds is the set modules - the import list of
+# test.f90 is itself the level's negative truth.
 #=====================================================================#
 
 F90FLAGS += -I../../../lib/ -I../../../src/

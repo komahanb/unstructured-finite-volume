@@ -25,7 +25,9 @@ program bench_graph_traversal
   use iso_fortran_env        , only : dp => REAL64, int64
   use graph_calculus         , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
   use graph_grammar          , only : graph, graph_field
-  use graph_carrier          , only : counted_set
+  use fractal_graph          , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation
+  use graph_set_map          , only : set_map
   use graph_binary_relation  , only : csr_relation
   use class_graph            , only : stored_graph
   use class_graph_support    , only : support
@@ -42,7 +44,8 @@ program bench_graph_traversal
   integer, parameter :: ne = (nx - 1) * ny + nx * (ny - 1)
 
   type(stored_graph)              :: g
-  type(counted_set)               :: vcarrier, ecarrier
+  type(set_graph)                 :: vcarrier, ecarrier
+  type(set_map)                   :: sets
   type(csr_relation), target      :: rel
   integer, pointer                :: fp(:)
   integer, allocatable            :: tab(:,:)
@@ -134,8 +137,10 @@ program bench_graph_traversal
 
   ! -- the phase-3 citizen on the same topology: the tail relation
   !    V x E, image(v) = outgoing edges, preimage(e) = tail vertex.
-  vcarrier = counted_set('vertices', nv)
-  ecarrier = counted_set('edges'   , ne)
+  call vcarrier % declare()
+  call ecarrier % declare()
+  call sets % bind(vcarrier, counted_set_representation(nv))
+  call sets % bind(ecarrier, counted_set_representation(ne))
   allocate(tab(2, ne))
   do e = 1, ne
      tab(1, e) = tails(e)
@@ -143,7 +148,7 @@ program bench_graph_traversal
   end do
 
   call system_clock(t0)
-  rel = csr_relation('tail', vcarrier, ecarrier, tab)
+  rel = csr_relation('tail', vcarrier, ecarrier, tab, sets)
   call system_clock(t1)
   call line("csr_relation construction", t0, t1, rate, int(nv, int64))
 

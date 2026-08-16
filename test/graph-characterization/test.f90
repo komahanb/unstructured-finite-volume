@@ -254,10 +254,11 @@ contains
   ! TODAY, so nothing shifts unseen while the ground moves. The
   ! destination is different on purpose: support becomes a SUBOBJECT
   ! S c--> A (AGENTS.md sections 6 and 37, refined by review) - and
-  ! THE DESTINATION NOW STANDS: subset_set in graph_carrier, with
-  ! its own laws in test/graph-carrier. The pins below keep guarding
-  ! the OLD support until the old fields retire onto the new
-  ! carriers; then these checks are rewritten, not obeyed - what
+  ! THE DESTINATION NOW STANDS: a listed representation bound to a
+  ! declared identity, with its provenance in the inclusion map, and
+  ! its laws in test/graph-set-view and test/graph-inclusion. The pins
+  ! below keep guarding the OLD support until the old fields retire
+  ! onto the new sets; then these checks are rewritten, not obeyed - what
   ! survives is membership, the host domain, order, and emptiness;
   ! the graph-flavoured spelling does not.
   !===================================================================!

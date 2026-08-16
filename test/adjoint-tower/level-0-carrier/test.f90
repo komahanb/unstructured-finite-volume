@@ -21,7 +21,7 @@
 ! confused. Roles are DOMAINS - there is no parameter_field, no
 ! state_field, no residual_field, no adjoint_field - and the
 ! imports of this file ARE the negative truth: adjoint_assert,
-! graph_carrier, and nothing above.
+! the set modules, and nothing above.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!

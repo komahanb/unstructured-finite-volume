@@ -11,7 +11,7 @@
 ! and nothing else is true yet. No relation, no graph, no field, no
 ! minimizer, no model, no neuron: predict is only a member of O
 ! here. The imports of this file ARE the negative truth -
-! learning_assert, graph_carrier, and nothing above.
+! learning_assert, the set modules, and nothing above.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!

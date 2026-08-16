@@ -15,7 +15,7 @@
 ! proves it independently. The + here is only a member of O; the
 ! slots carry no values; no graph reads these tuples yet. The
 ! import list IS the negative truth: calculator_assert,
-! graph_carrier, graph_relation, and nothing above (CALCULATOR.md
+! the set modules, graph_relation, and nothing above (CALCULATOR.md
 ! 8; the ternary shape is the point - no binary reduction, no
 ! vertex, no edge).
 !

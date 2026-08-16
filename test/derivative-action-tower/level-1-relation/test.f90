@@ -20,7 +20,7 @@
 ! looks exactly like ordinary computation structure because it IS
 ! ordinary computation structure. product does not yet multiply;
 ! sum does not yet add; nothing differentiates anything. The import
-! list is the negative truth - derivative_assert, graph_carrier,
+! list is the negative truth - derivative_assert, the set modules,
 ! graph_relation, and nothing above.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)

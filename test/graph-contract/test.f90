@@ -181,6 +181,14 @@ end module nonlinear_sample_support
 !      and the sum stops cancelling, which is the negative control -
 !      without it the check would also pass on a balance that returned
 !      nothing but zeros.
+!  21. A concrete graph mints its two carrier identities once, at
+!      construction, and hands out the SAME identity at every asking.
+!      Its two sides are two identities, and a graph built from
+!      identical numbers owns its own. This is the law the whole
+!      cutover rests on: a domain is WHICH set, and the graph is the
+!      only thing that says which. Inherited from the retired carrier
+!      suite, whose other laws now live in graph-set-view,
+!      graph-inclusion and fractal-graph.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -233,6 +241,7 @@ program test_graph_contract
   write(*,'(1x,a)') "graph contract suite"
   write(*,'(1x,a)') "============================================="
 
+  call check_graph_mints_its_carriers(nfail)
   call check_supports(nfail)
   call check_ordering_law(nfail)
   call check_value_kind_rule(nfail)
@@ -314,6 +323,55 @@ contains
          &      counted_set_representation(g % num_edges()))
 
   end subroutine describe
+
+  !===================================================================!
+  ! A concrete graph mints its two carrier identities at construction
+  ! and hands out the SAME one at every asking. Nothing else in the
+  ! library can say WHICH set a field or an operation is over, so if
+  ! this ever answers a fresh identity per call, every question asked
+  ! of a map afterwards is asked of the wrong set - and the map, being
+  ! keyed on identity, would answer "nobody describes that" rather
+  ! than answer wrongly. The map holds no opinion: the graph is the
+  ! only source.
+  !
+  ! Inherited from the retired carrier suite. What it does NOT claim
+  ! is as much of the ruling as what it does: the graph binds no
+  ! representation and no label, so the count comes from the graph
+  ! itself and the size only after a map has been told.
+  !===================================================================!
+
+  subroutine check_graph_mints_its_carriers(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_graph) :: g, h
+    type(set_graph)    :: vs, es, vs2
+    type(set_map)      :: sets
+
+    g = stored_graph(3, tails=[1, 2], heads=[2, 3])
+    h = stored_graph(3, tails=[1, 2], heads=[2, 3])
+
+    vs = g % vertex_set()
+    es = g % edge_set()
+
+    call report(.not. vs % same_as(es), &
+         & "a graph's two sides are two sets", nfail)
+
+    vs2 = g % vertex_set()
+    call report(vs % same_as(vs2), &
+         & "asked twice, the graph answers the same set", nfail)
+
+    call report(.not. vs % same_as(h % vertex_set()), &
+         & "an identical twin graph still owns its own sets", nfail)
+
+    ! The count is the graph's own answer, and a map agrees with it
+    ! only once it has been told - the graph binds nothing.
+    call describe(sets, g)
+    call report(sets % size_of(vs) .eq. g % num_vertices() .and. &
+         &      sets % size_of(es) .eq. g % num_edges(), &
+         & "and once described, the map counts what the graph counts", nfail)
+
+  end subroutine check_graph_mints_its_carriers
 
   !===================================================================!
   ! A support is a set of indices. It returns what it was given,

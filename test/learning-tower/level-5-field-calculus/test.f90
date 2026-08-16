@@ -18,7 +18,7 @@
 ! a stronger truth than constructing an empty one.
 !
 ! And the import list is the rung's own proof: a field needs a
-! domain - learning_assert, graph_carrier, class_graph_field - and
+! domain - learning_assert, the set modules, class_graph_field - and
 ! no graph topology anywhere. The model law is still unspoken:
 ! knowing x = 2 is not knowing what predict does with it.
 !

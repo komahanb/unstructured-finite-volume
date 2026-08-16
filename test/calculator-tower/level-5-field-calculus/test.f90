@@ -13,7 +13,7 @@
 ! order { d, a, b }, so storage order is domain enumeration and a
 ! raw-member indexing habit fails loudly here. The import list is
 ! the negative truth: a field needs a DOMAIN - calculator_assert,
-! graph_carrier, graph_field_calculus, class_graph_field - and no
+! the set modules, graph_field_calculus, class_graph_field - and no
 ! graph container anywhere.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)

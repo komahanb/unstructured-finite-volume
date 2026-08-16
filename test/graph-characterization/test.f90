@@ -28,7 +28,12 @@ program test_graph_characterization
   use iso_fortran_env        , only : dp => REAL64
   use graph_calculus         , only : GRAPH_SIDE_VERTEX
   use graph_grammar          , only : graph, graph_field
-  use graph_carrier          , only : member_set, counted_set, subset_set
+  use fractal_graph           , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map           , only : set_map
+  use graph_label_map         , only : label_map
+  use graph_inclusion_map     , only : inclusion_map, declared_subobject
   use class_graph            , only : stored_graph
   use class_graph_field      , only : field
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
@@ -92,7 +97,7 @@ contains
     type(stored_graph)              :: g
     type(differential_operator)     :: div
     class(graph_field), allocatable :: yf
-    type(counted_set)                   :: eon
+    type(set_graph)                   :: eon
     type(field)                     :: zf
     integer, allocatable            :: idx(:)
     real(dp), allocatable           :: y(:)
@@ -122,7 +127,7 @@ contains
 
     ! The divergence spends each edge separately: out minus in.
     eon = g % edge_set()
-    zf  = field('z', eon)
+    zf  = field('z', eon, g % num_edges())
     call zf % set_real_vector([3.0_dp, 5.0_dp])
     div = divergence()
     call div % apply(g, [zf], yf)
@@ -146,9 +151,12 @@ contains
     type(stored_graph)              :: g
     type(differential_operator)     :: div
     class(graph_field), allocatable :: yf
-    type(counted_set)                   :: eon
+    type(set_graph)                   :: eon
     type(field)                     :: zf
-    class(member_set), allocatable       :: sset
+    type(set_graph)                 :: sset
+    type(set_map)                   :: sets
+    type(label_map)                 :: labels
+    type(inclusion_map)             :: inclusions
     integer, allocatable            :: idx(:)
     real(dp), allocatable           :: y(:)
 
@@ -158,13 +166,13 @@ contains
     call report(g % edge_has_head(1) .and. .not. g % edge_has_head(3), &
          & "the wall edge has a tail and no head", nfail)
 
-    call g % interior_edges(sset)
-    call members(sset, idx)
+    call g % interior_edges(sets, labels, inclusions, sset)
+    call members(sets, sset, idx)
     call report(size(idx) .eq. 2 .and. all(idx .eq. [1, 2]), &
          & "interior edges are the two with heads", nfail)
 
-    call g % boundary_edges(sset)
-    call members(sset, idx)
+    call g % boundary_edges(sets, labels, inclusions, sset)
+    call members(sets, sset, idx)
     call report(size(idx) .eq. 1 .and. idx(1) .eq. 3, &
          & "the boundary set holds exactly the headless edge", nfail)
 
@@ -184,7 +192,7 @@ contains
     ! gives 2, 2, 3 - and the total, 7, is the wall edge's sample:
     ! the half-edge contributes exactly once, to its tail alone.
     eon = g % edge_set()
-    zf  = field('z', eon)
+    zf  = field('z', eon, g % num_edges())
     call zf % set_real_vector([2.0_dp, 4.0_dp, 7.0_dp])
     div = divergence()
     call div % apply(g, [zf], yf)
@@ -262,27 +270,38 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)    :: faces
-    type(subset_set)     :: es, none
+    type(set_graph)    :: faces
+    type(set_graph)     :: es, none
     integer, allocatable :: idx(:)
+    type(set_map)       :: sets
+    type(label_map)     :: labels
+    type(inclusion_map) :: inclusions
 
-    faces = counted_set('faces', 20)
-    es    = subset_set('walls', faces, [11, 14, 19])
+    call faces % declare()
+    call sets % bind(faces, counted_set_representation(20))
+    call labels % bind(faces, 'faces')
+    call es % declare()
+    call sets % bind(es, listed_set_representation([11, 14, 19]))
+    call labels % bind(es, 'walls')
+    call inclusions % include_in(es, faces)
 
-    call report(es % is_subobject_of(faces), &
+    call report(declared_subobject(es, faces, inclusions), &
          & "a support is a subobject of its host domain", nfail)
-    call report(es % size() .eq. 3, &
+    call report(sets % size_of(es) .eq. 3, &
          & "and knows how many it holds", nfail)
 
-    call es % members(idx)
+    call sets % members_of(es, idx)
     call report(all(idx .eq. [11, 14, 19]), &
          & "members return exactly as given, in order", nfail)
 
-    call report(es % has(14) .and. .not. es % has(12), &
+    call report(sets % has_in(es, 14) .and. .not. sets % has_in(es, 12), &
          & "membership answers the chosen family alone", nfail)
 
-    none = subset_set('nothing', faces, [integer ::])
-    call report(none % size() .eq. 0, &
+    call none % declare()
+    call sets % bind(none, listed_set_representation([integer ::]))
+    call labels % bind(none, 'nothing')
+    call inclusions % include_in(none, faces)
+    call report(sets % size_of(none) .eq. 0, &
          & "the empty support is a support", nfail)
 
   end subroutine check_supports
@@ -303,21 +322,26 @@ contains
     type(assembler)                 :: a
     class(graph), allocatable       :: part
     class(graph_field), allocatable :: pd, fd
-    type(counted_set)                   :: von, eon
+    type(set_graph)                   :: von, eon
     type(field)                     :: q, w
     real(dp), allocatable           :: v(:)
     real(dp)                        :: vtotal(6), etotal(5)
     integer                         :: k
+    type(set_map)       :: sets
+    type(label_map)     :: labels
+    type(inclusion_map) :: inclusions
 
     g = stored_graph(6, tails=[1, 2, 3, 4, 5], heads=[2, 3, 4, 5, 6])
     a = assembler()
 
     von = g % vertex_set()
-    q   = field('q', von)
+    call sets % bind(von, counted_set_representation(g % num_vertices()))
+    q   = field('q', von, g % num_vertices())
     call q % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp, 5.0_dp, 6.0_dp])
 
     eon = g % edge_set()
-    w   = field('w', eon)
+    call sets % bind(eon, counted_set_representation(g % num_edges()))
+    w   = field('w', eon, g % num_edges())
     call w % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp])
 
     vtotal = 0.0_dp
@@ -326,17 +350,21 @@ contains
     do k = 1, 2
        p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
        call p % partition_graph(g, part)
+       call sets % bind(part % vertex_set(), &
+            & counted_set_representation(part % num_vertices()))
+       call sets % bind(part % edge_set(), &
+            & counted_set_representation(part % num_edges()))
 
-       call p % partition_data(g, q, part, pd)
-       call a % assemble_data(part, pd, g, fd)
+       call p % partition_data(g, q, part, sets, labels, inclusions, pd)
+       call a % assemble_data(part, pd, g, sets, labels, inclusions, fd)
        select type (fd)
        class is (field)
           call fd % get_real_vector(v)
           vtotal = vtotal + v(1:6)
        end select
 
-       call p % partition_data(g, w, part, pd)
-       call a % assemble_data(part, pd, g, fd)
+       call p % partition_data(g, w, part, sets, labels, inclusions, pd)
+       call a % assemble_data(part, pd, g, sets, labels, inclusions, fd)
        select type (fd)
        class is (field)
           call fd % get_real_vector(v)
@@ -366,7 +394,7 @@ contains
     type(stored_graph)              :: g
     type(differential_operator)     :: fwd, rev
     class(graph_field), allocatable :: yf
-    type(counted_set)                   :: on
+    type(set_graph)                   :: on
     type(field)                     :: qf, pf
     real(dp), allocatable           :: aq(:), ap(:)
     real(dp)                        :: q(4), p(4), cs(5)
@@ -376,8 +404,8 @@ contains
     ! 1 ==> 2 (twice, in parallel), 2 --> 3 --> 4 --> wall.
     g  = stored_graph(4, tails=[1, 1, 2, 3, 4], heads=[2, 2, 3, 4, 0])
     on = g % vertex_set()
-    qf = field('q', on)
-    pf = field('p', on)
+    qf = field('q', on, g % num_vertices())
+    pf = field('p', on, g % num_vertices())
 
     do v = 1, 4
        q(v) = real(v, dp)**2 - 3.0_dp * v
@@ -411,12 +439,13 @@ contains
   ! members reads a named set back as plain indices.
   !===================================================================!
 
-  subroutine members(g, indices)
+  subroutine members(sets, g, indices)
 
-    class(member_set), intent(in)     :: g
+    type(set_map)       , intent(in)  :: sets
+    type(set_graph)     , intent(in)  :: g
     integer, allocatable, intent(out) :: indices(:)
 
-    call g % members(indices)
+    call sets % members_of(g, indices)
 
   end subroutine members
 

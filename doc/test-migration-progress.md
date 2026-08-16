@@ -1,103 +1,102 @@
-# Test migration: 18 of 33 suites green — stop condition C
+# Test migration: complete — 31 of 32 suites green, `graph_carrier` deleted
 
-Branch `tower-domain-cutover`, head `279d869`. Twelve suites migrated across two
-passes, each built, run and committed on its own. **No tower migrated this pass**
-— the reason is a finding, below. `graph_carrier` still stands; the §9 gate is
-shut.
+Branch `tower-domain-cutover`. Every suite is off the retired carrier ontology
+and onto set graph identity + representation + the three maps. The §9 gate is
+**open and executed**: `src/graph_carrier.f90`, its `src/OBJECTS` entry and the
+`test/graph-carrier` suite are gone.
 
-## Migration table
+The denominator moved from 33 to 32 by that deletion, not by drift.
 
-| suite | files | obsolete fixtures | notes | result |
-|---|---|---|---|---|
-| graph-multigrid | 2 | — | production fix + both repairs pinned | PASS |
-| graph-robustness | 1 | — | needs **no map at all** | PASS |
-| graph-constitution | 1 | — | local maps for a local carve | PASS |
-| graph-mesh | 1 | — | local maps | PASS |
-| graph-partition | 1 | — | binds carriers before transport | PASS |
-| graph-field-transport | 1 | — | 2 `select type` collapsed | PASS |
-| graph-field | 2 | — | transitive `declared_subobject` | PASS |
-| graph-marching | 4 | — | production fix: `attach` re-enterable | PASS |
-| graph-ordinary | 3 | **listed_set** dropped | fixture had nothing left to prove | PASS |
-| fractal-map | 1 | — | scale argument restated | PASS |
-| graph-characterization | 1 | — | carved edge sets | PASS |
-| graph-algorithms | 2 | — | `sources`/`sinks` carve; shadowing bug | PASS |
+## Where it stands
 
-Green before these passes, untouched: `fractal-graph`, `graph-sequence`,
-`graph-set-view`, `graph-state`, `graph-inclusion`, `graph-identity-map`.
+    green                31 / 32
+    failing              graph-benchmark, at its baseline
+    src/fractal_graph.f90 byte-identical to 57d8c51
 
-## §5 and §6 — the two production repairs, now pinned
+`graph-benchmark` fails on `class_graph_support.mod`, deleted in `a3817e3`,
+exactly as it did before this work began. Its four carrier lines were migrated
+*before* the module was deleted, so the failure kept its shape rather than
+becoming a dangling `use` — but that migration has therefore **never been
+through the compiler**: the file dies on `class_graph_support` at line 33,
+above every line that changed.
+
+## §9 — the gate, now open
+
+    use graph_carrier            src 0   test 0
+    member_set                   src 0   test 0
+    counted_set                  src 0   test 0
+    subset_set                   src 0   test 0
+
+Counts are of live code and of comments alike: `grep -rn graph_carrier src/`
+returns nothing at all. The abstract interface that used to be called
+`graph_carrier_interface` in `graph_grammar` — an identifier, never an import —
+is now `set_graph_interface`.
+
+Comments that name the retired types *historically* remain, and are still true:
+what `graph_forms` once extended, what the old `counted_set` constructor used to
+mint, what `graph-inclusion` restated. Comments that described the code **as it
+stands** were restated in `586fdbc`.
+
+## Where each carrier law went
+
+| carrier law | successor |
+|---|---|
+| counted contract: size, membership, position, 1..n | `graph-set-view` §2 |
+| structural identity: equal extensions, two sets | `graph-set-view` §1 |
+| subsets, embedding order, declared provenance | `graph-inclusion` §1–3 |
+| the name a set wears | `graph-identity-map/labels` |
+| refusal `twice` | `fractal-graph`: identity is assigned once |
+| refusal `unhosted` | `graph-inclusion`: `unsigned` |
+| a graph mints its carriers once | `graph-contract` check 21 |
+
+Two laws have **no** successor. Both are rulings, not omissions:
+
+- **refusal `outsider`** — a subset member from beyond the ambient is no longer
+  refused. Inclusion is *declared*, and `graph-inclusion` §2 rules on it
+  directly: containment does not imply an inclusion edge, so its absence does
+  not forbid one.
+- **the carrier's own name** — a graph binds no label. It mints identity and
+  counts; naming belongs to the label map.
+
+The one law that moved rather than died is `graph-contract` check 21: a concrete
+graph mints its two carrier identities once, hands out the same identity at
+every asking, its two sides are two identities, and a twin built from identical
+numbers owns its own. That is a law about `class_graph`, not about the retired
+module. It is restated so the count comes from the graph and the size only from
+a map that has been told.
+
+## The two production repairs, pinned
 
 Both were found by running, and neither had a test naming it. Both are pinned in
-`graph-multigrid`, the smallest suite that already exercised them:
+`graph-multigrid`:
 
 - **`attach` is re-enterable.** Newton calls it once per iteration and it
   declared the solver's number domain each time; a graph signs once, so the
   second iteration died. The old `counted_set` constructor minted a *fresh*
   domain per attach, so that reading is kept — reset to an unsigned graph, then
-  declare. The regression attaches a second time and asserts the same solution:
-  *"attach is re-enterable: the second attach solves the same"*.
+  declare.
 - **A count component needs a default.** `jacobi()` and `gmres()` name no
-  component, so `n_unknown_domain` / `n_residual_domain` must have values without
-  being named. Asserted directly: *"an unattached solver counts no unknowns, and
-  says so"*.
+  component, so `n_unknown_domain` / `n_residual_domain` must have values
+  without being named.
 
-No unrelated production cleanup was mixed in.
+## The import gates
 
-## Why no tower moved — a finding, not a shortfall
+Each tower's `check_imports.sh` is its layering law as a script. All seven now
+grant the four set capabilities separately rather than the single carrier grant:
 
-Each tower carries **`check_imports.sh`, an import gate** that names, per level
-and per fixture, exactly which modules that level may import — `graph_carrier`
-among them. It is the tower's layering law expressed as a script, and it is not
-incidental machinery: migrating a tower means restating that law over
-`fractal_graph` / `graph_set_representation` / `graph_set_map`, deciding for
-each level whether it may now see a *map* at all.
+    fractal_graph             identity — granted broadly, because WHICH set is
+                              a question everything asks
+    graph_set_representation  only where a representation is CONSTRUCTED
+    graph_set_map             only where one is BOUND or QUERIED
+    graph_inclusion_map       only where provenance is ASSERTED, or carve called
+    graph_label_map           only where a label is READ, or carve called
 
-That is a design question per tower, not a mechanical edit, and it is the reason
-a tower is not simply "the biggest of the remaining suites". The fixture work
-itself is straightforward and `graph-marching` remains the pattern: an operation
-fixture stores `type(set_graph) :: state` plus its count, and `domain` answers
-both. I began `time-integration-tower`'s common fixtures on that pattern, then
-reverted them rather than leave a tower half-migrated and uncommitted.
-
-**Recommendation for the next pass:** rule on the import gate first — whether a
-level that declares carriers may import `graph_set_map` — then the towers become
-mechanical. `time-integration-tower` is the smallest (16 files) and asks no
-domain labels, so it needs `sets` and `inclusions` only.
-
-## §7 — deleted, not ported
-
-`listed_set_fixture` left `graph-ordinary`'s build: it existed to prove the
-relation generic over `member_set` concretions, and that generality now lives in
-`set_representation`. Two `select type` blocks collapsed in
-`graph-field-transport` to `declared_subobject(...)` — the assertion the old code
-made *after* the type test, now carrying the whole meaning.
+Three gates additionally `refuses ... graph_carrier` by name. Those assertions
+stay: they are the towers' own record that the module is retired, and they go on
+passing.
 
 ## §8 — partition laws, unchanged
 
 `sum_k A_k(P_k(D)) = D` at nparts 2 and 3, on vertex **and** edge data; every
 cell owned exactly once; identity at one part and **not** at two. Nothing is
 called an inverse.
-
-## §9 — gate shut
-
-    member_set   src 30   test 372
-    counted_set  src 12   test 532
-    subset_set   src 17   test 262
-    use graph_carrier   src 0 files   test 117 files
-
-Every `src/` hit outside `src/graph_carrier.f90` is a comment, and no src module
-imports it: dead production code held alive entirely by 117 test files.
-
-## §10, §11
-
-`graph-benchmark` fails **exactly** the baseline — `class_graph_support.mod`
-missing, from `a3817e3`. Same failure, not a new one.
-
-`src/fractal_graph.f90` is byte-identical to `57d8c51`.
-
-**Stop condition C.** Migrated 18, remaining 15: `adjoint-tower`,
-`calculator-tower`, `derivative-action-tower`, `graph-algebra`,
-`graph-benchmark`, `graph-binary`, `graph-carrier`, `graph-contract`,
-`graph-minimization`, `graph-relational`, `graph-relation`, `learning-tower`,
-`partitioned-implicit-pde-tower`, `time-integration-tower`,
-`visualization-tower`.

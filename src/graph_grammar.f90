@@ -268,8 +268,8 @@ module graph_grammar
      ! persistent declared domains, for consumers that must ask
      ! where a field domain ultimately lives. This root is already
      ! explicitly the ordinary vertex/edge compatibility contract.
-     procedure(graph_carrier_interface), deferred :: vertex_set
-     procedure(graph_carrier_interface), deferred :: edge_set
+     procedure(set_graph_interface), deferred :: vertex_set
+     procedure(set_graph_interface), deferred :: edge_set
 
      ! Incidence: the two integer edge fields that ARE the structure.
      procedure(graph_edge_end_interface)     , deferred :: edge_tail
@@ -285,11 +285,11 @@ module graph_grammar
      !
      ! The split is not cosmetic: the first kind may be asked twice
      ! and answer one set, the second kind answers two.
-     procedure(graph_carrier_interface)   , deferred :: all_vertices
+     procedure(set_graph_interface)   , deferred :: all_vertices
      procedure(graph_carved_set_interface), deferred :: interior_vertices
      procedure(graph_carved_set_interface), deferred :: boundary_vertices
      procedure(graph_tagged_set_interface), deferred :: tagged_vertices
-     procedure(graph_carrier_interface)   , deferred :: all_edges
+     procedure(set_graph_interface)   , deferred :: all_edges
      procedure(graph_carved_set_interface), deferred :: interior_edges
      procedure(graph_carved_set_interface), deferred :: boundary_edges
      procedure(graph_tagged_set_interface), deferred :: tagged_edges
@@ -449,10 +449,10 @@ module graph_grammar
      ! Not pure: a set graph carries a pointer component, so copying
      ! one out of an INTENT(IN) dummy is barred from a pure subprogram
      ! (F2018 C1594). Identity is still answered by value.
-     type(set_graph) function graph_carrier_interface(this)
+     type(set_graph) function set_graph_interface(this)
        import :: graph, set_graph
        class(graph), intent(in) :: this
-     end function graph_carrier_interface
+     end function set_graph_interface
 
      pure integer function graph_edge_end_interface(this, edge_index)
        import :: graph

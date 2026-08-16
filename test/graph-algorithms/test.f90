@@ -18,7 +18,12 @@
 
 program test_graph_algorithms
 
-  use graph_carrier        , only : counted_set, subset_set, member_set
+  use fractal_graph           , only : graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map           , only : set_map
+  use graph_label_map         , only : label_map
+  use graph_inclusion_map     , only : inclusion_map, declared_subobject
   use graph_binary_relation, only : csr_relation
   use graph_profile        , only : directed_adjacency_view
   use graph_algorithms     , only : sources, sinks, reachable, &
@@ -31,8 +36,11 @@ program test_graph_algorithms
   implicit none
 
 
-  type(counted_set)              :: ground
-  type(subset_set)               :: v
+  type(graph)              :: ground
+  type(graph)               :: v
+  type(set_map)                    :: sets
+  type(label_map)                  :: labels
+  type(inclusion_map)              :: inclusions
   type(csr_relation)             :: after
   type(graph)             , target :: g
   type(graph)             , target :: scell(1), selem(1)
@@ -48,11 +56,16 @@ program test_graph_algorithms
   write(*,'(1x,a)') "graph algorithms suite (level 4)"
   write(*,'(1x,a)') "============================================="
 
-  ground = counted_set('ground', 5)
-  v      = subset_set('ordered-domain', ground, [3, 1, 5, 4, 2])
+  call ground % declare()
+  call sets % bind(ground, counted_set_representation(5))
+  call labels % bind(ground, 'ground')
+  call v % declare()
+  call sets % bind(v, listed_set_representation([3, 1, 5, 4, 2]))
+  call labels % bind(v, 'ordered-domain')
+  call inclusions % include_in(v, ground)
 
   after = csr_relation('after', v, v, &
-       & reshape([3,4,  1,4,  4,2], [2, 3]))
+       & reshape([3,4,  1,4,  4,2], [2, 3]), sets)
 
   ! 'dag': (S, P) as one sequence on each branch.
   call g % declare()
@@ -82,12 +95,12 @@ program test_graph_algorithms
   g % branch(1) = known_branch(scell(1))
   g % branch(2) = known_branch(rcell(1))
 
-  view = directed_adjacency_view(g, bnd, after)
+  view = directed_adjacency_view(g, bnd, sets, after)
 
-  call check_sources_and_sinks(view, nfail)
-  call check_reachability(view, nfail)
-  call check_topological_order(view, nfail)
-  call check_tuple_order_invariance(nfail)
+  call check_sources_and_sinks(view, sets, labels, inclusions, nfail)
+  call check_reachability(view, sets, nfail)
+  call check_topological_order(view, sets, nfail)
+  call check_tuple_order_invariance(v, sets, labels, inclusions, nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
@@ -120,29 +133,34 @@ contains
   ! lawfully in both.
   !===================================================================!
 
-  subroutine check_sources_and_sinks(view, nfail)
+  subroutine check_sources_and_sinks(view, sets, labels, inclusions, nfail)
 
     type(directed_adjacency_view), intent(in)    :: view
+    type(set_map)                , intent(inout) :: sets
+    type(label_map)              , intent(inout) :: labels
+    type(inclusion_map)          , intent(inout) :: inclusions
     integer                      , intent(inout) :: nfail
 
-    type(subset_set)     :: src, snk
+    type(graph)          :: src, snk
     integer, allocatable :: idx(:)
 
-    src = sources(view)
-    snk = sinks(view)
+    ! sources and sinks CARVE - a fresh declared set each - so the
+    ! caller's maps are where they say what they are.
+    call sources(view, sets, labels, inclusions, src)
+    call sinks(view, sets, labels, inclusions, snk)
 
-    call src % members(idx)
+    call sets % members_of(src, idx)
     call report(size(idx) .eq. 3 .and. all(idx .eq. [3, 1, 5]), &
          & "sources are [3, 1, 5], by declaration, not by number", nfail)
 
-    call snk % members(idx)
+    call sets % members_of(snk, idx)
     call report(size(idx) .eq. 2 .and. all(idx .eq. [5, 2]), &
          & "sinks are [5, 2], likewise", nfail)
 
-    call report(src % has(5) .and. snk % has(5), &
+    call report(sets % has_in(src, 5) .and. sets % has_in(snk, 5), &
          & "the isolated member is both source and sink", nfail)
 
-    call report(src % is_subobject_of(v) .and. snk % is_subobject_of(v), &
+    call report(declared_subobject(src, v, inclusions) .and. declared_subobject(snk, v, inclusions), &
          & "and both answers are subobjects of the domain", nfail)
 
   end subroutine check_sources_and_sinks
@@ -152,21 +170,22 @@ contains
   ! included and outsiders excluded.
   !===================================================================!
 
-  subroutine check_reachability(view, nfail)
+  subroutine check_reachability(view, sets, nfail)
 
     type(directed_adjacency_view), intent(in)    :: view
+    type(set_map)                , intent(in)    :: sets
     integer                      , intent(inout) :: nfail
 
-    call report(reachable(view, 3, 2), &
+    call report(reachable(view, sets, 3, 2), &
          & "3 reaches 2 through 4", nfail)
-    call report(.not. reachable(view, 2, 3), &
+    call report(.not. reachable(view, sets, 2, 3), &
          & "and never backwards", nfail)
-    call report(reachable(view, 5, 5), &
+    call report(reachable(view, sets, 5, 5), &
          & "every member reaches itself by the zero-length path", nfail)
-    call report(.not. reachable(view, 5, 2), &
+    call report(.not. reachable(view, sets, 5, 2), &
          & "the isolated member reaches nothing else", nfail)
-    call report(.not. reachable(view, 7, 2) .and. &
-         &      .not. reachable(view, 3, 0), &
+    call report(.not. reachable(view, sets, 7, 2) .and. &
+         &      .not. reachable(view, sets, 3, 0), &
          & "an outsider endpoint answers false, never a crash", nfail)
 
   end subroutine check_reachability
@@ -176,14 +195,15 @@ contains
   ! [3, 1, 5, 4, 2] - declaration-order ties, member values out.
   !===================================================================!
 
-  subroutine check_topological_order(view, nfail)
+  subroutine check_topological_order(view, sets, nfail)
 
     type(directed_adjacency_view), intent(in)    :: view
+    type(set_map)                , intent(in)    :: sets
     integer                      , intent(inout) :: nfail
 
     integer, allocatable :: order(:)
 
-    call topological_order(view, order)
+    call topological_order(view, sets, order)
 
     call report(size(order) .eq. 5 .and. &
          &      all(order .eq. [3, 1, 5, 4, 2]), &
@@ -197,9 +217,13 @@ contains
   ! sinks, reachability and order.
   !===================================================================!
 
-  subroutine check_tuple_order_invariance(nfail)
+  subroutine check_tuple_order_invariance(v, sets, labels, inclusions, nfail)
 
-    integer, intent(inout) :: nfail
+    type(graph)        , intent(in)    :: v
+    type(set_map)      , intent(inout) :: sets
+    type(label_map)    , intent(inout) :: labels
+    type(inclusion_map), intent(inout) :: inclusions
+    integer            , intent(inout) :: nfail
 
     type(csr_relation)             :: backwards
     type(graph)             , target :: g2
@@ -208,12 +232,12 @@ contains
     type(relational_binding)         :: bnd2
     integer                          :: kcell2
     type(directed_adjacency_view)  :: view2
-    type(subset_set)               :: src, snk
+    type(graph)               :: src, snk
     integer, allocatable           :: idx(:), order(:)
     logical                        :: ok
 
     backwards = csr_relation('after backwards', v, v, &
-         & reshape([4,2,  1,4,  3,4], [2, 3]))
+         & reshape([4,2,  1,4,  3,4], [2, 3]), sets)
 
     ! 'dag again': (S, P) as one sequence on each branch.
     call g2 % declare()
@@ -242,22 +266,22 @@ contains
 
     g2 % branch(1) = known_branch(scell2(1))
     g2 % branch(2) = known_branch(rcell2(1))
-    view2 = directed_adjacency_view(g2, bnd2, backwards)
+    view2 = directed_adjacency_view(g2, bnd2, sets, backwards)
 
-    src = sources(view2)
-    snk = sinks(view2)
-    call src % members(idx)
+    call sources(view2, sets, labels, inclusions, src)
+    call sinks(view2, sets, labels, inclusions, snk)
+    call sets % members_of(src, idx)
     ok = all(idx .eq. [3, 1, 5])
-    call snk % members(idx)
+    call sets % members_of(snk, idx)
     ok = ok .and. all(idx .eq. [5, 2])
     call report(ok, &
          & "sources and sinks stand, tuples shuffled", nfail)
 
-    call report(reachable(view2, 3, 2) .and. &
-         &      .not. reachable(view2, 2, 3), &
+    call report(reachable(view2, sets, 3, 2) .and. &
+         &      .not. reachable(view2, sets, 2, 3), &
          & "and so does reachability", nfail)
 
-    call topological_order(view2, order)
+    call topological_order(view2, sets, order)
     call report(all(order .eq. [3, 1, 5, 4, 2]), &
          & "and so does the one canonical order", nfail)
 

@@ -14,8 +14,13 @@
 
 program algorithms_refusal
 
-  use graph_carrier        , only : counted_set
-  use graph_relation       , only : stored_relation, slot
+  use fractal_graph           , only : graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map           , only : set_map
+  use graph_label_map         , only : label_map
+  use graph_inclusion_map     , only : inclusion_map, declared_subobject
+  use graph_relation       , only : stored_relation
   use graph_binary_relation, only : csr_relation
   use graph_profile        , only : directed_adjacency_view
   use graph_algorithms     , only : topological_order
@@ -27,7 +32,10 @@ program algorithms_refusal
   implicit none
 
 
-  type(counted_set)              :: a, b, c
+  type(graph)              :: a, b, c
+  type(set_map)                  :: sets
+  type(label_map)                :: labels
+  type(inclusion_map)            :: inclusions
   type(csr_relation)             :: adj, stray, lopsided, ring
   type(stored_relation)          :: fat
   type(graph)             , target :: g
@@ -43,14 +51,18 @@ program algorithms_refusal
   which = ''
   call get_command_argument(1, which)
 
-  a = counted_set('a-things', 3)
-  b = counted_set('b-things', 2)
+  call a % declare()
+  call sets % bind(a, counted_set_representation(3))
+  call labels % bind(a, 'a-things')
+  call b % declare()
+  call sets % bind(b, counted_set_representation(2))
+  call labels % bind(b, 'b-things')
 
   select case (trim(which))
 
   case ('notowned')
-     adj   = csr_relation('inside' , a, a, reshape([1, 2], [2, 1]))
-     stray = csr_relation('outside', a, a, reshape([2, 3], [2, 1]))
+     adj   = csr_relation('inside' , a, a, reshape([1, 2], [2, 1]), sets)
+     stray = csr_relation('outside', a, a, reshape([2, 3], [2, 1]), sets)
      ! 'bad': (S, P) as one sequence on each branch.
      call g % declare()
      do kcell = 1, 1
@@ -78,12 +90,14 @@ program algorithms_refusal
 
      g % branch(1) = known_branch(scell(1))
      g % branch(2) = known_branch(rcell(1))
-     view = directed_adjacency_view(g, bnd, stray)
+     view = directed_adjacency_view(g, bnd, sets, stray)
 
   case ('notbinary')
-     c   = counted_set('c-things', 2)
-     fat = stored_relation('fat', [slot(a), slot(a), slot(c)], &
-          & reshape([1, 2, 1], [3, 1]))
+     call c % declare()
+     call sets % bind(c, counted_set_representation(2))
+     call labels % bind(c, 'c-things')
+     fat = stored_relation('fat', [a, a, c], &
+          & reshape([1, 2, 1], [3, 1]), sets)
      ! 'bad': (S, P) as one sequence on each branch.
      call g % declare()
      do kcell = 1, 2
@@ -112,10 +126,10 @@ program algorithms_refusal
 
      g % branch(1) = known_branch(scell(1))
      g % branch(2) = known_branch(rcell(1))
-     view = directed_adjacency_view(g, bnd, fat)
+     view = directed_adjacency_view(g, bnd, sets, fat)
 
   case ('notsquare')
-     lopsided = csr_relation('lopsided', a, b, reshape([1, 1], [2, 1]))
+     lopsided = csr_relation('lopsided', a, b, reshape([1, 1], [2, 1]), sets)
      ! 'bad': (S, P) as one sequence on each branch.
      call g % declare()
      do kcell = 1, 2
@@ -144,11 +158,11 @@ program algorithms_refusal
 
      g % branch(1) = known_branch(scell(1))
      g % branch(2) = known_branch(rcell(1))
-     view = directed_adjacency_view(g, bnd, lopsided)
+     view = directed_adjacency_view(g, bnd, sets, lopsided)
 
   case ('cycle')
      ring = csr_relation('ring', a, a, &
-          & reshape([1,2,  2,3,  3,1], [2, 3]))
+          & reshape([1,2,  2,3,  3,1], [2, 3]), sets)
      ! 'cyclic': (S, P) as one sequence on each branch.
      call g % declare()
      do kcell = 1, 1
@@ -177,9 +191,9 @@ program algorithms_refusal
      g % branch(1) = known_branch(scell(1))
      g % branch(2) = known_branch(rcell(1))
      ! The view is lawful: a cycle is a directed graph.
-     view = directed_adjacency_view(g, bnd, ring)
+     view = directed_adjacency_view(g, bnd, sets, ring)
      ! Only the ordering is undefined.
-     call topological_order(view, order)
+     call topological_order(view, sets, order)
 
   case default
      write(*,'(1x,a)') "usage: refusal notowned|notbinary|notsquare|cycle"

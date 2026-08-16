@@ -25,10 +25,10 @@
 ! same 7 without ever having contributed to it.
 !
 ! Two graphs stand here and they are NOT interchangeable. The MODEL
-! is a relational_graph owning the mathematical structure: the
+! is a graph read as (S, P), with a binding to the objects its
+! elements denote, and it carries the mathematical structure: the
 ! external selectors are located inside it by identity and then
-! DESTROYED, and every number below comes through model-owned
-! relations. The HOST is a seven-vertex stored_graph that exists
+! DESTROYED, and every number below comes through bound relations. The HOST is a seven-vertex stored_graph that exists
 ! only because the legacy graph_operation face demands a
 ! class(graph); it is provably neither Q nor Y nor their size, and
 ! it contributes no domain, no coefficient and no topology.
@@ -52,7 +52,10 @@ program adjoint_level_9
   use graph_relation_algebra, only : compose_binary
   use graph_binary_relation , only : csr_relation, transposed_view, &
        &                             transpose_of, inclusion_of
-  use graph_structure  , only : relational_graph, held_set, held_relation
+  use fractal_graph        , only : graph, known_branch, null_branch
+  use graph_relational_view, only : relational_binding, &
+       & num_member_sets, member_set_at, num_relations, relation_at, &
+       & holds_set
   use graph_grammar    , only : graph_field
   use class_graph      , only : stored_graph
   use class_graph_field, only : field
@@ -69,7 +72,11 @@ program adjoint_level_9
   type(stored_relation), allocatable :: dep
   type(csr_relation)   , allocatable, target :: inc_y, inc_z, inc_q, inc_p
   type(csr_relation)   , allocatable :: jq, jp, fq, fp
-  type(relational_graph), target     :: model
+  type(graph)             , target :: model
+  type(graph)             , target :: scell(6), selem(6)
+  type(graph)             , target :: rcell(5), relem(5)
+  type(relational_binding)         :: bnd
+  integer                          :: kcell
   type(stored_graph)                 :: host
   class(relation), pointer           :: rp   => null()
   class(relation), pointer           :: gdep => null()
@@ -132,17 +139,48 @@ program adjoint_level_9
   fp = compose_binary(compose_binary(inc_z, dep), transpose_of(inc_p))
 
   !-- the MODEL graph owns the mathematics --------------------------
-  model = relational_graph('adjoint model', &
-       & [held_set(v), held_set(t), held_set(p_dom), held_set(q_dom), &
-       &  held_set(y_dom), held_set(z_dom)], &
-       & [held_relation(dep), held_relation(jq), held_relation(jp), &
-       &  held_relation(fq), held_relation(fp)])
+  ! 'adjoint model': (S, P) as one sequence on each branch.
+  call model % declare()
+  do kcell = 1, 6
+     call scell(kcell) % declare()
+     call selem(kcell) % declare()
+  end do
+  do kcell = 1, 5
+     call rcell(kcell) % declare()
+     call relem(kcell) % declare()
+  end do
+
+  call bnd % bind_set(selem(1), v)
+  call bnd % bind_set(selem(2), t)
+  call bnd % bind_set(selem(3), p_dom)
+  call bnd % bind_set(selem(4), q_dom)
+  call bnd % bind_set(selem(5), y_dom)
+  call bnd % bind_set(selem(6), z_dom)
+  call bnd % bind_relation(relem(1), dep)
+  call bnd % bind_relation(relem(2), jq)
+  call bnd % bind_relation(relem(3), jp)
+  call bnd % bind_relation(relem(4), fq)
+  call bnd % bind_relation(relem(5), fp)
+
+  do kcell = 1, 6
+     scell(kcell) % branch(1) = known_branch(selem(kcell))
+     if (kcell .lt. 6) scell(kcell) % branch(2) = &
+          & known_branch(scell(kcell + 1))
+  end do
+  do kcell = 1, 5
+     rcell(kcell) % branch(1) = known_branch(relem(kcell))
+     if (kcell .lt. 5) rcell(kcell) % branch(2) = &
+          & known_branch(rcell(kcell + 1))
+  end do
+
+  model % branch(1) = known_branch(scell(1))
+  model % branch(2) = known_branch(rcell(1))
 
   !-- locate the model's own citizens by identity, then destroy the
   !   construction selectors: from here on the statement runs on
   !   graph-owned structure alone
-  do k = 1, model % num_relations()
-     rp => model % relation_at(k)
+  do k = 1, num_relations(model)
+     rp => relation_at(model, bnd, k)
      if (rp % same_as(dep)) gdep => rp
      if (rp % same_as(jq))  gjq  => rp
      if (rp % same_as(jp))  gjp  => rp
@@ -221,8 +259,8 @@ contains
          & "and the model's own five relations were located by " // &
          & "identity before they died", nfail)
 
-    call report(model % num_relations() .eq. 5 .and. &
-         &      model % num_member_sets() .eq. 6, &
+    call report(num_relations(model) .eq. 5 .and. &
+         &      num_member_sets(model) .eq. 6, &
          & "the model still owns six carriers and five relations", &
          & nfail)
 
@@ -264,7 +302,7 @@ contains
          &      host % num_vertices() .ne. y_dom % size(), &
          & "nor of their size: the solver host is not the model", &
          & nfail)
-    call report(.not. model % holds_set(hv), &
+    call report(.not. holds_set(model, bnd, hv), &
          & "and the model does not own it at all", nfail)
 
   end subroutine check_host_is_not_the_model

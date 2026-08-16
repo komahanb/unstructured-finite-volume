@@ -54,18 +54,15 @@ program derivative_level_6
        &                             compose_binary
   use graph_binary_relation , only : csr_relation, transposed_view, &
        &                             transpose_of
-  use graph_structure  , only : relational_graph, held_set, held_relation
   use graph_profile    , only : directed_adjacency_view
   use graph_algorithms , only : reachable
-  use fractal_graph        , only : graph
-  use graph_relational_view, only : relational_binding
-  use relational_fixture   , only : fractal_fixture
+  use fractal_graph        , only : graph, known_branch, null_branch
+  use graph_relational_view, only : relational_binding, &
+       & num_member_sets, member_set_at, num_relations, relation_at, &
+       & holds_set
 
   implicit none
 
-  type(fractal_fixture)             :: fx_
-  type(graph)             , pointer :: fg_
-  type(relational_binding), pointer :: fb_
 
   type(counted_set)              :: v, o, p
   type(subset_set)               :: x_dom, c, z, p_in, p_out
@@ -74,7 +71,16 @@ program derivative_level_6
   type(csr_relation)             :: a, a2
   type(csr_relation), target     :: j_zx, j_zx2
   type(transposed_view)          :: jt, jt2
-  type(relational_graph), target :: g_a, g_a2
+  type(graph)             , target :: g_a
+  type(graph)             , target :: scell(1), selem(1)
+  type(graph)             , target :: rcell(1), relem(1)
+  type(relational_binding)         :: bnd
+  integer                          :: kcell
+  type(graph)             , target :: g_a2
+  type(graph)             , target :: scell2(1), selem2(1)
+  type(graph)             , target :: rcell2(1), relem2(1)
+  type(relational_binding)         :: bnd2
+  integer                          :: kcell2
   type(directed_adjacency_view)  :: dep_view, dep_view2
   integer                        :: table(3, 6)
   integer                        :: nfail
@@ -105,10 +111,34 @@ program derivative_level_6
   p_out = subset_set('output-port', p, [PORT_OUT])
 
   a = derive_direct(flow)
-  g_a = relational_graph('value dependency', [held_set(v)], &
-       & [held_relation(a)])
-  call fx_ % to_fractal(g_a, fg_, fb_)
-  dep_view = directed_adjacency_view(fg_, fb_, a)
+  ! 'value dependency': (S, P) as one sequence on each branch.
+  call g_a % declare()
+  do kcell = 1, 1
+     call scell(kcell) % declare()
+     call selem(kcell) % declare()
+  end do
+  do kcell = 1, 1
+     call rcell(kcell) % declare()
+     call relem(kcell) % declare()
+  end do
+
+  call bnd % bind_set(selem(1), v)
+  call bnd % bind_relation(relem(1), a)
+
+  do kcell = 1, 1
+     scell(kcell) % branch(1) = known_branch(selem(kcell))
+     if (kcell .lt. 1) scell(kcell) % branch(2) = &
+          & known_branch(scell(kcell + 1))
+  end do
+  do kcell = 1, 1
+     rcell(kcell) % branch(1) = known_branch(relem(kcell))
+     if (kcell .lt. 1) rcell(kcell) % branch(2) = &
+          & known_branch(rcell(kcell + 1))
+  end do
+
+  g_a % branch(1) = known_branch(scell(1))
+  g_a % branch(2) = known_branch(rcell(1))
+  dep_view = directed_adjacency_view(g_a, bnd, a)
 
   j_zx = derive_jacobian(dep_view)
 
@@ -380,10 +410,34 @@ contains
     backwards = stored_relation('flow backwards', [o, v, p], rev)
 
     a2 = derive_direct(backwards)
-    g_a2 = relational_graph('value dependency again', [held_set(v)], &
-         & [held_relation(a2)])
-    call fx_ % to_fractal(g_a2, fg_, fb_)
-    dep_view2 = directed_adjacency_view(fg_, fb_, a2)
+    ! 'value dependency again': (S, P) as one sequence on each branch.
+    call g_a2 % declare()
+    do kcell2 = 1, 1
+       call scell2(kcell2) % declare()
+       call selem2(kcell2) % declare()
+    end do
+    do kcell2 = 1, 1
+       call rcell2(kcell2) % declare()
+       call relem2(kcell2) % declare()
+    end do
+
+    call bnd2 % bind_set(selem2(1), v)
+    call bnd2 % bind_relation(relem2(1), a2)
+
+    do kcell2 = 1, 1
+       scell2(kcell2) % branch(1) = known_branch(selem2(kcell2))
+       if (kcell2 .lt. 1) scell2(kcell2) % branch(2) = &
+            & known_branch(scell2(kcell2 + 1))
+    end do
+    do kcell2 = 1, 1
+       rcell2(kcell2) % branch(1) = known_branch(relem2(kcell2))
+       if (kcell2 .lt. 1) rcell2(kcell2) % branch(2) = &
+            & known_branch(rcell2(kcell2 + 1))
+    end do
+
+    g_a2 % branch(1) = known_branch(scell2(1))
+    g_a2 % branch(2) = known_branch(rcell2(1))
+    dep_view2 = directed_adjacency_view(g_a2, bnd2, a2)
     j_zx2 = derive_jacobian(dep_view2)
     jt2 = transpose_of(j_zx2)
 

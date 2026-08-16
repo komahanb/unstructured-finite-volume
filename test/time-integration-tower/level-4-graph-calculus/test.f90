@@ -62,8 +62,6 @@ program time_level_4
   use graph_carrier         , only : counted_set, subset_set, member_set
   use graph_relation        , only : relation
   use graph_binary_relation , only : csr_relation
-  use graph_structure       , only : relational_graph, held_set, &
-       &                             held_relation
   use graph_profile         , only : directed_adjacency_view
   use graph_algorithms      , only : sources, sinks, reachable, &
        &                             topological_order
@@ -71,21 +69,23 @@ program time_level_4
   use time_relations_fixture, only : tail_relation, head_relation
   use time_algebra_fixture  , only : derive_one_step_reach, &
        &                             derive_two_step_reach
-  use fractal_graph        , only : graph
-  use graph_relational_view, only : relational_binding
-  use relational_fixture   , only : fractal_fixture
+  use fractal_graph        , only : graph, known_branch, null_branch
+  use graph_relational_view, only : relational_binding, &
+       & num_member_sets, member_set_at, num_relations, relation_at, &
+       & holds_set
 
   implicit none
 
-  type(fractal_fixture)             :: fx_
-  type(graph)             , pointer :: fg_
-  type(relational_binding), pointer :: fb_
 
   type(counted_set)              :: q, t, e
   type(csr_relation), target     :: tail, head, a1
   type(csr_relation)             :: a2
   class(relation), allocatable   :: sel_a1, sel_a2
-  type(relational_graph), target :: g
+  type(graph)             , target :: g
+  type(graph)             , target :: scell(3), selem(3)
+  type(graph)             , target :: rcell(4), relem(4)
+  type(relational_binding)         :: bnd
+  integer                          :: kcell
   type(directed_adjacency_view)  :: view_a1, view_a2
   integer                        :: nfail
 
@@ -101,10 +101,38 @@ program time_level_4
   a1   = derive_one_step_reach(tail, head)
   a2   = derive_two_step_reach(a1)
 
-  g = relational_graph('time', &
-       & [held_set(q), held_set(t), held_set(e)], &
-       & [held_relation(tail), held_relation(head), &
-       &  held_relation(a1), held_relation(a2)])
+  ! 'time': (S, P) as one sequence on each branch.
+  call g % declare()
+  do kcell = 1, 3
+     call scell(kcell) % declare()
+     call selem(kcell) % declare()
+  end do
+  do kcell = 1, 4
+     call rcell(kcell) % declare()
+     call relem(kcell) % declare()
+  end do
+
+  call bnd % bind_set(selem(1), q)
+  call bnd % bind_set(selem(2), t)
+  call bnd % bind_set(selem(3), e)
+  call bnd % bind_relation(relem(1), tail)
+  call bnd % bind_relation(relem(2), head)
+  call bnd % bind_relation(relem(3), a1)
+  call bnd % bind_relation(relem(4), a2)
+
+  do kcell = 1, 3
+     scell(kcell) % branch(1) = known_branch(selem(kcell))
+     if (kcell .lt. 3) scell(kcell) % branch(2) = &
+          & known_branch(scell(kcell + 1))
+  end do
+  do kcell = 1, 4
+     rcell(kcell) % branch(1) = known_branch(relem(kcell))
+     if (kcell .lt. 4) rcell(kcell) % branch(2) = &
+          & known_branch(rcell(kcell + 1))
+  end do
+
+  g % branch(1) = known_branch(scell(1))
+  g % branch(2) = known_branch(rcell(1))
 
   ! The interpretations read GRAPH-OWNED relations. A SELECTOR IS AN
   ! IDENTITY, NOT A THING: these two are separate objects that merely
@@ -113,10 +141,8 @@ program time_level_4
   ! question is asked of the views.
   allocate(sel_a1, source=a1)
   allocate(sel_a2, source=a2)
-  call fx_ % to_fractal(g, fg_, fb_)
-  view_a1 = directed_adjacency_view(fg_, fb_, sel_a1)
-  call fx_ % to_fractal(g, fg_, fb_)
-  view_a2 = directed_adjacency_view(fg_, fb_, sel_a2)
+  view_a1 = directed_adjacency_view(g, bnd, sel_a1)
+  view_a2 = directed_adjacency_view(g, bnd, sel_a2)
   deallocate(sel_a1)
   deallocate(sel_a2)
 

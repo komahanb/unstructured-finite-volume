@@ -57,7 +57,10 @@ program visualization_level_4
   use graph_carrier        , only : counted_set, subset_set, member_set
   use graph_relation       , only : relation
   use graph_binary_relation, only : csr_relation, binary_relation
-  use graph_structure      , only : relational_graph, held_set, held_relation
+  use fractal_graph        , only : graph, known_branch, null_branch
+  use graph_relational_view, only : relational_binding, &
+       & num_member_sets, member_set_at, num_relations, relation_at, &
+       & holds_set
   use visualization_carriers_fixture , only : structural_carriers, label_for
   use visualization_relations_fixture, only : occurrences_of_a1
   use visualization_relations_fixture, only : occurrences_of_a2
@@ -78,7 +81,11 @@ program visualization_level_4
   type(csr_relation), target :: d1, d2, d3, d21, d31
   type(csr_relation), target :: d1t, d2t, d3t
   type(csr_relation)         :: middle, drev, d31t
-  type(relational_graph)     :: g
+  type(graph)             , target :: g
+  type(graph)             , target :: scell(7), selem(7)
+  type(graph)             , target :: rcell(6), relem(6)
+  type(relational_binding)         :: bnd
+  integer                          :: kcell
   integer                    :: nfail
 
   nfail = 0
@@ -92,12 +99,44 @@ program visualization_level_4
   call occurrences_of_a2(e2, x1, x2, t2, h2)
   call occurrences_of_a3(e3, x2, x3, t3, h3)
 
-  g = relational_graph('the operator chain A3 o A2 o A1', &
-       & [held_set(x0), held_set(x1), held_set(x2), held_set(x3), &
-       &  held_set(e1), held_set(e2), held_set(e3)], &
-       & [held_relation(t1), held_relation(h1), &
-       &  held_relation(t2), held_relation(h2), &
-       &  held_relation(t3), held_relation(h3)])
+  ! 'the operator chain A3 o A2 o A1': (S, P) as one sequence on each branch.
+  call g % declare()
+  do kcell = 1, 7
+     call scell(kcell) % declare()
+     call selem(kcell) % declare()
+  end do
+  do kcell = 1, 6
+     call rcell(kcell) % declare()
+     call relem(kcell) % declare()
+  end do
+
+  call bnd % bind_set(selem(1), x0)
+  call bnd % bind_set(selem(2), x1)
+  call bnd % bind_set(selem(3), x2)
+  call bnd % bind_set(selem(4), x3)
+  call bnd % bind_set(selem(5), e1)
+  call bnd % bind_set(selem(6), e2)
+  call bnd % bind_set(selem(7), e3)
+  call bnd % bind_relation(relem(1), t1)
+  call bnd % bind_relation(relem(2), h1)
+  call bnd % bind_relation(relem(3), t2)
+  call bnd % bind_relation(relem(4), h2)
+  call bnd % bind_relation(relem(5), t3)
+  call bnd % bind_relation(relem(6), h3)
+
+  do kcell = 1, 7
+     scell(kcell) % branch(1) = known_branch(selem(kcell))
+     if (kcell .lt. 7) scell(kcell) % branch(2) = &
+          & known_branch(scell(kcell + 1))
+  end do
+  do kcell = 1, 6
+     rcell(kcell) % branch(1) = known_branch(relem(kcell))
+     if (kcell .lt. 6) rcell(kcell) % branch(2) = &
+          & known_branch(rcell(kcell + 1))
+  end do
+
+  g % branch(1) = known_branch(scell(1))
+  g % branch(2) = known_branch(rcell(1))
 
   d1 = derive_dependency('D1', t1, h1)
   d2 = derive_dependency('D2', t2, h2)
@@ -492,7 +531,7 @@ contains
          & "which a union would erase - direction would survive as " // &
          & "tuple order; the distinct source and codomain would not", nfail)
 
-    call report(g % num_member_sets() .eq. 7 .and. .not. g % holds_set(union_like()), &
+    call report(num_member_sets(g) .eq. 7 .and. .not. holds_set(g, bnd, union_like()), &
          & "so nothing was collapsed to make a picture: seven typed " // &
          & "carriers went in, and seven came out", nfail)
 

@@ -7,19 +7,22 @@
 !     branch(2) = the sequence of relations
 !
 ! Each element graph denotes a legacy member set or relation, resolved
-! through a binding. The kernel is unchanged; graph_structure is not
-! used here at all.
+! through a binding. The kernel is unchanged.
 !
-! THE VALIDITY LAW, stated mathematically:
+! THE VALIDITY LAW, stated mathematically. G is relationally valid iff
 !
-!     G is relationally valid  iff  for every relation P in the
-!     relation sequence and every j in 1..arity(P), domain_j(P) is a
-!     member set of the member-set sequence of G.
+!     (i)   S_i /= S_j for i /= j,
+!     (ii)  P_i /= P_j for i /= j, and
+!     (iii) for every relation P and every j in 1..arity(P),
+!           domain_j(P) is a member set of the member-set sequence.
 !
-! Zero sets and zero relations satisfy it vacuously. Relations without
-! sets do not, unless they have arity zero - and a relation of this
-! repository has arity at least one, so a relation always needs its
-! domains present.
+! (i) and (ii) say that S and P are SETS: the branches represent them
+! as sequences, and a sequence may repeat what a set cannot.
+!
+! Zero sets and zero relations satisfy all three vacuously. Relations
+! without sets do not, unless they have arity zero - and a relation of
+! this repository has arity at least one, so a relation always needs
+! its domains present.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!

@@ -30,7 +30,7 @@
 #
 #     graph_relation, graph_binary_relation  earned at Level 1
 #     graph_relation_algebra                 earned at Level 2
-#     graph_structure                        earned at Level 3
+#     fractal_graph, graph_relational_view   earned at Level 3
 #     structural_renderer_fixture            earned at Level 4
 #     class_graph_field, graph_field_calculus, and the two
 #     coefficient fixtures                   earned at Level 5
@@ -103,7 +103,7 @@ allowed_for() {
         #          the level's conclusion is that the ordinary graph
         #          was not required, and the gate is what makes that
         #          claim mechanical.
-        level-4-graph-calculus) echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra graph_structure" ;;
+        level-4-graph-calculus) echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra fractal_graph graph_relational_view" ;;
 
         # ===== REVIEW GATE A =====
 
@@ -111,7 +111,7 @@ allowed_for() {
         #          coefficients. The ordinary graph and every operator
         #          module stay refused: values arrived, machinery did
         #          not.
-        level-5-field-calculus) echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture visualization_values_fixture valued_renderer_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra graph_structure graph_field_calculus class_graph_field" ;;
+        level-5-field-calculus) echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture visualization_values_fixture valued_renderer_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra graph_field_calculus class_graph_field" ;;
 
         # ---- L6: + PRODUCTION DISCRETIZATION, and only the three
         #          modules the level actually names. graph_calculus and
@@ -120,7 +120,7 @@ allowed_for() {
         #          stored graph directly, and a ceiling permits what is
         #          used rather than what is nearby. graph_fitting is
         #          refused outright, and so is everything that solves.
-        level-6-discretization) echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_discretization_fixture production_pattern_renderer_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra graph_structure graph_grammar class_graph_stencil class_graph_step" ;;
+        level-6-discretization) echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_discretization_fixture production_pattern_renderer_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra graph_grammar class_graph_stencil class_graph_step" ;;
 
         # ---- L7: + MINIMIZATION, and only the concrete the
         #          experiment uses. graph_minimization itself is not
@@ -129,14 +129,14 @@ allowed_for() {
         #          census rather than run. Nothing that solves beyond
         #          jacobi: no gmres, no newton, no multigrid, no
         #          marcher, no linearization.
-        level-7-minimization) echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_pattern_renderer_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra graph_structure graph_grammar class_graph class_graph_stencil class_graph_jacobi" ;;
+        level-7-minimization) echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_pattern_renderer_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra graph_grammar class_graph class_graph_stencil class_graph_jacobi" ;;
 
         # ---- L8: the constitution. Both axes and the context at once,
         #          on the vocabulary Levels 6 and 7 already earned.
-        level-8-constitution) echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_pattern_renderer_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra graph_structure graph_grammar class_graph class_graph_stencil class_graph_step class_graph_jacobi" ;;
+        level-8-constitution) echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_pattern_renderer_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra graph_grammar class_graph class_graph_stencil class_graph_step class_graph_jacobi" ;;
         # ---- L9: the statement, on the same constitution plus the
         #          coefficient view Level 5 earned.
-        level-9-statement) echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture valued_renderer_fixture visualization_values_fixture production_pattern_renderer_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra graph_structure graph_grammar graph_field_calculus class_graph class_graph_field class_graph_stencil class_graph_step class_graph_jacobi" ;;
+        level-9-statement) echo "visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture valued_renderer_fixture visualization_values_fixture production_pattern_renderer_fixture graph_carrier graph_relation graph_binary_relation graph_relation_algebra graph_grammar graph_field_calculus class_graph class_graph_field class_graph_stencil class_graph_step class_graph_jacobi" ;;
 
         *)                 echo "__no_allowlist__" ;;
     esac

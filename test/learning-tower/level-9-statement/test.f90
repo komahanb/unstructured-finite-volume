@@ -47,7 +47,6 @@ program learning_level_9
   use graph_relation , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_structure, only : relational_graph, held_set, held_relation
   use graph_profile  , only : directed_adjacency_view
   use graph_algorithms, only : topological_order
   use graph_grammar  , only : graph_field
@@ -56,15 +55,13 @@ program learning_level_9
   use class_graph_gmres, only : gmres
   use learning_constitution_fixture, only : apply_law, slot_for_port
   use constituted_residual_fixture , only : constituted_learning_residual
-  use fractal_graph        , only : graph
-  use graph_relational_view, only : relational_binding
-  use relational_fixture   , only : fractal_fixture
+  use fractal_graph        , only : graph, known_branch, null_branch
+  use graph_relational_view, only : relational_binding, &
+       & num_member_sets, member_set_at, num_relations, relation_at, &
+       & holds_set
 
   implicit none
 
-  type(fractal_fixture)             :: fx_
-  type(graph)             , pointer :: fg_
-  type(relational_binding), pointer :: fb_
 
   integer, parameter :: ROW_R = 1
 
@@ -74,7 +71,11 @@ program learning_level_9
   type(stored_relation)              :: located, consumes, produces
   class(relation), allocatable       :: d
   class(relation), pointer           :: gflow
-  type(relational_graph), target     :: g
+  type(graph)             , target :: g
+  type(graph)             , target :: scell(3), selem(3)
+  type(graph)             , target :: rcell(2), relem(2)
+  type(relational_binding)         :: bnd
+  integer                          :: kcell
   type(directed_adjacency_view)      :: view
   type(stored_graph)                 :: host
   type(constituted_learning_residual) :: residual_op
@@ -118,17 +119,43 @@ program learning_level_9
   produces = project_slots(restrict_slot(flow, 3, p_out), [1, 2])
   d        = compose_binary(produces, consumes)
 
-  g = relational_graph('learning', &
-       & [held_set(v), held_set(o), held_set(p)], &
-       & [held_relation(flow), held_relation(d)])
+  ! 'learning': (S, P) as one sequence on each branch.
+  call g % declare()
+  do kcell = 1, 3
+     call scell(kcell) % declare()
+     call selem(kcell) % declare()
+  end do
+  do kcell = 1, 2
+     call rcell(kcell) % declare()
+     call relem(kcell) % declare()
+  end do
+
+  call bnd % bind_set(selem(1), v)
+  call bnd % bind_set(selem(2), o)
+  call bnd % bind_set(selem(3), p)
+  call bnd % bind_relation(relem(1), flow)
+  call bnd % bind_relation(relem(2), d)
+
+  do kcell = 1, 3
+     scell(kcell) % branch(1) = known_branch(selem(kcell))
+     if (kcell .lt. 3) scell(kcell) % branch(2) = &
+          & known_branch(scell(kcell + 1))
+  end do
+  do kcell = 1, 2
+     rcell(kcell) % branch(1) = known_branch(relem(kcell))
+     if (kcell .lt. 2) rcell(kcell) % branch(2) = &
+          & known_branch(rcell(kcell + 1))
+  end do
+
+  g % branch(1) = known_branch(scell(1))
+  g % branch(2) = known_branch(rcell(1))
 
   ! -- the discretization, distinct from the graph on purpose
   located = stored_relation('located', [y, v], &
        & reshape([ROW_R, SLOT_E], [2, 1]))
 
   ! -- the execution order, from structure - never from the adapter
-  call fx_ % to_fractal(g, fg_, fb_)
-  view = directed_adjacency_view(fg_, fb_, d)
+  view = directed_adjacency_view(g, bnd, d)
   call topological_order(view, order)
   call report(size(order) .eq. 2 .and. &
        &      order(1) .eq. OP_PREDICT .and. order(2) .eq. OP_ERROR, &
@@ -140,7 +167,7 @@ program learning_level_9
   call q_k % get_real_vector(obs)
 
   ! -- the adapter keeps the GRAPH-OWNED flow; the selector dies.
-  residual_op = constituted_learning_residual(g, flow, located, &
+  residual_op = constituted_learning_residual(g, bnd, flow, located, &
        & v, y, k, obs, theta, u, order)
   deallocate(flow)
 
@@ -223,8 +250,8 @@ contains
 
     flow_ok = .false.
     d_ok    = .false.
-    do kk = 1, g % num_relations()
-       rp => g % relation_at(kk)
+    do kk = 1, num_relations(g)
+       rp => relation_at(g, bnd, kk)
        if (rp % arity() .eq. 3) then
           gflow => rp
           flow_ok = rp % num_tuples() .eq. 6 .and. &

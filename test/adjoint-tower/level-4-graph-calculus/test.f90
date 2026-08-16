@@ -46,18 +46,15 @@ program adjoint_level_4
   use graph_relation_algebra, only : compose_binary
   use graph_binary_relation , only : csr_relation, transposed_view, &
        &                             transpose_of, inclusion_of
-  use graph_structure, only : relational_graph, held_set, held_relation
   use graph_profile  , only : directed_adjacency_view
   use graph_algorithms, only : reachable, sources, sinks
-  use fractal_graph        , only : graph
-  use graph_relational_view, only : relational_binding
-  use relational_fixture   , only : fractal_fixture
+  use fractal_graph        , only : graph, known_branch, null_branch
+  use graph_relational_view, only : relational_binding, &
+       & num_member_sets, member_set_at, num_relations, relation_at, &
+       & holds_set
 
   implicit none
 
-  type(fractal_fixture)             :: fx_
-  type(graph)             , pointer :: fg_
-  type(relational_binding), pointer :: fb_
 
   type(counted_set)              :: v, t
   type(subset_set)               :: p_dom, q_dom, y_dom, z_dom
@@ -65,7 +62,11 @@ program adjoint_level_4
   type(csr_relation), target     :: inc_y, inc_q, jq
   type(transposed_view)          :: inc_q_t, jq_t
   type(csr_relation)             :: coupling
-  type(relational_graph), target :: g
+  type(graph)             , target :: g
+  type(graph)             , target :: scell(1), selem(1)
+  type(graph)             , target :: rcell(1), relem(1)
+  type(relational_binding)         :: bnd
+  integer                          :: kcell
   type(directed_adjacency_view)  :: view
   integer                        :: table(2, 9)
   integer                        :: nfail
@@ -105,10 +106,34 @@ program adjoint_level_4
   jq_t     = transpose_of(jq)
   coupling = compose_binary(jq_t, jq)
 
-  g = relational_graph('state coupling', [held_set(q_dom)], &
-       & [held_relation(coupling)])
-  call fx_ % to_fractal(g, fg_, fb_)
-  view = directed_adjacency_view(fg_, fb_, coupling)
+  ! 'state coupling': (S, P) as one sequence on each branch.
+  call g % declare()
+  do kcell = 1, 1
+     call scell(kcell) % declare()
+     call selem(kcell) % declare()
+  end do
+  do kcell = 1, 1
+     call rcell(kcell) % declare()
+     call relem(kcell) % declare()
+  end do
+
+  call bnd % bind_set(selem(1), q_dom)
+  call bnd % bind_relation(relem(1), coupling)
+
+  do kcell = 1, 1
+     scell(kcell) % branch(1) = known_branch(selem(kcell))
+     if (kcell .lt. 1) scell(kcell) % branch(2) = &
+          & known_branch(scell(kcell + 1))
+  end do
+  do kcell = 1, 1
+     rcell(kcell) % branch(1) = known_branch(relem(kcell))
+     if (kcell .lt. 1) rcell(kcell) % branch(2) = &
+          & known_branch(rcell(kcell + 1))
+  end do
+
+  g % branch(1) = known_branch(scell(1))
+  g % branch(2) = known_branch(rcell(1))
+  view = directed_adjacency_view(g, bnd, coupling)
 
   call check_coupling_extension(nfail)
   call check_view_is_valid(nfail)

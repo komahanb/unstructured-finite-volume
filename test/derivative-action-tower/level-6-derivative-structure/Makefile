@@ -12,14 +12,11 @@ LDFLAGS += -L../../../lib/ ../../../lib/libufvm.a -llapack
 all: run
 
 run: derivative_assert.o test.o
-	$(F90) relational_fixture.o derivative_assert.o test.o -o $@ $(LDFLAGS)
+	$(F90) derivative_assert.o test.o -o $@ $(LDFLAGS)
 
-test.o: relational_fixture.o derivative_assert.o
+test.o: derivative_assert.o
 
 derivative_assert.o: ../common/derivative_assert.f90
-	$(F90) $(F90FLAGS) -c $< -o $@
-
-relational_fixture.o: ../../support/relational_fixture.f90
 	$(F90) $(F90FLAGS) -c $< -o $@
 
 clean:

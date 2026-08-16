@@ -24,8 +24,12 @@ module constituted_residual_fixture
   use iso_fortran_env  , only : dp => REAL64
   use graph_carrier    , only : member_set, counted_set, subset_set
   use graph_relation   , only : relation
-  use graph_structure  , only : relational_graph
-  use graph_grammar    , only : graph, graph_field, graph_operation
+  ! graph_grammar exports a type named graph too; the kernel keeps
+  ! the name and the grammar's is renamed at the door.
+  use fractal_graph        , only : graph
+  use graph_relational_view, only : relational_binding, &
+       & num_relations, relation_at
+  use graph_grammar    , only : grammar_graph => graph, graph_field, graph_operation
   use class_graph_field, only : field
   use learning_constitution_fixture, only : generated_residual
 
@@ -59,11 +63,12 @@ contains
   ! not own it.
   !===================================================================!
 
-  function create_adapter(g, selector, located, slots, rows, &
+  function create_adapter(g, b, selector, located, slots, rows, &
        & observed, observed_values, trainable, computed, order) &
        & result(this)
 
-    class(relational_graph), target, intent(in) :: g
+    type(graph)             , intent(in) :: g
+    type(relational_binding), intent(in) :: b
     class(relation)  , intent(in) :: selector, located
     type(counted_set), intent(in) :: slots, rows
     type(subset_set) , intent(in) :: observed, trainable, computed
@@ -76,8 +81,8 @@ contains
     logical :: found
 
     found = .false.
-    do kk = 1, g % num_relations()
-       rp => g % relation_at(kk)
+    do kk = 1, num_relations(g)
+       rp => relation_at(g, b, kk)
        if (rp % same_as(selector)) then
           found = .true.
           exit
@@ -107,7 +112,7 @@ contains
 
   subroutine clr_domain(this, input_graph, domain)
     class(constituted_learning_residual), intent(in) :: this
-    class(graph), intent(in) :: input_graph
+    class(grammar_graph), intent(in) :: input_graph
     class(member_set), allocatable, intent(out) :: domain
     associate (u1 => input_graph); end associate
     allocate(domain, source=this % rows)
@@ -116,7 +121,7 @@ contains
   subroutine clr_apply(this, input_graph, input_data, output)
 
     class(constituted_learning_residual), intent(in) :: this
-    class(graph), intent(in)                         :: input_graph
+    class(grammar_graph), intent(in)                 :: input_graph
     class(graph_field), intent(in), optional         :: input_data(:)
     class(graph_field), allocatable, intent(inout)   :: output
 

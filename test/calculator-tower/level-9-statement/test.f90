@@ -34,8 +34,14 @@ module constituted_residual_fixture
   use iso_fortran_env  , only : dp => REAL64
   use graph_carrier    , only : member_set, counted_set, subset_set
   use graph_relation   , only : relation
-  use graph_structure  , only : relational_graph
-  use graph_grammar    , only : graph, graph_field, graph_operation
+  ! graph_grammar exports a type named graph too; the kernel keeps
+  ! the name and the grammar's is renamed at the door.
+  use fractal_graph        , only : graph, known_branch, null_branch
+  use graph_relational_view, only : relational_binding, &
+       & num_member_sets, member_set_at, num_relations, relation_at, &
+       & holds_set
+  use graph_grammar    , only : grammar_graph => graph, graph_field, &
+       &                        graph_operation
   use class_graph_field, only : field
   use arithmetic_constitution_fixture, only : generated_residual
 
@@ -68,10 +74,11 @@ contains
   ! does not own it.
   !===================================================================!
 
-  function create_adapter(g, selector, located, xs, os, ys, &
+  function create_adapter(g, b, selector, located, xs, os, ys, &
        &                  known, known_values, unknown) result(this)
 
-    class(relational_graph), target, intent(in) :: g
+    type(graph)             , intent(in) :: g
+    type(relational_binding), intent(in) :: b
     class(relation)  , intent(in) :: selector, located
     type(counted_set), intent(in) :: xs, os, ys
     type(subset_set) , intent(in) :: known, unknown
@@ -83,8 +90,8 @@ contains
     logical :: found
 
     found = .false.
-    do kk = 1, g % num_relations()
-       rp => g % relation_at(kk)
+    do kk = 1, num_relations(g)
+       rp => relation_at(g, b, kk)
        if (rp % same_as(selector)) then
           found = .true.
           exit
@@ -113,7 +120,7 @@ contains
 
   subroutine cr_domain(this, input_graph, domain)
     class(constituted_residual), intent(in) :: this
-    class(graph), intent(in) :: input_graph
+    class(grammar_graph), intent(in) :: input_graph
     class(member_set), allocatable, intent(out) :: domain
     associate (u1 => input_graph); end associate
     allocate(domain, source=this % ys)
@@ -122,7 +129,7 @@ contains
   subroutine cr_apply(this, input_graph, input_data, output)
 
     class(constituted_residual), intent(in)        :: this
-    class(graph), intent(in)                       :: input_graph
+    class(grammar_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
@@ -168,9 +175,12 @@ program calculator_level_9
   use graph_carrier    , only : counted_set, subset_set, member_set
   use graph_grammar    , only : graph_field
   use graph_relation   , only : stored_relation, relation
+  use fractal_graph        , only : graph, known_branch, null_branch
+  use graph_relational_view, only : relational_binding, &
+       & num_member_sets, member_set_at, num_relations, relation_at, &
+       & holds_set
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_structure  , only : relational_graph, held_set, held_relation
   use class_graph      , only : stored_graph
   use class_graph_field, only : field
   use class_graph_gmres, only : gmres
@@ -186,7 +196,11 @@ program calculator_level_9
   type(stored_relation), allocatable :: flow
   type(stored_relation) :: located, t_out3, t_in3, produces, consumes
   class(relation), allocatable       :: d
-  type(relational_graph), target     :: g
+  type(graph)             , target :: g
+  type(graph)             , target :: scell(3), selem(3)
+  type(graph)             , target :: rcell(2), relem(2)
+  type(relational_binding)         :: bnd
+  integer                          :: kcell
   type(stored_graph)    :: host
   type(constituted_residual) :: residual_op
   type(gmres)           :: solver
@@ -226,9 +240,36 @@ program calculator_level_9
   consumes = project_slots(t_in3 , [2, 1])
   d        = compose_binary(produces, consumes)
 
-  g = relational_graph('calculator', &
-       & [held_set(x), held_set(o), held_set(p)], &
-       & [held_relation(flow), held_relation(d)])
+  ! 'calculator': (S, P) as one sequence on each branch.
+  call g % declare()
+  do kcell = 1, 3
+     call scell(kcell) % declare()
+     call selem(kcell) % declare()
+  end do
+  do kcell = 1, 2
+     call rcell(kcell) % declare()
+     call relem(kcell) % declare()
+  end do
+
+  call bnd % bind_set(selem(1), x)
+  call bnd % bind_set(selem(2), o)
+  call bnd % bind_set(selem(3), p)
+  call bnd % bind_relation(relem(1), flow)
+  call bnd % bind_relation(relem(2), d)
+
+  do kcell = 1, 3
+     scell(kcell) % branch(1) = known_branch(selem(kcell))
+     if (kcell .lt. 3) scell(kcell) % branch(2) = &
+          & known_branch(scell(kcell + 1))
+  end do
+  do kcell = 1, 2
+     rcell(kcell) % branch(1) = known_branch(relem(kcell))
+     if (kcell .lt. 2) rcell(kcell) % branch(2) = &
+          & known_branch(rcell(kcell + 1))
+  end do
+
+  g % branch(1) = known_branch(scell(1))
+  g % branch(2) = known_branch(rcell(1))
 
   ! -- the discretization, distinct from the graph on purpose
   located = stored_relation('located', [y, x], &
@@ -239,7 +280,7 @@ program calculator_level_9
   u = subset_set('unknown', x, [SLOT_C, SLOT_E])
 
   ! -- the adapter keeps the GRAPH-OWNED flow; the selector dies.
-  residual_op = constituted_residual(g, flow, located, x, o, y, &
+  residual_op = constituted_residual(g, bnd, flow, located, x, o, y, &
        &                             k, [4.0_dp, 2.0_dp, 3.0_dp], u)
   deallocate(flow)
 

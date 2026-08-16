@@ -78,10 +78,10 @@ intrinsics="iso_fortran_env iso_c_binding ieee_arithmetic ieee_exceptions ieee_f
 
 allowed_for() {
     case "$1" in
-        # 2026-08-16: graph_profile's constructors now take the graph
-        # and the relational binding, so the levels that build a view
-        # are granted fractal_graph, graph_relational_view and the
-        # relational_fixture scaffolding. Granted per level, in review.
+        # 2026-08-16: the relational container is retired. A level reading
+        # (S, P) is granted fractal_graph and graph_relational_view,
+        # and builds the representation itself. Granted per level, in
+        # review; the list is an assertion, not a history.
         # ---- shared fixtures, keyed by the level that earns them
         common/time_assert.f90) echo "" ;;
         common/time_carriers_fixture.f90) echo "graph_carrier" ;;
@@ -101,7 +101,7 @@ allowed_for() {
         # ---- L3: + the relational graph container
         level-3-graph)     echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture graph_carrier graph_relation graph_relation_algebra graph_binary_relation fractal_graph graph_relational_view" ;;
         # ---- L4: + the profile and its algorithms. No marcher.
-        level-4-graph-calculus) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_structure graph_profile graph_algorithms fractal_graph graph_relational_view relational_fixture" ;;
+        level-4-graph-calculus) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_profile graph_algorithms fractal_graph graph_relational_view" ;;
 
         # ===== REVIEW GATE A =====
 

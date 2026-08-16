@@ -42,18 +42,15 @@ program learning_level_6
        &                             compose_binary
   use graph_binary_relation , only : csr_relation, transposed_view, &
        &                             transpose_of
-  use graph_structure, only : relational_graph, held_set, held_relation
   use graph_profile  , only : directed_adjacency_view
   use graph_algorithms, only : reachable
-  use fractal_graph        , only : graph
-  use graph_relational_view, only : relational_binding
-  use relational_fixture   , only : fractal_fixture
+  use fractal_graph        , only : graph, known_branch, null_branch
+  use graph_relational_view, only : relational_binding, &
+       & num_member_sets, member_set_at, num_relations, relation_at, &
+       & holds_set
 
   implicit none
 
-  type(fractal_fixture)             :: fx_
-  type(graph)             , pointer :: fg_
-  type(relational_binding), pointer :: fb_
 
   ! Residual rows exist only from this level upward.
   integer, parameter :: ROW_R = 1
@@ -65,7 +62,16 @@ program learning_level_6
   type(csr_relation)             :: a, a2
   type(csr_relation), target     :: j_theta, j_theta2
   type(transposed_view)          :: jt
-  type(relational_graph), target :: g, g2
+  type(graph)             , target :: g
+  type(graph)             , target :: scell(1), selem(1)
+  type(graph)             , target :: rcell(1), relem(1)
+  type(relational_binding)         :: bnd
+  integer                          :: kcell
+  type(graph)             , target :: g2
+  type(graph)             , target :: scell2(1), selem2(1)
+  type(graph)             , target :: rcell2(1), relem2(1)
+  type(relational_binding)         :: bnd2
+  integer                          :: kcell2
   type(directed_adjacency_view)  :: view, view2
   integer                        :: table(3, 6)
   integer                        :: nfail
@@ -98,10 +104,34 @@ program learning_level_6
   p_out = subset_set('output-port', p, [PORT_OUT])
 
   a = derive_direct(flow)
-  g = relational_graph('value dependency', [held_set(v)], &
-       & [held_relation(a)])
-  call fx_ % to_fractal(g, fg_, fb_)
-  view = directed_adjacency_view(fg_, fb_, a)
+  ! 'value dependency': (S, P) as one sequence on each branch.
+  call g % declare()
+  do kcell = 1, 1
+     call scell(kcell) % declare()
+     call selem(kcell) % declare()
+  end do
+  do kcell = 1, 1
+     call rcell(kcell) % declare()
+     call relem(kcell) % declare()
+  end do
+
+  call bnd % bind_set(selem(1), v)
+  call bnd % bind_relation(relem(1), a)
+
+  do kcell = 1, 1
+     scell(kcell) % branch(1) = known_branch(selem(kcell))
+     if (kcell .lt. 1) scell(kcell) % branch(2) = &
+          & known_branch(scell(kcell + 1))
+  end do
+  do kcell = 1, 1
+     rcell(kcell) % branch(1) = known_branch(relem(kcell))
+     if (kcell .lt. 1) rcell(kcell) % branch(2) = &
+          & known_branch(rcell(kcell + 1))
+  end do
+
+  g % branch(1) = known_branch(scell(1))
+  g % branch(2) = known_branch(rcell(1))
+  view = directed_adjacency_view(g, bnd, a)
 
   j_theta = derive_trainable(view)
 
@@ -411,10 +441,34 @@ contains
     backwards = stored_relation('flow backwards', [o, v, p], rev)
 
     a2 = derive_direct(backwards)
-    g2 = relational_graph('value dependency again', [held_set(v)], &
-         & [held_relation(a2)])
-    call fx_ % to_fractal(g2, fg_, fb_)
-    view2 = directed_adjacency_view(fg_, fb_, a2)
+    ! 'value dependency again': (S, P) as one sequence on each branch.
+    call g2 % declare()
+    do kcell2 = 1, 1
+       call scell2(kcell2) % declare()
+       call selem2(kcell2) % declare()
+    end do
+    do kcell2 = 1, 1
+       call rcell2(kcell2) % declare()
+       call relem2(kcell2) % declare()
+    end do
+
+    call bnd2 % bind_set(selem2(1), v)
+    call bnd2 % bind_relation(relem2(1), a2)
+
+    do kcell2 = 1, 1
+       scell2(kcell2) % branch(1) = known_branch(selem2(kcell2))
+       if (kcell2 .lt. 1) scell2(kcell2) % branch(2) = &
+            & known_branch(scell2(kcell2 + 1))
+    end do
+    do kcell2 = 1, 1
+       rcell2(kcell2) % branch(1) = known_branch(relem2(kcell2))
+       if (kcell2 .lt. 1) rcell2(kcell2) % branch(2) = &
+            & known_branch(rcell2(kcell2 + 1))
+    end do
+
+    g2 % branch(1) = known_branch(scell2(1))
+    g2 % branch(2) = known_branch(rcell2(1))
+    view2 = directed_adjacency_view(g2, bnd2, a2)
     j_theta2 = derive_trainable(view2)
 
     call report(a2 % num_tuples() .eq. a % num_tuples(), &

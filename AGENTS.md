@@ -89,8 +89,9 @@ The laws:
 The letter \(R\) is no longer reserved by a second ontology. Where a view reads a graph as
 \((Q,R)\), \(R\) is that view's residual; where a view reads it as \((\mathcal S,\mathcal P)\),
 its relations are \(P, T, H, A, \ldots\). Sections 4-14 below describe the relation-centered view
-and remain in force **as a view**; `relational_graph` (graph_structure.f90) is its current
-implementation and is migration debt.
+and remain in force **as a view**. Its implementation is `graph_relational_view.f90` over the
+kernel: a graph plus a `relational_binding` from element graphs to the legacy objects they
+denote. The container `relational_graph` that once implemented it was retired on 2026-08-16.
 
 ---
 
@@ -2057,7 +2058,7 @@ The long-term module layout may evolve toward something conceptually like:
 graph_carrier.f90
 graph_relation.f90
 graph_relation_algebra.f90
-graph_structure.f90
+graph_relational_view.f90
 graph_calculus.f90
 graph_field_calculus.f90
 graph_discretization.f90

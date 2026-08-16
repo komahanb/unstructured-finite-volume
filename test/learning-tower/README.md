@@ -513,7 +513,7 @@ One relational model structure owns the learning schema.
 
 ```mermaid
 flowchart TB
-    GAMMA["learning relational_graph"]
+    GAMMA["learning graph, read as (S, P)"]
 
     V["V = value slots"]
     O["O = operations"]
@@ -540,12 +540,15 @@ flowchart TB
 container stores structure and re-derives nothing:
 
 ```fortran
-g = relational_graph('learning',                        &
-     & [held_set(v), held_set(o), held_set(p)],         &
-     & [held_relation(flow), held_relation(d)])
+call bnd % bind_set(selem(1), v)                  ! and o, and p
+call bnd % bind_relation(relem(1), flow)          ! and d
+
+g % branch(1) = known_branch(scell(1))            ! the member-set sequence
+g % branch(2) = known_branch(rcell(1))            ! the relation sequence
 ```
 
-(`src/graph_structure.f90`). Ownership truths:
+(`src/fractal_graph.f90` and `src/graph_relational_view.f90`). Ownership
+truths:
 
 ```text
 the graph owns materialized relations
@@ -578,7 +581,7 @@ is not the same graph.
 
 \(D\) remains a plain relation in a graph: no directed edge, no source, no
 walk — interpretation is Level 4's business. Still no number anywhere.
-`relational_graph` remains free of vertex/edge vocabulary.
+The (S, P) view remains free of vertex/edge vocabulary.
 
 ## What this proves
 

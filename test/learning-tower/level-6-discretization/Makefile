@@ -15,14 +15,11 @@ LDFLAGS += -L../../../lib/ ../../../lib/libufvm.a -llapack
 all: run
 
 run: learning_assert.o test.o
-	$(F90) relational_fixture.o learning_assert.o test.o -o $@ $(LDFLAGS)
+	$(F90) learning_assert.o test.o -o $@ $(LDFLAGS)
 
-test.o: relational_fixture.o learning_assert.o
+test.o: learning_assert.o
 
 learning_assert.o: ../common/learning_assert.f90
-	$(F90) $(F90FLAGS) -c $< -o $@
-
-relational_fixture.o: ../../support/relational_fixture.f90
 	$(F90) $(F90FLAGS) -c $< -o $@
 
 clean:

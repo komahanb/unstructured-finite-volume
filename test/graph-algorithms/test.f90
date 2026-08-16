@@ -20,25 +20,25 @@ program test_graph_algorithms
 
   use graph_carrier        , only : counted_set, subset_set, member_set
   use graph_binary_relation, only : csr_relation
-  use graph_structure      , only : relational_graph, held_set, &
-       &                            held_relation
   use graph_profile        , only : directed_adjacency_view
   use graph_algorithms     , only : sources, sinks, reachable, &
        &                            topological_order
-  use fractal_graph        , only : graph
-  use graph_relational_view, only : relational_binding
-  use relational_fixture   , only : fractal_fixture
+  use fractal_graph        , only : graph, known_branch, null_branch
+  use graph_relational_view, only : relational_binding, &
+       & num_member_sets, member_set_at, num_relations, relation_at, &
+       & holds_set
 
   implicit none
 
-  type(fractal_fixture)             :: fx_
-  type(graph)             , pointer :: fg_
-  type(relational_binding), pointer :: fb_
 
   type(counted_set)              :: ground
   type(subset_set)               :: v
   type(csr_relation)             :: after
-  type(relational_graph), target :: g
+  type(graph)             , target :: g
+  type(graph)             , target :: scell(1), selem(1)
+  type(graph)             , target :: rcell(1), relem(1)
+  type(relational_binding)         :: bnd
+  integer                          :: kcell
   type(directed_adjacency_view)  :: view
   integer                        :: nfail
 
@@ -54,10 +54,35 @@ program test_graph_algorithms
   after = csr_relation('after', v, v, &
        & reshape([3,4,  1,4,  4,2], [2, 3]))
 
-  g = relational_graph('dag', [held_set(v)], [held_relation(after)])
+  ! 'dag': (S, P) as one sequence on each branch.
+  call g % declare()
+  do kcell = 1, 1
+     call scell(kcell) % declare()
+     call selem(kcell) % declare()
+  end do
+  do kcell = 1, 1
+     call rcell(kcell) % declare()
+     call relem(kcell) % declare()
+  end do
 
-  call fx_ % to_fractal(g, fg_, fb_)
-  view = directed_adjacency_view(fg_, fb_, after)
+  call bnd % bind_set(selem(1), v)
+  call bnd % bind_relation(relem(1), after)
+
+  do kcell = 1, 1
+     scell(kcell) % branch(1) = known_branch(selem(kcell))
+     if (kcell .lt. 1) scell(kcell) % branch(2) = &
+          & known_branch(scell(kcell + 1))
+  end do
+  do kcell = 1, 1
+     rcell(kcell) % branch(1) = known_branch(relem(kcell))
+     if (kcell .lt. 1) rcell(kcell) % branch(2) = &
+          & known_branch(rcell(kcell + 1))
+  end do
+
+  g % branch(1) = known_branch(scell(1))
+  g % branch(2) = known_branch(rcell(1))
+
+  view = directed_adjacency_view(g, bnd, after)
 
   call check_sources_and_sinks(view, nfail)
   call check_reachability(view, nfail)
@@ -177,7 +202,11 @@ contains
     integer, intent(inout) :: nfail
 
     type(csr_relation)             :: backwards
-    type(relational_graph), target :: g2
+    type(graph)             , target :: g2
+    type(graph)             , target :: scell2(1), selem2(1)
+    type(graph)             , target :: rcell2(1), relem2(1)
+    type(relational_binding)         :: bnd2
+    integer                          :: kcell2
     type(directed_adjacency_view)  :: view2
     type(subset_set)               :: src, snk
     integer, allocatable           :: idx(:), order(:)
@@ -186,10 +215,34 @@ contains
     backwards = csr_relation('after backwards', v, v, &
          & reshape([4,2,  1,4,  3,4], [2, 3]))
 
-    g2 = relational_graph('dag again', [held_set(v)], &
-         & [held_relation(backwards)])
-    call fx_ % to_fractal(g2, fg_, fb_)
-    view2 = directed_adjacency_view(fg_, fb_, backwards)
+    ! 'dag again': (S, P) as one sequence on each branch.
+    call g2 % declare()
+    do kcell2 = 1, 1
+       call scell2(kcell2) % declare()
+       call selem2(kcell2) % declare()
+    end do
+    do kcell2 = 1, 1
+       call rcell2(kcell2) % declare()
+       call relem2(kcell2) % declare()
+    end do
+
+    call bnd2 % bind_set(selem2(1), v)
+    call bnd2 % bind_relation(relem2(1), backwards)
+
+    do kcell2 = 1, 1
+       scell2(kcell2) % branch(1) = known_branch(selem2(kcell2))
+       if (kcell2 .lt. 1) scell2(kcell2) % branch(2) = &
+            & known_branch(scell2(kcell2 + 1))
+    end do
+    do kcell2 = 1, 1
+       rcell2(kcell2) % branch(1) = known_branch(relem2(kcell2))
+       if (kcell2 .lt. 1) rcell2(kcell2) % branch(2) = &
+            & known_branch(rcell2(kcell2 + 1))
+    end do
+
+    g2 % branch(1) = known_branch(scell2(1))
+    g2 % branch(2) = known_branch(rcell2(1))
+    view2 = directed_adjacency_view(g2, bnd2, backwards)
 
     src = sources(view2)
     snk = sinks(view2)

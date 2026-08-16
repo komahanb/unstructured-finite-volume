@@ -475,7 +475,7 @@ in [`NUCLEUS-OBSERVATIONS.md`](NUCLEUS-OBSERVATIONS.md) under PIP-8.
 # D. Graph roles at radius 2
 
 This tower exercises the **legacy ordinary-graph / HPC branch** of the
-nucleus and introduces no `relational_graph`, because its mathematics
+nucleus and introduces no (S, P) view, because its mathematics
 does not need one.
 
 | Object | Type | Role |

@@ -46,9 +46,9 @@
 ! therefore needs no TARGET attribute at any call site.
 !
 ! The binding is storage keyed on identity, not ontology. It is where
-! the wrappers that used to sit inside relational_graph belong: they
-! existed only because a Fortran array carries one dynamic type, and
-! that was always a storage fact.
+! the wrappers that used to sit inside the retired container belong:
+! they existed only because a Fortran array carries one dynamic type,
+! and that was always a storage fact.
 !
 ! Sequence behaviour is delegated to graph_sequence_view. Nothing here
 ! traverses a spine.
@@ -60,7 +60,7 @@
 !     relationally invalid answered .false. by relational_valid
 !
 ! A view over an existing graph reports invalidity; it does not refuse
-! a graph it did not construct. The old create_graph refused at
+! a graph it did not construct. The retired constructor refused at
 ! construction because it was a constructor; this is not one. What the
 ! binding refuses is not the view but the storage: an object with no
 ! identity cannot be compared, and a borrowing view cannot be owned,

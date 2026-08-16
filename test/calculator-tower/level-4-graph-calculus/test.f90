@@ -30,26 +30,27 @@ program calculator_level_4
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_structure  , only : relational_graph, held_set, held_relation
   use graph_profile    , only : directed_adjacency_view
   use graph_algorithms , only : sources, sinks, reachable, &
        &                        topological_order
-  use fractal_graph        , only : graph
-  use graph_relational_view, only : relational_binding
-  use relational_fixture   , only : fractal_fixture
+  use fractal_graph        , only : graph, known_branch, null_branch
+  use graph_relational_view, only : relational_binding, &
+       & num_member_sets, member_set_at, num_relations, relation_at, &
+       & holds_set
 
   implicit none
 
-  type(fractal_fixture)             :: fx_
-  type(graph)             , pointer :: fg_
-  type(relational_binding), pointer :: fb_
 
   type(counted_set)              :: x, o, p
   type(subset_set)               :: p_out, p_in
   type(stored_relation)          :: flow, t_out3, t_in3
   type(stored_relation)          :: produces, consumes
   class(relation), allocatable   :: d
-  type(relational_graph), target :: g
+  type(graph)             , target :: g
+  type(graph)             , target :: scell(3), selem(3)
+  type(graph)             , target :: rcell(2), relem(2)
+  type(relational_binding)         :: bnd
+  integer                          :: kcell
   type(directed_adjacency_view)  :: view
   integer                        :: table(3, 6)
   integer                        :: nfail
@@ -81,14 +82,40 @@ program calculator_level_4
   consumes = project_slots(t_in3 , [2, 1])
   d        = compose_binary(produces, consumes)
 
-  g = relational_graph('calculator', &
-       & [held_set(x), held_set(o), held_set(p)], &
-       & [held_relation(flow), held_relation(d)])
+  ! 'calculator': (S, P) as one sequence on each branch.
+  call g % declare()
+  do kcell = 1, 3
+     call scell(kcell) % declare()
+     call selem(kcell) % declare()
+  end do
+  do kcell = 1, 2
+     call rcell(kcell) % declare()
+     call relem(kcell) % declare()
+  end do
+
+  call bnd % bind_set(selem(1), x)
+  call bnd % bind_set(selem(2), o)
+  call bnd % bind_set(selem(3), p)
+  call bnd % bind_relation(relem(1), flow)
+  call bnd % bind_relation(relem(2), d)
+
+  do kcell = 1, 3
+     scell(kcell) % branch(1) = known_branch(selem(kcell))
+     if (kcell .lt. 3) scell(kcell) % branch(2) = &
+          & known_branch(scell(kcell + 1))
+  end do
+  do kcell = 1, 2
+     rcell(kcell) % branch(1) = known_branch(relem(kcell))
+     if (kcell .lt. 2) rcell(kcell) % branch(2) = &
+          & known_branch(rcell(kcell + 1))
+  end do
+
+  g % branch(1) = known_branch(scell(1))
+  g % branch(2) = known_branch(rcell(1))
 
   ! The interpretation reads the GRAPH-OWNED dependency; the
   ! selector has served and may die.
-  call fx_ % to_fractal(g, fg_, fb_)
-  view = directed_adjacency_view(fg_, fb_, d)
+  view = directed_adjacency_view(g, bnd, d)
   deallocate(d)
 
   call check_sources_and_sinks(nfail)

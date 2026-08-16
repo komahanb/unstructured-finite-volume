@@ -355,7 +355,7 @@ with
 
 ```mermaid
 flowchart TB
-    GAMMA["Calculator relational_graph"]
+    GAMMA["Calculator graph, read as (S, P)"]
 
     X["X = value slots"]
     O["O = operations"]
@@ -386,7 +386,7 @@ Verify:
 - two relations may coexist over the same carrier;
 - there is no concept of vertex or edge anywhere in the generic graph test.
 
-A useful test assertion is simply that the entire calculator is representable by `relational_graph` without importing the ordinary-graph profile.
+A useful test assertion is simply that the entire calculator is representable as a graph read as (S, P), without importing the ordinary-graph profile.
 
 ## What this proves
 

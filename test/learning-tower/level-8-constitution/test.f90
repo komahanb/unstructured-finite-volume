@@ -37,21 +37,18 @@ program learning_level_8
   use graph_relation , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_structure, only : relational_graph, held_set, held_relation
   use graph_profile  , only : directed_adjacency_view
   use graph_algorithms, only : reachable, topological_order
   use class_graph_field, only : field
   use learning_constitution_fixture, only : apply_law, slot_for_port, &
        &                                    located_slot, generated_residual
-  use fractal_graph        , only : graph
-  use graph_relational_view, only : relational_binding
-  use relational_fixture   , only : fractal_fixture
+  use fractal_graph        , only : graph, known_branch, null_branch
+  use graph_relational_view, only : relational_binding, &
+       & num_member_sets, member_set_at, num_relations, relation_at, &
+       & holds_set
 
   implicit none
 
-  type(fractal_fixture)             :: fx_
-  type(graph)             , pointer :: fg_
-  type(relational_binding), pointer :: fb_
 
   ! Residual rows exist only from Level 6 upward.
   integer, parameter :: ROW_R = 1
@@ -61,7 +58,21 @@ program learning_level_8
   type(stored_relation)          :: flow, backwards, located
   type(stored_relation)          :: consumes, produces
   class(relation), allocatable   :: d, a, d2
-  type(relational_graph), target :: g, g_a, g2
+  type(graph)             , target :: g
+  type(graph)             , target :: scell(3), selem(3)
+  type(graph)             , target :: rcell(2), relem(2)
+  type(relational_binding)         :: bnd
+  integer                          :: kcell
+  type(graph)             , target :: g_a
+  type(graph)             , target :: scell2(1), selem2(1)
+  type(graph)             , target :: rcell2(1), relem2(1)
+  type(relational_binding)         :: bnd2
+  integer                          :: kcell2
+  type(graph)             , target :: g2
+  type(graph)             , target :: scell3(3), selem3(3)
+  type(graph)             , target :: rcell3(2), relem3(2)
+  type(relational_binding)         :: bnd3
+  integer                          :: kcell3
   type(directed_adjacency_view)  :: view, dep_view, view2
   type(field)                    :: q_k, q_k2
   integer, allocatable           :: order(:), order2(:)
@@ -109,11 +120,37 @@ program learning_level_8
   consumes = project_slots(restrict_slot(flow, 3, p_in ), [2, 1])
   produces = project_slots(restrict_slot(flow, 3, p_out), [1, 2])
   d = compose_binary(produces, consumes)
-  g = relational_graph('learning', &
-       & [held_set(v), held_set(o), held_set(p)], &
-       & [held_relation(flow), held_relation(d)])
-  call fx_ % to_fractal(g, fg_, fb_)
-  view = directed_adjacency_view(fg_, fb_, d)
+  ! 'learning': (S, P) as one sequence on each branch.
+  call g % declare()
+  do kcell = 1, 3
+     call scell(kcell) % declare()
+     call selem(kcell) % declare()
+  end do
+  do kcell = 1, 2
+     call rcell(kcell) % declare()
+     call relem(kcell) % declare()
+  end do
+
+  call bnd % bind_set(selem(1), v)
+  call bnd % bind_set(selem(2), o)
+  call bnd % bind_set(selem(3), p)
+  call bnd % bind_relation(relem(1), flow)
+  call bnd % bind_relation(relem(2), d)
+
+  do kcell = 1, 3
+     scell(kcell) % branch(1) = known_branch(selem(kcell))
+     if (kcell .lt. 3) scell(kcell) % branch(2) = &
+          & known_branch(scell(kcell + 1))
+  end do
+  do kcell = 1, 2
+     rcell(kcell) % branch(1) = known_branch(relem(kcell))
+     if (kcell .lt. 2) rcell(kcell) % branch(2) = &
+          & known_branch(rcell(kcell + 1))
+  end do
+
+  g % branch(1) = known_branch(scell(1))
+  g % branch(2) = known_branch(rcell(1))
+  view = directed_adjacency_view(g, bnd, d)
   call topological_order(view, order)
 
   call check_derived_order(nfail)
@@ -259,10 +296,34 @@ contains
     logical              :: same
 
     a = compose_binary(consumes, produces)
-    g_a = relational_graph('value dependency', [held_set(v)], &
-         & [held_relation(a)])
-    call fx_ % to_fractal(g_a, fg_, fb_)
-    dep_view = directed_adjacency_view(fg_, fb_, a)
+    ! 'value dependency': (S, P) as one sequence on each branch.
+    call g_a % declare()
+    do kcell2 = 1, 1
+       call scell2(kcell2) % declare()
+       call selem2(kcell2) % declare()
+    end do
+    do kcell2 = 1, 1
+       call rcell2(kcell2) % declare()
+       call relem2(kcell2) % declare()
+    end do
+
+    call bnd2 % bind_set(selem2(1), v)
+    call bnd2 % bind_relation(relem2(1), a)
+
+    do kcell2 = 1, 1
+       scell2(kcell2) % branch(1) = known_branch(selem2(kcell2))
+       if (kcell2 .lt. 1) scell2(kcell2) % branch(2) = &
+            & known_branch(scell2(kcell2 + 1))
+    end do
+    do kcell2 = 1, 1
+       rcell2(kcell2) % branch(1) = known_branch(relem2(kcell2))
+       if (kcell2 .lt. 1) rcell2(kcell2) % branch(2) = &
+            & known_branch(rcell2(kcell2 + 1))
+    end do
+
+    g_a % branch(1) = known_branch(scell2(1))
+    g_a % branch(2) = known_branch(rcell2(1))
+    dep_view = directed_adjacency_view(g_a, bnd2, a)
 
     home = located_slot(located, v, ROW_R)
     nsup = 0
@@ -346,11 +407,37 @@ contains
     d2 = compose_binary( &
          & project_slots(restrict_slot(backwards, 3, p_out), [1, 2]), &
          & project_slots(restrict_slot(backwards, 3, p_in ), [2, 1]))
-    g2 = relational_graph('learning backwards', &
-         & [held_set(v), held_set(o), held_set(p)], &
-         & [held_relation(backwards), held_relation(d2)])
-    call fx_ % to_fractal(g2, fg_, fb_)
-    view2 = directed_adjacency_view(fg_, fb_, d2)
+    ! 'learning backwards': (S, P) as one sequence on each branch.
+    call g2 % declare()
+    do kcell3 = 1, 3
+       call scell3(kcell3) % declare()
+       call selem3(kcell3) % declare()
+    end do
+    do kcell3 = 1, 2
+       call rcell3(kcell3) % declare()
+       call relem3(kcell3) % declare()
+    end do
+
+    call bnd3 % bind_set(selem3(1), v)
+    call bnd3 % bind_set(selem3(2), o)
+    call bnd3 % bind_set(selem3(3), p)
+    call bnd3 % bind_relation(relem3(1), backwards)
+    call bnd3 % bind_relation(relem3(2), d2)
+
+    do kcell3 = 1, 3
+       scell3(kcell3) % branch(1) = known_branch(selem3(kcell3))
+       if (kcell3 .lt. 3) scell3(kcell3) % branch(2) = &
+            & known_branch(scell3(kcell3 + 1))
+    end do
+    do kcell3 = 1, 2
+       rcell3(kcell3) % branch(1) = known_branch(relem3(kcell3))
+       if (kcell3 .lt. 2) rcell3(kcell3) % branch(2) = &
+            & known_branch(rcell3(kcell3 + 1))
+    end do
+
+    g2 % branch(1) = known_branch(scell3(1))
+    g2 % branch(2) = known_branch(rcell3(1))
+    view2 = directed_adjacency_view(g2, bnd3, d2)
     call topological_order(view2, order2)
 
     call generated_residual(flow, located, v, y, k, obs, &

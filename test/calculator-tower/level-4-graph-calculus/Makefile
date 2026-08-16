@@ -14,14 +14,11 @@ LDFLAGS += -L../../../lib/ ../../../lib/libufvm.a -llapack
 all: run
 
 run: calculator_assert.o test.o
-	$(F90) relational_fixture.o calculator_assert.o test.o -o $@ $(LDFLAGS)
+	$(F90) calculator_assert.o test.o -o $@ $(LDFLAGS)
 
-test.o: relational_fixture.o calculator_assert.o
+test.o: calculator_assert.o
 
 calculator_assert.o: ../common/calculator_assert.f90
-	$(F90) $(F90FLAGS) -c $< -o $@
-
-relational_fixture.o: ../../support/relational_fixture.f90
 	$(F90) $(F90FLAGS) -c $< -o $@
 
 clean:

@@ -12,10 +12,10 @@ intrinsics="iso_fortran_env iso_c_binding ieee_arithmetic ieee_exceptions ieee_f
 
 allowed_for() {
     case "$1" in
-        # 2026-08-16: graph_profile's constructors now take the graph
-        # and the relational binding, so the levels that build a view
-        # are granted fractal_graph, graph_relational_view and the
-        # relational_fixture scaffolding. Granted per level, in review.
+        # 2026-08-16: the relational container is retired. A level reading
+        # (S, P) is granted fractal_graph and graph_relational_view,
+        # and builds the representation itself. Granted per level, in
+        # review; the list is an assertion, not a history.
         common)                  echo "" ;;
         level-0-carrier)         echo "learning_assert graph_carrier" ;;
         level-1-relation)        echo "learning_assert graph_carrier graph_relation" ;;
@@ -28,7 +28,7 @@ allowed_for() {
         # level 4: the profile's interpretation and the algorithms
         # that walk it - the binary storage the view leans on stays
         # forbidden to the learning client.
-        level-4-graph-calculus)  echo "learning_assert graph_carrier graph_relation graph_relation_algebra graph_structure graph_profile graph_algorithms fractal_graph graph_relational_view relational_fixture" ;;
+        level-4-graph-calculus)  echo "learning_assert graph_carrier graph_relation graph_relation_algebra graph_profile graph_algorithms fractal_graph graph_relational_view" ;;
         # level 3: the container; graph_binary_relation is granted
         # for the view refusal ONLY - the production path never
         # touches it.
@@ -38,7 +38,7 @@ allowed_for() {
         # pairs and answer its reverse as a transpose view. Fields
         # stay forbidden: dependency structure belongs to the model,
         # not to one data instance.
-        level-6-discretization)  echo "learning_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_structure graph_profile graph_algorithms fractal_graph graph_relational_view relational_fixture" ;;
+        level-6-discretization)  echo "learning_assert graph_carrier graph_relation graph_relation_algebra graph_binary_relation graph_profile graph_algorithms fractal_graph graph_relational_view" ;;
         # level 7: the fitting rung. The GMRES citizen inherits
         # attach/constant/solve from the minimizer base, so
         # graph_minimization is not directly imported and stays off
@@ -50,13 +50,13 @@ allowed_for() {
         # the test-local constitution supplies the laws, L supplies
         # the home - no solver, no legacy host, no minimization, no
         # binary storage. The named fixture is the level's own.
-        level-8-constitution)    echo "learning_assert graph_carrier graph_relation graph_relation_algebra graph_structure graph_profile graph_algorithms class_graph_field learning_constitution_fixture fractal_graph graph_relational_view relational_fixture" ;;
+        level-8-constitution)    echo "learning_assert graph_carrier graph_relation graph_relation_algebra graph_profile graph_algorithms class_graph_field learning_constitution_fixture fractal_graph graph_relational_view" ;;
         # level 9: the statement - the composition rung. The REUSED
         # level-8 constitution and the level's own adapter are the
         # named fixtures; Level 7's affine oracle is deliberately
         # absent, and graph_minimization stays off: gmres inherits
         # the minimizer face. No new mathematics enters here.
-        level-9-statement)       echo "learning_assert graph_carrier graph_relation graph_relation_algebra graph_structure graph_profile graph_algorithms graph_grammar class_graph class_graph_field class_graph_gmres learning_constitution_fixture constituted_residual_fixture fractal_graph graph_relational_view relational_fixture" ;;
+        level-9-statement)       echo "learning_assert graph_carrier graph_relation graph_relation_algebra graph_profile graph_algorithms graph_grammar class_graph class_graph_field class_graph_gmres learning_constitution_fixture constituted_residual_fixture fractal_graph graph_relational_view" ;;
         *)                       echo "__no_allowlist__" ;;
     esac
 }

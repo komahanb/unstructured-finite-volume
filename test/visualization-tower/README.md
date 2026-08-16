@@ -53,7 +53,7 @@ is no longer asked to take its structure from the execution context.
 | **L0** | seven declared carriers | `counted_set` | — | — | `X0 X1 X2 X3` | — | none | \|X0\|=4, \|X1\|=\|X2\|=3, \|X3\|=2, \|E1\|=5, \|E2\|=4, \|E3\|=3; all 42 ordered pairs distinct | PASS |
 | **L1** | typed occurrence incidence | `csr_relation` | `E_k` | `X_(k-1)`, `X_k` | `T_k <= E_k x X_(k-1)`, `H_k <= E_k x X_k` | — | none | twelve occurrences, each with exactly one tail and one head | PASS |
 | **L2** | relation algebra | `compose_binary`, `transpose_of` | `X0` | `X3` | `D_k = H_k o T_k^T`; `D2:1`; `D3:1` | `D_k^T`; `D1^T o D2^T o D3^T` | none | exact extensions; 7 walks → 6 tuples; `(D3 o D2 o D1)^T = D1^T o D2^T o D3^T` | PASS |
-| **L3** | one relational ownership environment | `relational_graph` | — | — | owns 7 carriers + 6 primitive relations | derived on demand | none | signature closure over all twelve slots; whole chain re-derived from graph-owned relations alone | PASS |
+| **L3** | one relational ownership environment | `graph` read as (S, P) | — | — | binds 7 carriers + 6 primitive relations | derived on demand | none | signature closure over all twelve slots; whole chain re-derived from graph-owned relations alone | PASS |
 | **L4** | structural interpretation | test-local `structural_renderer_fixture` | any binary relation | text | chain line + sparsity | chain line + sparsity | A, B, C, D, E | five generated representations, cell by cell against `relation % has` | PASS |
 | — | ===== **REVIEW GATE A** ===== | | | | | | | | |
 | **L5** | fields `w_k : E_k -> reals` | `class_graph_field` / `field` | occurrence carriers `E1, E2, E3` | scalar values | structure **unchanged** | structure unchanged; **no numerical reverse** | structural sparsity **+ coefficient view** | `level-5-field-calculus/test.f90` | PASS |
@@ -838,7 +838,7 @@ than "the nucleus was sufficient":
 
 | Job | What it needed |
 |---|---|
-| **deriving** the structure | `binary_relation` (`source`, `target`, `transpose_of`), `compose_binary`, `relational_graph` |
+| **deriving** the structure | `binary_relation` (`source`, `target`, `transpose_of`), `compose_binary`, `graph_relational_view` |
 | **interpreting** it | the **root `relation`** contract (`arity`, `domain(k)`, `has`, `name`) and `member_set` (`size`, `member`, `local_index`, `name`) |
 
 `structural_renderer_fixture` names no binary relation at all. It never

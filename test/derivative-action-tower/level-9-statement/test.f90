@@ -51,21 +51,18 @@ program derivative_level_9
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_structure  , only : relational_graph, held_set, held_relation
   use graph_profile    , only : directed_adjacency_view
   use graph_algorithms , only : topological_order
   use class_graph_field, only : field
   use derivative_constitution_fixture, only : primal_execution, &
        &                                      tangent_action, reverse_action
-  use fractal_graph        , only : graph
-  use graph_relational_view, only : relational_binding
-  use relational_fixture   , only : fractal_fixture
+  use fractal_graph        , only : graph, known_branch, null_branch
+  use graph_relational_view, only : relational_binding, &
+       & num_member_sets, member_set_at, num_relations, relation_at, &
+       & holds_set
 
   implicit none
 
-  type(fractal_fixture)             :: fx_
-  type(graph)             , pointer :: fg_
-  type(relational_binding), pointer :: fb_
 
   type(counted_set)                  :: v, o, p
   type(subset_set)                   :: x_dom, c, z_dom, p_in, p_out
@@ -73,7 +70,11 @@ program derivative_level_9
   class(relation), allocatable       :: d
   class(relation), pointer           :: gflow => null()
   class(relation), pointer           :: rp    => null()
-  type(relational_graph), target     :: g
+  type(graph)             , target :: g
+  type(graph)             , target :: scell(3), selem(3)
+  type(graph)             , target :: rcell(2), relem(2)
+  type(relational_binding)         :: bnd
+  integer                          :: kcell
   type(directed_adjacency_view)      :: view
   type(field)                        :: qx, zbar_f, grad_f, vseed_f
   class(member_set), allocatable     :: dom
@@ -115,21 +116,47 @@ program derivative_level_9
        & project_slots(restrict_slot(flow, 3, p_out), [1, 2]), &
        & project_slots(restrict_slot(flow, 3, p_in ), [2, 1]))
 
-  g = relational_graph('derivative specimen', &
-       & [held_set(v), held_set(o), held_set(p)], &
-       & [held_relation(flow), held_relation(d)])
+  ! 'derivative specimen': (S, P) as one sequence on each branch.
+  call g % declare()
+  do kcell = 1, 3
+     call scell(kcell) % declare()
+     call selem(kcell) % declare()
+  end do
+  do kcell = 1, 2
+     call rcell(kcell) % declare()
+     call relem(kcell) % declare()
+  end do
+
+  call bnd % bind_set(selem(1), v)
+  call bnd % bind_set(selem(2), o)
+  call bnd % bind_set(selem(3), p)
+  call bnd % bind_relation(relem(1), flow)
+  call bnd % bind_relation(relem(2), d)
+
+  do kcell = 1, 3
+     scell(kcell) % branch(1) = known_branch(selem(kcell))
+     if (kcell .lt. 3) scell(kcell) % branch(2) = &
+          & known_branch(scell(kcell + 1))
+  end do
+  do kcell = 1, 2
+     rcell(kcell) % branch(1) = known_branch(relem(kcell))
+     if (kcell .lt. 2) rcell(kcell) % branch(2) = &
+          & known_branch(rcell(kcell + 1))
+  end do
+
+  g % branch(1) = known_branch(scell(1))
+  g % branch(2) = known_branch(rcell(1))
 
   ! -- the order comes from the graph's own dependency: the view is
   !    made, the dependency selector dies, and the walk still answers
-  call fx_ % to_fractal(g, fg_, fb_)
-  view = directed_adjacency_view(fg_, fb_, d)
+  view = directed_adjacency_view(g, bnd, d)
   deallocate(d)
   call topological_order(view, order)
 
   ! -- the statement keeps the GRAPH-OWNED flow, located by identity;
   !    then the external selector dies too
-  do i = 1, g % num_relations()
-     rp => g % relation_at(i)
+  do i = 1, num_relations(g)
+     rp => relation_at(g, bnd, i)
      if (rp % same_as(flow)) gflow => rp
   end do
   if (.not. associated(gflow)) then

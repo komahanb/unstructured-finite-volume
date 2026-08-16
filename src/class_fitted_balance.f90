@@ -45,9 +45,9 @@
 module class_fitted_balance
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_ordinary_view, only : ordinary_graph
+  use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
-  use class_graph        , only : ordinary_stored_graph
+  use class_graph        , only : directed_stored_graph
   use graph_forms        , only : form
   use class_graph_field  , only : field
   use class_graph_mesh   , only : mesh
@@ -90,7 +90,7 @@ contains
 
     type(field) :: fa, fn, fc, fcc
     type(fit) :: fitting
-    type(ordinary_stored_graph) :: constellation
+    type(directed_stored_graph) :: constellation
     type(field)   :: positions
     class(graph_field), allocatable :: answer
     real(dp), allocatable :: areas(:), normals(:), fcenters(:), centers(:)
@@ -135,7 +135,7 @@ contains
        xf = fcenters(3 * e - 2 : 3 * e)
        if (h == 0) pts(3 * npts - 2 : 3 * npts) = xf
 
-       constellation = ordinary_stored_graph(npts, tails=[integer ::], heads=[integer ::])
+       constellation = directed_stored_graph(npts, tails=[integer ::], heads=[integer ::])
        positions = field('positions', constellation % vertex_set(), &
             & constellation % num_vertices(), ncomp=3)
        call positions % set_real_vector(pts)

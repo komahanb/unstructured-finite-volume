@@ -53,7 +53,7 @@
 
 module class_graph
 
-  use graph_ordinary_view, only : ordinary_graph
+  use graph_directed_view, only : directed_graph
   use fractal_graph      , only : set_graph => graph
   use graph_calculus     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
   use graph_set_representation, only : counted_set_representation, &
@@ -65,13 +65,13 @@ module class_graph
   implicit none
 
   private
-  public :: ordinary_stored_graph
+  public :: directed_stored_graph
 
   !===================================================================!
   ! A graph that keeps its own structure in arrays.
   !===================================================================!
 
-  type, extends(ordinary_graph) :: ordinary_stored_graph
+  type, extends(directed_graph) :: directed_stored_graph
 
      integer :: number = 1
      integer :: nv     = 0
@@ -213,15 +213,15 @@ module class_graph
      procedure :: vertex_owner_part
      procedure :: edge_owner_part
 
-  end type ordinary_stored_graph
+  end type directed_stored_graph
 
   !===================================================================!
   ! Constructor.
   !===================================================================!
 
-  interface ordinary_stored_graph
+  interface directed_stored_graph
      module procedure create
-  end interface ordinary_stored_graph
+  end interface directed_stored_graph
 
 contains
 
@@ -233,7 +233,7 @@ contains
   ! returns an empty set for every tagged query.
   !===================================================================!
 
-  type(ordinary_stored_graph) function create(nv, tails, heads, vtags, etags, &
+  type(directed_stored_graph) function create(nv, tails, heads, vtags, etags, &
        &                             number, vglobal, vowner, eglobal, &
        &                             eowner, nparts) result(this)
 
@@ -486,7 +486,7 @@ contains
 
   pure integer function id(this)
 
-    class(ordinary_stored_graph), intent(in) :: this
+    class(directed_stored_graph), intent(in) :: this
 
     id = this % number
 
@@ -498,7 +498,7 @@ contains
 
   pure integer function num_vertices(this)
 
-    class(ordinary_stored_graph), intent(in) :: this
+    class(directed_stored_graph), intent(in) :: this
 
     num_vertices = this % nv
 
@@ -512,7 +512,7 @@ contains
 
   type(set_graph) function vertex_set(this)
 
-    class(ordinary_stored_graph), intent(in) :: this
+    class(directed_stored_graph), intent(in) :: this
 
     vertex_set = this % vset
 
@@ -520,7 +520,7 @@ contains
 
   type(set_graph) function edge_set(this)
 
-    class(ordinary_stored_graph), intent(in) :: this
+    class(directed_stored_graph), intent(in) :: this
 
     edge_set = this % eset
 
@@ -534,7 +534,7 @@ contains
 
   subroutine name_carriers(this, labels)
 
-    class(ordinary_stored_graph), intent(in)    :: this
+    class(directed_stored_graph), intent(in)    :: this
     type(label_map)    , intent(inout) :: labels
 
     call labels % bind(this % vset, 'vertices')
@@ -548,7 +548,7 @@ contains
 
   pure integer function num_edges(this)
 
-    class(ordinary_stored_graph), intent(in) :: this
+    class(directed_stored_graph), intent(in) :: this
 
     num_edges = this % ne
 
@@ -560,7 +560,7 @@ contains
 
   pure integer function edge_tail(this, edge_index)
 
-    class(ordinary_stored_graph), intent(in) :: this
+    class(directed_stored_graph), intent(in) :: this
     integer            , intent(in) :: edge_index
 
     edge_tail = this % tail(edge_index)
@@ -574,7 +574,7 @@ contains
 
   pure integer function edge_head(this, edge_index)
 
-    class(ordinary_stored_graph), intent(in) :: this
+    class(directed_stored_graph), intent(in) :: this
     integer            , intent(in) :: edge_index
 
     edge_head = this % head(edge_index)
@@ -588,7 +588,7 @@ contains
 
   pure logical function edge_has_head(this, edge_index)
 
-    class(ordinary_stored_graph), intent(in) :: this
+    class(directed_stored_graph), intent(in) :: this
     integer            , intent(in) :: edge_index
 
     edge_has_head = this % head(edge_index) >= 1
@@ -602,7 +602,7 @@ contains
 
   type(set_graph) function all_vertices(this) result(members)
 
-    class(ordinary_stored_graph), intent(in) :: this
+    class(directed_stored_graph), intent(in) :: this
 
     members = this % vset
 
@@ -614,7 +614,7 @@ contains
 
   subroutine interior_vertices(this, sets, labels, inclusions, members)
 
-    class(ordinary_stored_graph), intent(in)    :: this
+    class(directed_stored_graph), intent(in)    :: this
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
     type(inclusion_map), intent(inout) :: inclusions
@@ -643,7 +643,7 @@ contains
 
   subroutine boundary_vertices(this, sets, labels, inclusions, members)
 
-    class(ordinary_stored_graph), intent(in)    :: this
+    class(directed_stored_graph), intent(in)    :: this
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
     type(inclusion_map), intent(inout) :: inclusions
@@ -673,7 +673,7 @@ contains
 
   subroutine tagged_vertices(this, tag, sets, labels, inclusions, members)
 
-    class(ordinary_stored_graph), intent(in)    :: this
+    class(directed_stored_graph), intent(in)    :: this
     character(len=*)   , intent(in)    :: tag
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
@@ -745,7 +745,7 @@ contains
 
   pure logical function touches_boundary(this, v)
 
-    class(ordinary_stored_graph), intent(in) :: this
+    class(directed_stored_graph), intent(in) :: this
     integer            , intent(in) :: v
 
     integer :: k
@@ -766,7 +766,7 @@ contains
 
   type(set_graph) function all_edges(this) result(members)
 
-    class(ordinary_stored_graph), intent(in) :: this
+    class(directed_stored_graph), intent(in) :: this
 
     members = this % eset
 
@@ -778,7 +778,7 @@ contains
 
   subroutine interior_edges(this, sets, labels, inclusions, members)
 
-    class(ordinary_stored_graph), intent(in)    :: this
+    class(directed_stored_graph), intent(in)    :: this
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
     type(inclusion_map), intent(inout) :: inclusions
@@ -807,7 +807,7 @@ contains
 
   subroutine boundary_edges(this, sets, labels, inclusions, members)
 
-    class(ordinary_stored_graph), intent(in)    :: this
+    class(directed_stored_graph), intent(in)    :: this
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
     type(inclusion_map), intent(inout) :: inclusions
@@ -837,7 +837,7 @@ contains
 
   subroutine tagged_edges(this, tag, sets, labels, inclusions, members)
 
-    class(ordinary_stored_graph), intent(in)    :: this
+    class(directed_stored_graph), intent(in)    :: this
     character(len=*)   , intent(in)    :: tag
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
@@ -873,7 +873,7 @@ contains
 
   subroutine owned_vertices(this, part_id, sets, labels, inclusions, members)
 
-    class(ordinary_stored_graph), intent(in)    :: this
+    class(directed_stored_graph), intent(in)    :: this
     integer            , intent(in)    :: part_id
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
@@ -892,7 +892,7 @@ contains
 
   subroutine borrowed_vertices(this, part_id, sets, labels, inclusions, members)
 
-    class(ordinary_stored_graph), intent(in)    :: this
+    class(directed_stored_graph), intent(in)    :: this
     integer            , intent(in)    :: part_id
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
@@ -911,7 +911,7 @@ contains
 
   subroutine overlap_vertices(this, part_id, sets, labels, inclusions, members)
 
-    class(ordinary_stored_graph), intent(in)    :: this
+    class(directed_stored_graph), intent(in)    :: this
     integer            , intent(in)    :: part_id
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
@@ -934,7 +934,7 @@ contains
 
   subroutine owned_edges(this, part_id, sets, labels, inclusions, members)
 
-    class(ordinary_stored_graph), intent(in)    :: this
+    class(directed_stored_graph), intent(in)    :: this
     integer            , intent(in)    :: part_id
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
@@ -952,7 +952,7 @@ contains
 
   subroutine borrowed_edges(this, part_id, sets, labels, inclusions, members)
 
-    class(ordinary_stored_graph), intent(in)    :: this
+    class(directed_stored_graph), intent(in)    :: this
     integer            , intent(in)    :: part_id
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
@@ -970,7 +970,7 @@ contains
 
   subroutine overlap_edges(this, part_id, sets, labels, inclusions, members)
 
-    class(ordinary_stored_graph), intent(in)    :: this
+    class(directed_stored_graph), intent(in)    :: this
     integer            , intent(in)    :: part_id
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
@@ -1035,7 +1035,7 @@ contains
 
   pure subroutine incident_edges(this, vertex_index, indices)
 
-    class(ordinary_stored_graph), intent(in)   :: this
+    class(directed_stored_graph), intent(in)   :: this
     integer            , intent(in)   :: vertex_index
     integer, allocatable, intent(out) :: indices(:)
 
@@ -1049,7 +1049,7 @@ contains
 
   pure subroutine adjacent_vertices(this, vertex_index, indices)
 
-    class(ordinary_stored_graph), intent(in)   :: this
+    class(directed_stored_graph), intent(in)   :: this
     integer            , intent(in)   :: vertex_index
     integer, allocatable, intent(out) :: indices(:)
 
@@ -1063,7 +1063,7 @@ contains
 
   pure subroutine outgoing_edges(this, vertex_index, indices)
 
-    class(ordinary_stored_graph), intent(in)   :: this
+    class(directed_stored_graph), intent(in)   :: this
     integer            , intent(in)   :: vertex_index
     integer, allocatable, intent(out) :: indices(:)
 
@@ -1077,7 +1077,7 @@ contains
 
   pure subroutine incoming_edges(this, vertex_index, indices)
 
-    class(ordinary_stored_graph), intent(in)   :: this
+    class(directed_stored_graph), intent(in)   :: this
     integer            , intent(in)   :: vertex_index
     integer, allocatable, intent(out) :: indices(:)
 
@@ -1092,7 +1092,7 @@ contains
 
   pure subroutine outgoing_vertices(this, vertex_index, indices)
 
-    class(ordinary_stored_graph), intent(in)   :: this
+    class(directed_stored_graph), intent(in)   :: this
     integer            , intent(in)   :: vertex_index
     integer, allocatable, intent(out) :: indices(:)
 
@@ -1120,7 +1120,7 @@ contains
 
   pure subroutine incoming_vertices(this, vertex_index, indices)
 
-    class(ordinary_stored_graph), intent(in)   :: this
+    class(directed_stored_graph), intent(in)   :: this
     integer            , intent(in)   :: vertex_index
     integer, allocatable, intent(out) :: indices(:)
 
@@ -1146,7 +1146,7 @@ contains
 
   pure integer function num_parts(this)
 
-    class(ordinary_stored_graph), intent(in) :: this
+    class(directed_stored_graph), intent(in) :: this
 
     num_parts = this % nparts
 
@@ -1159,7 +1159,7 @@ contains
 
   pure logical function has_part_relation(this)
 
-    class(ordinary_stored_graph), intent(in) :: this
+    class(directed_stored_graph), intent(in) :: this
 
     has_part_relation = this % cut
 
@@ -1172,7 +1172,7 @@ contains
 
   pure integer function global_vertex_index(this, index)
 
-    class(ordinary_stored_graph), intent(in) :: this
+    class(directed_stored_graph), intent(in) :: this
     integer            , intent(in) :: index
 
     if (this % cut .and. allocated(this % vglobal)) then
@@ -1189,7 +1189,7 @@ contains
 
   pure integer function global_edge_index(this, index)
 
-    class(ordinary_stored_graph), intent(in) :: this
+    class(directed_stored_graph), intent(in) :: this
     integer            , intent(in) :: index
 
     if (this % cut .and. allocated(this % eglobal)) then
@@ -1207,7 +1207,7 @@ contains
 
   pure integer function part_vertex_index(this, global_index, part_id)
 
-    class(ordinary_stored_graph), intent(in) :: this
+    class(directed_stored_graph), intent(in) :: this
     integer            , intent(in) :: global_index
     integer            , intent(in) :: part_id
 
@@ -1226,7 +1226,7 @@ contains
 
   pure integer function part_edge_index(this, global_index, part_id)
 
-    class(ordinary_stored_graph), intent(in) :: this
+    class(directed_stored_graph), intent(in) :: this
     integer            , intent(in) :: global_index
     integer            , intent(in) :: part_id
 
@@ -1272,7 +1272,7 @@ contains
 
   pure integer function vertex_owner_part(this, index)
 
-    class(ordinary_stored_graph), intent(in) :: this
+    class(directed_stored_graph), intent(in) :: this
     integer            , intent(in) :: index
 
     if (this % cut .and. allocated(this % vowner)) then
@@ -1289,7 +1289,7 @@ contains
 
   pure integer function edge_owner_part(this, index)
 
-    class(ordinary_stored_graph), intent(in) :: this
+    class(directed_stored_graph), intent(in) :: this
     integer            , intent(in) :: index
 
     if (this % cut .and. allocated(this % eowner)) then

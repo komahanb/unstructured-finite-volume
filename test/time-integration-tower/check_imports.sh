@@ -109,12 +109,12 @@ allowed_for() {
         common/time_fields_fixture.f90) echo "fractal_graph graph_field_calculus class_graph_field time_assert" ;;
         # The action stores an identity and a count, so it needs
         # neither a representation nor a map. Each name comes from
-        # its owner: set_graph from the KERNEL, the ordinary graph
-        # from graph_ordinary_view, the field from the field
+        # its owner: set_graph from the KERNEL, the directed graph
+        # from graph_directed_view, the field from the field
         # calculus, and the operation contract from
         # graph_operation_view. graph_grammar, which once lent all
         # four, is deleted.
-        common/triangular_decay_fixture.f90) echo "fractal_graph graph_operation_view graph_ordinary_view graph_field_calculus class_graph_field" ;;
+        common/triangular_decay_fixture.f90) echo "fractal_graph graph_operation_view graph_directed_view graph_field_calculus class_graph_field" ;;
         common)            echo "__no_allowlist__" ;;
 
         # ---- L0: sets only. NOTHING relational - not the relation
@@ -146,13 +146,13 @@ allowed_for() {
 
         # ---- L5: + fields. Values, and nothing that steps or solves.
         level-5-field-calculus) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture fractal_graph graph_set_map graph_relation graph_relation_algebra graph_binary_relation graph_field_calculus class_graph_field" ;;
-        # ---- L6: + the ordinary graph (the compatibility host), the
+        # ---- L6: + the directed graph (the compatibility host), the
         #          operation contract, and the step operators. NO
         #          minimizer: the scheme is tested before the solve.
-        level-6-discretization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture fractal_graph graph_set_map graph_ordinary_view graph_relation graph_relation_algebra graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step" ;;
+        level-6-discretization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture fractal_graph graph_set_map graph_directed_view graph_relation graph_relation_algebra graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step" ;;
         # ---- L7: + minimization and its gmres concretion. Still no
         #          marcher.
-        level-7-minimization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture fractal_graph graph_set_map graph_ordinary_view graph_relation graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step graph_minimization class_graph_gmres" ;;
+        level-7-minimization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture fractal_graph graph_set_map graph_directed_view graph_relation graph_binary_relation graph_field_calculus class_graph class_graph_field class_graph_step graph_minimization class_graph_gmres" ;;
 
         # ===== REVIEW GATE B =====
 

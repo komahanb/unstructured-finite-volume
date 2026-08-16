@@ -57,7 +57,7 @@ program adjoint_level_8
   use graph_binary_relation , only : csr_relation, transposed_view, &
        &                             transpose_of, inclusion_of
   use graph_field_calculus, only : graph_field
-  use class_graph      , only : ordinary_stored_graph
+  use class_graph      , only : directed_stored_graph
   use class_graph_field, only : field
   use class_graph_gmres, only : gmres
   use adjoint_constitution_fixture, only : constituted_primal, &
@@ -70,7 +70,7 @@ program adjoint_level_8
   type(set_graph)     :: v, t
   type(set_graph)      :: p_dom, z_dom
   type(set_graph)      :: q_can, y_can, q_perm, y_perm
-  type(ordinary_stored_graph)    :: host
+  type(directed_stored_graph)    :: host
   type(stored_relation) :: dep
   integer               :: table(2, 9)
   integer               :: nfail
@@ -121,7 +121,7 @@ program adjoint_level_8
   table(:, 9) = [TGT_F , VAR_V]
   dep = stored_relation('dependency', [t, v], table, sets)
 
-  host = ordinary_stored_graph(5, tails=[1,2,3,4], heads=[2,3,4,5])
+  host = directed_stored_graph(5, tails=[1,2,3,4], heads=[2,3,4,5])
 
   ! The same battery, twice: once aligned, once with BOTH two-member
   ! roles independently reversed. The expected storage positions are

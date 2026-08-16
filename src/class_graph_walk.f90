@@ -47,7 +47,7 @@
 module class_graph_walk
 
   use graph_operation_view, only : graph_operation
-  use graph_ordinary_view, only : ordinary_graph
+  use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
   use fractal_graph      , only : set_graph => graph
   use class_graph_field  , only : field
@@ -136,7 +136,7 @@ contains
   subroutine walk_domain(this, input_graph, domain, nentries)
 
     class(walk) , intent(in)               :: this
-    class(ordinary_graph), intent(in)               :: input_graph
+    class(directed_graph), intent(in)               :: input_graph
     type(set_graph), intent(out) :: domain
     integer        , intent(out) :: nentries
 
@@ -157,7 +157,7 @@ contains
   subroutine walk_apply(this, input_graph, input_data, output)
 
     class(walk)       , intent(in)                 :: this
-    class(ordinary_graph)      , intent(in)                 :: input_graph
+    class(directed_graph)      , intent(in)                 :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
@@ -200,7 +200,7 @@ contains
 
   subroutine colour(input_graph, mark)
 
-    class(ordinary_graph)        , intent(in)  :: input_graph
+    class(directed_graph)        , intent(in)  :: input_graph
     integer, allocatable, intent(out) :: mark(:)
 
     integer, allocatable :: nbrs(:)
@@ -244,7 +244,7 @@ contains
 
   subroutine breadth_first(input_graph, seed, mark, want_depth)
 
-    class(ordinary_graph)        , intent(in)  :: input_graph
+    class(directed_graph)        , intent(in)  :: input_graph
     integer             , intent(in)  :: seed
     integer, allocatable, intent(out) :: mark(:)
     logical             , intent(in)  :: want_depth
@@ -303,7 +303,7 @@ contains
 
   subroutine components(input_graph, mark)
 
-    class(ordinary_graph)        , intent(in)  :: input_graph
+    class(directed_graph)        , intent(in)  :: input_graph
     integer, allocatable, intent(out) :: mark(:)
 
     integer, allocatable :: queue(:), nbrs(:)

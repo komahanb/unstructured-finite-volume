@@ -68,7 +68,7 @@ program time_level_8
   use fractal_graph        , only : set_graph => graph
   use graph_set_map        , only : set_map
   use graph_binary_relation , only : csr_relation
-  use class_graph           , only : ordinary_stored_graph
+  use class_graph           , only : directed_stored_graph
   use class_graph_field     , only : field
   use class_graph_gmres     , only : gmres
   use class_graph_newton    , only : newton
@@ -86,7 +86,7 @@ program time_level_8
   type(set_map)          :: sets
   type(csr_relation), target :: tail, head
   type(csr_relation)         :: a1
-  type(ordinary_stored_graph)         :: hcontext
+  type(directed_stored_graph)         :: hcontext
   type(triangular_decay)     :: decay
   integer                    :: nfail
 
@@ -102,7 +102,7 @@ program time_level_8
   a1   = derive_one_step_reach(tail, head, sets)
 
   ! The OPERATION HOST - the conduit, not the clock.
-  hcontext = ordinary_stored_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
+  hcontext = directed_stored_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
 
   decay = triangular_decay(q, NQ)
 
@@ -128,7 +128,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(marcher)      :: clock
-    type(ordinary_stored_graph) :: chain
+    type(directed_stored_graph) :: chain
     integer            :: i
     logical            :: ok
 
@@ -169,7 +169,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(marcher)                  :: clock
-    type(ordinary_stored_graph)             :: chain
+    type(directed_stored_graph)             :: chain
     type(set_graph) :: cv, hv
 
     call clock % instants(NSTEPS, chain)

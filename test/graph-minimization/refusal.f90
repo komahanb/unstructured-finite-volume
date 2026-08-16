@@ -9,7 +9,7 @@ module lopsided_fixture
   ! identity and the count are the whole of what it is entitled to.
   use fractal_graph    , only : set_graph => graph
   use graph_operation_view, only : graph_operation
-  use graph_ordinary_view, only : ordinary_graph
+  use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
   use class_graph_field, only : field
   implicit none
@@ -31,7 +31,7 @@ contains
   end function l_name
   subroutine l_domain(this, input_graph, domain, nentries)
     class(lopsided), intent(in) :: this
-    class(ordinary_graph), intent(in) :: input_graph
+    class(directed_graph), intent(in) :: input_graph
     type(set_graph), intent(out) :: domain
     integer        , intent(out) :: nentries
     associate (u => input_graph); end associate
@@ -40,7 +40,7 @@ contains
   end subroutine l_domain
   subroutine l_apply(this, input_graph, input_data, output)
     class(lopsided), intent(in) :: this
-    class(ordinary_graph), intent(in) :: input_graph
+    class(directed_graph), intent(in) :: input_graph
     class(graph_field), intent(in), optional :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
     type(field) :: out
@@ -58,17 +58,17 @@ program minimization_refusal
        & listed_set_representation
   use graph_set_map           , only : set_map
   use graph_inclusion_map     , only : inclusion_map
-  use class_graph      , only : ordinary_stored_graph
+  use class_graph      , only : directed_stored_graph
   use class_graph_gmres, only : gmres
   use lopsided_fixture , only : lopsided
   implicit none
-  type(ordinary_stored_graph)  :: host
+  type(directed_stored_graph)  :: host
   type(set_graph)     :: x, u
   type(lopsided)      :: action
   type(gmres)         :: solver
   type(set_map)       :: sets
   type(inclusion_map) :: inclusions
-  host = ordinary_stored_graph(4, tails=[1,2,3], heads=[2,3,4])
+  host = directed_stored_graph(4, tails=[1,2,3], heads=[2,3,4])
   call x % declare()
   call sets % bind(x, counted_set_representation(5))
   call u % declare()

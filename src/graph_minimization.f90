@@ -40,7 +40,7 @@ module graph_minimization
 
   use iso_fortran_env       , only : dp => REAL64
   use graph_operation_view  , only : graph_operation
-  use graph_ordinary_view   , only : ordinary_graph
+  use graph_directed_view   , only : directed_graph
   use graph_field_calculus  , only : graph_field
   use fractal_graph      , only : set_graph => graph
   use graph_calculus        , only : graph_functional
@@ -66,7 +66,7 @@ module graph_minimization
      ! is applied, and nothing more. It is whatever the action needs
      ! to compute with - a mesh, a compatibility host, a conduit -
      ! and it carries no authority over the solver's own structure.
-     class(ordinary_graph)          , allocatable :: on
+     class(directed_graph)          , allocatable :: on
 
      ! THE DEPENDENT-VARIABLE COUPLING. Which unknowns feed which:
      ! the stencil the structural algorithms need, and the ONLY thing
@@ -82,7 +82,7 @@ module graph_minimization
      ! to prevent: the graph an action happens to execute over is not
      ! evidence about which unknowns are coupled. Where the two really
      ! are the same graph, the CALLER says so, at its own call site.
-     class(ordinary_graph)          , allocatable :: coupling
+     class(directed_graph)          , allocatable :: coupling
 
      ! The unknown domain U: where the answer lives, explicit at
      ! attach, identity preserved - never inferred from the host.
@@ -168,11 +168,11 @@ contains
 
     class(minimizer)  , intent(inout) :: this
     class(graph_operation), intent(in)    :: action
-    class(ordinary_graph)          , intent(in)    :: on
+    class(directed_graph)          , intent(in)    :: on
     type(set_graph)       , intent(in)    :: unknown_domain
     integer               , intent(in)    :: n_unknown_domain
     integer, intent(in), optional         :: ncomp
-    class(ordinary_graph)  , intent(in), optional  :: coupling
+    class(directed_graph)  , intent(in), optional  :: coupling
 
     real(dp), allocatable :: zero(:)
     integer :: n
@@ -416,7 +416,7 @@ contains
   subroutine solver_domain(this, input_graph, domain, nentries)
 
     class(minimizer), intent(in)       :: this
-    class(ordinary_graph), intent(in)               :: input_graph
+    class(directed_graph), intent(in)               :: input_graph
     type(set_graph), intent(out) :: domain
     integer        , intent(out) :: nentries
 
@@ -431,7 +431,7 @@ contains
   subroutine solver_apply(this, input_graph, input_data, output)
 
     class(minimizer), intent(in)                   :: this
-    class(ordinary_graph), intent(in)                       :: input_graph
+    class(directed_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 

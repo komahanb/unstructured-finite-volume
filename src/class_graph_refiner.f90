@@ -25,11 +25,11 @@
 module class_graph_refiner
 
   use iso_fortran_env     , only : dp => REAL64
-  use graph_ordinary_view , only : ordinary_graph
+  use graph_directed_view , only : directed_graph
   use graph_field_calculus, only : graph_field
   use fractal_graph      , only : set_graph => graph
   use graph_calculus      , only : graph_refiner
-  use class_graph         , only : ordinary_stored_graph
+  use class_graph         , only : directed_stored_graph
   use class_graph_field   , only : field
 
   implicit none
@@ -88,7 +88,7 @@ contains
   pure logical function defined_on_graph(this, input_graph)
 
     class(refiner), intent(in) :: this
-    class(ordinary_graph)  , intent(in) :: input_graph
+    class(directed_graph)  , intent(in) :: input_graph
 
     defined_on_graph = input_graph % num_vertices() > 0 .and. this % split >= 1
 
@@ -102,7 +102,7 @@ contains
   logical function defined_on_data(this, input_graph, input_data)
 
     class(refiner)   , intent(in) :: this
-    class(ordinary_graph)     , intent(in) :: input_graph
+    class(directed_graph)     , intent(in) :: input_graph
     class(graph_field), intent(in) :: input_data
 
     defined_on_data = this % defined_on_graph(input_graph)
@@ -135,8 +135,8 @@ contains
   subroutine refine_graph(this, coarse_graph, fine_graph)
 
     class(refiner), intent(in)               :: this
-    class(ordinary_graph)  , intent(in)               :: coarse_graph
-    class(ordinary_graph)  , allocatable, intent(out) :: fine_graph
+    class(directed_graph)  , intent(in)               :: coarse_graph
+    class(directed_graph)  , allocatable, intent(out) :: fine_graph
 
     integer, allocatable :: tails(:), heads(:)
     integer :: nv, ne, v, e, i, j, n, room
@@ -173,7 +173,7 @@ contains
     end do
 
     allocate(fine_graph, source = &
-         & ordinary_stored_graph(nv * this % split, tails=tails(1:n), heads=heads(1:n), &
+         & directed_stored_graph(nv * this % split, tails=tails(1:n), heads=heads(1:n), &
          &              number=coarse_graph % id()))
 
   end subroutine refine_graph
@@ -202,9 +202,9 @@ contains
   subroutine refine_data(this, coarse_graph, coarse_data, fine_graph, fine_data)
 
     class(refiner)   , intent(in)               :: this
-    class(ordinary_graph)     , intent(in)               :: coarse_graph
+    class(directed_graph)     , intent(in)               :: coarse_graph
     class(graph_field), intent(in)               :: coarse_data
-    class(ordinary_graph)     , intent(in)               :: fine_graph
+    class(directed_graph)     , intent(in)               :: fine_graph
     class(graph_field), allocatable, intent(out) :: fine_data
 
     type(field)    :: out

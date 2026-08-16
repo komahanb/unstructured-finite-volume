@@ -44,18 +44,18 @@ program partitioned_pde_level_5
   use graph_set_map        , only : set_map
   use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_label_map      , only : label_map
-  use graph_ordinary_view, only : ordinary_graph
+  use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
-  use class_graph      , only : ordinary_stored_graph
+  use class_graph      , only : directed_stored_graph
   use class_graph_field, only : field
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
   use class_graph_assembler  , only : assembler
 
   implicit none
 
-  type(ordinary_stored_graph)        :: g
+  type(directed_stored_graph)        :: g
   type(assembler)           :: a
-  class(ordinary_graph), allocatable :: g1, g2
+  class(directed_graph), allocatable :: g1, g2
   integer                   :: nfail
   type(set_map)     :: sets
 
@@ -65,7 +65,7 @@ program partitioned_pde_level_5
   write(*,'(1x,a)') "partitioned pde tower . level 5 . fields"
   write(*,'(1x,a)') "============================================="
 
-  g = ordinary_stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  g = directed_stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
   call sets % bind(g % vertex_set(), &
        & counted_set_representation(g % num_vertices()))
   call sets % bind(g % edge_set(), &
@@ -88,7 +88,7 @@ contains
 
   subroutine cut(part, kpart)
 
-    class(ordinary_graph), allocatable, intent(out) :: part
+    class(directed_graph), allocatable, intent(out) :: part
     integer                  , intent(in)  :: kpart
 
     type(partitioner) :: p
@@ -176,7 +176,7 @@ contains
   subroutine check_one_transport(q, part, k, globals, expect, nfail)
 
     type(field)      , intent(in)    :: q
-    class(ordinary_graph)     , intent(in)    :: part
+    class(directed_graph)     , intent(in)    :: part
     integer          , intent(in)    :: k, globals(:)
     real(dp)         , intent(in)    :: expect(:)
     integer          , intent(inout) :: nfail
@@ -202,7 +202,7 @@ contains
 
     dom = pd % domain()
     select type (part)
-    type is (ordinary_stored_graph)
+    type is (directed_stored_graph)
        pvs = part % vertex_set()
        call report(dom % same_as(pvs) .and. sets % size_of(dom) .eq. 4, &
             & "q" // tag // " lives on G" // tag // "'s whole vertex " // &
@@ -213,7 +213,7 @@ contains
     call pd % get_real_vector(v)
     ok = .true.
     select type (part)
-    type is (ordinary_stored_graph)
+    type is (directed_stored_graph)
        do i = 1, size(globals)
           ok = ok .and. (part % global_vertex_index(i) .eq. globals(i))
           ok = ok .and. (abs(v(i) - expect(i)) < 1.0d-13)
@@ -279,7 +279,7 @@ contains
     type(set_graph)                :: s
     type(field)                     :: d
     type(partitioner)               :: p
-    class(ordinary_graph), allocatable       :: part
+    class(directed_graph), allocatable       :: part
     class(graph_field), allocatable :: pd, fd
     type(set_graph)  :: dom
     type(label_map)     :: labels
@@ -312,7 +312,7 @@ contains
        ! Each part receives only the members it can see.
        dom = pd % domain()
        select type (pp => part)
-       type is (ordinary_stored_graph)
+       type is (directed_stored_graph)
           ok = .true.
           do i = 1, pp % num_vertices()
              if (sets % has_in(dom, i)) then
@@ -369,7 +369,7 @@ contains
     real(dp)           , intent(inout) :: total(:)
 
     type(partitioner)               :: p
-    class(ordinary_graph), allocatable       :: part
+    class(directed_graph), allocatable       :: part
     class(graph_field), allocatable :: pd, fd
     real(dp), allocatable           :: v(:)
 

@@ -1,16 +1,29 @@
 !=====================================================================!
-! THE ORDINARY GRAPH, AS A VIEW
+! THE DIRECTED GRAPH, AS A VIEW
 !
-! One reading of the kernel graph: the ordinary binary graph the old
-! solvers speak - vertices, edges, incidence, named sets,
-! neighbourhoods. It is a VIEW and not an ontology, and the module
-! name now says so where the type name still cannot.
+! One reading of the kernel graph:
+!
+!            D = ( V, E, tail, head )
+!
+!            V              vertex set identity, and its count
+!            E              edge set identity, and its count
+!            tail, head     E -> V
+!
+! That is the whole of the role. `directed` is what the structure IS -
+! two finite domains and two maps between them - and it is a view over
+! the ontology, never a kind of graph.
+!
+! Named, carved and tagged vertex and edge sets are not extra
+! structure: each is a subobject of V or of E, answered as a set graph
+! identity and described in the caller's maps. Neighbourhood queries
+! are compositions of tail and head, materialized because they are
+! asked inside loops.
 !
 ! This module was carved out of graph_grammar, which had become the
-! one place everything legacy met. Nothing here is new: the contract
-! is moved verbatim, so that its consumers import the thing they
-! actually use and the compatibility module can be drained to
-! nothing (doc/final-codebase-cutover-plan.md, PR2).
+! one place everything legacy met (doc/final-codebase-cutover-plan.md,
+! PR2). The type was renamed from `graph`, and then from `ordinary_`
+! to `directed_`, because `ordinary` names no mathematical role and
+! `directed` names the one this contract actually holds.
 !
 ! WHAT IT LENDS. One name: the abstract type. set_graph is imported
 ! to spell the signatures below and is NOT re-exported - a consumer
@@ -19,8 +32,6 @@
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
-!
-!                      WHAT A GRAPH IS MADE OF
 !
 !                      WHAT A GRAPH IS MADE OF
 !
@@ -54,7 +65,7 @@
 !
 !=====================================================================!
 
-module graph_ordinary_view
+module graph_directed_view
 
   !===================================================================!
   ! THE DOMAIN IS A GRAPH, AND ITS INTERPRETATION IS THE CALLER'S.
@@ -62,7 +73,7 @@ module graph_ordinary_view
   ! set_graph is the kernel's graph, renamed on import for one reason
   ! only: this module and the kernel both speak of graphs, and a
   ! reader of a signature must be able to tell which. The COLLISION is
-  ! gone - the abstract type below is `ordinary_graph` now, and no
+  ! gone - the abstract type below is `directed_graph` now, and no
   ! other module lends a type called `graph` to anyone who reads this
   ! one. What remains is a convenience rename, not a disambiguation.
   !
@@ -84,7 +95,7 @@ module graph_ordinary_view
 
   private
 
-  public :: ordinary_graph
+  public :: directed_graph
 
   !===================================================================!
   ! GRAPH. The reader of structure.
@@ -138,18 +149,21 @@ module graph_ordinary_view
   !===================================================================!
 
   !===================================================================!
-  ! MIGRATION DEBT, AND WHAT IS LEFT OF IT. This abstract type is
-  ! named graph but is not the graph ontology. The ontology is
-  ! G=(B1,B2) in src/fractal_graph.f90; this is a view over it. The
-  ! module name has been fixed; the TYPE name has not, and that is the
-  ! whole of the remaining debt. Do not present it as ontology.
+  ! THE HIERARCHY, STATED ONCE. Three types, three roles, three names:
   !
-  ! The line this note replaces said "do not extend it", which read
-  ! oddly beside class_graph, which does. It always meant: no NEW
-  ! concretion. The existing one is the contract's reason to exist.
+  !     fractal_graph :: graph                 the ontology, G=(B1,B2)
+  !     graph_directed_view :: directed_graph  this contract, D
+  !     class_graph :: directed_stored_graph   one stored realization
+  !
+  ! The migration debt that made this type share the ontology's name
+  ! is discharged. What remains of it is the module name class_graph,
+  ! which says less than the type inside it does.
+  !
+  ! Do not present this as ontology, and add no NEW concretion: one
+  ! realization is what a contract needs to be inhabited.
   !===================================================================!
 
-  type, abstract :: ordinary_graph
+  type, abstract :: directed_graph
 
    contains
 
@@ -161,7 +175,8 @@ module graph_ordinary_view
      ! The carrier bridge (migration, AGENTS.md 5B): the graph's two
      ! persistent declared domains, for consumers that must ask
      ! where a field domain ultimately lives. This root is already
-     ! explicitly the ordinary vertex/edge compatibility contract.
+     ! explicitly the directed vertex/edge contract: V and E, by
+     ! identity.
      procedure(set_graph_interface), deferred :: vertex_set
      procedure(set_graph_interface), deferred :: edge_set
 
@@ -234,7 +249,7 @@ module graph_ordinary_view
      procedure(graph_owner_part_interface)       , deferred :: vertex_owner_part
      procedure(graph_owner_part_interface)       , deferred :: edge_owner_part
 
-  end type ordinary_graph
+  end type directed_graph
 
   abstract interface
      !===============================================================!
@@ -242,13 +257,13 @@ module graph_ordinary_view
      !===============================================================!
 
      pure integer function graph_id_interface(this)
-       import :: ordinary_graph
-       class(ordinary_graph), intent(in) :: this
+       import :: directed_graph
+       class(directed_graph), intent(in) :: this
      end function graph_id_interface
 
      pure integer function graph_count_interface(this)
-       import :: ordinary_graph
-       class(ordinary_graph), intent(in) :: this
+       import :: directed_graph
+       class(directed_graph), intent(in) :: this
      end function graph_count_interface
 
      !---------------------------------------------------------------!
@@ -262,19 +277,19 @@ module graph_ordinary_view
      ! one out of an INTENT(IN) dummy is barred from a pure subprogram
      ! (F2018 C1594). Identity is still answered by value.
      type(set_graph) function set_graph_interface(this)
-       import :: ordinary_graph, set_graph
-       class(ordinary_graph), intent(in) :: this
+       import :: directed_graph, set_graph
+       class(directed_graph), intent(in) :: this
      end function set_graph_interface
 
      pure integer function graph_edge_end_interface(this, edge_index)
-       import :: ordinary_graph
-       class(ordinary_graph), intent(in) :: this
+       import :: directed_graph
+       class(directed_graph), intent(in) :: this
        integer, intent(in) :: edge_index
      end function graph_edge_end_interface
 
      pure logical function graph_edge_has_head_interface(this, edge_index)
-       import :: ordinary_graph
-       class(ordinary_graph), intent(in) :: this
+       import :: directed_graph
+       class(directed_graph), intent(in) :: this
        integer, intent(in) :: edge_index
      end function graph_edge_has_head_interface
 
@@ -302,8 +317,8 @@ module graph_ordinary_view
 
      subroutine graph_carved_set_interface(this, sets, labels, &
           & inclusions, members)
-       import :: ordinary_graph, set_graph, set_map, label_map, inclusion_map
-       class(ordinary_graph)       , intent(in)    :: this
+       import :: directed_graph, set_graph, set_map, label_map, inclusion_map
+       class(directed_graph)       , intent(in)    :: this
        type(set_map)      , intent(inout) :: sets
        type(label_map)    , intent(inout) :: labels
        type(inclusion_map), intent(inout) :: inclusions
@@ -312,8 +327,8 @@ module graph_ordinary_view
 
      subroutine graph_tagged_set_interface(this, tag, sets, labels, &
           & inclusions, members)
-       import :: ordinary_graph, set_graph, set_map, label_map, inclusion_map
-       class(ordinary_graph)       , intent(in)    :: this
+       import :: directed_graph, set_graph, set_map, label_map, inclusion_map
+       class(directed_graph)       , intent(in)    :: this
        character(len=*)   , intent(in)    :: tag
        type(set_map)      , intent(inout) :: sets
        type(label_map)    , intent(inout) :: labels
@@ -323,8 +338,8 @@ module graph_ordinary_view
 
      subroutine graph_part_set_interface(this, part_id, sets, labels, &
           & inclusions, members)
-       import :: ordinary_graph, set_graph, set_map, label_map, inclusion_map
-       class(ordinary_graph)       , intent(in)    :: this
+       import :: directed_graph, set_graph, set_map, label_map, inclusion_map
+       class(directed_graph)       , intent(in)    :: this
        integer            , intent(in)    :: part_id
        type(set_map)      , intent(inout) :: sets
        type(label_map)    , intent(inout) :: labels
@@ -337,8 +352,8 @@ module graph_ordinary_view
      !===============================================================!
 
      pure subroutine graph_from_vertex_interface(this, vertex_index, indices)
-       import :: ordinary_graph
-       class(ordinary_graph), intent(in) :: this
+       import :: directed_graph
+       class(directed_graph), intent(in) :: this
        integer, intent(in) :: vertex_index
        integer, allocatable, intent(out) :: indices(:)
      end subroutine graph_from_vertex_interface
@@ -359,8 +374,8 @@ module graph_ordinary_view
      !---------------------------------------------------------------!
 
      pure logical function graph_has_part_relation_interface(this)
-       import :: ordinary_graph
-       class(ordinary_graph), intent(in) :: this
+       import :: directed_graph
+       class(directed_graph), intent(in) :: this
      end function graph_has_part_relation_interface
 
      !---------------------------------------------------------------!
@@ -379,8 +394,8 @@ module graph_ordinary_view
      !---------------------------------------------------------------!
 
      pure integer function graph_global_id_interface(this, index)
-       import :: ordinary_graph
-       class(ordinary_graph), intent(in) :: this
+       import :: directed_graph
+       class(directed_graph), intent(in) :: this
        integer, intent(in) :: index
      end function graph_global_id_interface
 
@@ -392,8 +407,8 @@ module graph_ordinary_view
      !---------------------------------------------------------------!
 
      pure integer function graph_part_id_interface(this, global_index, part_id)
-       import :: ordinary_graph
-       class(ordinary_graph), intent(in) :: this
+       import :: directed_graph
+       class(directed_graph), intent(in) :: this
        integer, intent(in) :: global_index
        integer, intent(in) :: part_id
      end function graph_part_id_interface
@@ -409,10 +424,10 @@ module graph_ordinary_view
      !---------------------------------------------------------------!
 
      pure integer function graph_owner_part_interface(this, index)
-       import :: ordinary_graph
-       class(ordinary_graph), intent(in) :: this
+       import :: directed_graph
+       class(directed_graph), intent(in) :: this
        integer, intent(in) :: index
      end function graph_owner_part_interface
   end interface
 
-end module graph_ordinary_view
+end module graph_directed_view

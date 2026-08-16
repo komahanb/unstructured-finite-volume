@@ -6,7 +6,7 @@
 ! absence in H. This suite's centrepiece is the compatibility law
 ! (AGENTS.md 62): on every topology below, the profile - deriving
 ! every answer from T and H alone - is held against the old
-! ordinary_stored_graph, query for query, vertex for vertex, edge for edge.
+! directed_stored_graph, query for query, vertex for vertex, edge for edge.
 ! One source of truth on the new road, and the old road as its
 ! oracle until the day it retires.
 !
@@ -15,7 +15,7 @@
 
 program test_graph_ordinary
 
-  use class_graph          , only : ordinary_stored_graph
+  use class_graph          , only : directed_stored_graph
   use graph_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use graph_set_map           , only : set_map
@@ -89,7 +89,7 @@ contains
   end subroutine report
 
   !===================================================================!
-  ! The oracle bout: build the old ordinary_stored_graph and the relational
+  ! The oracle bout: build the old directed_stored_graph and the relational
   ! road on one topology, then ask both everything and demand one
   ! answer. T gets every edge; H gets the headed ones; both tables
   ! in ascending edge order, as every mesh builder hands them.
@@ -103,7 +103,7 @@ contains
     integer         , intent(inout)        :: nfail
     logical         , intent(in), optional :: scrambled
 
-    type(ordinary_stored_graph)              :: old
+    type(directed_stored_graph)              :: old
     type(graph)               :: verts, edges
     type(set_map)               :: sets
     type(csr_relation)              :: t, h
@@ -118,7 +118,7 @@ contains
 
     ne = size(tails)
 
-    old = ordinary_stored_graph(nv, tails=tails, heads=heads)
+    old = directed_stored_graph(nv, tails=tails, heads=heads)
 
     call verts % declare()
     call sets % bind(verts, counted_set_representation(nv))

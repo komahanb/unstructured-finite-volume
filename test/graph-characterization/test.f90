@@ -27,7 +27,7 @@ program test_graph_characterization
 
   use iso_fortran_env        , only : dp => REAL64
   use graph_calculus         , only : GRAPH_SIDE_VERTEX
-  use graph_ordinary_view    , only : ordinary_graph
+  use graph_directed_view    , only : directed_graph
   use graph_field_calculus   , only : graph_field
   use fractal_graph           , only : set_graph => graph
   use graph_set_representation, only : counted_set_representation, &
@@ -35,7 +35,7 @@ program test_graph_characterization
   use graph_set_map           , only : set_map
   use graph_label_map         , only : label_map
   use graph_inclusion_map     , only : inclusion_map, declared_subobject
-  use class_graph            , only : ordinary_stored_graph
+  use class_graph            , only : directed_stored_graph
   use class_graph_field      , only : field
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
   use class_graph_assembler  , only : assembler
@@ -95,7 +95,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(ordinary_stored_graph)              :: g
+    type(directed_stored_graph)              :: g
     type(differential_operator)     :: div
     class(graph_field), allocatable :: yf
     type(set_graph)                   :: eon
@@ -103,7 +103,7 @@ contains
     integer, allocatable            :: idx(:)
     real(dp), allocatable           :: y(:)
 
-    g = ordinary_stored_graph(2, tails=[1, 1], heads=[2, 2])
+    g = directed_stored_graph(2, tails=[1, 1], heads=[2, 2])
 
     call report(g % num_edges() .eq. 2, &
          & "parallel edges keep two identities", nfail)
@@ -149,7 +149,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(ordinary_stored_graph)              :: g
+    type(directed_stored_graph)              :: g
     type(differential_operator)     :: div
     class(graph_field), allocatable :: yf
     type(set_graph)                   :: eon
@@ -162,7 +162,7 @@ contains
     real(dp), allocatable           :: y(:)
 
     ! 1 --> 2 --> 3 --> wall
-    g = ordinary_stored_graph(3, tails=[1, 2, 3], heads=[2, 3, 0])
+    g = directed_stored_graph(3, tails=[1, 2, 3], heads=[2, 3, 0])
 
     call report(g % edge_has_head(1) .and. .not. g % edge_has_head(3), &
          & "the wall edge has a tail and no head", nfail)
@@ -215,10 +215,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(ordinary_stored_graph)   :: g
+    type(directed_stored_graph)   :: g
     integer, allocatable :: idx(:)
 
-    g = ordinary_stored_graph(4, tails=[1, 1, 2, 3], heads=[2, 3, 4, 4])
+    g = directed_stored_graph(4, tails=[1, 1, 2, 3], heads=[2, 3, 4, 4])
 
     call g % outgoing_edges(1, idx)
     call report(size(idx) .eq. 2 .and. all(idx .eq. [1, 2]), &
@@ -319,10 +319,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(ordinary_stored_graph)              :: g
+    type(directed_stored_graph)              :: g
     type(partitioner)               :: p
     type(assembler)                 :: a
-    class(ordinary_graph), allocatable       :: part
+    class(directed_graph), allocatable       :: part
     class(graph_field), allocatable :: pd, fd
     type(set_graph)                   :: von, eon
     type(field)                     :: q, w
@@ -333,7 +333,7 @@ contains
     type(label_map)     :: labels
     type(inclusion_map) :: inclusions
 
-    g = ordinary_stored_graph(6, tails=[1, 2, 3, 4, 5], heads=[2, 3, 4, 5, 6])
+    g = directed_stored_graph(6, tails=[1, 2, 3, 4, 5], heads=[2, 3, 4, 5, 6])
     a = assembler()
 
     von = g % vertex_set()
@@ -393,7 +393,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(ordinary_stored_graph)              :: g
+    type(directed_stored_graph)              :: g
     type(differential_operator)     :: fwd, rev
     class(graph_field), allocatable :: yf
     type(set_graph)                   :: on
@@ -404,7 +404,7 @@ contains
     logical                         :: ok
 
     ! 1 ==> 2 (twice, in parallel), 2 --> 3 --> 4 --> wall.
-    g  = ordinary_stored_graph(4, tails=[1, 1, 2, 3, 4], heads=[2, 2, 3, 4, 0])
+    g  = directed_stored_graph(4, tails=[1, 1, 2, 3, 4], heads=[2, 2, 3, 4, 0])
     on = g % vertex_set()
     qf = field('q', on, g % num_vertices())
     pf = field('p', on, g % num_vertices())

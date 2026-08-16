@@ -41,7 +41,7 @@ module shifted_laplacian_fixture
   use iso_fortran_env  , only : dp => REAL64
   use fractal_graph    , only : set_graph => graph
   use graph_operation_view, only : graph_operation
-  use graph_ordinary_view, only : ordinary_graph
+  use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
   use class_graph_field, only : field
   use class_graph_differential_operator, only : differential_operator, &
@@ -75,7 +75,7 @@ contains
   subroutine shifted_domain(this, input_graph, domain, nentries)
 
     class(shifted_laplacian), intent(in) :: this
-    class(ordinary_graph), intent(in) :: input_graph
+    class(directed_graph), intent(in) :: input_graph
     type(set_graph), intent(out) :: domain
     integer        , intent(out) :: nentries
 
@@ -94,7 +94,7 @@ contains
   subroutine shifted_apply(this, input_graph, input_data, output)
 
     class(shifted_laplacian), intent(in)           :: this
-    class(ordinary_graph), intent(in)                       :: input_graph
+    class(directed_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 

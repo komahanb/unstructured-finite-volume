@@ -42,8 +42,8 @@ program visualization_level_8
   use iso_fortran_env      , only : dp => REAL64
   use visualization_assert , only : report, verdict
   use fractal_graph        , only : set_graph => graph
-  use graph_ordinary_view  , only : ordinary_graph
-  use class_graph          , only : ordinary_stored_graph
+  use graph_directed_view  , only : directed_graph
+  use class_graph          , only : directed_stored_graph
   use class_graph_stencil  , only : stencil_operator
   use class_graph_step     , only : step_operator, bdf, backward_euler
   use class_graph_jacobi   , only : jacobi
@@ -63,8 +63,8 @@ program visualization_level_8
 
   type(stencil_operator)    :: a
   type(step_operator)       :: clock, euler
-  class(ordinary_graph), allocatable :: dependent, independent, independent_be
-  type(ordinary_stored_graph)        :: context
+  class(directed_graph), allocatable :: dependent, independent, independent_be
+  type(directed_stored_graph)        :: context
   type(jacobi)              :: solver
   type(set_map)     :: sets
   type(label_map)     :: labels
@@ -130,7 +130,7 @@ program visualization_level_8
        & call labels % bind(independent_be % edge_set(), 'edges')
 
   ! ---- the execution context, deliberately neither of them.
-  context = ordinary_stored_graph(N, tails=[integer ::], heads=[integer ::])
+  context = directed_stored_graph(N, tails=[integer ::], heads=[integer ::])
   if (.not. sets % describes(context % vertex_set())) &
        & call sets % bind(context % vertex_set(), &
        &      counted_set_representation(context % num_vertices()))
@@ -357,7 +357,7 @@ contains
 
   logical function same_pattern(p, q)
 
-    class(ordinary_graph), intent(in) :: p, q
+    class(directed_graph), intent(in) :: p, q
 
     integer :: i, j
 
@@ -376,7 +376,7 @@ contains
   logical function properly_coloured(colours, coupling)
 
     integer     , intent(in) :: colours(:)
-    class(ordinary_graph), intent(in) :: coupling
+    class(directed_graph), intent(in) :: coupling
 
     integer :: i, j
 

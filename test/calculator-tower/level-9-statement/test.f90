@@ -39,14 +39,14 @@ module constituted_residual_fixture
   use graph_set_representation, only : set_representation
   use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation   , only : relation
-  ! The kernel's graph and the ordinary view's ordinary_graph are two
+  ! The kernel's graph and the ordinary view's directed_graph are two
   ! types with two names now, so nothing is renamed at this door.
   use fractal_graph        , only : graph, known_branch, null_branch
   use graph_relational_view, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
        & holds_set
   use graph_operation_view, only : graph_operation
-  use graph_ordinary_view, only : ordinary_graph
+  use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
   use class_graph_field, only : field
   use arithmetic_constitution_fixture, only : generated_residual
@@ -147,7 +147,7 @@ contains
 
   subroutine cr_domain(this, input_graph, domain, nentries)
     class(constituted_residual), intent(in) :: this
-    class(ordinary_graph), intent(in) :: input_graph
+    class(directed_graph), intent(in) :: input_graph
     type(set_graph), intent(out) :: domain
     integer        , intent(out) :: nentries
     integer         :: n_ys
@@ -159,7 +159,7 @@ contains
   subroutine cr_apply(this, input_graph, input_data, output)
 
     class(constituted_residual), intent(in)        :: this
-    class(ordinary_graph), intent(in)                       :: input_graph
+    class(directed_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
@@ -233,7 +233,7 @@ program calculator_level_9
        & holds_set
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use class_graph      , only : ordinary_stored_graph
+  use class_graph      , only : directed_stored_graph
   use class_graph_field, only : field
   use class_graph_gmres, only : gmres
   use constituted_residual_fixture, only : constituted_residual
@@ -253,7 +253,7 @@ program calculator_level_9
   type(graph)             , target :: rcell(2), relem(2)
   type(relational_binding)         :: bnd
   integer                          :: kcell
-  type(ordinary_stored_graph)    :: host
+  type(directed_stored_graph)    :: host
   type(constituted_residual) :: residual_op
   type(gmres)           :: solver
   type(field)           :: rhsf
@@ -352,7 +352,7 @@ program calculator_level_9
   deallocate(flow)
 
   ! -- the compatibility scenery: not part of the statement.
-  host = ordinary_stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
+  host = directed_stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
 
   ! -- the ordinary solver, through its own operation face
   call solver % attach(residual_op, host, u, sets % size_of(u))

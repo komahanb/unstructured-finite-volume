@@ -46,11 +46,11 @@ module class_graph_marcher
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_operation_view, only : graph_operation
-  use graph_ordinary_view, only : ordinary_graph
+  use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
   use fractal_graph      , only : set_graph => graph
   use class_graph_field  , only : field
-  use class_graph        , only : ordinary_stored_graph
+  use class_graph        , only : directed_stored_graph
   use class_graph_step   , only : step_operator, bdf
   use graph_minimization , only : minimizer
 
@@ -90,13 +90,13 @@ contains
 
     class(marcher), intent(in) :: this
     integer, intent(in) :: nsteps
-    type(ordinary_stored_graph), intent(out) :: chain
+    type(directed_stored_graph), intent(out) :: chain
 
     integer :: n
 
     associate (u1 => this); end associate
 
-    chain = ordinary_stored_graph(nsteps + 1, &
+    chain = directed_stored_graph(nsteps + 1, &
          & tails=[(n, n = 1, nsteps)], heads=[(n + 1, n = 1, nsteps)])
 
   end subroutine instants
@@ -109,11 +109,11 @@ contains
 
     class(marcher), intent(inout)      :: this
     class(graph_operation), intent(in) :: action
-    class(ordinary_graph), intent(in)           :: on
+    class(directed_graph), intent(in)           :: on
     real(dp), intent(inout)            :: q(:)
     integer, intent(in)                :: nsteps
 
-    type(ordinary_stored_graph) :: chain
+    type(directed_stored_graph) :: chain
     type(step_operator) :: statement
     type(set_graph) :: state_domain
     integer         :: n_state_domain
@@ -203,11 +203,11 @@ contains
 
     class(marcher), intent(inout)      :: this
     class(graph_operation), intent(in) :: transposed
-    class(ordinary_graph), intent(in)           :: on
+    class(directed_graph), intent(in)           :: on
     real(dp), intent(inout)            :: lambda(:)
     integer, intent(in)                :: nsteps
 
-    type(ordinary_stored_graph) :: chain
+    type(directed_stored_graph) :: chain
     real(dp), allocatable :: s(:)
     integer :: e
 
@@ -250,7 +250,7 @@ contains
   subroutine state_seat(action, on, q, state_domain, n_state_domain, ncomp)
 
     class(graph_operation), intent(in)  :: action
-    class(ordinary_graph)          , intent(in)  :: on
+    class(directed_graph)          , intent(in)  :: on
     real(dp)              , intent(in)  :: q(:)
     type(set_graph)       , intent(out) :: state_domain
     integer               , intent(out) :: n_state_domain
@@ -276,7 +276,7 @@ contains
   subroutine read_statement(action, on, q, s)
 
     class(graph_operation), intent(in) :: action
-    class(ordinary_graph), intent(in)           :: on
+    class(directed_graph), intent(in)           :: on
     real(dp), intent(in)               :: q(:)
     real(dp), allocatable, intent(out) :: s(:)
 

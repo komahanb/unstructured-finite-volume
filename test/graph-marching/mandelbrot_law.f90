@@ -25,7 +25,7 @@ module mandelbrot_law_fixture
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_operation_view, only : graph_operation
-  use graph_ordinary_view, only : ordinary_graph
+  use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
   use graph_calculus     , only : GRAPH_SIDE_VERTEX
   use fractal_graph         , only : set_graph => graph
@@ -60,7 +60,7 @@ contains
 
   subroutine law_domain(this, input_graph, domain, nentries)
     class(mandelbrot_law), intent(in)      :: this
-    class(ordinary_graph), intent(in)               :: input_graph
+    class(directed_graph), intent(in)               :: input_graph
     type(set_graph), intent(out) :: domain
     integer        , intent(out) :: nentries
     associate (u1 => this); end associate
@@ -71,7 +71,7 @@ contains
   subroutine law_apply(this, input_graph, input_data, output)
 
     class(mandelbrot_law), intent(in)              :: this
-    class(ordinary_graph), intent(in)                       :: input_graph
+    class(directed_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 

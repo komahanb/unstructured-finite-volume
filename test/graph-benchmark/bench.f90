@@ -23,7 +23,7 @@
 program bench_graph_traversal
 
   use iso_fortran_env        , only : dp => REAL64, int64
-  use graph_ordinary_view    , only : ordinary_graph
+  use graph_directed_view    , only : directed_graph
   use graph_field_calculus   , only : graph_field
   use fractal_graph          , only : set_graph => graph
   use graph_set_representation, only : counted_set_representation
@@ -31,7 +31,7 @@ program bench_graph_traversal
   use graph_label_map        , only : label_map
   use graph_inclusion_map    , only : inclusion_map
   use graph_binary_relation  , only : csr_relation
-  use class_graph            , only : ordinary_stored_graph
+  use class_graph            , only : directed_stored_graph
   use class_graph_field      , only : field
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
   use class_graph_assembler  , only : assembler
@@ -44,7 +44,7 @@ program bench_graph_traversal
   integer, parameter :: nv = nx * ny
   integer, parameter :: ne = (nx - 1) * ny + nx * (ny - 1)
 
-  type(ordinary_stored_graph)              :: g
+  type(directed_stored_graph)              :: g
   type(set_graph)                 :: vcarrier, ecarrier
   type(set_map)                   :: sets
   type(label_map)                 :: labels
@@ -55,7 +55,7 @@ program bench_graph_traversal
   type(differential_operator)     :: op
   type(partitioner)               :: p
   type(assembler)                 :: a
-  class(ordinary_graph), allocatable       :: part
+  class(directed_graph), allocatable       :: part
   class(graph_field), allocatable :: pd, fd, yf
   type(set_graph)                 :: von, eon
   type(field)                     :: q, z
@@ -92,9 +92,9 @@ program bench_graph_traversal
   end do
 
   call system_clock(t0, rate)
-  g = ordinary_stored_graph(nv, tails=tails, heads=heads)
+  g = directed_stored_graph(nv, tails=tails, heads=heads)
   call system_clock(t1)
-  call line("ordinary_stored_graph construction", t0, t1, rate, int(nv, int64))
+  call line("directed_stored_graph construction", t0, t1, rate, int(nv, int64))
 
   ! -- traversal sweeps: every vertex once per repetition.
   touched = 0

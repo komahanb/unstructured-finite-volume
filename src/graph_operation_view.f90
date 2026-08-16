@@ -9,7 +9,7 @@
 !
 ! A transform IS a graph-to-graph operation contract. They are named
 ! in the same files, written against the same three imported names,
-! and after the ordinary view moved out there was nothing left to
+! and after the directed view moved out there was nothing left to
 ! disentangle them from. Two modules here would be ceremony, not
 ! structure - so the measurement was accepted and one module written
 ! (doc/final-codebase-cutover-plan.md, PR2).
@@ -17,7 +17,7 @@
 ! This is the last of graph_grammar, which is deleted with this file's
 ! arrival. What that module held is now in three places:
 !
-!     graph                 -> graph_ordinary_view
+!     graph                 -> graph_directed_view
 !     graph_field, kinds    -> graph_field_calculus
 !     set_graph             -> fractal_graph
 !     `-- the two verbs     -> here
@@ -37,14 +37,15 @@
 ! different question. The list outlived the module that first stated
 ! it; what changed is that each role now lives where it belongs:
 !
-!    graph ............ structure     graph_ordinary_view
+!    graph ............ structure     graph_directed_view
 !    graph_field ...... value         graph_field_calculus
 !    graph_operation .. verb within   here
 !    graph_transform .. verb between  here
 !
-! A graph here is the ordinary reading: two finite domains joined by
-! tail and head. A domain is a set graph, never an edgeless graph; a
-! field's domain is an identity and a count, full stop.
+! A graph here is the DIRECTED reading, D = (V, E, tail, head): two
+! finite domains and two maps between them. A domain is a set graph,
+! never an edgeless graph; a field's domain is an identity and a
+! count, full stop.
 !
 !=====================================================================!
 !
@@ -95,20 +96,20 @@ module graph_operation_view
   !===================================================================!
   ! THREE NAMES ARRIVE, AND ALL THREE ARE SOMEONE ELSE'S.
   !
-  !     graph        graph_ordinary_view   the structure it reads
+  !     graph        graph_directed_view   the structure it reads
   !     set_graph    fractal_graph         the domain it answers on,
   !     |                                  renamed because the kernel
   !     |                                  calls it `graph` too
   !     graph_field  graph_field_calculus  the values it moves
   !
   ! The rename survives here as a convenience, not a disambiguation:
-  ! graph_ordinary_view's abstract type is `ordinary_graph` now, so
+  ! graph_directed_view's abstract type is `directed_graph` now, so
   ! nothing this module imports competes for the word `graph`. The
   ! kernel's type is still renamed at the door because a signature
   ! that says set_graph says WHICH question it is asking.
   !===================================================================!
 
-  use graph_ordinary_view , only : ordinary_graph
+  use graph_directed_view , only : directed_graph
   use fractal_graph       , only : set_graph => graph
   use graph_field_calculus, only : graph_field
 
@@ -214,17 +215,17 @@ module graph_operation_view
 
      subroutine operation_domain_interface(this, input_graph, domain, &
           & nentries)
-       import :: graph_operation, ordinary_graph, set_graph
+       import :: graph_operation, directed_graph, set_graph
        class(graph_operation), intent(in)  :: this
-       class(ordinary_graph)          , intent(in)  :: input_graph
+       class(directed_graph)          , intent(in)  :: input_graph
        type(set_graph)       , intent(out) :: domain
        integer               , intent(out) :: nentries
      end subroutine operation_domain_interface
 
      subroutine operation_apply_interface(this, input_graph, input_data, output)
-       import :: graph_operation, ordinary_graph, graph_field
+       import :: graph_operation, directed_graph, graph_field
        class(graph_operation), intent(in) :: this
-       class(ordinary_graph), intent(in) :: input_graph
+       class(directed_graph), intent(in) :: input_graph
        class(graph_field), intent(in), optional :: input_data(:)
        class(graph_field), allocatable, intent(inout) :: output
      end subroutine operation_apply_interface
@@ -234,15 +235,15 @@ module graph_operation_view
      !===============================================================!
 
      pure logical function transform_on_graph_interface(this, input_graph)
-       import :: graph_transform, ordinary_graph
+       import :: graph_transform, directed_graph
        class(graph_transform), intent(in) :: this
-       class(ordinary_graph), intent(in) :: input_graph
+       class(directed_graph), intent(in) :: input_graph
      end function transform_on_graph_interface
 
      logical function transform_on_data_interface(this, input_graph, input_data)
-       import :: graph_transform, ordinary_graph, graph_field
+       import :: graph_transform, directed_graph, graph_field
        class(graph_transform), intent(in) :: this
-       class(ordinary_graph), intent(in) :: input_graph
+       class(directed_graph), intent(in) :: input_graph
        class(graph_field), intent(in) :: input_data
      end function transform_on_data_interface
 

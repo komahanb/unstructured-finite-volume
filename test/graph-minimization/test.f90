@@ -19,7 +19,7 @@ module cubic_statement_fixture
 
   use iso_fortran_env, only : dp => REAL64
   use graph_operation_view, only : graph_operation
-  use graph_ordinary_view, only : ordinary_graph
+  use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
   use graph_calculus , only : GRAPH_SIDE_VERTEX
   ! An action names a domain and counts it. It asks no membership,
@@ -62,7 +62,7 @@ contains
 
   subroutine cubic_domain(this, input_graph, domain, nentries)
     class(cubic_statement), intent(in)     :: this
-    class(ordinary_graph), intent(in)               :: input_graph
+    class(directed_graph), intent(in)               :: input_graph
     type(set_graph), intent(out) :: domain
     integer        , intent(out) :: nentries
     domain   = input_graph % all_vertices()
@@ -72,7 +72,7 @@ contains
   subroutine cubic_apply(this, input_graph, input_data, output)
 
     class(cubic_statement), intent(in)             :: this
-    class(ordinary_graph), intent(in)                       :: input_graph
+    class(directed_graph), intent(in)                       :: input_graph
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
@@ -109,7 +109,7 @@ program test_graph_minimization
   use graph_set_map  , only : set_map
   use graph_label_map, only : label_map
   use graph_inclusion_map, only : inclusion_map
-  use graph_ordinary_view, only : ordinary_graph
+  use graph_directed_view, only : directed_graph
   use class_graph_mesh   , only : mesh
   use class_mesh_builder , only : mesh_from_gmsh
   use class_robin_condition, only : robin_condition, dirichlet

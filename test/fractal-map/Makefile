@@ -9,16 +9,19 @@ include ../../Makefile.in
 F90FLAGS += -I../../lib/ -Wtarget-lifetime
 LDFLAGS  += -L../../lib/ ../../lib/libufvm.a
 
-all: set scale
+all: set relation scale
 
 set: set.o
 	$(F90) set.o -o $@ $(LDFLAGS)
+
+relation: relation.o
+	$(F90) relation.o -o $@ $(LDFLAGS)
 
 scale: scale.o
 	$(F90) scale.o -o $@ $(LDFLAGS)
 
 clean:
-	@rm -f *.o *.mod *.so set scale
+	@rm -f *.o *.mod *.so set relation scale
 
 .SUFFIXES: .f90 .o
 .PHONY: all clean

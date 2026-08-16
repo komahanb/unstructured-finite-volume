@@ -85,12 +85,12 @@ module graph_minimization
      ! The unknown domain U: where the answer lives, explicit at
      ! attach, identity preserved - never inferred from the host.
      type(set_graph) :: unknown_domain
-     integer         :: n_unknown_domain
+     integer         :: n_unknown_domain = 0
 
      ! The residual domain Y: what the action answers on, asked of
      ! the action itself at attach.
      type(set_graph) :: residual_domain
-     integer         :: n_residual_domain
+     integer         :: n_residual_domain = 0
 
      ! A second seat, one member per NUMBER rather than per cell.
      ! The pairings live here: a measure carries one weight per

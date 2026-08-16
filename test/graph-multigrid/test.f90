@@ -155,7 +155,8 @@ contains
 
     allocate(mg % smoother, source=jacobi())
     allocate(mg % coarse  , source=gmres())
-    call mg % attach(chain_statement(m), m, m % vertex_set())
+    call mg % attach(chain_statement(m), m, m % vertex_set(), &
+         & m % num_vertices())
     call mg % setup(assignment)
     mg % coarse % tolerance = 1.0d-13
 
@@ -207,7 +208,8 @@ contains
 
     allocate(mg % smoother, source=jacobi())
     allocate(mg % coarse  , source=gmres())
-    call mg % attach(chain_statement(m), m, m % vertex_set())
+    call mg % attach(chain_statement(m), m, m % vertex_set(), &
+         & m % num_vertices())
     call mg % setup(assignment)
 
     mg % smoother % max_iterations = 3
@@ -230,7 +232,8 @@ contains
     call report(achieved < 1.0d-9, &
          & 'the two-grid cycle closes the chain statement', nfail)
 
-    call direct % attach(chain_statement(m), m, m % vertex_set())
+    call direct % attach(chain_statement(m), m, m % vertex_set(), &
+         & m % num_vertices())
     direct % tolerance = 1.0d-12
     allocate(xd(8))
     xd = 0.0_dp

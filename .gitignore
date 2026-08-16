@@ -18,6 +18,7 @@ test/*/run_serial
 *.res
 test/*/refusal
 test/*/mutation
+test/*/lifetime
 test/*/tag_refusal
 test/calculator-tower/*/run
 test/calculator-tower/*/refusal

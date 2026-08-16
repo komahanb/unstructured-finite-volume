@@ -10,3 +10,5 @@ make -C "$here" clean >/dev/null 2>&1 || true
 make -C "$here" >/dev/null
 
 cd "$here" && ./run
+echo ''
+./lifetime

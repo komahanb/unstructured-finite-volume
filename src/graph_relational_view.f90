@@ -17,6 +17,30 @@
 ! objects, because a borrowed pointer handed to a caller outlives
 ! whatever lent it.
 !
+! THE STORAGE LAW. A borrowed pointer stays valid for the life of the
+! binding, across any number of later bindings.
+!
+! That law is not free. A row holds a POINTER to an individually
+! allocated object, never the object itself: when the row array grows,
+! the rows are copied and the objects do not move. Holding the object
+! in the row - as an allocatable component - was measured and rejected,
+! because growth relocates the array and every borrowed pointer then
+! reads freed storage: silently wrong first, fatal next. See
+! test/graph-relational/lifetime.f90, which holds this law on every run.
+!
+! Individual allocation has two consequences the binding must carry:
+!
+!     it frees its objects when it dies          final :: release
+!     it deep-copies on assignment               assignment(=)
+!
+! without which a copied binding would free objects the original still
+! lends. Both are storage machinery. Neither is ontology, and neither
+! appears in fractal_graph.
+!
+! Because a row holds a pointer rather than the object, the pointer
+! this module returns does not point into the binding. The binding
+! therefore needs no TARGET attribute at any call site.
+!
 ! The binding is storage keyed on identity, not ontology. It is where
 ! the wrappers that used to sit inside relational_graph belong: they
 ! existed only because a Fortran array carries one dynamic type, and
@@ -63,13 +87,13 @@ module graph_relational_view
   !===================================================================!
 
   type :: bound_set
-     type(graph), pointer           :: element => null()
-     class(member_set), allocatable :: object
+     type(graph)      , pointer :: element => null()
+     class(member_set), pointer :: object  => null()
   end type bound_set
 
   type :: bound_relation
-     type(graph), pointer        :: element => null()
-     class(relation), allocatable :: object
+     type(graph)    , pointer :: element => null()
+     class(relation), pointer :: object  => null()
   end type bound_relation
 
   type :: relational_binding
@@ -83,6 +107,11 @@ module graph_relational_view
      procedure :: bind_relation
      procedure :: set_for
      procedure :: relation_for
+
+     procedure, private :: copy_binding
+     generic :: assignment(=) => copy_binding
+
+     final :: release_binding
 
   end type relational_binding
 
@@ -138,9 +167,9 @@ contains
 
   function set_for(this, element) result(s)
 
-    class(relational_binding), target, intent(in) :: this
-    type(graph)                      , intent(in) :: element
-    class(member_set), pointer                    :: s
+    class(relational_binding), intent(in) :: this
+    type(graph)              , intent(in) :: element
+    class(member_set), pointer            :: s
 
     integer :: k
 
@@ -159,9 +188,9 @@ contains
 
   function relation_for(this, element) result(r)
 
-    class(relational_binding), target, intent(in) :: this
-    type(graph)                      , intent(in) :: element
-    class(relation), pointer                      :: r
+    class(relational_binding), intent(in) :: this
+    type(graph)              , intent(in) :: element
+    class(relation), pointer              :: r
 
     integer :: k
 
@@ -177,6 +206,64 @@ contains
     error stop 'graph_relational_view: no relation is bound to that element'
 
   end function relation_for
+
+  !===================================================================!
+  ! Deep copy. A copied binding owns copies, so freeing it never
+  ! touches an object the original still lends.
+  !===================================================================!
+
+  subroutine copy_binding(lhs, rhs)
+
+    class(relational_binding), intent(out) :: lhs
+    type(relational_binding) , intent(in)  :: rhs
+
+    integer :: k
+
+    if (allocated(rhs % sets)) then
+       allocate(lhs % sets(size(rhs % sets)))
+       do k = 1, size(rhs % sets)
+          lhs % sets(k) % element => rhs % sets(k) % element
+          allocate(lhs % sets(k) % object, source=rhs % sets(k) % object)
+       end do
+    end if
+
+    if (allocated(rhs % relations)) then
+       allocate(lhs % relations(size(rhs % relations)))
+       do k = 1, size(rhs % relations)
+          lhs % relations(k) % element => rhs % relations(k) % element
+          allocate(lhs % relations(k) % object, source=rhs % relations(k) % object)
+       end do
+    end if
+
+  end subroutine copy_binding
+
+  !===================================================================!
+  ! Release. Individually allocated objects are individually freed.
+  !===================================================================!
+
+  subroutine release_binding(this)
+
+    type(relational_binding), intent(inout) :: this
+
+    integer :: k
+
+    if (allocated(this % sets)) then
+       do k = 1, size(this % sets)
+          if (associated(this % sets(k) % object)) then
+             deallocate(this % sets(k) % object)
+          end if
+       end do
+    end if
+
+    if (allocated(this % relations)) then
+       do k = 1, size(this % relations)
+          if (associated(this % relations(k) % object)) then
+             deallocate(this % relations(k) % object)
+          end if
+       end do
+    end if
+
+  end subroutine release_binding
 
   !===================================================================!
   ! The view. Counting and indexing are the sequence view's; this

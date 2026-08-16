@@ -27,8 +27,15 @@ program adjoint_level_4_refusal
   use graph_structure, only : relational_graph, held_set, held_relation
   use graph_profile  , only : directed_adjacency_view
   use graph_algorithms, only : topological_order
+  use fractal_graph        , only : graph
+  use graph_relational_view, only : relational_binding
+  use relational_fixture   , only : fractal_fixture
 
   implicit none
+
+  type(fractal_fixture)             :: fx_
+  type(graph)             , pointer :: fg_
+  type(relational_binding), pointer :: fb_
 
   type(counted_set)              :: v, t
   type(subset_set)               :: q_dom, y_dom
@@ -75,7 +82,8 @@ program adjoint_level_4_refusal
 
      g = relational_graph('state coupling', [held_set(q_dom)], &
           & [held_relation(coupling)])
-     view = directed_adjacency_view(g, coupling)
+     call fx_ % to_fractal(g, fg_, fb_)
+     view = directed_adjacency_view(fg_, fb_, coupling)
 
      call topological_order(view, order)
      write(*,*) 'an implicit system was given an execution order', order

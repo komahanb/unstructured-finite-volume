@@ -57,8 +57,15 @@ program derivative_level_6
   use graph_structure  , only : relational_graph, held_set, held_relation
   use graph_profile    , only : directed_adjacency_view
   use graph_algorithms , only : reachable
+  use fractal_graph        , only : graph
+  use graph_relational_view, only : relational_binding
+  use relational_fixture   , only : fractal_fixture
 
   implicit none
+
+  type(fractal_fixture)             :: fx_
+  type(graph)             , pointer :: fg_
+  type(relational_binding), pointer :: fb_
 
   type(counted_set)              :: v, o, p
   type(subset_set)               :: x_dom, c, z, p_in, p_out
@@ -100,7 +107,8 @@ program derivative_level_6
   a = derive_direct(flow)
   g_a = relational_graph('value dependency', [held_set(v)], &
        & [held_relation(a)])
-  dep_view = directed_adjacency_view(g_a, a)
+  call fx_ % to_fractal(g_a, fg_, fb_)
+  dep_view = directed_adjacency_view(fg_, fb_, a)
 
   j_zx = derive_jacobian(dep_view)
 
@@ -374,7 +382,8 @@ contains
     a2 = derive_direct(backwards)
     g_a2 = relational_graph('value dependency again', [held_set(v)], &
          & [held_relation(a2)])
-    dep_view2 = directed_adjacency_view(g_a2, a2)
+    call fx_ % to_fractal(g_a2, fg_, fb_)
+    dep_view2 = directed_adjacency_view(fg_, fb_, a2)
     j_zx2 = derive_jacobian(dep_view2)
     jt2 = transpose_of(j_zx2)
 

@@ -35,8 +35,15 @@ program learning_level_4
   use graph_profile  , only : directed_adjacency_view
   use graph_algorithms, only : sources, sinks, reachable, &
        &                       topological_order
+  use fractal_graph        , only : graph
+  use graph_relational_view, only : relational_binding
+  use relational_fixture   , only : fractal_fixture
 
   implicit none
+
+  type(fractal_fixture)             :: fx_
+  type(graph)             , pointer :: fg_
+  type(relational_binding), pointer :: fb_
 
   type(counted_set)              :: v, o, p
   type(subset_set)               :: p_out, p_in
@@ -80,7 +87,8 @@ program learning_level_4
 
   ! The interpretive jump, made explicitly - and the selector dies
   ! the moment the reading exists.
-  view = directed_adjacency_view(g, d)
+  call fx_ % to_fractal(g, fg_, fb_)
+  view = directed_adjacency_view(fg_, fb_, d)
   deallocate(d)
 
   call check_view_domain(nfail)

@@ -19,8 +19,15 @@ program ordinary_refusal
   use graph_structure      , only : relational_graph, held_set, &
        &                            held_relation
   use graph_profile        , only : ordinary_graph_view
+  use fractal_graph        , only : graph
+  use graph_relational_view, only : relational_binding
+  use relational_fixture   , only : fractal_fixture
 
   implicit none
+
+  type(fractal_fixture)             :: fx_
+  type(graph)             , pointer :: fg_
+  type(relational_binding), pointer :: fb_
 
   type(counted_set)              :: verts, edges, other, roles
   type(csr_relation)             :: t, h
@@ -42,7 +49,8 @@ program ordinary_refusal
      h = csr_relation('head', edges, verts, reshape([1, 2], [2, 1]))
      g = relational_graph('bad', [held_set(verts), held_set(edges)], &
           & [held_relation(t), held_relation(h)])
-     view = ordinary_graph_view(g, tail_at=1, head_at=2)
+     call fx_ % to_fractal(g, fg_, fb_)
+     view = ordinary_graph_view(fg_, fb_, tail_at=1, head_at=2)
 
   case ('twotailed')
      t = csr_relation('tail', edges, verts, &
@@ -50,7 +58,8 @@ program ordinary_refusal
      h = csr_relation('head', edges, verts, reshape([1, 2], [2, 1]))
      g = relational_graph('bad', [held_set(verts), held_set(edges)], &
           & [held_relation(t), held_relation(h)])
-     view = ordinary_graph_view(g, tail_at=1, head_at=2)
+     call fx_ % to_fractal(g, fg_, fb_)
+     view = ordinary_graph_view(fg_, fb_, tail_at=1, head_at=2)
 
   case ('twoheaded')
      t = csr_relation('tail', edges, verts, &
@@ -59,7 +68,8 @@ program ordinary_refusal
           & reshape([1,2,  1,3,  2,3], [2, 3]))
      g = relational_graph('bad', [held_set(verts), held_set(edges)], &
           & [held_relation(t), held_relation(h)])
-     view = ordinary_graph_view(g, tail_at=1, head_at=2)
+     call fx_ % to_fractal(g, fg_, fb_)
+     view = ordinary_graph_view(fg_, fb_, tail_at=1, head_at=2)
 
   case ('ternary')
      roles = counted_set('roles', 2)
@@ -70,7 +80,8 @@ program ordinary_refusal
      g = relational_graph('bad', &
           & [held_set(verts), held_set(edges), held_set(roles)], &
           & [held_relation(fat), held_relation(h)])
-     view = ordinary_graph_view(g, tail_at=1, head_at=2)
+     call fx_ % to_fractal(g, fg_, fb_)
+     view = ordinary_graph_view(fg_, fb_, tail_at=1, head_at=2)
 
   case ('mismatched')
      other = counted_set('elsewhere', 3)
@@ -80,14 +91,16 @@ program ordinary_refusal
      g = relational_graph('bad', &
           & [held_set(verts), held_set(edges), held_set(other)], &
           & [held_relation(t), held_relation(h)])
-     view = ordinary_graph_view(g, tail_at=1, head_at=2)
+     call fx_ % to_fractal(g, fg_, fb_)
+     view = ordinary_graph_view(fg_, fb_, tail_at=1, head_at=2)
 
   case ('selfsame')
      t = csr_relation('tail', edges, edges, reshape([1, 2], [2, 1]))
      h = csr_relation('head', edges, edges, reshape([2, 1], [2, 1]))
      g = relational_graph('bad', [held_set(edges)], &
           & [held_relation(t), held_relation(h)])
-     view = ordinary_graph_view(g, tail_at=1, head_at=2)
+     call fx_ % to_fractal(g, fg_, fb_)
+     view = ordinary_graph_view(fg_, fb_, tail_at=1, head_at=2)
 
   case default
      write(*,'(1x,a)') &

@@ -57,8 +57,15 @@ program derivative_level_9
   use class_graph_field, only : field
   use derivative_constitution_fixture, only : primal_execution, &
        &                                      tangent_action, reverse_action
+  use fractal_graph        , only : graph
+  use graph_relational_view, only : relational_binding
+  use relational_fixture   , only : fractal_fixture
 
   implicit none
+
+  type(fractal_fixture)             :: fx_
+  type(graph)             , pointer :: fg_
+  type(relational_binding), pointer :: fb_
 
   type(counted_set)                  :: v, o, p
   type(subset_set)                   :: x_dom, c, z_dom, p_in, p_out
@@ -114,7 +121,8 @@ program derivative_level_9
 
   ! -- the order comes from the graph's own dependency: the view is
   !    made, the dependency selector dies, and the walk still answers
-  view = directed_adjacency_view(g, d)
+  call fx_ % to_fractal(g, fg_, fb_)
+  view = directed_adjacency_view(fg_, fb_, d)
   deallocate(d)
   call topological_order(view, order)
 

@@ -56,8 +56,15 @@ program learning_level_9
   use class_graph_gmres, only : gmres
   use learning_constitution_fixture, only : apply_law, slot_for_port
   use constituted_residual_fixture , only : constituted_learning_residual
+  use fractal_graph        , only : graph
+  use graph_relational_view, only : relational_binding
+  use relational_fixture   , only : fractal_fixture
 
   implicit none
+
+  type(fractal_fixture)             :: fx_
+  type(graph)             , pointer :: fg_
+  type(relational_binding), pointer :: fb_
 
   integer, parameter :: ROW_R = 1
 
@@ -120,7 +127,8 @@ program learning_level_9
        & reshape([ROW_R, SLOT_E], [2, 1]))
 
   ! -- the execution order, from structure - never from the adapter
-  view = directed_adjacency_view(g, d)
+  call fx_ % to_fractal(g, fg_, fb_)
+  view = directed_adjacency_view(fg_, fb_, d)
   call topological_order(view, order)
   call report(size(order) .eq. 2 .and. &
        &      order(1) .eq. OP_PREDICT .and. order(2) .eq. OP_ERROR, &

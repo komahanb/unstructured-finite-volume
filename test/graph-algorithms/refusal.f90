@@ -21,8 +21,15 @@ program algorithms_refusal
        &                            held_relation
   use graph_profile        , only : directed_adjacency_view
   use graph_algorithms     , only : topological_order
+  use fractal_graph        , only : graph
+  use graph_relational_view, only : relational_binding
+  use relational_fixture   , only : fractal_fixture
 
   implicit none
+
+  type(fractal_fixture)             :: fx_
+  type(graph)             , pointer :: fg_
+  type(relational_binding), pointer :: fb_
 
   type(counted_set)              :: a, b, c
   type(csr_relation)             :: adj, stray, lopsided, ring
@@ -44,7 +51,8 @@ program algorithms_refusal
      adj   = csr_relation('inside' , a, a, reshape([1, 2], [2, 1]))
      stray = csr_relation('outside', a, a, reshape([2, 3], [2, 1]))
      g = relational_graph('bad', [held_set(a)], [held_relation(adj)])
-     view = directed_adjacency_view(g, stray)
+     call fx_ % to_fractal(g, fg_, fb_)
+     view = directed_adjacency_view(fg_, fb_, stray)
 
   case ('notbinary')
      c   = counted_set('c-things', 2)
@@ -52,20 +60,23 @@ program algorithms_refusal
           & reshape([1, 2, 1], [3, 1]))
      g = relational_graph('bad', [held_set(a), held_set(c)], &
           & [held_relation(fat)])
-     view = directed_adjacency_view(g, fat)
+     call fx_ % to_fractal(g, fg_, fb_)
+     view = directed_adjacency_view(fg_, fb_, fat)
 
   case ('notsquare')
      lopsided = csr_relation('lopsided', a, b, reshape([1, 1], [2, 1]))
      g = relational_graph('bad', [held_set(a), held_set(b)], &
           & [held_relation(lopsided)])
-     view = directed_adjacency_view(g, lopsided)
+     call fx_ % to_fractal(g, fg_, fb_)
+     view = directed_adjacency_view(fg_, fb_, lopsided)
 
   case ('cycle')
      ring = csr_relation('ring', a, a, &
           & reshape([1,2,  2,3,  3,1], [2, 3]))
      g = relational_graph('cyclic', [held_set(a)], [held_relation(ring)])
      ! The view is lawful: a cycle is a directed graph.
-     view = directed_adjacency_view(g, ring)
+     call fx_ % to_fractal(g, fg_, fb_)
+     view = directed_adjacency_view(fg_, fb_, ring)
      ! Only the ordering is undefined.
      call topological_order(view, order)
 

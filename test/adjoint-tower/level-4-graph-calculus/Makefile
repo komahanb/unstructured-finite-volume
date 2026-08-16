@@ -13,15 +13,18 @@ LDFLAGS += -L../../../lib/ ../../../lib/libufvm.a -llapack
 all: run refusal
 
 run: adjoint_assert.o test.o
-	$(F90) adjoint_assert.o test.o -o $@ $(LDFLAGS)
+	$(F90) relational_fixture.o adjoint_assert.o test.o -o $@ $(LDFLAGS)
 
-refusal: adjoint_assert.o refusal.o
-	$(F90) adjoint_assert.o refusal.o -o $@ $(LDFLAGS)
+refusal: relational_fixture.o adjoint_assert.o refusal.o
+	$(F90) relational_fixture.o adjoint_assert.o refusal.o -o $@ $(LDFLAGS)
 
-test.o: adjoint_assert.o
-refusal.o: adjoint_assert.o
+test.o: relational_fixture.o adjoint_assert.o
+refusal.o: relational_fixture.o adjoint_assert.o
 
 adjoint_assert.o: ../common/adjoint_assert.f90
+	$(F90) $(F90FLAGS) -c $< -o $@
+
+relational_fixture.o: ../../support/relational_fixture.f90
 	$(F90) $(F90FLAGS) -c $< -o $@
 
 clean:

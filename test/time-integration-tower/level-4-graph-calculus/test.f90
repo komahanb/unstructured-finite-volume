@@ -71,8 +71,15 @@ program time_level_4
   use time_relations_fixture, only : tail_relation, head_relation
   use time_algebra_fixture  , only : derive_one_step_reach, &
        &                             derive_two_step_reach
+  use fractal_graph        , only : graph
+  use graph_relational_view, only : relational_binding
+  use relational_fixture   , only : fractal_fixture
 
   implicit none
+
+  type(fractal_fixture)             :: fx_
+  type(graph)             , pointer :: fg_
+  type(relational_binding), pointer :: fb_
 
   type(counted_set)              :: q, t, e
   type(csr_relation), target     :: tail, head, a1
@@ -106,8 +113,10 @@ program time_level_4
   ! question is asked of the views.
   allocate(sel_a1, source=a1)
   allocate(sel_a2, source=a2)
-  view_a1 = directed_adjacency_view(g, sel_a1)
-  view_a2 = directed_adjacency_view(g, sel_a2)
+  call fx_ % to_fractal(g, fg_, fb_)
+  view_a1 = directed_adjacency_view(fg_, fb_, sel_a1)
+  call fx_ % to_fractal(g, fg_, fb_)
+  view_a2 = directed_adjacency_view(fg_, fb_, sel_a2)
   deallocate(sel_a1)
   deallocate(sel_a2)
 

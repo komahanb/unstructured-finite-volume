@@ -25,8 +25,15 @@ program test_graph_algorithms
   use graph_profile        , only : directed_adjacency_view
   use graph_algorithms     , only : sources, sinks, reachable, &
        &                            topological_order
+  use fractal_graph        , only : graph
+  use graph_relational_view, only : relational_binding
+  use relational_fixture   , only : fractal_fixture
 
   implicit none
+
+  type(fractal_fixture)             :: fx_
+  type(graph)             , pointer :: fg_
+  type(relational_binding), pointer :: fb_
 
   type(counted_set)              :: ground
   type(subset_set)               :: v
@@ -49,7 +56,8 @@ program test_graph_algorithms
 
   g = relational_graph('dag', [held_set(v)], [held_relation(after)])
 
-  view = directed_adjacency_view(g, after)
+  call fx_ % to_fractal(g, fg_, fb_)
+  view = directed_adjacency_view(fg_, fb_, after)
 
   call check_sources_and_sinks(view, nfail)
   call check_reachability(view, nfail)
@@ -180,7 +188,8 @@ contains
 
     g2 = relational_graph('dag again', [held_set(v)], &
          & [held_relation(backwards)])
-    view2 = directed_adjacency_view(g2, backwards)
+    call fx_ % to_fractal(g2, fg_, fb_)
+    view2 = directed_adjacency_view(fg_, fb_, backwards)
 
     src = sources(view2)
     snk = sinks(view2)

@@ -45,8 +45,15 @@ program learning_level_6
   use graph_structure, only : relational_graph, held_set, held_relation
   use graph_profile  , only : directed_adjacency_view
   use graph_algorithms, only : reachable
+  use fractal_graph        , only : graph
+  use graph_relational_view, only : relational_binding
+  use relational_fixture   , only : fractal_fixture
 
   implicit none
+
+  type(fractal_fixture)             :: fx_
+  type(graph)             , pointer :: fg_
+  type(relational_binding), pointer :: fb_
 
   ! Residual rows exist only from this level upward.
   integer, parameter :: ROW_R = 1
@@ -93,7 +100,8 @@ program learning_level_6
   a = derive_direct(flow)
   g = relational_graph('value dependency', [held_set(v)], &
        & [held_relation(a)])
-  view = directed_adjacency_view(g, a)
+  call fx_ % to_fractal(g, fg_, fb_)
+  view = directed_adjacency_view(fg_, fb_, a)
 
   j_theta = derive_trainable(view)
 
@@ -405,7 +413,8 @@ contains
     a2 = derive_direct(backwards)
     g2 = relational_graph('value dependency again', [held_set(v)], &
          & [held_relation(a2)])
-    view2 = directed_adjacency_view(g2, a2)
+    call fx_ % to_fractal(g2, fg_, fb_)
+    view2 = directed_adjacency_view(fg_, fb_, a2)
     j_theta2 = derive_trainable(view2)
 
     call report(a2 % num_tuples() .eq. a % num_tuples(), &

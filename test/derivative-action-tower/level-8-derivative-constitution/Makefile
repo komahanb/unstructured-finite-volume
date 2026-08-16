@@ -15,16 +15,19 @@ LDFLAGS += -L../../../lib/ ../../../lib/libufvm.a -llapack
 all: run refusal
 
 run: derivative_assert.o derivative_constitution_fixture.o test.o
-	$(F90) derivative_assert.o derivative_constitution_fixture.o test.o -o $@ $(LDFLAGS)
+	$(F90) relational_fixture.o derivative_assert.o derivative_constitution_fixture.o test.o -o $@ $(LDFLAGS)
 
 refusal: derivative_assert.o derivative_constitution_fixture.o refusal.o
 	$(F90) derivative_assert.o derivative_constitution_fixture.o refusal.o -o $@ $(LDFLAGS)
 
-test.o: derivative_assert.o derivative_constitution_fixture.o
+test.o: relational_fixture.o derivative_assert.o derivative_constitution_fixture.o
 refusal.o: derivative_assert.o derivative_constitution_fixture.o
 derivative_constitution_fixture.o: derivative_assert.o
 
 derivative_assert.o: ../common/derivative_assert.f90
+	$(F90) $(F90FLAGS) -c $< -o $@
+
+relational_fixture.o: ../../support/relational_fixture.f90
 	$(F90) $(F90FLAGS) -c $< -o $@
 
 clean:

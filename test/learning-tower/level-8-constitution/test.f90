@@ -43,8 +43,15 @@ program learning_level_8
   use class_graph_field, only : field
   use learning_constitution_fixture, only : apply_law, slot_for_port, &
        &                                    located_slot, generated_residual
+  use fractal_graph        , only : graph
+  use graph_relational_view, only : relational_binding
+  use relational_fixture   , only : fractal_fixture
 
   implicit none
+
+  type(fractal_fixture)             :: fx_
+  type(graph)             , pointer :: fg_
+  type(relational_binding), pointer :: fb_
 
   ! Residual rows exist only from Level 6 upward.
   integer, parameter :: ROW_R = 1
@@ -105,7 +112,8 @@ program learning_level_8
   g = relational_graph('learning', &
        & [held_set(v), held_set(o), held_set(p)], &
        & [held_relation(flow), held_relation(d)])
-  view = directed_adjacency_view(g, d)
+  call fx_ % to_fractal(g, fg_, fb_)
+  view = directed_adjacency_view(fg_, fb_, d)
   call topological_order(view, order)
 
   call check_derived_order(nfail)
@@ -253,7 +261,8 @@ contains
     a = compose_binary(consumes, produces)
     g_a = relational_graph('value dependency', [held_set(v)], &
          & [held_relation(a)])
-    dep_view = directed_adjacency_view(g_a, a)
+    call fx_ % to_fractal(g_a, fg_, fb_)
+    dep_view = directed_adjacency_view(fg_, fb_, a)
 
     home = located_slot(located, v, ROW_R)
     nsup = 0
@@ -340,7 +349,8 @@ contains
     g2 = relational_graph('learning backwards', &
          & [held_set(v), held_set(o), held_set(p)], &
          & [held_relation(backwards), held_relation(d2)])
-    view2 = directed_adjacency_view(g2, d2)
+    call fx_ % to_fractal(g2, fg_, fb_)
+    view2 = directed_adjacency_view(fg_, fb_, d2)
     call topological_order(view2, order2)
 
     call generated_residual(flow, located, v, y, k, obs, &

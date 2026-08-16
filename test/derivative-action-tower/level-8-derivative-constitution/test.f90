@@ -52,8 +52,15 @@ program derivative_level_8
   use derivative_constitution_fixture, only : apply_law, &
        & local_linearization, slot_for_port, primal_execution, &
        & tangent_action, reverse_action
+  use fractal_graph        , only : graph
+  use graph_relational_view, only : relational_binding
+  use relational_fixture   , only : fractal_fixture
 
   implicit none
+
+  type(fractal_fixture)             :: fx_
+  type(graph)             , pointer :: fg_
+  type(relational_binding), pointer :: fb_
 
   type(counted_set)              :: v, o, p
   type(subset_set)               :: x_dom, c, z_dom, p_in, p_out
@@ -101,7 +108,8 @@ program derivative_level_8
   g = relational_graph('derivative specimen', &
        & [held_set(v), held_set(o), held_set(p)], &
        & [held_relation(flow), held_relation(d)])
-  view = directed_adjacency_view(g, d)
+  call fx_ % to_fractal(g, fg_, fb_)
+  view = directed_adjacency_view(fg_, fb_, d)
   call topological_order(view, order)
 
   allocate(base(v % size()), avail(v % size()))
@@ -384,7 +392,8 @@ contains
          & project_slots(restrict_slot(flow, 3, p_out), [1, 2]))
     g_av = relational_graph('value dependency', [held_set(v)], &
          & [held_relation(av)])
-    dep_view = directed_adjacency_view(g_av, av)
+    call fx_ % to_fractal(g_av, fg_, fb_)
+    dep_view = directed_adjacency_view(fg_, fb_, av)
 
     ok = .true.
     do i = 1, x_dom % size()
@@ -506,7 +515,8 @@ contains
     g2 = relational_graph('derivative specimen backwards', &
          & [held_set(v), held_set(o), held_set(p)], &
          & [held_relation(backwards), held_relation(d2)])
-    view2 = directed_adjacency_view(g2, d2)
+    call fx_ % to_fractal(g2, fg_, fb_)
+    view2 = directed_adjacency_view(fg_, fb_, d2)
     call topological_order(view2, order2)
 
     call primal_execution(backwards, v, x_dom, obs, c, order2, &

@@ -56,7 +56,9 @@ module graph_profile
   use graph_carrier        , only : member_set
   use graph_relation       , only : relation
   use graph_binary_relation, only : binary_relation
-  use graph_structure      , only : relational_graph
+  use fractal_graph        , only : graph
+  use graph_relational_view, only : relational_binding, &
+       & num_relations, relation_at
 
   implicit none
 
@@ -147,19 +149,20 @@ contains
   !      a two-headed edge     at most one head
   !===================================================================!
 
-  type(ordinary_graph_view) function create_view(g, tail_at, head_at) &
-       & result(this)
+  type(ordinary_graph_view) function create_view(g, binding, tail_at, &
+       & head_at) result(this)
 
-    class(relational_graph), target, intent(in) :: g
-    integer                        , intent(in) :: tail_at
-    integer                        , intent(in) :: head_at
+    type(graph)             , intent(in) :: g
+    type(relational_binding), intent(in) :: binding
+    integer                 , intent(in) :: tail_at
+    integer                 , intent(in) :: head_at
 
     class(relation), pointer       :: r
     class(member_set), allocatable :: d
     integer, pointer               :: f(:)
     integer                        :: k, e
 
-    r => g % relation_at(tail_at)
+    r => relation_at(g, binding, tail_at)
     select type (r)
     class is (binary_relation)
        this % tails => r
@@ -167,7 +170,7 @@ contains
        error stop 'graph_profile: the tail relation must be binary'
     end select
 
-    r => g % relation_at(head_at)
+    r => relation_at(g, binding, head_at)
     select type (r)
     class is (binary_relation)
        this % heads => r
@@ -463,10 +466,11 @@ contains
   !===================================================================!
 
   type(directed_adjacency_view) function create_adjacency_view(g, &
-       & selector) result(this)
+       & binding, selector) result(this)
 
-    class(relational_graph), target, intent(in) :: g
-    class(relation)                , intent(in) :: selector
+    type(graph)             , intent(in) :: g
+    type(relational_binding), intent(in) :: binding
+    class(relation)         , intent(in) :: selector
 
     class(relation), pointer       :: rp
     class(member_set), allocatable :: s, t
@@ -474,8 +478,8 @@ contains
     logical                        :: found
 
     found = .false.
-    do k = 1, g % num_relations()
-       rp => g % relation_at(k)
+    do k = 1, num_relations(g)
+       rp => relation_at(g, binding, k)
        if (rp % same_as(selector)) then
           found = .true.
           exit

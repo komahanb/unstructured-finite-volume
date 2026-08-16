@@ -18,6 +18,9 @@ test/*/run_serial
 *.res
 test/*/refusal
 test/*/mutation
+test/fractal-map/set
+test/fractal-map/relation
+test/fractal-map/scale
 test/*/lifetime
 test/*/tag_refusal
 test/calculator-tower/*/run

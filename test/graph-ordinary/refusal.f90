@@ -16,8 +16,9 @@
 
 program ordinary_refusal
 
-  use graph_carrier        , only : counted_set
-  use graph_relation       , only : stored_relation, slot
+  use graph_set_representation, only : counted_set_representation
+  use graph_set_map           , only : set_map
+  use graph_relation       , only : stored_relation
   use graph_binary_relation, only : csr_relation
   use graph_profile        , only : ordinary_graph_view
   use fractal_graph        , only : graph, known_branch
@@ -25,7 +26,8 @@ program ordinary_refusal
 
   implicit none
 
-  type(counted_set)         :: verts, edges, other, roles
+  type(graph)         :: verts, edges, other, roles
+  type(set_map)         :: sets
   type(csr_relation)        :: t, h
   type(stored_relation)     :: fat
   type(ordinary_graph_view) :: view
@@ -47,14 +49,16 @@ program ordinary_refusal
      call rcell(k) % declare(); call relem(k) % declare()
   end do
 
-  verts = counted_set('vertices', 3)
-  edges = counted_set('edges'   , 2)
+  call verts % declare()
+  call sets % bind(verts, counted_set_representation(3))
+  call edges % declare()
+  call sets % bind(edges, counted_set_representation(2))
 
   select case (trim(which))
 
   case ('tailless')
-     t = csr_relation('tail', edges, verts, reshape([1, 1], [2, 1]))
-     h = csr_relation('head', edges, verts, reshape([1, 2], [2, 1]))
+     t = csr_relation('tail', edges, verts, reshape([1, 1], [2, 1]), sets)
+     h = csr_relation('head', edges, verts, reshape([1, 2], [2, 1]), sets)
      ns = 2
      call bnd % bind_set(selem(1), verts)
      call bnd % bind_set(selem(2), edges)
@@ -63,8 +67,8 @@ program ordinary_refusal
 
   case ('twotailed')
      t = csr_relation('tail', edges, verts, &
-          & reshape([1,1,  1,2,  2,2], [2, 3]))
-     h = csr_relation('head', edges, verts, reshape([1, 2], [2, 1]))
+          & reshape([1,1,  1,2,  2,2], [2, 3]), sets)
+     h = csr_relation('head', edges, verts, reshape([1, 2], [2, 1]), sets)
      ns = 2
      call bnd % bind_set(selem(1), verts)
      call bnd % bind_set(selem(2), edges)
@@ -73,9 +77,9 @@ program ordinary_refusal
 
   case ('twoheaded')
      t = csr_relation('tail', edges, verts, &
-          & reshape([1,1,  2,2], [2, 2]))
+          & reshape([1,1,  2,2], [2, 2]), sets)
      h = csr_relation('head', edges, verts, &
-          & reshape([1,2,  1,3,  2,3], [2, 3]))
+          & reshape([1,2,  1,3,  2,3], [2, 3]), sets)
      ns = 2
      call bnd % bind_set(selem(1), verts)
      call bnd % bind_set(selem(2), edges)
@@ -83,11 +87,12 @@ program ordinary_refusal
      call bnd % bind_relation(relem(2), h)
 
   case ('ternary')
-     roles = counted_set('roles', 2)
+     call roles % declare()
+     call sets % bind(roles, counted_set_representation(2))
      fat = stored_relation('endpoint', &
-          & [slot(edges), slot(verts), slot(roles)], &
-          & reshape([1,1,1,  2,2,1], [3, 2]))
-     h = csr_relation('head', edges, verts, reshape([1, 2], [2, 1]))
+          & [edges, verts, roles], &
+          & reshape([1,1,1,  2,2,1], [3, 2]), sets)
+     h = csr_relation('head', edges, verts, reshape([1, 2], [2, 1]), sets)
      ns = 3
      call bnd % bind_set(selem(1), verts)
      call bnd % bind_set(selem(2), edges)
@@ -96,10 +101,11 @@ program ordinary_refusal
      call bnd % bind_relation(relem(2), h)
 
   case ('mismatched')
-     other = counted_set('elsewhere', 3)
+     call other % declare()
+     call sets % bind(other, counted_set_representation(3))
      t = csr_relation('tail', edges, verts, &
-          & reshape([1,1,  2,2], [2, 2]))
-     h = csr_relation('head', edges, other, reshape([1, 2], [2, 1]))
+          & reshape([1,1,  2,2], [2, 2]), sets)
+     h = csr_relation('head', edges, other, reshape([1, 2], [2, 1]), sets)
      ns = 3
      call bnd % bind_set(selem(1), verts)
      call bnd % bind_set(selem(2), edges)
@@ -108,8 +114,8 @@ program ordinary_refusal
      call bnd % bind_relation(relem(2), h)
 
   case ('selfsame')
-     t = csr_relation('tail', edges, edges, reshape([1, 2], [2, 1]))
-     h = csr_relation('head', edges, edges, reshape([2, 1], [2, 1]))
+     t = csr_relation('tail', edges, edges, reshape([1, 2], [2, 1]), sets)
+     h = csr_relation('head', edges, edges, reshape([2, 1], [2, 1]), sets)
      ns = 1
      call bnd % bind_set(selem(1), edges)
      call bnd % bind_relation(relem(1), t)
@@ -135,7 +141,7 @@ program ordinary_refusal
   g % branch(1) = known_branch(scell(1))
   g % branch(2) = known_branch(rcell(1))
 
-  view = ordinary_graph_view(g, bnd, tail_at=1, head_at=2)
+  view = ordinary_graph_view(g, bnd, sets, tail_at=1, head_at=2)
 
   ! Reaching this line is the failure.
   write(*,'(1x,a,a)') "REACHED PAST THE REFUSAL: ", trim(which)

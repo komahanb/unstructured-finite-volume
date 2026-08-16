@@ -16,10 +16,11 @@
 program test_graph_ordinary
 
   use class_graph          , only : stored_graph
-  use graph_carrier        , only : counted_set
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map           , only : set_map
   use graph_binary_relation, only : csr_relation
   use graph_profile        , only : ordinary_graph_view
-  use listed_set_fixture   , only : listed_set
   use fractal_graph        , only : graph, known_branch
   use graph_relational_view, only : relational_binding
 
@@ -103,7 +104,8 @@ contains
     logical         , intent(in), optional :: scrambled
 
     type(stored_graph)              :: old
-    type(counted_set)               :: verts, edges
+    type(graph)               :: verts, edges
+    type(set_map)               :: sets
     type(csr_relation)              :: t, h
     type(graph)            , target :: g
     type(graph)            , target :: scell(2), selem(2), rcell(2), relem(2)
@@ -118,8 +120,10 @@ contains
 
     old = stored_graph(nv, tails=tails, heads=heads)
 
-    verts = counted_set('vertices', nv)
-    edges = counted_set('edges'   , ne)
+    call verts % declare()
+    call sets % bind(verts, counted_set_representation(nv))
+    call edges % declare()
+    call sets % bind(edges, counted_set_representation(ne))
 
     allocate(ttab(2, ne))
     nh = 0
@@ -145,8 +149,8 @@ contains
        end if
     end if
 
-    t = csr_relation('tail', edges, verts, ttab)
-    h = csr_relation('head', edges, verts, htab)
+    t = csr_relation('tail', edges, verts, ttab, sets)
+    h = csr_relation('head', edges, verts, htab, sets)
 
     ! (S, P) = ({V, E}, {T, H}), one sequence on each branch.
     call g % declare()
@@ -172,7 +176,7 @@ contains
     g % branch(1) = known_branch(scell(1))
     g % branch(2) = known_branch(rcell(1))
 
-    view = ordinary_graph_view(g, bnd, tail_at=1, head_at=2)
+    view = ordinary_graph_view(g, bnd, sets, tail_at=1, head_at=2)
 
     ok = (view % num_vertices() .eq. old % num_vertices()) .and. &
          & (view % num_edges() .eq. old % num_edges())
@@ -223,7 +227,8 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)               :: verts, edges
+    type(graph)               :: verts, edges
+    type(set_map)                   :: sets
     type(csr_relation)              :: t, h
     type(graph)            , target :: g
     type(graph)            , target :: scell(2), selem(2), rcell(2), relem(2)
@@ -232,13 +237,15 @@ contains
     integer                         :: v, k
     logical                         :: ok
 
-    verts = counted_set('vertices', 3)
-    edges = counted_set('edges'   , 3)
+    call verts % declare()
+    call sets % bind(verts, counted_set_representation(3))
+    call edges % declare()
+    call sets % bind(edges, counted_set_representation(3))
 
     t = csr_relation('tail', edges, verts, &
-         & reshape([1,1,  2,2,  3,3], [2, 3]))
+         & reshape([1,1,  2,2,  3,3], [2, 3]), sets)
     h = csr_relation('head', edges, verts, &
-         & reshape([1,2,  2,3], [2, 2]))
+         & reshape([1,2,  2,3], [2, 2]), sets)
 
     call g % declare()
     do k = 1, 2
@@ -263,7 +270,7 @@ contains
     g % branch(1) = known_branch(scell(1))
     g % branch(2) = known_branch(rcell(1))
 
-    view = ordinary_graph_view(g, bnd, tail_at=1, head_at=2)
+    view = ordinary_graph_view(g, bnd, sets, tail_at=1, head_at=2)
 
     call report(h % num_tuples() .eq. 2 .and. t % num_tuples() .eq. 3, &
          & "the wall edge stands in T and is an absence in H", nfail)
@@ -292,8 +299,9 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(listed_set)                :: edges
-    type(counted_set)               :: verts
+    type(graph)                     :: edges
+    type(set_map)                   :: sets
+    type(graph)               :: verts
     type(csr_relation)              :: t, h
     type(graph)            , target :: g
     type(graph)            , target :: scell(2), selem(2), rcell(2), relem(2)
@@ -302,14 +310,20 @@ contains
     integer, allocatable            :: idx(:)
     integer                         :: k
 
-    edges = listed_set('edges', [30, 10, 20])
-    verts = counted_set('vertices', 2)
+    ! A listed domain: sparse, unordered-world indices. It was a
+    ! second member_set concretion once, to prove the relation generic
+    ! over carriers; the generality now lives in the representation,
+    ! so the fixture is gone and this is one bind.
+    call edges % declare()
+    call sets  % bind(edges, listed_set_representation([30, 10, 20]))
+    call verts % declare()
+    call sets % bind(verts, counted_set_representation(2))
 
     ! Every edge runs 1 -> 2; tuples handed in scrambled order.
     t = csr_relation('tail', edges, verts, &
-         & reshape([10,1,  30,1,  20,1], [2, 3]))
+         & reshape([10,1,  30,1,  20,1], [2, 3]), sets)
     h = csr_relation('head', edges, verts, &
-         & reshape([20,2,  10,2,  30,2], [2, 3]))
+         & reshape([20,2,  10,2,  30,2], [2, 3]), sets)
 
     call g % declare()
     do k = 1, 2
@@ -334,7 +348,7 @@ contains
     g % branch(1) = known_branch(scell(1))
     g % branch(2) = known_branch(rcell(1))
 
-    view = ordinary_graph_view(g, bnd, tail_at=1, head_at=2)
+    view = ordinary_graph_view(g, bnd, sets, tail_at=1, head_at=2)
 
     call view % outgoing_edges(1, idx)
     call report(all(idx .eq. [30, 10, 20]), &

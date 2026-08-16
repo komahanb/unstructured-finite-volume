@@ -68,17 +68,26 @@ questions "how are the members stored and enumerated here?", and a bitset, a dev
 run-length extent would answer them differently for the same set.
 
 ## 4. Subset needs no subtype — and the reason is two coordinate systems
-Current `subset_set` conflates them; the prototype separates them:
+Current `subset_set` conflates them; the prototype separates them, and both are measured against
+production for `S = {2,5,6}` inside `A = 1..8`:
 
 ```
-member VALUE      shared with the ambient      roll(k)
-local POSITION    private to a representation  k
+                  member VALUE      local POSITION
+      in S              5                 2
+      in A              5                 5
 ```
 
-`inclusion_of(S)` is the proof in production code: it builds tuples `(s % member(k), s % member(k))`
-— **the same value on both sides**. So this repository is already in §5's case **A**: a subset
-reuses the ambient's member values, and inclusion needs no translation. What differs between S
-and A is only *position*, which is representation numbering.
+Exactly **two** coordinate systems, not three: the value is shared, the position is private to
+each representation. `inclusion_of(S)` is the proof in production code — it builds tuples
+`(s % member(k), s % member(k))`, **the same value on both sides**, while indexing its CSR rows
+through `S % local_index`, which is the *position*. So this repository is already in §5's case
+**A**: a subset reuses the ambient's member values, and inclusion needs no translation map.
+
+The prototype builds a **listed extent** beside the counted one and asserts the enumeration law
+`member(local_index(v)) = v` holds inside *each*, with the two positions disagreeing. That is the
+whole of what `roll` does. The claim is therefore precise: a subset needs **no subtype**, and it
+does need a second **representation**, `graph_set_listed_representation` — a type deletion plus a
+representation, not a type deletion alone.
 
 Therefore:
 ```

@@ -55,6 +55,29 @@ module set_prototype
   end interface counted_extent
 
   !===================================================================!
+  ! The listed representation: an explicit roll of member values. It
+  ! answers the same four questions, and it is where the second
+  ! coordinate system lives - position within THIS representation.
+  !===================================================================!
+
+  type, public :: listed_extent
+
+     integer, allocatable, private :: roll(:)
+
+   contains
+
+     procedure :: extent_size  => listed_size
+     procedure :: member       => listed_member
+     procedure :: has          => listed_has
+     procedure :: local_index  => listed_local_index
+
+  end type listed_extent
+
+  interface listed_extent
+     module procedure create_listed_extent
+  end interface listed_extent
+
+  !===================================================================!
   ! The map: set graph -> its extent, keyed on graph identity. The
   ! same shape as relational_binding, and for the same reason.
   !===================================================================!
@@ -114,6 +137,57 @@ contains
     end if
 
   end function local_index
+
+  type(listed_extent) function create_listed_extent(roll) result(this)
+
+    integer, intent(in) :: roll(:)
+
+    this % roll = roll
+
+  end function create_listed_extent
+
+  pure integer function listed_size(this)
+
+    class(listed_extent), intent(in) :: this
+
+    listed_size = size(this % roll)
+
+  end function listed_size
+
+  pure integer function listed_member(this, position)
+
+    class(listed_extent), intent(in) :: this
+    integer             , intent(in) :: position
+
+    listed_member = this % roll(position)
+
+  end function listed_member
+
+  pure logical function listed_has(this, value)
+
+    class(listed_extent), intent(in) :: this
+    integer             , intent(in) :: value
+
+    listed_has = any(this % roll == value)
+
+  end function listed_has
+
+  pure integer function listed_local_index(this, value)
+
+    class(listed_extent), intent(in) :: this
+    integer             , intent(in) :: value
+
+    integer :: k
+
+    listed_local_index = 0
+    do k = 1, size(this % roll)
+       if (this % roll(k) == value) then
+          listed_local_index = k
+          return
+       end if
+    end do
+
+  end function listed_local_index
 
   !===================================================================!
   ! Binding and lookup, by graph identity.
@@ -187,8 +261,8 @@ program set_map
   use fractal_graph , only : graph, null_branch, known_branch, &
        & GRAPH_NULL, GRAPH_KNOWN
   use graph_sequence_view, only : sequence_size, sequence_element
-  use set_prototype , only : counted_extent, extent_of, bind_extent, &
-       & set_equivalent
+  use set_prototype , only : counted_extent, listed_extent, extent_of, &
+       & bind_extent, set_equivalent
 
   implicit none
 
@@ -317,33 +391,47 @@ program set_map
 
     type(graph), target  :: ambient, part
     type(counted_extent) :: ea
+    type(listed_extent)  :: ep
     integer              :: roll(3) = [2, 5, 6]
     integer              :: k
-    logical              :: included, positions_differ
+    logical              :: included, both_ways, positions_differ
 
     call ambient % declare(); call part % declare()
     call bind_extent(ambient, counted_extent(8))
     ea = extent_of(ambient)
+    ep = listed_extent(roll)             ! the part's own representation
 
-    ! part's extent is its roll; the counted extent cannot express it,
-    ! so the roll stands here as the explicit-index representation.
     included = .true.
-    do k = 1, size(roll)
-       included = included .and. ea % has(roll(k))
+    do k = 1, ep % extent_size()
+       included = included .and. ea % has(ep % member(k))
     end do
 
     call check('4  S subset A is decided from the two extents', included)
     call check('4  and needs no subtype and no ambient component', &
          & .not. part % same_as(ambient))
 
-    ! Local position differs from member value; the values agree with
-    ! the ambient, which is why inclusion needs no translation map.
-    positions_differ = .false.
-    do k = 1, size(roll)
-       if (roll(k) .ne. k) positions_differ = .true.
+    ! The enumeration law holds INSIDE each representation, and the two
+    ! numberings disagree while the member values agree. This is the
+    ! whole of what subset_set's roll does, without a subtype.
+    both_ways = .true.
+    do k = 1, ep % extent_size()
+       both_ways = both_ways .and. ep % local_index(ep % member(k)) .eq. k
+       both_ways = both_ways .and. ea % member(ea % local_index(ep % member(k))) &
+            &                       .eq. ep % member(k)
     end do
-    call check('4  local position /= member value, and only the value travels', &
-         & positions_differ .and. ea % local_index(roll(2)) .eq. 5)
+    call check('4  member(local_index(v)) = v round-trips in BOTH extents', &
+         & both_ways)
+
+    positions_differ = .false.
+    do k = 1, ep % extent_size()
+       if (ea % local_index(ep % member(k)) .ne. ep % local_index(ep % member(k))) &
+            & positions_differ = .true.
+    end do
+    call check('4  the same member stands at different positions: 5 is 2nd in S, 5th in A', &
+         & positions_differ .and. ep % local_index(5) .eq. 2 &
+         &                  .and. ea % local_index(5) .eq. 5)
+    call check('4  only the VALUE travels, which is why inclusion is (s,s)', &
+         & ea % has(ep % member(2)) .and. ep % member(2) .eq. 5)
 
   end block subset_block
 

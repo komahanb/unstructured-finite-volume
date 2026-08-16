@@ -159,6 +159,11 @@ T(T(v)) % base same_as R           the SAME semantic relation
 a role permutation over a relation graph rather than a constructor of a new relation. Nothing in
 Fortran makes this artificial: the view is a pointer and a two-element permutation.
 
+That pointer is not free. A role view **borrows** its base and inherits exactly the lifetime
+obligation `relational_binding` was gated on: the base must outlive every view taken of it, and
+the borrow must survive whatever the base does in between. Whoever implements this owes that
+gate a test before the view is public.
+
 The classification is **involution**, and it is an involution on *views*, not on relations: R has
 no transpose until a view reads its signature in an order.
 

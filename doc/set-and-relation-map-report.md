@@ -5,7 +5,7 @@ da21e6a  M1  member-set-fractal-map.md      + set.f90, scale.f90
 43950f6  M2  relation-fractal-map.md        + relation.f90
 3d42056  M3  naming-and-transformation-algebra.md
 ```
-Each builds independently, verified in a clean worktree. New suite `test/fractal-map`, 35
+Each builds independently, verified in a clean worktree. New suite `test/fractal-map`, 37
 assertions, run on every pass; every other suite unchanged.
 
 ## The finding both maps turn on
@@ -37,14 +37,14 @@ a **representation** answers *how are its members stored here?* Neither alone is
 **3. Can `counted_set` remain O(1)?** Yes — demonstrated. The prototype declares a 10⁹-member set,
 allocates no member object, and asserts both branches of the set graph are NULL.
 
-**4. Does `subset_set` need a subtype?** No. `inclusion_of` already builds tuples `(s,s)` — the
-**same member value on both sides** — so a subset reuses the ambient's values and only its
-*positions* are private. `S ⊆ A` is a property between two set graphs; `ambient`/`host` become a
-map, `is_subobject_of` an algorithm.
+**4. Does `subset_set` need a subtype?** No — but it does need a second *representation*.
+`inclusion_of` builds tuples `(s,s)`, the **same value on both sides**, while indexing CSR rows
+through `S % local_index`, the *position*: measured, member 5 stands 2nd in S and 5th in A. Two
+coordinate systems, not three. `S ⊆ A` is a property between two set graphs; `ambient`/`host`
+become a map, `is_subobject_of` an algorithm, and `roll` becomes
+`graph_set_listed_representation`.
 
-**5. What becomes `local_index`?** The representation's numbering function, **not identity**. The
-integer 7 names a position within one representation of one set.
-
+**5. What becomes `local_index`?** The representation's numbering function, **not identity**.
 **6. Does `relation` survive as ontology?** No — same shape as (1). It becomes
 `graph_relation_representation`, with `arity`/`domain(k)` lifted into a view.
 
@@ -100,7 +100,7 @@ the missing assemble-from-all-parts test.
 - **Two distinct empty sets**: `set_equivalent` true, `same_as` false — the empty set of cells is
   not the empty set of faces.
 - **Design A, built** at n = 4, so its cost is measured; **A × A, A × B, A × B × C** through one
-  mechanism, seven cells for all three.
+  mechanism, seven cells for all three; a counted and a listed extent, positions disagreeing.
 - **The tuple trap**: two independently built holders of `(a,b)` are *not* the same graph while
   being the same tuple; `(b,a)` is a different tuple. Holder identity must never be tuple equality.
 - **One relation, two representations**, agreeing on extension and differing in object identity;

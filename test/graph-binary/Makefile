@@ -12,16 +12,11 @@ LDFLAGS += -L../../lib/ ../../lib/libufvm.a -llapack
 
 all: run refusal
 
-run: listed_set_fixture.o test.o
-	$(F90) listed_set_fixture.o test.o -o $@ $(LDFLAGS)
+run: test.o
+	$(F90) test.o -o $@ $(LDFLAGS)
 
 refusal: refusal.o
 	$(F90) refusal.o -o $@ $(LDFLAGS)
-
-test.o: listed_set_fixture.o
-
-listed_set_fixture.o: ../graph-relation/listed_set_fixture.f90
-	$(F90) $(F90FLAGS) -c $< -o $@
 
 clean:
 	@rm -f *.o *.mod *.so run refusal

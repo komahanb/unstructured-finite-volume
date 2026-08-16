@@ -10,10 +10,8 @@ LDFLAGS += -L../../lib/ ../../lib/libufvm.a -llapack
 
 all: run refusal
 
-run: listed_set_fixture.o test.o
-	$(F90) listed_set_fixture.o test.o -o $@ $(LDFLAGS)
-
-test.o: listed_set_fixture.o
+run: test.o
+	$(F90) test.o -o $@ $(LDFLAGS)
 
 refusal: refusal.o
 	$(F90) refusal.o -o $@ $(LDFLAGS)

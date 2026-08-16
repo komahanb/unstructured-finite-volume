@@ -14,7 +14,7 @@ cd "$here" && ./run
 
 declare -A reason=(
   [member]="a tuple names a member its domain does not hold"
-  [arity]="each tuple has exactly one part per slot"
+  [arity]="each tuple has exactly one part per domain"
   [undeclared]="a signature refers to declared domains only"
   [empty]="a relation relates at least one domain"
   [twice]="a relation never signs twice"

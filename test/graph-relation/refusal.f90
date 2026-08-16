@@ -15,43 +15,49 @@
 
 program relation_refusal
 
-  use graph_carrier , only : counted_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
   use graph_relation, only : stored_relation
 
   implicit none
 
-  type(counted_set)              :: cells, faces, raw
-  type(counted_set), allocatable :: nothing(:)
+  type(set_graph)              :: cells, faces, raw
+  type(set_graph), allocatable :: nothing(:)
   type(stored_relation)          :: r
   character(len=32)              :: which
+  type(set_map)     :: sets
 
   which = ''
   call get_command_argument(1, which)
 
-  cells = counted_set('cells', 4)
-  faces = counted_set('faces', 5)
+  call cells % declare()
+  call sets % bind(cells, counted_set_representation(4))
+  call faces % declare()
+  call sets % bind(faces, counted_set_representation(5))
 
   select case (trim(which))
 
   case ('member')
      ! Cell 5 does not exist; the domain must refuse it.
-     r = stored_relation('bad', [cells, faces], reshape([5, 1], [2, 1]))
+     r = stored_relation('bad', [cells, faces], reshape([5, 1], [2, 1]), sets)
 
   case ('arity')
      ! Three rows for two slots.
-     r = stored_relation('bad', [cells, faces], reshape([1, 1, 1], [3, 1]))
+     r = stored_relation('bad', [cells, faces], reshape([1, 1, 1], [3, 1]), sets)
 
   case ('undeclared')
      ! raw never signed; a signature refers to declared domains only.
-     r = stored_relation('bad', [cells, raw], reshape([1, 1], [2, 1]))
+     r = stored_relation('bad', [cells, raw], reshape([1, 1], [2, 1]), sets)
 
   case ('empty')
      ! No slots at all.
      allocate(nothing(0))
-     r = stored_relation('bad', nothing, reshape([integer ::], [0, 0]))
+     r = stored_relation('bad', nothing, reshape([integer ::], [0, 0]), sets)
 
   case ('twice')
-     r = stored_relation('good', [cells, faces], reshape([1, 1], [2, 1]))
+     r = stored_relation('good', [cells, faces], reshape([1, 1], [2, 1]), sets)
      call r % declare('good-again')
 
   case default

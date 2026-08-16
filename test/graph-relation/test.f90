@@ -20,9 +20,12 @@
 program test_graph_relation
 
   use graph_identity    , only : token
-  use graph_carrier     , only : counted_set, member_set
-  use graph_relation    , only : stored_relation, slot
-  use listed_set_fixture, only : listed_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
+  use graph_relation    , only : stored_relation
 
   implicit none
 
@@ -79,17 +82,20 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)              :: cells, faces
+    type(set_graph)              :: cells, faces
     type(stored_relation)          :: r
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
     type(token)                    :: tk
     integer, allocatable           :: t(:,:)
+    type(set_map)     :: sets
 
-    cells = counted_set('cells', 4)
-    faces = counted_set('faces', 5)
+    call cells % declare()
+    call sets % bind(cells, counted_set_representation(4))
+    call faces % declare()
+    call sets % bind(faces, counted_set_representation(5))
 
     r = stored_relation('touches', [cells, faces], &
-         & reshape([1,1,  1,2,  2,2,  3,4], [2, 4]))
+         & reshape([1,1,  1,2,  2,2,  3,4], [2, 4]), sets)
 
     tk = r % id()
     call report(tk % declared(), &
@@ -138,15 +144,18 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)     :: cells, faces
+    type(set_graph)     :: cells, faces
     type(stored_relation) :: r
     integer, allocatable  :: t(:,:)
+    type(set_map)     :: sets
 
-    cells = counted_set('cells', 4)
-    faces = counted_set('faces', 5)
+    call cells % declare()
+    call sets % bind(cells, counted_set_representation(4))
+    call faces % declare()
+    call sets % bind(faces, counted_set_representation(5))
 
     r = stored_relation('touches', [cells, faces], &
-         & reshape([1,1,  2,2,  1,1,  3,3,  2,2], [2, 5]))
+         & reshape([1,1,  2,2,  1,1,  3,3,  2,2], [2, 5]), sets)
 
     call report(r % num_tuples() .eq. 3, &
          & "a tuple handed in twice is in the relation once", nfail)
@@ -174,38 +183,40 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(listed_set)     :: dup
+    type(set_graph)     :: dup
     integer, allocatable :: idx(:)
     integer              :: i, j
     logical              :: ok
+    type(set_map)     :: sets
 
-    dup = listed_set('sensors', [10, 20, 10, 30, 20])
+    call dup % declare()
+    call sets % bind(dup, listed_set_representation([10, 20, 10, 30, 20]))
 
-    call report(dup % size() .eq. 3, &
+    call report(sets % size_of(dup) .eq. 3, &
          & "a member handed in twice is in the domain once", nfail)
 
-    call dup % members(idx)
+    call sets % members_of(dup, idx)
     call report(all(idx .eq. [10, 20, 30]), &
          & "first appearances stand, in their first order", nfail)
 
     ok = .true.
-    do i = 1, dup % size()
-       do j = i + 1, dup % size()
-          ok = ok .and. (dup % member(i) /= dup % member(j))
+    do i = 1, sets % size_of(dup)
+       do j = i + 1, sets % size_of(dup)
+          ok = ok .and. (sets % member_of(dup, i) /= sets % member_of(dup, j))
        end do
     end do
     call report(ok, &
          & "enumeration is injective: each member once", nfail)
 
-    call report(dup % local_index(20) .eq. 2 .and. &
-         &      dup % local_index(15) .eq. 0, &
+    call report(sets % index_in(dup, 20) .eq. 2 .and. &
+         &      sets % index_in(dup, 15) .eq. 0, &
          & "local_index finds the standing, zero for outsiders", nfail)
 
     ok = .true.
-    do i = 1, dup % size()
-       ok = ok .and. (dup % member(dup % local_index(dup % member(i))) &
-            &         .eq. dup % member(i))
-       ok = ok .and. (dup % local_index(dup % member(i)) .eq. i)
+    do i = 1, sets % size_of(dup)
+       ok = ok .and. (sets % member_of(dup, sets % index_in(dup, sets % member_of(dup, i))) &
+            &         .eq. sets % member_of(dup, i))
+       ok = ok .and. (sets % index_in(dup, sets % member_of(dup, i)) .eq. i)
     end do
     call report(ok, &
          & "member and local_index invert each other, both ways", nfail)
@@ -222,16 +233,19 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)              :: cells
-    type(listed_set)               :: sensors
+    type(set_graph)              :: cells
+    type(set_graph)               :: sensors
     type(stored_relation)          :: r
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
+    type(set_map)     :: sets
 
-    cells   = counted_set('cells', 3)
-    sensors = listed_set('sensors', [10, 20, 30])
+    call cells % declare()
+    call sets % bind(cells, counted_set_representation(3))
+    call sensors % declare()
+    call sets % bind(sensors, listed_set_representation([10, 20, 30]))
 
-    r = stored_relation('reads', [slot(cells), slot(sensors)], &
-         & reshape([1,10,  2,30], [2, 2]))
+    r = stored_relation('reads', [cells, sensors], &
+         & reshape([1,10,  2,30], [2, 2]), sets)
 
     call report(r % arity() .eq. 2 .and. r % num_tuples() .eq. 2, &
          & "two carrier concretions stand in one signature", nfail)
@@ -242,7 +256,7 @@ contains
     d = r % domain(2)
     call report(d % same_as(sensors), &
          & "the listed slot answers the listed domain, by identity", nfail)
-    call report(d % has(20) .and. .not. d % has(15), &
+    call report(sets % has_in(d, 20) .and. .not. sets % has_in(d, 15), &
          & "and the carrier's own membership law travels with it", nfail)
 
   end subroutine check_mixed_carriers
@@ -256,14 +270,16 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)              :: cells
+    type(set_graph)              :: cells
     type(stored_relation)          :: adj
-    class(member_set), allocatable :: d1, d2
+    type(set_graph) :: d1, d2
+    type(set_map)     :: sets
 
-    cells = counted_set('cells', 3)
+    call cells % declare()
+    call sets % bind(cells, counted_set_representation(3))
 
     adj = stored_relation('beside', [cells, cells], &
-         & reshape([1,2,  2,3], [2, 2]))
+         & reshape([1,2,  2,3], [2, 2]), sets)
 
     d1 = adj % domain(1)
     d2 = adj % domain(2)
@@ -284,18 +300,22 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)     :: edges, verts, roles
+    type(set_graph)     :: edges, verts, roles
     type(stored_relation) :: ends
     integer               :: v
     logical               :: ok
+    type(set_map)     :: sets
 
-    edges = counted_set('edges'   , 3)
-    verts = counted_set('vertices', 4)
-    roles = counted_set('roles'   , 2)     ! 1 = tail, 2 = head
+    call edges % declare()
+    call sets % bind(edges, counted_set_representation(3))
+    call verts % declare()
+    call sets % bind(verts, counted_set_representation(4))
+    call roles % declare()                 ! 1 = tail, 2 = head
+    call sets % bind(roles, counted_set_representation(2))
 
     ! 1 --> 2 --> 3, then edge 3 leaves vertex 3 for the wall.
     ends = stored_relation('endpoint', [edges, verts, roles], &
-         & reshape([1,1,1,  1,2,2,  2,2,1,  2,3,2,  3,3,1], [3, 5]))
+         & reshape([1,1,1,  1,2,2,  2,2,1,  2,3,2,  3,3,1], [3, 5]), sets)
 
     call report(ends % arity() .eq. 3, &
          & "roles are a slot, not an attribute", nfail)
@@ -323,17 +343,20 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)              :: cells, faces
+    type(set_graph)              :: cells, faces
     type(stored_relation)          :: adj, inc
-    class(member_set), allocatable :: da, di
+    type(set_graph) :: da, di
+    type(set_map)     :: sets
 
-    cells = counted_set('cells', 4)
-    faces = counted_set('faces', 5)
+    call cells % declare()
+    call sets % bind(cells, counted_set_representation(4))
+    call faces % declare()
+    call sets % bind(faces, counted_set_representation(5))
 
     adj = stored_relation('beside' , [cells, cells], &
-         & reshape([1,2,  3,4], [2, 2]))
+         & reshape([1,2,  3,4], [2, 2]), sets)
     inc = stored_relation('touches', [cells, faces], &
-         & reshape([1,1,  4,5], [2, 2]))
+         & reshape([1,1,  4,5], [2, 2]), sets)
 
     da = adj % domain(1)
     di = inc % domain(1)
@@ -351,16 +374,19 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)     :: cells, faces
+    type(set_graph)     :: cells, faces
     type(stored_relation) :: physical, coarse, copy
+    type(set_map)     :: sets
 
-    cells = counted_set('cells', 4)
-    faces = counted_set('faces', 5)
+    call cells % declare()
+    call sets % bind(cells, counted_set_representation(4))
+    call faces % declare()
+    call sets % bind(faces, counted_set_representation(5))
 
     physical = stored_relation('physical', [cells, faces], &
-         & reshape([1,1,  2,2], [2, 2]))
+         & reshape([1,1,  2,2], [2, 2]), sets)
     coarse   = stored_relation('coarse'  , [cells, faces], &
-         & reshape([1,1,  3,3], [2, 2]))
+         & reshape([1,1,  3,3], [2, 2]), sets)
 
     call report(.not. physical % same_as(coarse), &
          & "same signature, two relations - no collision", nfail)
@@ -382,14 +408,16 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)     :: cells
+    type(set_graph)     :: cells
     type(stored_relation) :: none
     type(token)           :: tk
+    type(set_map)     :: sets
 
-    cells = counted_set('cells', 3)
+    call cells % declare()
+    call sets % bind(cells, counted_set_representation(3))
 
     none = stored_relation('nothing', [cells, cells], &
-         & reshape([integer ::], [2, 0]))
+         & reshape([integer ::], [2, 0]), sets)
 
     tk = none % id()
     call report(tk % declared() .and. none % num_tuples() .eq. 0, &

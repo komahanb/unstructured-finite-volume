@@ -15,10 +15,14 @@
 
 program test_graph_binary
 
-  use graph_carrier         , only : counted_set, member_set, subset_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_binary_relation , only : csr_relation, transpose_of, &
        &                             transposed_view, inclusion_of
-  use listed_set_fixture    , only : listed_set
 
   implicit none
 
@@ -72,17 +76,20 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)              :: cells, faces
+    type(set_graph)              :: cells, faces
     type(csr_relation)             :: r
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
     integer, allocatable           :: idx(:), t(:,:)
+    type(set_map)     :: sets
 
-    cells = counted_set('cells', 4)
-    faces = counted_set('faces', 5)
+    call cells % declare()
+    call sets % bind(cells, counted_set_representation(4))
+    call faces % declare()
+    call sets % bind(faces, counted_set_representation(5))
 
     ! One duplicate handed in, on purpose.
     r = csr_relation('touches', cells, faces, &
-         & reshape([1,1,  1,2,  2,2,  3,4,  1,1], [2, 5]))
+         & reshape([1,1,  1,2,  2,2,  3,4,  1,1], [2, 5]), sets)
 
     call report(r % arity() .eq. 2, &
          & "arity two, answered once for the whole family", nfail)
@@ -130,16 +137,19 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)          :: cells, faces
+    type(set_graph)          :: cells, faces
     type(csr_relation), target :: r
     integer, pointer           :: f(:)
     integer, allocatable       :: owned(:)
+    type(set_map)     :: sets
 
-    cells = counted_set('cells', 4)
-    faces = counted_set('faces', 5)
+    call cells % declare()
+    call sets % bind(cells, counted_set_representation(4))
+    call faces % declare()
+    call sets % bind(faces, counted_set_representation(5))
 
     r = csr_relation('touches', cells, faces, &
-         & reshape([1,1,  1,2,  2,2,  3,4], [2, 4]))
+         & reshape([1,1,  1,2,  2,2,  3,4], [2, 4]), sets)
 
     f => r % image_view(1)
     call r % image(1, owned)
@@ -172,17 +182,20 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(listed_set)               :: sensors
-    type(counted_set)              :: cells
+    type(set_graph)               :: sensors
+    type(set_graph)              :: cells
     type(csr_relation)             :: r
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
     integer, allocatable           :: idx(:)
+    type(set_map)     :: sets
 
-    sensors = listed_set('sensors', [10, 20, 30])
-    cells   = counted_set('cells', 3)
+    call sensors % declare()
+    call sets % bind(sensors, listed_set_representation([10, 20, 30]))
+    call cells % declare()
+    call sets % bind(cells, counted_set_representation(3))
 
     r = csr_relation('reads', sensors, cells, &
-         & reshape([10,1,  20,1,  20,3], [2, 3]))
+         & reshape([10,1,  20,1,  20,3], [2, 3]), sets)
 
     call r % image(20, idx)
     call report(size(idx) .eq. 2 .and. all(idx .eq. [1, 3]), &
@@ -221,18 +234,26 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)              :: faces
-    type(subset_set)               :: walls
+    type(set_graph)              :: faces
+    type(set_graph)               :: walls
     type(csr_relation), target     :: inc
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
     integer, pointer               :: f(:)
     integer                        :: k
     logical                        :: ok
+    type(set_map)     :: sets
+    type(inclusion_map)     :: inclusions
+    type(label_map)     :: labels
 
-    faces = counted_set('faces', 5)
-    walls = subset_set('walls', faces, [2, 5])
+    call faces % declare()
+    call sets % bind(faces, counted_set_representation(5))
+    call walls % declare()
+    call sets       % bind(walls, listed_set_representation([2, 5]))
+    call inclusions % include_in(walls, faces)
 
-    inc = inclusion_of(walls)
+    call labels % bind(walls, 'walls')
+    call labels % bind(faces, 'faces')
+    inc = inclusion_of(walls, faces, sets, labels)
 
     call report(inc % arity() .eq. 2 .and. inc % num_tuples() .eq. 2, &
          & "the inclusion holds one tuple per subset member", nfail)
@@ -249,9 +270,9 @@ contains
          & "the target is the ambient it was carved from", nfail)
 
     ok = .true.
-    do k = 1, walls % size()
-       f => inc % image_view(walls % member(k))
-       ok = ok .and. (size(f) .eq. 1) .and. (f(1) .eq. walls % member(k))
+    do k = 1, sets % size_of(walls)
+       f => inc % image_view(sets % member_of(walls, k))
+       ok = ok .and. (size(f) .eq. 1) .and. (f(1) .eq. sets % member_of(walls, k))
     end do
     call report(ok, &
          & "total, functional, injective - by construction", nfail)
@@ -279,19 +300,30 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)              :: a, b
-    type(subset_set)               :: sa, sb
+    type(set_graph)              :: a, b
+    type(set_graph)               :: sa, sb
     type(csr_relation)             :: ia, ib
-    class(member_set), allocatable :: d
+    type(set_graph) :: d
     integer, allocatable           :: ta(:,:), tb(:,:)
+    type(set_map)     :: sets
+    type(inclusion_map)     :: inclusions
+    type(label_map)     :: labels
 
-    a  = counted_set('A', 8)
-    b  = counted_set('B', 8)
-    sa = subset_set('S in A', a, [2, 5, 6])
-    sb = subset_set('S in B', b, [2, 5, 6])
+    call a % declare()
+    call sets % bind(a, counted_set_representation(8))
+    call b % declare()
+    call sets % bind(b, counted_set_representation(8))
+    call sa % declare()
+    call sets       % bind(sa, listed_set_representation([2, 5, 6]))
+    call inclusions % include_in(sa, a)
+    call sb % declare()
+    call sets       % bind(sb, listed_set_representation([2, 5, 6]))
+    call inclusions % include_in(sb, b)
 
-    ia = inclusion_of(sa)
-    ib = inclusion_of(sb)
+    call labels % bind(sa, 'sa'); call labels % bind(a, 'a')
+    call labels % bind(sb, 'sb'); call labels % bind(b, 'b')
+    ia = inclusion_of(sa, a, sets, labels)
+    ib = inclusion_of(sb, b, sets, labels)
 
     call ia % tuples(ta)
     call ib % tuples(tb)
@@ -322,17 +354,20 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)               :: cells, faces
+    type(set_graph)               :: cells, faces
     type(csr_relation), target      :: r
     type(transposed_view)           :: t
-    class(member_set), allocatable  :: d
+    type(set_graph)  :: d
     integer, allocatable            :: fwd(:), rev(:)
+    type(set_map)     :: sets
 
-    cells = counted_set('cells', 4)
-    faces = counted_set('faces', 5)
+    call cells % declare()
+    call sets % bind(cells, counted_set_representation(4))
+    call faces % declare()
+    call sets % bind(faces, counted_set_representation(5))
 
     r = csr_relation('touches', cells, faces, &
-         & reshape([1,1,  1,2,  2,2,  3,4], [2, 4]))
+         & reshape([1,1,  1,2,  2,2,  3,4], [2, 4]), sets)
 
     t = transpose_of(r)
 
@@ -387,20 +422,23 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(counted_set)               :: cells, faces
+    type(set_graph)               :: cells, faces
     type(csr_relation) , target    :: r
     type(transposed_view), target  :: t
     type(transposed_view)          :: tt
-    class(member_set), allocatable :: da, db
+    type(set_graph) :: da, db
     integer, allocatable           :: rt(:,:)
     integer                        :: j
     logical                        :: ok
+    type(set_map)     :: sets
 
-    cells = counted_set('cells', 4)
-    faces = counted_set('faces', 5)
+    call cells % declare()
+    call sets % bind(cells, counted_set_representation(4))
+    call faces % declare()
+    call sets % bind(faces, counted_set_representation(5))
 
     r = csr_relation('touches', cells, faces, &
-         & reshape([1,1,  1,2,  2,2,  3,4], [2, 4]))
+         & reshape([1,1,  1,2,  2,2,  3,4], [2, 4]), sets)
 
     t  = transpose_of(r)
     tt = transpose_of(t)

@@ -11,31 +11,37 @@
 
 program binary_refusal
 
-  use graph_carrier        , only : counted_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
   use graph_binary_relation, only : csr_relation
 
   implicit none
 
-  type(counted_set)  :: cells, faces, raw
+  type(set_graph)  :: cells, faces, raw
   type(csr_relation) :: r
   character(len=32)  :: which
+  type(set_map)     :: sets
 
   which = ''
   call get_command_argument(1, which)
 
-  cells = counted_set('cells', 4)
-  faces = counted_set('faces', 5)
+  call cells % declare()
+  call sets % bind(cells, counted_set_representation(4))
+  call faces % declare()
+  call sets % bind(faces, counted_set_representation(5))
 
   select case (trim(which))
 
   case ('member')
-     r = csr_relation('bad', cells, faces, reshape([5, 1], [2, 1]))
+     r = csr_relation('bad', cells, faces, reshape([5, 1], [2, 1]), sets)
 
   case ('arity')
-     r = csr_relation('bad', cells, faces, reshape([1, 1, 1], [3, 1]))
+     r = csr_relation('bad', cells, faces, reshape([1, 1, 1], [3, 1]), sets)
 
   case ('undeclared')
-     r = csr_relation('bad', cells, raw, reshape([1, 1], [2, 1]))
+     r = csr_relation('bad', cells, raw, reshape([1, 1], [2, 1]), sets)
 
   case default
      write(*,'(1x,a)') "usage: refusal member|arity|undeclared"

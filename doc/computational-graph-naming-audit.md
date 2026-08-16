@@ -1,5 +1,10 @@
 # Naming audit — every public symbol, one category
 
+> **Superseded, 2026-08-15.** This document is premised on a split between a structural
+> graph and a computational graph. That split is withdrawn: there is one graph ontology,
+> `G=(B1,B2)` in `src/fractal_graph.f90`, and `(S,P)` and `(Q,R)` are views of it. See
+> AGENTS.md, "The graph ontology". Retained as history; do not implement.
+
 The §15 deliverable of the computational-graph naming pass
 (`COMPUTATIONAL-GRAPH.md`): before any symbol is renamed, its category
 must be explicit. Fifty-six source modules were read completely; every

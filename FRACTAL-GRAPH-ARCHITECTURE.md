@@ -23,7 +23,7 @@ is the most abstract structural object currently available to us, where:
 - \(\mathcal S\) is a collection of member sets;
 - \(\mathcal P\) is a collection of finite-arity typed relations among those sets.
 
-(The letter \(R\) is reserved for the residual of the computational graph \(G=(Q,R)\); see `COMPUTATIONAL-GRAPH.md`.)
+(Where a view reads a graph as \((Q,R)\), \(R\) is that view of the residual. There is one graph ontology; the two-graph reservation is withdrawn. See AGENTS.md, "The graph ontology".)
 
 The immediate goal is **not** to force every software object into one inheritance hierarchy.
 

@@ -218,6 +218,13 @@ module graph_grammar
   ! than invent one.
   !===================================================================!
 
+  !===================================================================!
+  ! MIGRATION DEBT. This abstract type is named graph but is not the
+  ! graph ontology. The ontology is G=(B1,B2) in src/fractal_graph.f90;
+  ! what follows is a legacy interface awaiting migration to a view
+  ! over it. Do not present it as ontology, and do not extend it.
+  !===================================================================!
+
   type, abstract :: graph
 
    contains

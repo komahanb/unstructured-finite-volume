@@ -25,7 +25,7 @@ A_1\times A_2\times\cdots\times A_k,
 \qquad k\ge 1.
 \]
 
-A graph is then a structured collection of member sets and relations — the **structural graph**:
+Read relationally, a graph is a structured collection of member sets and relations — the **relational view**:
 
 \[
 \boxed{
@@ -49,19 +49,48 @@ and every relation \(P_\rho\in\mathcal P\) has a declared signature
 
 The framework must therefore treat **member sets and relations as first-class mathematical objects**.
 
-## Notation reservation (naming pass, 2026-08-15)
+## The graph ontology (2026-08-15, supersedes the two-graph notation reservation)
 
-The letter \(R\) is **reserved**: it denotes the residual/operator of the **computational graph**
+There is **one** graph ontology, implemented in `src/fractal_graph.f90`:
 
 \[
-G=(Q,R),
+\boxed{G=(B_1,B_2)}\qquad B\in\{\textsf{NULL},\ \textsf{UNKNOWN},\ \textsf{KNOWN}\to G\}
 \]
 
-the epistemic pair documented in `COMPUTATIONAL-GRAPH.md` — data \(Q\) and residual/operator \(R\), each independently realized or unrealized (\(\bot\)). Its four states carry canonical names: **void graph** \((\bot,\bot)\), **data graph** \((Q,\bot)\), **operator graph** \((\bot,R)\), **realized graph** \((Q,R)\).
+```fortran
+type :: graph
+   type(graph_branch) :: branch(2)
+end type
+```
 
-The structural object of this document is therefore written \(\Gamma=(\mathcal S,\mathcal P)\), and individual structural relations are denoted \(P\), \(T\), \(H\), \(A\), \(\ldots\) — never \(R\). Do not write the structural graph as \(G=(S,R)\) anywhere.
+Two types, `graph` and `graph_branch`, and nothing else ontologically.
 
-`relational_graph` (graph_structure.f90) implements \(\Gamma\); `computational_graph` (graph_state.f90) implements \(G\). Neither is the other, and neither absorbs the other's vocabulary.
+\((\mathcal S,\mathcal P)\), \((Q,R)\) and \((V,E)\) are **views** of that one object, never
+distinct kinds of graph. The earlier reservation, which split a structural graph
+\(\Gamma=(\mathcal S,\mathcal P)\) from a computational graph \(G=(Q,R)\), is **withdrawn**;
+`COMPUTATIONAL-GRAPH.md` is deleted. Both phrases survive only as names of views and of legacy
+types awaiting migration. Neither names a kind of graph.
+
+The laws:
+
+- \(\textsf{NULL}\neq\textsf{UNKNOWN}\neq\textsf{KNOWN}\): definite absence, unrealized, and
+  a reference to a graph are three distinct states, carried as values, not as subtypes.
+- **Identity answers *which graph*.** It is object identity, minted once by `declare`, and
+  independent of branch state.
+- **Branch state answers *what this graph is now*.** The two questions do not collapse.
+- All **nine** branch-state combinations are representable, and every transition between them is
+  permitted by the kernel. Restrictions — monotone knowledge, freezing, phases — belong to views,
+  and a view that wants one must state it itself.
+- **Compiled representations are snapshots.** A CSR compiled from a graph stays valid when that
+  graph changes; it does not follow the graph and carries no version.
+- **Structural equality is not `same_as`.** `same_as` compares identity. Structural equality over
+  a graph with cycles is a bisimulation, which the kernel does not compute.
+
+The letter \(R\) is no longer reserved by a second ontology. Where a view reads a graph as
+\((Q,R)\), \(R\) is that view's residual; where a view reads it as \((\mathcal S,\mathcal P)\),
+its relations are \(P, T, H, A, \ldots\). Sections 4-14 below describe the relation-centered view
+and remain in force **as a view**; `relational_graph` (graph_structure.f90) is its current
+implementation and is migration debt.
 
 ---
 
@@ -809,7 +838,7 @@ A graph is a **relational structure**:
 
 where \(\mathcal S\) is a collection of member sets and \(\mathcal P\) is a collection of typed relations over them.
 
-This structural \(\Gamma\) is not the computational graph \(G=(Q,R)\) of `COMPUTATIONAL-GRAPH.md`: \(\mathcal P\) relates members; \(R\) constrains data. Do not write the structural pair with the letter \(R\).
+\(\Gamma\) is a **view** of the one graph ontology \(G=(B_1,B_2)\), not a rival kind of graph; see “The graph ontology” above. Within this view \(\mathcal P\) relates members, and its relations are written \(P, T, H, A, \ldots\).
 
 A graph is therefore composition, not inheritance from relation.
 

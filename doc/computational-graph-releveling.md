@@ -1,5 +1,10 @@
 # Releveling report — the tower under G=(Q,R)
 
+> **Superseded, 2026-08-15.** This document is premised on a split between a structural
+> graph and a computational graph. That split is withdrawn: there is one graph ontology,
+> `G=(B1,B2)` in `src/fractal_graph.f90`, and `(S,P)` and `(Q,R)` are views of it. See
+> AGENTS.md, "The graph ontology". Retained as history; do not implement.
+
 Status: **proposal only**. The naming pass (this branch, see
 `COMPUTATIONAL-GRAPH.md`) reserved the vocabulary and renumbered nothing.
 This report is the separate deliverable it owes: for every level-bearing

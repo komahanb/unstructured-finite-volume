@@ -23,14 +23,14 @@
 program bench_graph_traversal
 
   use iso_fortran_env        , only : dp => REAL64, int64
-  use graph_calculus         , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
   use graph_grammar          , only : graph, graph_field
   use fractal_graph          , only : set_graph => graph
   use graph_set_representation, only : counted_set_representation
   use graph_set_map          , only : set_map
+  use graph_label_map        , only : label_map
+  use graph_inclusion_map    , only : inclusion_map
   use graph_binary_relation  , only : csr_relation
   use class_graph            , only : stored_graph
-  use class_graph_support    , only : support
   use class_graph_field      , only : field
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
   use class_graph_assembler  , only : assembler
@@ -46,6 +46,8 @@ program bench_graph_traversal
   type(stored_graph)              :: g
   type(set_graph)                 :: vcarrier, ecarrier
   type(set_map)                   :: sets
+  type(label_map)                 :: labels
+  type(inclusion_map)             :: inclusions
   type(csr_relation), target      :: rel
   integer, pointer                :: fp(:)
   integer, allocatable            :: tab(:,:)
@@ -54,7 +56,7 @@ program bench_graph_traversal
   type(assembler)                 :: a
   class(graph), allocatable       :: part
   class(graph_field), allocatable :: pd, fd, yf
-  type(support)                   :: von, eon
+  type(set_graph)                 :: von, eon
   type(field)                     :: q, z
   integer, allocatable            :: tails(:), heads(:), idx(:)
   real(dp), allocatable           :: qv(:), zv(:)
@@ -193,9 +195,11 @@ program bench_graph_traversal
   call system_clock(t1)
   call line("csr preimage_view sweep (x3)", t0, t1, rate, int(3, int64) * ne)
 
-  ! -- differential operators over the whole graph.
-  eon = support(GRAPH_SIDE_EDGE, [(e, e = 1, ne)])
-  z   = field('z', eon)
+  ! -- differential operators over the whole graph. The operator
+  !    demands same_as on its input domain, so the field sits on the
+  !    graph's OWN edge identity, never on a freshly declared one.
+  eon = g % edge_set()
+  z   = field('z', eon, ne)
   allocate(zv(ne))
   do e = 1, ne
      zv(e) = real(mod(e, 97), dp) - 48.0_dp
@@ -210,8 +214,8 @@ program bench_graph_traversal
   call system_clock(t1)
   call line("divergence apply (x3)", t0, t1, rate, int(3, int64) * ne)
 
-  von = support(GRAPH_SIDE_VERTEX, [(v, v = 1, nv)])
-  q   = field('q', von)
+  von = g % vertex_set()
+  q   = field('q', von, nv)
   allocate(qv(nv))
   do v = 1, nv
      qv(v) = real(mod(v, 89), dp) - 44.0_dp
@@ -236,12 +240,23 @@ program bench_graph_traversal
   call system_clock(t1)
   call line("partition_graph, 4 parts", t0, t1, rate, int(nv, int64))
 
+  ! -- transport asks WHERE a global member stands, and only a
+  !    representation can say: the whole graph's domain is described
+  !    once, each part's own two domains as they are minted. The bind
+  !    is inside the timed loop because the part graph is, and the
+  !    round trip cannot begin without it.
+  call sets % bind(von, counted_set_representation(nv))
+
   call system_clock(t0)
   do k = 1, 4
      p = partitioner(PARTITION_LINEAR, nparts=4, part=k)
      call p % partition_graph(g, part)
-     call p % partition_data(g, q, part, pd)
-     call a % assemble_data(part, pd, g, fd)
+     call sets % bind(part % vertex_set(), &
+          & counted_set_representation(part % num_vertices()))
+     call sets % bind(part % edge_set(), &
+          & counted_set_representation(part % num_edges()))
+     call p % partition_data(g, q, part, sets, labels, inclusions, pd)
+     call a % assemble_data(part, pd, g, sets, labels, inclusions, fd)
   end do
   call system_clock(t1)
   call line("carry + assemble field, 4 parts", t0, t1, rate, int(nv, int64))

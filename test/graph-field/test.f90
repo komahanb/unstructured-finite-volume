@@ -1,6 +1,6 @@
 !=====================================================================!
 ! The field suite: the laws of the one field on the one domain kind
-! (level 5). A field lives on a member_set - ambient, subset,
+! (level 5). A field lives on a set graph - ambient, carved,
 ! nested, or empty - stores by domain enumeration, and carries its
 ! domain's identity wherever it is copied.
 !
@@ -10,15 +10,20 @@
 program test_graph_field
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use fractal_graph           , only : graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map           , only : set_map
+  use graph_inclusion_map     , only : inclusion_map, declared_subobject
   use class_graph_field, only : field
 
   implicit none
 
-  type(counted_set) :: cells
-  type(subset_set)  :: walls, hot, none
-  type(field)       :: q, w, h, z, copy
-  class(member_set), allocatable :: dom
+  type(graph)         :: cells, walls, hot, none
+  type(set_map)       :: sets
+  type(inclusion_map) :: inclusions
+  type(field)         :: q, w, h, z, copy
+  type(graph)         :: dom
   real(dp), allocatable :: v(:)
   integer :: kk
   integer :: nfail
@@ -28,14 +33,24 @@ program test_graph_field
   write(*,'(1x,a)') "graph field suite (level 5)"
   write(*,'(1x,a)') "============================================="
 
-  cells = counted_set('cells', 6)
-  walls = subset_set('walls', cells, [5, 2, 6])
-  hot   = subset_set('hot'  , walls, [6, 2])
-  none  = subset_set('none' , cells, [integer ::])
+  call cells % declare()
+  call sets % bind(cells, counted_set_representation(6))
 
-  q = field('q', cells, ncomp=2)
+  call walls % declare()
+  call sets       % bind(walls, listed_set_representation([5, 2, 6]))
+  call inclusions % include_in(walls, cells)
+
+  call hot % declare()
+  call sets       % bind(hot, listed_set_representation([6, 2]))
+  call inclusions % include_in(hot, walls)
+
+  call none % declare()
+  call sets       % bind(none, listed_set_representation([integer ::]))
+  call inclusions % include_in(none, cells)
+
+  q = field('q', cells, 6, ncomp=2)
   call q % set_real_vector([(1.0_dp * kk, kk = 1, 12)])
-  call q % domain(dom)
+  dom = q % domain()
   call report(dom % same_as(cells), &
        & "an ambient field's domain is the carrier, by identity", nfail)
   call report(q % num_entries() .eq. 6, &
@@ -44,26 +59,26 @@ program test_graph_field
   call report(abs(v((4 - 1) * 2 + 2) - 8.0_dp) < 1.0d-14, &
        & "values interleave at (entry-1)*ncomp + component", nfail)
 
-  w = field('w', walls)
+  w = field('w', walls, 3)
   call w % set_real_vector([50.0_dp, 20.0_dp, 60.0_dp])
   call w % get_real_vector(v)
-  call report(abs(v(walls % local_index(2)) - 20.0_dp) < 1.0d-14 .and. &
+  call report(abs(v(sets % index_in(walls, 2)) - 20.0_dp) < 1.0d-14 .and. &
        &      abs(v(1) - 50.0_dp) < 1.0d-14, &
        & "a subset field stores by declaration, not by member value", nfail)
 
-  h = field('h', hot)
+  h = field('h', hot, 2)
   call h % set_real_vector([600.0_dp, 200.0_dp])
-  call h % domain(dom)
-  call report(dom % is_subobject_of(cells), &
+  dom = h % domain()
+  call report(declared_subobject(dom, cells, inclusions), &
        & "a nested-subset field still descends from the ground", nfail)
 
-  z = field('z', none)
+  z = field('z', none, 0)
   call z % set_real_vector([real(dp) ::])
   call report(z % num_entries() .eq. 0, &
        & "the empty-domain field is lawful, zero entries", nfail)
 
   copy = w
-  call copy % domain(dom)
+  dom = copy % domain()
   call report(dom % same_as(walls), &
        & "a copy carries its domain's identity along", nfail)
 

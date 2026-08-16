@@ -17,38 +17,45 @@
 program calculator_level_1_refusal
 
   use calculator_assert, only : SLOT_A, OP_PLUS, PORT_IN1, PORT_OUT
-  use graph_carrier    , only : counted_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
   use graph_relation   , only : stored_relation
 
   implicit none
 
-  type(counted_set)     :: x, o, p, raw
+  type(set_graph)     :: x, o, p, raw
   type(stored_relation) :: flow
   character(len=32)     :: which
+  type(set_map)     :: sets
 
   which = ''
   call get_command_argument(1, which)
 
-  x = counted_set('value-slots', 5)
-  o = counted_set('operations' , 2)
-  p = counted_set('ports'      , 3)
+  call x % declare()
+  call sets % bind(x, counted_set_representation(5))
+  call o % declare()
+  call sets % bind(o, counted_set_representation(2))
+  call p % declare()
+  call sets % bind(p, counted_set_representation(3))
 
   select case (trim(which))
 
   case ('arity')
      ! Two rows for a three-slot signature.
      flow = stored_relation('bad', [o, x, p], &
-          & reshape([OP_PLUS, SLOT_A], [2, 1]))
+          & reshape([OP_PLUS, SLOT_A], [2, 1]), sets)
 
   case ('member')
      ! PORT_OUT = 3 in the operation slot: 3 is not in O = {1, 2}.
      flow = stored_relation('bad', [o, x, p], &
-          & reshape([PORT_OUT, SLOT_A, PORT_IN1], [3, 1]))
+          & reshape([PORT_OUT, SLOT_A, PORT_IN1], [3, 1]), sets)
 
   case ('undeclared')
      ! raw never signed; a signature refers to declared domains only.
      flow = stored_relation('bad', [o, x, raw], &
-          & reshape([OP_PLUS, SLOT_A, PORT_IN1], [3, 1]))
+          & reshape([OP_PLUS, SLOT_A, PORT_IN1], [3, 1]), sets)
 
   case default
      write(*,'(1x,a)') "usage: refusal arity|member|undeclared"

@@ -20,12 +20,16 @@ program calculator_level_0
 
   use calculator_assert, only : report, verdict
   use calculator_assert, only : SLOT_A, SLOT_E, OP_PLUS, PORT_OUT
-  use graph_carrier    , only : counted_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
 
   implicit none
 
-  type(counted_set) :: x, o, p
+  type(set_graph) :: x, o, p
   integer           :: nfail
+  type(set_map)     :: sets
 
   nfail = 0
 
@@ -34,9 +38,12 @@ program calculator_level_0
   write(*,'(1x,a)') "============================================="
 
   ! The three declarations. This is everything Level 0 may do.
-  x = counted_set('value-slots', 5)
-  o = counted_set('operations' , 2)
-  p = counted_set('ports'      , 3)
+  call x % declare()
+  call sets % bind(x, counted_set_representation(5))
+  call o % declare()
+  call sets % bind(o, counted_set_representation(2))
+  call p % declare()
+  call sets % bind(p, counted_set_representation(3))
 
   call check_cardinalities(nfail)
   call check_distinct_identities(nfail)
@@ -55,11 +62,11 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(x % size() .eq. 5, &
+    call report(sets % size_of(x) .eq. 5, &
          & "X counts its five value slots", nfail)
-    call report(o % size() .eq. 2, &
+    call report(sets % size_of(o) .eq. 2, &
          & "O counts its two operations", nfail)
-    call report(p % size() .eq. 3, &
+    call report(sets % size_of(p) .eq. 3, &
          & "P counts its three ports", nfail)
 
   end subroutine check_cardinalities
@@ -99,26 +106,26 @@ contains
     integer :: i
 
     ok = .true.
-    do i = 1, x % size()
-       ok = ok .and. (x % member(x % local_index(x % member(i))) &
-            &         .eq. x % member(i))
-       ok = ok .and. (x % local_index(x % member(i)) .eq. i)
+    do i = 1, sets % size_of(x)
+       ok = ok .and. (sets % member_of(x, sets % index_in(x, sets % member_of(x, i))) &
+            &         .eq. sets % member_of(x, i))
+       ok = ok .and. (sets % index_in(x, sets % member_of(x, i)) .eq. i)
     end do
     call report(ok, "member and local_index invert on X", nfail)
 
     ok = .true.
-    do i = 1, o % size()
-       ok = ok .and. (o % member(o % local_index(o % member(i))) &
-            &         .eq. o % member(i))
-       ok = ok .and. (o % local_index(o % member(i)) .eq. i)
+    do i = 1, sets % size_of(o)
+       ok = ok .and. (sets % member_of(o, sets % index_in(o, sets % member_of(o, i))) &
+            &         .eq. sets % member_of(o, i))
+       ok = ok .and. (sets % index_in(o, sets % member_of(o, i)) .eq. i)
     end do
     call report(ok, "member and local_index invert on O", nfail)
 
     ok = .true.
-    do i = 1, p % size()
-       ok = ok .and. (p % member(p % local_index(p % member(i))) &
-            &         .eq. p % member(i))
-       ok = ok .and. (p % local_index(p % member(i)) .eq. i)
+    do i = 1, sets % size_of(p)
+       ok = ok .and. (sets % member_of(p, sets % index_in(p, sets % member_of(p, i))) &
+            &         .eq. sets % member_of(p, i))
+       ok = ok .and. (sets % index_in(p, sets % member_of(p, i)) .eq. i)
     end do
     call report(ok, "member and local_index invert on P", nfail)
 
@@ -133,16 +140,16 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(x % has(SLOT_A) .and. x % has(SLOT_E), &
+    call report(sets % has_in(x, SLOT_A) .and. sets % has_in(x, SLOT_E), &
          & "a and e are value slots", nfail)
-    call report(o % has(OP_PLUS) .and. p % has(PORT_OUT), &
+    call report(sets % has_in(o, OP_PLUS) .and. sets % has_in(p, PORT_OUT), &
          & "+ is an operation and out is a port", nfail)
 
-    call report(.not. x % has(6) .and. .not. x % has(0), &
+    call report(.not. sets % has_in(x, 6) .and. .not. sets % has_in(x, 0), &
          & "an outsider is rejected by X", nfail)
-    call report(.not. o % has(3), &
+    call report(.not. sets % has_in(o, 3), &
          & "and by O", nfail)
-    call report(.not. p % has(4), &
+    call report(.not. sets % has_in(p, 4), &
          & "and by P", nfail)
 
   end subroutine check_membership_boundary

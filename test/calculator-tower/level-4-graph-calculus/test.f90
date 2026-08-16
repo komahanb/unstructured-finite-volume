@@ -26,7 +26,12 @@ program calculator_level_4
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_label_map      , only : label_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
@@ -41,8 +46,8 @@ program calculator_level_4
   implicit none
 
 
-  type(counted_set)              :: x, o, p
-  type(subset_set)               :: p_out, p_in
+  type(set_graph)              :: x, o, p
+  type(set_graph)               :: p_out, p_in
   type(stored_relation)          :: flow, t_out3, t_in3
   type(stored_relation)          :: produces, consumes
   class(relation), allocatable   :: d
@@ -54,6 +59,8 @@ program calculator_level_4
   type(directed_adjacency_view)  :: view
   integer                        :: table(3, 6)
   integer                        :: nfail
+  type(set_map)     :: sets
+  type(inclusion_map)     :: inclusions
 
   nfail = 0
 
@@ -61,9 +68,12 @@ program calculator_level_4
   write(*,'(1x,a)') "calculator tower . level 4 . graph calculus"
   write(*,'(1x,a)') "============================================="
 
-  x = counted_set('value-slots', 5)
-  o = counted_set('operations' , 2)
-  p = counted_set('ports'      , 3)
+  call x % declare()
+  call sets % bind(x, counted_set_representation(5))
+  call o % declare()
+  call sets % bind(o, counted_set_representation(2))
+  call p % declare()
+  call sets % bind(p, counted_set_representation(3))
 
   table(:, 1) = [OP_PLUS , SLOT_A, PORT_IN1]
   table(:, 2) = [OP_PLUS , SLOT_B, PORT_IN2]
@@ -72,15 +82,19 @@ program calculator_level_4
   table(:, 5) = [OP_TIMES, SLOT_D, PORT_IN2]
   table(:, 6) = [OP_TIMES, SLOT_E, PORT_OUT]
 
-  flow = stored_relation('flow', [o, x, p], table)
+  flow = stored_relation('flow', [o, x, p], table, sets)
 
-  p_out    = subset_set('output-port', p, [PORT_OUT])
-  p_in     = subset_set('input-ports', p, [PORT_IN1, PORT_IN2])
-  t_out3   = restrict_slot(flow, 3, p_out)
-  t_in3    = restrict_slot(flow, 3, p_in)
-  produces = project_slots(t_out3, [1, 2])
-  consumes = project_slots(t_in3 , [2, 1])
-  d        = compose_binary(produces, consumes)
+  call p_out % declare()
+  call sets       % bind(p_out, listed_set_representation([PORT_OUT]))
+  call inclusions % include_in(p_out, p)
+  call p_in % declare()
+  call sets       % bind(p_in, listed_set_representation([PORT_IN1, PORT_IN2]))
+  call inclusions % include_in(p_in, p)
+  t_out3   = restrict_slot(flow, 3, p_out, sets, inclusions)
+  t_in3    = restrict_slot(flow, 3, p_in, sets, inclusions)
+  produces = project_slots(t_out3, [1, 2], sets)
+  consumes = project_slots(t_in3 , [2, 1], sets)
+  d        = compose_binary(produces, consumes, sets)
 
   ! 'calculator': (S, P) as one sequence on each branch.
   call g % declare()
@@ -115,7 +129,7 @@ program calculator_level_4
 
   ! The interpretation reads the GRAPH-OWNED dependency; the
   ! selector has served and may die.
-  view = directed_adjacency_view(g, bnd, d)
+  view = directed_adjacency_view(g, bnd, sets, d)
   deallocate(d)
 
   call check_sources_and_sinks(nfail)
@@ -136,19 +150,20 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(subset_set) :: src, snk
+    type(set_graph) :: src, snk
+    type(label_map)     :: labels
 
-    src = sources(view)
-    snk = sinks(view)
+    call sources(view, sets, labels, inclusions, src)
+    call sinks(view, sets, labels, inclusions, snk)
 
-    call report(src % size() .eq. 1 .and. src % has(OP_PLUS), &
+    call report(sets % size_of(src) .eq. 1 .and. sets % has_in(src, OP_PLUS), &
          & "sources(D) = { + }, the selector long dead", nfail)
-    call report(snk % size() .eq. 1 .and. snk % has(OP_TIMES), &
+    call report(sets % size_of(snk) .eq. 1 .and. sets % has_in(snk, OP_TIMES), &
          & "sinks(D) = { x }", nfail)
 
-    call report(src % is_subobject_of(o), &
+    call report(declared_subobject(src, o, inclusions), &
          & "the sources stand embedded in the operations", nfail)
-    call report(snk % is_subobject_of(o), &
+    call report(declared_subobject(snk, o, inclusions), &
          & "and so do the sinks", nfail)
 
   end subroutine check_sources_and_sinks
@@ -162,11 +177,11 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(reachable(view, OP_PLUS, OP_TIMES), &
+    call report(reachable(view, sets, OP_PLUS, OP_TIMES), &
          & "reachable(+, x) = true", nfail)
-    call report(.not. reachable(view, OP_TIMES, OP_PLUS), &
-         & "reachable(x, +) = false", nfail)
-    call report(reachable(view, OP_PLUS, OP_PLUS), &
+    call report(.not. reachable(view, sets, OP_TIMES, OP_PLUS), &
+         & "reachable(x, sets, +) = false", nfail)
+    call report(reachable(view, sets, OP_PLUS, OP_PLUS), &
          & "and + reaches itself by the zero-length path", nfail)
 
   end subroutine check_reachability
@@ -181,7 +196,7 @@ contains
 
     integer, allocatable :: order(:)
 
-    call topological_order(view, order)
+    call topological_order(view, sets, order)
 
     call report(size(order) .eq. 2 .and. &
          &      order(1) .eq. OP_PLUS .and. order(2) .eq. OP_TIMES, &

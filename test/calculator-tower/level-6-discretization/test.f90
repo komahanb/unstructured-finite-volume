@@ -29,7 +29,11 @@ program calculator_level_6
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
@@ -42,24 +46,30 @@ program calculator_level_6
   integer, parameter :: ROW_C = 1
   integer, parameter :: ROW_E = 2
 
-  type(counted_set)          :: x, o, p, y
-  type(subset_set)           :: p_out
+  type(set_graph)          :: x, o, p, y
+  type(set_graph)           :: p_out
   type(stored_relation)      :: flow, backwards, located
   type(stored_relation)      :: q_prod, a_part
   type(csr_relation), target :: j, j2
   type(transposed_view)      :: jt
   integer                    :: table(3, 6)
   integer                    :: nfail
+  type(set_map)     :: sets
+  type(inclusion_map)     :: inclusions
 
   nfail = 0
   write(*,'(1x,a)') "============================================="
   write(*,'(1x,a)') "calculator tower . level 6 . discretization"
   write(*,'(1x,a)') "============================================="
 
-  x = counted_set('value-slots'  , 5)
-  o = counted_set('operations'   , 2)
-  p = counted_set('ports'        , 3)
-  y = counted_set('residual-rows', 2)
+  call x % declare()
+  call sets % bind(x, counted_set_representation(5))
+  call o % declare()
+  call sets % bind(o, counted_set_representation(2))
+  call p % declare()
+  call sets % bind(p, counted_set_representation(3))
+  call y % declare()
+  call sets % bind(y, counted_set_representation(2))
 
   table(:, 1) = [OP_PLUS , SLOT_A, PORT_IN1]
   table(:, 2) = [OP_PLUS , SLOT_B, PORT_IN2]
@@ -67,13 +77,15 @@ program calculator_level_6
   table(:, 4) = [OP_TIMES, SLOT_C, PORT_IN1]
   table(:, 5) = [OP_TIMES, SLOT_D, PORT_IN2]
   table(:, 6) = [OP_TIMES, SLOT_E, PORT_OUT]
-  flow = stored_relation('flow', [o, x, p], table)
+  flow = stored_relation('flow', [o, x, p], table, sets)
 
   ! THE one new level-6 fact: where each residual row is located.
   located = stored_relation('located', [y, x], &
-       & reshape([ROW_C, SLOT_C,  ROW_E, SLOT_E], [2, 2]))
+       & reshape([ROW_C, SLOT_C,  ROW_E, SLOT_E], [2, 2]), sets)
 
-  p_out = subset_set('output-port', p, [PORT_OUT])
+  call p_out % declare()
+  call sets       % bind(p_out, listed_set_representation([PORT_OUT]))
+  call inclusions % include_in(p_out, p)
 
   j = derive_jacobian(flow)
 
@@ -99,10 +111,10 @@ contains
     type(stored_relation)        :: q_, a_
     class(relation), allocatable :: b_
 
-    q_  = project_slots(restrict_slot(t_flow, 3, p_out), [2, 1])
-    b_  = compose_binary(located, q_)
-    a_  = project_slots(t_flow, [1, 2])
-    jac = compose_binary(b_, a_)
+    q_  = project_slots(restrict_slot(t_flow, 3, p_out, sets, inclusions), [2, 1], sets)
+    b_  = compose_binary(located, q_, sets)
+    a_  = project_slots(t_flow, [1, 2], sets)
+    jac = compose_binary(b_, a_, sets)
 
     ! keep the intermediates visible for their own checks
     q_prod = q_
@@ -120,7 +132,7 @@ contains
     character(len=*)  , intent(in) :: what
     integer           , intent(inout) :: nfail
 
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
 
     dom = jac % domain(1)
     call report(dom % same_as(y), &
@@ -152,32 +164,40 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(subset_set)     :: src, sre
+    type(set_graph)     :: src, sre
     integer              :: i, n1, n2
-    integer              :: kept1(x % size()), kept2(x % size())
+    integer              :: nx
+    integer, allocatable :: kept1(:), kept2(:)
+
+    nx = sets % size_of(x)
+    allocate(kept1(nx), kept2(nx))
 
     n1 = 0
     n2 = 0
-    do i = 1, x % size()
-       if (j % has([ROW_C, x % member(i)])) then
+    do i = 1, sets % size_of(x)
+       if (j % has([ROW_C, sets % member_of(x, i)])) then
           n1 = n1 + 1
-          kept1(n1) = x % member(i)
+          kept1(n1) = sets % member_of(x, i)
        end if
-       if (j % has([ROW_E, x % member(i)])) then
+       if (j % has([ROW_E, sets % member_of(x, i)])) then
           n2 = n2 + 1
-          kept2(n2) = x % member(i)
+          kept2(n2) = sets % member_of(x, i)
        end if
     end do
-    src = subset_set('support of r_c', x, kept1(1:n1))
-    sre = subset_set('support of r_e', x, kept2(1:n2))
+    call src % declare()
+    call sets       % bind(src, listed_set_representation(kept1(1:n1)))
+    call inclusions % include_in(src, x)
+    call sre % declare()
+    call sets       % bind(sre, listed_set_representation(kept2(1:n2)))
+    call inclusions % include_in(sre, x)
 
-    call report(src % size() .eq. 3 .and. src % has(SLOT_A) .and. &
-         &      src % has(SLOT_B) .and. src % has(SLOT_C), &
+    call report(sets % size_of(src) .eq. 3 .and. sets % has_in(src, SLOT_A) .and. &
+         &      sets % has_in(src, SLOT_B) .and. sets % has_in(src, SLOT_C), &
          & "support(r_c) = { a, b, c }, composed, not stored", nfail)
-    call report(sre % size() .eq. 3 .and. sre % has(SLOT_C) .and. &
-         &      sre % has(SLOT_D) .and. sre % has(SLOT_E), &
+    call report(sets % size_of(sre) .eq. 3 .and. sets % has_in(sre, SLOT_C) .and. &
+         &      sets % has_in(sre, SLOT_D) .and. sets % has_in(sre, SLOT_E), &
          & "support(r_e) = { c, d, e }", nfail)
-    call report(src % is_subobject_of(x) .and. sre % is_subobject_of(x), &
+    call report(declared_subobject(src, x, inclusions) .and. declared_subobject(sre, x, inclusions), &
          & "and both stand embedded in the value slots", nfail)
 
   end subroutine check_row_supports
@@ -198,7 +218,7 @@ contains
     do k = 1, 6
        rev(:, k) = table(:, 7 - k)
     end do
-    backwards = stored_relation('flow backwards', [o, x, p], rev)
+    backwards = stored_relation('flow backwards', [o, x, p], rev, sets)
 
     j2 = derive_jacobian(backwards)
 

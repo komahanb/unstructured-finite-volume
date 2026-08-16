@@ -23,7 +23,8 @@ module arithmetic_constitution_fixture
   use iso_fortran_env  , only : dp => REAL64
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_map        , only : set_map
   use graph_relation   , only : relation
 
   implicit none
@@ -58,20 +59,21 @@ contains
   ! the structural law alone, refused at zero or many.
   !===================================================================!
 
-  integer function producer_of(flow, ops, x_out) result(op)
+  integer function producer_of(flow, ops, sets, x_out) result(op)
 
     class(relation)  , intent(in) :: flow
-    class(member_set), intent(in) :: ops
-    integer          , intent(in) :: x_out
+    type(set_graph), intent(in) :: ops
+    type(set_map)  , intent(in) :: sets
+    integer        , intent(in) :: x_out
 
     integer :: j, n
 
     n  = 0
     op = 0
-    do j = 1, ops % size()
-       if (flow % has([ops % member(j), x_out, PORT_OUT])) then
+    do j = 1, sets % size_of(ops)
+       if (flow % has([sets % member_of(ops, j), x_out, PORT_OUT])) then
           n  = n + 1
-          op = ops % member(j)
+          op = sets % member_of(ops, j)
        end if
     end do
     if (n /= 1) error stop 'constitution: one producer per slot - or refusal'
@@ -82,20 +84,21 @@ contains
   ! The unique slot the flow holds for (operation, port).
   !===================================================================!
 
-  integer function slot_for_port(flow, slots, op, port) result(slot)
+  integer function slot_for_port(flow, slots, sets, op, port) result(slot)
 
     class(relation)  , intent(in) :: flow
-    class(member_set), intent(in) :: slots
-    integer          , intent(in) :: op, port
+    type(set_graph), intent(in) :: slots
+    type(set_map)  , intent(in) :: sets
+    integer        , intent(in) :: op, port
 
     integer :: i, n
 
     n    = 0
     slot = 0
-    do i = 1, slots % size()
-       if (flow % has([op, slots % member(i), port])) then
+    do i = 1, sets % size_of(slots)
+       if (flow % has([op, sets % member_of(slots, i), port])) then
           n    = n + 1
-          slot = slots % member(i)
+          slot = sets % member_of(slots, i)
        end if
     end do
     if (n /= 1) error stop 'constitution: one port, one slot - or refusal'
@@ -106,20 +109,21 @@ contains
   ! The slot where a residual row is located.
   !===================================================================!
 
-  integer function located_slot(located, slots, row) result(x_out)
+  integer function located_slot(located, slots, sets, row) result(x_out)
 
     class(relation)  , intent(in) :: located
-    class(member_set), intent(in) :: slots
-    integer          , intent(in) :: row
+    type(set_graph), intent(in) :: slots
+    type(set_map)  , intent(in) :: sets
+    integer        , intent(in) :: row
 
     integer :: j, n
 
     n     = 0
     x_out = 0
-    do j = 1, slots % size()
-       if (located % has([row, slots % member(j)])) then
+    do j = 1, sets % size_of(slots)
+       if (located % has([row, sets % member_of(slots, j)])) then
           n     = n + 1
-          x_out = slots % member(j)
+          x_out = sets % member_of(slots, j)
        end if
     end do
     if (n /= 1) error stop 'constitution: one location per residual row - or refusal'
@@ -133,38 +137,40 @@ contains
   ! and a slot with no home is refused.
   !===================================================================!
 
-  subroutine generated_residual(flow, located, slots, ops, rows, &
+  subroutine generated_residual(flow, located, slots, ops, rows, sets, &
        &                        known, known_values, unknown, ustate, r)
 
     class(relation)  , intent(in)      :: flow, located
-    class(member_set), intent(in)      :: slots, ops, rows
-    class(member_set), intent(in)      :: known, unknown
+    type(set_graph), intent(in)      :: slots, ops, rows
+    type(set_map)  , intent(in)      :: sets
+    type(set_graph), intent(in)      :: known, unknown
     real(dp), intent(in)               :: known_values(:), ustate(:)
     real(dp), allocatable, intent(out) :: r(:)
 
     integer  :: i, row, x_out, op, in1, in2
     real(dp) :: produced
 
-    allocate(r(rows % size()))
-    do i = 1, rows % size()
-       row   = rows % member(i)
-       x_out = located_slot(located, slots, row)
-       op    = producer_of(flow, ops, x_out)
-       in1   = slot_for_port(flow, slots, op, PORT_IN1)
-       in2   = slot_for_port(flow, slots, op, PORT_IN2)
+    allocate(r(sets % size_of(rows)))
+    do i = 1, sets % size_of(rows)
+       row   = sets % member_of(rows, i)
+       x_out = located_slot(located, slots, sets, row)
+       op    = producer_of(flow, ops, sets, x_out)
+       in1   = slot_for_port(flow, slots, sets, op, PORT_IN1)
+       in2   = slot_for_port(flow, slots, sets, op, PORT_IN2)
 
        produced = apply_law(op, q_of(in1), q_of(in2))
-       r(rows % local_index(row)) = q_of(x_out) - produced
+       r(sets % index_in(rows, row)) = q_of(x_out) - produced
     end do
 
   contains
 
     real(dp) function q_of(slot) result(v)
       integer, intent(in) :: slot
-      if (known % has(slot)) then
-         v = known_values(known % local_index(slot))
-      else if (unknown % has(slot)) then
-         v = ustate(unknown % local_index(slot))
+      ! sets, known and unknown come from the host by association.
+      if (sets % has_in(known, slot)) then
+         v = known_values(sets % index_in(known, slot))
+      else if (sets % has_in(unknown, slot)) then
+         v = ustate(sets % index_in(unknown, slot))
       else
          error stop 'constitution: a slot with no home holds no value'
       end if
@@ -178,24 +184,27 @@ contains
   ! structural interpretation the evaluator uses.
   !===================================================================!
 
-  subroutine constitution_support(flow, located, slots, ops, row, members)
+  subroutine constitution_support(flow, located, slots, ops, sets, row, members)
 
     class(relation)  , intent(in)      :: flow, located
-    class(member_set), intent(in)      :: slots, ops
+    type(set_graph)  , intent(in)      :: slots, ops
+    type(set_map)    , intent(in)      :: sets
     integer          , intent(in)      :: row
     integer, allocatable, intent(out)  :: members(:)
 
-    integer :: x_out, op, in1, in2, i, n, m
-    integer :: keep(slots % size())
+    integer              :: x_out, op, in1, in2, i, n, m
+    integer, allocatable :: keep(:)
 
-    x_out = located_slot(located, slots, row)
-    op    = producer_of(flow, ops, x_out)
-    in1   = slot_for_port(flow, slots, op, PORT_IN1)
-    in2   = slot_for_port(flow, slots, op, PORT_IN2)
+    allocate(keep(sets % size_of(slots)))
+
+    x_out = located_slot(located, slots, sets, row)
+    op    = producer_of(flow, ops, sets, x_out)
+    in1   = slot_for_port(flow, slots, sets, op, PORT_IN1)
+    in2   = slot_for_port(flow, slots, sets, op, PORT_IN2)
 
     n = 0
-    do i = 1, slots % size()
-       m = slots % member(i)
+    do i = 1, sets % size_of(slots)
+       m = sets % member_of(slots, i)
        if (m == x_out .or. m == in1 .or. m == in2) then
           n = n + 1
           keep(n) = m

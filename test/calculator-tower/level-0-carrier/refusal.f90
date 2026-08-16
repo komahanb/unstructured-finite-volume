@@ -10,15 +10,20 @@
 
 program calculator_level_0_refusal
 
-  use graph_carrier, only : counted_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
 
   implicit none
 
-  type(counted_set) :: x
+  type(set_graph) :: x
+  type(set_map)     :: sets
 
-  x = counted_set('value-slots', 5)
+  call x % declare()
+  call sets % bind(x, counted_set_representation(5))
 
-  call x % declare('value-slots-again')
+  call x % declare()
 
   ! Reaching this line is the failure.
   write(*,'(1x,a)') "REACHED PAST A SECOND DECLARE"

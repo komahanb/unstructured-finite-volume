@@ -29,7 +29,11 @@ program calculator_level_8
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
@@ -42,22 +46,28 @@ program calculator_level_8
   integer, parameter :: ROW_C = 1
   integer, parameter :: ROW_E = 2
 
-  type(counted_set)     :: x, o, p, y
-  type(subset_set)      :: k, u, p_out
+  type(set_graph)     :: x, o, p, y
+  type(set_graph)      :: k, u, p_out
   type(stored_relation) :: flow, located
   type(field)           :: qk, qu
   integer               :: table(3, 6)
   integer               :: nfail
+  type(set_map)     :: sets
+  type(inclusion_map)     :: inclusions
 
   nfail = 0
   write(*,'(1x,a)') "============================================="
   write(*,'(1x,a)') "calculator tower . level 8 . constitution"
   write(*,'(1x,a)') "============================================="
 
-  x = counted_set('value-slots'  , 5)
-  o = counted_set('operations'   , 2)
-  p = counted_set('ports'        , 3)
-  y = counted_set('residual-rows', 2)
+  call x % declare()
+  call sets % bind(x, counted_set_representation(5))
+  call o % declare()
+  call sets % bind(o, counted_set_representation(2))
+  call p % declare()
+  call sets % bind(p, counted_set_representation(3))
+  call y % declare()
+  call sets % bind(y, counted_set_representation(2))
 
   table(:, 1) = [OP_PLUS , SLOT_A, PORT_IN1]
   table(:, 2) = [OP_PLUS , SLOT_B, PORT_IN2]
@@ -65,18 +75,24 @@ program calculator_level_8
   table(:, 4) = [OP_TIMES, SLOT_C, PORT_IN1]
   table(:, 5) = [OP_TIMES, SLOT_D, PORT_IN2]
   table(:, 6) = [OP_TIMES, SLOT_E, PORT_OUT]
-  flow = stored_relation('flow', [o, x, p], table)
+  flow = stored_relation('flow', [o, x, p], table, sets)
 
   located = stored_relation('located', [y, x], &
-       & reshape([ROW_C, SLOT_C,  ROW_E, SLOT_E], [2, 2]))
+       & reshape([ROW_C, SLOT_C,  ROW_E, SLOT_E], [2, 2]), sets)
 
-  p_out = subset_set('output-port', p, [PORT_OUT])
+  call p_out % declare()
+  call sets       % bind(p_out, listed_set_representation([PORT_OUT]))
+  call inclusions % include_in(p_out, p)
 
-  k = subset_set('known'  , x, [SLOT_D, SLOT_A, SLOT_B])
-  u = subset_set('unknown', x, [SLOT_E, SLOT_C])
-  qk = field('q known', k)
+  call k % declare()
+  call sets       % bind(k, listed_set_representation([SLOT_D, SLOT_A, SLOT_B]))
+  call inclusions % include_in(k, x)
+  call u % declare()
+  call sets       % bind(u, listed_set_representation([SLOT_E, SLOT_C]))
+  call inclusions % include_in(u, x)
+  qk = field('q known', k, sets % size_of(k))
   call qk % set_real_vector([4.0_dp, 2.0_dp, 3.0_dp])
-  qu = field('q unknown', u)
+  qu = field('q unknown', u, sets % size_of(u))
 
   call check_coverage(nfail)
   call check_laws(nfail)
@@ -101,9 +117,9 @@ contains
     logical :: ok
 
     ok = .true.
-    do i = 1, x % size()
-       m = x % member(i)
-       ok = ok .and. (count([k % has(m), u % has(m)]) .eq. 1)
+    do i = 1, sets % size_of(x)
+       m = sets % member_of(x, i)
+       ok = ok .and. (count([sets % has_in(k, m), sets % has_in(u, m)]) .eq. 1)
     end do
     call report(ok, &
          & "K and U are disjoint and cover X together", nfail)
@@ -139,18 +155,18 @@ contains
 
     ! U order is {e, c}.
     call gen(flow, [0.0_dp, 0.0_dp], r)
-    call report(abs(r(y % local_index(ROW_C)) + 5.0_dp) < 1.0d-14 .and. &
-         &      abs(r(y % local_index(ROW_E)) - 0.0_dp) < 1.0d-14, &
+    call report(abs(r(sets % index_in(y, ROW_C)) + 5.0_dp) < 1.0d-14 .and. &
+         &      abs(r(sets % index_in(y, ROW_E)) - 0.0_dp) < 1.0d-14, &
          & "at q(e)=0, q(c)=0: r = (-5, 0)", nfail)
 
     call gen(flow, [0.0_dp, 1.0_dp], r)
-    call report(abs(r(y % local_index(ROW_C)) + 4.0_dp) < 1.0d-14 .and. &
-         &      abs(r(y % local_index(ROW_E)) + 4.0_dp) < 1.0d-14, &
+    call report(abs(r(sets % index_in(y, ROW_C)) + 4.0_dp) < 1.0d-14 .and. &
+         &      abs(r(sets % index_in(y, ROW_E)) + 4.0_dp) < 1.0d-14, &
          & "at q(e)=0, q(c)=1: r = (-4, -4)", nfail)
 
     call gen(flow, [1.0_dp, 0.0_dp], r)
-    call report(abs(r(y % local_index(ROW_C)) + 5.0_dp) < 1.0d-14 .and. &
-         &      abs(r(y % local_index(ROW_E)) - 1.0_dp) < 1.0d-14, &
+    call report(abs(r(sets % index_in(y, ROW_C)) + 5.0_dp) < 1.0d-14 .and. &
+         &      abs(r(sets % index_in(y, ROW_E)) - 1.0_dp) < 1.0d-14, &
          & "at q(e)=1, q(c)=0: r = (-5, 1)", nfail)
 
   end subroutine check_generated_map
@@ -192,18 +208,18 @@ contains
     logical :: ok
 
     ! The Level-6 road, walked again: J = A o (Q o L).
-    q_  = project_slots(restrict_slot(t_flow, 3, p_out), [2, 1])
-    b_  = compose_binary(located, q_)
-    a_  = project_slots(t_flow, [1, 2])
-    jac = compose_binary(b_, a_)
+    q_  = project_slots(restrict_slot(t_flow, 3, p_out, sets, inclusions), [2, 1], sets)
+    b_  = compose_binary(located, q_, sets)
+    a_  = project_slots(t_flow, [1, 2], sets)
+    jac = compose_binary(b_, a_, sets)
 
     ok = .true.
-    do i = 1, y % size()
-       row = y % member(i)
-       call constitution_support(t_flow, located, x, o, row, mine)
-       do j = 1, x % size()
-          ok = ok .and. ( jac % has([row, x % member(j)]) .eqv. &
-               &          any(mine == x % member(j)) )
+    do i = 1, sets % size_of(y)
+       row = sets % member_of(y, i)
+       call constitution_support(t_flow, located, x, o, sets, row, mine)
+       do j = 1, sets % size_of(x)
+          ok = ok .and. ( jac % has([row, sets % member_of(x, j)]) .eqv. &
+               &          any(mine == sets % member_of(x, j)) )
        end do
     end do
     call report(ok, &
@@ -228,7 +244,7 @@ contains
     do j = 1, 6
        rev(:, j) = table(:, 7 - j)
     end do
-    backwards = stored_relation('flow backwards', [o, x, p], rev)
+    backwards = stored_relation('flow backwards', [o, x, p], rev, sets)
 
     call gen(flow     , [7.0_dp, -2.0_dp], r1)
     call gen(backwards, [7.0_dp, -2.0_dp], r2)
@@ -240,9 +256,9 @@ contains
       integer :: i, jj
       logical :: ok
       ok = .true.
-      do i = 1, y % size()
-         call constitution_support(flow     , located, x, o, y % member(i), s1)
-         call constitution_support(backwards, located, x, o, y % member(i), s2)
+      do i = 1, sets % size_of(y)
+         call constitution_support(flow     , located, x, o, sets, sets % member_of(y, i), s1)
+         call constitution_support(backwards, located, x, o, sets, sets % member_of(y, i), s2)
          ok = ok .and. (size(s1) .eq. size(s2))
          do jj = 1, size(s1)
             ok = ok .and. any(s2 == s1(jj))
@@ -267,7 +283,7 @@ contains
     real(dp), allocatable :: kv(:)
 
     call qk % get_real_vector(kv)
-    call generated_residual(t_flow, located, x, o, y, k, kv, u, ustate, r)
+    call generated_residual(t_flow, located, x, o, y, sets, k, kv, u, ustate, r)
 
   end subroutine gen
 

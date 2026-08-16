@@ -30,7 +30,11 @@ program calculator_level_3
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_carrier    , only : counted_set, subset_set, member_set
+  use fractal_graph        , only : set_graph => graph
+  use graph_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use graph_set_map        , only : set_map
+  use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
@@ -41,8 +45,8 @@ program calculator_level_3
 
   implicit none
 
-  type(counted_set)              :: x, o, p
-  type(subset_set)               :: p_out, p_in
+  type(set_graph)              :: x, o, p
+  type(set_graph)               :: p_out, p_in
   type(stored_relation)          :: flow, t_out3, t_in3
   type(stored_relation)          :: produces, consumes
   class(relation), allocatable   :: d
@@ -53,6 +57,8 @@ program calculator_level_3
   integer                          :: k
   integer                        :: table(3, 6)
   integer                        :: nfail
+  type(set_map)     :: sets
+  type(inclusion_map)     :: inclusions
 
   nfail = 0
 
@@ -60,9 +66,12 @@ program calculator_level_3
   write(*,'(1x,a)') "calculator tower . level 3 . relational graph"
   write(*,'(1x,a)') "============================================="
 
-  x = counted_set('value-slots', 5)
-  o = counted_set('operations' , 2)
-  p = counted_set('ports'      , 3)
+  call x % declare()
+  call sets % bind(x, counted_set_representation(5))
+  call o % declare()
+  call sets % bind(o, counted_set_representation(2))
+  call p % declare()
+  call sets % bind(p, counted_set_representation(3))
 
   table(:, 1) = [OP_PLUS , SLOT_A, PORT_IN1]
   table(:, 2) = [OP_PLUS , SLOT_B, PORT_IN2]
@@ -71,17 +80,21 @@ program calculator_level_3
   table(:, 5) = [OP_TIMES, SLOT_D, PORT_IN2]
   table(:, 6) = [OP_TIMES, SLOT_E, PORT_OUT]
 
-  flow = stored_relation('flow', [o, x, p], table)
+  flow = stored_relation('flow', [o, x, p], table, sets)
 
   ! The approved Level-2 road, walked once more; the graph admits
   ! what the algebra derived.
-  p_out    = subset_set('output-port', p, [PORT_OUT])
-  p_in     = subset_set('input-ports', p, [PORT_IN1, PORT_IN2])
-  t_out3   = restrict_slot(flow, 3, p_out)
-  t_in3    = restrict_slot(flow, 3, p_in)
-  produces = project_slots(t_out3, [1, 2])
-  consumes = project_slots(t_in3 , [2, 1])
-  d        = compose_binary(produces, consumes)
+  call p_out % declare()
+  call sets       % bind(p_out, listed_set_representation([PORT_OUT]))
+  call inclusions % include_in(p_out, p)
+  call p_in % declare()
+  call sets       % bind(p_in, listed_set_representation([PORT_IN1, PORT_IN2]))
+  call inclusions % include_in(p_in, p)
+  t_out3   = restrict_slot(flow, 3, p_out, sets, inclusions)
+  t_in3    = restrict_slot(flow, 3, p_in, sets, inclusions)
+  produces = project_slots(t_out3, [1, 2], sets)
+  consumes = project_slots(t_in3 , [2, 1], sets)
+  d        = compose_binary(produces, consumes, sets)
 
   ! 'calculator': (S, P) as one sequence on each branch.
   call g % declare()
@@ -162,7 +175,7 @@ contains
     integer, intent(inout) :: nfail
 
     class(relation), pointer       :: rp
-    class(member_set), allocatable :: dom
+    type(set_graph) :: dom
     integer                        :: k, s
     logical                        :: ok
 
@@ -221,7 +234,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(subset_set)               :: times_only
+    type(set_graph)               :: times_only
     type(stored_relation)          :: d_empty
     type(graph)             , target :: aux
     type(graph)             , target :: scell2(1), selem2(1)
@@ -229,11 +242,13 @@ contains
     type(relational_binding)         :: bnd2
     integer                          :: k2
     class(relation), pointer       :: r1, r2
-    class(member_set), allocatable :: da, db
+    type(set_graph) :: da, db
     logical                        :: ok
 
-    times_only = subset_set('times-only', o, [OP_TIMES])
-    d_empty    = restrict_slot(d, 1, times_only)
+    call times_only % declare()
+    call sets       % bind(times_only, listed_set_representation([OP_TIMES]))
+    call inclusions % include_in(times_only, o)
+    d_empty    = restrict_slot(d, 1, times_only, sets, inclusions)
 
     call report(d_empty % num_tuples() .eq. 0, &
          & "restricting D to times-only leaves the empty relation", nfail)
@@ -317,7 +332,7 @@ contains
          & "the specimen is a valid relational graph", nfail)
 
     uses = stored_relation('uses', [o, x], &
-         & reshape([OP_PLUS, SLOT_A], [2, 1]))
+         & reshape([OP_PLUS, SLOT_A], [2, 1]), sets)
 
     ! O alone, and a relation reaching X: a foreign domain.
     call h % declare()

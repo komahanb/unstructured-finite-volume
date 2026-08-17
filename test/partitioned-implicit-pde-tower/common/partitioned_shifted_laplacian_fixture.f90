@@ -59,10 +59,8 @@ module partitioned_shifted_laplacian_fixture
   use class_graph_assembler  , only : assembler
   use shifted_laplacian_fixture, only : shifted_laplacian
 
-  use graph_partition_frame_representation, only : &
-       & partition_frame_representation
+  use graph_partition_relation, only : partition_relation
   implicit none
-  type(partition_frame_representation) :: pframe
 
   private
   public :: partitioned_shifted_laplacian
@@ -75,10 +73,10 @@ module partitioned_shifted_laplacian_fixture
      type(partitioner)         :: p1, p2
      type(assembler)           :: asm
 
-     ! One frame per part, because there is one per part. A single
-     ! frame here would hold whichever cut ran last and carry the
+     ! ONE RELATION PER PART, because there is one per part. A single
+     ! relation here would hold whichever cut ran last and carry the
      ! wrong numbering onto the other piece.
-     type(partition_frame_representation) :: f1, f2
+     type(partition_relation) :: r1, r2
      type(shifted_laplacian)   :: local
 
      ! ...and deliberately NO numerical state: no q, no overlap,
@@ -108,8 +106,8 @@ contains
     this % whole = g
     this % p1 = partitioner(PARTITION_LINEAR, nparts=2, part=1)
     this % p2 = partitioner(PARTITION_LINEAR, nparts=2, part=2)
-    call this % p1 % partition_graph(g, this % g1, this % f1)
-    call this % p2 % partition_graph(g, this % g2, this % f2)
+    call this % p1 % partition_graph(g, this % g1, this % r1)
+    call this % p2 % partition_graph(g, this % g2, this % r2)
 
   end function create_partitioned
 
@@ -194,10 +192,10 @@ contains
     call bind_part(sets, this % g2)
 
     ! -- NUMERICAL OVERLAP REFRESH, from the state handed in NOW
-    call this % p1 % partition_data(this % whole, input_data(1), &
-         & this % g1, this % f1, sets, labels, inclusions, q1)
-    call this % p2 % partition_data(this % whole, input_data(1), &
-         & this % g2, this % f2, sets, labels, inclusions, q2)
+    call this % p1 % partition_data(this % r1, this % whole, &
+         & input_data(1), this % g1, sets, labels, inclusions, q1)
+    call this % p2 % partition_data(this % r2, this % whole, &
+         & input_data(1), this % g2, sets, labels, inclusions, q2)
 
     ! -- LOCAL TOPOLOGY ACTIONS, each on its own part
     call act_locally(this % local, this % g1, q1, a1)
@@ -206,9 +204,9 @@ contains
     ! -- OWNED ASSEMBLY, and the sum of the two contributions
     allocate(total(this % whole % num_vertices()))
     total = 0.0_dp
-    call add_owned(assembler(this % f1), this % g1, a1, this % whole, &
+    call add_owned(assembler(), this % r1, this % g1, a1, this % whole, &
          & sets, labels, inclusions, total)
-    call add_owned(assembler(this % f2), this % g2, a2, this % whole, &
+    call add_owned(assembler(), this % r2, this % g2, a2, this % whole, &
          & sets, labels, inclusions, total)
 
     out = field('partitioned action', this % whole % vertex_set(), &
@@ -274,9 +272,15 @@ contains
   ! value is placed by MEMBER.
   !===================================================================!
 
-  subroutine add_owned(asm, part, answer, whole, sets, labels, inclusions, total)
+  subroutine add_owned(asm, rel, part, answer, whole, sets, labels, &
+       & inclusions, total)
 
     type(assembler)   , intent(in)    :: asm
+
+    ! The part's OWN relation, travelling beside the part. The two
+    ! arrive together or the wrong numbering goes home.
+    type(partition_relation), intent(in) :: rel
+
     class(directed_graph)      , intent(in)    :: part
     class(graph_field), intent(in)    :: answer
     type(directed_stored_graph), intent(in)    :: whole
@@ -291,7 +295,7 @@ contains
     integer , allocatable           :: mem(:)
     integer                         :: i
 
-    call asm % assemble_data(part, answer, whole, sets, labels, &
+    call asm % assemble_data(rel, part, answer, whole, sets, labels, &
          & inclusions, home)
     dom = home % domain()
     call home % get_real_vector(v)

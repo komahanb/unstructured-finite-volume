@@ -65,10 +65,9 @@ program partitioned_pde_level_4
        &                              own_relation
   use chain_algebra_fixture  , only : derive_tail_owner, derive_head_owner
 
-  use graph_partition_frame_representation, only : &
-       & partition_frame_representation
+  use graph_partition_relation, only : partition_relation
   implicit none
-  type(partition_frame_representation) :: pframe
+  type(partition_relation) :: rel
 
   type(set_graph)          :: v, e, k
   type(set_map)          :: sets
@@ -120,7 +119,7 @@ contains
     type(partitioner) :: p
 
     p = partitioner(PARTITION_LINEAR, nparts=2, part=kpart)
-    call p % partition_graph(g, part, pframe)
+    call p % partition_graph(g, part, rel)
 
   end subroutine cut
 
@@ -131,15 +130,15 @@ contains
     integer     , intent(inout) :: nfail
 
     character(len=1) :: tag
-    type(partition_frame_representation) :: fr
+    type(partition_relation) :: rel
 
     write(tag,'(i1)') kpart
 
     select type (part)
     type is (directed_stored_graph)
-       fr = part % frame()
-       call report(fr % has_part_relation() .and. &
-            &      fr % num_parts() .eq. 2 .and. &
+       rel = part % whole_relation()
+       call report(rel % has_part_relation() .and. &
+            &      rel % num_parts() .eq. 2 .and. &
             &      part % id() .eq. kpart, &
             & "G" // tag // " knows it is part " // tag // " of two", &
             & nfail)
@@ -165,17 +164,17 @@ contains
     character(len=1) :: tag
     integer          :: i
     logical          :: ok
-    type(partition_frame_representation) :: fr
+    type(partition_relation) :: rel
 
     write(tag,'(i1)') kpart
 
     select type (part)
     type is (directed_stored_graph)
-       fr = part % frame()
+       rel = part % whole_relation()
 
        ok = part % num_vertices() .eq. size(globals)
        do i = 1, min(part % num_vertices(), size(globals))
-          ok = ok .and. (fr % global_vertex_index(i) .eq. globals(i))
+          ok = ok .and. (rel % global_vertex_index(i) .eq. globals(i))
        end do
        call report(ok, &
             & "G" // tag // "'s local-to-global map is exactly as " // &
@@ -183,10 +182,10 @@ contains
 
        ok = .true.
        do i = 1, part % num_vertices()
-          if (fr % global_vertex_index(i) .eq. borrowed_global) then
-             ok = ok .and. (fr % vertex_owner_part(i) .ne. kpart)
+          if (rel % global_vertex_index(i) .eq. borrowed_global) then
+             ok = ok .and. (rel % vertex_owner_part(i) .ne. kpart)
           else
-             ok = ok .and. (fr % vertex_owner_part(i) .eq. kpart)
+             ok = ok .and. (rel % vertex_owner_part(i) .eq. kpart)
           end if
        end do
        call report(ok, &
@@ -204,7 +203,7 @@ contains
        ok = .false.
        do i = 1, part % num_vertices()
           if (sets % has_in(borrowed, i)) then
-             ok = fr % global_vertex_index(i) .eq. borrowed_global
+             ok = rel % global_vertex_index(i) .eq. borrowed_global
           end if
        end do
        call report(ok, &
@@ -278,14 +277,14 @@ contains
     integer     , intent(in) :: ge
 
     integer :: i
-    type(partition_frame_representation) :: fr
+    type(partition_relation) :: rel
 
     holds_global_edge = .false.
     select type (part)
     type is (directed_stored_graph)
-       fr = part % frame()
+       rel = part % whole_relation()
        do i = 1, part % num_edges()
-          if (fr % global_edge_index(i) .eq. ge) holds_global_edge = .true.
+          if (rel % global_edge_index(i) .eq. ge) holds_global_edge = .true.
        end do
     end select
 
@@ -297,15 +296,15 @@ contains
     integer     , intent(in) :: ge
 
     integer :: i
-    type(partition_frame_representation) :: fr
+    type(partition_relation) :: rel
 
     owner_of_global_edge = 0
     select type (part)
     type is (directed_stored_graph)
-       fr = part % frame()
+       rel = part % whole_relation()
        do i = 1, part % num_edges()
-          if (fr % global_edge_index(i) .eq. ge) then
-             owner_of_global_edge = fr % edge_owner_part(i)
+          if (rel % global_edge_index(i) .eq. ge) then
+             owner_of_global_edge = rel % edge_owner_part(i)
           end if
        end do
     end select

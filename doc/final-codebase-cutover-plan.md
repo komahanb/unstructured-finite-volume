@@ -765,6 +765,143 @@ carries, but they are still the graph's own question.
 
 ---
 
+## 6.8 PR5: the frame becomes the relation, and both verbs are handed it
+
+The ruling: `partition_frame` and `assemble_frame` are the wrong object.
+There is one object,
+
+    r_p  <=  S_part x S_whole
+
+and partition and assembly are opposite verbs over it. So r leads the
+signature of every verb that reads it, and no verb holds one.
+
+### What was renamed, and why the rename reduces ambiguity
+
+`graph_partition_frame_representation :: partition_frame_representation`
+became **`graph_partition_relation :: partition_relation`**. Bare
+`relation` was asked for and could not be taken: `graph_relation` already
+exports `relation` and `stored_relation`, and `graph_binary_relation`
+exports `binary_relation` and `csr_relation`. Two public types named
+`relation` is exactly the ambiguity the PR3 rule forbade when it refused
+two public types named `stored_graph`.
+
+The accessor `directed_stored_graph % frame()` became
+`% whole_relation()` rather than `% relation()`, because a graph
+*contains* relations — its incidence and its adjacency are two of them —
+and this is not one of those. It is the relation to the whole.
+
+### The preferred implementation path is blocked, on two counts
+
+Instruction 8 preferred building the object on `graph_relation` /
+`stored_relation`. Both constructors refuse it:
+
+    create_stored(name, domains, table, sets)      set_map is mandatory
+    create_csr   (name, source, target, table, sets)   likewise
+
+1. **The target signature has no maps.** `partition_graph(global_graph,
+   part_graph, rel)` was specified with three arguments; a first-class
+   relation cannot be built inside it.
+
+2. **Stronger: it would force the cut to write maps.** `create_stored`
+   asserts `sets % describes(domains(k))`. The part's carriers are
+   declared *inside* `partition_graph`, by `directed_stored_graph`, and
+   nothing has bound representations for them at that moment — the tests
+   bind them afterwards. So even with `sets` threaded in, the partitioner
+   would have to write representations for the part's carriers into the
+   caller's map to make its own return value constructible. That is the
+   graph verb creating semantic maps, which is the boundary PR4
+   established: maps arrive at `partition_data`, never at
+   `partition_graph`.
+
+So the transitional path was taken, with the role renamed rather than the
+storage rebuilt: the arrays ARE the tuples of r_V and r_E, read forward
+by `global_*_index` and backward by `part_*_index`. Ownership rides
+beside r as what it is — a field `own : S_part -> K`, not part of the
+relation.
+
+### The assembler holds nothing
+
+Before, PR4:
+
+    a = assembler(frame)
+    call a % assemble_graph(part_graph, global_graph)
+
+After:
+
+    a = assembler()
+    call a % assemble_graph(rel, part_graph, global_graph)
+
+The legacy `assembler(frame)` constructor was not kept. Instruction 6
+required migrating every test away from it in this PR regardless, so it
+would have bought nothing and owed a deletion condition under rule 5. The
+type now has no components at all, so the default structure constructor
+serves.
+
+### One consequence the ruling did not anticipate
+
+`defined_on_graph` on the assembler got **weaker**, and this is a real
+loss recorded rather than hidden. In PR4 it was
+`frame_rep % describes(input_graph)` — a genuine question, because the
+assembler held a frame. With no state it can only answer whether the
+graph has members to put back. The real question needs r, and r cannot be
+an argument there: `graph_transform`'s contract is not about relations,
+and instruction 3 forbade widening it.
+
+So the question moved to a new binding, `defined_on_relation(rel,
+part_graph)`, declared on `graph_assembler` where a relation is an
+argument. It is a **predicate, not an abort** — a caller holds one
+relation per part, so handing over the wrong one has to be reportable,
+and `error stop` would end the image with nothing left to report it to.
+`defined_on_data` reads through `defined_on_graph`, so it was weakened by
+the same amount; nothing gates on it, but the record should not say
+otherwise.
+
+The check is kept as an `error stop` backstop on all three verbs that
+READ r — `partition_data`, `assemble_graph`, `assemble_data` — for the
+paths a caller never gates. `partition_data` matters most there: it is
+the forward motion, where a wrong relation is *silent*, carrying values
+onto a part by another part's numbering. `partition_graph` cannot be
+guarded, because it is the verb that writes r.
+
+A second, smaller consequence: the `pure` that
+`transform_on_graph_interface` lost in PR4 could now be restored. It was
+lost because a transform that *held* a relation had to compare set
+identities to answer, and F2018 C1594 bars copying a pointer-bearing
+`set_graph` out of an `intent(in)` dummy in a pure subprogram. No
+transform holds a relation any more, so nothing in `graph_transform`
+needs the relaxation. It was left in place: instruction 3 said keep
+`graph_transform` unchanged, and narrowing a contract is its own change,
+not something to smuggle in beside a signature move.
+
+### What the suite now carries
+
+Two laws were added to `test/graph-partition`, because
+`graph_calculus.f90` says it itself — the laws live in the suite:
+
+* **F, one relation drives all four.** `rel_p` is written by
+  `partition_graph` and never assigned again; `partition_data`,
+  `assemble_graph` and `assemble_data` all name it. The claim is not that
+  the four agree, it is that there is nothing to disagree about.
+* **G, the wrong relation is refused.** Two parts of one chain, each
+  handed the other's relation, and `defined_on_relation` answers
+  `.false.` both ways. The third assertion is what makes it sharp: both
+  parts hold four cells and three edges, so a check on counts alone would
+  have passed the wrong relation straight through. **Identity** is what
+  refused them.
+
+The gate selftest refuses `graph_partition_frame_representation` by name
+at three keys, so a source reaching for the retired module is caught
+rather than silently ignored — the PR2 lesson about vacuous refusals,
+applied before it could bite.
+
+### Not done, deliberately
+
+`graph_transform` is byte-unchanged in its executable text. The mesh
+island is untouched. `class_graph`'s module name still says less than the
+type inside it, which remains the deferred PR3 debt.
+
+---
+
 ## 7. Verification record
 
 One clean rebuild per suite, at every commit recorded here:
@@ -776,6 +913,7 @@ One clean rebuild per suite, at every commit recorded here:
     directed_graph rename    32 of 32 suites PASS, 0 FAIL   (as ordinary_graph)
     ordinary -> directed     32 of 32 suites PASS, 0 FAIL
     partition frame moved    32 of 32 suites PASS, 0 FAIL
+    frame -> relation        32 of 32 suites PASS, 0 FAIL
 
 Seven tower import gates were re-asserted, not relaxed: a level that read
 the field through the grammar is granted `graph_field_calculus` by name,

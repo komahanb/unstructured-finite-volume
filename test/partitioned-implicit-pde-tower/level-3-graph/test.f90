@@ -32,8 +32,7 @@ program partitioned_pde_level_3
   use chain_carriers_fixture , only : chain_carriers
   use chain_relations_fixture, only : tail_relation, head_relation
 
-  use graph_partition_frame_representation, only : &
-       & partition_frame_representation
+  use graph_partition_relation, only : partition_relation
 
   implicit none
 
@@ -152,14 +151,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(partition_frame_representation) :: frame
+    type(partition_relation) :: rel
 
-    ! Read from the frame the graph carries, not asked of the graph.
-    ! A whole graph carries the identity frame, and saying so is a
+    ! Read from the rel the graph carries, not asked of the graph.
+    ! A whole graph carries the identity rel, and saying so is a
     ! statement about provenance - never about D = (V, E, tail, head).
-    frame = g % frame()
+    rel = g % whole_relation()
 
-    call report(.not. frame % has_part_relation(), &
+    call report(.not. rel % has_part_relation(), &
          & "G is a whole graph, not a part of one", nfail)
 
   end subroutine check_it_is_not_a_part

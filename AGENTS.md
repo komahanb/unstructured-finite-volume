@@ -1532,7 +1532,7 @@ The important point is that tagging is a relation between members and labels, no
 
 ---
 
-# 36. Partition frame
+# 36. Partition relation
 
 Partition metadata should also be reconsidered relationally.
 
@@ -1556,6 +1556,13 @@ Global/local index correspondence may be a functional or bijective relation.
 
 Do not force all of these into the first refactor.
 But design the new graph core so they can become relations naturally.
+
+**Landed.** `graph_partition_relation :: partition_relation` is that
+object: r_p <= S_part x S_whole, one per part, written by the cut and
+handed to the three verbs that read it. Ownership rides beside it as the
+field own : S_part -> K, which is the functional-law constraint above.
+Borrowed and overlap membership stayed carve-and-bind questions on the
+view. The object holds no set map, label map or inclusion map.
 
 ---
 

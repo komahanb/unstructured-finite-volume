@@ -79,7 +79,7 @@ allowed_for() {
         # queries the domains it transports. It also DESCRIBES the
         # part carriers it transports onto, so it constructs
         # representations and earns the module that makes them.
-        common/partitioned_shifted_laplacian_fixture.f90) echo "fractal_graph graph_set_representation graph_set_map graph_label_map graph_inclusion_map graph_operation_view graph_directed_view graph_partition_frame_representation graph_field_calculus class_graph class_graph_field class_graph_partitioner class_graph_assembler shifted_laplacian_fixture" ;;
+        common/partitioned_shifted_laplacian_fixture.f90) echo "fractal_graph graph_set_representation graph_set_map graph_label_map graph_inclusion_map graph_operation_view graph_directed_view graph_partition_relation graph_field_calculus class_graph class_graph_field class_graph_partitioner class_graph_assembler shifted_laplacian_fixture" ;;
         common)            echo "__no_allowlist__" ;;
 
         # ---- L0: sets only. NOTHING relational.
@@ -95,19 +95,19 @@ allowed_for() {
         #          means constructing a representation. So every level
         #          from here on earns graph_set_representation by
         #          building one, not by inheriting a permission.
-        level-3-graph)     echo "partitioned_pde_assert chain_carriers_fixture chain_relations_fixture fractal_graph graph_set_representation graph_set_map graph_relation graph_binary_relation class_graph graph_partition_frame_representation" ;;
+        level-3-graph)     echo "partitioned_pde_assert chain_carriers_fixture chain_relations_fixture fractal_graph graph_set_representation graph_set_map graph_relation graph_binary_relation class_graph graph_partition_relation" ;;
         # ---- L4: + the partitioner. Graph-to-graph only; no field.
         #          Calls owned_vertices, which CARVES - hence both the
         #          inclusion map and a label map it never reads.
-        level-4-graph-calculus) echo "partitioned_pde_assert chain_carriers_fixture chain_relations_fixture chain_algebra_fixture fractal_graph graph_set_representation graph_set_map graph_label_map graph_inclusion_map graph_directed_view graph_partition_frame_representation graph_relation graph_relation_algebra graph_binary_relation class_graph class_graph_partitioner" ;;
+        level-4-graph-calculus) echo "partitioned_pde_assert chain_carriers_fixture chain_relations_fixture chain_algebra_fixture fractal_graph graph_set_representation graph_set_map graph_label_map graph_inclusion_map graph_directed_view graph_partition_relation graph_relation graph_relation_algebra graph_binary_relation class_graph class_graph_partitioner" ;;
         # ---- L5: + fields and transport. NO differential operator.
         #          The one level that both CARVES a probe subset of its
         #          own and ASSERTS where a transported domain came from.
-        level-5-field-calculus) echo "partitioned_pde_assert fractal_graph graph_set_representation graph_set_map graph_label_map graph_inclusion_map graph_directed_view graph_partition_frame_representation graph_field_calculus class_graph class_graph_field class_graph_partitioner class_graph_assembler" ;;
+        level-5-field-calculus) echo "partitioned_pde_assert fractal_graph graph_set_representation graph_set_map graph_label_map graph_inclusion_map graph_directed_view graph_partition_relation graph_field_calculus class_graph class_graph_field class_graph_partitioner class_graph_assembler" ;;
         # ---- L6: + the differential operator and its fixture.
         #          Still no solver. Transport carves; the refusal
         #          builds a foreign carrier, and is keyed below.
-        level-6-discretization) echo "partitioned_pde_assert shifted_laplacian_fixture fractal_graph graph_set_representation graph_set_map graph_label_map graph_inclusion_map graph_directed_view graph_partition_frame_representation graph_field_calculus class_graph class_graph_field class_graph_partitioner class_graph_assembler class_graph_differential_operator" ;;
+        level-6-discretization) echo "partitioned_pde_assert shifted_laplacian_fixture fractal_graph graph_set_representation graph_set_map graph_label_map graph_inclusion_map graph_directed_view graph_partition_relation graph_field_calculus class_graph class_graph_field class_graph_partitioner class_graph_assembler class_graph_differential_operator" ;;
         level-6-discretization/refusal.f90) echo "partitioned_pde_assert shifted_laplacian_fixture fractal_graph graph_set_representation graph_set_map graph_field_calculus class_graph class_graph_field class_graph_differential_operator" ;;
         # ---- L7: + minimization. Consumes Level 6, not Level 8.
         level-7-minimization) echo "partitioned_pde_assert shifted_laplacian_fixture fractal_graph graph_set_representation graph_set_map graph_directed_view graph_field_calculus class_graph class_graph_field class_graph_gmres" ;;
@@ -226,6 +226,20 @@ if [ "$1" = "--selftest" ]; then
     refuses level-9-statement graph_inclusion_map
     # Level 8 asks only WHICH, so it is granted identity alone.
     refuses level-8-constitution graph_set_map
+
+    # THE PARTITION RELATION IS EARNED, LEVEL BY LEVEL. The levels
+    # that hold r may name it; the levels beneath, which have no cut,
+    # may not. The retired name is refused everywhere so that a source
+    # reaching for graph_partition_frame_representation is caught
+    # rather than quietly ignored.
+    permits level-4-graph-calculus graph_partition_relation
+    permits level-5-field-calculus graph_partition_relation
+    refuses level-4-graph-calculus graph_partition_frame_representation
+    refuses level-5-field-calculus graph_partition_frame_representation
+    refuses common/partitioned_shifted_laplacian_fixture.f90 graph_partition_frame_representation
+    refuses level-2-relation-algebra graph_partition_relation
+    refuses level-1-relation graph_partition_relation
+    refuses level-0-carrier graph_partition_relation
 
     # An unclassified source fails closed rather than silently open.
     allows common/not_a_real_fixture.f90 fractal_graph

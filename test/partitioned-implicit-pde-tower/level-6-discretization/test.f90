@@ -53,10 +53,9 @@ program partitioned_pde_level_6
        &                                        laplacian
   use shifted_laplacian_fixture, only : shifted_laplacian
 
-  use graph_partition_frame_representation, only : &
-       & partition_frame_representation
+  use graph_partition_relation, only : partition_relation
   implicit none
-  type(partition_frame_representation) :: pframe
+  type(partition_relation) :: rel
 
   type(directed_stored_graph)        :: g
   type(assembler)           :: a
@@ -76,7 +75,7 @@ program partitioned_pde_level_6
        & counted_set_representation(g % num_vertices()))
   call sets % bind(g % edge_set(), &
        & counted_set_representation(g % num_edges()))
-  a = assembler(pframe)
+  a = assembler()
   call cut(g1, 1)
   call cut(g2, 2)
 
@@ -97,7 +96,7 @@ contains
     type(partitioner) :: p
 
     p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
-    call p % partition_graph(g, part, pframe)
+    call p % partition_graph(g, part, rel)
 
   end subroutine cut
   !===================================================================!
@@ -171,7 +170,7 @@ contains
     type(label_map)     :: labels
     type(inclusion_map)     :: inclusions
     character(len=1)                :: tag
-    type(partition_frame_representation) :: fr
+    type(partition_relation) :: rel
 
     write(tag,'(i1)') k
 
@@ -180,13 +179,13 @@ contains
 
     p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
 
-    ! The frame of THIS part, not whichever cut ran last.
+    ! The relation of THIS part, not whichever cut ran last.
     select type (part)
     type is (directed_stored_graph)
-       fr = part % frame()
+       rel = part % whole_relation()
     end select
 
-    call p % partition_data(g, q, part, fr, sets, labels, inclusions, pd)
+    call p % partition_data(rel, g, q, part, sets, labels, inclusions, pd)
 
     dom = pd % domain()
     call pd % get_real_vector(v)
@@ -393,20 +392,20 @@ contains
     type(field)                     :: q
     class(graph_field), allocatable :: pd
     real(dp), allocatable           :: v(:)
-    type(partition_frame_representation) :: fr
+    type(partition_relation) :: rel
 
     q = field('q star', g % vertex_set(), g % num_vertices())
     call q % set_real_vector(Q_EXACT)
 
     p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
 
-    ! The frame of THIS part, not whichever cut ran last.
+    ! The relation of THIS part, not whichever cut ran last.
     select type (part)
     type is (directed_stored_graph)
-       fr = part % frame()
+       rel = part % whole_relation()
     end select
 
-    call p % partition_data(g, q, part, fr, sets, labels, inclusions, pd)
+    call p % partition_data(rel, g, q, part, sets, labels, inclusions, pd)
 
     call pd % get_real_vector(v)
     qp = field('local q', part % vertex_set(), part % num_vertices())
@@ -428,11 +427,11 @@ contains
     real(dp), allocatable           :: v(:)
     integer , allocatable           :: mem(:)
     integer                         :: i
-    type(partition_frame_representation) :: fr
+    type(partition_relation) :: rel
 
     select type (part)
     type is (directed_stored_graph)
-       fr = part % frame()
+       rel = part % whole_relation()
     end select
 
     qp = local_state(part, k, sets, labels, inclusions)
@@ -442,9 +441,10 @@ contains
     aq_local = field('A local', part % vertex_set(), part % num_vertices())
     call aq_local % set_real_vector(v)
 
-    ! The assembler binds the frame of the part it is gathering from.
-    a = assembler(fr)
-    call a % assemble_data(part, aq_local, g, sets, labels, inclusions, fd)
+    ! The assembler is handed the relation of the part it gathers
+    ! from. It binds nothing.
+    a = assembler()
+    call a % assemble_data(rel, part, aq_local, g, sets, labels, inclusions, fd)
     dom = fd % domain()
     call fd % get_real_vector(v)
 
@@ -461,14 +461,14 @@ contains
     integer     , intent(in) :: gm
 
     integer :: i
-    type(partition_frame_representation) :: fr
+    type(partition_relation) :: rel
 
     seat_of_global = 0
     select type (part)
     type is (directed_stored_graph)
-       fr = part % frame()
+       rel = part % whole_relation()
        do i = 1, part % num_vertices()
-          if (fr % global_vertex_index(i) .eq. gm) seat_of_global = i
+          if (rel % global_vertex_index(i) .eq. gm) seat_of_global = i
        end do
     end select
 

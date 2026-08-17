@@ -17,6 +17,8 @@
 !     B  vertex data       sum_i A_i(P_i(D)) = D , over owned entries
 !     C  edge data         the same question one dimension over
 !     D  ownership         every member owned exactly once
+!     F  one relation      all four verbs driven by the SAME r_p
+!     G  the wrong one     a relation from another part is refused
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -37,10 +39,9 @@ program partition_law
        &                              PARTITION_BREADTH_FIRST
   use class_graph_assembler, only : assembler
 
-  use graph_partition_frame_representation, only : &
-       & partition_frame_representation
+  use graph_partition_relation, only : partition_relation
   implicit none
-  type(partition_frame_representation) :: pframe
+  type(partition_relation) :: rel
 
   integer :: failures = 0
 
@@ -61,6 +62,9 @@ program partition_law
   call ownership_law(3)
 
   call one_part_is_restricted_identity()
+
+  call one_relation_drives_all_four()
+  call the_wrong_relation_is_refused()
 
   if (failures .eq. 0) then
      print *, ''
@@ -106,15 +110,15 @@ contains
     character(len=96)         :: what
 
     g = chain_of_six()
-    a = assembler(pframe)
+    a = assembler()
     seen  = 0
     sound = .true.
 
     do k = 1, nparts
        p = partitioner(PARTITION_LINEAR, nparts=nparts, part=k)
-       call p % partition_graph(g, part, pframe)
-       a = assembler(pframe)
-       call a % assemble_graph(part, back)
+       call p % partition_graph(g, part, rel)
+       a = assembler()
+       call a % assemble_graph(rel, part, back)
 
        do e = 1, back % num_edges()
           f = whole_edge(g, back % edge_tail(e), back % edge_head(e))
@@ -195,7 +199,7 @@ contains
     character(len=96)               :: what
 
     g    = chain_of_six()
-    a    = assembler(pframe)
+    a    = assembler()
     want = [10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp]
 
     !----------------------------------------------------------------!
@@ -213,8 +217,8 @@ contains
     total = 0.0_dp
     do k = 1, nparts
        p = partitioner(PARTITION_LINEAR, nparts=nparts, part=k)
-       call p % partition_graph(g, part, pframe)
-       a = assembler(pframe)
+       call p % partition_graph(g, part, rel)
+       a = assembler()
 
        ! Each part is a new graph, so its own carriers are new domains
        ! and must be described before a field can be seated on them.
@@ -223,8 +227,8 @@ contains
        call sets % bind(part % edge_set(), &
             & counted_set_representation(part % num_edges()))
 
-       call p % partition_data(g, d, part, pframe, sets, labels, inclusions, pd)
-       call a % assemble_data(part, pd, g, sets, labels, inclusions, fd)
+       call p % partition_data(rel, g, d, part, sets, labels, inclusions, pd)
+       call a % assemble_data(rel, part, pd, g, sets, labels, inclusions, fd)
 
        select type (fd)
        class is (field)
@@ -275,7 +279,7 @@ contains
     character(len=96)               :: what
 
     g    = chain_of_six()
-    a    = assembler(pframe)
+    a    = assembler()
     want = [1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp, 5.0_dp]
 
     !----------------------------------------------------------------!
@@ -294,8 +298,8 @@ contains
     expressible = .true.
     do k = 1, nparts
        p = partitioner(PARTITION_LINEAR, nparts=nparts, part=k)
-       call p % partition_graph(g, part, pframe)
-       a = assembler(pframe)
+       call p % partition_graph(g, part, rel)
+       a = assembler()
 
        ! Each part is a new graph, so its own carriers are new domains
        ! and must be described before a field can be seated on them.
@@ -304,8 +308,8 @@ contains
        call sets % bind(part % edge_set(), &
             & counted_set_representation(part % num_edges()))
 
-       call p % partition_data(g, d, part, pframe, sets, labels, inclusions, pd)
-       call a % assemble_data(part, pd, g, sets, labels, inclusions, fd)
+       call p % partition_data(rel, g, d, part, sets, labels, inclusions, pd)
+       call a % assemble_data(rel, part, pd, g, sets, labels, inclusions, fd)
 
        select type (fd)
        class is (field)
@@ -358,13 +362,13 @@ contains
 
     do k = 1, nparts
        p = partitioner(PARTITION_LINEAR, nparts=nparts, part=k)
-       call p % partition_graph(g, part, pframe)
+       call p % partition_graph(g, part, rel)
 
        call part % owned_vertices(k, sets, labels, inclusions, owned)
        call roster(sets, owned, idx)
        do l = 1, size(idx)
-          times(pframe % global_vertex_index(idx(l))) = &
-               & times(pframe % global_vertex_index(idx(l))) + 1
+          times(rel % global_vertex_index(idx(l))) = &
+               & times(rel % global_vertex_index(idx(l))) + 1
        end do
 
        call part % borrowed_vertices(k, sets, labels, inclusions, borrowed)
@@ -412,12 +416,12 @@ contains
     logical                   :: same, some_part_is_short
 
     g = chain_of_six()
-    a = assembler(pframe)
+    a = assembler()
     p = partitioner(PARTITION_LINEAR, nparts=1, part=1)
 
-    call p % partition_graph(g, part, pframe)
-    a = assembler(pframe)
-    call a % assemble_graph(part, back)
+    call p % partition_graph(g, part, rel)
+    a = assembler()
+    call a % assemble_graph(rel, part, back)
 
     same = back % num_vertices() .eq. g % num_vertices() .and. &
          & back % num_edges() .eq. g % num_edges()
@@ -434,9 +438,9 @@ contains
     some_part_is_short = .false.
     do e = 1, 2
        p = partitioner(PARTITION_LINEAR, nparts=2, part=e)
-       call p % partition_graph(g, part, pframe)
-       a = assembler(pframe)
-       call a % assemble_graph(part, back)
+       call p % partition_graph(g, part, rel)
+       a = assembler()
+       call a % assemble_graph(rel, part, back)
        if (back % num_edges() .lt. g % num_edges()) some_part_is_short = .true.
     end do
 
@@ -444,6 +448,138 @@ contains
          & some_part_is_short)
 
   end subroutine one_part_is_restricted_identity
+
+  !===================================================================!
+  ! F . ONE RELATION, FOUR VERBS.
+  !
+  ! r_p <= S_part x S_whole is written ONCE, by the cut, and the three
+  ! verbs that follow are HANDED it:
+  !
+  !     partition_graph(G)      -> G_p , r        r written here
+  !     partition_data (r, D)   -> D_p            read forward
+  !     assemble_graph (r, G_p) -> G contribution read backward
+  !     assemble_data  (r, D_p) -> D contribution read backward
+  !
+  ! The claim this makes is not that the four agree - it is that there
+  ! is nothing for them to disagree ABOUT, because exactly one value
+  ! reaches all four. So the test is written to make a second relation
+  ! impossible: `rel_p` is set by partition_graph and is never
+  ! assigned again, and every later verb names it.
+  !
+  ! What it checks afterwards is the consequence: the values that come
+  ! home land on the members r_p says they do.
+  !===================================================================!
+
+  subroutine one_relation_drives_all_four()
+
+    type(directed_stored_graph)        :: g
+    type(partitioner)         :: p
+    type(assembler)           :: a
+    class(directed_graph), allocatable :: part, back
+    class(graph_field), allocatable    :: pd, fd
+    type(partition_relation)  :: rel_p
+    type(set_map)             :: sets
+    type(label_map)           :: labels
+    type(inclusion_map)       :: inclusions
+    type(field)               :: d
+    type(set_graph)           :: on
+    real(dp), allocatable     :: home(:)
+    integer                   :: l, gm
+    logical                   :: ok
+
+    g = chain_of_six()
+    call sets % bind(g % vertex_set(), &
+         & counted_set_representation(g % num_vertices()))
+
+    ! 1. THE CUT WRITES r. Nothing else in this routine writes rel_p.
+    p = partitioner(PARTITION_LINEAR, nparts=2, part=2)
+    call p % partition_graph(g, part, rel_p)
+    call sets % bind(part % vertex_set(), &
+         & counted_set_representation(part % num_vertices()))
+
+    on = g % vertex_set()
+    d  = field('q', on, sets % size_of(on))
+    call d % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, &
+         &                    40.0_dp, 50.0_dp, 60.0_dp])
+
+    ! 2, 3, 4. THE OTHER THREE ARE HANDED THE SAME r.
+    a = assembler()
+    call check('F  the cut''s relation is the one this part stands in', &
+         & a % defined_on_relation(rel_p, part))
+
+    call p % partition_data(rel_p, g, d, part, sets, labels, inclusions, pd)
+    call a % assemble_graph(rel_p, part, back)
+    call a % assemble_data(rel_p, part, pd, g, sets, labels, inclusions, fd)
+
+    ! The structure came home by r read backwards.
+    call check('F  assemble_graph put the part back in whole names', &
+         & back % num_vertices() .eq. g % num_vertices())
+
+    ! And so did the values: every entry this part OWNS is standing at
+    ! the member r_p names, and every entry it does not own is zero -
+    ! which is what stops the other part''s copy being counted twice.
+    call fd % get_real_vector(home)
+    ok = .true.
+    do l = 1, part % num_vertices()
+       gm = rel_p % global_vertex_index(l)
+       if (rel_p % vertex_owner_part(l) .eq. rel_p % part_id()) then
+          ok = ok .and. abs(home(gm) - 10.0_dp * gm) .lt. 1.0e-12_dp
+       end if
+    end do
+    call check('F  every owned value came home to the member r names', ok)
+
+  end subroutine one_relation_drives_all_four
+
+  !===================================================================!
+  ! G . THE WRONG RELATION IS REFUSED.
+  !
+  ! ONE RELATION PER PART. NEVER ONE ACROSS TWO. A caller cutting a
+  ! graph in two holds two relations, and handing part 2 the relation
+  ! written for part 1 is the exact mistake this design exists to make
+  ! impossible - it was a real defect, found when a single relation was
+  ! reused across two parts and the second part assembled home through
+  ! the first part''s numbering.
+  !
+  ! So it must be REPORTABLE, not merely wrong. defined_on_relation
+  ! answers .false., and it answers on identity: r1 and r2 here have
+  ! equal shape in every respect a count could see, and are still not
+  ! interchangeable, because they relate different sets.
+  !===================================================================!
+
+  subroutine the_wrong_relation_is_refused()
+
+    type(directed_stored_graph)        :: g
+    type(partitioner)         :: p1, p2
+    type(assembler)           :: a
+    class(directed_graph), allocatable :: part1, part2
+    type(partition_relation)  :: r1, r2
+
+    g = chain_of_six()
+    a = assembler()
+
+    p1 = partitioner(PARTITION_LINEAR, nparts=2, part=1)
+    p2 = partitioner(PARTITION_LINEAR, nparts=2, part=2)
+    call p1 % partition_graph(g, part1, r1)
+    call p2 % partition_graph(g, part2, r2)
+
+    call check('G  each part stands in its own relation', &
+         & a % defined_on_relation(r1, part1) .and. &
+         & a % defined_on_relation(r2, part2))
+
+    call check('G  and in neither of the other''s: the wrong relation ' // &
+         & 'is REFUSED, not obeyed', &
+         & .not. a % defined_on_relation(r1, part2) .and. &
+         & .not. a % defined_on_relation(r2, part1))
+
+    ! The refusal is not a size argument. Both parts hold four cells
+    ! and three edges here, so a check on counts alone would pass the
+    ! wrong relation straight through.
+    call check('G  and the two are indistinguishable by size, so ' // &
+         & 'IDENTITY is what refused them', &
+         & part1 % num_vertices() .eq. part2 % num_vertices() .and. &
+         & part1 % num_edges()    .eq. part2 % num_edges())
+
+  end subroutine the_wrong_relation_is_refused
 
   subroutine check(label, ok)
 

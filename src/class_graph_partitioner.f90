@@ -57,8 +57,7 @@ module class_graph_partitioner
 
   use iso_fortran_env     , only : dp => REAL64
   use graph_directed_view , only : directed_graph
-  use graph_partition_frame_representation, only : &
-       & partition_frame_representation
+  use graph_partition_relation, only : partition_relation
   use graph_field_calculus, only : graph_field
   use fractal_graph      , only : set_graph => graph
   use graph_set_map      , only : set_map
@@ -200,16 +199,17 @@ contains
   ! the piece as a graph in its own numbering.
   !===================================================================!
 
-  subroutine partition_graph(this, global_graph, part_graph, frame)
+  subroutine partition_graph(this, global_graph, part_graph, rel)
 
     class(partitioner), intent(in)               :: this
     class(directed_graph), intent(in)            :: global_graph
     class(directed_graph), allocatable, intent(out) :: part_graph
 
-    ! The record the cut produces. It leaves through the door beside
-    ! the piece, because the piece alone can no longer be asked how it
-    ! sits in the whole - and it never should have been.
-    type(partition_frame_representation), intent(out), optional :: frame
+    ! r <= S_part x S_whole, written here and nowhere else. It leaves
+    ! through the door beside the piece, because the three verbs that
+    ! read it are handed it - none of them may ask the piece, and none
+    ! may invent its own.
+    type(partition_relation), intent(out), optional :: rel
 
     integer, allocatable :: owner(:), mine(:), whereis(:)
     integer, allocatable :: ltail(:), lhead(:), eglobal(:), eowner(:), vowner(:)
@@ -269,12 +269,9 @@ contains
        vowner(k) = owner(mine(k))
     end do
 
-    ! The piece is born knowing how it relates to the whole. Without
-    ! that record the assembler cannot restore whole-graph order and
-    ! defined_on_graph answers .false. rather than assuming a map -
-    ! and the record goes in through the door, because a graph told
-    ! its frame after birth would answer one question two ways in
-    ! one lifetime.
+    ! The piece is born standing in r. The tuples go in through the
+    ! door, because a graph told its relation after birth would answer
+    ! one question two ways in one lifetime.
     allocate(part_graph, source = &
          & directed_stored_graph(size(mine), tails=ltail(1:nkeep), heads=lhead(1:nkeep), &
          &              number  = this % part,   &
@@ -288,10 +285,10 @@ contains
          &              n_whole_verts = nv,                          &
          &              n_whole_edges = ne))
 
-    if (present(frame)) then
+    if (present(rel)) then
        select type (part_graph)
        class is (directed_stored_graph)
-          frame = part_graph % frame()
+          rel = part_graph % whole_relation()
        end select
     end if
 
@@ -484,14 +481,14 @@ contains
   ! cannot drift out of step with the structure.
   !===================================================================!
 
-  subroutine partition_data(this, global_graph, global_data, part_graph, &
-       & frame, sets, labels, inclusions, part_data)
+  subroutine partition_data(this, rel, global_graph, global_data, part_graph, &
+       & sets, labels, inclusions, part_data)
 
     class(partitioner), intent(in)               :: this
+    type(partition_relation), intent(in)         :: rel
     class(directed_graph)      , intent(in)               :: global_graph
     class(graph_field) , intent(in)               :: global_data
     class(directed_graph)      , intent(in)               :: part_graph
-    type(partition_frame_representation), intent(in) :: frame
     type(set_map)      , intent(inout)            :: sets
     type(label_map)    , intent(inout)            :: labels
     type(inclusion_map), intent(inout)            :: inclusions
@@ -501,6 +498,14 @@ contains
     integer         :: n_dom
 
     associate (u1 => this); end associate
+
+    ! ONE RELATION PER PART, guarded on the forward motion too. This
+    ! is the direction where a wrong r is SILENT: values carried onto
+    ! a part by another part's numbering, no abort, wrong answers near
+    ! a cut - which is the failure the design exists to prevent.
+    if (.not. rel % describes(part_graph)) then
+       error stop 'partition: this relation was not written for this part'
+    end if
 
     select type (global_data)
 
@@ -512,11 +517,11 @@ contains
        if (declared_subobject(dom, global_graph % vertex_set(), inclusions)) then
           call carry_field(global_data, dom, n_dom, &
                & global_graph % vertex_set(), global_graph % num_vertices(), &
-               & part_graph, frame, .true., sets, labels, inclusions, part_data)
+               & part_graph, rel, .true., sets, labels, inclusions, part_data)
        else if (declared_subobject(dom, global_graph % edge_set(), inclusions)) then
           call carry_field(global_data, dom, n_dom, &
                & global_graph % edge_set(), global_graph % num_edges(), &
-               & part_graph, frame, .false., sets, labels, inclusions, part_data)
+               & part_graph, rel, .false., sets, labels, inclusions, part_data)
        else
           error stop 'partition: this field does not live on this graph''s domains'
        end if
@@ -540,7 +545,7 @@ contains
   !===================================================================!
 
   subroutine carry_field(global_data, dom, n_dom, global_carrier, &
-       &                 n_global_carrier, part_graph, frame, on_vertices, &
+       &                 n_global_carrier, part_graph, rel, on_vertices, &
        &                 sets, labels, inclusions, part_data)
 
     type(field)        , intent(in)               :: global_data
@@ -549,7 +554,7 @@ contains
     type(set_graph)    , intent(in)               :: global_carrier
     integer            , intent(in)               :: n_global_carrier
     class(directed_graph)       , intent(in)               :: part_graph
-    type(partition_frame_representation), intent(in) :: frame
+    type(partition_relation), intent(in)          :: rel
     logical            , intent(in)               :: on_vertices
     type(set_map)      , intent(inout)            :: sets
     type(label_map)    , intent(inout)            :: labels
@@ -580,7 +585,7 @@ contains
        allocate(lv(nlocal * ncomp))
        lv = 0.0_dp
        do l = 1, nlocal
-          g = global_of(frame, l, on_vertices)
+          g = global_of(rel, l, on_vertices)
           at = sets % index_in(dom, g)
           if (at >= 1) then
              do c = 1, ncomp
@@ -598,7 +603,7 @@ contains
        allocate(kept(nlocal))
        n = 0
        do l = 1, nlocal
-          g = global_of(frame, l, on_vertices)
+          g = global_of(rel, l, on_vertices)
           if (sets % has_in(dom, g)) then
              n = n + 1
              kept(n) = l
@@ -618,7 +623,7 @@ contains
 
        allocate(lv(n * ncomp))
        do l = 1, n
-          g  = global_of(frame, kept(l), on_vertices)
+          g  = global_of(rel, kept(l), on_vertices)
           at = sets % index_in(dom, g)
           do c = 1, ncomp
              lv((l - 1) * ncomp + c) = fv((at - 1) * ncomp + c)
@@ -638,16 +643,16 @@ contains
   ! What the part's l-th member was called in the whole.
   !===================================================================!
 
-  pure integer function global_of(frame, l, on_vertices)
+  pure integer function global_of(rel, l, on_vertices)
 
-    type(partition_frame_representation), intent(in) :: frame
-    integer                             , intent(in) :: l
-    logical                             , intent(in) :: on_vertices
+    type(partition_relation), intent(in) :: rel
+    integer                 , intent(in) :: l
+    logical                 , intent(in) :: on_vertices
 
     if (on_vertices) then
-       global_of = frame % global_vertex_index(l)
+       global_of = rel % global_vertex_index(l)
     else
-       global_of = frame % global_edge_index(l)
+       global_of = rel % global_edge_index(l)
     end if
 
   end function global_of

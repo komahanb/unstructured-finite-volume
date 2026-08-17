@@ -51,7 +51,10 @@ program partitioned_pde_level_5
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
   use class_graph_assembler  , only : assembler
 
+  use graph_partition_frame_representation, only : &
+       & partition_frame_representation
   implicit none
+  type(partition_frame_representation) :: pframe
 
   type(directed_stored_graph)        :: g
   type(assembler)           :: a
@@ -70,7 +73,7 @@ program partitioned_pde_level_5
        & counted_set_representation(g % num_vertices()))
   call sets % bind(g % edge_set(), &
        & counted_set_representation(g % num_edges()))
-  a = assembler()
+  a = assembler(pframe)
   call cut(g1, 1)
   call cut(g2, 2)
 
@@ -94,7 +97,8 @@ contains
     type(partitioner) :: p
 
     p = partitioner(PARTITION_LINEAR, nparts=2, part=kpart)
-    call p % partition_graph(g, part)
+    call p % partition_graph(g, part, pframe)
+    a = assembler(pframe)
 
     ! A part is a NEW graph, so its carriers are new declared domains
     ! and must be described before anything is seated on them.
@@ -191,6 +195,7 @@ contains
     character(len=1)                :: tag
     integer                         :: i
     logical                         :: ok
+    type(partition_frame_representation) :: fr
 
     write(tag,'(i1)') k
 
@@ -198,7 +203,17 @@ contains
     ! of the same graph, which would be a different carrier with a
     ! different identity.
     p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
-    call p % partition_data(g, q, part, sets, labels, inclusions, pd)
+
+    ! The frame of THIS part, not whichever was cut last. A host-scope
+    ! frame is a single value; a check handed a part must read the
+    ! record that part carries, which is the whole point of the record
+    ! being a value the graph carries rather than a global.
+    select type (part)
+    type is (directed_stored_graph)
+       fr = part % frame()
+    end select
+
+    call p % partition_data(g, q, part, fr, sets, labels, inclusions, pd)
 
     dom = pd % domain()
     select type (part)
@@ -215,7 +230,7 @@ contains
     select type (part)
     type is (directed_stored_graph)
        do i = 1, size(globals)
-          ok = ok .and. (part % global_vertex_index(i) .eq. globals(i))
+          ok = ok .and. (fr % global_vertex_index(i) .eq. globals(i))
           ok = ok .and. (abs(v(i) - expect(i)) < 1.0d-13)
        end do
     end select
@@ -306,8 +321,9 @@ contains
     seen  = .false.
     do k = 1, 2
        p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
-       call p % partition_graph(g, part)
-       call p % partition_data(g, d, part, sets, labels, inclusions, pd)
+       call p % partition_graph(g, part, pframe)
+       a = assembler(pframe)
+       call p % partition_data(g, d, part, pframe, sets, labels, inclusions, pd)
 
        ! Each part receives only the members it can see.
        dom = pd % domain()
@@ -316,7 +332,7 @@ contains
           ok = .true.
           do i = 1, pp % num_vertices()
              if (sets % has_in(dom, i)) then
-                gm = pp % global_vertex_index(i)
+                gm = pframe % global_vertex_index(i)
                 ok = ok .and. (gm .eq. 6 .or. gm .eq. 3 .or. gm .eq. 4)
                 seen(gm) = .true.
              end if
@@ -374,12 +390,14 @@ contains
     real(dp), allocatable           :: v(:)
 
     p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
-    call p % partition_graph(g, part)
+    call p % partition_graph(g, part, pframe)
+    a = assembler(pframe)
+    a = assembler(pframe)
     call sets % bind(part % vertex_set(), &
          & counted_set_representation(part % num_vertices()))
     call sets % bind(part % edge_set(), &
          & counted_set_representation(part % num_edges()))
-    call p % partition_data(g, d, part, sets, labels, inclusions, pd)
+    call p % partition_data(g, d, part, pframe, sets, labels, inclusions, pd)
     call a % assemble_data(part, pd, g, sets, labels, inclusions, fd)
     call fd % get_real_vector(v)
     total = total + v(1:size(total))

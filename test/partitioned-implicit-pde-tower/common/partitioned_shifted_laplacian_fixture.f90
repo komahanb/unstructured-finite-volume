@@ -59,7 +59,10 @@ module partitioned_shifted_laplacian_fixture
   use class_graph_assembler  , only : assembler
   use shifted_laplacian_fixture, only : shifted_laplacian
 
+  use graph_partition_frame_representation, only : &
+       & partition_frame_representation
   implicit none
+  type(partition_frame_representation) :: pframe
 
   private
   public :: partitioned_shifted_laplacian
@@ -71,6 +74,11 @@ module partitioned_shifted_laplacian_fixture
      class(directed_graph), allocatable :: g1, g2
      type(partitioner)         :: p1, p2
      type(assembler)           :: asm
+
+     ! One frame per part, because there is one per part. A single
+     ! frame here would hold whichever cut ran last and carry the
+     ! wrong numbering onto the other piece.
+     type(partition_frame_representation) :: f1, f2
      type(shifted_laplacian)   :: local
 
      ! ...and deliberately NO numerical state: no q, no overlap,
@@ -100,9 +108,8 @@ contains
     this % whole = g
     this % p1 = partitioner(PARTITION_LINEAR, nparts=2, part=1)
     this % p2 = partitioner(PARTITION_LINEAR, nparts=2, part=2)
-    call this % p1 % partition_graph(g, this % g1)
-    call this % p2 % partition_graph(g, this % g2)
-    this % asm = assembler()
+    call this % p1 % partition_graph(g, this % g1, this % f1)
+    call this % p2 % partition_graph(g, this % g2, this % f2)
 
   end function create_partitioned
 
@@ -188,9 +195,9 @@ contains
 
     ! -- NUMERICAL OVERLAP REFRESH, from the state handed in NOW
     call this % p1 % partition_data(this % whole, input_data(1), &
-         & this % g1, sets, labels, inclusions, q1)
+         & this % g1, this % f1, sets, labels, inclusions, q1)
     call this % p2 % partition_data(this % whole, input_data(1), &
-         & this % g2, sets, labels, inclusions, q2)
+         & this % g2, this % f2, sets, labels, inclusions, q2)
 
     ! -- LOCAL TOPOLOGY ACTIONS, each on its own part
     call act_locally(this % local, this % g1, q1, a1)
@@ -199,9 +206,9 @@ contains
     ! -- OWNED ASSEMBLY, and the sum of the two contributions
     allocate(total(this % whole % num_vertices()))
     total = 0.0_dp
-    call add_owned(this % asm, this % g1, a1, this % whole, &
+    call add_owned(assembler(this % f1), this % g1, a1, this % whole, &
          & sets, labels, inclusions, total)
-    call add_owned(this % asm, this % g2, a2, this % whole, &
+    call add_owned(assembler(this % f2), this % g2, a2, this % whole, &
          & sets, labels, inclusions, total)
 
     out = field('partitioned action', this % whole % vertex_set(), &

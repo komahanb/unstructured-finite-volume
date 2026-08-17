@@ -55,6 +55,8 @@ module class_graph
 
   use graph_directed_view, only : directed_graph
   use fractal_graph      , only : set_graph => graph
+  use graph_partition_frame_representation, only : &
+       & partition_frame_representation
   use graph_calculus     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
   use graph_set_representation, only : counted_set_representation, &
        & listed_set_representation
@@ -102,20 +104,17 @@ module class_graph
      character(len=:), allocatable :: etag(:)
 
      !----------------------------------------------------------------!
-     ! How this graph relates to a whole one. A graph straight off a
-     ! mesh file has no relation: one part, itself, identity maps. A
-     ! partitioner fills these in.
+     ! HOW THIS GRAPH RELATES TO A WHOLE ONE, and it is one component
+     ! now rather than six. The record is a REPRESENTATION - part-local
+     ! numbering, ownership, provenance - and none of it is a question
+     ! about D = (V, E, tail, head), which is why it stopped being a
+     ! binding on the contract and became a value the graph carries.
+     !
+     ! A graph straight off a mesh file carries the identity frame: one
+     ! part, itself, every index its own.
      !----------------------------------------------------------------!
 
-     ! Which part this one is has a name already - the graph's own
-     ! number, which the partitioner stamps as it cuts. A second
-     ! component saying the same thing is a second thing to keep
-     ! true.
-     logical :: cut    = .false.
-     integer :: nparts = 1
-
-     integer, allocatable :: vowner(:), eowner(:)
-     integer, allocatable :: vglobal(:) , eglobal(:)
+     type(partition_frame_representation) :: frame_rep
 
      !----------------------------------------------------------------!
      ! The graph's two carriers (AGENTS.md, phase 1): its vertices
@@ -201,17 +200,13 @@ module class_graph
      procedure :: incoming_vertices
 
      !----------------------------------------------------------------!
-     ! How a part relates to the whole.
+     ! How a part relates to the whole: ONE accessor, handing back the
+     ! record by value. The eight questions that used to stand here are
+     ! the frame's, and a caller that needs them takes the frame and
+     ! asks it - which is also what lets an action bind one.
      !----------------------------------------------------------------!
 
-     procedure :: num_parts
-     procedure :: has_part_relation
-     procedure :: global_vertex_index
-     procedure :: global_edge_index
-     procedure :: part_vertex_index
-     procedure :: part_edge_index
-     procedure :: vertex_owner_part
-     procedure :: edge_owner_part
+     procedure :: frame
 
   end type directed_stored_graph
 
@@ -235,7 +230,8 @@ contains
 
   type(directed_stored_graph) function create(nv, tails, heads, vtags, etags, &
        &                             number, vglobal, vowner, eglobal, &
-       &                             eowner, nparts) result(this)
+       &                             eowner, nparts, whole_verts, whole_edges, &
+       &                             n_whole_verts, n_whole_edges) result(this)
 
     integer           , intent(in)           :: nv
     integer           , intent(in)           :: tails(:)
@@ -260,6 +256,16 @@ contains
     integer           , intent(in), optional :: eowner(:)
     integer           , intent(in), optional :: nparts
 
+    !----------------------------------------------------------------!
+    ! The whole this piece was cut from, by identity and count. A
+    ! frame that could not say WHICH whole it maps into would let a
+    ! caller holding two frames hand the wrong one to the wrong graph
+    ! and be wrong in silence.
+    !----------------------------------------------------------------!
+
+    type(set_graph)   , intent(in), optional :: whole_verts, whole_edges
+    integer           , intent(in), optional :: n_whole_verts, n_whole_edges
+
     integer :: e
 
     this % nv = nv
@@ -271,15 +277,6 @@ contains
     call this % eset % declare()
 
     if (present(number)) this % number = number
-
-    if (present(vglobal)) then
-       this % cut = .true.
-       allocate(this % vglobal, source=vglobal)
-    end if
-    if (present(vowner))  allocate(this % vowner , source=vowner)
-    if (present(eglobal)) allocate(this % eglobal, source=eglobal)
-    if (present(eowner))  allocate(this % eowner , source=eowner)
-    if (present(nparts))  this % nparts = nparts
 
     allocate(this % tail, source=tails)
     allocate(this % head(this % ne))
@@ -293,6 +290,32 @@ contains
           this % head(e) = 0
        end if
     end do
+
+    !----------------------------------------------------------------!
+    ! The frame goes in through the door, or the identity frame does.
+    ! A graph that could be told its frame afterwards would answer one
+    ! question two ways in one lifetime; present vglobal is what makes
+    ! a graph a piece, and absent, it is a whole.
+    !----------------------------------------------------------------!
+
+    if (present(vglobal)) then
+       this % frame_rep = partition_frame_representation( &
+            & part_verts    = this % vset, n_part_verts = this % nv, &
+            & part_edges    = this % eset, n_part_edges = this % ne, &
+            & whole_verts   = merge_set(whole_verts, this % vset),   &
+            & n_whole_verts = merge_count(n_whole_verts, this % nv), &
+            & whole_edges   = merge_set(whole_edges, this % eset),   &
+            & n_whole_edges = merge_count(n_whole_edges, this % ne), &
+            & number  = this % number,                               &
+            & nparts  = merge_count(nparts, 1),                      &
+            & vglobal = vglobal,                                     &
+            & vowner  = pick_owner(vowner, size(vglobal), this % number), &
+            & eglobal = pick_global(eglobal, this % ne),             &
+            & eowner  = pick_owner(eowner, this % ne, this % number))
+    else
+       this % frame_rep = partition_frame_representation( &
+            & this % vset, this % nv, this % eset, this % ne)
+    end if
 
     if (present(vtags)) allocate(this % vtag, source=vtags)
     if (present(etags)) allocate(this % etag, source=etags)
@@ -880,7 +903,7 @@ contains
     type(inclusion_map), intent(inout) :: inclusions
     type(set_graph)    , intent(out)   :: members
 
-    call carve(members, owner_matches(this % vowner, this % nv, part_id, this % cut, .true.), 'owned_vertices', &
+    call carve(members, owner_matches(this % frame_rep, this % nv, part_id, .true., .true.), 'owned_vertices', &
          & this % vset, sets, labels, inclusions)
 
   end subroutine owned_vertices
@@ -899,7 +922,7 @@ contains
     type(inclusion_map), intent(inout) :: inclusions
     type(set_graph)    , intent(out)   :: members
 
-    call carve(members, owner_matches(this % vowner, this % nv, part_id, this % cut, .false.), 'borrowed_vertices', &
+    call carve(members, owner_matches(this % frame_rep, this % nv, part_id, .true., .false.), 'borrowed_vertices', &
          & this % vset, sets, labels, inclusions)
 
   end subroutine borrowed_vertices
@@ -920,8 +943,8 @@ contains
 
     integer, allocatable :: owned(:), borrowed(:)
 
-    allocate(owned   , source=owner_matches(this % vowner, this % nv, part_id, this % cut, .true.))
-    allocate(borrowed, source=owner_matches(this % vowner, this % nv, part_id, this % cut, .false.))
+    allocate(owned   , source=owner_matches(this % frame_rep, this % nv, part_id, .true., .true.))
+    allocate(borrowed, source=owner_matches(this % frame_rep, this % nv, part_id, .true., .false.))
 
     call carve(members, [owned, borrowed], 'overlap_vertices', &
          & this % vset, sets, labels, inclusions)
@@ -941,7 +964,7 @@ contains
     type(inclusion_map), intent(inout) :: inclusions
     type(set_graph)    , intent(out)   :: members
 
-    call carve(members, owner_matches(this % eowner, this % ne, part_id, this % cut, .true.), 'owned_edges', &
+    call carve(members, owner_matches(this % frame_rep, this % ne, part_id, .false., .true.), 'owned_edges', &
          & this % eset, sets, labels, inclusions)
 
   end subroutine owned_edges
@@ -959,7 +982,7 @@ contains
     type(inclusion_map), intent(inout) :: inclusions
     type(set_graph)    , intent(out)   :: members
 
-    call carve(members, owner_matches(this % eowner, this % ne, part_id, this % cut, .false.), 'borrowed_edges', &
+    call carve(members, owner_matches(this % frame_rep, this % ne, part_id, .false., .false.), 'borrowed_edges', &
          & this % eset, sets, labels, inclusions)
 
   end subroutine borrowed_edges
@@ -979,8 +1002,8 @@ contains
 
     integer, allocatable :: owned(:), borrowed(:)
 
-    allocate(owned   , source=owner_matches(this % eowner, this % ne, part_id, this % cut, .true.))
-    allocate(borrowed, source=owner_matches(this % eowner, this % ne, part_id, this % cut, .false.))
+    allocate(owned   , source=owner_matches(this % frame_rep, this % ne, part_id, .false., .true.))
+    allocate(borrowed, source=owner_matches(this % frame_rep, this % ne, part_id, .false., .false.))
 
     call carve(members, [owned, borrowed], 'overlap_edges', &
          & this % eset, sets, labels, inclusions)
@@ -995,18 +1018,71 @@ contains
   ! of itself.
   !===================================================================!
 
-  pure function owner_matches(owner, n, part_id, cut, want_owned) result(pick)
+  !===================================================================!
+  ! Optional arguments, defaulted where the frame demands a value. A
+  ! piece told its global vertex names but not its whole's identity
+  ! answers about itself, which is the honest reading of silence.
+  !===================================================================!
 
-    integer, allocatable, intent(in) :: owner(:)
-    integer             , intent(in) :: n
-    integer             , intent(in) :: part_id
-    logical             , intent(in) :: cut
-    logical             , intent(in) :: want_owned
+  function merge_set(given, fallback) result(s)
+    type(set_graph), intent(in), optional :: given
+    type(set_graph), intent(in)           :: fallback
+    type(set_graph)                       :: s
+    if (present(given)) then
+       s = given
+    else
+       s = fallback
+    end if
+  end function merge_set
+
+  pure integer function merge_count(given, fallback)
+    integer, intent(in), optional :: given
+    integer, intent(in)           :: fallback
+    if (present(given)) then
+       merge_count = given
+    else
+       merge_count = fallback
+    end if
+  end function merge_count
+
+  pure function pick_global(given, n) result(g)
+    integer, intent(in), optional :: given(:)
+    integer, intent(in)           :: n
+    integer, allocatable          :: g(:)
+    integer                       :: i
+    if (present(given)) then
+       g = given
+    else
+       g = [(i, i = 1, n)]
+    end if
+  end function pick_global
+
+  pure function pick_owner(given, n, mine) result(o)
+    integer, intent(in), optional :: given(:)
+    integer, intent(in)           :: n, mine
+    integer, allocatable          :: o(:)
+    integer                       :: i
+    if (present(given)) then
+       o = given
+    else
+       o = [(mine, i = 1, n)]
+    end if
+  end function pick_owner
+
+  pure function owner_matches(fr, n, part_id, on_vertices, want_owned) result(pick)
+
+    type(partition_frame_representation), intent(in) :: fr
+    integer                             , intent(in) :: n
+    integer                             , intent(in) :: part_id
+    logical                             , intent(in) :: on_vertices
+    logical                             , intent(in) :: want_owned
 
     integer, allocatable :: pick(:)
-    integer :: i, k
+    integer :: i, k, owns
 
-    if (.not. cut .or. .not. allocated(owner)) then
+    ! A graph born whole owns everything and borrows nothing. That is
+    ! not a special case: it is what an identity frame means.
+    if (.not. fr % has_part_relation()) then
        if (want_owned) then
           pick = [(i, i = 1, n)]
        else
@@ -1018,7 +1094,12 @@ contains
     allocate(pick(n))
     k = 0
     do i = 1, n
-       if ((owner(i) == part_id) .eqv. want_owned) then
+       if (on_vertices) then
+          owns = fr % vertex_owner_part(i)
+       else
+          owns = fr % edge_owner_part(i)
+       end if
+       if ((owns == part_id) .eqv. want_owned) then
           k = k + 1
           pick(k) = i
        end if
@@ -1140,165 +1221,26 @@ contains
   end subroutine incoming_vertices
 
   !===================================================================!
-  ! How a part relates to the whole. An uncut graph is the whole of
-  ! itself: one part, identity maps, everything owned by part one.
+  ! THE FRAME, HANDED BACK BY VALUE.
+  !
+  ! Eight questions used to stand here as bindings on the contract:
+  ! how many parts, which part owns what, and the index maps both
+  ! ways. Not one of them is a question about D = (V, E, tail, head),
+  ! so they are the frame's now, and this graph answers only WHICH
+  ! frame it carries.
+  !
+  ! By value, and deliberately: a caller that binds the record - the
+  ! assembler does - must hold something that cannot change under it
+  ! when the graph it came from goes out of scope.
   !===================================================================!
 
-  pure integer function num_parts(this)
+  type(partition_frame_representation) function frame(this)
 
     class(directed_stored_graph), intent(in) :: this
 
-    num_parts = this % nparts
+    frame = this % frame_rep
 
-  end function num_parts
-
-  !===================================================================!
-  ! Whether this graph knows how it sits in a whole; false for a
-  ! graph born whole.
-  !===================================================================!
-
-  pure logical function has_part_relation(this)
-
-    class(directed_stored_graph), intent(in) :: this
-
-    has_part_relation = this % cut
-
-  end function has_part_relation
-
-  !===================================================================!
-  ! The whole-graph name of this part's vertex. A graph that is not
-  ! a part answers the index unchanged.
-  !===================================================================!
-
-  pure integer function global_vertex_index(this, index)
-
-    class(directed_stored_graph), intent(in) :: this
-    integer            , intent(in) :: index
-
-    if (this % cut .and. allocated(this % vglobal)) then
-       global_vertex_index = this % vglobal(index)
-    else
-       global_vertex_index = index
-    end if
-
-  end function global_vertex_index
-
-  !===================================================================!
-  ! The same, for an edge.
-  !===================================================================!
-
-  pure integer function global_edge_index(this, index)
-
-    class(directed_stored_graph), intent(in) :: this
-    integer            , intent(in) :: index
-
-    if (this % cut .and. allocated(this % eglobal)) then
-       global_edge_index = this % eglobal(index)
-    else
-       global_edge_index = index
-    end if
-
-  end function global_edge_index
-
-  !===================================================================!
-  ! The map read backwards. Zero means the whole-graph index does not
-  ! appear in that part at all.
-  !===================================================================!
-
-  pure integer function part_vertex_index(this, global_index, part_id)
-
-    class(directed_stored_graph), intent(in) :: this
-    integer            , intent(in) :: global_index
-    integer            , intent(in) :: part_id
-
-    if (this % cut .and. part_id /= this % number) then
-       part_vertex_index = 0
-    else
-       part_vertex_index = reverse_lookup(this % vglobal, global_index, this % cut)
-    end if
-
-  end function part_vertex_index
-
-  !===================================================================!
-  ! The part's own index for a whole-graph edge; zero for an edge
-  ! this part does not hold.
-  !===================================================================!
-
-  pure integer function part_edge_index(this, global_index, part_id)
-
-    class(directed_stored_graph), intent(in) :: this
-    integer            , intent(in) :: global_index
-    integer            , intent(in) :: part_id
-
-    if (this % cut .and. part_id /= this % number) then
-       part_edge_index = 0
-    else
-       part_edge_index = reverse_lookup(this % eglobal, global_index, this % cut)
-    end if
-
-  end function part_edge_index
-
-  !===================================================================!
-  ! Find which of the part's own indices holds a given whole-graph
-  ! index.
-  !===================================================================!
-
-  pure integer function reverse_lookup(global, global_index, cut)
-
-    integer, allocatable, intent(in) :: global(:)
-    integer             , intent(in) :: global_index
-    logical             , intent(in) :: cut
-
-    integer :: i
-
-    if (.not. cut .or. .not. allocated(global)) then
-       reverse_lookup = global_index
-       return
-    end if
-
-    reverse_lookup = 0
-    do i = 1, size(global)
-       if (global(i) == global_index) then
-          reverse_lookup = i
-          return
-       end if
-    end do
-
-  end function reverse_lookup
-
-  !===================================================================!
-  ! Which part keeps this vertex.
-  !===================================================================!
-
-  pure integer function vertex_owner_part(this, index)
-
-    class(directed_stored_graph), intent(in) :: this
-    integer            , intent(in) :: index
-
-    if (this % cut .and. allocated(this % vowner)) then
-       vertex_owner_part = this % vowner(index)
-    else
-       vertex_owner_part = 1
-    end if
-
-  end function vertex_owner_part
-
-  !===================================================================!
-  ! Which part keeps this edge.
-  !===================================================================!
-
-  pure integer function edge_owner_part(this, index)
-
-    class(directed_stored_graph), intent(in) :: this
-    integer            , intent(in) :: index
-
-    if (this % cut .and. allocated(this % eowner)) then
-       edge_owner_part = this % eowner(index)
-    else
-       edge_owner_part = 1
-    end if
-
-  end function edge_owner_part
+  end function frame
 
 
 end module class_graph

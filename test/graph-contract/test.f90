@@ -27,7 +27,10 @@ module nonlinear_sample_support
   use fractal_graph      , only : set_graph => graph
   use class_graph_field  , only : field
 
+  use graph_partition_frame_representation, only : &
+       & partition_frame_representation
   implicit none
+  type(partition_frame_representation) :: pframe
 
   private
   public :: nonlinear_sample
@@ -234,7 +237,10 @@ program test_graph_contract
   use class_graph_walk      , only : WALK_COMPONENT, WALK_DEPTH
   use nonlinear_sample_support, only : nonlinear_sample
 
+  use graph_partition_frame_representation, only : &
+       & partition_frame_representation
   implicit none
+  type(partition_frame_representation) :: pframe
 
   integer :: nfail
 
@@ -834,13 +840,21 @@ contains
     type(set_map)     :: sets
     type(label_map)     :: labels
     type(inclusion_map)     :: inclusions
+    type(partition_frame_representation) :: gframe
 
     g = diamond()
     call describe(sets, g)
 
-    call report(.not. g % has_part_relation(), &
+    ! The frame is a VALUE the graph carries, not a question it
+    ! answers. A graph born whole carries the identity frame, and
+    ! that is what the next five checks read.
+    gframe = g % frame()
+
+    call report(gframe % describes(g), &
+         & "a graph's own frame describes it", nfail)
+    call report(.not. gframe % has_part_relation(), &
          & "an uncut graph reports no partition record", nfail)
-    call report(g % num_parts() .eq. 1, "an uncut graph is one part", nfail)
+    call report(gframe % num_parts() .eq. 1, "an uncut graph is one part", nfail)
 
     call g % owned_vertices(1, sets, labels, inclusions, vs)
     call members_of(sets, vs, indices)
@@ -850,11 +864,11 @@ contains
     call members_of(sets, vs, indices)
     call report(size(indices) .eq. 0, "and borrows none", nfail)
 
-    call report(g % vertex_owner_part(3) .eq. 1, &
+    call report(gframe % vertex_owner_part(3) .eq. 1, &
          & "every cell belongs to the one part", nfail)
-    call report(g % global_vertex_index(3) .eq. 3, &
+    call report(gframe % global_vertex_index(3) .eq. 3, &
          & "its own numbering is the whole-graph numbering", nfail)
-    call report(g % part_vertex_index(3, 1) .eq. 3, &
+    call report(gframe % part_vertex_index(3, 1) .eq. 3, &
          & "and the map reads the same backwards", nfail)
 
   end subroutine check_graph_uncut
@@ -1098,11 +1112,12 @@ contains
     g = chain_of_six()
     call describe(sets, g)
     p = partitioner(PARTITION_LINEAR, nparts=1, part=1)
-    a = assembler()
+    a = assembler(pframe)
 
     call report(p % defined_on_graph(g), "a partitioner accepts a real graph", nfail)
 
-    call p % partition_graph(g, part)
+    call p % partition_graph(g, part, pframe)
+    a = assembler(pframe)
     call describe(sets, part)
     call report(part % num_vertices() .eq. 6, &
          & "cut into one, the piece has every cell", nfail)
@@ -1130,7 +1145,7 @@ contains
     d  = field('q', on, sets % size_of(on))
     call d % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp])
 
-    call p % partition_data(g, d, part, sets, labels, inclusions, pd)
+    call p % partition_data(g, d, part, pframe, sets, labels, inclusions, pd)
     call a % assemble_data(part, pd, g, sets, labels, inclusions, fd)
 
     select type (fd)
@@ -1178,18 +1193,18 @@ contains
 
     do k = 1, 2
        p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
-       call p % partition_graph(g, part)
+       call p % partition_graph(g, part, pframe)
        call describe(sets, part)
 
-       call report(part % has_part_relation(), &
+       call report(pframe % has_part_relation(), &
             & "has_part_relation is true on a cut piece", nfail)
-       call report(part % num_parts() .eq. 2, "and how many pieces there are", nfail)
+       call report(pframe % num_parts() .eq. 2, "and how many pieces there are", nfail)
 
        ! Count how often each whole-graph cell is owned.
        call part % owned_vertices(k, sets, labels, inclusions, vs)
        call members_of(sets, vs, indices)
        do l = 1, size(indices)
-          f = part % global_vertex_index(indices(l))
+          f = pframe % global_vertex_index(indices(l))
           times(f) = times(f) + 1
        end do
 
@@ -1241,12 +1256,12 @@ contains
 
     do k = 1, nparts
        p = partitioner(rule, nparts=nparts, part=k)
-       call p % partition_graph(g, part)
+       call p % partition_graph(g, part, pframe)
        call describe(sets, part)
        call part % owned_vertices(k, sets, labels, inclusions, vs)
        call members_of(sets, vs, indices)
        do l = 1, size(indices)
-          f = part % global_vertex_index(indices(l))
+          f = pframe % global_vertex_index(indices(l))
           times(f) = times(f) + 1
        end do
     end do
@@ -1292,7 +1307,7 @@ contains
 
     g = chain_of_six()
     call describe(sets, g)
-    a = assembler()
+    a = assembler(pframe)
 
     on = g % vertex_set()
     d  = field('q', on, sets % size_of(on))
@@ -1302,9 +1317,10 @@ contains
 
     do k = 1, 2
        p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
-       call p % partition_graph(g, part)
+       call p % partition_graph(g, part, pframe)
+       a = assembler(pframe)
        call describe(sets, part)
-       call p % partition_data(g, d, part, sets, labels, inclusions, pd)
+       call p % partition_data(g, d, part, pframe, sets, labels, inclusions, pd)
        call a % assemble_data(part, pd, g, sets, labels, inclusions, fd)
 
        select type (fd)
@@ -1377,9 +1393,9 @@ contains
 
     do k = 1, 2
        p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
-       call p % partition_graph(g, part)
+       call p % partition_graph(g, part, pframe)
        call describe(sets, part)
-       call p % partition_data(g, d, part, sets, labels, inclusions, pd)
+       call p % partition_data(g, d, part, pframe, sets, labels, inclusions, pd)
 
        ! Accumulate this piece's owned cells only.
        call part % owned_vertices(k, sets, labels, inclusions, vs)
@@ -1537,10 +1553,13 @@ contains
     call report(out % num_vertices() .eq. 1, &
          & "it returns the same single cell", nfail)
 
-    ! A graph that was never cut is already assembled.
+    ! A graph that was never cut is already assembled - and it says so
+    ! through the identity frame it carries, which the assembler binds
+    ! like any other. `describes` is what makes the binding checkable:
+    ! an assembler holding another graph's frame refuses this one.
     g = chain_of_six()
     call describe(sets, g)
-    a = assembler()
+    a = assembler(g % frame())
     call report(a % defined_on_graph(g), &
          & "an assembler accepts a graph that was never cut", nfail)
 
@@ -1551,7 +1570,8 @@ contains
 
     ! And cutting into one piece is the same story from the other end.
     p = partitioner(PARTITION_LINEAR, nparts=1, part=1)
-    call p % partition_graph(g, part)
+    call p % partition_graph(g, part, pframe)
+    a = assembler(pframe)
     call describe(sets, part)
     call report(part % num_vertices() .eq. 6, &
          & "cutting into one piece returns the whole graph", nfail)

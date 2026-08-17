@@ -222,32 +222,21 @@ module graph_directed_view
      procedure(graph_from_vertex_interface), deferred :: incoming_vertices
 
      !----------------------------------------------------------------!
-     ! LEGACY PARTITION FRAME - MOVES IN THE NEXT FRAME PR.
+     ! THE PARTITION FRAME IS GONE FROM HERE, and this note stands in
+     ! its place so nobody puts it back.
      !
-     ! The frame's relations: counts, ownership, and the index maps
-     ! both ways between a part and its whole. These eight are the
-     ! only bindings on this type that are not a view question. Read
-     ! for what they are, they are already spoken for elsewhere:
+     ! Eight bindings sat at this point - num_parts,
+     ! has_part_relation, the two index maps each way, and the two
+     ! ownership questions. Not one of them is a question about
+     ! D = (V, E, tail, head): they are a subobject's extension read
+     ! both ways, its provenance, and an integer field on its members.
+     ! They are now graph_partition_frame_representation, a value a
+     ! graph carries and an action may bind.
      !
-     !     global_*_index    the EXTENSION of a subobject   set_map
-     !     part_*_index      the same map read backwards    set_map
-     !     has_part_relation, num_parts    provenance       inclusion_map
-     !     *_owner_part      an integer field on the set    a field
-     !
-     ! They are carried here UNCHANGED, and deliberately: moving them
-     ! in this phase would strand class_graph_partitioner and
-     ! class_graph_assembler, which are their only two consumers
-     ! outside the implementation. The six frame SETS above are NOT
-     ! part of this - they carve and bind, which a view may do.
+     ! The six frame SETS above stayed. owned, borrowed and overlap
+     ! carve a subobject of V or of E and bind what it means into the
+     ! caller's maps, which is a view question and always was.
      !----------------------------------------------------------------!
-     procedure(graph_count_interface)            , deferred :: num_parts
-     procedure(graph_has_part_relation_interface), deferred :: has_part_relation
-     procedure(graph_global_id_interface)        , deferred :: global_vertex_index
-     procedure(graph_global_id_interface)        , deferred :: global_edge_index
-     procedure(graph_part_id_interface)          , deferred :: part_vertex_index
-     procedure(graph_part_id_interface)          , deferred :: part_edge_index
-     procedure(graph_owner_part_interface)       , deferred :: vertex_owner_part
-     procedure(graph_owner_part_interface)       , deferred :: edge_owner_part
 
   end type directed_graph
 
@@ -357,77 +346,6 @@ module graph_directed_view
        integer, intent(in) :: vertex_index
        integer, allocatable, intent(out) :: indices(:)
      end subroutine graph_from_vertex_interface
-
-     !===============================================================!
-     ! The frame: how a part relates to the whole.
-     !===============================================================!
-
-     !---------------------------------------------------------------!
-     ! Does this graph hold a partition record?
-     !
-     !      straight off a mesh file  ->  no
-     !      out of a partitioner      ->  yes
-     !
-     ! An assembler checks this first. Without the relation there is
-     ! no way back to whole-graph order, and this check reports that
-     ! rather than assuming a map.
-     !---------------------------------------------------------------!
-
-     pure logical function graph_has_part_relation_interface(this)
-       import :: directed_graph
-       class(directed_graph), intent(in) :: this
-     end function graph_has_part_relation_interface
-
-     !---------------------------------------------------------------!
-     ! What was this cell called in the whole graph?
-     !
-     !      whole    1   2   3   4   5   6   7   8
-     !                       |   |           |
-     !      part 2           1   2           3
-     !
-     !      global_vertex_index(2) = 4
-     !
-     ! Read that as: the part numbers this cell 2; the whole graph it
-     ! was cut from numbered it 4. For an uncut graph the result
-     ! equals the argument, because the graph is its own whole. The
-     ! same map on an edgeless member set is what names the members.
-     !---------------------------------------------------------------!
-
-     pure integer function graph_global_id_interface(this, index)
-       import :: directed_graph
-       class(directed_graph), intent(in) :: this
-       integer, intent(in) :: index
-     end function graph_global_id_interface
-
-     !---------------------------------------------------------------!
-     ! The same map read backwards: where does whole-graph vertex 4
-     ! sit inside part 2? The part is named because the partition is
-     ! replicated - every image builds every part, so one image
-     ! regularly queries a part it does not own.
-     !---------------------------------------------------------------!
-
-     pure integer function graph_part_id_interface(this, global_index, part_id)
-       import :: directed_graph
-       class(directed_graph), intent(in) :: this
-       integer, intent(in) :: global_index
-       integer, intent(in) :: part_id
-     end function graph_part_id_interface
-
-     !---------------------------------------------------------------!
-     ! Whose job is this one?
-     !
-     !      vertex_owner_part(4) = 2       part 2 answers for it;
-     !                                     everyone else only reads it
-     !
-     ! This is what stops a shared cell being counted twice when the
-     ! parts are added back together.
-     !---------------------------------------------------------------!
-
-     pure integer function graph_owner_part_interface(this, index)
-       import :: directed_graph
-       class(directed_graph), intent(in) :: this
-       integer, intent(in) :: index
-     end function graph_owner_part_interface
   end interface
 
 end module graph_directed_view

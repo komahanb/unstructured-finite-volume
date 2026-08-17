@@ -235,16 +235,21 @@ module graph_operation_view
      !===============================================================!
 
      !--------------------------------------------------------------!
-     ! NOT pure, and the reason is a language rule rather than a
-     ! design choice. A transform that binds a partition frame answers
-     ! this by asking the frame whether it describes the graph - which
-     ! means comparing set IDENTITIES, and a set graph carries a
-     ! pointer component, so copying one out of an intent(in) dummy is
+     ! NOT pure, and the reason was a language rule rather than a
+     ! design choice: a transform that held a partition relation
+     ! answered this by asking whether the relation described the
+     ! graph, which compares set IDENTITIES, and a set graph carries a
+     ! pointer component - copying one out of an intent(in) dummy is
      ! barred from a pure subprogram (F2018 C1594).
      !
-     ! An implementation that needs no identity may still be pure: an
-     ! impure interface permits a pure override, never the reverse.
-     ! Coarsener, refiner and partitioner remain pure.
+     ! No transform holds a relation any more; that question is
+     ! defined_on_relation, on the assembler, where the relation is an
+     ! argument. So the constraint no longer binds anything here and
+     ! pure could return - a narrowing, deliberately left for its own
+     ! change rather than smuggled in beside a signature move.
+     !
+     ! An impure interface permits a pure override, never the reverse,
+     ! so every implementation is free to be pure and all four are.
      !--------------------------------------------------------------!
 
      logical function transform_on_graph_interface(this, input_graph)

@@ -55,8 +55,7 @@ module class_graph
 
   use graph_directed_view, only : directed_graph
   use fractal_graph      , only : set_graph => graph
-  use graph_partition_frame_representation, only : &
-       & partition_frame_representation
+  use graph_partition_relation, only : partition_relation
   use graph_calculus     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
   use graph_set_representation, only : counted_set_representation, &
        & listed_set_representation
@@ -105,16 +104,17 @@ module class_graph
 
      !----------------------------------------------------------------!
      ! HOW THIS GRAPH RELATES TO A WHOLE ONE, and it is one component
-     ! now rather than six. The record is a REPRESENTATION - part-local
-     ! numbering, ownership, provenance - and none of it is a question
-     ! about D = (V, E, tail, head), which is why it stopped being a
-     ! binding on the contract and became a value the graph carries.
+     ! now rather than six: the relation r <= S_part x S_whole. The
+     ! record is a REPRESENTATION - part-local numbering, ownership,
+     ! provenance - and none of it is a question about
+     ! D = (V, E, tail, head), which is why it stopped being a binding
+     ! on the contract and became a value the graph carries.
      !
-     ! A graph straight off a mesh file carries the identity frame: one
-     ! part, itself, every index its own.
+     ! A graph straight off a mesh file carries the IDENTITY relation:
+     ! one part, itself, every member its own name.
      !----------------------------------------------------------------!
 
-     type(partition_frame_representation) :: frame_rep
+     type(partition_relation) :: whole_rel
 
      !----------------------------------------------------------------!
      ! The graph's two carriers (AGENTS.md, phase 1): its vertices
@@ -201,12 +201,16 @@ module class_graph
 
      !----------------------------------------------------------------!
      ! How a part relates to the whole: ONE accessor, handing back the
-     ! record by value. The eight questions that used to stand here are
-     ! the frame's, and a caller that needs them takes the frame and
-     ! asks it - which is also what lets an action bind one.
+     ! relation by value. The eight questions that used to stand here
+     ! are r's, and a caller that needs them takes r and asks it -
+     ! which is also what lets the four verbs be handed one explicitly.
+     !
+     ! whole_relation, not relation: this graph CONTAINS relations -
+     ! its incidence and its adjacency are two of them - and this is
+     ! not one of those. It is the relation to the whole.
      !----------------------------------------------------------------!
 
-     procedure :: frame
+     procedure :: whole_relation
 
   end type directed_stored_graph
 
@@ -241,13 +245,13 @@ contains
     integer           , intent(in), optional :: number
 
     !----------------------------------------------------------------!
-    ! The frame, for a graph that is a piece of a larger one: what
-    ! each of its own numbers was called in the whole, and which part
-    ! owns it. These arrive HERE or not at all - a graph that could
-    ! be told its frame afterwards would answer the same question two
-    ! ways in one lifetime, which is the one thing the grammar says a
-    ! graph may never do. Present vglobal is what makes a graph a
-    ! piece; absent, it is a whole.
+    ! The tuples of r, for a graph that is a piece of a larger one:
+    ! what each of its own members is called in the whole, and which
+    ! part owns it. These arrive HERE or not at all - a graph that
+    ! could be told its relation afterwards would answer the same
+    ! question two ways in one lifetime, which is the one thing the
+    ! grammar says a graph may never do. Present vglobal is what makes
+    ! a graph a piece; absent, it is a whole.
     !----------------------------------------------------------------!
 
     integer           , intent(in), optional :: vglobal(:)
@@ -257,10 +261,10 @@ contains
     integer           , intent(in), optional :: nparts
 
     !----------------------------------------------------------------!
-    ! The whole this piece was cut from, by identity and count. A
-    ! frame that could not say WHICH whole it maps into would let a
-    ! caller holding two frames hand the wrong one to the wrong graph
-    ! and be wrong in silence.
+    ! The far side of r, by identity and count. A relation that could
+    ! not say WHICH sets it relates would let a caller holding two of
+    ! them hand the wrong one to the wrong graph and be wrong in
+    ! silence.
     !----------------------------------------------------------------!
 
     type(set_graph)   , intent(in), optional :: whole_verts, whole_edges
@@ -292,14 +296,14 @@ contains
     end do
 
     !----------------------------------------------------------------!
-    ! The frame goes in through the door, or the identity frame does.
-    ! A graph that could be told its frame afterwards would answer one
-    ! question two ways in one lifetime; present vglobal is what makes
-    ! a graph a piece, and absent, it is a whole.
+    ! The relation goes in through the door, or the identity relation
+    ! does. A graph that could be told its relation afterwards would
+    ! answer one question two ways in one lifetime; present vglobal is
+    ! what makes a graph a piece, and absent, it is a whole.
     !----------------------------------------------------------------!
 
     if (present(vglobal)) then
-       this % frame_rep = partition_frame_representation( &
+       this % whole_rel = partition_relation( &
             & part_verts    = this % vset, n_part_verts = this % nv, &
             & part_edges    = this % eset, n_part_edges = this % ne, &
             & whole_verts   = merge_set(whole_verts, this % vset),   &
@@ -313,7 +317,7 @@ contains
             & eglobal = pick_global(eglobal, this % ne),             &
             & eowner  = pick_owner(eowner, this % ne, this % number))
     else
-       this % frame_rep = partition_frame_representation( &
+       this % whole_rel = partition_relation( &
             & this % vset, this % nv, this % eset, this % ne)
     end if
 
@@ -903,7 +907,7 @@ contains
     type(inclusion_map), intent(inout) :: inclusions
     type(set_graph)    , intent(out)   :: members
 
-    call carve(members, owner_matches(this % frame_rep, this % nv, part_id, .true., .true.), 'owned_vertices', &
+    call carve(members, owner_matches(this % whole_rel, this % nv, part_id, .true., .true.), 'owned_vertices', &
          & this % vset, sets, labels, inclusions)
 
   end subroutine owned_vertices
@@ -922,7 +926,7 @@ contains
     type(inclusion_map), intent(inout) :: inclusions
     type(set_graph)    , intent(out)   :: members
 
-    call carve(members, owner_matches(this % frame_rep, this % nv, part_id, .true., .false.), 'borrowed_vertices', &
+    call carve(members, owner_matches(this % whole_rel, this % nv, part_id, .true., .false.), 'borrowed_vertices', &
          & this % vset, sets, labels, inclusions)
 
   end subroutine borrowed_vertices
@@ -943,8 +947,8 @@ contains
 
     integer, allocatable :: owned(:), borrowed(:)
 
-    allocate(owned   , source=owner_matches(this % frame_rep, this % nv, part_id, .true., .true.))
-    allocate(borrowed, source=owner_matches(this % frame_rep, this % nv, part_id, .true., .false.))
+    allocate(owned   , source=owner_matches(this % whole_rel, this % nv, part_id, .true., .true.))
+    allocate(borrowed, source=owner_matches(this % whole_rel, this % nv, part_id, .true., .false.))
 
     call carve(members, [owned, borrowed], 'overlap_vertices', &
          & this % vset, sets, labels, inclusions)
@@ -964,7 +968,7 @@ contains
     type(inclusion_map), intent(inout) :: inclusions
     type(set_graph)    , intent(out)   :: members
 
-    call carve(members, owner_matches(this % frame_rep, this % ne, part_id, .false., .true.), 'owned_edges', &
+    call carve(members, owner_matches(this % whole_rel, this % ne, part_id, .false., .true.), 'owned_edges', &
          & this % eset, sets, labels, inclusions)
 
   end subroutine owned_edges
@@ -982,7 +986,7 @@ contains
     type(inclusion_map), intent(inout) :: inclusions
     type(set_graph)    , intent(out)   :: members
 
-    call carve(members, owner_matches(this % frame_rep, this % ne, part_id, .false., .false.), 'borrowed_edges', &
+    call carve(members, owner_matches(this % whole_rel, this % ne, part_id, .false., .false.), 'borrowed_edges', &
          & this % eset, sets, labels, inclusions)
 
   end subroutine borrowed_edges
@@ -1002,8 +1006,8 @@ contains
 
     integer, allocatable :: owned(:), borrowed(:)
 
-    allocate(owned   , source=owner_matches(this % frame_rep, this % ne, part_id, .false., .true.))
-    allocate(borrowed, source=owner_matches(this % frame_rep, this % ne, part_id, .false., .false.))
+    allocate(owned   , source=owner_matches(this % whole_rel, this % ne, part_id, .false., .true.))
+    allocate(borrowed, source=owner_matches(this % whole_rel, this % ne, part_id, .false., .false.))
 
     call carve(members, [owned, borrowed], 'overlap_edges', &
          & this % eset, sets, labels, inclusions)
@@ -1019,8 +1023,8 @@ contains
   !===================================================================!
 
   !===================================================================!
-  ! Optional arguments, defaulted where the frame demands a value. A
-  ! piece told its global vertex names but not its whole's identity
+  ! Optional arguments, defaulted where the relation demands a value.
+  ! A piece told its global vertex names but not its whole's identity
   ! answers about itself, which is the honest reading of silence.
   !===================================================================!
 
@@ -1069,9 +1073,9 @@ contains
     end if
   end function pick_owner
 
-  pure function owner_matches(fr, n, part_id, on_vertices, want_owned) result(pick)
+  pure function owner_matches(r, n, part_id, on_vertices, want_owned) result(pick)
 
-    type(partition_frame_representation), intent(in) :: fr
+    type(partition_relation), intent(in) :: r
     integer                             , intent(in) :: n
     integer                             , intent(in) :: part_id
     logical                             , intent(in) :: on_vertices
@@ -1081,8 +1085,8 @@ contains
     integer :: i, k, owns
 
     ! A graph born whole owns everything and borrows nothing. That is
-    ! not a special case: it is what an identity frame means.
-    if (.not. fr % has_part_relation()) then
+    ! not a special case: it is what the identity relation means.
+    if (.not. r % has_part_relation()) then
        if (want_owned) then
           pick = [(i, i = 1, n)]
        else
@@ -1095,9 +1099,9 @@ contains
     k = 0
     do i = 1, n
        if (on_vertices) then
-          owns = fr % vertex_owner_part(i)
+          owns = r % vertex_owner_part(i)
        else
-          owns = fr % edge_owner_part(i)
+          owns = r % edge_owner_part(i)
        end if
        if ((owns == part_id) .eqv. want_owned) then
           k = k + 1
@@ -1221,26 +1225,26 @@ contains
   end subroutine incoming_vertices
 
   !===================================================================!
-  ! THE FRAME, HANDED BACK BY VALUE.
+  ! THE RELATION TO THE WHOLE, HANDED BACK BY VALUE.
   !
   ! Eight questions used to stand here as bindings on the contract:
-  ! how many parts, which part owns what, and the index maps both
-  ! ways. Not one of them is a question about D = (V, E, tail, head),
-  ! so they are the frame's now, and this graph answers only WHICH
-  ! frame it carries.
+  ! how many parts, which part owns what, and the maps both ways. Not
+  ! one of them is a question about D = (V, E, tail, head). They are
+  ! r's - r <= S_part x S_whole - and this graph answers only WHICH
+  ! relation it stands in.
   !
-  ! By value, and deliberately: a caller that binds the record - the
-  ! assembler does - must hold something that cannot change under it
-  ! when the graph it came from goes out of scope.
+  ! By value, and deliberately: the four verbs are HANDED r, so what
+  ! they receive must be something that cannot change under them when
+  ! the graph it came from goes out of scope.
   !===================================================================!
 
-  type(partition_frame_representation) function frame(this)
+  type(partition_relation) function whole_relation(this)
 
     class(directed_stored_graph), intent(in) :: this
 
-    frame = this % frame_rep
+    whole_relation = this % whole_rel
 
-  end function frame
+  end function whole_relation
 
 
 end module class_graph

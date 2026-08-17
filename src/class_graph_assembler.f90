@@ -6,10 +6,10 @@
 !
 !         part 2   1   2   3
 !                  |   |   |
-!         whole    3   4   5           by the map the part already
-!                                      holds - the assembler reads
-!                                      the relation, it never invents
-!                                      one
+!         whole    3   4   5           by the relation the cut wrote.
+!                                      The assembler is HANDED r; it
+!                                      never invents one and never
+!                                      keeps one.
 !
 ! The law it has to satisfy:
 !
@@ -61,8 +61,7 @@ module class_graph_assembler
 
   use iso_fortran_env     , only : dp => REAL64
   use graph_directed_view , only : directed_graph
-  use graph_partition_frame_representation, only : &
-       & partition_frame_representation
+  use graph_partition_relation, only : partition_relation
   use graph_field_calculus, only : graph_field
   use fractal_graph      , only : set_graph => graph
   use graph_set_map      , only : set_map
@@ -79,79 +78,86 @@ module class_graph_assembler
   public :: assembler
 
   !===================================================================!
-  ! THE ASSEMBLER HOLDS ONE THING, AND IT IS NOT A MAP.
+  ! THE ASSEMBLER HOLDS NOTHING.
   !
-  ! The index maps and the ownership used to be questions the part
-  ! answered, so an assembler could hold nothing and ask. They are a
-  ! REPRESENTATION now, so it binds one - once, at construction, by
-  ! value. That is admissible for exactly the reason a CSR relation
-  ! copies its numbering: a representation carries no semantic
-  ! identity of its own and cannot go stale under its holder.
+  ! It briefly held a bound relation, and that was one holder too
+  ! many. Partition and assembly are opposite verbs over ONE r, so r
+  ! belongs to neither of them: the cut writes it, and every verb
+  ! that reads it is handed it. An assembler that carried its own
+  ! copy could be paired with a part the copy was never written for,
+  ! and the law it exists to keep - one relation per part - would be
+  ! a convention rather than an argument.
   !
-  ! It still holds NO set_map, label_map or inclusion_map. What a set
-  ! MEANS is the caller's, and arrives at the semantic boundary - as
-  ! arguments to assemble_data, every time.
-  !
-  ! The frame knows which graph it is about, so defined_on_graph is a
-  ! real question again rather than a guess: it asks the frame whether
-  ! this is the part it was written for.
+  ! So: no state, no set_map, no label_map, no inclusion_map. What a
+  ! set MEANS is the caller's, and arrives at the semantic boundary -
+  ! as arguments to assemble_data, every time. WHERE a member goes
+  ! arrives beside it, as r.
   !===================================================================!
 
   type, extends(graph_assembler) :: assembler
-
-     type(partition_frame_representation) :: frame_rep
 
    contains
 
      procedure :: defined_on_graph
      procedure :: defined_on_data
+     procedure :: defined_on_relation
      procedure :: assemble_graph
      procedure :: assemble_data
 
   end type assembler
 
-  interface assembler
-     module procedure create
-  end interface assembler
-
 contains
 
   !===================================================================!
-  ! Build an assembler on the frame it will assemble by. A caller
-  ! that names no frame gets one that describes nothing, and
-  ! defined_on_graph will say so rather than assume an identity map
-  ! and be wrong in silence.
+  ! THE TRANSFORM'S GENERIC GATE, AND IT IS A WEAK ONE ON PURPOSE.
+  !
+  ! With no relation in hand there is exactly one thing an assembler
+  ! can say about a bare graph: whether it has members to put back.
+  ! The real question - is this the part r was written for - needs r,
+  ! and r is not an argument here because graph_transform's contract
+  ! is not about relations. It is defined_on_relation below, and that
+  ! is the gate a caller assembling parts must use.
   !===================================================================!
 
-  type(assembler) function create(frame) result(this)
+  pure logical function defined_on_graph(this, input_graph)
 
-    type(partition_frame_representation), intent(in), optional :: frame
+    class(assembler)     , intent(in) :: this
+    class(directed_graph), intent(in) :: input_graph
 
-    if (present(frame)) this % frame_rep = frame
+    associate (u1 => this); end associate
 
-  end function create
-
-  !===================================================================!
-  ! A part can be assembled back only if it holds its relation to
-  ! the whole. A graph straight off a mesh file holds no relation,
-  ! and this check returns .false. rather than assuming an identity
-  ! map and being wrong in silence.
-  !===================================================================!
-
-  logical function defined_on_graph(this, input_graph)
-
-    class(assembler), intent(in) :: this
-    class(directed_graph)    , intent(in) :: input_graph
-
-    defined_on_graph = this % frame_rep % describes(input_graph)
+    defined_on_graph = input_graph % num_vertices() > 0
 
   end function defined_on_graph
+
+  !===================================================================!
+  ! THE REAL GATE: is this r the one written for this part?
+  !
+  ! A PREDICATE, not an abort. A caller holds one relation per part -
+  ! that is the law - so handing over the wrong one is a mistake that
+  ! has to be REPORTABLE. Ending the image would leave nothing to
+  ! report it to.
+  !===================================================================!
+
+  logical function defined_on_relation(this, rel, part_graph)
+
+    class(assembler)        , intent(in) :: this
+    type(partition_relation), intent(in) :: rel
+    class(directed_graph)   , intent(in) :: part_graph
+
+    associate (u1 => this); end associate
+
+    defined_on_relation = rel % describes(part_graph)
+
+  end function defined_on_relation
 
   !===================================================================!
   ! Can this assembler say anything about that data? Yes for a field
   ! riding a part that passes the graph gate above.
   !===================================================================!
 
+  ! Reads through defined_on_graph, so it inherits that gate's reach
+  ! and no more. The relation question is defined_on_relation.
   logical function defined_on_data(this, input_graph, input_data)
 
     class(assembler) , intent(in) :: this
@@ -178,30 +184,35 @@ contains
   ! part of anything.
   !===================================================================!
 
-  subroutine assemble_graph(this, part_graph, global_graph)
+  subroutine assemble_graph(this, rel, part_graph, global_graph)
 
     class(assembler), intent(in)               :: this
+    type(partition_relation), intent(in)       :: rel
     class(directed_graph)    , intent(in)               :: part_graph
     class(directed_graph)    , allocatable, intent(out) :: global_graph
 
     integer, allocatable :: tails(:), heads(:)
     integer :: ne, e, nv_global, l, biggest
 
+    if (.not. this % defined_on_relation(rel, part_graph)) then
+       error stop 'assemble: this relation was not written for this part'
+    end if
+
     ne = part_graph % num_edges()
 
     ! The whole graph is at least as big as the largest whole-graph
-    ! index recorded in the frame.
+    ! index r records.
     biggest = 0
     do l = 1, part_graph % num_vertices()
-       biggest = max(biggest, this % frame_rep % global_vertex_index(l))
+       biggest = max(biggest, rel % global_vertex_index(l))
     end do
-    nv_global = max(biggest, this % frame_rep % num_whole_vertices())
+    nv_global = max(biggest, rel % num_whole_vertices())
 
     allocate(tails(ne), heads(ne))
     do e = 1, ne
-       tails(e) = this % frame_rep % global_vertex_index(part_graph % edge_tail(e))
+       tails(e) = rel % global_vertex_index(part_graph % edge_tail(e))
        if (part_graph % edge_has_head(e)) then
-          heads(e) = this % frame_rep % global_vertex_index(part_graph % edge_head(e))
+          heads(e) = rel % global_vertex_index(part_graph % edge_head(e))
        else
           heads(e) = 0
        end if
@@ -209,7 +220,7 @@ contains
 
     allocate(global_graph, source = &
          & directed_stored_graph(nv_global, tails=tails, heads=heads, &
-         &                       number=this % frame_rep % part_id()))
+         &                       number=rel % part_id()))
 
   end subroutine assemble_graph
 
@@ -221,10 +232,11 @@ contains
   ! the answers from every part rebuilds the whole field exactly once.
   !===================================================================!
 
-  subroutine assemble_data(this, part_graph, part_data, global_graph, &
+  subroutine assemble_data(this, rel, part_graph, part_data, global_graph, &
        & sets, labels, inclusions, global_data)
 
     class(assembler) , intent(in)               :: this
+    type(partition_relation), intent(in)        :: rel
     class(directed_graph)     , intent(in)               :: part_graph
     class(graph_field), intent(in)               :: part_data
     class(directed_graph)     , intent(in)               :: global_graph
@@ -236,7 +248,9 @@ contains
     type(set_graph) :: dom
     integer         :: n_dom
 
-    associate (u1 => this); end associate
+    if (.not. this % defined_on_relation(rel, part_graph)) then
+       error stop 'assemble: this relation was not written for this part'
+    end if
 
     select type (part_data)
 
@@ -246,11 +260,11 @@ contains
        ! Classify by embedding - a DECLARED question, so the inclusion
        ! map answers it, never the extension and never the graph.
        if (declared_subobject(dom, part_graph % vertex_set(), inclusions)) then
-          call gather_field(part_data, dom, n_dom, part_graph, this % frame_rep, &
+          call gather_field(part_data, dom, n_dom, part_graph, rel, &
                & part_graph % vertex_set(), part_graph % num_vertices(), &
                & global_graph, .true., sets, labels, inclusions, global_data)
        else if (declared_subobject(dom, part_graph % edge_set(), inclusions)) then
-          call gather_field(part_data, dom, n_dom, part_graph, this % frame_rep, &
+          call gather_field(part_data, dom, n_dom, part_graph, rel, &
                & part_graph % edge_set(), part_graph % num_edges(), &
                & global_graph, .false., sets, labels, inclusions, global_data)
        else
@@ -273,7 +287,7 @@ contains
   ! declared subset: extension and values return, tokens do not.
   !===================================================================!
 
-  subroutine gather_field(part_data, dom, n_dom, part_graph, frame, part_carrier, &
+  subroutine gather_field(part_data, dom, n_dom, part_graph, rel, part_carrier, &
        &                  n_part_carrier, global_graph, on_vertices, &
        &                  sets, labels, inclusions, global_data)
 
@@ -281,7 +295,7 @@ contains
     type(set_graph)    , intent(in)               :: dom
     integer            , intent(in)               :: n_dom
     class(directed_graph)       , intent(in)               :: part_graph
-    type(partition_frame_representation), intent(in) :: frame
+    type(partition_relation), intent(in)          :: rel
     type(set_graph)    , intent(in)               :: part_carrier
     integer            , intent(in)               :: n_part_carrier
     class(directed_graph)       , intent(in)               :: global_graph
@@ -308,7 +322,7 @@ contains
        global_carrier = global_graph % edge_set()
     end if
     ncomp = part_data % num_components()
-    me    = frame % part_id()
+    me    = rel % part_id()
 
     call part_data % get_real_vector(lv)
 
@@ -321,10 +335,10 @@ contains
        fv = 0.0_dp
 
        do l = 1, nlocal
-          if (frame % has_part_relation()) then
-             if (owner_of(frame, l, on_vertices) /= me) cycle
+          if (rel % has_part_relation()) then
+             if (owner_of(rel, l, on_vertices) /= me) cycle
           end if
-          f = global_of(frame, l, on_vertices)
+          f = global_of(rel, l, on_vertices)
           do c = 1, ncomp
              associate (to => (f - 1) * ncomp + c, from => (l - 1) * ncomp + c)
                if (to >= 1 .and. to <= size(fv) .and. from <= size(lv)) fv(to) = lv(from)
@@ -341,11 +355,11 @@ contains
        n = 0
        do l = 1, n_dom
           at = sets % member_of(dom, l)      ! part-local member
-          if (frame % has_part_relation()) then
-             if (owner_of(frame, at, on_vertices) /= me) cycle
+          if (rel % has_part_relation()) then
+             if (owner_of(rel, at, on_vertices) /= me) cycle
           end if
           n = n + 1
-          kept(n) = global_of(frame, at, on_vertices)
+          kept(n) = global_of(rel, at, on_vertices)
           came(n) = l
        end do
        !-------------------------------------------------------------!
@@ -376,30 +390,30 @@ contains
 
   end subroutine gather_field
 
-  pure integer function global_of(frame, l, on_vertices)
+  pure integer function global_of(rel, l, on_vertices)
 
-    type(partition_frame_representation), intent(in) :: frame
-    integer                             , intent(in) :: l
-    logical                             , intent(in) :: on_vertices
+    type(partition_relation), intent(in) :: rel
+    integer                 , intent(in) :: l
+    logical                 , intent(in) :: on_vertices
 
     if (on_vertices) then
-       global_of = frame % global_vertex_index(l)
+       global_of = rel % global_vertex_index(l)
     else
-       global_of = frame % global_edge_index(l)
+       global_of = rel % global_edge_index(l)
     end if
 
   end function global_of
 
-  pure integer function owner_of(frame, l, on_vertices)
+  pure integer function owner_of(rel, l, on_vertices)
 
-    type(partition_frame_representation), intent(in) :: frame
-    integer                             , intent(in) :: l
-    logical                             , intent(in) :: on_vertices
+    type(partition_relation), intent(in) :: rel
+    integer                 , intent(in) :: l
+    logical                 , intent(in) :: on_vertices
 
     if (on_vertices) then
-       owner_of = frame % vertex_owner_part(l)
+       owner_of = rel % vertex_owner_part(l)
     else
-       owner_of = frame % edge_owner_part(l)
+       owner_of = rel % edge_owner_part(l)
     end if
 
   end function owner_of

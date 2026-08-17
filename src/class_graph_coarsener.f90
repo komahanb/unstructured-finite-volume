@@ -15,8 +15,9 @@
 ! inside it. That is the whole rule.
 !
 ! Coarsening and partitioning are both transforms and they are not the
-! same family. Partitioning changes the frame: whole to parts, same
-! detail. Coarsening changes the detail: fine to coarse, same whole.
+! same family. Partitioning changes WHO HOLDS WHAT: whole to parts,
+! same detail. Coarsening changes the detail: fine to coarse, same
+! whole.
 !
 ! What it is for: a multigrid level, where the slow smooth part of an
 ! error is cheap to damp; a first guess to start a fine solve from;

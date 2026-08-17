@@ -34,10 +34,9 @@ program test_graph_field_transport
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
   use class_graph_assembler  , only : assembler
 
-  use graph_partition_frame_representation, only : &
-       & partition_frame_representation
+  use graph_partition_relation, only : partition_relation
   implicit none
-  type(partition_frame_representation) :: pframe
+  type(partition_relation) :: rel
 
   type(directed_stored_graph) :: g
   type(assembler)    :: a
@@ -49,7 +48,7 @@ program test_graph_field_transport
   write(*,'(1x,a)') "============================================="
 
   g = directed_stored_graph(6, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
-  a = assembler(pframe)
+  a = assembler()
 
   call check_full(.true. , 6, nfail)
   call check_full(.false., 5, nfail)
@@ -121,15 +120,13 @@ contains
     total = 0.0_dp
     do k = 1, 2
        p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
-       call p % partition_graph(g, part, pframe)
-       a = assembler(pframe)
-       a = assembler(pframe)
+       call p % partition_graph(g, part, rel)
        call sets % bind(part % vertex_set(), &
             & counted_set_representation(part % num_vertices()))
        call sets % bind(part % edge_set(), &
             & counted_set_representation(part % num_edges()))
-       call p % partition_data(g, d, part, pframe, sets, labels, inclusions, pd)
-       call a % assemble_data(part, pd, g, sets, labels, inclusions, fd)
+       call p % partition_data(rel, g, d, part, sets, labels, inclusions, pd)
+       call a % assemble_data(rel, part, pd, g, sets, labels, inclusions, fd)
        call fd % get_real_vector(v)
        total = total + v(1:n)
     end do
@@ -195,15 +192,13 @@ contains
     okp  = .true.
     do k = 1, 2
        p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
-       call p % partition_graph(g, part, pframe)
-       a = assembler(pframe)
-       a = assembler(pframe)
+       call p % partition_graph(g, part, rel)
        call sets % bind(part % vertex_set(), &
             & counted_set_representation(part % num_vertices()))
        call sets % bind(part % edge_set(), &
             & counted_set_representation(part % num_edges()))
 
-       call p % partition_data(g, d, part, pframe, sets, labels, inclusions, pd)
+       call p % partition_data(rel, g, d, part, sets, labels, inclusions, pd)
 
        !-------------------------------------------------------------!
        ! The select type asked whether the domain was a subset TYPE.
@@ -219,7 +214,7 @@ contains
           okp = okp .and. declared_subobject(dp_, part % edge_set(), inclusions)
        end if
 
-       call a % assemble_data(part, pd, g, sets, labels, inclusions, fd)
+       call a % assemble_data(rel, part, pd, g, sets, labels, inclusions, fd)
 
        dg = fd % domain()
        ok = ok .and. declared_subobject(dg, carrier, inclusions)
@@ -289,15 +284,13 @@ contains
     call d % set_real_vector([real(dp) ::])
 
     p = partitioner(PARTITION_LINEAR, nparts=2, part=1)
-    call p % partition_graph(g, part, pframe)
-    a = assembler(pframe)
-    a = assembler(pframe)
+    call p % partition_graph(g, part, rel)
     call sets % bind(part % vertex_set(), &
          & counted_set_representation(part % num_vertices()))
     call sets % bind(part % edge_set(), &
          & counted_set_representation(part % num_edges()))
-    call p % partition_data(g, d, part, pframe, sets, labels, inclusions, pd)
-    call a % assemble_data(part, pd, g, sets, labels, inclusions, fd)
+    call p % partition_data(rel, g, d, part, sets, labels, inclusions, pd)
+    call a % assemble_data(rel, part, pd, g, sets, labels, inclusions, fd)
     call fd % get_real_vector(v)
 
     ok = pd % num_entries() .eq. 0 .and. fd % num_entries() .eq. 0 &

@@ -75,8 +75,7 @@ module graph_calculus
   use graph_inclusion_map, only : inclusion_map
   use graph_operation_view, only : graph_operation, graph_transform
   use graph_directed_view, only : directed_graph
-  use graph_partition_frame_representation, only : &
-       & partition_frame_representation
+  use graph_partition_relation, only : partition_relation
   use graph_field_calculus, only : graph_field
 
   implicit none
@@ -281,9 +280,10 @@ module graph_calculus
   !         o---o---o   :   o---o---o     so the parts talk little
   !                part 1     part 2
   !
-  ! What comes out is still a graph, and it holds the record of how
-  ! it relates back to the whole - the frame the grammar already
-  ! knows how to read.
+  ! What comes out is a graph and a RELATION: r <= S_part x S_whole,
+  ! the tuples that say what the whole calls each of the part's own
+  ! members. The cut is where that relation is written, and the only
+  ! place it may be.
   !===================================================================!
 
   type, abstract, extends(graph_transform) :: graph_partitioner
@@ -301,6 +301,13 @@ module graph_calculus
   !
   !      assemble( partition( G ) )  =  G
   !
+  ! and it is the SAME r the partitioner wrote. Assembly is not a
+  ! second record read in agreement with the first; it is the one
+  ! relation read backwards. So r arrives as an argument, and
+  ! defined_on_relation is what asks whether it is the right one for
+  ! the part in hand - a caller holding two relations may hand over
+  ! the wrong one, and that must be caught rather than answered.
+  !
   ! Only owned values are collected. A borrowed value is a copy of a
   ! value another part owns; counting both copies violates
   ! conservation. No physics, no matrices, no solver behaviour
@@ -311,6 +318,7 @@ module graph_calculus
 
    contains
 
+     procedure(defined_on_relation_interface), deferred :: defined_on_relation
      procedure(assemble_graph_interface), deferred :: assemble_graph
      procedure(assemble_data_interface) , deferred :: assemble_data
 
@@ -454,19 +462,29 @@ module graph_calculus
 
      !--------------------------------------------------------------!
      ! The cut yields two things, and they leave together: the piece,
-     ! and the record of how it sits in the whole. The record is a
-     ! REPRESENTATION rather than a question the piece answers,
-     ! because none of what it holds - part-local numbering,
-     ! ownership, provenance - is a question about D.
+     ! and the RELATION r <= S_part x S_whole that says how the piece
+     ! sits in the whole. The relation is a REPRESENTATION rather than
+     ! a question the piece answers, because none of what it holds -
+     ! part-local numbering, ownership, provenance - is a question
+     ! about D.
+     !
+     ! This is the one verb of the four that WRITES r. The other three
+     ! read it, and none of them may invent one.
+     !
+     ! REQUIRED, not optional. What a cut produces is not G_p; it is
+     ! the pair (G_p, r_p), and a call that took the piece and left
+     ! the relation behind would be mathematically incomplete - it
+     ! would name half of what the verb makes. There is therefore no
+     ! valid two-argument call.
      !--------------------------------------------------------------!
 
-     subroutine partition_graph_interface(this, global_graph, part_graph, frame)
+     subroutine partition_graph_interface(this, global_graph, part_graph, rel)
        import :: graph_partitioner, directed_graph, &
-            & partition_frame_representation
+            & partition_relation
        class(graph_partitioner), intent(in) :: this
        class(directed_graph), intent(in) :: global_graph
        class(directed_graph), allocatable, intent(out) :: part_graph
-       type(partition_frame_representation), intent(out), optional :: frame
+       type(partition_relation), intent(out) :: rel
      end subroutine partition_graph_interface
 
      !--------------------------------------------------------------!
@@ -484,34 +502,61 @@ module graph_calculus
      ! The transform writes into the caller's maps and keeps nothing.
      !--------------------------------------------------------------!
 
-     subroutine partition_data_interface(this, global_graph, global_data, &
-          & part_graph, frame, sets, labels, inclusions, part_data)
+     ! r LEADS, because it is what the verb is about: the data is
+     ! carried along the very tuples the cut wrote, and the graphs and
+     ! maps beside it are the context that carry still needs.
+     subroutine partition_data_interface(this, rel, global_graph, global_data, &
+          & part_graph, sets, labels, inclusions, part_data)
        import :: graph_partitioner, directed_graph, graph_field, &
             & set_map, label_map, inclusion_map, &
-            & partition_frame_representation
+            & partition_relation
        class(graph_partitioner), intent(in) :: this
+       type(partition_relation), intent(in) :: rel
        class(directed_graph), intent(in) :: global_graph
        class(graph_field), intent(in) :: global_data
        class(directed_graph), intent(in) :: part_graph
-       type(partition_frame_representation), intent(in) :: frame
        type(set_map), intent(inout) :: sets
        type(label_map), intent(inout) :: labels
        type(inclusion_map), intent(inout) :: inclusions
        class(graph_field), allocatable, intent(out) :: part_data
      end subroutine partition_data_interface
 
-     subroutine assemble_graph_interface(this, part_graph, global_graph)
-       import :: graph_assembler, directed_graph
+     !--------------------------------------------------------------!
+     ! IS THIS THE RIGHT RELATION FOR THIS PART? A PREDICATE, NOT AN
+     ! ABORT. A caller may hold one relation per part - it must, and
+     ! that is the law - so handing over the wrong one is a mistake
+     ! the contract has to be able to REPORT. error stop would end the
+     ! image and leave nothing to report it to.
+     !
+     ! It is declared here rather than on graph_transform because a
+     ! generic transform has no relation: only the assembly side reads
+     ! one it did not write.
+     !--------------------------------------------------------------!
+
+     logical function defined_on_relation_interface(this, rel, part_graph)
+       import :: graph_assembler, directed_graph, &
+            & partition_relation
        class(graph_assembler), intent(in) :: this
+       type(partition_relation), intent(in) :: rel
+       class(directed_graph), intent(in) :: part_graph
+     end function defined_on_relation_interface
+
+     subroutine assemble_graph_interface(this, rel, part_graph, global_graph)
+       import :: graph_assembler, directed_graph, &
+            & partition_relation
+       class(graph_assembler), intent(in) :: this
+       type(partition_relation), intent(in) :: rel
        class(directed_graph), intent(in) :: part_graph
        class(directed_graph), allocatable, intent(out) :: global_graph
      end subroutine assemble_graph_interface
 
-     subroutine assemble_data_interface(this, part_graph, part_data, &
+     subroutine assemble_data_interface(this, rel, part_graph, part_data, &
           & global_graph, sets, labels, inclusions, global_data)
        import :: graph_assembler, directed_graph, graph_field, &
-            & set_map, label_map, inclusion_map
+            & set_map, label_map, inclusion_map, &
+            & partition_relation
        class(graph_assembler), intent(in) :: this
+       type(partition_relation), intent(in) :: rel
        class(directed_graph), intent(in) :: part_graph
        class(graph_field), intent(in) :: part_data
        class(directed_graph), intent(in) :: global_graph

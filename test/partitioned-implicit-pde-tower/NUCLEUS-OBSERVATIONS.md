@@ -58,8 +58,9 @@ global necessity:     yes at this radius and above; a partition with
 cross-tower recurrence: FIRST tower to meet it. Every prior tower's
                       domains were global and undivided
 
-graph role:           partition frame - the part graph carries the
-                      ownership function and the global map
+graph role:           the part graph stands in r_p <= S_part x S_whole,
+                      which carries the ownership function and the
+                      global map
 
 comparison:           the adjoint tower distinguished DOMAINS of equal
                       size by identity (AD-0); this tower distinguishes
@@ -411,9 +412,9 @@ symptom / fact:       THE PART GRAPH IS A GENUINE NUMERICAL OPERAND.
                         G2 borrowed global 3:  local L =  3, global 1
 
                       So one object - the part graph - carries four
-                      roles at once: partition frame, ownership
-                      environment, local field-domain source, and
-                      numerical topology operand.
+                      roles at once: it stands in r_p, it is an
+                      ownership environment, a local field-domain
+                      source, and a numerical topology operand.
 
 exact caller:         gate-b-operator/test.f90 (check_local_actions,
                       one_local_action)
@@ -424,9 +425,9 @@ mathematical concept: restriction of an operator to a subdomain with
 local necessity:      yes
 global necessity:     unknown beyond this radius
 
-cross-tower recurrence: first tower in which a graph is BOTH a frame
-                      and an operand. In the adjoint tower the model
-                      graph was an owner and never an operand
+cross-tower recurrence: first tower in which a graph both STANDS IN a
+                      relation and is an operand. In the adjoint tower
+                      the model graph was an owner and never an operand
                       (AD-13); here the same object is both
 
 graph role:           all four, simultaneously

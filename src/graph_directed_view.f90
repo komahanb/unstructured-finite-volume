@@ -101,7 +101,7 @@ module graph_directed_view
   ! GRAPH. The reader of structure.
   !
   ! Thirty-six symbols, all queries: identity, counts, incidence,
-  ! named sets, neighbourhoods, and the frame. A graph answers; it
+  ! named sets, and neighbourhoods. A graph answers; it
   ! never acts. Algorithms act on it from the levels above, which is
   ! what keeps this contract small.
   !
@@ -203,7 +203,7 @@ module graph_directed_view
      procedure(graph_carved_set_interface), deferred :: boundary_edges
      procedure(graph_tagged_set_interface), deferred :: tagged_edges
 
-     ! The frame's sets, one part at a time.
+     ! Carved by ownership, one part at a time.
      procedure(graph_part_set_interface), deferred :: owned_vertices
      procedure(graph_part_set_interface), deferred :: borrowed_vertices
      procedure(graph_part_set_interface), deferred :: overlap_vertices
@@ -222,20 +222,21 @@ module graph_directed_view
      procedure(graph_from_vertex_interface), deferred :: incoming_vertices
 
      !----------------------------------------------------------------!
-     ! THE PARTITION FRAME IS GONE FROM HERE, and this note stands in
-     ! its place so nobody puts it back.
+     ! THE PARTITION RELATION IS GONE FROM HERE, and this note stands
+     ! in its place so nobody puts it back.
      !
      ! Eight bindings sat at this point - num_parts,
-     ! has_part_relation, the two index maps each way, and the two
-     ! ownership questions. Not one of them is a question about
-     ! D = (V, E, tail, head): they are a subobject's extension read
-     ! both ways, its provenance, and an integer field on its members.
-     ! They are now graph_partition_frame_representation, a value a
-     ! graph carries and an action may bind.
+     ! has_part_relation, the two maps each way, and the two ownership
+     ! questions. Not one of them is a question about
+     ! D = (V, E, tail, head): they are the tuples of
+     ! r <= S_part x S_whole read both ways, r's provenance, and an
+     ! integer field on the part's members. They are
+     ! partition_relation now - a value the cut writes, a graph
+     ! carries, and the four verbs are handed.
      !
-     ! The six frame SETS above stayed. owned, borrowed and overlap
-     ! carve a subobject of V or of E and bind what it means into the
-     ! caller's maps, which is a view question and always was.
+     ! The six SETS above stayed. owned, borrowed and overlap carve a
+     ! subobject of V or of E and bind what it means into the caller's
+     ! maps, which is a view question and always was.
      !----------------------------------------------------------------!
 
   end type directed_graph

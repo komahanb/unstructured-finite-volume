@@ -209,7 +209,10 @@ contains
     ! through the door beside the piece, because the three verbs that
     ! read it are handed it - none of them may ask the piece, and none
     ! may invent its own.
-    type(partition_relation), intent(out), optional :: rel
+    !
+    ! REQUIRED. A cut produces the pair (G_p, r_p); taking the piece
+    ! and leaving the relation is taking half the answer.
+    type(partition_relation), intent(out) :: rel
 
     integer, allocatable :: owner(:), mine(:), whereis(:)
     integer, allocatable :: ltail(:), lhead(:), eglobal(:), eowner(:), vowner(:)
@@ -285,12 +288,10 @@ contains
          &              n_whole_verts = nv,                          &
          &              n_whole_edges = ne))
 
-    if (present(rel)) then
-       select type (part_graph)
-       class is (directed_stored_graph)
-          rel = part_graph % whole_relation()
-       end select
-    end if
+    select type (part_graph)
+    class is (directed_stored_graph)
+       rel = part_graph % whole_relation()
+    end select
 
   end subroutine partition_graph
 

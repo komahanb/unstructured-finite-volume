@@ -470,6 +470,12 @@ module graph_calculus
      !
      ! This is the one verb of the four that WRITES r. The other three
      ! read it, and none of them may invent one.
+     !
+     ! REQUIRED, not optional. What a cut produces is not G_p; it is
+     ! the pair (G_p, r_p), and a call that took the piece and left
+     ! the relation behind would be mathematically incomplete - it
+     ! would name half of what the verb makes. There is therefore no
+     ! valid two-argument call.
      !--------------------------------------------------------------!
 
      subroutine partition_graph_interface(this, global_graph, part_graph, rel)
@@ -478,7 +484,7 @@ module graph_calculus
        class(graph_partitioner), intent(in) :: this
        class(directed_graph), intent(in) :: global_graph
        class(directed_graph), allocatable, intent(out) :: part_graph
-       type(partition_relation), intent(out), optional :: rel
+       type(partition_relation), intent(out) :: rel
      end subroutine partition_graph_interface
 
      !--------------------------------------------------------------!

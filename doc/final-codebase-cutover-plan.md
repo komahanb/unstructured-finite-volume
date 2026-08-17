@@ -894,11 +894,34 @@ at three keys, so a source reaching for the retired module is caught
 rather than silently ignored — the PR2 lesson about vacuous refusals,
 applied before it could bite.
 
+### `rel` is required, not optional
+
+PR4 left the frame `optional` on `partition_graph`, and PR5 first carried
+that forward. The ruling on review corrected it, and the reason is the
+mathematics rather than the ergonomics: what a cut produces is not G_p,
+it is the pair
+
+    (G_p, r_p)  ,   r_p <= S_part x S_whole
+
+so a call that took the piece and left the relation behind would name
+half of what the verb makes. There is no valid two-argument call:
+
+    call p % partition_graph(global_graph, part_graph)        <- gone
+    call p % partition_graph(global_graph, part_graph, rel)   <- the shape
+
+The tightening cost nothing at the call sites. All 28 of them already
+passed a relation, so removing `optional` removed a shape nobody used —
+which is the evidence that the argument was never really optional in
+practice, only in the contract.
+
 ### Not done, deliberately
 
-`graph_transform` is byte-unchanged in its executable text. The mesh
-island is untouched. `class_graph`'s module name still says less than the
-type inside it, which remains the deferred PR3 debt.
+`graph_transform` is byte-unchanged in its executable text — including
+the `pure` that `transform_on_graph_interface` could now take back.
+Restoring it is a contract tightening of its own and was ruled a separate
+PR, not something to bury beside a signature move. The mesh island is
+untouched. `class_graph`'s module name still says less than the type
+inside it, which remains the deferred PR3 debt.
 
 ---
 

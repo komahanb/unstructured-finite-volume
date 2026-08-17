@@ -696,6 +696,75 @@ the tests that assert frame laws — §6.2's measurement, unchanged.
 
 ---
 
+## 6.7 PR4: the partition frame leaves the directed view
+
+The eight bindings PR1 §3.3 measured as *not a view question* are gone
+from `directed_graph`. They are `graph_partition_frame_representation`
+now — a value a graph carries and an action may bind.
+
+    D = (V, E, tail, head)      is what directed_graph says, and all
+                                it says. 28 bindings, no frame.
+
+### What the frame carries, and why it is more than coordinates
+
+    part V, part E              identity  ]  so the frame can say
+    whole V, whole E            identity  ]  WHICH graph it is about
+    part / whole counts                   ]
+    number, nparts, cut         provenance
+    vglobal, eglobal            part-local -> whole
+    vowner, eowner              who answers for each member
+
+A bare numbering could not say which part it numbers, so a caller
+holding two frames could hand the wrong one to the wrong graph and be
+wrong in silence. `describes(g)` is the question that makes a captured
+frame checkable, and it is what `defined_on_graph` now asks.
+
+It holds **no** `set_map`, `label_map` or `inclusion_map`. What a set
+means stays the caller's and arrives at the semantic boundary.
+
+### How the two consumers get it
+
+| | before | after |
+|---|---|---|
+| partitioner | stamped the frame into the piece | `partition_graph(g, part, frame)` hands it back; `partition_data` takes it |
+| assembler | asked the piece | **binds** one at construction: `assembler(frame)` |
+
+The assembler binding is admissible for the reason a CSR relation
+copies its numbering: a representation carries no semantic identity and
+cannot go stale under its holder. It still holds no map.
+
+### One consequence the ruling did not anticipate
+
+`transform_on_graph_interface` is **no longer `pure`**. Asking whether a
+frame describes a graph means comparing set identities, and a set graph
+carries a pointer component, so copying one out of an `intent(in)` dummy
+is barred from a pure subprogram (F2018 C1594). The *signature* is
+unchanged — the contract was not widened — and an impure interface still
+permits a pure override, so coarsener, refiner and partitioner remain
+pure.
+
+### What the tests learned, which is the point
+
+The migration's own failures taught the law better than a passing test
+would have. A host-scope frame reused across two parts is *wrong*, and
+five suites said so numerically:
+
+    a check handed `part` must read the frame THAT part carries
+
+which is exactly why the record is a value the graph carries rather
+than a global. Every such site now reads `part % frame()` inside its
+`select type`, and the shared partitioned fixture holds **one frame per
+part** where it used to keep one.
+
+### Not moved, deliberately
+
+The six carved frame sets — `owned_`, `borrowed_`, `overlap_` vertices
+and edges — stayed in the view. §6.2 measured them as carve-and-bind,
+which a view may do. They now read ownership through the frame the graph
+carries, but they are still the graph's own question.
+
+---
+
 ## 7. Verification record
 
 One clean rebuild per suite, at every commit recorded here:
@@ -706,6 +775,7 @@ One clean rebuild per suite, at every commit recorded here:
     graph_grammar deleted    32 of 32 suites PASS, 0 FAIL
     directed_graph rename    32 of 32 suites PASS, 0 FAIL   (as ordinary_graph)
     ordinary -> directed     32 of 32 suites PASS, 0 FAIL
+    partition frame moved    32 of 32 suites PASS, 0 FAIL
 
 Seven tower import gates were re-asserted, not relaxed: a level that read
 the field through the grammar is granted `graph_field_calculus` by name,

@@ -37,7 +37,10 @@ program partition_law
        &                              PARTITION_BREADTH_FIRST
   use class_graph_assembler, only : assembler
 
+  use graph_partition_frame_representation, only : &
+       & partition_frame_representation
   implicit none
+  type(partition_frame_representation) :: pframe
 
   integer :: failures = 0
 
@@ -103,13 +106,14 @@ contains
     character(len=96)         :: what
 
     g = chain_of_six()
-    a = assembler()
+    a = assembler(pframe)
     seen  = 0
     sound = .true.
 
     do k = 1, nparts
        p = partitioner(PARTITION_LINEAR, nparts=nparts, part=k)
-       call p % partition_graph(g, part)
+       call p % partition_graph(g, part, pframe)
+       a = assembler(pframe)
        call a % assemble_graph(part, back)
 
        do e = 1, back % num_edges()
@@ -191,7 +195,7 @@ contains
     character(len=96)               :: what
 
     g    = chain_of_six()
-    a    = assembler()
+    a    = assembler(pframe)
     want = [10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp]
 
     !----------------------------------------------------------------!
@@ -209,7 +213,8 @@ contains
     total = 0.0_dp
     do k = 1, nparts
        p = partitioner(PARTITION_LINEAR, nparts=nparts, part=k)
-       call p % partition_graph(g, part)
+       call p % partition_graph(g, part, pframe)
+       a = assembler(pframe)
 
        ! Each part is a new graph, so its own carriers are new domains
        ! and must be described before a field can be seated on them.
@@ -218,7 +223,7 @@ contains
        call sets % bind(part % edge_set(), &
             & counted_set_representation(part % num_edges()))
 
-       call p % partition_data(g, d, part, sets, labels, inclusions, pd)
+       call p % partition_data(g, d, part, pframe, sets, labels, inclusions, pd)
        call a % assemble_data(part, pd, g, sets, labels, inclusions, fd)
 
        select type (fd)
@@ -270,7 +275,7 @@ contains
     character(len=96)               :: what
 
     g    = chain_of_six()
-    a    = assembler()
+    a    = assembler(pframe)
     want = [1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp, 5.0_dp]
 
     !----------------------------------------------------------------!
@@ -289,7 +294,8 @@ contains
     expressible = .true.
     do k = 1, nparts
        p = partitioner(PARTITION_LINEAR, nparts=nparts, part=k)
-       call p % partition_graph(g, part)
+       call p % partition_graph(g, part, pframe)
+       a = assembler(pframe)
 
        ! Each part is a new graph, so its own carriers are new domains
        ! and must be described before a field can be seated on them.
@@ -298,7 +304,7 @@ contains
        call sets % bind(part % edge_set(), &
             & counted_set_representation(part % num_edges()))
 
-       call p % partition_data(g, d, part, sets, labels, inclusions, pd)
+       call p % partition_data(g, d, part, pframe, sets, labels, inclusions, pd)
        call a % assemble_data(part, pd, g, sets, labels, inclusions, fd)
 
        select type (fd)
@@ -352,13 +358,13 @@ contains
 
     do k = 1, nparts
        p = partitioner(PARTITION_LINEAR, nparts=nparts, part=k)
-       call p % partition_graph(g, part)
+       call p % partition_graph(g, part, pframe)
 
        call part % owned_vertices(k, sets, labels, inclusions, owned)
        call roster(sets, owned, idx)
        do l = 1, size(idx)
-          times(part % global_vertex_index(idx(l))) = &
-               & times(part % global_vertex_index(idx(l))) + 1
+          times(pframe % global_vertex_index(idx(l))) = &
+               & times(pframe % global_vertex_index(idx(l))) + 1
        end do
 
        call part % borrowed_vertices(k, sets, labels, inclusions, borrowed)
@@ -406,10 +412,11 @@ contains
     logical                   :: same, some_part_is_short
 
     g = chain_of_six()
-    a = assembler()
+    a = assembler(pframe)
     p = partitioner(PARTITION_LINEAR, nparts=1, part=1)
 
-    call p % partition_graph(g, part)
+    call p % partition_graph(g, part, pframe)
+    a = assembler(pframe)
     call a % assemble_graph(part, back)
 
     same = back % num_vertices() .eq. g % num_vertices() .and. &
@@ -427,7 +434,8 @@ contains
     some_part_is_short = .false.
     do e = 1, 2
        p = partitioner(PARTITION_LINEAR, nparts=2, part=e)
-       call p % partition_graph(g, part)
+       call p % partition_graph(g, part, pframe)
+       a = assembler(pframe)
        call a % assemble_graph(part, back)
        if (back % num_edges() .lt. g % num_edges()) some_part_is_short = .true.
     end do

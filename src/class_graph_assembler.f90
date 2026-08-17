@@ -61,6 +61,8 @@ module class_graph_assembler
 
   use iso_fortran_env     , only : dp => REAL64
   use graph_directed_view , only : directed_graph
+  use graph_partition_frame_representation, only : &
+       & partition_frame_representation
   use graph_field_calculus, only : graph_field
   use fractal_graph      , only : set_graph => graph
   use graph_set_map      , only : set_map
@@ -77,11 +79,27 @@ module class_graph_assembler
   public :: assembler
 
   !===================================================================!
-  ! The assembler holds nothing. Everything it needs - the index maps
-  ! and the ownership - is already recorded on the part it is handed.
+  ! THE ASSEMBLER HOLDS ONE THING, AND IT IS NOT A MAP.
+  !
+  ! The index maps and the ownership used to be questions the part
+  ! answered, so an assembler could hold nothing and ask. They are a
+  ! REPRESENTATION now, so it binds one - once, at construction, by
+  ! value. That is admissible for exactly the reason a CSR relation
+  ! copies its numbering: a representation carries no semantic
+  ! identity of its own and cannot go stale under its holder.
+  !
+  ! It still holds NO set_map, label_map or inclusion_map. What a set
+  ! MEANS is the caller's, and arrives at the semantic boundary - as
+  ! arguments to assemble_data, every time.
+  !
+  ! The frame knows which graph it is about, so defined_on_graph is a
+  ! real question again rather than a guess: it asks the frame whether
+  ! this is the part it was written for.
   !===================================================================!
 
   type, extends(graph_assembler) :: assembler
+
+     type(partition_frame_representation) :: frame_rep
 
    contains
 
@@ -99,15 +117,17 @@ module class_graph_assembler
 contains
 
   !===================================================================!
-  ! Build an assembler. There is nothing to choose - everything
-  ! assembly needs is recorded on the part it will be handed.
+  ! Build an assembler on the frame it will assemble by. A caller
+  ! that names no frame gets one that describes nothing, and
+  ! defined_on_graph will say so rather than assume an identity map
+  ! and be wrong in silence.
   !===================================================================!
 
-  pure type(assembler) function create() result(this)
+  type(assembler) function create(frame) result(this)
 
-    type(assembler) :: blank
+    type(partition_frame_representation), intent(in), optional :: frame
 
-    this = blank
+    if (present(frame)) this % frame_rep = frame
 
   end function create
 
@@ -118,15 +138,12 @@ contains
   ! map and being wrong in silence.
   !===================================================================!
 
-  pure logical function defined_on_graph(this, input_graph)
+  logical function defined_on_graph(this, input_graph)
 
     class(assembler), intent(in) :: this
     class(directed_graph)    , intent(in) :: input_graph
 
-    associate (u1 => this); end associate
-
-    defined_on_graph = input_graph % has_part_relation() .or. &
-         &               input_graph % num_parts() == 1
+    defined_on_graph = this % frame_rep % describes(input_graph)
 
   end function defined_on_graph
 
@@ -170,30 +187,29 @@ contains
     integer, allocatable :: tails(:), heads(:)
     integer :: ne, e, nv_global, l, biggest
 
-    associate (u1 => this); end associate
-
     ne = part_graph % num_edges()
 
     ! The whole graph is at least as big as the largest whole-graph
-    ! index recorded on this part.
+    ! index recorded in the frame.
     biggest = 0
     do l = 1, part_graph % num_vertices()
-       biggest = max(biggest, part_graph % global_vertex_index(l))
+       biggest = max(biggest, this % frame_rep % global_vertex_index(l))
     end do
-    nv_global = biggest
+    nv_global = max(biggest, this % frame_rep % num_whole_vertices())
 
     allocate(tails(ne), heads(ne))
     do e = 1, ne
-       tails(e) = part_graph % global_vertex_index(part_graph % edge_tail(e))
+       tails(e) = this % frame_rep % global_vertex_index(part_graph % edge_tail(e))
        if (part_graph % edge_has_head(e)) then
-          heads(e) = part_graph % global_vertex_index(part_graph % edge_head(e))
+          heads(e) = this % frame_rep % global_vertex_index(part_graph % edge_head(e))
        else
           heads(e) = 0
        end if
     end do
 
     allocate(global_graph, source = &
-         & directed_stored_graph(nv_global, tails=tails, heads=heads, number=part_graph % id()))
+         & directed_stored_graph(nv_global, tails=tails, heads=heads, &
+         &                       number=this % frame_rep % part_id()))
 
   end subroutine assemble_graph
 
@@ -230,11 +246,11 @@ contains
        ! Classify by embedding - a DECLARED question, so the inclusion
        ! map answers it, never the extension and never the graph.
        if (declared_subobject(dom, part_graph % vertex_set(), inclusions)) then
-          call gather_field(part_data, dom, n_dom, part_graph, &
+          call gather_field(part_data, dom, n_dom, part_graph, this % frame_rep, &
                & part_graph % vertex_set(), part_graph % num_vertices(), &
                & global_graph, .true., sets, labels, inclusions, global_data)
        else if (declared_subobject(dom, part_graph % edge_set(), inclusions)) then
-          call gather_field(part_data, dom, n_dom, part_graph, &
+          call gather_field(part_data, dom, n_dom, part_graph, this % frame_rep, &
                & part_graph % edge_set(), part_graph % num_edges(), &
                & global_graph, .false., sets, labels, inclusions, global_data)
        else
@@ -257,7 +273,7 @@ contains
   ! declared subset: extension and values return, tokens do not.
   !===================================================================!
 
-  subroutine gather_field(part_data, dom, n_dom, part_graph, part_carrier, &
+  subroutine gather_field(part_data, dom, n_dom, part_graph, frame, part_carrier, &
        &                  n_part_carrier, global_graph, on_vertices, &
        &                  sets, labels, inclusions, global_data)
 
@@ -265,6 +281,7 @@ contains
     type(set_graph)    , intent(in)               :: dom
     integer            , intent(in)               :: n_dom
     class(directed_graph)       , intent(in)               :: part_graph
+    type(partition_frame_representation), intent(in) :: frame
     type(set_graph)    , intent(in)               :: part_carrier
     integer            , intent(in)               :: n_part_carrier
     class(directed_graph)       , intent(in)               :: global_graph
@@ -291,7 +308,7 @@ contains
        global_carrier = global_graph % edge_set()
     end if
     ncomp = part_data % num_components()
-    me    = part_graph % id()
+    me    = frame % part_id()
 
     call part_data % get_real_vector(lv)
 
@@ -304,10 +321,10 @@ contains
        fv = 0.0_dp
 
        do l = 1, nlocal
-          if (part_graph % has_part_relation()) then
-             if (owner_of(part_graph, l, on_vertices) /= me) cycle
+          if (frame % has_part_relation()) then
+             if (owner_of(frame, l, on_vertices) /= me) cycle
           end if
-          f = global_of(part_graph, l, on_vertices)
+          f = global_of(frame, l, on_vertices)
           do c = 1, ncomp
              associate (to => (f - 1) * ncomp + c, from => (l - 1) * ncomp + c)
                if (to >= 1 .and. to <= size(fv) .and. from <= size(lv)) fv(to) = lv(from)
@@ -324,11 +341,11 @@ contains
        n = 0
        do l = 1, n_dom
           at = sets % member_of(dom, l)      ! part-local member
-          if (part_graph % has_part_relation()) then
-             if (owner_of(part_graph, at, on_vertices) /= me) cycle
+          if (frame % has_part_relation()) then
+             if (owner_of(frame, at, on_vertices) /= me) cycle
           end if
           n = n + 1
-          kept(n) = global_of(part_graph, at, on_vertices)
+          kept(n) = global_of(frame, at, on_vertices)
           came(n) = l
        end do
        !-------------------------------------------------------------!
@@ -359,30 +376,30 @@ contains
 
   end subroutine gather_field
 
-  pure integer function global_of(part_graph, l, on_vertices)
+  pure integer function global_of(frame, l, on_vertices)
 
-    class(directed_graph), intent(in) :: part_graph
-    integer     , intent(in) :: l
-    logical     , intent(in) :: on_vertices
+    type(partition_frame_representation), intent(in) :: frame
+    integer                             , intent(in) :: l
+    logical                             , intent(in) :: on_vertices
 
     if (on_vertices) then
-       global_of = part_graph % global_vertex_index(l)
+       global_of = frame % global_vertex_index(l)
     else
-       global_of = part_graph % global_edge_index(l)
+       global_of = frame % global_edge_index(l)
     end if
 
   end function global_of
 
-  pure integer function owner_of(part_graph, l, on_vertices)
+  pure integer function owner_of(frame, l, on_vertices)
 
-    class(directed_graph), intent(in) :: part_graph
-    integer     , intent(in) :: l
-    logical     , intent(in) :: on_vertices
+    type(partition_frame_representation), intent(in) :: frame
+    integer                             , intent(in) :: l
+    logical                             , intent(in) :: on_vertices
 
     if (on_vertices) then
-       owner_of = part_graph % vertex_owner_part(l)
+       owner_of = frame % vertex_owner_part(l)
     else
-       owner_of = part_graph % edge_owner_part(l)
+       owner_of = frame % edge_owner_part(l)
     end if
 
   end function owner_of

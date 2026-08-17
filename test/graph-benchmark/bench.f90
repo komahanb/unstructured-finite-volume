@@ -30,6 +30,8 @@ program bench_graph_traversal
   use graph_set_map          , only : set_map
   use graph_label_map        , only : label_map
   use graph_inclusion_map    , only : inclusion_map
+  use graph_partition_frame_representation, only : &
+       & partition_frame_representation
   use graph_binary_relation  , only : csr_relation
   use class_graph            , only : directed_stored_graph
   use class_graph_field      , only : field
@@ -49,6 +51,7 @@ program bench_graph_traversal
   type(set_map)                   :: sets
   type(label_map)                 :: labels
   type(inclusion_map)             :: inclusions
+  type(partition_frame_representation) :: frame
   type(csr_relation), target      :: rel
   integer, pointer                :: fp(:)
   integer, allocatable            :: tab(:,:)
@@ -232,11 +235,13 @@ program bench_graph_traversal
   call line("laplacian apply (x3)", t0, t1, rate, int(3, int64) * ne)
 
   ! -- partition construction and the field round trip, four ways.
+  ! The assembler binds the frame the cut produced; a part alone can
+  ! no longer be asked how it sits in the whole.
   a = assembler()
   call system_clock(t0)
   do k = 1, 4
      p = partitioner(PARTITION_LINEAR, nparts=4, part=k)
-     call p % partition_graph(g, part)
+     call p % partition_graph(g, part, frame)
   end do
   call system_clock(t1)
   call line("partition_graph, 4 parts", t0, t1, rate, int(nv, int64))
@@ -251,12 +256,13 @@ program bench_graph_traversal
   call system_clock(t0)
   do k = 1, 4
      p = partitioner(PARTITION_LINEAR, nparts=4, part=k)
-     call p % partition_graph(g, part)
+     call p % partition_graph(g, part, frame)
+     a = assembler(frame)
      call sets % bind(part % vertex_set(), &
           & counted_set_representation(part % num_vertices()))
      call sets % bind(part % edge_set(), &
           & counted_set_representation(part % num_edges()))
-     call p % partition_data(g, q, part, sets, labels, inclusions, pd)
+     call p % partition_data(g, q, part, frame, sets, labels, inclusions, pd)
      call a % assemble_data(part, pd, g, sets, labels, inclusions, fd)
   end do
   call system_clock(t1)

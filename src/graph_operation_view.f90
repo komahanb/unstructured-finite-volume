@@ -234,7 +234,20 @@ module graph_operation_view
      ! Verb between: the two admissibility questions.
      !===============================================================!
 
-     pure logical function transform_on_graph_interface(this, input_graph)
+     !--------------------------------------------------------------!
+     ! NOT pure, and the reason is a language rule rather than a
+     ! design choice. A transform that binds a partition frame answers
+     ! this by asking the frame whether it describes the graph - which
+     ! means comparing set IDENTITIES, and a set graph carries a
+     ! pointer component, so copying one out of an intent(in) dummy is
+     ! barred from a pure subprogram (F2018 C1594).
+     !
+     ! An implementation that needs no identity may still be pure: an
+     ! impure interface permits a pure override, never the reverse.
+     ! Coarsener, refiner and partitioner remain pure.
+     !--------------------------------------------------------------!
+
+     logical function transform_on_graph_interface(this, input_graph)
        import :: graph_transform, directed_graph
        class(graph_transform), intent(in) :: this
        class(directed_graph), intent(in) :: input_graph

@@ -75,6 +75,8 @@ module graph_calculus
   use graph_inclusion_map, only : inclusion_map
   use graph_operation_view, only : graph_operation, graph_transform
   use graph_directed_view, only : directed_graph
+  use graph_partition_frame_representation, only : &
+       & partition_frame_representation
   use graph_field_calculus, only : graph_field
 
   implicit none
@@ -450,11 +452,21 @@ module graph_calculus
      ! the structure, so the values cannot drift out of step with it.
      !===============================================================!
 
-     subroutine partition_graph_interface(this, global_graph, part_graph)
-       import :: graph_partitioner, directed_graph
+     !--------------------------------------------------------------!
+     ! The cut yields two things, and they leave together: the piece,
+     ! and the record of how it sits in the whole. The record is a
+     ! REPRESENTATION rather than a question the piece answers,
+     ! because none of what it holds - part-local numbering,
+     ! ownership, provenance - is a question about D.
+     !--------------------------------------------------------------!
+
+     subroutine partition_graph_interface(this, global_graph, part_graph, frame)
+       import :: graph_partitioner, directed_graph, &
+            & partition_frame_representation
        class(graph_partitioner), intent(in) :: this
        class(directed_graph), intent(in) :: global_graph
        class(directed_graph), allocatable, intent(out) :: part_graph
+       type(partition_frame_representation), intent(out), optional :: frame
      end subroutine partition_graph_interface
 
      !--------------------------------------------------------------!
@@ -473,13 +485,15 @@ module graph_calculus
      !--------------------------------------------------------------!
 
      subroutine partition_data_interface(this, global_graph, global_data, &
-          & part_graph, sets, labels, inclusions, part_data)
+          & part_graph, frame, sets, labels, inclusions, part_data)
        import :: graph_partitioner, directed_graph, graph_field, &
-            & set_map, label_map, inclusion_map
+            & set_map, label_map, inclusion_map, &
+            & partition_frame_representation
        class(graph_partitioner), intent(in) :: this
        class(directed_graph), intent(in) :: global_graph
        class(graph_field), intent(in) :: global_data
        class(directed_graph), intent(in) :: part_graph
+       type(partition_frame_representation), intent(in) :: frame
        type(set_map), intent(inout) :: sets
        type(label_map), intent(inout) :: labels
        type(inclusion_map), intent(inout) :: inclusions

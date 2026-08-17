@@ -43,7 +43,10 @@ program test_graph_characterization
        &                                        differential_operator, &
        &                                        vertex_differential_operator
 
+  use graph_partition_frame_representation, only : &
+       & partition_frame_representation
   implicit none
+  type(partition_frame_representation) :: pframe
 
   integer :: nfail
 
@@ -334,7 +337,7 @@ contains
     type(inclusion_map) :: inclusions
 
     g = directed_stored_graph(6, tails=[1, 2, 3, 4, 5], heads=[2, 3, 4, 5, 6])
-    a = assembler()
+    a = assembler(pframe)
 
     von = g % vertex_set()
     call sets % bind(von, counted_set_representation(g % num_vertices()))
@@ -351,13 +354,14 @@ contains
 
     do k = 1, 2
        p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
-       call p % partition_graph(g, part)
+       call p % partition_graph(g, part, pframe)
+       a = assembler(pframe)
        call sets % bind(part % vertex_set(), &
             & counted_set_representation(part % num_vertices()))
        call sets % bind(part % edge_set(), &
             & counted_set_representation(part % num_edges()))
 
-       call p % partition_data(g, q, part, sets, labels, inclusions, pd)
+       call p % partition_data(g, q, part, pframe, sets, labels, inclusions, pd)
        call a % assemble_data(part, pd, g, sets, labels, inclusions, fd)
        select type (fd)
        class is (field)
@@ -365,7 +369,7 @@ contains
           vtotal = vtotal + v(1:6)
        end select
 
-       call p % partition_data(g, w, part, sets, labels, inclusions, pd)
+       call p % partition_data(g, w, part, pframe, sets, labels, inclusions, pd)
        call a % assemble_data(part, pd, g, sets, labels, inclusions, fd)
        select type (fd)
        class is (field)

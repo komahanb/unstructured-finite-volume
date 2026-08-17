@@ -1115,7 +1115,6 @@ contains
     call report(p % defined_on_graph(g), "a partitioner accepts a real graph", nfail)
 
     call p % partition_graph(g, part, rel)
-    a = assembler()
     call describe(sets, part)
     call report(part % num_vertices() .eq. 6, &
          & "cut into one, the piece has every cell", nfail)
@@ -1317,7 +1316,6 @@ contains
     do k = 1, 2
        p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
        call p % partition_graph(g, part, rel)
-       a = assembler()
        call describe(sets, part)
        call p % partition_data(rel, g, d, part, sets, labels, inclusions, pd)
        call a % assemble_data(rel, part, pd, g, sets, labels, inclusions, fd)
@@ -1572,7 +1570,6 @@ contains
     ! And cutting into one piece is the same story from the other end.
     p = partitioner(PARTITION_LINEAR, nparts=1, part=1)
     call p % partition_graph(g, part, rel)
-    a = assembler()
     call describe(sets, part)
     call report(part % num_vertices() .eq. 6, &
          & "cutting into one piece returns the whole graph", nfail)

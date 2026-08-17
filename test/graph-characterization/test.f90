@@ -354,7 +354,6 @@ contains
     do k = 1, 2
        p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
        call p % partition_graph(g, part, rel)
-       a = assembler()
        call sets % bind(part % vertex_set(), &
             & counted_set_representation(part % num_vertices()))
        call sets % bind(part % edge_set(), &

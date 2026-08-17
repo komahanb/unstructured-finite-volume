@@ -443,7 +443,6 @@ contains
 
     ! The assembler is handed the relation of the part it gathers
     ! from. It binds nothing.
-    a = assembler()
     call a % assemble_data(rel, part, aq_local, g, sets, labels, inclusions, fd)
     dom = fd % domain()
     call fd % get_real_vector(v)

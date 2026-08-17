@@ -117,7 +117,6 @@ contains
     do k = 1, nparts
        p = partitioner(PARTITION_LINEAR, nparts=nparts, part=k)
        call p % partition_graph(g, part, rel)
-       a = assembler()
        call a % assemble_graph(rel, part, back)
 
        do e = 1, back % num_edges()
@@ -218,7 +217,6 @@ contains
     do k = 1, nparts
        p = partitioner(PARTITION_LINEAR, nparts=nparts, part=k)
        call p % partition_graph(g, part, rel)
-       a = assembler()
 
        ! Each part is a new graph, so its own carriers are new domains
        ! and must be described before a field can be seated on them.
@@ -299,7 +297,6 @@ contains
     do k = 1, nparts
        p = partitioner(PARTITION_LINEAR, nparts=nparts, part=k)
        call p % partition_graph(g, part, rel)
-       a = assembler()
 
        ! Each part is a new graph, so its own carriers are new domains
        ! and must be described before a field can be seated on them.
@@ -420,7 +417,6 @@ contains
     p = partitioner(PARTITION_LINEAR, nparts=1, part=1)
 
     call p % partition_graph(g, part, rel)
-    a = assembler()
     call a % assemble_graph(rel, part, back)
 
     same = back % num_vertices() .eq. g % num_vertices() .and. &
@@ -439,7 +435,6 @@ contains
     do e = 1, 2
        p = partitioner(PARTITION_LINEAR, nparts=2, part=e)
        call p % partition_graph(g, part, rel)
-       a = assembler()
        call a % assemble_graph(rel, part, back)
        if (back % num_edges() .lt. g % num_edges()) some_part_is_short = .true.
     end do

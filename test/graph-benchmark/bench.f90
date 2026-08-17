@@ -256,7 +256,6 @@ program bench_graph_traversal
   do k = 1, 4
      p = partitioner(PARTITION_LINEAR, nparts=4, part=k)
      call p % partition_graph(g, part, rp)
-     a = assembler()
      call sets % bind(part % vertex_set(), &
           & counted_set_representation(part % num_vertices()))
      call sets % bind(part % edge_set(), &

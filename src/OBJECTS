@@ -68,4 +68,5 @@ gti_value_buffer.o \
 gti_state_bundle.o \
 gti_design_bundle.o \
 gti_evaluation_point.o \
-gti_form_interface.o
+gti_form_interface.o \
+gti_form_evaluator.o

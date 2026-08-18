@@ -6,6 +6,11 @@
 !      fdegree    F is asked the same
 !      dircount   an order-1 request arrives with no direction
 !      mismatch   a state request arrives with a design direction
+!      badkind    a slot speaks an argument kind outside the four
+!                 GTI_ARG_* words, request and direction agreeing
+!                 on the nonsense
+!      badcomp    a state slot names a state component outside the
+!                 three GTI_STATE_* orders, again in agreement
 !      bshape     a value vector that does not fill entries times
 !                 components
 !
@@ -64,6 +69,20 @@ program refusal
      request = gti_partial_request(order=1, argument_kind=[GTI_ARG_STATE], &
           & state_component=[GTI_STATE_Q])
      one(1) % argument_kind = GTI_ARG_DESIGN
+     call r_form % partial_action(point, request, one, out)
+
+  case ('badkind')
+
+     request = gti_partial_request(order=1, argument_kind=[999])
+     one(1) % argument_kind = 999
+     call r_form % partial_action(point, request, one, out)
+
+  case ('badcomp')
+
+     request = gti_partial_request(order=1, argument_kind=[GTI_ARG_STATE], &
+          & state_component=[999])
+     one(1) % argument_kind   = GTI_ARG_STATE
+     one(1) % state_component = 999
      call r_form % partial_action(point, request, one, out)
 
   case ('bshape')

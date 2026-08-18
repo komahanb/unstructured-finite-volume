@@ -41,9 +41,10 @@
 !                         slot is GTI_ARG_STATE
 !
 ! require_supported is the phase-1 seat of max_degree validation:
-! a request beyond the declared degree, a request whose slot count
-! disagrees with its order, or directions that tell a different
-! story than their request, all die loudly before any arithmetic.
+! a request beyond the declared degree, a slot speaking outside
+! the declared vocabulary, a request whose slot count disagrees
+! with its order, or directions that tell a different story than
+! their request, all die loudly before any arithmetic.
 !
 ! What the layer above will do with these calls - time graphs,
 ! Newton wiring, traversals, higher-order chain-rule assembly - is
@@ -210,12 +211,16 @@ module gti_form_interface
 contains
 
   !===================================================================!
-  ! The admission check every partial_action runs first. Four laws,
+  ! The admission check every partial_action runs first. Five laws,
   ! refused loudly in this order:
   !
   !      0 <= order <= max_degree()
   !      one argument kind per order
   !      one direction per order
+  !      every slot speaks the declared vocabulary - the argument
+  !      kind is one of the four GTI_ARG_* values, and a state
+  !      slot's component is one of the three GTI_STATE_* orders;
+  !      the vocabulary is closed, an unknown word is not a request
   !      the request and its directions tell one story - kind
   !      agrees slot by slot, and where the slot is state, the
   !      state component is named and agrees too
@@ -252,6 +257,13 @@ contains
 
     do k = 1, request % order
 
+       select case (request % argument_kind(k))
+       case (GTI_ARG_STATE, GTI_ARG_DESIGN, GTI_ARG_TIME, GTI_ARG_GEOM)
+          continue
+       case default
+          error stop 'gti_form_interface: unknown argument kind'
+       end select
+
        if (directions(k) % argument_kind /= request % argument_kind(k)) then
           error stop 'gti_form_interface: a request and its directions must tell one story'
        end if
@@ -263,6 +275,12 @@ contains
           if (size(request % state_component) /= request % order) then
              error stop 'gti_form_interface: a state slot names its state component'
           end if
+          select case (request % state_component(k))
+          case (GTI_STATE_Q, GTI_STATE_QDOT, GTI_STATE_QDDOT)
+             continue
+          case default
+             error stop 'gti_form_interface: unknown state component'
+          end select
           if (directions(k) % state_component /= request % state_component(k)) then
              error stop 'gti_form_interface: a request and its directions must tell one story'
           end if

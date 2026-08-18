@@ -2,19 +2,26 @@
 ! The refusals that must die at the assembly seat, one per
 ! invocation:
 !
-!      negdeg    a derivative degree of -1
-!      highdeg   a derivative degree of 3, past phase-2 support
-!      dupq      two channels both naming the state component q
-!      dupxi     two channels both naming the design xi
-!      shifty    a form whose output_signature answer shifts
-!                between calls, so a term that passed the
-!                evaluator's shape law no longer matches the
-!                running accumulation
+!      negdeg        a derivative degree of -1
+!      highdeg       a derivative degree of 3, past phase-2 support
+!      inconsistent  one channel whose seats name two different
+!                    arguments - q^(1) beside xi^(2)
+!      dupq          two channels both naming the state component q
+!      dupxi         two channels both naming the design xi
+!      negent        a form declaring nentries = -1, dying at the
+!                    assembly's zero initialization
+!      zerocomp      a form declaring ncomp = 0, likewise
+!      shifty        a form whose output_signature answer shifts
+!                    between calls, so a term that passed the
+!                    evaluator's shape law no longer matches the
+!                    running accumulation
 !
-! The shifting form is the witness for the accumulation guard:
-! every term is held to the form's declaration by the evaluator,
-! but the declaration is re-read per call - only the accumulation
-! check pins the shape across calls.
+! A channel is one argument's path, not a bag of unrelated
+! directions - the inconsistent case must die before any form
+! call. The shifting form is the witness for the accumulation
+! guard: every term is held to the form's declaration by the
+! evaluator, but the declaration is re-read per call - only the
+! accumulation check pins the shape across calls.
 !
 ! Every case must error stop before any wrong number is produced;
 ! a case that returns is a failure of the suite.
@@ -131,6 +138,111 @@ contains
 
 end module gti_shifting_forms
 
+!=====================================================================!
+! The misdeclaring form: it answers the contract and declares an
+! unlawful output shape. Its verbs are benign - the declaration
+! itself must be refused at the assembly's zero initialization,
+! before any of them run.
+!=====================================================================!
+
+module gti_misdeclaring_forms
+
+  use iso_fortran_env      , only : dp => REAL64
+  use gti_value_buffers    , only : gti_value_buffer
+  use gti_evaluation_points, only : gti_evaluation_point
+  use gti_form_interface   , only : gti_differentiable_form, &
+       & gti_partial_request, gti_direction_bundle, GTI_ARG_STATE
+
+  implicit none
+
+  private
+  public :: misdeclaring_form
+
+  type, extends(gti_differentiable_form) :: misdeclaring_form
+
+     integer, allocatable :: claimed(:)
+
+   contains
+
+     procedure :: name             => misdeclaring_name
+     procedure :: input_signature  => misdeclaring_input_signature
+     procedure :: output_signature => misdeclaring_output_signature
+     procedure :: max_degree       => misdeclaring_max_degree
+     procedure :: value            => misdeclaring_value
+     procedure :: partial_action   => misdeclaring_partial_action
+
+  end type misdeclaring_form
+
+contains
+
+  pure function misdeclaring_name(this) result(name)
+
+    class(misdeclaring_form), intent(in) :: this
+    character(len=:), allocatable :: name
+
+    name = 'misdeclaring form'
+
+  end function misdeclaring_name
+
+  pure function misdeclaring_input_signature(this) result(signature)
+
+    class(misdeclaring_form), intent(in) :: this
+    integer, allocatable :: signature(:)
+
+    signature = [GTI_ARG_STATE]
+
+  end function misdeclaring_input_signature
+
+  pure function misdeclaring_output_signature(this) result(signature)
+
+    class(misdeclaring_form), intent(in) :: this
+    integer, allocatable :: signature(:)
+
+    signature = this % claimed
+
+  end function misdeclaring_output_signature
+
+  pure function misdeclaring_max_degree(this) result(degree)
+
+    class(misdeclaring_form), intent(in) :: this
+    integer :: degree
+
+    degree = 2
+
+  end function misdeclaring_max_degree
+
+  subroutine misdeclaring_value(this, point, output)
+
+    class(misdeclaring_form)  , intent(in)    :: this
+    type(gti_evaluation_point), intent(in)    :: point
+    type(gti_value_buffer)    , intent(inout) :: output
+
+    ! never reached: the declaration is refused first
+    associate(unread => point)
+    end associate
+
+    call output % set_real([0.0_dp])
+
+  end subroutine misdeclaring_value
+
+  subroutine misdeclaring_partial_action(this, point, request, directions, output)
+
+    class(misdeclaring_form)  , intent(in)    :: this
+    type(gti_evaluation_point), intent(in)    :: point
+    type(gti_partial_request) , intent(in)    :: request
+    type(gti_direction_bundle), intent(in)    :: directions(:)
+    type(gti_value_buffer)    , intent(inout) :: output
+
+    ! never reached: the declaration is refused first
+    associate(p => point, r => request, d => directions)
+    end associate
+
+    call output % set_real([0.0_dp])
+
+  end subroutine misdeclaring_partial_action
+
+end module gti_misdeclaring_forms
+
 program refusal
 
   use iso_fortran_env        , only : dp => REAL64
@@ -140,6 +252,7 @@ program refusal
   use gti_chain_rule_assemblies, only : gti_chain_rule_assembler, gti_chain_input
   use gti_toy_forms          , only : toy_residual_form
   use gti_shifting_forms     , only : shifting_form
+  use gti_misdeclaring_forms , only : misdeclaring_form
 
   implicit none
 
@@ -148,6 +261,7 @@ program refusal
   type(gti_chain_input)          :: input
   type(toy_residual_form)        :: r_form
   type(shifting_form)            :: shifter
+  type(misdeclaring_form)        :: misdeclarer
   type(gti_value_buffer)         :: out
   character(len=32) :: which
 
@@ -162,6 +276,15 @@ program refusal
   case ('highdeg')
 
      call assembler % assemble(r_form, point, 3, input, out)
+
+  case ('inconsistent')
+
+     allocate(input % channel(1))
+     allocate(input % channel(1) % derivative(2))
+     call input % channel(1) % derivative(1) % values % set_real([1.0_dp, 0.0_dp, 2.0_dp])
+     input % channel(1) % derivative(2) % argument_kind = GTI_ARG_DESIGN
+     call input % channel(1) % derivative(2) % values % set_real([0.75_dp])
+     call assembler % assemble(r_form, point, 2, input, out)
 
   case ('dupq')
 
@@ -182,6 +305,22 @@ program refusal
      input % channel(2) % derivative(1) % argument_kind = GTI_ARG_DESIGN
      call input % channel(2) % derivative(1) % values % set_real([0.75_dp])
      call assembler % assemble(r_form, point, 1, input, out)
+
+  case ('negent')
+
+     misdeclarer % claimed = [-1, 1]
+     allocate(input % channel(1))
+     allocate(input % channel(1) % derivative(1))
+     call input % channel(1) % derivative(1) % values % set_real([1.0_dp, 0.0_dp, 2.0_dp])
+     call assembler % assemble(misdeclarer, point, 1, input, out)
+
+  case ('zerocomp')
+
+     misdeclarer % claimed = [1, 0]
+     allocate(input % channel(1))
+     allocate(input % channel(1) % derivative(1))
+     call input % channel(1) % derivative(1) % values % set_real([1.0_dp, 0.0_dp, 2.0_dp])
+     call assembler % assemble(misdeclarer, point, 1, input, out)
 
   case ('shifty')
 

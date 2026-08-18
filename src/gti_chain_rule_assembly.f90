@@ -26,9 +26,14 @@
 ! each entry a self-describing direction (argument kind, state
 ! component, values). A seat with no values is an absent
 ! derivative, read as zero: the transport term it would have fed
-! is simply not assembled. Two channels naming the same argument
-! are refused - a duplicated channel would double-count chain-rule
-! terms, so distinctness is a law of the input, not a convention.
+! is simply not assembled.
+!
+! Two input laws hold before any form call. A channel is one
+! argument's path, not a bag of unrelated directions: every
+! present derivative in it must name the same argument. And two
+! channels naming the same argument are refused - a duplicated
+! channel would double-count chain-rule terms. Consistency and
+! distinctness are laws of the input, not conventions.
 !
 ! Every partial action goes through the form evaluator, so each
 ! term is held to the form's declared output shape before it is
@@ -145,7 +150,7 @@ contains
   !===================================================================!
   ! The one public verb: assemble the total derivative of the
   ! given degree. The degree is admitted, the channels are proven
-  ! distinct, and only then does any form call run.
+  ! consistent and distinct, and only then does any form call run.
   !===================================================================!
 
   subroutine assemble(this, form, point, degree, input, output)
@@ -169,6 +174,7 @@ contains
        error stop 'gti_chain_rule_assembler: degree above phase-2 support is refused'
     end if
 
+    call require_consistent_channels(input)
     call require_distinct_channels(input)
 
     !----------------------------------------------------------------!
@@ -266,6 +272,46 @@ contains
   end subroutine second_order_term
 
   !===================================================================!
+  ! The consistency law: a channel is one argument's path, not a
+  ! bag of unrelated directions. Every present derivative in a
+  ! channel must name the same argument - same kind, and for
+  ! state the same component - and a channel that mixes arguments
+  ! is refused before any form call.
+  !===================================================================!
+
+  pure subroutine require_consistent_channels(input)
+
+    type(gti_chain_input), intent(in) :: input
+
+    logical :: found
+    integer :: c, k, kind, component
+
+    do c = 1, input % size()
+
+       call argument_identity(input % channel(c), found, kind, component)
+       if (.not. found) cycle
+
+       do k = 1, size(input % channel(c) % derivative)
+
+          if (.not. input % channel(c) % has_degree(k)) cycle
+
+          if (input % channel(c) % derivative(k) % argument_kind /= kind) then
+             error stop 'gti_chain_rule_assembler: inconsistent argument channel is refused'
+          end if
+
+          if (kind == GTI_ARG_STATE) then
+             if (input % channel(c) % derivative(k) % state_component /= component) then
+                error stop 'gti_chain_rule_assembler: inconsistent argument channel is refused'
+             end if
+          end if
+
+       end do
+
+    end do
+
+  end subroutine require_consistent_channels
+
+  !===================================================================!
   ! The distinctness law: two channels naming the same argument -
   ! same kind, and for state the same component - would double-
   ! count chain-rule terms, and are refused. A channel with no
@@ -313,7 +359,9 @@ contains
 
   !===================================================================!
   ! A channel's argument identity, read from its lowest present
-  ! derivative: which argument this channel's path perturbs.
+  ! derivative: which argument this channel's path perturbs. The
+  ! consistency law makes every present derivative equivalent, so
+  ! the lowest is not a choice but a representative.
   !===================================================================!
 
   pure subroutine argument_identity(c, found, kind, component)
@@ -357,6 +405,14 @@ contains
 
     if (size(signature) /= 2) then
        error stop 'gti_chain_rule_assembler: output_signature has shape [nentries,ncomp]'
+    end if
+
+    if (signature(1) < 0) then
+       error stop 'gti_chain_rule_assembler: output nentries is nonnegative'
+    end if
+
+    if (signature(2) < 1) then
+       error stop 'gti_chain_rule_assembler: output ncomp is at least one'
     end if
 
     call output % set_real(spread(0.0_dp, dim=1, &

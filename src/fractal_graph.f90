@@ -72,6 +72,7 @@ module fractal_graph
      procedure :: declare
      procedure :: id
      procedure :: same_as
+     procedure :: similar_as
 
   end type graph
 
@@ -166,5 +167,103 @@ contains
     same_as = this % identity % matches(other % identity)
 
   end function same_as
+
+  !===================================================================!
+  ! STRUCTURAL COMPARISON: similar_as
+  !
+  ! Two graphs are similar if their branch states match structurally,
+  ! regardless of identity. For KNOWN branches, similarity is tested
+  ! recursively. Distinguishes from same_as (identity) to enable
+  ! structural change detection in evolving systems.
+  !
+  ! SAME_AS vs SIMILAR_AS:
+  !
+  !   g1.same_as(g2)     => g1 and g2 are the identical graph
+  !   g1.similar_as(g2)  => g1 and g2 have the same structure
+  !
+  ! Use cases:
+  !
+  !   1. CONVERGENCE DETECTION (adaptive refinement):
+  !      do
+  !        refined = refiner.apply(mesh)
+  !        if (refined.similar_as(mesh)) exit  ! No finer structure
+  !        mesh = refined
+  !      end do
+  !
+  !   2. COARSENING TERMINATION (multigrid levels):
+  !      do level = 1, max_levels
+  !        coarse = coarsener.apply(current)
+  !        if (coarse.similar_as(current)) exit  ! Already coarsest
+  !        current = coarse
+  !      end do
+  !
+  !   3. STRUCTURE VALIDATION (post-transformation):
+  !      partition = partitioner.apply(mesh)
+  !      call assert(partition.similar_as(expected_structure), &
+  !           & "partition structure mismatch")
+  !
+  !   4. EQUILIBRIUM DETECTION (evolving systems):
+  !      state_old = state
+  !      call marcher.step(state)
+  !      if (state.similar_as(state_old)) converged = .true.
+  !
+  ! STRUCTURE COMPARISON LAW:
+  !
+  !   g1 and g2 are similar iff:
+  !   - branch(1) states match (NULL, UNKNOWN, or KNOWN)
+  !   - branch(2) states match
+  !   - for each KNOWN branch, the referenced graphs are recursively similar
+  !
+  ! Example (sequences [a,b] vs [c,d]):
+  !
+  !   g1: (a, (b, NULL))      g2: (c, (d, NULL))
+  !   both KNOWN -> KNOWN     both KNOWN -> KNOWN
+  !   -> similar = .true.     (structure same, identity different)
+  !
+  !===================================================================!
+
+  recursive logical function similar_as(this, other)
+
+    class(graph), intent(in) :: this
+    type(graph) , intent(in) :: other
+
+    type(graph), pointer :: this_known_1, this_known_2
+    type(graph), pointer :: other_known_1, other_known_2
+
+    ! Branch(1) states must match
+    if (this % branch(1) % status() /= other % branch(1) % status()) then
+       similar_as = .false.
+       return
+    end if
+
+    ! Branch(2) states must match
+    if (this % branch(2) % status() /= other % branch(2) % status()) then
+       similar_as = .false.
+       return
+    end if
+
+    ! If branch(1) is KNOWN, recursively check the referenced graphs
+    if (this % branch(1) % status() == GRAPH_KNOWN) then
+       this_known_1  => this % branch(1) % known()
+       other_known_1 => other % branch(1) % known()
+       if (.not. this_known_1 % similar_as(other_known_1)) then
+          similar_as = .false.
+          return
+       end if
+    end if
+
+    ! If branch(2) is KNOWN, recursively check the referenced graphs
+    if (this % branch(2) % status() == GRAPH_KNOWN) then
+       this_known_2  => this % branch(2) % known()
+       other_known_2 => other % branch(2) % known()
+       if (.not. this_known_2 % similar_as(other_known_2)) then
+          similar_as = .false.
+          return
+       end if
+    end if
+
+    similar_as = .true.
+
+  end function similar_as
 
 end module fractal_graph

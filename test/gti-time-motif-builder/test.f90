@@ -44,11 +44,13 @@ program test_gti_time_motif_builder
 
   type(gti_time_motif_builder)            :: builder
   type(gti_time_motif)                    :: bdf1, bdf2, dirk, abm2
+  type(gti_time_motif)                    :: vbdf1, vbdf2u, vbdf2, ubdf2
+  type(gti_time_motif)                    :: vabm, uabm, ft
   type(gti_time_local_residual_evaluator) :: evaluator
   type(toy_time_residual_form)            :: r_form
   type(gti_value_buffer)                  :: out
 
-  real(dp), allocatable :: rv(:)
+  real(dp), allocatable :: rv(:), w(:)
   integer :: nfail
 
   nfail = 0
@@ -199,6 +201,82 @@ program test_gti_time_motif_builder
   call report(bdf1 % size() == 2 .and. bdf2 % size() == 2 .and. &
        & dirk % size() == 2 .and. abm2 % size() == 2, &
        & "every builder output carries exactly two rows", nfail)
+
+  !-------------------------------------------------------------------!
+  ! The variable-step family. Uniform steps must collapse onto the
+  ! uniform builders exactly, and the nonuniform BDF2 row must be
+  ! the derivative of the interpolating quadratic at t_n:
+  !
+  !      h0 = h_n = 2,  h1 = h_{n-1} = 3
+  !      qdot = [ 2/15, -5/6, 7/10 ]
+  !
+  ! proven three ways below - the closed row, and polynomial
+  ! exactness on constants, linears, and quadratics at the sample
+  ! times t = [-5, -2, 0].
+  !-------------------------------------------------------------------!
+
+  call builder % bdf_variable(1, [0.5_dp], vbdf1)
+  call report(matches(vbdf1 % rule(1) % weight, bdf1 % rule(1) % weight) .and. &
+       & matches(vbdf1 % rule(2) % weight, bdf1 % rule(2) % weight), &
+       & "bdf_variable(1, [h]) equals bdf_uniform(1, h)", nfail)
+
+  call builder % bdf_uniform(2, 2.0_dp, ubdf2)
+  call builder % bdf_variable(2, [2.0_dp, 2.0_dp], vbdf2u)
+  call report(matches(vbdf2u % rule(1) % weight, ubdf2 % rule(1) % weight) .and. &
+       & matches(vbdf2u % rule(2) % weight, ubdf2 % rule(2) % weight), &
+       & "bdf_variable(2, [h, h]) collapses onto bdf_uniform(2, h)", nfail)
+
+  call builder % bdf_variable(2, [2.0_dp, 3.0_dp], vbdf2)
+  call report(matches(vbdf2 % rule(1) % weight, [0.0_dp, 0.0_dp, 1.0_dp]), &
+       & "nonuniform BDF2 q row is [0, 0, 1]", nfail)
+
+  w = vbdf2 % rule(2) % weight
+  call report(matches(w, [2.0_dp / 15.0_dp, -5.0_dp / 6.0_dp, 0.7_dp]), &
+       & "nonuniform BDF2 qdot row is [2/15, -5/6, 7/10]", nfail)
+
+  call report(matches([sum(w)], [0.0_dp]), &
+       & "nonuniform BDF2 differentiates constants to zero", nfail)
+
+  call report(matches([w(1) * (-5.0_dp) + w(2) * (-2.0_dp) + w(3) * 0.0_dp], &
+       & [1.0_dp]), &
+       & "nonuniform BDF2 differentiates q = t to exactly one", nfail)
+
+  call report(matches([w(1) * 25.0_dp + w(2) * 4.0_dp + w(3) * 0.0_dp], &
+       & [0.0_dp]), &
+       & "nonuniform BDF2 differentiates q = t^2 to zero at t_n", nfail)
+
+  !-------------------------------------------------------------------!
+  ! The ABM current-step wrapper: the SAME rows as the uniform
+  ! corrector, at both orders - variable-step READY because only
+  ! h_n enters; the Adams history lives in the externally
+  ! assembled base, and no history-ratio coefficients exist here.
+  !-------------------------------------------------------------------!
+
+  call builder % abm_corrector(1, 2.0_dp, uabm)
+  call builder % abm_corrector_variable(1, 2.0_dp, vabm)
+  call report(matches(vabm % rule(1) % weight, uabm % rule(1) % weight) .and. &
+       & matches(vabm % rule(2) % weight, uabm % rule(2) % weight), &
+       & "abm_corrector_variable(1, h) equals abm_corrector(1, h)", nfail)
+
+  call builder % abm_corrector(2, 2.0_dp, uabm)
+  call builder % abm_corrector_variable(2, 2.0_dp, vabm)
+  call report(matches(vabm % rule(1) % weight, uabm % rule(1) % weight) .and. &
+       & matches(vabm % rule(2) % weight, uabm % rule(2) % weight), &
+       & "abm_corrector_variable(2, h) equals abm_corrector(2, h)", nfail)
+
+  !-------------------------------------------------------------------!
+  ! Times in, rows out: bdf_from_times mints the same rows its
+  ! steps would.
+  !-------------------------------------------------------------------!
+
+  call builder % bdf_from_times([0.0_dp, 2.0_dp], ft)
+  call builder % bdf_variable(1, [2.0_dp], vbdf1)
+  call report(matches(ft % rule(2) % weight, vbdf1 % rule(2) % weight), &
+       & "bdf_from_times([0, 2]) equals bdf_variable(1, [2])", nfail)
+
+  call builder % bdf_from_times([0.0_dp, 3.0_dp, 5.0_dp], ft)
+  call report(matches(ft % rule(2) % weight, vbdf2 % rule(2) % weight), &
+       & "bdf_from_times([0, 3, 5]) equals bdf_variable(2, [2, 3])", nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then

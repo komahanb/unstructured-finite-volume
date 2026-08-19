@@ -65,6 +65,7 @@ class_gmsh_loader.o \
 class_mesh.o \
 class_mesh_builder.o \
 gti_value_buffer.o \
+gti_attached_value_map.o \
 gti_state_bundle.o \
 gti_design_bundle.o \
 gti_evaluation_point.o \

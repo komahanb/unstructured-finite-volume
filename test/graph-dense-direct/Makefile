@@ -1,11 +1,9 @@
 include ../../Makefile.in
 
 #=====================================================================#
-# Two programs over the dense direct seat: the law suite proving
-# one more concretion of the graph minimization tower - matrices
-# as stencil graphs, elimination behind the minimizer face - and
-# the refusals that must die. -Wtarget-lifetime keeps the borrows
-# honest at compile time.
+# Builds two binaries: run (the assertion suite) and refusal (the
+# invalid-input cases). -Wtarget-lifetime warns when a pointer may
+# outlive its target.
 #=====================================================================#
 
 # Ufvm (-I../../src for scalar.fpp, -I../../lib for the .mod files)

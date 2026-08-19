@@ -1,17 +1,18 @@
 !=====================================================================!
-! The refusals that must die at the dense direct seat, one per
-! invocation:
+! Invalid-input cases for the dense direct solver, one per
+! invocation. The case is selected by the first command-line
+! argument; each must terminate in error stop with the message
+! run.sh expects, and a case that returns normally is reported as
+! a failure by run.sh.
 !
 !      tolzero       a zero singular tolerance
 !      sizemismatch  a solution array whose length disagrees with
 !                    the right-hand side
 !      singular      dependent rows - no pivot survives elimination
-!      nonsquare     a rectangular array at the adapter door
-!      probewidth    a probed width carrying a fractional number
-!                    per member of the operation's domain
-!
-! Every case must error stop; a case that returns is a failure of
-! the suite.
+!      nonsquare     a rectangular array given to the dense-array
+!                    adapter
+!      badwidth      a dense_matrix_of width carrying a fractional
+!                    number per member of the operation's domain
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -21,14 +22,14 @@ program refusal
   use iso_fortran_env     , only : dp => REAL64
   use class_graph_stencil , only : stencil_operator
   use class_graph_dense_direct, only : dense_direct, &
-       & solve_dense_matrix_with_dense_direct, probed_dense_matrix
+       & solve_dense_matrix_with_dense_direct, dense_matrix_of
 
   implicit none
 
   type(stencil_operator) :: statement
   type(dense_direct)     :: solver
 
-  real(dp), allocatable :: xa(:), aprobe(:,:)
+  real(dp), allocatable :: xa(:), arebuilt(:,:)
   real(dp) :: x2(2), x3(3), achieved
   real(dp) :: rect(2,3)
 
@@ -60,7 +61,7 @@ program refusal
 
   case ('singular')
 
-     ! row 2 = 2 * row 1: no pivot survives elimination
+     ! row 2 = 2 * row 1, so elimination produces no usable pivot
      statement = stencil_operator([1, 1, 2, 2], [1, 2, 1, 2], &
           & [1.0_dp, 2.0_dp, 2.0_dp, 4.0_dp], [0.0_dp, 0.0_dp], 'flat')
      call solver % attach(statement, statement % pattern, &
@@ -75,13 +76,13 @@ program refusal
      call solve_dense_matrix_with_dense_direct(rect, [1.0_dp, 1.0_dp], &
           & 1.0e-14_dp, xa, achieved)
 
-  case ('probewidth')
+  case ('badwidth')
 
      ! three numbers over a two-member domain is not a whole
      ! number per member
      statement = stencil_operator([1, 1, 2, 2], [1, 2, 1, 2], &
           & [2.0_dp, 1.0_dp, 1.0_dp, 3.0_dp], [0.0_dp, 0.0_dp], 'two')
-     call probed_dense_matrix(statement, statement % pattern, 3, aprobe)
+     call dense_matrix_of(statement, statement % pattern, 3, arebuilt)
 
   case default
 

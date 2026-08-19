@@ -4,33 +4,19 @@
 ! One lifecycle for every reversible mutation of a graph and its
 ! attached values:
 !
-!      (G, V) --apply/check--> (G*, V*)
-!             --keep---------> (G_new, V_new)
-!             --revert-------> (G, V)
-!
-! where G is graph structure and V is attached values. A change may
-! touch structure only, attached values only, or both, and the
-! controller does not care which: it owns only the lifecycle
-!
 !      apply -> check -> keep | revert
 !
-! while the change object owns every detail. Identity lives in the
-! graph. Numbers live in attached values. Updates are reversible
-! changes.
+! The controller owns only the lifecycle; the change object owns
+! the mutation, its memory, and its undoing. A change may touch
+! structure, attached values, or both; the controller never reads
+! which.
 !
-! Failure is a lawful answer at every step: a change whose apply or
-! check marks failed is reverted and reported, never refused. What
-! dies loudly is a change that lies about its own lifecycle - one
-! that returns from apply, check, keep, or revert without either
-! marking the step or marking failure - and a terminal record that
-! claims impossible things at once.
-!
-! The protocol is lifecycle only. It names no graph, no values, no
-! forms, no time; it imports nothing at all. Concrete changes live
-! with the seats they mutate - the first was transactional
-! graph growth - and every future structure amendment or
-! attached-value update is one more extension of the same abstract
-! change, run by the same controller.
+! A failure reported by apply or check is reverted and returned,
+! not refused. What stops the program: a change that returns from
+! a step without marking either the step or failure, because its
+! record would then misreport what happened; and a terminal record
+! with contradictory flags. This module imports nothing; concrete
+! changes live next to the data they mutate.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -79,9 +65,9 @@ module graph_change_protocol
   end type change_result
 
   !===================================================================!
-  ! The abstract reversible change: four deferred verbs, no state
-  ! demanded. What apply builds, revert unbuilds; what check
-  ! judges, keep makes permanent. The change owns the details.
+  ! The abstract reversible change: four deferred steps. What
+  ! apply builds, revert must undo; keep makes the applied state
+  ! permanent.
   !===================================================================!
 
   type, abstract :: reversible_change
@@ -124,9 +110,7 @@ module graph_change_protocol
   end interface
 
   !===================================================================!
-  ! The stateless lifecycle verb. The types keep their public
-  ! singular names; Fortran denies a type its host module's name,
-  ! so the module speaks in the plural.
+  ! The stateless lifecycle runner.
   !===================================================================!
 
   type :: change_controller
@@ -195,9 +179,9 @@ contains
   end subroutine mark_failed
 
   !===================================================================!
-  ! A terminal record must not claim impossible things at once: a
-  ! change is kept or reverted, never both; an accepted change was
-  ! kept; a failed change was not kept.
+  ! Check a terminal record for contradictions, each stopping the
+  ! program: kept and reverted cannot both be set; accepted
+  ! requires kept; failed excludes kept.
   !===================================================================!
 
   pure subroutine validate_terminal(this)
@@ -219,14 +203,12 @@ contains
   end subroutine validate_terminal
 
   !===================================================================!
-  ! The lifecycle, owned whole: apply, then check, then keep on
-  ! acceptance or revert otherwise. A failure reported by apply or
-  ! check reverts and returns lawfully; a step that did its work
-  ! without marking it is refused - and EVERY revert the controller
-  ! calls, on failure paths and reject paths alike, must report
-  ! reverted, so no terminal record can be silently incomplete.
-  ! The controller never asks what the change touched - structural,
-  ! numerical, or mixed is the change's own affair.
+  ! Run the lifecycle: apply, then check, then keep on acceptance
+  ! or revert otherwise. A failure reported by apply or check is
+  ! reverted and returned. A step that returns without marking its
+  ! work stops the program - including every controller-called
+  ! revert, on failure and reject paths alike - so no terminal
+  ! record can be silently incomplete.
   !===================================================================!
 
   subroutine run(this, change, accept, result)

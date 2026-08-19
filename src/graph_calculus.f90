@@ -274,16 +274,13 @@ module graph_calculus
   end type linearization_operator
 
   !===================================================================!
-  ! DIFFERENTIABLE_OPERATION. A statement that knows its own
-  ! calculus: beyond apply, it answers exact partial actions -
-  ! multilinear contractions of its derivatives against direction
-  ! fields, one input slot named per derivative seat - up to a
-  ! declared maximum order. No derivative tensor is ever stored:
-  ! an action is computed, contracted, and gone. This is the
-  ! statement the linearization family's difference concretion
-  ! always awaited - one that linearizes itself exactly - and
-  ! beyond the tangent it opens the door to second and higher
-  ! derivatives, the raw material of chain-rule composition.
+  ! DIFFERENTIABLE_OPERATION. An operation that, beyond apply,
+  ! computes exact partial actions: multilinear contractions of
+  ! its derivatives against direction fields, one input slot named
+  ! per derivative, up to a declared maximum order. No derivative
+  ! tensor is stored; an action is computed, contracted, and
+  ! discarded. The exact linearization and the chain rule are
+  ! built on this contract.
   !===================================================================!
 
   type, abstract, extends(graph_operation) :: differentiable_operation
@@ -387,11 +384,11 @@ module graph_calculus
   abstract interface
 
      !===============================================================!
-     ! The differentiable statement's two answers: how deep its
-     ! exact calculus goes, and one mixed partial action - the
-     ! statement differentiated once in the input slot each seat
-     ! names, contracted against the matching direction field,
-     ! answering on its own domain.
+     ! The two deferred routines: max_degree reports how deep the
+     ! exact calculus goes; partial_action computes one mixed
+     ! partial - the statement differentiated once per entry of
+     ! slots(:), contracted against the matching direction field,
+     ! returned on the statement's own domain.
      !===============================================================!
 
      pure function differentiable_max_degree_interface(this) result(degree)
@@ -410,10 +407,6 @@ module graph_calculus
        class(graph_field)             , intent(in)    :: directions(:)
        class(graph_field), allocatable, intent(inout) :: output
      end subroutine differentiable_partial_action_interface
-
-     !===============================================================!
-          !===============================================================!
-
 
      !===============================================================!
      ! The reduction's four steps and its one-call form. The state is

@@ -9,14 +9,14 @@ declare -A reason=(
   [bdforder]="step: only orders one and two carry tables so far"
   [bdfcount]="step: the step count matches the order"
   [bdfstep]="step: a time step is positive"
-  [dupslot]="chain_rule: duplicate slot channel is refused"
-  [badslot]="chain_rule: a channel names an input slot"
+  [dupslot]="chain_rule: duplicate slot path is refused"
+  [badslot]="chain_rule: a path names an input slot"
   [negdegree]="chain_rule: degree is supported"
   [pastcalculus]="chain_rule: the statement supports the requested order"
-  [hugedegree]="chain_rule: pattern coefficient is representable"
-  [statepath]="march_directional: the state path is the walk's own"
+  [hugedegree]="chain_rule: partition coefficient is representable"
+  [statepath]="march_directional: the state path is computed, not supplied"
   [orderzero]="march_directional: the order is positive"
-  [blindreverse]="march_adjoint: the implicit reverse walk needs the action"
+  [blindreverse]="march_adjoint: the implicit reverse traversal needs the action"
   [unfrozen]="linearization: an exact tangent is taken at a frozen state"
   [eagerclock]="march_adaptive: the duration is positive"
 )
@@ -28,8 +28,8 @@ for case in bdforder bdfcount bdfstep dupslot badslot negdegree \
 done
 rm -f refusal.out
 
-# the book stays closed, statically: this suite speaks only the
-# living tower - no GTI vocabulary anywhere in its sources.
+# Regression guard: the test sources must not reference the
+# deleted gti_* modules.
 grep -q "gti_" "$here"/*.f90 \
-    && { echo " FAIL : a GTI name appears in the suite"; exit 1; } \
-    || echo " PASS : the suite speaks only the living tower"
+    && { echo " FAIL : a gti_ reference appears in the suite sources"; exit 1; } \
+    || echo " PASS : no gti_ reference in the suite sources"

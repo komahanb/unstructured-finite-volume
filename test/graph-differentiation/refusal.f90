@@ -1,24 +1,29 @@
 !=====================================================================!
-! The refusals that must die on the differentiation tower, one per
-! invocation:
+! Invalid-input cases for the differentiation stack, one per
+! invocation. The case is selected by the first command-line
+! argument; each must terminate in error stop with the message
+! run.sh expects, and a case that returns normally is reported as
+! a failure by run.sh.
 !
-!      bdforder      an order the table shelf does not carry
-!      bdfcount      a step count disagreeing with the order
+!      bdforder      set_bdf with order 3 (only 1 and 2 have
+!                    tables)
+!      bdfcount      a step count that disagrees with the order
 !      bdfstep       a nonpositive time step
-!      dupslot       two channels naming one input slot
-!      badslot       a channel naming a slot the statement lacks
+!      dupslot       two paths naming one input slot
+!      badslot       a path naming an input slot that does not
+!                    exist
 !      negdegree     a negative derivative degree
-!      pastcalculus  a composition needing a partial past the
-!                    statement's declared calculus
-!      hugedegree    a multinomial count past the integer range
-!      statepath     a caller-supplied path on the state slot
-!      orderzero     a directional walk of order zero
-!      blindreverse  a governed reverse walk with no trajectory
-!      unfrozen      an exact tangent taken at no state
-!      eagerclock    an adaptive walk over no duration
-!
-! Every case must error stop; a case that returns is a failure of
-! the suite.
+!      pastcalculus  a degree needing more derivative slots than
+!                    the operation's max_degree
+!      hugedegree    a multinomial coefficient past the int64
+!                    range (degree 21)
+!      statepath     a caller-supplied path on the state slot,
+!                    which march_directional computes itself
+!      orderzero     march_directional with order 0
+!      blindreverse  an implicit-rule march_adjoint without the
+!                    action and trajectory it needs
+!      unfrozen      an exact tangent applied before freeze
+!      eagerclock    march_adaptive with duration 0
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -31,12 +36,12 @@ program refusal
   use class_graph         , only : directed_stored_graph
   use class_graph_field   , only : field
   use class_graph_step    , only : step_operator
-  use class_graph_chain_rule, only : chain_rule, chain_channel
+  use class_graph_chain_rule, only : chain_rule, argument_path
   use class_graph_exact_linearization, only : exact_linearization
   use class_graph_marcher , only : marcher, MARCH_BACKWARD
   use class_graph_step_policy, only : halving_policy
   use toy_differentiable_forms, only : quartic_form, equilibrium_law, &
-       & scalar_pair, fill_scalar_channel
+       & scalar_pair, fill_path
 
   implicit none
 
@@ -47,13 +52,13 @@ program refusal
   type(set_graph)             :: cells
   type(step_operator)         :: statement
   type(chain_rule)            :: composer
-  type(chain_channel)         :: channels(2)
+  type(argument_path)         :: paths(2)
   type(exact_linearization)   :: tangent
   type(marcher)               :: clock
   type(halving_policy)        :: policy
 
   type(field) :: inputs(2), direction
-  class(graph_field), allocatable :: answer
+  class(graph_field), allocatable :: output
   real(dp), allocatable :: sensitivities(:,:,:), taken(:)
   real(dp) :: trajectory(1,3), lambda(1), q(1)
   logical  :: completed
@@ -85,44 +90,44 @@ program refusal
   case ('dupslot')
 
      call scalar_pair(1.0_dp, 2.0_dp, cells, inputs)
-     call fill_scalar_channel(channels(1), 1, [1.0_dp], cells)
-     call fill_scalar_channel(channels(2), 1, [1.0_dp], cells)
-     call composer % assemble(quartic, lone, inputs, 1, channels, answer)
+     call fill_path(paths(1), 1, [1.0_dp], cells)
+     call fill_path(paths(2), 1, [1.0_dp], cells)
+     call composer % assemble(quartic, lone, inputs, 1, paths, output)
 
   case ('badslot')
 
      call scalar_pair(1.0_dp, 2.0_dp, cells, inputs)
-     call fill_scalar_channel(channels(1), 1, [1.0_dp], cells)
-     call fill_scalar_channel(channels(2), 3, [1.0_dp], cells)
-     call composer % assemble(quartic, lone, inputs, 1, channels, answer)
+     call fill_path(paths(1), 1, [1.0_dp], cells)
+     call fill_path(paths(2), 3, [1.0_dp], cells)
+     call composer % assemble(quartic, lone, inputs, 1, paths, output)
 
   case ('negdegree')
 
      call scalar_pair(1.0_dp, 2.0_dp, cells, inputs)
-     call fill_scalar_channel(channels(1), 1, [1.0_dp], cells)
-     call composer % assemble(quartic, lone, inputs, -1, channels(1:1), &
-          & answer)
+     call fill_path(paths(1), 1, [1.0_dp], cells)
+     call composer % assemble(quartic, lone, inputs, -1, paths(1:1), &
+          & output)
 
   case ('pastcalculus')
 
      call scalar_pair(1.0_dp, 2.0_dp, cells, inputs)
-     call fill_scalar_channel(channels(1), 1, &
+     call fill_path(paths(1), 1, &
           & [1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp], cells)
-     call composer % assemble(quartic, lone, inputs, 5, channels(1:1), &
-          & answer)
+     call composer % assemble(quartic, lone, inputs, 5, paths(1:1), &
+          & output)
 
   case ('hugedegree')
 
      call scalar_pair(1.0_dp, 2.0_dp, cells, inputs)
-     call fill_scalar_channel(channels(1), 1, [1.0_dp], cells)
-     call composer % assemble(quartic, lone, inputs, 21, channels(1:1), &
-          & answer)
+     call fill_path(paths(1), 1, [1.0_dp], cells)
+     call composer % assemble(quartic, lone, inputs, 21, paths(1:1), &
+          & output)
 
   case ('statepath')
 
-     call fill_scalar_channel(channels(1), 1, [1.0_dp], cells)
+     call fill_path(paths(1), 1, [1.0_dp], cells)
      call clock % march_directional(equil, lone, 2, trajectory, 1, &
-          & sensitivities, channels=channels(1:1))
+          & sensitivities, paths=paths(1:1))
 
   case ('orderzero')
 
@@ -139,7 +144,7 @@ program refusal
      tangent = exact_linearization(quartic)
      direction = field('v', cells, 1, ncomp=1)
      call direction % set_real_vector([1.0_dp])
-     call tangent % apply(lone, [direction], answer)
+     call tangent % apply(lone, [direction], output)
 
   case ('eagerclock')
 

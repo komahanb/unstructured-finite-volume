@@ -1,11 +1,9 @@
 include ../../Makefile.in
 
 #=====================================================================#
-# Two programs over the differentiation tower and one shared toy
-# fixture: the law suite proving the table seat, the tangent
-# chooser, the chain rule to degree 8, and the marcher's three
-# derivative walks - and the refusals that must die.
-# -Wtarget-lifetime keeps the borrows honest at compile time.
+# Builds two binaries: run (the assertion suite) and refusal (the
+# invalid-input cases). Both link the shared fixture toy_forms.o.
+# -Wtarget-lifetime warns when a pointer may outlive its target.
 #=====================================================================#
 
 # Ufvm (-I../../src for scalar.fpp, -I../../lib for the .mod files)

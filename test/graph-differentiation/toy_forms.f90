@@ -1,25 +1,27 @@
 !=====================================================================!
-! THE DIFFERENTIABLE TOYS: the first concretions of the calculus
-! contract, one fixture set serving the whole differentiation
-! tower - the chain rule, the exact linearization, the step table,
-! and the marcher's three derivative walks.
+! Test fixtures shared by test.f90 and refusal.f90: four concrete
+! operations used to exercise the chain rule, the exact
+! linearization, the step table, and the marcher's derivative
+! routines.
 !
-!      quartic      Phi(q, xi) = q^4 + q^3 xi + q^2 xi^2
-!                              + q xi^3 + xi^4          degree 4
-!      power8       Phi(q, xi) = (q + xi)^8             degree 8
-!      equilibrium  S_i(q, xi) = q_i^2 - xi             degree 8,
-!                   every partial past the second exactly zero
-!      linear       S(q) = q                            not
-!                   differentiable - the difference road's witness
+!      quartic_form     Phi(q, xi) = q^4 + q^3 xi + q^2 xi^2
+!                                  + q xi^3 + xi^4,  max_degree 4
+!      power8_form      Phi(q, xi) = (q + xi)^8,     max_degree 8
+!      equilibrium_law  S_i(q, xi) = q_i^2 - xi,     max_degree 8;
+!                       every partial of order 3 or higher is zero
+!      linear_law       S(q) = q; implements graph_operation only,
+!                       so tangent_of must select the difference
+!                       linearization for it
 !
-! Every mixed partial is COMPUTED, never tabulated: the quartic
-! walks its five monomials with falling factorials, the power8
-! collapses to one falling factorial of u = q + xi, and the
-! equilibrium law's calculus is three live cases and zero. The
-! second input slot carries xi; a statement reached with the state
-! alone reads its own default, so the same toy serves the chain
-! rule's two-channel compositions and the linearization family's
-! same-domain tangent.
+! Partial derivatives are computed rather than tabulated: the
+! quartic differentiates each of its five monomials with falling
+! factorials, and every order-k mixed partial of power8 equals
+! 8!/(8-k)! (q + xi)^(8-k).
+!
+! xi is read from input slot 2 when the caller passes two input
+! fields, and from the xi_default component otherwise. The chain
+! rule tests pass both inputs; exact_linearization passes only the
+! state, so the default keeps one operation usable by both.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -33,13 +35,13 @@ module toy_differentiable_forms
   use graph_calculus      , only : differentiable_operation
   use fractal_graph       , only : set_graph => graph
   use class_graph_field   , only : field
-  use class_graph_chain_rule, only : chain_channel
+  use class_graph_chain_rule, only : argument_path
 
   implicit none
 
   private
   public :: quartic_form, power8_form, equilibrium_law, linear_law
-  public :: scalar_pair, fill_scalar_channel
+  public :: scalar_pair, fill_path
 
   !===================================================================!
   ! Phi = q^4 + q^3 xi + q^2 xi^2 + q xi^3 + xi^4, scalar q in slot
@@ -57,10 +59,10 @@ module toy_differentiable_forms
   end type quartic_form
 
   !===================================================================!
-  ! Phi = (q + xi)^8: with u = q + xi, every mixed partial of order
-  ! k in any mix of the two slots is the one number 8!/(8-k)!
-  ! u^(8-k) - the degree-8 witness whose path derivatives a test
-  ! can recompute independently by Taylor convolution.
+  ! Phi = (q + xi)^8. With u = q + xi, every mixed partial of
+  ! order k, in any mix of the two slots, equals 8!/(8-k)! u^(8-k).
+  ! Used by the degree-8 chain-rule test, whose expected values
+  ! are recomputed independently by Taylor convolution.
   !===================================================================!
 
   type, extends(differentiable_operation) :: power8_form
@@ -74,12 +76,13 @@ module toy_differentiable_forms
   end type power8_form
 
   !===================================================================!
-  ! S_i(q, xi) = q_i^2 - xi, elementwise: the marched statement.
-  ! At xi = 1 its equilibrium is q = 1, so the walk stands still
-  ! while every derivative of the walk stays alive - the chain the
-  ! directional and adjoint oracles are priced on. Declared to
-  ! degree 8 because the declaration is a promise to ANSWER, and
-  ! zero is an exact answer for every partial past the second.
+  ! S_i(q, xi) = q_i^2 - xi, elementwise: the operation the
+  ! marcher tests integrate. At xi = 1 the fixed point is q = 1,
+  ! so a march started there produces a constant trajectory while
+  ! its parameter sensitivities are nonzero, which keeps the
+  ! expected values in closed form. max_degree is 8 because the
+  ! tests request compositions up to degree 8; every partial of
+  ! order 3 or higher is returned as exactly zero.
   !===================================================================!
 
   type, extends(differentiable_operation) :: equilibrium_law
@@ -93,9 +96,10 @@ module toy_differentiable_forms
   end type equilibrium_law
 
   !===================================================================!
-  ! S(q) = q, an ordinary operation and deliberately NOT a
-  ! differentiable one: tangent_of must hand it the difference
-  ! road, and the nonuniform governed march prices 1/3 on it.
+  ! S(q) = q, implementing graph_operation only. Used to check
+  ! that tangent_of falls back to the difference linearization for
+  ! a non-differentiable operation, and as the statement of the
+  ! nonuniform implicit march test.
   !===================================================================!
 
   type, extends(graph_operation) :: linear_law
@@ -108,7 +112,7 @@ module toy_differentiable_forms
 contains
 
   !===================================================================!
-  ! The one domain every toy answers: the graph's own vertices.
+  ! Domain used by every toy: the input graph's vertex set.
   !===================================================================!
 
   subroutine vertex_domain(input_graph, domain, nentries)
@@ -123,11 +127,9 @@ contains
   end subroutine vertex_domain
 
   !===================================================================!
-  ! The two arguments as the toys read them: the state whole from
-  ! slot one, xi from slot two when the caller supplies it and the
-  ! statement's own default otherwise - one reading discipline for
-  ! the chain rule's two-channel inputs and the linearization
-  ! family's state-only reach.
+  ! Read the state vector from input slot 1, and xi from input
+  ! slot 2 when two inputs were passed or from xi_default when
+  ! only the state was passed.
   !===================================================================!
 
   subroutine read_arguments(input_data, xi_default, q, xi)
@@ -151,10 +153,11 @@ contains
   end subroutine read_arguments
 
   !===================================================================!
-  ! Land an answer on the graph's own vertices.
+  ! Copy the given values into a field on the input graph's vertex
+  ! set and place it in output.
   !===================================================================!
 
-  subroutine pack_answer(input_graph, values, output)
+  subroutine pack_output(input_graph, values, output)
 
     class(directed_graph), intent(in) :: input_graph
     real(dp), intent(in) :: values(:)
@@ -167,19 +170,19 @@ contains
     cells    = input_graph % vertex_set()
     nentries = input_graph % num_vertices()
 
-    out = field('toy answer', cells, nentries, &
+    out = field('toy value', cells, nentries, &
          & ncomp = size(values) / nentries)
     call out % set_real_vector(values)
 
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
 
-  end subroutine pack_answer
+  end subroutine pack_output
 
   !===================================================================!
-  ! The falling factorial n (n-1) ... (n-k+1): the k-th derivative
-  ! of a power is one of these times the lowered power, and it is
-  ! zero exactly when the derivative outruns the exponent.
+  ! The falling factorial n (n-1) ... (n-k+1): the coefficient of
+  ! the k-th derivative of an n-th power. It is zero when k > n,
+  ! which makes derivatives past an exponent vanish.
   !===================================================================!
 
   pure function falling(n, k) result(f)
@@ -197,9 +200,9 @@ contains
   end function falling
 
   !===================================================================!
-  ! How many of the requested seats perturb each slot, and the
-  ! product of the scalar direction values - the whole bookkeeping
-  ! a scalar toy's mixed partial needs.
+  ! Count how many entries of slots(:) name input 1 (a) and input
+  ! 2 (b), and accumulate the product of the first value of every
+  ! direction field.
   !===================================================================!
 
   subroutine count_seats(slots, directions, a, b, product)
@@ -224,8 +227,8 @@ contains
   end subroutine count_seats
 
   !===================================================================!
-  ! One scalar input pair (q, xi) as fields on the given cells -
-  ! the composition point both test programs stand at.
+  ! Build the two scalar input fields (q, xi) on the given vertex
+  ! set.
   !===================================================================!
 
   subroutine scalar_pair(q, xi, cells, inputs)
@@ -242,30 +245,32 @@ contains
   end subroutine scalar_pair
 
   !===================================================================!
-  ! One derivative channel: the named slot, seat k carrying the
-  ! k-th scalar, every seat occupied.
+  ! Build an argument_path for the given input slot whose
+  ! derivative(k) holds the k-th scalar, every entry marked
+  ! occupied.
   !===================================================================!
 
-  subroutine fill_scalar_channel(channel, slot, seats, cells)
+  subroutine fill_path(path, slot, derivatives, cells)
 
-    type(chain_channel), intent(inout) :: channel
+    type(argument_path), intent(inout) :: path
     integer            , intent(in)    :: slot
-    real(dp)           , intent(in)    :: seats(:)
+    real(dp)           , intent(in)    :: derivatives(:)
     type(set_graph)    , intent(in)    :: cells
 
     integer :: k
 
-    channel % slot = slot
-    if (allocated(channel % derivative)) deallocate(channel % derivative)
-    allocate(channel % derivative(size(seats)))
+    path % slot = slot
+    if (allocated(path % derivative)) deallocate(path % derivative)
+    allocate(path % derivative(size(derivatives)))
 
-    do k = 1, size(seats)
-       channel % derivative(k) % occupied  = .true.
-       channel % derivative(k) % direction = field('path', cells, 1, ncomp=1)
-       call channel % derivative(k) % direction % set_real_vector([seats(k)])
+    do k = 1, size(derivatives)
+       path % derivative(k) % occupied  = .true.
+       path % derivative(k) % direction = field('path', cells, 1, ncomp=1)
+       call path % derivative(k) % direction % &
+            & set_real_vector([derivatives(k)])
     end do
 
-  end subroutine fill_scalar_channel
+  end subroutine fill_path
 
   !===================================================================!
   ! The quartic.
@@ -310,15 +315,15 @@ contains
        phi = quartic_mixed(0, 0, q(1), xi)
     end if
 
-    call pack_answer(input_graph, [phi], output)
+    call pack_output(input_graph, [phi], output)
 
   end subroutine quartic_apply
 
   !-------------------------------------------------------------------!
-  ! The mixed partial M(a, b) of Phi, computed by walking the five
-  ! monomials q^i xi^(4-i): each contributes its falling factorials
-  ! times the lowered powers, and dies exactly when a derivative
-  ! outruns an exponent. At (a, b) = (0, 0) this IS Phi.
+  ! The mixed partial d^a/dq^a d^b/dxi^b of Phi, computed per
+  ! monomial q^i xi^j with j = 4 - i: each term contributes
+  ! falling(i, a) falling(j, b) q^(i-a) xi^(j-b) and is skipped
+  ! when a > i or b > j. At (a, b) = (0, 0) this returns Phi.
   !-------------------------------------------------------------------!
 
   pure function quartic_mixed(a, b, q, xi) result(m)
@@ -355,7 +360,7 @@ contains
     call read_arguments(input_data, this % xi_default, q, xi)
     call count_seats(slots, directions, a, b, product)
 
-    call pack_answer(input_graph, &
+    call pack_output(input_graph, &
          & [quartic_mixed(a, b, q(1), xi) * product], output)
 
   end subroutine quartic_partial_action
@@ -403,7 +408,7 @@ contains
        phi = (q(1) + xi) ** 8
     end if
 
-    call pack_answer(input_graph, [phi], output)
+    call pack_output(input_graph, [phi], output)
 
   end subroutine power8_apply
 
@@ -424,12 +429,12 @@ contains
     call read_arguments(input_data, this % xi_default, q, xi)
     call count_seats(slots, directions, a, b, product)
 
-    ! every slot mix of order k answers the same one number:
-    ! d^k u^8 = 8!/(8-k)! u^(8-k), u = q + xi
+    ! d^k (q + xi)^8 = 8!/(8-k)! (q + xi)^(8-k) for every mix of
+    ! q and xi slots of total order k
     order = a + b
     term  = falling(8, order) * (q(1) + xi) ** (8 - order)
 
-    call pack_answer(input_graph, [term * product], output)
+    call pack_output(input_graph, [term * product], output)
 
   end subroutine power8_partial_action
 
@@ -478,7 +483,7 @@ contains
        s = 0.0_dp
     end if
 
-    call pack_answer(input_graph, s, output)
+    call pack_output(input_graph, s, output)
 
   end subroutine equilibrium_apply
 
@@ -501,7 +506,8 @@ contains
     a = count(slots == 1)
     b = count(slots == 2)
 
-    ! the state directions ride whole, xi's rides by its one value
+    ! collect up to two state direction vectors whole; only the
+    ! first value of a xi direction is used
     do j = 1, size(slots)
        if (slots(j) == 1) then
           if (.not. allocated(v1)) then
@@ -514,8 +520,8 @@ contains
        end if
     end do
 
-    ! the whole calculus of q^2 - xi: three live partials, the
-    ! rest exactly zero
+    ! the three nonzero partials of q^2 - xi; every other slot
+    ! combination is zero
     allocate(s(size(q)))
     if (a == 1 .and. b == 0) then
        s = 2.0_dp * q * v1
@@ -527,7 +533,7 @@ contains
        s = 0.0_dp
     end if
 
-    call pack_answer(input_graph, s, output)
+    call pack_output(input_graph, s, output)
 
   end subroutine equilibrium_partial_action
 
@@ -569,7 +575,7 @@ contains
        s = 0.0_dp
     end if
 
-    call pack_answer(input_graph, s, output)
+    call pack_output(input_graph, s, output)
 
   end subroutine linear_apply
 

@@ -41,7 +41,7 @@ module class_graph_chain_rule
   use graph_directed_view , only : directed_graph
   use graph_field_calculus, only : graph_field
   use fractal_graph       , only : set_graph => graph
-  use graph_calculus      , only : differentiable_operation
+  use graph_discretization      , only : differentiable_operation
   use class_graph_field   , only : field
 
   implicit none

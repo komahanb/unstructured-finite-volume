@@ -33,7 +33,7 @@ module class_graph_step
   use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
   use fractal_graph      , only : set_graph => graph
-  use graph_calculus     , only : discretization_operator
+  use graph_discretization     , only : discretization_operator
   use class_graph_field  , only : field
   use class_graph        , only : directed_stored_graph
 

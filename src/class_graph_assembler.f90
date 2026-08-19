@@ -68,14 +68,70 @@ module class_graph_assembler
   use graph_label_map    , only : label_map
   use graph_inclusion_map, only : inclusion_map, declared_subobject
   use graph_set_representation, only : listed_set_representation
-  use graph_calculus      , only : graph_assembler
+  use graph_operation_view, only : graph_transform
   use class_graph         , only : directed_stored_graph
   use class_graph_field   , only : field
 
   implicit none
 
   private
+  public :: graph_assembler
   public :: assembler
+
+  !===================================================================!
+  ! GRAPH_ASSEMBLER. The inverse transform: parts become the whole
+  ! again, along the same relation the partitioner wrote -
+  ! assemble(partition(G)) = G. defined_on_relation reports
+  ! whether a given relation belongs to a given part, so a caller
+  ! holding several relations can be told it handed over the wrong
+  ! one instead of getting a wrong assembly. Only owned values are
+  ! collected; counting a borrowed copy twice would violate
+  ! conservation.
+  !===================================================================!
+
+  type, abstract, extends(graph_transform) :: graph_assembler
+
+   contains
+
+     procedure(defined_on_relation_interface), deferred :: defined_on_relation
+     procedure(assemble_graph_interface), deferred :: assemble_graph
+     procedure(assemble_data_interface) , deferred :: assemble_data
+
+  end type graph_assembler
+
+  abstract interface
+
+     logical function defined_on_relation_interface(this, rel, part_graph)
+       import :: graph_assembler, directed_graph, partition_relation
+       class(graph_assembler), intent(in) :: this
+       type(partition_relation), intent(in) :: rel
+       class(directed_graph), intent(in) :: part_graph
+     end function defined_on_relation_interface
+
+     subroutine assemble_graph_interface(this, rel, part_graph, global_graph)
+       import :: graph_assembler, directed_graph, partition_relation
+       class(graph_assembler), intent(in) :: this
+       type(partition_relation), intent(in) :: rel
+       class(directed_graph), intent(in) :: part_graph
+       class(directed_graph), allocatable, intent(out) :: global_graph
+     end subroutine assemble_graph_interface
+
+     subroutine assemble_data_interface(this, rel, part_graph, part_data, &
+          & global_graph, sets, labels, inclusions, global_data)
+       import :: graph_assembler, directed_graph, graph_field, &
+            & set_map, label_map, inclusion_map, partition_relation
+       class(graph_assembler), intent(in) :: this
+       type(partition_relation), intent(in) :: rel
+       class(directed_graph), intent(in) :: part_graph
+       class(graph_field), intent(in) :: part_data
+       class(directed_graph), intent(in) :: global_graph
+       type(set_map), intent(inout) :: sets
+       type(label_map), intent(inout) :: labels
+       type(inclusion_map), intent(inout) :: inclusions
+       class(graph_field), allocatable, intent(out) :: global_data
+     end subroutine assemble_data_interface
+
+  end interface
 
   !===================================================================!
   ! THE ASSEMBLER HOLDS NOTHING.

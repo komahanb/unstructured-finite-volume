@@ -48,7 +48,7 @@ module class_graph_marcher
   use class_graph        , only : directed_stored_graph
   use class_graph_step   , only : step_operator, bdf
   use graph_minimization , only : minimizer
-  use graph_calculus     , only : linearization_operator, &
+  use graph_discretization     , only : linearization_operator, &
        & differentiable_operation
   use class_graph_exact_linearization, only : tangent_of
   use class_graph_chain_rule, only : chain_rule, argument_path, &

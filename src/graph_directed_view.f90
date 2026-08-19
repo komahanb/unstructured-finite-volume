@@ -96,6 +96,17 @@ module graph_directed_view
   private
 
   public :: directed_graph
+  public :: GRAPH_SIDE_VERTEX
+  public :: GRAPH_SIDE_EDGE
+
+  !===================================================================!
+  ! The two sides of a directed graph an operation's output may
+  ! land on. Output-landing identity only - not field-domain
+  ! identity and not a subset: domains are set graph identities.
+  !===================================================================!
+
+  integer, parameter :: GRAPH_SIDE_VERTEX = 1
+  integer, parameter :: GRAPH_SIDE_EDGE   = 2
 
   !===================================================================!
   ! GRAPH. The reader of structure.

@@ -20,7 +20,7 @@ module class_graph_exact_linearization
   use graph_directed_view , only : directed_graph
   use graph_field_calculus, only : graph_field
   use fractal_graph       , only : set_graph => graph
-  use graph_calculus      , only : linearization_operator, &
+  use graph_discretization      , only : linearization_operator, &
        & differentiable_operation
   use graph_operation_view, only : graph_operation
   use class_graph_linearization, only : difference_linearization

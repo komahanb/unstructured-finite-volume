@@ -32,15 +32,53 @@ module class_graph_coarsener
   use graph_directed_view , only : directed_graph
   use graph_field_calculus, only : graph_field
   use fractal_graph      , only : set_graph => graph
-  use graph_calculus      , only : graph_coarsener
+  use graph_operation_view, only : graph_transform
   use class_graph         , only : directed_stored_graph
   use class_graph_field   , only : field
 
   implicit none
 
   private
+  public :: graph_coarsener
   public :: coarsener
   public :: COARSEN_PAIRWISE, COARSEN_ADOPTED
+
+  !===================================================================!
+  ! GRAPH_COARSENER. The transform to fewer, larger cells - a
+  ! multigrid level. coarsen_data states how several fine values
+  ! merge onto one coarse cell: added for a residual, averaged for
+  ! a state, volume-weighted for unequal cells.
+  !===================================================================!
+
+  type, abstract, extends(graph_transform) :: graph_coarsener
+
+   contains
+
+     procedure(coarsen_graph_interface), deferred :: coarsen_graph
+     procedure(coarsen_data_interface) , deferred :: coarsen_data
+
+  end type graph_coarsener
+
+  abstract interface
+
+     subroutine coarsen_graph_interface(this, fine_graph, coarse_graph)
+       import :: graph_coarsener, directed_graph
+       class(graph_coarsener), intent(in) :: this
+       class(directed_graph), intent(in) :: fine_graph
+       class(directed_graph), allocatable, intent(out) :: coarse_graph
+     end subroutine coarsen_graph_interface
+
+     subroutine coarsen_data_interface(this, fine_graph, fine_data, &
+          & coarse_graph, coarse_data)
+       import :: graph_coarsener, directed_graph, graph_field
+       class(graph_coarsener), intent(in) :: this
+       class(directed_graph), intent(in) :: fine_graph
+       class(graph_field), intent(in) :: fine_data
+       class(directed_graph), intent(in) :: coarse_graph
+       class(graph_field), allocatable, intent(out) :: coarse_data
+     end subroutine coarsen_data_interface
+
+  end interface
 
   !-------------------------------------------------------------------!
   ! Walk the cells and glue each unclaimed one to a neighbour that is

@@ -64,7 +64,7 @@ module class_graph_partitioner
   use graph_label_map    , only : label_map
   use graph_inclusion_map, only : inclusion_map, declared_subobject
   use graph_set_representation, only : listed_set_representation
-  use graph_calculus      , only : graph_partitioner
+  use graph_operation_view, only : graph_transform
   use class_graph         , only : directed_stored_graph
   use class_graph_field   , only : field
   use class_graph_walk    , only : walk, WALK_VISIT_ORDER
@@ -72,8 +72,55 @@ module class_graph_partitioner
   implicit none
 
   private
+  public :: graph_partitioner
   public :: partitioner
   public :: PARTITION_LINEAR, PARTITION_BREADTH_FIRST, PARTITION_ADOPTED
+
+  !===================================================================!
+  ! GRAPH_PARTITIONER. The transform that cuts a whole into parts.
+  ! partition_graph returns the part and the relation
+  ! r <= S_part x S_whole recording how the part sits in the
+  ! whole; the relation is required output, because a part without
+  ! it cannot be reassembled. partition_data carries a field onto
+  ! a part along that same relation, writing the carved domain
+  ! into the caller's maps.
+  !===================================================================!
+
+  type, abstract, extends(graph_transform) :: graph_partitioner
+
+   contains
+
+     procedure(partition_graph_interface), deferred :: partition_graph
+     procedure(partition_data_interface) , deferred :: partition_data
+
+  end type graph_partitioner
+
+  abstract interface
+
+     subroutine partition_graph_interface(this, global_graph, part_graph, rel)
+       import :: graph_partitioner, directed_graph, partition_relation
+       class(graph_partitioner), intent(in) :: this
+       class(directed_graph), intent(in) :: global_graph
+       class(directed_graph), allocatable, intent(out) :: part_graph
+       type(partition_relation), intent(out) :: rel
+     end subroutine partition_graph_interface
+
+     subroutine partition_data_interface(this, rel, global_graph, &
+          & global_data, part_graph, sets, labels, inclusions, part_data)
+       import :: graph_partitioner, directed_graph, graph_field, &
+            & set_map, label_map, inclusion_map, partition_relation
+       class(graph_partitioner), intent(in) :: this
+       type(partition_relation), intent(in) :: rel
+       class(directed_graph), intent(in) :: global_graph
+       class(graph_field), intent(in) :: global_data
+       class(directed_graph), intent(in) :: part_graph
+       type(set_map), intent(inout) :: sets
+       type(label_map), intent(inout) :: labels
+       type(inclusion_map), intent(inout) :: inclusions
+       class(graph_field), allocatable, intent(out) :: part_data
+     end subroutine partition_data_interface
+
+  end interface
 
   !-------------------------------------------------------------------!
   ! Slice the vertex numbering into equal blocks. Cheap, deterministic,

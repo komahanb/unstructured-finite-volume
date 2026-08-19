@@ -56,7 +56,7 @@ module class_graph
   use graph_directed_view, only : directed_graph
   use fractal_graph      , only : set_graph => graph
   use graph_partition_relation, only : partition_relation
-  use graph_calculus     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
+  use graph_directed_view     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
   use graph_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use graph_set_map      , only : set_map

@@ -25,7 +25,7 @@ program test_graph_marching
   use graph_operation_view, only : graph_operation
   use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
-  use graph_calculus , only : GRAPH_SIDE_VERTEX
+  use graph_directed_view , only : GRAPH_SIDE_VERTEX
   use fractal_graph         , only : set_graph => graph
   use class_graph_field  , only : field
   use class_graph        , only : directed_stored_graph

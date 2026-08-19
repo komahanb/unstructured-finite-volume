@@ -6,7 +6,14 @@
 ! edges, and a step size is a number riding an edge, exactly as a
 ! spacing rides a mesh face,
 !
-!      (t0) --h--> (t1) --h--> (t2) --h--> ... --h--> (tn)
+!      (t0) --h1--> (t1) --h2--> (t2) --h3--> ... --hn--> (tn)
+!
+! and the banner is kept literally: march takes an optional array
+! of per-edge steps, one number riding each edge; absent, every
+! edge carries the marcher's one step, as before. Under bdf-2 a
+! nonuniform pair of edges is priced exactly - the step operator's
+! own table seat answers the coefficients, and no bdf number lives
+! here.
 !
 ! THE FORWARD WALK. At every edge the attached statement is read
 ! and the state moves against it. Three rules, absorbed:
@@ -28,16 +35,21 @@
 ! balance measures what a cell has left over; z -> z^2 + c at h = 1
 ! is the forward walk on S = z - z^2 - c, an identity.
 !
-! THE REVERSE WALK IS THE ADJOINT - OF THE EXPLICIT RULE. The same
-! chain traversed head to tail carries sensitivities backward:
+! THE REVERSE WALK IS THE ADJOINT - OF THE WALK ACTUALLY TAKEN.
+! For the explicit rule, the same chain traversed head to tail:
 ! handed the TRANSPOSED statement, lambda <- lambda - h *
-! transposed(lambda) per edge, in reverse edge order. The pairing
-! <lambda, q> is then invariant across every step - the duality the
-! suite holds to machine precision. For statements that change along
-! the walk the reversed order is not a courtesy; it is the
-! derivative's chain rule. Under an implicit rule this walk refuses
-! rather than lies: the adjoint of a solved step is the transpose of
-! that solve, and nothing here holds the trajectory it would need.
+! transposed(lambda) per edge, in reverse edge order, the pairing
+! <lambda, q> invariant across every step. For the governed rules
+! the adjoint of a solved step is the transpose of that solve, and
+! the trajectory it needs now arrives: march records the state at
+! every instant when asked, and march_adjoint becomes backward
+! substitution on the chain - at each edge the step Jacobian
+! a0 I + h S'(q_e) is probed at the recorded state through the
+! linearization shelf's own chooser (exact for a differentiable
+! statement, differenced otherwise), its TRANSPOSE is eliminated by
+! the dense direct seat, and the history couplings carry backward
+! as the constant diagonals a1 and a2 - the same one table seat
+! that priced the forward walk prices the reverse.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -53,6 +65,13 @@ module class_graph_marcher
   use class_graph        , only : directed_stored_graph
   use class_graph_step   , only : step_operator, bdf
   use graph_minimization , only : minimizer
+  use graph_calculus     , only : linearization_operator, &
+       & differentiable_operation
+  use class_graph_exact_linearization, only : tangent_of
+  use class_graph_chain_rule, only : chain_rule, chain_channel, chain_seat
+  use class_graph_step_policy, only : step_policy
+  use class_graph_dense_direct, only : solve_dense_matrix_with_dense_direct, &
+       & probed_dense_matrix
 
   implicit none
 
@@ -68,6 +87,7 @@ module class_graph_marcher
 
      integer  :: rule = MARCH_FORWARD
      real(dp) :: step = 1.0_dp
+     real(dp) :: singular_tolerance = 1.0e-14_dp
 
      class(minimizer), allocatable :: inner
 
@@ -76,6 +96,8 @@ module class_graph_marcher
      procedure :: instants
      procedure :: march
      procedure :: march_adjoint
+     procedure :: march_directional
+     procedure :: march_adaptive
 
   end type marcher
 
@@ -105,29 +127,39 @@ contains
   ! Walk the chain forward, by the rule.
   !===================================================================!
 
-  subroutine march(this, action, on, q, nsteps)
+  subroutine march(this, action, on, q, nsteps, steps, trajectory)
 
     class(marcher), intent(inout)      :: this
     class(graph_operation), intent(in) :: action
     class(directed_graph), intent(in)           :: on
     real(dp), intent(inout)            :: q(:)
     integer, intent(in)                :: nsteps
+    real(dp), intent(in), optional     :: steps(:)
+    real(dp), allocatable, intent(out), optional :: trajectory(:,:)
 
     type(directed_stored_graph) :: chain
     type(step_operator) :: statement
     type(set_graph) :: state_domain
     integer         :: n_state_domain
     real(dp), allocatable :: s(:), qold(:), qolder(:), zeros(:)
-    real(dp) :: answered
+    real(dp) :: answered, h_edge, h_previous
     integer :: e, ncomp
 
+    call require_lawful_steps(steps, nsteps)
+
     call this % instants(nsteps, chain)
+
+    if (present(trajectory)) then
+       allocate(trajectory(size(q), nsteps + 1))
+       trajectory(:, 1) = q
+    end if
 
     if (this % rule == MARCH_FORWARD) then
 
        do e = 1, chain % num_edges()
           call read_statement(action, on, q, s)
-          q = q - this % step * s
+          q = q - edge_step(this, steps, e) * s
+          if (present(trajectory)) trajectory(:, e + 1) = q
        end do
        return
 
@@ -135,9 +167,12 @@ contains
 
     ! The implicit rules: one governed solve per edge; bdf2 starts
     ! with a single backward step, as it must. The step comes off
-    ! the time shelf; the per-edge state and the bdf2 start are
-    ! written onto it as the walk proceeds.
+    ! the time shelf and is RE-AIMED there between edges - its own
+    ! table seat prices every coefficient, uniform or not, and no
+    ! bdf number lives in this file.
     statement = bdf(1, action, this % step)
+
+    h_previous = this % step
 
     ! The unknown of every governed solve is the state, so it lives
     ! where the state lives - the action's domain, asked once here
@@ -151,20 +186,15 @@ contains
 
     do e = 1, chain % num_edges()
 
+       h_edge = edge_step(this, steps, e)
+
        if (this % rule == MARCH_BDF2 .and. e > 1) then
-          statement % a0 = 1.5_dp
-          statement % a1 = -2.0_dp
-          statement % a2 = 0.5_dp
-          statement % reach = 2
+          call statement % set_bdf(2, [h_edge, h_previous])
           statement % qolder = qolder
        else
-          statement % a0 = 1.0_dp
-          statement % a1 = -1.0_dp
-          statement % a2 = 0.0_dp
-          statement % reach = 1
+          call statement % set_bdf(1, [h_edge])
        end if
 
-       statement % hs   = this % step
        statement % qold = qold
 
        ! The state's width travels with it: a member carrying several
@@ -174,12 +204,58 @@ contains
             & n_state_domain, ncomp = ncomp)
        call this % inner % solve(zeros, q, answered)
 
-       qolder = qold
-       qold   = q
+       qolder     = qold
+       qold       = q
+       h_previous = h_edge
+
+       if (present(trajectory)) trajectory(:, e + 1) = q
 
     end do
 
   end subroutine march
+
+  !===================================================================!
+  ! The per-edge step: the caller's array where one was given, the
+  ! marcher's one step otherwise. Given, it must carry exactly one
+  ! positive number per edge - a step is a number riding an edge,
+  ! and an edge without one is not a step.
+  !===================================================================!
+
+  pure subroutine require_lawful_steps(steps, nsteps)
+
+    real(dp), intent(in), optional :: steps(:)
+    integer , intent(in)           :: nsteps
+
+    integer :: e
+
+    if (.not. present(steps)) return
+
+    if (size(steps) /= nsteps) then
+       error stop 'marcher: one step rides each edge'
+    end if
+
+    do e = 1, size(steps)
+       if (steps(e) <= 0.0_dp) then
+          error stop 'marcher: a time step is positive'
+       end if
+    end do
+
+  end subroutine require_lawful_steps
+
+  pure function edge_step(this, steps, e) result(h)
+
+    class(marcher), intent(in)     :: this
+    real(dp), intent(in), optional :: steps(:)
+    integer , intent(in)           :: e
+    real(dp) :: h
+
+    if (present(steps)) then
+       h = steps(e)
+    else
+       h = this % step
+    end if
+
+  end function edge_step
 
   !===================================================================!
   ! Walk the chain in reverse, carrying the pairing: handed the
@@ -199,30 +275,156 @@ contains
   ! becomes the same verb as the forward one.
   !===================================================================!
 
-  subroutine march_adjoint(this, transposed, on, lambda, nsteps)
+  subroutine march_adjoint(this, transposed, on, lambda, nsteps, steps, &
+       & action, trajectory, seeds)
 
     class(marcher), intent(inout)      :: this
     class(graph_operation), intent(in) :: transposed
     class(directed_graph), intent(in)           :: on
     real(dp), intent(inout)            :: lambda(:)
     integer, intent(in)                :: nsteps
+    real(dp), intent(in), optional     :: steps(:)
+    class(graph_operation), intent(in), optional :: action
+    real(dp), intent(in), optional     :: trajectory(:,:)
+    real(dp), intent(in), optional     :: seeds(:,:)
 
     type(directed_stored_graph) :: chain
     real(dp), allocatable :: s(:)
     integer :: e
 
-    if (this % rule /= MARCH_FORWARD) then
-       error stop 'march_adjoint: the reverse walk answers the explicit rule only'
-    end if
+    call require_lawful_steps(steps, nsteps)
 
     call this % instants(nsteps, chain)
 
-    do e = chain % num_edges(), 1, -1
-       call read_statement(transposed, on, lambda, s)
-       lambda = lambda - this % step * s
-    end do
+    if (this % rule == MARCH_FORWARD) then
+
+       do e = chain % num_edges(), 1, -1
+          call read_statement(transposed, on, lambda, s)
+          lambda = lambda - edge_step(this, steps, e) * s
+       end do
+       return
+
+    end if
+
+    !----------------------------------------------------------------!
+    ! The governed rules: backward substitution on the chain. The
+    ! trajectory the transpose of each solve needs must have been
+    ! recorded by the forward walk.
+    !----------------------------------------------------------------!
+
+    if (.not. (present(action) .and. present(trajectory))) then
+       error stop 'march_adjoint: the implicit reverse walk needs the action &
+            &and its forward trajectory'
+    end if
+
+    call substitute_backward(this, action, on, lambda, chain, steps, &
+         & trajectory, seeds)
 
   end subroutine march_adjoint
+
+  !===================================================================!
+  ! Backward substitution: at each edge, in reverse order, the seed
+  ! arriving at the newest instant is answered by the transposed
+  ! step Jacobian,
+  !
+  !      (a0 I + h_e S'(q_e))^T lambda_e = seed_e,
+  !
+  ! the state Jacobian probed at the recorded state through the
+  ! linearization shelf's chooser and eliminated by the dense direct
+  ! seat - the transpose is one array away, and no solve_transpose
+  ! exists anywhere. The history couplings are the CONSTANT
+  ! diagonals of the step table, so the seed carries backward as
+  !
+  !      seed_(e-1) = -a1 lambda_e + (the -a2 of the edge after)
+  !
+  ! and what leaves in lambda is the seed at the first instant: the
+  ! sensitivity of the seeded functional to the initial state.
+  !===================================================================!
+
+  subroutine substitute_backward(this, action, on, lambda, chain, steps, &
+       & trajectory, seeds)
+
+    class(marcher), intent(inout)      :: this
+    class(graph_operation), intent(in) :: action
+    class(directed_graph), intent(in)  :: on
+    real(dp), intent(inout)            :: lambda(:)
+    type(directed_stored_graph), intent(in) :: chain
+    real(dp), intent(in), optional     :: steps(:)
+    real(dp), intent(in)               :: trajectory(:,:)
+    real(dp), intent(in), optional     :: seeds(:,:)
+
+    class(linearization_operator), allocatable :: tangent
+    type(step_operator) :: table
+    real(dp), allocatable :: jac(:,:), jstep(:,:)
+    real(dp), allocatable :: seed(:), lambda_e(:), carry_one(:), carry_two(:)
+    real(dp) :: answered, h_edge, h_previous
+    integer :: e, n, j
+
+    n = size(lambda)
+
+    if (size(trajectory, 1) /= n .or. &
+         & size(trajectory, 2) /= chain % num_vertices()) then
+       error stop 'march_adjoint: the trajectory carries one state per instant'
+    end if
+
+    ! a functional may touch interior instants: its per-instant
+    ! seeds join the carried couplings as each instant is reached
+    if (present(seeds)) then
+       if (size(seeds, 1) /= n .or. &
+            & size(seeds, 2) /= chain % num_vertices()) then
+          error stop 'march_adjoint: the seeds carry one entry per instant'
+       end if
+    end if
+
+    tangent = tangent_of(action)
+
+    allocate(carry_one(n), carry_two(n))
+    carry_one = 0.0_dp
+    carry_two = 0.0_dp
+
+    seed = lambda
+
+    do e = chain % num_edges(), 1, -1
+
+       h_edge = edge_step(this, steps, e)
+
+       ! the same one table seat that priced the forward walk
+       if (this % rule == MARCH_BDF2 .and. e > 1) then
+          h_previous = edge_step(this, steps, e - 1)
+          call table % set_bdf(2, [h_edge, h_previous])
+       else
+          call table % set_bdf(1, [h_edge])
+       end if
+
+       if (e < chain % num_edges()) then
+          seed = carry_one
+          if (present(seeds)) seed = seed + seeds(:, e + 1)
+       end if
+
+       ! the step Jacobian at the recorded state, transposed and
+       ! eliminated
+       call tangent % freeze(trajectory(:, e + 1))
+       call probed_dense_matrix(tangent, on, n, jac)
+
+       jstep = table % hs * jac
+       do j = 1, n
+          jstep(j, j) = jstep(j, j) + table % a0
+       end do
+
+       call solve_dense_matrix_with_dense_direct(transpose(jstep), seed, &
+            & this % singular_tolerance, lambda_e, answered)
+
+       ! the history couplings, carried backward as the table's own
+       ! constant diagonals
+       carry_one = carry_two - table % a1 * lambda_e
+       carry_two = -table % a2 * lambda_e
+
+    end do
+
+    lambda = carry_one
+    if (present(seeds)) lambda = lambda + seeds(:, 1)
+
+  end subroutine substitute_backward
 
   !===================================================================!
   ! One read of a statement at the standing state.
@@ -308,5 +510,390 @@ contains
     end if
 
   end subroutine read_statement
+
+  !===================================================================!
+  ! THE DIRECTIONAL WALK: forward derivatives of any order along
+  ! the walk actually taken. Differentiate the whole chain s times
+  ! along a parameter path; at each edge the step's own structure
+  ! splits the total,
+  !
+  !      J_e q_e^(s) = -( a1 qprev^(s) + a2 qolder^(s)
+  !                       + h_e * d^s S with the top state seat
+  !                         suppressed ),
+  !      J_e = a0 I + h_e S'(q_e),
+  !
+  ! because the history couplings live OUTSIDE the statement as the
+  ! table's constant diagonals - the same one table seat again -
+  ! and every composition term inside S is the chain rule's to
+  ! assemble, never this walk's. One Jacobian per edge serves every
+  ! order: only the right-hand side changes with s, which is the
+  ! whole claim of higher-degree marching. The parameter paths
+  ! arrive as caller-supplied chain channels on the statement's
+  ! slots beyond the state; the state's own path is the walk's and
+  ! may not be supplied. Under the explicit rule the same verb
+  ! recurs without a single solve:
+  !
+  !      q_e^(s) = qprev^(s) - h_e * d^s S at the previous state,
+  !                all seats full.
+  !
+  ! The initial state is held fixed: its derivatives are zero, and
+  ! what accumulates along the walk is the sensitivity of every
+  ! instant to the supplied parameter paths.
+  !===================================================================!
+
+  subroutine march_directional(this, action, on, nsteps, trajectory, order, &
+       & sensitivities, steps, parameters, channels)
+
+    class(marcher), intent(inout)               :: this
+    class(differentiable_operation), intent(in) :: action
+    class(directed_graph), intent(in)           :: on
+    integer, intent(in)                         :: nsteps
+    real(dp), intent(in)                        :: trajectory(:,:)
+    integer, intent(in)                         :: order
+    real(dp), allocatable, intent(out)          :: sensitivities(:,:,:)
+    real(dp), intent(in), optional              :: steps(:)
+    type(field), intent(in), optional           :: parameters(:)
+    type(chain_channel), intent(in), optional   :: channels(:)
+
+    type(directed_stored_graph) :: chain
+    type(chain_rule)            :: composer
+    type(step_operator)         :: table
+    class(linearization_operator), allocatable :: tangent
+    type(chain_channel), allocatable :: paths(:)
+    type(field), allocatable         :: inputs(:)
+    class(graph_field), allocatable  :: total_field
+    type(field)     :: state
+    type(set_graph) :: state_domain
+    real(dp), allocatable :: jac(:,:), jstep(:,:), total(:), b(:), q_s(:)
+    real(dp) :: answered, h_edge, h_previous
+    integer :: n_state_domain, ncomp
+    integer :: e, s_order, k, j, n, at, nchan
+
+    if (order < 1) then
+       error stop 'march_directional: the order is positive'
+    end if
+
+    call require_lawful_steps(steps, nsteps)
+    call this % instants(nsteps, chain)
+
+    n = size(trajectory, 1)
+    if (size(trajectory, 2) /= chain % num_vertices()) then
+       error stop 'march_directional: the trajectory carries one state per instant'
+    end if
+
+    call state_seat(action, on, trajectory(:, 1), state_domain, &
+         & n_state_domain, ncomp)
+
+    !----------------------------------------------------------------!
+    ! The caller's parameter paths: slots beyond the state, each
+    ! covered by a supplied parameter field. The state's own path
+    ! is the walk's.
+    !----------------------------------------------------------------!
+
+    nchan = 0
+    if (present(channels)) then
+       nchan = size(channels)
+       do k = 1, nchan
+          if (channels(k) % slot <= 1) then
+             error stop 'march_directional: the state path is the walk''s own'
+          end if
+          if (.not. present(parameters)) then
+             error stop 'march_directional: a parameter channel names a supplied slot'
+          end if
+          if (channels(k) % slot > 1 + size(parameters)) then
+             error stop 'march_directional: a parameter channel names a supplied slot'
+          end if
+       end do
+    end if
+
+    allocate(sensitivities(n, order, nsteps + 1))
+    sensitivities = 0.0_dp
+
+    tangent = tangent_of(action)
+
+    !----------------------------------------------------------------!
+    ! Walk the edges forward; at each edge assemble the composition
+    ! by degree and advance every order's derivative.
+    !----------------------------------------------------------------!
+
+    do e = 1, chain % num_edges()
+
+       h_edge = edge_step(this, steps, e)
+
+       if (this % rule == MARCH_BDF2 .and. e > 1) then
+          h_previous = edge_step(this, steps, e - 1)
+          call table % set_bdf(2, [h_edge, h_previous])
+       else
+          call table % set_bdf(1, [h_edge])
+       end if
+
+       !--------------------------------------------------------------!
+       ! The state the composition reads: the solved instant under
+       ! a governed rule, the previous instant under the explicit
+       ! one - the derivative of the walk actually taken.
+       !--------------------------------------------------------------!
+
+       if (this % rule == MARCH_FORWARD) then
+          at = e
+       else
+          at = e + 1
+       end if
+
+       state = field('state', state_domain, n_state_domain, ncomp=ncomp)
+       call state % set_real_vector(trajectory(:, at))
+
+       if (allocated(inputs)) deallocate(inputs)
+       if (present(parameters)) then
+          allocate(inputs(1 + size(parameters)))
+          inputs(1) = state
+          do k = 1, size(parameters)
+             inputs(1 + k) = parameters(k)
+          end do
+       else
+          allocate(inputs(1))
+          inputs(1) = state
+       end if
+
+       if (this % rule /= MARCH_FORWARD) then
+          call tangent % freeze(trajectory(:, e + 1))
+          call probed_dense_matrix(tangent, on, n, jac)
+          jstep = h_edge * jac
+          do j = 1, n
+             jstep(j, j) = jstep(j, j) + table % a0
+          end do
+       end if
+
+       do s_order = 1, order
+
+          call build_paths(this, sensitivities, state_domain, &
+               & n_state_domain, ncomp, at, s_order, nchan, channels, paths)
+
+          call composer % assemble(action, on, inputs, s_order, paths, &
+               & total_field)
+          call total_field % get_real_vector(total)
+
+          if (this % rule == MARCH_FORWARD) then
+
+             sensitivities(:, s_order, e + 1) = &
+                  & sensitivities(:, s_order, e) - h_edge * total
+
+          else
+
+             b = table % a1 * sensitivities(:, s_order, e) + h_edge * total
+             if (this % rule == MARCH_BDF2 .and. e > 1) then
+                b = b + table % a2 * sensitivities(:, s_order, e - 1)
+             end if
+
+             call solve_dense_matrix_with_dense_direct(jstep, -b, &
+                  & this % singular_tolerance, q_s, answered)
+             sensitivities(:, s_order, e + 1) = q_s
+
+          end if
+
+       end do
+
+    end do
+
+  end subroutine march_directional
+
+  !===================================================================!
+  ! The composition's channels at one edge and one order: the state
+  ! channel - seats below the order full from the solved
+  ! sensitivities, the top seat suppressed to zero under a governed
+  ! rule and full under the explicit one - followed by the caller's
+  ! parameter channels, passed through whole.
+  !===================================================================!
+
+  subroutine build_paths(this, sensitivities, state_domain, n_state_domain, &
+       & ncomp, at, s_order, nchan, channels, paths)
+
+    class(marcher), intent(in) :: this
+    real(dp)      , intent(in) :: sensitivities(:,:,:)
+    type(set_graph), intent(in) :: state_domain
+    integer       , intent(in) :: n_state_domain, ncomp, at, s_order, nchan
+    type(chain_channel), intent(in), optional :: channels(:)
+    type(chain_channel), allocatable, intent(out) :: paths(:)
+
+    type(field) :: seat_field
+    real(dp), allocatable :: seat_values(:)
+    integer :: k
+
+    allocate(paths(1 + nchan))
+
+    paths(1) % slot = 1
+    allocate(paths(1) % derivative(s_order))
+
+    do k = 1, s_order
+
+       if (k == s_order .and. this % rule /= MARCH_FORWARD) then
+          ! the suppression that defines the right-hand side: the
+          ! unknown's top seat is zero while it is assembled
+          allocate(seat_values(size(sensitivities, 1)))
+          seat_values = 0.0_dp
+       else
+          seat_values = sensitivities(:, k, at)
+       end if
+
+       seat_field = field('state path', state_domain, n_state_domain, &
+            & ncomp=ncomp)
+       call seat_field % set_real_vector(seat_values)
+       paths(1) % derivative(k) % occupied  = .true.
+       paths(1) % derivative(k) % direction = seat_field
+       deallocate(seat_values)
+
+    end do
+
+    do k = 1, nchan
+       paths(1 + k) = channels(k)
+    end do
+
+  end subroutine build_paths
+
+  !===================================================================!
+  ! THE ADAPTIVE WALK: the chain is not given, it is decided. At
+  ! each edge the policy proposes a step, the marcher takes it on
+  ! trial - explicit or governed by its standing rule - and
+  ! measures the evidence: the distance between the trial state and
+  ! the extrapolating predictor through the accepted history,
+  ! constant with one accepted instant behind, linear with two. The
+  ! policy judges; an accepted edge commits and its step joins the
+  ! record, a rejected edge leaves NOTHING - the trial never touched
+  ! the state, so there is no transaction and nothing to roll back.
+  ! A spent attempt budget ends the walk lawfully where it stands.
+  !
+  ! What leaves is the walk itself: the steps actually taken, one
+  ! per accepted edge. A caller wanting the trajectory or the
+  ! adjoint marches again with those steps - the recorded chain is
+  ! an ordinary nonuniform chain, and every other verb already
+  ! speaks it.
+  !===================================================================!
+
+  subroutine march_adaptive(this, action, on, q, duration, policy, &
+       & max_attempts, steps_taken, completed)
+
+    class(marcher), intent(inout)      :: this
+    class(graph_operation), intent(in) :: action
+    class(directed_graph), intent(in)  :: on
+    real(dp), intent(inout)            :: q(:)
+    real(dp), intent(in)               :: duration
+    class(step_policy), intent(inout)  :: policy
+    integer, intent(in)                :: max_attempts
+    real(dp), allocatable, intent(out) :: steps_taken(:)
+    logical, intent(out)               :: completed
+
+    type(step_operator) :: statement
+    type(set_graph)     :: state_domain
+    integer             :: n_state_domain, ncomp
+    real(dp), allocatable :: trial(:), predictor(:), qprev(:), s(:), zeros(:)
+    real(dp), allocatable :: grown(:)
+    real(dp) :: t, h, h_previous, estimate, answered
+    integer  :: attempt, taken
+    logical  :: accepted, have_previous
+
+    if (duration <= 0.0_dp) then
+       error stop 'march_adaptive: the duration is positive'
+    end if
+    if (max_attempts < 1) then
+       error stop 'march_adaptive: the attempt budget is positive'
+    end if
+
+    call state_seat(action, on, q, state_domain, n_state_domain, ncomp)
+
+    if (this % rule /= MARCH_FORWARD) then
+       statement = bdf(1, action, this % step)
+       allocate(zeros(size(q)))
+       zeros = 0.0_dp
+    end if
+
+    allocate(steps_taken(0))
+    t             = 0.0_dp
+    taken         = 0
+    have_previous = .false.
+    h_previous    = 0.0_dp
+    completed     = .false.
+
+    do while (duration - t > 1.0e-12_dp * duration)
+
+       call policy % propose(h)
+
+       accepted = .false.
+       attempt  = 0
+
+       do while (.not. accepted .and. attempt < max_attempts)
+
+          attempt = attempt + 1
+
+          if (h <= 0.0_dp) then
+             error stop 'march_adaptive: the policy proposes a positive step'
+          end if
+          h = min(h, duration - t)
+
+          !----------------------------------------------------------!
+          ! The trial: the state is never touched - a rejection has
+          ! nothing to undo.
+          !----------------------------------------------------------!
+
+          if (this % rule == MARCH_FORWARD) then
+
+             call read_statement(action, on, q, s)
+             trial = q - h * s
+
+          else
+
+             if (this % rule == MARCH_BDF2 .and. have_previous) then
+                call statement % set_bdf(2, [h, h_previous])
+                statement % qolder = qprev
+             else
+                call statement % set_bdf(1, [h])
+             end if
+             statement % qold = q
+
+             trial = q
+             call this % inner % attach(statement, on, state_domain, &
+                  & n_state_domain, ncomp = ncomp)
+             call this % inner % solve(zeros, trial, answered)
+
+          end if
+
+          !----------------------------------------------------------!
+          ! The evidence: distance from the extrapolating predictor
+          ! through the accepted history. Measurement only - the
+          ! judgment is the policy's.
+          !----------------------------------------------------------!
+
+          if (have_previous) then
+             predictor = q + (h / h_previous) * (q - qprev)
+          else
+             predictor = q
+          end if
+          estimate = norm2(trial - predictor)
+
+          call policy % judge(estimate, h, attempt, accepted)
+
+          if (.not. accepted .and. attempt < max_attempts) then
+             call policy % retry(estimate, h)
+          end if
+
+       end do
+
+       if (.not. accepted) return
+
+       qprev         = q
+       q             = trial
+       t             = t + h
+       h_previous    = h
+       have_previous = .true.
+
+       allocate(grown(taken + 1))
+       grown(1:taken) = steps_taken
+       grown(taken + 1) = h
+       call move_alloc(grown, steps_taken)
+       taken = taken + 1
+
+    end do
+
+    completed = .true.
+
+  end subroutine march_adaptive
 
 end module class_graph_marcher

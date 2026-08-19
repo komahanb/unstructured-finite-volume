@@ -1,5 +1,6 @@
 objects= \
 graph_identity.o \
+graph_change_protocol.o \
 fractal_graph.o \
 graph_sequence_view.o \
 graph_set_representation.o \
@@ -20,6 +21,8 @@ graph_partition_relation.o \
 graph_operation_view.o \
 graph_calculus.o \
 class_graph_field.o \
+graph_value_map.o \
+graph_value_change.o \
 class_graph_functional.o \
 class_graph.o \
 class_graph_mesh.o \
@@ -29,6 +32,8 @@ class_advection.o \
 class_graph_stencil.o \
 class_graph_step.o \
 class_graph_linearization.o \
+class_graph_exact_linearization.o \
+class_graph_chain_rule.o \
 graph_forms.o \
 class_polynomial_form.o \
 class_harmonic_form.o \
@@ -42,6 +47,7 @@ class_graph_differential_operator.o \
 class_graph_balance.o \
 graph_minimization.o \
 class_graph_jacobi.o \
+class_graph_dense_direct.o \
 class_graph_conjugate_gradient.o \
 graph_fitting.o \
 class_form_pruner.o \
@@ -51,6 +57,7 @@ class_graph_gauss_seidel.o \
 class_graph_gmres.o \
 class_graph_newton.o \
 class_graph_multigrid.o \
+class_graph_step_policy.o \
 class_graph_marcher.o \
 module_solve_mode.o \
 module_verbosity.o \
@@ -63,29 +70,4 @@ interface_mesh_loader.o \
 class_array_mesh_loader.o \
 class_gmsh_loader.o \
 class_mesh.o \
-class_mesh_builder.o \
-gti_value_buffer.o \
-gti_attached_value_map.o \
-gti_state_bundle.o \
-gti_design_bundle.o \
-gti_evaluation_point.o \
-gti_form_interface.o \
-gti_form_evaluator.o \
-gti_chain_rule_assembly.o \
-gti_time_local_scheme.o \
-gti_time_motif_builder.o \
-gti_time_local_unknown_problem.o \
-gti_time_local_newton_driver.o \
-gti_time_local_tangent_driver.o \
-gti_time_local_adjoint_driver.o \
-gti_time_graph.o \
-gti_time_forward_driver.o \
-gti_time_reverse_driver.o \
-gti_time_functional_seed_driver.o \
-gti_time_solve_gradient_driver.o \
-gti_change_protocol.o \
-gti_attached_value_change.o \
-gti_time_adaptive_growth_driver.o \
-gti_time_adaptive_controller.o \
-gti_time_degree2_directional_driver.o \
-gti_time_degree_r_directional_driver.o
+class_mesh_builder.o

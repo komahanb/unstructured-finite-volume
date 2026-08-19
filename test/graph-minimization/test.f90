@@ -21,7 +21,7 @@ module cubic_statement_fixture
   use graph_operation_view, only : graph_operation
   use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
-  use graph_calculus , only : GRAPH_SIDE_VERTEX
+  use graph_directed_view , only : GRAPH_SIDE_VERTEX
   ! An action names a domain and counts it. It asks no membership,
   ! so it holds no map: identity and count is the whole of it.
   use fractal_graph      , only : set_graph => graph

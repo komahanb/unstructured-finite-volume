@@ -35,7 +35,7 @@ module class_graph_stencil
   use iso_fortran_env    , only : dp => REAL64
   use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
-  use graph_calculus     , only : discretization_operator
+  use graph_discretization     , only : discretization_operator
   use class_graph_field  , only : field
   use class_graph        , only : directed_stored_graph
   use fractal_graph      , only : set_graph => graph

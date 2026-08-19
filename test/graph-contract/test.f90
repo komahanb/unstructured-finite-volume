@@ -20,7 +20,7 @@ module nonlinear_sample_support
   use graph_operation_view, only : graph_operation
   use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
-  use graph_calculus     , only : GRAPH_SIDE_VERTEX
+  use graph_directed_view, only : GRAPH_SIDE_VERTEX
   ! An operation names a domain and counts it. It asks no membership,
   ! so it imports no map: identity and count is the whole of what an
   ! operation is entitled to see.
@@ -209,8 +209,8 @@ program test_graph_contract
   use graph_field_calculus  , only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
   use graph_field_calculus  , only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
   use graph_field_calculus  , only : GRAPH_FIELD_CHARACTER
-  use graph_calculus        , only : GRAPH_SIDE_VERTEX
-  use graph_calculus        , only : graph_functional
+  use graph_directed_view   , only : GRAPH_SIDE_VERTEX
+  use graph_field_calculus  , only : graph_functional
   use class_graph           , only : directed_stored_graph
   use class_graph_field     , only : field
   use class_graph_functional, only : functional

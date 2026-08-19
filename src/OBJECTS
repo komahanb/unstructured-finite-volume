@@ -19,7 +19,7 @@ graph_field_calculus.o \
 graph_directed_view.o \
 graph_partition_relation.o \
 graph_operation_view.o \
-graph_calculus.o \
+graph_discretization.o \
 class_graph_field.o \
 graph_value_map.o \
 graph_value_change.o \

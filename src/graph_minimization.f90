@@ -43,7 +43,7 @@ module graph_minimization
   use graph_directed_view   , only : directed_graph
   use graph_field_calculus  , only : graph_field
   use fractal_graph      , only : set_graph => graph
-  use graph_calculus        , only : graph_functional
+  use graph_field_calculus        , only : graph_functional
   use class_graph_field     , only : field
   use class_graph_reduction , only : reduction, REDUCE_SUM, REDUCE_NORM
   use class_graph_walk      , only : walk, WALK_COLOURING

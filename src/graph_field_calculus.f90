@@ -60,6 +60,7 @@ module graph_field_calculus
 
   private
   public :: graph_field
+  public :: graph_functional
   public :: set_graph
   public :: GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL, GRAPH_FIELD_COMPLEX
   public :: GRAPH_FIELD_LOGICAL, GRAPH_FIELD_CHARACTER
@@ -104,6 +105,18 @@ module graph_field_calculus
      procedure(field_set_character_interface), deferred :: set_character_vector
 
   end type graph_field
+
+  !===================================================================!
+  ! GRAPH_FUNCTIONAL. The field at domain size one: a single
+  ! value with the whole inherited interface. The type exists so
+  ! an argument may demand the one-entry case at compile time - a
+  ! reduction returns a functional, not a field that happens to be
+  ! small. The law num_entries() == 1 is held by the test suite,
+  ! because the type system cannot state it.
+  !===================================================================!
+
+  type, abstract, extends(graph_field) :: graph_functional
+  end type graph_functional
 
   abstract interface
 

@@ -18,10 +18,39 @@ declare -A reason=(
   [nolambda]="reverse_driver: lambda has values"
   [propshape]="propagated seed shape matches target"
   [rdsize]="reverse_driver: residual design action size matches unknown size"
-  [singular]="reverse_driver: dense Jacobian pivot is nonsingular"
+  [singular]="dense_direct: pivot is nonsingular"
 )
 for case in negsing norelations idx0 idxhigh seedsize noeta unsolved noseed seedshape nolambda propshape rdsize singular; do
     if ./refusal "$case" >refusal.out 2>&1; then echo " FAIL : '$case' accepted"; exit 1; fi
     grep -q "${reason[$case]}" refusal.out && echo " PASS : '$case' is refused, loudly" || { cat refusal.out; exit 1; }
 done
 rm -f refusal.out
+
+migrated="$here/../../src/gti_time_reverse_driver.f90"
+
+# the tower migration, statically: the driver solves through the
+# existing graph minimization tower - the dense Jacobian rides
+# class_graph_stencil inside the adapter, dense_direct eliminates
+# it - and no private helper, GTI solver module, or backend
+# language survives.
+grep -q "class_graph_dense_direct" "$migrated" \
+    && echo " PASS : the driver solves through class_graph_dense_direct" \
+    || { echo " FAIL : the dense direct import is missing"; exit 1; }
+grep -q "class_graph_stencil" "$migrated" \
+    && echo " PASS : the stencil representation is named at the seat" \
+    || { echo " FAIL : the stencil representation is unnamed"; exit 1; }
+grep -q "subroutine dense_solve" "$migrated" \
+    && { echo " FAIL : a private dense_solve helper survives"; exit 1; } \
+    || echo " PASS : no private dense_solve helper remains"
+grep -qE "gti_linear_solve_backend|gti_dense_linear_solve_backend|gti_dense_block_solver" "$migrated" \
+    && { echo " FAIL : a GTI solver module is named"; exit 1; } \
+    || echo " PASS : no GTI solver module exists"
+grep -qi "backend" "$migrated" \
+    && { echo " FAIL : backend language appears in the driver"; exit 1; } \
+    || echo " PASS : no backend language exists"
+grep -q "transpose(jacobian)" "$migrated" \
+    && echo " PASS : the adjoint system is the transpose, as a stencil" \
+    || { echo " FAIL : the transpose formation is missing"; exit 1; }
+grep -q "solve_transpose" "$migrated" \
+    && { echo " FAIL : a solve_transpose method is used"; exit 1; } \
+    || echo " PASS : no solve_transpose exists - the transpose rides the stencil"

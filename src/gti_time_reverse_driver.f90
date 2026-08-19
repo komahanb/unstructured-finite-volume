@@ -53,6 +53,9 @@ module gti_time_reverse_drivers
   use gti_time_local_newton_drivers , only : gti_time_local_newton_driver
   use gti_time_local_adjoint_drivers, only : gti_time_local_adjoint_driver
   use gti_time_graphs      , only : gti_time_graph
+  ! the dense Jacobian rides class_graph_stencil as a weighted-edge
+  ! graph inside this adapter, and dense_direct minimizes it there
+  use class_graph_dense_direct, only : solve_dense_matrix_with_dense_direct
 
   implicit none
 
@@ -162,6 +165,7 @@ contains
     type(gti_time_local_adjoint_driver) :: adjoint
     type(gti_time_sample), allocatable  :: samples(:)
     type(gti_value_buffer)              :: q_star, dq_basis, column, r_action
+    real(dp) :: achieved
 
     real(dp), allocatable :: q_values(:), seed_values(:), r_values(:)
     real(dp), allocatable :: jacobian(:,:), transposed(:,:), lambda_values(:)
@@ -252,8 +256,8 @@ contains
 
     transposed = transpose(jacobian)
 
-    call dense_solve(transposed, seed_values, options % singular_tolerance, &
-         & lambda_values)
+    call solve_dense_matrix_with_dense_direct(transposed, seed_values, &
+         & options % singular_tolerance, lambda_values, achieved)
 
     result % relation_index       = relation_index
     result % unknown_vertex       = unknown_vertex
@@ -508,59 +512,5 @@ contains
     target % rvals = target % rvals + values
 
   end subroutine add_to_seed
-
-  !===================================================================!
-  ! Solve A x = b by Gaussian elimination with partial pivoting,
-  ! on private copies. A pivot below the singular tolerance is
-  ! refused. A deliberate local duplicate of the driver helpers -
-  ! serving this driver alone, not an abstraction.
-  !===================================================================!
-
-  pure subroutine dense_solve(a, b, singular_tolerance, x)
-
-    real(dp)             , intent(in)  :: a(:,:), b(:)
-    real(dp)             , intent(in)  :: singular_tolerance
-    real(dp), allocatable, intent(out) :: x(:)
-
-    real(dp), allocatable :: m(:,:), r(:), row(:)
-    real(dp) :: swap_value, factor
-    integer :: n, k, p, i
-
-    n = size(b)
-    m = a
-    r = b
-    allocate(row(n))
-
-    do k = 1, n
-
-       p = k - 1 + maxloc(abs(m(k:n, k)), dim=1)
-
-       if (abs(m(p, k)) <= singular_tolerance) then
-          error stop 'gti_time_reverse_driver: dense Jacobian pivot is nonsingular'
-       end if
-
-       if (p /= k) then
-          row        = m(k, :)
-          m(k, :)    = m(p, :)
-          m(p, :)    = row
-          swap_value = r(k)
-          r(k)       = r(p)
-          r(p)       = swap_value
-       end if
-
-       do i = k + 1, n
-          factor    = m(i, k) / m(k, k)
-          m(i, k:n) = m(i, k:n) - factor * m(k, k:n)
-          r(i)      = r(i) - factor * r(k)
-       end do
-
-    end do
-
-    allocate(x(n))
-    do k = n, 1, -1
-       x(k) = (r(k) - dot_product(m(k, k+1:n), x(k+1:n))) / m(k, k)
-    end do
-
-  end subroutine dense_solve
 
 end module gti_time_reverse_drivers

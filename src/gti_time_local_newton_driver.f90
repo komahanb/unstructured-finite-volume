@@ -8,8 +8,8 @@
 !
 ! by Newton iteration, entirely through the seats already built -
 ! the unknown problem answers the residual, the motif rows and the
-! form's partial actions answer the exact Jacobian action, and a
-! private dense elimination answers the step. Nothing here is a
+! form's partial actions answer the exact Jacobian action, and
+! the graph tower's dense direct minimizer answers the step. Nothing here is a
 ! scheme: the same three verbs serve BDF, DIRK, ABM, or any motif
 ! a builder mints.
 !
@@ -28,10 +28,11 @@
 ! scheme-specific formula.
 !
 ! The dense system J step = -r is built column by column from that
-! action on basis directions and solved by Gaussian elimination
-! with partial pivoting, a private helper for this small local
-! driver only - no linear-solver abstraction is introduced, and no
-! existing solver is called.
+! action on basis directions and solved through the existing graph
+! minimization tower: J rides a stencil - a matrix is a graph with
+! weights on its edges - and dense_direct eliminates it. The driver
+! still owns the residual, the Jacobian action, and the Newton
+! loop; the linear algebra lives where every solver lives.
 !
 ! Failure to converge is an answer, not an error: the result
 ! carries converged/.false., the iterations spent, and the norms
@@ -57,6 +58,9 @@ module gti_time_local_newton_drivers
   use gti_time_local_schemes, only : gti_time_sample, gti_time_motif, &
        & gti_time_local_residual_evaluator, gti_evaluation_point
   use gti_time_local_unknown_problems, only : gti_time_local_unknown_problem
+  ! the dense Jacobian rides class_graph_stencil as a weighted-edge
+  ! graph inside this adapter, and dense_direct minimizes it there
+  use class_graph_dense_direct, only : solve_dense_matrix_with_dense_direct
 
   implicit none
 
@@ -302,6 +306,7 @@ contains
     type(gti_value_buffer) :: q_current, r_current, dq_basis, column
     real(dp), allocatable  :: q_values(:), r_values(:), column_values(:)
     real(dp), allocatable  :: jacobian(:,:), step(:), basis(:)
+    real(dp) :: achieved
     integer :: n, j
 
     call options % validate()
@@ -350,7 +355,8 @@ contains
           jacobian(:, j) = column_values
        end do
 
-       call dense_solve(jacobian, -r_values, options % singular_tolerance, step)
+       call solve_dense_matrix_with_dense_direct(jacobian, -r_values, &
+            & options % singular_tolerance, step, achieved)
 
        q_values = q_values + step
        call q_current % set_real(q_values, ncomp=q_initial % ncomp)
@@ -390,59 +396,5 @@ contains
     end if
 
   end subroutine require_vector
-
-  !===================================================================!
-  ! Solve A x = b by Gaussian elimination with partial pivoting,
-  ! on private copies. A pivot below the singular tolerance is
-  ! refused - a flat Jacobian cannot point at a root. This helper
-  ! serves the local driver alone; it is not a solver abstraction.
-  !===================================================================!
-
-  pure subroutine dense_solve(a, b, singular_tolerance, x)
-
-    real(dp)             , intent(in)  :: a(:,:), b(:)
-    real(dp)             , intent(in)  :: singular_tolerance
-    real(dp), allocatable, intent(out) :: x(:)
-
-    real(dp), allocatable :: m(:,:), r(:), row(:)
-    real(dp) :: pivot_value, factor
-    integer :: n, k, p, i
-
-    n = size(b)
-    m = a
-    r = b
-    allocate(row(n))
-
-    do k = 1, n
-
-       p = k - 1 + maxloc(abs(m(k:n, k)), dim=1)
-
-       if (abs(m(p, k)) <= singular_tolerance) then
-          error stop 'gti_time_local_newton_driver: dense Jacobian pivot is nonsingular'
-       end if
-
-       if (p /= k) then
-          row       = m(k, :)
-          m(k, :)   = m(p, :)
-          m(p, :)   = row
-          pivot_value = r(k)
-          r(k)        = r(p)
-          r(p)        = pivot_value
-       end if
-
-       do i = k + 1, n
-          factor    = m(i, k) / m(k, k)
-          m(i, k:n) = m(i, k:n) - factor * m(k, k:n)
-          r(i)      = r(i) - factor * r(k)
-       end do
-
-    end do
-
-    allocate(x(n))
-    do k = n, 1, -1
-       x(k) = (r(k) - dot_product(m(k, k+1:n), x(k+1:n))) / m(k, k)
-    end do
-
-  end subroutine dense_solve
 
 end module gti_time_local_newton_drivers

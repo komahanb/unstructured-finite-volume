@@ -20,7 +20,7 @@ declare -A reason=(
   [noq]="degree_r_directional_driver: unknown q has values"
   [badseed]="degree_r_directional_driver: derivative shape matches vertex q"
   [shortres]="degree_r_directional_driver: degree residual size matches unknown size"
-  [singular]="degree_r_directional_driver: dense Jacobian pivot is nonsingular"
+  [singular]="dense_direct: pivot is nonsingular"
 )
 for case in deg0 negsing norelations idx0 idxhigh degdim vertdim noeta noetalegacy \
             unsolved unsolvedhistory noq badseed shortres singular; do
@@ -108,3 +108,26 @@ grep -q "Bell" "$src" \
 grep -q "jet" "$src" \
     && { echo " FAIL : the word 'jet' appears in the driver"; exit 1; } \
     || echo " PASS : no 'jet' in the driver"
+
+migrated="$here/../../src/gti_time_degree_r_directional_driver.f90"
+
+# the tower migration, statically: the driver solves through the
+# existing graph minimization tower - the dense Jacobian rides
+# class_graph_stencil inside the adapter, dense_direct eliminates
+# it - and no private helper, GTI solver module, or backend
+# language survives.
+grep -q "class_graph_dense_direct" "$migrated" \
+    && echo " PASS : the driver solves through class_graph_dense_direct" \
+    || { echo " FAIL : the dense direct import is missing"; exit 1; }
+grep -q "class_graph_stencil" "$migrated" \
+    && echo " PASS : the stencil representation is named at the seat" \
+    || { echo " FAIL : the stencil representation is unnamed"; exit 1; }
+grep -q "subroutine dense_solve" "$migrated" \
+    && { echo " FAIL : a private dense_solve helper survives"; exit 1; } \
+    || echo " PASS : no private dense_solve helper remains"
+grep -qE "gti_linear_solve_backend|gti_dense_linear_solve_backend|gti_dense_block_solver" "$migrated" \
+    && { echo " FAIL : a GTI solver module is named"; exit 1; } \
+    || echo " PASS : no GTI solver module exists"
+grep -qi "backend" "$migrated" \
+    && { echo " FAIL : backend language appears in the driver"; exit 1; } \
+    || echo " PASS : no backend language exists"

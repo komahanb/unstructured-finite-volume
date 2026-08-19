@@ -60,6 +60,9 @@ module gti_time_degree2_directional_drivers
   use gti_time_graphs      , only : gti_time_graph
   use gti_chain_rule_assemblies, only : gti_chain_rule_assembler, &
        & gti_chain_channel, gti_chain_input
+  ! the dense Jacobian rides class_graph_stencil as a weighted-edge
+  ! graph inside this adapter, and dense_direct minimizes it there
+  use class_graph_dense_direct, only : solve_dense_matrix_with_dense_direct
 
   implicit none
 
@@ -173,6 +176,7 @@ contains
     real(dp), allocatable :: first_local(:,:), second_local(:,:)
     real(dp), allocatable :: jacobian(:,:), column_values(:), basis(:)
     real(dp), allocatable :: b_values(:), rhs(:), solution(:)
+    real(dp) :: achieved
     integer :: n, ncomp, arity, unknown, unknown_vertex
     integer :: i, j, k, vertex_index
 
@@ -280,7 +284,8 @@ contains
     end do
 
     rhs = -b_values
-    call dense_solve(jacobian, rhs, options % singular_tolerance, solution)
+    call solve_dense_matrix_with_dense_direct(jacobian, rhs, &
+         & options % singular_tolerance, solution, achieved)
 
     result % relation_index = relation_index
     result % unknown_vertex = unknown_vertex
@@ -309,7 +314,8 @@ contains
     end if
 
     rhs = -b_values
-    call dense_solve(jacobian, rhs, options % singular_tolerance, solution)
+    call solve_dense_matrix_with_dense_direct(jacobian, rhs, &
+         & options % singular_tolerance, solution, achieved)
 
     result % second_linear_residual_norm = norm2(matmul(jacobian, solution) + b_values)
     call result % second_rhs % set_real(rhs)
@@ -497,59 +503,5 @@ contains
     call buffer % set_real(values, ncomp=ncomp)
 
   end subroutine set_vertex_derivative
-
-  !===================================================================!
-  ! Solve A x = b by Gaussian elimination with partial pivoting,
-  ! on private copies. A pivot below the singular tolerance is
-  ! refused. A deliberate local duplicate of the driver helpers -
-  ! serving this driver alone, not an abstraction.
-  !===================================================================!
-
-  pure subroutine dense_solve(a, b, singular_tolerance, x)
-
-    real(dp)             , intent(in)  :: a(:,:), b(:)
-    real(dp)             , intent(in)  :: singular_tolerance
-    real(dp), allocatable, intent(out) :: x(:)
-
-    real(dp), allocatable :: m(:,:), r(:), row(:)
-    real(dp) :: swap_value, factor
-    integer :: n, k, p, i
-
-    n = size(b)
-    m = a
-    r = b
-    allocate(row(n))
-
-    do k = 1, n
-
-       p = k - 1 + maxloc(abs(m(k:n, k)), dim=1)
-
-       if (abs(m(p, k)) <= singular_tolerance) then
-          error stop 'gti_time_degree2_directional_driver: dense Jacobian pivot is nonsingular'
-       end if
-
-       if (p /= k) then
-          row        = m(k, :)
-          m(k, :)    = m(p, :)
-          m(p, :)    = row
-          swap_value = r(k)
-          r(k)       = r(p)
-          r(p)       = swap_value
-       end if
-
-       do i = k + 1, n
-          factor    = m(i, k) / m(k, k)
-          m(i, k:n) = m(i, k:n) - factor * m(k, k:n)
-          r(i)      = r(i) - factor * r(k)
-       end do
-
-    end do
-
-    allocate(x(n))
-    do k = n, 1, -1
-       x(k) = (r(k) - dot_product(m(k, k+1:n), x(k+1:n))) / m(k, k)
-    end do
-
-  end subroutine dense_solve
 
 end module gti_time_degree2_directional_drivers

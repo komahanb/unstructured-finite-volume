@@ -2,7 +2,8 @@
 ! The refusals that must die at the degree-r seat, one per
 ! invocation:
 !
-!      deg0 / deg5      a degree outside 1..4
+!      deg0             a degree below one - degree has no upper
+!                       cap here; the form contract bounds it
 !      negsing          a zero singular tolerance
 !      norelations      traversing a graph with no relations
 !      idx0 / idxhigh   a relation index outside the graph
@@ -105,11 +106,6 @@ program refusal
   case ('deg0')
 
      options % max_degree = 0
-     call driver % solve_all(r_form, time_graph, design, eta, options, result)
-
-  case ('deg5')
-
-     options % max_degree = 5
      call driver % solve_all(r_form, time_graph, design, eta, options, result)
 
   case ('negsing')

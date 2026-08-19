@@ -7,10 +7,10 @@
 !
 !      D_q R[v] = 2 q v      D_qdot R[v] = v      D_xi R[v] = -v
 !      D_qq R[v,w] = 2 v w   every other second partial zero,
-!      every third and fourth partial zero,
+!      every partial of order three through eight zero,
 !
-! lawful to order 4 - and although its own calculus stops at the
-! quadratic, q^(3) and q^(4) do not vanish along the path: the
+! lawful to order 8 - and although its own calculus stops at the
+! quadratic, q^(3) through q^(8) do not vanish along the path: the
 ! chain-rule right-hand side carries products of lower-degree
 ! curvature, which is exactly what the degree loop must transport.
 ! Plus the design-only scalar (J_u = 0, the singular specimen) and
@@ -134,7 +134,7 @@ contains
   pure function qs_max_degree(this) result(degree)
     class(toy_qdot_square_form), intent(in) :: this
     integer :: degree
-    degree = 4
+    degree = 8
   end function qs_max_degree
 
   subroutine qs_value(this, point, output)
@@ -182,7 +182,7 @@ contains
           call output % set_real([0.0_dp])
        end if
     case default
-       ! orders 3 and 4: a quadratic's calculus ends here, exactly
+       ! orders 3 through 8: a quadratic's calculus ends here, exactly
        call output % set_real([0.0_dp])
     end select
   end subroutine qs_partial_action

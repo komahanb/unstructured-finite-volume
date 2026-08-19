@@ -4,9 +4,10 @@
 !
 !      R = (q_u - q_h) + q_u^2 - xi,   q = 1 everywhere, xi = 1,
 !
-! ONE driver walks the graph at r = 1, 2, 3, 4 and computes every
-! directional derivative along eta = 1 from the same J_u = 3 per
-! relation, built once and eliminated r times:
+! ONE driver walks the graph at r = 1, 2, 3, 4 - and then at
+! r = 8, past every retired table - computing every directional
+! derivative along eta = 1 from the same J_u = 3 per relation,
+! built once and eliminated r times:
 !
 !      r1:  q2^(1) =  1/3          (rhs      1)
 !           q2^(2) = -2/27         (rhs  -2/9)
@@ -72,7 +73,7 @@ program test_gti_time_degree_r_directional_driver
 
   real(dp), allocatable :: rv(:), ov(:)
   logical :: norms_ok, agrees
-  integer :: v, nfail
+  integer :: v, s8, nfail
 
   nfail = 0
   write(*,'(1x,a)') "============================================="
@@ -253,6 +254,73 @@ program test_gti_time_degree_r_directional_driver
        & "r=4: r2's degree-4 right-hand side is -B4 = [-14848/19683]", nfail)
 
   !-------------------------------------------------------------------!
+  ! r = 8: four turns past every retired table. The residual's own
+  ! calculus still stops at the quadratic; every value below is
+  ! transported curvature, and the same J_u = 3 is eliminated
+  ! eight times per relation. Exact values by rational Taylor
+  ! composition of q_u(eps) = (-1 + sqrt(9 + 4 eps))/2 and its
+  ! feed-forward into relation 2.
+  !-------------------------------------------------------------------!
+
+  options % max_degree = 8
+  call driver % solve_all(r_form, time_graph, design, eta, options, result)
+  call fold_norms(result, norms_ok)
+
+  call report(result % completed .and. result % max_degree == 8 .and. &
+       & result % completed_relations == 2, &
+       & "r=8: solve_all completes and records max_degree = 8", nfail)
+
+  call report(size(result % vertex_derivative, 1) == 8 .and. &
+       & size(result % vertex_derivative, 2) == 3 .and. &
+       & size(result % step(1) % rhs) == 8 .and. &
+       & size(result % step(1) % derivative) == 8 .and. &
+       & size(result % step(1) % linear_residual_norm) == 8, &
+       & "r=8: every result array carries eight degree seats", nfail)
+
+  call result % vertex_derivative(5, 2) % get_real(rv)
+  call report(matches(rv, [560.0_dp / 6561.0_dp], 1.0e-10_dp), &
+       & "r=8: q2^(5) = 560/6561", nfail)
+
+  call result % vertex_derivative(6, 2) % get_real(rv)
+  call report(matches(rv, [-1120.0_dp / 6561.0_dp], 1.0e-10_dp), &
+       & "r=8: q2^(6) = -1120/6561", nfail)
+
+  call result % vertex_derivative(7, 2) % get_real(rv)
+  call report(matches(rv, [24640.0_dp / 59049.0_dp], 1.0e-10_dp), &
+       & "r=8: q2^(7) = 24640/59049", nfail)
+
+  call result % vertex_derivative(8, 2) % get_real(rv)
+  call report(matches(rv, [-640640.0_dp / 531441.0_dp], 1.0e-10_dp), &
+       & "r=8: q2^(8) = -640640/531441", nfail)
+
+  call result % vertex_derivative(5, 3) % get_real(rv)
+  call report(matches(rv, [897680.0_dp / 1594323.0_dp], 1.0e-10_dp), &
+       & "r=8: q3^(5) = 897680/1594323", nfail)
+
+  call result % vertex_derivative(6, 3) % get_real(rv)
+  call report(matches(rv, [-95200.0_dp / 59049.0_dp], 1.0e-10_dp), &
+       & "r=8: q3^(6) = -95200/59049", nfail)
+
+  call result % vertex_derivative(7, 3) % get_real(rv)
+  call report(matches(rv, [726772480.0_dp / 129140163.0_dp], 1.0e-10_dp), &
+       & "r=8: q3^(7) = 726772480/129140163", nfail)
+
+  call result % vertex_derivative(8, 3) % get_real(rv)
+  call report(matches(rv, [-80862642560.0_dp / 3486784401.0_dp], 1.0e-10_dp), &
+       & "r=8: q3^(8) = -80862642560/3486784401", nfail)
+
+  agrees = .true.
+  do v = 1, 2
+     do s8 = 1, 8
+        call result % step(v) % rhs(s8) % get_real(rv)
+        call result % step(v) % derivative(s8) % get_real(ov)
+        agrees = agrees .and. matches(rv, 3.0_dp * ov, 1.0e-10_dp)
+     end do
+  end do
+  call report(agrees, &
+       & "r=8: every stored rhs equals J_u q^(s) = 3 q^(s), both relations", nfail)
+
+  !-------------------------------------------------------------------!
   ! Shared laws: exact eliminations, and a graph that never felt
   ! the traversals.
   !-------------------------------------------------------------------!
@@ -266,12 +334,12 @@ program test_gti_time_degree_r_directional_driver
      if (.not. matches(rv, [1.0_dp], 1.0e-14_dp)) exit
   end do
   call report(v == 4, &
-       & "the graph's q values survive all four traversals untouched", nfail)
+       & "the graph's q values survive all five traversals untouched", nfail)
 
   call report(time_graph % vertex(1) % has_solution .and. &
        & time_graph % vertex(2) % has_solution .and. &
        & time_graph % vertex(3) % has_solution, &
-       & "the graph's solution flags survive all four traversals untouched", nfail)
+       & "the graph's solution flags survive all five traversals untouched", nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then

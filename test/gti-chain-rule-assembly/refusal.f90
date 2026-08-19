@@ -3,7 +3,11 @@
 ! invocation:
 !
 !      negdeg        a derivative degree of -1
-!      highdeg       a derivative degree of 3, past phase-2 support
+!      beyondform    a degree whose composition demands a partial
+!                    order past the form's declared max_degree -
+!                    the form contract is the real support boundary
+!      hugedeg       a degree whose multinomial counts leave the
+!                    stored integer range - refused, not overflowed
 !      inconsistent  one channel whose seats name two different
 !                    arguments - q^(1) beside xi^(2)
 !      dupq          two channels both naming the state component q
@@ -274,9 +278,22 @@ program refusal
 
      call assembler % assemble(r_form, point, -1, input, out)
 
-  case ('highdeg')
+  case ('beyondform')
 
+     ! degree 5 patterns generate lawfully; the max_degree-2
+     ! residual form refuses the deeper partials they demand
+     ! (seats 1 and 2 occupied, so [1,2,2] admits an order-3 term)
+     allocate(input % channel(1))
+     allocate(input % channel(1) % derivative(2))
+     call input % channel(1) % derivative(1) % values % &
+          & set_real([1.0_dp, 0.0_dp, 2.0_dp])
+     call input % channel(1) % derivative(2) % values % &
+          & set_real([0.5_dp, 1.0_dp, 1.5_dp])
      call assembler % assemble(r_form, point, 5, input, out)
+
+  case ('hugedeg')
+
+     call assembler % assemble(r_form, point, 21, input, out)
 
   case ('inconsistent')
 

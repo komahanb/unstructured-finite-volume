@@ -3,20 +3,24 @@
 !
 ! One form, one point, and per-argument derivative directions; the
 ! assembler produces the total derivative of Phi along the path
-! x(s) of its arguments, through the public form contract alone:
+! x(s) of its arguments, through the public form contract alone.
 !
-!      degree 0 :  Phi
-!      degree 1 :  D Phi [x^(1)]
-!      degree 2 :  D Phi [x^(2)] + D^2 Phi [x^(1), x^(1)]
-!      degree 3 :  D Phi [x^(3)] + 3 D^2 Phi [x^(1), x^(2)]
-!                                +   D^3 Phi [x^(1), x^(1), x^(1)]
-!      degree 4 :  D Phi [x^(4)] + 4 D^2 Phi [x^(1), x^(3)]
-!                                + 3 D^2 Phi [x^(2), x^(2)]
-!                                + 6 D^3 Phi [x^(1), x^(1), x^(2)]
-!                                +   D^4 Phi [x^(1), ..., x^(1)]
+! For total degree n, each symbolic term of the composition is one
+! PATTERN: a nondecreasing positive tuple d = [d1, ..., dm] with
+! d1 + ... + dm = n, carrying the multinomial count
 !
-! Each symbolic term is one PATTERN - a coefficient and a tuple of
-! slot orders - and every slot expands over all channels providing
+!      c(d) = n! / ( prod_i d_i!  *  prod_j multiplicity_j! )
+!
+! where multiplicity_j counts repeated equal entries of d. The
+! patterns are GENERATED, never tabulated - increasing slot count
+! first, lexicographic inside one slot count - so degree 4 reads,
+! exactly as the retired hand table did,
+!
+!      [4]  [1,3]  [2,2]  [1,1,2]  [1,1,1,1]
+!       1     4      3       6         1
+!
+! and every degree beyond follows the same law: the degree is
+! data. Each slot of a pattern expands over all channels providing
 ! that derivative seat, in ordered tuples:
 !
 !      D^2 Phi [x^(1), x^(1)]  =  sum_a,b D^2 Phi [x_a^(1), x_b^(1)]
@@ -55,14 +59,18 @@
 ! The assembler carries nothing: no form, no graph, no scheme, no
 ! solver, no map. Local assembly only - no time graph, no Newton,
 ! no traversal lives here, no tensor is materialized, and this
-! seat serves degrees 0 through 4.
+! seat serves degree 0 upward, tested through degree 8. It refuses
+! only a negative degree and a multinomial count beyond the
+! integer range it stores; the form contract is the real support
+! boundary - a form asked for a partial order it does not promise
+! refuses through the form/evaluator law, not here.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module gti_chain_rule_assemblies
 
-  use iso_fortran_env      , only : dp => REAL64
+  use iso_fortran_env      , only : dp => REAL64, int64
   use gti_value_buffers    , only : gti_value_buffer
   use gti_form_interface   , only : gti_differentiable_form, &
        & gti_partial_request, gti_direction_bundle, &
@@ -130,7 +138,7 @@ module gti_chain_rule_assemblies
 
   type :: chain_term_pattern
 
-     integer :: coefficient = 1
+     integer(int64) :: coefficient = 1_int64
      integer, allocatable :: slot_degree(:)
 
   end type chain_term_pattern
@@ -192,7 +200,7 @@ contains
     type(chain_term_pattern), allocatable :: patterns(:)
     integer :: p
 
-    if (degree < 0 .or. degree > 4) then
+    if (degree < 0) then
        error stop 'gti_chain_rule_assembler: degree is supported'
     end if
 
@@ -225,9 +233,11 @@ contains
   end subroutine assemble
 
   !===================================================================!
-  ! The pattern table of the composition, one row per symbolic
-  ! term, the coefficient carrying the multinomial count. Private:
-  ! how the assembler thinks, not what it promises.
+  ! The patterns of the composition at one degree, GENERATED: every
+  ! nondecreasing positive tuple summing to the degree, in the
+  ! stable order - increasing slot count first, lexicographic
+  ! inside one slot count - each carrying its multinomial count.
+  ! Private: how the assembler thinks, not what it promises.
   !===================================================================!
 
   subroutine get_patterns(degree, patterns)
@@ -235,29 +245,141 @@ contains
     integer                              , intent(in)  :: degree
     type(chain_term_pattern), allocatable, intent(out) :: patterns(:)
 
-    select case (degree)
-    case (1)
-       allocate(patterns(1))
-       patterns(1) % coefficient = 1;  patterns(1) % slot_degree = [1]
-    case (2)
-       allocate(patterns(2))
-       patterns(1) % coefficient = 1;  patterns(1) % slot_degree = [2]
-       patterns(2) % coefficient = 1;  patterns(2) % slot_degree = [1, 1]
-    case (3)
-       allocate(patterns(3))
-       patterns(1) % coefficient = 1;  patterns(1) % slot_degree = [3]
-       patterns(2) % coefficient = 3;  patterns(2) % slot_degree = [1, 2]
-       patterns(3) % coefficient = 1;  patterns(3) % slot_degree = [1, 1, 1]
-    case default
-       allocate(patterns(5))
-       patterns(1) % coefficient = 1;  patterns(1) % slot_degree = [4]
-       patterns(2) % coefficient = 4;  patterns(2) % slot_degree = [1, 3]
-       patterns(3) % coefficient = 3;  patterns(3) % slot_degree = [2, 2]
-       patterns(4) % coefficient = 6;  patterns(4) % slot_degree = [1, 1, 2]
-       patterns(5) % coefficient = 1;  patterns(5) % slot_degree = [1, 1, 1, 1]
-    end select
+    integer, allocatable :: tuple(:)
+    integer :: slots
+
+    allocate(patterns(0))
+
+    do slots = 1, degree
+       allocate(tuple(slots))
+       call generate_patterns(degree, tuple, 1, 1, patterns)
+       deallocate(tuple)
+    end do
 
   end subroutine get_patterns
+
+  !===================================================================!
+  ! Fill tuple(position:) with nondecreasing entries no smaller
+  ! than the given minimum, summing to what remains; each completed
+  ! tuple appends one pattern. Iterating each entry from its
+  ! minimum upward yields lexicographic order within a slot count.
+  !===================================================================!
+
+  recursive subroutine generate_patterns(remaining, tuple, position, &
+       & minimum, patterns)
+
+    integer                              , intent(in)    :: remaining
+    integer                              , intent(inout) :: tuple(:)
+    integer                              , intent(in)    :: position
+    integer                              , intent(in)    :: minimum
+    type(chain_term_pattern), allocatable, intent(inout) :: patterns(:)
+
+    integer :: slots_left, entry_degree
+
+    slots_left = size(tuple) - position + 1
+
+    if (slots_left == 1) then
+       if (remaining >= minimum) then
+          tuple(position) = remaining
+          call append_pattern(patterns, tuple)
+       end if
+       return
+    end if
+
+    ! later entries are each at least this one, so it can claim at
+    ! most an equal share of what remains
+    do entry_degree = minimum, remaining / slots_left
+       tuple(position) = entry_degree
+       call generate_patterns(remaining - entry_degree, tuple, &
+            & position + 1, entry_degree, patterns)
+    end do
+
+  end subroutine generate_patterns
+
+  !===================================================================!
+  ! Append one completed tuple as a pattern, with its multinomial
+  ! count computed - never chosen.
+  !===================================================================!
+
+  subroutine append_pattern(patterns, tuple)
+
+    type(chain_term_pattern), allocatable, intent(inout) :: patterns(:)
+    integer                              , intent(in)    :: tuple(:)
+
+    type(chain_term_pattern), allocatable :: grown(:)
+    integer :: n
+
+    n = size(patterns)
+    allocate(grown(n + 1))
+    grown(1:n) = patterns
+    grown(n + 1) % slot_degree = tuple
+    grown(n + 1) % coefficient = pattern_coefficient(sum(tuple), tuple)
+    call move_alloc(grown, patterns)
+
+  end subroutine append_pattern
+
+  !===================================================================!
+  ! The multinomial count of one pattern,
+  !
+  !      c(d) = n! / ( prod_i d_i!  *  prod_j multiplicity_j! ),
+  !
+  ! computed as one exact integer division: the denominator is
+  ! assembled whole, and the tuple's nondecreasing order makes
+  ! every multiplicity a contiguous run.
+  !===================================================================!
+
+  pure function pattern_coefficient(total, slot_degree) result(coefficient)
+
+    integer, intent(in) :: total
+    integer, intent(in) :: slot_degree(:)
+    integer(int64)      :: coefficient
+
+    integer(int64) :: denominator
+    integer :: j, run
+
+    denominator = 1_int64
+    do j = 1, size(slot_degree)
+       denominator = denominator * factorial_int64(slot_degree(j))
+    end do
+
+    run = 1
+    do j = 2, size(slot_degree)
+       if (slot_degree(j) == slot_degree(j - 1)) then
+          run = run + 1
+       else
+          denominator = denominator * factorial_int64(run)
+          run = 1
+       end if
+    end do
+    denominator = denominator * factorial_int64(run)
+
+    coefficient = factorial_int64(total) / denominator
+
+  end function pattern_coefficient
+
+  !===================================================================!
+  ! The exact factorial the counts are built from. Twenty is where
+  ! the stored integer range ends; a composition that deep is
+  ! refused loudly, never overflowed silently.
+  !===================================================================!
+
+  pure function factorial_int64(n) result(factorial)
+
+    integer, intent(in) :: n
+    integer(int64)      :: factorial
+
+    integer :: k
+
+    if (n > 20) then
+       error stop 'gti_chain_rule_assembler: pattern coefficient is representable'
+    end if
+
+    factorial = 1_int64
+    do k = 2, n
+       factorial = factorial * int(k, int64)
+    end do
+
+  end function factorial_int64
 
   !===================================================================!
   ! Expand one pattern over the channels: every slot ranges over

@@ -2,15 +2,20 @@
 ! The refusals that must die at the change-protocol seat, one per
 ! invocation:
 !
-!      noapply      an apply that neither marks applied nor fails
-!      nocheck      a check that neither marks checked nor fails
-!      nokeep       an accepted keep that does not mark kept
-!      norevert     a rejected revert that does not mark reverted
-!      badterminal  a terminal record kept AND reverted at once
+!      noapply             an apply that neither marks applied nor fails
+!      nocheck             a check that neither marks checked nor fails
+!      nokeep              an accepted keep that does not mark kept
+!      norevert            a rejected revert that does not mark reverted
+!      failapply_norevert  apply marks failed, revert lies
+!      failcheck_norevert  check marks failed, revert lies
+!      vetocheck_norevert  check judges against, revert lies
+!      badterminal         a terminal record kept AND reverted at once
 !
 ! A change may lawfully fail; it may not lie about its own
-! lifecycle. Every case must error stop; a case that returns is a
-! failure of the suite.
+! lifecycle - and EVERY controller-called revert must report
+! reverted, on failure paths exactly as on reject paths. Every
+! case must error stop; a case that returns is a failure of the
+! suite.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -26,7 +31,9 @@ module gti_liar_changes
 
   !===================================================================!
   ! One configurable liar: each verb does its marking only if its
-  ! knob says so - and never marks failure, which is the lie.
+  ! knob says so, apply and check may lawfully fail on demand, and
+  ! the check's verdict is a knob too - so every lifecycle path
+  ! can be walked with a lying revert at its end.
   !===================================================================!
 
   type, extends(gti_reversible_change) :: liar_change
@@ -34,6 +41,9 @@ module gti_liar_changes
      logical :: says_checked  = .true.
      logical :: says_kept     = .true.
      logical :: says_reverted = .true.
+     logical :: fails_apply   = .false.
+     logical :: fails_check   = .false.
+     logical :: passes_check  = .true.
    contains
      procedure :: apply  => liar_apply
      procedure :: check  => liar_check
@@ -46,13 +56,21 @@ contains
   subroutine liar_apply(this, result)
     class(liar_change)     , intent(inout) :: this
     type(gti_change_result), intent(inout) :: result
+    if (this % fails_apply) then
+       call result % mark_failed()
+       return
+    end if
     if (this % says_applied) call result % mark_applied()
   end subroutine liar_apply
 
   subroutine liar_check(this, result)
     class(liar_change)     , intent(inout) :: this
     type(gti_change_result), intent(inout) :: result
-    if (this % says_checked) call result % mark_checked(.true.)
+    if (this % fails_check) then
+       call result % mark_failed()
+       return
+    end if
+    if (this % says_checked) call result % mark_checked(this % passes_check)
   end subroutine liar_check
 
   subroutine liar_keep(this, result)
@@ -105,6 +123,24 @@ program refusal
 
      liar % says_reverted = .false.
      call controller % run(liar, .false., result)
+
+  case ('failapply_norevert')
+
+     liar % fails_apply   = .true.
+     liar % says_reverted = .false.
+     call controller % run(liar, .true., result)
+
+  case ('failcheck_norevert')
+
+     liar % fails_check   = .true.
+     liar % says_reverted = .false.
+     call controller % run(liar, .true., result)
+
+  case ('vetocheck_norevert')
+
+     liar % passes_check  = .false.
+     liar % says_reverted = .false.
+     call controller % run(liar, .true., result)
 
   case ('badterminal')
 

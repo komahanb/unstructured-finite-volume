@@ -222,9 +222,11 @@ contains
   ! The lifecycle, owned whole: apply, then check, then keep on
   ! acceptance or revert otherwise. A failure reported by apply or
   ! check reverts and returns lawfully; a step that did its work
-  ! without marking it is refused. The controller never asks what
-  ! the change touched - structural, numerical, or mixed is the
-  ! change's own affair.
+  ! without marking it is refused - and EVERY revert the controller
+  ! calls, on failure paths and reject paths alike, must report
+  ! reverted, so no terminal record can be silently incomplete.
+  ! The controller never asks what the change touched - structural,
+  ! numerical, or mixed is the change's own affair.
   !===================================================================!
 
   subroutine run(this, change, accept, result)
@@ -241,6 +243,9 @@ contains
 
     if (result % failed) then
        call change % revert(result)
+       if (.not. result % reverted) then
+          error stop 'gti_change_controller: reverted change reports reverted'
+       end if
        call result % validate_terminal()
        return
     end if
@@ -259,6 +264,9 @@ contains
 
     if (result % failed .or. .not. result % check_passed) then
        call change % revert(result)
+       if (.not. result % reverted) then
+          error stop 'gti_change_controller: reverted change reports reverted'
+       end if
        call result % validate_terminal()
        return
     end if

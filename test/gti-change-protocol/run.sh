@@ -10,9 +10,13 @@ declare -A reason=(
   [nocheck]="gti_change_controller: checked change reports checked"
   [nokeep]="gti_change_controller: kept change reports kept"
   [norevert]="gti_change_controller: reverted change reports reverted"
+  [failapply_norevert]="gti_change_controller: reverted change reports reverted"
+  [failcheck_norevert]="gti_change_controller: reverted change reports reverted"
+  [vetocheck_norevert]="gti_change_controller: reverted change reports reverted"
   [badterminal]="gti_change_result: terminal state is consistent"
 )
-for case in noapply nocheck nokeep norevert badterminal; do
+for case in noapply nocheck nokeep norevert failapply_norevert \
+            failcheck_norevert vetocheck_norevert badterminal; do
     if ./refusal "$case" >refusal.out 2>&1; then echo " FAIL : '$case' accepted"; exit 1; fi
     grep -q "${reason[$case]}" refusal.out && echo " PASS : '$case' is refused, loudly" || { cat refusal.out; exit 1; }
 done

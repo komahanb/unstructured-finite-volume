@@ -36,14 +36,20 @@
 module class_graph_dense_direct
 
   use iso_fortran_env    , only : dp => REAL64
+  use graph_operation_view, only : graph_operation
+  use graph_directed_view , only : directed_graph
+  use graph_field_calculus, only : graph_field
+  use fractal_graph      , only : set_graph => graph
   use graph_minimization , only : minimizer
   use class_graph_stencil, only : stencil_operator
+  use class_graph_field  , only : field
 
   implicit none
 
   private
   public :: dense_direct
   public :: solve_dense_matrix_with_dense_direct
+  public :: probed_dense_matrix
 
   type, extends(minimizer) :: dense_direct
 
@@ -217,5 +223,56 @@ contains
     call solver % solve(b, x, achieved)
 
   end subroutine solve_dense_matrix_with_dense_direct
+
+
+  !===================================================================!
+  ! The compiled-dense door: probe any operation into the dense
+  ! matrix of its linear action, one apply per basis column - the
+  ! same probing this seat's solve performs against an attached
+  ! matvec, offered raw to callers that must hold the matrix whole:
+  ! a transposed step Jacobian, a small compiled block. A door, not
+  ! an algebra - the numbers leave as one plain array.
+  !===================================================================!
+
+  subroutine probed_dense_matrix(action, on, width, a)
+
+    class(graph_operation), intent(in)  :: action
+    class(directed_graph) , intent(in)  :: on
+    integer               , intent(in)  :: width
+    real(dp), allocatable , intent(out) :: a(:,:)
+
+    type(field)     :: probe
+    class(graph_field), allocatable :: answer
+    type(set_graph) :: dom
+    real(dp), allocatable :: e(:), y(:)
+    integer :: n_dom, ncomp, j
+
+    call action % domain(on, dom, n_dom)
+
+    if (n_dom <= 0) then
+       error stop 'dense_direct: the probed operation''s domain is empty'
+    end if
+    if (width <= 0 .or. mod(width, n_dom) /= 0) then
+       error stop 'dense_direct: the probed width carries a whole number per member'
+    end if
+
+    ncomp = width / n_dom
+
+    allocate(a(width, width), e(width))
+
+    do j = 1, width
+       e    = 0.0_dp
+       e(j) = 1.0_dp
+       probe = field('probe', dom, n_dom, ncomp=ncomp)
+       call probe % set_real_vector(e)
+       call action % apply(on, [probe], answer)
+       call answer % get_real_vector(y)
+       if (size(y) /= width) then
+          error stop 'dense_direct: the probed operation answers its own width'
+       end if
+       a(:, j) = y
+    end do
+
+  end subroutine probed_dense_matrix
 
 end module class_graph_dense_direct

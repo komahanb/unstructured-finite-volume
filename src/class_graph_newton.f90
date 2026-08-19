@@ -28,10 +28,8 @@ module class_graph_newton
 
   use iso_fortran_env           , only : dp => REAL64
   use graph_minimization        , only : minimizer
-  use graph_calculus            , only : linearization_operator, &
-       & differentiable_operation
-  use class_graph_linearization , only : difference_linearization
-  use class_graph_exact_linearization, only : exact_linearization
+  use graph_calculus            , only : linearization_operator
+  use class_graph_exact_linearization, only : tangent_of
 
   implicit none
 
@@ -87,13 +85,9 @@ contains
 
     call this % constant(g)
 
-    ! the seat is filled by what the statement is
-    select type (statement => this % action)
-    class is (differentiable_operation)
-       allocate(jacobian, source=exact_linearization(statement))
-    class default
-       allocate(jacobian, source=difference_linearization(this % action))
-    end select
+    ! the seat is filled by what the statement is - the shelf's
+    ! own chooser answers, and no dispatch lives here
+    jacobian = tangent_of(this % action)
 
     do it = 1, this % max_iterations
 

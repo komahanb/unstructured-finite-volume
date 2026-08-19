@@ -35,16 +35,21 @@
 ! balance measures what a cell has left over; z -> z^2 + c at h = 1
 ! is the forward walk on S = z - z^2 - c, an identity.
 !
-! THE REVERSE WALK IS THE ADJOINT - OF THE EXPLICIT RULE. The same
-! chain traversed head to tail carries sensitivities backward:
+! THE REVERSE WALK IS THE ADJOINT - OF THE WALK ACTUALLY TAKEN.
+! For the explicit rule, the same chain traversed head to tail:
 ! handed the TRANSPOSED statement, lambda <- lambda - h *
-! transposed(lambda) per edge, in reverse edge order. The pairing
-! <lambda, q> is then invariant across every step - the duality the
-! suite holds to machine precision. For statements that change along
-! the walk the reversed order is not a courtesy; it is the
-! derivative's chain rule. Under an implicit rule this walk refuses
-! rather than lies: the adjoint of a solved step is the transpose of
-! that solve, and nothing here holds the trajectory it would need.
+! transposed(lambda) per edge, in reverse edge order, the pairing
+! <lambda, q> invariant across every step. For the governed rules
+! the adjoint of a solved step is the transpose of that solve, and
+! the trajectory it needs now arrives: march records the state at
+! every instant when asked, and march_adjoint becomes backward
+! substitution on the chain - at each edge the step Jacobian
+! a0 I + h S'(q_e) is probed at the recorded state through the
+! linearization shelf's own chooser (exact for a differentiable
+! statement, differenced otherwise), its TRANSPOSE is eliminated by
+! the dense direct seat, and the history couplings carry backward
+! as the constant diagonals a1 and a2 - the same one table seat
+! that priced the forward walk prices the reverse.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -60,6 +65,10 @@ module class_graph_marcher
   use class_graph        , only : directed_stored_graph
   use class_graph_step   , only : step_operator, bdf
   use graph_minimization , only : minimizer
+  use graph_calculus     , only : linearization_operator
+  use class_graph_exact_linearization, only : tangent_of
+  use class_graph_dense_direct, only : solve_dense_matrix_with_dense_direct, &
+       & probed_dense_matrix
 
   implicit none
 
@@ -75,6 +84,7 @@ module class_graph_marcher
 
      integer  :: rule = MARCH_FORWARD
      real(dp) :: step = 1.0_dp
+     real(dp) :: singular_tolerance = 1.0e-14_dp
 
      class(minimizer), allocatable :: inner
 
@@ -112,7 +122,7 @@ contains
   ! Walk the chain forward, by the rule.
   !===================================================================!
 
-  subroutine march(this, action, on, q, nsteps, steps)
+  subroutine march(this, action, on, q, nsteps, steps, trajectory)
 
     class(marcher), intent(inout)      :: this
     class(graph_operation), intent(in) :: action
@@ -120,6 +130,7 @@ contains
     real(dp), intent(inout)            :: q(:)
     integer, intent(in)                :: nsteps
     real(dp), intent(in), optional     :: steps(:)
+    real(dp), allocatable, intent(out), optional :: trajectory(:,:)
 
     type(directed_stored_graph) :: chain
     type(step_operator) :: statement
@@ -133,11 +144,17 @@ contains
 
     call this % instants(nsteps, chain)
 
+    if (present(trajectory)) then
+       allocate(trajectory(size(q), nsteps + 1))
+       trajectory(:, 1) = q
+    end if
+
     if (this % rule == MARCH_FORWARD) then
 
        do e = 1, chain % num_edges()
           call read_statement(action, on, q, s)
           q = q - edge_step(this, steps, e) * s
+          if (present(trajectory)) trajectory(:, e + 1) = q
        end do
        return
 
@@ -185,6 +202,8 @@ contains
        qolder     = qold
        qold       = q
        h_previous = h_edge
+
+       if (present(trajectory)) trajectory(:, e + 1) = q
 
     end do
 
@@ -251,7 +270,8 @@ contains
   ! becomes the same verb as the forward one.
   !===================================================================!
 
-  subroutine march_adjoint(this, transposed, on, lambda, nsteps, steps)
+  subroutine march_adjoint(this, transposed, on, lambda, nsteps, steps, &
+       & action, trajectory)
 
     class(marcher), intent(inout)      :: this
     class(graph_operation), intent(in) :: transposed
@@ -259,25 +279,131 @@ contains
     real(dp), intent(inout)            :: lambda(:)
     integer, intent(in)                :: nsteps
     real(dp), intent(in), optional     :: steps(:)
+    class(graph_operation), intent(in), optional :: action
+    real(dp), intent(in), optional     :: trajectory(:,:)
 
     type(directed_stored_graph) :: chain
     real(dp), allocatable :: s(:)
     integer :: e
 
-    if (this % rule /= MARCH_FORWARD) then
-       error stop 'march_adjoint: the reverse walk answers the explicit rule only'
-    end if
-
     call require_lawful_steps(steps, nsteps)
 
     call this % instants(nsteps, chain)
 
-    do e = chain % num_edges(), 1, -1
-       call read_statement(transposed, on, lambda, s)
-       lambda = lambda - edge_step(this, steps, e) * s
-    end do
+    if (this % rule == MARCH_FORWARD) then
+
+       do e = chain % num_edges(), 1, -1
+          call read_statement(transposed, on, lambda, s)
+          lambda = lambda - edge_step(this, steps, e) * s
+       end do
+       return
+
+    end if
+
+    !----------------------------------------------------------------!
+    ! The governed rules: backward substitution on the chain. The
+    ! trajectory the transpose of each solve needs must have been
+    ! recorded by the forward walk.
+    !----------------------------------------------------------------!
+
+    if (.not. (present(action) .and. present(trajectory))) then
+       error stop 'march_adjoint: the implicit reverse walk needs the action &
+            &and its forward trajectory'
+    end if
+
+    call substitute_backward(this, action, on, lambda, chain, steps, trajectory)
 
   end subroutine march_adjoint
+
+  !===================================================================!
+  ! Backward substitution: at each edge, in reverse order, the seed
+  ! arriving at the newest instant is answered by the transposed
+  ! step Jacobian,
+  !
+  !      (a0 I + h_e S'(q_e))^T lambda_e = seed_e,
+  !
+  ! the state Jacobian probed at the recorded state through the
+  ! linearization shelf's chooser and eliminated by the dense direct
+  ! seat - the transpose is one array away, and no solve_transpose
+  ! exists anywhere. The history couplings are the CONSTANT
+  ! diagonals of the step table, so the seed carries backward as
+  !
+  !      seed_(e-1) = -a1 lambda_e + (the -a2 of the edge after)
+  !
+  ! and what leaves in lambda is the seed at the first instant: the
+  ! sensitivity of the seeded functional to the initial state.
+  !===================================================================!
+
+  subroutine substitute_backward(this, action, on, lambda, chain, steps, &
+       & trajectory)
+
+    class(marcher), intent(inout)      :: this
+    class(graph_operation), intent(in) :: action
+    class(directed_graph), intent(in)  :: on
+    real(dp), intent(inout)            :: lambda(:)
+    type(directed_stored_graph), intent(in) :: chain
+    real(dp), intent(in), optional     :: steps(:)
+    real(dp), intent(in)               :: trajectory(:,:)
+
+    class(linearization_operator), allocatable :: tangent
+    type(step_operator) :: table
+    real(dp), allocatable :: jac(:,:), jstep(:,:)
+    real(dp), allocatable :: seed(:), lambda_e(:), carry_one(:), carry_two(:)
+    real(dp) :: answered, h_edge, h_previous
+    integer :: e, n, j
+
+    n = size(lambda)
+
+    if (size(trajectory, 1) /= n .or. &
+         & size(trajectory, 2) /= chain % num_vertices()) then
+       error stop 'march_adjoint: the trajectory carries one state per instant'
+    end if
+
+    tangent = tangent_of(action)
+
+    allocate(carry_one(n), carry_two(n))
+    carry_one = 0.0_dp
+    carry_two = 0.0_dp
+
+    seed = lambda
+
+    do e = chain % num_edges(), 1, -1
+
+       h_edge = edge_step(this, steps, e)
+
+       ! the same one table seat that priced the forward walk
+       if (this % rule == MARCH_BDF2 .and. e > 1) then
+          h_previous = edge_step(this, steps, e - 1)
+          call table % set_bdf(2, [h_edge, h_previous])
+       else
+          call table % set_bdf(1, [h_edge])
+       end if
+
+       if (e < chain % num_edges()) seed = carry_one
+
+       ! the step Jacobian at the recorded state, transposed and
+       ! eliminated
+       call tangent % freeze(trajectory(:, e + 1))
+       call probed_dense_matrix(tangent, on, n, jac)
+
+       jstep = table % hs * jac
+       do j = 1, n
+          jstep(j, j) = jstep(j, j) + table % a0
+       end do
+
+       call solve_dense_matrix_with_dense_direct(transpose(jstep), seed, &
+            & this % singular_tolerance, lambda_e, answered)
+
+       ! the history couplings, carried backward as the table's own
+       ! constant diagonals
+       carry_one = carry_two - table % a1 * lambda_e
+       carry_two = -table % a2 * lambda_e
+
+    end do
+
+    lambda = carry_one
+
+  end subroutine substitute_backward
 
   !===================================================================!
   ! One read of a statement at the standing state.

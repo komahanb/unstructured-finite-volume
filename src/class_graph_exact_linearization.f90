@@ -31,12 +31,15 @@ module class_graph_exact_linearization
   use fractal_graph       , only : set_graph => graph
   use graph_calculus      , only : linearization_operator, &
        & differentiable_operation
+  use graph_operation_view, only : graph_operation
+  use class_graph_linearization, only : difference_linearization
   use class_graph_field   , only : field
 
   implicit none
 
   private
   public :: exact_linearization
+  public :: tangent_of
 
   type, extends(linearization_operator) :: exact_linearization
 
@@ -58,6 +61,28 @@ module class_graph_exact_linearization
   end interface exact_linearization
 
 contains
+
+  !===================================================================!
+  ! The shelf's own chooser: the seat is filled by what the
+  ! statement IS. A differentiable statement linearizes itself
+  ! exactly; anything else is differenced. Every governor - newton,
+  ! the marcher's reverse walk, whoever comes next - asks here and
+  ! owns no dispatch of its own.
+  !===================================================================!
+
+  function tangent_of(action) result(tangent)
+
+    class(graph_operation), intent(in)         :: action
+    class(linearization_operator), allocatable :: tangent
+
+    select type (action)
+    class is (differentiable_operation)
+       allocate(tangent, source=exact_linearization(action))
+    class default
+       allocate(tangent, source=difference_linearization(action))
+    end select
+
+  end function tangent_of
 
   !===================================================================!
   ! Built about a differentiable statement; the state may arrive

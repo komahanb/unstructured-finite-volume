@@ -17,11 +17,20 @@
 ! right-hand side does, and the assembler generates every pattern
 ! the degree demands.
 !
-! Along the affine design path xi(eps) = xi + eps eta,
+! The default path is affine: xi(eps) = xi + eps eta,
 !
 !      xi^(1) = eta,        xi^(s) = 0   for s >= 2,
 !
-! the total degree-s derivative of R(U(q(eps)), xi(eps), t) = 0
+! taken whenever the caller supplies no design path. A caller may
+! instead occupy the design derivative seats directly, xi^(1),
+! ..., xi^(r), through an optional design path array - and,
+! independently, occupy the time derivative seats t^(1), ...,
+! t^(r) through an optional time path array. An absent seat, in
+! either path, means zero: the legacy affine path is the
+! design-path-absent specialization of the same law, not a second
+! mechanism living beside it.
+!
+! the total degree-s derivative of R(U(q(eps)), xi(eps), t(eps)) = 0
 ! splits into the unknown's transport term R_u[q_u^(s)] and
 ! everything else; everything else is B^(s), and it is assembled
 ! by gti_chain_rule_assemblies - never re-derived here. Each motif
@@ -36,7 +45,8 @@
 !      the unknown's q^(s) is zero while B^(s) is assembled,
 !      the unknown's q^(k), k < s, is the derivative just solved,
 !      history q^(k), k <= s, is read from the vertex array,
-!      design x^(1) = eta, and every higher design seat is absent.
+!      design/time seats are caller-provided or absent, and an
+!      absent seat contributes nothing.
 !
 ! The traversal reads the graph and writes only the caller's
 ! derivative array: no q value and no solution flag is touched,
@@ -55,7 +65,7 @@ module gti_time_degree_r_directional_drivers
   use gti_value_buffers    , only : gti_value_buffer
   use gti_design_bundles   , only : gti_design_bundle
   use gti_form_interface   , only : gti_differentiable_form, &
-       & GTI_ARG_STATE, GTI_ARG_DESIGN
+       & GTI_ARG_STATE, GTI_ARG_DESIGN, GTI_ARG_TIME
   use gti_state_bundles    , only : GTI_STATE_Q
   use gti_time_local_schemes, only : gti_time_sample, gti_time_motif, &
        & gti_time_local_residual_evaluator, gti_evaluation_point
@@ -163,7 +173,8 @@ contains
   !===================================================================!
 
   subroutine solve_relation(this, residual_form, graph, relation_index, &
-       & design, design_direction, vertex_derivative, options, result)
+       & design, design_direction, vertex_derivative, options, result, &
+       & design_path, time_path)
 
     class(gti_time_degree_r_directional_driver)  , intent(in)    :: this
     class(gti_differentiable_form)               , intent(in)    :: residual_form
@@ -174,13 +185,15 @@ contains
     type(gti_value_buffer)                       , intent(inout) :: vertex_derivative(:,:)
     type(gti_time_degree_r_directional_options)  , intent(in)    :: options
     type(gti_time_degree_r_relation_result)      , intent(inout) :: result
+    type(gti_value_buffer)                       , intent(in), optional :: design_path(:)
+    type(gti_value_buffer)                       , intent(in), optional :: time_path(:)
 
     type(gti_time_local_residual_evaluator) :: point_builder
     type(gti_time_sample), allocatable      :: samples(:)
     type(gti_evaluation_point)              :: point
     type(gti_value_buffer)                  :: q_star, b_buffer
 
-    real(dp), allocatable :: q_values(:), eta_values(:)
+    real(dp), allocatable :: q_values(:)
     real(dp), allocatable :: local_path(:,:,:)
     real(dp), allocatable :: jacobian(:,:)
     real(dp), allocatable :: b_values(:), rhs(:), solution(:)
@@ -203,12 +216,20 @@ contains
        error stop 'gti_time_degree_r_directional_driver: derivative array vertex count matches graph'
     end if
 
-    k = 0
-    if (allocated(design_direction % rvals)) k = size(design_direction % rvals)
-    if (k == 0) then
-       error stop 'gti_time_degree_r_directional_driver: design direction has values'
+    !----------------------------------------------------------------!
+    ! The legacy affine path is the design-path-absent case: it
+    ! alone requires design_direction to carry values. A caller
+    ! that supplies design_path owns the design seats directly, and
+    ! may pass an empty legacy buffer.
+    !----------------------------------------------------------------!
+
+    if (.not. present(design_path)) then
+       k = 0
+       if (allocated(design_direction % rvals)) k = size(design_direction % rvals)
+       if (k == 0) then
+          error stop 'gti_time_degree_r_directional_driver: design direction has values'
+       end if
     end if
-    call design_direction % get_real(eta_values)
 
     arity          = graph % relation(relation_index) % arity()
     unknown        = graph % relation(relation_index) % unknown_sample
@@ -292,7 +313,8 @@ contains
 
        call assemble_degree_rhs(residual_form, point, &
             & graph % relation(relation_index) % motif, arity, n, ncomp, &
-            & local_path, eta_values, s, b_buffer)
+            & local_path, design_direction, s, b_buffer, &
+            & design_path, time_path)
 
        call b_buffer % get_real(b_values)
        if (size(b_values) /= n) then
@@ -322,7 +344,7 @@ contains
   !===================================================================!
 
   subroutine solve_all(this, residual_form, graph, design, design_direction, &
-       & options, result)
+       & options, result, design_path, time_path)
 
     class(gti_time_degree_r_directional_driver) , intent(in)    :: this
     class(gti_differentiable_form)              , intent(in)    :: residual_form
@@ -331,6 +353,8 @@ contains
     type(gti_value_buffer)                      , intent(in)    :: design_direction
     type(gti_time_degree_r_directional_options) , intent(in)    :: options
     type(gti_time_degree_r_directional_result)  , intent(inout) :: result
+    type(gti_value_buffer)                      , intent(in), optional :: design_path(:)
+    type(gti_value_buffer)                      , intent(in), optional :: time_path(:)
 
     integer :: r
 
@@ -355,7 +379,7 @@ contains
     do r = 1, graph % num_relations()
        call this % solve_relation(residual_form, graph, r, design, &
             & design_direction, result % vertex_derivative, &
-            & options, result % step(r))
+            & options, result % step(r), design_path, time_path)
        result % completed_relations = result % completed_relations + 1
     end do
 
@@ -372,32 +396,68 @@ contains
   !      U_m^(k) = sum_i w_m(i) q_i^(k),        k = 1, ..., s,
   !
   ! read from the local path tensor - the caller has already
-  ! applied the suppression rule there - and the design channel
-  ! carries eta as x^(1) with every higher seat absent, which is
-  ! exactly the affine path xi + eps eta.
+  ! applied the suppression rule there. A design channel and a
+  ! time channel are added AFTER the state channels, each only
+  ! when it carries at least one occupied seat up to this degree:
+  ! with no design_path, the legacy affine channel occupies only
+  ! x^(1) = eta; with a design_path, occupied design_path(k)
+  ! entries occupy x^(k); with a time_path, occupied time_path(k)
+  ! entries occupy t^(k). An absent seat, in every channel, is
+  ! zero. This is the only place composition terms are assembled -
+  ! gti_chain_rule_assemblies alone generates every pattern.
   !===================================================================!
 
   subroutine assemble_degree_rhs(residual_form, point, motif, arity, &
-       & n, ncomp, local_path, eta_values, degree, b_buffer)
+       & n, ncomp, local_path, design_direction, degree, b_buffer, &
+       & design_path, time_path)
 
     class(gti_differentiable_form), intent(in)    :: residual_form
     type(gti_evaluation_point)    , intent(in)    :: point
     type(gti_time_motif)          , intent(in)    :: motif
     integer                       , intent(in)    :: arity, n, ncomp
     real(dp)                      , intent(in)    :: local_path(:,:,:)
-    real(dp)                      , intent(in)    :: eta_values(:)
+    type(gti_value_buffer)        , intent(in)    :: design_direction
     integer                       , intent(in)    :: degree
     type(gti_value_buffer)        , intent(inout) :: b_buffer
+    type(gti_value_buffer)        , intent(in), optional :: design_path(:)
+    type(gti_value_buffer)        , intent(in), optional :: time_path(:)
 
     type(gti_chain_rule_assembler) :: assembler
     type(gti_chain_input)          :: input
 
     real(dp), allocatable :: component_path(:)
-    integer :: m, i, k, nrules
+    integer :: m, i, k, nrules, nchannels, design_slot, time_slot
+    logical :: add_design, add_time
 
     nrules = motif % size()
 
-    allocate(input % channel(nrules + 1))
+    !----------------------------------------------------------------!
+    ! Which optional channels this degree earns: never an empty
+    ! channel, only one that carries an occupied seat.
+    !----------------------------------------------------------------!
+
+    if (present(design_path)) then
+       add_design = path_has_occupied(design_path, degree)
+    else
+       add_design = .true.
+    end if
+
+    add_time = .false.
+    if (present(time_path)) add_time = path_has_occupied(time_path, degree)
+
+    nchannels   = nrules
+    design_slot = 0
+    time_slot   = 0
+    if (add_design) then
+       nchannels   = nchannels + 1
+       design_slot = nchannels
+    end if
+    if (add_time) then
+       nchannels = nchannels + 1
+       time_slot = nchannels
+    end if
+
+    allocate(input % channel(nchannels))
     allocate(component_path(n))
 
     do m = 1, nrules
@@ -423,18 +483,110 @@ contains
     end do
 
     !----------------------------------------------------------------!
-    ! The design channel: eta as x^(1); every higher seat stays
-    ! empty, and absence is zero.
+    ! The design channel: the legacy affine seat x^(1) = eta when
+    ! no design_path was supplied, or the caller-supplied design
+    ! seats otherwise.
     !----------------------------------------------------------------!
 
-    allocate(input % channel(nrules + 1) % derivative(degree))
-    input % channel(nrules + 1) % derivative(1) % argument_kind = GTI_ARG_DESIGN
-    call input % channel(nrules + 1) % derivative(1) % values % &
-         & set_real(eta_values)
+    if (add_design) then
+       if (present(design_path)) then
+          call fill_path_channel(input % channel(design_slot), &
+               & GTI_ARG_DESIGN, design_path, degree)
+       else
+          call fill_legacy_design_channel(input % channel(design_slot), &
+               & design_direction, degree)
+       end if
+    end if
+
+    !----------------------------------------------------------------!
+    ! The time channel: caller-supplied time seats only - there is
+    ! no legacy time path to default to.
+    !----------------------------------------------------------------!
+
+    if (add_time) then
+       call fill_path_channel(input % channel(time_slot), &
+            & GTI_ARG_TIME, time_path, degree)
+    end if
 
     call assembler % assemble(residual_form, point, degree, input, b_buffer)
 
   end subroutine assemble_degree_rhs
+
+  !===================================================================!
+  ! Does a path array carry at least one occupied seat at or below
+  ! the requested degree? A seat beyond the array's size is absent,
+  ! and an occupied entry is one holding real values.
+  !===================================================================!
+
+  pure function path_has_occupied(path, degree) result(has)
+
+    type(gti_value_buffer), intent(in) :: path(:)
+    integer                , intent(in) :: degree
+    logical :: has
+
+    integer :: k
+
+    has = .false.
+    do k = 1, min(degree, size(path))
+       if (allocated(path(k) % rvals)) then
+          if (size(path(k) % rvals) > 0) then
+             has = .true.
+             return
+          end if
+       end if
+    end do
+
+  end function path_has_occupied
+
+  !===================================================================!
+  ! Fill one channel from a caller-supplied path: seat k takes
+  ! path(k) where it is occupied; a seat beyond the path's size, or
+  ! an empty entry within it, stays absent - the channel's default,
+  ! read as zero.
+  !===================================================================!
+
+  pure subroutine fill_path_channel(channel, argument_kind, path, degree)
+
+    type(gti_chain_channel), intent(inout) :: channel
+    integer                 , intent(in)    :: argument_kind
+    type(gti_value_buffer)  , intent(in)    :: path(:)
+    integer                 , intent(in)    :: degree
+
+    real(dp), allocatable :: values(:)
+    integer :: k
+
+    allocate(channel % derivative(degree))
+
+    do k = 1, min(degree, size(path))
+       call path(k) % get_real(values)
+       if (size(values) == 0) cycle
+       channel % derivative(k) % argument_kind = argument_kind
+       call channel % derivative(k) % values % set_real(values)
+    end do
+
+  end subroutine fill_path_channel
+
+  !===================================================================!
+  ! Fill the legacy affine design channel: x^(1) = eta, every
+  ! higher seat absent - exactly the path xi + eps eta. Called only
+  ! when the caller supplied no design_path.
+  !===================================================================!
+
+  pure subroutine fill_legacy_design_channel(channel, design_direction, degree)
+
+    type(gti_chain_channel), intent(inout) :: channel
+    type(gti_value_buffer) , intent(in)    :: design_direction
+    integer                 , intent(in)    :: degree
+
+    real(dp), allocatable :: eta_values(:)
+
+    allocate(channel % derivative(degree))
+
+    call design_direction % get_real(eta_values)
+    channel % derivative(1) % argument_kind = GTI_ARG_DESIGN
+    call channel % derivative(1) % values % set_real(eta_values)
+
+  end subroutine fill_legacy_design_channel
 
   !===================================================================!
   ! The dense J_u from Newton's exact action, one basis direction

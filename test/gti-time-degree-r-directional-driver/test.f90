@@ -44,12 +44,14 @@ program test_gti_time_degree_r_directional_driver
   use gti_time_degree_r_directional_drivers, only : &
        & gti_time_degree_r_directional_driver, &
        & gti_time_degree_r_directional_options, &
-       & gti_time_degree_r_directional_result
+       & gti_time_degree_r_directional_result, &
+       & gti_time_degree_r_relation_result
   use gti_time_degree2_directional_drivers, only : &
        & gti_time_degree2_directional_driver, &
        & gti_time_degree2_directional_options, &
        & gti_time_degree2_directional_result
-  use gti_toy_forms        , only : toy_qdot_square_form
+  use gti_toy_forms        , only : toy_qdot_square_form, &
+       & toy_qdot_square_time_form
 
   implicit none
 
@@ -319,6 +321,259 @@ program test_gti_time_degree_r_directional_driver
   end do
   call report(agrees, &
        & "r=8: every stored rhs equals J_u q^(s) = 3 q^(s), both relations", nfail)
+
+  !-------------------------------------------------------------------!
+  ! Design-path law: the hard-coded xi^(1) = eta, xi^(s>=2) absent
+  ! occupancy is retired. A caller-supplied design_path can occupy
+  ! xi^(2), which the legacy path could never reach.
+  !
+  !      R = (q_u - q_h) + q_u^2 - xi,   q_h = 1, xi = 1, q_u = 1
+  !
+  ! One relation. design_path: xi^(1) = 1, xi^(2) = 6, xi^(s>=3)
+  ! absent - degree 1 reproduces the legacy answer since xi^(1)
+  ! matches eta; degree 2 reaches a seat the legacy path never
+  ! occupies.
+  !
+  !      degree 1: 3 q1 - xi1 = 0             => q1 = 1/3
+  !      degree 2: 3 q2 + 2 q1^2 - xi2 = 0     => q2 = 52/27
+  !-------------------------------------------------------------------!
+
+  block
+    type(gti_time_graph) :: path_graph
+    type(gti_time_degree_r_directional_options) :: path_options
+    type(gti_time_degree_r_relation_result)     :: path_step
+    type(gti_value_buffer) :: vd(2, 2)
+    type(gti_value_buffer) :: design_path(2), empty_design_path(1)
+    type(gti_value_buffer) :: no_eta
+    integer :: pv
+
+    allocate(path_graph % vertex(2))
+    do pv = 1, 2
+       allocate(path_graph % vertex(pv) % sample % state % component(1))
+       path_graph % vertex(pv) % sample % state % component(1) % value = one_field
+       path_graph % vertex(pv) % has_solution = .true.
+    end do
+    allocate(path_graph % relation(1))
+    call builder % bdf_uniform(1, 1.0_dp, path_graph % relation(1) % motif)
+    path_graph % relation(1) % sample_vertex   = [1, 2]
+    path_graph % relation(1) % unknown_sample  = 2
+    path_graph % relation(1) % evaluation_time = 1.0_dp
+
+    call design_path(1) % set_real([1.0_dp])
+    call design_path(2) % set_real([6.0_dp])
+
+    path_options % max_degree = 2
+    call driver % solve_relation(r_form, path_graph, 1, design, eta, vd, &
+         & path_options, path_step, design_path=design_path)
+
+    call path_step % derivative(1) % get_real(rv)
+    call report(matches(rv, [1.0_dp / 3.0_dp], 1.0e-12_dp), &
+         & "design-path: q1 = 1/3 with xi1 = 1", nfail)
+
+    call path_step % derivative(2) % get_real(rv)
+    call report(matches(rv, [52.0_dp / 27.0_dp], 1.0e-12_dp), &
+         & "design-path: q2 = 52/27 with xi2 = 6, no longer hard-coded absent", nfail)
+
+    !----------------------------------------------------------------!
+    ! The pass-through law: solve_all forwards design_path to
+    ! solve_relation untouched - proven by reaching the same seat
+    ! through the whole-graph verb, and by the vertex_derivative
+    ! write-back the direct solve_relation checks above do not
+    ! exercise.
+    !----------------------------------------------------------------!
+
+    block
+      type(gti_time_degree_r_directional_result) :: path_result
+      call driver % solve_all(r_form, path_graph, design, eta, &
+           & path_options, path_result, design_path=design_path)
+      call path_result % vertex_derivative(1, 2) % get_real(rv)
+      call report(matches(rv, [1.0_dp / 3.0_dp], 1.0e-12_dp), &
+           & "solve_all forwards design_path: q1 = 1/3", nfail)
+      call path_result % vertex_derivative(2, 2) % get_real(rv)
+      call report(matches(rv, [52.0_dp / 27.0_dp], 1.0e-12_dp), &
+           & "solve_all forwards design_path: q2 = 52/27, through the whole-graph verb", nfail)
+    end block
+
+    !----------------------------------------------------------------!
+    ! With design_path absent, the legacy mechanism is untouched:
+    ! q2 = -2/27 still holds for the same relation, same eta.
+    !----------------------------------------------------------------!
+
+    call driver % solve_relation(r_form, path_graph, 1, design, eta, vd, &
+         & path_options, path_step)
+
+    call path_step % derivative(1) % get_real(rv)
+    call report(matches(rv, [1.0_dp / 3.0_dp], 1.0e-12_dp), &
+         & "design-path absent: legacy q1 = 1/3 unaffected", nfail)
+
+    call path_step % derivative(2) % get_real(rv)
+    call report(matches(rv, [-2.0_dp / 27.0_dp], 1.0e-12_dp), &
+         & "design-path absent: legacy q2 = -2/27 recovered exactly", nfail)
+
+    !----------------------------------------------------------------!
+    ! Edge law: design_path shorter than max_degree - only the
+    ! provided seat is occupied; the missing degree-2 seat is
+    ! absent, exactly as the legacy path leaves it.
+    !----------------------------------------------------------------!
+
+    call driver % solve_relation(r_form, path_graph, 1, design, eta, vd, &
+         & path_options, path_step, design_path=design_path(1:1))
+
+    call path_step % derivative(2) % get_real(rv)
+    call report(matches(rv, [-2.0_dp / 27.0_dp], 1.0e-12_dp), &
+         & "design-path shorter than max_degree: missing xi2 is absent", nfail)
+
+    !----------------------------------------------------------------!
+    ! Edge law: design_path present but empty - no design channel
+    ! is added, and the design contribution is exactly zero.
+    !----------------------------------------------------------------!
+
+    path_options % max_degree = 1
+    call driver % solve_relation(r_form, path_graph, 1, design, eta, vd(1:1, :), &
+         & path_options, path_step, design_path=empty_design_path)
+
+    call path_step % derivative(1) % get_real(rv)
+    call report(matches(rv, [0.0_dp], 1.0e-12_dp), &
+         & "design-path present but empty: no design channel, q1 = 0", nfail)
+
+    !----------------------------------------------------------------!
+    ! Edge law: design_path present allows an empty legacy
+    ! design_direction - the caller need not carry both.
+    !----------------------------------------------------------------!
+
+    call no_eta % clear()
+    path_options % max_degree = 2
+    call driver % solve_relation(r_form, path_graph, 1, design, no_eta, vd, &
+         & path_options, path_step, design_path=design_path)
+
+    call path_step % derivative(1) % get_real(rv)
+    agrees = matches(rv, [1.0_dp / 3.0_dp], 1.0e-12_dp)
+    call path_step % derivative(2) % get_real(rv)
+    agrees = agrees .and. matches(rv, [52.0_dp / 27.0_dp], 1.0e-12_dp)
+    call report(agrees, &
+         & "design-path present: an empty legacy design_direction is lawful", nfail)
+
+  end block
+
+  !-------------------------------------------------------------------!
+  ! Time-path law: a time derivative channel now reaches the chain
+  ! assembler, alongside a design channel, without conflating the
+  ! two.
+  !
+  !      R(q_u, q_h, xi, t) = (q_u - q_h) + q_u^2 - xi - t
+  !      q_h = 1, xi = 1, t = 0, q_u = 1
+  !
+  ! One relation. design_path: xi^(1) = 1, xi^(s>=2) absent.
+  ! time_path: t^(1) = 2, t^(2) = 12, t^(s>=3) absent.
+  !
+  !      degree 1: 3 q1 - xi1 - t1 = 0        => q1 = (1 + 2) / 3 = 1
+  !      degree 2: 3 q2 + 2 q1^2 - t2 = 0      => q2 = (12 - 2) / 3 = 10/3
+  !-------------------------------------------------------------------!
+
+  block
+    type(gti_time_graph)            :: t_graph
+    type(toy_qdot_square_time_form) :: t_form
+    type(gti_time_degree_r_directional_options) :: t_options
+    type(gti_time_degree_r_relation_result)     :: t_step
+    type(gti_value_buffer) :: vd(2, 2)
+    type(gti_value_buffer) :: design_path(1), time_path(2), empty_time_path(1)
+    integer :: pv
+
+    allocate(t_graph % vertex(2))
+    do pv = 1, 2
+       allocate(t_graph % vertex(pv) % sample % state % component(1))
+       t_graph % vertex(pv) % sample % state % component(1) % value = one_field
+       t_graph % vertex(pv) % has_solution = .true.
+    end do
+    allocate(t_graph % relation(1))
+    call builder % bdf_uniform(1, 1.0_dp, t_graph % relation(1) % motif)
+    t_graph % relation(1) % sample_vertex   = [1, 2]
+    t_graph % relation(1) % unknown_sample  = 2
+    t_graph % relation(1) % evaluation_time = 0.0_dp
+
+    call design_path(1) % set_real([1.0_dp])
+    call time_path(1) % set_real([2.0_dp])
+    call time_path(2) % set_real([12.0_dp])
+
+    !----------------------------------------------------------------!
+    ! Without time_path: the time-aware form recovers exactly the
+    ! design-only answer - the time channel is simply never added.
+    !----------------------------------------------------------------!
+
+    t_options % max_degree = 1
+    call driver % solve_relation(t_form, t_graph, 1, design, eta, vd(1:1, :), &
+         & t_options, t_step, design_path=design_path)
+
+    call t_step % derivative(1) % get_real(rv)
+    call report(matches(rv, [1.0_dp / 3.0_dp], 1.0e-12_dp), &
+         & "time-path absent: the design-only answer q1 = 1/3 is recovered", nfail)
+
+    !----------------------------------------------------------------!
+    ! With time_path: t1 = 2 and t2 = 12 both reach the assembler.
+    !----------------------------------------------------------------!
+
+    t_options % max_degree = 2
+    call driver % solve_relation(t_form, t_graph, 1, design, eta, vd, &
+         & t_options, t_step, design_path=design_path, time_path=time_path)
+
+    call t_step % derivative(1) % get_real(rv)
+    call report(matches(rv, [1.0_dp], 1.0e-12_dp), &
+         & "time-path: q1 = 1 with xi1 = 1, t1 = 2", nfail)
+
+    call t_step % derivative(2) % get_real(rv)
+    call report(matches(rv, [10.0_dp / 3.0_dp], 1.0e-12_dp), &
+         & "time-path: q2 = 10/3 with t2 = 12, xi2 absent", nfail)
+
+    !----------------------------------------------------------------!
+    ! The pass-through law: solve_all forwards both design_path and
+    ! time_path to solve_relation untouched.
+    !----------------------------------------------------------------!
+
+    block
+      type(gti_time_degree_r_directional_result) :: t_result
+      call driver % solve_all(t_form, t_graph, design, eta, &
+           & t_options, t_result, design_path=design_path, time_path=time_path)
+      call t_result % vertex_derivative(1, 2) % get_real(rv)
+      call report(matches(rv, [1.0_dp], 1.0e-12_dp), &
+           & "solve_all forwards design_path and time_path: q1 = 1", nfail)
+      call t_result % vertex_derivative(2, 2) % get_real(rv)
+      call report(matches(rv, [10.0_dp / 3.0_dp], 1.0e-12_dp), &
+           & "solve_all forwards design_path and time_path: q2 = 10/3", nfail)
+    end block
+
+    !----------------------------------------------------------------!
+    ! Edge law: time_path shorter than max_degree - only t1 is
+    ! occupied; t2 is absent, so degree 2 sees no design and no
+    ! time seat at all: 3 q2 + 2 q1^2 = 0, q1 = 1 => q2 = -2/3.
+    !----------------------------------------------------------------!
+
+    call driver % solve_relation(t_form, t_graph, 1, design, eta, vd, &
+         & t_options, t_step, design_path=design_path, &
+         & time_path=time_path(1:1))
+
+    call t_step % derivative(1) % get_real(rv)
+    call report(matches(rv, [1.0_dp], 1.0e-12_dp), &
+         & "time-path shorter than max_degree: q1 = 1 from the occupied t1", nfail)
+
+    call t_step % derivative(2) % get_real(rv)
+    call report(matches(rv, [-2.0_dp / 3.0_dp], 1.0e-12_dp), &
+         & "time-path shorter than max_degree: missing t2 is absent", nfail)
+
+    !----------------------------------------------------------------!
+    ! Edge law: time_path present but empty - no time channel is
+    ! added, and the time contribution is exactly zero.
+    !----------------------------------------------------------------!
+
+    t_options % max_degree = 1
+    call driver % solve_relation(t_form, t_graph, 1, design, eta, vd(1:1, :), &
+         & t_options, t_step, design_path=design_path, &
+         & time_path=empty_time_path)
+
+    call t_step % derivative(1) % get_real(rv)
+    call report(matches(rv, [1.0_dp / 3.0_dp], 1.0e-12_dp), &
+         & "time-path present but empty: no time channel, design-only answer holds", nfail)
+
+  end block
 
   !-------------------------------------------------------------------!
   ! Shared laws: exact eliminations, and a graph that never felt

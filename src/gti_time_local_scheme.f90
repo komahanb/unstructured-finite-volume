@@ -65,6 +65,11 @@ module gti_time_local_schemes
   public :: gti_time_motif
   public :: gti_time_local_residual_evaluator
 
+  ! the seat that builds evaluation points also names them for its
+  ! importers: build_point fills a gti_evaluation_point, so the
+  ! type rides along
+  public :: gti_evaluation_point
+
   !===================================================================!
   ! One time sample: a state bundle holding this sample's q, and
   ! the time it was taken.

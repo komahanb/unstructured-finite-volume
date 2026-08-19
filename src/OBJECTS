@@ -82,6 +82,7 @@ gti_time_forward_driver.o \
 gti_time_reverse_driver.o \
 gti_time_functional_seed_driver.o \
 gti_time_solve_gradient_driver.o \
+gti_change_protocol.o \
 gti_time_adaptive_growth_driver.o \
 gti_time_degree2_directional_driver.o \
 gti_time_degree_r_directional_driver.o

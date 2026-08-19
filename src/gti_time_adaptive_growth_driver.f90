@@ -31,6 +31,14 @@
 ! as before - the forward driver never wrote, and the appended
 ! seats are gone.
 !
+! Growth is the first concrete reversible change: append is apply,
+! the local solve is check, acceptance is keep, and rollback is
+! revert - a MIXED change, touching structure and attached values
+! at once, run by the generic gti_change_controller whose
+! lifecycle never learns which kind it ran. Identity lives in the
+! graph. Numbers live in attached values. Updates are reversible
+! changes.
+!
 ! The driver carries nothing: no graph, no controller, no
 ! estimator, no forms, no state.
 !
@@ -39,6 +47,8 @@
 
 module gti_time_adaptive_growth_drivers
 
+  use gti_change_protocols , only : gti_change_result, &
+       & gti_reversible_change, gti_change_controller
   use gti_design_bundles   , only : gti_design_bundle
   use gti_form_interface   , only : gti_differentiable_form
   use gti_time_graphs      , only : gti_time_graph, gti_time_vertex, &
@@ -82,6 +92,7 @@ module gti_time_adaptive_growth_drivers
      integer :: num_vertices_after = 0
      integer :: num_relations_after = 0
      type(gti_time_forward_step_result) :: forward_step
+     type(gti_change_result)            :: change
 
   end type gti_time_growth_step_result
 
@@ -100,6 +111,33 @@ module gti_time_adaptive_growth_drivers
      procedure :: try_candidate
 
   end type gti_time_adaptive_growth_driver
+
+  !===================================================================!
+  ! Growth as a reversible change - private: the protocol speaks
+  ! through the controller, and the details stay in this seat.
+  ! Apply appends, check solves the appended relation, keep leaves
+  ! the grown graph standing, revert discards what apply appended.
+  !===================================================================!
+
+  type, extends(gti_reversible_change) :: gti_time_growth_change
+
+     class(gti_differentiable_form), pointer :: residual_form => null()
+     type(gti_time_graph)          , pointer :: graph => null()
+     type(gti_time_growth_candidate)         :: candidate
+     type(gti_design_bundle)                 :: design
+     type(gti_time_forward_options)          :: options
+     type(gti_time_forward_step_result)      :: forward_step
+     integer :: appended_vertex = 0
+     integer :: appended_relation = 0
+
+   contains
+
+     procedure :: apply  => growth_apply
+     procedure :: check  => growth_check
+     procedure :: keep   => growth_keep
+     procedure :: revert => growth_revert
+
+  end type gti_time_growth_change
 
 contains
 
@@ -198,26 +236,28 @@ contains
   end subroutine discard_last_candidate
 
   !===================================================================!
-  ! One transactional growth step: append, solve the appended
-  ! relation alone, and keep or roll back. Non-convergence rolls
-  ! back and reports - an answer, never an error stop. The accept
-  ! logical is the external controller's decision, nothing more.
+  ! One transactional growth step, run as one reversible change:
+  ! the generic controller owns the lifecycle - apply, check, keep
+  ! or revert - and this seat owns the details. Non-convergence is
+  ! a failed check: reverted and reported, an answer, never an
+  ! error stop. The accept logical is the external controller's
+  ! decision, nothing more.
   !===================================================================!
 
   subroutine try_candidate(this, residual_form, graph, candidate, design, &
        & options, accept, result)
 
     class(gti_time_adaptive_growth_driver), intent(in)    :: this
-    class(gti_differentiable_form)        , intent(in)    :: residual_form
-    type(gti_time_graph)                  , intent(inout) :: graph
+    class(gti_differentiable_form), target, intent(in)    :: residual_form
+    type(gti_time_graph)          , target, intent(inout) :: graph
     type(gti_time_growth_candidate)       , intent(in)    :: candidate
     type(gti_design_bundle)               , intent(in)    :: design
     type(gti_time_forward_options)        , intent(in)    :: options
     logical                               , intent(in)    :: accept
     type(gti_time_growth_step_result)     , intent(inout) :: result
 
-    type(gti_time_forward_driver) :: forward
-    integer :: appended_vertex, appended_relation
+    type(gti_time_growth_change) :: change
+    type(gti_change_controller)  :: lifecycle
 
     result % accepted  = .false.
     result % solved    = .false.
@@ -226,32 +266,92 @@ contains
     result % appended_relation = 0
     result % forward_step = gti_time_forward_step_result()
 
-    call this % append_candidate(graph, candidate, appended_vertex, &
-         & appended_relation)
+    change % residual_form => residual_form
+    change % graph         => graph
+    change % candidate     = candidate
+    change % design        = design
+    change % options       = options
 
-    result % appended_vertex   = appended_vertex
-    result % appended_relation = appended_relation
+    call lifecycle % run(change, accept, result % change)
 
-    call forward % solve_relation(residual_form, graph, appended_relation, &
-         & design, options, result % forward_step)
+    result % appended_vertex   = change % appended_vertex
+    result % appended_relation = change % appended_relation
+    result % forward_step      = change % forward_step
 
-    result % solved    = .true.
-    result % converged = result % forward_step % converged
-
-    if (.not. result % converged) then
-       call this % discard_last_candidate(graph, appended_vertex, &
-            & appended_relation)
-    else if (accept) then
-       result % accepted = .true.
-    else
-       call this % discard_last_candidate(graph, appended_vertex, &
-            & appended_relation)
-    end if
+    result % solved    = result % change % checked
+    result % converged = result % change % check_passed
+    result % accepted  = result % change % accepted .and. result % change % kept
 
     result % num_vertices_after  = graph % num_vertices()
     result % num_relations_after = graph % num_relations()
 
   end subroutine try_candidate
+
+  !===================================================================!
+  ! The growth change's four verbs: a MIXED change - structure and
+  ! attached values at once - whose apply/revert pair is exactly
+  ! the append/discard pair this driver already owns.
+  !===================================================================!
+
+  subroutine growth_apply(this, result)
+
+    class(gti_time_growth_change), intent(inout) :: this
+    type(gti_change_result)      , intent(inout) :: result
+
+    type(gti_time_adaptive_growth_driver) :: driver
+
+    result % touches_structure = .true.
+    result % touches_value     = .true.
+
+    call driver % append_candidate(this % graph, this % candidate, &
+         & this % appended_vertex, this % appended_relation)
+
+    call result % mark_applied()
+
+  end subroutine growth_apply
+
+  subroutine growth_check(this, result)
+
+    class(gti_time_growth_change), intent(inout) :: this
+    type(gti_change_result)      , intent(inout) :: result
+
+    type(gti_time_forward_driver) :: forward
+
+    call forward % solve_relation(this % residual_form, this % graph, &
+         & this % appended_relation, this % design, this % options, &
+         & this % forward_step)
+
+    call result % mark_checked(this % forward_step % converged)
+
+  end subroutine growth_check
+
+  subroutine growth_keep(this, result)
+
+    class(gti_time_growth_change), intent(inout) :: this
+    type(gti_change_result)      , intent(inout) :: result
+
+    ! the grown graph and its solved q already stand; keeping is
+    ! declining to revert
+    associate(unread => this)
+    end associate
+
+    call result % mark_kept()
+
+  end subroutine growth_keep
+
+  subroutine growth_revert(this, result)
+
+    class(gti_time_growth_change), intent(inout) :: this
+    type(gti_change_result)      , intent(inout) :: result
+
+    type(gti_time_adaptive_growth_driver) :: driver
+
+    call driver % discard_last_candidate(this % graph, &
+         & this % appended_vertex, this % appended_relation)
+
+    call result % mark_reverted()
+
+  end subroutine growth_revert
 
   !===================================================================!
   ! The private growth mechanics: grow and shrink the graph's

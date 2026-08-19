@@ -1,14 +1,16 @@
 !=====================================================================!
-! The dense direct minimizer suite: one more concretion of the
-! graph minimization tower, proven over stencil statements - a
-! matrix is a graph with weights on its edges, and dense_direct
-! eliminates whatever the attached operation's matvec answers,
-! probed one basis direction per column. Exact solutions on 1x1
-! and 2x2 systems, survival of a zero leading pivot by partial
-! pivoting, repeated solves on one attached value, an achieved
-! norm the tower itself certifies, an unmutated stencil, the
-! dense-array adapter door, and the probe door that compiles any
-! operation into the dense matrix of its linear action.
+! Tests for class_graph_dense_direct. dense_direct assembles its
+! matrix by applying the attached operation's matvec to each basis
+! vector, then eliminates with partial pivoting. Covered here:
+! exact solutions of 1x1 and 2x2 stencil systems; the achieved
+! residual, which must be the attached operation's norm of
+! rhs - matvec(x); repeated solves on one attached operation; the
+! stencil weights being left unmodified by a solve; a zero leading
+! pivot handled by partial pivoting;
+! solve_dense_matrix_with_dense_direct, which lays a plain dense
+! array on a stencil and solves it through the same interface; and
+! dense_matrix_of, which rebuilds an operation's matrix column by
+! column.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -18,7 +20,7 @@ program test_graph_dense_direct
   use iso_fortran_env     , only : dp => REAL64
   use class_graph_stencil , only : stencil_operator
   use class_graph_dense_direct, only : dense_direct, &
-       & solve_dense_matrix_with_dense_direct, probed_dense_matrix
+       & solve_dense_matrix_with_dense_direct, dense_matrix_of
 
   implicit none
 
@@ -26,7 +28,7 @@ program test_graph_dense_direct
   type(dense_direct)     :: solver
 
   real(dp), allocatable :: x(:), xa(:), w_before(:), w_after(:)
-  real(dp), allocatable :: aprobe(:,:)
+  real(dp), allocatable :: arebuilt(:,:)
   real(dp) :: achieved
   real(dp) :: amat(2,2)
   integer  :: nfail
@@ -72,22 +74,22 @@ program test_graph_dense_direct
        & "2x2 stencil: A x = b recovers x = [1, 2] exactly", nfail)
 
   call report(achieved <= 1.0e-12_dp, &
-       & "achieved is the tower's own norm of rhs - matvec(x), small", nfail)
+       & "achieved equals the attached operation's norm of rhs - matvec(x)", &
+       & nfail)
 
   !-------------------------------------------------------------------!
-  ! Repeated solves on one attached value: no memory of the first
-  ! carries into the second.
+  ! Repeated solves on one attached operation: the second solve
+  ! must not be affected by the first.
   !-------------------------------------------------------------------!
 
   x = 0.0_dp
   call solver % solve([2.0_dp, 1.0_dp], x, achieved)
   call report(matches(x, [1.0_dp, 0.0_dp], 1.0e-12_dp), &
-       & "repeated solves on one attached dense_direct are lawful", nfail)
+       & "a second solve on one attached dense_direct is exact", nfail)
   deallocate(x)
 
   !-------------------------------------------------------------------!
-  ! The stencil is read, never written: its weights survive the
-  ! solves untouched.
+  ! A solve must not modify the stencil's weights.
   !-------------------------------------------------------------------!
 
   call two_by_two % weights % get_real_vector(w_before)
@@ -95,7 +97,7 @@ program test_graph_dense_direct
   call solver % solve([4.0_dp, 7.0_dp], x, achieved)
   call two_by_two % weights % get_real_vector(w_after)
   call report(matches(w_after, w_before, 0.0_dp + tiny(1.0_dp)), &
-       & "the stencil's weights survive the solve unmutated", nfail)
+       & "the solve leaves the stencil's weights unmodified", nfail)
   deallocate(x)
 
   !-------------------------------------------------------------------!
@@ -118,9 +120,9 @@ program test_graph_dense_direct
   deallocate(x)
 
   !-------------------------------------------------------------------!
-  ! The adapter door: a plain dense array laid on a stencil and
-  ! solved through the same minimizer face - the seat the GTI
-  ! drivers call.
+  ! solve_dense_matrix_with_dense_direct: a plain dense array is
+  ! laid on a stencil and solved through the same minimizer
+  ! interface.
   !-------------------------------------------------------------------!
 
   amat = reshape([2.0_dp, 1.0_dp, 1.0_dp, 3.0_dp], [2, 2])
@@ -129,22 +131,21 @@ program test_graph_dense_direct
 
   call report(matches(xa, [1.0_dp, 2.0_dp], 1.0e-12_dp) .and. &
        & achieved <= 1.0e-12_dp, &
-       & "the dense-array adapter solves through the same tower", nfail)
+       & "the dense-array adapter solves through the same minimizer", nfail)
 
   !-------------------------------------------------------------------!
-  ! The probe door: any operation compiled into the dense matrix
-  ! of its linear action, one apply per basis column. Probing the
-  ! stencil that carries A reassembles A exactly - the round trip
-  ! the adapter's banner promises.
+  ! dense_matrix_of: one apply per basis column. Applied to the
+  ! stencil that carries A it must reproduce A exactly.
   !-------------------------------------------------------------------!
 
-  call probed_dense_matrix(two_by_two, two_by_two % pattern, 2, aprobe)
+  call dense_matrix_of(two_by_two, two_by_two % pattern, 2, arebuilt)
 
-  call report(size(aprobe, 1) == 2 .and. size(aprobe, 2) == 2 .and. &
-       & matches([aprobe(1,1), aprobe(2,1), aprobe(1,2), aprobe(2,2)], &
-       &         [amat(1,1),   amat(2,1),   amat(1,2),   amat(2,2)], &
+  call report(size(arebuilt, 1) == 2 .and. size(arebuilt, 2) == 2 .and. &
+       & matches([arebuilt(1,1), arebuilt(2,1), arebuilt(1,2), &
+       &          arebuilt(2,2)], &
+       &         [amat(1,1), amat(2,1), amat(1,2), amat(2,2)], &
        &         0.0_dp + tiny(1.0_dp)), &
-       & "the probe door reassembles the stencil's matrix exactly", nfail)
+       & "dense_matrix_of reassembles the stencil's matrix exactly", nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then

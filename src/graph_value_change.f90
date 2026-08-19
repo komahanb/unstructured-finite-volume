@@ -1,28 +1,23 @@
 !=====================================================================!
-! THE VALUE CHANGE
+! THE VALUE CHANGE: a reversible_change that updates a value_map
+! through the change controller.
 !
-! The pure attached-value member of the reversible change family:
-! one concrete change that updates a value map through the one
-! generic change_controller -
-!
-!      apply    save the seat's prior state, then vouch the new
-!               values (attaching first when no seat exists)
-!      check    the caller-provided verdict
+!      apply    save the row's prior state, then store the new
+!               values (attaching first when no row exists)
+!      check    report the caller-provided verdict
 !      keep     leave the map as updated
-!      revert   restore the seat EXACTLY: unattached seats leave,
-!               unknown seats stand untrusted again, known seats
-!               get their old values back
+!      revert   restore the row exactly: a row that did not exist
+!               is removed, an UNKNOWN row is set back to UNKNOWN,
+!               a KNOWN row gets its old values back
 !
-! This is not a controller and chooses no policy: the change owns
-! the rollback details, the map owns identity, status, and value
-! storage, and the protocol owns the lifecycle. It touches values
-! and never structure - the mirror image of a structural change
-! under the same four verbs.
+! The change owns the rollback record; the map owns identity,
+! status, and storage; the protocol owns the lifecycle. It touches
+! values and never structure.
 !
 ! Bound state is copied at bind - the element with its identity,
-! the new values whole - so a caller mutating its array after
-! binding changes nothing; only the map is held by pointer,
-! because the map is the thing being changed.
+! the new values whole - so mutating the caller's array after
+! binding changes nothing. Only the map is held by pointer,
+! because the map is the object being changed.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -41,10 +36,9 @@ module graph_value_change
   public :: value_change
 
   !===================================================================!
-  ! One bound update: WHICH map (by pointer - the map is the thing
-  ! being changed), WHICH graph (copied, identity and all), WHAT
-  ! values (copied at bind), and the saved prior state revert
-  ! restores exactly.
+  ! One bound update: the map (by pointer), the graph (copied with
+  ! its identity), the new values (copied at bind), and the saved
+  ! prior state that revert restores.
   !===================================================================!
 
   type, extends(reversible_change) :: value_change
@@ -73,8 +67,8 @@ contains
   !===================================================================!
   ! Bind one update: point at the map, copy the element and the
   ! new values, take the check verdict (true unless the caller
-  ! says otherwise), and clear any saved state from an earlier
-  ! life.
+  ! passes otherwise), and clear any saved state from an earlier
+  ! use.
   !===================================================================!
 
   subroutine bind(this, values, element, new_values, check_passes)
@@ -98,10 +92,10 @@ contains
   end subroutine bind
 
   !===================================================================!
-  ! Apply: remember what the seat was, then vouch the new values -
-  ! attaching first when no seat exists. The identity gate and the
-  ! known-value laws stay the map's own; this change adds only the
-  ! memory revert needs.
+  ! Apply: record the row's prior status and values, then store
+  ! the new values, attaching first when no row exists. Stops the
+  ! program when no map is bound, because there is nothing to
+  ! change. Identity and value checks remain the map's.
   !===================================================================!
 
   subroutine apply(this, result)
@@ -133,7 +127,7 @@ contains
   end subroutine apply
 
   !===================================================================!
-  ! Check: the caller-provided verdict - a proof hook, not policy.
+  ! Check: report the caller-provided verdict.
   !===================================================================!
 
   subroutine check(this, result)
@@ -146,8 +140,8 @@ contains
   end subroutine check
 
   !===================================================================!
-  ! Keep: the map already holds the update; keeping is declining
-  ! to revert.
+  ! Keep: the map already holds the update, so only the mark is
+  ! written.
   !===================================================================!
 
   subroutine keep(this, result)
@@ -163,9 +157,9 @@ contains
   end subroutine keep
 
   !===================================================================!
-  ! Revert: restore the seat exactly as apply found it. A seat
-  ! that did not exist leaves; a seat that stood untrusted stands
-  ! untrusted again; a seat that held values holds its old values.
+  ! Revert: restore the row exactly as apply found it. A row that
+  ! did not exist is removed; a previously UNKNOWN row is set back
+  ! to UNKNOWN; a previously KNOWN row gets its old values back.
   !===================================================================!
 
   subroutine revert(this, result)

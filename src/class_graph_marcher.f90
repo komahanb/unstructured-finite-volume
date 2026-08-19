@@ -1,55 +1,38 @@
 !=====================================================================!
-! The marcher: time as a graph, walked both ways.
+! Time integration over a chain graph: instants are vertices,
+! steps are edges, and a step size is a number stored per edge.
+! march takes an optional per-edge step array; absent, every edge
+! uses the marcher's one step.
 !
-! LEVEL 2 OF THE STRATIFICATION. Time is not a special dimension
-! here - it is one more graph: instants are vertices, steps are
-! edges, and a step size is a number riding an edge, exactly as a
-! spacing rides a mesh face,
-!
-!      (t0) --h1--> (t1) --h2--> (t2) --h3--> ... --hn--> (tn)
-!
-! and the banner is kept literally: march takes an optional array
-! of per-edge steps, one number riding each edge; absent, every
-! edge carries the marcher's one step, as before. Under bdf-2 a
-! nonuniform pair of edges is priced exactly - the step operator's
-! own table seat answers the coefficients, and no bdf number lives
-! here.
-!
-! THE FORWARD WALK. At every edge the attached statement is read
-! and the state moves against it. Three rules, absorbed:
+! Rules:
 !
 !      MARCH_FORWARD    q <- q - h * action(q)          explicit
 !      MARCH_BACKWARD   q - qold + h * action(q) = 0    implicit,
-!                                                       one governed
-!                                                       solve per edge
+!                                                       one solve
+!                                                       per edge
 !      MARCH_BDF2       (3q - 4qold + qolder)/2
-!                              + h * action(q) = 0      second order,
-!                                                       started by one
-!                                                       backward step
+!                              + h * action(q) = 0      implicit,
+!                                                       started by
+!                                                       one
+!                                                       backward
+!                                                       step
 !
-! The implicit rules GOVERN: the marcher holds a minimizer and hands
-! it one step operator per edge - the level-1 citizen from the time
-! shelf, time's own discretization stencil - the same family
-! discipline as newton over its linear question. The statement
-! returns MINUS the velocity, matching the house convention that a
-! balance measures what a cell has left over; z -> z^2 + c at h = 1
-! is the forward walk on S = z - z^2 - c, an identity.
+! The implicit rules use the held minimizer (inner) on one
+! step_operator per edge; every BDF coefficient comes from
+! step_operator's set_bdf. The action returns minus the velocity.
 !
-! THE REVERSE WALK IS THE ADJOINT - OF THE WALK ACTUALLY TAKEN.
-! For the explicit rule, the same chain traversed head to tail:
-! handed the TRANSPOSED statement, lambda <- lambda - h *
-! transposed(lambda) per edge, in reverse edge order, the pairing
-! <lambda, q> invariant across every step. For the governed rules
-! the adjoint of a solved step is the transpose of that solve, and
-! the trajectory it needs now arrives: march records the state at
-! every instant when asked, and march_adjoint becomes backward
-! substitution on the chain - at each edge the step Jacobian
-! a0 I + h S'(q_e) is probed at the recorded state through the
-! linearization shelf's own chooser (exact for a differentiable
-! statement, differenced otherwise), its TRANSPOSE is eliminated by
-! the dense direct seat, and the history couplings carry backward
-! as the constant diagonals a1 and a2 - the same one table seat
-! that priced the forward walk prices the reverse.
+! march_adjoint runs the chain in reverse. Under MARCH_FORWARD it
+! applies the caller's transposed statement edge by edge. Under
+! the implicit rules it is backward substitution: at each edge the
+! step Jacobian a0 I + h S'(q_e) is assembled at the recorded
+! state via tangent_of and dense_matrix_of, its transpose is
+! solved by the dense direct minimizer, and the couplings to
+! earlier instants are the constant coefficients a1 and a2. This
+! requires the action and the forward trajectory as arguments.
+!
+! march_directional computes forward directional derivatives of
+! any order along the recorded trajectory. march_adaptive chooses
+! the steps at run time under a step_policy.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -68,10 +51,11 @@ module class_graph_marcher
   use graph_calculus     , only : linearization_operator, &
        & differentiable_operation
   use class_graph_exact_linearization, only : tangent_of
-  use class_graph_chain_rule, only : chain_rule, chain_channel, chain_seat
+  use class_graph_chain_rule, only : chain_rule, argument_path, &
+       & path_derivative
   use class_graph_step_policy, only : step_policy
   use class_graph_dense_direct, only : solve_dense_matrix_with_dense_direct, &
-       & probed_dense_matrix
+       & dense_matrix_of
 
   implicit none
 
@@ -104,8 +88,8 @@ module class_graph_marcher
 contains
 
   !===================================================================!
-  ! The time graph itself: one vertex per instant, one edge per
-  ! step. Callers who want to see time as structure hold this.
+  ! Build the chain graph: one vertex per instant, one edge per
+  ! step.
   !===================================================================!
 
   subroutine instants(this, nsteps, chain)
@@ -124,7 +108,8 @@ contains
   end subroutine instants
 
   !===================================================================!
-  ! Walk the chain forward, by the rule.
+  ! Integrate nsteps edges forward under the marcher's rule,
+  ! optionally recording the state at every instant.
   !===================================================================!
 
   subroutine march(this, action, on, q, nsteps, steps, trajectory)
@@ -145,7 +130,7 @@ contains
     real(dp) :: answered, h_edge, h_previous
     integer :: e, ncomp
 
-    call require_lawful_steps(steps, nsteps)
+    call require_valid_steps(steps, nsteps)
 
     call this % instants(nsteps, chain)
 
@@ -165,19 +150,16 @@ contains
 
     end if
 
-    ! The implicit rules: one governed solve per edge; bdf2 starts
-    ! with a single backward step, as it must. The step comes off
-    ! the time shelf and is RE-AIMED there between edges - its own
-    ! table seat prices every coefficient, uniform or not, and no
-    ! bdf number lives in this file.
+    ! Implicit rules: one minimizer solve per edge. BDF2 needs two
+    ! history states, so its first edge is a backward-euler step.
+    ! All coefficients come from set_bdf; none are written here.
     statement = bdf(1, action, this % step)
 
     h_previous = this % step
 
-    ! The unknown of every governed solve is the state, so it lives
-    ! where the state lives - the action's domain, asked once here
-    ! and used for both the seat and the width.
-    call state_seat(action, on, q, state_domain, n_state_domain, ncomp)
+    ! the unknown of each implicit solve is the state, so the
+    ! solve is attached on the action's domain, read once here
+    call read_state_domain(action, on, q, state_domain, n_state_domain, ncomp)
 
     allocate(zeros(size(q)))
     zeros = 0.0_dp
@@ -197,9 +179,8 @@ contains
 
        statement % qold = qold
 
-       ! The state's width travels with it: a member carrying several
-       ! numbers is measured whole, not by its first stripe. And the
-       ! unknown domain is the state's own, never the host's.
+       ! ncomp is the state's component count, so a multi-component
+       ! entry is solved whole
        call this % inner % attach(statement, on, state_domain, &
             & n_state_domain, ncomp = ncomp)
        call this % inner % solve(zeros, q, answered)
@@ -215,13 +196,13 @@ contains
   end subroutine march
 
   !===================================================================!
-  ! The per-edge step: the caller's array where one was given, the
-  ! marcher's one step otherwise. Given, it must carry exactly one
-  ! positive number per edge - a step is a number riding an edge,
-  ! and an edge without one is not a step.
+  ! Check an optional per-edge step array: if present it must hold
+  ! exactly one positive value per edge. A wrong length or a
+  ! nonpositive step stops the program, because a silent default
+  ! would integrate a different chain than the caller specified.
   !===================================================================!
 
-  pure subroutine require_lawful_steps(steps, nsteps)
+  pure subroutine require_valid_steps(steps, nsteps)
 
     real(dp), intent(in), optional :: steps(:)
     integer , intent(in)           :: nsteps
@@ -231,7 +212,7 @@ contains
     if (.not. present(steps)) return
 
     if (size(steps) /= nsteps) then
-       error stop 'marcher: one step rides each edge'
+       error stop 'marcher: one step per edge'
     end if
 
     do e = 1, size(steps)
@@ -240,7 +221,7 @@ contains
        end if
     end do
 
-  end subroutine require_lawful_steps
+  end subroutine require_valid_steps
 
   pure function edge_step(this, steps, e) result(h)
 
@@ -258,21 +239,13 @@ contains
   end function edge_step
 
   !===================================================================!
-  ! Walk the chain in reverse, carrying the pairing: handed the
-  ! transposed statement, the sensitivities travel head to tail and
-  ! <lambda, q> stays put.
-  !
-  ! ONLY THE EXPLICIT RULE, AND IT SAYS SO. The adjoint of a walk is
-  ! the adjoint of the walk that was actually taken: if the forward
-  ! rule solves an implicit step at every edge, the reverse walk owes
-  ! the transpose of that solve, and doing plain euler backwards
-  ! instead returns a lambda that pairs with nothing. Worse, an
-  ! implicit reverse walk needs the forward trajectory to linearize
-  ! against, and this signature is handed no trajectory - only a
-  ! statement and a lambda. So the refusal below is the honest state
-  ! of the art, not a stub: the trajectory arrives when this citizen
-  ! becomes backward substitution on the chain, and the reverse walk
-  ! becomes the same verb as the forward one.
+  ! Reverse traversal. Under MARCH_FORWARD the caller's transposed
+  ! statement is applied edge by edge in reverse order. Under the
+  ! implicit rules the reverse traversal must linearize the solves
+  ! actually taken, so it needs the action and the forward
+  ! trajectory; calling without them stops the program, because an
+  ! explicit reverse pass over an implicit forward march would
+  ! return sensitivities of a different scheme.
   !===================================================================!
 
   subroutine march_adjoint(this, transposed, on, lambda, nsteps, steps, &
@@ -292,7 +265,7 @@ contains
     real(dp), allocatable :: s(:)
     integer :: e
 
-    call require_lawful_steps(steps, nsteps)
+    call require_valid_steps(steps, nsteps)
 
     call this % instants(nsteps, chain)
 
@@ -306,15 +279,9 @@ contains
 
     end if
 
-    !----------------------------------------------------------------!
-    ! The governed rules: backward substitution on the chain. The
-    ! trajectory the transpose of each solve needs must have been
-    ! recorded by the forward walk.
-    !----------------------------------------------------------------!
-
     if (.not. (present(action) .and. present(trajectory))) then
-       error stop 'march_adjoint: the implicit reverse walk needs the action &
-            &and its forward trajectory'
+       error stop 'march_adjoint: the implicit reverse traversal needs the &
+            &action and its forward trajectory'
     end if
 
     call substitute_backward(this, action, on, lambda, chain, steps, &
@@ -323,22 +290,23 @@ contains
   end subroutine march_adjoint
 
   !===================================================================!
-  ! Backward substitution: at each edge, in reverse order, the seed
-  ! arriving at the newest instant is answered by the transposed
-  ! step Jacobian,
+  ! Backward substitution over the chain: at each edge, in reverse
+  ! order, solve
   !
   !      (a0 I + h_e S'(q_e))^T lambda_e = seed_e,
   !
-  ! the state Jacobian probed at the recorded state through the
-  ! linearization shelf's chooser and eliminated by the dense direct
-  ! seat - the transpose is one array away, and no solve_transpose
-  ! exists anywhere. The history couplings are the CONSTANT
-  ! diagonals of the step table, so the seed carries backward as
+  ! with the Jacobian assembled at the recorded state through
+  ! tangent_of and dense_matrix_of and the transpose solved by the
+  ! dense direct minimizer. The couplings to earlier instants are
+  ! the constant coefficients a1 and a2, so the seed carried to
+  ! edge e-1 is -a1 lambda_e plus the -a2 term from the edge after
+  ! it. On return, lambda holds the sensitivity at the first
+  ! instant.
   !
-  !      seed_(e-1) = -a1 lambda_e + (the -a2 of the edge after)
-  !
-  ! and what leaves in lambda is the seed at the first instant: the
-  ! sensitivity of the seeded functional to the initial state.
+  ! The trajectory must hold one state per instant, and seeds, if
+  ! present, one entry per instant; both are checked and stop the
+  ! program, because a misaligned array would pair states with the
+  ! wrong instants.
   !===================================================================!
 
   subroutine substitute_backward(this, action, on, lambda, chain, steps, &
@@ -367,8 +335,6 @@ contains
        error stop 'march_adjoint: the trajectory carries one state per instant'
     end if
 
-    ! a functional may touch interior instants: its per-instant
-    ! seeds join the carried couplings as each instant is reached
     if (present(seeds)) then
        if (size(seeds, 1) /= n .or. &
             & size(seeds, 2) /= chain % num_vertices()) then
@@ -388,7 +354,7 @@ contains
 
        h_edge = edge_step(this, steps, e)
 
-       ! the same one table seat that priced the forward walk
+       ! same coefficients as the forward march
        if (this % rule == MARCH_BDF2 .and. e > 1) then
           h_previous = edge_step(this, steps, e - 1)
           call table % set_bdf(2, [h_edge, h_previous])
@@ -396,15 +362,14 @@ contains
           call table % set_bdf(1, [h_edge])
        end if
 
+       ! seeds(:, k), if given, is added when instant k is reached
        if (e < chain % num_edges()) then
           seed = carry_one
           if (present(seeds)) seed = seed + seeds(:, e + 1)
        end if
 
-       ! the step Jacobian at the recorded state, transposed and
-       ! eliminated
        call tangent % freeze(trajectory(:, e + 1))
-       call probed_dense_matrix(tangent, on, n, jac)
+       call dense_matrix_of(tangent, on, n, jac)
 
        jstep = table % hs * jac
        do j = 1, n
@@ -414,8 +379,7 @@ contains
        call solve_dense_matrix_with_dense_direct(transpose(jstep), seed, &
             & this % singular_tolerance, lambda_e, answered)
 
-       ! the history couplings, carried backward as the table's own
-       ! constant diagonals
+       ! carry the couplings to the two earlier instants
        carry_one = carry_two - table % a1 * lambda_e
        carry_two = -table % a2 * lambda_e
 
@@ -427,29 +391,14 @@ contains
   end subroutine substitute_backward
 
   !===================================================================!
-  ! One read of a statement at the standing state.
+  ! Read the action's domain and check the state fits it: the
+  ! domain must be nonempty and size(q) must be a whole multiple
+  ! of its entry count; both violations stop the program, because
+  ! ncomp is derived from that division.
   !===================================================================!
 
-  !===================================================================!
-  ! THE EVOLVING STATE LIVES WHERE THE ACTION SAYS IT LIVES.
-  !
-  ! A march is a repeated application of one action, so the thing
-  ! being marched inhabits that action's domain - never the host's
-  ! vertex carrier, which is the conduit the action is reached
-  ! through and not the seat of the mathematics.
-  !
-  ! For every action that reads its domain off the graph - which is
-  ! all of them on the directed-graph road - this asks the action
-  ! and receives exactly the vertex set asking the graph would have
-  ! returned. For an action that carries its own domain it receives
-  ! that domain, which asking the graph never could.
-  !
-  ! The width travels with the STATE: a coordinate carrying several
-  ! numbers is marched whole, and the count is a division that must
-  ! come out even.
-  !===================================================================!
-
-  subroutine state_seat(action, on, q, state_domain, n_state_domain, ncomp)
+  subroutine read_state_domain(action, on, q, state_domain, n_state_domain, &
+       & ncomp)
 
     class(graph_operation), intent(in)  :: action
     class(directed_graph)          , intent(in)  :: on
@@ -473,7 +422,15 @@ contains
 
     ncomp = size(q) / n
 
-  end subroutine state_seat
+  end subroutine read_state_domain
+
+  !===================================================================!
+  ! Evaluate the action at the state q. The result must live on
+  ! the same domain as the state, not merely have the same length:
+  ! a different domain of equal size would otherwise pass, and
+  ! q - h s would mix fields from two domains. Both mismatches
+  ! stop the program.
+  !===================================================================!
 
   subroutine read_statement(action, on, q, s)
 
@@ -483,66 +440,57 @@ contains
     real(dp), allocatable, intent(out) :: s(:)
 
     type(field)   :: state
-    class(graph_field), allocatable :: answer
+    class(graph_field), allocatable :: output
     type(set_graph) :: state_domain, given
     integer         :: n_state_domain, n_given
     integer :: ncomp
 
-    call state_seat(action, on, q, state_domain, n_state_domain, ncomp)
+    call read_state_domain(action, on, q, state_domain, n_state_domain, ncomp)
 
     state = field('state', state_domain, n_state_domain, ncomp=ncomp)
     call state % set_real_vector(q)
 
-    call action % apply(on, [state], answer)
+    call action % apply(on, [state], output)
 
-    ! q <- q - h s is an equation between two states, so the answer
-    ! must inhabit the domain the state does. Equal length is not
-    ! the same claim, and would let a foreign carrier through.
-    given   = answer % domain()
-    n_given = answer % num_entries()
+    given   = output % domain()
+    n_given = output % num_entries()
     if (.not. given % same_as(state_domain)) then
-       error stop 'marcher: the action must answer on the domain its state lives on'
+       error stop 'marcher: the action result lives on the state''s domain'
     end if
 
-    call answer % get_real_vector(s)
+    call output % get_real_vector(s)
     if (size(s) /= size(q)) then
-       error stop 'marcher: the action''s answer must match the state''s width'
+       error stop 'marcher: the action result matches the state''s width'
     end if
 
   end subroutine read_statement
 
   !===================================================================!
-  ! THE DIRECTIONAL WALK: forward derivatives of any order along
-  ! the walk actually taken. Differentiate the whole chain s times
-  ! along a parameter path; at each edge the step's own structure
-  ! splits the total,
+  ! Forward directional derivatives of any order along the
+  ! recorded trajectory. At each edge the derivative of the step
+  ! equation splits into
   !
   !      J_e q_e^(s) = -( a1 qprev^(s) + a2 qolder^(s)
-  !                       + h_e * d^s S with the top state seat
-  !                         suppressed ),
+  !                       + h_e * (degree-s composition with the
+  !                         order-s state derivative set to zero) ),
   !      J_e = a0 I + h_e S'(q_e),
   !
-  ! because the history couplings live OUTSIDE the statement as the
-  ! table's constant diagonals - the same one table seat again -
-  ! and every composition term inside S is the chain rule's to
-  ! assemble, never this walk's. One Jacobian per edge serves every
-  ! order: only the right-hand side changes with s, which is the
-  ! whole claim of higher-degree marching. The parameter paths
-  ! arrive as caller-supplied chain channels on the statement's
-  ! slots beyond the state; the state's own path is the walk's and
-  ! may not be supplied. Under the explicit rule the same verb
-  ! recurs without a single solve:
+  ! because the couplings to earlier instants are the constant
+  ! coefficients a1 and a2 while everything inside S is assembled
+  ! by chain_rule. One Jacobian per edge serves every order; only
+  ! the right-hand side changes with s. Under MARCH_FORWARD the
+  ! same recursion needs no solve.
   !
-  !      q_e^(s) = qprev^(s) - h_e * d^s S at the previous state,
-  !                all seats full.
-  !
-  ! The initial state is held fixed: its derivatives are zero, and
-  ! what accumulates along the walk is the sensitivity of every
-  ! instant to the supplied parameter paths.
+  ! Parameter paths arrive as argument_path values on input slots
+  ! 2 and higher, each covered by a supplied parameter field. A
+  ! path on slot 1 stops the program, because the state's path is
+  ! what this routine computes; a path on an uncovered slot also
+  ! stops the program. The initial state is held fixed, so its
+  ! derivatives are zero.
   !===================================================================!
 
   subroutine march_directional(this, action, on, nsteps, trajectory, order, &
-       & sensitivities, steps, parameters, channels)
+       & sensitivities, steps, parameters, paths)
 
     class(marcher), intent(inout)               :: this
     class(differentiable_operation), intent(in) :: action
@@ -553,13 +501,13 @@ contains
     real(dp), allocatable, intent(out)          :: sensitivities(:,:,:)
     real(dp), intent(in), optional              :: steps(:)
     type(field), intent(in), optional           :: parameters(:)
-    type(chain_channel), intent(in), optional   :: channels(:)
+    type(argument_path), intent(in), optional   :: paths(:)
 
     type(directed_stored_graph) :: chain
     type(chain_rule)            :: composer
     type(step_operator)         :: table
     class(linearization_operator), allocatable :: tangent
-    type(chain_channel), allocatable :: paths(:)
+    type(argument_path), allocatable :: assembled(:)
     type(field), allocatable         :: inputs(:)
     class(graph_field), allocatable  :: total_field
     type(field)     :: state
@@ -567,13 +515,13 @@ contains
     real(dp), allocatable :: jac(:,:), jstep(:,:), total(:), b(:), q_s(:)
     real(dp) :: answered, h_edge, h_previous
     integer :: n_state_domain, ncomp
-    integer :: e, s_order, k, j, n, at, nchan
+    integer :: e, s_order, k, j, n, at, npaths
 
     if (order < 1) then
        error stop 'march_directional: the order is positive'
     end if
 
-    call require_lawful_steps(steps, nsteps)
+    call require_valid_steps(steps, nsteps)
     call this % instants(nsteps, chain)
 
     n = size(trajectory, 1)
@@ -581,27 +529,24 @@ contains
        error stop 'march_directional: the trajectory carries one state per instant'
     end if
 
-    call state_seat(action, on, trajectory(:, 1), state_domain, &
+    call read_state_domain(action, on, trajectory(:, 1), state_domain, &
          & n_state_domain, ncomp)
 
-    !----------------------------------------------------------------!
-    ! The caller's parameter paths: slots beyond the state, each
-    ! covered by a supplied parameter field. The state's own path
-    ! is the walk's.
-    !----------------------------------------------------------------!
-
-    nchan = 0
-    if (present(channels)) then
-       nchan = size(channels)
-       do k = 1, nchan
-          if (channels(k) % slot <= 1) then
-             error stop 'march_directional: the state path is the walk''s own'
+    ! check the parameter paths: each must name a slot >= 2 that a
+    ! supplied parameter field covers
+    npaths = 0
+    if (present(paths)) then
+       npaths = size(paths)
+       do k = 1, npaths
+          if (paths(k) % slot <= 1) then
+             error stop 'march_directional: the state path is computed, &
+                  &not supplied'
           end if
           if (.not. present(parameters)) then
-             error stop 'march_directional: a parameter channel names a supplied slot'
+             error stop 'march_directional: a parameter path names a supplied slot'
           end if
-          if (channels(k) % slot > 1 + size(parameters)) then
-             error stop 'march_directional: a parameter channel names a supplied slot'
+          if (paths(k) % slot > 1 + size(parameters)) then
+             error stop 'march_directional: a parameter path names a supplied slot'
           end if
        end do
     end if
@@ -611,11 +556,8 @@ contains
 
     tangent = tangent_of(action)
 
-    !----------------------------------------------------------------!
-    ! Walk the edges forward; at each edge assemble the composition
-    ! by degree and advance every order's derivative.
-    !----------------------------------------------------------------!
-
+    ! for each edge, assemble the composition degree by degree and
+    ! advance each order's derivative
     do e = 1, chain % num_edges()
 
        h_edge = edge_step(this, steps, e)
@@ -627,12 +569,9 @@ contains
           call table % set_bdf(1, [h_edge])
        end if
 
-       !--------------------------------------------------------------!
-       ! The state the composition reads: the solved instant under
-       ! a governed rule, the previous instant under the explicit
-       ! one - the derivative of the walk actually taken.
-       !--------------------------------------------------------------!
-
+       ! the composition is evaluated at the solved instant under
+       ! an implicit rule and at the previous instant under the
+       ! explicit rule, matching the state each rule differentiates
        if (this % rule == MARCH_FORWARD) then
           at = e
        else
@@ -656,7 +595,7 @@ contains
 
        if (this % rule /= MARCH_FORWARD) then
           call tangent % freeze(trajectory(:, e + 1))
-          call probed_dense_matrix(tangent, on, n, jac)
+          call dense_matrix_of(tangent, on, n, jac)
           jstep = h_edge * jac
           do j = 1, n
              jstep(j, j) = jstep(j, j) + table % a0
@@ -666,9 +605,9 @@ contains
        do s_order = 1, order
 
           call build_paths(this, sensitivities, state_domain, &
-               & n_state_domain, ncomp, at, s_order, nchan, channels, paths)
+               & n_state_domain, ncomp, at, s_order, npaths, paths, assembled)
 
-          call composer % assemble(action, on, inputs, s_order, paths, &
+          call composer % assemble(action, on, inputs, s_order, assembled, &
                & total_field)
           call total_field % get_real_vector(total)
 
@@ -697,75 +636,72 @@ contains
   end subroutine march_directional
 
   !===================================================================!
-  ! The composition's channels at one edge and one order: the state
-  ! channel - seats below the order full from the solved
-  ! sensitivities, the top seat suppressed to zero under a governed
-  ! rule and full under the explicit one - followed by the caller's
-  ! parameter channels, passed through whole.
+  ! Build the argument paths for one edge and one order: the state
+  ! path holds the solved derivatives below the current order;
+  ! under an implicit rule its order-s entry is set to zero, which
+  ! makes the assembled total the right-hand side for the unknown
+  ! q^(s). The caller's parameter paths are appended unchanged.
   !===================================================================!
 
   subroutine build_paths(this, sensitivities, state_domain, n_state_domain, &
-       & ncomp, at, s_order, nchan, channels, paths)
+       & ncomp, at, s_order, npaths, parameter_paths, assembled)
 
     class(marcher), intent(in) :: this
     real(dp)      , intent(in) :: sensitivities(:,:,:)
     type(set_graph), intent(in) :: state_domain
-    integer       , intent(in) :: n_state_domain, ncomp, at, s_order, nchan
-    type(chain_channel), intent(in), optional :: channels(:)
-    type(chain_channel), allocatable, intent(out) :: paths(:)
+    integer       , intent(in) :: n_state_domain, ncomp, at, s_order, npaths
+    type(argument_path), intent(in), optional :: parameter_paths(:)
+    type(argument_path), allocatable, intent(out) :: assembled(:)
 
-    type(field) :: seat_field
-    real(dp), allocatable :: seat_values(:)
+    type(field) :: derivative_field
+    real(dp), allocatable :: derivative_values(:)
     integer :: k
 
-    allocate(paths(1 + nchan))
+    allocate(assembled(1 + npaths))
 
-    paths(1) % slot = 1
-    allocate(paths(1) % derivative(s_order))
+    assembled(1) % slot = 1
+    allocate(assembled(1) % derivative(s_order))
 
     do k = 1, s_order
 
        if (k == s_order .and. this % rule /= MARCH_FORWARD) then
-          ! the suppression that defines the right-hand side: the
-          ! unknown's top seat is zero while it is assembled
-          allocate(seat_values(size(sensitivities, 1)))
-          seat_values = 0.0_dp
+          ! the unknown order's entry is zero while the total is
+          ! assembled
+          allocate(derivative_values(size(sensitivities, 1)))
+          derivative_values = 0.0_dp
        else
-          seat_values = sensitivities(:, k, at)
+          derivative_values = sensitivities(:, k, at)
        end if
 
-       seat_field = field('state path', state_domain, n_state_domain, &
+       derivative_field = field('state path', state_domain, n_state_domain, &
             & ncomp=ncomp)
-       call seat_field % set_real_vector(seat_values)
-       paths(1) % derivative(k) % occupied  = .true.
-       paths(1) % derivative(k) % direction = seat_field
-       deallocate(seat_values)
+       call derivative_field % set_real_vector(derivative_values)
+       assembled(1) % derivative(k) % occupied  = .true.
+       assembled(1) % derivative(k) % direction = derivative_field
+       deallocate(derivative_values)
 
     end do
 
-    do k = 1, nchan
-       paths(1 + k) = channels(k)
+    do k = 1, npaths
+       assembled(1 + k) = parameter_paths(k)
     end do
 
   end subroutine build_paths
 
   !===================================================================!
-  ! THE ADAPTIVE WALK: the chain is not given, it is decided. At
-  ! each edge the policy proposes a step, the marcher takes it on
-  ! trial - explicit or governed by its standing rule - and
-  ! measures the evidence: the distance between the trial state and
-  ! the extrapolating predictor through the accepted history,
-  ! constant with one accepted instant behind, linear with two. The
-  ! policy judges; an accepted edge commits and its step joins the
-  ! record, a rejected edge leaves NOTHING - the trial never touched
-  ! the state, so there is no transaction and nothing to roll back.
-  ! A spent attempt budget ends the walk lawfully where it stands.
+  ! Adaptive integration: the policy proposes a step, the marcher
+  ! computes a trial state under its rule without modifying q,
+  ! measures the distance between the trial and the extrapolating
+  ! predictor through the accepted history, and the policy judges.
+  ! An accepted edge commits the trial and records its step; a
+  ! rejected edge changes nothing. When max_attempts trials in a
+  ! row are rejected the routine returns with completed = .false.
+  ! and q at the last accepted state.
   !
-  ! What leaves is the walk itself: the steps actually taken, one
-  ! per accepted edge. A caller wanting the trajectory or the
-  ! adjoint marches again with those steps - the recorded chain is
-  ! an ordinary nonuniform chain, and every other verb already
-  ! speaks it.
+  ! Checks, each stopping the program: duration and max_attempts
+  ! must be positive, and the policy must propose positive steps.
+  ! What is returned is steps_taken; a caller wanting the
+  ! trajectory or the adjoint marches again with those steps.
   !===================================================================!
 
   subroutine march_adaptive(this, action, on, q, duration, policy, &
@@ -797,7 +733,7 @@ contains
        error stop 'march_adaptive: the attempt budget is positive'
     end if
 
-    call state_seat(action, on, q, state_domain, n_state_domain, ncomp)
+    call read_state_domain(action, on, q, state_domain, n_state_domain, ncomp)
 
     if (this % rule /= MARCH_FORWARD) then
        statement = bdf(1, action, this % step)
@@ -828,11 +764,7 @@ contains
           end if
           h = min(h, duration - t)
 
-          !----------------------------------------------------------!
-          ! The trial: the state is never touched - a rejection has
-          ! nothing to undo.
-          !----------------------------------------------------------!
-
+          ! compute the trial state; q is not modified
           if (this % rule == MARCH_FORWARD) then
 
              call read_statement(action, on, q, s)
@@ -855,12 +787,9 @@ contains
 
           end if
 
-          !----------------------------------------------------------!
-          ! The evidence: distance from the extrapolating predictor
-          ! through the accepted history. Measurement only - the
-          ! judgment is the policy's.
-          !----------------------------------------------------------!
-
+          ! error estimate: distance from the extrapolating
+          ! predictor - constant with one accepted state behind,
+          ! linear with two. The accept decision is the policy's.
           if (have_previous) then
              predictor = q + (h / h_previous) * (q - qprev)
           else

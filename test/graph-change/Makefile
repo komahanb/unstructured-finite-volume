@@ -1,11 +1,10 @@
 include ../../Makefile.in
 
 #=====================================================================#
-# Two programs over the change seam and one shared toy fixture:
-# the law suite proving the reversible lifecycle, the value map
-# ontology, and the value change's exact restorations - and the
-# refusals that must die. -Wtarget-lifetime keeps the borrows
-# honest at compile time.
+# Builds two binaries: run (the assertion suite) and refusal (the
+# invalid-input cases). Both link the shared fixture
+# toy_changes.o. -Wtarget-lifetime warns when a pointer may
+# outlive its target.
 #=====================================================================#
 
 # Ufvm (-I../../src for scalar.fpp, -I../../lib for the .mod files)

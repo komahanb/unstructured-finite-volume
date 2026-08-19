@@ -1,24 +1,15 @@
 !=====================================================================!
-! The exact linearization: a derivative asked for, not bought.
-!
-! The SECOND concretion of the linearization operator - the one the
-! difference concretion's own banner promised: a statement that can
-! linearize itself exactly takes the seat, and the governor never
-! notices the change. The tangent of a differentiable statement S
-! at the standing state q is one partial action,
+! Exact linearization: the second concrete member of the
+! linearization family. The tangent of a differentiable statement
+! S at the frozen state q is one partial action,
 !
 !      J v = D S(q) [v],
 !
-! exact to the statement's declared calculus - no epsilon, no
-! two-residual difference, no eight-digit floor. Everything else is
-! the family's: same freeze to move the standing state, same
-! operation face, same same-domain discipline. A base residual
-! handed to freeze is accepted and ignored, because an exact
-! tangent owes nothing to the residual at the point.
-!
-! THIS CITIZEN REMAINS SAME-DOMAIN, exactly as its difference
-! sibling declares: it linearizes S : U -> U in its first input
-! slot and nothing wider.
+! exact to the statement's declared max_degree - no finite
+! difference. freeze moves the frozen state; a base residual
+! passed to freeze is accepted and ignored, since an exact tangent
+! does not use the residual value. Like the difference member,
+! this linearizes S : U -> U in its first input slot only.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -63,11 +54,10 @@ module class_graph_exact_linearization
 contains
 
   !===================================================================!
-  ! The shelf's own chooser: the seat is filled by what the
-  ! statement IS. A differentiable statement linearizes itself
-  ! exactly; anything else is differenced. Every governor - newton,
-  ! the marcher's reverse walk, whoever comes next - asks here and
-  ! owns no dispatch of its own.
+  ! Select the linearization by the statement's type: exact for a
+  ! differentiable_operation, difference for anything else.
+  ! Callers (newton, the marcher) use this instead of dispatching
+  ! themselves, so the dispatch rule exists in one place.
   !===================================================================!
 
   function tangent_of(action) result(tangent)
@@ -85,8 +75,8 @@ contains
   end function tangent_of
 
   !===================================================================!
-  ! Built about a differentiable statement; the state may arrive
-  ! now or through freeze.
+  ! Construct from a differentiable statement; the state may
+  ! arrive now or later through freeze.
   !===================================================================!
 
   function create(of, at) result(this)
@@ -101,9 +91,8 @@ contains
   end function create
 
   !===================================================================!
-  ! Move the standing state. The base rides the family's freeze
-  ! signature and is ignored: an exact tangent owes nothing to the
-  ! residual at the point.
+  ! Move the frozen state. base is part of the family's freeze
+  ! signature and is ignored here.
   !===================================================================!
 
   subroutine exact_freeze(this, at, base)
@@ -142,10 +131,13 @@ contains
   end subroutine exact_domain
 
   !===================================================================!
-  ! J v as one partial action: the statement differentiated in its
-  ! first input slot at the frozen state, contracted against the
-  ! direction. The direction arrives as the input field; the answer
-  ! leaves on the statement's own domain.
+  ! Apply J v as one partial action in input slot 1 at the frozen
+  ! state. Checks, each stopping the program: the domain must be
+  ! nonempty; a state must have been frozen; the frozen state must
+  ! hold a whole number of components per domain member; the
+  ! direction must live on the statement's domain and match the
+  ! frozen state's size. Without input data the result is zero,
+  ! returned without calling the statement.
   !===================================================================!
 
   subroutine exact_apply(this, input_graph, input_data, output)
@@ -191,8 +183,8 @@ contains
           error stop 'linearization: the direction must match the frozen state''s width'
        end if
 
-       ! re-seated concretely: a polymorphic entity cannot ride an
-       ! array constructor, and the statement takes field families
+       ! copy into a concrete field: a polymorphic entity cannot
+       ! appear in an array constructor
        direction = field('direction', on, n_on, ncomp=ncomp)
        call direction % set_real_vector(v)
 
@@ -201,8 +193,8 @@ contains
 
     else
 
-       ! no direction is the zero direction, and an exact tangent
-       ! of zero is zero - answered without asking the statement
+       ! no direction means the zero direction, and the tangent of
+       ! zero is zero
        zero = field('J v', on, n_on, ncomp=ncomp)
        call zero % set_real_vector(spread(0.0_dp, 1, size(this % at)))
        if (allocated(output)) deallocate(output)

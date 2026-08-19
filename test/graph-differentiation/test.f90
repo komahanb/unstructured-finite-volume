@@ -1,25 +1,20 @@
 !=====================================================================!
-! The differentiation tower suite: one fixture set proving the
-! whole calculus road, end to end -
+! Tests for the differentiation stack:
 !
-!      set_bdf        the one table seat prices nonuniform steps
-!                     in exact rationals and equal steps in exact
-!                     constants
-!      tangent_of     the linearization shelf's chooser hands a
-!                     differentiable statement the exact road and
-!                     everything else the difference road
-!      chain_rule     total derivatives to degree 8 against
-!                     independent analytic and Taylor-convolution
-!                     oracles
-!      the marcher    a governed walk recorded, then differentiated
-!                     forward to degree 8 (march_directional),
-!                     backward to the initial state (march_adjoint,
-!                     terminal and per-instant seeds), stepped
-!                     adaptively under a policy, and priced on a
-!                     nonuniform chain
+!      set_bdf            the nonuniform and uniform order-2 rows
+!                         and the order-1 row
+!      tangent_of         exact/difference dispatch, and the value
+!                         of the exact tangent
+!      chain_rule         total derivatives to degree 8
+!      the marcher        march with trajectory recording,
+!                         march_directional to degree 8,
+!                         march_adjoint with terminal and
+!                         per-instant seeds, march_adaptive, and a
+!                         nonuniform implicit march
 !
-! Every expected number is an exact rational or a closed form, and
-! none is produced by the machinery under test.
+! Every expected value is an exact rational or a closed form
+! derived independently of the code under test; the derivation is
+! stated in each section comment.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -33,14 +28,14 @@ program test_graph_differentiation
   use class_graph         , only : directed_stored_graph
   use class_graph_field   , only : field
   use class_graph_step    , only : step_operator, backward_euler, bdf_variable
-  use class_graph_chain_rule, only : chain_rule, chain_channel
+  use class_graph_chain_rule, only : chain_rule, argument_path
   use class_graph_exact_linearization, only : tangent_of
   use class_graph_marcher , only : marcher, MARCH_BACKWARD
   use class_graph_step_policy, only : halving_policy
   use class_graph_newton  , only : newton
   use class_graph_gmres   , only : gmres
   use toy_differentiable_forms, only : quartic_form, power8_form, &
-       & equilibrium_law, linear_law, scalar_pair, fill_scalar_channel
+       & equilibrium_law, linear_law, scalar_pair, fill_path
 
   implicit none
 
@@ -90,10 +85,12 @@ program test_graph_differentiation
 contains
 
   !===================================================================!
-  ! THE ONE TABLE SEAT. Order two at steps (2, 3) is the derivative
-  ! of the interpolating quadratic: [7/5, -5/3, 4/15]. Equal steps
-  ! collapse onto the uniform table exactly, and order one is
-  ! backward euler whatever the step.
+  ! set_bdf order 2 at steps (2, 3): with h0 = 2 and h1 = 3 the
+  ! coefficients are a0 = (2 h0 + h1)/(h0 + h1) = 7/5,
+  ! a1 = -(h0 + h1)/h1 = -5/3, a2 = h0^2/(h1 (h0 + h1)) = 4/15.
+  ! Equal steps must give the constants (1.5, -2, 0.5) exactly,
+  ! because set_bdf assigns them without arithmetic. Order 1 is
+  ! (1, -1, 0) for any step.
   !===================================================================!
 
   subroutine check_the_table_seat(nfail)
@@ -108,14 +105,14 @@ contains
          & near(statement % a1, -5.0_dp /  3.0_dp, 1.0e-15_dp) .and. &
          & near(statement % a2,  4.0_dp / 15.0_dp, 1.0e-15_dp) .and. &
          & near(statement % hs,  2.0_dp, 0.0_dp), &
-         & "set_bdf prices steps (2, 3) as [7/5, -5/3, 4/15], h = 2", nfail)
+         & "set_bdf at steps (2, 3) gives [7/5, -5/3, 4/15], h = 2", nfail)
 
     call statement % set_bdf(2, [0.7_dp, 0.7_dp])
     call report( &
          & statement % a0 ==  1.5_dp .and. &
          & statement % a1 == -2.0_dp .and. &
          & statement % a2 ==  0.5_dp, &
-         & "equal steps answer the uniform table in exact constants", nfail)
+         & "equal steps give the uniform coefficients exactly", nfail)
 
     statement = backward_euler(lin, 0.25_dp)
     call report( &
@@ -123,16 +120,17 @@ contains
          & statement % a1 == -1.0_dp .and. &
          & statement % a2 ==  0.0_dp .and. &
          & statement % reach == 1, &
-         & "backward euler is the order-one row, reach one", nfail)
+         & "backward euler gives [1, -1, 0], reach 1", nfail)
 
   end subroutine check_the_table_seat
 
   !===================================================================!
-  ! THE CHOOSER AND THE EXACT TANGENT. tangent_of reads what the
-  ! statement IS: the quartic takes the exact road, the linear law
-  ! the difference road - observable in the names. The exact
-  ! tangent at q = 1 (xi at its default 2) is Phi_q(1, 2) = 26, so
-  ! J v = 26 v with no epsilon anywhere.
+  ! tangent_of must return exact_linearization for a
+  ! differentiable_operation and difference_linearization for any
+  ! other operation; the two are distinguished here by their
+  ! name() prefixes. The exact tangent of the quartic frozen at
+  ! q = 1 (xi defaulting to 2) is Phi_q(1, 2) = 26, so applying it
+  ! to the direction v = 3 must return 78.
   !===================================================================!
 
   subroutine check_the_tangent_chooser(nfail)
@@ -140,7 +138,7 @@ contains
     integer, intent(inout) :: nfail
 
     class(linearization_operator), allocatable :: tangent, slow
-    class(graph_field), allocatable :: answer
+    class(graph_field), allocatable :: output
     type(field) :: direction
     real(dp), allocatable :: rv(:)
 
@@ -148,17 +146,18 @@ contains
     slow    = tangent_of(lin)
 
     call report(index(tangent % name(), 'exact derivative of') == 1, &
-         & "a differentiable statement is handed the exact road", nfail)
+         & "tangent_of picks the exact linearization when differentiable", &
+         & nfail)
     call report(index(slow % name(), 'derivative of') == 1 .and. &
          & index(slow % name(), 'exact') == 0, &
-         & "an ordinary statement is handed the difference road", nfail)
+         & "tangent_of picks the difference linearization otherwise", nfail)
 
     call tangent % freeze([1.0_dp])
 
     direction = field('v', cells, 1, ncomp=1)
     call direction % set_real_vector([3.0_dp])
-    call tangent % apply(lone, [direction], answer)
-    call answer % get_real_vector(rv)
+    call tangent % apply(lone, [direction], output)
+    call output % get_real_vector(rv)
 
     call report(size(rv) == 1 .and. near(rv(1), 78.0_dp, 1.0e-12_dp), &
          & "the exact tangent of the quartic at 1: J v = 26 v", nfail)
@@ -166,16 +165,15 @@ contains
   end subroutine check_the_tangent_chooser
 
   !===================================================================!
-  ! THE CHAIN RULE ON THE QUARTIC. At (q, xi) = (1, 2) along the
-  ! path with seats q^(k) = (1, 2, 3, 4) and xi^(k) = (5, 7, 11,
-  ! 13), the exact total derivatives by rational Taylor composition
-  ! are
+  ! chain_rule % assemble on the quartic at (q, xi) = (1, 2) with
+  ! path derivatives q^(k) = (1, 2, 3, 4) and xi^(k) = (5, 7, 11,
+  ! 13). Expected totals were computed by rational Taylor
+  ! composition, independently of the pattern generator:
   !
   !      d0 = 31,  d1 = 271,  d2 = 2207,  d3 = 16688,  d4 = 118251
   !
-  ! and with xi's seats past the first absent (read as zero),
-  !
-  !      d3 = 9156,  d4 = 27908.
+  ! With xi's derivatives past the first unoccupied, those terms
+  ! are read as zero: d3 = 9156, d4 = 27908.
   !===================================================================!
 
   subroutine check_the_chain_rule(nfail)
@@ -183,9 +181,9 @@ contains
     integer, intent(inout) :: nfail
 
     type(chain_rule)    :: composer
-    type(chain_channel) :: full(2), sparse(2)
+    type(argument_path) :: full(2), sparse(2)
     type(field)         :: inputs(2)
-    class(graph_field), allocatable :: answer
+    class(graph_field), allocatable :: output
     real(dp), allocatable :: rv(:)
     real(dp) :: expected(0:4)
     logical  :: degrees_ok
@@ -193,45 +191,47 @@ contains
 
     call scalar_pair(1.0_dp, 2.0_dp, cells, inputs)
 
-    call fill_scalar_channel(full(1), 1, [1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp], &
-         & cells)
-    call fill_scalar_channel(full(2), 2, [5.0_dp, 7.0_dp, 11.0_dp, 13.0_dp], &
-         & cells)
+    call fill_path(full(1), 1, [1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp], cells)
+    call fill_path(full(2), 2, [5.0_dp, 7.0_dp, 11.0_dp, 13.0_dp], cells)
 
     sparse(1) = full(1)
-    call fill_scalar_channel(sparse(2), 2, [5.0_dp], cells)
+    call fill_path(sparse(2), 2, [5.0_dp], cells)
 
     expected = [31.0_dp, 271.0_dp, 2207.0_dp, 16688.0_dp, 118251.0_dp]
 
     degrees_ok = .true.
     do n = 0, 4
-       call composer % assemble(quartic, lone, inputs, n, full, answer)
-       call answer % get_real_vector(rv)
+       call composer % assemble(quartic, lone, inputs, n, full, output)
+       call output % get_real_vector(rv)
        degrees_ok = degrees_ok .and. size(rv) == 1 .and. &
             & near(rv(1), expected(n), 1.0e-10_dp)
     end do
     call report(degrees_ok, &
          & "quartic degrees 0..4: 31, 271, 2207, 16688, 118251", nfail)
 
-    call composer % assemble(quartic, lone, inputs, 3, sparse, answer)
-    call answer % get_real_vector(rv)
+    call composer % assemble(quartic, lone, inputs, 3, sparse, output)
+    call output % get_real_vector(rv)
     call report(near(rv(1), 9156.0_dp, 1.0e-10_dp), &
-         & "an absent seat reads as zero: sparse degree 3 is 9156", nfail)
+         & "an unoccupied derivative reads as zero: sparse degree 3 is 9156", &
+         & nfail)
 
-    call composer % assemble(quartic, lone, inputs, 4, sparse, answer)
-    call answer % get_real_vector(rv)
+    call composer % assemble(quartic, lone, inputs, 4, sparse, output)
+    call output % get_real_vector(rv)
     call report(near(rv(1), 27908.0_dp, 1.0e-10_dp), &
-         & "an absent seat reads as zero: sparse degree 4 is 27908", nfail)
+         & "an unoccupied derivative reads as zero: sparse degree 4 is 27908", &
+         & nfail)
 
   end subroutine check_the_chain_rule
 
   !===================================================================!
-  ! DEGREES 1..8, BEYOND EVERY HAND TABLE. Phi = (q + xi)^8 at
-  ! (1, 2) along seats q^(k) = k! and xi^(k) = k k!, so u(e) has
-  ! the exact normalized Taylor coefficients a_0 = 3, a_k = k + 1.
-  ! The oracle raises u(e) to the eighth power by truncated
-  ! polynomial convolution - independent of the pattern generator -
-  ! and degree n is n! times the coefficient of e^n.
+  ! Degrees 1..8 of Phi = (q + xi)^8 at (1, 2) with path
+  ! derivatives q^(k) = k! and xi^(k) = k k!. Then u(e) = q(e) +
+  ! xi(e) has the normalized Taylor coefficients a_0 = 3 and
+  ! a_k = k + 1, all exact in floating point. The expected values
+  ! are computed here by raising u(e) to the eighth power with
+  ! truncated polynomial convolution, independently of the pattern
+  ! generator; the degree-n total is n! times the coefficient of
+  ! e^n.
   !===================================================================!
 
   subroutine check_the_taylor_convolution(nfail)
@@ -239,9 +239,9 @@ contains
     integer, intent(inout) :: nfail
 
     type(chain_rule)    :: composer
-    type(chain_channel) :: paths(2)
+    type(argument_path) :: paths(2)
     type(field)         :: inputs(2)
-    class(graph_field), allocatable :: answer
+    class(graph_field), allocatable :: output
     real(dp), allocatable :: rv(:)
     real(dp) :: qseats(8), xiseats(8)
     real(dp) :: acoef(0:8), upow(0:8), convolved(0:8)
@@ -258,8 +258,8 @@ contains
        xiseats(k) = real(k, dp) * fact
     end do
 
-    call fill_scalar_channel(paths(1), 1, qseats, cells)
-    call fill_scalar_channel(paths(2), 2, xiseats, cells)
+    call fill_path(paths(1), 1, qseats, cells)
+    call fill_path(paths(2), 2, xiseats, cells)
 
     acoef(0) = 3.0_dp
     do k = 1, 8
@@ -281,8 +281,8 @@ contains
     do n = 1, 8
        fact     = fact * real(n, dp)
        expected = fact * upow(n)
-       call composer % assemble(p8, lone, inputs, n, paths, answer)
-       call answer % get_real_vector(rv)
+       call composer % assemble(p8, lone, inputs, n, paths, output)
+       call output % get_real_vector(rv)
        degrees_ok = degrees_ok .and. size(rv) == 1 .and. &
             & abs(rv(1) - expected) <= 1.0e-12_dp * abs(expected)
     end do
@@ -294,28 +294,30 @@ contains
   end subroutine check_the_taylor_convolution
 
   !===================================================================!
-  ! THE DERIVATIVE WALKS ON THE EQUILIBRIUM CHAIN. Under backward
-  ! euler at h = 1 with S = q^2 - xi and xi = 1, the walk from
-  ! q = 1 stands still while its derivatives live: every step
-  ! Jacobian is a0 + 2 h q = 3, and with the parameter path
-  ! xi^(1) = 1 the directional recursion
+  ! Marcher derivative tests on S = q^2 - xi with xi = 1, backward
+  ! euler at h = 1, started at the fixed point q = 1: the
+  ! trajectory is constant and every step Jacobian equals
+  ! a0 + 2 h q = 3. With the parameter path xi^(1) = 1 the
+  ! second-instant sensitivities satisfy
   !
-  !      u_1 = 1/3,   u_s = -( sum C(s,i) u_i u_(s-i) ) / 3
+  !      u_1 = 1/3,
+  !      u_s = -( sum_{i=1}^{s-1} C(s,i) u_i u_(s-i) ) / 3
   !
-  ! prices every order in exact rationals - written below as the
-  ! literal fractions, through degree 8, at both marched instants.
-  ! The reverse walk is backward substitution by the same Jacobian:
-  ! a terminal seed of 1 crosses two edges as (1/3)^2 = 1/9, and
-  ! per-instant seeds of 1 join the couplings as 1 + 4/9 = 13/9.
-  ! The nonuniform chain prices S = q on steps (1, 1/2) to exactly
-  ! 1/3.
+  ! and the third-instant ones the same recursion plus the
+  ! -a1 u_s term carried from the previous instant. The fractions
+  ! below were computed by hand from these recursions.
+  ! march_adjoint is backward substitution with the same Jacobian:
+  ! a terminal seed of 1 becomes (1/3)^2 = 1/9 after two edges,
+  ! and per-instant seeds of 1 give 1 + (1 + 1/3)/3 = 13/9. The
+  ! last check marches S = q with steps (1, 1/2): backward euler
+  ! gives q1 = 1/2, then q2 = q1 / (3/2) = 1/3.
   !===================================================================!
 
   subroutine check_the_derivative_walks(nfail)
 
     integer, intent(inout) :: nfail
 
-    type(chain_channel) :: xipath(1)
+    type(argument_path) :: xipath(1)
     type(field) :: xifield(1)
     real(dp), allocatable :: trajectory(:,:), sensitivities(:,:,:)
     real(dp) :: q(1), lambda(1), seeds(1,3)
@@ -324,7 +326,7 @@ contains
     integer  :: s
 
     !----------------------------------------------------------------!
-    ! The walk itself, recorded: the equilibrium never moves.
+    ! march with trajectory recording: 3 instants, all equal to 1.
     !----------------------------------------------------------------!
 
     q = [1.0_dp]
@@ -332,19 +334,19 @@ contains
 
     call report(size(trajectory, 2) == 3 .and. &
          & maxval(abs(trajectory - 1.0_dp)) < 1.0e-12_dp, &
-         & "the governed walk records its trajectory: still at 1", nfail)
+         & "march records the trajectory: constant at the fixed point", nfail)
 
     !----------------------------------------------------------------!
-    ! Forward derivatives of every order to 8, one probed Jacobian
-    ! per edge, the parameter path riding slot two.
+    ! march_directional to order 8, the parameter path supplied on
+    ! input slot 2.
     !----------------------------------------------------------------!
 
     xifield(1) = field('xi', cells, 1, ncomp=1)
     call xifield(1) % set_real_vector([1.0_dp])
-    call fill_scalar_channel(xipath(1), 2, [1.0_dp], cells)
+    call fill_path(xipath(1), 2, [1.0_dp], cells)
 
     call clock % march_directional(equil, lone, 2, trajectory, 8, &
-         & sensitivities, parameters=xifield, channels=xipath)
+         & sensitivities, parameters=xifield, paths=xipath)
 
     instant2 = [ 1.0_dp / 3.0_dp,            -2.0_dp / 27.0_dp,       &
          &       4.0_dp / 81.0_dp,          -40.0_dp / 729.0_dp,      &
@@ -366,10 +368,10 @@ contains
     end do
 
     call report(orders_ok, &
-         & "march_directional prices degrees 1..8 in exact rationals", nfail)
+         & "march_directional matches the exact rationals to degree 8", nfail)
 
     !----------------------------------------------------------------!
-    ! The reverse walk: backward substitution on the same chain.
+    ! march_adjoint over the recorded trajectory.
     !----------------------------------------------------------------!
 
     lambda = [1.0_dp]
@@ -383,31 +385,34 @@ contains
     call clock % march_adjoint(equil, lone, lambda, 2, action=equil, &
          & trajectory=trajectory, seeds=seeds)
     call report(near(lambda(1), 13.0_dp / 9.0_dp, 1.0e-12_dp), &
-         & "per-instant seeds join the couplings: 13/9", nfail)
+         & "per-instant seeds accumulate to 13/9", nfail)
 
     !----------------------------------------------------------------!
-    ! The nonuniform chain: the same one table seat prices it.
+    ! Implicit march with per-edge steps (1, 1/2).
     !----------------------------------------------------------------!
 
     q = [1.0_dp]
     call clock % march(lin, lone, q, 2, steps=[1.0_dp, 0.5_dp])
     call report(near(q(1), 1.0_dp / 3.0_dp, 1.0e-9_dp), &
-         & "S = q on steps (1, 1/2) lands exactly on 1/3", nfail)
+         & "S = q on steps (1, 1/2) gives exactly 1/3", nfail)
 
   end subroutine check_the_derivative_walks
 
   !===================================================================!
-  ! THE ADAPTIVE WALK. Each backward-euler trial solves
-  ! h q^2 + q - (qold + h) = 0, whose root is
+  ! march_adaptive with the halving policy, q0 = 2, duration 1/2.
+  ! Each backward-euler trial solves h q^2 + q - (qold + h) = 0,
+  ! whose positive root is
   !
-  !      q = ( -1 + sqrt(1 + 4 h (qold + h)) ) / (2 h),
+  !      q = ( -1 + sqrt(1 + 4 h (qold + h)) ) / (2 h).
   !
-  ! and from q = 2 over duration 1/2: a generous tolerance accepts
-  ! the first proposal (one edge of 1/2, landing on -1 + sqrt 6); a
-  ! tolerance of 0.45 rejects h = 1/2 (evidence about 0.5505) and
-  ! accepts the halved retry (about 0.3944), walking two edges of
-  ! 1/4; an impossible tolerance spends the budget and leaves the
-  ! state untouched - a rejected trial has nothing to roll back.
+  ! Tolerance 1: the first proposal h = 1/2 is accepted (error
+  ! estimate |trial - q0| is about 0.5505), giving q = -1 + sqrt 6.
+  ! Tolerance 0.45: h = 1/2 is rejected, the halved retry h = 1/4
+  ! is accepted (estimate about 0.3944), and a second h = 1/4 edge
+  ! completes the duration. Tolerance 1e-30 with max_attempts = 3:
+  ! no trial is accepted, so completed must be false, steps_taken
+  ! empty, and q unchanged, because a rejected trial never writes
+  ! to q.
   !===================================================================!
 
   subroutine check_the_adaptive_walk(nfail)
@@ -441,7 +446,8 @@ contains
          & taken, completed)
     call report(completed .and. size(taken) == 2 .and. &
          & all(taken == 0.25_dp) .and. near(q(1), second, 1.0e-9_dp), &
-         & "a rejected proposal halves and the walk takes (1/4, 1/4)", nfail)
+         & "a rejected proposal halves: the march takes steps (1/4, 1/4)", &
+         & nfail)
 
     impossible % first_step = 0.5_dp
     impossible % tolerance  = 1.0e-30_dp
@@ -451,7 +457,7 @@ contains
          & taken, completed)
     call report((.not. completed) .and. size(taken) == 0 .and. &
          & q(1) == 2.0_dp, &
-         & "a spent budget ends lawfully: no steps, the state untouched", &
+         & "a spent attempt budget: completed false, no steps, q unchanged", &
          & nfail)
 
   end subroutine check_the_adaptive_walk

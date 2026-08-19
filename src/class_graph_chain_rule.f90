@@ -1,37 +1,36 @@
 !=====================================================================!
-! The chain rule, to any order.
+! The chain rule to any order: for a composition S(x_1(s), ...,
+! x_m(s)) of one differentiable statement with per-argument paths
+! x_j(s), assemble the total derivative d^n/ds^n from the
+! statement's exact partial actions.
 !
-! One differentiable statement, one standing state, and per-slot
-! derivative paths; this seat assembles the total derivative of
-! the composition S(x(s)) at any degree n, through the statement's
-! exact partial actions alone. Each symbolic term of the
-! composition is one PATTERN: a nondecreasing positive tuple
-! d = [d1, ..., dm] with d1 + ... + dm = n, carrying the
-! multinomial count
+! Each term is indexed by an integer partition of n: a
+! nondecreasing positive tuple d = [d_1, ..., d_k] with
+! d_1 + ... + d_k = n, carrying the multinomial count
 !
 !      c(d) = n! / ( prod_i d_i!  *  prod_j multiplicity_j! )
 !
-! where multiplicity_j counts repeated equal entries of d. The
-! patterns are GENERATED, never tabulated - increasing slot count
-! first, lexicographic inside one slot count - and every pattern
-! slot expands over all channels providing that derivative seat,
-! in ordered tuples, which is exactly the factor a symmetric mixed
-! partial carries. The coefficient multiplies OUTSIDE the
-! statement's calculus; no derivative tensor is ever stored.
+! where multiplicity_j counts repeated equal entries of d.
+! Partitions are generated, not tabulated, in a fixed order:
+! increasing entry count first, lexicographic within one entry
+! count. Every partition entry ranges over all argument paths
+! providing that derivative order, in ordered tuples - the factor
+! a symmetric mixed partial requires. The count multiplies the
+! result outside the statement's calculus; no derivative tensor is
+! stored.
 !
-! A CHANNEL IS ONE INPUT SLOT'S PATH, by construction: it names
-! the input argument it perturbs once, and its seats carry only
-! direction fields. The old worry that one channel might mix two
-! arguments' derivatives is not refused here - it is
-! unrepresentable. Two channels naming the same slot would double
-! count, and are refused. An unoccupied seat is an absent
-! derivative, read as zero: the terms it would have fed are simply
-! not assembled.
+! An argument_path names one input slot and carries the derivative
+! sequence x^(1), ..., x^(k) of that argument, so one path cannot
+! mix two arguments' derivatives. Two paths naming the same slot
+! would double count and stop the program. An unoccupied
+! derivative is read as zero: the terms it would feed are not
+! assembled.
 !
-! Degree 0 is the statement's own value. The degree is data: this
-! seat refuses only a negative degree, a multinomial count beyond
-! the integer range it stores, and an order past the statement's
-! declared calculus.
+! Degree 0 is the statement's value. Inputs that stop the program:
+! a negative degree, a multinomial count outside int64, a path
+! naming a slot the statement does not take, a duplicated slot,
+! and a partition needing a partial past the statement's
+! max_degree.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -49,40 +48,39 @@ module class_graph_chain_rule
 
   private
   public :: chain_rule
-  public :: chain_channel
-  public :: chain_seat
+  public :: argument_path
+  public :: path_derivative
 
   !===================================================================!
-  ! One derivative seat: occupied, it carries x^(k) as a direction
-  ! field; unoccupied, it is an absent derivative - zero.
+  ! One derivative of a path: occupied, it carries x^(k) as a
+  ! direction field; unoccupied, it is read as zero.
   !===================================================================!
 
-  type :: chain_seat
+  type :: path_derivative
 
      logical     :: occupied = .false.
      type(field) :: direction
 
-  end type chain_seat
+  end type path_derivative
 
   !===================================================================!
-  ! One input slot's path: which argument of the statement this
-  ! channel perturbs, and its derivative seats - seat k holds
-  ! x^(k).
+  ! One argument's path: the input slot it perturbs, and its
+  ! derivative sequence - derivative(k) holds x^(k).
   !===================================================================!
 
-  type :: chain_channel
+  type :: argument_path
 
      integer :: slot = 0
-     type(chain_seat), allocatable :: derivative(:)
+     type(path_derivative), allocatable :: derivative(:)
 
    contains
 
-     procedure :: has_degree => channel_has_degree
+     procedure :: has_degree => path_has_degree
 
-  end type chain_channel
+  end type argument_path
 
   !===================================================================!
-  ! The stateless assembler verb.
+  ! The stateless assembler.
   !===================================================================!
 
   type :: chain_rule
@@ -94,28 +92,26 @@ module class_graph_chain_rule
   end type chain_rule
 
   !===================================================================!
-  ! One symbolic term of the composition: a multinomial count and
-  ! the derivative order each slot carries. Private: patterns are
-  ! how this seat thinks, not what it promises.
+  ! One integer partition of the degree, with its multinomial
+  ! count. Private to this module.
   !===================================================================!
 
-  type :: chain_term_pattern
+  type :: derivative_partition
 
      integer(int64) :: coefficient = 1_int64
      integer, allocatable :: slot_degree(:)
 
-  end type chain_term_pattern
+  end type derivative_partition
 
 contains
 
   !===================================================================!
-  ! Does the channel carry x^(order)? True when the seat exists
-  ! and is occupied.
+  ! True when derivative(order) exists and is occupied.
   !===================================================================!
 
-  pure function channel_has_degree(this, order) result(has)
+  pure function path_has_degree(this, order) result(has)
 
-    class(chain_channel), intent(in) :: this
+    class(argument_path), intent(in) :: this
     integer             , intent(in) :: order
     logical :: has
 
@@ -125,26 +121,25 @@ contains
 
     has = this % derivative(order) % occupied
 
-  end function channel_has_degree
+  end function path_has_degree
 
   !===================================================================!
-  ! The one public verb: assemble the total derivative of the
-  ! given degree. The degree and the channels are proven lawful,
-  ! and only then does any statement call run.
+  ! Assemble the total derivative of the given degree. The degree
+  ! and the paths are checked before any statement call runs.
   !===================================================================!
 
   subroutine assemble(this, statement, input_graph, input_data, degree, &
-       & channels, output)
+       & paths, output)
 
     class(chain_rule)              , intent(in)    :: this
     class(differentiable_operation), intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
     type(field)                    , intent(in)    :: input_data(:)
     integer                        , intent(in)    :: degree
-    type(chain_channel)            , intent(in)    :: channels(:)
+    type(argument_path)            , intent(in)    :: paths(:)
     class(graph_field), allocatable, intent(inout) :: output
 
-    type(chain_term_pattern), allocatable :: patterns(:)
+    type(derivative_partition), allocatable :: partitions(:)
     real(dp), allocatable :: running(:)
     logical :: started
     integer :: p, ncomp
@@ -156,140 +151,136 @@ contains
        error stop 'chain_rule: degree is supported'
     end if
 
-    call require_lawful_channels(channels, size(input_data))
+    call require_valid_paths(paths, size(input_data))
 
-    !----------------------------------------------------------------!
-    ! Degree 0 is the statement's own value.
-    !----------------------------------------------------------------!
-
+    ! degree 0 is the statement's own value
     if (degree == 0) then
        call statement % apply(input_graph, input_data, output)
        return
     end if
 
-    call get_patterns(degree, patterns)
+    call get_partitions(degree, partitions)
 
     started = .false.
     ncomp   = 1
 
-    do p = 1, size(patterns)
-       call assemble_pattern(statement, input_graph, input_data, &
-            & patterns(p), channels, running, started, ncomp)
+    do p = 1, size(partitions)
+       call assemble_partition(statement, input_graph, input_data, &
+            & partitions(p), paths, running, started, ncomp)
     end do
 
-    call land_output(statement, input_graph, input_data, running, &
+    call write_output(statement, input_graph, input_data, running, &
          & started, ncomp, output)
 
   end subroutine assemble
 
   !===================================================================!
-  ! The channel laws: every channel names an input slot the
-  ! statement actually takes, and no two channels name the same
-  ! slot - a duplicated slot would double count chain-rule terms.
-  ! Mixing arguments inside one channel is unrepresentable here.
+  ! Check the paths: each must name an input slot the statement
+  ! takes, and no two may name the same slot, because a duplicated
+  ! slot would double count chain-rule terms. Both violations stop
+  ! the program.
   !===================================================================!
 
-  pure subroutine require_lawful_channels(channels, nslots)
+  pure subroutine require_valid_paths(paths, nslots)
 
-    type(chain_channel), intent(in) :: channels(:)
+    type(argument_path), intent(in) :: paths(:)
     integer            , intent(in) :: nslots
 
     integer :: i, j
 
-    do i = 1, size(channels)
-       if (channels(i) % slot < 1 .or. channels(i) % slot > nslots) then
-          error stop 'chain_rule: a channel names an input slot'
+    do i = 1, size(paths)
+       if (paths(i) % slot < 1 .or. paths(i) % slot > nslots) then
+          error stop 'chain_rule: a path names an input slot'
        end if
     end do
 
-    do i = 1, size(channels)
-       do j = i + 1, size(channels)
-          if (channels(i) % slot == channels(j) % slot) then
-             error stop 'chain_rule: duplicate slot channel is refused'
+    do i = 1, size(paths)
+       do j = i + 1, size(paths)
+          if (paths(i) % slot == paths(j) % slot) then
+             error stop 'chain_rule: duplicate slot path is refused'
           end if
        end do
     end do
 
-  end subroutine require_lawful_channels
+  end subroutine require_valid_paths
 
   !===================================================================!
-  ! The patterns of the composition at one degree, GENERATED:
-  ! every nondecreasing positive tuple summing to the degree, in
-  ! the stable order - increasing slot count first, lexicographic
-  ! inside one slot count - each carrying its multinomial count.
+  ! Generate the partitions of one degree: every nondecreasing
+  ! positive tuple summing to the degree, ordered by entry count
+  ! then lexicographically, each with its multinomial count.
   !===================================================================!
 
-  subroutine get_patterns(degree, patterns)
+  subroutine get_partitions(degree, partitions)
 
-    integer                              , intent(in)  :: degree
-    type(chain_term_pattern), allocatable, intent(out) :: patterns(:)
+    integer                                , intent(in)  :: degree
+    type(derivative_partition), allocatable, intent(out) :: partitions(:)
 
     integer, allocatable :: tuple(:)
-    integer :: slots
+    integer :: entries
 
-    allocate(patterns(0))
+    allocate(partitions(0))
 
-    do slots = 1, degree
-       allocate(tuple(slots))
-       call generate_patterns(degree, tuple, 1, 1, patterns)
+    do entries = 1, degree
+       allocate(tuple(entries))
+       call generate_partitions(degree, tuple, 1, 1, partitions)
        deallocate(tuple)
     end do
 
-  end subroutine get_patterns
+  end subroutine get_partitions
 
-  recursive subroutine generate_patterns(remaining, tuple, position, &
-       & minimum, patterns)
+  recursive subroutine generate_partitions(remaining, tuple, position, &
+       & minimum, partitions)
 
-    integer                              , intent(in)    :: remaining
-    integer                              , intent(inout) :: tuple(:)
-    integer                              , intent(in)    :: position
-    integer                              , intent(in)    :: minimum
-    type(chain_term_pattern), allocatable, intent(inout) :: patterns(:)
+    integer                                , intent(in)    :: remaining
+    integer                                , intent(inout) :: tuple(:)
+    integer                                , intent(in)    :: position
+    integer                                , intent(in)    :: minimum
+    type(derivative_partition), allocatable, intent(inout) :: partitions(:)
 
-    integer :: slots_left, entry_degree
+    integer :: entries_left, entry_degree
 
-    slots_left = size(tuple) - position + 1
+    entries_left = size(tuple) - position + 1
 
-    if (slots_left == 1) then
+    if (entries_left == 1) then
        if (remaining >= minimum) then
           tuple(position) = remaining
-          call append_pattern(patterns, tuple)
+          call append_partition(partitions, tuple)
        end if
        return
     end if
 
-    do entry_degree = minimum, remaining / slots_left
+    do entry_degree = minimum, remaining / entries_left
        tuple(position) = entry_degree
-       call generate_patterns(remaining - entry_degree, tuple, &
-            & position + 1, entry_degree, patterns)
+       call generate_partitions(remaining - entry_degree, tuple, &
+            & position + 1, entry_degree, partitions)
     end do
 
-  end subroutine generate_patterns
+  end subroutine generate_partitions
 
-  subroutine append_pattern(patterns, tuple)
+  subroutine append_partition(partitions, tuple)
 
-    type(chain_term_pattern), allocatable, intent(inout) :: patterns(:)
-    integer                              , intent(in)    :: tuple(:)
+    type(derivative_partition), allocatable, intent(inout) :: partitions(:)
+    integer                                , intent(in)    :: tuple(:)
 
-    type(chain_term_pattern), allocatable :: grown(:)
+    type(derivative_partition), allocatable :: grown(:)
     integer :: n
 
-    n = size(patterns)
+    n = size(partitions)
     allocate(grown(n + 1))
-    grown(1:n) = patterns
+    grown(1:n) = partitions
     grown(n + 1) % slot_degree = tuple
-    grown(n + 1) % coefficient = pattern_coefficient(sum(tuple), tuple)
-    call move_alloc(grown, patterns)
+    grown(n + 1) % coefficient = partition_coefficient(sum(tuple), tuple)
+    call move_alloc(grown, partitions)
 
-  end subroutine append_pattern
+  end subroutine append_partition
 
   !===================================================================!
-  ! The multinomial count of one pattern, as one exact integer
+  ! The multinomial count of one partition, as one exact integer
   ! division; the tuple's nondecreasing order makes every
   ! multiplicity a contiguous run.
   !===================================================================!
 
-  pure function pattern_coefficient(total, slot_degree) result(coefficient)
+  pure function partition_coefficient(total, slot_degree) result(coefficient)
 
     integer, intent(in) :: total
     integer, intent(in) :: slot_degree(:)
@@ -316,7 +307,7 @@ contains
 
     coefficient = factorial_int64(total) / denominator
 
-  end function pattern_coefficient
+  end function partition_coefficient
 
   pure function factorial_int64(n) result(factorial)
 
@@ -325,8 +316,9 @@ contains
 
     integer :: k
 
+    ! 21! overflows int64; stop rather than wrap
     if (n > 20) then
-       error stop 'chain_rule: pattern coefficient is representable'
+       error stop 'chain_rule: partition coefficient is representable'
     end if
 
     factorial = 1_int64
@@ -337,31 +329,31 @@ contains
   end function factorial_int64
 
   !===================================================================!
-  ! Expand one pattern over the channels: every pattern slot
-  ! ranges over every channel providing that derivative seat, in
-  ! ordered tuples, and each admitted tuple becomes one partial
-  ! action, scaled by the pattern's count.
+  ! Expand one partition over the paths: every partition entry
+  ! ranges over every path providing that derivative order, in
+  ! ordered tuples; each admitted tuple becomes one partial action
+  ! scaled by the partition's count.
   !===================================================================!
 
-  subroutine assemble_pattern(statement, input_graph, input_data, pattern, &
-       & channels, running, started, ncomp)
+  subroutine assemble_partition(statement, input_graph, input_data, &
+       & partition, paths, running, started, ncomp)
 
     class(differentiable_operation), intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
     type(field)                    , intent(in)    :: input_data(:)
-    type(chain_term_pattern)       , intent(in)    :: pattern
-    type(chain_channel)            , intent(in)    :: channels(:)
+    type(derivative_partition)     , intent(in)    :: partition
+    type(argument_path)            , intent(in)    :: paths(:)
     real(dp), allocatable          , intent(inout) :: running(:)
     logical                        , intent(inout) :: started
     integer                        , intent(inout) :: ncomp
 
-    integer :: chosen(size(pattern % slot_degree))
-    integer :: k, j, nchannels
+    integer :: chosen(size(partition % slot_degree))
+    integer :: k, j, npaths
     logical :: admitted
 
-    k         = size(pattern % slot_degree)
-    nchannels = size(channels)
-    if (nchannels == 0) return
+    k      = size(partition % slot_degree)
+    npaths = size(paths)
+    if (npaths == 0) return
 
     chosen = 1
 
@@ -369,23 +361,23 @@ contains
 
        admitted = .true.
        do j = 1, k
-          if (.not. channels(chosen(j)) % &
-               & has_degree(pattern % slot_degree(j))) then
+          if (.not. paths(chosen(j)) % &
+               & has_degree(partition % slot_degree(j))) then
              admitted = .false.
              exit
           end if
        end do
 
        if (admitted) then
-          call emit_term(statement, input_graph, input_data, pattern, &
-               & channels, chosen, running, started, ncomp)
+          call emit_term(statement, input_graph, input_data, partition, &
+               & paths, chosen, running, started, ncomp)
        end if
 
-       ! the odometer: advance the last slot, carrying leftwards
+       ! the odometer: advance the last entry, carrying leftwards
        j = k
        do
           chosen(j) = chosen(j) + 1
-          if (chosen(j) <= nchannels) exit
+          if (chosen(j) <= npaths) exit
           chosen(j) = 1
           j = j - 1
           if (j == 0) return
@@ -393,29 +385,31 @@ contains
 
     end do
 
-  end subroutine assemble_pattern
+  end subroutine assemble_partition
 
   !===================================================================!
-  ! One admitted tuple, one partial action: the slot list and the
-  ! direction family are written from the chosen seats themselves,
-  ! the statement's calculus depth is proven before the call, and
-  ! the count scales the accumulated term outside its calculus.
+  ! One admitted tuple, one partial action. The order (the tuple
+  ! length) must not exceed the statement's max_degree; violation
+  ! stops the program, because the statement declared no partials
+  ! past that order. The multinomial count scales the term after
+  ! the statement call, and every accumulated term must have one
+  ! shape.
   !===================================================================!
 
-  subroutine emit_term(statement, input_graph, input_data, pattern, &
-       & channels, chosen, running, started, ncomp)
+  subroutine emit_term(statement, input_graph, input_data, partition, &
+       & paths, chosen, running, started, ncomp)
 
     class(differentiable_operation), intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
     type(field)                    , intent(in)    :: input_data(:)
-    type(chain_term_pattern)       , intent(in)    :: pattern
-    type(chain_channel)            , intent(in)    :: channels(:)
+    type(derivative_partition)     , intent(in)    :: partition
+    type(argument_path)            , intent(in)    :: paths(:)
     integer                        , intent(in)    :: chosen(:)
     real(dp), allocatable          , intent(inout) :: running(:)
     logical                        , intent(inout) :: started
     integer                        , intent(inout) :: ncomp
 
-    class(graph_field), allocatable :: answer
+    class(graph_field), allocatable :: output
     type(field) :: directions(size(chosen))
     integer     :: slots(size(chosen))
     real(dp), allocatable :: term(:)
@@ -428,37 +422,36 @@ contains
     end if
 
     do j = 1, k
-       slots(j)      = channels(chosen(j)) % slot
-       directions(j) = channels(chosen(j)) % &
-            & derivative(pattern % slot_degree(j)) % direction
+       slots(j)      = paths(chosen(j)) % slot
+       directions(j) = paths(chosen(j)) % &
+            & derivative(partition % slot_degree(j)) % direction
     end do
 
     call statement % partial_action(input_graph, input_data, slots, &
-         & directions, answer)
+         & directions, output)
 
-    call answer % get_real_vector(term)
+    call output % get_real_vector(term)
 
     if (started) then
        if (size(term) /= size(running)) then
           error stop 'chain_rule: accumulated terms share one shape'
        end if
-       running = running + real(pattern % coefficient, dp) * term
+       running = running + real(partition % coefficient, dp) * term
     else
-       running = real(pattern % coefficient, dp) * term
-       ncomp   = answer % num_components()
+       running = real(partition % coefficient, dp) * term
+       ncomp   = output % num_components()
        started = .true.
     end if
 
   end subroutine emit_term
 
   !===================================================================!
-  ! Land the total on the statement's own domain. When no term was
-  ! admitted - every seat the degree asked for was absent - the
-  ! total is the codomain's zero, its shape learned from the
-  ! statement's own value.
+  ! Write the total onto the statement's domain. When no term was
+  ! admitted (every required derivative was unoccupied) the total
+  ! is zero, with its shape taken from the statement's own value.
   !===================================================================!
 
-  subroutine land_output(statement, input_graph, input_data, running, &
+  subroutine write_output(statement, input_graph, input_data, running, &
        & started, ncomp, output)
 
     class(differentiable_operation), intent(in)    :: statement
@@ -469,7 +462,7 @@ contains
     integer                        , intent(in)    :: ncomp
     class(graph_field), allocatable, intent(inout) :: output
 
-    class(graph_field), allocatable :: probe
+    class(graph_field), allocatable :: value
     type(field)     :: total
     type(set_graph) :: on
     integer         :: n_on, width
@@ -478,10 +471,10 @@ contains
 
     width = ncomp
     if (.not. started) then
-       call statement % apply(input_graph, input_data, probe)
-       call probe % get_real_vector(running)
+       call statement % apply(input_graph, input_data, value)
+       call value % get_real_vector(running)
        running = 0.0_dp
-       width   = probe % num_components()
+       width   = value % num_components()
     end if
 
     total = field('total derivative', on, size(running) / width, ncomp=width)
@@ -490,6 +483,6 @@ contains
     if (allocated(output)) deallocate(output)
     allocate(output, source=total)
 
-  end subroutine land_output
+  end subroutine write_output
 
 end module class_graph_chain_rule

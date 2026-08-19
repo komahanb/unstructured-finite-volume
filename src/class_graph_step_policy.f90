@@ -1,24 +1,20 @@
 !=====================================================================!
-! The step policy: the walk's governance, and nothing else.
+! The step policy: the decision half of adaptive marching. The
+! marcher owns the mechanism - trial steps, the error estimate,
+! commitment of an accepted edge. A policy owns three decisions:
 !
-! An adaptive walk separates cleanly into mechanism and decision.
-! The marcher owns the mechanism - trial steps, evidence measured
-! as the distance from the extrapolating predictor, commitment of
-! an accepted edge. This family owns every DECISION as three
-! deferred verbs:
+!      propose   the step to try first at a new edge
+!      judge     accept or reject, from the estimate alone
+!      retry     the step to try after a rejection
 !
-!      propose ····· the step to try first at a new edge
-!      judge ······· accept or reject, from the evidence alone
-!      retry ······· the step to try after a rejection
+! A policy reads scalars only - estimate, step, attempt count -
+! never a state, a graph, or a statement, so a different
+! adaptivity is a different policy, not a different marcher.
 !
-! A policy sees scalars - the estimate, the step, the attempt -
-! and never a state, a graph, or a statement: policies decide,
-! mechanisms execute, and a different adaptivity is a different
-! policy, never a different marcher.
-!
-! The reference member halves: start at the caller's step, accept
-! within the caller's tolerance, halve on every rejection. A
-! policy example - not the policy.
+! halving_policy is the reference member: start at first_step,
+! accept when the estimate is at or below tolerance, halve on
+! every rejection. A nonpositive first_step or tolerance stops the
+! program at propose.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!

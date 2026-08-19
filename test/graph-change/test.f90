@@ -1,21 +1,18 @@
 !=====================================================================!
-! The reversible change suite: one program over the whole change
-! seam -
+! Tests for graph_change_protocol, graph_value_map, and
+! graph_value_change:
 !
-!      protocol    apply -> check -> keep | revert, owned by the
-!                  one controller for structural, value, and mixed
-!                  changes alike; failure is a lawful answer at
-!                  every step
-!      value map   graph identity -> value status x field, keyed
-!                  on copied tokens and never on position, with
-!                  the closed vocabulary UNATTACHED / UNKNOWN /
-!                  KNOWN
-!      value change  the pure attached-value member of the family:
-!                  the map updated through the same controller,
-!                  and revert restoring the seat EXACTLY -
-!                  unattached seats leave, unknown seats stand
-!                  untrusted again, known seats get their old
-!                  values back
+!  - the controller lifecycle apply -> check -> keep | revert on
+!    accepted, rejected, vetoed, failing, and mixed changes, and
+!    the change_result flags after each outcome
+!  - the value map status transitions UNATTACHED -> UNKNOWN ->
+!    KNOWN and back, and its storage rules: rows are keyed on
+!    copied identity tokens rather than position, values are
+!    copied on write, and rows outlive the variables that created
+!    them
+!  - value_change run through the same controller against every
+!    possible prior status, checking that revert restores the
+!    prior state exactly
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -57,11 +54,11 @@ program test_graph_change
 contains
 
   !===================================================================!
-  ! THE LIFECYCLE, WALKED FOUR WAYS on the structural toy and once
-  ! on the mixed one: acceptance keeps, rejection reverts, a veto
-  ! reverts before acceptance is asked, and a failed apply reverts
-  ! without ever having mutated - and every terminal record says
-  ! exactly what happened.
+  ! Run the counting toy through the controller four ways -
+  ! accepted, rejected, vetoed by check, and failing in apply -
+  ! and verify the counter and the change_result flags after each
+  ! run. Then run the mixed toy accepted and rejected, and check
+  ! that reset clears every flag.
   !===================================================================!
 
   subroutine check_the_lifecycle(nfail)
@@ -84,7 +81,7 @@ contains
     call report(change % rooms == 1 .and. &
          & result % reverted .and. .not. result % kept .and. &
          & .not. result % accepted, &
-         & "a rejected change is reverted: the room ungrows", nfail)
+         & "a rejected change is reverted: the counter is restored", nfail)
 
     change % check_passes = .false.
     call controller % run(change, .true., result)
@@ -99,13 +96,13 @@ contains
     call report(change % rooms == 1 .and. &
          & result % failed .and. result % reverted .and. &
          & .not. result % applied .and. .not. result % kept, &
-         & "a failed apply is a lawful answer: reverted, never kept", nfail)
+         & "a failed apply is reverted and never kept", nfail)
 
     call controller % run(both, .true., result)
     call report(both % rooms == 1 .and. both % value == 2.0_dp .and. &
          & result % touches_structure .and. result % touches_value .and. &
          & result % kept, &
-         & "a mixed change rides the same lifecycle: both kept", nfail)
+         & "an accepted mixed change keeps both mutations", nfail)
 
     call controller % run(both, .false., result)
     call report(both % rooms == 1 .and. both % value == 2.0_dp .and. &
@@ -123,7 +120,8 @@ contains
   end subroutine check_the_lifecycle
 
   !===================================================================!
-  ! THE CLOSED STATUS VOCABULARY, walked whole on one seat:
+  ! Take one map entry through every status transition and verify
+  ! attached / status_of / value_of after each step:
   ! UNATTACHED -> attach -> UNKNOWN -> mark_known -> KNOWN ->
   ! update -> KNOWN -> mark_unknown -> UNKNOWN -> detach ->
   ! UNATTACHED.
@@ -141,42 +139,46 @@ contains
 
     call report(.not. map % attached(a) .and. &
          & map % status_of(a) == VALUE_UNATTACHED, &
-         & "a fresh map holds nothing: unattached is a lawful answer", nfail)
+         & "a fresh map reports UNATTACHED for an unmapped graph", nfail)
 
     call map % attach_unknown(a)
     call report(map % attached(a) .and. &
          & map % status_of(a) == VALUE_UNKNOWN, &
-         & "attach opens the seat: attached and UNKNOWN", nfail)
+         & "attach_unknown: attached is true and the status is UNKNOWN", nfail)
 
     call map % mark_known(a, [2.5_dp])
     call map % value_of(a, rv)
     call report(map % status_of(a) == VALUE_KNOWN .and. &
          & size(rv) == 1 .and. rv(1) == 2.5_dp, &
-         & "mark_known vouches: KNOWN, and the value reads back", nfail)
+         & "mark_known: the status is KNOWN and the value reads back", nfail)
 
     call map % mark_known(a, [3.5_dp, 4.5_dp])
     call map % value_of(a, rv)
     call report(size(rv) == 2 .and. rv(1) == 3.5_dp .and. rv(2) == 4.5_dp, &
-         & "updating a KNOWN seat is lawful: values move", nfail)
+         & "mark_known on a KNOWN entry updates the stored values", nfail)
 
     call map % mark_unknown(a)
     call report(map % attached(a) .and. &
          & map % status_of(a) == VALUE_UNKNOWN, &
-         & "mark_unknown withdraws trust, the seat stands", nfail)
+         & "mark_unknown: the status returns to UNKNOWN, the entry remains", &
+         & nfail)
 
     call map % detach(a)
     call report(.not. map % attached(a) .and. &
          & map % status_of(a) == VALUE_UNATTACHED, &
-         & "detach closes the seat: unattached again", nfail)
+         & "detach removes the entry: UNATTACHED again", nfail)
 
   end subroutine check_the_map_ontology
 
   !===================================================================!
-  ! THE STORAGE LAWS. Rows key on copied identity, never position:
-  ! detaching a middle row re-aims nothing, a copied graph IS its
-  ! identity, values are copied at attach so the caller's array is
-  ! not borrowed, and the map outlives every variable that built
-  ! it.
+  ! Storage checks: (1) detach the middle of three rows and verify
+  ! the other two are still found, because lookup is by identity
+  ! token and not by row position; (2) an assignment copy of a
+  ! graph carries the same token and finds the same row; (3)
+  ! mark_known copies the caller's array, so mutating that array
+  ! afterwards must not change the stored value; (4) a row created
+  ! from a subroutine-local graph must still be readable after
+  ! that variable is gone.
   !===================================================================!
 
   subroutine check_the_storage_laws(nfail)
@@ -203,20 +205,19 @@ contains
     call map % value_of(a, rv)
     call report(rv(1) == 1.0_dp .and. map % status_of(c) == VALUE_KNOWN &
          & .and. .not. map % attached(b), &
-         & "detaching a middle row re-aims nothing: identity, not position", &
+         & "after detaching a middle row the others are found by identity", &
          & nfail)
 
     b_copy = b
     call report(.not. map % attached(b_copy), &
-         & "a copied graph IS its identity: the copy answers as the &
-         &original", nfail)
+         & "an assignment copy of a graph finds the same row", nfail)
 
     mine = [5.0_dp, 6.0_dp]
     call map % mark_known(a, mine)
     mine = [-9.0_dp, -9.0_dp]
     call map % value_of(a, rv)
     call report(rv(1) == 5.0_dp .and. rv(2) == 6.0_dp, &
-         & "values are copied at attach: mutating the source moves &
+         & "mark_known copies values: mutating the source array changes &
          &nothing", nfail)
 
     call attach_from_a_life(map, keeper)
@@ -228,8 +229,9 @@ contains
   end subroutine check_the_storage_laws
 
   !-------------------------------------------------------------------!
-  ! One row built from a life that ends here: the local graph dies
-  ! at return, its copied token and minted field do not.
+  ! Creates a map row keyed on a subroutine-local graph and
+  ! returns a copy of that graph; the caller reads the row after
+  ! the local variable no longer exists.
   !-------------------------------------------------------------------!
 
   subroutine attach_from_a_life(map, keeper)
@@ -248,10 +250,12 @@ contains
   end subroutine attach_from_a_life
 
   !===================================================================!
-  ! THE VALUE CHANGE THROUGH THE ONE CONTROLLER. Every prior state
-  ! of the seat is restored exactly on revert: a fresh seat leaves,
-  ! an untrusted seat stands untrusted again, a known seat gets its
-  ! old values back - and an accepted update simply stays.
+  ! value_change through the controller, one case per prior
+  ! status: an accepted update on an unattached graph must leave a
+  ! KNOWN entry; a rejected update on a KNOWN entry must restore
+  ! the old values; a vetoed update on an UNKNOWN entry must leave
+  ! it UNKNOWN; a rejected update on an unattached graph must
+  ! remove the entry its apply created.
   !===================================================================!
 
   subroutine check_the_value_change(nfail)
@@ -274,7 +278,7 @@ contains
          & .not. result % touches_structure .and. &
          & map % status_of(d) == VALUE_KNOWN .and. &
          & rv(1) == 1.5_dp .and. rv(2) == 2.5_dp, &
-         & "an accepted update vouches a fresh seat: KNOWN and kept", nfail)
+         & "an accepted update on an unattached graph: KNOWN and kept", nfail)
 
     call update % bind(map, d, [9.0_dp, 9.0_dp])
     call controller % run(update, .false., result)
@@ -288,13 +292,13 @@ contains
     call controller % run(update, .true., result)
     call report(result % reverted .and. map % attached(e) .and. &
          & map % status_of(e) == VALUE_UNKNOWN, &
-         & "a vetoed update on an untrusted seat leaves it untrusted", nfail)
+         & "a vetoed update on an UNKNOWN entry leaves it UNKNOWN", nfail)
 
     call update % bind(map, f, [4.0_dp])
     call controller % run(update, .false., result)
     call report(result % reverted .and. .not. map % attached(f) .and. &
          & map % status_of(f) == VALUE_UNATTACHED, &
-         & "a rejected update on a fresh seat detaches it whole", nfail)
+         & "a rejected update on an unattached graph removes its entry", nfail)
 
   end subroutine check_the_value_change
 

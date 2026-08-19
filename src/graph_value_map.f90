@@ -1,53 +1,26 @@
 !=====================================================================!
-! VALUE MAP
+! VALUE MAP: graph identity -> value status x field, stored
+! outside the graph. Per graph it records whether a value is
+! attached, whether it is trusted, and the value itself, a field
+! on the graph's own domain.
 !
-! What a graph's value IS, and whether it is trusted. Keyed on
-! graph identity, stored outside the graph:
+! Statuses, closed:
 !
-!     value_map : graph identity -> value status x field
+!     VALUE_UNATTACHED   no row in the map
+!     VALUE_UNKNOWN      a row with no trusted value
+!     VALUE_KNOWN        a row holding a trusted field
 !
-! The second metadata association, filling the seat the label map
-! reserved: a label answers WHAT IT IS CALLED, this map answers
-! WHAT NUMBER IS ATTACHED AND WHETHER ANYONE VOUCHES FOR IT. The
-! split it serves is the tower's:
+! Readers accept absence: an unattached graph reads as
+! VALUE_UNATTACHED. Reading a value requires KNOWN, because an
+! untrusted number must not be consumed. Writers require an
+! assigned identity and (except attach) an existing row, because
+! updating a missing row or attaching twice would each leave the
+! map ambiguous.
 !
-!     Structural knownness lives in fractal_graph.
-!     Value knownness lives in an attached value map.
-!     Updates are reversible changes; the map owns the ontology,
-!     never the lifecycle.
-!
-! The attached value is a FIELD, minted on the element's own
-! domain when it is vouched - the value carries the identity of
-! what it values, and no second value carrier exists.
-!
-!                  KEYED BY IDENTITY, NEVER BY POSITION
-!
-! No integer index exists in this API. A row is found by the one
-! comparison the identity module owns, so reordering, growing, or
-! compacting whatever container holds the graphs can never re-aim
-! an attachment.
-!
-!                       THE STATUS VOCABULARY
-!
-! Three answers, closed:
-!
-!     VALUE_UNATTACHED   no seat: the map holds nothing
-!     VALUE_UNKNOWN      a seat, but no trusted number
-!     VALUE_KNOWN        a seat holding a trusted field
-!
-! Unattached is absence and absence is a lawful answer, exactly as
-! a set nobody named is still a set. Reading a value demands
-! KNOWN: a number nobody vouched for is not read, it is refused.
-! Writers are the strict half - they demand assigned identity and
-! an existing seat, because updating nothing and attaching twice
-! both leave two answers to one question.
-!
-!                         THE STORAGE LAW
-!
-! Rows key on type(token), copied at attach - the label map's
-! storage law, inherited whole. This map borrows no graph object
-! merely to recognize it, so it may outlive every variable that
-! built it, and no verb demands TARGET.
+! Rows are keyed on type(token) identity tokens copied at attach,
+! never on position, so growing, reordering, or compacting the
+! container cannot redirect an attachment, and the map may outlive
+! every variable that built it. No argument requires TARGET.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -70,9 +43,8 @@ module graph_value_map
   integer, parameter :: VALUE_KNOWN      = 2
 
   !===================================================================!
-  ! One row: WHICH graph - by copied token - what status its value
-  ! carries, and the value itself, a field on the element's own
-  ! domain.
+  ! One row: the copied identity token, the status, and the value
+  ! field.
   !===================================================================!
 
   type :: value_row
@@ -102,8 +74,7 @@ module graph_value_map
 contains
 
   !===================================================================!
-  ! Where the row for an identity is, or zero. The one comparison,
-  ! and it reads nothing outside this map.
+  ! Index of the row keyed on the given token, or zero.
   !===================================================================!
 
   pure integer function row_at(this, key) result(at)
@@ -126,8 +97,10 @@ contains
   end function row_at
 
   !===================================================================!
-  ! The assigned-identity gate every writer passes: an undeclared
-  ! token does not match itself, and no seat can key on it.
+  ! Check that the element has an assigned identity before any
+  ! write: an undeclared token does not match itself, so a row
+  ! keyed on it could never be found again. Violation stops the
+  ! program.
   !===================================================================!
 
   pure function writer_key(element) result(key)
@@ -143,9 +116,9 @@ contains
   end function writer_key
 
   !===================================================================!
-  ! Open one value seat for a graph: attached, UNKNOWN, empty. A
-  ! seat is attached once - a second attach would leave two
-  ! answers to one question.
+  ! Add one row for a graph, status UNKNOWN, no value. Attaching
+  ! twice stops the program, because two rows for one identity
+  ! would make lookups ambiguous.
   !===================================================================!
 
   subroutine attach_unknown(this, element)
@@ -160,7 +133,7 @@ contains
     key = writer_key(element)
 
     if (row_at(this, key) /= 0) then
-       error stop 'graph_value_map: a value seat is attached once'
+       error stop 'graph_value_map: a value row is attached once'
     end if
 
     if (.not. allocated(this % rows)) allocate(this % rows(0))
@@ -175,11 +148,11 @@ contains
   end subroutine attach_unknown
 
   !===================================================================!
-  ! Vouch for a value: a field is minted on the element's own
-  ! domain, holding a copy of the given numbers, and the seat
-  ! reads KNOWN. Updating an already-KNOWN seat is lawful - values
-  ! move, identity does not - but a KNOWN claim with no numbers
-  ! behind it is refused.
+  ! Store a copy of the given values in a field on the element's
+  ! own domain and set the status to KNOWN. Updating an existing
+  ! KNOWN row is allowed. Stops the program when the element has
+  ! no row, or when values is empty, because KNOWN with no numbers
+  ! could not be read back.
   !===================================================================!
 
   subroutine mark_known(this, element, values, ncomp)
@@ -196,7 +169,7 @@ contains
 
     at = row_at(this, key)
     if (at == 0) then
-       error stop 'graph_value_map: an update touches an attached seat'
+       error stop 'graph_value_map: an update touches an attached row'
     end if
 
     if (size(values) == 0) then
@@ -214,8 +187,8 @@ contains
   end subroutine mark_known
 
   !===================================================================!
-  ! Withdraw trust: the seat stays attached, the number leaves,
-  ! and the status reads UNKNOWN again.
+  ! Clear the value and set the status back to UNKNOWN; the row
+  ! remains. Stops the program when the element has no row.
   !===================================================================!
 
   subroutine mark_unknown(this, element)
@@ -231,7 +204,7 @@ contains
 
     at = row_at(this, key)
     if (at == 0) then
-       error stop 'graph_value_map: an update touches an attached seat'
+       error stop 'graph_value_map: an update touches an attached row'
     end if
 
     this % rows(at) % value  = nothing
@@ -240,8 +213,9 @@ contains
   end subroutine mark_unknown
 
   !===================================================================!
-  ! Close one seat: the row leaves whole, every other attachment
-  ! stands - identity lookup owes nothing to position.
+  ! Remove the element's row; other rows are unaffected, because
+  ! lookup is by token and not by position. Stops the program when
+  ! the element has no row.
   !===================================================================!
 
   subroutine detach(this, element)
@@ -257,7 +231,7 @@ contains
 
     at = row_at(this, key)
     if (at == 0) then
-       error stop 'graph_value_map: a detach removes an attached seat'
+       error stop 'graph_value_map: a detach removes an attached row'
     end if
 
     n = size(this % rows)
@@ -273,9 +247,10 @@ contains
   end subroutine detach
 
   !===================================================================!
-  ! The readers. Absence is a lawful answer - an undeclared or
-  ! unattached graph is simply not in the map - so the readers
-  ! refuse nothing except reading a number nobody vouched for.
+  ! Readers. Absence is an accepted input: an undeclared or
+  ! unattached graph reads as not present. Only value_of stops the
+  ! program, when the status is not KNOWN, because an untrusted
+  ! number must not be consumed.
   !===================================================================!
 
   pure logical function attached(this, element)

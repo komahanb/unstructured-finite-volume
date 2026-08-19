@@ -1,20 +1,23 @@
 !=====================================================================!
-! The refusals that must die on the change seam, one per
-! invocation:
+! Invalid-input cases for the change modules, one per invocation.
+! The case is selected by the first command-line argument; each
+! must terminate in error stop with the message run.sh expects,
+! and a case that returns normally is reported as a failure by
+! run.sh.
 !
-!      attachtwice   a second seat for one identity
-!      updatefree    vouching a value nobody attached
-!      readunknown   reading a number nobody vouched for
-!      detachfree    detaching a seat that does not exist
-!      emptyknown    a KNOWN claim with no numbers behind it
-!      undeclared    keying a writer on unassigned identity
-!      liarapply     a change that works without marking applied
-!      liarrevert    a reverted change that never says reverted
-!      impossible    a terminal record kept AND reverted at once
-!      unbound       a value change applied with no map bound
-!
-! Every case must error stop; a case that returns is a failure of
-! the suite.
+!      attachtwice   attach_unknown called twice for one graph
+!      updatefree    mark_known on a graph with no map entry
+!      readunknown   value_of on an entry whose status is UNKNOWN
+!      detachfree    detach on a graph with no map entry
+!      emptyknown    mark_known with a zero-length value array
+!      undeclared    a map writer keyed on a graph with no
+!                    assigned identity
+!      silentapply   a change whose apply marks neither applied
+!                    nor failed
+!      silentrevert  a change whose revert does not mark reverted
+!      impossible    validate_terminal on a record marked both
+!                    kept and reverted
+!      unbound       a value_change applied with no map bound
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -26,16 +29,16 @@ program refusal
   use graph_change_protocol, only : change_controller, change_result
   use graph_value_map      , only : value_map, VALUE_UNKNOWN
   use graph_value_change   , only : value_change
-  use toy_changes          , only : liar_apply, liar_revert
+  use toy_changes          , only : silent_apply_change, silent_revert_change
 
   implicit none
 
-  type(change_controller) :: controller
-  type(change_result)     :: result
-  type(value_map)         :: map
-  type(value_change)      :: loose
-  type(liar_apply)        :: worker
-  type(liar_revert)       :: mute
+  type(change_controller)     :: controller
+  type(change_result)         :: result
+  type(value_map)             :: map
+  type(value_change)          :: loose
+  type(silent_apply_change)   :: silent_apply
+  type(silent_revert_change)  :: silent_revert
 
   type(graph) :: a, ghost
   real(dp), allocatable :: rv(:)
@@ -75,13 +78,13 @@ program refusal
 
      call map % attach_unknown(ghost)
 
-  case ('liarapply')
+  case ('silentapply')
 
-     call controller % run(worker, .true., result)
+     call controller % run(silent_apply, .true., result)
 
-  case ('liarrevert')
+  case ('silentrevert')
 
-     call controller % run(mute, .true., result)
+     call controller % run(silent_revert, .true., result)
 
   case ('impossible')
 

@@ -164,13 +164,12 @@ contains
     type(gti_time_local_newton_driver)  :: newton
     type(gti_time_local_adjoint_driver) :: adjoint
     type(gti_time_sample), allocatable  :: samples(:)
-    type(gti_value_buffer)              :: q_star, dq_basis, column, r_action
+    type(gti_value_buffer)              :: q_star, r_action
     real(dp) :: achieved
 
     real(dp), allocatable :: q_values(:), seed_values(:), r_values(:)
     real(dp), allocatable :: jacobian(:,:), transposed(:,:), lambda_values(:)
-    real(dp), allocatable :: column_values(:), basis(:)
-    integer :: n, j, unknown, unknown_vertex, ndirection
+    integer :: n, unknown, unknown_vertex, ndirection
 
     call options % validate()
     call graph % validate()
@@ -240,19 +239,10 @@ contains
     ! eliminated against the seed.
     !----------------------------------------------------------------!
 
-    allocate(jacobian(n, n), basis(n))
-
-    do j = 1, n
-       basis    = 0.0_dp
-       basis(j) = 1.0_dp
-       call dq_basis % set_real(basis, ncomp=q_star % ncomp)
-       call newton % jacobian_action(residual_form, &
-            & graph % relation(relation_index) % motif, samples, unknown, &
-            & q_star, dq_basis, design, &
-            & graph % relation(relation_index) % evaluation_time, column)
-       call column % get_real(column_values)
-       jacobian(:, j) = column_values
-    end do
+    call newton % dense_jacobian(residual_form, &
+         & graph % relation(relation_index) % motif, samples, unknown, &
+         & q_star, design, &
+         & graph % relation(relation_index) % evaluation_time, jacobian)
 
     transposed = transpose(jacobian)
 

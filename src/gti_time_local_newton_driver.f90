@@ -115,6 +115,7 @@ module gti_time_local_newton_drivers
 
      procedure :: residual        => driver_residual
      procedure :: jacobian_action => driver_jacobian_action
+     procedure :: dense_jacobian  => driver_dense_jacobian
      procedure :: solve           => driver_solve
 
   end type gti_time_local_newton_driver
@@ -283,6 +284,54 @@ contains
   end subroutine driver_jacobian_action
 
   !===================================================================!
+  ! The dense Jacobian, assembled whole: one exact action per basis
+  ! column. This is the ONE probe loop in the tower's clients -
+  ! every seat that eliminates J entire calls here, none copies it -
+  ! and each column is held to the unknown's size by the same law
+  ! the residual answers to.
+  !===================================================================!
+
+  subroutine driver_dense_jacobian(this, form, motif, samples, unknown_index, &
+       & q_trial, design, time, jacobian)
+
+    class(gti_time_local_newton_driver), intent(in)  :: this
+    class(gti_differentiable_form)     , intent(in)  :: form
+    type(gti_time_motif)               , intent(in)  :: motif
+    type(gti_time_sample)              , intent(in)  :: samples(:)
+    integer                            , intent(in)  :: unknown_index
+    type(gti_value_buffer)             , intent(in)  :: q_trial
+    type(gti_design_bundle)            , intent(in)  :: design
+    real(dp)                           , intent(in)  :: time
+    real(dp), allocatable              , intent(out) :: jacobian(:,:)
+
+    type(gti_value_buffer) :: dq_basis, column
+    real(dp), allocatable  :: basis(:), column_values(:)
+    integer :: n, j
+
+    n = 0
+    if (allocated(q_trial % rvals)) n = size(q_trial % rvals)
+    if (n == 0) then
+       error stop 'gti_time_local_newton_driver: trial q has values'
+    end if
+
+    allocate(jacobian(n, n), basis(n))
+
+    do j = 1, n
+       basis    = 0.0_dp
+       basis(j) = 1.0_dp
+       call dq_basis % set_real(basis, ncomp=q_trial % ncomp)
+       call this % jacobian_action(form, motif, samples, unknown_index, &
+            & q_trial, dq_basis, design, time, column)
+       call column % get_real(column_values)
+       if (size(column_values) /= n) then
+          error stop 'gti_time_local_newton_driver: residual size matches unknown size'
+       end if
+       jacobian(:, j) = column_values
+    end do
+
+  end subroutine driver_dense_jacobian
+
+  !===================================================================!
   ! Newton: residual, dense Jacobian by columns of the exact
   ! action, eliminate, step, repeat. Convergence is a small
   ! residual; a stalled step without a small residual ends the
@@ -303,11 +352,11 @@ contains
     type(gti_time_local_newton_options), intent(in)    :: options
     type(gti_time_local_newton_result) , intent(inout) :: result
 
-    type(gti_value_buffer) :: q_current, r_current, dq_basis, column
-    real(dp), allocatable  :: q_values(:), r_values(:), column_values(:)
-    real(dp), allocatable  :: jacobian(:,:), step(:), basis(:)
+    type(gti_value_buffer) :: q_current, r_current
+    real(dp), allocatable  :: q_values(:), r_values(:)
+    real(dp), allocatable  :: jacobian(:,:), step(:)
     real(dp) :: achieved
-    integer :: n, j
+    integer :: n
 
     call options % validate()
 
@@ -336,24 +385,13 @@ contains
        result % converged = .true.
     end if
 
-    allocate(jacobian(n, n), basis(n))
-
     do while (.not. result % converged .and. &
          &    result % iterations < options % max_iterations)
 
-       !-------------------------------------------------------------!
-       ! The dense Jacobian, one exact action per basis column.
-       !-------------------------------------------------------------!
-
-       do j = 1, n
-          basis    = 0.0_dp
-          basis(j) = 1.0_dp
-          call dq_basis % set_real(basis, ncomp=q_initial % ncomp)
-          call this % jacobian_action(form, motif, samples, unknown_index, &
-               & q_current, dq_basis, design, time, column)
-          call column % get_real(column_values)
-          jacobian(:, j) = column_values
-       end do
+       ! the dense Jacobian at the current iterate, probed whole
+       ! through the one assembly verb
+       call this % dense_jacobian(form, motif, samples, unknown_index, &
+            & q_current, design, time, jacobian)
 
        call solve_dense_matrix_with_dense_direct(jacobian, -r_values, &
             & options % singular_tolerance, step, achieved)

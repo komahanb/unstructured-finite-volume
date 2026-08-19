@@ -192,11 +192,11 @@ contains
 
     type(gti_time_local_newton_driver) :: newton
     real(dp) :: achieved
-    type(gti_value_buffer)             :: rhs_buffer, dq_basis, column
+    type(gti_value_buffer)             :: rhs_buffer
 
-    real(dp), allocatable :: rhs_values(:), column_values(:)
-    real(dp), allocatable :: jacobian(:,:), tangent(:), basis(:)
-    integer :: n, j
+    real(dp), allocatable :: rhs_values(:)
+    real(dp), allocatable :: jacobian(:,:), tangent(:)
+    integer :: n
 
     if (singular_tolerance <= 0.0_dp) then
        error stop 'gti_time_local_tangent_driver: singular tolerance is positive'
@@ -225,17 +225,8 @@ contains
     ! rederived.
     !----------------------------------------------------------------!
 
-    allocate(jacobian(n, n), basis(n))
-
-    do j = 1, n
-       basis    = 0.0_dp
-       basis(j) = 1.0_dp
-       call dq_basis % set_real(basis, ncomp=q_star % ncomp)
-       call newton % jacobian_action(form, motif, samples, unknown_index, &
-            & q_star, dq_basis, design, time, column)
-       call column % get_real(column_values)
-       jacobian(:, j) = column_values
-    end do
+    call newton % dense_jacobian(form, motif, samples, unknown_index, &
+         & q_star, design, time, jacobian)
 
     call solve_dense_matrix_with_dense_direct(jacobian, rhs_values, &
          & singular_tolerance, tangent, achieved)

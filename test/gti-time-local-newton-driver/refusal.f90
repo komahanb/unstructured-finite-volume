@@ -10,6 +10,8 @@
 !      dqshape    a direction whose shape contradicts the trial
 !      wide       a residual of two components - not a vector
 !      short      two equations against three unknowns
+!      shortjac   the same short form probed through the one
+!                 assembly verb, dense_jacobian
 !      singular   a constant residual, whose Jacobian is zero
 !
 ! Every case must error stop; a case that returns is a failure of
@@ -53,6 +55,7 @@ program refusal
   type(toy_short_form)         :: short
 
   type(gti_value_buffer) :: trial, dq, out
+  real(dp), allocatable :: jac(:,:)
   character(len=32) :: which
 
   call get_command_argument(1, which)
@@ -123,6 +126,13 @@ program refusal
 
      call driver % solve(short, bdf1, samples, 2, trial, design, &
           & 0.5_dp, options, result)
+
+  case ('shortjac')
+
+     ! the one assembly verb holds each probed column to the
+     ! unknown's size - the same law the residual answers to
+     call driver % dense_jacobian(short, bdf1, samples, 2, trial, &
+          & design, 0.5_dp, jac)
 
   case ('singular')
 

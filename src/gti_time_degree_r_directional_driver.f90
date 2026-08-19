@@ -299,7 +299,7 @@ contains
     call build_unknown_jacobian(residual_form, &
          & graph % relation(relation_index) % motif, samples, unknown, &
          & q_star, design, graph % relation(relation_index) % evaluation_time, &
-         & n, ncomp, jacobian)
+         & jacobian)
 
     call initialize_step_result(result, relation_index, unknown_vertex, &
          & options % max_degree)
@@ -594,13 +594,13 @@ contains
   end subroutine fill_legacy_design_channel
 
   !===================================================================!
-  ! The dense J_u from Newton's exact action, one basis direction
-  ! per column. Built once per relation; no degree ever rebuilds
-  ! it.
+  ! The dense J_u, delegated whole to the Newton driver's one
+  ! assembly verb. Built once per relation; no degree ever rebuilds
+  ! it, and no probe loop is copied here.
   !===================================================================!
 
   subroutine build_unknown_jacobian(residual_form, motif, samples, unknown, &
-       & q_star, design, evaluation_time, n, ncomp, jacobian)
+       & q_star, design, evaluation_time, jacobian)
 
     class(gti_differentiable_form), intent(in)  :: residual_form
     type(gti_time_motif)          , intent(in)  :: motif
@@ -609,26 +609,12 @@ contains
     type(gti_value_buffer)        , intent(in)  :: q_star
     type(gti_design_bundle)       , intent(in)  :: design
     real(dp)                      , intent(in)  :: evaluation_time
-    integer                       , intent(in)  :: n, ncomp
     real(dp), allocatable         , intent(out) :: jacobian(:,:)
 
     type(gti_time_local_newton_driver) :: newton
-    type(gti_value_buffer)             :: dq_basis, column
 
-    real(dp), allocatable :: basis(:), column_values(:)
-    integer :: j
-
-    allocate(jacobian(n, n), basis(n))
-
-    do j = 1, n
-       basis    = 0.0_dp
-       basis(j) = 1.0_dp
-       call dq_basis % set_real(basis, ncomp=ncomp)
-       call newton % jacobian_action(residual_form, motif, samples, unknown, &
-            & q_star, dq_basis, design, evaluation_time, column)
-       call column % get_real(column_values)
-       jacobian(:, j) = column_values
-    end do
+    call newton % dense_jacobian(residual_form, motif, samples, unknown, &
+         & q_star, design, evaluation_time, jacobian)
 
   end subroutine build_unknown_jacobian
 

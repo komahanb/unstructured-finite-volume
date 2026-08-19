@@ -170,15 +170,15 @@ contains
     type(gti_time_local_residual_evaluator) :: point_builder
     type(gti_time_sample), allocatable      :: samples(:)
     type(gti_evaluation_point)              :: point
-    type(gti_value_buffer)                  :: q_star, dq_basis, column, b_buffer
+    type(gti_value_buffer)                  :: q_star, b_buffer
 
     real(dp), allocatable :: q_values(:), eta_values(:)
     real(dp), allocatable :: first_local(:,:), second_local(:,:)
-    real(dp), allocatable :: jacobian(:,:), column_values(:), basis(:)
+    real(dp), allocatable :: jacobian(:,:)
     real(dp), allocatable :: b_values(:), rhs(:), solution(:)
     real(dp) :: achieved
     integer :: n, ncomp, arity, unknown, unknown_vertex
-    integer :: i, j, k, vertex_index
+    integer :: i, k, vertex_index
 
     call options % validate()
     call graph % validate()
@@ -269,19 +269,10 @@ contains
     ! with the degree.
     !----------------------------------------------------------------!
 
-    allocate(jacobian(n, n), basis(n))
-
-    do j = 1, n
-       basis    = 0.0_dp
-       basis(j) = 1.0_dp
-       call dq_basis % set_real(basis, ncomp=ncomp)
-       call newton % jacobian_action(residual_form, &
-            & graph % relation(relation_index) % motif, samples, unknown, &
-            & q_star, dq_basis, design, &
-            & graph % relation(relation_index) % evaluation_time, column)
-       call column % get_real(column_values)
-       jacobian(:, j) = column_values
-    end do
+    call newton % dense_jacobian(residual_form, &
+         & graph % relation(relation_index) % motif, samples, unknown, &
+         & q_star, design, &
+         & graph % relation(relation_index) % evaluation_time, jacobian)
 
     rhs = -b_values
     call solve_dense_matrix_with_dense_direct(jacobian, rhs, &

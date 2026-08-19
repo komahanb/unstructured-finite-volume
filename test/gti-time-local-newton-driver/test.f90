@@ -54,7 +54,7 @@ program test_gti_time_local_newton_driver
 
   type(gti_value_buffer) :: trial, dq, q_start, scalar_start, out
 
-  real(dp), allocatable :: rv(:)
+  real(dp), allocatable :: rv(:), jac(:,:)
   real(dp) :: root_bdf1(3), root_dirk(3), root_bdf2(3)
   integer :: nfail
 
@@ -139,6 +139,20 @@ program test_gti_time_local_newton_driver
   call out % get_real(rv)
   call report(matches(rv, [3.0_dp, 0.0_dp, 6.0_dp], 1.0e-14_dp), &
        & "BDF1 exact action: J dq = 3 dq = [3, 0, 6]", nfail)
+
+  !-------------------------------------------------------------------!
+  ! The one assembly verb: dense_jacobian probes the action whole,
+  ! one basis direction per column - here exactly 3 I.
+  !-------------------------------------------------------------------!
+
+  call driver % dense_jacobian(r_form, bdf1, bdf1_samples, 2, trial, &
+       & design, 0.5_dp, jac)
+  call report(size(jac, 1) == 3 .and. size(jac, 2) == 3 .and. &
+       & matches([jac(1,1), jac(2,2), jac(3,3)], &
+       &         [3.0_dp, 3.0_dp, 3.0_dp], 1.0e-14_dp) .and. &
+       & matches([jac(1,2), jac(1,3), jac(2,1), jac(2,3), jac(3,1), jac(3,2)], &
+       &         [0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp], 1.0e-14_dp), &
+       & "dense_jacobian assembles the whole J = 3 I, exactly", nfail)
 
   !-------------------------------------------------------------------!
   ! Newton on BDF1: one exact step lands on the closed-form root.

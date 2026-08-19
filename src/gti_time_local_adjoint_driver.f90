@@ -275,12 +275,12 @@ contains
     type(gti_time_local_adjoint_result) , intent(inout) :: result
 
     type(gti_time_local_newton_driver) :: newton
-    type(gti_value_buffer)             :: seed, dq_basis, column
+    type(gti_value_buffer)             :: seed
     real(dp) :: achieved
 
-    real(dp), allocatable :: seed_values(:), column_values(:)
-    real(dp), allocatable :: jacobian(:,:), transposed(:,:), lambda_values(:), basis(:)
-    integer :: n, j
+    real(dp), allocatable :: seed_values(:)
+    real(dp), allocatable :: jacobian(:,:), transposed(:,:), lambda_values(:)
+    integer :: n
 
     if (singular_tolerance <= 0.0_dp) then
        error stop 'gti_time_local_adjoint_driver: singular tolerance is positive'
@@ -304,20 +304,8 @@ contains
     ! each held to the unknown's size.
     !----------------------------------------------------------------!
 
-    allocate(jacobian(n, n), basis(n))
-
-    do j = 1, n
-       basis    = 0.0_dp
-       basis(j) = 1.0_dp
-       call dq_basis % set_real(basis, ncomp=q_star % ncomp)
-       call newton % jacobian_action(residual_form, motif, samples, unknown_index, &
-            & q_star, dq_basis, design, time, column)
-       call column % get_real(column_values)
-       if (size(column_values) /= n) then
-          error stop 'gti_time_local_adjoint_driver: residual size matches unknown size'
-       end if
-       jacobian(:, j) = column_values
-    end do
+    call newton % dense_jacobian(residual_form, motif, samples, unknown_index, &
+         & q_star, design, time, jacobian)
 
     transposed = transpose(jacobian)
 

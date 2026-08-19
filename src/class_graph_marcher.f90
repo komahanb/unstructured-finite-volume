@@ -65,8 +65,10 @@ module class_graph_marcher
   use class_graph        , only : directed_stored_graph
   use class_graph_step   , only : step_operator, bdf
   use graph_minimization , only : minimizer
-  use graph_calculus     , only : linearization_operator
+  use graph_calculus     , only : linearization_operator, &
+       & differentiable_operation
   use class_graph_exact_linearization, only : tangent_of
+  use class_graph_chain_rule, only : chain_rule, chain_channel, chain_seat
   use class_graph_dense_direct, only : solve_dense_matrix_with_dense_direct, &
        & probed_dense_matrix
 
@@ -93,6 +95,7 @@ module class_graph_marcher
      procedure :: instants
      procedure :: march
      procedure :: march_adjoint
+     procedure :: march_directional
 
   end type marcher
 
@@ -489,5 +492,243 @@ contains
     end if
 
   end subroutine read_statement
+
+  !===================================================================!
+  ! THE DIRECTIONAL WALK: forward derivatives of any order along
+  ! the walk actually taken. Differentiate the whole chain s times
+  ! along a parameter path; at each edge the step's own structure
+  ! splits the total,
+  !
+  !      J_e q_e^(s) = -( a1 qprev^(s) + a2 qolder^(s)
+  !                       + h_e * d^s S with the top state seat
+  !                         suppressed ),
+  !      J_e = a0 I + h_e S'(q_e),
+  !
+  ! because the history couplings live OUTSIDE the statement as the
+  ! table's constant diagonals - the same one table seat again -
+  ! and every composition term inside S is the chain rule's to
+  ! assemble, never this walk's. One Jacobian per edge serves every
+  ! order: only the right-hand side changes with s, which is the
+  ! whole claim of higher-degree marching. The parameter paths
+  ! arrive as caller-supplied chain channels on the statement's
+  ! slots beyond the state; the state's own path is the walk's and
+  ! may not be supplied. Under the explicit rule the same verb
+  ! recurs without a single solve:
+  !
+  !      q_e^(s) = qprev^(s) - h_e * d^s S at the previous state,
+  !                all seats full.
+  !
+  ! The initial state is held fixed: its derivatives are zero, and
+  ! what accumulates along the walk is the sensitivity of every
+  ! instant to the supplied parameter paths.
+  !===================================================================!
+
+  subroutine march_directional(this, action, on, nsteps, trajectory, order, &
+       & sensitivities, steps, parameters, channels)
+
+    class(marcher), intent(inout)               :: this
+    class(differentiable_operation), intent(in) :: action
+    class(directed_graph), intent(in)           :: on
+    integer, intent(in)                         :: nsteps
+    real(dp), intent(in)                        :: trajectory(:,:)
+    integer, intent(in)                         :: order
+    real(dp), allocatable, intent(out)          :: sensitivities(:,:,:)
+    real(dp), intent(in), optional              :: steps(:)
+    type(field), intent(in), optional           :: parameters(:)
+    type(chain_channel), intent(in), optional   :: channels(:)
+
+    type(directed_stored_graph) :: chain
+    type(chain_rule)            :: composer
+    type(step_operator)         :: table
+    class(linearization_operator), allocatable :: tangent
+    type(chain_channel), allocatable :: paths(:)
+    type(field), allocatable         :: inputs(:)
+    class(graph_field), allocatable  :: total_field
+    type(field)     :: state
+    type(set_graph) :: state_domain
+    real(dp), allocatable :: jac(:,:), jstep(:,:), total(:), b(:), q_s(:)
+    real(dp) :: answered, h_edge, h_previous
+    integer :: n_state_domain, ncomp
+    integer :: e, s_order, k, j, n, at, nchan
+
+    if (order < 1) then
+       error stop 'march_directional: the order is positive'
+    end if
+
+    call require_lawful_steps(steps, nsteps)
+    call this % instants(nsteps, chain)
+
+    n = size(trajectory, 1)
+    if (size(trajectory, 2) /= chain % num_vertices()) then
+       error stop 'march_directional: the trajectory carries one state per instant'
+    end if
+
+    call state_seat(action, on, trajectory(:, 1), state_domain, &
+         & n_state_domain, ncomp)
+
+    !----------------------------------------------------------------!
+    ! The caller's parameter paths: slots beyond the state, each
+    ! covered by a supplied parameter field. The state's own path
+    ! is the walk's.
+    !----------------------------------------------------------------!
+
+    nchan = 0
+    if (present(channels)) then
+       nchan = size(channels)
+       do k = 1, nchan
+          if (channels(k) % slot <= 1) then
+             error stop 'march_directional: the state path is the walk''s own'
+          end if
+          if (.not. present(parameters)) then
+             error stop 'march_directional: a parameter channel names a supplied slot'
+          end if
+          if (channels(k) % slot > 1 + size(parameters)) then
+             error stop 'march_directional: a parameter channel names a supplied slot'
+          end if
+       end do
+    end if
+
+    allocate(sensitivities(n, order, nsteps + 1))
+    sensitivities = 0.0_dp
+
+    tangent = tangent_of(action)
+
+    !----------------------------------------------------------------!
+    ! Walk the edges forward; at each edge assemble the composition
+    ! by degree and advance every order's derivative.
+    !----------------------------------------------------------------!
+
+    do e = 1, chain % num_edges()
+
+       h_edge = edge_step(this, steps, e)
+
+       if (this % rule == MARCH_BDF2 .and. e > 1) then
+          h_previous = edge_step(this, steps, e - 1)
+          call table % set_bdf(2, [h_edge, h_previous])
+       else
+          call table % set_bdf(1, [h_edge])
+       end if
+
+       !--------------------------------------------------------------!
+       ! The state the composition reads: the solved instant under
+       ! a governed rule, the previous instant under the explicit
+       ! one - the derivative of the walk actually taken.
+       !--------------------------------------------------------------!
+
+       if (this % rule == MARCH_FORWARD) then
+          at = e
+       else
+          at = e + 1
+       end if
+
+       state = field('state', state_domain, n_state_domain, ncomp=ncomp)
+       call state % set_real_vector(trajectory(:, at))
+
+       if (allocated(inputs)) deallocate(inputs)
+       if (present(parameters)) then
+          allocate(inputs(1 + size(parameters)))
+          inputs(1) = state
+          do k = 1, size(parameters)
+             inputs(1 + k) = parameters(k)
+          end do
+       else
+          allocate(inputs(1))
+          inputs(1) = state
+       end if
+
+       if (this % rule /= MARCH_FORWARD) then
+          call tangent % freeze(trajectory(:, e + 1))
+          call probed_dense_matrix(tangent, on, n, jac)
+          jstep = h_edge * jac
+          do j = 1, n
+             jstep(j, j) = jstep(j, j) + table % a0
+          end do
+       end if
+
+       do s_order = 1, order
+
+          call build_paths(this, sensitivities, state_domain, &
+               & n_state_domain, ncomp, at, s_order, nchan, channels, paths)
+
+          call composer % assemble(action, on, inputs, s_order, paths, &
+               & total_field)
+          call total_field % get_real_vector(total)
+
+          if (this % rule == MARCH_FORWARD) then
+
+             sensitivities(:, s_order, e + 1) = &
+                  & sensitivities(:, s_order, e) - h_edge * total
+
+          else
+
+             b = table % a1 * sensitivities(:, s_order, e) + h_edge * total
+             if (this % rule == MARCH_BDF2 .and. e > 1) then
+                b = b + table % a2 * sensitivities(:, s_order, e - 1)
+             end if
+
+             call solve_dense_matrix_with_dense_direct(jstep, -b, &
+                  & this % singular_tolerance, q_s, answered)
+             sensitivities(:, s_order, e + 1) = q_s
+
+          end if
+
+       end do
+
+    end do
+
+  end subroutine march_directional
+
+  !===================================================================!
+  ! The composition's channels at one edge and one order: the state
+  ! channel - seats below the order full from the solved
+  ! sensitivities, the top seat suppressed to zero under a governed
+  ! rule and full under the explicit one - followed by the caller's
+  ! parameter channels, passed through whole.
+  !===================================================================!
+
+  subroutine build_paths(this, sensitivities, state_domain, n_state_domain, &
+       & ncomp, at, s_order, nchan, channels, paths)
+
+    class(marcher), intent(in) :: this
+    real(dp)      , intent(in) :: sensitivities(:,:,:)
+    type(set_graph), intent(in) :: state_domain
+    integer       , intent(in) :: n_state_domain, ncomp, at, s_order, nchan
+    type(chain_channel), intent(in), optional :: channels(:)
+    type(chain_channel), allocatable, intent(out) :: paths(:)
+
+    type(field) :: seat_field
+    real(dp), allocatable :: seat_values(:)
+    integer :: k
+
+    allocate(paths(1 + nchan))
+
+    paths(1) % slot = 1
+    allocate(paths(1) % derivative(s_order))
+
+    do k = 1, s_order
+
+       if (k == s_order .and. this % rule /= MARCH_FORWARD) then
+          ! the suppression that defines the right-hand side: the
+          ! unknown's top seat is zero while it is assembled
+          allocate(seat_values(size(sensitivities, 1)))
+          seat_values = 0.0_dp
+       else
+          seat_values = sensitivities(:, k, at)
+       end if
+
+       seat_field = field('state path', state_domain, n_state_domain, &
+            & ncomp=ncomp)
+       call seat_field % set_real_vector(seat_values)
+       paths(1) % derivative(k) % occupied  = .true.
+       paths(1) % derivative(k) % direction = seat_field
+       deallocate(seat_values)
+
+    end do
+
+    do k = 1, nchan
+       paths(1 + k) = channels(k)
+    end do
+
+  end subroutine build_paths
 
 end module class_graph_marcher

@@ -6,7 +6,14 @@
 ! edges, and a step size is a number riding an edge, exactly as a
 ! spacing rides a mesh face,
 !
-!      (t0) --h--> (t1) --h--> (t2) --h--> ... --h--> (tn)
+!      (t0) --h1--> (t1) --h2--> (t2) --h3--> ... --hn--> (tn)
+!
+! and the banner is kept literally: march takes an optional array
+! of per-edge steps, one number riding each edge; absent, every
+! edge carries the marcher's one step, as before. Under bdf-2 a
+! nonuniform pair of edges is priced exactly - the step operator's
+! own table seat answers the coefficients, and no bdf number lives
+! here.
 !
 ! THE FORWARD WALK. At every edge the attached statement is read
 ! and the state moves against it. Three rules, absorbed:
@@ -105,21 +112,24 @@ contains
   ! Walk the chain forward, by the rule.
   !===================================================================!
 
-  subroutine march(this, action, on, q, nsteps)
+  subroutine march(this, action, on, q, nsteps, steps)
 
     class(marcher), intent(inout)      :: this
     class(graph_operation), intent(in) :: action
     class(directed_graph), intent(in)           :: on
     real(dp), intent(inout)            :: q(:)
     integer, intent(in)                :: nsteps
+    real(dp), intent(in), optional     :: steps(:)
 
     type(directed_stored_graph) :: chain
     type(step_operator) :: statement
     type(set_graph) :: state_domain
     integer         :: n_state_domain
     real(dp), allocatable :: s(:), qold(:), qolder(:), zeros(:)
-    real(dp) :: answered
+    real(dp) :: answered, h_edge, h_previous
     integer :: e, ncomp
+
+    call require_lawful_steps(steps, nsteps)
 
     call this % instants(nsteps, chain)
 
@@ -127,7 +137,7 @@ contains
 
        do e = 1, chain % num_edges()
           call read_statement(action, on, q, s)
-          q = q - this % step * s
+          q = q - edge_step(this, steps, e) * s
        end do
        return
 
@@ -135,9 +145,12 @@ contains
 
     ! The implicit rules: one governed solve per edge; bdf2 starts
     ! with a single backward step, as it must. The step comes off
-    ! the time shelf; the per-edge state and the bdf2 start are
-    ! written onto it as the walk proceeds.
+    ! the time shelf and is RE-AIMED there between edges - its own
+    ! table seat prices every coefficient, uniform or not, and no
+    ! bdf number lives in this file.
     statement = bdf(1, action, this % step)
+
+    h_previous = this % step
 
     ! The unknown of every governed solve is the state, so it lives
     ! where the state lives - the action's domain, asked once here
@@ -151,20 +164,15 @@ contains
 
     do e = 1, chain % num_edges()
 
+       h_edge = edge_step(this, steps, e)
+
        if (this % rule == MARCH_BDF2 .and. e > 1) then
-          statement % a0 = 1.5_dp
-          statement % a1 = -2.0_dp
-          statement % a2 = 0.5_dp
-          statement % reach = 2
+          call statement % set_bdf(2, [h_edge, h_previous])
           statement % qolder = qolder
        else
-          statement % a0 = 1.0_dp
-          statement % a1 = -1.0_dp
-          statement % a2 = 0.0_dp
-          statement % reach = 1
+          call statement % set_bdf(1, [h_edge])
        end if
 
-       statement % hs   = this % step
        statement % qold = qold
 
        ! The state's width travels with it: a member carrying several
@@ -174,12 +182,56 @@ contains
             & n_state_domain, ncomp = ncomp)
        call this % inner % solve(zeros, q, answered)
 
-       qolder = qold
-       qold   = q
+       qolder     = qold
+       qold       = q
+       h_previous = h_edge
 
     end do
 
   end subroutine march
+
+  !===================================================================!
+  ! The per-edge step: the caller's array where one was given, the
+  ! marcher's one step otherwise. Given, it must carry exactly one
+  ! positive number per edge - a step is a number riding an edge,
+  ! and an edge without one is not a step.
+  !===================================================================!
+
+  pure subroutine require_lawful_steps(steps, nsteps)
+
+    real(dp), intent(in), optional :: steps(:)
+    integer , intent(in)           :: nsteps
+
+    integer :: e
+
+    if (.not. present(steps)) return
+
+    if (size(steps) /= nsteps) then
+       error stop 'marcher: one step rides each edge'
+    end if
+
+    do e = 1, size(steps)
+       if (steps(e) <= 0.0_dp) then
+          error stop 'marcher: a time step is positive'
+       end if
+    end do
+
+  end subroutine require_lawful_steps
+
+  pure function edge_step(this, steps, e) result(h)
+
+    class(marcher), intent(in)     :: this
+    real(dp), intent(in), optional :: steps(:)
+    integer , intent(in)           :: e
+    real(dp) :: h
+
+    if (present(steps)) then
+       h = steps(e)
+    else
+       h = this % step
+    end if
+
+  end function edge_step
 
   !===================================================================!
   ! Walk the chain in reverse, carrying the pairing: handed the
@@ -199,13 +251,14 @@ contains
   ! becomes the same verb as the forward one.
   !===================================================================!
 
-  subroutine march_adjoint(this, transposed, on, lambda, nsteps)
+  subroutine march_adjoint(this, transposed, on, lambda, nsteps, steps)
 
     class(marcher), intent(inout)      :: this
     class(graph_operation), intent(in) :: transposed
     class(directed_graph), intent(in)           :: on
     real(dp), intent(inout)            :: lambda(:)
     integer, intent(in)                :: nsteps
+    real(dp), intent(in), optional     :: steps(:)
 
     type(directed_stored_graph) :: chain
     real(dp), allocatable :: s(:)
@@ -215,11 +268,13 @@ contains
        error stop 'march_adjoint: the reverse walk answers the explicit rule only'
     end if
 
+    call require_lawful_steps(steps, nsteps)
+
     call this % instants(nsteps, chain)
 
     do e = chain % num_edges(), 1, -1
        call read_statement(transposed, on, lambda, s)
-       lambda = lambda - this % step * s
+       lambda = lambda - edge_step(this, steps, e) * s
     end do
 
   end subroutine march_adjoint

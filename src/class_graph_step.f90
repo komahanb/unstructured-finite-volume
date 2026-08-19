@@ -19,9 +19,25 @@
 !
 !      backward_euler(action, h)          reach 1, [1, -1]
 !      bdf(k, action, h)                  reach k, the k-step table
+!      bdf_variable(k, action, steps)     reach k, the table priced
+!                                         on the steps actually
+!                                         taken - steps(1) = h_n,
+!                                         steps(2) = h_{n-1}
 !
 ! One name per family, the order riding as an argument, never as a
-! type. The statement it holds returns MINUS the velocity, matching
+! type. The tables live ONCE, in set_bdf, which re-aims a standing
+! step operator between edges - the constructors and any marcher
+! walking a nonuniform chain all speak through it. At equal steps
+! the variable table collapses exactly onto the uniform one, and
+! set_bdf says so in exact constants rather than arithmetic.
+!
+! A DIAGONAL RK STAGE AND AN ADAMS CORRECTOR NEED NO SEATS HERE.
+! Both are this same backward step against an externally assembled
+! base: the DIRK stage is reach 1 with hs = h gamma, the ABM
+! corrector is reach 1 with hs = h beta0 - the base rides qold,
+! and the shelf refuses to multiply names for one row.
+!
+! The statement it holds returns MINUS the velocity, matching
 ! the house convention that a balance measures what a cell has left
 ! over.
 !
@@ -43,7 +59,7 @@ module class_graph_step
 
   private
   public :: step_operator
-  public :: backward_euler, bdf
+  public :: backward_euler, bdf, bdf_variable
 
   type, extends(discretization_operator) :: step_operator
 
@@ -65,6 +81,7 @@ module class_graph_step
      procedure :: domain       => step_domain
      procedure :: apply        => step_apply
      procedure :: dependencies => step_dependencies
+     procedure :: set_bdf
 
   end type step_operator
 
@@ -81,11 +98,7 @@ contains
     type(step_operator)                :: this
 
     allocate(this % action, source=action)
-    this % a0    = 1.0_dp
-    this % a1    = -1.0_dp
-    this % a2    = 0.0_dp
-    this % hs    = h
-    this % reach = 1
+    call this % set_bdf(1, [h])
 
   end function backward_euler
 
@@ -103,23 +116,100 @@ contains
     type(step_operator)                :: this
 
     allocate(this % action, source=action)
-    this % hs    = h
-    this % reach = k
 
     select case (k)
     case (1)
-       this % a0 = 1.0_dp
-       this % a1 = -1.0_dp
-       this % a2 = 0.0_dp
+       call this % set_bdf(1, [h])
     case (2)
-       this % a0 = 1.5_dp
-       this % a1 = -2.0_dp
-       this % a2 = 0.5_dp
+       call this % set_bdf(2, [h, h])
     case default
        error stop 'bdf: only orders one and two carry tables so far'
     end select
 
   end function bdf
+
+  !===================================================================!
+  ! The bdf family priced on the steps actually taken: steps(1) is
+  ! the current step h_n, steps(2) the one before it. The order-two
+  ! table is the derivative of the interpolating quadratic at the
+  ! newest instant - exact on quadratics whatever the spacing.
+  !===================================================================!
+
+  function bdf_variable(k, action, steps) result(this)
+
+    integer, intent(in)                :: k
+    class(graph_operation), intent(in) :: action
+    real(dp), intent(in)               :: steps(:)
+    type(step_operator)                :: this
+
+    allocate(this % action, source=action)
+    call this % set_bdf(k, steps)
+
+  end function bdf_variable
+
+  !===================================================================!
+  ! THE ONE TABLE SEAT. Re-aim a standing step operator: order k
+  ! from the steps actually taken, the coefficients scaled so the
+  ! residual reads a0 q + a1 qold + a2 qolder + h_n S(q). With
+  ! h0 = h_n and h1 = h_{n-1}, the order-two row is
+  !
+  !      a0 = (2 h0 + h1)/(h0 + h1)
+  !      a1 = -(h0 + h1)/h1
+  !      a2 = h0^2 / (h1 (h0 + h1))
+  !
+  ! which at h0 = h1 is exactly [3/2, -2, 1/2] - answered in exact
+  ! constants there, never re-derived through arithmetic. A marcher
+  ! walking a nonuniform chain calls here between edges; nothing
+  ! anywhere else knows a bdf coefficient.
+  !===================================================================!
+
+  subroutine set_bdf(this, k, steps)
+
+    class(step_operator), intent(inout) :: this
+    integer             , intent(in)    :: k
+    real(dp)            , intent(in)    :: steps(:)
+
+    real(dp) :: h0, h1
+    integer  :: j
+
+    if (k /= 1 .and. k /= 2) then
+       error stop 'step: only orders one and two carry tables so far'
+    end if
+
+    if (size(steps) /= k) then
+       error stop 'step: the step count matches the order'
+    end if
+
+    do j = 1, k
+       if (steps(j) <= 0.0_dp) then
+          error stop 'step: a time step is positive'
+       end if
+    end do
+
+    this % hs    = steps(1)
+    this % reach = k
+
+    if (k == 1) then
+       this % a0 = 1.0_dp
+       this % a1 = -1.0_dp
+       this % a2 = 0.0_dp
+       return
+    end if
+
+    h0 = steps(1)
+    h1 = steps(2)
+
+    if (h0 == h1) then
+       this % a0 = 1.5_dp
+       this % a1 = -2.0_dp
+       this % a2 = 0.5_dp
+    else
+       this % a0 = (2.0_dp * h0 + h1) / (h0 + h1)
+       this % a1 = -(h0 + h1) / h1
+       this % a2 = (h0 * h0) / (h1 * (h0 + h1))
+    end if
+
+  end subroutine set_bdf
 
   !===================================================================!
   ! The contract's answer: THE STENCIL ON THE INDEPENDENT AXIS.

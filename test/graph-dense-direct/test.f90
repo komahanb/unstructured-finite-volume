@@ -6,8 +6,9 @@
 ! probed one basis direction per column. Exact solutions on 1x1
 ! and 2x2 systems, survival of a zero leading pivot by partial
 ! pivoting, repeated solves on one attached value, an achieved
-! norm the tower itself certifies, an unmutated stencil, and the
-! dense-array adapter door the GTI drivers walk through.
+! norm the tower itself certifies, an unmutated stencil, the
+! dense-array adapter door, and the probe door that compiles any
+! operation into the dense matrix of its linear action.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -17,7 +18,7 @@ program test_graph_dense_direct
   use iso_fortran_env     , only : dp => REAL64
   use class_graph_stencil , only : stencil_operator
   use class_graph_dense_direct, only : dense_direct, &
-       & solve_dense_matrix_with_dense_direct
+       & solve_dense_matrix_with_dense_direct, probed_dense_matrix
 
   implicit none
 
@@ -25,6 +26,7 @@ program test_graph_dense_direct
   type(dense_direct)     :: solver
 
   real(dp), allocatable :: x(:), xa(:), w_before(:), w_after(:)
+  real(dp), allocatable :: aprobe(:,:)
   real(dp) :: achieved
   real(dp) :: amat(2,2)
   integer  :: nfail
@@ -128,6 +130,21 @@ program test_graph_dense_direct
   call report(matches(xa, [1.0_dp, 2.0_dp], 1.0e-12_dp) .and. &
        & achieved <= 1.0e-12_dp, &
        & "the dense-array adapter solves through the same tower", nfail)
+
+  !-------------------------------------------------------------------!
+  ! The probe door: any operation compiled into the dense matrix
+  ! of its linear action, one apply per basis column. Probing the
+  ! stencil that carries A reassembles A exactly - the round trip
+  ! the adapter's banner promises.
+  !-------------------------------------------------------------------!
+
+  call probed_dense_matrix(two_by_two, two_by_two % pattern, 2, aprobe)
+
+  call report(size(aprobe, 1) == 2 .and. size(aprobe, 2) == 2 .and. &
+       & matches([aprobe(1,1), aprobe(2,1), aprobe(1,2), aprobe(2,2)], &
+       &         [amat(1,1),   amat(2,1),   amat(1,2),   amat(2,2)], &
+       &         0.0_dp + tiny(1.0_dp)), &
+       & "the probe door reassembles the stencil's matrix exactly", nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then

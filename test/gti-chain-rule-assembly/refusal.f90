@@ -250,7 +250,7 @@ program refusal
   use gti_evaluation_points  , only : gti_evaluation_point
   use gti_form_interface     , only : GTI_ARG_DESIGN
   use gti_chain_rule_assemblies, only : gti_chain_rule_assembler, gti_chain_input
-  use gti_toy_forms          , only : toy_residual_form
+  use gti_toy_forms          , only : toy_residual_form, toy_liar4_form
   use gti_shifting_forms     , only : shifting_form
   use gti_misdeclaring_forms , only : misdeclaring_form
 
@@ -260,6 +260,7 @@ program refusal
   type(gti_evaluation_point)     :: point
   type(gti_chain_input)          :: input
   type(toy_residual_form)        :: r_form
+  type(toy_liar4_form)           :: liar4
   type(shifting_form)            :: shifter
   type(misdeclaring_form)        :: misdeclarer
   type(gti_value_buffer)         :: out
@@ -275,7 +276,7 @@ program refusal
 
   case ('highdeg')
 
-     call assembler % assemble(r_form, point, 3, input, out)
+     call assembler % assemble(r_form, point, 5, input, out)
 
   case ('inconsistent')
 
@@ -321,6 +322,36 @@ program refusal
      allocate(input % channel(1) % derivative(1))
      call input % channel(1) % derivative(1) % values % set_real([1.0_dp, 0.0_dp, 2.0_dp])
      call assembler % assemble(misdeclarer, point, 1, input, out)
+
+  case ('badseedmeta')
+
+     ! a seat with values but nonsense argument metadata, at degree 3
+     allocate(input % channel(1))
+     allocate(input % channel(1) % derivative(1))
+     input % channel(1) % derivative(1) % argument_kind = 0
+     call input % channel(1) % derivative(1) % values % set_real([1.0_dp, 0.0_dp, 2.0_dp])
+     call assembler % assemble(r_form, point, 3, input, out)
+
+  case ('inconsistent4')
+
+     ! one channel mixing arguments across seats, at degree 4
+     allocate(input % channel(1))
+     allocate(input % channel(1) % derivative(2))
+     call input % channel(1) % derivative(1) % values % set_real([1.0_dp, 0.0_dp, 2.0_dp])
+     input % channel(1) % derivative(2) % argument_kind = GTI_ARG_DESIGN
+     call input % channel(1) % derivative(2) % values % set_real([0.75_dp])
+     call assembler % assemble(r_form, point, 4, input, out)
+
+  case ('shape4')
+
+     ! the order-4 liar: lawful to order 3, two entries at order 4
+     allocate(input % channel(1))
+     allocate(input % channel(1) % derivative(4))
+     call input % channel(1) % derivative(1) % values % set_real([1.0_dp])
+     call input % channel(1) % derivative(2) % values % set_real([1.0_dp])
+     call input % channel(1) % derivative(3) % values % set_real([1.0_dp])
+     call input % channel(1) % derivative(4) % values % set_real([1.0_dp])
+     call assembler % assemble(liar4, point, 4, input, out)
 
   case ('shifty')
 

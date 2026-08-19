@@ -1,36 +1,39 @@
 !=====================================================================!
-! GRAPH-ATTACHED VALUE MAP
+! VALUE MAP
 !
 ! What a graph's value IS, and whether it is trusted. Keyed on
 ! graph identity, stored outside the graph:
 !
-!     value_map : graph identity -> value status x value buffer
+!     value_map : graph identity -> value status x field
 !
-! The label map named the seat this module now fills: "when a
-! second kind of metadata earns its place it will be measured and
-! named on its own." This is that second association - not a name,
-! a number with a status - and the split it serves is the tower's:
+! The second metadata association, filling the seat the label map
+! reserved: a label answers WHAT IT IS CALLED, this map answers
+! WHAT NUMBER IS ATTACHED AND WHETHER ANYONE VOUCHES FOR IT. The
+! split it serves is the tower's:
 !
 !     Structural knownness lives in fractal_graph.
 !     Value knownness lives in an attached value map.
-!     Reversible changes update maps, but do not define the
-!     map ontology.
+!     Updates are reversible changes; the map owns the ontology,
+!     never the lifecycle.
+!
+! The attached value is a FIELD, minted on the element's own
+! domain when it is vouched - the value carries the identity of
+! what it values, and no second value carrier exists.
 !
 !                  KEYED BY IDENTITY, NEVER BY POSITION
 !
 ! No integer index exists in this API. A row is found by the one
 ! comparison the identity module owns, so reordering, growing, or
 ! compacting whatever container holds the graphs can never re-aim
-! an attachment - and an integer that names a position in one
-! array is not an identity at all.
+! an attachment.
 !
 !                       THE STATUS VOCABULARY
 !
 ! Three answers, closed:
 !
-!     GTI_VALUE_STATUS_UNATTACHED   no seat: the map holds nothing
-!     GTI_VALUE_STATUS_UNKNOWN      a seat, but no trusted number
-!     GTI_VALUE_STATUS_KNOWN        a seat holding a trusted value
+!     VALUE_UNATTACHED   no seat: the map holds nothing
+!     VALUE_UNKNOWN      a seat, but no trusted number
+!     VALUE_KNOWN        a seat holding a trusted field
 !
 ! Unattached is absence and absence is a lawful answer, exactly as
 ! a set nobody named is still a set. Reading a value demands
@@ -41,7 +44,7 @@
 !
 !                         THE STORAGE LAW
 !
-! Rows key on type(token), copied at attach - the graph_label_map
+! Rows key on type(token), copied at attach - the label map's
 ! storage law, inherited whole. This map borrows no graph object
 ! merely to recognize it, so it may outlive every variable that
 ! built it, and no verb demands TARGET.
@@ -49,44 +52,38 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module gti_attached_value_maps
+module graph_value_map
 
+  use iso_fortran_env  , only : dp => REAL64
   use fractal_graph    , only : graph
   use graph_identity   , only : token
-  use gti_value_buffers, only : gti_value_buffer
+  use class_graph_field, only : field
 
   implicit none
 
   private
-  public :: gti_attached_value_map
-  public :: GTI_VALUE_STATUS_UNATTACHED
-  public :: GTI_VALUE_STATUS_UNKNOWN
-  public :: GTI_VALUE_STATUS_KNOWN
+  public :: value_map
+  public :: VALUE_UNATTACHED, VALUE_UNKNOWN, VALUE_KNOWN
 
-  integer, parameter :: GTI_VALUE_STATUS_UNATTACHED = 0
-  integer, parameter :: GTI_VALUE_STATUS_UNKNOWN    = 1
-  integer, parameter :: GTI_VALUE_STATUS_KNOWN      = 2
+  integer, parameter :: VALUE_UNATTACHED = 0
+  integer, parameter :: VALUE_UNKNOWN    = 1
+  integer, parameter :: VALUE_KNOWN      = 2
 
   !===================================================================!
   ! One row: WHICH graph - by copied token - what status its value
-  ! carries, and the value itself.
+  ! carries, and the value itself, a field on the element's own
+  ! domain.
   !===================================================================!
 
   type :: value_row
 
-     type(token)            :: identity
-     integer                :: status = GTI_VALUE_STATUS_UNKNOWN
-     type(gti_value_buffer) :: value
+     type(token) :: identity
+     integer     :: status = VALUE_UNKNOWN
+     type(field) :: value
 
   end type value_row
 
-  !===================================================================!
-  ! The map. The type keeps its public singular name; Fortran
-  ! denies a type its host module's name, so the module speaks in
-  ! the plural.
-  !===================================================================!
-
-  type :: gti_attached_value_map
+  type :: value_map
 
      type(value_row), allocatable, private :: rows(:)
 
@@ -100,7 +97,7 @@ module gti_attached_value_maps
      procedure :: status_of
      procedure :: value_of
 
-  end type gti_attached_value_map
+  end type value_map
 
 contains
 
@@ -111,8 +108,8 @@ contains
 
   pure integer function row_at(this, key) result(at)
 
-    class(gti_attached_value_map), intent(in) :: this
-    type(token)                  , intent(in) :: key
+    class(value_map), intent(in) :: this
+    type(token)     , intent(in) :: key
 
     integer :: k
 
@@ -140,7 +137,7 @@ contains
 
     key = element % id()
     if (.not. key % matches(key)) then
-       error stop 'gti_attached_value_map: a value map is keyed on assigned identity'
+       error stop 'graph_value_map: a value map is keyed on assigned identity'
     end if
 
   end function writer_key
@@ -153,8 +150,8 @@ contains
 
   subroutine attach_unknown(this, element)
 
-    class(gti_attached_value_map), intent(inout) :: this
-    type(graph)                  , intent(in)    :: element
+    class(value_map), intent(inout) :: this
+    type(graph)     , intent(in)    :: element
 
     type(value_row), allocatable :: grown(:)
     type(token)                  :: key
@@ -163,7 +160,7 @@ contains
     key = writer_key(element)
 
     if (row_at(this, key) /= 0) then
-       error stop 'gti_attached_value_map: a value seat is attached once'
+       error stop 'graph_value_map: a value seat is attached once'
     end if
 
     if (.not. allocated(this % rows)) allocate(this % rows(0))
@@ -172,42 +169,47 @@ contains
     allocate(grown(n + 1))
     grown(1:n) = this % rows
     grown(n + 1) % identity = key
-    grown(n + 1) % status   = GTI_VALUE_STATUS_UNKNOWN
+    grown(n + 1) % status   = VALUE_UNKNOWN
     call move_alloc(grown, this % rows)
 
   end subroutine attach_unknown
 
   !===================================================================!
-  ! Vouch for a value: the seat holds a copy of the given buffer
-  ! and reads KNOWN. Updating an already-KNOWN seat is lawful -
-  ! values move, identity does not - but a KNOWN claim with no
-  ! numbers behind it is refused.
+  ! Vouch for a value: a field is minted on the element's own
+  ! domain, holding a copy of the given numbers, and the seat
+  ! reads KNOWN. Updating an already-KNOWN seat is lawful - values
+  ! move, identity does not - but a KNOWN claim with no numbers
+  ! behind it is refused.
   !===================================================================!
 
-  subroutine mark_known(this, element, values)
+  subroutine mark_known(this, element, values, ncomp)
 
-    class(gti_attached_value_map), intent(inout) :: this
-    type(graph)                  , intent(in)    :: element
-    type(gti_value_buffer)       , intent(in)    :: values
+    class(value_map)  , intent(inout) :: this
+    type(graph)       , intent(in)    :: element
+    real(dp)          , intent(in)    :: values(:)
+    integer , optional, intent(in)    :: ncomp
 
     type(token) :: key
-    integer     :: at, n
+    integer     :: at, width
 
     key = writer_key(element)
 
     at = row_at(this, key)
     if (at == 0) then
-       error stop 'gti_attached_value_map: an update touches an attached seat'
+       error stop 'graph_value_map: an update touches an attached seat'
     end if
 
-    n = 0
-    if (allocated(values % rvals)) n = size(values % rvals)
-    if (n == 0) then
-       error stop 'gti_attached_value_map: a known value has values'
+    if (size(values) == 0) then
+       error stop 'graph_value_map: a known value has values'
     end if
 
-    this % rows(at) % value  = values
-    this % rows(at) % status = GTI_VALUE_STATUS_KNOWN
+    width = 1
+    if (present(ncomp)) width = max(ncomp, 1)
+
+    this % rows(at) % value = field('attached value', element, &
+         & size(values) / width, ncomp=width)
+    call this % rows(at) % value % set_real_vector(values)
+    this % rows(at) % status = VALUE_KNOWN
 
   end subroutine mark_known
 
@@ -218,9 +220,10 @@ contains
 
   subroutine mark_unknown(this, element)
 
-    class(gti_attached_value_map), intent(inout) :: this
-    type(graph)                  , intent(in)    :: element
+    class(value_map), intent(inout) :: this
+    type(graph)     , intent(in)    :: element
 
+    type(field) :: nothing
     type(token) :: key
     integer     :: at
 
@@ -228,11 +231,11 @@ contains
 
     at = row_at(this, key)
     if (at == 0) then
-       error stop 'gti_attached_value_map: an update touches an attached seat'
+       error stop 'graph_value_map: an update touches an attached seat'
     end if
 
-    call this % rows(at) % value % clear()
-    this % rows(at) % status = GTI_VALUE_STATUS_UNKNOWN
+    this % rows(at) % value  = nothing
+    this % rows(at) % status = VALUE_UNKNOWN
 
   end subroutine mark_unknown
 
@@ -243,8 +246,8 @@ contains
 
   subroutine detach(this, element)
 
-    class(gti_attached_value_map), intent(inout) :: this
-    type(graph)                  , intent(in)    :: element
+    class(value_map), intent(inout) :: this
+    type(graph)     , intent(in)    :: element
 
     type(value_row), allocatable :: kept(:)
     type(token)                  :: key
@@ -254,7 +257,7 @@ contains
 
     at = row_at(this, key)
     if (at == 0) then
-       error stop 'gti_attached_value_map: a detach removes an attached seat'
+       error stop 'graph_value_map: a detach removes an attached seat'
     end if
 
     n = size(this % rows)
@@ -277,8 +280,8 @@ contains
 
   pure logical function attached(this, element)
 
-    class(gti_attached_value_map), intent(in) :: this
-    type(graph)                  , intent(in) :: element
+    class(value_map), intent(in) :: this
+    type(graph)     , intent(in) :: element
 
     type(token) :: key
 
@@ -289,8 +292,8 @@ contains
 
   pure integer function status_of(this, element) result(status)
 
-    class(gti_attached_value_map), intent(in) :: this
-    type(graph)                  , intent(in) :: element
+    class(value_map), intent(in) :: this
+    type(graph)     , intent(in) :: element
 
     type(token) :: key
     integer     :: at
@@ -299,7 +302,7 @@ contains
     at  = row_at(this, key)
 
     if (at == 0) then
-       status = GTI_VALUE_STATUS_UNATTACHED
+       status = VALUE_UNATTACHED
     else
        status = this % rows(at) % status
     end if
@@ -308,9 +311,9 @@ contains
 
   subroutine value_of(this, element, values)
 
-    class(gti_attached_value_map), intent(in)  :: this
-    type(graph)                  , intent(in)  :: element
-    type(gti_value_buffer)       , intent(out) :: values
+    class(value_map)     , intent(in)  :: this
+    type(graph)          , intent(in)  :: element
+    real(dp), allocatable, intent(out) :: values(:)
 
     type(token) :: key
     integer     :: at
@@ -319,15 +322,15 @@ contains
     at  = row_at(this, key)
 
     if (at == 0) then
-       error stop 'gti_attached_value_map: a known value is read'
+       error stop 'graph_value_map: a known value is read'
     end if
 
-    if (this % rows(at) % status /= GTI_VALUE_STATUS_KNOWN) then
-       error stop 'gti_attached_value_map: a known value is read'
+    if (this % rows(at) % status /= VALUE_KNOWN) then
+       error stop 'graph_value_map: a known value is read'
     end if
 
-    values = this % rows(at) % value
+    call this % rows(at) % value % get_real_vector(values)
 
   end subroutine value_of
 
-end module gti_attached_value_maps
+end module graph_value_map

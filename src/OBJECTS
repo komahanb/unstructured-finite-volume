@@ -1,5 +1,6 @@
 objects= \
 graph_identity.o \
+graph_change_protocol.o \
 fractal_graph.o \
 graph_sequence_view.o \
 graph_set_representation.o \
@@ -20,6 +21,8 @@ graph_partition_relation.o \
 graph_operation_view.o \
 graph_calculus.o \
 class_graph_field.o \
+graph_value_map.o \
+graph_value_change.o \
 class_graph_functional.o \
 class_graph.o \
 class_graph_mesh.o \

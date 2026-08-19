@@ -1,5 +1,5 @@
 !=====================================================================!
-! GTI REVERSIBLE CHANGE PROTOCOL
+! THE REVERSIBLE CHANGE PROTOCOL
 !
 ! One lifecycle for every reversible mutation of a graph and its
 ! attached values:
@@ -27,22 +27,22 @@
 !
 ! The protocol is lifecycle only. It names no graph, no values, no
 ! forms, no time; it imports nothing at all. Concrete changes live
-! with the seats they mutate - the first is the time graph's
-! transactional growth - and every future structure amendment or
+! with the seats they mutate - the first was transactional
+! graph growth - and every future structure amendment or
 ! attached-value update is one more extension of the same abstract
 ! change, run by the same controller.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module gti_change_protocols
+module graph_change_protocol
 
   implicit none
 
   private
-  public :: gti_change_result
-  public :: gti_reversible_change
-  public :: gti_change_controller
+  public :: change_result
+  public :: reversible_change
+  public :: change_controller
 
   !===================================================================!
   ! The record of one change's lifecycle: what was attempted, what
@@ -51,7 +51,7 @@ module gti_change_protocols
   ! controller never reads them.
   !===================================================================!
 
-  type :: gti_change_result
+  type :: change_result
 
      logical :: attempted    = .false.
      logical :: applied      = .false.
@@ -76,7 +76,7 @@ module gti_change_protocols
      procedure :: mark_failed
      procedure :: validate_terminal
 
-  end type gti_change_result
+  end type change_result
 
   !===================================================================!
   ! The abstract reversible change: four deferred verbs, no state
@@ -84,7 +84,7 @@ module gti_change_protocols
   ! judges, keep makes permanent. The change owns the details.
   !===================================================================!
 
-  type, abstract :: gti_reversible_change
+  type, abstract :: reversible_change
 
    contains
 
@@ -93,32 +93,32 @@ module gti_change_protocols
      procedure(change_keep)  , deferred :: keep
      procedure(change_revert), deferred :: revert
 
-  end type gti_reversible_change
+  end type reversible_change
 
   abstract interface
 
      subroutine change_apply(this, result)
-       import :: gti_reversible_change, gti_change_result
-       class(gti_reversible_change), intent(inout) :: this
-       type(gti_change_result)     , intent(inout) :: result
+       import :: reversible_change, change_result
+       class(reversible_change), intent(inout) :: this
+       type(change_result)     , intent(inout) :: result
      end subroutine change_apply
 
      subroutine change_check(this, result)
-       import :: gti_reversible_change, gti_change_result
-       class(gti_reversible_change), intent(inout) :: this
-       type(gti_change_result)     , intent(inout) :: result
+       import :: reversible_change, change_result
+       class(reversible_change), intent(inout) :: this
+       type(change_result)     , intent(inout) :: result
      end subroutine change_check
 
      subroutine change_keep(this, result)
-       import :: gti_reversible_change, gti_change_result
-       class(gti_reversible_change), intent(inout) :: this
-       type(gti_change_result)     , intent(inout) :: result
+       import :: reversible_change, change_result
+       class(reversible_change), intent(inout) :: this
+       type(change_result)     , intent(inout) :: result
      end subroutine change_keep
 
      subroutine change_revert(this, result)
-       import :: gti_reversible_change, gti_change_result
-       class(gti_reversible_change), intent(inout) :: this
-       type(gti_change_result)     , intent(inout) :: result
+       import :: reversible_change, change_result
+       class(reversible_change), intent(inout) :: this
+       type(change_result)     , intent(inout) :: result
      end subroutine change_revert
 
   end interface
@@ -129,13 +129,13 @@ module gti_change_protocols
   ! so the module speaks in the plural.
   !===================================================================!
 
-  type :: gti_change_controller
+  type :: change_controller
 
    contains
 
      procedure :: run
 
-  end type gti_change_controller
+  end type change_controller
 
 contains
 
@@ -146,7 +146,7 @@ contains
 
   pure subroutine reset(this)
 
-    class(gti_change_result), intent(inout) :: this
+    class(change_result), intent(inout) :: this
 
     this % attempted    = .false.
     this % applied      = .false.
@@ -163,34 +163,34 @@ contains
   end subroutine reset
 
   pure subroutine mark_attempted(this)
-    class(gti_change_result), intent(inout) :: this
+    class(change_result), intent(inout) :: this
     this % attempted = .true.
   end subroutine mark_attempted
 
   pure subroutine mark_applied(this)
-    class(gti_change_result), intent(inout) :: this
+    class(change_result), intent(inout) :: this
     this % applied = .true.
   end subroutine mark_applied
 
   pure subroutine mark_checked(this, pass)
-    class(gti_change_result), intent(inout) :: this
+    class(change_result), intent(inout) :: this
     logical                 , intent(in)    :: pass
     this % checked      = .true.
     this % check_passed = pass
   end subroutine mark_checked
 
   pure subroutine mark_kept(this)
-    class(gti_change_result), intent(inout) :: this
+    class(change_result), intent(inout) :: this
     this % kept = .true.
   end subroutine mark_kept
 
   pure subroutine mark_reverted(this)
-    class(gti_change_result), intent(inout) :: this
+    class(change_result), intent(inout) :: this
     this % reverted = .true.
   end subroutine mark_reverted
 
   pure subroutine mark_failed(this)
-    class(gti_change_result), intent(inout) :: this
+    class(change_result), intent(inout) :: this
     this % failed = .true.
   end subroutine mark_failed
 
@@ -202,18 +202,18 @@ contains
 
   pure subroutine validate_terminal(this)
 
-    class(gti_change_result), intent(in) :: this
+    class(change_result), intent(in) :: this
 
     if (this % kept .and. this % reverted) then
-       error stop 'gti_change_result: terminal state is consistent'
+       error stop 'change_result: terminal state is consistent'
     end if
 
     if (this % accepted .and. .not. this % kept) then
-       error stop 'gti_change_result: terminal state is consistent'
+       error stop 'change_result: terminal state is consistent'
     end if
 
     if (this % failed .and. this % kept) then
-       error stop 'gti_change_result: terminal state is consistent'
+       error stop 'change_result: terminal state is consistent'
     end if
 
   end subroutine validate_terminal
@@ -231,10 +231,10 @@ contains
 
   subroutine run(this, change, accept, result)
 
-    class(gti_change_controller), intent(in)    :: this
-    class(gti_reversible_change), intent(inout) :: change
+    class(change_controller), intent(in)    :: this
+    class(reversible_change), intent(inout) :: change
     logical                     , intent(in)    :: accept
-    type(gti_change_result)     , intent(inout) :: result
+    type(change_result)     , intent(inout) :: result
 
     call result % reset()
     call result % mark_attempted()
@@ -244,28 +244,28 @@ contains
     if (result % failed) then
        call change % revert(result)
        if (.not. result % reverted) then
-          error stop 'gti_change_controller: reverted change reports reverted'
+          error stop 'change_controller: reverted change reports reverted'
        end if
        call result % validate_terminal()
        return
     end if
 
     if (.not. result % applied) then
-       error stop 'gti_change_controller: applied change reports applied'
+       error stop 'change_controller: applied change reports applied'
     end if
 
     call change % check(result)
 
     if (.not. result % failed) then
        if (.not. result % checked) then
-          error stop 'gti_change_controller: checked change reports checked'
+          error stop 'change_controller: checked change reports checked'
        end if
     end if
 
     if (result % failed .or. .not. result % check_passed) then
        call change % revert(result)
        if (.not. result % reverted) then
-          error stop 'gti_change_controller: reverted change reports reverted'
+          error stop 'change_controller: reverted change reports reverted'
        end if
        call result % validate_terminal()
        return
@@ -275,12 +275,12 @@ contains
        result % accepted = .true.
        call change % keep(result)
        if (.not. result % kept) then
-          error stop 'gti_change_controller: kept change reports kept'
+          error stop 'change_controller: kept change reports kept'
        end if
     else
        call change % revert(result)
        if (.not. result % reverted) then
-          error stop 'gti_change_controller: reverted change reports reverted'
+          error stop 'change_controller: reverted change reports reverted'
        end if
     end if
 
@@ -288,4 +288,4 @@ contains
 
   end subroutine run
 
-end module gti_change_protocols
+end module graph_change_protocol

@@ -78,4 +78,5 @@ gti_time_local_newton_driver.o \
 gti_time_local_tangent_driver.o \
 gti_time_local_adjoint_driver.o \
 gti_time_graph.o \
-gti_time_forward_driver.o
+gti_time_forward_driver.o \
+gti_time_reverse_driver.o

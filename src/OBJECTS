@@ -32,6 +32,7 @@ class_advection.o \
 class_graph_stencil.o \
 class_graph_step.o \
 class_graph_linearization.o \
+class_graph_exact_linearization.o \
 graph_forms.o \
 class_polynomial_form.o \
 class_harmonic_form.o \

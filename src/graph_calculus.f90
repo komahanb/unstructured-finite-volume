@@ -87,6 +87,7 @@ module graph_calculus
   public :: graph_broadcast
   public :: discretization_operator
   public :: linearization_operator
+  public :: differentiable_operation
   public :: graph_partitioner
   public :: graph_assembler
   public :: graph_coarsener
@@ -273,6 +274,28 @@ module graph_calculus
   end type linearization_operator
 
   !===================================================================!
+  ! DIFFERENTIABLE_OPERATION. A statement that knows its own
+  ! calculus: beyond apply, it answers exact partial actions -
+  ! multilinear contractions of its derivatives against direction
+  ! fields, one input slot named per derivative seat - up to a
+  ! declared maximum order. No derivative tensor is ever stored:
+  ! an action is computed, contracted, and gone. This is the
+  ! statement the linearization family's difference concretion
+  ! always awaited - one that linearizes itself exactly - and
+  ! beyond the tangent it opens the door to second and higher
+  ! derivatives, the raw material of chain-rule composition.
+  !===================================================================!
+
+  type, abstract, extends(graph_operation) :: differentiable_operation
+
+   contains
+
+     procedure(differentiable_max_degree_interface)    , deferred :: max_degree
+     procedure(differentiable_partial_action_interface), deferred :: partial_action
+
+  end type differentiable_operation
+
+  !===================================================================!
   ! GRAPH_PARTITIONER. P: the whole becomes parts.
   !
   !         o---o---o---o---o---o
@@ -362,6 +385,31 @@ module graph_calculus
   end type graph_refiner
 
   abstract interface
+
+     !===============================================================!
+     ! The differentiable statement's two answers: how deep its
+     ! exact calculus goes, and one mixed partial action - the
+     ! statement differentiated once in the input slot each seat
+     ! names, contracted against the matching direction field,
+     ! answering on its own domain.
+     !===============================================================!
+
+     pure function differentiable_max_degree_interface(this) result(degree)
+       import :: differentiable_operation
+       class(differentiable_operation), intent(in) :: this
+       integer :: degree
+     end function differentiable_max_degree_interface
+
+     subroutine differentiable_partial_action_interface(this, input_graph, &
+          & input_data, slots, directions, output)
+       import :: differentiable_operation, directed_graph, graph_field
+       class(differentiable_operation), intent(in)    :: this
+       class(directed_graph)          , intent(in)    :: input_graph
+       class(graph_field)             , intent(in)    :: input_data(:)
+       integer                        , intent(in)    :: slots(:)
+       class(graph_field)             , intent(in)    :: directions(:)
+       class(graph_field), allocatable, intent(inout) :: output
+     end subroutine differentiable_partial_action_interface
 
      !===============================================================!
           !===============================================================!

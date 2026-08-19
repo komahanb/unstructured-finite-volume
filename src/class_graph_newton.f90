@@ -15,9 +15,11 @@
 ! Newton owns no derivative mathematics. The tangent is a level-1
 ! citizen - the linearization operator - and newton merely governs:
 ! freeze the linearization at the standing state, hand the linear
-! question to the inner minimizer, step. Today the difference
-! concretion stands in the seat; a statement that linearizes itself
-! exactly takes the seat with no change here.
+! question to the inner minimizer, step. The seat is filled by what
+! the statement IS: a differentiable statement linearizes itself
+! exactly, anything else is differenced - the promise the family
+! made, kept by one dispatch, and the governance below it never
+! changes.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -26,7 +28,10 @@ module class_graph_newton
 
   use iso_fortran_env           , only : dp => REAL64
   use graph_minimization        , only : minimizer
+  use graph_calculus            , only : linearization_operator, &
+       & differentiable_operation
   use class_graph_linearization , only : difference_linearization
+  use class_graph_exact_linearization, only : exact_linearization
 
   implicit none
 
@@ -73,7 +78,7 @@ contains
     real(dp), intent(inout) :: x(:)
     real(dp), intent(out)   :: achieved
 
-    type(difference_linearization) :: jacobian
+    class(linearization_operator), allocatable :: jacobian
     real(dp), allocatable :: residual(:), g(:), y(:), dq(:)
     real(dp) :: linear_achieved
     integer :: it
@@ -82,7 +87,13 @@ contains
 
     call this % constant(g)
 
-    jacobian = difference_linearization(this % action)
+    ! the seat is filled by what the statement is
+    select type (statement => this % action)
+    class is (differentiable_operation)
+       allocate(jacobian, source=exact_linearization(statement))
+    class default
+       allocate(jacobian, source=difference_linearization(this % action))
+    end select
 
     do it = 1, this % max_iterations
 

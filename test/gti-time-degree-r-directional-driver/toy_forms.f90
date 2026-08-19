@@ -27,13 +27,14 @@ module gti_toy_forms
   use gti_evaluation_points, only : gti_evaluation_point
   use gti_form_interface, only : gti_differentiable_form, &
        & gti_partial_request, gti_direction_bundle, &
-       & GTI_ARG_STATE, GTI_ARG_DESIGN, &
+       & GTI_ARG_STATE, GTI_ARG_DESIGN, GTI_ARG_TIME, &
        & GTI_STATE_Q, GTI_STATE_QDOT
 
   implicit none
 
   private
   public :: toy_qdot_square_form
+  public :: toy_qdot_square_time_form
   public :: toy_design_only_scalar_form
   public :: toy_short_form
 
@@ -46,6 +47,16 @@ module gti_toy_forms
      procedure :: value            => qs_value
      procedure :: partial_action   => qs_partial_action
   end type toy_qdot_square_form
+
+  type, extends(gti_differentiable_form) :: toy_qdot_square_time_form
+   contains
+     procedure :: name             => qst_name
+     procedure :: input_signature  => qst_input_signature
+     procedure :: output_signature => qst_output_signature
+     procedure :: max_degree       => qst_max_degree
+     procedure :: value            => qst_value
+     procedure :: partial_action   => qst_partial_action
+  end type toy_qdot_square_time_form
 
   type, extends(gti_differentiable_form) :: toy_design_only_scalar_form
    contains
@@ -186,6 +197,90 @@ contains
        call output % set_real([0.0_dp])
     end select
   end subroutine qs_partial_action
+
+  !===================================================================!
+  ! R = qdot + q^2 - xi - t: the time-path specimen. Identical to
+  ! the qdot-square toy in every partial but one - D_t R[v] = -v,
+  ! the same shape as D_xi R[v] - so a time channel and a design
+  ! channel are exercised by one form without conflating them.
+  !===================================================================!
+
+  pure function qst_name(this) result(name)
+    class(toy_qdot_square_time_form), intent(in) :: this
+    character(len=:), allocatable :: name
+    name = 'toy qdot square time'
+  end function qst_name
+
+  pure function qst_input_signature(this) result(signature)
+    class(toy_qdot_square_time_form), intent(in) :: this
+    integer, allocatable :: signature(:)
+    signature = [GTI_ARG_STATE, GTI_ARG_DESIGN, GTI_ARG_TIME]
+  end function qst_input_signature
+
+  pure function qst_output_signature(this) result(signature)
+    class(toy_qdot_square_time_form), intent(in) :: this
+    integer, allocatable :: signature(:)
+    signature = [1, 1]
+  end function qst_output_signature
+
+  pure function qst_max_degree(this) result(degree)
+    class(toy_qdot_square_time_form), intent(in) :: this
+    integer :: degree
+    degree = 8
+  end function qst_max_degree
+
+  subroutine qst_value(this, point, output)
+    class(toy_qdot_square_time_form), intent(in)    :: this
+    type(gti_evaluation_point)      , intent(in)    :: point
+    type(gti_value_buffer)          , intent(inout) :: output
+    real(dp) :: q1, qdot1, xi1
+    call read_scalars(point, q1, qdot1, xi1)
+    call output % set_real([qdot1 + q1 * q1 - xi1 - point % time])
+  end subroutine qst_value
+
+  subroutine qst_partial_action(this, point, request, directions, output)
+    class(toy_qdot_square_time_form), intent(in)    :: this
+    type(gti_evaluation_point)      , intent(in)    :: point
+    type(gti_partial_request)       , intent(in)    :: request
+    type(gti_direction_bundle)      , intent(in)    :: directions(:)
+    type(gti_value_buffer)          , intent(inout) :: output
+    real(dp), allocatable :: v1(:), v2(:)
+    real(dp) :: q1, qdot1, xi1
+    call this % require_supported(request, directions)
+    select case (request % order)
+    case (0)
+       call this % value(point, output)
+    case (1)
+       call read_scalars(point, q1, qdot1, xi1)
+       if (slot_is(request, 1, GTI_ARG_STATE, GTI_STATE_Q)) then
+          call directions(1) % values % get_real(v1)
+          call output % set_real([2.0_dp * q1 * v1(1)])
+       else if (slot_is(request, 1, GTI_ARG_STATE, GTI_STATE_QDOT)) then
+          call directions(1) % values % get_real(v1)
+          call output % set_real([v1(1)])
+       else if (request % argument_kind(1) == GTI_ARG_DESIGN) then
+          call directions(1) % values % get_real(v1)
+          call output % set_real([-v1(1)])
+       else if (request % argument_kind(1) == GTI_ARG_TIME) then
+          call directions(1) % values % get_real(v1)
+          call output % set_real([-v1(1)])
+       else
+          call output % set_real([0.0_dp])
+       end if
+    case (2)
+       if (slot_is(request, 1, GTI_ARG_STATE, GTI_STATE_Q) .and. &
+            & slot_is(request, 2, GTI_ARG_STATE, GTI_STATE_Q)) then
+          call directions(1) % values % get_real(v1)
+          call directions(2) % values % get_real(v2)
+          call output % set_real([2.0_dp * v1(1) * v2(1)])
+       else
+          call output % set_real([0.0_dp])
+       end if
+    case default
+       ! orders 3 through 8: every remaining partial is exactly zero
+       call output % set_real([0.0_dp])
+    end select
+  end subroutine qst_partial_action
 
   !===================================================================!
   ! R = xi: J_u = 0, the singular specimen.

@@ -11,7 +11,12 @@
 !                       disagrees with the options
 !      vertdim          a derivative array whose vertex dimension
 !                       disagrees with the graph
-!      noeta            a design direction with no values
+!      noeta            a design direction with no values, and no
+!                       design_path supplied to waive that law -
+!                       the legacy affine path is still the one in
+!                       force here, and it still demands eta
+!      noetalegacy      the same law, proven through solve_all
+!                       rather than solve_relation
 !      unsolved         an unknown vertex nobody has solved
 !      unsolvedhistory  a history vertex nobody has solved
 !      noq              an unknown q holding no real values
@@ -20,6 +25,10 @@
 !      shortres         two assembled equations against one
 !                       unknown
 !      singular         a design-only residual: J_u = 0
+!
+! An empty design_path or an empty time_path is deliberately absent
+! from this list - an empty path is lawful zero, never a refusal;
+! that law is proven positively in test.f90, not here.
 !
 ! Every case must error stop; a case that returns is a failure of
 ! the suite.
@@ -141,9 +150,20 @@ program refusal
 
   case ('noeta')
 
+     ! design_path is not passed here, so it is absent - the
+     ! legacy affine path governs, and an empty design_direction
+     ! still dies exactly as before.
      call eta % clear()
      call driver % solve_relation(r_form, time_graph, 1, design, eta, &
           & vd, options, step)
+
+  case ('noetalegacy')
+
+     ! The same design-path-absent law, proven explicitly through
+     ! solve_all rather than solve_relation: the whole-graph verb
+     ! forwards no design_path either, and dies the same way.
+     call eta % clear()
+     call driver % solve_all(r_form, time_graph, design, eta, options, result)
 
   case ('unsolved')
 

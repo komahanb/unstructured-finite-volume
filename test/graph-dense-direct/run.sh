@@ -10,8 +10,9 @@ declare -A reason=(
   [sizemismatch]="dense_direct: solution size matches rhs"
   [singular]="dense_direct: pivot is nonsingular"
   [nonsquare]="dense_direct: dense matrix is square"
+  [probewidth]="dense_direct: the probed width carries a whole number per member"
 )
-for case in tolzero sizemismatch singular nonsquare; do
+for case in tolzero sizemismatch singular nonsquare probewidth; do
     if ./refusal "$case" >refusal.out 2>&1; then echo " FAIL : '$case' accepted"; exit 1; fi
     grep -q "${reason[$case]}" refusal.out && echo " PASS : '$case' is refused, loudly" || { cat refusal.out; exit 1; }
 done

@@ -7,6 +7,8 @@
 !                    the right-hand side
 !      singular      dependent rows - no pivot survives elimination
 !      nonsquare     a rectangular array at the adapter door
+!      probewidth    a probed width carrying a fractional number
+!                    per member of the operation's domain
 !
 ! Every case must error stop; a case that returns is a failure of
 ! the suite.
@@ -19,14 +21,14 @@ program refusal
   use iso_fortran_env     , only : dp => REAL64
   use class_graph_stencil , only : stencil_operator
   use class_graph_dense_direct, only : dense_direct, &
-       & solve_dense_matrix_with_dense_direct
+       & solve_dense_matrix_with_dense_direct, probed_dense_matrix
 
   implicit none
 
   type(stencil_operator) :: statement
   type(dense_direct)     :: solver
 
-  real(dp), allocatable :: xa(:)
+  real(dp), allocatable :: xa(:), aprobe(:,:)
   real(dp) :: x2(2), x3(3), achieved
   real(dp) :: rect(2,3)
 
@@ -72,6 +74,14 @@ program refusal
      rect = 1.0_dp
      call solve_dense_matrix_with_dense_direct(rect, [1.0_dp, 1.0_dp], &
           & 1.0e-14_dp, xa, achieved)
+
+  case ('probewidth')
+
+     ! three numbers over a two-member domain is not a whole
+     ! number per member
+     statement = stencil_operator([1, 1, 2, 2], [1, 2, 1, 2], &
+          & [2.0_dp, 1.0_dp, 1.0_dp, 3.0_dp], [0.0_dp, 0.0_dp], 'two')
+     call probed_dense_matrix(statement, statement % pattern, 3, aprobe)
 
   case default
 

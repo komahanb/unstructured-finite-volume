@@ -69,6 +69,7 @@ module class_graph_marcher
        & differentiable_operation
   use class_graph_exact_linearization, only : tangent_of
   use class_graph_chain_rule, only : chain_rule, chain_channel, chain_seat
+  use class_graph_step_policy, only : step_policy
   use class_graph_dense_direct, only : solve_dense_matrix_with_dense_direct, &
        & probed_dense_matrix
 
@@ -96,6 +97,7 @@ module class_graph_marcher
      procedure :: march
      procedure :: march_adjoint
      procedure :: march_directional
+     procedure :: march_adaptive
 
   end type marcher
 
@@ -274,7 +276,7 @@ contains
   !===================================================================!
 
   subroutine march_adjoint(this, transposed, on, lambda, nsteps, steps, &
-       & action, trajectory)
+       & action, trajectory, seeds)
 
     class(marcher), intent(inout)      :: this
     class(graph_operation), intent(in) :: transposed
@@ -284,6 +286,7 @@ contains
     real(dp), intent(in), optional     :: steps(:)
     class(graph_operation), intent(in), optional :: action
     real(dp), intent(in), optional     :: trajectory(:,:)
+    real(dp), intent(in), optional     :: seeds(:,:)
 
     type(directed_stored_graph) :: chain
     real(dp), allocatable :: s(:)
@@ -314,7 +317,8 @@ contains
             &and its forward trajectory'
     end if
 
-    call substitute_backward(this, action, on, lambda, chain, steps, trajectory)
+    call substitute_backward(this, action, on, lambda, chain, steps, &
+         & trajectory, seeds)
 
   end subroutine march_adjoint
 
@@ -338,7 +342,7 @@ contains
   !===================================================================!
 
   subroutine substitute_backward(this, action, on, lambda, chain, steps, &
-       & trajectory)
+       & trajectory, seeds)
 
     class(marcher), intent(inout)      :: this
     class(graph_operation), intent(in) :: action
@@ -347,6 +351,7 @@ contains
     type(directed_stored_graph), intent(in) :: chain
     real(dp), intent(in), optional     :: steps(:)
     real(dp), intent(in)               :: trajectory(:,:)
+    real(dp), intent(in), optional     :: seeds(:,:)
 
     class(linearization_operator), allocatable :: tangent
     type(step_operator) :: table
@@ -360,6 +365,15 @@ contains
     if (size(trajectory, 1) /= n .or. &
          & size(trajectory, 2) /= chain % num_vertices()) then
        error stop 'march_adjoint: the trajectory carries one state per instant'
+    end if
+
+    ! a functional may touch interior instants: its per-instant
+    ! seeds join the carried couplings as each instant is reached
+    if (present(seeds)) then
+       if (size(seeds, 1) /= n .or. &
+            & size(seeds, 2) /= chain % num_vertices()) then
+          error stop 'march_adjoint: the seeds carry one entry per instant'
+       end if
     end if
 
     tangent = tangent_of(action)
@@ -382,7 +396,10 @@ contains
           call table % set_bdf(1, [h_edge])
        end if
 
-       if (e < chain % num_edges()) seed = carry_one
+       if (e < chain % num_edges()) then
+          seed = carry_one
+          if (present(seeds)) seed = seed + seeds(:, e + 1)
+       end if
 
        ! the step Jacobian at the recorded state, transposed and
        ! eliminated
@@ -405,6 +422,7 @@ contains
     end do
 
     lambda = carry_one
+    if (present(seeds)) lambda = lambda + seeds(:, 1)
 
   end subroutine substitute_backward
 
@@ -730,5 +748,152 @@ contains
     end do
 
   end subroutine build_paths
+
+  !===================================================================!
+  ! THE ADAPTIVE WALK: the chain is not given, it is decided. At
+  ! each edge the policy proposes a step, the marcher takes it on
+  ! trial - explicit or governed by its standing rule - and
+  ! measures the evidence: the distance between the trial state and
+  ! the extrapolating predictor through the accepted history,
+  ! constant with one accepted instant behind, linear with two. The
+  ! policy judges; an accepted edge commits and its step joins the
+  ! record, a rejected edge leaves NOTHING - the trial never touched
+  ! the state, so there is no transaction and nothing to roll back.
+  ! A spent attempt budget ends the walk lawfully where it stands.
+  !
+  ! What leaves is the walk itself: the steps actually taken, one
+  ! per accepted edge. A caller wanting the trajectory or the
+  ! adjoint marches again with those steps - the recorded chain is
+  ! an ordinary nonuniform chain, and every other verb already
+  ! speaks it.
+  !===================================================================!
+
+  subroutine march_adaptive(this, action, on, q, duration, policy, &
+       & max_attempts, steps_taken, completed)
+
+    class(marcher), intent(inout)      :: this
+    class(graph_operation), intent(in) :: action
+    class(directed_graph), intent(in)  :: on
+    real(dp), intent(inout)            :: q(:)
+    real(dp), intent(in)               :: duration
+    class(step_policy), intent(inout)  :: policy
+    integer, intent(in)                :: max_attempts
+    real(dp), allocatable, intent(out) :: steps_taken(:)
+    logical, intent(out)               :: completed
+
+    type(step_operator) :: statement
+    type(set_graph)     :: state_domain
+    integer             :: n_state_domain, ncomp
+    real(dp), allocatable :: trial(:), predictor(:), qprev(:), s(:), zeros(:)
+    real(dp), allocatable :: grown(:)
+    real(dp) :: t, h, h_previous, estimate, answered
+    integer  :: attempt, taken
+    logical  :: accepted, have_previous
+
+    if (duration <= 0.0_dp) then
+       error stop 'march_adaptive: the duration is positive'
+    end if
+    if (max_attempts < 1) then
+       error stop 'march_adaptive: the attempt budget is positive'
+    end if
+
+    call state_seat(action, on, q, state_domain, n_state_domain, ncomp)
+
+    if (this % rule /= MARCH_FORWARD) then
+       statement = bdf(1, action, this % step)
+       allocate(zeros(size(q)))
+       zeros = 0.0_dp
+    end if
+
+    allocate(steps_taken(0))
+    t             = 0.0_dp
+    taken         = 0
+    have_previous = .false.
+    h_previous    = 0.0_dp
+    completed     = .false.
+
+    do while (duration - t > 1.0e-12_dp * duration)
+
+       call policy % propose(h)
+
+       accepted = .false.
+       attempt  = 0
+
+       do while (.not. accepted .and. attempt < max_attempts)
+
+          attempt = attempt + 1
+
+          if (h <= 0.0_dp) then
+             error stop 'march_adaptive: the policy proposes a positive step'
+          end if
+          h = min(h, duration - t)
+
+          !----------------------------------------------------------!
+          ! The trial: the state is never touched - a rejection has
+          ! nothing to undo.
+          !----------------------------------------------------------!
+
+          if (this % rule == MARCH_FORWARD) then
+
+             call read_statement(action, on, q, s)
+             trial = q - h * s
+
+          else
+
+             if (this % rule == MARCH_BDF2 .and. have_previous) then
+                call statement % set_bdf(2, [h, h_previous])
+                statement % qolder = qprev
+             else
+                call statement % set_bdf(1, [h])
+             end if
+             statement % qold = q
+
+             trial = q
+             call this % inner % attach(statement, on, state_domain, &
+                  & n_state_domain, ncomp = ncomp)
+             call this % inner % solve(zeros, trial, answered)
+
+          end if
+
+          !----------------------------------------------------------!
+          ! The evidence: distance from the extrapolating predictor
+          ! through the accepted history. Measurement only - the
+          ! judgment is the policy's.
+          !----------------------------------------------------------!
+
+          if (have_previous) then
+             predictor = q + (h / h_previous) * (q - qprev)
+          else
+             predictor = q
+          end if
+          estimate = norm2(trial - predictor)
+
+          call policy % judge(estimate, h, attempt, accepted)
+
+          if (.not. accepted .and. attempt < max_attempts) then
+             call policy % retry(estimate, h)
+          end if
+
+       end do
+
+       if (.not. accepted) return
+
+       qprev         = q
+       q             = trial
+       t             = t + h
+       h_previous    = h
+       have_previous = .true.
+
+       allocate(grown(taken + 1))
+       grown(1:taken) = steps_taken
+       grown(taken + 1) = h
+       call move_alloc(grown, steps_taken)
+       taken = taken + 1
+
+    end do
+
+    completed = .true.
+
+  end subroutine march_adaptive
 
 end module class_graph_marcher

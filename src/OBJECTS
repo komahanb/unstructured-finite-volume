@@ -74,4 +74,5 @@ gti_chain_rule_assembly.o \
 gti_time_local_scheme.o \
 gti_time_motif_builder.o \
 gti_time_local_unknown_problem.o \
-gti_time_local_newton_driver.o
+gti_time_local_newton_driver.o \
+gti_time_local_tangent_driver.o

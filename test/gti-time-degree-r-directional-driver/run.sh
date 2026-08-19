@@ -7,7 +7,6 @@ make -C "$here" >/dev/null
 cd "$here" && ./run
 declare -A reason=(
   [deg0]="degree_r_directional_driver: degree is supported"
-  [deg5]="degree_r_directional_driver: degree is supported"
   [negsing]="degree_r_directional_driver: singular tolerance is positive"
   [norelations]="degree_r_directional_driver: at least one relation is required"
   [idx0]="degree_r_directional_driver: relation index is in range"
@@ -22,7 +21,7 @@ declare -A reason=(
   [shortres]="degree_r_directional_driver: degree residual size matches unknown size"
   [singular]="degree_r_directional_driver: dense Jacobian pivot is nonsingular"
 )
-for case in deg0 deg5 negsing norelations idx0 idxhigh degdim vertdim noeta \
+for case in deg0 negsing norelations idx0 idxhigh degdim vertdim noeta \
             unsolved unsolvedhistory noq badseed shortres singular; do
     if ./refusal "$case" >refusal.out 2>&1; then echo " FAIL : '$case' accepted"; exit 1; fi
     grep -q "${reason[$case]}" refusal.out && echo " PASS : '$case' is refused, loudly" || { cat refusal.out; exit 1; }

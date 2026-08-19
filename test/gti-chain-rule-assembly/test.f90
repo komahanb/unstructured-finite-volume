@@ -38,7 +38,8 @@ program test_gti_chain_rule_assembly
   use gti_chain_rule_assemblies, only : gti_chain_rule_assembler, &
        & gti_chain_channel, gti_chain_input
   use gti_toy_forms          , only : toy_residual_form, toy_functional_form, &
-       & toy_mixed_form, toy_polynomial_form, reset_toy_counters, &
+       & toy_mixed_form, toy_polynomial_form, toy_power8_form, &
+       & reset_toy_counters, &
        & partial_order_1_calls, partial_order_2_calls, &
        & partial_order_3_calls, partial_order_4_calls
 
@@ -55,16 +56,20 @@ program test_gti_chain_rule_assembly
   type(toy_functional_form) :: f_form
   type(toy_mixed_form)      :: m_form
   type(toy_polynomial_form) :: poly
+  type(toy_power8_form)     :: p8_form
 
   type(graph) :: pstates, pdesigns
   type(field) :: pq_field, px_field
   type(gti_evaluation_point) :: ppoint
-  type(gti_chain_input)      :: pinput, psparse
+  type(gti_chain_input)      :: pinput, psparse, p8_input
 
   type(gti_value_buffer) :: out
 
   real(dp), allocatable :: rv(:)
-  integer :: k, nfail
+  real(dp) :: acoef(0:8), upow(0:8), convolved(0:8), expected, fact
+  logical  :: high_degrees_ok
+  integer  :: k, n, i, j, nfail
+  character(len=64) :: label
 
   nfail = 0
   write(*,'(1x,a)') "============================================="
@@ -311,6 +316,67 @@ program test_gti_chain_rule_assembly
   call out % get_real(rv)
   call report(matches(rv, [27908.0_dp]), &
        & "degree 4 with xi's higher seats absent reads them as zero: 27908", nfail)
+
+  !-------------------------------------------------------------------!
+  ! Degrees 1 through 8, beyond every hand table: the scalar
+  !
+  !      Phi = (q + xi)^8       at (q, xi) = (1, 2), u = q + xi
+  !
+  ! along the path with seats q^(k) = k! and xi^(k) = k k!, so the
+  ! normalized Taylor coefficients of u(e) are a_0 = 3 and
+  ! a_k = k + 1, all exact in floating point. The oracle below
+  ! raises u(e) to the eighth power by truncated polynomial
+  ! convolution - INDEPENDENT of the production pattern generator -
+  ! and the exact total derivative of degree n is n! times the
+  ! coefficient of e^n. The same point ppoint serves: q = 1,
+  ! xi = 2.
+  !-------------------------------------------------------------------!
+
+  allocate(p8_input % channel(2))
+  allocate(p8_input % channel(1) % derivative(8))
+  allocate(p8_input % channel(2) % derivative(8))
+  fact = 1.0_dp
+  do k = 1, 8
+     fact = fact * real(k, dp)
+     call p8_input % channel(1) % derivative(k) % values % set_real([fact])
+     p8_input % channel(2) % derivative(k) % argument_kind = GTI_ARG_DESIGN
+     call p8_input % channel(2) % derivative(k) % values % &
+          & set_real([real(k, dp) * fact])
+  end do
+
+  acoef(0) = 3.0_dp
+  do k = 1, 8
+     acoef(k) = real(k + 1, dp)
+  end do
+  upow = acoef
+  do k = 1, 7
+     convolved = 0.0_dp
+     do i = 0, 8
+        do j = 0, 8 - i
+           convolved(i + j) = convolved(i + j) + upow(i) * acoef(j)
+        end do
+     end do
+     upow = convolved
+  end do
+
+  high_degrees_ok = .true.
+  fact = 1.0_dp
+  do n = 1, 8
+     fact = fact * real(n, dp)
+     expected = fact * upow(n)
+     call assembler % assemble(p8_form, ppoint, n, p8_input, out)
+     call out % get_real(rv)
+     high_degrees_ok = high_degrees_ok .and. size(rv) == 1 .and. &
+          & abs(rv(1) - expected) <= 1.0e-12_dp * abs(expected)
+     if (n == 5 .or. n == 8) then
+        write(label,'(a,i0,a)') "degree ", n, &
+             & " matches the independent Taylor-convolution oracle"
+        call report(high_degrees_ok, trim(label), nfail)
+     end if
+  end do
+
+  call report(high_degrees_ok, &
+       & "every degree 1..8 of (q+xi)^8 matches the independent oracle", nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then

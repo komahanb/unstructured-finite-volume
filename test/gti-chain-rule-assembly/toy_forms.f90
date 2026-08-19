@@ -50,6 +50,7 @@ module gti_toy_forms
   public :: toy_functional_form
   public :: toy_mixed_form
   public :: toy_polynomial_form
+  public :: toy_power8_form
   public :: toy_liar4_form
   public :: reset_toy_counters
   public :: value_calls, partial_order_1_calls, partial_order_2_calls
@@ -99,6 +100,16 @@ module gti_toy_forms
      procedure :: value            => liar4_value
      procedure :: partial_action   => liar4_partial_action
   end type toy_liar4_form
+
+  type, extends(gti_differentiable_form) :: toy_power8_form
+   contains
+     procedure :: name             => p8_name
+     procedure :: input_signature  => p8_input_signature
+     procedure :: output_signature => p8_output_signature
+     procedure :: max_degree       => p8_max_degree
+     procedure :: value            => p8_value
+     procedure :: partial_action   => p8_partial_action
+  end type toy_power8_form
 
   !===================================================================!
   ! R : R^n x R -> R^n. The one configuration a residual form
@@ -753,5 +764,96 @@ contains
        call output % set_real([0.0_dp])
     end if
   end subroutine liar4_partial_action
+
+  !===================================================================!
+  ! Phi = (q + xi)^8, scalar q and scalar xi, with EXACT partial
+  ! actions to order 8: with u = q + xi, every mixed partial of
+  ! order k in any mix of q and xi slots is one number,
+  !
+  !      D^k Phi = 8 (8-1) ... (8-k+1) u^(8-k),
+  !
+  ! times the product of the direction values. The degree-8 witness
+  ! whose exact path derivatives a test can compute independently
+  ! by Taylor convolution.
+  !===================================================================!
+
+  pure function p8_name(this) result(name)
+    class(toy_power8_form), intent(in) :: this
+    character(len=:), allocatable :: name
+    name = 'toy power eight'
+  end function p8_name
+
+  pure function p8_input_signature(this) result(signature)
+    class(toy_power8_form), intent(in) :: this
+    integer, allocatable :: signature(:)
+    signature = [GTI_ARG_STATE, GTI_ARG_DESIGN]
+  end function p8_input_signature
+
+  pure function p8_output_signature(this) result(signature)
+    class(toy_power8_form), intent(in) :: this
+    integer, allocatable :: signature(:)
+    signature = [1, 1]
+  end function p8_output_signature
+
+  pure function p8_max_degree(this) result(degree)
+    class(toy_power8_form), intent(in) :: this
+    integer :: degree
+    degree = 8
+  end function p8_max_degree
+
+  subroutine p8_read(point, q1, xi1)
+    type(gti_evaluation_point), intent(in)  :: point
+    real(dp)                  , intent(out) :: q1, xi1
+    real(dp), allocatable :: v(:)
+    call point % state % component(1 + GTI_STATE_Q) % value % get_real_vector(v)
+    q1 = v(1)
+    call point % design % component(1) % value % get_real_vector(v)
+    xi1 = v(1)
+  end subroutine p8_read
+
+  subroutine p8_value(this, point, output)
+    class(toy_power8_form)    , intent(in)    :: this
+    type(gti_evaluation_point), intent(in)    :: point
+    type(gti_value_buffer)    , intent(inout) :: output
+    real(dp) :: q1, xi1
+    call p8_read(point, q1, xi1)
+    call output % set_real([(q1 + xi1) ** 8])
+  end subroutine p8_value
+
+  subroutine p8_partial_action(this, point, request, directions, output)
+    class(toy_power8_form)    , intent(in)    :: this
+    type(gti_evaluation_point), intent(in)    :: point
+    type(gti_partial_request) , intent(in)    :: request
+    type(gti_direction_bundle), intent(in)    :: directions(:)
+    type(gti_value_buffer)    , intent(inout) :: output
+    real(dp), allocatable :: v(:)
+    real(dp) :: q1, xi1, term
+    integer :: j
+    call this % require_supported(request, directions)
+    if (request % order == 0) then
+       call this % value(point, output)
+       return
+    end if
+    ! a state slot the form ignores has a zero partial, not an error
+    do j = 1, request % order
+       if (request % argument_kind(j) == GTI_ARG_STATE) then
+          if (request % state_component(j) /= GTI_STATE_Q) then
+             call output % set_real([0.0_dp])
+             return
+          end if
+       end if
+    end do
+    call p8_read(point, q1, xi1)
+    term = 1.0_dp
+    do j = 0, request % order - 1
+       term = term * real(8 - j, dp)
+    end do
+    term = term * (q1 + xi1) ** (8 - request % order)
+    do j = 1, request % order
+       call directions(j) % values % get_real(v)
+       term = term * v(1)
+    end do
+    call output % set_real([term])
+  end subroutine p8_partial_action
 
 end module gti_toy_forms

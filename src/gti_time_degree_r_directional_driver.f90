@@ -2,18 +2,20 @@
 ! GTI TIME DEGREE-R DIRECTIONAL TRAVERSAL
 !
 ! The general forward derivative traversal over the time graph:
-! given a solved G_time, one design direction eta, and a maximum
-! degree r in {1, 2, 3, 4}, walk relations in stored forward order
-! and compute every unknown vertex's directional derivatives
+! given a solved G_time, one design direction eta, and a positive
+! maximum degree r - tested through degree 8 - walk relations in
+! stored forward order and compute every unknown vertex's
+! directional derivatives
 !
 !      J_u q_u^(s) = -B^(s),        s = 1, ..., r,
 !
 ! with ONE J_u per relation - built once from the local Jacobian
-! action, before the degree loop, and eliminated r times. Degree 3
-! and degree 4 are not new drivers; they are two more turns of the
-! same loop, which is the architecture's central claim made
-! executable: the Jacobian never changes with the degree, only the
-! chain-rule right-hand side does.
+! action, before the degree loop, and eliminated r times. A higher
+! degree is not a new driver; it is one more turn of the same
+! loop, which is the architecture's central claim made executable:
+! the Jacobian never changes with the degree, only the chain-rule
+! right-hand side does, and the assembler generates every pattern
+! the degree demands.
 !
 ! Along the affine design path xi(eps) = xi + eps eta,
 !
@@ -144,7 +146,7 @@ contains
 
     class(gti_time_degree_r_directional_options), intent(in) :: this
 
-    if (this % max_degree < 1 .or. this % max_degree > 4) then
+    if (this % max_degree < 1) then
        error stop 'gti_time_degree_r_directional_driver: degree is supported'
     end if
 

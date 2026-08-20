@@ -31,6 +31,12 @@ another graph. Sets, tuples, relations, domains, and chains are all
 this one object read differently. There is exactly one type named
 `graph` in the living tower.
 
+The namespace law (doc/coding-standards.md, 2026-08-19): a module
+reads namespace order, `<prime>_<subject>` (`relation_binary`,
+`field_stored`); a type reads english order (`binary_relation`,
+`stored_field`); so no type can ever collide with a module name.
+test/graph-ordinary enforces it statically.
+
 ## The composition tree
 
 Indentation is `extends`; brackets name the file.
@@ -39,7 +45,7 @@ Indentation is `extends`; brackets name the file.
     ├── stored_relation                        [relation_finitary]
     └── binary_relation                        [relation_binary]
         ├── csr_relation                       [relation_binary]
-        └── transposed_relation                    [relation_binary]
+        └── transposed_relation  (the converse)  [relation_binary]
 
     group_by_key                               [relation_binary]
         the one grouping kernel (counting sort): the fibration of a
@@ -58,14 +64,14 @@ Indentation is `extends`; brackets name the file.
     operation                                  [operation_action]
     ├── reduction   field -> functional  (sum, average, norm, ...)   [operation_reduction]
     ├── broadcast   functional -> field  (copy, share)               [operation_reduction]
-    ├── discretization                [operation_discretization]
-    │   ├── stencil  space: matrix as weighted edges   [operation_stencil]
+    ├── discretization                             [operation_discretization]
+    │   ├── stencil  space: matrix as weighted edges         [operation_stencil]
     │   │       constructed from triples or from a dense array;
     │   │       exports combine_triples (one entry per pair)
-    │   └── scheme     time:  a0 q + a1 qold + a2 qolder + hs S(q)   [operation_step]
-    ├── linearization  J v at a frozen state           [operation_discretization]
-    │   ├── difference_linearization           [operation_linearization]
-    │   └── exact_linearization  + tangent_of chooser           [operation_linearization]
+    │   └── scheme   time: a0 q + a1 qold + a2 qolder + hs S(q)  [operation_step]
+    ├── linearization  J v at a frozen state       [operation_discretization]
+    │   ├── difference_linearization               [operation_linearization]
+    │   └── exact_linearization  + tangent_of chooser  [operation_linearization]
     ├── differentiable_operation  exact partial actions to max_degree   [operation_discretization]
     ├── minimizer                              [operation_minimization]
     │   ├── jacobi, gauss_seidel, conjugate_gradient, gmres, multigrid
@@ -85,7 +91,7 @@ Indentation is `extends`; brackets name the file.
     ├── coarsener                              [transform_coarsener]
     └── refiner                                [transform_refiner]
 
-    reversible_change  apply -> check -> keep | revert   [map_change_protocol]
+    reversible_change  run_change: apply -> check -> keep | revert   [map_change_protocol]
     └── value_change                           [map_value_change]
 
     chain_rule + argument_path + path_derivative          [operation_chain_rule]
@@ -98,7 +104,7 @@ Indentation is `extends`; brackets name the file.
     step_policy -> halving_policy              [operation_step_policy]
 
     form -> polynomial_form, harmonic_form     [field_forms]
-    form_optimizer -> pruner, fit              [operation_fitting]
+    form_optimizer -> pruner;  fit (an operation)   [operation_fitting]
 
 ## Composition, stated as arithmetic
 
@@ -112,7 +118,7 @@ Indentation is `extends`; brackets name the file.
     chain rule   = partitions x partial actions             (any derivative)
     minimizer    = operation + a stopping rule              (a solve)
     newton       = minimizer x tangent_of                   (nonlinear solve)
-    marcher      = chain graph x step x minimizer           (integration)
+    marcher      = chain graph x scheme x minimizer         (integration)
     adjoint      = marcher read backward x transpose        (sensitivity)
     change       = mutation x memory x undo                 (transaction)
     mesh         = sets x relations x measurement fields    (see below)
@@ -127,14 +133,17 @@ Indentation is `extends`; brackets name the file.
                       transforms (partitioner/assembler/coarsener/refiner)
     5    field:       field_calculus, field_stored,
                       field_functional, operation_reduction
-    6    calculus:    operation_discretization, stencil, scheme,
-                      linearizations, chain rule, differential
-                      operator, forms/fitting
+    6    calculus:    operation_discretization, operation_stencil,
+                      operation_step, operation_step_policy,
+                      operation_linearization, operation_chain_rule,
+                      operation_differential, field_forms,
+                      operation_fitting
     7    solve:       operation_minimization + members, marcher,
                       step_policy, change protocol + value map
-    8-9  physics:     balance, fitted_balance, advection, conduction,
-                      diffusion_stencil, robin_condition,
-                      mesh + loaders
+    8-9  physics:     operation_balance, operation_fitted_balance,
+                      operation_advection, operation_conduction,
+                      operation_diffusion, operation_robin_condition,
+                      view_mesh, view_mesh_geometry + the loaders
 
 An import may only point downward in this list.
 

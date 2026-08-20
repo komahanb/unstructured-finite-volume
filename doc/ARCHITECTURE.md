@@ -104,7 +104,7 @@ Indentation is `extends`; brackets name the file.
     marcher      = chain graph x step x minimizer           (integration)
     adjoint      = marcher read backward x transpose        (sensitivity)
     change       = mutation x memory x undo                 (transaction)
-    mesh         = graph x measurements                     (see below)
+    mesh         = sets x relations x measurement fields    (see below)
 
 ## Level assignment (AGENTS.md section 2)
 
@@ -127,18 +127,33 @@ Indentation is `extends`; brackets name the file.
 
 An import may only point downward in this list.
 
-## The one remaining duplication
+## The mesh, in the primes
 
-`class_mesh` still extends the pre-tower graph
-(`interface_graph.f90`, `class_stored_graph.f90`) — the only
-remaining client of that stack, which duplicates the kernel + view
-primes above. The consolidation (AGENTS.md phase 11): the mesh's own
-vocabulary is already self-contained (coordinates, face_cells,
-areas, normals); it needs the old base only for inherited graph
-queries. Re-seat `mesh` on `directed_stored_graph`, keep its
-measurement API verbatim, and delete `interface_graph.f90` and
-`class_stored_graph.f90` (about 3,000 lines). Until then, no new
-code may import either old module.
+A mesh file supplies member sets (vertices, cells, tagged boundary
+faces), one relation (C2V, cell to vertex), one field (coordinates
+on vertices), and tag names. Everything else is derived, in
+`graph_mesh_geometry`, by relation algebra and geometry:
+
+    faces  = boundary faces + shared-vertex intersections of cell pairs
+    V2C    = transpose(C2V)
+    F2C    = {(f, c) : F2V(f) subset of C2V(c)}     (<= 2 cells per face)
+    C2F    = transpose(F2C)
+    measurements = pure functions of coordinates and the relations:
+                   cell centers/volumes, face centers/areas/normals,
+                   center-to-center vectors, deltas, weights
+
+`class_mesh_builder` seats the result as `class_graph_mesh`: the
+directed view whose vertices are cells and whose edges are the
+two-cell faces (a one-cell face is an edge without a head), with
+the measurements as fields and the tag names on the boundary edges.
+
+The pre-tower graph stack (`interface_graph`, `class_stored_graph`,
+`class_mesh`, `class_array_mesh_loader`, about 4,400 lines) was
+deleted on 2026-08-19 after `graph_mesh_geometry` reproduced its
+derived arrays bitwise on all eleven sample meshes (2d quadrilateral
+and triangle, 3d hexahedral and tetrahedral). A static in
+test/graph-mesh keeps it deleted. AGENTS.md phase 11 is complete:
+exactly one type named `graph` exists.
 
 ## Review candidates (not duplication, but under watch)
 
@@ -146,8 +161,6 @@ code may import either old module.
   original FV differential operator. Overlaps `stencil_operator`
   conceptually; consumed by `class_graph_balance` and ten suites.
   Candidate for re-expression over stencils.
-- `interface_graph`'s `vertex`/`edge` types: die with the mesh
-  consolidation.
 
 ## Documentation rule
 

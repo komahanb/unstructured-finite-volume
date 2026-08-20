@@ -63,11 +63,8 @@ module_solve_mode.o \
 module_verbosity.o \
 class_string.o \
 class_file.o \
-interface_graph.o \
-class_stored_graph.o \
 module_mesh_utils.o \
+graph_mesh_geometry.o \
 interface_mesh_loader.o \
-class_array_mesh_loader.o \
 class_gmsh_loader.o \
-class_mesh.o \
 class_mesh_builder.o

@@ -73,6 +73,9 @@ Indentation is `extends`; brackets name the file.
     │   │       constructed from triples or from a dense array;
     │   │       exports combine_triples (one entry per pair)
     │   └── scheme   time: a0 q + a1 qold + a2 qolder + hs S(q)  [operation_step]
+    │           max_degree and partial_action are the action's, with
+    │           a0 v added to the first derivative in the state: the
+    │           tangent of the step equation is exact when S's is
     ├── linearization  J v at a frozen state       [operation_discretization]
     │   ├── difference_linearization               [operation_linearization]
     │   └── exact_linearization  + tangent_of chooser  [operation_linearization]

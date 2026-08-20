@@ -4,7 +4,13 @@
 !
 !      a0 q  +  a1 qold  +  a2 qolder  +  hs S(q),
 !
-! the temporal counterpart of the spatial stencil. Constructors:
+! the temporal counterpart of the spatial stencil. Its calculus is
+! the action's: max_degree is the action's max_degree, and a partial
+! action is hs times the action's partial, plus a0 v for the first
+! derivative in slot 1 only, because a0 q is linear in the state,
+! constant in every other slot, and qold, qolder are constants of
+! the solve. So tangent_of(scheme) is exact whenever tangent_of(S)
+! is. Constructors:
 !
 !      backward_euler(action, h)          reach 1, [1, -1]
 !      bdf(k, action, h)                  reach k, uniform
@@ -64,6 +70,9 @@ module operation_step
      procedure :: apply        => step_apply
      procedure :: dependencies => step_dependencies
      procedure :: set_bdf
+
+     procedure :: max_degree     => step_max_degree
+     procedure :: partial_action => step_partial_action
 
   end type scheme
 
@@ -318,5 +327,89 @@ contains
     allocate(output, source=out)
 
   end subroutine step_apply
+
+  !===================================================================!
+  ! The calculus reaches as deep as the action's. A scheme without
+  ! an action stops the program, because there is nothing to
+  ! differentiate.
+  !===================================================================!
+
+  pure function step_max_degree(this) result(degree)
+
+    class(scheme), intent(in) :: this
+    integer :: degree
+
+    if (.not. allocated(this % action)) then
+       error stop 'step: the action is attached'
+    end if
+
+    degree = this % action % max_degree()
+
+  end function step_max_degree
+
+  !===================================================================!
+  ! One mixed partial of the residual: hs times the action's
+  ! partial, plus a0 times the direction when the request is the
+  ! first derivative in slot 1. Checks, each stopping the program:
+  ! the action must be attached; the action's partial must live on
+  ! its stated domain; for the slot-1 first derivative the direction
+  ! must live on that domain and match the partial's width, because
+  ! a0 v is added to it entry by entry.
+  !===================================================================!
+
+  subroutine step_partial_action(this, input_graph, input_data, slots, &
+       & directions, output)
+
+    class(scheme), intent(in)                :: this
+    class(directed_graph), intent(in)        :: input_graph
+    class(field), intent(in)                 :: input_data(:)
+    integer, intent(in)                      :: slots(:)
+    class(field), intent(in)                 :: directions(:)
+    class(field), allocatable, intent(inout) :: output
+
+    type(stored_field)        :: out
+    class(field), allocatable :: partial
+    type(graph) :: expected, given
+    integer     :: n_expected
+    real(dp), allocatable :: y(:), v(:)
+
+    if (.not. allocated(this % action)) then
+       error stop 'step: the action is attached'
+    end if
+
+    call this % action % domain(input_graph, expected, n_expected)
+
+    call this % action % partial_action(input_graph, input_data, slots, &
+         & directions, partial)
+    given = partial % domain()
+    if (.not. given % same_as(expected)) then
+       error stop 'step: the action partial lives on its stated domain'
+    end if
+    call partial % real_vector(y)
+
+    y = this % hs * y
+
+    if (size(slots) == 1) then
+       if (slots(1) == 1) then
+          given = directions(1) % domain()
+          if (.not. given % same_as(expected)) then
+             error stop 'step: the direction lives on the action''s own domain'
+          end if
+          call directions(1) % real_vector(v)
+          if (size(v) /= size(y)) then
+             error stop 'step: the direction matches the action result'
+          end if
+          y = y + this % a0 * v
+       end if
+    end if
+
+    out = stored_field('step tangent', expected, n_expected, &
+         & num_components=partial % num_components())
+    call out % set_real_vector(y)
+
+    if (allocated(output)) deallocate(output)
+    allocate(output, source=out)
+
+  end subroutine step_partial_action
 
 end module operation_step

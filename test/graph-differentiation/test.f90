@@ -5,6 +5,9 @@
 !                         and the order-1 row
 !      tangent_of         exact/difference dispatch, and the value
 !                         of the exact tangent
+!      the scheme         its max_degree and partial actions, the
+!                         exact tangent of the step equation, the
+!                         chain rule over it
 !      chain_rule         total derivatives to degree 8
 !      the marcher        march with trajectory recording,
 !                         march_directional to degree 8,
@@ -70,6 +73,7 @@ program test_graph_differentiation
 
   call check_the_table_seat(nfail)
   call check_the_tangent_chooser(nfail)
+  call check_the_step_tangent(nfail)
   call check_the_chain_rule(nfail)
   call check_the_taylor_convolution(nfail)
   call check_the_derivative_walks(nfail)
@@ -165,6 +169,116 @@ contains
          & "the exact tangent of the quartic at 1: J v = 26 v", nfail)
 
   end subroutine check_the_tangent_chooser
+
+  !===================================================================!
+  ! The scheme's own calculus. Its max_degree is the action's. Its
+  ! partial actions follow from a0 q + a1 qold + a2 qolder + hs S(q):
+  ! hs times the action's partial, plus a0 v for the first
+  ! derivative in slot 1 only. With the quartic at (q, xi) = (1, 2)
+  ! - Phi_q = 26, Phi_xi = 49, Phi_qq = 32 - and backward euler at
+  ! h = 1/2 (a0 = 1, hs = 1/2):
+  !
+  !      D_q [3]      = 1*3 + 26*3/2   = 42
+  !      D_xi [1]     = 49/2           = 24.5
+  !      D_qq [1, 1]  = 32/2           = 16
+  !
+  ! and after set_bdf(2, [2, 3]) (a0 = 7/5, hs = 2) the tangent at
+  ! [3] is 21/5 + 156 = 160.2. The chain rule over the scheme with
+  ! the quartic's paths q^(k) = (1, 2, 3, 4), xi^(k) = (5, 7, 11,
+  ! 13) gives a0 q^(n) + hs d_n = n + d_n/2 for n = 1..4 and, at
+  ! degree 0 with qold = 0, 1 + 31/2 = 16.5. A scheme over
+  ! linear_law keeps the difference tangent, which reads qold: at
+  ! h = 1 it is a0 + h = 2.
+  !===================================================================!
+
+  subroutine check_the_step_tangent(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(scheme) :: statement, shallow, slowstep
+    class(linearization), allocatable :: tangent, slow
+    type(chain_rule)    :: composer
+    type(argument_path) :: full(2)
+    type(stored_field)  :: inputs(2), v, w, one
+    class(field), allocatable :: output
+    real(dp), allocatable :: rv(:)
+    real(dp) :: expected(0:4)
+    logical  :: ok
+    integer  :: n
+
+    statement = backward_euler(equil, 1.0_dp)
+    shallow   = bdf_variable(2, lin, [1.0_dp, 1.0_dp])
+    call report(statement % max_degree() == 8 .and. &
+         & shallow % max_degree() == 0, &
+         & "a scheme's max_degree is its action's", nfail)
+
+    statement = backward_euler(quartic, 0.5_dp)
+    statement % qold = [0.0_dp]
+    call scalar_pair(1.0_dp, 2.0_dp, cells, inputs)
+
+    v = stored_field('v', cells, 1, num_components=1)
+    call v % set_real_vector([3.0_dp])
+    w = stored_field('w', cells, 1, num_components=1)
+    call w % set_real_vector([1.0_dp])
+    one = stored_field('one', cells, 1, num_components=1)
+    call one % set_real_vector([1.0_dp])
+
+    call statement % partial_action(lone, inputs, [1], [v], output)
+    call output % real_vector(rv)
+    ok = size(rv) == 1 .and. near(rv(1), 42.0_dp, 1.0e-12_dp)
+    call statement % partial_action(lone, inputs, [2], [w], output)
+    call output % real_vector(rv)
+    ok = ok .and. near(rv(1), 24.5_dp, 1.0e-12_dp)
+    call statement % partial_action(lone, inputs, [1, 1], [one, one], output)
+    call output % real_vector(rv)
+    ok = ok .and. near(rv(1), 16.0_dp, 1.0e-12_dp)
+    call report(ok, &
+         & "the scheme's partials a0 v + hs D_q S, hs D_xi S, hs D_qq S: &
+         &42, 24.5, 16", nfail)
+
+    tangent = tangent_of(statement)
+    call tangent % freeze([1.0_dp])
+    call tangent % apply(lone, [v], output)
+    call output % real_vector(rv)
+    ok = index(tangent % name(), 'exact derivative of') == 1 .and. &
+         & near(rv(1), 42.0_dp, 1.0e-12_dp)
+
+    call statement % set_bdf(2, [2.0_dp, 3.0_dp])
+    tangent = tangent_of(statement)
+    call tangent % freeze([1.0_dp])
+    call tangent % apply(lone, [v], output)
+    call output % real_vector(rv)
+    ok = ok .and. near(rv(1), 160.2_dp, 1.0e-12_dp)
+    call report(ok, &
+         & "tangent_of(scheme) is exact: 42 at backward euler, 160.2 after &
+         &set_bdf(2, [2, 3])", nfail)
+
+    call statement % set_bdf(1, [0.5_dp])
+    call fill_path(full(1), 1, [1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp], cells)
+    call fill_path(full(2), 2, [5.0_dp, 7.0_dp, 11.0_dp, 13.0_dp], cells)
+    expected = [16.5_dp, 136.5_dp, 1105.5_dp, 8347.0_dp, 59129.5_dp]
+    ok = .true.
+    do n = 0, 4
+       call composer % assemble(statement, lone, inputs, n, full, output)
+       call output % real_vector(rv)
+       ok = ok .and. size(rv) == 1 .and. near(rv(1), expected(n), 1.0e-10_dp)
+    end do
+    call report(ok, &
+         & "the chain rule over the scheme, a0 q^(n) + hs d_n: 16.5, 136.5, &
+         &1105.5, 8347, 59129.5", nfail)
+
+    slowstep = backward_euler(lin, 1.0_dp)
+    slowstep % qold = [0.0_dp]
+    slow = tangent_of(slowstep)
+    call slow % freeze([1.0_dp])
+    call slow % apply(lone, [w], output)
+    call output % real_vector(rv)
+    call report(index(slow % name(), 'exact') == 0 .and. &
+         & near(rv(1), 2.0_dp, 1.0e-6_dp), &
+         & "a scheme over a max_degree-0 action keeps the difference tangent: &
+         &a0 + h = 2", nfail)
+
+  end subroutine check_the_step_tangent
 
   !===================================================================!
   ! chain_rule % assemble on the quartic at (q, xi) = (1, 2) with

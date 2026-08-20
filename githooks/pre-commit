@@ -1,0 +1,40 @@
+#!/bin/bash
+# Refuse a commit that breaks the naming law (doc/coding-standards.md).
+#
+# The check runs on the STAGED tree - what this commit will actually
+# contain - not the working tree, so an unstaged fix cannot make a
+# bad commit look clean and an unstaged breakage cannot block a
+# clean one.
+#
+# Install once per clone:
+#
+#     git config core.hooksPath githooks
+#
+# The same checks run in test/graph-ordinary/run.sh; check_naming.sh
+# is the one implementation both call.
+set -e
+
+root="$(git rev-parse --show-toplevel)"
+
+# Nothing staged under src/ and the checker itself unchanged:
+# this commit cannot break the law.
+if git diff --cached --quiet -- src/ check_naming.sh; then
+    exit 0
+fi
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+git checkout-index --prefix="$tmp/" -a
+
+# the staged checker judges the staged tree; if the checker itself
+# is not (yet) tracked, the working-tree copy stands in.
+chk="$tmp/check_naming.sh"
+[ -f "$chk" ] || chk="$root/check_naming.sh"
+
+bash "$chk" "$tmp" || {
+    echo ""
+    echo " the commit is refused: the staged tree breaks the naming law"
+    echo " (doc/coding-standards.md); fix and stage the fix."
+    exit 1
+}

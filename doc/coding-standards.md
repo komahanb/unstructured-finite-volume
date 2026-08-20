@@ -183,6 +183,16 @@ below is a defect, not a style choice.
     formal name (`csr`, `gmres`, `bdf`, `lhs`/`rhs`).
 12. every module carries `private` plus an explicit public list.
 
+the mechanical rules are enforced, not requested: `check_naming.sh`
+at the repository root refuses modules outside the prime namespace,
+types wearing one, an incomplete or misordered `src/OBJECTS`, import
+aliases beyond `dp => real64`, `get_` declarations, re-exports, and
+american spellings. test/graph-ordinary runs it on every battery
+pass, and a pre-commit hook runs it on the staged tree of every
+commit. install the hook once per clone:
+
+    git config core.hooksPath githooks
+
 ## the writing voice
 
 comments and commit messages are written like a person explaining to a

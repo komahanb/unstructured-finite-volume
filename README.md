@@ -36,6 +36,13 @@ one directed graph type.
 bash build_parallel.sh   # coarray build into lib_par/ (caf, -fcoarray=lib)
 ```
 
+One-time setup per clone — the pre-commit hook that enforces the
+naming law (`doc/coding-standards.md`) on every commit's staged tree:
+
+```
+git config core.hooksPath githooks
+```
+
 ## Test
 
 Each directory under `test/` with a `run.sh` is a suite; the tower

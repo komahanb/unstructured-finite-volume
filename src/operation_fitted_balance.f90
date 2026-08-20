@@ -14,7 +14,7 @@
 ! exactly on the edge's neighbourhood, exchanged through incidence,
 ! compiled into one stencil operator.
 !
-! The two-point kernel measures the derivative ALONG THE CENTER
+! The two-point kernel measures the derivative ALONG THE CENTRE
 ! LINE, and the balance needs it along the EDGE'S NORMAL; on a
 ! skewed mesh no solver can repair a value measured in the wrong
 ! direction. Here the assumption is never made: the geometry is

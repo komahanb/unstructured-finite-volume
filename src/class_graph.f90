@@ -55,6 +55,7 @@ module class_graph
 
   use graph_directed_view, only : directed_graph
   use fractal_graph      , only : set_graph => graph
+  use graph_binary_relation, only : group_by_key
   use graph_partition_relation, only : partition_relation
   use graph_directed_view     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
   use graph_set_representation, only : counted_set_representation, &
@@ -348,40 +349,22 @@ contains
     integer             , intent(in)  :: tail(:), head(:)
     integer, allocatable, intent(out) :: xptr(:), elist(:)
 
-    integer :: ne, e, v, n
+    integer, allocatable :: keys(:), values(:)
+    integer :: ne, e
 
+    ! one (endpoint, edge) pair per end, interleaved tail-then-head
+    ! so each vertex's fiber keeps the single-pass edge order; a
+    ! missing head is key zero and belongs to no vertex
     ne = size(tail)
-
-    allocate(xptr(nv + 1))
-    xptr = 0
-
+    allocate(keys(2 * ne), values(2 * ne))
     do e = 1, ne
-       xptr(tail(e) + 1) = xptr(tail(e) + 1) + 1
-       if (head(e) >= 1) xptr(head(e) + 1) = xptr(head(e) + 1) + 1
+       keys(2 * e - 1) = tail(e)
+       keys(2 * e)     = head(e)
+       values(2 * e - 1) = e
+       values(2 * e)     = e
     end do
 
-    xptr(1) = 1
-    do v = 1, nv
-       xptr(v + 1) = xptr(v + 1) + xptr(v)
-    end do
-
-    n = xptr(nv + 1) - 1
-    allocate(elist(max(n, 0)))
-
-    block
-      integer, allocatable :: fill(:)
-      allocate(fill, source=xptr(1:nv))
-      do e = 1, ne
-         v = tail(e)
-         elist(fill(v)) = e
-         fill(v) = fill(v) + 1
-         if (head(e) >= 1) then
-            v = head(e)
-            elist(fill(v)) = e
-            fill(v) = fill(v) + 1
-         end if
-      end do
-    end block
+    call group_by_key(nv, keys, values, xptr, elist)
 
   end subroutine build_incidence
 
@@ -474,36 +457,15 @@ contains
     integer             , intent(in)  :: endpoint(:)
     integer, allocatable, intent(out) :: xptr(:), elist(:)
 
-    integer :: ne, e, v, n
+    integer, allocatable :: identity(:)
+    integer :: e
 
-    ne = size(endpoint)
+    ! group the edges by the chosen endpoint; an endpoint of zero
+    ! belongs to no vertex and is skipped by the kernel
+    allocate(identity(size(endpoint)))
+    identity = [(e, e = 1, size(endpoint))]
 
-    allocate(xptr(nv + 1))
-    xptr = 0
-
-    do e = 1, ne
-       if (endpoint(e) >= 1) xptr(endpoint(e) + 1) = xptr(endpoint(e) + 1) + 1
-    end do
-
-    xptr(1) = 1
-    do v = 1, nv
-       xptr(v + 1) = xptr(v + 1) + xptr(v)
-    end do
-
-    n = xptr(nv + 1) - 1
-    allocate(elist(max(n, 0)))
-
-    block
-      integer, allocatable :: fill(:)
-      allocate(fill, source=xptr(1:nv))
-      do e = 1, ne
-         v = endpoint(e)
-         if (v >= 1) then
-            elist(fill(v)) = e
-            fill(v) = fill(v) + 1
-         end if
-      end do
-    end block
+    call group_by_key(nv, endpoint, identity, xptr, elist)
 
   end subroutine build_directed
 

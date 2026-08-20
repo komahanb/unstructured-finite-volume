@@ -16,7 +16,8 @@
 !                     intersections of cell pairs; with the file's
 !                     boundary faces they form the face member set
 !                     and the relation F2V subset of faces x vertices
-!      V2C            transpose(C2V)               (transpose_incidence)
+!      V2C            transpose(C2V), by graph_binary_relation's
+!                     transpose_padded
 !      F2C            {(f, c) : F2V(f) subset of C2V(c)}, at most
 !                     two cells per face; one cell = boundary face
 !      C2F            transpose(F2C)
@@ -43,12 +44,11 @@ module graph_mesh_geometry
 
   use iso_fortran_env  , only : dp => REAL64
   use module_mesh_utils, only : distance, cross_product, &
-       & elem_type_face_count, elem_type_dimension, order_face_vertices
+       & elem_type_face_count, order_face_vertices
 
   implicit none
 
   private
-  public :: transpose_incidence
   public :: derive_faces
   public :: derive_face_cells
   public :: cell_centers_of
@@ -60,85 +60,6 @@ module graph_mesh_geometry
   public :: face_weights_of
 
 contains
-
-  !===================================================================!
-  ! Group (key, value) pairs by key: ptr(k) .. ptr(k+1)-1 indexes
-  ! the values of key k in sorted(:), arrival order kept per key.
-  !===================================================================!
-
-  pure subroutine counting_sort(nkeys, keys, values, ptr, sorted)
-
-    integer             , intent(in)  :: nkeys
-    integer             , intent(in)  :: keys(:)
-    integer             , intent(in)  :: values(:)
-    integer, allocatable, intent(out) :: ptr(:)
-    integer, allocatable, intent(out) :: sorted(:)
-
-    integer, allocatable :: cursor(:)
-    integer :: i, k
-
-    allocate(ptr(nkeys+1))
-    ptr = 0
-    do i = 1, size(keys)
-       ptr(keys(i)+1) = ptr(keys(i)+1) + 1
-    end do
-
-    ptr(1) = 1
-    do k = 1, nkeys
-       ptr(k+1) = ptr(k+1) + ptr(k)
-    end do
-
-    allocate(sorted(ptr(nkeys+1)-1))
-    allocate(cursor(nkeys))
-    cursor = ptr(1:nkeys)
-    do i = 1, size(keys)
-       sorted(cursor(keys(i))) = values(i)
-       cursor(keys(i)) = cursor(keys(i)) + 1
-    end do
-
-  end subroutine counting_sort
-
-  !===================================================================!
-  ! Transpose a binary incidence relation given as padded lists:
-  ! forward(k, key) lists the values of each key; the result lists,
-  ! for each value 1..n_values, the keys that touch it.
-  !===================================================================!
-
-  pure subroutine transpose_incidence(forward, num_forward, n_values, &
-       & reverse, num_reverse)
-
-    integer             , intent(in)  :: forward(:,:)
-    integer             , intent(in)  :: num_forward(:)
-    integer             , intent(in)  :: n_values
-    integer, allocatable, intent(out) :: reverse(:,:)
-    integer, allocatable, intent(out) :: num_reverse(:)
-
-    integer, allocatable :: keys(:), values(:), ptr(:), sorted(:)
-    integer :: key, k, n, v
-
-    allocate(keys(sum(num_forward)), values(sum(num_forward)))
-    n = 0
-    do key = 1, size(num_forward)
-       do k = 1, num_forward(key)
-          n = n + 1
-          keys(n)   = forward(k, key)
-          values(n) = key
-       end do
-    end do
-
-    call counting_sort(n_values, keys, values, ptr, sorted)
-
-    allocate(num_reverse(n_values))
-    do v = 1, n_values
-       num_reverse(v) = ptr(v+1) - ptr(v)
-    end do
-    allocate(reverse(maxval(num_reverse), n_values))
-    reverse = 0
-    do v = 1, n_values
-       reverse(1:num_reverse(v), v) = sorted(ptr(v) : ptr(v+1)-1)
-    end do
-
-  end subroutine transpose_incidence
 
   !===================================================================!
   ! The face member set and F2V. The file supplies only the tagged

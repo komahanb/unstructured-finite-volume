@@ -23,8 +23,9 @@ module class_mesh_builder
   use interface_mesh_loader, only : mesh_loader
   use class_gmsh_loader    , only : gmsh_loader
   use module_mesh_utils    , only : elem_type_dimension
+  use graph_binary_relation, only : transpose_padded
   use graph_mesh_geometry  , only : derive_faces, derive_face_cells, &
-       & transpose_incidence, cell_centers_of, face_centers_areas_of, &
+       & cell_centers_of, face_centers_areas_of, &
        & cell_face_normals_of, cell_volumes_of, centroidal_vectors_of, &
        & face_deltas_of, face_weights_of
 
@@ -107,14 +108,14 @@ contains
          & bface_types, num_faces, face_vertices, num_face_vertices, &
          & face_tags, face_types)
 
-    call transpose_incidence(cell_vertices, num_cell_vertices, &
+    call transpose_padded(cell_vertices, num_cell_vertices, &
          & num_vertices, vertex_cells, num_vertex_cells)
 
     call derive_face_cells(num_faces, face_vertices, num_face_vertices, &
          & cell_vertices, num_cell_vertices, vertex_cells, &
          & num_vertex_cells, face_cells, num_face_cells)
 
-    call transpose_incidence(face_cells, num_face_cells, num_cells, &
+    call transpose_padded(face_cells, num_face_cells, num_cells, &
          & cell_faces, num_cell_faces)
 
     ! the measurements

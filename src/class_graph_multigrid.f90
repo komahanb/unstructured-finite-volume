@@ -17,10 +17,11 @@
 ! THE GALERKIN ROAD. The coarse operator is not re-derived: it is
 ! the fine stencil operator READ THROUGH THE AGGREGATES - each
 ! dependency (row, column, weight) becomes (block of row, block of
-! column, weight), duplicates accumulating as the stencil walk
-! already accumulates. That is R A P with summing restriction and
-! injected prolongation, and it obeys the commutation square the
-! suite holds:
+! column, weight), and the dependencies landing between one block
+! pair are combined into one entry (combine_triples), so the
+! coarse matrix has one entry per pair. That is R A P with summing
+! restriction and injected prolongation, and it obeys the
+! commutation square the suite holds:
 !
 !      solve_coarse( R(A(P e)) ) = e        the coarsened statement
 !                                           answers as the fine one
@@ -38,7 +39,7 @@ module class_graph_multigrid
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_directed_view, only : directed_graph
-  use class_graph_stencil, only : stencil_operator
+  use class_graph_stencil, only : stencil_operator, combine_triples
   use graph_minimization , only : minimizer
 
   implicit none
@@ -111,8 +112,16 @@ contains
        allocate(zeros(this % nblocks))
        zeros = 0.0_dp
 
-       block_statement = stencil_operator(rows, columns, weights, &
-            & zeros, label='block statement')
+       ! many fine dependencies land between one block pair; the
+       ! coarse matrix carries their sum as one entry
+       block
+         integer , allocatable :: crows(:), ccolumns(:)
+         real(dp), allocatable :: cweights(:)
+         call combine_triples(this % nblocks, this % nblocks, &
+              & rows, columns, weights, crows, ccolumns, cweights)
+         block_statement = stencil_operator(crows, ccolumns, cweights, &
+              & zeros, label='block statement')
+       end block
 
     class default
 

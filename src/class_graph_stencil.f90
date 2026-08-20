@@ -36,6 +36,7 @@ module class_graph_stencil
   use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
   use graph_discretization     , only : discretization_operator
+  use graph_binary_relation, only : group_by_key
   use class_graph_field  , only : field
   use class_graph        , only : directed_stored_graph
   use fractal_graph      , only : set_graph => graph
@@ -44,6 +45,7 @@ module class_graph_stencil
 
   private
   public :: stencil_operator
+  public :: combine_triples
 
   type, extends(discretization_operator) :: stencil_operator
 
@@ -176,5 +178,67 @@ contains
     allocate(pattern, source=this % pattern)
 
   end subroutine stencil_dependencies
+
+  !===================================================================!
+  ! Combine duplicate (row, column) entries of a weighted triple
+  ! list: a matrix has one entry per pair, so equal pairs sum. Two
+  ! stable groupings (by column, then by row) bring equal pairs
+  ! adjacent; one pass merges them. Used wherever triples are
+  ! produced with repeats - a sparse product's emitted terms, a
+  ! Galerkin coarsening's aggregated edges - before they become a
+  ! stencil.
+  !===================================================================!
+
+  pure subroutine combine_triples(nrows, ncols, r, c, w, rows, cols, weights)
+
+    integer , intent(in) :: nrows, ncols
+    integer , intent(in) :: r(:), c(:)
+    real(dp), intent(in) :: w(:)
+    integer , allocatable, intent(out) :: rows(:)
+    integer , allocatable, intent(out) :: cols(:)
+    real(dp), allocatable, intent(out) :: weights(:)
+
+    integer, allocatable :: identity(:), ptr(:), by_c(:), by_rc(:)
+    integer :: j, n, m
+
+    n = size(r)
+
+    allocate(identity(n))
+    identity = [(j, j = 1, n)]
+    call group_by_key(ncols, c, identity, ptr, by_c)
+
+    block
+      integer, allocatable :: rkey(:), order(:)
+      allocate(rkey(n))
+      do j = 1, n
+         rkey(j) = r(by_c(j))
+      end do
+      call group_by_key(nrows, rkey, identity, ptr, order)
+      allocate(by_rc(n))
+      do j = 1, n
+         by_rc(j) = by_c(order(j))
+      end do
+    end block
+
+    allocate(rows(n), cols(n), weights(n))
+    m = 0
+    do j = 1, n
+       if (m > 0) then
+          if (rows(m) == r(by_rc(j)) .and. cols(m) == c(by_rc(j))) then
+             weights(m) = weights(m) + w(by_rc(j))
+             cycle
+          end if
+       end if
+       m = m + 1
+       rows(m)    = r(by_rc(j))
+       cols(m)    = c(by_rc(j))
+       weights(m) = w(by_rc(j))
+    end do
+
+    rows    = rows(1:m)
+    cols    = cols(1:m)
+    weights = weights(1:m)
+
+  end subroutine combine_triples
 
 end module class_graph_stencil

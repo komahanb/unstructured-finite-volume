@@ -81,7 +81,7 @@ module class_graph_differential_operator
   use fractal_graph      , only : set_graph => graph
   use graph_directed_view     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
   use class_graph_field  , only : field
-  use class_graph_stencil, only : stencil_operator
+  use class_graph_stencil, only : stencil_operator, combine_triples
 
   implicit none
 
@@ -643,7 +643,7 @@ contains
       end do
     end block
 
-    call combine(a % nrows, a % ncols, r, c, w, &
+    call combine_triples(a % nrows, a % ncols, r, c, w, &
          & a % rows, a % cols, a % weights)
 
     ! the constant travels through the outer map
@@ -655,88 +655,6 @@ contains
     end do
 
   end function compose
-
-  !===================================================================!
-  ! Combine duplicate (row, column) entries: two stable counting
-  ! sorts group equal pairs adjacently, then one pass sums them.
-  !===================================================================!
-
-  pure subroutine combine(nrows, ncols, r, c, w, rows, cols, weights)
-
-    integer , intent(in) :: nrows, ncols
-    integer , intent(in) :: r(:), c(:)
-    real(dp), intent(in) :: w(:)
-    integer , allocatable, intent(out) :: rows(:)
-    integer , allocatable, intent(out) :: cols(:)
-    real(dp), allocatable, intent(out) :: weights(:)
-
-    integer, allocatable :: by_c(:), by_rc(:)
-    integer :: j, n, m
-
-    n = size(r)
-
-    call stable_sort_by_key(ncols, c, by_c)
-
-    block
-      integer, allocatable :: rkey(:)
-      allocate(rkey(n))
-      do j = 1, n
-         rkey(j) = r(by_c(j))
-      end do
-      call stable_sort_by_key(nrows, rkey, by_rc)
-      do j = 1, n
-         by_rc(j) = by_c(by_rc(j))
-      end do
-    end block
-
-    allocate(rows(n), cols(n), weights(n))
-    m = 0
-    do j = 1, n
-       if (m > 0) then
-          if (rows(m) == r(by_rc(j)) .and. cols(m) == c(by_rc(j))) then
-             weights(m) = weights(m) + w(by_rc(j))
-             cycle
-          end if
-       end if
-       m = m + 1
-       rows(m)    = r(by_rc(j))
-       cols(m)    = c(by_rc(j))
-       weights(m) = w(by_rc(j))
-    end do
-
-    rows    = rows(1:m)
-    cols    = cols(1:m)
-    weights = weights(1:m)
-
-  end subroutine combine
-
-  pure subroutine stable_sort_by_key(nkeys, keys, order)
-
-    integer, intent(in)               :: nkeys
-    integer, intent(in)               :: keys(:)
-    integer, allocatable, intent(out) :: order(:)
-
-    integer, allocatable :: ptr(:), cursor(:)
-    integer :: j, k
-
-    allocate(ptr(nkeys + 1))
-    ptr = 0
-    do j = 1, size(keys)
-       ptr(keys(j) + 1) = ptr(keys(j) + 1) + 1
-    end do
-    ptr(1) = 1
-    do k = 1, nkeys
-       ptr(k + 1) = ptr(k + 1) + ptr(k)
-    end do
-
-    allocate(order(size(keys)), cursor(nkeys))
-    cursor = ptr(1:nkeys)
-    do j = 1, size(keys)
-       order(cursor(keys(j))) = j
-       cursor(keys(j)) = cursor(keys(j)) + 1
-    end do
-
-  end subroutine stable_sort_by_key
 
   !===================================================================!
   ! The transpose: rows and columns swapped, the constant dropped -

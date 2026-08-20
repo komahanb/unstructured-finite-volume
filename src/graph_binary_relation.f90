@@ -108,6 +108,8 @@ module graph_binary_relation
   private
   public :: binary_relation, csr_relation, transposed_view, transpose_of
   public :: inclusion_of
+  public :: group_by_key
+  public :: transpose_padded
 
   !===================================================================!
   ! The abstract binary relation: the general contract, plus the
@@ -314,7 +316,7 @@ contains
     integer         , intent(in) :: table(:,:)
     type(set_map)   , intent(in) :: sets
 
-    integer, allocatable :: aloc(:), bloc(:), order(:), fill(:), stamp(:)
+    integer, allocatable :: aloc(:), bloc(:), order(:), stamp(:)
     integer, allocatable :: keepa(:), keepb(:)
     integer              :: na, nb, nt
     integer              :: j, p, q, row, col, kept
@@ -354,62 +356,41 @@ contains
        bloc(j) = this % target_coords % local_index(table(2, j))
     end do
 
-    ! Forward: count per source row, prefix-sum, place - duplicates
-    ! and all - then collapse each row with one stamp sweep.
-    allocate(this % xfwd(na + 1), fill(na), order(nt))
-    this % xfwd = 0
-    do j = 1, nt
-       this % xfwd(aloc(j) + 1) = this % xfwd(aloc(j) + 1) + 1
-    end do
-    this % xfwd(1) = 1
-    do row = 1, na
-       this % xfwd(row + 1) = this % xfwd(row + 1) + this % xfwd(row)
-    end do
-    fill = this % xfwd(1:na) - 1
-    do j = 1, nt
-       fill(aloc(j)) = fill(aloc(j)) + 1
-       order(fill(aloc(j))) = j
-    end do
+    ! Forward: group the tuples by source row - duplicates and all -
+    ! then collapse each row with one stamp sweep.
+    block
+      integer, allocatable :: ptr(:), identity(:)
+      allocate(identity(nt))
+      identity = [(j, j = 1, nt)]
+      call group_by_key(na, aloc, identity, ptr, order)
 
-    allocate(this % tgt(nt), stamp(max(nb, 1)))
-    allocate(keepa(nt), keepb(nt))
-    stamp = 0
-    kept  = 0
-    do row = 1, na
-       p = this % xfwd(row)
-       q = this % xfwd(row + 1) - 1
-       this % xfwd(row) = kept + 1
-       do j = p, q
-          col = bloc(order(j))
-          if (stamp(col) /= row) then
-             stamp(col)       = row
-             kept             = kept + 1
-             this % tgt(kept) = table(2, order(j))
-             keepa(kept)      = table(1, order(j))
-             keepb(kept)      = col
-          end if
-       end do
-    end do
-    this % xfwd(na + 1) = kept + 1
-    this % nnz          = kept
+      allocate(this % xfwd(na + 1))
+      allocate(this % tgt(nt), stamp(max(nb, 1)))
+      allocate(keepa(nt), keepb(nt))
+      stamp = 0
+      kept  = 0
+      do row = 1, na
+         p = ptr(row)
+         q = ptr(row + 1) - 1
+         this % xfwd(row) = kept + 1
+         do j = p, q
+            col = bloc(order(j))
+            if (stamp(col) /= row) then
+               stamp(col)       = row
+               kept             = kept + 1
+               this % tgt(kept) = table(2, order(j))
+               keepa(kept)      = table(1, order(j))
+               keepb(kept)      = col
+            end if
+         end do
+      end do
+      this % xfwd(na + 1) = kept + 1
+      this % nnz          = kept
+    end block
 
-    ! Backward: the same construction, mirrored, over the kept
-    ! tuples alone.
-    allocate(this % xbwd(nb + 1), this % src(kept))
-    deallocate(fill); allocate(fill(max(nb, 1)))
-    this % xbwd = 0
-    do j = 1, kept
-       this % xbwd(keepb(j) + 1) = this % xbwd(keepb(j) + 1) + 1
-    end do
-    this % xbwd(1) = 1
-    do row = 1, nb
-       this % xbwd(row + 1) = this % xbwd(row + 1) + this % xbwd(row)
-    end do
-    fill(1:nb) = this % xbwd(1:nb) - 1
-    do j = 1, kept
-       fill(keepb(j)) = fill(keepb(j)) + 1
-       this % src(fill(keepb(j))) = keepa(j)
-    end do
+    ! Backward: the kept tuples grouped by target row.
+    call group_by_key(nb, keepb(1:kept), keepa(1:kept), &
+         & this % xbwd, this % src)
 
     allocate(this % signature(2))
     this % signature(1) = source
@@ -653,5 +634,96 @@ contains
          &                   labels % label_of(host), s, host, table, sets)
 
   end function inclusion_of
+
+  !===================================================================!
+  ! Group a finite family of (key, value) pairs by key: the fibers
+  ! of a stored binary relation over one slot, as the compressed
+  ! rows ptr(k) .. ptr(k+1)-1 into grouped(:). One counting pass,
+  ! one prefix sum, one scatter - stable, so arrival order is kept
+  ! within each key. A key outside 1..nkeys is skipped: a pair with
+  ! no key belongs to no fiber. This is the one grouping kernel in
+  ! the codebase; CSR builds, incidence lists, padded transposes,
+  ! and triple combination are its callers.
+  !===================================================================!
+
+  pure subroutine group_by_key(nkeys, keys, values, ptr, grouped)
+
+    integer             , intent(in)  :: nkeys
+    integer             , intent(in)  :: keys(:)
+    integer             , intent(in)  :: values(:)
+    integer, allocatable, intent(out) :: ptr(:)
+    integer, allocatable, intent(out) :: grouped(:)
+
+    integer, allocatable :: cursor(:)
+    integer :: j, k, n
+
+    allocate(ptr(nkeys + 1))
+    ptr = 0
+    do j = 1, size(keys)
+       if (keys(j) >= 1 .and. keys(j) <= nkeys) then
+          ptr(keys(j) + 1) = ptr(keys(j) + 1) + 1
+       end if
+    end do
+
+    ptr(1) = 1
+    do k = 1, nkeys
+       ptr(k + 1) = ptr(k + 1) + ptr(k)
+    end do
+
+    n = ptr(nkeys + 1) - 1
+    allocate(grouped(max(n, 0)))
+    allocate(cursor(nkeys))
+    cursor = ptr(1:nkeys)
+    do j = 1, size(keys)
+       if (keys(j) >= 1 .and. keys(j) <= nkeys) then
+          grouped(cursor(keys(j))) = values(j)
+          cursor(keys(j)) = cursor(keys(j)) + 1
+       end if
+    end do
+
+  end subroutine group_by_key
+
+  !===================================================================!
+  ! Transpose a binary relation stored as padded lists: forward(k,
+  ! key) lists the values of each key with per-key counts; the
+  ! result lists, for each value 1..n_values, the keys that touch
+  ! it, in the same padded shape. One grouping, then the pad.
+  !===================================================================!
+
+  pure subroutine transpose_padded(forward, num_forward, n_values, &
+       & reverse, num_reverse)
+
+    integer             , intent(in)  :: forward(:,:)
+    integer             , intent(in)  :: num_forward(:)
+    integer             , intent(in)  :: n_values
+    integer, allocatable, intent(out) :: reverse(:,:)
+    integer, allocatable, intent(out) :: num_reverse(:)
+
+    integer, allocatable :: keys(:), values(:), ptr(:), grouped(:)
+    integer :: key, k, n, v
+
+    allocate(keys(sum(num_forward)), values(sum(num_forward)))
+    n = 0
+    do key = 1, size(num_forward)
+       do k = 1, num_forward(key)
+          n = n + 1
+          keys(n)   = forward(k, key)
+          values(n) = key
+       end do
+    end do
+
+    call group_by_key(n_values, keys, values, ptr, grouped)
+
+    allocate(num_reverse(n_values))
+    do v = 1, n_values
+       num_reverse(v) = ptr(v + 1) - ptr(v)
+    end do
+    allocate(reverse(maxval(num_reverse), n_values))
+    reverse = 0
+    do v = 1, n_values
+       reverse(1:num_reverse(v), v) = grouped(ptr(v) : ptr(v + 1) - 1)
+    end do
+
+  end subroutine transpose_padded
 
 end module graph_binary_relation

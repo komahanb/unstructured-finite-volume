@@ -51,9 +51,9 @@ program adjoint_level_4
   use relation_algebra, only : compose_binary
   use relation_binary , only : csr_relation, transposed_view, &
        &                             transpose_of, inclusion_of
-  use graph_algorithms, only : reachable, sources, sinks
+  use relation_algorithms, only : reachable, sources, sinks
   use graph_fractal        , only : graph, known_branch, null_branch
-  use graph_relational_view, only : relational_binding, &
+  use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
        & holds_set
 

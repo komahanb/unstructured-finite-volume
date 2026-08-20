@@ -18,7 +18,7 @@ program set_foundation
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set          , only : set_map
-  use graph_set_view         , only : set_defined, set_size, set_member, &
+  use view_set         , only : set_defined, set_size, set_member, &
        & set_members, set_has, set_local_index, set_equivalent
 
   implicit none

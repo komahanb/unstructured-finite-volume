@@ -400,7 +400,7 @@ comparison:           the calculator tower killed its selector the
                       contract is general, which supports A3's KEEP
 
 suspected nucleus implication: none. graph_profile and
-                      graph_algorithms answered a subject they were
+                      relation_algorithms answered a subject they were
                       not designed for - time - without modification.
 
 confidence:           high
@@ -540,7 +540,7 @@ comparison:           the learning tower established that a field's
                       This client needed that to already be true, and
                       found it was
 
-suspected nucleus implication: none. class_graph_field needed
+suspected nucleus implication: none. field_stored needed
                       nothing; it was already right.
 
 confidence:           high
@@ -590,12 +590,12 @@ symptom / fact:       *** THE SEAM-A2 OBSERVATION. RED FIRST. ***
                                vertices - the state domain is not
                                inferred from the conduit
 
-                        ERROR STOP class_graph_field: a value vector
+                        ERROR STOP field_stored: a value vector
                         must fill its domain exactly
 
                         Error termination. Backtrace:
                         #3 __class_graph_field_MOD_field_set_real_vector
-                           at src/class_graph_field.f90:305
+                           at src/field_stored.f90:305
                         #4 __class_graph_step_MOD_step_apply
                            at src/class_graph_step.f90:200
 
@@ -1071,12 +1071,12 @@ symptom / fact:       *** SEAM-A2 RED, SECOND SITE. RED FIRST. ***
 
                       Run against src at f7fb641, VERBATIM:
 
-                        ERROR STOP class_graph_field: a value vector
+                        ERROR STOP field_stored: a value vector
                         must fill its domain exactly
 
                         Error termination. Backtrace:
                         #3 __class_graph_field_MOD_field_set_real_vector
-                           at src/class_graph_field.f90:305
+                           at src/field_stored.f90:305
                         #4 read_statement
                            at src/class_graph_marcher.f90:234
                         #5 __class_graph_marcher_MOD_march
@@ -1241,12 +1241,12 @@ symptom / fact:       *** THE CLASS-2 WITNESS, AND IT IS NATURAL. ***
 
                       Run after the TI-15 correction, VERBATIM:
 
-                        ERROR STOP class_graph_field: a value vector
+                        ERROR STOP field_stored: a value vector
                         must fill its domain exactly
 
                         Error termination. Backtrace:
                         #3 __class_graph_field_MOD_field_set_real_vector
-                           at src/class_graph_field.f90:305
+                           at src/field_stored.f90:305
                         #4 __class_graph_linearization_MOD_derivative_apply
                            at src/class_graph_linearization.f90:163
                         #5 raw_apply

@@ -90,7 +90,7 @@
 module relation_partition
 
   use graph_fractal      , only : set_graph => graph
-  use graph_directed_view, only : directed_graph
+  use view_directed, only : directed_graph
 
   implicit none
 

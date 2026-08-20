@@ -7,7 +7,7 @@
 !     (A_1,...,A_k)      the ordered signature, small
 !     extension(R)       the tuples, large
 !
-! The signature is built with graph_sequence_view over set graphs -
+! The signature is built with view_sequence over set graphs -
 ! repeated domains, mixed domains, arity three. The extension is left
 ! in the production representations, which already store integers.
 !
@@ -22,7 +22,7 @@
 module relation_prototype
 
   use graph_fractal, only : graph, null_branch, known_branch
-  use graph_sequence_view, only : sequence_size, sequence_element
+  use view_sequence, only : sequence_size, sequence_element
 
   implicit none
 
@@ -92,7 +92,7 @@ end module relation_prototype
 program relation_map
 
   use graph_fractal        , only : graph, null_branch, known_branch
-  use graph_sequence_view  , only : sequence_size, sequence_element
+  use view_sequence  , only : sequence_size, sequence_element
   use graph_fractal           , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
@@ -102,7 +102,7 @@ program relation_map
   use relation_finitary       , only : relation, stored_relation
   use relation_binary, only : binary_relation, csr_relation, &
        & transposed_view, transpose_of
-  use graph_relational_view, only : relational_binding
+  use view_relational, only : relational_binding
   use relation_prototype   , only : same_tuple, role_view, &
        & transpose_role, apply_role
 

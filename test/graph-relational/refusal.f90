@@ -22,7 +22,7 @@ program refusal
   use relation_finitary       , only : relation, stored_relation
   use relation_binary, only : csr_relation, transposed_view, &
        &                            transpose_of
-  use graph_relational_view, only : relational_binding
+  use view_relational, only : relational_binding
 
   implicit none
 

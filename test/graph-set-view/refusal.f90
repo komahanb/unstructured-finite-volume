@@ -13,7 +13,7 @@ program refusal
   use graph_fractal          , only : graph
   use map_set_representation, only : counted_set_representation
   use map_set          , only : set_map
-  use graph_set_view         , only : set_size
+  use view_set         , only : set_size
 
   implicit none
 

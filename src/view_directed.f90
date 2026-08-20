@@ -65,7 +65,7 @@
 !
 !=====================================================================!
 
-module graph_directed_view
+module view_directed
 
   !===================================================================!
   ! THE DOMAIN IS A GRAPH, AND ITS INTERPRETATION IS THE CALLER'S.
@@ -163,11 +163,11 @@ module graph_directed_view
   ! THE HIERARCHY, STATED ONCE. Three types, three roles, three names:
   !
   !     graph_fractal :: graph                 the ontology, G=(B1,B2)
-  !     graph_directed_view :: directed_graph  this contract, D
-  !     class_graph :: directed_stored_graph   one stored realization
+  !     view_directed :: directed_graph  this contract, D
+  !     view_directed_stored :: directed_stored_graph   one stored realization
   !
   ! The migration debt that made this type share the ontology's name
-  ! is discharged. What remains of it is the module name class_graph,
+  ! is discharged. What remains of it is the module name view_directed_stored,
   ! which says less than the type inside it does.
   !
   ! Do not present this as ontology, and add no NEW concretion: one
@@ -360,4 +360,4 @@ module graph_directed_view
      end subroutine graph_from_vertex_interface
   end interface
 
-end module graph_directed_view
+end module view_directed

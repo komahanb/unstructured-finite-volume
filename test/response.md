@@ -49,7 +49,7 @@
   functional,
   │         │                             reduction, broadcast … one bound param
   each)
-  │         ├── class_graph.f90           stored graph (edge list → adjacency)
+  │         ├── view_directed_stored.f90           stored graph (edge list → adjacency)
   │         ├── class_graph_mesh.f90      mesh IS a graph in space (the ONE
   │         │                             inheritance crossing; boundary face =
   │         │                             half-edge, no ghost cell)
@@ -252,16 +252,16 @@
   role
   └── edge ends     edge_tail | edge_head | edge_has_head → incidence_role(...)
 
-  CONCRETE  class_graph.f90 — storage is ALREADY symmetric
+  CONCRETE  view_directed_stored.f90 — storage is ALREADY symmetric
   ├── tail(:), head(:)          edge → vertex      (I read one way)
   ├── xinc/einc                 vertex → edge      (Iᵀ, already materialized)
   ├── xadj/vadj, xout/eout, xin/ein   derived adjacency caches (keep)
   └── vowner/eowner, vglobal/eglobal  side-paired partition data
 
   TRANSPORT  the Phase-4 collapse targets
-  ├── class_graph_partitioner.f90:490,534   carry_vertex_field |
+  ├── transform_partitioner.f90:490,534   carry_vertex_field |
   carry_edge_field
-  └── class_graph_assembler.f90:234,289     assemble_vertex_field |
+  └── transform_assembler.f90:234,289     assemble_vertex_field |
   assemble_edge_field
 
   PINNING TESTS  (must stay green through Phases 1–5)
@@ -270,7 +270,7 @@
       all speak the vertex/edge vocabulary → compatibility view keeps them
   compiling
 
-  The pleasant surprise: class_graph already stores both traversal directions
+  The pleasant surprise: view_directed_stored already stores both traversal directions
   (tail/head and xinc/einc), so the O(1)-dual requirement is nearly met by
   existing storage — Phase 1 is mostly re-keying the API by side and introducing
   the neutral incidence vocabulary, not re-engineering memory layout. The

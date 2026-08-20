@@ -14,7 +14,7 @@
 
 program test_graph_ordinary
 
-  use class_graph          , only : directed_stored_graph
+  use view_directed_stored          , only : directed_stored_graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set           , only : set_map

@@ -48,7 +48,7 @@ program lifetime
   use map_label      , only : label_map
   use relation_finitary       , only : relation, stored_relation
   use relation_binary, only : binary_relation, csr_relation
-  use graph_relational_view, only : relational_binding, relation_at, &
+  use view_relational, only : relational_binding, relation_at, &
        & member_set_at
 
   implicit none

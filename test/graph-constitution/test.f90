@@ -24,14 +24,14 @@
 program test_graph_constitution
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use graph_directed_view , only : GRAPH_SIDE_VERTEX
+  use view_directed, only : directed_graph
+  use field_calculus, only : graph_field
+  use view_directed , only : GRAPH_SIDE_VERTEX
   use graph_fractal  , only : set_graph => graph
   use map_set  , only : set_map
   use map_label, only : label_map
   use map_inclusion, only : inclusion_map
-  use class_graph_field  , only : field
+  use field_stored  , only : field
   use class_graph_mesh   , only : mesh
   use class_robin_condition, only : robin_condition, robin, dirichlet, neumann
   use class_graph_differential_operator, only : differential_operator

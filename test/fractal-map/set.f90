@@ -260,7 +260,7 @@ program set_map
 
   use graph_fractal , only : graph, null_branch, known_branch, &
        & GRAPH_NULL, GRAPH_KNOWN
-  use graph_sequence_view, only : sequence_size, sequence_element
+  use view_sequence, only : sequence_size, sequence_element
   use set_prototype , only : counted_extent, listed_extent, extent_of, &
        & bind_extent, set_equivalent
 

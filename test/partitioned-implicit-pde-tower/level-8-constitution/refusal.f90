@@ -18,9 +18,9 @@ program partitioned_pde_level_8_refusal
 
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : NV, Q_EXACT
-  use graph_field_calculus, only : graph_field
-  use class_graph      , only : directed_stored_graph
-  use class_graph_field, only : field
+  use field_calculus, only : graph_field
+  use view_directed_stored      , only : directed_stored_graph
+  use field_stored, only : field
   use class_graph_gmres, only : gmres
   use partitioned_shifted_laplacian_fixture, only : &
        & partitioned_shifted_laplacian

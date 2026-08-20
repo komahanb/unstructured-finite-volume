@@ -38,7 +38,7 @@
 module class_graph_multigrid
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_directed_view, only : directed_graph
+  use view_directed, only : directed_graph
   use class_graph_stencil, only : stencil_operator, combine_triples
   use graph_minimization , only : minimizer
 

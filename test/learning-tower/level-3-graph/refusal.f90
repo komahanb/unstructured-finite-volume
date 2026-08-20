@@ -27,7 +27,7 @@ program learning_level_3_refusal
   use relation_binary, only : csr_relation, transposed_view, &
        &                            transpose_of
   use graph_fractal        , only : graph
-  use graph_relational_view, only : relational_binding
+  use view_relational, only : relational_binding
 
   implicit none
 

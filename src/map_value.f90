@@ -30,7 +30,7 @@ module map_value
   use iso_fortran_env  , only : dp => REAL64
   use graph_fractal    , only : graph
   use token_identity   , only : token
-  use class_graph_field, only : field
+  use field_stored, only : field
 
   implicit none
 

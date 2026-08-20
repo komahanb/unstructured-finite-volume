@@ -359,7 +359,7 @@ interpretation choice:
 ```text
 graph-owned D
     ↓ directed_adjacency_view(g, d)
-graph_algorithms: sources / sinks / reachable / topological_order
+relation_algorithms: sources / sinks / reachable / topological_order
 ```
 
 **Verification.**
@@ -1065,10 +1065,10 @@ had first right of refusal — and at Gate A it refused nothing.
 | 1 | `level-1-relation/` | + `relation_finitary` |
 | 2 | `level-2-relation-algebra/` | + `relation_algebra` (D held as `class(relation)`) |
 | 3 | `level-3-graph/` | + `graph_structure` |
-| 4 | `level-4-graph-calculus/` | + `graph_profile`, `graph_algorithms` |
-| 5 | `level-5-field-calculus/` | `graph_carrier`, `class_graph_field` — the smallest allowlist above ground |
-| 6 | `level-6-derivative-structure/` | + `relation_binary` (`csr_relation`, `transpose_of` earned), `graph_structure`, `graph_profile`, `graph_algorithms` |
-| 8 | `level-8-derivative-constitution/` | carriers/relations/algebra/structure/profile/algorithms + `class_graph_field` + `derivative_constitution_fixture` (own file; refusal suite); **no** binary storage, no solver |
+| 4 | `level-4-graph-calculus/` | + `graph_profile`, `relation_algorithms` |
+| 5 | `level-5-field-calculus/` | `graph_carrier`, `field_stored` — the smallest allowlist above ground |
+| 6 | `level-6-derivative-structure/` | + `relation_binary` (`csr_relation`, `transpose_of` earned), `graph_structure`, `graph_profile`, `relation_algorithms` |
+| 8 | `level-8-derivative-constitution/` | carriers/relations/algebra/structure/profile/algorithms + `field_stored` + `derivative_constitution_fixture` (own file; refusal suite); **no** binary storage, no solver |
 | 9 | `level-9-statement/` | the same set, reusing the Level-8 fixture — no adapter, no new law, and `graph_minimization` / `class_graph_gmres` forbidden |
 
 Every level also imports `derivative_assert`

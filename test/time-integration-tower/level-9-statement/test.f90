@@ -52,8 +52,8 @@ program time_level_9
   use time_assert           , only : TIME_COORD, BDF2_TRAJECTORY
   use graph_fractal        , only : set_graph => graph
   use map_set        , only : set_map
-  use class_graph           , only : directed_stored_graph
-  use class_graph_field     , only : field
+  use view_directed_stored           , only : directed_stored_graph
+  use field_stored     , only : field
   use class_graph_gmres     , only : gmres
   use class_graph_newton    , only : newton
   use class_graph_marcher   , only : marcher, MARCH_BDF2

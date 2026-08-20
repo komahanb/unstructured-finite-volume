@@ -19,7 +19,7 @@ program test
 
   use graph_fractal      , only : graph, GRAPH_NULL, GRAPH_UNKNOWN, &
        & null_branch, unknown_branch, known_branch
-  use graph_sequence_view, only : sequence_defined, sequence_size, &
+  use view_sequence, only : sequence_defined, sequence_size, &
        & sequence_element, sequence_contains
 
   implicit none

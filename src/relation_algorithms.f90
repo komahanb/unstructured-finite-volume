@@ -56,7 +56,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_algorithms
+module relation_algorithms
 
   use graph_fractal           , only : set_graph => graph
   use relation_finitary          , only : relation
@@ -246,7 +246,7 @@ contains
           end if
        end do
        if (pick == 0) then
-          error stop 'graph_algorithms: a topological order needs an acyclic graph'
+          error stop 'relation_algorithms: a topological order needs an acyclic graph'
        end if
 
        placed(pick) = .true.
@@ -280,13 +280,13 @@ contains
     class is (binary_relation)
        a => adjacency
     class default
-       error stop 'graph_algorithms: the adjacency is a binary relation'
+       error stop 'relation_algorithms: the adjacency is a binary relation'
     end select
 
     s = a % source()
     t = a % target()
     if (.not. s % same_as(t)) then
-       error stop 'graph_algorithms: the adjacency runs over one domain'
+       error stop 'relation_algorithms: the adjacency runs over one domain'
     end if
 
     dom = s
@@ -294,7 +294,7 @@ contains
   end subroutine require_adjacency
 
   !===================================================================!
-  ! CARVE. The same atomic declaration class_graph states in full: a
+  ! CARVE. The same atomic declaration view_directed_stored states in full: a
   ! carved set mints its identity and binds its extension, its label
   ! and its embedding together, so no half-described set escapes.
   !===================================================================!
@@ -317,4 +317,4 @@ contains
 
   end subroutine carve
 
-end module graph_algorithms
+end module relation_algorithms

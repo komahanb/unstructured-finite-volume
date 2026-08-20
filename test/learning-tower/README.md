@@ -547,7 +547,7 @@ g % branch(1) = known_branch(scell(1))            ! the member-set sequence
 g % branch(2) = known_branch(rcell(1))            ! the relation sequence
 ```
 
-(`src/graph_fractal.f90` and `src/graph_relational_view.f90`). Ownership
+(`src/graph_fractal.f90` and `src/view_relational.f90`). Ownership
 truths:
 
 ```text
@@ -623,13 +623,13 @@ flowchart LR
 graph-owned D
     ↓ directed_adjacency_view(g, d)     borrows g's OWN relation;
     ↓                                   the external selector may die
-graph_algorithms: sources / sinks / reachable / topological_order
+relation_algorithms: sources / sinks / reachable / topological_order
 ```
 
 The view (`src/graph_profile.f90`) locates the graph-owned relation that is
 `same_as` the selector and borrows **that** — the test deallocates the
 external selector `d` the moment the view exists, and every algorithm
-(`src/graph_algorithms.f90`) still answers. Algorithms remain outside
+(`src/relation_algorithms.f90`) still answers. Algorithms remain outside
 storage; sources and sinks come back as `subset_set` subobjects of \(O\).
 
 ## Minimal verification
@@ -725,7 +725,7 @@ u     = subset_set('computed' , v, [SLOT_E, SLOT_YHAT])
 ```
 
 The fields are the ordinary production `field` on those domains
-(`src/class_graph_field.f90`):
+(`src/field_stored.f90`):
 
 ```fortran
 qk = field('observations', k)
@@ -1627,12 +1627,12 @@ Two mechanisms hold the stratification:
 | 1 | `level-1-relation/` | + `relation_finitary` (with refusal suite) |
 | 2 | `level-2-relation-algebra/` | + `relation_algebra` (D held as `class(relation)`) |
 | 3 | `level-3-graph/` | + `graph_structure` (`relation_binary` granted for the view refusal **only**) |
-| 4 | `level-4-graph-calculus/` | + `graph_profile`, `graph_algorithms` (binary storage stays forbidden) |
-| 5 | `level-5-field-calculus/` | `graph_carrier`, `class_graph_field` — the smallest allowlist above ground |
-| 6 | `level-6-discretization/` | + `relation_binary` (`csr_relation`, `transpose_of` earned), `graph_structure`, `graph_profile`, `graph_algorithms` |
-| 7 | `level-7-minimization/` | `graph_carrier`, `graph_grammar`, `class_graph_field`, `class_graph`, `class_graph_gmres` + in-file `learning_residual_fixture` |
-| 8 | `level-8-constitution/` | carriers/relations/algebra/structure/profile/algorithms, `class_graph_field` + `learning_constitution_fixture` (own file; refusal suite) |
-| 9 | `level-9-statement/` | + `graph_grammar`, `class_graph`, `class_graph_gmres`, both fixtures (`constituted_residual_fixture.f90`) |
+| 4 | `level-4-graph-calculus/` | + `graph_profile`, `relation_algorithms` (binary storage stays forbidden) |
+| 5 | `level-5-field-calculus/` | `graph_carrier`, `field_stored` — the smallest allowlist above ground |
+| 6 | `level-6-discretization/` | + `relation_binary` (`csr_relation`, `transpose_of` earned), `graph_structure`, `graph_profile`, `relation_algorithms` |
+| 7 | `level-7-minimization/` | `graph_carrier`, `graph_grammar`, `field_stored`, `view_directed_stored`, `class_graph_gmres` + in-file `learning_residual_fixture` |
+| 8 | `level-8-constitution/` | carriers/relations/algebra/structure/profile/algorithms, `field_stored` + `learning_constitution_fixture` (own file; refusal suite) |
+| 9 | `level-9-statement/` | + `graph_grammar`, `view_directed_stored`, `class_graph_gmres`, both fixtures (`constituted_residual_fixture.f90`) |
 
 Every level also imports `learning_assert`
 (`common/learning_assert.f90`) — the tower's dependency-free constants and

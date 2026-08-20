@@ -45,9 +45,9 @@ module adjoint_constitution_fixture
        & set_representation
   use relation_finitary   , only : relation
   use operation_action, only : graph_operation
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use class_graph_field, only : field
+  use view_directed, only : directed_graph
+  use field_calculus, only : graph_field
+  use field_stored, only : field
 
   implicit none
 

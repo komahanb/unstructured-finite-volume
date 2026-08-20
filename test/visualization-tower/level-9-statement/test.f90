@@ -38,9 +38,9 @@ program visualization_level_9
   use map_label      , only : label_map
   use relation_finitary       , only : relation
   use relation_binary, only : csr_relation
-  use graph_directed_view  , only : directed_graph
-  use class_graph          , only : directed_stored_graph
-  use class_graph_field    , only : field
+  use view_directed  , only : directed_graph
+  use view_directed_stored          , only : directed_stored_graph
+  use field_stored    , only : field
   use class_graph_stencil  , only : stencil_operator
   use class_graph_step     , only : step_operator, bdf
   use class_graph_jacobi   , only : jacobi

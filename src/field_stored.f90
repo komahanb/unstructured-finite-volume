@@ -72,13 +72,13 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_graph_field
+module field_stored
 
   use iso_fortran_env    , only : dp => REAL64
-  use graph_field_calculus, only : graph_field, set_graph
-  use graph_field_calculus, only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
-  use graph_field_calculus, only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
-  use graph_field_calculus, only : GRAPH_FIELD_CHARACTER
+  use field_calculus, only : graph_field, set_graph
+  use field_calculus, only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
+  use field_calculus, only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
+  use field_calculus, only : GRAPH_FIELD_CHARACTER
 
   implicit none
 
@@ -172,11 +172,11 @@ contains
     character(len=*), intent(in), optional :: unit_name
 
     if (.not. on % same_as(on)) then
-       error stop 'class_graph_field: a field needs a declared domain'
+       error stop 'field_stored: a field needs a declared domain'
     end if
 
     if (nentries < 0) then
-       error stop 'class_graph_field: a domain does not have fewer than no entries'
+       error stop 'field_stored: a domain does not have fewer than no entries'
     end if
 
     this % label    = label
@@ -299,7 +299,7 @@ contains
     integer     , intent(in)    :: values(:)
 
     if (size(values) /= this % nentries * this % ncomp) then
-       error stop 'class_graph_field: a value vector must fill its domain exactly'
+       error stop 'field_stored: a value vector must fill its domain exactly'
     end if
     this % ivals = values
     this % vkind = GRAPH_FIELD_INTEGER
@@ -325,7 +325,7 @@ contains
     real(dp)    , intent(in)    :: values(:)
 
     if (size(values) /= this % nentries * this % ncomp) then
-       error stop 'class_graph_field: a value vector must fill its domain exactly'
+       error stop 'field_stored: a value vector must fill its domain exactly'
     end if
     this % rvals = values
     this % vkind = GRAPH_FIELD_REAL
@@ -356,7 +356,7 @@ contains
     complex(dp) , intent(in)    :: values(:)
 
     if (size(values) /= this % nentries * this % ncomp) then
-       error stop 'class_graph_field: a value vector must fill its domain exactly'
+       error stop 'field_stored: a value vector must fill its domain exactly'
     end if
     this % cvals = values
     this % vkind = GRAPH_FIELD_COMPLEX
@@ -382,7 +382,7 @@ contains
     logical     , intent(in)    :: values(:)
 
     if (size(values) /= this % nentries * this % ncomp) then
-       error stop 'class_graph_field: a value vector must fill its domain exactly'
+       error stop 'field_stored: a value vector must fill its domain exactly'
     end if
     this % lvals = values
     this % vkind = GRAPH_FIELD_LOGICAL
@@ -408,11 +408,11 @@ contains
     character(len=*), intent(in) :: values(:)
 
     if (size(values) /= this % nentries * this % ncomp) then
-       error stop 'class_graph_field: a value vector must fill its domain exactly'
+       error stop 'field_stored: a value vector must fill its domain exactly'
     end if
     this % svals = values
     this % vkind = GRAPH_FIELD_CHARACTER
 
   end subroutine field_set_character_vector
 
-end module class_graph_field
+end module field_stored

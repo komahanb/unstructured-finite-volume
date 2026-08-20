@@ -22,11 +22,11 @@
 program test_graph_differentiation
 
   use iso_fortran_env     , only : dp => REAL64
-  use graph_field_calculus, only : graph_field
+  use field_calculus, only : graph_field
   use graph_discretization      , only : linearization_operator
   use graph_fractal       , only : set_graph => graph
-  use class_graph         , only : directed_stored_graph
-  use class_graph_field   , only : field
+  use view_directed_stored         , only : directed_stored_graph
+  use field_stored   , only : field
   use class_graph_step    , only : step_operator, backward_euler, bdf_variable
   use class_graph_chain_rule, only : chain_rule, argument_path
   use class_graph_linearization, only : tangent_of

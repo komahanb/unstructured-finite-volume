@@ -31,9 +31,9 @@ program adjoint_level_7_refusal
        & listed_set_representation
   use map_set        , only : set_map
   use map_inclusion  , only : inclusion_map, declared_subobject
-  use graph_field_calculus, only : graph_field
-  use class_graph      , only : directed_stored_graph
-  use class_graph_field, only : field
+  use field_calculus, only : graph_field
+  use view_directed_stored      , only : directed_stored_graph
+  use field_stored, only : field
   use class_graph_gmres, only : gmres
   use opaque_equation_fixture, only : opaque_primal, opaque_adjoint
 

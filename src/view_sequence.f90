@@ -44,7 +44,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_sequence_view
+module view_sequence
 
   use graph_fractal, only : graph, graph_branch, &
        & GRAPH_NULL, GRAPH_UNKNOWN, GRAPH_KNOWN
@@ -99,7 +99,7 @@ contains
     type(graph), pointer :: cell
 
     if (.not. sequence_defined(b)) then
-       error stop 'graph_sequence_view: the extent depends on an unknown tail'
+       error stop 'view_sequence: the extent depends on an unknown tail'
     end if
 
     n = 0
@@ -129,7 +129,7 @@ contains
     integer              :: i
 
     if (k .lt. 1) then
-       error stop 'graph_sequence_view: a sequence is indexed from one'
+       error stop 'view_sequence: a sequence is indexed from one'
     end if
     call require_reachable(b)
 
@@ -165,7 +165,7 @@ contains
     found = .false.
     if (b % status() .eq. GRAPH_NULL) return
     if (b % status() .eq. GRAPH_UNKNOWN) then
-       error stop 'graph_sequence_view: membership depends on an unknown sequence'
+       error stop 'view_sequence: membership depends on an unknown sequence'
     end if
 
     cell => b % known()
@@ -178,7 +178,7 @@ contains
        end if
        if (cell % branch(2) % status() .eq. GRAPH_NULL) return
        if (cell % branch(2) % status() .eq. GRAPH_UNKNOWN) then
-          error stop 'graph_sequence_view: membership depends on an unknown tail'
+          error stop 'view_sequence: membership depends on an unknown tail'
        end if
        cell => cell % branch(2) % known()
     end do
@@ -195,7 +195,7 @@ contains
     type(graph), intent(in) :: cell
 
     if (cell % branch(1) % status() .ne. GRAPH_KNOWN) then
-       error stop 'graph_sequence_view: a sequence cell holds a KNOWN element'
+       error stop 'view_sequence: a sequence cell holds a KNOWN element'
     end if
 
   end subroutine require_cell
@@ -205,12 +205,12 @@ contains
     type(graph_branch), intent(in) :: b
 
     if (b % status() .eq. GRAPH_NULL) then
-       error stop 'graph_sequence_view: the sequence has no such element'
+       error stop 'view_sequence: the sequence has no such element'
     end if
     if (b % status() .eq. GRAPH_UNKNOWN) then
-       error stop 'graph_sequence_view: that element lies beyond an unknown tail'
+       error stop 'view_sequence: that element lies beyond an unknown tail'
     end if
 
   end subroutine require_reachable
 
-end module graph_sequence_view
+end module view_sequence

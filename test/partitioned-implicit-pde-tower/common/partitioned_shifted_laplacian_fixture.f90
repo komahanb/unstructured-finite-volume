@@ -51,12 +51,12 @@ module partitioned_shifted_laplacian_fixture
   use map_label    , only : label_map
   use map_inclusion, only : inclusion_map
   use operation_action, only : graph_operation
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use class_graph      , only : directed_stored_graph
-  use class_graph_field, only : field
-  use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
-  use class_graph_assembler  , only : assembler
+  use view_directed, only : directed_graph
+  use field_calculus, only : graph_field
+  use view_directed_stored      , only : directed_stored_graph
+  use field_stored, only : field
+  use transform_partitioner, only : partitioner, PARTITION_LINEAR
+  use transform_assembler  , only : assembler
   use shifted_laplacian_fixture, only : shifted_laplacian
 
   use relation_partition, only : partition_relation

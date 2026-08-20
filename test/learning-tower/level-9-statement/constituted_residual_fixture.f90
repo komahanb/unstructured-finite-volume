@@ -29,12 +29,12 @@ module constituted_residual_fixture
   ! The kernel's graph and the ordinary view's directed_graph are two
   ! types with two names now, so nothing is renamed at this door.
   use graph_fractal        , only : graph
-  use graph_relational_view, only : relational_binding, &
+  use view_relational, only : relational_binding, &
        & num_relations, relation_at
   use operation_action, only : graph_operation
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use class_graph_field, only : field
+  use view_directed, only : directed_graph
+  use field_calculus, only : graph_field
+  use field_stored, only : field
   use learning_constitution_fixture, only : generated_residual
 
   implicit none

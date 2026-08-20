@@ -48,9 +48,9 @@ module learning_residual_fixture
   use map_set_representation, only : set_representation
   use map_inclusion  , only : inclusion_map, declared_subobject
   use operation_action, only : graph_operation
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use class_graph_field, only : field
+  use view_directed, only : directed_graph
+  use field_calculus, only : graph_field
+  use field_stored, only : field
 
   implicit none
 
@@ -150,9 +150,9 @@ program learning_level_7
 
   use iso_fortran_env  , only : dp => REAL64
   use learning_assert  , only : report, verdict, SLOT_W
-  use graph_field_calculus, only : graph_field
-  use class_graph_field, only : field
-  use class_graph      , only : directed_stored_graph
+  use field_calculus, only : graph_field
+  use field_stored, only : field
+  use view_directed_stored      , only : directed_stored_graph
   use class_graph_gmres, only : gmres
   use graph_fractal        , only : set_graph => graph
   use map_set_representation, only : counted_set_representation, &

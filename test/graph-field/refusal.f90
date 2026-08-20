@@ -8,7 +8,7 @@ program field_refusal
   use graph_fractal           , only : graph
   use map_set_representation, only : counted_set_representation
   use map_set           , only : set_map
-  use class_graph_field, only : field
+  use field_stored, only : field
   implicit none
   type(graph)       :: cells, raw
   type(set_map)     :: sets

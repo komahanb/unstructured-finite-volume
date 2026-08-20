@@ -36,7 +36,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_epistemic_view
+module view_epistemic
 
   use graph_fractal, only : graph, GRAPH_UNKNOWN, GRAPH_KNOWN
 
@@ -99,7 +99,7 @@ contains
     character(len=:), allocatable :: said
 
     if (.not. epistemic_defined(g)) then
-       error stop 'graph_epistemic_view: NULL has no epistemic name'
+       error stop 'view_epistemic: NULL has no epistemic name'
     end if
 
     if (has_data(g)) then
@@ -129,7 +129,7 @@ contains
     type(graph), pointer    :: q
 
     if (.not. has_data(g)) then
-       error stop 'graph_epistemic_view: Q is not KNOWN'
+       error stop 'view_epistemic: Q is not KNOWN'
     end if
 
     q => g % branch(1) % known()
@@ -142,11 +142,11 @@ contains
     type(graph), pointer    :: r
 
     if (.not. has_operator(g)) then
-       error stop 'graph_epistemic_view: R is not KNOWN'
+       error stop 'view_epistemic: R is not KNOWN'
     end if
 
     r => g % branch(2) % known()
 
   end function residual_of
 
-end module graph_epistemic_view
+end module view_epistemic

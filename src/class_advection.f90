@@ -33,7 +33,7 @@
 module class_advection
 
   use iso_fortran_env  , only : dp => REAL64
-  use class_graph_field, only : field
+  use field_stored, only : field
   use class_graph_mesh , only : mesh
 
   implicit none

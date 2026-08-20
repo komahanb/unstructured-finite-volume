@@ -17,14 +17,14 @@ composition, a view, or a concretion of these.
     graph            G = (B1, B2),  B in {NULL, UNKNOWN, KNOWN -> G}     graph_fractal
     token            object identity, minted once by declare             token_identity
     relation         P subset of A1 x ... x Ak                           relation_finitary
-    field            f : A -> V on one set-graph domain                  graph_field_calculus
+    field            f : A -> V on one set-graph domain                  field_calculus
     operation        (graph, fields) -> field                            operation_action
     transform        graph -> graph, data carried along                  transform_structure
     map              token -> {representation | name | inclusion | value}
                                                                          map_set, map_label,
                                                                          map_inclusion, map_value
-    view             a reading of the kernel graph, never a new kind     graph_directed_view,
-                                                                         graph_relational_view
+    view             a reading of the kernel graph, never a new kind     view_directed,
+                                                                         view_relational
 
 The kernel graph is self-similar: each branch is NULL, UNKNOWN, or
 another graph. Sets, tuples, relations, domains, and chains are all
@@ -47,17 +47,17 @@ Indentation is `extends`; brackets name the file.
         transpose_padded, and combine_triples are its callers; no
         other count/prefix/scatter exists.
 
-    directed_graph  D = (V, E, tail, head)     [graph_directed_view]
-    └── directed_stored_graph                  [class_graph]
+    directed_graph  D = (V, E, tail, head)     [view_directed]
+    └── directed_stored_graph                  [view_directed_stored]
 
-    graph_field                                [graph_field_calculus]
-    ├── field                                  [class_graph_field]
-    └── graph_functional  (one entry)          [graph_field_calculus]
-        └── functional                         [class_graph_functional]
+    graph_field                                [field_calculus]
+    ├── field                                  [field_stored]
+    └── graph_functional  (one entry)          [field_calculus]
+        └── functional                         [field_functional]
 
     graph_operation                            [operation_action]
-    ├── reduction   field -> functional  (sum, average, norm, ...)   [class_graph_reduction]
-    ├── broadcast   functional -> field  (copy, share)               [class_graph_reduction]
+    ├── reduction   field -> functional  (sum, average, norm, ...)   [operation_reduction]
+    ├── broadcast   functional -> field  (copy, share)               [operation_reduction]
     ├── discretization_operator                [graph_discretization]
     │   ├── stencil_operator  space: matrix as weighted edges   [class_graph_stencil]
     │   │       constructed from triples or from a dense array;
@@ -80,10 +80,10 @@ Indentation is `extends`; brackets name the file.
     └── ...
 
     graph_transform                            [transform_structure]
-    ├── partitioner                            [class_graph_partitioner]
-    ├── assembler                              [class_graph_assembler]
-    ├── coarsener                              [class_graph_coarsener]
-    └── refiner                                [class_graph_refiner]
+    ├── partitioner                            [transform_partitioner]
+    ├── assembler                              [transform_assembler]
+    ├── coarsener                              [transform_coarsener]
+    └── refiner                                [transform_refiner]
 
     reversible_change  apply -> check -> keep | revert   [map_change_protocol]
     └── value_change                           [map_value_change]
@@ -122,11 +122,11 @@ Indentation is `extends`; brackets name the file.
     0-3  kernel:      graph_fractal, token_identity, relation_finitary,
                       relation_binary, relation_partition,
                       map_set_representation, the four maps
-    4    graph view:  graph_directed_view, graph_relational_view,
-                      class_graph, class_graph_walk, graph_algorithms,
+    4    graph view:  view_directed, view_relational,
+                      view_directed_stored, operation_walk, relation_algorithms,
                       transforms (partitioner/assembler/coarsener/refiner)
-    5    field:       graph_field_calculus, class_graph_field,
-                      class_graph_functional, class_graph_reduction
+    5    field:       field_calculus, field_stored,
+                      field_functional, operation_reduction
     6    calculus:    graph_discretization, stencil, step,
                       linearizations, chain rule, differential
                       operator, forms/fitting
@@ -188,7 +188,7 @@ snapshots the hot paths read; its `tail_relation()` and
 on request, over counted coordinates, so a graph nobody reads
 relationally pays nothing (the section-66 benchmark rejected the
 eager form at 1.7-2.2x on pattern and part construction; the lazy
-form is within noise of baseline). `graph_algorithms` (sources,
+form is within noise of baseline). `relation_algorithms` (sources,
 sinks, reachable, topological_order) takes any `class(relation)`,
 selects the binary reading, and refuses a non-binary or two-domain
 adjacency. `graph_profile` and its two view types are deleted; a

@@ -37,7 +37,7 @@ program calculator_level_8
   use relation_finitary   , only : stored_relation, relation
   use relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use class_graph_field, only : field
+  use field_stored, only : field
   use arithmetic_constitution_fixture, only : apply_law, &
        &  generated_residual, constitution_support
 

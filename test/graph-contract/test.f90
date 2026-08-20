@@ -18,14 +18,14 @@ module nonlinear_sample_support
 
   use iso_fortran_env    , only : dp => REAL64
   use operation_action, only : graph_operation
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use graph_directed_view, only : GRAPH_SIDE_VERTEX
+  use view_directed, only : directed_graph
+  use field_calculus, only : graph_field
+  use view_directed, only : GRAPH_SIDE_VERTEX
   ! An operation names a domain and counts it. It asks no membership,
   ! so it imports no map: identity and count is the whole of what an
   ! operation is entitled to see.
   use graph_fractal      , only : set_graph => graph
-  use class_graph_field  , only : field
+  use field_stored  , only : field
 
   use relation_partition, only : partition_relation
   implicit none
@@ -206,26 +206,26 @@ program test_graph_contract
   use map_set        , only : set_map
   use map_label      , only : label_map
   use map_inclusion  , only : inclusion_map, declared_subobject
-  use graph_field_calculus  , only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
-  use graph_field_calculus  , only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
-  use graph_field_calculus  , only : GRAPH_FIELD_CHARACTER
-  use graph_directed_view   , only : GRAPH_SIDE_VERTEX
-  use graph_field_calculus  , only : graph_functional
-  use class_graph           , only : directed_stored_graph
-  use class_graph_field     , only : field
-  use class_graph_functional, only : functional
-  use class_graph_reduction , only : reduction
-  use class_graph_reduction , only : REDUCE_SUM, REDUCE_AVERAGE, REDUCE_MINIMUM
-  use class_graph_reduction , only : REDUCE_MAXIMUM, REDUCE_NORM, REDUCE_COUNT
-  use class_graph_reduction , only : REDUCE_ALL, REDUCE_ANY
-  use class_graph_reduction , only : broadcast, BROADCAST_COPY, BROADCAST_SHARE
-  use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
-  use class_graph_partitioner, only : PARTITION_BREADTH_FIRST, PARTITION_ADOPTED
-  use class_graph_assembler , only : assembler
-  use graph_directed_view   , only : directed_graph
-  use graph_field_calculus  , only : graph_field
-  use class_graph_coarsener , only : coarsener, COARSEN_PAIRWISE, COARSEN_ADOPTED
-  use class_graph_refiner   , only : refiner
+  use field_calculus  , only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
+  use field_calculus  , only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
+  use field_calculus  , only : GRAPH_FIELD_CHARACTER
+  use view_directed   , only : GRAPH_SIDE_VERTEX
+  use field_calculus  , only : graph_functional
+  use view_directed_stored           , only : directed_stored_graph
+  use field_stored     , only : field
+  use field_functional, only : functional
+  use operation_reduction , only : reduction
+  use operation_reduction , only : REDUCE_SUM, REDUCE_AVERAGE, REDUCE_MINIMUM
+  use operation_reduction , only : REDUCE_MAXIMUM, REDUCE_NORM, REDUCE_COUNT
+  use operation_reduction , only : REDUCE_ALL, REDUCE_ANY
+  use operation_reduction , only : broadcast, BROADCAST_COPY, BROADCAST_SHARE
+  use transform_partitioner, only : partitioner, PARTITION_LINEAR
+  use transform_partitioner, only : PARTITION_BREADTH_FIRST, PARTITION_ADOPTED
+  use transform_assembler , only : assembler
+  use view_directed   , only : directed_graph
+  use field_calculus  , only : graph_field
+  use transform_coarsener , only : coarsener, COARSEN_PAIRWISE, COARSEN_ADOPTED
+  use transform_refiner   , only : refiner
   use class_graph_differential_operator, only : differential_operator
   use class_graph_differential_operator, only : edge_differential_operator
   use class_graph_differential_operator, only : vertex_differential_operator
@@ -234,8 +234,8 @@ program test_graph_contract
   use class_graph_differential_operator, only : stencil_of
   use class_graph_stencil, only : stencil_operator
   use class_graph_balance   , only : balance
-  use class_graph_walk      , only : walk, WALK_COLOURING, WALK_VISIT_ORDER
-  use class_graph_walk      , only : WALK_COMPONENT, WALK_DEPTH
+  use operation_walk      , only : walk, WALK_COLOURING, WALK_VISIT_ORDER
+  use operation_walk      , only : WALK_COMPONENT, WALK_DEPTH
   use nonlinear_sample_support, only : nonlinear_sample
 
   use relation_partition, only : partition_relation

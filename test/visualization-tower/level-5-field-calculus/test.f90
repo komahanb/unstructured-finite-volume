@@ -75,8 +75,8 @@ program visualization_level_5
   use map_label      , only : label_map
   use relation_finitary       , only : relation
   use relation_binary, only : csr_relation
-  use graph_field_calculus , only : GRAPH_FIELD_REAL
-  use class_graph_field    , only : field
+  use field_calculus , only : GRAPH_FIELD_REAL
+  use field_stored    , only : field
   use visualization_carriers_fixture , only : structural_carriers, label_for
   use visualization_relations_fixture, only : occurrences_of_a1
   use visualization_relations_fixture, only : occurrences_of_a2

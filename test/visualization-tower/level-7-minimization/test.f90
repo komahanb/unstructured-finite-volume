@@ -105,8 +105,8 @@ program visualization_level_7
   use iso_fortran_env      , only : dp => REAL64
   use visualization_assert , only : report, verdict
   use graph_fractal        , only : set_graph => graph
-  use graph_directed_view  , only : directed_graph
-  use class_graph          , only : directed_stored_graph
+  use view_directed  , only : directed_graph
+  use view_directed_stored          , only : directed_stored_graph
   use class_graph_stencil  , only : stencil_operator
   use class_graph_jacobi   , only : jacobi
   use production_pattern_renderer_fixture, only : pattern_picture

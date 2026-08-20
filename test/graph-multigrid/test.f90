@@ -18,12 +18,12 @@
 program test_graph_multigrid
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_directed_view, only : directed_graph
+  use view_directed, only : directed_graph
   use class_graph_mesh   , only : mesh
   use class_graph_stencil, only : stencil_operator
   use class_fitted_balance, only : fitted_balance_stencil
   use graph_forms       , only : polynomial_form
-  use class_graph_coarsener, only : coarsener, COARSEN_PAIRWISE
+  use transform_coarsener, only : coarsener, COARSEN_PAIRWISE
   use class_graph_multigrid, only : multigrid
   use class_graph_jacobi   , only : jacobi
   use class_graph_gmres    , only : gmres

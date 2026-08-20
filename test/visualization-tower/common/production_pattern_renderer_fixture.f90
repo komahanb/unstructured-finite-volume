@@ -74,7 +74,7 @@ module production_pattern_renderer_fixture
   use map_set        , only : set_map
   use map_label      , only : label_map
   use relation_finitary                , only : relation
-  use graph_directed_view           , only : directed_graph
+  use view_directed           , only : directed_graph
   use visualization_carriers_fixture, only : label_for
   use structural_renderer_fixture   , only : picture
 

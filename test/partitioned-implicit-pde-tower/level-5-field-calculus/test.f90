@@ -44,12 +44,12 @@ program partitioned_pde_level_5
   use map_set        , only : set_map
   use map_inclusion  , only : inclusion_map, declared_subobject
   use map_label      , only : label_map
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use class_graph      , only : directed_stored_graph
-  use class_graph_field, only : field
-  use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
-  use class_graph_assembler  , only : assembler
+  use view_directed, only : directed_graph
+  use field_calculus, only : graph_field
+  use view_directed_stored      , only : directed_stored_graph
+  use field_stored, only : field
+  use transform_partitioner, only : partitioner, PARTITION_LINEAR
+  use transform_assembler  , only : assembler
 
   use relation_partition, only : partition_relation
   implicit none

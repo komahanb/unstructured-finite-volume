@@ -28,7 +28,7 @@ program partitioned_pde_level_3
   use map_set_representation, only : counted_set_representation
   use map_set        , only : set_map
   use relation_binary  , only : csr_relation
-  use class_graph            , only : directed_stored_graph
+  use view_directed_stored            , only : directed_stored_graph
   use chain_carriers_fixture , only : chain_carriers
   use chain_relations_fixture, only : tail_relation, head_relation
 

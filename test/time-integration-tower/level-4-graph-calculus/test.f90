@@ -65,14 +65,14 @@ program time_level_4
   use map_inclusion  , only : inclusion_map, declared_subobject
   use relation_finitary        , only : relation
   use relation_binary , only : csr_relation
-  use graph_algorithms      , only : sources, sinks, reachable, &
+  use relation_algorithms      , only : sources, sinks, reachable, &
        &                             topological_order
   use time_carriers_fixture , only : time_carriers
   use time_relations_fixture, only : tail_relation, head_relation
   use time_algebra_fixture  , only : derive_one_step_reach, &
        &                             derive_two_step_reach
   use graph_fractal        , only : graph, known_branch, null_branch
-  use graph_relational_view, only : relational_binding, &
+  use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
        & holds_set
 

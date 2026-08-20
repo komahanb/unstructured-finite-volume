@@ -841,7 +841,7 @@ symptom / fact:       EQUAL CARDINALITY DOES NOT MAKE ONE CARRIER A
                       NO NEW VALIDATION MECHANISM WAS INVENTED. The
                       check asks the field for its domain and the
                       domain for its identity, which is what
-                      graph_carrier and class_graph_field have always
+                      graph_carrier and field_stored have always
                       offered. Level 5 exposes those semantics; it
                       does not add to them.
 

@@ -59,10 +59,10 @@ program time_level_7
   use time_assert           , only : H_STEP, Q0, Q_BE1, Q_BDF2
   use graph_fractal        , only : set_graph => graph
   use map_set        , only : set_map
-  use graph_directed_view   , only : directed_graph
-  use graph_field_calculus  , only : graph_field
-  use class_graph           , only : directed_stored_graph
-  use class_graph_field     , only : field
+  use view_directed   , only : directed_graph
+  use field_calculus  , only : graph_field
+  use view_directed_stored           , only : directed_stored_graph
+  use field_stored     , only : field
   use class_graph_step      , only : step_operator, backward_euler, bdf
   use class_graph_gmres     , only : gmres
   use time_carriers_fixture , only : time_carriers

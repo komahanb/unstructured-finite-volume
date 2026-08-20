@@ -44,13 +44,13 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_graph_walk
+module operation_walk
 
   use operation_action, only : graph_operation
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
+  use view_directed, only : directed_graph
+  use field_calculus, only : graph_field
   use graph_fractal      , only : set_graph => graph
-  use class_graph_field  , only : field
+  use field_stored  , only : field
 
   implicit none
 
@@ -340,4 +340,4 @@ contains
 
   end subroutine components
 
-end module class_graph_walk
+end module operation_walk

@@ -9,9 +9,9 @@ module lopsided_fixture
   ! identity and the count are the whole of what it is entitled to.
   use graph_fractal    , only : set_graph => graph
   use operation_action, only : graph_operation
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use class_graph_field, only : field
+  use view_directed, only : directed_graph
+  use field_calculus, only : graph_field
+  use field_stored, only : field
   implicit none
   private
   public :: lopsided
@@ -58,7 +58,7 @@ program minimization_refusal
        & listed_set_representation
   use map_set           , only : set_map
   use map_inclusion     , only : inclusion_map
-  use class_graph      , only : directed_stored_graph
+  use view_directed_stored      , only : directed_stored_graph
   use class_graph_gmres, only : gmres
   use lopsided_fixture , only : lopsided
   implicit none

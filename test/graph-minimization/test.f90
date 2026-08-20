@@ -19,13 +19,13 @@ module cubic_statement_fixture
 
   use iso_fortran_env, only : dp => REAL64
   use operation_action, only : graph_operation
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use graph_directed_view , only : GRAPH_SIDE_VERTEX
+  use view_directed, only : directed_graph
+  use field_calculus, only : graph_field
+  use view_directed , only : GRAPH_SIDE_VERTEX
   ! An action names a domain and counts it. It asks no membership,
   ! so it holds no map: identity and count is the whole of it.
   use graph_fractal      , only : set_graph => graph
-  use class_graph_field  , only : field
+  use field_stored  , only : field
   use class_graph_differential_operator, only : differential_operator
 
   implicit none
@@ -109,7 +109,7 @@ program test_graph_minimization
   use map_set  , only : set_map
   use map_label, only : label_map
   use map_inclusion, only : inclusion_map
-  use graph_directed_view, only : directed_graph
+  use view_directed, only : directed_graph
   use class_graph_mesh   , only : mesh
   use class_mesh_builder , only : mesh_from_gmsh
   use class_robin_condition, only : robin_condition, dirichlet
@@ -350,7 +350,7 @@ contains
     c = -c
 
     block
-      use class_graph_field, only : field
+      use field_stored, only : field
       type(field) :: fd
       fd = m % face_delta()
       call fd % get_real_vector(deltas)

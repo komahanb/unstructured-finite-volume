@@ -50,12 +50,12 @@
 ! they existed only because a Fortran array carries one dynamic type,
 ! and that was always a storage fact.
 !
-! Sequence behaviour is delegated to graph_sequence_view. Nothing here
+! Sequence behaviour is delegated to view_sequence. Nothing here
 ! traverses a spine.
 !
 ! THREE FAILURES, STRUCTURALLY APART.
 !
-!     malformed sequence   refused, by graph_sequence_view
+!     malformed sequence   refused, by view_sequence
 !     unstorable object    refused, by bind_set / bind_relation
 !     relationally invalid answered .false. by relational_valid
 !
@@ -82,12 +82,12 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_relational_view
+module view_relational
 
   use graph_fractal      , only : graph
   use graph_fractal      , only : set_graph => graph
   use relation_finitary     , only : relation
-  use graph_sequence_view, only : sequence_size, sequence_element, &
+  use view_sequence, only : sequence_size, sequence_element, &
        & sequence_contains
 
   implicit none
@@ -155,7 +155,7 @@ contains
 
     ! An undeclared token does not match itself.
     if (.not. object % same_as(object)) then
-       error stop 'graph_relational_view: a binding stores identified objects'
+       error stop 'view_relational: a binding stores identified objects'
     end if
 
     if (.not. allocated(this % sets)) allocate(this % sets(0))
@@ -178,11 +178,11 @@ contains
     integer                           :: n
 
     if (.not. object % same_as(object)) then
-       error stop 'graph_relational_view: a binding stores identified objects'
+       error stop 'view_relational: a binding stores identified objects'
     end if
 
     if (.not. object % materialized()) then
-       error stop 'graph_relational_view: a binding owns whole relations; a view cannot be bound'
+       error stop 'view_relational: a binding owns whole relations; a view cannot be bound'
     end if
 
     if (.not. allocated(this % relations)) allocate(this % relations(0))
@@ -217,7 +217,7 @@ contains
        end do
     end if
 
-    error stop 'graph_relational_view: no member set is bound to that element'
+    error stop 'view_relational: no member set is bound to that element'
 
   end function set_for
 
@@ -238,7 +238,7 @@ contains
        end do
     end if
 
-    error stop 'graph_relational_view: no relation is bound to that element'
+    error stop 'view_relational: no relation is bound to that element'
 
   end function relation_for
 
@@ -253,7 +253,7 @@ contains
     class(relational_binding), intent(inout) :: lhs
     type(relational_binding) , intent(in)    :: rhs
 
-    error stop 'graph_relational_view: a relational_binding is not assignable'
+    error stop 'view_relational: a relational_binding is not assignable'
 
   end subroutine refuse_assignment
 
@@ -405,4 +405,4 @@ contains
 
   end function relational_valid
 
-end module graph_relational_view
+end module view_relational

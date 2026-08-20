@@ -23,8 +23,8 @@
 program bench_graph_traversal
 
   use iso_fortran_env        , only : dp => REAL64, int64
-  use graph_directed_view    , only : directed_graph
-  use graph_field_calculus   , only : graph_field
+  use view_directed    , only : directed_graph
+  use field_calculus   , only : graph_field
   use graph_fractal          , only : set_graph => graph
   use map_set_representation, only : counted_set_representation
   use map_set          , only : set_map
@@ -32,10 +32,10 @@ program bench_graph_traversal
   use map_inclusion    , only : inclusion_map
   use relation_partition, only : partition_relation
   use relation_binary  , only : csr_relation
-  use class_graph            , only : directed_stored_graph
-  use class_graph_field      , only : field
-  use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
-  use class_graph_assembler  , only : assembler
+  use view_directed_stored            , only : directed_stored_graph
+  use field_stored      , only : field
+  use transform_partitioner, only : partitioner, PARTITION_LINEAR
+  use transform_assembler  , only : assembler
   use class_graph_differential_operator, only : divergence, laplacian, &
        &                                        differential_operator, &
        &                                        stencil_of

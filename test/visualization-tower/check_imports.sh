@@ -30,22 +30,22 @@
 #
 #     relation_finitary, relation_binary  earned at Level 1
 #     relation_algebra                 earned at Level 2
-#     graph_fractal, graph_relational_view   earned at Level 3
+#     graph_fractal, view_relational   earned at Level 3
 #     structural_renderer_fixture            earned at Level 4
-#     class_graph_field, graph_field_calculus, and the two
+#     field_stored, field_calculus, and the two
 #     coefficient fixtures                   earned at Level 5
 #
 # UNIVERSAL refusals never lift at any level BUILT SO FAR, and there
 # are two families of them - values used to be a third, and Level 5 is
 # where it stopped being one.
 #
-# 0. VALUES, refused at L0-L4 and EARNED AT L5. graph_field_calculus
-#    and class_graph_field are Level 5's business. Gate A's claim is
+# 0. VALUES, refused at L0-L4 and EARNED AT L5. field_calculus
+#    and field_stored are Level 5's business. Gate A's claim is
 #    that the structural picture precedes the numbers, so the four
 #    levels below Level 5 must remain unable to reach a coefficient -
 #    which is a ceiling that lifted, not a refusal that was deleted.
 #
-# 2. OPERATORS. graph_directed_view, class_graph_stencil, class_graph_step
+# 2. OPERATORS. view_directed, class_graph_stencil, class_graph_step
 #    and everything that solves, steps, linearizes or marches. The
 #    types the brief names explicitly - discretization_operator and
 #    stencil_operator - live inside class_graph_stencil,
@@ -54,7 +54,7 @@
 #    bare names too, in case a later level finds another road to them.
 #    dependencies() is Level 6's question and Level 6 is unbuilt.
 #
-# 3. THE ORDINARY GRAPH. and graph_algorithms, refused
+# 3. THE ORDINARY GRAPH. and relation_algorithms, refused
 #    at every level, Level 5 included.
 #
 # THAT THIRD REFUSAL IS THE SHARPEST ASSERTION IN THIS GATE, and it
@@ -112,10 +112,10 @@ allowed_for() {
         common/visualization_relations_fixture.f90) echo "graph_fractal map_set visualization_assert relation_finitary relation_binary" ;;
         common/visualization_algebra_fixture.f90) echo "graph_fractal map_set  relation_finitary relation_binary relation_algebra" ;;
         common/structural_renderer_fixture.f90) echo "graph_fractal map_set map_label visualization_carriers_fixture relation_finitary relation_binary" ;;
-        common/visualization_values_fixture.f90) echo "graph_fractal map_set  class_graph_field" ;;
-        common/valued_renderer_fixture.f90) echo "graph_fractal map_set map_label visualization_carriers_fixture structural_renderer_fixture relation_finitary relation_binary graph_field_calculus class_graph_field" ;;
+        common/visualization_values_fixture.f90) echo "graph_fractal map_set  field_stored" ;;
+        common/valued_renderer_fixture.f90) echo "graph_fractal map_set map_label visualization_carriers_fixture structural_renderer_fixture relation_finitary relation_binary field_calculus field_stored" ;;
         common/production_discretization_fixture.f90) echo "graph_fractal operation_action class_graph_stencil class_graph_step" ;;
-        common/production_pattern_renderer_fixture.f90) echo "graph_fractal map_set map_label visualization_carriers_fixture structural_renderer_fixture relation_finitary graph_directed_view" ;;
+        common/production_pattern_renderer_fixture.f90) echo "graph_fractal map_set map_label visualization_carriers_fixture structural_renderer_fixture relation_finitary view_directed" ;;
         common)            echo "__no_allowlist__" ;;
 
         # ---- L0: carriers only. NOTHING relational - not the relation
@@ -126,12 +126,12 @@ allowed_for() {
         # ---- L2: + relation algebra. Where D1, D2, D3 are DERIVED.
         level-2-relation-algebra) echo "graph_fractal map_set map_label visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture relation_finitary relation_binary relation_algebra" ;;
         # ---- L3: + the relational graph container
-        level-3-graph)     echo "graph_fractal map_set_representation map_set map_label map_inclusion visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture relation_finitary relation_binary relation_algebra graph_relational_view" ;;
+        level-3-graph)     echo "graph_fractal map_set_representation map_set map_label map_inclusion visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture relation_finitary relation_binary relation_algebra view_relational" ;;
         # ---- L4: + the renderer, and NOTHING ELSE. No:
         #          the level's conclusion is that the ordinary graph
         #          was not required, and the gate is what makes that
         #          claim mechanical.
-        level-4-graph-calculus) echo "graph_fractal map_set_representation map_set map_label map_inclusion visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture relation_finitary relation_binary relation_algebra graph_relational_view" ;;
+        level-4-graph-calculus) echo "graph_fractal map_set_representation map_set map_label map_inclusion visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture relation_finitary relation_binary relation_algebra view_relational" ;;
 
         # ===== REVIEW GATE A =====
 
@@ -139,16 +139,16 @@ allowed_for() {
         #          coefficients. The ordinary graph and every operator
         #          module stay refused: values arrived, machinery did
         #          not.
-        level-5-field-calculus) echo "graph_fractal map_set map_label visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture visualization_values_fixture valued_renderer_fixture relation_finitary relation_binary relation_algebra graph_field_calculus class_graph_field" ;;
+        level-5-field-calculus) echo "graph_fractal map_set map_label visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture visualization_values_fixture valued_renderer_fixture relation_finitary relation_binary relation_algebra field_calculus field_stored" ;;
 
         # ---- L6: + PRODUCTION DISCRETIZATION, and only the three
         #          modules the level actually names. graph_calculus and
-        #          class_graph are NOT permitted: the test reaches the
+        #          view_directed_stored are NOT permitted: the test reaches the
         #          concrete citizens, never the abstract type or the
         #          stored graph directly, and a ceiling permits what is
         #          used rather than what is nearby. graph_fitting is
         #          refused outright, and so is everything that solves.
-        level-6-discretization) echo "graph_fractal map_set_representation map_set map_label visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_discretization_fixture production_pattern_renderer_fixture relation_finitary relation_binary relation_algebra graph_directed_view class_graph_stencil class_graph_step" ;;
+        level-6-discretization) echo "graph_fractal map_set_representation map_set map_label visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_discretization_fixture production_pattern_renderer_fixture relation_finitary relation_binary relation_algebra view_directed class_graph_stencil class_graph_step" ;;
 
         # ---- L7: + MINIMIZATION, and only the concrete the
         #          experiment uses. graph_minimization itself is not
@@ -157,14 +157,14 @@ allowed_for() {
         #          census rather than run. Nothing that solves beyond
         #          jacobi: no gmres, no newton, no multigrid, no
         #          marcher, no linearization.
-        level-7-minimization) echo "graph_fractal map_set_representation map_set map_label visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_pattern_renderer_fixture relation_finitary relation_binary relation_algebra graph_directed_view class_graph class_graph_stencil class_graph_jacobi" ;;
+        level-7-minimization) echo "graph_fractal map_set_representation map_set map_label visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_pattern_renderer_fixture relation_finitary relation_binary relation_algebra view_directed view_directed_stored class_graph_stencil class_graph_jacobi" ;;
 
         # ---- L8: the constitution. Both axes and the context at once,
         #          on the vocabulary Levels 6 and 7 already earned.
-        level-8-constitution) echo "graph_fractal map_set_representation map_set map_label visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_pattern_renderer_fixture relation_finitary relation_binary relation_algebra graph_directed_view class_graph class_graph_stencil class_graph_step class_graph_jacobi" ;;
+        level-8-constitution) echo "graph_fractal map_set_representation map_set map_label visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_pattern_renderer_fixture relation_finitary relation_binary relation_algebra view_directed view_directed_stored class_graph_stencil class_graph_step class_graph_jacobi" ;;
         # ---- L9: the statement, on the same constitution plus the
         #          coefficient view Level 5 earned.
-        level-9-statement) echo "graph_fractal map_set_representation map_set map_label visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture valued_renderer_fixture visualization_values_fixture production_pattern_renderer_fixture relation_finitary relation_binary relation_algebra graph_directed_view graph_field_calculus class_graph class_graph_field class_graph_stencil class_graph_step class_graph_jacobi" ;;
+        level-9-statement) echo "graph_fractal map_set_representation map_set map_label visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture valued_renderer_fixture visualization_values_fixture production_pattern_renderer_fixture relation_finitary relation_binary relation_algebra view_directed field_calculus view_directed_stored field_stored class_graph_stencil class_graph_step class_graph_jacobi" ;;
 
         *)                 echo "__no_allowlist__" ;;
     esac
@@ -185,8 +185,8 @@ allowlist_for() {
 # THE NUMBERLESS LAW, AND WHERE IT STOPS.
 #
 # Gate A's central claim is that the structural picture precedes the
-# numerical coefficients entirely. Refusing class_graph_field and
-# graph_field_calculus does not establish that: a level could simply
+# numerical coefficients entirely. Refusing field_stored and
+# field_calculus does not establish that: a level could simply
 # have written
 #
 #     real(dp) :: w = 2.0_dp
@@ -308,23 +308,23 @@ if [ "$1" = "--selftest" ]; then
     refuses level-0-carrier visualization_algebra_fixture
     refuses level-0-carrier relation_finitary
     refuses level-0-carrier relation_binary
-    refuses level-0-carrier graph_relational_view
+    refuses level-0-carrier view_relational
 
     # L1 stands on L0's fixture and adds its own; L2's is still above it.
     permits level-1-relation visualization_relations_fixture
     permits level-1-relation relation_binary
     refuses level-1-relation visualization_algebra_fixture
     refuses level-1-relation relation_algebra
-    refuses level-1-relation graph_relational_view
+    refuses level-1-relation view_relational
 
     # L2 earns the algebra; the container is still one rung up.
     permits level-2-relation-algebra visualization_algebra_fixture
     permits level-2-relation-algebra relation_algebra
-    refuses level-2-relation-algebra graph_relational_view
+    refuses level-2-relation-algebra view_relational
 
     # L3 earns the container.
     permits level-3-graph graph_fractal
-    permits level-3-graph graph_relational_view
+    permits level-3-graph view_relational
 
     # ---- STAGED: the renderer, earned at Level 4 and nowhere below.
     #      A tower that could draw before it could derive would never
@@ -334,7 +334,7 @@ if [ "$1" = "--selftest" ]; then
         refuses "$lvl" structural_renderer_fixture
     done
     for lvl in $before_three; do
-        refuses "$lvl" graph_relational_view
+        refuses "$lvl" view_relational
     done
     for lvl in $before_two; do
         refuses "$lvl" relation_algebra
@@ -349,15 +349,15 @@ if [ "$1" = "--selftest" ]; then
     # ---- UNIVERSAL 1: VALUES. Gate A holds no number at all, and the
     #      levels that would supply one are unbuilt.
     for lvl in $levels; do
-        refuses "$lvl" graph_field_calculus
-        refuses "$lvl" class_graph_field
+        refuses "$lvl" field_calculus
+        refuses "$lvl" field_stored
     done
 
     # ---- UNIVERSAL 2: OPERATORS. Nothing that steps, solves,
     #      linearizes, marches, or owns dependencies().
     for lvl in $with_five; do
         refuses "$lvl" operation_action
-        refuses "$lvl" graph_directed_view
+        refuses "$lvl" view_directed
         refuses "$lvl" class_graph_stencil
         refuses "$lvl" class_graph_step
         refuses "$lvl" graph_calculus
@@ -377,13 +377,13 @@ if [ "$1" = "--selftest" ]; then
     #      profile, that conclusion cannot have been reached with one.
     for lvl in $with_five; do
         refuses "$lvl" graph_profile
-        refuses "$lvl" graph_algorithms
-        refuses "$lvl" class_graph
+        refuses "$lvl" relation_algorithms
+        refuses "$lvl" view_directed_stored
         refuses "$lvl" class_stored_graph
     done
 
     # The illegal upward import the brief names, spelled out.
-    refuses level-2-relation-algebra graph_field_calculus
+    refuses level-2-relation-algebra field_calculus
 
     # The fixtures themselves are keyed per file.
     permits common/visualization_carriers_fixture.f90 graph_fractal
@@ -391,15 +391,15 @@ if [ "$1" = "--selftest" ]; then
     refuses common/visualization_carriers_fixture.f90 visualization_assert
     refuses common/visualization_assert.f90 graph_fractal
     permits common/structural_renderer_fixture.f90 visualization_carriers_fixture
-    refuses common/structural_renderer_fixture.f90 graph_relational_view
+    refuses common/structural_renderer_fixture.f90 view_relational
     refuses common/structural_renderer_fixture.f90 graph_profile
     refuses common/visualization_relations_fixture.f90 relation_algebra
-    refuses common/visualization_algebra_fixture.f90 graph_relational_view
+    refuses common/visualization_algebra_fixture.f90 view_relational
 
     # ---- L5 earns the field nucleus and its two coefficient
     #      fixtures. Nothing below it may reach any of them.
-    permits level-5-field-calculus class_graph_field
-    permits level-5-field-calculus graph_field_calculus
+    permits level-5-field-calculus field_stored
+    permits level-5-field-calculus field_calculus
     permits level-5-field-calculus visualization_values_fixture
     permits level-5-field-calculus valued_renderer_fixture
     permits level-5-field-calculus structural_renderer_fixture
@@ -410,26 +410,26 @@ if [ "$1" = "--selftest" ]; then
 
     # L5 does NOT lift the frontier. Values arrived; machinery did not.
     refuses level-5-field-calculus graph_profile
-    refuses level-5-field-calculus graph_algorithms
+    refuses level-5-field-calculus relation_algorithms
     refuses level-5-field-calculus class_graph_step
     refuses level-5-field-calculus class_graph_stencil
     refuses level-5-field-calculus operation_action
-    refuses level-5-field-calculus graph_directed_view
+    refuses level-5-field-calculus view_directed
     refuses level-5-field-calculus class_graph_linearization
 
     # The valued renderer stands ON the structural one, never inside
     # it - and the structural one may not learn about fields.
     permits common/valued_renderer_fixture.f90 structural_renderer_fixture
-    permits common/valued_renderer_fixture.f90 class_graph_field
-    refuses common/structural_renderer_fixture.f90 class_graph_field
-    refuses common/structural_renderer_fixture.f90 graph_field_calculus
+    permits common/valued_renderer_fixture.f90 field_stored
+    refuses common/structural_renderer_fixture.f90 field_stored
+    refuses common/structural_renderer_fixture.f90 field_calculus
     refuses common/structural_renderer_fixture.f90 valued_renderer_fixture
     refuses common/visualization_values_fixture.f90 structural_renderer_fixture
 
     # ---- L6 earns production discretization, and only what it uses.
     permits level-6-discretization class_graph_stencil
     permits level-6-discretization class_graph_step
-    permits level-6-discretization graph_directed_view
+    permits level-6-discretization view_directed
     permits level-6-discretization production_discretization_fixture
     permits level-6-discretization production_pattern_renderer_fixture
     permits level-6-discretization structural_renderer_fixture
@@ -437,7 +437,7 @@ if [ "$1" = "--selftest" ]; then
         refuses "$lvl" class_graph_stencil
         refuses "$lvl" class_graph_step
         refuses "$lvl" operation_action
-        refuses "$lvl" graph_directed_view
+        refuses "$lvl" view_directed
         refuses "$lvl" graph_calculus
         refuses "$lvl" production_discretization_fixture
         refuses "$lvl" production_pattern_renderer_fixture
@@ -452,26 +452,26 @@ if [ "$1" = "--selftest" ]; then
     refuses level-6-discretization class_graph_marcher
     refuses level-6-discretization class_graph_linearization
     refuses level-6-discretization graph_profile
-    refuses level-6-discretization graph_algorithms
+    refuses level-6-discretization relation_algorithms
     refuses level-6-discretization graph_calculus
-    refuses level-6-discretization class_graph
-    refuses level-6-discretization class_graph_field
+    refuses level-6-discretization view_directed_stored
+    refuses level-6-discretization field_stored
     refuses level-6-discretization valued_renderer_fixture
 
     # The production fixtures stand where they are earned, and the
     # Level-4 renderer still knows nothing of production.
-    permits common/production_pattern_renderer_fixture.f90 graph_directed_view
+    permits common/production_pattern_renderer_fixture.f90 view_directed
     permits common/production_pattern_renderer_fixture.f90 structural_renderer_fixture
     permits common/production_discretization_fixture.f90 class_graph_stencil
     refuses common/structural_renderer_fixture.f90 operation_action
-    refuses common/structural_renderer_fixture.f90 graph_directed_view
+    refuses common/structural_renderer_fixture.f90 view_directed
     refuses common/structural_renderer_fixture.f90 class_graph_stencil
     refuses common/valued_renderer_fixture.f90 class_graph_step
     refuses common/production_pattern_renderer_fixture.f90 class_graph_stencil
 
     # ---- L7 earns minimization, and only the concrete it uses.
     permits level-7-minimization class_graph_jacobi
-    permits level-7-minimization class_graph
+    permits level-7-minimization view_directed_stored
     permits level-7-minimization class_graph_stencil
     permits level-7-minimization production_pattern_renderer_fixture
     for lvl in $with_five level-6-discretization; do

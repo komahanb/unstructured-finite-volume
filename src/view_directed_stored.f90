@@ -51,13 +51,13 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_graph
+module view_directed_stored
 
-  use graph_directed_view, only : directed_graph
+  use view_directed, only : directed_graph
   use graph_fractal      , only : set_graph => graph
   use relation_binary, only : group_by_key, csr_relation
   use relation_partition, only : partition_relation
-  use graph_directed_view     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
+  use view_directed     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set      , only : set_map
@@ -1278,4 +1278,4 @@ contains
 
   end function head_relation
 
-end module class_graph
+end module view_directed_stored

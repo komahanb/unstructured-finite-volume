@@ -90,7 +90,7 @@ program visualization_level_6
   use map_label      , only : label_map
   use relation_finitary       , only : relation
   use relation_binary, only : csr_relation
-  use graph_directed_view  , only : directed_graph
+  use view_directed  , only : directed_graph
   use class_graph_stencil  , only : stencil_operator
   use class_graph_step     , only : step_operator
   use visualization_carriers_fixture , only : structural_carriers

@@ -47,7 +47,7 @@ module time_fields_fixture
 
   use iso_fortran_env  , only : dp => REAL64
   use graph_fractal    , only : set_graph => graph
-  use class_graph_field, only : field
+  use field_stored, only : field
   use time_assert      , only : NQ, NT, NE, H_STEP, TIME_COORD, Q0
 
   implicit none

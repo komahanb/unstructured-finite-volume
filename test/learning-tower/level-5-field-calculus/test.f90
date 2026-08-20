@@ -18,7 +18,7 @@
 ! a stronger truth than constructing an empty one.
 !
 ! And the import list is the rung's own proof: a field needs a
-! domain - learning_assert, the set modules, class_graph_field - and
+! domain - learning_assert, the set modules, field_stored - and
 ! no graph topology anywhere. The model law is still unspoken:
 ! knowing x = 2 is not knowing what predict does with it.
 !
@@ -35,7 +35,7 @@ program learning_level_5
        & listed_set_representation
   use map_set        , only : set_map
   use map_inclusion  , only : inclusion_map, declared_subobject
-  use class_graph_field, only : field
+  use field_stored, only : field
 
   implicit none
 

@@ -60,7 +60,7 @@ program visualization_level_3
   use relation_binary, only : csr_relation, binary_relation
   use relation_binary, only : transposed_view, transpose_of
   use graph_fractal        , only : graph, known_branch, null_branch
-  use graph_relational_view, only : relational_binding, &
+  use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
        & holds_set
   use visualization_carriers_fixture , only : structural_carriers

@@ -208,7 +208,7 @@ symptom / fact:       ONE GLOBAL ENTITY, ONE ASSEMBLED CONTRIBUTION -
 exact caller:         gate-a-partition/test.f90
                       (check_edge_assembly_law,
                       document_canonical_edge_owner);
-                      src/class_graph_partitioner.f90 (the eowner
+                      src/transform_partitioner.f90 (the eowner
                       assignment)
 
 mathematical concept: a partition of a set of entities into ownership

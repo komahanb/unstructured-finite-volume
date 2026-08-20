@@ -74,19 +74,19 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_graph_reduction
+module operation_reduction
 
   use iso_fortran_env       , only : dp => REAL64
-  use graph_directed_view   , only : directed_graph
-  use graph_field_calculus  , only : graph_field
+  use view_directed   , only : directed_graph
+  use field_calculus  , only : graph_field
   use graph_fractal      , only : set_graph => graph
-  use graph_field_calculus  , only : GRAPH_FIELD_REAL, GRAPH_FIELD_COMPLEX
-  use graph_field_calculus  , only : GRAPH_FIELD_LOGICAL
+  use field_calculus  , only : GRAPH_FIELD_REAL, GRAPH_FIELD_COMPLEX
+  use field_calculus  , only : GRAPH_FIELD_LOGICAL
   use operation_action  , only : graph_operation
-  use graph_field_calculus  , only : graph_functional
-  use graph_directed_view   , only : GRAPH_SIDE_VERTEX
-  use class_graph_field     , only : plain_field => field
-  use class_graph_functional, only : scalar_result => functional
+  use field_calculus  , only : graph_functional
+  use view_directed   , only : GRAPH_SIDE_VERTEX
+  use field_stored     , only : plain_field => field
+  use field_functional, only : scalar_result => functional
 
   implicit none
 
@@ -791,4 +791,4 @@ contains
 
   end subroutine set_logical
 
-end module class_graph_reduction
+end module operation_reduction

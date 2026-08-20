@@ -37,7 +37,7 @@
 # it, so they see no machinery at all; the machinery then arrives
 # one rung at a time, each where its level earns it:
 #
-#     class_graph_field       earned at Level 5
+#     field_stored       earned at Level 5
 #     class_graph_step        earned at Level 6, refused at 0-5
 #     graph_minimization      earned at Level 7, refused at 0-6
 #     class_graph_gmres       earned at Level 7, refused at 0-6
@@ -79,7 +79,7 @@ intrinsics="iso_fortran_env iso_c_binding ieee_arithmetic ieee_exceptions ieee_f
 allowed_for() {
     case "$1" in
         # 2026-08-16: the relational container is retired. A level reading
-        # (S, P) is granted graph_fractal and graph_relational_view,
+        # (S, P) is granted graph_fractal and view_relational,
         # and builds the representation itself. Granted per level, in
         # review; the list is an assertion, not a history.
         # ---- shared fixtures, keyed by the level that earns them
@@ -106,15 +106,15 @@ allowed_for() {
         common/time_carriers_fixture.f90) echo "graph_fractal map_set_representation map_set" ;;
         common/time_relations_fixture.f90) echo "graph_fractal map_set relation_finitary relation_binary" ;;
         common/time_algebra_fixture.f90) echo "graph_fractal map_set relation_finitary relation_algebra relation_binary" ;;
-        common/time_fields_fixture.f90) echo "graph_fractal graph_field_calculus class_graph_field time_assert" ;;
+        common/time_fields_fixture.f90) echo "graph_fractal field_calculus field_stored time_assert" ;;
         # The action stores an identity and a count, so it needs
         # neither a representation nor a map. Each name comes from
         # its owner: set_graph from the KERNEL, the directed graph
-        # from graph_directed_view, the field from the field
+        # from view_directed, the field from the field
         # calculus, and the operation contract from
         # operation_action. graph_grammar, which once lent all
         # four, is deleted.
-        common/triangular_decay_fixture.f90) echo "graph_fractal operation_action graph_directed_view graph_field_calculus class_graph_field" ;;
+        common/triangular_decay_fixture.f90) echo "graph_fractal operation_action view_directed field_calculus field_stored" ;;
         common)            echo "__no_allowlist__" ;;
 
         # ---- L0: sets only. NOTHING relational - not the relation
@@ -125,7 +125,7 @@ allowed_for() {
         # ---- L2: + relation algebra
         level-2-relation-algebra) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture graph_fractal map_set relation_finitary relation_algebra relation_binary" ;;
         # ---- L3: + the relational graph container
-        level-3-graph)     echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture graph_fractal map_set relation_finitary relation_algebra relation_binary graph_relational_view" ;;
+        level-3-graph)     echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture graph_fractal map_set relation_finitary relation_algebra relation_binary view_relational" ;;
         # ---- L4: + the profile and its algorithms. No marcher.
         #
         #          This is the ONE level granted map_inclusion:
@@ -140,28 +140,28 @@ allowed_for() {
         #          a carving operation must therefore HOLD a label map
         #          even where it will never read one. The grant records
         #          that cost rather than hiding it: held, not queried.
-        level-4-graph-calculus) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture graph_fractal map_set map_label map_inclusion relation_finitary relation_algebra relation_binary graph_algorithms graph_relational_view" ;;
+        level-4-graph-calculus) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture graph_fractal map_set map_label map_inclusion relation_finitary relation_algebra relation_binary relation_algorithms view_relational" ;;
 
         # ===== REVIEW GATE A =====
 
         # ---- L5: + fields. Values, and nothing that steps or solves.
-        level-5-field-calculus) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture graph_fractal map_set relation_finitary relation_algebra relation_binary graph_field_calculus class_graph_field" ;;
+        level-5-field-calculus) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture graph_fractal map_set relation_finitary relation_algebra relation_binary field_calculus field_stored" ;;
         # ---- L6: + the directed graph (the compatibility host), the
         #          operation contract, and the step operators. NO
         #          minimizer: the scheme is tested before the solve.
-        level-6-discretization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_fractal map_set graph_directed_view relation_finitary relation_algebra relation_binary graph_field_calculus class_graph class_graph_field class_graph_step" ;;
+        level-6-discretization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_fractal map_set view_directed relation_finitary relation_algebra relation_binary field_calculus view_directed_stored field_stored class_graph_step" ;;
         # ---- L7: + minimization and its gmres concretion. Still no
         #          marcher.
-        level-7-minimization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_fractal map_set graph_directed_view relation_finitary relation_binary graph_field_calculus class_graph class_graph_field class_graph_step graph_minimization class_graph_gmres" ;;
+        level-7-minimization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_fractal map_set view_directed relation_finitary relation_binary field_calculus view_directed_stored field_stored class_graph_step graph_minimization class_graph_gmres" ;;
 
         # ===== REVIEW GATE B =====
 
         # ---- L8: + the marcher and newton, the constituted citizens
         #          under test. NOT class_graph_linearization: newton
         #          reaches it, and the tower may not.
-        level-8-constitution) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_fractal map_set relation_finitary relation_algebra relation_binary graph_field_calculus class_graph class_graph_field class_graph_step graph_minimization class_graph_gmres class_graph_newton class_graph_marcher" ;;
+        level-8-constitution) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_fractal map_set relation_finitary relation_algebra relation_binary field_calculus view_directed_stored field_stored class_graph_step graph_minimization class_graph_gmres class_graph_newton class_graph_marcher" ;;
         # ---- L9: the statement, on the same constitution.
-        level-9-statement) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_fractal map_set relation_finitary relation_binary graph_field_calculus class_graph class_graph_field class_graph_step graph_minimization class_graph_gmres class_graph_newton class_graph_marcher" ;;
+        level-9-statement) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_fractal map_set relation_finitary relation_binary field_calculus view_directed_stored field_stored class_graph_step graph_minimization class_graph_gmres class_graph_newton class_graph_marcher" ;;
 
         *)                 echo "__no_allowlist__" ;;
     esac
@@ -235,34 +235,34 @@ if [ "$1" = "--selftest" ]; then
     refuses level-0-carrier time_algebra_fixture
     refuses level-0-carrier relation_finitary
     refuses level-0-carrier relation_binary
-    refuses level-0-carrier graph_relational_view
+    refuses level-0-carrier view_relational
 
     # L1 stands on L0's fixture and adds its own; L2's is still above it.
     permits level-1-relation time_carriers_fixture
     permits level-1-relation time_relations_fixture
     refuses level-1-relation time_algebra_fixture
-    refuses level-1-relation graph_relational_view
+    refuses level-1-relation view_relational
 
     # L2 earns the algebra; the container is still one rung up.
     permits level-2-relation-algebra time_algebra_fixture
     permits level-2-relation-algebra relation_algebra
-    refuses level-2-relation-algebra graph_relational_view
+    refuses level-2-relation-algebra view_relational
 
     # L3 earns the container; the profile and its algorithms are not
     # its business.
     permits level-3-graph graph_fractal
-    permits level-3-graph graph_relational_view
+    permits level-3-graph view_relational
     refuses level-3-graph graph_profile
-    refuses level-3-graph graph_algorithms
+    refuses level-3-graph relation_algorithms
 
     # L4 earns the interpretation.
     refuses level-4-graph-calculus graph_profile
-    permits level-4-graph-calculus graph_algorithms
+    permits level-4-graph-calculus relation_algorithms
 
     # ---- STAGED: ceilings that rise, each at the level that earns it.
     permits level-5-field-calculus time_fields_fixture
-    permits level-5-field-calculus class_graph_field
-    refuses level-4-graph-calculus class_graph_field
+    permits level-5-field-calculus field_stored
+    refuses level-4-graph-calculus field_stored
     refuses level-4-graph-calculus time_fields_fixture
 
     permits level-6-discretization class_graph_step

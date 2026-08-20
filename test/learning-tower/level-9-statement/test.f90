@@ -51,15 +51,15 @@ program learning_level_9
   use relation_finitary , only : stored_relation, relation
   use relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_algorithms, only : topological_order
-  use graph_field_calculus, only : graph_field
-  use class_graph    , only : directed_stored_graph
-  use class_graph_field, only : field
+  use relation_algorithms, only : topological_order
+  use field_calculus, only : graph_field
+  use view_directed_stored    , only : directed_stored_graph
+  use field_stored, only : field
   use class_graph_gmres, only : gmres
   use learning_constitution_fixture, only : apply_law, slot_for_port
   use constituted_residual_fixture , only : constituted_learning_residual
   use graph_fractal        , only : graph, known_branch, null_branch
-  use graph_relational_view, only : relational_binding, &
+  use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
        & holds_set
 

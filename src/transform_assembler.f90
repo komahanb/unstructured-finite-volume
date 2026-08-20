@@ -57,20 +57,20 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_graph_assembler
+module transform_assembler
 
   use iso_fortran_env     , only : dp => REAL64
-  use graph_directed_view , only : directed_graph
+  use view_directed , only : directed_graph
   use relation_partition, only : partition_relation
-  use graph_field_calculus, only : graph_field
+  use field_calculus, only : graph_field
   use graph_fractal      , only : set_graph => graph
   use map_set      , only : set_map
   use map_label    , only : label_map
   use map_inclusion, only : inclusion_map, declared_subobject
   use map_set_representation, only : listed_set_representation
   use transform_structure, only : graph_transform
-  use class_graph         , only : directed_stored_graph
-  use class_graph_field   , only : field
+  use view_directed_stored         , only : directed_stored_graph
+  use field_stored   , only : field
 
   implicit none
 
@@ -427,4 +427,4 @@ contains
 
   end function owner_of
 
-end module class_graph_assembler
+end module transform_assembler

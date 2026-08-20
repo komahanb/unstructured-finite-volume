@@ -42,13 +42,13 @@ module constituted_residual_fixture
   ! The kernel's graph and the ordinary view's directed_graph are two
   ! types with two names now, so nothing is renamed at this door.
   use graph_fractal        , only : graph, known_branch, null_branch
-  use graph_relational_view, only : relational_binding, &
+  use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
        & holds_set
   use operation_action, only : graph_operation
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use class_graph_field, only : field
+  use view_directed, only : directed_graph
+  use field_calculus, only : graph_field
+  use field_stored, only : field
   use arithmetic_constitution_fixture, only : generated_residual
 
   implicit none
@@ -220,7 +220,7 @@ program calculator_level_9
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_field_calculus, only : graph_field
+  use field_calculus, only : graph_field
   use relation_finitary   , only : stored_relation, relation
   use graph_fractal        , only : graph, set_graph => graph, &
        & known_branch, null_branch
@@ -228,13 +228,13 @@ program calculator_level_9
        & listed_set_representation
   use map_set        , only : set_map
   use map_inclusion  , only : inclusion_map, declared_subobject
-  use graph_relational_view, only : relational_binding, &
+  use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
        & holds_set
   use relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use class_graph      , only : directed_stored_graph
-  use class_graph_field, only : field
+  use view_directed_stored      , only : directed_stored_graph
+  use field_stored, only : field
   use class_graph_gmres, only : gmres
   use constituted_residual_fixture, only : constituted_residual
 

@@ -89,7 +89,7 @@ The laws:
 The letter \(R\) is no longer reserved by a second ontology. Where a view reads a graph as
 \((Q,R)\), \(R\) is that view's residual; where a view reads it as \((\mathcal S,\mathcal P)\),
 its relations are \(P, T, H, A, \ldots\). Sections 4-14 below describe the relation-centered view
-and remain in force **as a view**. Its implementation is `graph_relational_view.f90` over the
+and remain in force **as a view**. Its implementation is `view_relational.f90` over the
 kernel: a graph plus a `relational_binding` from element graphs to the legacy objects they
 denote. The container `relational_graph` that once implemented it was retired on 2026-08-16.
 
@@ -1113,8 +1113,8 @@ f:S\to V.
 A field domain is therefore **always a member_set** — an ambient
 carrier or a `subset_set` subobject (a support IS a member_set) —
 one domain kind, never a carrier-or-predicate union, and never an
-edgeless graph. This is now implemented: `graph_field_calculus`
-owns the abstract field, `class_graph_field%on` is a polymorphic
+edgeless graph. This is now implemented: `field_calculus`
+owns the abstract field, `field_stored%on` is a polymorphic
 member_set, and the shape law `stored = domain.size * ncomp` is
 refused loudly in every value kind.
 
@@ -2065,9 +2065,9 @@ The long-term module layout may evolve toward something conceptually like:
 graph_carrier.f90
 relation_finitary.f90
 relation_algebra.f90
-graph_relational_view.f90
+view_relational.f90
 graph_calculus.f90
-graph_field_calculus.f90
+field_calculus.f90
 graph_discretization.f90
 graph_minimization.f90
 ...

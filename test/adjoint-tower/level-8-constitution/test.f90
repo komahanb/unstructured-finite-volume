@@ -56,9 +56,9 @@ program adjoint_level_8
   use relation_algebra, only : compose_binary
   use relation_binary , only : csr_relation, transposed_view, &
        &                             transpose_of, inclusion_of
-  use graph_field_calculus, only : graph_field
-  use class_graph      , only : directed_stored_graph
-  use class_graph_field, only : field
+  use field_calculus, only : graph_field
+  use view_directed_stored      , only : directed_stored_graph
+  use field_stored, only : field
   use class_graph_gmres, only : gmres
   use adjoint_constitution_fixture, only : constituted_primal, &
        & constituted_adjoint, constituted_tangent, &

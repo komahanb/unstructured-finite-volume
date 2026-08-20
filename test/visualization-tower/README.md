@@ -56,7 +56,7 @@ is no longer asked to take its structure from the execution context.
 | **L3** | one relational ownership environment | `graph` read as (S, P) | — | — | binds 7 carriers + 6 primitive relations | derived on demand | none | signature closure over all twelve slots; whole chain re-derived from graph-owned relations alone | PASS |
 | **L4** | structural interpretation | test-local `structural_renderer_fixture` | any binary relation | text | chain line + sparsity | chain line + sparsity | A, B, C, D, E | five generated representations, cell by cell against `relation % has` | PASS |
 | — | ===== **REVIEW GATE A** ===== | | | | | | | | |
-| **L5** | fields `w_k : E_k -> reals` | `class_graph_field` / `field` | occurrence carriers `E1, E2, E3` | scalar values | structure **unchanged** | structure unchanged; **no numerical reverse** | structural sparsity **+ coefficient view** | `level-5-field-calculus/test.f90` | PASS |
+| **L5** | fields `w_k : E_k -> reals` | `field_stored` / `field` | occurrence carriers `E1, E2, E3` | scalar values | structure **unchanged** | structure unchanged; **no numerical reverse** | structural sparsity **+ coefficient view** | `level-5-field-calculus/test.f90` | PASS |
 | **L6** | production dependency projection | `discretization_operator % dependencies()` → `class(graph)` | one ordinary vertex carrier | the same carrier | Boolean coordinate pattern equals `D2 : X1 -> X2` | structure unchanged; no numerical reverse | signature **+** sparsity, shown side by side | `level-6-discretization/test.f90` | PASS |
 | **L7** | minimizer structural provenance | `minimizer % attach(..., coupling=)`, `% sweep_order()`, `% diagonal()` | one operator, two execution contexts | colours, matvec, diagonal | coupling `P_A` is context-independent | not exercised | operator coupling **vs** execution context, side by side | `level-7-minimization/test.f90` | PASS |
 | — | ===== **REVIEW GATE B** ===== | | | | | | | | |
@@ -147,7 +147,7 @@ Levels 0–4 exercise items 2, 4 and 5 while items 1 and 3 do not exist.
 Level 5 adds item 3 and shows items 2 and 4 unmoved.
 
 That is **enforced rather than asserted**. Refusing
-`class_graph_field` and `graph_field_calculus` would not have been
+`field_stored` and `field_calculus` would not have been
 enough — a level could simply have written `real(dp) :: w = 2.0_dp`
 and helped itself. So `check_imports.sh` carries a *numberless law*:
 no `real` or `complex` declaration, and no literal carrying a decimal
@@ -838,7 +838,7 @@ than "the nucleus was sufficient":
 
 | Job | What it needed |
 |---|---|
-| **deriving** the structure | `binary_relation` (`source`, `target`, `transpose_of`), `compose_binary`, `graph_relational_view` |
+| **deriving** the structure | `binary_relation` (`source`, `target`, `transpose_of`), `compose_binary`, `view_relational` |
 | **interpreting** it | the **root `relation`** contract (`arity`, `domain(k)`, `has`, `name`) and `member_set` (`size`, `member`, `local_index`, `name`) |
 
 `structural_renderer_fixture` names no binary relation at all. It never
@@ -946,9 +946,9 @@ fixture, with `--selftest`.
 | L3 | `+ graph_structure` |
 | L4 | `+ structural_renderer_fixture` |
 | — | ===== **REVIEW GATE A** ===== |
-| L5 | `+ class_graph_field`, `graph_field_calculus`, `visualization_values_fixture`, `valued_renderer_fixture` |
+| L5 | `+ field_stored`, `field_calculus`, `visualization_values_fixture`, `valued_renderer_fixture` |
 | L6 | `+ graph_grammar`, `class_graph_stencil`, `class_graph_step`, `production_discretization_fixture`, `production_pattern_renderer_fixture` |
-| L7 | `+ class_graph`, `class_graph_jacobi` |
+| L7 | `+ view_directed_stored`, `class_graph_jacobi` |
 | L8–L9 | the same, plus the L5 coefficient view at L9 |
 
 The shared fixtures are keyed by file and classified by the first
@@ -965,7 +965,7 @@ can quietly become a picture — `visualization_values_fixture` plus
 Two families are refused **universally**, at every level built so far.
 Values used to be a third, and Level 5 is where it stopped being one:
 
-0. **Values** — `class_graph_field`, `graph_field_calculus`, *and any
+0. **Values** — `field_stored`, `field_calculus`, *and any
    real number written by hand*, refused at L0–L4 and **earned at
    L5**. See the numberless law above; the module refusal alone would
    have left the back door open, and the ceiling lifting at exactly
@@ -991,8 +991,8 @@ Values used to be a third, and Level 5 is where it stopped being one:
    structure; the moment a level evaluates a production operator it
    has started doing arithmetic, and Level 6's "zero applies" would
    become a promise instead of a fact.
-3. **The ordinary graph** — `graph_profile`, `graph_algorithms`,
-   `class_graph`, `class_stored_graph`. Level 5 included: values
+3. **The ordinary graph** — `graph_profile`, `relation_algorithms`,
+   `view_directed_stored`, `class_stored_graph`. Level 5 included: values
    arrived, machinery did not.
 
 **That third refusal is load-bearing evidence, not hygiene.** Gate A

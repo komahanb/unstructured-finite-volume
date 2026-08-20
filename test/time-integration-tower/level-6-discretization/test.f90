@@ -71,11 +71,11 @@ program time_level_6
   use time_assert           , only : action_of
   use graph_fractal        , only : set_graph => graph
   use map_set        , only : set_map
-  use graph_directed_view   , only : directed_graph
-  use graph_field_calculus  , only : graph_field
+  use view_directed   , only : directed_graph
+  use field_calculus  , only : graph_field
   use relation_binary , only : csr_relation
-  use class_graph           , only : directed_stored_graph
-  use class_graph_field     , only : field
+  use view_directed_stored           , only : directed_stored_graph
+  use field_stored     , only : field
   use class_graph_step      , only : step_operator, backward_euler, bdf
   use time_carriers_fixture , only : time_carriers
   use time_relations_fixture, only : tail_relation, head_relation

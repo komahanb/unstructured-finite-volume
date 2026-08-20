@@ -25,7 +25,7 @@ program inclusion_suite
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set          , only : set_map
-  use graph_set_view         , only : set_size, set_member, set_has, &
+  use view_set         , only : set_size, set_member, set_has, &
        & set_local_index, set_equivalent
   use map_inclusion    , only : inclusion_map, declared_subobject
 

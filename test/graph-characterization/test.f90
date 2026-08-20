@@ -26,19 +26,19 @@
 program test_graph_characterization
 
   use iso_fortran_env        , only : dp => REAL64
-  use graph_directed_view    , only : GRAPH_SIDE_VERTEX
-  use graph_directed_view    , only : directed_graph
-  use graph_field_calculus   , only : graph_field
+  use view_directed    , only : GRAPH_SIDE_VERTEX
+  use view_directed    , only : directed_graph
+  use field_calculus   , only : graph_field
   use graph_fractal           , only : set_graph => graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set           , only : set_map
   use map_label         , only : label_map
   use map_inclusion     , only : inclusion_map, declared_subobject
-  use class_graph            , only : directed_stored_graph
-  use class_graph_field      , only : field
-  use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
-  use class_graph_assembler  , only : assembler
+  use view_directed_stored            , only : directed_stored_graph
+  use field_stored      , only : field
+  use transform_partitioner, only : partitioner, PARTITION_LINEAR
+  use transform_assembler  , only : assembler
   use class_graph_differential_operator, only : divergence, &
        &                                        differential_operator, &
        &                                        vertex_differential_operator

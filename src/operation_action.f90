@@ -19,9 +19,9 @@
 
 module operation_action
 
-  use graph_directed_view , only : directed_graph
+  use view_directed , only : directed_graph
   use graph_fractal       , only : set_graph => graph
-  use graph_field_calculus, only : graph_field
+  use field_calculus, only : graph_field
 
   implicit none
 

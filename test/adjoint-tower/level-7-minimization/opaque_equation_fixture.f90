@@ -39,9 +39,9 @@ module opaque_equation_fixture
   use map_set        , only : set_map
   use map_set_representation, only : set_representation
   use operation_action, only : graph_operation
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use class_graph_field, only : field
+  use view_directed, only : directed_graph
+  use field_calculus, only : graph_field
+  use field_stored, only : field
 
   implicit none
 

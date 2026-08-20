@@ -13,8 +13,8 @@ make -C "$here" >/dev/null
 cd "$here" && ./run
 
 declare -A reason=(
-  [notbinary]="graph_algorithms: the adjacency is a binary relation"
-  [notsquare]="graph_algorithms: the adjacency runs over one domain"
+  [notbinary]="relation_algorithms: the adjacency is a binary relation"
+  [notsquare]="relation_algorithms: the adjacency runs over one domain"
   [cycle]="a topological order needs an acyclic graph"
 )
 

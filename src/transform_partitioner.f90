@@ -53,21 +53,21 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_graph_partitioner
+module transform_partitioner
 
   use iso_fortran_env     , only : dp => REAL64
-  use graph_directed_view , only : directed_graph
+  use view_directed , only : directed_graph
   use relation_partition, only : partition_relation
-  use graph_field_calculus, only : graph_field
+  use field_calculus, only : graph_field
   use graph_fractal      , only : set_graph => graph
   use map_set      , only : set_map
   use map_label    , only : label_map
   use map_inclusion, only : inclusion_map, declared_subobject
   use map_set_representation, only : listed_set_representation
   use transform_structure, only : graph_transform
-  use class_graph         , only : directed_stored_graph
-  use class_graph_field   , only : field
-  use class_graph_walk    , only : walk, WALK_VISIT_ORDER
+  use view_directed_stored         , only : directed_stored_graph
+  use field_stored   , only : field
+  use operation_walk    , only : walk, WALK_VISIT_ORDER
 
   implicit none
 
@@ -668,4 +668,4 @@ contains
 
   end function global_of
 
-end module class_graph_partitioner
+end module transform_partitioner

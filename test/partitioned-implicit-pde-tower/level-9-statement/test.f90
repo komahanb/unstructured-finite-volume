@@ -41,10 +41,10 @@ program partitioned_pde_level_9
   use graph_fractal        , only : set_graph => graph
   use map_set_representation, only : counted_set_representation
   use map_set        , only : set_map
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use class_graph      , only : directed_stored_graph
-  use class_graph_field, only : field
+  use view_directed, only : directed_graph
+  use field_calculus, only : graph_field
+  use view_directed_stored      , only : directed_stored_graph
+  use field_stored, only : field
   use class_graph_gmres, only : gmres
   use shifted_laplacian_fixture, only : shifted_laplacian
   use partitioned_shifted_laplacian_fixture, only : &

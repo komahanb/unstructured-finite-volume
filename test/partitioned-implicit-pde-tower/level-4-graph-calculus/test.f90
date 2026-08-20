@@ -56,10 +56,10 @@ program partitioned_pde_level_4
   use map_set        , only : set_map
   use map_inclusion  , only : inclusion_map, declared_subobject
   use map_label      , only : label_map
-  use graph_directed_view    , only : directed_graph
+  use view_directed    , only : directed_graph
   use relation_binary  , only : csr_relation
-  use class_graph            , only : directed_stored_graph
-  use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
+  use view_directed_stored            , only : directed_stored_graph
+  use transform_partitioner, only : partitioner, PARTITION_LINEAR
   use chain_carriers_fixture , only : chain_carriers
   use chain_relations_fixture, only : tail_relation, head_relation, &
        &                              own_relation

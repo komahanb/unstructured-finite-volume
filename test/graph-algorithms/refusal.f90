@@ -20,7 +20,7 @@ program algorithms_refusal
   use map_label         , only : label_map
   use relation_finitary          , only : stored_relation
   use relation_binary   , only : csr_relation
-  use graph_algorithms        , only : topological_order
+  use relation_algorithms        , only : topological_order
 
   implicit none
 

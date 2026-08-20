@@ -27,7 +27,7 @@ program test
   use token_identity     , only : token
   use graph_fractal      , only : graph, GRAPH_NULL, GRAPH_UNKNOWN, GRAPH_KNOWN, &
        & null_branch, unknown_branch, known_branch
-  use graph_epistemic_view, only : has_data, has_operator, &
+  use view_epistemic, only : has_data, has_operator, &
        & epistemic_defined, epistemic_name, data_of, residual_of
 
   implicit none

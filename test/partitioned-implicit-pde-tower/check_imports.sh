@@ -74,12 +74,12 @@ allowed_for() {
         common/chain_relations_fixture.f90) echo "graph_fractal map_set relation_finitary relation_binary" ;;
         common/chain_algebra_fixture.f90) echo "graph_fractal map_set relation_finitary relation_algebra relation_binary" ;;
         # The operation holds an identity and a count. No map.
-        common/shifted_laplacian_fixture.f90) echo "graph_fractal operation_action graph_directed_view graph_field_calculus class_graph_field class_graph_differential_operator" ;;
+        common/shifted_laplacian_fixture.f90) echo "graph_fractal operation_action view_directed field_calculus field_stored class_graph_differential_operator" ;;
         # Calls partition_data and assemble_data - both carve - and
         # queries the domains it transports. It also DESCRIBES the
         # part carriers it transports onto, so it constructs
         # representations and earns the module that makes them.
-        common/partitioned_shifted_laplacian_fixture.f90) echo "graph_fractal map_set_representation map_set map_label map_inclusion operation_action graph_directed_view relation_partition graph_field_calculus class_graph class_graph_field class_graph_partitioner class_graph_assembler shifted_laplacian_fixture" ;;
+        common/partitioned_shifted_laplacian_fixture.f90) echo "graph_fractal map_set_representation map_set map_label map_inclusion operation_action view_directed relation_partition field_calculus view_directed_stored field_stored transform_partitioner transform_assembler shifted_laplacian_fixture" ;;
         common)            echo "__no_allowlist__" ;;
 
         # ---- L0: sets only. NOTHING relational.
@@ -95,28 +95,28 @@ allowed_for() {
         #          means constructing a representation. So every level
         #          from here on earns map_set_representation by
         #          building one, not by inheriting a permission.
-        level-3-graph)     echo "partitioned_pde_assert chain_carriers_fixture chain_relations_fixture graph_fractal map_set_representation map_set relation_finitary relation_binary class_graph relation_partition" ;;
+        level-3-graph)     echo "partitioned_pde_assert chain_carriers_fixture chain_relations_fixture graph_fractal map_set_representation map_set relation_finitary relation_binary view_directed_stored relation_partition" ;;
         # ---- L4: + the partitioner. Graph-to-graph only; no field.
         #          Calls owned_vertices, which CARVES - hence both the
         #          inclusion map and a label map it never reads.
-        level-4-graph-calculus) echo "partitioned_pde_assert chain_carriers_fixture chain_relations_fixture chain_algebra_fixture graph_fractal map_set_representation map_set map_label map_inclusion graph_directed_view relation_partition relation_finitary relation_algebra relation_binary class_graph class_graph_partitioner" ;;
+        level-4-graph-calculus) echo "partitioned_pde_assert chain_carriers_fixture chain_relations_fixture chain_algebra_fixture graph_fractal map_set_representation map_set map_label map_inclusion view_directed relation_partition relation_finitary relation_algebra relation_binary view_directed_stored transform_partitioner" ;;
         # ---- L5: + fields and transport. NO differential operator.
         #          The one level that both CARVES a probe subset of its
         #          own and ASSERTS where a transported domain came from.
-        level-5-field-calculus) echo "partitioned_pde_assert graph_fractal map_set_representation map_set map_label map_inclusion graph_directed_view relation_partition graph_field_calculus class_graph class_graph_field class_graph_partitioner class_graph_assembler" ;;
+        level-5-field-calculus) echo "partitioned_pde_assert graph_fractal map_set_representation map_set map_label map_inclusion view_directed relation_partition field_calculus view_directed_stored field_stored transform_partitioner transform_assembler" ;;
         # ---- L6: + the differential operator and its fixture.
         #          Still no solver. Transport carves; the refusal
         #          builds a foreign carrier, and is keyed below.
-        level-6-discretization) echo "partitioned_pde_assert shifted_laplacian_fixture graph_fractal map_set_representation map_set map_label map_inclusion graph_directed_view relation_partition graph_field_calculus class_graph class_graph_field class_graph_partitioner class_graph_assembler class_graph_differential_operator" ;;
-        level-6-discretization/refusal.f90) echo "partitioned_pde_assert shifted_laplacian_fixture graph_fractal map_set_representation map_set graph_field_calculus class_graph class_graph_field class_graph_differential_operator" ;;
+        level-6-discretization) echo "partitioned_pde_assert shifted_laplacian_fixture graph_fractal map_set_representation map_set map_label map_inclusion view_directed relation_partition field_calculus view_directed_stored field_stored transform_partitioner transform_assembler class_graph_differential_operator" ;;
+        level-6-discretization/refusal.f90) echo "partitioned_pde_assert shifted_laplacian_fixture graph_fractal map_set_representation map_set field_calculus view_directed_stored field_stored class_graph_differential_operator" ;;
         # ---- L7: + minimization. Consumes Level 6, not Level 8.
-        level-7-minimization) echo "partitioned_pde_assert shifted_laplacian_fixture graph_fractal map_set_representation map_set graph_directed_view graph_field_calculus class_graph class_graph_field class_graph_gmres" ;;
+        level-7-minimization) echo "partitioned_pde_assert shifted_laplacian_fixture graph_fractal map_set_representation map_set view_directed field_calculus view_directed_stored field_stored class_graph_gmres" ;;
         # ---- L8: + the partitioned constitution, which consumes L6.
         #          It asks its domains WHICH and nothing else, so it is
         #          granted identity alone - no map of any kind.
-        level-8-constitution) echo "partitioned_pde_assert shifted_laplacian_fixture partitioned_shifted_laplacian_fixture graph_fractal graph_directed_view graph_field_calculus class_graph class_graph_field class_graph_gmres" ;;
+        level-8-constitution) echo "partitioned_pde_assert shifted_laplacian_fixture partitioned_shifted_laplacian_fixture graph_fractal view_directed field_calculus view_directed_stored field_stored class_graph_gmres" ;;
         # ---- L9: the statement, consuming Level 8 and the solver.
-        level-9-statement) echo "partitioned_pde_assert shifted_laplacian_fixture partitioned_shifted_laplacian_fixture graph_fractal map_set_representation map_set graph_directed_view graph_field_calculus class_graph class_graph_field class_graph_gmres" ;;
+        level-9-statement) echo "partitioned_pde_assert shifted_laplacian_fixture partitioned_shifted_laplacian_fixture graph_fractal map_set_representation map_set view_directed field_calculus view_directed_stored field_stored class_graph_gmres" ;;
 
         *)                 echo "__no_allowlist__" ;;
     esac
@@ -187,7 +187,7 @@ if [ "$1" = "--selftest" ]; then
     refuses level-0-carrier chain_algebra_fixture
     refuses level-0-carrier relation_finitary
     refuses level-0-carrier relation_binary
-    refuses level-0-carrier class_graph
+    refuses level-0-carrier view_directed_stored
 
     # L1 stands on L0's fixture and adds its own; L2's is still above it.
     permits level-1-relation chain_carriers_fixture

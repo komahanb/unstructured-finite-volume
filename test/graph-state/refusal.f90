@@ -12,7 +12,7 @@
 program refusal
 
   use graph_fractal       , only : graph, null_branch, unknown_branch, known_branch
-  use graph_epistemic_view, only : epistemic_name, data_of, residual_of
+  use view_epistemic, only : epistemic_name, data_of, residual_of
 
   implicit none
 

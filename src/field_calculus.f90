@@ -34,7 +34,7 @@
 ! grammar, which re-exported them for a while and was drained and
 ! deleted in PR2; every consumer now asks here, which is where they
 ! are defined. One abstract field, one concrete field
-! (class_graph_field), before and after the move.
+! (field_stored), before and after the move.
 !
 ! THE SHAPE INVARIANT, now that the domain is mathematically real:
 !
@@ -51,7 +51,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_field_calculus
+module field_calculus
 
   use iso_fortran_env, only : dp => REAL64
   use graph_fractal  , only : set_graph => graph
@@ -204,4 +204,4 @@ module graph_field_calculus
 
   end interface
 
-end module graph_field_calculus
+end module field_calculus

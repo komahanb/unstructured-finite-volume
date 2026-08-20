@@ -31,10 +31,10 @@
 program refusal
 
   use iso_fortran_env     , only : dp => REAL64
-  use graph_field_calculus, only : graph_field
+  use field_calculus, only : graph_field
   use graph_fractal       , only : set_graph => graph
-  use class_graph         , only : directed_stored_graph
-  use class_graph_field   , only : field
+  use view_directed_stored         , only : directed_stored_graph
+  use field_stored   , only : field
   use class_graph_step    , only : step_operator
   use class_graph_chain_rule, only : chain_rule, argument_path
   use class_graph_linearization, only : exact_linearization

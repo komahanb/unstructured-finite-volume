@@ -15,7 +15,7 @@ program test_graph_field
        & listed_set_representation
   use map_set           , only : set_map
   use map_inclusion     , only : inclusion_map, declared_subobject
-  use class_graph_field, only : field
+  use field_stored, only : field
 
   implicit none
 

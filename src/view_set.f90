@@ -37,7 +37,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_set_view
+module view_set
 
   use graph_fractal , only : graph
   use map_set , only : set_map
@@ -130,4 +130,4 @@ contains
 
   end function set_equivalent
 
-end module graph_set_view
+end module view_set

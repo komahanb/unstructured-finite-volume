@@ -20,7 +20,7 @@
 !
 ! It is small control-plane data - k identities - so it is stored
 ! contiguously, as an array of graph values. That IS the ordered graph
-! sequence; graph_sequence_view represents the same mathematics as a
+! sequence; view_sequence represents the same mathematics as a
 ! branch spine and says so itself: indexed access there is O(k) and
 ! hands back a POINTER into cells the holder must keep alive. A
 ! signature is indexed constantly and copied freely, so it takes the

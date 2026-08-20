@@ -25,10 +25,10 @@ program test_graph_algorithms
   use map_label         , only : label_map
   use map_inclusion     , only : inclusion_map, declared_subobject
   use relation_binary, only : csr_relation
-  use graph_algorithms     , only : sources, sinks, reachable, &
+  use relation_algorithms     , only : sources, sinks, reachable, &
        &                            topological_order
   use graph_fractal        , only : graph, known_branch, null_branch
-  use graph_relational_view, only : relational_binding, &
+  use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
        & holds_set
 

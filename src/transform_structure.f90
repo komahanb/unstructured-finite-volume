@@ -18,8 +18,8 @@
 
 module transform_structure
 
-  use graph_directed_view , only : directed_graph
-  use graph_field_calculus, only : graph_field
+  use view_directed , only : directed_graph
+  use field_calculus, only : graph_field
 
   implicit none
 

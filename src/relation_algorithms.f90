@@ -60,7 +60,7 @@ module relation_algorithms
 
   use graph_fractal           , only : graph
   use relation_finitary          , only : relation
-  use relation_binary   , only : binary_relation
+  use relation_binary   , only : binary_relation, transposed_relation, transpose_of
   use map_set           , only : set_map
   use map_label         , only : label_map
   use map_inclusion     , only : inclusion_map
@@ -88,11 +88,54 @@ contains
 
     class(binary_relation), pointer :: a
     type(graph)      :: dom
+
+    call require_adjacency(adjacency, a, dom)
+    call carve_unpointed(a, 'sources', dom, sets, labels, inclusions, chosen)
+
+  end subroutine sources
+
+  !===================================================================!
+  ! The members that point at nothing: the sources of the converse,
+  ! read through the transposed view, so the search is written once.
+  !===================================================================!
+
+  subroutine sinks(adjacency, sets, labels, inclusions, chosen)
+
+    class(relation), target      , intent(in)    :: adjacency
+    type(set_map)                , intent(inout) :: sets
+    type(label_map)              , intent(inout) :: labels
+    type(inclusion_map)          , intent(inout) :: inclusions
+    type(graph)              , intent(out)   :: chosen
+
+    class(binary_relation), pointer :: a
+    type(transposed_relation), target :: converse
+    type(graph)      :: dom
+
+    call require_adjacency(adjacency, a, dom)
+    converse = transpose_of(a)
+    call carve_unpointed(converse, 'sinks', dom, sets, labels, inclusions, chosen)
+
+  end subroutine sinks
+
+  !===================================================================!
+  ! The members with an empty preimage, carved as a subobject of the
+  ! domain in the domain's own order.
+  !===================================================================!
+
+  subroutine carve_unpointed(a, label, dom, sets, labels, inclusions, chosen)
+
+    class(binary_relation), target, intent(in)    :: a
+    character(len=*)              , intent(in)    :: label
+    type(graph)                   , intent(in)    :: dom
+    type(set_map)                 , intent(inout) :: sets
+    type(label_map)               , intent(inout) :: labels
+    type(inclusion_map)           , intent(inout) :: inclusions
+    type(graph)                   , intent(out)   :: chosen
+
     integer, allocatable :: keep(:)
     integer, pointer     :: fibre(:)
     integer              :: i, n, m, size_of_dom
 
-    call require_adjacency(adjacency, a, dom)
     size_of_dom = sets % num_members_of(dom)
 
     allocate(keep(size_of_dom))
@@ -106,45 +149,9 @@ contains
        end if
     end do
 
-    call carve(chosen, keep(1:n), 'sources', dom, sets, labels, inclusions)
+    call carve(chosen, keep(1:n), label, dom, sets, labels, inclusions)
 
-  end subroutine sources
-
-  !===================================================================!
-  ! The members that point at nothing, likewise.
-  !===================================================================!
-
-  subroutine sinks(adjacency, sets, labels, inclusions, chosen)
-
-    class(relation), target      , intent(in)    :: adjacency
-    type(set_map)                , intent(inout) :: sets
-    type(label_map)              , intent(inout) :: labels
-    type(inclusion_map)          , intent(inout) :: inclusions
-    type(graph)              , intent(out)   :: chosen
-
-    class(binary_relation), pointer :: a
-    type(graph)      :: dom
-    integer, allocatable :: keep(:)
-    integer, pointer     :: fibre(:)
-    integer              :: i, n, m, size_of_dom
-
-    call require_adjacency(adjacency, a, dom)
-    size_of_dom = sets % num_members_of(dom)
-
-    allocate(keep(size_of_dom))
-    n = 0
-    do i = 1, size_of_dom
-       m = sets % member_of(dom, i)
-       fibre => a % image_view(m)
-       if (size(fibre) == 0) then
-          n = n + 1
-          keep(n) = m
-       end if
-    end do
-
-    call carve(chosen, keep(1:n), 'sinks', dom, sets, labels, inclusions)
-
-  end subroutine sinks
+  end subroutine carve_unpointed
 
   !===================================================================!
   ! Is there a directed path. Every member reaches itself by the

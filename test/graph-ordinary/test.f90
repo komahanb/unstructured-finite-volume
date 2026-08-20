@@ -61,6 +61,7 @@ program test_graph_ordinary
        & "the self-loop, tuples shuffled", nfail, scrambled=.true.)
 
   call compare_large_topology(nfail)
+  call check_relations_of_the_graph(nfail)
 
   call check_wall_is_absence(nfail)
   call check_declared_order(nfail)
@@ -239,13 +240,29 @@ contains
 
     integer, intent(inout) :: nfail
 
-    integer, parameter :: nv = 400
-    integer, parameter :: ne = 3 * nv
-    integer :: tails(ne), heads(ne)
-    integer :: v, k, e
-    integer :: state
+    integer :: tails(1200), heads(1200)
 
-    ! a fixed linear congruential walk: deterministic, seedless
+    call pseudo_random_topology(400, tails, heads)
+
+    call compare_topology(400, tails, heads, &
+         & "a 400-vertex pseudo-random topology, tuples shuffled", &
+         & nfail, scrambled=.true.)
+
+  end subroutine compare_large_topology
+
+  !===================================================================!
+  ! Three edges per vertex to deterministic LCG targets, roughly
+  ! one in seven headless. Seedless, so every run builds the same
+  ! topology.
+  !===================================================================!
+
+  subroutine pseudo_random_topology(nv, tails, heads)
+
+    integer, intent(in)  :: nv
+    integer, intent(out) :: tails(:), heads(:)
+
+    integer :: v, k, e, state
+
     state = 12345
     e = 0
     do v = 1, nv
@@ -261,11 +278,67 @@ contains
        end do
     end do
 
-    call compare_topology(nv, tails, heads, &
-         & "a 400-vertex pseudo-random topology, tuples shuffled", &
-         & nfail, scrambled=.true.)
+  end subroutine pseudo_random_topology
 
-  end subroutine compare_large_topology
+  !===================================================================!
+  ! The graph's own relation reading (consolidation plan, phase 3):
+  ! tail_relation and head_relation, derived on request, must agree
+  ! with the graph's stored answers - T's fibre at an edge is its
+  ! tail, H's fibre its head or empty at a wall, and the preimages
+  ! at a vertex are exactly the outgoing and incoming edge lists.
+  !===================================================================!
+
+  subroutine check_relations_of_the_graph(nfail)
+
+    integer, intent(inout) :: nfail
+
+    integer :: tails(1200), heads(1200)
+    type(directed_stored_graph) :: g
+    type(csr_relation) :: t, h
+    integer, allocatable :: idx(:), ref(:)
+    integer :: e, v
+    logical :: ok
+
+    call pseudo_random_topology(400, tails, heads)
+    g = directed_stored_graph(400, tails=tails, heads=heads)
+
+    t = g % tail_relation()
+    h = g % head_relation()
+
+    ok = .true.
+
+    do e = 1, g % num_edges()
+       call t % image(e, idx)
+       ok = ok .and. size(idx) == 1
+       if (ok) ok = idx(1) == g % edge_tail(e)
+       call h % image(e, idx)
+       if (g % edge_has_head(e)) then
+          ok = ok .and. size(idx) == 1
+          if (ok) ok = idx(1) == g % edge_head(e)
+       else
+          ok = ok .and. size(idx) == 0
+       end if
+    end do
+
+    call report(ok, &
+         & "the derived T and H fibre every edge to its own ends", nfail)
+
+    ok = .true.
+    do v = 1, g % num_vertices()
+       call t % preimage(v, idx)
+       call g % outgoing_edges(v, ref)
+       ok = ok .and. size(idx) == size(ref)
+       if (ok .and. size(idx) > 0) ok = all(idx == ref)
+       call h % preimage(v, idx)
+       call g % incoming_edges(v, ref)
+       ok = ok .and. size(idx) == size(ref)
+       if (ok .and. size(idx) > 0) ok = all(idx == ref)
+    end do
+
+    call report(ok, &
+         & "the derived preimages are the outgoing and incoming lists", nfail)
+
+  end subroutine check_relations_of_the_graph
 
   subroutine check_wall_is_absence(nfail)
 

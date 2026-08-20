@@ -125,16 +125,21 @@ phases 3 and 5 additionally pass the benchmark gate.
               Measure local_index; if any coordinate path is O(n),
               fix it here, before anything depends on it.
 
-    Phase 3   Re-seat the internals.
-              directed_stored_graph's constructor builds T and H as
-              csr_relations from the caller's tails/heads, then
-              derives tail(:)/head(:) and the CSR snapshots from
-              the relations' compiled arrays. The 28 answers are
-              unchanged in shape: hot five read the snapshot;
-              neighbourhood queries read snapshots built once, as
-              today. class_graph's private table-to-CSR paths that
-              duplicate what csr_relation already compiled are
-              deleted. Gates: equivalence law, battery, benchmark.
+    Phase 3   DONE - amended by the benchmark gate. The eager
+              form (T, H built as components in every constructor)
+              failed section 66: every pattern graph and part graph
+              paid the build, costing stencil_of 1.66x, partition
+              1.77x, assembly 1.65x. The landed form derives the
+              relations ON REQUEST: tail_relation() and
+              head_relation() build csr_relations from the stored
+              table over counted coordinates when asked; a graph
+              nobody reads relationally pays nothing, and every
+              benchmark act is within noise of baseline. The
+              equivalence law gained two accessor laws: T and H
+              fibre every edge to its own ends, and their preimages
+              are exactly the outgoing and incoming lists. The
+              stored snapshots remain the compiled truth the hot
+              paths read.
 
     Phase 4   One consumer contract.
               graph_algorithms takes class(directed_graph). The

@@ -55,7 +55,7 @@ module class_graph
 
   use graph_directed_view, only : directed_graph
   use fractal_graph      , only : set_graph => graph
-  use graph_binary_relation, only : group_by_key
+  use graph_binary_relation, only : group_by_key, csr_relation
   use graph_partition_relation, only : partition_relation
   use graph_directed_view     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
   use graph_set_representation, only : counted_set_representation, &
@@ -212,6 +212,19 @@ module class_graph
      !----------------------------------------------------------------!
 
      procedure :: whole_relation
+
+     !----------------------------------------------------------------!
+     ! The structure read as relations (AGENTS.md section 16):
+     ! T <= E x V (edge to tail) and H <= E x V (edge to head; a
+     ! boundary edge is an absence in H). Derived from the stored
+     ! table when asked, so a pattern graph or a part graph that
+     ! nobody reads relationally never pays for them - the
+     ! section-66 benchmark caught the eager version costing every
+     ! construction 2.2x.
+     !----------------------------------------------------------------!
+
+     procedure :: tail_relation
+     procedure :: head_relation
 
   end type directed_stored_graph
 
@@ -1208,5 +1221,61 @@ contains
 
   end function whole_relation
 
+
+  !===================================================================!
+  ! The structure read as relations, derived on request from the
+  ! stored table over counted coordinates (1..nv, 1..ne), which
+  ! keeps every query on the result O(1). A caller holding T and H
+  ! may compose, transpose, and query them as relations; the
+  ! graph's own answers keep reading the compiled snapshots, and a
+  ! graph nobody reads relationally never builds these.
+  !===================================================================!
+
+  type(csr_relation) function tail_relation(this)
+
+    class(directed_stored_graph), intent(in) :: this
+
+    type(set_map) :: sets
+    integer, allocatable :: table(:,:)
+    integer :: k
+
+    call sets % bind(this % vset, counted_set_representation(this % nv))
+    call sets % bind(this % eset, counted_set_representation(this % ne))
+
+    allocate(table(2, this % ne))
+    do k = 1, this % ne
+       table(:, k) = [k, this % tail(k)]
+    end do
+
+    tail_relation = csr_relation('edge tails', this % eset, &
+         & this % vset, table, sets)
+
+  end function tail_relation
+
+  type(csr_relation) function head_relation(this)
+
+    class(directed_stored_graph), intent(in) :: this
+
+    type(set_map) :: sets
+    integer, allocatable :: table(:,:)
+    integer :: nh, k
+
+    call sets % bind(this % vset, counted_set_representation(this % nv))
+    call sets % bind(this % eset, counted_set_representation(this % ne))
+
+    nh = count(this % head >= 1)
+    allocate(table(2, nh))
+    nh = 0
+    do k = 1, this % ne
+       if (this % head(k) >= 1) then
+          nh = nh + 1
+          table(:, nh) = [k, this % head(k)]
+       end if
+    end do
+
+    head_relation = csr_relation('edge heads', this % eset, &
+         & this % vset, table, sets)
+
+  end function head_relation
 
 end module class_graph

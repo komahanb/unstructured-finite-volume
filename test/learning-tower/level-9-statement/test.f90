@@ -51,7 +51,6 @@ program learning_level_9
   use graph_relation , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_profile  , only : directed_adjacency_view
   use graph_algorithms, only : topological_order
   use graph_field_calculus, only : graph_field
   use class_graph    , only : directed_stored_graph
@@ -80,7 +79,6 @@ program learning_level_9
   type(graph)             , target :: rcell(2), relem(2)
   type(relational_binding)         :: bnd
   integer                          :: kcell
-  type(directed_adjacency_view)      :: view
   type(directed_stored_graph)                 :: host
   type(constituted_learning_residual) :: residual_op
   type(gmres)                        :: solver
@@ -176,8 +174,7 @@ program learning_level_9
        & reshape([ROW_R, SLOT_E], [2, 1]), sets)
 
   ! -- the execution order, from structure - never from the adapter
-  view = directed_adjacency_view(g, bnd, sets, d)
-  call topological_order(view, sets, order)
+  call topological_order(d, sets, order)
   call report(size(order) .eq. 2 .and. &
        &      order(1) .eq. OP_PREDICT .and. order(2) .eq. OP_ERROR, &
        & "the derived order is [predict, error], exactly", nfail)

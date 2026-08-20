@@ -5,13 +5,11 @@
 ! BE READ from the derived dependency. The relation predict->error
 ! has existed since Level 2; only THIS rung chooses to read it as
 ! directed execution - interpretation is explicit, never automatic:
-! a binary relation is not a directed graph until a view says so.
+! a binary relation carries the directed reading itself.
 !
 !      graph-owned D --interpreted--> directed adjacency over O
 !      sources = {predict}   sinks = {error}   walk = [predict, error]
 !
-! The external selector D is DEALLOCATED the moment the view exists
-! and every algorithm still answers: the view borrows the graph's
 ! owned stable relation, never the selector. And still: execution
 ! order has meaning; operation laws do not - predict does not yet
 ! multiply, nothing is evaluated, nothing is trained, and the word
@@ -34,9 +32,9 @@ program learning_level_4
   use graph_label_map      , only : label_map
   use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation , only : stored_relation, relation
+  use graph_binary_relation, only : binary_relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_profile  , only : directed_adjacency_view
   use graph_algorithms, only : sources, sinks, reachable, &
        &                       topological_order
   use fractal_graph        , only : graph, known_branch, null_branch
@@ -57,7 +55,6 @@ program learning_level_4
   type(graph)             , target :: rcell(2), relem(2)
   type(relational_binding)         :: bnd
   integer                          :: kcell
-  type(directed_adjacency_view)  :: view
   integer                        :: table(3, 6)
   integer                        :: nfail
   type(set_map)     :: sets
@@ -129,8 +126,6 @@ program learning_level_4
 
   ! The interpretive jump, made explicitly - and the selector dies
   ! the moment the reading exists.
-  view = directed_adjacency_view(g, bnd, sets, d)
-  deallocate(d)
 
   call check_view_domain(nfail)
   call check_sources_and_sinks(nfail)
@@ -152,7 +147,10 @@ contains
 
     type(set_graph) :: dom
 
-    dom = view % domain()
+    select type (d)
+    class is (binary_relation)
+       dom = d % source()
+    end select
     call report(dom % same_as(o) .and. sets % size_of(dom) .eq. 2, &
          & "the view walks the operations, and nothing invented", nfail)
 
@@ -170,8 +168,8 @@ contains
     type(set_graph) :: src, snk
     type(label_map)     :: labels
 
-    call sources(view, sets, labels, inclusions, src)
-    call sinks(view, sets, labels, inclusions, snk)
+    call sources(d, sets, labels, inclusions, src)
+    call sinks(d, sets, labels, inclusions, snk)
 
     call report(sets % size_of(src) .eq. 1 .and. sets % has_in(src, OP_PREDICT) .and. &
          &      .not. sets % has_in(src, OP_ERROR), &
@@ -194,14 +192,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(reachable(view, sets, OP_PREDICT, OP_ERROR), &
+    call report(reachable(d, sets, OP_PREDICT, OP_ERROR), &
          & "reachable(predict, sets, error) = true", nfail)
-    call report(.not. reachable(view, sets, OP_ERROR, OP_PREDICT), &
+    call report(.not. reachable(d, sets, OP_ERROR, OP_PREDICT), &
          & "reachable(error, sets, predict) = false", nfail)
-    call report(reachable(view, sets, OP_PREDICT, OP_PREDICT) .and. &
-         &      reachable(view, sets, OP_ERROR, OP_ERROR), &
+    call report(reachable(d, sets, OP_PREDICT, OP_PREDICT) .and. &
+         &      reachable(d, sets, OP_ERROR, OP_ERROR), &
          & "each operation reaches itself by the zero-length path", nfail)
-    call report(.not. reachable(view, sets, 7, OP_ERROR), &
+    call report(.not. reachable(d, sets, 7, OP_ERROR), &
          & "an outsider reaches nothing", nfail)
 
   end subroutine check_reachability
@@ -217,7 +215,7 @@ contains
 
     integer, allocatable :: order(:)
 
-    call topological_order(view, sets, order)
+    call topological_order(d, sets, order)
 
     call report(size(order) .eq. 2 .and. &
          &      order(1) .eq. OP_PREDICT .and. order(2) .eq. OP_ERROR, &

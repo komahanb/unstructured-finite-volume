@@ -21,7 +21,7 @@
 ! reason.
 !
 ! Interpreted as a directed graph this is a perfectly VALID
-! structure - the view builds, the domain is Q, reachability
+! structure - the reading holds, the domain is Q, reachability
 ! answers in both directions - and it is emphatically not a DAG:
 !
 !      a valid directed graph  /=  a DAG
@@ -51,7 +51,6 @@ program adjoint_level_4
   use graph_relation_algebra, only : compose_binary
   use graph_binary_relation , only : csr_relation, transposed_view, &
        &                             transpose_of, inclusion_of
-  use graph_profile  , only : directed_adjacency_view
   use graph_algorithms, only : reachable, sources, sinks
   use fractal_graph        , only : graph, known_branch, null_branch
   use graph_relational_view, only : relational_binding, &
@@ -72,7 +71,6 @@ program adjoint_level_4
   type(graph)             , target :: rcell(1), relem(1)
   type(relational_binding)         :: bnd
   integer                          :: kcell
-  type(directed_adjacency_view)  :: view
   integer                        :: table(2, 9)
   integer                        :: nfail
   type(set_map)     :: sets
@@ -151,7 +149,6 @@ program adjoint_level_4
 
   g % branch(1) = known_branch(scell(1))
   g % branch(2) = known_branch(rcell(1))
-  view = directed_adjacency_view(g, bnd, sets, coupling)
 
   call check_coupling_extension(nfail)
   call check_view_is_valid(nfail)
@@ -196,7 +193,7 @@ contains
   end subroutine check_coupling_extension
 
   !===================================================================!
-  ! The interpretation is perfectly legitimate: a view builds over
+  ! The interpretation is perfectly legitimate: the reading runs over
   ! the graph-owned coupling and walks the state domain.
   !===================================================================!
 
@@ -206,9 +203,9 @@ contains
 
     type(set_graph) :: dom
 
-    dom = view % domain()
+    dom = coupling % source()
     call report(dom % same_as(q_dom) .and. sets % size_of(dom) .eq. 2, &
-         & "the view is valid and walks the state slots", nfail)
+         & "the coupling is valid and walks the state slots", nfail)
 
   end subroutine check_view_is_valid
 
@@ -228,8 +225,8 @@ contains
          &      coupling % has([VAR_V, VAR_U]), &
          & "the off-diagonal pair stands: u depends on v and v on " // &
          & "u - THAT is the mutual coupling", nfail)
-    call report(reachable(view, sets, VAR_U, VAR_V) .and. &
-         &      reachable(view, sets, VAR_V, VAR_U), &
+    call report(reachable(coupling, sets, VAR_U, VAR_V) .and. &
+         &      reachable(coupling, sets, VAR_V, VAR_U), &
          & "and each reaches the other, so the walk finds a cycle", &
          & nfail)
     call report(coupling % has([VAR_U, VAR_U]) .and. &
@@ -252,8 +249,8 @@ contains
 
     type(set_graph) :: src, snk
 
-    call sources(view, sets, labels, inclusions, src)
-    call sinks(view, sets, labels, inclusions, snk)
+    call sources(coupling, sets, labels, inclusions, src)
+    call sinks(coupling, sets, labels, inclusions, snk)
 
     call report(sets % size_of(src) .eq. 0 .and. sets % size_of(snk) .eq. 0, &
          & "the state coupling has no source or sink state slot: " // &

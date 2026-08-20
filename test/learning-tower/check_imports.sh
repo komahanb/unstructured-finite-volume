@@ -28,7 +28,7 @@ allowed_for() {
         # level 4: the profile's interpretation and the algorithms
         # that walk it - the binary storage the view leans on stays
         # forbidden to the learning client.
-        level-4-graph-calculus)  echo "learning_assert fractal_graph graph_set_representation graph_set_map graph_label_map graph_inclusion_map graph_relation graph_relation_algebra graph_profile graph_algorithms fractal_graph graph_relational_view" ;;
+        level-4-graph-calculus)  echo "learning_assert fractal_graph graph_set_representation graph_set_map graph_label_map graph_inclusion_map graph_relation graph_relation_algebra graph_profile graph_algorithms fractal_graph graph_relational_view graph_binary_relation" ;;
         # level 3: the container; graph_binary_relation is granted
         # for the view refusal ONLY - the production path never
         # touches it.

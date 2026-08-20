@@ -58,7 +58,6 @@ program derivative_level_6
        &                             compose_binary
   use graph_binary_relation , only : csr_relation, transposed_view, &
        &                             transpose_of
-  use graph_profile    , only : directed_adjacency_view
   use graph_algorithms , only : reachable
   use fractal_graph        , only : graph, known_branch, null_branch
   use graph_relational_view, only : relational_binding, &
@@ -85,7 +84,6 @@ program derivative_level_6
   type(graph)             , target :: rcell2(1), relem2(1)
   type(relational_binding)         :: bnd2
   integer                          :: kcell2
-  type(directed_adjacency_view)  :: dep_view, dep_view2
   integer                        :: table(3, 6)
   integer                        :: nfail
   type(set_map)     :: sets
@@ -157,9 +155,8 @@ program derivative_level_6
 
   g_a % branch(1) = known_branch(scell(1))
   g_a % branch(2) = known_branch(rcell(1))
-  dep_view = directed_adjacency_view(g_a, bnd, sets, a)
 
-  j_zx = derive_jacobian(dep_view)
+  j_zx = derive_jacobian(a)
 
   call check_response_domain(nfail)
   call check_participation(nfail)
@@ -206,7 +203,7 @@ contains
 
   function derive_jacobian(dv) result(jac)
 
-    type(directed_adjacency_view), intent(in) :: dv
+    type(csr_relation), intent(in) :: dv
     type(csr_relation)                        :: jac
 
     integer, allocatable :: pairs(:,:)
@@ -330,10 +327,10 @@ contains
          & "and y -> u -> z stands beside it: two routes to one " // &
          & "response", nfail)
     call report(.not. a % has([SLOT_X, SLOT_Z]) .and. &
-         &      reachable(dep_view, sets, SLOT_X, SLOT_Z), &
+         &      reachable(a, sets, SLOT_X, SLOT_Z), &
          & "x -> u -> z: transitive only, hard-coded never", nfail)
-    call report(.not. reachable(dep_view, sets, SLOT_Z, SLOT_X) .and. &
-         &      .not. reachable(dep_view, sets, SLOT_Z, SLOT_Y), &
+    call report(.not. reachable(a, sets, SLOT_Z, SLOT_X) .and. &
+         &      .not. reachable(a, sets, SLOT_Z, SLOT_Y), &
          & "nothing flows back out of the response", nfail)
 
   end subroutine check_two_path_truth
@@ -459,8 +456,7 @@ contains
 
     g_a2 % branch(1) = known_branch(scell2(1))
     g_a2 % branch(2) = known_branch(rcell2(1))
-    dep_view2 = directed_adjacency_view(g_a2, bnd2, sets, a2)
-    j_zx2 = derive_jacobian(dep_view2)
+    j_zx2 = derive_jacobian(a2)
     jt2 = transpose_of(j_zx2)
 
     call report(a2 % num_tuples() .eq. a % num_tuples(), &

@@ -55,7 +55,6 @@ program derivative_level_9
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_profile    , only : directed_adjacency_view
   use graph_algorithms , only : topological_order
   use class_graph_field, only : field
   use derivative_constitution_fixture, only : primal_execution, &
@@ -79,7 +78,6 @@ program derivative_level_9
   type(graph)             , target :: rcell(2), relem(2)
   type(relational_binding)         :: bnd
   integer                          :: kcell
-  type(directed_adjacency_view)      :: view
   type(field)                        :: qx, zbar_f, grad_f, vseed_f
   type(set_graph)     :: dom
   integer, allocatable               :: order(:)
@@ -166,11 +164,9 @@ program derivative_level_9
   g % branch(1) = known_branch(scell(1))
   g % branch(2) = known_branch(rcell(1))
 
-  ! -- the order comes from the graph's own dependency: the view is
+  ! -- the order comes from the graph's own dependency: the relation is
   !    made, the dependency selector dies, and the walk still answers
-  view = directed_adjacency_view(g, bnd, sets, d)
-  deallocate(d)
-  call topological_order(view, sets, order)
+  call topological_order(d, sets, order)
 
   ! -- the statement keeps the GRAPH-OWNED flow, located by identity;
   !    then the external selector dies too

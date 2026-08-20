@@ -65,7 +65,6 @@ program time_level_4
   use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation        , only : relation
   use graph_binary_relation , only : csr_relation
-  use graph_profile         , only : directed_adjacency_view
   use graph_algorithms      , only : sources, sinks, reachable, &
        &                             topological_order
   use time_carriers_fixture , only : time_carriers
@@ -88,14 +87,12 @@ program time_level_4
   ! held here although nothing in this tower reads one.
   type(label_map)              :: labels
   type(csr_relation), target     :: tail, head, a1
-  type(csr_relation)             :: a2
-  class(relation), allocatable   :: sel_a1, sel_a2
+  type(csr_relation), target     :: a2
   type(graph)             , target :: g
   type(graph)             , target :: scell(3), selem(3)
   type(graph)             , target :: rcell(4), relem(4)
   type(relational_binding)         :: bnd
   integer                          :: kcell
-  type(directed_adjacency_view)  :: view_a1, view_a2
   integer                        :: nfail
 
   nfail = 0
@@ -148,12 +145,6 @@ program time_level_4
   ! carry A1's and A2's identities, they are used only to find the
   ! graph's own storage, and they are destroyed before a single
   ! question is asked of the views.
-  allocate(sel_a1, source=a1)
-  allocate(sel_a2, source=a2)
-  view_a1 = directed_adjacency_view(g, bnd, sets, sel_a1)
-  view_a2 = directed_adjacency_view(g, bnd, sets, sel_a2)
-  deallocate(sel_a1)
-  deallocate(sel_a2)
 
   call check_causal_ends(nfail)
   call check_causal_reachability(nfail)
@@ -177,8 +168,8 @@ contains
 
     type(set_graph) :: src, snk
 
-    call sources(view_a1, sets, labels, inclusions, src)
-    call sinks(view_a1, sets, labels, inclusions, snk)
+    call sources(a1, sets, labels, inclusions, src)
+    call sinks(a1, sets, labels, inclusions, snk)
 
     call report(sets % size_of(src) .eq. 1 .and. sets % has_in(src, T0), &
          & "sources(A1) = { t0 }: one instant nothing leads to, the " // &
@@ -201,18 +192,18 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(reachable(view_a1, sets, T0, T4), &
+    call report(reachable(a1, sets, T0, T4), &
          & "t0 reaches t4 along the causal chain", nfail)
-    call report(.not. reachable(view_a1, sets, T4, T0), &
+    call report(.not. reachable(a1, sets, T4, T0), &
          & "and t4 reaches t0 not at all: THE ASYMMETRY IS " // &
          & "STRUCTURAL, not a convention about which way to loop", &
          & nfail)
 
-    call report(reachable(view_a1, sets, T2, T2), &
+    call report(reachable(a1, sets, T2, T2), &
          & "every instant reaches itself by the zero-length path", &
          & nfail)
-    call report(reachable(view_a1, sets, T1, T3) .and. &
-         &      .not. reachable(view_a1, sets, T3, T1), &
+    call report(reachable(a1, sets, T1, T3) .and. &
+         &      .not. reachable(a1, sets, T3, T1), &
          & "and the asymmetry holds in the interior too, not only " // &
          & "at the ends", nfail)
 
@@ -233,7 +224,7 @@ contains
     integer              :: i
     logical              :: ok
 
-    call topological_order(view_a1, sets, order)
+    call topological_order(a1, sets, order)
 
     ok = size(order) .eq. NT
     do i = 1, min(size(order), sets % size_of(t))
@@ -248,7 +239,7 @@ contains
     ! A1 runs forwards in it.
     ok = .true.
     do i = 1, size(order) - 1
-       ok = ok .and. .not. reachable(view_a1, sets, order(i + 1), order(i))
+       ok = ok .and. .not. reachable(a1, sets, order(i + 1), order(i))
     end do
     call report(ok, &
          & "and no later instant reaches an earlier one: the order " // &
@@ -280,23 +271,23 @@ contains
     integer, pointer :: fibre(:)
     logical          :: ok
 
-    fibre => view_a2 % successors_view(T0)
+    fibre => a2 % image_view(T0)
     ok = size(fibre) .eq. 1
     if (ok) ok = fibre(1) .eq. T2
-    fibre => view_a2 % successors_view(T1)
+    fibre => a2 % image_view(T1)
     ok = ok .and. size(fibre) .eq. 1
     if (ok) ok = ok .and. fibre(1) .eq. T3
-    fibre => view_a2 % successors_view(T2)
+    fibre => a2 % image_view(T2)
     ok = ok .and. size(fibre) .eq. 1
     if (ok) ok = ok .and. fibre(1) .eq. T4
     call report(ok, &
          & "successors under A2: t0->{t2}, t1->{t3}, t2->{t4}", nfail)
 
-    call report(reachable(view_a2, sets, T0, T4), &
+    call report(reachable(a2, sets, T0, T4), &
          & "t0 reaches t4 under repeated two-step traversal, by way " // &
          & "of t2", nfail)
 
-    call report(.not. reachable(view_a2, sets, T0, T3), &
+    call report(.not. reachable(a2, sets, T0, T3), &
          & "but t0 does NOT reach t3: two-step reach lands only on " // &
          & "even offsets - REACH IS NOT A SCHEME, and a BDF2 " // &
          & "dependency would have had to see t3", nfail)
@@ -314,8 +305,8 @@ contains
 
     type(set_graph) :: d1, d2
 
-    d1 = view_a1 % domain()
-    d2 = view_a2 % domain()
+    d1 = a1 % source()
+    d2 = a2 % source()
 
     call report(d1 % same_as(t) .and. d2 % same_as(t), &
          & "both views run over T itself, by identity", nfail)

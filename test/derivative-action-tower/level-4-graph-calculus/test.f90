@@ -36,9 +36,9 @@ program derivative_level_4
   use graph_label_map      , only : label_map
   use graph_inclusion_map  , only : inclusion_map, declared_subobject
   use graph_relation   , only : stored_relation, relation
+  use graph_binary_relation, only : binary_relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_profile    , only : directed_adjacency_view
   use graph_algorithms , only : sources, sinks, reachable, &
        &                        topological_order
   use fractal_graph        , only : graph, known_branch, null_branch
@@ -58,7 +58,6 @@ program derivative_level_4
   type(graph)             , target :: rcell(2), relem(2)
   type(relational_binding)         :: bnd
   integer                          :: kcell
-  type(directed_adjacency_view)  :: view
   integer                        :: table(3, 6)
   integer                        :: nfail
   type(set_map)     :: sets
@@ -127,7 +126,6 @@ program derivative_level_4
   g % branch(2) = known_branch(rcell(1))
 
   ! The interpretive jump, made explicitly.
-  view = directed_adjacency_view(g, bnd, sets, d)
 
   call check_view_domain(nfail)
   call check_sources_and_sinks(nfail)
@@ -149,9 +147,12 @@ contains
 
     type(set_graph) :: dom
 
-    dom = view % domain()
+    select type (d)
+    class is (binary_relation)
+       dom = d % source()
+    end select
     call report(dom % same_as(o) .and. sets % size_of(dom) .eq. 2, &
-         & "the view walks the operations, and nothing invented", nfail)
+         & "the relation walks the operations, and nothing invented", nfail)
 
   end subroutine check_view_domain
 
@@ -166,8 +167,8 @@ contains
     type(set_graph) :: src, snk
     type(label_map)     :: labels
 
-    call sources(view, sets, labels, inclusions, src)
-    call sinks(view, sets, labels, inclusions, snk)
+    call sources(d, sets, labels, inclusions, src)
+    call sinks(d, sets, labels, inclusions, snk)
 
     call report(sets % size_of(src) .eq. 1 .and. sets % has_in(src, OP_PRODUCT) .and. &
          &      .not. sets % has_in(src, OP_SUM), &
@@ -190,12 +191,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(reachable(view, sets, OP_PRODUCT, OP_SUM), &
+    call report(reachable(d, sets, OP_PRODUCT, OP_SUM), &
          & "reachable(product, sets, sum) = true", nfail)
-    call report(.not. reachable(view, sets, OP_SUM, OP_PRODUCT), &
+    call report(.not. reachable(d, sets, OP_SUM, OP_PRODUCT), &
          & "reachable(sum, sets, product) = false", nfail)
-    call report(reachable(view, sets, OP_PRODUCT, OP_PRODUCT) .and. &
-         &      reachable(view, sets, OP_SUM, OP_SUM), &
+    call report(reachable(d, sets, OP_PRODUCT, OP_PRODUCT) .and. &
+         &      reachable(d, sets, OP_SUM, OP_SUM), &
          & "each operation reaches itself by the zero-length path", nfail)
 
   end subroutine check_reachability
@@ -212,7 +213,7 @@ contains
 
     integer, allocatable :: order(:)
 
-    call topological_order(view, sets, order)
+    call topological_order(d, sets, order)
 
     call report(size(order) .eq. 2 .and. &
          &      order(1) .eq. OP_PRODUCT .and. order(2) .eq. OP_SUM, &

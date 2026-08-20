@@ -46,7 +46,6 @@ program learning_level_6
        &                             compose_binary
   use graph_binary_relation , only : csr_relation, transposed_view, &
        &                             transpose_of
-  use graph_profile  , only : directed_adjacency_view
   use graph_algorithms, only : reachable
   use fractal_graph        , only : graph, known_branch, null_branch
   use graph_relational_view, only : relational_binding, &
@@ -76,7 +75,6 @@ program learning_level_6
   type(graph)             , target :: rcell2(1), relem2(1)
   type(relational_binding)         :: bnd2
   integer                          :: kcell2
-  type(directed_adjacency_view)  :: view, view2
   integer                        :: table(3, 6)
   integer                        :: nfail
   type(set_map)     :: sets
@@ -147,9 +145,8 @@ program learning_level_6
 
   g % branch(1) = known_branch(scell(1))
   g % branch(2) = known_branch(rcell(1))
-  view = directed_adjacency_view(g, bnd, sets, a)
 
-  j_theta = derive_trainable(view)
+  j_theta = derive_trainable(a)
 
   call check_participation(nfail)
   call check_direct_dependency(nfail)
@@ -222,7 +219,7 @@ contains
 
   function derive_trainable(dep_view) result(jth)
 
-    type(directed_adjacency_view), intent(in) :: dep_view
+    type(csr_relation), intent(in) :: dep_view
     type(csr_relation)                        :: jth
 
     integer, allocatable :: pairs(:,:)
@@ -322,22 +319,22 @@ contains
 
     type(set_graph) :: dom
 
-    dom = view % domain()
+    dom = a % source()
     call report(dom % same_as(v), &
          & "the interpretation walks the value slots", nfail)
 
-    call report(reachable(view, sets, SLOT_W   , SLOT_E) .and. &
-         &      reachable(view, sets, SLOT_X   , SLOT_E) .and. &
-         &      reachable(view, sets, SLOT_YHAT, SLOT_E) .and. &
-         &      reachable(view, sets, SLOT_Y   , SLOT_E), &
+    call report(reachable(a, sets, SLOT_W   , SLOT_E) .and. &
+         &      reachable(a, sets, SLOT_X   , SLOT_E) .and. &
+         &      reachable(a, sets, SLOT_YHAT, SLOT_E) .and. &
+         &      reachable(a, sets, SLOT_Y   , SLOT_E), &
          & "w, x, yhat and y all reach e", nfail)
-    call report(.not. reachable(view, sets, SLOT_E, SLOT_W), &
+    call report(.not. reachable(a, sets, SLOT_E, SLOT_W), &
          & "reachable(e, sets, w) = false: nothing flows back", nfail)
 
     call report(a % has([SLOT_W, SLOT_YHAT]) .and. &
          &      a % has([SLOT_YHAT, SLOT_E]) .and. &
          &      .not. a % has([SLOT_W, SLOT_E]) .and. &
-         &      reachable(view, sets, SLOT_W, SLOT_E), &
+         &      reachable(a, sets, SLOT_W, SLOT_E), &
          & "w -> yhat -> e: adjacent twice, transitive once, " // &
          & "hard-coded never", nfail)
 
@@ -489,8 +486,7 @@ contains
 
     g2 % branch(1) = known_branch(scell2(1))
     g2 % branch(2) = known_branch(rcell2(1))
-    view2 = directed_adjacency_view(g2, bnd2, sets, a2)
-    j_theta2 = derive_trainable(view2)
+    j_theta2 = derive_trainable(a2)
 
     call report(a2 % num_tuples() .eq. a % num_tuples(), &
          & "|A1| = |A2|", nfail)

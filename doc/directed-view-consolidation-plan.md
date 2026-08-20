@@ -141,13 +141,24 @@ phases 3 and 5 additionally pass the benchmark gate.
               stored snapshots remain the compiled truth the hot
               paths read.
 
-    Phase 4   One consumer contract.
-              graph_algorithms takes class(directed_graph). The
-              five tower level-4 suites and graph-ordinary /
-              graph-algorithms tests construct the stored graph
-              (directly or through the new from-relations
-              constructor) instead of profile views. graph_profile
-              gains no new consumers from here on.
+    Phase 4   DONE - sharpened during execution. The adjacency
+              view was csr_relation with two renamed queries, so
+              the algorithms re-aimed at class(relation) (level 1)
+              rather than at the stored graph: sources, sinks,
+              reachable, and topological_order take any relation,
+              select the binary reading, and refuse a non-binary or
+              two-domain adjacency themselves (the two view-
+              constructor refusals moved here as
+              'graph_algorithms: the adjacency is a binary
+              relation' and '... runs over one domain'; the
+              ownership refusal died with the view). Fourteen test
+              files pass their relations directly; the dead 'the
+              selector may die, the view borrows' law and its
+              deallocations were removed; two tower import gates
+              now allow graph_binary_relation at level 4.
+              graph_profile's remaining consumer is graph-ordinary
+              alone (the incidence view inside the equivalence
+              suite).
 
     Phase 5   Retire graph_profile.
               Anything it alone still answers moves into

@@ -49,7 +49,6 @@ program derivative_level_8
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_profile    , only : directed_adjacency_view
   use graph_algorithms , only : reachable, topological_order
   use class_graph_field, only : field
   use derivative_constitution_fixture, only : apply_law, &
@@ -82,7 +81,6 @@ program derivative_level_8
   type(graph)             , target :: rcell2(1), relem2(1)
   type(relational_binding)         :: bnd2
   integer                          :: kcell2
-  type(directed_adjacency_view)  :: view, view2, dep_view
   type(field)                    :: qx, vx, zbar_f, jv_f, xbar_f
   integer, allocatable           :: order(:), order2(:), hits(:)
   real(dp), allocatable          :: obs(:), seedv(:), zseed(:), xbar(:)
@@ -165,8 +163,7 @@ program derivative_level_8
 
   g % branch(1) = known_branch(scell(1))
   g % branch(2) = known_branch(rcell(1))
-  view = directed_adjacency_view(g, bnd, sets, d)
-  call topological_order(view, sets, order)
+  call topological_order(d, sets, order)
 
   allocate(base(sets % size_of(v)), avail(sets % size_of(v)))
   allocate(dot(sets % size_of(v)), davail(sets % size_of(v)))
@@ -473,12 +470,11 @@ contains
 
     g_av % branch(1) = known_branch(scell2(1))
     g_av % branch(2) = known_branch(rcell2(1))
-    dep_view = directed_adjacency_view(g_av, bnd2, sets, av)
 
     ok = .true.
     do i = 1, sets % size_of(x_dom)
        m = sets % member_of(x_dom, i)
-       ok = ok .and. (reachable(dep_view, sets, m, SLOT_Z) .eqv. &
+       ok = ok .and. (reachable(av, sets, m, SLOT_Z) .eqv. &
             &         (hits(sets % index_in(v, m)) .gt. 0))
     end do
     call report(ok, &
@@ -622,8 +618,7 @@ contains
 
     g2 % branch(1) = known_branch(scell3(1))
     g2 % branch(2) = known_branch(rcell3(1))
-    view2 = directed_adjacency_view(g2, bnd3, sets, d2)
-    call topological_order(view2, sets, order2)
+    call topological_order(d2, sets, order2)
 
     call primal_execution(backwards, v, sets, x_dom, obs, c, order2, &
          & baseb, availb)

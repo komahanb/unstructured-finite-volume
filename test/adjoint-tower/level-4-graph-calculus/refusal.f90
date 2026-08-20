@@ -29,7 +29,6 @@ program adjoint_level_4_refusal
   use graph_relation_algebra, only : compose_binary
   use graph_binary_relation , only : csr_relation, transposed_view, &
        &                             transpose_of, inclusion_of
-  use graph_profile  , only : directed_adjacency_view
   use graph_algorithms, only : topological_order
   use fractal_graph        , only : graph, known_branch, null_branch
   use graph_relational_view, only : relational_binding, &
@@ -50,7 +49,6 @@ program adjoint_level_4_refusal
   type(graph)             , target :: rcell(1), relem(1)
   type(relational_binding)         :: bnd
   integer                          :: kcell
-  type(directed_adjacency_view)  :: view
   integer, allocatable           :: order(:)
   integer                        :: table(2, 9)
   character(len=32)              :: which
@@ -122,9 +120,8 @@ program adjoint_level_4_refusal
 
      g % branch(1) = known_branch(scell(1))
      g % branch(2) = known_branch(rcell(1))
-     view = directed_adjacency_view(g, bnd, sets, coupling)
 
-     call topological_order(view, sets, order)
+     call topological_order(coupling, sets, order)
      write(*,*) 'an implicit system was given an execution order', order
 
   case default

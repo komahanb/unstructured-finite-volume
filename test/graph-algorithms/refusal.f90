@@ -1,13 +1,13 @@
 !=====================================================================!
-! The interpretation and algorithm refusals, each EXPECTED TO DIE
-! for its stated reason:
+! Invalid-input cases for the graph algorithms, one per invocation.
+! Each must terminate in error stop with the message run.sh expects;
+! a case that returns normally is reported as a failure by run.sh.
 !
-!      notowned     the selector names a relation the graph lacks
-!      notbinary    a ternary relation offered as adjacency
+!      notbinary    a ternary relation offered as the adjacency
 !      notsquare    a binary relation over two different domains
-!      cycle        a lawful cyclic view whose topological order
-!                   is rightly refused - the VIEW is valid; only
-!                   the ordering is undefined
+!      cycle        a lawful cyclic relation whose topological
+!                   order is refused - the relation is valid; only
+!                   the ordering is undefined on it
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -15,38 +15,22 @@
 program algorithms_refusal
 
   use fractal_graph           , only : graph
-  use graph_set_representation, only : counted_set_representation, &
-       & listed_set_representation
+  use graph_set_representation, only : counted_set_representation
   use graph_set_map           , only : set_map
   use graph_label_map         , only : label_map
-  use graph_inclusion_map     , only : inclusion_map, declared_subobject
-  use graph_relation       , only : stored_relation
-  use graph_binary_relation, only : csr_relation
-  use graph_profile        , only : directed_adjacency_view
-  use graph_algorithms     , only : topological_order
-  use fractal_graph        , only : graph, known_branch, null_branch
-  use graph_relational_view, only : relational_binding, &
-       & num_member_sets, member_set_at, num_relations, relation_at, &
-       & holds_set
+  use graph_relation          , only : stored_relation
+  use graph_binary_relation   , only : csr_relation
+  use graph_algorithms        , only : topological_order
 
   implicit none
 
-
-  type(graph)              :: a, b, c
-  type(set_map)                  :: sets
-  type(label_map)                :: labels
-  type(inclusion_map)            :: inclusions
-  type(csr_relation)             :: adj, stray, lopsided, ring
-  type(stored_relation)          :: fat
-  type(graph)             , target :: g
-  ! Sized for the widest case; each case builds its own.
-  type(graph)             , target :: scell(2), selem(2)
-  type(graph)             , target :: rcell(1), relem(1)
-  type(relational_binding)         :: bnd
-  integer                          :: kcell
-  type(directed_adjacency_view)  :: view
-  integer, allocatable           :: order(:)
-  character(len=32)              :: which
+  type(graph)           :: a, b, c
+  type(set_map)         :: sets
+  type(label_map)       :: labels
+  type(csr_relation)    :: lopsided, ring
+  type(stored_relation) :: fat
+  integer, allocatable  :: order(:)
+  character(len=32)     :: which
 
   which = ''
   call get_command_argument(1, which)
@@ -60,143 +44,28 @@ program algorithms_refusal
 
   select case (trim(which))
 
-  case ('notowned')
-     adj   = csr_relation('inside' , a, a, reshape([1, 2], [2, 1]), sets)
-     stray = csr_relation('outside', a, a, reshape([2, 3], [2, 1]), sets)
-     ! 'bad': (S, P) as one sequence on each branch.
-     call g % declare()
-     do kcell = 1, 1
-        call scell(kcell) % declare()
-        call selem(kcell) % declare()
-     end do
-     do kcell = 1, 1
-        call rcell(kcell) % declare()
-        call relem(kcell) % declare()
-     end do
-
-     call bnd % bind_set(selem(1), a)
-     call bnd % bind_relation(relem(1), adj)
-
-     do kcell = 1, 1
-        scell(kcell) % branch(1) = known_branch(selem(kcell))
-        if (kcell .lt. 1) scell(kcell) % branch(2) = &
-             & known_branch(scell(kcell + 1))
-     end do
-     do kcell = 1, 1
-        rcell(kcell) % branch(1) = known_branch(relem(kcell))
-        if (kcell .lt. 1) rcell(kcell) % branch(2) = &
-             & known_branch(rcell(kcell + 1))
-     end do
-
-     g % branch(1) = known_branch(scell(1))
-     g % branch(2) = known_branch(rcell(1))
-     view = directed_adjacency_view(g, bnd, sets, stray)
-
   case ('notbinary')
+
      call c % declare()
      call sets % bind(c, counted_set_representation(2))
      call labels % bind(c, 'c-things')
      fat = stored_relation('fat', [a, a, c], &
           & reshape([1, 2, 1], [3, 1]), sets)
-     ! 'bad': (S, P) as one sequence on each branch.
-     call g % declare()
-     do kcell = 1, 2
-        call scell(kcell) % declare()
-        call selem(kcell) % declare()
-     end do
-     do kcell = 1, 1
-        call rcell(kcell) % declare()
-        call relem(kcell) % declare()
-     end do
-
-     call bnd % bind_set(selem(1), a)
-     call bnd % bind_set(selem(2), c)
-     call bnd % bind_relation(relem(1), fat)
-
-     do kcell = 1, 2
-        scell(kcell) % branch(1) = known_branch(selem(kcell))
-        if (kcell .lt. 2) scell(kcell) % branch(2) = &
-             & known_branch(scell(kcell + 1))
-     end do
-     do kcell = 1, 1
-        rcell(kcell) % branch(1) = known_branch(relem(kcell))
-        if (kcell .lt. 1) rcell(kcell) % branch(2) = &
-             & known_branch(rcell(kcell + 1))
-     end do
-
-     g % branch(1) = known_branch(scell(1))
-     g % branch(2) = known_branch(rcell(1))
-     view = directed_adjacency_view(g, bnd, sets, fat)
+     call topological_order(fat, sets, order)
 
   case ('notsquare')
+
      lopsided = csr_relation('lopsided', a, b, reshape([1, 1], [2, 1]), sets)
-     ! 'bad': (S, P) as one sequence on each branch.
-     call g % declare()
-     do kcell = 1, 2
-        call scell(kcell) % declare()
-        call selem(kcell) % declare()
-     end do
-     do kcell = 1, 1
-        call rcell(kcell) % declare()
-        call relem(kcell) % declare()
-     end do
-
-     call bnd % bind_set(selem(1), a)
-     call bnd % bind_set(selem(2), b)
-     call bnd % bind_relation(relem(1), lopsided)
-
-     do kcell = 1, 2
-        scell(kcell) % branch(1) = known_branch(selem(kcell))
-        if (kcell .lt. 2) scell(kcell) % branch(2) = &
-             & known_branch(scell(kcell + 1))
-     end do
-     do kcell = 1, 1
-        rcell(kcell) % branch(1) = known_branch(relem(kcell))
-        if (kcell .lt. 1) rcell(kcell) % branch(2) = &
-             & known_branch(rcell(kcell + 1))
-     end do
-
-     g % branch(1) = known_branch(scell(1))
-     g % branch(2) = known_branch(rcell(1))
-     view = directed_adjacency_view(g, bnd, sets, lopsided)
+     call topological_order(lopsided, sets, order)
 
   case ('cycle')
+
      ring = csr_relation('ring', a, a, &
           & reshape([1,2,  2,3,  3,1], [2, 3]), sets)
-     ! 'cyclic': (S, P) as one sequence on each branch.
-     call g % declare()
-     do kcell = 1, 1
-        call scell(kcell) % declare()
-        call selem(kcell) % declare()
-     end do
-     do kcell = 1, 1
-        call rcell(kcell) % declare()
-        call relem(kcell) % declare()
-     end do
-
-     call bnd % bind_set(selem(1), a)
-     call bnd % bind_relation(relem(1), ring)
-
-     do kcell = 1, 1
-        scell(kcell) % branch(1) = known_branch(selem(kcell))
-        if (kcell .lt. 1) scell(kcell) % branch(2) = &
-             & known_branch(scell(kcell + 1))
-     end do
-     do kcell = 1, 1
-        rcell(kcell) % branch(1) = known_branch(relem(kcell))
-        if (kcell .lt. 1) rcell(kcell) % branch(2) = &
-             & known_branch(rcell(kcell + 1))
-     end do
-
-     g % branch(1) = known_branch(scell(1))
-     g % branch(2) = known_branch(rcell(1))
-     ! The view is lawful: a cycle is a directed graph.
-     view = directed_adjacency_view(g, bnd, sets, ring)
-     ! Only the ordering is undefined.
-     call topological_order(view, sets, order)
+     call topological_order(ring, sets, order)
 
   case default
-     write(*,'(1x,a)') "usage: refusal notowned|notbinary|notsquare|cycle"
+     write(*,'(1x,a)') "usage: refusal notbinary|notsquare|cycle"
      error stop 'no case chosen'
 
   end select

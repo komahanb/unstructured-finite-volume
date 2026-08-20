@@ -13,13 +13,12 @@ make -C "$here" >/dev/null
 cd "$here" && ./run
 
 declare -A reason=(
-  [notowned]="the graph does not own the selected relation"
-  [notbinary]="a directed adjacency reads a binary relation"
-  [notsquare]="a directed adjacency runs over one domain"
+  [notbinary]="graph_algorithms: the adjacency is a binary relation"
+  [notsquare]="graph_algorithms: the adjacency runs over one domain"
   [cycle]="a topological order needs an acyclic graph"
 )
 
-for case in notowned notbinary notsquare cycle; do
+for case in notbinary notsquare cycle; do
     if ./refusal "$case" >refusal.out 2>&1; then
         echo " FAIL : '$case' was accepted"
         exit 1

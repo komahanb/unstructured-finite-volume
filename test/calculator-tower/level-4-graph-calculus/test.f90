@@ -7,9 +7,9 @@
 !      T_flow --algebra--> D --admitted--> GAMMA --interpreted-->
 !      directed adjacency --walked--> sources, sinks, reach, order
 !
-! and no second dependency is ever built: the view borrows the
+! and no second dependency is ever built: the algorithms read the
 ! GRAPH-OWNED relation - the external selector is deallocated the
-! moment the view exists, and every answer still stands, which pins
+! relation itself, and every answer still stands, which pins
 ! the borrow where the ownership law says it lives.
 !
 ! The architect-owned truths: sources = {+}, sinks = {x},
@@ -35,7 +35,6 @@ program calculator_level_4
   use graph_relation   , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_profile    , only : directed_adjacency_view
   use graph_algorithms , only : sources, sinks, reachable, &
        &                        topological_order
   use fractal_graph        , only : graph, known_branch, null_branch
@@ -56,7 +55,6 @@ program calculator_level_4
   type(graph)             , target :: rcell(2), relem(2)
   type(relational_binding)         :: bnd
   integer                          :: kcell
-  type(directed_adjacency_view)  :: view
   integer                        :: table(3, 6)
   integer                        :: nfail
   type(set_map)     :: sets
@@ -129,8 +127,6 @@ program calculator_level_4
 
   ! The interpretation reads the GRAPH-OWNED dependency; the
   ! selector has served and may die.
-  view = directed_adjacency_view(g, bnd, sets, d)
-  deallocate(d)
 
   call check_sources_and_sinks(nfail)
   call check_reachability(nfail)
@@ -153,8 +149,8 @@ contains
     type(set_graph) :: src, snk
     type(label_map)     :: labels
 
-    call sources(view, sets, labels, inclusions, src)
-    call sinks(view, sets, labels, inclusions, snk)
+    call sources(d, sets, labels, inclusions, src)
+    call sinks(d, sets, labels, inclusions, snk)
 
     call report(sets % size_of(src) .eq. 1 .and. sets % has_in(src, OP_PLUS), &
          & "sources(D) = { + }, the selector long dead", nfail)
@@ -177,11 +173,11 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(reachable(view, sets, OP_PLUS, OP_TIMES), &
+    call report(reachable(d, sets, OP_PLUS, OP_TIMES), &
          & "reachable(+, x) = true", nfail)
-    call report(.not. reachable(view, sets, OP_TIMES, OP_PLUS), &
+    call report(.not. reachable(d, sets, OP_TIMES, OP_PLUS), &
          & "reachable(x, sets, +) = false", nfail)
-    call report(reachable(view, sets, OP_PLUS, OP_PLUS), &
+    call report(reachable(d, sets, OP_PLUS, OP_PLUS), &
          & "and + reaches itself by the zero-length path", nfail)
 
   end subroutine check_reachability
@@ -196,7 +192,7 @@ contains
 
     integer, allocatable :: order(:)
 
-    call topological_order(view, sets, order)
+    call topological_order(d, sets, order)
 
     call report(size(order) .eq. 2 .and. &
          &      order(1) .eq. OP_PLUS .and. order(2) .eq. OP_TIMES, &

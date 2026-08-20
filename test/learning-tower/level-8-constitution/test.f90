@@ -41,7 +41,6 @@ program learning_level_8
   use graph_relation , only : stored_relation, relation
   use graph_relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_profile  , only : directed_adjacency_view
   use graph_algorithms, only : reachable, topological_order
   use class_graph_field, only : field
   use learning_constitution_fixture, only : apply_law, slot_for_port, &
@@ -77,7 +76,6 @@ program learning_level_8
   type(graph)             , target :: rcell3(2), relem3(2)
   type(relational_binding)         :: bnd3
   integer                          :: kcell3
-  type(directed_adjacency_view)  :: view, dep_view, view2
   type(field)                    :: q_k, q_k2
   integer, allocatable           :: order(:), order2(:)
   real(dp), allocatable          :: obs(:)
@@ -170,8 +168,7 @@ program learning_level_8
 
   g % branch(1) = known_branch(scell(1))
   g % branch(2) = known_branch(rcell(1))
-  view = directed_adjacency_view(g, bnd, sets, d)
-  call topological_order(view, sets, order)
+  call topological_order(d, sets, order)
 
   call check_derived_order(nfail)
   call check_laws(nfail)
@@ -344,12 +341,11 @@ contains
 
     g_a % branch(1) = known_branch(scell2(1))
     g_a % branch(2) = known_branch(rcell2(1))
-    dep_view = directed_adjacency_view(g_a, bnd2, sets, a)
 
     home = located_slot(located, v, sets, ROW_R)
     nsup = 0
     do ti = 1, sets % size_of(theta)
-       if (reachable(dep_view, sets, sets % member_of(theta, ti), home)) then
+       if (reachable(a, sets, sets % member_of(theta, ti), home)) then
           nsup      = nsup + 1
           sup(nsup) = sets % member_of(theta, ti)
        end if
@@ -458,8 +454,7 @@ contains
 
     g2 % branch(1) = known_branch(scell3(1))
     g2 % branch(2) = known_branch(rcell3(1))
-    view2 = directed_adjacency_view(g2, bnd3, sets, d2)
-    call topological_order(view2, sets, order2)
+    call topological_order(d2, sets, order2)
 
     call generated_residual(flow, located, v, sets, y, k, obs, &
          & theta, [-2.0_dp], u, order, r_fwd, touched=touched)

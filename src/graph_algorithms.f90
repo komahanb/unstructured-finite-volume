@@ -3,8 +3,8 @@
 !
 ! The level answers one question: WHAT GRAPH-THEORETIC QUESTIONS CAN
 ! BE ASKED of an interpretation. The algorithms live HERE, as free
-! module procedures over the directed adjacency view - never as
-! methods on relation, on the container, or on the view itself:
+! module procedures over a binary relation on one domain - never as
+! methods on the relation or on any container:
 ! traversal acts on structure, it is not structure (AGENTS.md 18,
 ! CALCULATOR.md 11). This module holds exactly what its first real
 ! caller - the calculator's dependency walk - has earned:
@@ -32,7 +32,7 @@
 ! path; an endpoint outside the domain answers FALSE, never an
 ! index into invalid storage. A topological order is undefined on a
 ! cycle: the walk REFUSES loudly rather than inventing an order.
-! The cyclic view itself remains a lawful directed graph - a valid
+! A cyclic relation remains a lawful structure - a valid
 ! interpretation is not a valid input to every algorithm.
 !
 !                    COSTS, AS WRITTEN
@@ -59,7 +59,8 @@
 module graph_algorithms
 
   use fractal_graph           , only : set_graph => graph
-  use graph_profile           , only : directed_adjacency_view
+  use graph_relation          , only : relation
+  use graph_binary_relation   , only : binary_relation
   use graph_set_map           , only : set_map
   use graph_label_map         , only : label_map
   use graph_inclusion_map     , only : inclusion_map
@@ -77,27 +78,28 @@ contains
   ! the domain's own order.
   !===================================================================!
 
-  subroutine sources(view, sets, labels, inclusions, chosen)
+  subroutine sources(adjacency, sets, labels, inclusions, chosen)
 
-    type(directed_adjacency_view), intent(in)    :: view
+    class(relation), target      , intent(in)    :: adjacency
     type(set_map)                , intent(inout) :: sets
     type(label_map)              , intent(inout) :: labels
     type(inclusion_map)          , intent(inout) :: inclusions
     type(set_graph)              , intent(out)   :: chosen
 
+    class(binary_relation), pointer :: a
     type(set_graph)      :: dom
     integer, allocatable :: keep(:)
     integer, pointer     :: fibre(:)
     integer              :: i, n, m, size_of_dom
 
-    dom         = view % domain()
+    call require_adjacency(adjacency, a, dom)
     size_of_dom = sets % size_of(dom)
 
     allocate(keep(size_of_dom))
     n = 0
     do i = 1, size_of_dom
        m = sets % member_of(dom, i)
-       fibre => view % predecessors_view(m)
+       fibre => a % preimage_view(m)
        if (size(fibre) == 0) then
           n = n + 1
           keep(n) = m
@@ -112,27 +114,28 @@ contains
   ! The members that point at nothing, likewise.
   !===================================================================!
 
-  subroutine sinks(view, sets, labels, inclusions, chosen)
+  subroutine sinks(adjacency, sets, labels, inclusions, chosen)
 
-    type(directed_adjacency_view), intent(in)    :: view
+    class(relation), target      , intent(in)    :: adjacency
     type(set_map)                , intent(inout) :: sets
     type(label_map)              , intent(inout) :: labels
     type(inclusion_map)          , intent(inout) :: inclusions
     type(set_graph)              , intent(out)   :: chosen
 
+    class(binary_relation), pointer :: a
     type(set_graph)      :: dom
     integer, allocatable :: keep(:)
     integer, pointer     :: fibre(:)
     integer              :: i, n, m, size_of_dom
 
-    dom         = view % domain()
+    call require_adjacency(adjacency, a, dom)
     size_of_dom = sets % size_of(dom)
 
     allocate(keep(size_of_dom))
     n = 0
     do i = 1, size_of_dom
        m = sets % member_of(dom, i)
-       fibre => view % successors_view(m)
+       fibre => a % image_view(m)
        if (size(fibre) == 0) then
           n = n + 1
           keep(n) = m
@@ -150,13 +153,14 @@ contains
   ! stamped by local index.
   !===================================================================!
 
-  logical function reachable(view, sets, from, to)
+  logical function reachable(adjacency, sets, from, to)
 
-    type(directed_adjacency_view), intent(in) :: view
+    class(relation), target      , intent(in) :: adjacency
     type(set_map)                , intent(in) :: sets
     integer                      , intent(in) :: from
     integer                      , intent(in) :: to
 
+    class(binary_relation), pointer :: a
     type(set_graph)      :: dom
     logical, allocatable :: visited(:)
     integer, allocatable :: queue(:)
@@ -165,7 +169,7 @@ contains
 
     reachable = .false.
 
-    dom = view % domain()
+    call require_adjacency(adjacency, a, dom)
     if (.not. (sets % has_in(dom, from) .and. sets % has_in(dom, to))) return
 
     if (from == to) then
@@ -185,7 +189,7 @@ contains
     do while (head <= tail)
        v = queue(head)
        head = head + 1
-       fibre => view % successors_view(v)
+       fibre => a % image_view(v)
        do j = 1, size(fibre)
           s = fibre(j)
           if (s == to) then
@@ -210,25 +214,26 @@ contains
   ! the walk is done, and the walk refuses.
   !===================================================================!
 
-  subroutine topological_order(view, sets, order)
+  subroutine topological_order(adjacency, sets, order)
 
-    type(directed_adjacency_view), intent(in)  :: view
+    class(relation), target      , intent(in)  :: adjacency
     type(set_map)                , intent(in)  :: sets
     integer, allocatable         , intent(out) :: order(:)
 
+    class(binary_relation), pointer :: a
     type(set_graph)      :: dom
     integer, allocatable :: indegree(:)
     logical, allocatable :: placed(:)
     integer, pointer     :: fibre(:)
     integer              :: n, i, j, round, pick
 
-    dom = view % domain()
+    call require_adjacency(adjacency, a, dom)
     n   = sets % size_of(dom)
 
     allocate(indegree(n), placed(n), order(n))
     placed = .false.
     do i = 1, n
-       fibre => view % predecessors_view(sets % member_of(dom, i))
+       fibre => a % preimage_view(sets % member_of(dom, i))
        indegree(i) = size(fibre)
     end do
 
@@ -247,7 +252,7 @@ contains
        placed(pick) = .true.
        order(round) = sets % member_of(dom, pick)
 
-       fibre => view % successors_view(sets % member_of(dom, pick))
+       fibre => a % image_view(sets % member_of(dom, pick))
        do j = 1, size(fibre)
           i = sets % index_in(dom, fibre(j))
           indegree(i) = indegree(i) - 1
@@ -255,6 +260,38 @@ contains
     end do
 
   end subroutine topological_order
+
+  !===================================================================!
+  ! The gate every algorithm passes: the adjacency must be a binary
+  ! relation over one domain (source and target the same set).
+  ! Either violation stops the program, because a walk over two
+  ! domains has no single member set to enumerate.
+  !===================================================================!
+
+  subroutine require_adjacency(adjacency, a, dom)
+
+    class(relation), target        , intent(in)  :: adjacency
+    class(binary_relation), pointer, intent(out) :: a
+    type(set_graph)                , intent(out) :: dom
+
+    type(set_graph) :: s, t
+
+    select type (adjacency)
+    class is (binary_relation)
+       a => adjacency
+    class default
+       error stop 'graph_algorithms: the adjacency is a binary relation'
+    end select
+
+    s = a % source()
+    t = a % target()
+    if (.not. s % same_as(t)) then
+       error stop 'graph_algorithms: the adjacency runs over one domain'
+    end if
+
+    dom = s
+
+  end subroutine require_adjacency
 
   !===================================================================!
   ! CARVE. The same atomic declaration class_graph states in full: a

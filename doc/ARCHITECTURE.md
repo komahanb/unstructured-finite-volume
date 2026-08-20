@@ -41,6 +41,12 @@ Indentation is `extends`; brackets name the file.
         ├── csr_relation                       [graph_binary_relation]
         └── transposed_view                    [graph_binary_relation]
 
+    group_by_key                               [graph_binary_relation]
+        the one grouping kernel (counting sort): the fibration of a
+        stored relation over one slot. CSR builds, incidence lists,
+        transpose_padded, and combine_triples are its callers; no
+        other count/prefix/scatter exists.
+
     directed_graph  D = (V, E, tail, head)     [graph_directed_view]
     └── directed_stored_graph                  [class_graph]
 
@@ -56,6 +62,8 @@ Indentation is `extends`; brackets name the file.
     │   └── broadcast   (copy, share)
     ├── discretization_operator                [graph_discretization]
     │   ├── stencil_operator  space: matrix as weighted edges   [class_graph_stencil]
+    │   │       constructed from triples or from a dense array;
+    │   │       exports combine_triples (one entry per pair)
     │   └── step_operator     time:  a0 q + a1 qold + a2 qolder + hs S(q)   [class_graph_step]
     ├── linearization_operator  J v at a frozen state           [graph_discretization]
     │   ├── difference_linearization           [class_graph_linearization]
@@ -172,6 +180,19 @@ the adjoint is the transpose of the composed matrix - no reversed
 step kernels exist. The contract suite holds the agreement law:
 applying the operator and applying its compiled stencil give the
 same numbers, boundary constants and adjoint included.
+
+## The known dual representation (by design, not by accident)
+
+The directed view D = (V, E, tail, head) has two implementations:
+`class_graph`'s `directed_stored_graph` (stored arrays, the
+workhorse every operation executes over) and `graph_profile`'s
+relation-backed views (the constitution's target reading, AGENTS.md
+section 16). This is the migration seam AGENTS.md phases 9-10 name,
+not duplicated mathematics to delete casually: consolidating it
+means moving every hot loop onto relation fibres and passing the
+performance acceptance in AGENTS.md section 66. Until that is
+undertaken deliberately, both stand, and new code takes
+`directed_stored_graph`.
 
 ## Documentation rule
 

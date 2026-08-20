@@ -491,15 +491,14 @@ contains
     !----------------------------------------------------------------!
 
     lambda = [1.0_dp]
-    call clock % march_adjoint(equil, lone, lambda, 2, action=equil, &
-         & trajectory=trajectory)
+    call clock % march_adjoint(equil, lone, lambda, 2, trajectory)
     call report(near(lambda(1), 1.0_dp / 9.0_dp, 1.0e-12_dp), &
          & "a terminal seed crosses two edges as (1/3)^2 = 1/9", nfail)
 
     lambda = [1.0_dp]
     seeds  = 1.0_dp
-    call clock % march_adjoint(equil, lone, lambda, 2, action=equil, &
-         & trajectory=trajectory, seeds=seeds)
+    call clock % march_adjoint(equil, lone, lambda, 2, trajectory, &
+         & seeds=seeds)
     call report(near(lambda(1), 13.0_dp / 9.0_dp, 1.0e-12_dp), &
          & "per-instant seeds accumulate to 13/9", nfail)
 
@@ -521,8 +520,7 @@ contains
     q = [1.0_dp]
     call clock % march(lin, lone, q, 2, trajectory=trajectory)
     lambda = [1.0_dp]
-    call clock % march_adjoint(lin, lone, lambda, 2, action=lin, &
-         & trajectory=trajectory)
+    call clock % march_adjoint(lin, lone, lambda, 2, trajectory)
     call report(near(lambda(1), 0.25_dp, 1.0e-7_dp), &
          & "on the difference road a terminal seed crosses two edges as (1/2)^2", &
          & nfail)

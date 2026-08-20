@@ -69,6 +69,8 @@ module operation_stencil
      procedure :: apply        => stencil_apply
      procedure :: dependencies => stencil_dependencies
      procedure :: transpose     => stencil_transpose
+     procedure :: max_degree     => stencil_max_degree
+     procedure :: partial_action => stencil_partial_action
 
   end type stencil
 
@@ -253,21 +255,13 @@ contains
     class(field), allocatable, intent(inout) :: output
 
     type(stored_field)   :: out
-    real(dp), allocatable :: q(:), y(:), w(:)
-    integer :: nv, e
-
-    nv = input_graph % num_vertices()
+    real(dp), allocatable :: q(:), y(:)
 
     call this % constants % real_vector(y)
 
     if (present(input_data)) then
        call input_data(1) % real_vector(q)
-       call this % weights % real_vector(w)
-       do e = 1, this % pattern % num_edges()
-          y(this % pattern % edge_head(e)) = &
-               & y(this % pattern % edge_head(e)) &
-               & + w(e) * q(this % pattern % edge_tail(e))
-       end do
+       call accumulate_edges(this, q, y)
     end if
 
     out = stored_field(this % label, input_graph % vertex_set(), input_graph % num_vertices())
@@ -277,6 +271,83 @@ contains
     allocate(output, source=out)
 
   end subroutine stencil_apply
+
+  !===================================================================!
+  ! The one edge walk, shared by apply and the tangent: each edge
+  ! carries its weight times the tail's value onto the head.
+  !===================================================================!
+
+  subroutine accumulate_edges(this, q, y)
+
+    class(stencil), intent(in)    :: this
+    real(dp)      , intent(in)    :: q(:)
+    real(dp)      , intent(inout) :: y(:)
+
+    real(dp), allocatable :: w(:)
+    integer :: e
+
+    call this % weights % real_vector(w)
+    do e = 1, this % pattern % num_edges()
+       y(this % pattern % edge_head(e)) = &
+            & y(this % pattern % edge_head(e)) &
+            & + w(e) * q(this % pattern % edge_tail(e))
+    end do
+
+  end subroutine accumulate_edges
+
+  !===================================================================!
+  ! A stencil is linear, so it is its own tangent: the first partial
+  ! action in its one input slot is the edge walk on the direction,
+  ! without the constants. An order past one or a slot other than
+  ! one stops the program, because a linear map in one slot has no
+  ! other partial.
+  !===================================================================!
+
+  pure function stencil_max_degree(this) result(degree)
+
+    class(stencil), intent(in) :: this
+    integer :: degree
+
+    associate (u1 => this); end associate
+
+    degree = 1
+
+  end function stencil_max_degree
+
+  subroutine stencil_partial_action(this, input_graph, input_data, slots, &
+       & directions, output)
+
+    class(stencil), intent(in)               :: this
+    class(directed_graph), intent(in)        :: input_graph
+    class(field), intent(in)                 :: input_data(:)
+    integer, intent(in)                      :: slots(:)
+    class(field), intent(in)                 :: directions(:)
+    class(field), allocatable, intent(inout) :: output
+
+    type(stored_field)   :: out
+    real(dp), allocatable :: v(:), y(:)
+
+    associate (u1 => input_data); end associate
+
+    if (size(slots) /= 1) then
+       error stop 'stencil: the requested order is within max_degree'
+    end if
+    if (slots(1) /= 1) then
+       error stop 'stencil: the partial action is taken in the one input slot'
+    end if
+
+    call directions(1) % real_vector(v)
+    allocate(y(this % pattern % num_vertices()))
+    y = 0.0_dp
+    call accumulate_edges(this, v, y)
+
+    out = stored_field(this % label, input_graph % vertex_set(), input_graph % num_vertices())
+    call out % set_real_vector(y)
+
+    if (allocated(output)) deallocate(output)
+    allocate(output, source=out)
+
+  end subroutine stencil_partial_action
 
   !===================================================================!
   ! The contract's answer: the pattern IS a graph, handed out whole.

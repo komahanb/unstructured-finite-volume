@@ -36,7 +36,7 @@ program test_graph_marching
   use operation_newton  , only : newton
   use operation_gmres   , only : gmres
   use mandelbrot_law_fixture, only : mandelbrot_law
-  use vdp_fixture, only : vdp_law, vdp_tangent_law, vdp_adjoint_law
+  use vdp_fixture, only : vdp_law, vdp_tangent_law
 
   implicit none
 
@@ -315,7 +315,8 @@ contains
 
     type(marcher) :: clock
     type(stored_directed_graph) :: trio
-    type(stencil) :: forward_action, transposed
+    type(stencil) :: forward_action
+    real(dp), allocatable :: trajectory(:,:)
     real(dp) :: q(3), lambda(3), before, after
     integer , parameter :: rows(6) = [1, 1, 2, 2, 3, 3]
     integer , parameter :: cols(6) = [1, 2, 2, 3, 3, 1]
@@ -325,10 +326,9 @@ contains
 
     trio = stored_directed_graph(3, tails=[integer ::], heads=[integer ::])
 
-    ! An unsymmetric statement and its transpose: rows and columns
-    ! swapped, the stencil's own adjoint.
+    ! An unsymmetric statement; the reverse walk derives its
+    ! transpose from the recorded trajectory.
     forward_action = stencil(rows, cols, w, zeros)
-    transposed     = stencil(cols, rows, w, zeros)
 
     clock % rule = 1
     clock % step = 0.05_dp
@@ -338,11 +338,11 @@ contains
 
     ! The pairing at the far end: <lambda_N, q_N> needs q marched
     ! all the way forward first.
-    call clock % march(forward_action, trio, q, 12)
+    call clock % march(forward_action, trio, q, 12, trajectory=trajectory)
     before = sum(lambda * q)
 
-    ! Now lambda walks home under the transpose.
-    call clock % march_adjoint(transposed, trio, lambda, 12)
+    ! Now lambda walks home under the derived transpose.
+    call clock % march_adjoint(forward_action, trio, lambda, 12, trajectory)
 
     ! And meets the initial state.
     q = [1.0_dp, -2.0_dp, 3.0_dp]
@@ -356,8 +356,9 @@ contains
   !===================================================================!
   ! VERDICT SIX. The paper's witness: on Van der Pol, the tangent
   ! marched forward as an augmented statement and the adjoint walked
-  ! home under the transposed linearization are constructed from the
-  ! same chain - so the gradient they each report is one number, and
+  ! home under the linearization derived from the law itself are
+  ! constructed from the same chain - so the gradient they each
+  ! report is one number, and
   ! the pairing <lambda, dq> holds across the whole walk. This is
   ! the consistency the complex step used to be hired for, standing
   ! in the suite at no cost.
@@ -371,42 +372,36 @@ contains
     type(stored_directed_graph) :: cell
     type(vdp_law)         :: law
     type(vdp_tangent_law) :: tangent
-    type(vdp_adjoint_law) :: transposed
     real(dp), allocatable :: trajectory(:,:)
     real(dp) :: aug(4), lambda(2), grad_tangent(2), q(2)
     real(dp), parameter :: h = 0.01_dp
     integer , parameter :: nsteps = 100
-    integer :: n, i
+    integer :: i
 
     cell = stored_directed_graph(1, tails=[integer ::], heads=[integer ::])
     clock % rule = 1
     clock % step = h
 
-    ! The trajectory, stored: the reverse walk reads it back.
-    allocate(trajectory(2, 0:nsteps))
+    ! The trajectory, recorded by the march: the reverse walk reads
+    ! it back.
     q = [2.0_dp, 0.0_dp]
-    trajectory(:, 0) = q
-    do n = 1, nsteps
-       call clock % march(law, cell, q, 1)
-       trajectory(:, n) = q
-    end do
+    call clock % march(law, cell, q, nsteps, trajectory=trajectory)
 
     ! The tangent road: one augmented march per seed direction; the
     ! objective is u at the end, so the gradient entry is du_N.
     do i = 1, 2
        aug = 0.0_dp
-       aug(1:2) = trajectory(:, 0)
+       aug(1:2) = trajectory(:, 1)
        aug(2 + i) = 1.0_dp
        call clock % march(tangent, cell, aug, nsteps)
        grad_tangent(i) = aug(3)
     end do
 
-    ! The adjoint road: one reverse walk, seeded by the objective.
+    ! The adjoint road: one reverse walk, seeded by the objective,
+    ! the transposed linearization derived from the law at every
+    ! recorded state.
     lambda = [1.0_dp, 0.0_dp]
-    do n = nsteps, 1, -1
-       transposed % at = trajectory(:, n - 1)
-       call clock % march_adjoint(transposed, cell, lambda, 1)
-    end do
+    call clock % march_adjoint(law, cell, lambda, nsteps, trajectory)
 
     call report(all(abs(lambda - grad_tangent) < 1.0d-12 &
          & * (1.0_dp + abs(grad_tangent))), &

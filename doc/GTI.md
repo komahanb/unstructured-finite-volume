@@ -98,19 +98,20 @@ The integrator. Rules: `MARCH_FORWARD` (explicit), `MARCH_BACKWARD`
 - `march(action, on, q, nsteps [, steps] [, trajectory])` integrates
   forward; `steps(:)` gives one step per edge, `trajectory` records
   the state at every instant.
-- `march_adjoint(transposed, on, lambda, nsteps [, steps] [, action]
-  [, trajectory] [, seeds])` runs the chain in reverse. Explicit
-  rule: the caller's transposed statement is applied edge by edge.
-  Implicit rules: backward substitution; at each edge
+- `march_adjoint(action, on, lambda, nsteps, trajectory [, steps]
+  [, seeds])` runs the chain in reverse over the recorded
+  trajectory; the adjoint of either rule is derived from the primal,
+  never supplied. Explicit rule: lambda <- lambda - h_e S'(q_e)^T
+  lambda edge by edge, the tangent at the recorded state compiled to
+  a `stencil` and transposed. Implicit rules: backward substitution;
+  at each edge
 
       J_e^T lambda_e = seed_e,      J_e = tangent_of(scheme),
 
-  the tangent of the step equation taken at the recorded state,
-  compiled to a `stencil`, transposed, and solved by `dense_direct`;
-  the couplings to earlier instants are the scheme's constant
-  coefficients a1 and a2. Requires `action` and
-  `trajectory`. `seeds(:, k)` is added when instant k is reached; on
-  return `lambda` is the sensitivity at the first instant.
+  compiled, transposed, and solved by `dense_direct`; the couplings
+  to earlier instants are the scheme's constant coefficients a1 and
+  a2. `seeds(:, k)` is added when instant k is reached; on return
+  `lambda` is the sensitivity at the first instant.
 - `march_directional(action, on, nsteps, trajectory, order,
   sensitivities [, steps] [, parameters] [, paths])` computes
   forward directional derivatives of every order up to `order`. At

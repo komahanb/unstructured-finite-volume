@@ -22,14 +22,14 @@
 ! scheme's set_bdf, and configure_edge is the one place a scheme
 ! is set up for an edge. The action returns minus the velocity.
 !
-! march_adjoint runs the chain in reverse. Under MARCH_FORWARD it
-! applies the caller's transposed statement edge by edge. Under
-! the implicit rules it is backward substitution: at each edge the
-! tangent of the step equation, tangent_of(scheme) at the recorded
-! state, is compiled to a stencil, transposed, and solved by the
-! dense direct minimizer; the couplings to earlier instants are the
-! scheme's constant coefficients a1 and a2. This requires the
-! action and the forward trajectory as arguments.
+! march_adjoint runs the chain in reverse over the recorded
+! trajectory; the adjoint of either rule is derived from the primal,
+! never supplied. Under MARCH_FORWARD the tangent of the action at
+! each recorded state is compiled to a stencil and transposed. Under
+! the implicit rules it is backward substitution: the tangent of the
+! step equation, tangent_of(scheme), is compiled, transposed, and
+! solved by the dense direct minimizer; the couplings to earlier
+! instants are the scheme's constant coefficients a1 and a2.
 !
 ! march_directional computes forward directional derivatives of
 ! any order along the recorded trajectory. march_adaptive chooses
@@ -285,53 +285,82 @@ contains
   end subroutine recorded_edge
 
   !===================================================================!
-  ! Reverse traversal. Under MARCH_FORWARD the caller's transposed
-  ! statement is applied edge by edge in reverse order. Under the
-  ! implicit rules the reverse traversal must linearize the solves
-  ! actually taken, so it needs the action and the forward
-  ! trajectory; calling without them stops the program, because an
-  ! explicit reverse pass over an implicit forward march would
-  ! return sensitivities of a different scheme.
+  ! Reverse traversal over the recorded trajectory. The adjoint of
+  ! either rule is derived from the primal: at each edge the tangent
+  ! of the statement the forward step took is compiled to a stencil
+  ! and transposed. Under MARCH_FORWARD the reverse step is
+  !
+  !      lambda <- lambda - h_e S'(q_e)^T lambda,
+  !
+  ! edge by edge in reverse order; under the implicit rules it is
+  ! backward substitution. seeds(:, k), if present, is added when
+  ! instant k is reached. The trajectory must hold one state per
+  ! instant and seeds one entry per instant; both are checked and
+  ! stop the program, because a misaligned array would pair states
+  ! with the wrong instants.
   !===================================================================!
 
-  subroutine march_adjoint(this, transposed, on, lambda, nsteps, steps, &
-       & action, trajectory, seeds)
+  subroutine march_adjoint(this, action, on, lambda, nsteps, trajectory, &
+       & steps, seeds)
 
     class(marcher), intent(inout)      :: this
-    class(operation), intent(in) :: transposed
-    class(directed_graph), intent(in)           :: on
+    class(operation), intent(in)       :: action
+    class(directed_graph), intent(in)  :: on
     real(dp), intent(inout)            :: lambda(:)
     integer, intent(in)                :: nsteps
+    real(dp), intent(in)               :: trajectory(:,:)
     real(dp), intent(in), optional     :: steps(:)
-    class(operation), intent(in), optional :: action
-    real(dp), intent(in), optional     :: trajectory(:,:)
     real(dp), intent(in), optional     :: seeds(:,:)
 
     type(stored_directed_graph) :: chain
+    type(linearization) :: tangent
+    type(stencil) :: compiled, adjoint
     real(dp), allocatable :: s(:)
-    integer :: e
+    integer :: e, n
 
     call require_valid_steps(steps, nsteps)
 
     call this % instants(nsteps, chain)
 
-    if (this % rule == MARCH_FORWARD) then
+    n = size(lambda)
 
-       do e = chain % num_edges(), 1, -1
-          call read_statement(transposed, on, lambda, s)
-          lambda = lambda - edge_step(this, steps, e) * s
-       end do
+    if (size(trajectory, 1) /= n .or. &
+         & size(trajectory, 2) /= chain % num_vertices()) then
+       error stop 'march_adjoint: the trajectory carries one state per instant'
+    end if
+
+    if (present(seeds)) then
+       if (size(seeds, 1) /= n .or. &
+            & size(seeds, 2) /= chain % num_vertices()) then
+          error stop 'march_adjoint: the seeds carry one entry per instant'
+       end if
+    end if
+
+    if (this % rule /= MARCH_FORWARD) then
+       call substitute_backward(this, action, on, lambda, chain, steps, &
+            & trajectory, seeds)
        return
-
     end if
 
-    if (.not. (present(action) .and. present(trajectory))) then
-       error stop 'march_adjoint: the implicit reverse traversal needs the &
-            &action and its forward trajectory'
-    end if
+    ! the explicit step read the state it started from, so its
+    ! tangent is frozen there
+    tangent = tangent_of(action)
 
-    call substitute_backward(this, action, on, lambda, chain, steps, &
-         & trajectory, seeds)
+    do e = chain % num_edges(), 1, -1
+
+       if (e < chain % num_edges() .and. present(seeds)) then
+          lambda = lambda + seeds(:, e + 1)
+       end if
+
+       call tangent % freeze(trajectory(:, e))
+       compiled = stencil(tangent, on, n)
+       adjoint  = compiled % transpose()
+       call read_statement(adjoint, adjoint % pattern, lambda, s)
+       lambda = lambda - edge_step(this, steps, e) * s
+
+    end do
+
+    if (present(seeds)) lambda = lambda + seeds(:, 1)
 
   end subroutine march_adjoint
 
@@ -348,11 +377,6 @@ contains
   ! carried to edge e-1 is -a1 lambda_e plus the -a2 term from the
   ! edge after it. On return, lambda holds the sensitivity at the
   ! first instant.
-  !
-  ! The trajectory must hold one state per instant, and seeds, if
-  ! present, one entry per instant; both are checked and stop the
-  ! program, because a misaligned array would pair states with the
-  ! wrong instants.
   !===================================================================!
 
   subroutine substitute_backward(this, action, on, lambda, chain, steps, &
@@ -376,18 +400,6 @@ contains
     integer :: e, n
 
     n = size(lambda)
-
-    if (size(trajectory, 1) /= n .or. &
-         & size(trajectory, 2) /= chain % num_vertices()) then
-       error stop 'march_adjoint: the trajectory carries one state per instant'
-    end if
-
-    if (present(seeds)) then
-       if (size(seeds, 1) /= n .or. &
-            & size(seeds, 2) /= chain % num_vertices()) then
-          error stop 'march_adjoint: the seeds carry one entry per instant'
-       end if
-    end if
 
     statement = bdf(1, action, this % step)
     direct % singular_tolerance = this % singular_tolerance

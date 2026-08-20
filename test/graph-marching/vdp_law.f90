@@ -1,9 +1,9 @@
 !=====================================================================!
-! Van der Pol, three ways, all from one graph: the law, its tangent
-! as an AUGMENTED law marched forward on the same chain, and its
-! transposed linearization walked in reverse. The paper's witness,
-! ported: agreement between the roads is by construction, not by
-! adjustment.
+! Van der Pol, two ways, all from one graph: the law, carrying its
+! Jacobian once as partial_action, and its tangent as an AUGMENTED
+! law marched forward on the same chain as an independent witness.
+! The reverse walk derives the transposed linearization from the
+! law itself, so agreement between the roads is by construction.
 !
 !      du/dt = v                     J = | 0            1          |
 !      dv/dt = mu (1-u^2) v - u         | -2 mu u v - 1  mu (1-u^2) |
@@ -24,14 +24,16 @@ module vdp_fixture
   implicit none
 
   private
-  public :: vdp_law, vdp_tangent_law, vdp_adjoint_law
+  public :: vdp_law, vdp_tangent_law
 
   type, extends(operation) :: vdp_law
      real(dp) :: mu = 1.0_dp
    contains
-     procedure :: name   => law_name
-     procedure :: domain => law_domain
-     procedure :: apply  => law_apply
+     procedure :: name           => law_name
+     procedure :: domain         => law_domain
+     procedure :: apply          => law_apply
+     procedure :: max_degree     => law_max_degree
+     procedure :: partial_action => law_partial_action
   end type vdp_law
 
   ! The augmented statement: (q, dq) marched together; the tangent
@@ -43,17 +45,6 @@ module vdp_fixture
      procedure :: domain => law_domain2
      procedure :: apply  => tangent_apply
   end type vdp_tangent_law
-
-  ! The transposed linearization at a stored state, for the reverse
-  ! walk; the test moves `at` along the stored trajectory.
-  type, extends(operation) :: vdp_adjoint_law
-     real(dp) :: mu = 1.0_dp
-     real(dp) :: at(2) = 0.0_dp
-   contains
-     procedure :: name   => adjoint_name
-     procedure :: domain => law_domain3
-     procedure :: apply  => adjoint_apply
-  end type vdp_adjoint_law
 
 contains
 
@@ -70,13 +61,6 @@ contains
     associate (u1 => this); end associate
     name = 'van der pol, augmented'
   end function tangent_name
-
-  pure function adjoint_name(this) result(name)
-    class(vdp_adjoint_law), intent(in) :: this
-    character(len=:), allocatable :: name
-    associate (u1 => this); end associate
-    name = 'van der pol, transposed'
-  end function adjoint_name
 
   subroutine law_domain(this, input_graph, domain, num_entries)
     class(vdp_law), intent(in) :: this
@@ -97,16 +81,6 @@ contains
     domain   = input_graph % all_vertices()
     num_entries = input_graph % num_vertices()
   end subroutine law_domain2
-
-  subroutine law_domain3(this, input_graph, domain, num_entries)
-    class(vdp_adjoint_law), intent(in) :: this
-    class(directed_graph), intent(in) :: input_graph
-    type(graph), intent(out) :: domain
-    integer        , intent(out) :: num_entries
-    associate (u1 => this); end associate
-    domain   = input_graph % all_vertices()
-    num_entries = input_graph % num_vertices()
-  end subroutine law_domain3
 
   subroutine law_apply(this, input_graph, input_data, output)
 
@@ -159,29 +133,42 @@ contains
 
   end subroutine tangent_apply
 
-  subroutine adjoint_apply(this, input_graph, input_data, output)
+  pure function law_max_degree(this) result(degree)
+    class(vdp_law), intent(in) :: this
+    integer :: degree
+    associate (u1 => this); end associate
+    degree = 1
+  end function law_max_degree
 
-    class(vdp_adjoint_law), intent(in)             :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+  ! Minus J dq at the state in slot 1: the velocity jacobian, written
+  ! once; tangent_of reads it and the reverse walk transposes it.
+  subroutine law_partial_action(this, input_graph, input_data, slots, &
+       & directions, output)
+
+    class(vdp_law), intent(in)               :: this
+    class(directed_graph), intent(in)        :: input_graph
+    class(field), intent(in)                 :: input_data(:)
+    integer, intent(in)                      :: slots(:)
+    class(field), intent(in)                 :: directions(:)
     class(field), allocatable, intent(inout) :: output
 
-    real(dp), allocatable :: lam(:)
+    real(dp), allocatable :: q(:), d(:)
     real(dp) :: s(2), u, v
 
-    s = 0.0_dp
-    if (present(input_data)) then
-       call input_data(1) % real_vector(lam)
-       u = this % at(1)
-       v = this % at(2)
-       ! Minus J^T lambda: the transpose of the velocity jacobian.
-       s(1) = -((-2.0_dp * this % mu * u * v - 1.0_dp) * lam(2))
-       s(2) = -(lam(1) + this % mu * (1.0_dp - u * u) * lam(2))
-    end if
+    if (size(slots) /= 1) error stop 'van der pol: the law is exact to first order'
+    if (slots(1) /= 1)    error stop 'van der pol: the law takes one input slot'
+
+    call input_data(1) % real_vector(q)
+    call directions(1) % real_vector(d)
+    u = q(1)
+    v = q(2)
+    s(1) = -d(2)
+    s(2) = -((-2.0_dp * this % mu * u * v - 1.0_dp) * d(1) &
+         &   + this % mu * (1.0_dp - u * u) * d(2))
 
     call pack_answer(input_graph, s, output)
 
-  end subroutine adjoint_apply
+  end subroutine law_partial_action
 
   subroutine pack_answer(input_graph, s, output)
 

@@ -20,8 +20,6 @@
 !      statepath     a caller-supplied path on the state slot,
 !                    which march_directional computes itself
 !      orderzero     march_directional with order 0
-!      blindreverse  an implicit-rule march_adjoint without the
-!                    action and trajectory it needs
 !      unfrozen      an exact tangent applied before freeze
 !      eagerclock    march_adaptive with duration 0
 !      flatcalculus  a partial action requested from an operation
@@ -65,7 +63,7 @@ program refusal
   type(stored_field) :: inputs(2), direction
   class(field), allocatable :: output
   real(dp), allocatable :: sensitivities(:,:,:), taken(:)
-  real(dp) :: trajectory(1,3), lambda(1), q(1)
+  real(dp) :: trajectory(1,3), q(1)
   logical  :: completed
 
   character(len=32) :: which
@@ -138,11 +136,6 @@ program refusal
 
      call clock % march_directional(equil, lone, 2, trajectory, 0, &
           & sensitivities)
-
-  case ('blindreverse')
-
-     lambda = [1.0_dp]
-     call clock % march_adjoint(equil, lone, lambda, 2)
 
   case ('unfrozen')
 

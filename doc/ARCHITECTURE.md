@@ -72,7 +72,8 @@ Indentation is `extends`; brackets name the file.
     │   ├── stencil  space: matrix as weighted edges         [operation_stencil]
     │   │       constructed from triples, from a dense array, or
     │   │       compiled from an operation on the standard basis;
-    │   │       transpose; exports combine_triples (one entry per pair)
+    │   │       transpose; its own tangent (a linear map, max_degree
+    │   │       1); exports combine_triples (one entry per pair)
     │   └── scheme   time: a0 q + a1 qold + a2 qolder + hs S(q)  [operation_step]
     │           max_degree and partial_action are the action's, with
     │           a0 v added to the first derivative in the state: the
@@ -107,11 +108,12 @@ Indentation is `extends`; brackets name the file.
         partitions of the degree, from partial actions alone
 
     marcher  time as a chain graph             [operation_marching]
-        march, march_adjoint (backward substitution through
-        tangent_of(scheme), compiled to a stencil and transposed),
-        march_directional (any order, one tangent_of(scheme) per
-        edge), march_adaptive; configure_edge sets up the scheme
-        for an edge, once for all four
+        march, march_adjoint (the adjoint of either rule derived
+        from the primal: tangent_of at each recorded state, compiled
+        to a stencil and transposed; implicit rules by backward
+        substitution), march_directional (any order, one
+        tangent_of(scheme) per edge), march_adaptive; configure_edge
+        sets up the scheme for an edge, once for all four
     step_policy -> halving_policy              [operation_step_policy]
 
     form -> polynomial_form, harmonic_form     [field_forms]

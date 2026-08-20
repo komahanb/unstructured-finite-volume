@@ -330,10 +330,10 @@ contains
     integer        , intent(out) :: num_entries
 
     if (this % landing == SIDE_EDGE) then
-       domain   = input_graph % all_edges()
+       domain   = input_graph % edge_set()
        num_entries = input_graph % num_edges()
     else
-       domain   = input_graph % all_vertices()
+       domain   = input_graph % vertex_set()
        num_entries = input_graph % num_vertices()
     end if
 

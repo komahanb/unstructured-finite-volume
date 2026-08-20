@@ -164,7 +164,7 @@ contains
 
     associate (u1 => this); end associate
 
-    domain   = input_graph % all_vertices()
+    domain   = input_graph % vertex_set()
     num_entries = input_graph % num_vertices()
 
   end subroutine fit_domain

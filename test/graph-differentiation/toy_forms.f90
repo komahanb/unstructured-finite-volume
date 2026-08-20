@@ -169,7 +169,7 @@ contains
     type(graph)      , intent(out) :: domain
     integer              , intent(out) :: num_entries
 
-    domain   = input_graph % all_vertices()
+    domain   = input_graph % vertex_set()
     num_entries = input_graph % num_vertices()
 
   end subroutine vertex_domain

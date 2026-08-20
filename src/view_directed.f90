@@ -111,7 +111,7 @@ module view_directed
   !===================================================================!
   ! GRAPH. The reader of structure.
   !
-  ! Thirty-six symbols, all queries: identity, counts, incidence,
+  ! Thirty-four symbols, all queries: identity, counts, incidence,
   ! named sets, and neighbourhoods. A graph answers; it
   ! never acts. Algorithms act on it from the levels above, which is
   ! what keeps this contract small.
@@ -127,12 +127,12 @@ module view_directed
   ! it originates outside the code, in the mesh file that named its
   ! boundary groups.
   !
-  ! A NAMED SET IS A SET GRAPH. The full sets answer the graph's own
-  ! carrier - one stable identity, asked twice, answering once; the
-  ! carved ones answer a FRESH identity and bind what it means into
-  ! the caller's maps,
+  ! A NAMED SET IS A SET GRAPH. The whole sets are the graph's own
+  ! carriers - one stable identity, asked twice, answering once; the
+  ! subsets declared on demand answer a FRESH identity and bind what
+  ! it means into the caller's maps,
   !
-  !      all_vertices           tagged_edges('wall')
+  !      vertex_set             tagged_edges('wall')
   !      the vertex carrier     a new set { 11 14 19 } c--> edges
   !
   ! and membership, size, order and standing are questions for the
@@ -196,20 +196,14 @@ module view_directed
      procedure(directed_edge_end_interface)     , deferred :: edge_head
      procedure(directed_edge_has_head_interface), deferred :: edge_has_head
 
-     ! The named sets, split by whether the answer already exists.
-     !
-     !   all_*        IS the carrier - stable identity, no binding
-     !   the rest     CARVED on demand - a fresh set each call, so
-     !                each call binds its extension, its label and
-     !                its declared embedding into the caller's maps
-     !
-     ! The split is not cosmetic: the first kind may be asked twice
-     ! and answer one set, the second kind answers two.
-     procedure(member_set_interface)   , deferred :: all_vertices
+     ! The named subsets, declared on demand: a fresh set each call,
+     ! so each call binds its extension, its label and its declared
+     ! embedding into the caller's maps - asked twice, they answer
+     ! two sets. The whole vertex and edge sets are the carriers
+     ! above, vertex_set and edge_set: stable identities, no binding.
      procedure(directed_carved_set_interface), deferred :: interior_vertices
      procedure(directed_carved_set_interface), deferred :: boundary_vertices
      procedure(directed_tagged_set_interface), deferred :: tagged_vertices
-     procedure(member_set_interface)   , deferred :: all_edges
      procedure(directed_carved_set_interface), deferred :: interior_edges
      procedure(directed_carved_set_interface), deferred :: boundary_edges
      procedure(directed_tagged_set_interface), deferred :: tagged_edges

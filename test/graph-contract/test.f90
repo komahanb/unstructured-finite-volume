@@ -64,7 +64,7 @@ contains
     class(directed_graph), intent(in)               :: input_graph
     type(graph), intent(out) :: domain
     integer        , intent(out) :: num_entries
-    domain   = input_graph % all_edges()
+    domain   = input_graph % edge_set()
     num_entries = input_graph % num_edges()
   end subroutine nonlinear_sample_domain
 
@@ -732,10 +732,10 @@ contains
     g = diamond()
     call describe(sets, g)
 
-    vs = g % all_vertices()
+    vs = g % vertex_set()
     call members_of(sets, vs, indices)
     call report(size(indices) .eq. 4 .and. all(indices .eq. [1, 2, 3, 4]), &
-         & "all_vertices is every cell", nfail)
+         & "vertex_set is every cell", nfail)
 
     call g % boundary_vertices(sets, labels, inclusions, vs)
     call members_of(sets, vs, indices)
@@ -747,9 +747,9 @@ contains
     call report(size(indices) .eq. 3 .and. all(indices .eq. [1, 2, 3]), &
          & "the other three are interior", nfail)
 
-    es = g % all_edges()
+    es = g % edge_set()
     call members_of(sets, es, indices)
-    call report(size(indices) .eq. 5, "all_edges is every face", nfail)
+    call report(size(indices) .eq. 5, "edge_set is every face", nfail)
 
     call g % boundary_edges(sets, labels, inclusions, es)
     call members_of(sets, es, indices)

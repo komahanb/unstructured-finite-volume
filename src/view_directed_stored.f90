@@ -164,7 +164,6 @@ module view_directed_stored
      ! The named vertex sets.
      !----------------------------------------------------------------!
 
-     procedure :: all_vertices
      procedure :: interior_vertices
      procedure :: boundary_vertices
      procedure :: tagged_vertices
@@ -173,7 +172,6 @@ module view_directed_stored
      ! The named edge sets.
      !----------------------------------------------------------------!
 
-     procedure :: all_edges
      procedure :: interior_edges
      procedure :: boundary_edges
      procedure :: tagged_edges
@@ -598,17 +596,9 @@ contains
   end function edge_has_head
 
   !===================================================================!
-  ! The named vertex sets. A boundary vertex is one that touches a
+  ! The named vertex subsets. A boundary vertex is one that touches a
   ! boundary edge; an interior vertex is one that does not.
   !===================================================================!
-
-  type(graph) function all_vertices(this) result(members)
-
-    class(stored_directed_graph), intent(in) :: this
-
-    members = this % vset
-
-  end function all_vertices
 
   !===================================================================!
   ! The vertices that touch no boundary edge.
@@ -763,16 +753,8 @@ contains
   end function touches_boundary
 
   !===================================================================!
-  ! The named edge sets. A boundary edge is one with no head.
+  ! The named edge subsets. A boundary edge is one with no head.
   !===================================================================!
-
-  type(graph) function all_edges(this) result(members)
-
-    class(stored_directed_graph), intent(in) :: this
-
-    members = this % eset
-
-  end function all_edges
 
   !===================================================================!
   ! The edges with a head: both ends real.

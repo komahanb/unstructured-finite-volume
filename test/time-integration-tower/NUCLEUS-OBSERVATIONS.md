@@ -602,7 +602,7 @@ symptom / fact:       *** THE SEAM-A2 OBSERVATION. RED FIRST. ***
                       Two distinct defects in one operator:
 
                         step_domain  answered
-                                     input_graph % all_vertices(...)
+                                     input_graph % vertex_set(...)
                                      - a 5-member carrier for a
                                      2-member unknown
 
@@ -700,10 +700,10 @@ symptom / fact:       DISCRETIZATION PRESERVES THE ACTION'S DOMAIN -
 
                       REGRESSION, verified rather than argued. Every
                       action on the ordinary-graph road answers
-                      input_graph % all_vertices(domain) - checked
+                      input_graph % vertex_set(domain) - checked
                       directly in mandelbrot_law, vdp_law,
                       vdp_tangent_law and vdp_adjoint_law - and the
-                      test pins that all_vertices(H) and
+                      test pins that vertex_set(H) and
                       H % vertex_set() are the same carrier. So
                       delegation returns exactly what asking the graph
                       returned, and test/graph-marching passes
@@ -1171,8 +1171,8 @@ symptom / fact:       THE MARCHER PRESERVES THE ACTION'S DOMAIN -
                       through.
 
                       REGRESSION: every action on the ordinary-graph
-                      road answers input_graph % all_vertices, and
-                      Level 6 pins that all_vertices and vertex_set
+                      road answers input_graph % vertex_set, and
+                      Level 6 pins that vertex_set and vertex_set
                       are the same carrier. graph-marching was run
                       IMMEDIATELY after this change and passed
                       unchanged, including its two-numbers-wide cell.

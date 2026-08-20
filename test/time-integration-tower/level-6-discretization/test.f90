@@ -169,10 +169,10 @@ contains
     integer        :: n_d
 
     hv = ht % vertex_set()
-    d   = ht % all_vertices()
+    d   = ht % vertex_set()
     n_d = ht % num_vertices()
     call report(d % same_as(hv), &
-         & "all_vertices(H_t) and H_t % vertex_set() are the same " // &
+         & "vertex_set(H_t) and H_t % vertex_set() are the same " // &
          & "carrier - so delegating a domain question changes no " // &
          & "graph-based caller's answer", nfail)
 
@@ -245,7 +245,7 @@ contains
   ! - not whatever carrier the compatibility host happens to have.
   !
   ! On the production reviewed at Gate A, step_domain answered
-  ! input_graph % all_vertices(...) and this assertion FAILED,
+  ! input_graph % vertex_set(...) and this assertion FAILED,
   ! reporting a five-member carrier for a two-member unknown. That
   ! RED is recorded verbatim in NUCLEUS-OBSERVATIONS.md TI-8.
   !

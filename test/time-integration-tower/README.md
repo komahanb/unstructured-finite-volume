@@ -415,7 +415,7 @@ is a statement about the same unknown. The domain question is delegated
 to the action; the component width is read from the input field; the
 answer lands on the action's domain. For every graph-based action —
 which is all of them on the ordinary-graph road, since each answers
-`input_graph % all_vertices(...)` — this returns exactly what asking the
+`input_graph % vertex_set(...)` — this returns exactly what asking the
 graph returned, and `test/graph-marching` passes unchanged.
 
 ### Structure and scheme, finally joined

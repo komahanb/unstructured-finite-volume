@@ -91,7 +91,7 @@ contains
     type(graph), intent(out) :: domain
     integer        , intent(out) :: num_entries
     associate (u1 => this); end associate
-    domain   = input_graph % all_vertices()
+    domain   = input_graph % vertex_set()
     num_entries = input_graph % num_vertices()
   end subroutine law_domain
 
@@ -101,7 +101,7 @@ contains
     type(graph), intent(out) :: domain
     integer        , intent(out) :: num_entries
     associate (u1 => this); end associate
-    domain   = input_graph % all_vertices()
+    domain   = input_graph % vertex_set()
     num_entries = input_graph % num_vertices()
   end subroutine law_domain2
 

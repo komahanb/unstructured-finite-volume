@@ -24,7 +24,7 @@
 ! and the established habit - visible in the marching fixtures, in
 ! operation_fitting, in reduction and broadcast - is to answer
 !
-!      call input_graph % all_vertices(domain)
+!      call input_graph % vertex_set(domain)
 !
 ! and let the host decide what the mathematics is about. This
 ! operation does not. Its domain is a thing it was constructed

@@ -11,7 +11,7 @@ include ../../../Makefile.in
 #=====================================================================#
 
 F90FLAGS += -I../../../lib/ -I../../../src/
-LDFLAGS += -L../../../lib/ ../../../lib/libufvm.a -llapack
+LDFLAGS += -L../../../lib/ ../../../lib/libufvm.a
 
 all: run
 

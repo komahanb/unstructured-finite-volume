@@ -72,7 +72,7 @@ module graph_relation_algebra
   use graph_relation       , only : relation, stored_relation
   use graph_set_map        , only : set_map
   use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use graph_binary_relation, only : csr_relation
+  use graph_binary_relation, only : group_by_key, csr_relation
 
   implicit none
 
@@ -235,16 +235,43 @@ contains
     call r_ab % tuples(tab)
     call r_bc % tuples(tbc)
 
-    allocate(pairs(2, size(tab, 2) * size(tbc, 2)))
-    n = 0
-    do i = 1, size(tab, 2)
-       do j = 1, size(tbc, 2)
-          if (tab(2, i) == tbc(1, j)) then
-             n = n + 1
-             pairs(:, n) = [tab(1, i), tbc(2, j)]
-          end if
-       end do
-    end do
+    ! The sparse product: group the right factor's tuples by the
+    ! local index of their first slot once, then walk each left
+    ! tuple's matching fiber - linear in the tuples plus the
+    ! output, never the all-pairs scan. Emission order is
+    ! unchanged: left tuples in order, matches in the right
+    ! factor's arrival order.
+    sparse_product : block
+
+      integer, allocatable :: keys(:), identity(:), ptr(:), grouped(:)
+      integer :: nmid, k, m
+
+      nmid = sets % size_of(db)
+
+      allocate(keys(size(tbc, 2)), identity(size(tbc, 2)))
+      do j = 1, size(tbc, 2)
+         keys(j)     = sets % index_in(db, tbc(1, j))
+         identity(j) = j
+      end do
+      call group_by_key(nmid, keys, identity, ptr, grouped)
+
+      n = 0
+      do i = 1, size(tab, 2)
+         m = sets % index_in(db, tab(2, i))
+         n = n + ptr(m + 1) - ptr(m)
+      end do
+      allocate(pairs(2, n))
+
+      n = 0
+      do i = 1, size(tab, 2)
+         m = sets % index_in(db, tab(2, i))
+         do k = ptr(m), ptr(m + 1) - 1
+            n = n + 1
+            pairs(:, n) = [tab(1, i), tbc(2, grouped(k))]
+         end do
+      end do
+
+    end block sparse_product
 
     da = r_ab % domain(1)
     dc = r_bc % domain(2)

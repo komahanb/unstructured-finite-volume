@@ -1,7 +1,7 @@
 include ../../../Makefile.in
 
 F90FLAGS += -I../../../lib/ -I../../../src/
-LDFLAGS += -L../../../lib/ ../../../lib/libufvm.a -llapack
+LDFLAGS += -L../../../lib/ ../../../lib/libufvm.a
 
 FIXTURES = visualization_assert.o visualization_carriers_fixture.o \
            visualization_relations_fixture.o visualization_algebra_fixture.o

@@ -37,7 +37,7 @@ program refusal
   use class_graph_field   , only : field
   use class_graph_step    , only : step_operator
   use class_graph_chain_rule, only : chain_rule, argument_path
-  use class_graph_exact_linearization, only : exact_linearization
+  use class_graph_linearization, only : exact_linearization
   use class_graph_marcher , only : marcher, MARCH_BACKWARD
   use class_graph_step_policy, only : halving_policy
   use toy_differentiable_forms, only : quartic_form, equilibrium_law, &

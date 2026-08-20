@@ -50,7 +50,7 @@ module class_graph_marcher
   use graph_minimization , only : minimizer
   use graph_discretization     , only : linearization_operator, &
        & differentiable_operation
-  use class_graph_exact_linearization, only : tangent_of
+  use class_graph_linearization, only : tangent_of
   use class_graph_chain_rule, only : chain_rule, argument_path, &
        & path_derivative
   use class_graph_step_policy, only : step_policy

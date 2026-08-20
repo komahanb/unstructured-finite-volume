@@ -58,8 +58,7 @@
   │         ├── class_graph_step.f90      time-discretization stencil (BDF
   motif)
   │         ├── graph_forms.f90           basis = support of functions
-  │         │     ├── class_polynomial_form.f90   {1, x, y, z}
-  │         │     └── class_harmonic_form.f90     {1, sin, cos}
+  │         │     (polynomial_form {1, x, y, z}; harmonic_form {1, sin, cos})
   │         └── fields/supports/reductions/walks/differential operators
   │
   LEVEL 2  MINIMIZATION "how answers are found"  (first level with a goal)

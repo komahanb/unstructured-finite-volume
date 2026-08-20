@@ -35,7 +35,7 @@ contracted against the matching direction field, returned on the
 statement's domain. `max_degree()` declares how deep this calculus
 goes. No derivative tensor is stored.
 
-### class_graph_linearization, class_graph_exact_linearization
+### class_graph_linearization
 
 Two members of the linearization family. `difference_linearization`
 computes J v by finite differences of two residuals.
@@ -185,7 +185,7 @@ restoring the prior row exactly.
 | motifs, motif builders, variable-step rows | `class_graph_step` (set_bdf)               |
 | time graph, forward driver                 | `class_graph_marcher` (march)              |
 | local newton driver                        | `class_graph_newton` + `tangent_of`        |
-| tangent driver                             | `class_graph_exact_linearization`          |
+| tangent driver                             | `class_graph_linearization`          |
 | adjoint, reverse, seed drivers             | `march_adjoint` (backward substitution)    |
 | degree-2 and degree-r directional drivers  | `march_directional`                        |
 | adaptive growth driver, controller         | `march_adaptive` + `class_graph_step_policy`|

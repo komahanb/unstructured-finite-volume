@@ -31,11 +31,8 @@ class_advection.o \
 class_graph_stencil.o \
 class_graph_step.o \
 class_graph_linearization.o \
-class_graph_exact_linearization.o \
 class_graph_chain_rule.o \
 graph_forms.o \
-class_polynomial_form.o \
-class_harmonic_form.o \
 class_graph_reduction.o \
 class_graph_walk.o \
 class_graph_partitioner.o \
@@ -49,7 +46,6 @@ class_graph_jacobi.o \
 class_graph_dense_direct.o \
 class_graph_conjugate_gradient.o \
 graph_fitting.o \
-class_form_pruner.o \
 class_fitted_balance.o \
 class_diffusion_statement.o \
 class_graph_gauss_seidel.o \
@@ -62,7 +58,6 @@ module_solve_mode.o \
 module_verbosity.o \
 class_string.o \
 class_file.o \
-module_mesh_utils.o \
 graph_mesh_geometry.o \
 interface_mesh_loader.o \
 class_gmsh_loader.o \

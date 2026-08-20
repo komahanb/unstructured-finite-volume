@@ -104,6 +104,58 @@ module graph_forms
 
   end interface
 
+!=====================================================================!
+! The polynomial form: the constant and the three coordinates,
+! reckoned about the point of interest - the Taylor shape at degree
+! one, whose span is every linear field.
+!
+!=====================================================================!
+
+  public :: polynomial_form
+
+  type, extends(form) :: polynomial_form
+
+   contains
+
+     procedure :: size_of => polynomial_size
+     procedure :: values  => polynomial_values
+     procedure :: slopes  => polynomial_slopes
+
+  end type polynomial_form
+
+  interface polynomial_form
+     module procedure create_polynomial
+  end interface polynomial_form
+
+!=====================================================================!
+! The harmonic form: one wave and the constant,
+!
+!      { 1,  sin(k . (x - at)),  cos(k . (x - at)) }
+!
+! whose span holds every wave of that wavenumber, whatever its
+! phase. A fit over this form differentiates such waves exactly,
+! where a polynomial of any finite degree only approximates them.
+!
+!=====================================================================!
+
+  public :: harmonic_form
+
+  type, extends(form) :: harmonic_form
+
+     real(dp) :: wavenumber(3) = [1.0_dp, 0.0_dp, 0.0_dp]
+
+   contains
+
+     procedure :: size_of => harmonic_size
+     procedure :: values  => harmonic_values
+     procedure :: slopes  => harmonic_slopes
+
+  end type harmonic_form
+
+  interface harmonic_form
+     module procedure create_harmonic
+  end interface harmonic_form
+
 contains
 
   !===================================================================!
@@ -170,5 +222,111 @@ contains
     this % active = listed_set_representation(kept)
 
   end subroutine restrict
+
+
+  ! Born with every table entry standing: the members are the four.
+  type(polynomial_form) function create_polynomial() result(this)
+
+    call this % declare_basis(4)
+
+  end function create_polynomial
+
+  pure integer function polynomial_size(this)
+
+    class(polynomial_form), intent(in) :: this
+
+    associate (u1 => this); end associate
+
+    polynomial_size = 4
+
+  end function polynomial_size
+
+  pure subroutine polynomial_values(this, x, at, phi)
+
+    class(polynomial_form), intent(in) :: this
+    real(dp), intent(in)  :: x(3), at(3)
+    real(dp), intent(out) :: phi(:)
+
+    associate (u1 => this); end associate
+
+    phi(1)   = 1.0_dp
+    phi(2:4) = x - at
+
+  end subroutine polynomial_values
+
+  pure subroutine polynomial_slopes(this, x, at, direction, dphi)
+
+    class(polynomial_form), intent(in) :: this
+    real(dp), intent(in)  :: x(3), at(3), direction(3)
+    real(dp), intent(out) :: dphi(:)
+
+    associate (u1 => this, u2 => x, u3 => at); end associate
+
+    dphi(1)   = 0.0_dp
+    dphi(2:4) = direction
+
+  end subroutine polynomial_slopes
+
+
+
+  ! Born with every table entry standing: the members are the three.
+  type(harmonic_form) function create_harmonic(wavenumber) result(this)
+
+    real(dp), intent(in) :: wavenumber(3)
+
+    integer :: m
+
+    this % wavenumber = wavenumber
+    call this % declare_basis(3)
+
+  end function create_harmonic
+
+  pure integer function harmonic_size(this)
+
+    class(harmonic_form), intent(in) :: this
+
+    associate (u1 => this); end associate
+
+    harmonic_size = 3
+
+  end function harmonic_size
+
+  pure subroutine harmonic_values(this, x, at, phi)
+
+    class(harmonic_form), intent(in) :: this
+    real(dp), intent(in)  :: x(3), at(3)
+    real(dp), intent(out) :: phi(:)
+
+    real(dp) :: phase
+
+    phase = dot_product(this % wavenumber, x - at)
+
+    phi(1) = 1.0_dp
+    phi(2) = sin(phase)
+    phi(3) = cos(phase)
+
+  end subroutine harmonic_values
+
+  !===================================================================!
+  ! d/dn of a wave: the chain rule brings down k . n.
+  !===================================================================!
+
+  pure subroutine harmonic_slopes(this, x, at, direction, dphi)
+
+    class(harmonic_form), intent(in) :: this
+    real(dp), intent(in)  :: x(3), at(3), direction(3)
+    real(dp), intent(out) :: dphi(:)
+
+    real(dp) :: phase, kn
+
+    phase = dot_product(this % wavenumber, x - at)
+    kn    = dot_product(this % wavenumber, direction)
+
+    dphi(1) = 0.0_dp
+    dphi(2) =  kn * cos(phase)
+    dphi(3) = -kn * sin(phase)
+
+  end subroutine harmonic_slopes
+
 
 end module graph_forms

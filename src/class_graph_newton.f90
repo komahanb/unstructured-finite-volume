@@ -29,7 +29,7 @@ module class_graph_newton
   use iso_fortran_env           , only : dp => REAL64
   use graph_minimization        , only : minimizer
   use graph_discretization            , only : linearization_operator
-  use class_graph_exact_linearization, only : tangent_of
+  use class_graph_linearization, only : tangent_of
 
   implicit none
 

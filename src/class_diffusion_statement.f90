@@ -37,7 +37,7 @@ module class_diffusion_statement
   use class_fitted_balance , only : fitted_balance_stencil
   use class_conduction     , only : conduction
   use class_robin_condition, only : robin_condition
-  use class_polynomial_form, only : polynomial_form
+  use graph_forms       , only : polynomial_form
 
   implicit none
 

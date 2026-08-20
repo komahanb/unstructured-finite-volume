@@ -65,7 +65,7 @@ Indentation is `extends`; brackets name the file.
     │   └── step_operator     time:  a0 q + a1 qold + a2 qolder + hs S(q)   [class_graph_step]
     ├── linearization_operator  J v at a frozen state           [graph_discretization]
     │   ├── difference_linearization           [class_graph_linearization]
-    │   └── exact_linearization  + tangent_of chooser           [class_graph_exact_linearization]
+    │   └── exact_linearization  + tangent_of chooser           [class_graph_linearization]
     ├── differentiable_operation  exact partial actions to max_degree   [graph_discretization]
     ├── minimizer                              [graph_minimization]
     │   ├── jacobi, gauss_seidel, conjugate_gradient, gmres, multigrid
@@ -97,7 +97,7 @@ Indentation is `extends`; brackets name the file.
         march_directional (any order), march_adaptive
     step_policy -> halving_policy              [class_graph_step_policy]
 
-    form -> polynomial_form, harmonic_form     [graph_forms and clients]
+    form -> polynomial_form, harmonic_form     [graph_forms]
     form_optimizer -> pruner, fit              [graph_fitting]
 
 ## Composition, stated as arithmetic

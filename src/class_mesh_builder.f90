@@ -22,7 +22,7 @@ module class_mesh_builder
   use class_string         , only : string
   use interface_mesh_loader, only : mesh_loader
   use class_gmsh_loader    , only : gmsh_loader
-  use module_mesh_utils    , only : elem_type_dimension
+  use graph_mesh_geometry  , only : elem_type_dimension
   use graph_binary_relation, only : transpose_padded
   use graph_mesh_geometry  , only : derive_faces, derive_face_cells, &
        & cell_centers_of, face_centers_areas_of, &

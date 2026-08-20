@@ -35,9 +35,9 @@ program test_graph_robustness
   use class_graph_stencil, only : stencil_operator
   use class_fitted_balance, only : fitted_balance_stencil
   use graph_fitting        , only : fit
-  use class_polynomial_form, only : polynomial_form
-  use class_harmonic_form  , only : harmonic_form
-  use class_form_pruner    , only : pruner
+  use graph_forms       , only : polynomial_form
+  use graph_forms   , only : harmonic_form
+  use graph_fitting , only : pruner
   use class_graph_gmres  , only : gmres
 
   implicit none

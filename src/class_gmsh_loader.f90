@@ -28,7 +28,7 @@ module class_gmsh_loader
   use interface_mesh_loader , only : mesh_loader
   use class_file            , only : file
   use class_string          , only : string
-  use module_mesh_utils     , only : find, elem_type_dimension, &
+  use graph_mesh_geometry   , only : find, elem_type_dimension, &
        & elem_type_vertex_count
   use module_verbosity      , only : verbosity
 

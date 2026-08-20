@@ -45,9 +45,9 @@ program partitioned_pde_level_5
   use map_inclusion  , only : inclusion_map, declared_subobject
   use map_label      , only : label_map
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
-  use view_directed_stored      , only : directed_stored_graph
-  use field_stored, only : field
+  use field_calculus, only : field
+  use view_directed_stored      , only : stored_directed_graph
+  use field_stored, only : stored_field
   use transform_partitioner, only : partitioner, PARTITION_LINEAR
   use transform_assembler  , only : assembler
 
@@ -55,7 +55,7 @@ program partitioned_pde_level_5
   implicit none
   type(partition_relation) :: rel
 
-  type(directed_stored_graph)        :: g
+  type(stored_directed_graph)        :: g
   type(assembler)           :: a
   class(directed_graph), allocatable :: g1, g2
   integer                   :: nfail
@@ -67,7 +67,7 @@ program partitioned_pde_level_5
   write(*,'(1x,a)') "partitioned pde tower . level 5 . fields"
   write(*,'(1x,a)') "============================================="
 
-  g = directed_stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  g = stored_directed_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
   call sets % bind(g % vertex_set(), &
        & counted_set_representation(g % num_vertices()))
   call sets % bind(g % edge_set(), &
@@ -120,12 +120,12 @@ contains
 
     real(dp), parameter :: PROBE(NE) = &
          & [10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp]
-    type(field)           :: z
+    type(stored_field)           :: z
     real(dp), allocatable :: total(:), got(:)
     type(label_map)     :: labels
     type(inclusion_map)     :: inclusions
 
-    z = field('edge probe', g % edge_set(), g % num_edges())
+    z = stored_field('edge probe', g % edge_set(), g % num_edges())
     call z % set_real_vector(PROBE)
 
     allocate(total(NE))
@@ -144,7 +144,7 @@ contains
     deallocate(total)
     allocate(total(NV))
     total = 0.0_dp
-    z = field('vertex probe', g % vertex_set(), g % num_vertices())
+    z = stored_field('vertex probe', g % vertex_set(), g % num_vertices())
     call z % set_real_vector(Q_EXACT)
     call add_round_trip(z, 1, sets, labels, inclusions, total)
     call add_round_trip(z, 2, sets, labels, inclusions, total)
@@ -164,9 +164,9 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(field) :: q
+    type(stored_field) :: q
 
-    q = field('q star', g % vertex_set(), g % num_vertices())
+    q = stored_field('q star', g % vertex_set(), g % num_vertices())
     call q % set_real_vector(Q_EXACT)
 
     call check_one_transport(q, g1, 1, [1,2,3,4], &
@@ -177,14 +177,14 @@ contains
   end subroutine check_vertex_transport
   subroutine check_one_transport(q, part, k, globals, expect, nfail)
 
-    type(field)      , intent(in)    :: q
+    type(stored_field)      , intent(in)    :: q
     class(directed_graph)     , intent(in)    :: part
     integer          , intent(in)    :: k, globals(:)
     real(dp)         , intent(in)    :: expect(:)
     integer          , intent(inout) :: nfail
 
     type(partitioner)               :: p
-    class(graph_field), allocatable :: pd
+    class(field), allocatable :: pd
     type(set_graph)  :: dom
     type(inclusion_map)  :: inclusions
     type(label_map)  :: labels
@@ -207,7 +207,7 @@ contains
     ! must read the relation that part stands in - ONE RELATION PER
     ! PART, which is why r is a value rather than a global.
     select type (part)
-    type is (directed_stored_graph)
+    type is (stored_directed_graph)
        rel = part % whole_relation()
     end select
 
@@ -215,7 +215,7 @@ contains
 
     dom = pd % domain()
     select type (part)
-    type is (directed_stored_graph)
+    type is (stored_directed_graph)
        pvs = part % vertex_set()
        call report(dom % same_as(pvs) .and. sets % size_of(dom) .eq. 4, &
             & "q" // tag // " lives on G" // tag // "'s whole vertex " // &
@@ -226,7 +226,7 @@ contains
     call pd % get_real_vector(v)
     ok = .true.
     select type (part)
-    type is (directed_stored_graph)
+    type is (stored_directed_graph)
        do i = 1, size(globals)
           ok = ok .and. (rel % global_vertex_index(i) .eq. globals(i))
           ok = ok .and. (abs(v(i) - expect(i)) < 1.0d-13)
@@ -247,12 +247,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(field)           :: q
+    type(stored_field)           :: q
     real(dp)              :: from1(NV), from2(NV), total(NV)
     type(label_map)     :: labels
     type(inclusion_map)     :: inclusions
 
-    q = field('q star', g % vertex_set(), g % num_vertices())
+    q = stored_field('q star', g % vertex_set(), g % num_vertices())
     call q % set_real_vector(Q_EXACT)
 
     from1 = 0.0_dp
@@ -290,10 +290,10 @@ contains
 
     type(set_graph)               :: vs
     type(set_graph)                :: s
-    type(field)                     :: d
+    type(stored_field)                     :: d
     type(partitioner)               :: p
     class(directed_graph), allocatable       :: part
-    class(graph_field), allocatable :: pd, fd
+    class(field), allocatable :: pd, fd
     type(set_graph)  :: dom
     type(label_map)     :: labels
     type(inclusion_map)     :: inclusions
@@ -307,7 +307,7 @@ contains
     call s % declare()      ! non-global order
     call sets       % bind(s, listed_set_representation([6, 3, 4]))
     call inclusions % include_in(s, vs)
-    d = field('subset probe', s, 3)
+    d = stored_field('subset probe', s, 3)
     call d % set_real_vector([600.0_dp, 300.0_dp, 400.0_dp])
 
     call report(abs(600.0_dp - value_at(sets, d, s, 6)) < 1.0d-13 .and. &
@@ -325,7 +325,7 @@ contains
        ! Each part receives only the members it can see.
        dom = pd % domain()
        select type (pp => part)
-       type is (directed_stored_graph)
+       type is (stored_directed_graph)
           ok = .true.
           do i = 1, pp % num_vertices()
              if (sets % has_in(dom, i)) then
@@ -374,7 +374,7 @@ contains
   ! Partition d to part k, assemble it home, add it into total.
   subroutine add_round_trip(d, k, sets, labels, inclusions, total)
 
-    type(field)        , intent(in)    :: d
+    type(stored_field)        , intent(in)    :: d
     integer            , intent(in)    :: k
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
@@ -383,7 +383,7 @@ contains
 
     type(partitioner)               :: p
     class(directed_graph), allocatable       :: part
-    class(graph_field), allocatable :: pd, fd
+    class(field), allocatable :: pd, fd
     real(dp), allocatable           :: v(:)
 
     p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
@@ -401,7 +401,7 @@ contains
   real(dp) function value_at(sets, d, dom, member)
 
     type(set_map)  , intent(in) :: sets
-    type(field)    , intent(in) :: d
+    type(stored_field)    , intent(in) :: d
     type(set_graph), intent(in) :: dom
     integer        , intent(in) :: member
 

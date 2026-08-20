@@ -80,7 +80,7 @@ module valued_renderer_fixture
   use map_label      , only : label_map
   use relation_finitary                , only : relation
   use field_calculus          , only : GRAPH_FIELD_REAL
-  use field_stored             , only : field
+  use field_stored             , only : stored_field
   use visualization_carriers_fixture, only : label_for
   use structural_renderer_fixture   , only : picture, sparsity_picture
   use structural_renderer_fixture   , only : glyph_at
@@ -119,7 +119,7 @@ contains
 
   logical function coefficients_fit(w, occurrences)
 
-    class(field)     , intent(in) :: w
+    class(stored_field)     , intent(in) :: w
     type(set_graph), intent(in) :: occurrences
 
     type(set_graph) :: on
@@ -198,7 +198,7 @@ contains
 
   real(dp) function value_at(w, occurrences, member, sets)
 
-    class(field)     , intent(in) :: w
+    class(stored_field)     , intent(in) :: w
     type(set_graph), intent(in) :: occurrences
     integer          , intent(in) :: member
     type(set_map)  , intent(in) :: sets
@@ -263,7 +263,7 @@ contains
     class(relation)  , intent(in) :: d
     class(relation)  , intent(in) :: tail, head
     type(set_graph), intent(in) :: occurrences
-    class(field)     , intent(in) :: w
+    class(stored_field)     , intent(in) :: w
     type(set_map)  , intent(in) :: sets
     type(label_map), intent(in) :: labels
 

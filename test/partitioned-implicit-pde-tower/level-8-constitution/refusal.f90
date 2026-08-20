@@ -18,20 +18,20 @@ program partitioned_pde_level_8_refusal
 
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : NV, Q_EXACT
-  use field_calculus, only : graph_field
-  use view_directed_stored      , only : directed_stored_graph
-  use field_stored, only : field
+  use field_calculus, only : field
+  use view_directed_stored      , only : stored_directed_graph
+  use field_stored, only : stored_field
   use operation_gmres, only : gmres
   use partitioned_shifted_laplacian_fixture, only : &
        & partitioned_shifted_laplacian
 
   implicit none
 
-  type(directed_stored_graph)                  :: g, g_alt
+  type(stored_directed_graph)                  :: g, g_alt
   type(partitioned_shifted_laplacian) :: composite
   type(gmres)                         :: solver
-  type(field)                         :: q
-  class(graph_field), allocatable     :: out
+  type(stored_field)                         :: q
+  class(field), allocatable     :: out
   character(len=32)                   :: which
 
   if (command_argument_count() .lt. 1) then
@@ -39,15 +39,15 @@ program partitioned_pde_level_8_refusal
   end if
   call get_command_argument(1, which)
 
-  g     = directed_stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
-  g_alt = directed_stored_graph(NV, tails=[1,1,1,1,1], heads=[2,3,4,5,6])
+  g     = stored_directed_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  g_alt = stored_directed_graph(NV, tails=[1,1,1,1,1], heads=[2,3,4,5,6])
 
   composite = partitioned_shifted_laplacian(g)
 
   select case (trim(which))
 
   case ('foreign-host-apply')
-     q = field('state on the star', g_alt % vertex_set(), g_alt % num_vertices())
+     q = stored_field('state on the star', g_alt % vertex_set(), g_alt % num_vertices())
      call q % set_real_vector(Q_EXACT)
      call composite % apply(g_alt, [q], out)
      write(*,*) 'a chain decomposition acted on the star'

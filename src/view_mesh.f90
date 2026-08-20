@@ -41,8 +41,8 @@
 module view_mesh
 
   use iso_fortran_env    , only : dp => REAL64, error_unit
-  use field_stored  , only : field
-  use view_directed_stored        , only : directed_stored_graph
+  use field_stored  , only : stored_field
+  use view_directed_stored        , only : stored_directed_graph
   use graph_fractal      , only : set_graph => graph
 
   implicit none
@@ -54,15 +54,15 @@ module view_mesh
   ! One mesh: the inherited structure, plus seven measurements.
   !===================================================================!
 
-  type, extends(directed_stored_graph) :: mesh
+  type, extends(stored_directed_graph) :: mesh
 
-     type(field) :: volumes
-     type(field) :: cell_centers
-     type(field) :: areas
-     type(field) :: deltas
-     type(field) :: normals
-     type(field) :: face_centers_
-     type(field) :: weights
+     type(stored_field) :: volumes
+     type(stored_field) :: cell_centers
+     type(stored_field) :: areas
+     type(stored_field) :: deltas
+     type(stored_field) :: normals
+     type(stored_field) :: face_centers_
+     type(stored_field) :: weights
 
    contains
 
@@ -112,7 +112,7 @@ contains
     integer :: ne
 
     ! The structure first, through the parent's own constructor.
-    this % directed_stored_graph = directed_stored_graph(nv, tails=tails, heads=heads, &
+    this % stored_directed_graph = stored_directed_graph(nv, tails=tails, heads=heads, &
          & vtags=vtags, etags=etags, number=number)
 
     ne = this % num_edges()
@@ -131,13 +131,13 @@ contains
     cells = this % vertex_set()
     faces = this % edge_set()
 
-    this % volumes       = field('cell_volume' , cells, nv, unit_name='m3')
-    this % cell_centers  = field('cell_center' , cells, nv, ncomp=3, unit_name='m')
-    this % areas         = field('face_area'   , faces, ne, unit_name='m2')
-    this % deltas        = field('face_delta'  , faces, ne, unit_name='m')
-    this % normals       = field('face_normal' , faces, ne, ncomp=3, unit_name='-')
-    this % face_centers_ = field('face_center' , faces, ne, ncomp=3, unit_name='m')
-    this % weights       = field('face_weights', faces, ne, unit_name='-')
+    this % volumes       = stored_field('cell_volume' , cells, nv, unit_name='m3')
+    this % cell_centers  = stored_field('cell_center' , cells, nv, ncomp=3, unit_name='m')
+    this % areas         = stored_field('face_area'   , faces, ne, unit_name='m2')
+    this % deltas        = stored_field('face_delta'  , faces, ne, unit_name='m')
+    this % normals       = stored_field('face_normal' , faces, ne, ncomp=3, unit_name='-')
+    this % face_centers_ = stored_field('face_center' , faces, ne, ncomp=3, unit_name='m')
+    this % weights       = stored_field('face_weights', faces, ne, unit_name='-')
 
     call this % volumes       % set_real_vector(volumes)
     call this % cell_centers  % set_real_vector(cell_centers)
@@ -172,7 +172,7 @@ contains
   ! reach back into the mesh.
   !===================================================================!
 
-  type(field) function cell_volume(this)
+  type(stored_field) function cell_volume(this)
 
     class(mesh), intent(in) :: this
 
@@ -180,7 +180,7 @@ contains
 
   end function cell_volume
 
-  type(field) function cell_center(this)
+  type(stored_field) function cell_center(this)
 
     class(mesh), intent(in) :: this
 
@@ -188,7 +188,7 @@ contains
 
   end function cell_center
 
-  type(field) function face_area(this)
+  type(stored_field) function face_area(this)
 
     class(mesh), intent(in) :: this
 
@@ -196,7 +196,7 @@ contains
 
   end function face_area
 
-  type(field) function face_delta(this)
+  type(stored_field) function face_delta(this)
 
     class(mesh), intent(in) :: this
 
@@ -204,7 +204,7 @@ contains
 
   end function face_delta
 
-  type(field) function face_normal(this)
+  type(stored_field) function face_normal(this)
 
     class(mesh), intent(in) :: this
 
@@ -212,7 +212,7 @@ contains
 
   end function face_normal
 
-  type(field) function face_center(this)
+  type(stored_field) function face_center(this)
 
     class(mesh), intent(in) :: this
 
@@ -220,7 +220,7 @@ contains
 
   end function face_center
 
-  type(field) function face_weights(this)
+  type(stored_field) function face_weights(this)
 
     class(mesh), intent(in) :: this
 

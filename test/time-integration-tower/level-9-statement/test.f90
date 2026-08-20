@@ -52,8 +52,8 @@ program time_level_9
   use time_assert           , only : TIME_COORD, BDF2_TRAJECTORY
   use graph_fractal        , only : set_graph => graph
   use map_set        , only : set_map
-  use view_directed_stored           , only : directed_stored_graph
-  use field_stored     , only : field
+  use view_directed_stored           , only : stored_directed_graph
+  use field_stored     , only : stored_field
   use operation_gmres     , only : gmres
   use operation_newton    , only : newton
   use operation_marching   , only : marcher, MARCH_BDF2
@@ -65,10 +65,10 @@ program time_level_9
 
   type(set_graph)      :: q, t, e
   type(set_map)      :: sets
-  type(directed_stored_graph)     :: hcontext
+  type(stored_directed_graph)     :: hcontext
   type(triangular_decay) :: decay
   type(marcher)          :: clock
-  type(field)            :: q_initial, q_final, tcoord
+  type(stored_field)            :: q_initial, q_final, tcoord
   real(dp), allocatable  :: state(:)
   integer                :: nfail
 
@@ -79,7 +79,7 @@ program time_level_9
   write(*,'(1x,a)') "============================================="
 
   call time_carriers(sets, q, t, e)
-  hcontext = directed_stored_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
+  hcontext = stored_directed_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
   decay    = triangular_decay(q, NQ)
   tcoord   = instant_coordinates(t)
 
@@ -101,7 +101,7 @@ program time_level_9
   call q_initial % get_real_vector(state)
   call clock % march(decay, hcontext, state, NSTEPS)
 
-  q_final = field('q(t4)', q, NQ, ncomp=1)
+  q_final = stored_field('q(t4)', q, NQ, ncomp=1)
   call q_final % set_real_vector(state)
 
   call check_the_statement_s_two_ends(nfail)
@@ -151,7 +151,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)    :: chain
+    type(stored_directed_graph)    :: chain
     real(dp), allocatable :: tv(:)
     integer               :: here, i
     logical               :: ok

@@ -645,7 +645,7 @@ cross-tower recurrence: *** THIS IS THE THIRD INDEPENDENT TOWER FOR
                       levels are one client, not ten
 
 graph role:           compatibility conduit. H_t is present because
-                      the graph_operation contract requires a graph,
+                      the operation contract requires a graph,
                       and its topology is never read by this action
 
 comparison:           the reverse review predicted A2 would need a
@@ -711,12 +711,12 @@ symptom / fact:       DISCRETIZATION PRESERVES THE ACTION'S DOMAIN -
                       case, which is the one that exercises ncomp.
 
                       operation_marching is the ONLY consumer of
-                      step_operator in the repository, and it was not
+                      scheme in the repository, and it was not
                       touched.
 
                       WHAT WAS NOT DONE, deliberately:
 
-                        graph_operation root      unchanged
+                        operation root      unchanged
                         graph_grammar             unchanged
                         operation_fitting             unchanged
                         reduction / broadcast     unchanged
@@ -1008,7 +1008,7 @@ symptom / fact:       THE OPERATION HOST IS NOT THE TIME GRAPH, and
                       refuse to lean on it, and the naming was
                       corrected at this level: what Gate B called
                       H_t is H_context, the compatibility conduit
-                      the graph_operation contract requires - never
+                      the operation contract requires - never
                       the clock.
 
 exact caller:         level-8-constitution/test.f90
@@ -1180,7 +1180,7 @@ symptom / fact:       THE MARCHER PRESERVES THE ACTION'S DOMAIN -
                       WHAT WAS NOT DONE:
 
                         the public march signature   unchanged
-                        the graph_operation root     unchanged
+                        the operation root     unchanged
                         the host                     STILL PASSED to
                                                      every action
 
@@ -1642,7 +1642,7 @@ WHAT THIS LEDGER DOES NOT SAY
     that a rectangular or bidirectional linearization is earned
     that a nonuniform h or a supplied relational time graph is
         needed - see TI-18; both are exact specializations here
-    that graph_operation, graph_grammar, operation_fitting,
+    that operation, graph_grammar, operation_fitting,
         graph_calculus or operation_minimization must change - none
         of them did
 

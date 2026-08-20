@@ -94,14 +94,14 @@ module map_inclusion
   ! One declared embedding: which part, which ambient, by value.
   !===================================================================!
 
-  type :: inclusion_row
+  type :: inclusion_pair
      type(token) :: part
      type(token) :: ambient
-  end type inclusion_row
+  end type inclusion_pair
 
   type :: inclusion_map
 
-     type(inclusion_row), allocatable, private :: rows(:)
+     type(inclusion_pair), allocatable, private :: rows(:)
 
    contains
 
@@ -125,7 +125,7 @@ contains
     type(graph)         , intent(in)    :: part
     type(graph)         , intent(in)    :: ambient
 
-    type(inclusion_row), allocatable :: grown(:)
+    type(inclusion_pair), allocatable :: grown(:)
     type(token)                      :: below, above
     integer                          :: n
 

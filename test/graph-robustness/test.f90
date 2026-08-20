@@ -22,17 +22,17 @@
 
 program test_graph_robustness
 
-  use view_directed_stored, only : directed_stored_graph
+  use view_directed_stored, only : stored_directed_graph
   use iso_fortran_env, only : dp => REAL64
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use view_directed , only : GRAPH_SIDE_VERTEX
   use graph_fractal  , only : set_graph => graph
-  use field_stored  , only : field
+  use field_stored  , only : stored_field
   use view_mesh   , only : mesh
-  use operation_differential, only : edge_differential_operator
+  use operation_differential, only : edge_derivative
   use operation_differential, only : differential_operator
-  use operation_stencil, only : stencil_operator
+  use operation_stencil, only : stencil
   use operation_fitted_balance, only : fitted_balance_stencil
   use operation_fitting        , only : fit
   use field_forms       , only : polynomial_form
@@ -155,13 +155,13 @@ contains
     integer, intent(inout) :: nfail
 
     type(fit) :: fitting
-    type(directed_stored_graph) :: pair
-    type(field)   :: positions
-    class(graph_field), allocatable :: answer
+    type(stored_directed_graph) :: pair
+    type(stored_field)   :: positions
+    class(field), allocatable :: answer
     real(dp), allocatable :: w(:)
 
-    pair = directed_stored_graph(2, tails=[integer ::], heads=[integer ::])
-    positions = field('positions', pair % vertex_set(), pair % num_vertices(), ncomp=3)
+    pair = stored_directed_graph(2, tails=[integer ::], heads=[integer ::])
+    positions = stored_field('positions', pair % vertex_set(), pair % num_vertices(), ncomp=3)
     call positions % set_real_vector([0.0_dp, 0.0_dp, 0.0_dp, &
          &                            0.5_dp, 0.0_dp, 0.0_dp])
 
@@ -198,9 +198,9 @@ contains
     type(fit)    :: wave
     type(fit)    :: poly
     type(pruner) :: gardener
-    type(directed_stored_graph) :: trio, pair
-    type(field)   :: positions
-    class(graph_field), allocatable :: answer
+    type(stored_directed_graph) :: trio, pair
+    type(stored_field)   :: positions
+    class(field), allocatable :: answer
     real(dp), allocatable :: w(:)
     real(dp) :: pts(9), sampled(3), got, expected
     integer :: j
@@ -211,8 +211,8 @@ contains
          & 0.4_dp, 0.0_dp, 0.0_dp, &
          & 0.8_dp, 0.0_dp, 0.0_dp]
 
-    trio = directed_stored_graph(3, tails=[integer ::], heads=[integer ::])
-    positions = field('positions', trio % vertex_set(), trio % num_vertices(), ncomp=3)
+    trio = stored_directed_graph(3, tails=[integer ::], heads=[integer ::])
+    positions = stored_field('positions', trio % vertex_set(), trio % num_vertices(), ncomp=3)
     call positions % set_real_vector(pts)
 
     wave = fit(harmonic_form([2.5_dp, 0.0_dp, 0.0_dp]), &
@@ -233,8 +233,8 @@ contains
 
     ! Two collinear points: the pruner strikes what they cannot see,
     ! and the fit still lands the two-point theorem.
-    pair = directed_stored_graph(2, tails=[integer ::], heads=[integer ::])
-    positions = field('positions', pair % vertex_set(), pair % num_vertices(), ncomp=3)
+    pair = stored_directed_graph(2, tails=[integer ::], heads=[integer ::])
+    positions = stored_field('positions', pair % vertex_set(), pair % num_vertices(), ncomp=3)
     call positions % set_real_vector([0.0_dp, 0.0_dp, 0.0_dp, &
          &                            0.5_dp, 0.0_dp, 0.0_dp])
 
@@ -265,9 +265,9 @@ contains
 
     type(mesh) :: m
     type(differential_operator) :: slope
-    type(field) :: state, fd
+    type(stored_field) :: state, fd
     type(set_graph) :: cells
-    class(graph_field), allocatable :: z
+    class(field), allocatable :: z
     real(dp), allocatable :: got(:), deltas(:), q(:)
     real(dp) :: exact_flux(4), worst
     integer :: v, e
@@ -275,7 +275,7 @@ contains
     m = skewed_mesh()
 
     cells = m % vertex_set()
-    state = field('q', cells, m % num_vertices())
+    state = stored_field('q', cells, m % num_vertices())
     q = [exact_at(0.0_dp, 0.0_dp), exact_at(1.0_dp, 0.45_dp), &
          & exact_at(0.15_dp, 1.1_dp), exact_at(1.3_dp, 1.6_dp)]
     call state % set_real_vector(q)
@@ -283,7 +283,7 @@ contains
     fd = m % face_delta()
     call fd % get_real_vector(deltas)
 
-    slope = edge_differential_operator(order=1, spacings=deltas)
+    slope = edge_derivative(order=1, spacings=deltas)
     call slope % apply(m, [state], z)
     call z % get_real_vector(got)
 
@@ -315,12 +315,12 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(stencil_operator) :: op
-    type(field) :: state
+    type(stencil) :: op
+    type(stored_field) :: state
     type(set_graph) :: cells
-    class(graph_field), allocatable :: y
+    class(field), allocatable :: y
     real(dp), allocatable :: got(:), q(:), vb(:), centers(:)
-    type(field) :: fc
+    type(stored_field) :: fc
     integer :: v, e
 
     m = skewed_mesh()
@@ -336,7 +336,7 @@ contains
     end do
 
     block
-      type(field) :: fa
+      type(stored_field) :: fa
       real(dp), allocatable :: farea(:)
       fa = m % face_area()
       call fa % get_real_vector(farea)
@@ -345,7 +345,7 @@ contains
     end block
 
     cells = m % vertex_set()
-    state = field('q', cells, m % num_vertices())
+    state = stored_field('q', cells, m % num_vertices())
     q = [exact_at(0.0_dp, 0.0_dp), exact_at(1.0_dp, 0.45_dp), &
          & exact_at(0.15_dp, 1.1_dp), exact_at(1.3_dp, 1.6_dp)]
     call state % set_real_vector(q)
@@ -369,9 +369,9 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(stencil_operator) :: op
+    type(stencil) :: op
     type(gmres) :: gm
-    type(field) :: fc
+    type(stored_field) :: fc
     real(dp), allocatable :: vb(:), centers(:), g(:), rhs(:), x(:)
     real(dp) :: achieved
     real(dp) :: q_exact(4)
@@ -389,7 +389,7 @@ contains
     end do
 
     block
-      type(field) :: fa
+      type(stored_field) :: fa
       real(dp), allocatable :: farea(:)
       fa = m % face_area()
       call fa % get_real_vector(farea)

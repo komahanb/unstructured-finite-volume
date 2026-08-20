@@ -9,7 +9,7 @@
 !      power8_form      Phi(q, xi) = (q + xi)^8,     max_degree 8
 !      equilibrium_law  S_i(q, xi) = q_i^2 - xi,     max_degree 8;
 !                       every partial of order 3 or higher is zero
-!      linear_law       S(q) = q; implements graph_operation only,
+!      linear_law       S(q) = q; implements operation only,
 !                       so tangent_of must select the difference
 !                       linearization for it
 !
@@ -29,12 +29,12 @@
 module toy_differentiable_forms
 
   use iso_fortran_env     , only : dp => REAL64
-  use operation_action, only : graph_operation
+  use operation_action, only : operation
   use view_directed , only : directed_graph
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use operation_discretization      , only : differentiable_operation
   use graph_fractal       , only : set_graph => graph
-  use field_stored   , only : field
+  use field_stored   , only : stored_field
   use operation_chain_rule, only : argument_path
 
   implicit none
@@ -96,13 +96,13 @@ module toy_differentiable_forms
   end type equilibrium_law
 
   !===================================================================!
-  ! S(q) = q, implementing graph_operation only. Used to check
+  ! S(q) = q, implementing operation only. Used to check
   ! that tangent_of falls back to the difference linearization for
   ! a non-differentiable operation, and as the statement of the
   ! nonuniform implicit march test.
   !===================================================================!
 
-  type, extends(graph_operation) :: linear_law
+  type, extends(operation) :: linear_law
    contains
      procedure :: name   => linear_name
      procedure :: domain => linear_domain
@@ -134,7 +134,7 @@ contains
 
   subroutine read_arguments(input_data, xi_default, q, xi)
 
-    class(graph_field), intent(in)     :: input_data(:)
+    class(field), intent(in)     :: input_data(:)
     real(dp)          , intent(in)     :: xi_default
     real(dp), allocatable, intent(out) :: q(:)
     real(dp)          , intent(out)    :: xi
@@ -161,16 +161,16 @@ contains
 
     class(directed_graph), intent(in) :: input_graph
     real(dp), intent(in) :: values(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), allocatable, intent(inout) :: output
 
     type(set_graph) :: cells
-    type(field)     :: out
+    type(stored_field)     :: out
     integer         :: nentries
 
     cells    = input_graph % vertex_set()
     nentries = input_graph % num_vertices()
 
-    out = field('toy value', cells, nentries, &
+    out = stored_field('toy value', cells, nentries, &
          & ncomp = size(values) / nentries)
     call out % set_real_vector(values)
 
@@ -208,7 +208,7 @@ contains
   subroutine count_seats(slots, directions, a, b, product)
 
     integer           , intent(in)  :: slots(:)
-    class(graph_field), intent(in)  :: directions(:)
+    class(field), intent(in)  :: directions(:)
     integer           , intent(out) :: a, b
     real(dp)          , intent(out) :: product
 
@@ -235,11 +235,11 @@ contains
 
     real(dp)       , intent(in)  :: q, xi
     type(set_graph), intent(in)  :: cells
-    type(field)    , intent(out) :: inputs(2)
+    type(stored_field)    , intent(out) :: inputs(2)
 
-    inputs(1) = field('q', cells, 1, ncomp=1)
+    inputs(1) = stored_field('q', cells, 1, ncomp=1)
     call inputs(1) % set_real_vector([q])
-    inputs(2) = field('xi', cells, 1, ncomp=1)
+    inputs(2) = stored_field('xi', cells, 1, ncomp=1)
     call inputs(2) % set_real_vector([xi])
 
   end subroutine scalar_pair
@@ -265,7 +265,7 @@ contains
 
     do k = 1, size(derivatives)
        path % derivative(k) % occupied  = .true.
-       path % derivative(k) % direction = field('path', cells, 1, ncomp=1)
+       path % derivative(k) % direction = stored_field('path', cells, 1, ncomp=1)
        call path % derivative(k) % direction % &
             & set_real_vector([derivatives(k)])
     end do
@@ -303,8 +303,8 @@ contains
 
     class(quartic_form), intent(in)                 :: this
     class(directed_graph), intent(in)               :: input_graph
-    class(graph_field), intent(in), optional        :: input_data(:)
-    class(graph_field), allocatable, intent(inout)  :: output
+    class(field), intent(in), optional        :: input_data(:)
+    class(field), allocatable, intent(inout)  :: output
 
     real(dp), allocatable :: q(:)
     real(dp) :: xi, phi
@@ -348,10 +348,10 @@ contains
 
     class(quartic_form), intent(in)                :: this
     class(directed_graph), intent(in)              :: input_graph
-    class(graph_field), intent(in)                 :: input_data(:)
+    class(field), intent(in)                 :: input_data(:)
     integer           , intent(in)                 :: slots(:)
-    class(graph_field), intent(in)                 :: directions(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in)                 :: directions(:)
+    class(field), allocatable, intent(inout) :: output
 
     real(dp), allocatable :: q(:)
     real(dp) :: xi, product
@@ -396,8 +396,8 @@ contains
 
     class(power8_form), intent(in)                  :: this
     class(directed_graph), intent(in)               :: input_graph
-    class(graph_field), intent(in), optional        :: input_data(:)
-    class(graph_field), allocatable, intent(inout)  :: output
+    class(field), intent(in), optional        :: input_data(:)
+    class(field), allocatable, intent(inout)  :: output
 
     real(dp), allocatable :: q(:)
     real(dp) :: xi, phi
@@ -417,10 +417,10 @@ contains
 
     class(power8_form), intent(in)                 :: this
     class(directed_graph), intent(in)              :: input_graph
-    class(graph_field), intent(in)                 :: input_data(:)
+    class(field), intent(in)                 :: input_data(:)
     integer           , intent(in)                 :: slots(:)
-    class(graph_field), intent(in)                 :: directions(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in)                 :: directions(:)
+    class(field), allocatable, intent(inout) :: output
 
     real(dp), allocatable :: q(:)
     real(dp) :: xi, product, term
@@ -469,8 +469,8 @@ contains
 
     class(equilibrium_law), intent(in)              :: this
     class(directed_graph), intent(in)               :: input_graph
-    class(graph_field), intent(in), optional        :: input_data(:)
-    class(graph_field), allocatable, intent(inout)  :: output
+    class(field), intent(in), optional        :: input_data(:)
+    class(field), allocatable, intent(inout)  :: output
 
     real(dp), allocatable :: q(:), s(:)
     real(dp) :: xi
@@ -492,10 +492,10 @@ contains
 
     class(equilibrium_law), intent(in)             :: this
     class(directed_graph), intent(in)              :: input_graph
-    class(graph_field), intent(in)                 :: input_data(:)
+    class(field), intent(in)                 :: input_data(:)
     integer           , intent(in)                 :: slots(:)
-    class(graph_field), intent(in)                 :: directions(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in)                 :: directions(:)
+    class(field), allocatable, intent(inout) :: output
 
     real(dp), allocatable :: q(:), s(:), v1(:), v2(:), w(:)
     real(dp) :: xi
@@ -561,8 +561,8 @@ contains
 
     class(linear_law), intent(in)                   :: this
     class(directed_graph), intent(in)               :: input_graph
-    class(graph_field), intent(in), optional        :: input_data(:)
-    class(graph_field), allocatable, intent(inout)  :: output
+    class(field), intent(in), optional        :: input_data(:)
+    class(field), allocatable, intent(inout)  :: output
 
     real(dp), allocatable :: s(:)
 

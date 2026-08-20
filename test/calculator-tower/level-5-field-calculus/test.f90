@@ -29,14 +29,14 @@ program calculator_level_5
        & listed_set_representation
   use map_set        , only : set_map
   use map_inclusion  , only : inclusion_map, declared_subobject
-  use field_calculus, only : graph_field
-  use field_stored, only : field
+  use field_calculus, only : field
+  use field_stored, only : stored_field
 
   implicit none
 
   type(set_graph) :: x
   type(set_graph)  :: k, u, e
-  type(field)       :: qk, qe
+  type(stored_field)       :: qk, qe
   integer           :: nfail
   type(set_map)     :: sets
   type(inclusion_map)     :: inclusions
@@ -116,7 +116,7 @@ contains
     type(set_graph) :: dom
     real(dp), allocatable          :: v(:)
 
-    qk = field('q', k, sets % size_of(k))
+    qk = stored_field('q', k, sets % size_of(k))
     call qk % set_real_vector([4.0_dp, 2.0_dp, 3.0_dp])
 
     dom = qk % domain()
@@ -150,7 +150,7 @@ contains
     call e % declare()
     call sets       % bind(e, listed_set_representation([integer ::]))
     call inclusions % include_in(e, x)
-    qe = field('q', e, sets % size_of(e))
+    qe = stored_field('q', e, sets % size_of(e))
     call qe % set_real_vector([real(dp) ::])
 
     call report(qe % num_entries() .eq. 0, &

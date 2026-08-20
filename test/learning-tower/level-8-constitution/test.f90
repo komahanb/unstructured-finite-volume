@@ -42,7 +42,7 @@ program learning_level_8
   use relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
   use relation_algorithms, only : reachable, topological_order
-  use field_stored, only : field
+  use field_stored, only : stored_field
   use learning_constitution_fixture, only : apply_law, slot_for_port, &
        &                                    located_slot, generated_residual
   use graph_fractal        , only : graph, known_branch, null_branch
@@ -76,7 +76,7 @@ program learning_level_8
   type(graph)             , target :: rcell3(2), relem3(2)
   type(relational_binding)         :: bnd3
   integer                          :: kcell3
-  type(field)                    :: q_k, q_k2
+  type(stored_field)                    :: q_k, q_k2
   integer, allocatable           :: order(:), order2(:)
   real(dp), allocatable          :: obs(:)
   integer                        :: table(3, 6)
@@ -129,7 +129,7 @@ program learning_level_8
   ! The Level-5 observed field, carried forward: [6, 2] on K = {y, x}
   ! in declaration order. U gets NO field - before evaluation the
   ! computed domain owns no numbers, and that stays true.
-  q_k = field('observations', k, sets % size_of(k))
+  q_k = stored_field('observations', k, sets % size_of(k))
   call q_k % set_real_vector([6.0_dp, 2.0_dp])
   call q_k % get_real_vector(obs)
 
@@ -385,7 +385,7 @@ contains
     real(dp)              :: r(1)
     real(dp), allocatable :: obs2(:)
 
-    q_k2 = field('observations again', k, sets % size_of(k))
+    q_k2 = stored_field('observations again', k, sets % size_of(k))
     call q_k2 % set_real_vector([8.0_dp, 4.0_dp])
     call q_k2 % get_real_vector(obs2)
 

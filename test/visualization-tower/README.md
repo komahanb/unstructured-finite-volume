@@ -57,7 +57,7 @@ is no longer asked to take its structure from the execution context.
 | **L4** | structural interpretation | test-local `structural_renderer_fixture` | any binary relation | text | chain line + sparsity | chain line + sparsity | A, B, C, D, E | five generated representations, cell by cell against `relation % has` | PASS |
 | — | ===== **REVIEW GATE A** ===== | | | | | | | | |
 | **L5** | fields `w_k : E_k -> reals` | `field_stored` / `field` | occurrence carriers `E1, E2, E3` | scalar values | structure **unchanged** | structure unchanged; **no numerical reverse** | structural sparsity **+ coefficient view** | `level-5-field-calculus/test.f90` | PASS |
-| **L6** | production dependency projection | `discretization_operator % dependencies()` → `class(graph)` | one ordinary vertex carrier | the same carrier | Boolean coordinate pattern equals `D2 : X1 -> X2` | structure unchanged; no numerical reverse | signature **+** sparsity, shown side by side | `level-6-discretization/test.f90` | PASS |
+| **L6** | production dependency projection | `discretization % dependencies()` → `class(graph)` | one ordinary vertex carrier | the same carrier | Boolean coordinate pattern equals `D2 : X1 -> X2` | structure unchanged; no numerical reverse | signature **+** sparsity, shown side by side | `level-6-discretization/test.f90` | PASS |
 | **L7** | minimizer structural provenance | `minimizer % attach(..., coupling=)`, `% sweep_order()`, `% diagonal()` | one operator, two execution contexts | colours, matvec, diagonal | coupling `P_A` is context-independent | not exercised | operator coupling **vs** execution context, side by side | `level-7-minimization/test.f90` | PASS |
 | — | ===== **REVIEW GATE B** ===== | | | | | | | | |
 | **L8** | two axes and a context, coexisting | `step % dependencies()`, `stencil % dependencies()`, `minimizer % attach(coupling=)` | one composition | three distinct structures | independent stencil fans in | not exercised | all three grids side by side | `level-8-constitution/test.f90` | PASS |
@@ -342,12 +342,12 @@ executable consumer `dependencies()` has ever had.**
 ### The production census, at `b134a1f`
 
 ```
-discretization_operator                    src/graph_calculus.f90:219
+discretization                    src/graph_calculus.f90:219
 │   deferred :: dependencies
 │   subroutine (this, pattern)
 │       class(graph), allocatable, intent(out) :: pattern
 │
-├── stencil_operator                       src/operation_stencil.f90:47
+├── stencil                       src/operation_stencil.f90:47
 │   ├── implementation   stencil_dependencies              :168
 │   ├── meaning          a copy of its own stored pattern, built at
 │   │                    construction as
@@ -356,7 +356,7 @@ discretization_operator                    src/graph_calculus.f90:219
 │   ├── returns          class(graph) → concretely stored_graph
 │   └── repo callers     0
 │
-└── step_operator                          src/operation_step.f90:46
+└── scheme                          src/operation_step.f90:46
     ├── implementation   step_dependencies                 :127
     ├── meaning          a freshly built linear chain of reach+1
     │                    instants, tails=[1..reach], heads=[2..reach+1]
@@ -389,7 +389,7 @@ waiting for a consumer. Level 6 is the first.
 
 ### Measurement one — the stencil witness
 
-A production `stencil_operator` is built carrying D2's Boolean
+A production `stencil` is built carrying D2's Boolean
 occupancy in production's own coordinates, with Level 5's `w2` as its
 weights. Then `dependencies()` is called.
 
@@ -477,8 +477,8 @@ which instants the residual *reads*.
 
 > **FAMILY-C** — the apparent semantic difference disappears under a
 > more precise reading: **both answer a stencil, and the concrete type
-> says which axis the stencil belongs to.** `stencil_operator` owns
-> the dependent variable, `step_operator` the independent one.
+> says which axis the stencil belongs to.** `stencil` owns
+> the dependent variable, `scheme` the independent one.
 
 An earlier draft of this level read the two as *unrelated* meanings
 and concluded the verb was incoherent across the family. That was
@@ -855,7 +855,7 @@ any other. Rendering a rectangular typed dependency turned out to need
   `graph_visualization`, `class_graph_visualization`,
   `graph_observation`, `graph_interpretation`, `graph_renderer` or
   `graph_visualizer`; no `visualize()`, `print()` or `dependencies()`
-  added to `graph_operation`.
+  added to `operation`.
 - **No union carrier.** There is no
   `V = X0 u X1 u X2 u X3`. Level 3 asserts the graph does not hold
   one, and Level 4 shows what adopting one would cost.
@@ -867,7 +867,7 @@ any other. Rendering a rectangular typed dependency turned out to need
   measurement, and what it measured was a specialization, not a
   defect.
 - **`dependencies()` was not generalized**, its return type was not
-  changed, and nothing was moved onto `graph_operation`.
+  changed, and nothing was moved onto `operation`.
 
 The tower succeeded, and success here means: **the nucleus was already
 sufficient.** That is a reason to build nothing, not a reason to build
@@ -979,8 +979,8 @@ Values used to be a third, and Level 5 is where it stopped being one:
    and the derivative/adjoint fixtures stay refused **everywhere**,
    Level 6 included.
 
-   The type names `discretization_operator`, `stencil_operator` and
-   `step_operator` are additionally refused by a direct source scan,
+   The type names `discretization`, `stencil` and
+   `scheme` are additionally refused by a direct source scan,
    in case a later level finds another road to them — and that scan is
    level-sensitive in the same way: **forbidden L0–L5, allowed L6.**
    A planted `use operation_stencil` in a Level-5 source is refused
@@ -1016,7 +1016,7 @@ What follows is still unbuilt.
 Where production first enters. The expected question:
 
 > How does the structural relation `D` correspond to
-> `discretization_operator % dependencies()`?
+> `discretization % dependencies()`?
 
 The answer was the second of the anticipated findings:
 `dependencies()` is ordinary-graph/square-domain specialized and
@@ -1024,11 +1024,11 @@ cannot intrinsically express `X -> Y`. No RED occurred, because no
 executable contract promised otherwise.
 
 **What Level 6 did NOT answer**, and deliberately: whether
-`dependencies()` belongs on `graph_operation` at all. This tower
-inspected `discretization_operator` and its two concretes and nothing
+`dependencies()` belongs on `operation` at all. This tower
+inspected `discretization` and its two concretes and nothing
 else. The root question —
 
-> Does every `graph_operation` possess one meaningful dependency
+> Does every `operation` possess one meaningful dependency
 > structure?
 
 — is untouched, and the ledger records root pressure as **OBSERVE**,

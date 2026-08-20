@@ -29,17 +29,17 @@ program test_graph_mesh
 
   use iso_fortran_env, only : dp => REAL64
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use view_directed , only : GRAPH_SIDE_VERTEX
   use graph_fractal  , only : set_graph => graph
   use map_set  , only : set_map
   use map_label, only : label_map
   use map_inclusion, only : inclusion_map
-  use field_stored  , only : field
+  use field_stored  , only : stored_field
   use view_mesh   , only : mesh
   use view_mesh_builder , only : mesh_from_gmsh
   use operation_differential, only : differential_operator
-  use operation_differential, only : vertex_differential_operator
+  use operation_differential, only : vertex_derivative
 
   implicit none
 
@@ -149,7 +149,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(field) :: f
+    type(stored_field) :: f
     real(dp), allocatable :: v(:)
 
     m = hand_mesh()
@@ -206,12 +206,12 @@ contains
 
     type(mesh) :: m
     type(differential_operator) :: second
-    type(field) :: state
+    type(stored_field) :: state
     type(set_graph) :: cells
-    class(graph_field), allocatable :: y
+    class(field), allocatable :: y
     real(dp), allocatable :: farea(:), fdelta(:), vol(:), got(:)
     real(dp) :: k(3), c(3)
-    type(field) :: fa, fd, fv
+    type(stored_field) :: fa, fd, fv
     integer :: v
 
     m = hand_mesh()
@@ -229,11 +229,11 @@ contains
     c = k * farea
 
     cells = m % vertex_set()
-    state = field('q', cells, m % num_vertices())
+    state = stored_field('q', cells, m % num_vertices())
     call state % set_real_vector([1.0_dp, 3.0_dp, 6.0_dp])
 
     ! The raw rows: unit measures.
-    second = vertex_differential_operator(order=2, coefficients=c, &
+    second = vertex_derivative(order=2, coefficients=c, &
          & spacings=fdelta)
     call second % apply(m, [state], y)
     call y % get_real_vector(got)
@@ -243,7 +243,7 @@ contains
          & 'the rows match the old two-point stencil entry for entry', nfail)
 
     ! The same rows seated on the cell volumes.
-    second = vertex_differential_operator(order=2, coefficients=c, &
+    second = vertex_derivative(order=2, coefficients=c, &
          & spacings=fdelta, measures=vol)
     call second % apply(m, [state], y)
     call y % get_real_vector(got)
@@ -267,10 +267,10 @@ contains
 
     type(mesh) :: m
     type(differential_operator) :: second
-    type(field) :: state
+    type(stored_field) :: state
     type(set_graph) :: cells
-    class(graph_field), allocatable :: y
-    type(field) :: fa, fd, fv
+    class(field), allocatable :: y
+    type(stored_field) :: fa, fd, fv
     real(dp), allocatable :: farea(:), fdelta(:), vol(:), got(:), c(:), q(:)
     integer :: nv, ne, e, v, nwall
 
@@ -315,10 +315,10 @@ contains
     end do
 
     cells = m % vertex_set()
-    state = field('q', cells, m % num_vertices())
+    state = stored_field('q', cells, m % num_vertices())
     call state % set_real_vector(q)
 
-    second = vertex_differential_operator(order=2, coefficients=c, &
+    second = vertex_derivative(order=2, coefficients=c, &
          & spacings=fdelta)
     call second % apply(m, [state], y)
     call y % get_real_vector(got)

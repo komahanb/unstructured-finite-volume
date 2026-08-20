@@ -36,7 +36,7 @@ module graph_fractal
   implicit none
 
   private
-  public :: graph, graph_branch
+  public :: graph, branch
   public :: GRAPH_NULL, GRAPH_UNKNOWN, GRAPH_KNOWN
   public :: null_branch, unknown_branch, known_branch
 
@@ -46,10 +46,10 @@ module graph_fractal
   integer, parameter :: GRAPH_UNKNOWN = 1
   integer, parameter :: GRAPH_KNOWN   = 2
 
-  ! graph_branch precedes graph: a forward reference to an undefined
+  ! branch precedes graph: a forward reference to an undefined
   ! derived type is admitted only as a pointer component.
 
-  type :: graph_branch
+  type :: branch
 
      private
      integer              :: status_ = GRAPH_NULL
@@ -60,11 +60,11 @@ module graph_fractal
      procedure :: status
      procedure :: known
 
-  end type graph_branch
+  end type branch
 
   type :: graph
 
-     type(graph_branch)   :: branch(2)
+     type(branch)   :: branch(2)
      type(token), private :: identity
 
    contains
@@ -88,7 +88,7 @@ contains
 
   pure integer function status(this)
 
-    class(graph_branch), intent(in) :: this
+    class(branch), intent(in) :: this
 
     status = this % status_
 
@@ -96,7 +96,7 @@ contains
 
   function known(this) result(g)
 
-    class(graph_branch), intent(in) :: this
+    class(branch), intent(in) :: this
     type(graph), pointer            :: g
 
     g => this % known_
@@ -110,19 +110,19 @@ contains
   ! both components are private.
   !===================================================================!
 
-  pure type(graph_branch) function null_branch() result(this)
+  pure type(branch) function null_branch() result(this)
 
     this % status_ = GRAPH_NULL
 
   end function null_branch
 
-  pure type(graph_branch) function unknown_branch() result(this)
+  pure type(branch) function unknown_branch() result(this)
 
     this % status_ = GRAPH_UNKNOWN
 
   end function unknown_branch
 
-  type(graph_branch) function known_branch(that) result(this)
+  type(branch) function known_branch(that) result(this)
 
     type(graph), target, intent(in) :: that
 

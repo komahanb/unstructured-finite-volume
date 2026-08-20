@@ -42,9 +42,9 @@ program partitioned_pde_level_9
   use map_set_representation, only : counted_set_representation
   use map_set        , only : set_map
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
-  use view_directed_stored      , only : directed_stored_graph
-  use field_stored, only : field
+  use field_calculus, only : field
+  use view_directed_stored      , only : stored_directed_graph
+  use field_stored, only : stored_field
   use operation_gmres, only : gmres
   use shifted_laplacian_fixture, only : shifted_laplacian
   use partitioned_shifted_laplacian_fixture, only : &
@@ -59,7 +59,7 @@ program partitioned_pde_level_9
   real(dp), parameter :: E4(NV) = &
        & [0.0_dp, 0.0_dp, 0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp]
 
-  type(directed_stored_graph)                  :: g
+  type(stored_directed_graph)                  :: g
   type(shifted_laplacian)             :: direct
   type(partitioned_shifted_laplacian) :: composite
   type(gmres)                         :: solver_global, solver_part
@@ -73,7 +73,7 @@ program partitioned_pde_level_9
   write(*,'(1x,a)') "partitioned pde tower . level 9 . statement"
   write(*,'(1x,a)') "============================================="
 
-  g = directed_stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  g = stored_directed_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
   call sets % bind(g % vertex_set(), &
        & counted_set_representation(g % num_vertices()))
   call sets % bind(g % edge_set(), &
@@ -152,16 +152,16 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(field)                     :: rhs
+    type(stored_field)                     :: rhs
     type(set_graph)               :: vs
-    class(graph_field), allocatable :: sol
+    class(field), allocatable :: sol
     type(set_graph)  :: dom
     real(dp), allocatable           :: v(:)
     integer         :: n_vs
 
     vs = g % vertex_set()
     n_vs = g % num_vertices()
-    rhs = field('b', vs, n_vs)
+    rhs = stored_field('b', vs, n_vs)
     call rhs % set_real_vector(B_EXACT)
 
     ! The partitioned road - the tower's own.

@@ -2,7 +2,7 @@
 ! THE PRODUCTION-PATTERN INTERPRETER - earned at LEVEL 6.
 !
 ! It reads an ORDINARY production graph - whatever
-! discretization_operator % dependencies() hands back - and renders
+! discretization % dependencies() hands back - and renders
 ! its directed adjacency as a grid, beside the signature that grid
 ! came from.
 !

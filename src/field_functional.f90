@@ -40,19 +40,19 @@ module field_functional
   use field_calculus, only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
   use field_calculus, only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
   use field_calculus, only : GRAPH_FIELD_CHARACTER
-  use field_calculus     , only : graph_functional
+  use field_calculus     , only : functional
   use graph_fractal      , only : set_graph => graph
 
   implicit none
 
   private
-  public :: functional
+  public :: stored_functional
 
   !===================================================================!
   ! One value, of whichever kind was last set.
   !===================================================================!
 
-  type, extends(graph_functional) :: functional
+  type, extends(functional) :: stored_functional
 
      ! The one-entry home, declared at construction so domain()
      ! answers one stable identity for the life of the functional.
@@ -119,16 +119,16 @@ module field_functional
      procedure :: get_character_value
      procedure :: set_character_value
 
-  end type functional
+  end type stored_functional
 
   !===================================================================!
   ! Constructor. Name it; the value arrives through a setter, which
   ! is also what fixes the kind.
   !===================================================================!
 
-  interface functional
+  interface stored_functional
      module procedure create
-  end interface functional
+  end interface stored_functional
 
 contains
 
@@ -136,7 +136,7 @@ contains
   ! Build a functional that holds nothing yet.
   !===================================================================!
 
-  type(functional) function create(label, unit_name) result(this)
+  type(stored_functional) function create(label, unit_name) result(this)
 
     character(len=*), intent(in), optional :: label
     character(len=*), intent(in), optional :: unit_name
@@ -163,7 +163,7 @@ contains
 
   pure function functional_name(this) result(name)
 
-    class(functional), intent(in) :: this
+    class(stored_functional), intent(in) :: this
     character(len=:), allocatable :: name
 
     if (allocated(this % label)) then
@@ -176,7 +176,7 @@ contains
 
   pure function functional_units(this) result(units)
 
-    class(functional), intent(in) :: this
+    class(stored_functional), intent(in) :: this
     character(len=:), allocatable :: units
 
     if (allocated(this % unit_name)) then
@@ -195,7 +195,7 @@ contains
 
   type(set_graph) function functional_domain(this) result(domain)
 
-    class(functional), intent(in) :: this
+    class(stored_functional), intent(in) :: this
 
     domain = this % home
 
@@ -207,7 +207,7 @@ contains
 
   pure integer function functional_num_components(this)
 
-    class(functional), intent(in) :: this
+    class(stored_functional), intent(in) :: this
 
     associate (u1 => this); end associate
 
@@ -217,7 +217,7 @@ contains
 
   pure integer function functional_num_entries(this)
 
-    class(functional), intent(in) :: this
+    class(stored_functional), intent(in) :: this
 
     associate (u1 => this); end associate
 
@@ -227,7 +227,7 @@ contains
 
   pure integer function functional_value_kind(this)
 
-    class(functional), intent(in) :: this
+    class(stored_functional), intent(in) :: this
 
     functional_value_kind = this % vkind
 
@@ -242,7 +242,7 @@ contains
 
   pure subroutine functional_get_integer_vector(this, values)
 
-    class(functional), intent(in)     :: this
+    class(stored_functional), intent(in)     :: this
     integer, allocatable, intent(out) :: values(:)
 
     if (this % vkind == GRAPH_FIELD_INTEGER) then
@@ -255,7 +255,7 @@ contains
 
   pure subroutine functional_set_integer_vector(this, values)
 
-    class(functional), intent(inout) :: this
+    class(stored_functional), intent(inout) :: this
     integer          , intent(in)    :: values(:)
 
     if (size(values) >= 1) then
@@ -267,7 +267,7 @@ contains
 
   pure subroutine functional_get_real_vector(this, values)
 
-    class(functional), intent(in)      :: this
+    class(stored_functional), intent(in)      :: this
     real(dp), allocatable, intent(out) :: values(:)
 
     if (this % vkind == GRAPH_FIELD_REAL) then
@@ -280,7 +280,7 @@ contains
 
   pure subroutine functional_set_real_vector(this, values)
 
-    class(functional), intent(inout) :: this
+    class(stored_functional), intent(inout) :: this
     real(dp)         , intent(in)    :: values(:)
 
     if (size(values) >= 1) then
@@ -292,7 +292,7 @@ contains
 
   pure subroutine functional_get_complex_vector(this, values)
 
-    class(functional), intent(in)         :: this
+    class(stored_functional), intent(in)         :: this
     complex(dp), allocatable, intent(out) :: values(:)
 
     if (this % vkind == GRAPH_FIELD_COMPLEX) then
@@ -305,7 +305,7 @@ contains
 
   pure subroutine functional_set_complex_vector(this, values)
 
-    class(functional), intent(inout) :: this
+    class(stored_functional), intent(inout) :: this
     complex(dp)      , intent(in)    :: values(:)
 
     if (size(values) >= 1) then
@@ -317,7 +317,7 @@ contains
 
   pure subroutine functional_get_logical_vector(this, values)
 
-    class(functional), intent(in)     :: this
+    class(stored_functional), intent(in)     :: this
     logical, allocatable, intent(out) :: values(:)
 
     if (this % vkind == GRAPH_FIELD_LOGICAL) then
@@ -330,7 +330,7 @@ contains
 
   pure subroutine functional_set_logical_vector(this, values)
 
-    class(functional), intent(inout) :: this
+    class(stored_functional), intent(inout) :: this
     logical          , intent(in)    :: values(:)
 
     if (size(values) >= 1) then
@@ -342,7 +342,7 @@ contains
 
   pure subroutine functional_get_character_vector(this, values)
 
-    class(functional), intent(in)              :: this
+    class(stored_functional), intent(in)              :: this
     character(len=:), allocatable, intent(out) :: values(:)
 
     if (this % vkind == GRAPH_FIELD_CHARACTER .and. allocated(this % sval)) then
@@ -356,7 +356,7 @@ contains
 
   pure subroutine functional_set_character_vector(this, values)
 
-    class(functional), intent(inout) :: this
+    class(stored_functional), intent(inout) :: this
     character(len=*) , intent(in)    :: values(:)
 
     if (size(values) >= 1) then
@@ -373,7 +373,7 @@ contains
 
   pure subroutine get_integer_value(this, value)
 
-    class(functional), intent(in) :: this
+    class(stored_functional), intent(in) :: this
     integer, intent(out) :: value
 
     if (this % vkind == GRAPH_FIELD_INTEGER) then
@@ -386,7 +386,7 @@ contains
 
   pure subroutine set_integer_value(this, value)
 
-    class(functional), intent(inout) :: this
+    class(stored_functional), intent(inout) :: this
     integer, intent(in) :: value
 
     this % ival  = value
@@ -396,7 +396,7 @@ contains
 
   pure subroutine get_real_value(this, value)
 
-    class(functional), intent(in) :: this
+    class(stored_functional), intent(in) :: this
     real(dp), intent(out) :: value
 
     if (this % vkind == GRAPH_FIELD_REAL) then
@@ -409,7 +409,7 @@ contains
 
   pure subroutine set_real_value(this, value)
 
-    class(functional), intent(inout) :: this
+    class(stored_functional), intent(inout) :: this
     real(dp), intent(in) :: value
 
     this % rval  = value
@@ -419,7 +419,7 @@ contains
 
   pure subroutine get_complex_value(this, value)
 
-    class(functional), intent(in) :: this
+    class(stored_functional), intent(in) :: this
     complex(dp), intent(out) :: value
 
     if (this % vkind == GRAPH_FIELD_COMPLEX) then
@@ -432,7 +432,7 @@ contains
 
   pure subroutine set_complex_value(this, value)
 
-    class(functional), intent(inout) :: this
+    class(stored_functional), intent(inout) :: this
     complex(dp), intent(in) :: value
 
     this % cval  = value
@@ -442,7 +442,7 @@ contains
 
   pure subroutine get_logical_value(this, value)
 
-    class(functional), intent(in) :: this
+    class(stored_functional), intent(in) :: this
     logical, intent(out) :: value
 
     if (this % vkind == GRAPH_FIELD_LOGICAL) then
@@ -455,7 +455,7 @@ contains
 
   pure subroutine set_logical_value(this, value)
 
-    class(functional), intent(inout) :: this
+    class(stored_functional), intent(inout) :: this
     logical, intent(in) :: value
 
     this % lval  = value
@@ -465,7 +465,7 @@ contains
 
   pure subroutine get_character_value(this, value)
 
-    class(functional), intent(in) :: this
+    class(stored_functional), intent(in) :: this
     character(len=:), allocatable, intent(out) :: value
 
     if (this % vkind == GRAPH_FIELD_CHARACTER .and. allocated(this % sval)) then
@@ -478,7 +478,7 @@ contains
 
   pure subroutine set_character_value(this, value)
 
-    class(functional), intent(inout) :: this
+    class(stored_functional), intent(inout) :: this
     character(len=*), intent(in) :: value
 
     this % sval  = value

@@ -38,10 +38,10 @@ module opaque_equation_fixture
   use graph_fractal        , only : set_graph => graph
   use map_set        , only : set_map
   use map_set_representation, only : set_representation
-  use operation_action, only : graph_operation
+  use operation_action, only : operation
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
-  use field_stored, only : field
+  use field_calculus, only : field
+  use field_stored, only : stored_field
 
   implicit none
 
@@ -52,7 +52,7 @@ module opaque_equation_fixture
   ! The primal equation: a state on Q, a residual on Y.
   !===================================================================!
 
-  type, extends(graph_operation) :: opaque_primal
+  type, extends(operation) :: opaque_primal
      ! Identity and count. Both domains are counted 1..n here,
      ! so no coordinates beyond the count are needed.
      type(set_graph) :: q_dom, y_dom
@@ -71,7 +71,7 @@ module opaque_equation_fixture
   ! orientation is exchanged, and nothing else is.
   !===================================================================!
 
-  type, extends(graph_operation) :: opaque_adjoint
+  type, extends(operation) :: opaque_adjoint
      ! Identity and count. Both domains are counted 1..n here,
      ! so no coordinates beyond the count are needed.
      type(set_graph) :: q_dom, y_dom
@@ -154,10 +154,10 @@ contains
 
     class(opaque_primal), intent(in)               :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
-    type(field)                    :: out
+    type(stored_field)                    :: out
     type(set_graph) :: dom
     real(dp), allocatable          :: q(:), r(:)
     real(dp)                       :: u, v
@@ -181,7 +181,7 @@ contains
     r(this % c_y % local_index(TGT_R1)) = 2.0_dp*u +      v -  8.0_dp
     r(this % c_y % local_index(TGT_R2)) = 3.0_dp*u + 4.0_dp*v - 22.0_dp
 
-    out = field('residual', this % y_dom, this % n_y_dom)
+    out = stored_field('residual', this % y_dom, this % n_y_dom)
     call out % set_real_vector(r)
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
@@ -198,10 +198,10 @@ contains
 
     class(opaque_adjoint), intent(in)              :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
-    type(field)                    :: out
+    type(stored_field)                    :: out
     type(set_graph) :: dom
     real(dp), allocatable          :: lam(:), r(:)
     real(dp)                       :: l1, l2
@@ -225,7 +225,7 @@ contains
     r(this % c_q % local_index(VAR_U)) = 2.0_dp*l1 + 3.0_dp*l2 - 1.0_dp
     r(this % c_q % local_index(VAR_V)) =      l1 + 4.0_dp*l2 - 2.0_dp
 
-    out = field('adjoint residual', this % q_dom, this % n_q_dom)
+    out = stored_field('adjoint residual', this % q_dom, this % n_q_dom)
     call out % set_real_vector(r)
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)

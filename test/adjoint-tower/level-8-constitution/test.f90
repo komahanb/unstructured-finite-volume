@@ -54,11 +54,11 @@ program adjoint_level_8
   use map_inclusion  , only : inclusion_map, declared_subobject
   use relation_finitary   , only : stored_relation, relation
   use relation_algebra, only : compose_binary
-  use relation_binary , only : csr_relation, transposed_view, &
+  use relation_binary , only : csr_relation, transposed_relation, &
        &                             transpose_of, inclusion_of
-  use field_calculus, only : graph_field
-  use view_directed_stored      , only : directed_stored_graph
-  use field_stored, only : field
+  use field_calculus, only : field
+  use view_directed_stored      , only : stored_directed_graph
+  use field_stored, only : stored_field
   use operation_gmres, only : gmres
   use adjoint_constitution_fixture, only : constituted_primal, &
        & constituted_adjoint, constituted_tangent, &
@@ -70,7 +70,7 @@ program adjoint_level_8
   type(set_graph)     :: v, t
   type(set_graph)      :: p_dom, z_dom
   type(set_graph)      :: q_can, y_can, q_perm, y_perm
-  type(directed_stored_graph)    :: host
+  type(stored_directed_graph)    :: host
   type(stored_relation) :: dep
   integer               :: table(2, 9)
   integer               :: nfail
@@ -121,7 +121,7 @@ program adjoint_level_8
   table(:, 9) = [TGT_F , VAR_V]
   dep = stored_relation('dependency', [t, v], table, sets)
 
-  host = directed_stored_graph(5, tails=[1,2,3,4], heads=[2,3,4,5])
+  host = stored_directed_graph(5, tails=[1,2,3,4], heads=[2,3,4,5])
 
   ! The same battery, twice: once aligned, once with BOTH two-member
   ! roles independently reversed. The expected storage positions are
@@ -149,16 +149,16 @@ contains
     integer          , intent(inout) :: nfail
 
     type(csr_relation), target      :: inc_y, inc_z, inc_q, inc_p
-    type(transposed_view)           :: inc_q_t, inc_p_t
+    type(transposed_relation)           :: inc_q_t, inc_p_t
     type(csr_relation)              :: jq, jp, fq, fp
     type(constituted_primal)        :: primal_eq
     type(constituted_adjoint)       :: adjoint_eq
     type(constituted_tangent)       :: tangent_eq
     type(gmres)                     :: primal_solver, adjoint_solver
     type(gmres)                     :: tangent_solver
-    type(field)                     :: rhs_y, rhs_q, state
+    type(stored_field)                     :: rhs_y, rhs_q, state
     type(set_graph)  :: dom
-    class(graph_field), allocatable :: sol
+    class(field), allocatable :: sol
     real(dp), allocatable           :: gv(:), qv(:), lv(:), qp(:)
     real(dp), allocatable           :: rp_dir(:)
     real(dp), allocatable                        :: resp(:)
@@ -206,7 +206,7 @@ contains
     primal_solver % max_iterations = 50
 
     call primal_solver % constant(gv)
-    rhs_y = field('rhs', y_dom, sets % size_of(y_dom))
+    rhs_y = stored_field('rhs', y_dom, sets % size_of(y_dom))
     call rhs_y % set_real_vector(-gv)
     call primal_solver % apply(host, [rhs_y], sol)
 
@@ -231,7 +231,7 @@ contains
     adjoint_solver % max_iterations = 50
 
     call adjoint_solver % constant(gv)
-    rhs_q = field('rhs', q_dom, sets % size_of(q_dom))
+    rhs_q = stored_field('rhs', q_dom, sets % size_of(q_dom))
     call rhs_q % set_real_vector(-gv)
     call adjoint_solver % apply(host, [rhs_q], sol)
 
@@ -254,7 +254,7 @@ contains
     tangent_solver % max_iterations = 50
 
     call tangent_solver % constant(gv)
-    rhs_y = field('rhs', y_dom, sets % size_of(y_dom))
+    rhs_y = stored_field('rhs', y_dom, sets % size_of(y_dom))
     call rhs_y % set_real_vector(-gv)
     call tangent_solver % apply(host, [rhs_y], sol)
 

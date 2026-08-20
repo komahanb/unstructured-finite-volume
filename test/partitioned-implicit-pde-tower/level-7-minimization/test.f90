@@ -40,15 +40,15 @@ program partitioned_pde_level_7
   use map_set_representation, only : counted_set_representation
   use map_set        , only : set_map
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
-  use view_directed_stored      , only : directed_stored_graph
-  use field_stored, only : field
+  use field_calculus, only : field
+  use view_directed_stored      , only : stored_directed_graph
+  use field_stored, only : stored_field
   use operation_gmres, only : gmres
   use shifted_laplacian_fixture, only : shifted_laplacian
 
   implicit none
 
-  type(directed_stored_graph)      :: g, g_alt
+  type(stored_directed_graph)      :: g, g_alt
   type(shifted_laplacian) :: shifted
   integer                 :: nfail
   type(set_map)     :: sets
@@ -59,7 +59,7 @@ program partitioned_pde_level_7
   write(*,'(1x,a)') "partitioned pde tower . level 7 . minimization"
   write(*,'(1x,a)') "============================================="
 
-  g = directed_stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  g = stored_directed_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
   call sets % bind(g % vertex_set(), &
        & counted_set_representation(g % num_vertices()))
   call sets % bind(g % edge_set(), &
@@ -80,9 +80,9 @@ contains
     integer, intent(inout) :: nfail
 
     type(gmres)                     :: solver
-    type(field)                     :: rhs
+    type(stored_field)                     :: rhs
     type(set_graph)  :: dom
-    class(graph_field), allocatable :: sol
+    class(field), allocatable :: sol
     real(dp), allocatable           :: gv(:), v(:)
     type(set_graph)               :: vs
     integer         :: n_dom
@@ -107,7 +107,7 @@ contains
     call report(maxval(abs(gv)) < 1.0d-12, &
          & "the affine constant is zero: A is linear", nfail)
 
-    rhs = field('b', vs, n_vs)
+    rhs = stored_field('b', vs, n_vs)
     call rhs % set_real_vector(B_EXACT)
     call solver % apply(g, [rhs], sol)
 
@@ -138,7 +138,7 @@ contains
     integer         :: n_vs_alt
 
     ! Same counts, different shape: a star, not a chain.
-    g_alt = directed_stored_graph(NV, tails=[1,1,1,1,1], heads=[2,3,4,5,6])
+    g_alt = stored_directed_graph(NV, tails=[1,1,1,1,1], heads=[2,3,4,5,6])
     call sets % bind(g_alt % vertex_set(), &
          & counted_set_representation(g_alt % num_vertices()))
     call sets % bind(g_alt % edge_set(), &

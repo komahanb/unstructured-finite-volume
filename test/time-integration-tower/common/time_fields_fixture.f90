@@ -47,7 +47,7 @@ module time_fields_fixture
 
   use iso_fortran_env  , only : dp => REAL64
   use graph_fractal    , only : set_graph => graph
-  use field_stored, only : field
+  use field_stored, only : stored_field
   use time_assert      , only : NQ, NT, NE, H_STEP, TIME_COORD, Q0
 
   implicit none
@@ -61,11 +61,11 @@ contains
   ! q0 : Q -> reals, and NOT a graph in sight.
   !===================================================================!
 
-  type(field) function state_field(q) result(f)
+  type(stored_field) function state_field(q) result(f)
 
     type(set_graph), intent(in) :: q
 
-    f = field('state', q, NQ, ncomp=1)
+    f = stored_field('state', q, NQ, ncomp=1)
     call f % set_real_vector(Q0)
 
   end function state_field
@@ -74,11 +74,11 @@ contains
   ! time : T -> reals, the numerical coordinate of each instant.
   !===================================================================!
 
-  type(field) function instant_coordinates(t) result(f)
+  type(stored_field) function instant_coordinates(t) result(f)
 
     type(set_graph), intent(in) :: t
 
-    f = field('instant coordinate', t, NT, ncomp=1)
+    f = stored_field('instant coordinate', t, NT, ncomp=1)
     call f % set_real_vector(TIME_COORD)
 
   end function instant_coordinates
@@ -90,14 +90,14 @@ contains
   ! type that holds them.
   !===================================================================!
 
-  type(field) function step_sizes(e) result(f)
+  type(stored_field) function step_sizes(e) result(f)
 
     type(set_graph), intent(in) :: e
 
     real(dp) :: values(NE)
 
     values = H_STEP
-    f = field('step size', e, NE, ncomp=1)
+    f = stored_field('step size', e, NE, ncomp=1)
     call f % set_real_vector(values)
 
   end function step_sizes

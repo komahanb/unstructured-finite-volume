@@ -49,7 +49,7 @@
 ! A^T B^T C^T is an identity of the composition, not code.
 !
 ! THE STENCIL DOOR. The composed map on the vertex landing is
-! square, and stencil_of returns it as a stencil_operator - the
+! square, and stencil_of returns it as a stencil - the
 ! same triples, the same constant - so a minimizer can attach the
 ! compiled matrix directly. The edge landing is a rectangular
 ! relation (edges x vertices) and is refused there, because a
@@ -75,20 +75,20 @@
 module operation_differential
 
   use iso_fortran_env    , only : dp => REAL64
-  use operation_action, only : graph_operation
+  use operation_action, only : operation
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use graph_fractal      , only : set_graph => graph
   use view_directed     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
-  use field_stored  , only : field
-  use operation_stencil, only : stencil_operator, combine_triples
+  use field_stored  , only : stored_field
+  use operation_stencil, only : stencil, combine_triples
 
   implicit none
 
   private
   public :: differential_operator
-  public :: edge_differential_operator
-  public :: vertex_differential_operator
+  public :: edge_derivative
+  public :: vertex_derivative
   public :: gradient, interpolation, divergence, laplacian
   public :: stencil_of
 
@@ -104,7 +104,7 @@ module operation_differential
   !                        end of an edge with no head, in S and G
   !===================================================================!
 
-  type, extends(graph_operation) :: differential_operator
+  type, extends(operation) :: differential_operator
 
      integer :: landing = GRAPH_SIDE_VERTEX
      integer :: order   = 2
@@ -156,7 +156,7 @@ contains
   ! wins over its scalar when given.
   !===================================================================!
 
-  pure type(differential_operator) function edge_differential_operator &
+  pure type(differential_operator) function edge_derivative &
        & (order, coefficient, coefficients, spacing, spacings, &
        &  measure, measures, boundary_value, boundary_values, one_sided, &
        &  label) result(this)
@@ -188,14 +188,14 @@ contains
     if (present(boundary_values)) allocate(this % boundary_values, source=boundary_values)
     if (present(label))           this % label          = label
 
-  end function edge_differential_operator
+  end function edge_derivative
 
   !===================================================================!
   ! The same constructor, for the vertex landing, plus the adjoint
   ! flag: raised, the operator applies its transpose.
   !===================================================================!
 
-  pure type(differential_operator) function vertex_differential_operator &
+  pure type(differential_operator) function vertex_derivative &
        & (order, coefficient, coefficients, spacing, spacings, &
        &  measure, measures, boundary_value, boundary_values, adjoint, label) result(this)
 
@@ -225,7 +225,7 @@ contains
     if (present(adjoint))         this % adjoint        = adjoint
     if (present(label))           this % label          = label
 
-  end function vertex_differential_operator
+  end function vertex_derivative
 
   !===================================================================!
   ! The named layer. Four operators every equation reaches for, as
@@ -244,7 +244,7 @@ contains
     real(dp), intent(in), optional :: spacing, spacings(:)
     real(dp), intent(in), optional :: boundary_value, boundary_values(:)
 
-    this = edge_differential_operator(order=1, coefficient=coefficient, &
+    this = edge_derivative(order=1, coefficient=coefficient, &
          & coefficients=coefficients, spacing=spacing, spacings=spacings, &
          & boundary_value=boundary_value, boundary_values=boundary_values, &
          & label='gradient')
@@ -257,7 +257,7 @@ contains
     real(dp), intent(in), optional :: coefficient, coefficients(:)
     real(dp), intent(in), optional :: boundary_value, boundary_values(:)
 
-    this = edge_differential_operator(order=0, coefficient=coefficient, &
+    this = edge_derivative(order=0, coefficient=coefficient, &
          & coefficients=coefficients, boundary_value=boundary_value, &
          & boundary_values=boundary_values, label='interpolation')
 
@@ -269,7 +269,7 @@ contains
     real(dp), intent(in), optional :: coefficient, coefficients(:)
     real(dp), intent(in), optional :: measure, measures(:)
 
-    this = vertex_differential_operator(order=1, coefficient=coefficient, &
+    this = vertex_derivative(order=1, coefficient=coefficient, &
          & coefficients=coefficients, measure=measure, measures=measures, &
          & label='divergence')
 
@@ -283,7 +283,7 @@ contains
     real(dp), intent(in), optional :: measure, measures(:)
     real(dp), intent(in), optional :: boundary_value, boundary_values(:)
 
-    this = vertex_differential_operator(order=2, coefficient=coefficient, &
+    this = vertex_derivative(order=2, coefficient=coefficient, &
          & coefficients=coefficients, spacing=spacing, spacings=spacings, &
          & measure=measure, measures=measures, boundary_value=boundary_value, &
          & boundary_values=boundary_values, label='laplacian')
@@ -811,7 +811,7 @@ contains
   end function compiled_map
 
   !===================================================================!
-  ! THE STENCIL DOOR: the compiled operator as a stencil_operator.
+  ! THE STENCIL DOOR: the compiled operator as a stencil.
   ! Only the vertex landing compiles to one, because a stencil's
   ! input and output share one vertex set; the edge landing is a
   ! rectangular relation and stops the program here.
@@ -821,7 +821,7 @@ contains
 
     type(differential_operator), intent(in) :: operator
     class(directed_graph)      , intent(in) :: input_graph
-    type(stencil_operator)                  :: compiled
+    type(stencil)                  :: compiled
 
     type(affine_map) :: a
 
@@ -832,7 +832,7 @@ contains
 
     a = compiled_map(operator, input_graph, enters_on_edges=.false.)
 
-    compiled = stencil_operator(a % rows, a % cols, a % weights, &
+    compiled = stencil(a % rows, a % cols, a % weights, &
          & a % constants, label=operator % name())
 
   end function stencil_of
@@ -910,11 +910,11 @@ contains
 
     class(differential_operator), intent(in)       :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
     type(affine_map) :: a
-    type(field)      :: out
+    type(stored_field)      :: out
     real(dp), allocatable :: q(:), y(:), qc(:), yc(:)
     integer :: nv, ne, nout, nc, c
     logical :: enters_on_edges
@@ -933,11 +933,11 @@ contains
 
     if (this % landing == GRAPH_SIDE_EDGE) then
        nout = ne
-       out  = field(this % name(), input_graph % edge_set(), ne, &
+       out  = stored_field(this % name(), input_graph % edge_set(), ne, &
             & ncomp=max(nc, 1))
     else
        nout = nv
-       out  = field(this % name(), input_graph % vertex_set(), nv, &
+       out  = stored_field(this % name(), input_graph % vertex_set(), nv, &
             & ncomp=max(nc, 1))
     end if
 
@@ -975,7 +975,7 @@ contains
 
   subroutine fetch_values(input_data, input_graph, on_edges, n, q, ncomp)
 
-    class(graph_field), intent(in), optional :: input_data(:)
+    class(field), intent(in), optional :: input_data(:)
     class(directed_graph)     , intent(in)           :: input_graph
     logical          , intent(in)           :: on_edges
     integer          , intent(in)           :: n
@@ -988,7 +988,7 @@ contains
 
     if (present(input_data)) then
        select type (state => input_data(1))
-       class is (field)
+       class is (stored_field)
           dom = state % domain()
           if (on_edges) then
              expected = input_graph % edge_set()

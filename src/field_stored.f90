@@ -75,7 +75,7 @@
 module field_stored
 
   use iso_fortran_env    , only : dp => REAL64
-  use field_calculus, only : graph_field, set_graph
+  use field_calculus, only : field, set_graph
   use field_calculus, only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
   use field_calculus, only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
   use field_calculus, only : GRAPH_FIELD_CHARACTER
@@ -83,13 +83,13 @@ module field_stored
   implicit none
 
   private
-  public :: field
+  public :: stored_field
 
   !===================================================================!
   ! One field: a name, a unit, a domain, a width, and one live store.
   !===================================================================!
 
-  type, extends(graph_field) :: field
+  type, extends(field) :: stored_field
 
      character(len=:), allocatable :: label
      character(len=:), allocatable :: unit_name
@@ -142,7 +142,7 @@ module field_stored
      procedure :: get_character_vector => field_get_character_vector
      procedure :: set_character_vector => field_set_character_vector
 
-  end type field
+  end type stored_field
 
   !===================================================================!
   ! Constructor. Name the field, say where it lives, say how wide
@@ -150,9 +150,9 @@ module field_stored
   ! which is also what fixes the kind.
   !===================================================================!
 
-  interface field
+  interface stored_field
      module procedure create
-  end interface field
+  end interface stored_field
 
 contains
 
@@ -162,7 +162,7 @@ contains
   ! repeat the fact.
   !===================================================================!
 
-  type(field) function create(label, on, nentries, ncomp, unit_name) &
+  type(stored_field) function create(label, on, nentries, ncomp, unit_name) &
        & result(this)
 
     character(len=*), intent(in)           :: label
@@ -203,7 +203,7 @@ contains
 
   pure function field_name(this) result(name)
 
-    class(field), intent(in)      :: this
+    class(stored_field), intent(in)      :: this
     character(len=:), allocatable :: name
 
     if (allocated(this % label)) then
@@ -220,7 +220,7 @@ contains
 
   pure function field_units(this) result(units)
 
-    class(field), intent(in)      :: this
+    class(stored_field), intent(in)      :: this
     character(len=:), allocatable :: units
 
     if (allocated(this % unit_name)) then
@@ -238,7 +238,7 @@ contains
 
   type(set_graph) function field_domain(this) result(domain)
 
-    class(field), intent(in) :: this
+    class(stored_field), intent(in) :: this
 
     domain = this % on
 
@@ -252,7 +252,7 @@ contains
 
   pure integer function field_num_components(this)
 
-    class(field), intent(in) :: this
+    class(stored_field), intent(in) :: this
 
     field_num_components = this % ncomp
 
@@ -260,7 +260,7 @@ contains
 
   pure integer function field_num_entries(this)
 
-    class(field), intent(in) :: this
+    class(stored_field), intent(in) :: this
 
     field_num_entries = this % nentries
 
@@ -268,7 +268,7 @@ contains
 
   pure integer function field_value_kind(this)
 
-    class(field), intent(in) :: this
+    class(stored_field), intent(in) :: this
 
     field_value_kind = this % vkind
 
@@ -282,7 +282,7 @@ contains
 
   pure subroutine field_get_integer_vector(this, values)
 
-    class(field), intent(in)          :: this
+    class(stored_field), intent(in)          :: this
     integer, allocatable, intent(out) :: values(:)
 
     if (this % vkind == GRAPH_FIELD_INTEGER .and. allocated(this % ivals)) then
@@ -295,7 +295,7 @@ contains
 
   pure subroutine field_set_integer_vector(this, values)
 
-    class(field), intent(inout) :: this
+    class(stored_field), intent(inout) :: this
     integer     , intent(in)    :: values(:)
 
     if (size(values) /= this % nentries * this % ncomp) then
@@ -308,7 +308,7 @@ contains
 
   pure subroutine field_get_real_vector(this, values)
 
-    class(field), intent(in)           :: this
+    class(stored_field), intent(in)           :: this
     real(dp), allocatable, intent(out) :: values(:)
 
     if (this % vkind == GRAPH_FIELD_REAL .and. allocated(this % rvals)) then
@@ -321,7 +321,7 @@ contains
 
   pure subroutine field_set_real_vector(this, values)
 
-    class(field), intent(inout) :: this
+    class(stored_field), intent(inout) :: this
     real(dp)    , intent(in)    :: values(:)
 
     if (size(values) /= this % nentries * this % ncomp) then
@@ -339,7 +339,7 @@ contains
 
   pure subroutine field_get_complex_vector(this, values)
 
-    class(field), intent(in)              :: this
+    class(stored_field), intent(in)              :: this
     complex(dp), allocatable, intent(out) :: values(:)
 
     if (this % vkind == GRAPH_FIELD_COMPLEX .and. allocated(this % cvals)) then
@@ -352,7 +352,7 @@ contains
 
   pure subroutine field_set_complex_vector(this, values)
 
-    class(field), intent(inout) :: this
+    class(stored_field), intent(inout) :: this
     complex(dp) , intent(in)    :: values(:)
 
     if (size(values) /= this % nentries * this % ncomp) then
@@ -365,7 +365,7 @@ contains
 
   pure subroutine field_get_logical_vector(this, values)
 
-    class(field), intent(in)          :: this
+    class(stored_field), intent(in)          :: this
     logical, allocatable, intent(out) :: values(:)
 
     if (this % vkind == GRAPH_FIELD_LOGICAL .and. allocated(this % lvals)) then
@@ -378,7 +378,7 @@ contains
 
   pure subroutine field_set_logical_vector(this, values)
 
-    class(field), intent(inout) :: this
+    class(stored_field), intent(inout) :: this
     logical     , intent(in)    :: values(:)
 
     if (size(values) /= this % nentries * this % ncomp) then
@@ -391,7 +391,7 @@ contains
 
   pure subroutine field_get_character_vector(this, values)
 
-    class(field), intent(in)                   :: this
+    class(stored_field), intent(in)                   :: this
     character(len=:), allocatable, intent(out) :: values(:)
 
     if (this % vkind == GRAPH_FIELD_CHARACTER .and. allocated(this % svals)) then
@@ -404,7 +404,7 @@ contains
 
   pure subroutine field_set_character_vector(this, values)
 
-    class(field), intent(inout)  :: this
+    class(stored_field), intent(inout)  :: this
     character(len=*), intent(in) :: values(:)
 
     if (size(values) /= this % nentries * this % ncomp) then

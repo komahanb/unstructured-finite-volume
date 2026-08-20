@@ -40,9 +40,9 @@
   LEVEL 0  GRAMMAR      "what may exist"        graph_grammar.f90
   │         4 abstract roles, 55 operation symbols, zero math
   │         ├── graph            structure   (what joins what)
-  │         ├── graph_field      values      (what members carry)
-  │         ├── graph_operation  verb within (data → data)
-  │         └── graph_transform  verb between(graph → graph)
+  │         ├── field      values      (what members carry)
+  │         ├── operation  verb within (data → data)
+  │         └── transform  verb between(graph → graph)
   │
   LEVEL 1  CALCULUS     "how quantities relate"
   │         ├── graph_calculus.f90        the named citizens (support,

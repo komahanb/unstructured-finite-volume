@@ -4,11 +4,11 @@
 ! The three abstract contracts by which a continuous statement
 ! becomes discrete algebra and exposes its derivatives:
 !
-!      discretization_operator   an operation built from an
+!      discretization   an operation built from an
 !                                operation by binding it to a
 !                                graph's arithmetic; owes its
 !                                dependency pattern as a graph
-!      linearization_operator    an operation built from an
+!      linearization    an operation built from an
 !                                operation by freezing a state:
 !                                the tangent J v at that state,
 !                                behind the ordinary operation
@@ -19,7 +19,7 @@
 !                                against direction fields - up to
 !                                a declared maximum order
 !
-! Concrete members: stencil_operator and step_operator discretize
+! Concrete members: stencil and scheme discretize
 ! on the dependent and independent axes; difference_linearization
 ! and exact_linearization are the two tangents, selected by
 ! tangent_of; chain_rule composes partial actions to any degree.
@@ -31,47 +31,47 @@ module operation_discretization
 
   use iso_fortran_env     , only : dp => REAL64
   use view_directed , only : directed_graph
-  use field_calculus, only : graph_field
-  use operation_action, only : graph_operation
+  use field_calculus, only : field
+  use operation_action, only : operation
 
   implicit none
 
   private
-  public :: discretization_operator
-  public :: linearization_operator
+  public :: discretization
+  public :: linearization
   public :: differentiable_operation
 
   !===================================================================!
-  ! DISCRETIZATION_OPERATOR. Owes by contract its dependency
+  ! DISCRETIZATION. Owes by contract its dependency
   ! pattern, as a graph, on the axis the concrete type represents:
-  ! a stencil_operator's pattern is on the dependent variable
-  ! (which unknown feeds which), a step_operator's on the
+  ! a stencil's pattern is on the dependent variable
+  ! (which unknown feeds which), a scheme's on the
   ! independent variable (which instants the residual reads).
   !===================================================================!
 
-  type, abstract, extends(graph_operation) :: discretization_operator
+  type, abstract, extends(operation) :: discretization
 
    contains
 
      procedure(discretization_pattern_interface), deferred :: dependencies
 
-  end type discretization_operator
+  end type discretization
 
   !===================================================================!
-  ! LINEARIZATION_OPERATOR. The tangent of S at a frozen state,
+  ! LINEARIZATION. The tangent of S at a frozen state,
   ! behind the operation interface, so a minimizer sees an
   ! ordinary linear operation. One deferred routine beyond the
   ! interface: freeze, which moves the state (and may cache the
   ! base residual) between a governor's steps.
   !===================================================================!
 
-  type, abstract, extends(graph_operation) :: linearization_operator
+  type, abstract, extends(operation) :: linearization
 
    contains
 
      procedure(linearization_freeze_interface), deferred :: freeze
 
-  end type linearization_operator
+  end type linearization
 
   !===================================================================!
   ! DIFFERENTIABLE_OPERATION. An operation that, beyond apply,
@@ -83,7 +83,7 @@ module operation_discretization
   ! built on this contract.
   !===================================================================!
 
-  type, abstract, extends(graph_operation) :: differentiable_operation
+  type, abstract, extends(operation) :: differentiable_operation
 
    contains
 
@@ -100,8 +100,8 @@ module operation_discretization
      !===============================================================!
 
      subroutine discretization_pattern_interface(this, pattern)
-       import :: discretization_operator, directed_graph
-       class(discretization_operator), intent(in) :: this
+       import :: discretization, directed_graph
+       class(discretization), intent(in) :: this
        class(directed_graph), allocatable, intent(out)     :: pattern
      end subroutine discretization_pattern_interface
 
@@ -111,8 +111,8 @@ module operation_discretization
      !===============================================================!
 
      subroutine linearization_freeze_interface(this, at, base)
-       import :: linearization_operator, dp
-       class(linearization_operator), intent(inout) :: this
+       import :: linearization, dp
+       class(linearization), intent(inout) :: this
        real(dp), intent(in)           :: at(:)
        real(dp), intent(in), optional :: base(:)
      end subroutine linearization_freeze_interface
@@ -133,13 +133,13 @@ module operation_discretization
 
      subroutine differentiable_partial_action_interface(this, input_graph, &
           & input_data, slots, directions, output)
-       import :: differentiable_operation, directed_graph, graph_field
+       import :: differentiable_operation, directed_graph, field
        class(differentiable_operation), intent(in)    :: this
        class(directed_graph)          , intent(in)    :: input_graph
-       class(graph_field)             , intent(in)    :: input_data(:)
+       class(field)             , intent(in)    :: input_data(:)
        integer                        , intent(in)    :: slots(:)
-       class(graph_field)             , intent(in)    :: directions(:)
-       class(graph_field), allocatable, intent(inout) :: output
+       class(field)             , intent(in)    :: directions(:)
+       class(field), allocatable, intent(inout) :: output
      end subroutine differentiable_partial_action_interface
 
   end interface

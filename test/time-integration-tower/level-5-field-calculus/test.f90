@@ -56,7 +56,7 @@ program time_level_5
   use graph_fractal        , only : set_graph => graph
   use map_set        , only : set_map
   use relation_binary , only : csr_relation
-  use field_stored     , only : field
+  use field_stored     , only : stored_field
   use time_carriers_fixture , only : time_carriers
   use time_relations_fixture, only : tail_relation, head_relation
   use time_fields_fixture   , only : state_field, instant_coordinates, &
@@ -67,7 +67,7 @@ program time_level_5
   type(set_graph)  :: q, t, e
   type(set_map)  :: sets
   type(csr_relation) :: tail, head
-  type(field)        :: qf, tf, hf
+  type(stored_field)        :: qf, tf, hf
   integer            :: nfail
 
   nfail = 0

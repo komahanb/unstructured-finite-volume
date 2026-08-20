@@ -39,12 +39,12 @@
 module operation_minimization
 
   use iso_fortran_env       , only : dp => REAL64
-  use operation_action  , only : graph_operation
+  use operation_action  , only : operation
   use view_directed   , only : directed_graph
-  use field_calculus  , only : graph_field
+  use field_calculus  , only : field
   use graph_fractal      , only : set_graph => graph
-  use field_calculus        , only : graph_functional
-  use field_stored     , only : field
+  use field_calculus        , only : functional
+  use field_stored     , only : stored_field
   use operation_reduction , only : reduction, REDUCE_SUM, REDUCE_NORM
   use operation_walk      , only : walk, WALK_COLOURING
 
@@ -58,9 +58,9 @@ module operation_minimization
   ! tolerances every iteration honours.
   !===================================================================!
 
-  type, abstract, extends(graph_operation) :: minimizer
+  type, abstract, extends(operation) :: minimizer
 
-     class(graph_operation), allocatable :: action
+     class(operation), allocatable :: action
 
      ! THE EXECUTION CONTEXT. The graph handed to the action when it
      ! is applied, and nothing more. It is whatever the action needs
@@ -167,7 +167,7 @@ contains
        & ncomp, coupling)
 
     class(minimizer)  , intent(inout) :: this
-    class(graph_operation), intent(in)    :: action
+    class(operation), intent(in)    :: action
     class(directed_graph)          , intent(in)    :: on
     type(set_graph)       , intent(in)    :: unknown_domain
     integer               , intent(in)    :: n_unknown_domain
@@ -245,10 +245,10 @@ contains
     real(dp), intent(in)               :: x(:)
     real(dp), allocatable, intent(out) :: y(:)
 
-    type(field) :: state
-    class(graph_field), allocatable :: answer
+    type(stored_field) :: state
+    class(field), allocatable :: answer
 
-    state = field('state', this % unknown_domain, this % n_unknown_domain, ncomp=this % ncomp)
+    state = stored_field('state', this % unknown_domain, this % n_unknown_domain, ncomp=this % ncomp)
     call state % set_real_vector(x)
 
     call this % action % apply(this % on, [state], answer)
@@ -288,13 +288,13 @@ contains
     real(dp), intent(in) :: u(:), v(:)
 
     type(reduction) :: total
-    type(field) :: uf, vf
-    class(graph_functional), allocatable :: answer
+    type(stored_field) :: uf, vf
+    class(functional), allocatable :: answer
     real(dp), allocatable :: got(:)
 
-    uf = field('u', this % numbers, this % n_numbers)
+    uf = stored_field('u', this % numbers, this % n_numbers)
     call uf % set_real_vector(u)
-    vf = field('v', this % numbers, this % n_numbers)
+    vf = stored_field('v', this % numbers, this % n_numbers)
     call vf % set_real_vector(v)
 
     total = reduction(REDUCE_SUM)
@@ -311,11 +311,11 @@ contains
     real(dp), intent(in) :: u(:)
 
     type(reduction) :: measure_of
-    type(field) :: uf
-    class(graph_functional), allocatable :: answer
+    type(stored_field) :: uf
+    class(functional), allocatable :: answer
     real(dp), allocatable :: got(:)
 
-    uf = field('u', this % numbers, this % n_numbers)
+    uf = stored_field('u', this % numbers, this % n_numbers)
     call uf % set_real_vector(u)
 
     measure_of = reduction(REDUCE_NORM)
@@ -332,7 +332,7 @@ contains
     integer, allocatable, intent(out) :: colours(:)
 
     type(walk) :: colouring
-    class(graph_field), allocatable :: answer
+    class(field), allocatable :: answer
 
     ! THE COLOURING IS OF THE UNKNOWNS' COUPLING, never of the
     ! execution context. Two unknowns may share a colour only when
@@ -432,11 +432,11 @@ contains
 
     class(minimizer), intent(in)                   :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
     class(minimizer), allocatable :: worker
-    type(field) :: out
+    type(stored_field) :: out
     real(dp), allocatable :: rhs(:), x(:)
     real(dp) :: achieved
 
@@ -461,7 +461,7 @@ contains
        call worker % solve(rhs, x, achieved)
     end if
 
-    out = field('solution', this % unknown_domain, this % n_unknown_domain, ncomp=this % ncomp)
+    out = stored_field('solution', this % unknown_domain, this % n_unknown_domain, ncomp=this % ncomp)
     call out % set_real_vector(x)
 
     if (allocated(output)) deallocate(output)

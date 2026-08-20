@@ -16,7 +16,7 @@
 program mutation
 
   use token_identity, only : token
-  use graph_fractal , only : graph, graph_branch, &
+  use graph_fractal , only : graph, branch, &
        & GRAPH_NULL, GRAPH_UNKNOWN, GRAPH_KNOWN, &
        & null_branch, unknown_branch, known_branch
   use graph_views   , only : dp, attribute_map, csr, &
@@ -277,7 +277,7 @@ contains
 
   end function transition
 
-  type(graph_branch) function branch_with(s, ref) result(b)
+  type(branch) function branch_with(s, ref) result(b)
 
     integer            , intent(in) :: s
     type(graph), target, intent(in) :: ref

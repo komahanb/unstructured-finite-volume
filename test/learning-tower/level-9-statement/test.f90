@@ -52,9 +52,9 @@ program learning_level_9
   use relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
   use relation_algorithms, only : topological_order
-  use field_calculus, only : graph_field
-  use view_directed_stored    , only : directed_stored_graph
-  use field_stored, only : field
+  use field_calculus, only : field
+  use view_directed_stored    , only : stored_directed_graph
+  use field_stored, only : stored_field
   use operation_gmres, only : gmres
   use learning_constitution_fixture, only : apply_law, slot_for_port
   use constituted_residual_fixture , only : constituted_learning_residual
@@ -79,13 +79,13 @@ program learning_level_9
   type(graph)             , target :: rcell(2), relem(2)
   type(relational_binding)         :: bnd
   integer                          :: kcell
-  type(directed_stored_graph)                 :: host
+  type(stored_directed_graph)                 :: host
   type(constituted_learning_residual) :: residual_op
   type(gmres)                        :: solver
-  type(field)                        :: q_k, rhsf
+  type(stored_field)                        :: q_k, rhsf
   type(set_graph)     :: dom
   integer     :: n_dom
-  class(graph_field), allocatable    :: sol, rf
+  class(field), allocatable    :: sol, rf
   integer, allocatable               :: order(:)
   real(dp), allocatable              :: obs(:), gv(:), solval(:), rv(:)
   real(dp)                           :: w_learned
@@ -180,7 +180,7 @@ program learning_level_9
        & "the derived order is [predict, error], exactly", nfail)
 
   ! -- the observation: Level 5's field on K, and NO field on U
-  q_k = field('observations', k, sets % size_of(k))
+  q_k = stored_field('observations', k, sets % size_of(k))
   call q_k % set_real_vector([6.0_dp, 2.0_dp])
   call q_k % get_real_vector(obs)
 
@@ -190,7 +190,7 @@ program learning_level_9
   deallocate(flow)
 
   ! -- the compatibility scenery: seven vertices, nobody's trainables
-  host = directed_stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
+  host = stored_directed_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
 
   call check_structure(nfail, "before training")
 
@@ -212,7 +212,7 @@ program learning_level_9
        & "R(0) = -6: the full model evaluated at the untrained w", &
        & nfail)
 
-  rhsf = field('rhs', y, sets % size_of(y))
+  rhsf = stored_field('rhs', y, sets % size_of(y))
   call rhsf % set_real_vector(-gv)
 
   ! -- the solve: rhs on Y in, solution on Theta out; the internal
@@ -233,7 +233,7 @@ program learning_level_9
 
   ! -- the full symbolic model judges its own learned solution
   select type (sol)
-  type is (field)
+  type is (stored_field)
      call residual_op % apply(host, [sol], rf)
   end select
   call rf % get_real_vector(rv)

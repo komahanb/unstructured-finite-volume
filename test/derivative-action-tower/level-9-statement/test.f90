@@ -56,7 +56,7 @@ program derivative_level_9
   use relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
   use relation_algorithms , only : topological_order
-  use field_stored, only : field
+  use field_stored, only : stored_field
   use derivative_constitution_fixture, only : primal_execution, &
        &                                      tangent_action, reverse_action
   use graph_fractal        , only : graph, known_branch, null_branch
@@ -78,7 +78,7 @@ program derivative_level_9
   type(graph)             , target :: rcell(2), relem(2)
   type(relational_binding)         :: bnd
   integer                          :: kcell
-  type(field)                        :: qx, zbar_f, grad_f, vseed_f
+  type(stored_field)                        :: qx, zbar_f, grad_f, vseed_f
   type(set_graph)     :: dom
   integer, allocatable               :: order(:)
   real(dp), allocatable              :: obs(:), gradient(:), gvals(:)
@@ -236,7 +236,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    qx = field('base point', x_dom, sets % size_of(x_dom))
+    qx = stored_field('base point', x_dom, sets % size_of(x_dom))
     call qx % set_real_vector([3.0_dp, 2.0_dp])
     call qx % get_real_vector(obs)
 
@@ -260,14 +260,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    zbar_f = field('reverse seed', z_dom, sets % size_of(z_dom))
+    zbar_f = stored_field('reverse seed', z_dom, sets % size_of(z_dom))
     call zbar_f % set_real_vector([1.0_dp])
     call zbar_f % get_real_vector(seed1)
 
     call reverse_action(gflow, v, sets, x_dom, order, base, z_dom, &
          & seed1, gradient)
 
-    grad_f = field('derivative of z on X', x_dom, sets % size_of(x_dom))
+    grad_f = stored_field('derivative of z on X', x_dom, sets % size_of(x_dom))
     call grad_f % set_real_vector(gradient)
 
     dom = grad_f % domain()
@@ -331,7 +331,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    vseed_f = field('tangent direction', x_dom, sets % size_of(x_dom))
+    vseed_f = stored_field('tangent direction', x_dom, sets % size_of(x_dom))
     call vseed_f % set_real_vector([-1.0_dp, 4.0_dp])
     call vseed_f % get_real_vector(vdir)
 
@@ -357,11 +357,11 @@ contains
     integer, intent(inout) :: nfail
 
     real(dp), allocatable :: xbar2(:), seed2(:)
-    type(field)           :: zbar2_f
+    type(stored_field)           :: zbar2_f
 
     allocate(xbar2(sets % size_of(x_dom)))
 
-    zbar2_f = field('reverse seed two', z_dom, sets % size_of(z_dom))
+    zbar2_f = stored_field('reverse seed two', z_dom, sets % size_of(z_dom))
     call zbar2_f % set_real_vector([2.0_dp])
     call zbar2_f % get_real_vector(seed2)
 

@@ -76,7 +76,7 @@ program visualization_level_5
   use relation_finitary       , only : relation
   use relation_binary, only : csr_relation
   use field_calculus , only : GRAPH_FIELD_REAL
-  use field_stored    , only : field
+  use field_stored    , only : stored_field
   use visualization_carriers_fixture , only : structural_carriers, label_for
   use visualization_relations_fixture, only : occurrences_of_a1
   use visualization_relations_fixture, only : occurrences_of_a2
@@ -106,7 +106,7 @@ program visualization_level_5
   type(label_map)     :: labels
   type(csr_relation)         :: t1, h1, t2, h2, t3, h3
   type(csr_relation), target :: d1, d2, d3, d21, d31
-  type(field)                :: w1, w2, w3, w1_alt, decoy
+  type(stored_field)                :: w1, w2, w3, w1_alt, decoy
   type(picture)              :: before_d1, before_d2, before_d3
   integer                    :: nfail
 
@@ -138,7 +138,7 @@ program visualization_level_5
   w1_alt = alternate_coefficients_of_a1(e1, sets)
 
   ! A perfectly valid field that is simply not about E2. |X0| = |E2|.
-  decoy = field('four numbers on X0', x0, sets % size_of(x0), ncomp=1)
+  decoy = stored_field('four numbers on X0', x0, sets % size_of(x0), ncomp=1)
   call decoy % set_real_vector([7.0_dp, 7.0_dp, 7.0_dp, 7.0_dp])
 
   ! ---- the compositions, derived AFTER the fields exist.
@@ -602,7 +602,7 @@ contains
 
   logical function all_values_recovered(w, occurrences, want)
 
-    class(field)     , intent(in) :: w
+    class(stored_field)     , intent(in) :: w
     type(set_graph), intent(in) :: occurrences
     real(dp)         , intent(in) :: want(:)
 
@@ -668,7 +668,7 @@ contains
 
     class(relation)  , intent(in) :: d, tail, head
     type(set_graph), intent(in) :: occurrences
-    class(field)     , intent(in) :: w
+    class(stored_field)     , intent(in) :: w
 
     type(set_graph) :: cols, rows
     type(picture)                  :: structural, valued

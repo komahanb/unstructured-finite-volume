@@ -37,7 +37,7 @@
 !
 !                    THE COORDINATES ARE PRODUCTION'S
 !
-! stencil_operator(rows, columns, weights, constant) builds
+! stencil(rows, columns, weights, constant) builds
 !
 !      stored_graph(nv, tails = columns, heads = rows)
 !
@@ -52,9 +52,9 @@
 module production_discretization_fixture
 
   use iso_fortran_env    , only : dp => REAL64
-  use operation_action, only : graph_operation
-  use operation_stencil, only : stencil_operator
-  use operation_step   , only : step_operator, bdf
+  use operation_action, only : operation
+  use operation_stencil, only : stencil
+  use operation_step   , only : scheme, bdf
 
   implicit none
 
@@ -86,9 +86,9 @@ contains
   ! LENGTH is what sets the vertex count - three, here.
   !===================================================================!
 
-  type(stencil_operator) function d2_coordinate_stencil() result(s)
+  type(stencil) function d2_coordinate_stencil() result(s)
 
-    s = stencil_operator(rows     = [1, 1, 2, 3], &
+    s = stencil(rows     = [1, 1, 2, 3], &
          &               columns  = [1, 2, 2, 3], &
          &               weights  = [1.0_dp, 5.0_dp, -2.0_dp, 2.0_dp], &
          &               constant = [0.0_dp, 0.0_dp, 0.0_dp], &
@@ -111,9 +111,9 @@ contains
   ! The weights are Level 5's w1, zero and all.
   !===================================================================!
 
-  type(stencil_operator) function d1_coordinate_stencil() result(s)
+  type(stencil) function d1_coordinate_stencil() result(s)
 
-    s = stencil_operator(rows     = [1, 1, 2, 2, 3], &
+    s = stencil(rows     = [1, 1, 2, 2, 3], &
          &               columns  = [1, 2, 2, 3, 4], &
          &               weights  = [2.0_dp, -1.0_dp, 0.0_dp, 3.0_dp, 4.0_dp], &
          &               constant = [0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp], &
@@ -129,9 +129,9 @@ contains
   ! everything except their order can be asked the same question.
   !===================================================================!
 
-  type(stencil_operator) function diagonal_stencil() result(s)
+  type(stencil) function diagonal_stencil() result(s)
 
-    s = stencil_operator(rows     = [1, 2, 3], &
+    s = stencil(rows     = [1, 2, 3], &
          &               columns  = [1, 2, 3], &
          &               weights  = [1.0_dp, 1.0_dp, 1.0_dp], &
          &               constant = [0.0_dp, 0.0_dp, 0.0_dp], &
@@ -144,9 +144,9 @@ contains
   ! called as production calls it.
   !===================================================================!
 
-  type(step_operator) function bdf2_around(action) result(clock)
+  type(scheme) function bdf2_around(action) result(clock)
 
-    class(graph_operation), intent(in) :: action
+    class(operation), intent(in) :: action
 
     clock = bdf(BDF2_ORDER, action, H_PROBE)
 

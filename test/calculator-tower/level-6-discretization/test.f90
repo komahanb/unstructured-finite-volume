@@ -37,7 +37,7 @@ program calculator_level_6
   use relation_finitary   , only : stored_relation, relation
   use relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use relation_binary , only : csr_relation, transposed_view, &
+  use relation_binary , only : csr_relation, transposed_relation, &
        &                             transpose_of
 
   implicit none
@@ -51,7 +51,7 @@ program calculator_level_6
   type(stored_relation)      :: flow, backwards, located
   type(stored_relation)      :: q_prod, a_part
   type(csr_relation), target :: j, j2
-  type(transposed_view)      :: jt
+  type(transposed_relation)      :: jt
   integer                    :: table(3, 6)
   integer                    :: nfail
   type(set_map)     :: sets

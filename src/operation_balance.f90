@@ -45,11 +45,11 @@
 module operation_balance
 
   use iso_fortran_env    , only : dp => REAL64
-  use operation_action, only : graph_operation
+  use operation_action, only : operation
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use graph_fractal      , only : set_graph => graph
-  use field_stored  , only : field
+  use field_stored  , only : stored_field
   use operation_differential, only : differential_operator
 
   implicit none
@@ -66,7 +66,7 @@ module operation_balance
   ! type is what lets the balance keep its terms in a plain array.
   !===================================================================!
 
-  type, extends(graph_operation) :: balance
+  type, extends(operation) :: balance
 
      type(differential_operator), allocatable :: edge_terms(:)
 
@@ -149,19 +149,19 @@ contains
 
     class(balance)    , intent(in)                 :: this
     class(directed_graph)      , intent(in)                 :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
-    class(graph_field), allocatable :: edge_values
+    class(field), allocatable :: edge_values
 
-    type(field)           :: out
+    type(stored_field)           :: out
     real(dp), allocatable :: y(:), z(:)
     integer               :: nv, ne, v, e, t, h, k
 
     nv = input_graph % num_vertices()
     ne = input_graph % num_edges()
 
-    out = field('balance', input_graph % vertex_set(), input_graph % num_vertices())
+    out = stored_field('balance', input_graph % vertex_set(), input_graph % num_vertices())
 
     allocate(y(nv))
     y = this % source

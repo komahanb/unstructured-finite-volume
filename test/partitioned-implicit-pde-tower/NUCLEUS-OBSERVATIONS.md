@@ -381,7 +381,7 @@ comparison:           the reverse review inferred this from
                       different host, different answer
 
 suspected nucleus implication: the reverse review's REJECT of
-                      "remove class(graph) from graph_operation" is
+                      "remove class(graph) from operation" is
                       now supported by evidence rather than by
                       inference. Removing it would break this call
                       chain outright. Seam A1 is CLOSED as a refactor
@@ -597,7 +597,7 @@ action:               observe; candidate subject for a future tower
 ## Reverse-evidence status after this tower
 
 ```text
-A1  graph_operation host          CLOSED at Gate B - measured, not
+A1  operation host          CLOSED at Gate B - measured, not
                                   inferred. Gate C reinforces it and
                                   does not reopen it.
 

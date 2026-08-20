@@ -58,7 +58,7 @@ program partitioned_pde_level_4
   use map_label      , only : label_map
   use view_directed    , only : directed_graph
   use relation_binary  , only : csr_relation
-  use view_directed_stored            , only : directed_stored_graph
+  use view_directed_stored            , only : stored_directed_graph
   use transform_partitioner, only : partitioner, PARTITION_LINEAR
   use chain_carriers_fixture , only : chain_carriers
   use chain_relations_fixture, only : tail_relation, head_relation, &
@@ -73,7 +73,7 @@ program partitioned_pde_level_4
   type(set_map)          :: sets
   type(csr_relation), target :: tail, head, own
   type(csr_relation)         :: tail_owner, head_owner
-  type(directed_stored_graph)         :: g
+  type(stored_directed_graph)         :: g
   class(directed_graph), allocatable  :: g1, g2
   integer                    :: nfail
 
@@ -92,7 +92,7 @@ program partitioned_pde_level_4
   tail_owner = derive_tail_owner(tail, own, sets)
   head_owner = derive_head_owner(head, own, sets)
 
-  g = directed_stored_graph(6, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  g = stored_directed_graph(6, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
   call sets % bind(g % vertex_set(), &
        & counted_set_representation(g % num_vertices()))
   call sets % bind(g % edge_set(), &
@@ -135,7 +135,7 @@ contains
     write(tag,'(i1)') kpart
 
     select type (part)
-    type is (directed_stored_graph)
+    type is (stored_directed_graph)
        rel = part % whole_relation()
        call report(rel % has_part_relation() .and. &
             &      rel % num_parts() .eq. 2 .and. &
@@ -169,7 +169,7 @@ contains
     write(tag,'(i1)') kpart
 
     select type (part)
-    type is (directed_stored_graph)
+    type is (stored_directed_graph)
        rel = part % whole_relation()
 
        ok = part % num_vertices() .eq. size(globals)
@@ -281,7 +281,7 @@ contains
 
     holds_global_edge = .false.
     select type (part)
-    type is (directed_stored_graph)
+    type is (stored_directed_graph)
        rel = part % whole_relation()
        do i = 1, part % num_edges()
           if (rel % global_edge_index(i) .eq. ge) holds_global_edge = .true.
@@ -300,7 +300,7 @@ contains
 
     owner_of_global_edge = 0
     select type (part)
-    type is (directed_stored_graph)
+    type is (stored_directed_graph)
        rel = part % whole_relation()
        do i = 1, part % num_edges()
           if (rel % global_edge_index(i) .eq. ge) then

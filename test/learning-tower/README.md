@@ -977,7 +977,7 @@ minimization independently of constitution.
 ## Construction / implementation
 
 The in-file fixture module `learning_residual_fixture` defines
-`affine_learning_residual` extending the legacy `graph_operation` face
+`affine_learning_residual` extending the legacy `operation` face
 (`graph_grammar`), constructed **parametrically**:
 
 ```text
@@ -1299,7 +1299,7 @@ independent minimizer certification below the frontier.
 
 The adapter `constituted_learning_residual`
 (`level-9-statement/constituted_residual_fixture.f90`) is an adapter
-**only** — Level-8 semantics wearing the legacy `graph_operation` face so
+**only** — Level-8 semantics wearing the legacy `operation` face so
 the ordinary solver can drive them. Its entire numerical act is one
 delegation to `learning_constitution_fixture::generated_residual`. It
 contains no law, no slot name, no order literal, no \(2w-6\).
@@ -1813,7 +1813,7 @@ conflate law, policy, role, and statement.
 
 ## Observation E — the graph host appears locally unused in minimization
 
-At Levels 7 and 9 the legacy `graph_operation` face requires a graph host;
+At Levels 7 and 9 the legacy `operation` face requires a graph host;
 the tests deliberately supply a seven-vertex graph unrelated to every
 learning domain, and the mathematics never touches it.
 

@@ -26,22 +26,22 @@
 module operation_linearization
 
   use iso_fortran_env    , only : dp => REAL64
-  use operation_action, only : graph_operation
+  use operation_action, only : operation
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use graph_fractal      , only : set_graph => graph
-  use operation_discretization     , only : linearization_operator, &
+  use operation_discretization     , only : linearization, &
        & differentiable_operation
-  use field_stored  , only : field
+  use field_stored  , only : stored_field
 
   implicit none
 
   private
   public :: difference_linearization
 
-  type, extends(linearization_operator) :: difference_linearization
+  type, extends(linearization) :: difference_linearization
 
-     class(graph_operation), allocatable :: of
+     class(operation), allocatable :: of
 
      real(dp), allocatable :: at(:)
      real(dp), allocatable :: base(:)
@@ -78,7 +78,7 @@ module operation_linearization
   public :: exact_linearization
   public :: tangent_of
 
-  type, extends(linearization_operator) :: exact_linearization
+  type, extends(linearization) :: exact_linearization
 
      class(differentiable_operation), allocatable :: of
 
@@ -106,7 +106,7 @@ contains
 
   function create_difference(of, at, base) result(this)
 
-    class(graph_operation), intent(in) :: of
+    class(operation), intent(in) :: of
     real(dp), intent(in), optional     :: at(:)
     real(dp), intent(in), optional     :: base(:)
     type(difference_linearization)     :: this
@@ -187,11 +187,11 @@ contains
 
     class(difference_linearization), intent(in)    :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
-    type(field)   :: state
-    class(graph_field), allocatable :: pushed
+    type(stored_field)   :: state
+    class(field), allocatable :: pushed
     type(set_graph) :: on, given
     integer         :: n_on, n_given
     real(dp), allocatable :: v(:), y(:), base(:)
@@ -232,14 +232,14 @@ contains
     if (allocated(this % base)) then
        base = this % base
     else
-       state = field('state', on, n_on, ncomp=ncomp)
+       state = stored_field('state', on, n_on, ncomp=ncomp)
        call state % set_real_vector(this % at)
        call this % of % apply(input_graph, [state], pushed)
        call answered_on(pushed, on)
        call pushed % get_real_vector(base)
     end if
 
-    state = field('state', on, n_on, ncomp=ncomp)
+    state = stored_field('state', on, n_on, ncomp=ncomp)
     call state % set_real_vector(this % at + this % step * v)
 
     call this % of % apply(input_graph, [state], pushed)
@@ -248,7 +248,7 @@ contains
 
     y = (y - base) / this % step
 
-    state = field('J v', on, n_on, ncomp=ncomp)
+    state = stored_field('J v', on, n_on, ncomp=ncomp)
     call state % set_real_vector(y)
     if (allocated(output)) deallocate(output)
     allocate(output, source=state)
@@ -262,7 +262,7 @@ contains
 
   subroutine answered_on(answer, expected)
 
-    class(graph_field), intent(in) :: answer
+    class(field), intent(in) :: answer
     type(set_graph)   , intent(in) :: expected
 
     type(set_graph) :: got
@@ -284,8 +284,8 @@ contains
 
   function tangent_of(action) result(tangent)
 
-    class(graph_operation), intent(in)         :: action
-    class(linearization_operator), allocatable :: tangent
+    class(operation), intent(in)         :: action
+    class(linearization), allocatable :: tangent
 
     select type (action)
     class is (differentiable_operation)
@@ -366,10 +366,10 @@ contains
 
     class(exact_linearization), intent(in)          :: this
     class(directed_graph), intent(in)               :: input_graph
-    class(graph_field), intent(in), optional        :: input_data(:)
-    class(graph_field), allocatable, intent(inout)  :: output
+    class(field), intent(in), optional        :: input_data(:)
+    class(field), allocatable, intent(inout)  :: output
 
-    type(field)     :: state, direction, zero
+    type(stored_field)     :: state, direction, zero
     type(set_graph) :: on, given
     real(dp), allocatable :: v(:)
     integer         :: n_on
@@ -391,7 +391,7 @@ contains
 
     ncomp = max(size(this % at) / n, 1)
 
-    state = field('state', on, n_on, ncomp=ncomp)
+    state = stored_field('state', on, n_on, ncomp=ncomp)
     call state % set_real_vector(this % at)
 
     if (present(input_data)) then
@@ -407,7 +407,7 @@ contains
 
        ! copy into a concrete field: a polymorphic entity cannot
        ! appear in an array constructor
-       direction = field('direction', on, n_on, ncomp=ncomp)
+       direction = stored_field('direction', on, n_on, ncomp=ncomp)
        call direction % set_real_vector(v)
 
        call this % of % partial_action(input_graph, [state], [1], &
@@ -417,7 +417,7 @@ contains
 
        ! no direction means the zero direction, and the tangent of
        ! zero is zero
-       zero = field('J v', on, n_on, ncomp=ncomp)
+       zero = stored_field('J v', on, n_on, ncomp=ncomp)
        call zero % set_real_vector(spread(0.0_dp, 1, size(this % at)))
        if (allocated(output)) deallocate(output)
        allocate(output, source=zero)

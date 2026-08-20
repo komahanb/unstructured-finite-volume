@@ -26,7 +26,7 @@ program calculator_level_3_refusal
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
-  use relation_binary , only : csr_relation, transposed_view, &
+  use relation_binary , only : csr_relation, transposed_relation, &
        &                             transpose_of
   use graph_fractal         , only : graph
   use view_relational , only : relational_binding
@@ -35,7 +35,7 @@ program calculator_level_3_refusal
 
   type(set_graph)          :: o
   type(csr_relation), target :: dep
-  type(transposed_view)      :: flipped
+  type(transposed_relation)      :: flipped
   type(graph)       , target :: elem
   type(relational_binding)   :: bnd
   character(len=32)          :: which

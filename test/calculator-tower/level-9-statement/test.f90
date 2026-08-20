@@ -28,7 +28,7 @@
 module constituted_residual_fixture
 
   ! The Level-9 adapter: Level-8 semantics wearing the legacy
-  ! graph_operation face so the ordinary solver can drive it. Its
+  ! operation face so the ordinary solver can drive it. Its
   ! entire numerical act is delegation.
 
   use iso_fortran_env  , only : dp => REAL64
@@ -45,10 +45,10 @@ module constituted_residual_fixture
   use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
        & holds_set
-  use operation_action, only : graph_operation
+  use operation_action, only : operation
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
-  use field_stored, only : field
+  use field_calculus, only : field
+  use field_stored, only : stored_field
   use arithmetic_constitution_fixture, only : generated_residual
 
   implicit none
@@ -56,7 +56,7 @@ module constituted_residual_fixture
   private
   public :: constituted_residual
 
-  type, extends(graph_operation) :: constituted_residual
+  type, extends(operation) :: constituted_residual
      class(relation), allocatable :: flow      ! the GRAPH-OWNED copy
      class(relation), allocatable :: located
      type(set_graph)            :: xs, os, ys
@@ -160,12 +160,12 @@ contains
 
     class(constituted_residual), intent(in)        :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
     type(set_map) :: mine
 
-    type(field)                    :: out
+    type(stored_field)                    :: out
     type(set_graph) :: dom
     real(dp), allocatable          :: ustate(:), r(:)
     integer         :: n_os
@@ -204,7 +204,7 @@ contains
          & mine, this % known, this % known_values, &
          & this % unknown, ustate, r)
 
-    out = field('residual', this % ys, this % n_ys)
+    out = stored_field('residual', this % ys, this % n_ys)
     call out % set_real_vector(r)
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
@@ -220,7 +220,7 @@ program calculator_level_9
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use relation_finitary   , only : stored_relation, relation
   use graph_fractal        , only : graph, set_graph => graph, &
        & known_branch, null_branch
@@ -233,8 +233,8 @@ program calculator_level_9
        & holds_set
   use relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use view_directed_stored      , only : directed_stored_graph
-  use field_stored, only : field
+  use view_directed_stored      , only : stored_directed_graph
+  use field_stored, only : stored_field
   use operation_gmres, only : gmres
   use constituted_residual_fixture, only : constituted_residual
 
@@ -253,12 +253,12 @@ program calculator_level_9
   type(graph)             , target :: rcell(2), relem(2)
   type(relational_binding)         :: bnd
   integer                          :: kcell
-  type(directed_stored_graph)    :: host
+  type(stored_directed_graph)    :: host
   type(constituted_residual) :: residual_op
   type(gmres)           :: solver
-  type(field)           :: rhsf
+  type(stored_field)           :: rhsf
   type(set_graph)  :: dom
-  class(graph_field), allocatable :: sol, rf
+  class(field), allocatable :: sol, rf
   real(dp), allocatable :: gv(:), solval(:), rv(:)
   real(dp)              :: answer
   integer               :: table(3, 6)
@@ -352,7 +352,7 @@ program calculator_level_9
   deallocate(flow)
 
   ! -- the compatibility scenery: not part of the statement.
-  host = directed_stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
+  host = stored_directed_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
 
   ! -- the ordinary solver, through its own operation face
   call solver % attach(residual_op, host, u, sets % size_of(u))
@@ -364,7 +364,7 @@ program calculator_level_9
        & "the solver answers on U = { c, e }", nfail)
 
   call solver % constant(gv)
-  rhsf = field('rhs', y, sets % size_of(y))
+  rhsf = stored_field('rhs', y, sets % size_of(y))
   call rhsf % set_real_vector(-gv)
 
   call solver % apply(host, [rhsf], sol)
@@ -375,7 +375,7 @@ program calculator_level_9
 
   ! -- verify the constituted residual vanishes at the solution
   select type (sol)
-  type is (field)
+  type is (stored_field)
      call residual_op % apply(host, [sol], rf)
   end select
   call rf % get_real_vector(rv)

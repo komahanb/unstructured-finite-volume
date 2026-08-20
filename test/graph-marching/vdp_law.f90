@@ -14,19 +14,19 @@
 module vdp_fixture
 
   use iso_fortran_env    , only : dp => REAL64
-  use operation_action, only : graph_operation
+  use operation_action, only : operation
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use view_directed     , only : GRAPH_SIDE_VERTEX
   use graph_fractal         , only : set_graph => graph
-  use field_stored  , only : field
+  use field_stored  , only : stored_field
 
   implicit none
 
   private
   public :: vdp_law, vdp_tangent_law, vdp_adjoint_law
 
-  type, extends(graph_operation) :: vdp_law
+  type, extends(operation) :: vdp_law
      real(dp) :: mu = 1.0_dp
    contains
      procedure :: name   => law_name
@@ -36,7 +36,7 @@ module vdp_fixture
 
   ! The augmented statement: (q, dq) marched together; the tangent
   ! rides the same forward walk as the state.
-  type, extends(graph_operation) :: vdp_tangent_law
+  type, extends(operation) :: vdp_tangent_law
      real(dp) :: mu = 1.0_dp
    contains
      procedure :: name   => tangent_name
@@ -46,7 +46,7 @@ module vdp_fixture
 
   ! The transposed linearization at a stored state, for the reverse
   ! walk; the test moves `at` along the stored trajectory.
-  type, extends(graph_operation) :: vdp_adjoint_law
+  type, extends(operation) :: vdp_adjoint_law
      real(dp) :: mu = 1.0_dp
      real(dp) :: at(2) = 0.0_dp
    contains
@@ -112,8 +112,8 @@ contains
 
     class(vdp_law), intent(in)                     :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
     real(dp), allocatable :: q(:)
     real(dp) :: s(2), u, v
@@ -135,8 +135,8 @@ contains
 
     class(vdp_tangent_law), intent(in)             :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
     real(dp), allocatable :: q(:)
     real(dp) :: s(4), u, v, du, dv
@@ -163,8 +163,8 @@ contains
 
     class(vdp_adjoint_law), intent(in)             :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
     real(dp), allocatable :: lam(:)
     real(dp) :: s(2), u, v
@@ -187,14 +187,14 @@ contains
 
     class(directed_graph), intent(in) :: input_graph
     real(dp), intent(in) :: s(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), allocatable, intent(inout) :: output
 
     type(set_graph) :: cells
-    type(field)   :: out
+    type(stored_field)   :: out
     integer :: v
 
     cells = input_graph % vertex_set()
-    out = field('velocity', cells, input_graph % num_vertices(), ncomp=size(s))
+    out = stored_field('velocity', cells, input_graph % num_vertices(), ncomp=size(s))
     call out % set_real_vector(s)
 
     if (allocated(output)) deallocate(output)

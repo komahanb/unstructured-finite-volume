@@ -35,13 +35,13 @@ program derivative_level_5
        & listed_set_representation
   use map_set        , only : set_map
   use map_inclusion  , only : inclusion_map, declared_subobject
-  use field_stored, only : field
+  use field_stored, only : stored_field
 
   implicit none
 
   type(set_graph) :: v
   type(set_graph)  :: x_dom, c
-  type(field)       :: qx
+  type(stored_field)       :: qx
   integer           :: nfail
   type(set_map)     :: sets
   type(inclusion_map)     :: inclusions
@@ -122,7 +122,7 @@ contains
     type(set_graph) :: dom
     real(dp), allocatable          :: val(:)
 
-    qx = field('base point', x_dom, sets % size_of(x_dom))
+    qx = stored_field('base point', x_dom, sets % size_of(x_dom))
     call qx % set_real_vector([3.0_dp, 2.0_dp])
 
     dom = qx % domain()

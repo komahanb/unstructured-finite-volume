@@ -19,36 +19,36 @@
 module transform_structure
 
   use view_directed , only : directed_graph
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
 
   implicit none
 
   private
 
-  public :: graph_transform
+  public :: transform
 
-  type, abstract :: graph_transform
+  type, abstract :: transform
 
    contains
 
      procedure(transform_on_graph_interface), deferred :: defined_on_graph
      procedure(transform_on_data_interface) , deferred :: defined_on_data
 
-  end type graph_transform
+  end type transform
 
   abstract interface
 
      logical function transform_on_graph_interface(this, input_graph)
-       import :: graph_transform, directed_graph
-       class(graph_transform), intent(in) :: this
+       import :: transform, directed_graph
+       class(transform), intent(in) :: this
        class(directed_graph), intent(in) :: input_graph
      end function transform_on_graph_interface
 
      logical function transform_on_data_interface(this, input_graph, input_data)
-       import :: graph_transform, directed_graph, graph_field
-       class(graph_transform), intent(in) :: this
+       import :: transform, directed_graph, field
+       class(transform), intent(in) :: this
        class(directed_graph), intent(in) :: input_graph
-       class(graph_field), intent(in) :: input_data
+       class(field), intent(in) :: input_data
      end function transform_on_data_interface
 
   end interface

@@ -34,25 +34,25 @@ module operation_stencil
 
   use iso_fortran_env    , only : dp => REAL64
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
-  use operation_discretization     , only : discretization_operator
+  use field_calculus, only : field
+  use operation_discretization     , only : discretization
   use relation_binary, only : group_by_key
-  use field_stored  , only : field
-  use view_directed_stored        , only : directed_stored_graph
+  use field_stored  , only : stored_field
+  use view_directed_stored        , only : stored_directed_graph
   use graph_fractal      , only : set_graph => graph
 
   implicit none
 
   private
-  public :: stencil_operator
+  public :: stencil
   public :: combine_triples
 
-  type, extends(discretization_operator) :: stencil_operator
+  type, extends(discretization) :: stencil
 
-     type(directed_stored_graph) :: pattern
+     type(stored_directed_graph) :: pattern
 
-     type(field) :: weights
-     type(field) :: constants
+     type(stored_field) :: weights
+     type(stored_field) :: constants
 
      character(len=:), allocatable :: label
 
@@ -63,12 +63,12 @@ module operation_stencil
      procedure :: apply        => stencil_apply
      procedure :: dependencies => stencil_dependencies
 
-  end type stencil_operator
+  end type stencil
 
-  interface stencil_operator
+  interface stencil
      module procedure create
      module procedure create_dense
-  end interface stencil_operator
+  end interface stencil
 
 contains
 
@@ -78,7 +78,7 @@ contains
   ! column, head at the row - and the numbers become its fields.
   !===================================================================!
 
-  type(stencil_operator) function create(rows, columns, weights, &
+  type(stencil) function create(rows, columns, weights, &
        & constant, label) result(this)
 
     integer , intent(in) :: rows(:)
@@ -91,11 +91,11 @@ contains
 
     nv = size(constant)
 
-    this % pattern = directed_stored_graph(nv, tails=columns, heads=rows)
+    this % pattern = stored_directed_graph(nv, tails=columns, heads=rows)
 
-    this % weights   = field('stencil weights', this % pattern % edge_set(), this % pattern % num_edges())
+    this % weights   = stored_field('stencil weights', this % pattern % edge_set(), this % pattern % num_edges())
     call this % weights % set_real_vector(weights)
-    this % constants = field('stencil constants', this % pattern % vertex_set(), this % pattern % num_vertices())
+    this % constants = stored_field('stencil constants', this % pattern % vertex_set(), this % pattern % num_vertices())
     call this % constants % set_real_vector(constant)
 
     if (present(label)) then
@@ -113,7 +113,7 @@ contains
   ! a rectangular array stops the program.
   !===================================================================!
 
-  type(stencil_operator) function create_dense(a, label) result(this)
+  type(stencil) function create_dense(a, label) result(this)
 
     real(dp)        , intent(in)           :: a(:,:)
     character(len=*), intent(in), optional :: label
@@ -146,7 +146,7 @@ contains
 
   pure function stencil_name(this) result(name)
 
-    class(stencil_operator), intent(in) :: this
+    class(stencil), intent(in) :: this
     character(len=:), allocatable :: name
 
     name = this % label
@@ -155,7 +155,7 @@ contains
 
   subroutine stencil_domain(this, input_graph, domain, nentries)
 
-    class(stencil_operator), intent(in)    :: this
+    class(stencil), intent(in)    :: this
     class(directed_graph), intent(in)               :: input_graph
     type(set_graph), intent(out) :: domain
     integer        , intent(out) :: nentries
@@ -174,12 +174,12 @@ contains
 
   subroutine stencil_apply(this, input_graph, input_data, output)
 
-    class(stencil_operator), intent(in)            :: this
+    class(stencil), intent(in)            :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
-    type(field)   :: out
+    type(stored_field)   :: out
     real(dp), allocatable :: q(:), y(:), w(:)
     integer :: nv, e
 
@@ -197,7 +197,7 @@ contains
        end do
     end if
 
-    out = field(this % label, input_graph % vertex_set(), input_graph % num_vertices())
+    out = stored_field(this % label, input_graph % vertex_set(), input_graph % num_vertices())
     call out % set_real_vector(y)
 
     if (allocated(output)) deallocate(output)
@@ -211,7 +211,7 @@ contains
 
   subroutine stencil_dependencies(this, pattern)
 
-    class(stencil_operator), intent(in)    :: this
+    class(stencil), intent(in)    :: this
     class(directed_graph), allocatable, intent(out) :: pattern
 
     allocate(pattern, source=this % pattern)

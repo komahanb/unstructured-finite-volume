@@ -3,7 +3,7 @@ include ../../../Makefile.in
 #=====================================================================#
 # Learning level 7: the fitting suite. Framework modules this level
 # may see: the carrier/domain machinery, the field, the legacy
-# graph_operation host contract and the GMRES citizen - which
+# operation host contract and the GMRES citizen - which
 # inherits attach, constant and solve from the minimizer base, so
 # operation_minimization itself stays off the allowlist. Constitution
 # and statement remain forbidden: the solver never learns what

@@ -22,17 +22,17 @@
 program test_graph_marching
 
   use iso_fortran_env, only : dp => REAL64
-  use operation_action, only : graph_operation
+  use operation_action, only : operation
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use view_directed , only : GRAPH_SIDE_VERTEX
   use graph_fractal         , only : set_graph => graph
-  use field_stored  , only : field
-  use view_directed_stored        , only : directed_stored_graph
-  use operation_differential, only : vertex_differential_operator
+  use field_stored  , only : stored_field
+  use view_directed_stored        , only : stored_directed_graph
+  use operation_differential, only : vertex_derivative
   use operation_differential, only : differential_operator
   use operation_marching, only : marcher, MARCH_BACKWARD, MARCH_BDF2
-  use operation_stencil , only : stencil_operator
+  use operation_stencil , only : stencil
   use operation_newton  , only : newton
   use operation_gmres   , only : gmres
   use mandelbrot_law_fixture, only : mandelbrot_law
@@ -86,7 +86,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(marcher) :: clock
-    type(directed_stored_graph) :: chain
+    type(stored_directed_graph) :: chain
     logical :: ordered
     integer :: e
 
@@ -115,16 +115,16 @@ contains
 
     type(marcher) :: clock
     type(set_graph) :: cells
-    type(directed_stored_graph) :: lone
+    type(stored_directed_graph) :: lone
     type(differential_operator) :: decay
     real(dp) :: q(1), expected
     integer :: v
 
-    lone = directed_stored_graph(1, tails=[integer ::], heads=[integer ::])
+    lone = stored_directed_graph(1, tails=[integer ::], heads=[integer ::])
     associate (u1 => cells, u2 => v)
     end associate
 
-    decay = vertex_differential_operator(order=0, coefficient=1.0_dp)
+    decay = vertex_derivative(order=0, coefficient=1.0_dp)
 
     clock % step = 0.125_dp
     q = [3.0_dp]
@@ -150,16 +150,16 @@ contains
 
     type(marcher) :: clock
     type(mandelbrot_law) :: law
-    type(directed_stored_graph) :: points
+    type(stored_directed_graph) :: points
     type(set_graph) :: cells
-    type(field) :: escape_field
+    type(stored_field) :: escape_field
     real(dp), allocatable :: q(:)
     integer, allocatable :: escape(:)
     integer :: v, n
     integer, parameter :: nv = 5, nmax = 30
 
     ! The five points, as a graph of lone cells.
-    points = directed_stored_graph(nv, tails=[integer ::], heads=[integer ::])
+    points = stored_directed_graph(nv, tails=[integer ::], heads=[integer ::])
 
     law % creal = [0.0_dp, -1.0_dp, 1.0_dp, -2.0_dp, 0.0_dp]
     law % cimag = [0.0_dp,  0.0_dp, 0.0_dp,  0.0_dp, 2.0_dp]
@@ -188,7 +188,7 @@ contains
     ! The counts leave as an integer field: the tower's native kind
     ! for a picture of whole numbers.
     cells = points % vertex_set()
-    escape_field = field('escape time', cells, points % num_vertices())
+    escape_field = stored_field('escape time', cells, points % num_vertices())
     call escape_field % set_integer_vector(escape)
 
     call report(escape(1) == 0, 'c = 0 never escapes: the origin holds', nfail)
@@ -211,12 +211,12 @@ contains
     integer, intent(inout) :: nfail
 
     type(marcher) :: clock
-    type(directed_stored_graph) :: lone
+    type(stored_directed_graph) :: lone
     type(differential_operator) :: decay
     real(dp) :: q(1), expected, coarse_error, fine_error, ratio
 
-    lone  = directed_stored_graph(1, tails=[integer ::], heads=[integer ::])
-    decay = vertex_differential_operator(order=0, coefficient=1.0_dp)
+    lone  = stored_directed_graph(1, tails=[integer ::], heads=[integer ::])
+    decay = vertex_derivative(order=0, coefficient=1.0_dp)
 
     clock % rule = MARCH_BACKWARD
     clock % step = 0.125_dp
@@ -268,13 +268,13 @@ contains
     integer, intent(inout) :: nfail
 
     type(marcher) :: clock
-    type(directed_stored_graph) :: pair, lone
+    type(stored_directed_graph) :: pair, lone
     type(differential_operator) :: decay
     real(dp) :: wide(2), tall(2), expected(2)
 
-    pair = directed_stored_graph(2, tails=[integer ::], heads=[integer ::])
-    lone = directed_stored_graph(1, tails=[integer ::], heads=[integer ::])
-    decay = vertex_differential_operator(order=0, coefficient=1.0_dp)
+    pair = stored_directed_graph(2, tails=[integer ::], heads=[integer ::])
+    lone = stored_directed_graph(1, tails=[integer ::], heads=[integer ::])
+    decay = vertex_derivative(order=0, coefficient=1.0_dp)
 
     clock % rule = MARCH_BACKWARD
     clock % step = 0.125_dp
@@ -314,8 +314,8 @@ contains
     integer, intent(inout) :: nfail
 
     type(marcher) :: clock
-    type(directed_stored_graph) :: trio
-    type(stencil_operator) :: forward_action, transposed
+    type(stored_directed_graph) :: trio
+    type(stencil) :: forward_action, transposed
     real(dp) :: q(3), lambda(3), before, after
     integer , parameter :: rows(6) = [1, 1, 2, 2, 3, 3]
     integer , parameter :: cols(6) = [1, 2, 2, 3, 3, 1]
@@ -323,12 +323,12 @@ contains
          &                         0.3_dp, 0.7_dp]
     real(dp), parameter :: zeros(3) = [0.0_dp, 0.0_dp, 0.0_dp]
 
-    trio = directed_stored_graph(3, tails=[integer ::], heads=[integer ::])
+    trio = stored_directed_graph(3, tails=[integer ::], heads=[integer ::])
 
     ! An unsymmetric statement and its transpose: rows and columns
     ! swapped, the stencil's own adjoint.
-    forward_action = stencil_operator(rows, cols, w, zeros)
-    transposed     = stencil_operator(cols, rows, w, zeros)
+    forward_action = stencil(rows, cols, w, zeros)
+    transposed     = stencil(cols, rows, w, zeros)
 
     clock % rule = 1
     clock % step = 0.05_dp
@@ -368,7 +368,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(marcher) :: clock
-    type(directed_stored_graph) :: cell
+    type(stored_directed_graph) :: cell
     type(vdp_law)         :: law
     type(vdp_tangent_law) :: tangent
     type(vdp_adjoint_law) :: transposed
@@ -378,7 +378,7 @@ contains
     integer , parameter :: nsteps = 100
     integer :: n, i
 
-    cell = directed_stored_graph(1, tails=[integer ::], heads=[integer ::])
+    cell = stored_directed_graph(1, tails=[integer ::], heads=[integer ::])
     clock % rule = 1
     clock % step = h
 

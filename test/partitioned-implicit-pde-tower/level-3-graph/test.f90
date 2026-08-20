@@ -28,7 +28,7 @@ program partitioned_pde_level_3
   use map_set_representation, only : counted_set_representation
   use map_set        , only : set_map
   use relation_binary  , only : csr_relation
-  use view_directed_stored            , only : directed_stored_graph
+  use view_directed_stored            , only : stored_directed_graph
   use chain_carriers_fixture , only : chain_carriers
   use chain_relations_fixture, only : tail_relation, head_relation
 
@@ -39,7 +39,7 @@ program partitioned_pde_level_3
   type(set_graph)  :: v, e, k
   type(set_map)  :: sets
   type(csr_relation) :: tail, head
-  type(directed_stored_graph) :: g
+  type(stored_directed_graph) :: g
   integer            :: nfail
 
   nfail = 0
@@ -52,7 +52,7 @@ program partitioned_pde_level_3
   tail = tail_relation(e, v, sets)
   head = head_relation(e, v, sets)
 
-  g = directed_stored_graph(6, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  g = stored_directed_graph(6, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
   call sets % bind(g % vertex_set(), &
        & counted_set_representation(g % num_vertices()))
   call sets % bind(g % edge_set(), &

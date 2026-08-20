@@ -481,7 +481,7 @@ does not need one.
 | Object | Type | Role |
 |---|---|---|
 | **global G** | `stored_graph` | topology **yes**; global domain source **yes**; GMRES host **yes**; downstream numerical influence **yes** (Level-7 star control) |
-| **parts G1, G2** | `directed_stored_graph` + `partition_relation` | stands in r_p **yes**; local domain source **yes**; local topology operand **yes**; ownership/global maps **yes** — the graph carries r, the four verbs are handed it |
+| **parts G1, G2** | `stored_directed_graph` + `partition_relation` | stands in r_p **yes**; local domain source **yes**; local topology operand **yes**; ownership/global maps **yes** — the graph carries r, the four verbs are handed it |
 | **borrowed member** | a member of a part carrier | visible to the local operator **yes**; authoritative output contributor **NO** |
 | **vertex/edge sets** | `counted_set` / `subset_set` | value domains — what fields live on |
 

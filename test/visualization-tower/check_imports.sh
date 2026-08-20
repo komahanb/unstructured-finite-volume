@@ -47,8 +47,8 @@
 #
 # 2. OPERATORS. view_directed, operation_stencil, operation_step
 #    and everything that solves, steps, linearizes or marches. The
-#    types the brief names explicitly - discretization_operator and
-#    stencil_operator - live inside operation_stencil,
+#    types the brief names explicitly - discretization and
+#    stencil - live inside operation_stencil,
 #    operation_step, graph_calculus and operation_fitting, so refusing
 #    those modules refuses the types; a second scan below refuses the
 #    bare names too, in case a later level finds another road to them.
@@ -613,9 +613,13 @@ for dir in "$here"/common "$here"/level-*; do
         # a road to them the module scan would not see. Like the
         # numberless law, it is a CEILING THAT LIFTS rather than a rule
         # deleted when Level 6 needed it: forbidden L0-L5, allowed L6.
+        # The type names are now plain words (stencil, scheme,
+        # discretization), so the scan strips comments and matches
+        # only type usage - type(x), class(x), extends(x) - the one
+        # road to a type the module scan cannot see.
         if ! discretization_allowed "$key"; then
-            for banned in discretization_operator stencil_operator step_operator; do
-                if grep -qiE "(^|[^a-zA-Z0-9_])$banned([^a-zA-Z0-9_]|$)" "$src"; then
+            for banned in discretization stencil scheme; do
+                if sed 's/!.*//' "$src" | grep -qiE "(type|class|extends) *\( *$banned *\)"; then
                     echo "IMPORT GATE: $(basename "$src") in $name names '$banned' - production discretization first enters at Level 6"
                     violation=1
                 fi

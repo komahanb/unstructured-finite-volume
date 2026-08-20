@@ -37,10 +37,10 @@ module affine_residual_fixture
   use map_set        , only : set_map
   use map_set_representation, only : set_representation
   use map_inclusion  , only : inclusion_map, declared_subobject
-  use operation_action, only : graph_operation
+  use operation_action, only : operation
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
-  use field_stored, only : field
+  use field_calculus, only : field
+  use field_stored, only : stored_field
 
   implicit none
 
@@ -50,7 +50,7 @@ module affine_residual_fixture
   integer, parameter :: ROW_C = 1
   integer, parameter :: ROW_E = 2
 
-  type, extends(graph_operation) :: affine_residual
+  type, extends(operation) :: affine_residual
      !----------------------------------------------------------------!
      ! Identity, count, and the action's OWN coordinates - copied in
      ! at construction, the way a CSR relation copies the numbering it
@@ -103,10 +103,10 @@ contains
 
     class(affine_residual), intent(in)             :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
-    type(field)                    :: out
+    type(stored_field)                    :: out
     type(set_graph) :: dom
     real(dp), allocatable          :: q(:), r(:)
     real(dp)                       :: qc, qe
@@ -133,7 +133,7 @@ contains
     r(this % y_coords % local_index(ROW_C)) = qc - 5.0_dp
     r(this % y_coords % local_index(ROW_E)) = qe - 4.0_dp * qc
 
-    out = field('residual', this % y, this % n_y)
+    out = stored_field('residual', this % y, this % n_y)
     call out % set_real_vector(r)
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
@@ -146,7 +146,7 @@ program calculator_level_7
 
   use iso_fortran_env  , only : dp => REAL64
   use calculator_assert, only : report, verdict, SLOT_C, SLOT_E
-  use view_directed_stored      , only : directed_stored_graph
+  use view_directed_stored      , only : stored_directed_graph
   use operation_gmres, only : gmres
   use graph_fractal        , only : set_graph => graph
   use map_set_representation, only : counted_set_representation, &
@@ -160,7 +160,7 @@ program calculator_level_7
 
   type(set_graph)     :: x, y, hv
   type(set_graph)      :: u
-  type(directed_stored_graph)    :: host
+  type(stored_directed_graph)    :: host
   type(affine_residual) :: oracle
   type(gmres)           :: solver
   type(set_graph) :: dom
@@ -185,7 +185,7 @@ program calculator_level_7
   call sets % bind(y, counted_set_representation(2))
 
   ! Seven vertices: the wrong size for everything, on purpose.
-  host = directed_stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
+  host = stored_directed_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
 
   oracle = affine_residual(u, y, sets)
 

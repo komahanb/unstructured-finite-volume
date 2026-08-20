@@ -30,7 +30,7 @@
 ! from holding N copies of its extension.
 !
 ! This module is the REHOMED field ontology: the one abstract
-! graph_field and its value-kind constants. They came from the old
+! field and its value-kind constants. They came from the old
 ! grammar, which re-exported them for a while and was drained and
 ! deleted in PR2; every consumer now asks here, which is where they
 ! are defined. One abstract field, one concrete field
@@ -59,8 +59,8 @@ module field_calculus
   implicit none
 
   private
-  public :: graph_field
-  public :: graph_functional
+  public :: field
+  public :: functional
   public :: set_graph
   public :: GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL, GRAPH_FIELD_COMPLEX
   public :: GRAPH_FIELD_LOGICAL, GRAPH_FIELD_CHARACTER
@@ -81,7 +81,7 @@ module field_calculus
   ! once. num_entries is the construction snapshot, not a query.
   !===================================================================!
 
-  type, abstract :: graph_field
+  type, abstract :: field
 
    contains
 
@@ -104,10 +104,10 @@ module field_calculus
      procedure(field_get_character_interface), deferred :: get_character_vector
      procedure(field_set_character_interface), deferred :: set_character_vector
 
-  end type graph_field
+  end type field
 
   !===================================================================!
-  ! GRAPH_FUNCTIONAL. The field at domain size one: a single
+  ! FUNCTIONAL. The field at domain size one: a single
   ! value with the whole inherited interface. The type exists so
   ! an argument may demand the one-entry case at compile time - a
   ! reduction returns a functional, not a field that happens to be
@@ -115,14 +115,14 @@ module field_calculus
   ! because the type system cannot state it.
   !===================================================================!
 
-  type, abstract, extends(graph_field) :: graph_functional
-  end type graph_functional
+  type, abstract, extends(field) :: functional
+  end type functional
 
   abstract interface
 
      pure function field_name_interface(this) result(name)
-       import :: graph_field
-       class(graph_field), intent(in) :: this
+       import :: field
+       class(field), intent(in) :: this
        character(len=:), allocatable :: name
      end function field_name_interface
 
@@ -133,72 +133,72 @@ module field_calculus
      !--------------------------------------------------------------!
 
      type(set_graph) function field_domain_interface(this)
-       import :: graph_field, set_graph
-       class(graph_field), intent(in) :: this
+       import :: field, set_graph
+       class(field), intent(in) :: this
      end function field_domain_interface
 
      pure integer function field_count_interface(this)
-       import :: graph_field
-       class(graph_field), intent(in) :: this
+       import :: field
+       class(field), intent(in) :: this
      end function field_count_interface
 
      pure subroutine field_get_integer_interface(this, values)
-       import :: graph_field
-       class(graph_field), intent(in) :: this
+       import :: field
+       class(field), intent(in) :: this
        integer, allocatable, intent(out) :: values(:)
      end subroutine field_get_integer_interface
 
      pure subroutine field_set_integer_interface(this, values)
-       import :: graph_field
-       class(graph_field), intent(inout) :: this
+       import :: field
+       class(field), intent(inout) :: this
        integer, intent(in) :: values(:)
      end subroutine field_set_integer_interface
 
      pure subroutine field_get_real_interface(this, values)
-       import :: graph_field, dp
-       class(graph_field), intent(in) :: this
+       import :: field, dp
+       class(field), intent(in) :: this
        real(dp), allocatable, intent(out) :: values(:)
      end subroutine field_get_real_interface
 
      pure subroutine field_set_real_interface(this, values)
-       import :: graph_field, dp
-       class(graph_field), intent(inout) :: this
+       import :: field, dp
+       class(field), intent(inout) :: this
        real(dp), intent(in) :: values(:)
      end subroutine field_set_real_interface
 
      pure subroutine field_get_complex_interface(this, values)
-       import :: graph_field, dp
-       class(graph_field), intent(in) :: this
+       import :: field, dp
+       class(field), intent(in) :: this
        complex(dp), allocatable, intent(out) :: values(:)
      end subroutine field_get_complex_interface
 
      pure subroutine field_set_complex_interface(this, values)
-       import :: graph_field, dp
-       class(graph_field), intent(inout) :: this
+       import :: field, dp
+       class(field), intent(inout) :: this
        complex(dp), intent(in) :: values(:)
      end subroutine field_set_complex_interface
 
      pure subroutine field_get_logical_interface(this, values)
-       import :: graph_field
-       class(graph_field), intent(in) :: this
+       import :: field
+       class(field), intent(in) :: this
        logical, allocatable, intent(out) :: values(:)
      end subroutine field_get_logical_interface
 
      pure subroutine field_set_logical_interface(this, values)
-       import :: graph_field
-       class(graph_field), intent(inout) :: this
+       import :: field
+       class(field), intent(inout) :: this
        logical, intent(in) :: values(:)
      end subroutine field_set_logical_interface
 
      pure subroutine field_get_character_interface(this, values)
-       import :: graph_field
-       class(graph_field), intent(in) :: this
+       import :: field
+       class(field), intent(in) :: this
        character(len=:), allocatable, intent(out) :: values(:)
      end subroutine field_get_character_interface
 
      pure subroutine field_set_character_interface(this, values)
-       import :: graph_field
-       class(graph_field), intent(inout) :: this
+       import :: field
+       class(field), intent(inout) :: this
        character(len=*), intent(in) :: values(:)
      end subroutine field_set_character_interface
 

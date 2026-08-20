@@ -39,7 +39,7 @@ Indentation is `extends`; brackets name the file.
     ├── stored_relation                        [relation_finitary]
     └── binary_relation                        [relation_binary]
         ├── csr_relation                       [relation_binary]
-        └── transposed_view                    [relation_binary]
+        └── transposed_relation                    [relation_binary]
 
     group_by_key                               [relation_binary]
         the one grouping kernel (counting sort): the fibration of a
@@ -48,22 +48,22 @@ Indentation is `extends`; brackets name the file.
         other count/prefix/scatter exists.
 
     directed_graph  D = (V, E, tail, head)     [view_directed]
-    └── directed_stored_graph                  [view_directed_stored]
+    └── stored_directed_graph                  [view_directed_stored]
 
-    graph_field                                [field_calculus]
-    ├── field                                  [field_stored]
-    └── graph_functional  (one entry)          [field_calculus]
-        └── functional                         [field_functional]
+    field                                      [field_calculus]
+    ├── stored_field                           [field_stored]
+    └── functional  (one entry)                [field_calculus]
+        └── stored_functional                  [field_functional]
 
-    graph_operation                            [operation_action]
+    operation                                  [operation_action]
     ├── reduction   field -> functional  (sum, average, norm, ...)   [operation_reduction]
     ├── broadcast   functional -> field  (copy, share)               [operation_reduction]
-    ├── discretization_operator                [operation_discretization]
-    │   ├── stencil_operator  space: matrix as weighted edges   [operation_stencil]
+    ├── discretization                [operation_discretization]
+    │   ├── stencil  space: matrix as weighted edges   [operation_stencil]
     │   │       constructed from triples or from a dense array;
     │   │       exports combine_triples (one entry per pair)
-    │   └── step_operator     time:  a0 q + a1 qold + a2 qolder + hs S(q)   [operation_step]
-    ├── linearization_operator  J v at a frozen state           [operation_discretization]
+    │   └── scheme     time:  a0 q + a1 qold + a2 qolder + hs S(q)   [operation_step]
+    ├── linearization  J v at a frozen state           [operation_discretization]
     │   ├── difference_linearization           [operation_linearization]
     │   └── exact_linearization  + tangent_of chooser           [operation_linearization]
     ├── differentiable_operation  exact partial actions to max_degree   [operation_discretization]
@@ -75,11 +75,11 @@ Indentation is `extends`; brackets name the file.
     │       the average, difference, and incidence steps as affine
     │       sparse maps, composed by parity into one matrix + constant;
     │       adjoint = transpose; stencil_of returns the square compiled
-    │       form as a stencil_operator
+    │       form as a stencil
     ├── balance, fit, walk                     [clients and utilities]
     └── ...
 
-    graph_transform                            [transform_structure]
+    transform                            [transform_structure]
     ├── partitioner                            [transform_partitioner]
     ├── assembler                              [transform_assembler]
     ├── coarsener                              [transform_coarsener]
@@ -106,7 +106,7 @@ Indentation is `extends`; brackets name the file.
     relation     = graph  x  tuples
     operation    = graph  x  fields  ->  field
     stencil      = operation with weights on edges          (a matrix)
-    step         = operation x (a0, a1, a2, hs)             (a scheme)
+    scheme       = operation x (a0, a1, a2, hs)             (a step rule)
     tangent      = operation frozen at a state              (a matrix action)
     derivative   = incidence o difference o ... o average   (one stencil)
     chain rule   = partitions x partial actions             (any derivative)
@@ -127,7 +127,7 @@ Indentation is `extends`; brackets name the file.
                       transforms (partitioner/assembler/coarsener/refiner)
     5    field:       field_calculus, field_stored,
                       field_functional, operation_reduction
-    6    calculus:    operation_discretization, stencil, step,
+    6    calculus:    operation_discretization, stencil, scheme,
                       linearizations, chain rule, differential
                       operator, forms/fitting
     7    solve:       operation_minimization + members, marcher,
@@ -173,7 +173,7 @@ difference, incidence - are affine sparse maps (a matrix plus the
 constant a boundary value leaves behind). The order-n operator is
 their composition by parity, computed as one sparse triple product
 with duplicates combined, so the operator IS a stencil: `stencil_of`
-returns the square vertex-landing form as a `stencil_operator`, and
+returns the square vertex-landing form as a `stencil`, and
 the adjoint is the transpose of the composed matrix - no reversed
 step kernels exist. The contract suite holds the agreement law:
 applying the operator and applying its compiled stencil give the
@@ -182,7 +182,7 @@ same numbers, boundary constants and adjoint included.
 ## One directed view, relation-seated (consolidated 2026-08-19)
 
 The directed view D = (V, E, tail, head) has one implementation:
-`directed_stored_graph`. Its stored arrays are the compiled
+`stored_directed_graph`. Its stored arrays are the compiled
 snapshots the hot paths read; its `tail_relation()` and
 `head_relation()` derive T <= E x V and H <= E x V as csr_relations
 on request, over counted coordinates, so a graph nobody reads

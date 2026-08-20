@@ -60,10 +60,10 @@ program time_level_7
   use graph_fractal        , only : set_graph => graph
   use map_set        , only : set_map
   use view_directed   , only : directed_graph
-  use field_calculus  , only : graph_field
-  use view_directed_stored           , only : directed_stored_graph
-  use field_stored     , only : field
-  use operation_step      , only : step_operator, backward_euler, bdf
+  use field_calculus  , only : field
+  use view_directed_stored           , only : stored_directed_graph
+  use field_stored     , only : stored_field
+  use operation_step      , only : scheme, backward_euler, bdf
   use operation_gmres     , only : gmres
   use time_carriers_fixture , only : time_carriers
   use triangular_decay_fixture, only : triangular_decay
@@ -72,7 +72,7 @@ program time_level_7
 
   type(set_graph)      :: q, t, e
   type(set_map)      :: sets
-  type(directed_stored_graph)     :: ht
+  type(stored_directed_graph)     :: ht
   type(triangular_decay) :: decay
   integer                :: nfail
 
@@ -85,7 +85,7 @@ program time_level_7
   call time_carriers(sets, q, t, e)
 
   ! The same compatibility host as Level 6: five vertices, and not Q.
-  ht = directed_stored_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
+  ht = stored_directed_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
 
   decay = triangular_decay(q, NQ)
 
@@ -126,10 +126,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(step_operator)             :: step
+    type(scheme)             :: step
     type(gmres)                     :: solver
-    type(field)                     :: rhs
-    class(graph_field), allocatable :: answer
+    type(stored_field)                     :: rhs
+    class(field), allocatable :: answer
     type(set_graph)  :: d
     integer         :: n_d
     real(dp), allocatable           :: c(:), v(:)
@@ -152,7 +152,7 @@ contains
          & "measured rather than assumed", nfail)
 
     ! ... so the linear statement is (I + hM) q1 = q0.
-    rhs = field('rhs', q, NQ, ncomp=1)
+    rhs = stored_field('rhs', q, NQ, ncomp=1)
     call rhs % set_real_vector(Q0)
 
     call solver % apply(ht, [rhs], answer)
@@ -178,10 +178,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(step_operator)             :: step
+    type(scheme)             :: step
     type(gmres)                     :: solver
-    type(field)                     :: rhs
-    class(graph_field), allocatable :: answer
+    type(stored_field)                     :: rhs
+    class(field), allocatable :: answer
     type(set_graph)  :: d
     real(dp), allocatable           :: c(:), v(:)
     real(dp)                        :: expected_rhs(NQ)
@@ -206,7 +206,7 @@ contains
          & "which is the oracle, arrived at from the history rather " // &
          & "than copied in", nfail)
 
-    rhs = field('rhs', q, NQ, ncomp=1)
+    rhs = stored_field('rhs', q, NQ, ncomp=1)
     call rhs % set_real_vector(expected_rhs)
 
     call solver % apply(ht, [rhs], answer)
@@ -237,7 +237,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(step_operator)            :: step
+    type(scheme)            :: step
     type(gmres)                    :: solver
     type(set_graph) :: d, hv
     integer         :: n_d

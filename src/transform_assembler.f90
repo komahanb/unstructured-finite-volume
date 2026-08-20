@@ -62,15 +62,15 @@ module transform_assembler
   use iso_fortran_env     , only : dp => REAL64
   use view_directed , only : directed_graph
   use relation_partition, only : partition_relation
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use graph_fractal      , only : set_graph => graph
   use map_set      , only : set_map
   use map_label    , only : label_map
   use map_inclusion, only : inclusion_map, declared_subobject
   use map_set_representation, only : listed_set_representation
-  use transform_structure, only : graph_transform
-  use view_directed_stored         , only : directed_stored_graph
-  use field_stored   , only : field
+  use transform_structure, only : transform
+  use view_directed_stored         , only : stored_directed_graph
+  use field_stored   , only : stored_field
 
   implicit none
 
@@ -103,7 +103,7 @@ module transform_assembler
   ! arrives beside it, as r.
   !===================================================================!
 
-  type, extends(graph_transform) :: assembler
+  type, extends(transform) :: assembler
 
    contains
 
@@ -123,7 +123,7 @@ contains
   ! With no relation in hand there is exactly one thing an assembler
   ! can say about a bare graph: whether it has members to put back.
   ! The real question - is this the part r was written for - needs r,
-  ! and r is not an argument here because graph_transform's contract
+  ! and r is not an argument here because transform's contract
   ! is not about relations. It is defined_on_relation below, and that
   ! is the gate a caller assembling parts must use.
   !===================================================================!
@@ -171,12 +171,12 @@ contains
 
     class(assembler) , intent(in) :: this
     class(directed_graph)     , intent(in) :: input_graph
-    class(graph_field), intent(in) :: input_data
+    class(field), intent(in) :: input_data
 
     defined_on_data = this % defined_on_graph(input_graph)
 
     select type (input_data)
-    class is (graph_field)
+    class is (field)
        defined_on_data = defined_on_data .and. input_data % num_entries() >= 0
     class default
        defined_on_data = .false.
@@ -228,7 +228,7 @@ contains
     end do
 
     allocate(global_graph, source = &
-         & directed_stored_graph(nv_global, tails=tails, heads=heads, &
+         & stored_directed_graph(nv_global, tails=tails, heads=heads, &
          &                       number=rel % part_id()))
 
   end subroutine assemble_graph
@@ -247,12 +247,12 @@ contains
     class(assembler) , intent(in)               :: this
     type(partition_relation), intent(in)        :: rel
     class(directed_graph)     , intent(in)               :: part_graph
-    class(graph_field), intent(in)               :: part_data
+    class(field), intent(in)               :: part_data
     class(directed_graph)     , intent(in)               :: global_graph
     type(set_map)      , intent(inout)            :: sets
     type(label_map)    , intent(inout)            :: labels
     type(inclusion_map), intent(inout)            :: inclusions
-    class(graph_field), allocatable, intent(out) :: global_data
+    class(field), allocatable, intent(out) :: global_data
 
     type(set_graph) :: dom
     integer         :: n_dom
@@ -263,7 +263,7 @@ contains
 
     select type (part_data)
 
-    class is (field)
+    class is (stored_field)
        dom   = part_data % domain()
        n_dom = part_data % num_entries()
        ! Classify by embedding - a DECLARED question, so the inclusion
@@ -300,7 +300,7 @@ contains
        &                  n_part_carrier, global_graph, on_vertices, &
        &                  sets, labels, inclusions, global_data)
 
-    type(field)        , intent(in)               :: part_data
+    type(stored_field)        , intent(in)               :: part_data
     type(set_graph)    , intent(in)               :: dom
     integer            , intent(in)               :: n_dom
     class(directed_graph)       , intent(in)               :: part_graph
@@ -312,9 +312,9 @@ contains
     type(set_map)      , intent(inout)            :: sets
     type(label_map)    , intent(inout)            :: labels
     type(inclusion_map), intent(inout)            :: inclusions
-    class(graph_field) , allocatable, intent(out) :: global_data
+    class(field) , allocatable, intent(out) :: global_data
 
-    type(field)           :: out
+    type(stored_field)           :: out
     type(set_graph)       :: global_carrier
     type(set_graph)       :: sg
     real(dp), allocatable :: lv(:), fv(:)
@@ -338,7 +338,7 @@ contains
     if (dom % same_as(part_carrier)) then
 
        ! Full coverage: the established dense assembly, owned only.
-       out = field(part_data % name(), global_carrier, nglobal, ncomp=ncomp, &
+       out = stored_field(part_data % name(), global_carrier, nglobal, ncomp=ncomp, &
             &      unit_name=part_data % units())
        allocate(fv(nglobal * ncomp))
        fv = 0.0_dp
@@ -389,7 +389,7 @@ contains
              fv((l - 1) * ncomp + c) = lv((came(l) - 1) * ncomp + c)
           end do
        end do
-       out = field(part_data % name(), sg, n, ncomp=ncomp, &
+       out = stored_field(part_data % name(), sg, n, ncomp=ncomp, &
             &      unit_name=part_data % units())
        call out % set_real_vector(fv)
 

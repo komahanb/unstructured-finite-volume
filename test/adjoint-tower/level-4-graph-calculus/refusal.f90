@@ -27,7 +27,7 @@ program adjoint_level_4_refusal
   use map_inclusion  , only : inclusion_map, declared_subobject
   use relation_finitary, only : stored_relation
   use relation_algebra, only : compose_binary
-  use relation_binary , only : csr_relation, transposed_view, &
+  use relation_binary , only : csr_relation, transposed_relation, &
        &                             transpose_of, inclusion_of
   use relation_algorithms, only : topological_order
   use graph_fractal        , only : graph, known_branch, null_branch
@@ -42,7 +42,7 @@ program adjoint_level_4_refusal
   type(set_graph)               :: q_dom, y_dom
   type(stored_relation)          :: dep
   type(csr_relation), target     :: inc_y, inc_q, jq
-  type(transposed_view)          :: inc_q_t, jq_t
+  type(transposed_relation)          :: inc_q_t, jq_t
   type(csr_relation)             :: coupling
   type(graph)             , target :: g
   type(graph)             , target :: scell(1), selem(1)

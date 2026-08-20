@@ -71,7 +71,7 @@ int64 (degree 21 and beyond).
 
 ### operation_step
 
-`step_operator` is the step recurrence as an operation. Constructors
+`scheme` is the step recurrence as an operation. Constructors
 `backward_euler(action, h)`, `bdf(k, action, h)`, and
 `bdf_variable(k, action, steps)` fill the coefficients; every
 coefficient comes from `set_bdf(k, steps)`, which reconfigures a
@@ -148,7 +148,7 @@ applying the attached operation's matvec to each basis vector. A
 pivot at or below `singular_tolerance` stops the program.
 
 - `solve_dense_matrix_with_dense_direct(a, b, tol, x, achieved)`
-  lays a plain dense array on a `stencil_operator` and solves it
+  lays a plain dense array on a `stencil` and solves it
   through the same minimizer interface.
 - `dense_matrix_of(action, on, width, a)` assembles any operation's
   dense matrix column by column - the reverse direction.

@@ -37,7 +37,7 @@ program calculator_level_8
   use relation_finitary   , only : stored_relation, relation
   use relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use field_stored, only : field
+  use field_stored, only : stored_field
   use arithmetic_constitution_fixture, only : apply_law, &
        &  generated_residual, constitution_support
 
@@ -49,7 +49,7 @@ program calculator_level_8
   type(set_graph)     :: x, o, p, y
   type(set_graph)      :: k, u, p_out
   type(stored_relation) :: flow, located
-  type(field)           :: qk, qu
+  type(stored_field)           :: qk, qu
   integer               :: table(3, 6)
   integer               :: nfail
   type(set_map)     :: sets
@@ -90,9 +90,9 @@ program calculator_level_8
   call u % declare()
   call sets       % bind(u, listed_set_representation([SLOT_E, SLOT_C]))
   call inclusions % include_in(u, x)
-  qk = field('q known', k, sets % size_of(k))
+  qk = stored_field('q known', k, sets % size_of(k))
   call qk % set_real_vector([4.0_dp, 2.0_dp, 3.0_dp])
-  qu = field('q unknown', u, sets % size_of(u))
+  qu = stored_field('q unknown', u, sets % size_of(u))
 
   call check_coverage(nfail)
   call check_laws(nfail)

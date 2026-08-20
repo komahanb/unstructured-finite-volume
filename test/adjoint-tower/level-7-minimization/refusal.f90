@@ -31,9 +31,9 @@ program adjoint_level_7_refusal
        & listed_set_representation
   use map_set        , only : set_map
   use map_inclusion  , only : inclusion_map, declared_subobject
-  use field_calculus, only : graph_field
-  use view_directed_stored      , only : directed_stored_graph
-  use field_stored, only : field
+  use field_calculus, only : field
+  use view_directed_stored      , only : stored_directed_graph
+  use field_stored, only : stored_field
   use operation_gmres, only : gmres
   use opaque_equation_fixture, only : opaque_primal, opaque_adjoint
 
@@ -41,12 +41,12 @@ program adjoint_level_7_refusal
 
   type(set_graph)               :: v, t
   type(set_graph)                :: q_dom, y_dom
-  type(directed_stored_graph)              :: host
+  type(stored_directed_graph)              :: host
   type(opaque_primal)             :: primal_eq
   type(opaque_adjoint)            :: adjoint_eq
   type(gmres)                     :: solver
-  type(field)                     :: wrong, state
-  class(graph_field), allocatable :: answer
+  type(stored_field)                     :: wrong, state
+  class(field), allocatable :: answer
   character(len=32)               :: which
   type(set_map)     :: sets
   type(inclusion_map)     :: inclusions
@@ -66,7 +66,7 @@ program adjoint_level_7_refusal
   call y_dom % declare()
   call sets       % bind(y_dom, listed_set_representation([TGT_R1, TGT_R2]))
   call inclusions % include_in(y_dom, t)
-  host  = directed_stored_graph(5, tails=[1,2,3,4], heads=[2,3,4,5])
+  host  = stored_directed_graph(5, tails=[1,2,3,4], heads=[2,3,4,5])
 
   primal_eq  = opaque_primal(q_dom, y_dom, sets)
   adjoint_eq = opaque_adjoint(y_dom, q_dom, sets)
@@ -76,7 +76,7 @@ program adjoint_level_7_refusal
   case ('primal-rhs-on-Q')
      ! Residual domain is Y; the right-hand side is offered on Q.
      call solver % attach(primal_eq, host, q_dom, sets % size_of(q_dom))
-     wrong = field('rhs on the wrong domain', q_dom, sets % size_of(q_dom))
+     wrong = stored_field('rhs on the wrong domain', q_dom, sets % size_of(q_dom))
      call wrong % set_real_vector([8.0_dp, 22.0_dp])
      call solver % apply(host, [wrong], answer)
      write(*,*) 'a right-hand side on Q was accepted by a Y-residual solver'
@@ -84,19 +84,19 @@ program adjoint_level_7_refusal
   case ('adjoint-rhs-on-Y')
      ! Residual domain is Q; the right-hand side is offered on Y.
      call solver % attach(adjoint_eq, host, y_dom, sets % size_of(y_dom))
-     wrong = field('rhs on the wrong domain', y_dom, sets % size_of(y_dom))
+     wrong = stored_field('rhs on the wrong domain', y_dom, sets % size_of(y_dom))
      call wrong % set_real_vector([1.0_dp, 2.0_dp])
      call solver % apply(host, [wrong], answer)
      write(*,*) 'a right-hand side on Y was accepted by a Q-residual solver'
 
   case ('primal-state-on-Y')
-     state = field('state on the wrong domain', y_dom, sets % size_of(y_dom))
+     state = stored_field('state on the wrong domain', y_dom, sets % size_of(y_dom))
      call state % set_real_vector([2.0_dp, 4.0_dp])
      call primal_eq % apply(host, [state], answer)
      write(*,*) 'the primal equation read a state on Y'
 
   case ('adjoint-covector-on-Q')
-     state = field('covector on the wrong domain', q_dom, sets % size_of(q_dom))
+     state = stored_field('covector on the wrong domain', q_dom, sets % size_of(q_dom))
      call state % set_real_vector([-0.4_dp, 0.6_dp])
      call adjoint_eq % apply(host, [state], answer)
      write(*,*) 'the adjoint equation read a covector on Q'

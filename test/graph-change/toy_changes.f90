@@ -25,7 +25,7 @@
 module toy_changes
 
   use iso_fortran_env      , only : dp => REAL64
-  use map_change_protocol, only : reversible_change, change_result
+  use map_change_protocol, only : reversible_change, change_record
 
   implicit none
 
@@ -110,7 +110,7 @@ contains
   subroutine counting_apply(this, result)
 
     class(counting_change), intent(inout) :: this
-    type(change_result)   , intent(inout) :: result
+    type(change_record)   , intent(inout) :: result
 
     result % touches_structure = .true.
 
@@ -128,7 +128,7 @@ contains
   subroutine counting_check(this, result)
 
     class(counting_change), intent(inout) :: this
-    type(change_result)   , intent(inout) :: result
+    type(change_record)   , intent(inout) :: result
 
     call result % mark_checked(this % check_passes)
 
@@ -137,7 +137,7 @@ contains
   subroutine counting_keep(this, result)
 
     class(counting_change), intent(inout) :: this
-    type(change_result)   , intent(inout) :: result
+    type(change_record)   , intent(inout) :: result
 
     this % grown = .false.
     call result % mark_kept()
@@ -147,7 +147,7 @@ contains
   subroutine counting_revert(this, result)
 
     class(counting_change), intent(inout) :: this
-    type(change_result)   , intent(inout) :: result
+    type(change_record)   , intent(inout) :: result
 
     if (this % grown) then
        this % rooms = this % rooms - 1
@@ -165,7 +165,7 @@ contains
   subroutine mixed_apply(this, result)
 
     class(mixed_change), intent(inout) :: this
-    type(change_result), intent(inout) :: result
+    type(change_record), intent(inout) :: result
 
     result % touches_structure = .true.
     result % touches_value     = .true.
@@ -180,7 +180,7 @@ contains
   subroutine mixed_check(this, result)
 
     class(mixed_change), intent(inout) :: this
-    type(change_result), intent(inout) :: result
+    type(change_record), intent(inout) :: result
 
     call result % mark_checked(this % check_passes)
 
@@ -189,7 +189,7 @@ contains
   subroutine mixed_keep(this, result)
 
     class(mixed_change), intent(inout) :: this
-    type(change_result), intent(inout) :: result
+    type(change_record), intent(inout) :: result
 
     this % grown = .false.
     call result % mark_kept()
@@ -199,7 +199,7 @@ contains
   subroutine mixed_revert(this, result)
 
     class(mixed_change), intent(inout) :: this
-    type(change_result), intent(inout) :: result
+    type(change_record), intent(inout) :: result
 
     if (this % grown) then
        this % rooms = this % rooms - 1
@@ -217,27 +217,27 @@ contains
 
   subroutine silent_apply_apply(this, result)
     class(silent_apply_change)  , intent(inout) :: this
-    type(change_result), intent(inout) :: result
+    type(change_record), intent(inout) :: result
     associate(u1 => this, u2 => result); end associate
   end subroutine silent_apply_apply
 
   subroutine silent_apply_check(this, result)
     class(silent_apply_change)  , intent(inout) :: this
-    type(change_result), intent(inout) :: result
+    type(change_record), intent(inout) :: result
     associate(u1 => this); end associate
     call result % mark_checked(.true.)
   end subroutine silent_apply_check
 
   subroutine silent_apply_keep(this, result)
     class(silent_apply_change)  , intent(inout) :: this
-    type(change_result), intent(inout) :: result
+    type(change_record), intent(inout) :: result
     associate(u1 => this); end associate
     call result % mark_kept()
   end subroutine silent_apply_keep
 
   subroutine silent_apply_revert(this, result)
     class(silent_apply_change)  , intent(inout) :: this
-    type(change_result), intent(inout) :: result
+    type(change_record), intent(inout) :: result
     associate(u1 => this); end associate
     call result % mark_reverted()
   end subroutine silent_apply_revert
@@ -249,28 +249,28 @@ contains
 
   subroutine silent_revert_apply(this, result)
     class(silent_revert_change) , intent(inout) :: this
-    type(change_result), intent(inout) :: result
+    type(change_record), intent(inout) :: result
     associate(u1 => this); end associate
     call result % mark_failed()
   end subroutine silent_revert_apply
 
   subroutine silent_revert_check(this, result)
     class(silent_revert_change) , intent(inout) :: this
-    type(change_result), intent(inout) :: result
+    type(change_record), intent(inout) :: result
     associate(u1 => this); end associate
     call result % mark_checked(.true.)
   end subroutine silent_revert_check
 
   subroutine silent_revert_keep(this, result)
     class(silent_revert_change) , intent(inout) :: this
-    type(change_result), intent(inout) :: result
+    type(change_record), intent(inout) :: result
     associate(u1 => this); end associate
     call result % mark_kept()
   end subroutine silent_revert_keep
 
   subroutine silent_revert_revert(this, result)
     class(silent_revert_change) , intent(inout) :: this
-    type(change_result), intent(inout) :: result
+    type(change_record), intent(inout) :: result
     associate(u1 => this, u2 => result); end associate
   end subroutine silent_revert_revert
 

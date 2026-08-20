@@ -44,10 +44,10 @@ module adjoint_constitution_fixture
   use map_set_representation, only : counted_set_representation, &
        & set_representation
   use relation_finitary   , only : relation
-  use operation_action, only : graph_operation
+  use operation_action, only : operation
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
-  use field_stored, only : field
+  use field_calculus, only : field
+  use field_stored, only : stored_field
 
   implicit none
 
@@ -65,7 +65,7 @@ module adjoint_constitution_fixture
   ! every number it uses comes from the law table below.
   !===================================================================!
 
-  type, extends(graph_operation) :: constituted_primal
+  type, extends(operation) :: constituted_primal
      class(relation)  , allocatable :: jq, jp
      type(set_graph) :: q_dom, y_dom, p_dom
      integer         :: n_q_dom = 0, n_y_dom = 0
@@ -80,7 +80,7 @@ module adjoint_constitution_fixture
      procedure :: apply  => primal_apply
   end type constituted_primal
 
-  type, extends(graph_operation) :: constituted_adjoint
+  type, extends(operation) :: constituted_adjoint
      class(relation)  , allocatable :: jq, fq
      type(set_graph) :: q_dom, y_dom, z_dom
      integer         :: n_q_dom = 0, n_y_dom = 0
@@ -94,7 +94,7 @@ module adjoint_constitution_fixture
      procedure :: apply  => adjoint_apply
   end type constituted_adjoint
 
-  type, extends(graph_operation) :: constituted_tangent
+  type, extends(operation) :: constituted_tangent
      class(relation)  , allocatable :: jq, jp
      type(set_graph) :: q_dom, y_dom, p_dom
      integer         :: n_q_dom = 0, n_y_dom = 0
@@ -518,10 +518,10 @@ contains
 
     class(constituted_primal), intent(in)          :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
-    type(field)                    :: out
+    type(stored_field)                    :: out
     type(set_graph) :: dom
     real(dp), allocatable          :: q(:), r(:)
 
@@ -551,7 +551,7 @@ contains
     call residual_of(this % jq, this % jp, this % y_dom, this % q_dom, &
          & this % p_dom, mine, q, this % p_val, r)
 
-    out = field('residual', this % y_dom, this % n_y_dom)
+    out = stored_field('residual', this % y_dom, this % n_y_dom)
     call out % set_real_vector(r)
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
@@ -569,10 +569,10 @@ contains
 
     class(constituted_adjoint), intent(in)         :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
-    type(field)                    :: out
+    type(stored_field)                    :: out
     type(set_graph) :: dom
     real(dp), allocatable          :: lam(:), r(:), rhs(:), seed(:)
 
@@ -606,7 +606,7 @@ contains
     seed = 1.0_dp
     call fq_reverse(this % fq, this % z_dom, this % q_dom, mine, seed, rhs)
 
-    out = field('adjoint residual', this % q_dom, this % n_q_dom)
+    out = stored_field('adjoint residual', this % q_dom, this % n_q_dom)
     call out % set_real_vector(r - rhs)
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
@@ -622,10 +622,10 @@ contains
 
     class(constituted_tangent), intent(in)         :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
-    type(field)                    :: out
+    type(stored_field)                    :: out
     type(set_graph) :: dom
     real(dp), allocatable          :: qp(:), r(:), from_param(:)
 
@@ -657,7 +657,7 @@ contains
     call rp_forward(this % jp, this % y_dom, this % p_dom, mine, &
          & this % dp_val, from_param)
 
-    out = field('tangent residual', this % y_dom, this % n_y_dom)
+    out = stored_field('tangent residual', this % y_dom, this % n_y_dom)
     call out % set_real_vector(r + from_param)
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)

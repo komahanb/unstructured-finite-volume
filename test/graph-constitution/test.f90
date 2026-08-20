@@ -25,23 +25,23 @@ program test_graph_constitution
 
   use iso_fortran_env, only : dp => REAL64
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use view_directed , only : GRAPH_SIDE_VERTEX
   use graph_fractal  , only : set_graph => graph
   use map_set  , only : set_map
   use map_label, only : label_map
   use map_inclusion, only : inclusion_map
-  use field_stored  , only : field
+  use field_stored  , only : stored_field
   use view_mesh   , only : mesh
   use operation_robin_condition, only : robin_condition, robin, dirichlet, neumann
   use operation_differential, only : differential_operator
-  use operation_differential, only : vertex_differential_operator
-  use operation_differential, only : edge_differential_operator
+  use operation_differential, only : vertex_derivative
+  use operation_differential, only : edge_derivative
   use operation_balance  , only : balance
   use operation_conduction     , only : conduction
   use operation_advection      , only : advection
   use operation_diffusion, only : diffusion_statement
-  use operation_stencil  , only : stencil_operator
+  use operation_stencil  , only : stencil
   use operation_gmres    , only : gmres
 
   implicit none
@@ -216,9 +216,9 @@ contains
     type(mesh) :: m
     type(robin_condition) :: bc
     type(differential_operator) :: with_wall, without
-    type(field) :: state
+    type(stored_field) :: state
     type(set_graph) :: cells
-    class(graph_field), allocatable :: y
+    class(field), allocatable :: y
     real(dp), allocatable :: cin(:), bin(:), rows_with(:), rows_without(:)
     real(dp) :: c(3), b(3), expected
     real(dp), parameter :: kappa = 1.7_dp, kint = 1.3_dp
@@ -236,15 +236,15 @@ contains
     b = [0.0_dp, bin(1), 0.0_dp]
 
     cells = m % vertex_set()
-    state = field('q', cells, m % num_vertices())
+    state = stored_field('q', cells, m % num_vertices())
     call state % set_real_vector([q1, q2])
 
-    with_wall = vertex_differential_operator(order=2, coefficients=c, &
+    with_wall = vertex_derivative(order=2, coefficients=c, &
          & spacings=[0.8_dp, 0.3_dp, 0.6_dp], boundary_values=b)
     call with_wall % apply(m, [state], y)
     call y % get_real_vector(rows_with)
 
-    without = vertex_differential_operator(order=2, &
+    without = vertex_derivative(order=2, &
          & coefficients=[c(1), 0.0_dp, 0.0_dp], &
          & spacings=[0.8_dp, 0.3_dp, 0.6_dp])
     call without % apply(m, [state], y)
@@ -321,9 +321,9 @@ contains
     type(mesh) :: m
     type(advection) :: flow
     type(balance) :: sums
-    type(field) :: state
+    type(stored_field) :: state
     type(set_graph) :: cells
-    class(graph_field), allocatable :: y
+    class(field), allocatable :: y
     real(dp), allocatable :: vn(:), c(:), got(:)
     real(dp), parameter :: q1 = 2.0_dp, q2 = 4.0_dp
     real(dp) :: area, wp, wn
@@ -333,7 +333,7 @@ contains
     area = 2.0_dp
 
     cells = m % vertex_set()
-    state = field('q', cells, m % num_vertices())
+    state = stored_field('q', cells, m % num_vertices())
     call state % set_real_vector([q1, q2])
 
     flow = advection([1.5_dp, 0.0_dp, 0.0_dp])
@@ -346,7 +346,7 @@ contains
          & 'the coefficient is vn times area, interior only', nfail)
 
     ! Upwind, flow along the edge: the tail carries it.
-    sums = balance(edge_terms=[edge_differential_operator(order=0, &
+    sums = balance(edge_terms=[edge_derivative(order=0, &
          & coefficients=c, one_sided=.true.)])
     call sums % apply(m, [state], y)
     call y % get_real_vector(got)
@@ -360,7 +360,7 @@ contains
     ! Upwind, flow against the edge: the head carries it.
     flow = advection([-1.5_dp, 0.0_dp, 0.0_dp])
     call flow % edge_coefficients(m, c)
-    sums = balance(edge_terms=[edge_differential_operator(order=0, &
+    sums = balance(edge_terms=[edge_derivative(order=0, &
          & coefficients=c, one_sided=.true.)])
     call sums % apply(m, [state], y)
     call y % get_real_vector(got)
@@ -373,7 +373,7 @@ contains
     ! Central: both ends, evenly - the old half weights.
     flow = advection([1.5_dp, 0.0_dp, 0.0_dp])
     call flow % edge_coefficients(m, c)
-    sums = balance(edge_terms=[edge_differential_operator(order=0, &
+    sums = balance(edge_terms=[edge_derivative(order=0, &
          & coefficients=c, one_sided=.false.)])
     call sums % apply(m, [state], y)
     call y % get_real_vector(got)
@@ -396,7 +396,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(stencil_operator) :: op
+    type(stencil) :: op
     type(gmres) :: gm
     real(dp), allocatable :: g(:), rhs(:), x(:)
     real(dp) :: achieved
@@ -440,7 +440,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(stencil_operator) :: op
+    type(stencil) :: op
     type(gmres) :: gm
     real(dp), allocatable :: g(:), rhs(:), x(:), mixed(:), pinned(:)
     real(dp) :: achieved
@@ -485,7 +485,7 @@ contains
 
   subroutine solve_statement(op, m, x, achieved)
 
-    type(stencil_operator), intent(in) :: op
+    type(stencil), intent(in) :: op
     type(mesh), intent(in)             :: m
     real(dp), allocatable, intent(out) :: x(:)
     real(dp), intent(out)              :: achieved

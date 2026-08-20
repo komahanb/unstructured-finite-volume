@@ -58,15 +58,15 @@ module transform_partitioner
   use iso_fortran_env     , only : dp => REAL64
   use view_directed , only : directed_graph
   use relation_partition, only : partition_relation
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use graph_fractal      , only : set_graph => graph
   use map_set      , only : set_map
   use map_label    , only : label_map
   use map_inclusion, only : inclusion_map, declared_subobject
   use map_set_representation, only : listed_set_representation
-  use transform_structure, only : graph_transform
-  use view_directed_stored         , only : directed_stored_graph
-  use field_stored   , only : field
+  use transform_structure, only : transform
+  use view_directed_stored         , only : stored_directed_graph
+  use field_stored   , only : stored_field
   use operation_walk    , only : walk, WALK_VISIT_ORDER
 
   implicit none
@@ -112,7 +112,7 @@ module transform_partitioner
   ! back.
   !===================================================================!
 
-  type, extends(graph_transform) :: partitioner
+  type, extends(transform) :: partitioner
 
      integer :: rule   = PARTITION_LINEAR
      integer :: nparts = 1
@@ -191,12 +191,12 @@ contains
 
     class(partitioner), intent(in) :: this
     class(directed_graph)      , intent(in) :: input_graph
-    class(graph_field) , intent(in) :: input_data
+    class(field) , intent(in) :: input_data
 
     defined_on_data = this % defined_on_graph(input_graph)
 
     select type (input_data)
-    class is (graph_field)
+    class is (field)
        defined_on_data = defined_on_data .and. input_data % num_entries() >= 0
     class default
        defined_on_data = .false.
@@ -286,7 +286,7 @@ contains
     ! door, because a graph told its relation after birth would answer
     ! one question two ways in one lifetime.
     allocate(part_graph, source = &
-         & directed_stored_graph(size(mine), tails=ltail(1:nkeep), heads=lhead(1:nkeep), &
+         & stored_directed_graph(size(mine), tails=ltail(1:nkeep), heads=lhead(1:nkeep), &
          &              number  = this % part,   &
          &              nparts  = this % nparts, &
          &              vglobal = mine,          &
@@ -299,7 +299,7 @@ contains
          &              n_whole_edges = ne))
 
     select type (part_graph)
-    class is (directed_stored_graph)
+    class is (stored_directed_graph)
        rel = part_graph % whole_relation()
     end select
 
@@ -373,9 +373,9 @@ contains
     integer     , intent(in)    :: nparts
     integer     , intent(inout) :: owner(:)
 
-    type(directed_stored_graph) :: untaken
+    type(stored_directed_graph) :: untaken
     type(walk)         :: visit
-    class(graph_field), allocatable :: reached
+    class(field), allocatable :: reached
     integer, allocatable :: locals(:), whereis(:), tails(:), heads(:), order(:)
     integer :: nv, ne, share, k, v, e, t, h, n, m
 
@@ -413,7 +413,7 @@ contains
           end if
        end do
 
-       untaken = directed_stored_graph(n, tails=tails(1:m), heads=heads(1:m))
+       untaken = stored_directed_graph(n, tails=tails(1:m), heads=heads(1:m))
 
        ! The first unclaimed cell seeds the part; the visit order
        ! says who its share of the ring is.
@@ -498,12 +498,12 @@ contains
     class(partitioner), intent(in)               :: this
     type(partition_relation), intent(in)         :: rel
     class(directed_graph)      , intent(in)               :: global_graph
-    class(graph_field) , intent(in)               :: global_data
+    class(field) , intent(in)               :: global_data
     class(directed_graph)      , intent(in)               :: part_graph
     type(set_map)      , intent(inout)            :: sets
     type(label_map)    , intent(inout)            :: labels
     type(inclusion_map), intent(inout)            :: inclusions
-    class(graph_field) , allocatable, intent(out) :: part_data
+    class(field) , allocatable, intent(out) :: part_data
 
     type(set_graph) :: dom
     integer         :: n_dom
@@ -520,7 +520,7 @@ contains
 
     select type (global_data)
 
-    class is (field)
+    class is (stored_field)
        dom   = global_data % domain()
        n_dom = global_data % num_entries()
        ! Classify by embedding - a DECLARED question, so the inclusion
@@ -559,7 +559,7 @@ contains
        &                 n_global_carrier, part_graph, rel, on_vertices, &
        &                 sets, labels, inclusions, part_data)
 
-    type(field)        , intent(in)               :: global_data
+    type(stored_field)        , intent(in)               :: global_data
     type(set_graph)    , intent(in)               :: dom
     integer            , intent(in)               :: n_dom
     type(set_graph)    , intent(in)               :: global_carrier
@@ -570,9 +570,9 @@ contains
     type(set_map)      , intent(inout)            :: sets
     type(label_map)    , intent(inout)            :: labels
     type(inclusion_map), intent(inout)            :: inclusions
-    class(graph_field) , allocatable, intent(out) :: part_data
+    class(field) , allocatable, intent(out) :: part_data
 
-    type(field)           :: out
+    type(stored_field)           :: out
     type(set_graph)       :: part_carrier
     type(set_graph)       :: sp
     real(dp), allocatable :: fv(:), lv(:)
@@ -604,7 +604,7 @@ contains
              end do
           end if
        end do
-       out = field(global_data % name(), part_carrier, nlocal, ncomp=ncomp, &
+       out = stored_field(global_data % name(), part_carrier, nlocal, ncomp=ncomp, &
             &      unit_name=global_data % units())
        call out % set_real_vector(lv)
 
@@ -640,7 +640,7 @@ contains
              lv((l - 1) * ncomp + c) = fv((at - 1) * ncomp + c)
           end do
        end do
-       out = field(global_data % name(), sp, n, ncomp=ncomp, &
+       out = stored_field(global_data % name(), sp, n, ncomp=ncomp, &
             &      unit_name=global_data % units())
        call out % set_real_vector(lv)
 

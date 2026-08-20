@@ -50,11 +50,11 @@ module partitioned_shifted_laplacian_fixture
   use map_set      , only : set_map
   use map_label    , only : label_map
   use map_inclusion, only : inclusion_map
-  use operation_action, only : graph_operation
+  use operation_action, only : operation
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
-  use view_directed_stored      , only : directed_stored_graph
-  use field_stored, only : field
+  use field_calculus, only : field
+  use view_directed_stored      , only : stored_directed_graph
+  use field_stored, only : stored_field
   use transform_partitioner, only : partitioner, PARTITION_LINEAR
   use transform_assembler  , only : assembler
   use shifted_laplacian_fixture, only : shifted_laplacian
@@ -65,10 +65,10 @@ module partitioned_shifted_laplacian_fixture
   private
   public :: partitioned_shifted_laplacian
 
-  type, extends(graph_operation) :: partitioned_shifted_laplacian
+  type, extends(operation) :: partitioned_shifted_laplacian
 
      ! STRUCTURE, cut once and never rebuilt.
-     type(directed_stored_graph)        :: whole
+     type(stored_directed_graph)        :: whole
      class(directed_graph), allocatable :: g1, g2
      type(partitioner)         :: p1, p2
      type(assembler)           :: asm
@@ -101,7 +101,7 @@ contains
   type(partitioned_shifted_laplacian) function create_partitioned(g) &
        & result(this)
 
-    type(directed_stored_graph), intent(in) :: g
+    type(stored_directed_graph), intent(in) :: g
 
     this % whole = g
     this % p1 = partitioner(PARTITION_LINEAR, nparts=2, part=1)
@@ -148,11 +148,11 @@ contains
 
     class(partitioned_shifted_laplacian), intent(in) :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
-    type(field)                     :: out
-    class(graph_field), allocatable :: q1, q2, a1, a2
+    type(stored_field)                     :: out
+    class(field), allocatable :: q1, q2, a1, a2
     type(set_graph)                 :: dom
     real(dp), allocatable           :: total(:)
 
@@ -209,7 +209,7 @@ contains
     call add_owned(assembler(), this % r2, this % g2, a2, this % whole, &
          & sets, labels, inclusions, total)
 
-    out = field('partitioned action', this % whole % vertex_set(), &
+    out = stored_field('partitioned action', this % whole % vertex_set(), &
          & this % whole % num_vertices())
     call out % set_real_vector(total)
 
@@ -249,15 +249,15 @@ contains
 
     type(shifted_laplacian), intent(in)  :: local
     class(directed_graph)           , intent(in)  :: part
-    class(graph_field)     , intent(in)  :: q_part
-    class(graph_field), allocatable, intent(out) :: answer
+    class(field)     , intent(in)  :: q_part
+    class(field), allocatable, intent(out) :: answer
 
-    type(field)                     :: qf
-    class(graph_field), allocatable :: out
+    type(stored_field)                     :: qf
+    class(field), allocatable :: out
     real(dp), allocatable           :: v(:)
 
     call q_part % get_real_vector(v)
-    qf = field('local state', part % vertex_set(), part % num_vertices())
+    qf = stored_field('local state', part % vertex_set(), part % num_vertices())
     call qf % set_real_vector(v)
 
     call local % apply(part, [qf], out)
@@ -282,14 +282,14 @@ contains
     type(partition_relation), intent(in) :: rel
 
     class(directed_graph)      , intent(in)    :: part
-    class(graph_field), intent(in)    :: answer
-    type(directed_stored_graph), intent(in)    :: whole
+    class(field), intent(in)    :: answer
+    type(stored_directed_graph), intent(in)    :: whole
     type(set_map)     , intent(inout) :: sets
     type(label_map)   , intent(inout) :: labels
     type(inclusion_map), intent(inout) :: inclusions
     real(dp)          , intent(inout) :: total(:)
 
-    class(graph_field), allocatable :: home
+    class(field), allocatable :: home
     type(set_graph)                 :: dom
     real(dp), allocatable           :: v(:)
     integer , allocatable           :: mem(:)

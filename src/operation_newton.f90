@@ -28,7 +28,7 @@ module operation_newton
 
   use iso_fortran_env           , only : dp => REAL64
   use operation_minimization        , only : minimizer
-  use operation_discretization            , only : linearization_operator
+  use operation_discretization            , only : linearization
   use operation_linearization, only : tangent_of
 
   implicit none
@@ -76,7 +76,7 @@ contains
     real(dp), intent(inout) :: x(:)
     real(dp), intent(out)   :: achieved
 
-    class(linearization_operator), allocatable :: jacobian
+    class(linearization), allocatable :: jacobian
     real(dp), allocatable :: residual(:), g(:), y(:), dq(:)
     real(dp) :: linear_achieved
     integer :: it

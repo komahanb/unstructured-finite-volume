@@ -26,7 +26,7 @@ module map_change_protocol
   implicit none
 
   private
-  public :: change_result
+  public :: change_record
   public :: reversible_change
   public :: run_change
 
@@ -37,7 +37,7 @@ module map_change_protocol
   ! controller never reads them.
   !===================================================================!
 
-  type :: change_result
+  type :: change_record
 
      logical :: attempted    = .false.
      logical :: applied      = .false.
@@ -62,7 +62,7 @@ module map_change_protocol
      procedure :: mark_failed
      procedure :: validate_terminal
 
-  end type change_result
+  end type change_record
 
   !===================================================================!
   ! The abstract reversible change: four deferred steps. What
@@ -84,27 +84,27 @@ module map_change_protocol
   abstract interface
 
      subroutine change_apply(this, result)
-       import :: reversible_change, change_result
+       import :: reversible_change, change_record
        class(reversible_change), intent(inout) :: this
-       type(change_result)     , intent(inout) :: result
+       type(change_record)     , intent(inout) :: result
      end subroutine change_apply
 
      subroutine change_check(this, result)
-       import :: reversible_change, change_result
+       import :: reversible_change, change_record
        class(reversible_change), intent(inout) :: this
-       type(change_result)     , intent(inout) :: result
+       type(change_record)     , intent(inout) :: result
      end subroutine change_check
 
      subroutine change_keep(this, result)
-       import :: reversible_change, change_result
+       import :: reversible_change, change_record
        class(reversible_change), intent(inout) :: this
-       type(change_result)     , intent(inout) :: result
+       type(change_record)     , intent(inout) :: result
      end subroutine change_keep
 
      subroutine change_revert(this, result)
-       import :: reversible_change, change_result
+       import :: reversible_change, change_record
        class(reversible_change), intent(inout) :: this
-       type(change_result)     , intent(inout) :: result
+       type(change_record)     , intent(inout) :: result
      end subroutine change_revert
 
   end interface
@@ -118,7 +118,7 @@ contains
 
   pure subroutine reset(this)
 
-    class(change_result), intent(inout) :: this
+    class(change_record), intent(inout) :: this
 
     this % attempted    = .false.
     this % applied      = .false.
@@ -135,34 +135,34 @@ contains
   end subroutine reset
 
   pure subroutine mark_attempted(this)
-    class(change_result), intent(inout) :: this
+    class(change_record), intent(inout) :: this
     this % attempted = .true.
   end subroutine mark_attempted
 
   pure subroutine mark_applied(this)
-    class(change_result), intent(inout) :: this
+    class(change_record), intent(inout) :: this
     this % applied = .true.
   end subroutine mark_applied
 
   pure subroutine mark_checked(this, pass)
-    class(change_result), intent(inout) :: this
+    class(change_record), intent(inout) :: this
     logical                 , intent(in)    :: pass
     this % checked      = .true.
     this % check_passed = pass
   end subroutine mark_checked
 
   pure subroutine mark_kept(this)
-    class(change_result), intent(inout) :: this
+    class(change_record), intent(inout) :: this
     this % kept = .true.
   end subroutine mark_kept
 
   pure subroutine mark_reverted(this)
-    class(change_result), intent(inout) :: this
+    class(change_record), intent(inout) :: this
     this % reverted = .true.
   end subroutine mark_reverted
 
   pure subroutine mark_failed(this)
-    class(change_result), intent(inout) :: this
+    class(change_record), intent(inout) :: this
     this % failed = .true.
   end subroutine mark_failed
 
@@ -174,18 +174,18 @@ contains
 
   pure subroutine validate_terminal(this)
 
-    class(change_result), intent(in) :: this
+    class(change_record), intent(in) :: this
 
     if (this % kept .and. this % reverted) then
-       error stop 'change_result: terminal state is consistent'
+       error stop 'change_record: terminal state is consistent'
     end if
 
     if (this % accepted .and. .not. this % kept) then
-       error stop 'change_result: terminal state is consistent'
+       error stop 'change_record: terminal state is consistent'
     end if
 
     if (this % failed .and. this % kept) then
-       error stop 'change_result: terminal state is consistent'
+       error stop 'change_record: terminal state is consistent'
     end if
 
   end subroutine validate_terminal
@@ -203,7 +203,7 @@ contains
 
     class(reversible_change), intent(inout) :: change
     logical                     , intent(in)    :: accept
-    type(change_result)     , intent(inout) :: result
+    type(change_record)     , intent(inout) :: result
 
     call result % reset()
     call result % mark_attempted()

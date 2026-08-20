@@ -69,7 +69,7 @@ module visualization_algebra_fixture
   use map_set        , only : set_map
   use relation_finitary        , only : relation
   use relation_binary , only : binary_relation, csr_relation
-  use relation_binary , only : transposed_view, transpose_of
+  use relation_binary , only : transposed_relation, transpose_of
   use relation_algebra, only : compose_binary
 
   implicit none
@@ -101,7 +101,7 @@ contains
     class(relation)               , intent(in) :: head
     type(set_map)  , intent(in) :: sets
 
-    type(transposed_view) :: reads
+    type(transposed_relation) :: reads
 
     reads = transpose_of(tail)
     d     = named(label, compose_binary(reads, head, sets), sets)
@@ -149,7 +149,7 @@ contains
     class(binary_relation), target, intent(in) :: r
     type(set_map)  , intent(in) :: sets
 
-    type(transposed_view) :: reversed
+    type(transposed_relation) :: reversed
 
     reversed = transpose_of(r)
     rt       = named(label, reversed, sets)

@@ -1,6 +1,6 @@
 !=====================================================================!
 ! THE CONSTITUTED LEARNING RESIDUAL - the Level-9 adapter, test-
-! local: Level-8 semantics wearing the legacy graph_operation face
+! local: Level-8 semantics wearing the legacy operation face
 ! so the ordinary solver can drive them. Its entire numerical act
 ! is delegation to learning_constitution_fixture::generated_residual
 ! - no multiplication here, no subtraction, no slot name, no order
@@ -31,10 +31,10 @@ module constituted_residual_fixture
   use graph_fractal        , only : graph
   use view_relational, only : relational_binding, &
        & num_relations, relation_at
-  use operation_action, only : graph_operation
+  use operation_action, only : operation
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
-  use field_stored, only : field
+  use field_calculus, only : field
+  use field_stored, only : stored_field
   use learning_constitution_fixture, only : generated_residual
 
   implicit none
@@ -42,7 +42,7 @@ module constituted_residual_fixture
   private
   public :: constituted_learning_residual
 
-  type, extends(graph_operation) :: constituted_learning_residual
+  type, extends(operation) :: constituted_learning_residual
      class(relation), allocatable :: flow      ! the GRAPH-OWNED copy
      class(relation), allocatable :: located
      ! Identities, counts, and the action's OWN coordinates. A
@@ -154,10 +154,10 @@ contains
 
     class(constituted_learning_residual), intent(in) :: this
     class(directed_graph), intent(in)                 :: input_graph
-    class(graph_field), intent(in), optional         :: input_data(:)
-    class(graph_field), allocatable, intent(inout)   :: output
+    class(field), intent(in), optional         :: input_data(:)
+    class(field), allocatable, intent(inout)   :: output
 
-    type(field)                    :: out
+    type(stored_field)                    :: out
     type(set_graph) :: dom
     real(dp), allocatable          :: tstate(:), r(:)
 
@@ -198,7 +198,7 @@ contains
          & this % trainable, tstate, &
          & this % computed, this % order, r)
 
-    out = field('residual', this % rows, this % n_rows)
+    out = stored_field('residual', this % rows, this % n_rows)
     call out % set_real_vector(r)
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)

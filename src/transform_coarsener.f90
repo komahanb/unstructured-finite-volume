@@ -30,11 +30,11 @@ module transform_coarsener
 
   use iso_fortran_env     , only : dp => REAL64
   use view_directed , only : directed_graph
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use graph_fractal      , only : set_graph => graph
-  use transform_structure, only : graph_transform
-  use view_directed_stored         , only : directed_stored_graph
-  use field_stored   , only : field
+  use transform_structure, only : transform
+  use view_directed_stored         , only : stored_directed_graph
+  use field_stored   , only : stored_field
 
   implicit none
 
@@ -67,7 +67,7 @@ module transform_coarsener
   ! One coarsener, holding how it glues and the map it ends up with.
   !===================================================================!
 
-  type, extends(graph_transform) :: coarsener
+  type, extends(transform) :: coarsener
 
      integer :: rule = COARSEN_PAIRWISE
 
@@ -163,12 +163,12 @@ contains
 
     class(coarsener) , intent(in) :: this
     class(directed_graph)     , intent(in) :: input_graph
-    class(graph_field), intent(in) :: input_data
+    class(field), intent(in) :: input_data
 
     defined_on_data = this % defined_on_graph(input_graph)
 
     select type (input_data)
-    class is (field)
+    class is (stored_field)
        block
          type(set_graph) :: dom
          integer         :: n_dom
@@ -240,7 +240,7 @@ contains
     end do
 
     allocate(coarse_graph, source = &
-         & directed_stored_graph(nb, tails=tails(1:n), heads=heads(1:n), &
+         & stored_directed_graph(nb, tails=tails(1:n), heads=heads(1:n), &
          &              number=fine_graph % id()))
 
   end subroutine coarsen_graph
@@ -323,24 +323,24 @@ contains
 
     class(coarsener) , intent(in)               :: this
     class(directed_graph)     , intent(in)               :: fine_graph
-    class(graph_field), intent(in)               :: fine_data
+    class(field), intent(in)               :: fine_data
     class(directed_graph)     , intent(in)               :: coarse_graph
-    class(graph_field), allocatable, intent(out) :: coarse_data
+    class(field), allocatable, intent(out) :: coarse_data
 
-    type(field)    :: out
+    type(stored_field)    :: out
     integer , allocatable :: blk(:), tally(:)
     real(dp), allocatable :: fv(:), cv(:)
     integer :: nb, nv, ncomp, v, c, b
 
     select type (fine_data)
-    class is (field)
+    class is (stored_field)
 
        call blocks_of(this, fine_graph, blk, nb)
 
        nv    = fine_graph % num_vertices()
        ncomp = fine_data % num_components()
 
-       out = field(fine_data % name(), coarse_graph % vertex_set(), coarse_graph % num_vertices(), &
+       out = stored_field(fine_data % name(), coarse_graph % vertex_set(), coarse_graph % num_vertices(), &
             &             ncomp=ncomp, unit_name=fine_data % units())
 
        call fine_data % get_real_vector(fv)

@@ -30,7 +30,7 @@ module map_value
   use iso_fortran_env  , only : dp => REAL64
   use graph_fractal    , only : graph
   use token_identity   , only : token
-  use field_stored, only : field
+  use field_stored, only : stored_field
 
   implicit none
 
@@ -47,17 +47,17 @@ module map_value
   ! field.
   !===================================================================!
 
-  type :: value_row
+  type :: value_pair
 
      type(token) :: identity
      integer     :: status = VALUE_UNKNOWN
-     type(field) :: value
+     type(stored_field) :: value
 
-  end type value_row
+  end type value_pair
 
   type :: value_map
 
-     type(value_row), allocatable, private :: rows(:)
+     type(value_pair), allocatable, private :: rows(:)
 
    contains
 
@@ -126,7 +126,7 @@ contains
     class(value_map), intent(inout) :: this
     type(graph)     , intent(in)    :: element
 
-    type(value_row), allocatable :: grown(:)
+    type(value_pair), allocatable :: grown(:)
     type(token)                  :: key
     integer                      :: n
 
@@ -179,7 +179,7 @@ contains
     width = 1
     if (present(ncomp)) width = max(ncomp, 1)
 
-    this % rows(at) % value = field('attached value', element, &
+    this % rows(at) % value = stored_field('attached value', element, &
          & size(values) / width, ncomp=width)
     call this % rows(at) % value % set_real_vector(values)
     this % rows(at) % status = VALUE_KNOWN
@@ -196,7 +196,7 @@ contains
     class(value_map), intent(inout) :: this
     type(graph)     , intent(in)    :: element
 
-    type(field) :: nothing
+    type(stored_field) :: nothing
     type(token) :: key
     integer     :: at
 
@@ -223,7 +223,7 @@ contains
     class(value_map), intent(inout) :: this
     type(graph)     , intent(in)    :: element
 
-    type(value_row), allocatable :: kept(:)
+    type(value_pair), allocatable :: kept(:)
     type(token)                  :: key
     integer                      :: at, n, k, m
 

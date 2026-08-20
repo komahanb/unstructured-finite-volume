@@ -47,10 +47,10 @@ module learning_residual_fixture
   use map_set        , only : set_map
   use map_set_representation, only : set_representation
   use map_inclusion  , only : inclusion_map, declared_subobject
-  use operation_action, only : graph_operation
+  use operation_action, only : operation
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
-  use field_stored, only : field
+  use field_calculus, only : field
+  use field_stored, only : stored_field
 
   implicit none
 
@@ -59,7 +59,7 @@ module learning_residual_fixture
 
   integer, parameter :: ROW_R = 1
 
-  type, extends(graph_operation) :: affine_learning_residual
+  type, extends(operation) :: affine_learning_residual
      ! Identity, count, and the action's OWN coordinates: a
      ! representation carries no identity, so holding one keeps this
      ! type free of any caller's map.
@@ -113,10 +113,10 @@ contains
 
     class(affine_learning_residual), intent(in)    :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
-    type(field)                    :: out
+    type(stored_field)                    :: out
     type(set_graph) :: dom
     real(dp), allocatable          :: q(:), r(:)
     real(dp)                       :: w
@@ -137,7 +137,7 @@ contains
     allocate(r(1))
     r(this % c_y % local_index(ROW_R)) = this % x_data * w - this % y_data
 
-    out = field('residual', this % y, this % n_y)
+    out = stored_field('residual', this % y, this % n_y)
     call out % set_real_vector(r)
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
@@ -150,9 +150,9 @@ program learning_level_7
 
   use iso_fortran_env  , only : dp => REAL64
   use learning_assert  , only : report, verdict, SLOT_W
-  use field_calculus, only : graph_field
-  use field_stored, only : field
-  use view_directed_stored      , only : directed_stored_graph
+  use field_calculus, only : field
+  use field_stored, only : stored_field
+  use view_directed_stored      , only : stored_directed_graph
   use operation_gmres, only : gmres
   use graph_fractal        , only : set_graph => graph
   use map_set_representation, only : counted_set_representation, &
@@ -165,11 +165,11 @@ program learning_level_7
 
   type(set_graph)     :: v, y, hv
   type(set_graph)      :: theta
-  type(directed_stored_graph)    :: host
+  type(stored_directed_graph)    :: host
   type(affine_learning_residual) :: oracle, witness
   type(gmres)           :: solver, fitter
-  type(field)           :: state
-  class(graph_field), allocatable :: resid
+  type(stored_field)           :: state
+  class(field), allocatable :: resid
   type(set_graph)  :: dom
   real(dp), allocatable :: g(:), rhs(:), w_state(:), rr(:)
   real(dp)              :: achieved
@@ -192,7 +192,7 @@ program learning_level_7
   call sets % bind(y, counted_set_representation(1))
 
   ! Seven vertices: the wrong size for everything, on purpose.
-  host = directed_stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
+  host = stored_directed_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
 
   ! The primary training problem: (x, y) = (2, 6), supplied as data.
   oracle = affine_learning_residual(theta, y, sets, 2.0_dp, 6.0_dp)
@@ -239,7 +239,7 @@ program learning_level_7
        & nfail)
 
   ! Direct confirmation through the oracle itself: R(w_learned) = 0.
-  state = field('state', theta, sets % size_of(theta))
+  state = stored_field('state', theta, sets % size_of(theta))
   call state % set_real_vector(w_state)
   call oracle % apply(host, [state], resid)
   call resid % get_real_vector(rr)

@@ -101,7 +101,7 @@ program relation_map
   use map_inclusion     , only : inclusion_map, declared_subobject
   use relation_finitary       , only : relation, stored_relation
   use relation_binary, only : binary_relation, csr_relation, &
-       & transposed_view, transpose_of
+       & transposed_relation, transpose_of
   use view_relational, only : relational_binding
   use relation_prototype   , only : same_tuple, role_view, &
        & transpose_role, apply_role
@@ -299,8 +299,8 @@ program relation_map
     type(graph), target        :: r
     type(graph)          :: e, v
     type(csr_relation), target :: c
-    type(transposed_view), target :: ct
-    type(transposed_view)      :: ctt
+    type(transposed_relation), target :: ct
+    type(transposed_relation)      :: ctt
     type(role_view)            :: rv, rvt, rvtt
     integer                    :: pairs(2, 3)
     integer, allocatable       :: back(:,:)

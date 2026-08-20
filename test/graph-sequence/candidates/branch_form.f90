@@ -1,4 +1,4 @@
-! CANDIDATE 1. The sequence is a graph_branch.
+! CANDIDATE 1. The sequence is a branch.
 !
 !     NULL          the empty sequence
 !     KNOWN -> cell a nonempty sequence
@@ -6,13 +6,13 @@
 !
 ! The empty sequence needs no graph, because it has no cell.
 module branch_form
-  use graph_fractal, only : graph, graph_branch, GRAPH_NULL, GRAPH_KNOWN
+  use graph_fractal, only : graph, branch, GRAPH_NULL, GRAPH_KNOWN
   implicit none
   private
   public :: size_of
 contains
   integer function size_of(b) result(n)
-    type(graph_branch), intent(in) :: b
+    type(branch), intent(in) :: b
     type(graph), pointer :: cell
     n = 0
     if (b % status() .eq. GRAPH_NULL) return

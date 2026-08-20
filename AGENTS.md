@@ -59,11 +59,11 @@ There is **one** graph ontology, implemented in `src/graph_fractal.f90`:
 
 ```fortran
 type :: graph
-   type(graph_branch) :: branch(2)
+   type(branch) :: branch(2)
 end type
 ```
 
-Two types, `graph` and `graph_branch`, and nothing else ontologically.
+Two types, `graph` and `branch`, and nothing else ontologically.
 
 \((\mathcal S,\mathcal P)\), \((Q,R)\) and \((V,E)\) are **views** of that one object, never
 distinct kinds of graph. The earlier reservation, which split a structural graph
@@ -1361,9 +1361,9 @@ The existing `graph_grammar` currently places four roots at Level 0:
 
 ```text
 graph
-graph_field
-graph_operation
-graph_transform
+field
+operation
+transform
 ```
 
 and defines graph structurally through vertices, edges, tail, and head.

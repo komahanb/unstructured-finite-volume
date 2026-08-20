@@ -18,8 +18,8 @@
 !                                                       step
 !
 ! The implicit rules use the held minimizer (inner) on one
-! step_operator per edge; every BDF coefficient comes from
-! step_operator's set_bdf. The action returns minus the velocity.
+! scheme per edge; every BDF coefficient comes from
+! scheme's set_bdf. The action returns minus the velocity.
 !
 ! march_adjoint runs the chain in reverse. Under MARCH_FORWARD it
 ! applies the caller's transposed statement edge by edge. Under
@@ -40,15 +40,15 @@
 module operation_marching
 
   use iso_fortran_env    , only : dp => REAL64
-  use operation_action, only : graph_operation
+  use operation_action, only : operation
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use graph_fractal      , only : set_graph => graph
-  use field_stored  , only : field
-  use view_directed_stored        , only : directed_stored_graph
-  use operation_step   , only : step_operator, bdf
+  use field_stored  , only : stored_field
+  use view_directed_stored        , only : stored_directed_graph
+  use operation_step   , only : scheme, bdf
   use operation_minimization , only : minimizer
-  use operation_discretization     , only : linearization_operator, &
+  use operation_discretization     , only : linearization, &
        & differentiable_operation
   use operation_linearization, only : tangent_of
   use operation_chain_rule, only : chain_rule, argument_path, &
@@ -96,13 +96,13 @@ contains
 
     class(marcher), intent(in) :: this
     integer, intent(in) :: nsteps
-    type(directed_stored_graph), intent(out) :: chain
+    type(stored_directed_graph), intent(out) :: chain
 
     integer :: n
 
     associate (u1 => this); end associate
 
-    chain = directed_stored_graph(nsteps + 1, &
+    chain = stored_directed_graph(nsteps + 1, &
          & tails=[(n, n = 1, nsteps)], heads=[(n + 1, n = 1, nsteps)])
 
   end subroutine instants
@@ -115,15 +115,15 @@ contains
   subroutine march(this, action, on, q, nsteps, steps, trajectory)
 
     class(marcher), intent(inout)      :: this
-    class(graph_operation), intent(in) :: action
+    class(operation), intent(in) :: action
     class(directed_graph), intent(in)           :: on
     real(dp), intent(inout)            :: q(:)
     integer, intent(in)                :: nsteps
     real(dp), intent(in), optional     :: steps(:)
     real(dp), allocatable, intent(out), optional :: trajectory(:,:)
 
-    type(directed_stored_graph) :: chain
-    type(step_operator) :: statement
+    type(stored_directed_graph) :: chain
+    type(scheme) :: statement
     type(set_graph) :: state_domain
     integer         :: n_state_domain
     real(dp), allocatable :: s(:), qold(:), qolder(:), zeros(:)
@@ -252,16 +252,16 @@ contains
        & action, trajectory, seeds)
 
     class(marcher), intent(inout)      :: this
-    class(graph_operation), intent(in) :: transposed
+    class(operation), intent(in) :: transposed
     class(directed_graph), intent(in)           :: on
     real(dp), intent(inout)            :: lambda(:)
     integer, intent(in)                :: nsteps
     real(dp), intent(in), optional     :: steps(:)
-    class(graph_operation), intent(in), optional :: action
+    class(operation), intent(in), optional :: action
     real(dp), intent(in), optional     :: trajectory(:,:)
     real(dp), intent(in), optional     :: seeds(:,:)
 
-    type(directed_stored_graph) :: chain
+    type(stored_directed_graph) :: chain
     real(dp), allocatable :: s(:)
     integer :: e
 
@@ -313,16 +313,16 @@ contains
        & trajectory, seeds)
 
     class(marcher), intent(inout)      :: this
-    class(graph_operation), intent(in) :: action
+    class(operation), intent(in) :: action
     class(directed_graph), intent(in)  :: on
     real(dp), intent(inout)            :: lambda(:)
-    type(directed_stored_graph), intent(in) :: chain
+    type(stored_directed_graph), intent(in) :: chain
     real(dp), intent(in), optional     :: steps(:)
     real(dp), intent(in)               :: trajectory(:,:)
     real(dp), intent(in), optional     :: seeds(:,:)
 
-    class(linearization_operator), allocatable :: tangent
-    type(step_operator) :: table
+    class(linearization), allocatable :: tangent
+    type(scheme) :: table
     real(dp), allocatable :: jac(:,:), jstep(:,:)
     real(dp), allocatable :: seed(:), lambda_e(:), carry_one(:), carry_two(:)
     real(dp) :: answered, h_edge, h_previous
@@ -400,7 +400,7 @@ contains
   subroutine read_state_domain(action, on, q, state_domain, n_state_domain, &
        & ncomp)
 
-    class(graph_operation), intent(in)  :: action
+    class(operation), intent(in)  :: action
     class(directed_graph)          , intent(in)  :: on
     real(dp)              , intent(in)  :: q(:)
     type(set_graph)       , intent(out) :: state_domain
@@ -434,20 +434,20 @@ contains
 
   subroutine read_statement(action, on, q, s)
 
-    class(graph_operation), intent(in) :: action
+    class(operation), intent(in) :: action
     class(directed_graph), intent(in)           :: on
     real(dp), intent(in)               :: q(:)
     real(dp), allocatable, intent(out) :: s(:)
 
-    type(field)   :: state
-    class(graph_field), allocatable :: output
+    type(stored_field)   :: state
+    class(field), allocatable :: output
     type(set_graph) :: state_domain, given
     integer         :: n_state_domain, n_given
     integer :: ncomp
 
     call read_state_domain(action, on, q, state_domain, n_state_domain, ncomp)
 
-    state = field('state', state_domain, n_state_domain, ncomp=ncomp)
+    state = stored_field('state', state_domain, n_state_domain, ncomp=ncomp)
     call state % set_real_vector(q)
 
     call action % apply(on, [state], output)
@@ -500,17 +500,17 @@ contains
     integer, intent(in)                         :: order
     real(dp), allocatable, intent(out)          :: sensitivities(:,:,:)
     real(dp), intent(in), optional              :: steps(:)
-    type(field), intent(in), optional           :: parameters(:)
+    type(stored_field), intent(in), optional           :: parameters(:)
     type(argument_path), intent(in), optional   :: paths(:)
 
-    type(directed_stored_graph) :: chain
+    type(stored_directed_graph) :: chain
     type(chain_rule)            :: composer
-    type(step_operator)         :: table
-    class(linearization_operator), allocatable :: tangent
+    type(scheme)         :: table
+    class(linearization), allocatable :: tangent
     type(argument_path), allocatable :: assembled(:)
-    type(field), allocatable         :: inputs(:)
-    class(graph_field), allocatable  :: total_field
-    type(field)     :: state
+    type(stored_field), allocatable         :: inputs(:)
+    class(field), allocatable  :: total_field
+    type(stored_field)     :: state
     type(set_graph) :: state_domain
     real(dp), allocatable :: jac(:,:), jstep(:,:), total(:), b(:), q_s(:)
     real(dp) :: answered, h_edge, h_previous
@@ -578,7 +578,7 @@ contains
           at = e + 1
        end if
 
-       state = field('state', state_domain, n_state_domain, ncomp=ncomp)
+       state = stored_field('state', state_domain, n_state_domain, ncomp=ncomp)
        call state % set_real_vector(trajectory(:, at))
 
        if (allocated(inputs)) deallocate(inputs)
@@ -653,7 +653,7 @@ contains
     type(argument_path), intent(in), optional :: parameter_paths(:)
     type(argument_path), allocatable, intent(out) :: assembled(:)
 
-    type(field) :: derivative_field
+    type(stored_field) :: derivative_field
     real(dp), allocatable :: derivative_values(:)
     integer :: k
 
@@ -673,7 +673,7 @@ contains
           derivative_values = sensitivities(:, k, at)
        end if
 
-       derivative_field = field('state path', state_domain, n_state_domain, &
+       derivative_field = stored_field('state path', state_domain, n_state_domain, &
             & ncomp=ncomp)
        call derivative_field % set_real_vector(derivative_values)
        assembled(1) % derivative(k) % occupied  = .true.
@@ -708,7 +708,7 @@ contains
        & max_attempts, steps_taken, completed)
 
     class(marcher), intent(inout)      :: this
-    class(graph_operation), intent(in) :: action
+    class(operation), intent(in) :: action
     class(directed_graph), intent(in)  :: on
     real(dp), intent(inout)            :: q(:)
     real(dp), intent(in)               :: duration
@@ -717,7 +717,7 @@ contains
     real(dp), allocatable, intent(out) :: steps_taken(:)
     logical, intent(out)               :: completed
 
-    type(step_operator) :: statement
+    type(scheme) :: statement
     type(set_graph)     :: state_domain
     integer             :: n_state_domain, ncomp
     real(dp), allocatable :: trial(:), predictor(:), qprev(:), s(:), zeros(:)

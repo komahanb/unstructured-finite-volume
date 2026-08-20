@@ -36,13 +36,13 @@
 module operation_fitting
 
   use iso_fortran_env    , only : dp => REAL64
-  use operation_action, only : graph_operation
+  use operation_action, only : operation
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use graph_fractal      , only : set_graph => graph
   use field_forms        , only : form
-  use field_stored  , only : field
-  use operation_stencil, only : stencil_operator
+  use field_stored  , only : stored_field
+  use operation_stencil, only : stencil
   use operation_conjugate_gradient, only : conjugate_gradient
 
   implicit none
@@ -58,7 +58,7 @@ module operation_fitting
   ! which table entries stand.
   !===================================================================!
 
-  type, extends(graph_operation) :: fit
+  type, extends(operation) :: fit
 
      class(form), allocatable :: shape
 
@@ -175,11 +175,11 @@ contains
 
     class(fit), intent(in)                         :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
-    type(field)   :: out
-    type(stencil_operator) :: dual
+    type(stored_field)   :: out
+    type(stencil) :: dual
     type(conjugate_gradient) :: solver
     real(dp), allocatable :: positions(:), w(:), b(:,:), bw(:,:)
     real(dp), allocatable :: g(:,:), r(:), lam(:), price(:)
@@ -246,7 +246,7 @@ contains
           if (.not. stands(i)) g(i, i) = 1.0_dp
        end do
 
-       dual = stencil_operator(g, label='fitting dual')
+       dual = stencil(g, label='fitting dual')
 
        call solver % attach(dual, dual % pattern, dual % pattern % vertex_set(), &
             & dual % pattern % num_vertices())
@@ -266,7 +266,7 @@ contains
 
     end if
 
-    out = field('fit weights', input_graph % vertex_set(), input_graph % num_vertices())
+    out = stored_field('fit weights', input_graph % vertex_set(), input_graph % num_vertices())
     call out % set_real_vector(w)
 
     if (allocated(output)) deallocate(output)

@@ -77,14 +77,14 @@ module map_set
   ! One row: WHICH set - by value - and how its members are stored.
   !===================================================================!
 
-  type :: set_row
+  type :: set_pair
      type(token)                             :: identity
      class(set_representation), allocatable  :: extent
-  end type set_row
+  end type set_pair
 
   type :: set_map
 
-     type(set_row), allocatable, private :: rows(:)
+     type(set_pair), allocatable, private :: rows(:)
 
    contains
 
@@ -131,7 +131,7 @@ contains
     type(graph)              , intent(in)    :: element
     class(set_representation), intent(in)    :: extent
 
-    type(set_row), allocatable :: grown(:)
+    type(set_pair), allocatable :: grown(:)
     type(token)                :: key
     integer                    :: n
 

@@ -25,7 +25,7 @@
 ! and the assertions below refuse to rely on it: no two are the
 ! same carrier, by identity.
 !
-!      H_context is the compatibility conduit the graph_operation
+!      H_context is the compatibility conduit the operation
 !      contract requires. It is NOT the time graph.
 !
 !      clock % instants(4) is the marcher's own control chain. It
@@ -68,8 +68,8 @@ program time_level_8
   use graph_fractal        , only : set_graph => graph
   use map_set        , only : set_map
   use relation_binary , only : csr_relation
-  use view_directed_stored           , only : directed_stored_graph
-  use field_stored     , only : field
+  use view_directed_stored           , only : stored_directed_graph
+  use field_stored     , only : stored_field
   use operation_gmres     , only : gmres
   use operation_newton    , only : newton
   use operation_marching   , only : marcher, MARCH_FORWARD, &
@@ -86,7 +86,7 @@ program time_level_8
   type(set_map)          :: sets
   type(csr_relation), target :: tail, head
   type(csr_relation)         :: a1
-  type(directed_stored_graph)         :: hcontext
+  type(stored_directed_graph)         :: hcontext
   type(triangular_decay)     :: decay
   integer                    :: nfail
 
@@ -102,7 +102,7 @@ program time_level_8
   a1   = derive_one_step_reach(tail, head, sets)
 
   ! The OPERATION HOST - the conduit, not the clock.
-  hcontext = directed_stored_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
+  hcontext = stored_directed_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
 
   decay = triangular_decay(q, NQ)
 
@@ -128,7 +128,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(marcher)      :: clock
-    type(directed_stored_graph) :: chain
+    type(stored_directed_graph) :: chain
     integer            :: i
     logical            :: ok
 
@@ -169,7 +169,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(marcher)                  :: clock
-    type(directed_stored_graph)             :: chain
+    type(stored_directed_graph)             :: chain
     type(set_graph) :: cv, hv
 
     call clock % instants(NSTEPS, chain)
@@ -207,7 +207,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(marcher)         :: clock
-    type(field)           :: h
+    type(stored_field)           :: h
     real(dp), allocatable :: hv(:)
     integer               :: i
     logical               :: ok

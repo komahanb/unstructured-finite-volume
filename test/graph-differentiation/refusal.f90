@@ -31,11 +31,11 @@
 program refusal
 
   use iso_fortran_env     , only : dp => REAL64
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use graph_fractal       , only : set_graph => graph
-  use view_directed_stored         , only : directed_stored_graph
-  use field_stored   , only : field
-  use operation_step    , only : step_operator
+  use view_directed_stored         , only : stored_directed_graph
+  use field_stored   , only : stored_field
+  use operation_step    , only : scheme
   use operation_chain_rule, only : chain_rule, argument_path
   use operation_linearization, only : exact_linearization
   use operation_marching , only : marcher, MARCH_BACKWARD
@@ -48,17 +48,17 @@ program refusal
   type(quartic_form)    :: quartic
   type(equilibrium_law) :: equil
 
-  type(directed_stored_graph) :: lone
+  type(stored_directed_graph) :: lone
   type(set_graph)             :: cells
-  type(step_operator)         :: statement
+  type(scheme)         :: statement
   type(chain_rule)            :: composer
   type(argument_path)         :: paths(2)
   type(exact_linearization)   :: tangent
   type(marcher)               :: clock
   type(halving_policy)        :: policy
 
-  type(field) :: inputs(2), direction
-  class(graph_field), allocatable :: output
+  type(stored_field) :: inputs(2), direction
+  class(field), allocatable :: output
   real(dp), allocatable :: sensitivities(:,:,:), taken(:)
   real(dp) :: trajectory(1,3), lambda(1), q(1)
   logical  :: completed
@@ -67,7 +67,7 @@ program refusal
 
   call get_command_argument(1, which)
 
-  lone  = directed_stored_graph(1, tails=[integer ::], heads=[integer ::])
+  lone  = stored_directed_graph(1, tails=[integer ::], heads=[integer ::])
   cells = lone % vertex_set()
 
   clock % rule = MARCH_BACKWARD
@@ -142,7 +142,7 @@ program refusal
   case ('unfrozen')
 
      tangent = exact_linearization(quartic)
-     direction = field('v', cells, 1, ncomp=1)
+     direction = stored_field('v', cells, 1, ncomp=1)
      call direction % set_real_vector([1.0_dp])
      call tangent % apply(lone, [direction], output)
 

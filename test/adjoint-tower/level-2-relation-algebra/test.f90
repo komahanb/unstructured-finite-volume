@@ -44,7 +44,7 @@ program adjoint_level_2
   use map_inclusion  , only : inclusion_map, declared_subobject
   use relation_finitary, only : stored_relation, relation
   use relation_algebra, only : compose_binary
-  use relation_binary , only : csr_relation, transposed_view, &
+  use relation_binary , only : csr_relation, transposed_relation, &
        &                             transpose_of, inclusion_of
 
   implicit none
@@ -53,7 +53,7 @@ program adjoint_level_2
   type(set_graph)           :: p_dom, q_dom, y_dom, z_dom
   type(stored_relation)      :: dep
   type(csr_relation), target :: inc_y, inc_z, inc_q, inc_p
-  type(transposed_view)      :: inc_q_t, inc_p_t
+  type(transposed_relation)      :: inc_q_t, inc_p_t
   type(csr_relation)         :: on_y, on_z
   type(csr_relation)         :: jq, jp, fq, fp
   integer                    :: table(2, 9)

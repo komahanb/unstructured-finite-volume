@@ -31,9 +31,9 @@ module operation_diffusion
   use map_label    , only : label_map
   use map_inclusion, only : inclusion_map
   use field_forms          , only : form
-  use field_stored    , only : field
+  use field_stored    , only : stored_field
   use view_mesh     , only : mesh
-  use operation_stencil  , only : stencil_operator
+  use operation_stencil  , only : stencil
   use operation_fitted_balance , only : fitted_balance_stencil
   use operation_conduction     , only : conduction
   use operation_robin_condition, only : robin_condition
@@ -53,7 +53,7 @@ contains
     type(robin_condition), intent(in) :: conditions(:)
     class(form), intent(in), optional :: shape
 
-    type(stencil_operator) :: op
+    type(stencil) :: op
 
     class(form), allocatable :: chosen
     !----------------------------------------------------------------!
@@ -68,7 +68,7 @@ contains
     type(label_map)     :: labels
     type(inclusion_map) :: inclusions
 
-    type(field) :: fa
+    type(stored_field) :: fa
     real(dp), allocatable :: keff(:), areas(:), scales(:)
     real(dp), allocatable :: vb(:), wb(:), values(:), weights(:)
     integer :: k, f, e, ne

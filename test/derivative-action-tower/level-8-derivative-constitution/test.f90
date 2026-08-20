@@ -50,7 +50,7 @@ program derivative_level_8
   use relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
   use relation_algorithms , only : reachable, topological_order
-  use field_stored, only : field
+  use field_stored, only : stored_field
   use derivative_constitution_fixture, only : apply_law, &
        & local_linearization, slot_for_port, primal_execution, &
        & tangent_action, reverse_action
@@ -81,7 +81,7 @@ program derivative_level_8
   type(graph)             , target :: rcell2(1), relem2(1)
   type(relational_binding)         :: bnd2
   integer                          :: kcell2
-  type(field)                    :: qx, vx, zbar_f, jv_f, xbar_f
+  type(stored_field)                    :: qx, vx, zbar_f, jv_f, xbar_f
   integer, allocatable           :: order(:), order2(:), hits(:)
   real(dp), allocatable          :: obs(:), seedv(:), zseed(:), xbar(:)
   real(dp), allocatable          :: base(:), dot(:)
@@ -286,7 +286,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    qx = field('base point', x_dom, sets % size_of(x_dom))
+    qx = stored_field('base point', x_dom, sets % size_of(x_dom))
     call qx % set_real_vector([3.0_dp, 2.0_dp])
     call qx % get_real_vector(obs)
 
@@ -316,7 +316,7 @@ contains
     type(set_graph) :: dom
     real(dp), allocatable          :: out_val(:)
 
-    vx = field('tangent seed', x_dom, sets % size_of(x_dom))
+    vx = stored_field('tangent seed', x_dom, sets % size_of(x_dom))
     call vx % set_real_vector([-1.0_dp, 4.0_dp])
     call vx % get_real_vector(seedv)
 
@@ -328,7 +328,7 @@ contains
          & "du = 3(4) + 2(-1) = 10, by the local shadow", nfail)
 
     jv = dot(sets % index_in(v, SLOT_Z))
-    jv_f = field('tangent response', z_dom, sets % size_of(z_dom))
+    jv_f = stored_field('tangent response', z_dom, sets % size_of(z_dom))
     call jv_f % set_real_vector([jv])
 
     dom = jv_f % domain()
@@ -352,7 +352,7 @@ contains
 
     type(set_graph) :: dom
 
-    zbar_f = field('reverse seed', z_dom, sets % size_of(z_dom))
+    zbar_f = stored_field('reverse seed', z_dom, sets % size_of(z_dom))
     call zbar_f % set_real_vector([2.0_dp])
     call zbar_f % get_real_vector(zseed)
 
@@ -366,7 +366,7 @@ contains
          &      < 1.0d-12, &
          & "xbar = 3(2) = 6", nfail)
 
-    xbar_f = field('reverse result', x_dom, sets % size_of(x_dom))
+    xbar_f = stored_field('reverse result', x_dom, sets % size_of(x_dom))
     call xbar_f % set_real_vector(xbar)
     dom = xbar_f % domain()
     call report(dom % same_as(x_dom), &
@@ -496,13 +496,13 @@ contains
     real(dp), allocatable :: obs2(:), base2(:), dot2(:), xbar2(:)
     logical , allocatable :: avail2(:), davail2(:)
     real(dp)              :: jv2, lhs, rhs
-    type(field)           :: qx2
+    type(stored_field)           :: qx2
 
     allocate(base2(sets % size_of(v)), avail2(sets % size_of(v)))
     allocate(dot2(sets % size_of(v)), davail2(sets % size_of(v)))
     allocate(xbar2(sets % size_of(x_dom)))
 
-    qx2 = field('base point two', x_dom, sets % size_of(x_dom))
+    qx2 = stored_field('base point two', x_dom, sets % size_of(x_dom))
     call qx2 % set_real_vector([2.0_dp, 4.0_dp])
     call qx2 % get_real_vector(obs2)
 

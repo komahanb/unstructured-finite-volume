@@ -78,15 +78,15 @@ module operation_reduction
 
   use iso_fortran_env       , only : dp => REAL64
   use view_directed   , only : directed_graph
-  use field_calculus  , only : graph_field
+  use field_calculus  , only : field
   use graph_fractal      , only : set_graph => graph
   use field_calculus  , only : GRAPH_FIELD_REAL, GRAPH_FIELD_COMPLEX
   use field_calculus  , only : GRAPH_FIELD_LOGICAL
-  use operation_action  , only : graph_operation
-  use field_calculus  , only : graph_functional
+  use operation_action  , only : operation
+  use field_calculus  , only : functional
   use view_directed   , only : GRAPH_SIDE_VERTEX
-  use field_stored     , only : plain_field => field
-  use field_functional, only : scalar_result => functional
+  use field_stored     , only : plain_field => stored_field
+  use field_functional, only : scalar_result => stored_functional
 
   implicit none
 
@@ -118,7 +118,7 @@ module operation_reduction
   ! product's second field.
   !===================================================================!
 
-  type, extends(graph_operation) :: reduction
+  type, extends(operation) :: reduction
 
      integer  :: rule  = REDUCE_SUM
      real(dp) :: power = 2.0_dp     ! which norm, when the rule is a norm
@@ -176,7 +176,7 @@ module operation_reduction
   ! broadcast(BROADCAST_SHARE) builds one.
   !===================================================================!
 
-  type, extends(graph_operation) :: broadcast
+  type, extends(operation) :: broadcast
 
      integer :: rule = BROADCAST_COPY
 
@@ -226,7 +226,7 @@ contains
   pure subroutine initialize(this, state)
 
     class(reduction), intent(in)                            :: this
-    class(graph_functional), allocatable, intent(inout)     :: state
+    class(functional), allocatable, intent(inout)     :: state
 
     if (allocated(state)) deallocate(state)
     allocate(scalar_result :: state)
@@ -258,12 +258,12 @@ contains
   ! Add one part's values into the running answer.
   !===================================================================!
 
-  pure subroutine accumulate(this, field, state, measure)
+  pure subroutine accumulate(this, values, state, measure)
 
     class(reduction)       , intent(in)    :: this
-    class(graph_field)     , intent(in)    :: field
-    class(graph_functional), intent(inout) :: state
-    class(graph_field)     , intent(in), optional :: measure
+    class(field)     , intent(in)    :: values
+    class(functional), intent(inout) :: state
+    class(field)     , intent(in), optional :: measure
 
     real(dp)   , allocatable :: v(:), m(:)
     complex(dp), allocatable :: cv(:)
@@ -274,8 +274,8 @@ contains
     logical     :: lacc
     integer     :: i, c, k, ncomp, nentry
 
-    ncomp  = field % num_components()
-    nentry = field % num_entries()
+    ncomp  = values % num_components()
+    nentry = values % num_entries()
 
     call weights_of(measure, nentry, m)
 
@@ -283,7 +283,7 @@ contains
 
     case (REDUCE_ALL, REDUCE_ANY)
 
-       call field % get_logical_vector(lv)
+       call values % get_logical_vector(lv)
        call get_logical(state, lacc)
        if (this % rule == REDUCE_ALL) then
           lacc = lacc .and. all(lv)
@@ -301,12 +301,12 @@ contains
 
     case default
 
-       ! A complex field takes the complex road; everything else the
+       ! A complex values takes the complex road; everything else the
        ! real one. Only summing is defined for complex values, since
        ! ordering them has no meaning.
-       if (field % value_kind() == GRAPH_FIELD_COMPLEX) then
+       if (values % value_kind() == GRAPH_FIELD_COMPLEX) then
 
-          call field % get_complex_vector(cv)
+          call values % get_complex_vector(cv)
           call get_complex(state, cacc)
           do i = 1, nentry
              do c = 1, ncomp
@@ -318,7 +318,7 @@ contains
 
        else
 
-          call field % get_real_vector(v)
+          call values % get_real_vector(v)
 
           select case (this % rule)
 
@@ -380,7 +380,7 @@ contains
 
   pure subroutine weights_of(measure, nentry, m)
 
-    class(graph_field), intent(in), optional :: measure
+    class(field), intent(in), optional :: measure
     integer           , intent(in)           :: nentry
     real(dp), allocatable, intent(out)       :: m(:)
 
@@ -405,9 +405,9 @@ contains
   pure subroutine combine(this, left, right, combined)
 
     class(reduction)       , intent(in)    :: this
-    class(graph_functional), intent(in)    :: left
-    class(graph_functional), intent(in)    :: right
-    class(graph_functional), allocatable, intent(inout) :: combined
+    class(functional), intent(in)    :: left
+    class(functional), intent(in)    :: right
+    class(functional), allocatable, intent(inout) :: combined
 
     real(dp)    :: a, b
     complex(dp) :: ca, cb
@@ -477,14 +477,14 @@ contains
   ! any earlier is exactly the bug the four steps exist to prevent.
   !===================================================================!
 
-  pure subroutine finalize(this, state, functional)
+  pure subroutine finalize(this, state, scalar)
 
     class(reduction)       , intent(in) :: this
-    class(graph_functional), intent(in) :: state
-    class(graph_functional), allocatable, intent(inout) :: functional
+    class(functional), intent(in) :: state
+    class(functional), allocatable, intent(inout) :: scalar
 
-    if (allocated(functional)) deallocate(functional)
-    allocate(functional, source=state)
+    if (allocated(scalar)) deallocate(scalar)
+    allocate(scalar, source=state)
 
     select case (this % rule)
 
@@ -493,9 +493,9 @@ contains
        select type (state)
        type is (scalar_result)
           if (state % weight > 0.0_dp) then
-             call set_real(functional, state % tally / state % weight)
+             call set_real(scalar, state % tally / state % weight)
           else
-             call set_real(functional, 0.0_dp)
+             call set_real(scalar, 0.0_dp)
           end if
        end select
 
@@ -504,9 +504,9 @@ contains
        select type (state)
        type is (scalar_result)
           if (state % tally > 0.0_dp) then
-             call set_real(functional, state % tally**(1.0_dp / this % power))
+             call set_real(scalar, state % tally**(1.0_dp / this % power))
           else
-             call set_real(functional, 0.0_dp)
+             call set_real(scalar, 0.0_dp)
           end if
        end select
 
@@ -514,7 +514,7 @@ contains
 
        select type (state)
        type is (scalar_result)
-          call functional % set_integer_vector([nint(state % tally)])
+          call scalar % set_integer_vector([nint(state % tally)])
        end select
 
     end select
@@ -529,18 +529,18 @@ contains
   ! distributed reduction would sum here before finalizing.
   !===================================================================!
 
-  subroutine reduce(this, field, functional, measure)
+  subroutine reduce(this, values, scalar, measure)
 
     class(reduction)    , intent(in) :: this
-    class(graph_field)  , intent(in) :: field
-    class(graph_functional), allocatable, intent(inout) :: functional
-    class(graph_field)  , intent(in), optional :: measure
+    class(field)  , intent(in) :: values
+    class(functional), allocatable, intent(inout) :: scalar
+    class(field)  , intent(in), optional :: measure
 
-    class(graph_functional), allocatable :: state
+    class(functional), allocatable :: state
 
     call this % initialize(state)
-    call this % accumulate(field, state, measure)
-    call this % finalize(state, functional)
+    call this % accumulate(values, state, measure)
+    call this % finalize(state, scalar)
 
   end subroutine reduce
 
@@ -580,10 +580,10 @@ contains
 
     class(reduction), intent(in)                   :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
-    class(graph_functional), allocatable :: answer
+    class(functional), allocatable :: answer
 
     associate (u1 => input_graph); end associate
 
@@ -610,9 +610,9 @@ contains
   subroutine reduce_measured(this, u, v, answer)
 
     class(reduction), intent(in)   :: this
-    class(graph_field), intent(in) :: u
-    class(graph_field), intent(in) :: v
-    class(graph_functional), allocatable, intent(inout) :: answer
+    class(field), intent(in) :: u
+    class(field), intent(in) :: v
+    class(functional), allocatable, intent(inout) :: answer
 
     call this % reduce(u, answer, measure=v)
 
@@ -652,8 +652,8 @@ contains
 
     class(broadcast), intent(in)                   :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
     type(plain_field) :: out
 
@@ -661,7 +661,7 @@ contains
 
     if (present(input_data)) then
        select type (f => input_data(1))
-       class is (graph_functional)
+       class is (functional)
           call this % broadcast(f, out)
        class default
           error stop 'broadcast: the operation face wants a functional'
@@ -682,30 +682,30 @@ contains
   ! value-kind rule the fields state.
   !===================================================================!
 
-  pure subroutine broadcast_functional(this, functional, field)
+  pure subroutine broadcast_functional(this, scalar, values)
 
     class(broadcast)       , intent(in)    :: this
-    class(graph_functional), intent(in)    :: functional
-    class(graph_field)     , intent(inout) :: field
+    class(functional), intent(in)    :: scalar
+    class(field)     , intent(inout) :: values
 
     real(dp)    :: value
     complex(dp) :: complex_value
     integer     :: n, i
 
-    n = field % num_entries() * max(field % num_components(), 1)
+    n = values % num_entries() * max(values % num_components(), 1)
 
-    if (functional % value_kind() == GRAPH_FIELD_COMPLEX) then
-       call get_complex(functional, complex_value)
+    if (scalar % value_kind() == GRAPH_FIELD_COMPLEX) then
+       call get_complex(scalar, complex_value)
        if (this % rule == BROADCAST_SHARE .and. n > 0) then
           complex_value = complex_value / real(n, dp)
        end if
-       call field % set_complex_vector([(complex_value, i = 1, n)])
+       call values % set_complex_vector([(complex_value, i = 1, n)])
     else
-       call get_real(functional, value)
+       call get_real(scalar, value)
        if (this % rule == BROADCAST_SHARE .and. n > 0) then
           value = value / real(n, dp)
        end if
-       call field % set_real_vector([(value, i = 1, n)])
+       call values % set_real_vector([(value, i = 1, n)])
     end if
 
   end subroutine broadcast_functional
@@ -718,7 +718,7 @@ contains
 
   pure subroutine get_real(f, x)
 
-    class(graph_functional), intent(in) :: f
+    class(functional), intent(in) :: f
     real(dp), intent(out) :: x
 
     real(dp), allocatable :: t(:)
@@ -734,7 +734,7 @@ contains
 
   pure subroutine set_real(f, x)
 
-    class(graph_functional), intent(inout) :: f
+    class(functional), intent(inout) :: f
     real(dp), intent(in) :: x
 
     call f % set_real_vector([x])
@@ -743,7 +743,7 @@ contains
 
   pure subroutine get_complex(f, x)
 
-    class(graph_functional), intent(in) :: f
+    class(functional), intent(in) :: f
     complex(dp), intent(out) :: x
 
     complex(dp), allocatable :: t(:)
@@ -759,7 +759,7 @@ contains
 
   pure subroutine set_complex(f, x)
 
-    class(graph_functional), intent(inout) :: f
+    class(functional), intent(inout) :: f
     complex(dp), intent(in) :: x
 
     call f % set_complex_vector([x])
@@ -768,7 +768,7 @@ contains
 
   pure subroutine get_logical(f, x)
 
-    class(graph_functional), intent(in) :: f
+    class(functional), intent(in) :: f
     logical, intent(out) :: x
 
     logical, allocatable :: t(:)
@@ -784,7 +784,7 @@ contains
 
   pure subroutine set_logical(f, x)
 
-    class(graph_functional), intent(inout) :: f
+    class(functional), intent(inout) :: f
     logical, intent(in) :: x
 
     call f % set_logical_vector([x])

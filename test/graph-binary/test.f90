@@ -22,7 +22,7 @@ program test_graph_binary
   use map_label      , only : label_map
   use map_inclusion  , only : inclusion_map, declared_subobject
   use relation_binary , only : csr_relation, transpose_of, &
-       &                             transposed_view, inclusion_of
+       &                             transposed_relation, inclusion_of
 
   implicit none
 
@@ -356,7 +356,7 @@ contains
 
     type(set_graph)               :: cells, faces
     type(csr_relation), target      :: r
-    type(transposed_view)           :: t
+    type(transposed_relation)           :: t
     type(set_graph)  :: d
     integer, allocatable            :: fwd(:), rev(:)
     type(set_map)     :: sets
@@ -424,8 +424,8 @@ contains
 
     type(set_graph)               :: cells, faces
     type(csr_relation) , target    :: r
-    type(transposed_view), target  :: t
-    type(transposed_view)          :: tt
+    type(transposed_relation), target  :: t
+    type(transposed_relation)          :: tt
     type(set_graph) :: da, db
     integer, allocatable           :: rt(:,:)
     integer                        :: j

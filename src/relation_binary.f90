@@ -106,7 +106,7 @@ module relation_binary
   implicit none
 
   private
-  public :: binary_relation, csr_relation, transposed_view, transpose_of
+  public :: binary_relation, csr_relation, transposed_relation, transpose_of
   public :: inclusion_of
   public :: group_by_key
   public :: transpose_padded
@@ -214,7 +214,7 @@ module relation_binary
   ! must outlive the view.
   !===================================================================!
 
-  type, extends(binary_relation) :: transposed_view
+  type, extends(binary_relation) :: transposed_relation
 
      class(binary_relation), pointer, private :: base => null()
 
@@ -233,7 +233,7 @@ module relation_binary
      ! exactly what the default guards against. Views live OVER
      ! graph-owned relations, never inside them.
 
-  end type transposed_view
+  end type transposed_relation
 
 contains
 
@@ -518,7 +518,7 @@ contains
   function transpose_of(base) result(view)
 
     class(binary_relation), target, intent(in) :: base
-    type(transposed_view)                      :: view
+    type(transposed_relation)                      :: view
 
     view % base => base
     call view % declare(base % name() // '^T')
@@ -531,7 +531,7 @@ contains
 
   type(set_graph) function view_domain(this, position) result(domain)
 
-    class(transposed_view), intent(in) :: this
+    class(transposed_relation), intent(in) :: this
     integer               , intent(in) :: position
 
     domain = this % base % domain(3 - position)
@@ -540,7 +540,7 @@ contains
 
   pure logical function view_has(this, tuple)
 
-    class(transposed_view), intent(in) :: this
+    class(transposed_relation), intent(in) :: this
     integer               , intent(in) :: tuple(:)
 
     view_has = .false.
@@ -552,7 +552,7 @@ contains
 
   pure integer function view_num_tuples(this)
 
-    class(transposed_view), intent(in) :: this
+    class(transposed_relation), intent(in) :: this
 
     view_num_tuples = this % base % num_tuples()
 
@@ -560,7 +560,7 @@ contains
 
   pure subroutine view_tuples(this, table)
 
-    class(transposed_view), intent(in)  :: this
+    class(transposed_relation), intent(in)  :: this
     integer, allocatable  , intent(out) :: table(:,:)
 
     integer, allocatable :: forward(:,:)
@@ -574,7 +574,7 @@ contains
 
   function view_image_view(this, member) result(fibre)
 
-    class(transposed_view), target, intent(in) :: this
+    class(transposed_relation), target, intent(in) :: this
     integer                       , intent(in) :: member
     integer, pointer                           :: fibre(:)
 
@@ -584,7 +584,7 @@ contains
 
   function view_preimage_view(this, member) result(fibre)
 
-    class(transposed_view), target, intent(in) :: this
+    class(transposed_relation), target, intent(in) :: this
     integer                       , intent(in) :: member
     integer, pointer                           :: fibre(:)
 

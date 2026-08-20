@@ -28,9 +28,9 @@ program test_graph_field_transport
   use map_label         , only : label_map
   use map_inclusion     , only : inclusion_map, declared_subobject
   use view_directed    , only : directed_graph
-  use field_calculus   , only : graph_field
-  use view_directed_stored            , only : directed_stored_graph
-  use field_stored      , only : field
+  use field_calculus   , only : field
+  use view_directed_stored            , only : stored_directed_graph
+  use field_stored      , only : stored_field
   use transform_partitioner, only : partitioner, PARTITION_LINEAR
   use transform_assembler  , only : assembler
 
@@ -38,7 +38,7 @@ program test_graph_field_transport
   implicit none
   type(partition_relation) :: rel
 
-  type(directed_stored_graph) :: g
+  type(stored_directed_graph) :: g
   type(assembler)    :: a
   integer            :: nfail
 
@@ -47,7 +47,7 @@ program test_graph_field_transport
   write(*,'(1x,a)') "graph field transport suite (phase 5B)"
   write(*,'(1x,a)') "============================================="
 
-  g = directed_stored_graph(6, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  g = stored_directed_graph(6, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
   a = assembler()
 
   call check_full(.true. , 6, nfail)
@@ -95,10 +95,10 @@ contains
     integer, intent(in)    :: n
     integer, intent(inout) :: nfail
 
-    type(field)                     :: d
+    type(stored_field)                     :: d
     type(partitioner)               :: p
     class(directed_graph), allocatable       :: part
-    class(graph_field), allocatable :: pd, fd
+    class(field), allocatable :: pd, fd
     type(set_map)                   :: sets
     type(label_map)                 :: labels
     type(inclusion_map)             :: inclusions
@@ -109,11 +109,11 @@ contains
     if (verts) then
        call sets % bind(g % vertex_set(), &
             & counted_set_representation(g % num_vertices()))
-       d = field('q', g % vertex_set(), g % num_vertices())
+       d = stored_field('q', g % vertex_set(), g % num_vertices())
     else
        call sets % bind(g % edge_set(), &
             & counted_set_representation(g % num_edges()))
-       d = field('q', g % edge_set(), g % num_edges())
+       d = stored_field('q', g % edge_set(), g % num_edges())
     end if
     call d % set_real_vector([(10.0_dp * i, i = 1, n)])
 
@@ -153,10 +153,10 @@ contains
     type(set_map)                   :: sets
     type(label_map)                 :: labels
     type(inclusion_map)             :: inclusions
-    type(field)                     :: d
+    type(stored_field)                     :: d
     type(partitioner)               :: p
     class(directed_graph), allocatable       :: part
-    class(graph_field), allocatable :: pd, fd
+    class(field), allocatable :: pd, fd
     type(set_graph)                 :: dp_, dg
     real(dp), allocatable           :: sv(:), v(:)
     integer, allocatable            :: mem(:)
@@ -178,7 +178,7 @@ contains
     call labels     % bind(s, 'chosen')
     call inclusions % include_in(s, carrier)
 
-    d = field('q', s, size(chosen), ncomp=2)
+    d = stored_field('q', s, size(chosen), ncomp=2)
 
     allocate(sv(2 * size(chosen)))
     do i = 1, size(chosen)
@@ -260,10 +260,10 @@ contains
     type(set_map)                   :: sets
     type(label_map)                 :: labels
     type(inclusion_map)             :: inclusions
-    type(field)                     :: d
+    type(stored_field)                     :: d
     type(partitioner)               :: p
     class(directed_graph), allocatable       :: part
-    class(graph_field), allocatable :: pd, fd
+    class(field), allocatable :: pd, fd
     real(dp), allocatable           :: v(:)
     logical                         :: ok
 
@@ -280,7 +280,7 @@ contains
     call labels     % bind(s, 'none')
     call inclusions % include_in(s, carrier)
 
-    d = field('q', s, 0)
+    d = stored_field('q', s, 0)
     call d % set_real_vector([real(dp) ::])
 
     p = partitioner(PARTITION_LINEAR, nparts=2, part=1)

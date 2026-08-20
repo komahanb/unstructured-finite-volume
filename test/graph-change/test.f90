@@ -4,7 +4,7 @@
 !
 !  - the run_change lifecycle apply -> check -> keep | revert on
 !    accepted, rejected, vetoed, failing, and mixed changes, and
-!    the change_result flags after each outcome
+!    the change_record flags after each outcome
 !  - the value map status transitions UNATTACHED -> UNKNOWN ->
 !    KNOWN and back, and its storage rules: rows are keyed on
 !    copied identity tokens rather than position, values are
@@ -21,14 +21,14 @@ program test_graph_change
 
   use iso_fortran_env      , only : dp => REAL64
   use graph_fractal        , only : graph
-  use map_change_protocol, only : run_change, change_result
+  use map_change_protocol, only : run_change, change_record
   use map_value      , only : value_map, &
        & VALUE_UNATTACHED, VALUE_UNKNOWN, VALUE_KNOWN
   use map_value_change   , only : value_change
   use toy_changes          , only : counting_change, mixed_change
 
   implicit none
-  type(change_result)     :: result
+  type(change_record)     :: result
 
   integer :: nfail
 
@@ -54,7 +54,7 @@ contains
   !===================================================================!
   ! Run the counting toy through run_change four ways -
   ! accepted, rejected, vetoed by check, and failing in apply -
-  ! and verify the counter and the change_result flags after each
+  ! and verify the counter and the change_record flags after each
   ! run. Then run the mixed toy accepted and rejected, and check
   ! that reset clears every flag.
   !===================================================================!

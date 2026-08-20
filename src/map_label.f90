@@ -74,14 +74,14 @@ module map_label
   ! One row: WHICH set - by value - and what it is called.
   !===================================================================!
 
-  type :: label_row
+  type :: label_pair
      type(token)                   :: identity
      character(len=:), allocatable :: label
-  end type label_row
+  end type label_pair
 
   type :: label_map
 
-     type(label_row), allocatable, private :: rows(:)
+     type(label_pair), allocatable, private :: rows(:)
 
    contains
 
@@ -104,7 +104,7 @@ contains
     type(graph)     , intent(in)    :: element
     character(len=*), intent(in)    :: label
 
-    type(label_row), allocatable :: grown(:)
+    type(label_pair), allocatable :: grown(:)
     type(token)                  :: key
     integer                      :: n
 

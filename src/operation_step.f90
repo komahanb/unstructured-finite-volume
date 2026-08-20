@@ -29,23 +29,23 @@
 module operation_step
 
   use iso_fortran_env    , only : dp => REAL64
-  use operation_action, only : graph_operation
+  use operation_action, only : operation
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use graph_fractal      , only : set_graph => graph
-  use operation_discretization     , only : discretization_operator
-  use field_stored  , only : field
-  use view_directed_stored        , only : directed_stored_graph
+  use operation_discretization     , only : discretization
+  use field_stored  , only : stored_field
+  use view_directed_stored        , only : stored_directed_graph
 
   implicit none
 
   private
-  public :: step_operator
+  public :: scheme
   public :: backward_euler, bdf, bdf_variable
 
-  type, extends(discretization_operator) :: step_operator
+  type, extends(discretization) :: scheme
 
-     class(graph_operation), allocatable :: action
+     class(operation), allocatable :: action
 
      real(dp), allocatable :: qold(:)
      real(dp), allocatable :: qolder(:)
@@ -65,7 +65,7 @@ module operation_step
      procedure :: dependencies => step_dependencies
      procedure :: set_bdf
 
-  end type step_operator
+  end type scheme
 
 contains
 
@@ -75,9 +75,9 @@ contains
 
   function backward_euler(action, h) result(this)
 
-    class(graph_operation), intent(in) :: action
+    class(operation), intent(in) :: action
     real(dp), intent(in)               :: h
-    type(step_operator)                :: this
+    type(scheme)                :: this
 
     allocate(this % action, source=action)
     call this % set_bdf(1, [h])
@@ -92,9 +92,9 @@ contains
   function bdf(k, action, h) result(this)
 
     integer, intent(in)                :: k
-    class(graph_operation), intent(in) :: action
+    class(operation), intent(in) :: action
     real(dp), intent(in)               :: h
-    type(step_operator)                :: this
+    type(scheme)                :: this
 
     allocate(this % action, source=action)
 
@@ -119,9 +119,9 @@ contains
   function bdf_variable(k, action, steps) result(this)
 
     integer, intent(in)                :: k
-    class(graph_operation), intent(in) :: action
+    class(operation), intent(in) :: action
     real(dp), intent(in)               :: steps(:)
-    type(step_operator)                :: this
+    type(scheme)                :: this
 
     allocate(this % action, source=action)
     call this % set_bdf(k, steps)
@@ -145,7 +145,7 @@ contains
 
   subroutine set_bdf(this, k, steps)
 
-    class(step_operator), intent(inout) :: this
+    class(scheme), intent(inout) :: this
     integer             , intent(in)    :: k
     real(dp)            , intent(in)    :: steps(:)
 
@@ -206,20 +206,20 @@ contains
   !                                3 --> 3
   !
   ! This records which instants the residual reads, not which
-  ! instant follows which. A stencil_operator's dependencies are
+  ! instant follows which. A stencil's dependencies are
   ! the same pattern on the dependent-variable axis.
   !===================================================================!
 
   subroutine step_dependencies(this, pattern)
 
-    class(step_operator), intent(in)       :: this
+    class(scheme), intent(in)       :: this
     class(directed_graph), allocatable, intent(out) :: pattern
 
     integer :: n, newest
 
     newest = this % reach + 1
 
-    allocate(pattern, source=directed_stored_graph(newest, &
+    allocate(pattern, source=stored_directed_graph(newest, &
          & tails=[(n, n = 1, newest)], &
          & heads=[(newest, n = 1, newest)]))
 
@@ -231,7 +231,7 @@ contains
 
   pure function step_name(this) result(name)
 
-    class(step_operator), intent(in) :: this
+    class(scheme), intent(in) :: this
     character(len=:), allocatable :: name
 
     associate (u1 => this); end associate
@@ -248,7 +248,7 @@ contains
 
   subroutine step_domain(this, input_graph, domain, nentries)
 
-    class(step_operator), intent(in)       :: this
+    class(scheme), intent(in)       :: this
     class(directed_graph), intent(in)               :: input_graph
     type(set_graph), intent(out) :: domain
     integer        , intent(out) :: nentries
@@ -267,13 +267,13 @@ contains
 
   subroutine step_apply(this, input_graph, input_data, output)
 
-    class(step_operator), intent(in)               :: this
+    class(scheme), intent(in)               :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
-    type(field)   :: out
-    class(graph_field), allocatable :: velocity
+    type(stored_field)   :: out
+    class(field), allocatable :: velocity
     type(set_graph) :: expected, given
     integer         :: n_expected, n_given
     real(dp), allocatable :: q(:), s(:), y(:)
@@ -311,7 +311,7 @@ contains
        y = 0.0_dp
     end if
 
-    out = field('step residual', expected, n_expected, ncomp=ncomp)
+    out = stored_field('step residual', expected, n_expected, ncomp=ncomp)
     call out % set_real_vector(y)
 
     if (allocated(output)) deallocate(output)

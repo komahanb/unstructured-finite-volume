@@ -38,13 +38,13 @@ program adjoint_level_5
        & listed_set_representation
   use map_set        , only : set_map
   use map_inclusion  , only : inclusion_map, declared_subobject
-  use field_stored, only : field
+  use field_stored, only : stored_field
 
   implicit none
 
   type(set_graph) :: v
   type(set_graph)  :: p_dom, q_dom
-  type(field)       :: p_field, q0
+  type(stored_field)       :: p_field, q0
   integer           :: nfail
   type(set_map)     :: sets
   type(inclusion_map)     :: inclusions
@@ -86,7 +86,7 @@ contains
     type(set_graph) :: dom
     real(dp), allocatable          :: val(:)
 
-    p_field = field('parameter', p_dom, sets % size_of(p_dom))
+    p_field = stored_field('parameter', p_dom, sets % size_of(p_dom))
     call p_field % set_real_vector([2.0_dp])
 
     dom = p_field % domain()
@@ -114,7 +114,7 @@ contains
     type(set_graph) :: dom
     real(dp), allocatable          :: val(:)
 
-    q0 = field('initial state', q_dom, sets % size_of(q_dom))
+    q0 = stored_field('initial state', q_dom, sets % size_of(q_dom))
     call q0 % set_real_vector([0.0_dp, 0.0_dp])
 
     dom = q0 % domain()

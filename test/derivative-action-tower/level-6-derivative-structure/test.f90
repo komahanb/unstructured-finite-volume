@@ -56,7 +56,7 @@ program derivative_level_6
   use relation_finitary   , only : stored_relation, relation
   use relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use relation_binary , only : csr_relation, transposed_view, &
+  use relation_binary , only : csr_relation, transposed_relation, &
        &                             transpose_of
   use relation_algorithms , only : reachable
   use graph_fractal        , only : graph, known_branch, null_branch
@@ -73,7 +73,7 @@ program derivative_level_6
   type(stored_relation)          :: consumes, produces
   type(csr_relation)             :: a, a2
   type(csr_relation), target     :: j_zx, j_zx2
-  type(transposed_view)          :: jt, jt2
+  type(transposed_relation)          :: jt, jt2
   type(graph)             , target :: g_a
   type(graph)             , target :: scell(1), selem(1)
   type(graph)             , target :: rcell(1), relem(1)

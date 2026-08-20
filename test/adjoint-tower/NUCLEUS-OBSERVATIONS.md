@@ -519,7 +519,7 @@ gate / level:         B / 7-8
 contextual radius:    1
 
 symptom / fact:       the legacy graph host is COMPATIBILITY at this
-                      radius. The graph_operation face requires a
+                      radius. The operation face requires a
                       class(graph); a five-vertex stored_graph was
                       supplied whose vertex set is neither Q nor Y and
                       not even their size. It is never queried for
@@ -779,7 +779,7 @@ symptom / fact:       "GRAPH" CARRIES TWO DIFFERENT SOFTWARE ROLES,
                       provably neither Q nor Y nor their size, not
                       owned by the model, never queried for topology
                       or coefficients. It exists because
-                      graph_operation demands a class(graph).
+                      operation demands a class(graph).
                       Compatibility scenery.
 
                       Therefore both of these are true at once:

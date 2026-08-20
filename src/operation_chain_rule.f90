@@ -39,10 +39,10 @@ module operation_chain_rule
 
   use iso_fortran_env     , only : dp => REAL64, int64
   use view_directed , only : directed_graph
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use graph_fractal       , only : set_graph => graph
   use operation_discretization      , only : differentiable_operation
-  use field_stored   , only : field
+  use field_stored   , only : stored_field
 
   implicit none
 
@@ -59,7 +59,7 @@ module operation_chain_rule
   type :: path_derivative
 
      logical     :: occupied = .false.
-     type(field) :: direction
+     type(stored_field) :: direction
 
   end type path_derivative
 
@@ -134,10 +134,10 @@ contains
     class(chain_rule)              , intent(in)    :: this
     class(differentiable_operation), intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
-    type(field)                    , intent(in)    :: input_data(:)
+    type(stored_field)                    , intent(in)    :: input_data(:)
     integer                        , intent(in)    :: degree
     type(argument_path)            , intent(in)    :: paths(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), allocatable, intent(inout) :: output
 
     type(derivative_partition), allocatable :: partitions(:)
     real(dp), allocatable :: running(:)
@@ -340,7 +340,7 @@ contains
 
     class(differentiable_operation), intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
-    type(field)                    , intent(in)    :: input_data(:)
+    type(stored_field)                    , intent(in)    :: input_data(:)
     type(derivative_partition)     , intent(in)    :: partition
     type(argument_path)            , intent(in)    :: paths(:)
     real(dp), allocatable          , intent(inout) :: running(:)
@@ -401,7 +401,7 @@ contains
 
     class(differentiable_operation), intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
-    type(field)                    , intent(in)    :: input_data(:)
+    type(stored_field)                    , intent(in)    :: input_data(:)
     type(derivative_partition)     , intent(in)    :: partition
     type(argument_path)            , intent(in)    :: paths(:)
     integer                        , intent(in)    :: chosen(:)
@@ -409,8 +409,8 @@ contains
     logical                        , intent(inout) :: started
     integer                        , intent(inout) :: ncomp
 
-    class(graph_field), allocatable :: output
-    type(field) :: directions(size(chosen))
+    class(field), allocatable :: output
+    type(stored_field) :: directions(size(chosen))
     integer     :: slots(size(chosen))
     real(dp), allocatable :: term(:)
     integer :: j, k
@@ -456,14 +456,14 @@ contains
 
     class(differentiable_operation), intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
-    type(field)                    , intent(in)    :: input_data(:)
+    type(stored_field)                    , intent(in)    :: input_data(:)
     real(dp), allocatable          , intent(inout) :: running(:)
     logical                        , intent(in)    :: started
     integer                        , intent(in)    :: ncomp
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), allocatable, intent(inout) :: output
 
-    class(graph_field), allocatable :: value
-    type(field)     :: total
+    class(field), allocatable :: value
+    type(stored_field)     :: total
     type(set_graph) :: on
     integer         :: n_on, width
 
@@ -477,7 +477,7 @@ contains
        width   = value % num_components()
     end if
 
-    total = field('total derivative', on, size(running) / width, ncomp=width)
+    total = stored_field('total derivative', on, size(running) / width, ncomp=width)
     call total % set_real_vector(running)
 
     if (allocated(output)) deallocate(output)

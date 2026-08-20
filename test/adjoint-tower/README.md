@@ -508,7 +508,7 @@ The solver is never told which is which. It knows an unknown domain, a
 residual domain, and an operation that answers on the latter. There is
 no `adjoint_solver`, `transpose_gmres` or `reverse_gmres`.
 
-**The compatibility host.** The legacy `graph_operation` face still
+**The compatibility host.** The legacy `operation` face still
 requires a `class(graph)`. It is supplied honestly as a five-vertex
 `stored_graph` whose vertex set is **neither \(Q\) nor \(Y\)** — and
 not even their size — so three identities stay distinct: *solver host*,
@@ -655,7 +655,7 @@ prevent.
 |---|---|---|
 | type | `graph` + `relational_binding` | `stored_graph` (legacy) |
 | content | \(V,T,P,Q,Y,Z\) and \(R_{\mathrm{dep}},J_Q,J_P,F_Q,F_P\) | seven vertices in a chain, unrelated to anything |
-| role | mathematical **ownership environment** | `graph_operation` **compatibility argument** |
+| role | mathematical **ownership environment** | `operation` **compatibility argument** |
 | supplies the supports? | **yes** — every action reads model-owned relations | no |
 | queried for coefficients? | no | no |
 | queried for topology? | no | no |

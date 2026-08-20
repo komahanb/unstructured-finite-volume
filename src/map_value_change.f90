@@ -28,7 +28,7 @@ module map_value_change
   use graph_fractal        , only : graph
   use map_value      , only : value_map, &
        & VALUE_UNATTACHED, VALUE_UNKNOWN, VALUE_KNOWN
-  use map_change_protocol, only : reversible_change, change_result
+  use map_change_protocol, only : reversible_change, change_record
 
   implicit none
 
@@ -101,7 +101,7 @@ contains
   subroutine apply(this, result)
 
     class(value_change), intent(inout) :: this
-    type(change_result), intent(inout) :: result
+    type(change_record), intent(inout) :: result
 
     if (.not. associated(this % values)) then
        error stop 'value_change: value map is bound'
@@ -133,7 +133,7 @@ contains
   subroutine check(this, result)
 
     class(value_change), intent(inout) :: this
-    type(change_result), intent(inout) :: result
+    type(change_record), intent(inout) :: result
 
     call result % mark_checked(this % check_passes)
 
@@ -147,7 +147,7 @@ contains
   subroutine keep(this, result)
 
     class(value_change), intent(inout) :: this
-    type(change_result), intent(inout) :: result
+    type(change_record), intent(inout) :: result
 
     associate(unread => this)
     end associate
@@ -165,7 +165,7 @@ contains
   subroutine revert(this, result)
 
     class(value_change), intent(inout) :: this
-    type(change_result), intent(inout) :: result
+    type(change_record), intent(inout) :: result
 
     select case (this % old_status)
 

@@ -11,7 +11,7 @@
 
 program scale
 
-  use graph_fractal, only : graph, graph_branch
+  use graph_fractal, only : graph, branch
 
   implicit none
 
@@ -24,7 +24,7 @@ program scale
 
   block
     type(graph)        :: g
-    type(graph_branch) :: b
+    type(branch) :: b
     integer            :: i
     gbytes = storage_size(g) / 8
     bbytes = storage_size(b) / 8

@@ -46,11 +46,11 @@
 
 module operation_walk
 
-  use operation_action, only : graph_operation
+  use operation_action, only : operation
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use graph_fractal      , only : set_graph => graph
-  use field_stored  , only : field
+  use field_stored  , only : stored_field
 
   implicit none
 
@@ -67,7 +67,7 @@ module operation_walk
   ! One walk, holding which question it answers and where it starts.
   !===================================================================!
 
-  type, extends(graph_operation) :: walk
+  type, extends(operation) :: walk
 
      integer :: rule = WALK_COLOURING
      integer :: seed = 1
@@ -158,10 +158,10 @@ contains
 
     class(walk)       , intent(in)                 :: this
     class(directed_graph)      , intent(in)                 :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
-    type(field)           :: out
+    type(stored_field)           :: out
     integer , allocatable :: mark(:)
     integer :: nv
 
@@ -169,7 +169,7 @@ contains
 
     nv = input_graph % num_vertices()
 
-    out = field(this % name(), input_graph % vertex_set(), input_graph % num_vertices())
+    out = stored_field(this % name(), input_graph % vertex_set(), input_graph % num_vertices())
 
     select case (this % rule)
     case (WALK_VISIT_ORDER)

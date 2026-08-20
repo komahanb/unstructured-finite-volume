@@ -50,7 +50,7 @@ remain binding, and what is still open.
 - A step policy reads scalars only (estimate, step, attempt count),
   never a state, a graph, or a statement.
 - A coupled multi-stage (block implicit) scheme is one state of
-  stacked stages solved by one `step_operator`; it is not a new
+  stacked stages solved by one `scheme`; it is not a new
   marcher rule.
 - Comments are operational: what is checked, what input is invalid,
   what happens on failure, why the check is needed.

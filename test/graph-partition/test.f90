@@ -26,10 +26,10 @@
 program partition_law
 
   use iso_fortran_env      , only : dp => REAL64
-  use view_directed_stored          , only : directed_stored_graph
+  use view_directed_stored          , only : stored_directed_graph
   use view_directed  , only : directed_graph
-  use field_calculus , only : graph_field
-  use field_stored    , only : field
+  use field_calculus , only : field
+  use field_stored    , only : stored_field
   use graph_fractal      , only : set_graph => graph
   use map_set_representation, only : counted_set_representation
   use map_set      , only : set_map
@@ -77,9 +77,9 @@ program partition_law
 
 contains
 
-  type(directed_stored_graph) function chain_of_six() result(g)
+  type(stored_directed_graph) function chain_of_six() result(g)
 
-    g = directed_stored_graph(6, tails=[1, 2, 3, 4, 5], heads=[2, 3, 4, 5, 6])
+    g = stored_directed_graph(6, tails=[1, 2, 3, 4, 5], heads=[2, 3, 4, 5, 6])
 
   end function chain_of_six
 
@@ -100,7 +100,7 @@ contains
 
     integer, intent(in) :: nparts
 
-    type(directed_stored_graph)        :: g
+    type(stored_directed_graph)        :: g
     type(partitioner)         :: p
     type(assembler)           :: a
     class(directed_graph), allocatable :: part, back
@@ -145,7 +145,7 @@ contains
 
   integer function whole_edge(g, t, h) result(which)
 
-    type(directed_stored_graph), intent(in) :: g
+    type(stored_directed_graph), intent(in) :: g
     integer           , intent(in) :: t, h
 
     integer :: e
@@ -174,13 +174,13 @@ contains
 
     integer, intent(in) :: nparts
 
-    type(directed_stored_graph)              :: g
+    type(stored_directed_graph)              :: g
     type(partitioner)               :: p
     type(assembler)                 :: a
     class(directed_graph), allocatable       :: part
-    class(graph_field), allocatable :: pd, fd
+    class(field), allocatable :: pd, fd
     type(set_graph)                 :: on
-    type(field)                     :: d
+    type(stored_field)                     :: d
 
     !----------------------------------------------------------------!
     ! The transport CARVES: a part field lands on a domain that did
@@ -210,7 +210,7 @@ contains
     on = g % vertex_set()
     call sets % bind(on, counted_set_representation(g % num_vertices()))
 
-    d  = field('q', on, g % num_vertices())
+    d  = stored_field('q', on, g % num_vertices())
     call d % set_real_vector(want)
 
     total = 0.0_dp
@@ -229,7 +229,7 @@ contains
        call a % assemble_data(rel, part, pd, g, sets, labels, inclusions, fd)
 
        select type (fd)
-       class is (field)
+       class is (stored_field)
           call fd % get_real_vector(v)
           if (size(v) .eq. 6) total = total + v
        end select
@@ -252,13 +252,13 @@ contains
 
     integer, intent(in) :: nparts
 
-    type(directed_stored_graph)              :: g
+    type(stored_directed_graph)              :: g
     type(partitioner)               :: p
     type(assembler)                 :: a
     class(directed_graph), allocatable       :: part
-    class(graph_field), allocatable :: pd, fd
+    class(field), allocatable :: pd, fd
     type(set_graph)                 :: on
-    type(field)                     :: d
+    type(stored_field)                     :: d
 
     !----------------------------------------------------------------!
     ! The transport CARVES: a part field lands on a domain that did
@@ -289,7 +289,7 @@ contains
     on = g % edge_set()
     call sets % bind(on, counted_set_representation(g % num_edges()))
 
-    d  = field('w', on, g % num_edges())
+    d  = stored_field('w', on, g % num_edges())
     call d % set_real_vector(want)
 
     total       = 0.0_dp
@@ -309,7 +309,7 @@ contains
        call a % assemble_data(rel, part, pd, g, sets, labels, inclusions, fd)
 
        select type (fd)
-       class is (field)
+       class is (stored_field)
           call fd % get_real_vector(v)
           if (size(v) .eq. 5) then
              total = total + v
@@ -341,7 +341,7 @@ contains
 
     integer, intent(in) :: nparts
 
-    type(directed_stored_graph)             :: g
+    type(stored_directed_graph)             :: g
     type(partitioner)              :: p
     class(directed_graph), allocatable      :: part
     type(set_graph)                :: owned, borrowed
@@ -405,7 +405,7 @@ contains
 
   subroutine one_part_is_restricted_identity()
 
-    type(directed_stored_graph)        :: g
+    type(stored_directed_graph)        :: g
     type(partitioner)         :: p
     type(assembler)           :: a
     class(directed_graph), allocatable :: part, back
@@ -467,16 +467,16 @@ contains
 
   subroutine one_relation_drives_all_four()
 
-    type(directed_stored_graph)        :: g
+    type(stored_directed_graph)        :: g
     type(partitioner)         :: p
     type(assembler)           :: a
     class(directed_graph), allocatable :: part, back
-    class(graph_field), allocatable    :: pd, fd
+    class(field), allocatable    :: pd, fd
     type(partition_relation)  :: rel_p
     type(set_map)             :: sets
     type(label_map)           :: labels
     type(inclusion_map)       :: inclusions
-    type(field)               :: d
+    type(stored_field)               :: d
     type(set_graph)           :: on
     real(dp), allocatable     :: home(:)
     integer                   :: l, gm
@@ -493,7 +493,7 @@ contains
          & counted_set_representation(part % num_vertices()))
 
     on = g % vertex_set()
-    d  = field('q', on, sets % size_of(on))
+    d  = stored_field('q', on, sets % size_of(on))
     call d % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, &
          &                    40.0_dp, 50.0_dp, 60.0_dp])
 
@@ -543,7 +543,7 @@ contains
 
   subroutine the_wrong_relation_is_refused()
 
-    type(directed_stored_graph)        :: g
+    type(stored_directed_graph)        :: g
     type(partitioner)         :: p1, p2
     type(assembler)           :: a
     class(directed_graph), allocatable :: part1, part2

@@ -39,7 +39,7 @@ module operation_multigrid
 
   use iso_fortran_env    , only : dp => REAL64
   use view_directed, only : directed_graph
-  use operation_stencil, only : stencil_operator, combine_triples
+  use operation_stencil, only : stencil, combine_triples
   use operation_minimization , only : minimizer
 
   implicit none
@@ -87,7 +87,7 @@ contains
     class(multigrid), intent(inout) :: this
     integer, intent(in) :: aggregates(:)
 
-    type(stencil_operator) :: block_statement
+    type(stencil) :: block_statement
     integer , allocatable :: rows(:), columns(:)
     real(dp), allocatable :: weights(:), zeros(:)
     integer :: e, ne, b
@@ -98,7 +98,7 @@ contains
     ! The Galerkin road: every dependency lands between blocks.
     select type (fine => this % action)
 
-    type is (stencil_operator)
+    type is (stencil)
 
        ne = fine % pattern % num_edges()
        allocate(rows(ne), columns(ne), weights(ne))
@@ -119,7 +119,7 @@ contains
          real(dp), allocatable :: cweights(:)
          call combine_triples(this % nblocks, this % nblocks, &
               & rows, columns, weights, crows, ccolumns, cweights)
-         block_statement = stencil_operator(crows, ccolumns, cweights, &
+         block_statement = stencil(crows, ccolumns, cweights, &
               & zeros, label='block statement')
        end block
 

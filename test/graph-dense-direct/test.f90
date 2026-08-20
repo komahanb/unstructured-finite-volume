@@ -18,13 +18,13 @@
 program test_graph_dense_direct
 
   use iso_fortran_env     , only : dp => REAL64
-  use operation_stencil , only : stencil_operator
+  use operation_stencil , only : stencil
   use operation_dense_direct, only : dense_direct, &
        & solve_dense_matrix_with_dense_direct, dense_matrix_of
 
   implicit none
 
-  type(stencil_operator) :: one_by_one, two_by_two, pivoting
+  type(stencil) :: one_by_one, two_by_two, pivoting
   type(dense_direct)     :: solver
 
   real(dp), allocatable :: x(:), xa(:), w_before(:), w_after(:)
@@ -42,7 +42,7 @@ program test_graph_dense_direct
   ! 1x1: the statement [2] x = [6] on a one-vertex, one-edge graph.
   !-------------------------------------------------------------------!
 
-  one_by_one = stencil_operator([1], [1], [2.0_dp], [0.0_dp], 'one by one')
+  one_by_one = stencil([1], [1], [2.0_dp], [0.0_dp], 'one by one')
 
   call solver % attach(one_by_one, one_by_one % pattern, &
        & one_by_one % pattern % vertex_set(), &
@@ -60,7 +60,7 @@ program test_graph_dense_direct
   ! b = [4, 7].
   !-------------------------------------------------------------------!
 
-  two_by_two = stencil_operator([1, 1, 2, 2], [1, 2, 1, 2], &
+  two_by_two = stencil([1, 1, 2, 2], [1, 2, 1, 2], &
        & [2.0_dp, 1.0_dp, 1.0_dp, 3.0_dp], [0.0_dp, 0.0_dp], 'two by two')
 
   call solver % attach(two_by_two, two_by_two % pattern, &
@@ -105,7 +105,7 @@ program test_graph_dense_direct
   ! A = [0 1; 1 1], x = [3, 5], b = [5, 8].
   !-------------------------------------------------------------------!
 
-  pivoting = stencil_operator([1, 2, 2], [2, 1, 2], &
+  pivoting = stencil([1, 2, 2], [2, 1, 2], &
        & [1.0_dp, 1.0_dp, 1.0_dp], [0.0_dp, 0.0_dp], 'zero leading pivot')
 
   call solver % attach(pivoting, pivoting % pattern, &

@@ -58,7 +58,7 @@ program visualization_level_3
   use map_inclusion  , only : inclusion_map, declared_subobject
   use relation_finitary       , only : relation
   use relation_binary, only : csr_relation, binary_relation
-  use relation_binary, only : transposed_view, transpose_of
+  use relation_binary, only : transposed_relation, transpose_of
   use graph_fractal        , only : graph, known_branch, null_branch
   use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
@@ -304,7 +304,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(transposed_view) :: view
+    type(transposed_relation) :: view
     class(relation), pointer :: r
     integer :: k
     logical :: any_dependency

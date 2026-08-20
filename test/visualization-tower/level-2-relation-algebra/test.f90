@@ -63,7 +63,7 @@ program visualization_level_2
   use map_label      , only : label_map
   use relation_finitary       , only : relation
   use relation_binary, only : csr_relation, binary_relation
-  use relation_binary, only : transposed_view, transpose_of
+  use relation_binary, only : transposed_relation, transpose_of
   use visualization_carriers_fixture , only : structural_carriers
   use visualization_relations_fixture, only : occurrences_of_a1
   use visualization_relations_fixture, only : occurrences_of_a2
@@ -262,7 +262,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(transposed_view) :: live
+    type(transposed_relation) :: live
 
     call report(runs_from_to(d1t, x1, x0) .and. &
          &      runs_from_to(d2t, x2, x1) .and. &

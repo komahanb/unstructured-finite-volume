@@ -24,19 +24,19 @@
 module mandelbrot_law_fixture
 
   use iso_fortran_env    , only : dp => REAL64
-  use operation_action, only : graph_operation
+  use operation_action, only : operation
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use view_directed     , only : GRAPH_SIDE_VERTEX
   use graph_fractal         , only : set_graph => graph
-  use field_stored  , only : field
+  use field_stored  , only : stored_field
 
   implicit none
 
   private
   public :: mandelbrot_law
 
-  type, extends(graph_operation) :: mandelbrot_law
+  type, extends(operation) :: mandelbrot_law
 
      real(dp), allocatable :: creal(:)
      real(dp), allocatable :: cimag(:)
@@ -72,11 +72,11 @@ contains
 
     class(mandelbrot_law), intent(in)              :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
     type(set_graph) :: cells
-    type(field)   :: out
+    type(stored_field)   :: out
     real(dp), allocatable :: q(:), s(:)
     real(dp) :: u, v
     integer :: nv, k
@@ -96,7 +96,7 @@ contains
     end if
 
     cells = input_graph % vertex_set()
-    out = field('velocity', cells, input_graph % num_vertices(), ncomp=2)
+    out = stored_field('velocity', cells, input_graph % num_vertices(), ncomp=2)
     call out % set_real_vector(s)
 
     if (allocated(output)) deallocate(output)

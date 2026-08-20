@@ -14,7 +14,7 @@ declare -A reason=(
   [undeclared]="map_value: a value map is keyed on assigned identity"
   [silentapply]="run_change: applied change reports applied"
   [silentrevert]="run_change: reverted change reports reverted"
-  [impossible]="change_result: terminal state is consistent"
+  [impossible]="change_record: terminal state is consistent"
   [unbound]="value_change: value map is bound"
 )
 for case in attachtwice updatefree readunknown detachfree emptyknown \

@@ -50,7 +50,7 @@ module operation_robin_condition
   use map_set      , only : set_map
   use map_label    , only : label_map
   use map_inclusion, only : inclusion_map
-  use field_stored, only : field
+  use field_stored, only : stored_field
   use view_mesh, only : mesh
 
   implicit none
@@ -334,7 +334,7 @@ contains
     type(label_map)     :: labels
     type(inclusion_map) :: inclusions
 
-    type(field) :: fa, fd
+    type(stored_field) :: fa, fd
     real(dp), allocatable :: all_areas(:), all_deltas(:)
     integer :: f, e
 

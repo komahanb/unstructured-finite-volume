@@ -3,13 +3,13 @@
 ! There is no cell for the empty sequence, so the caller must decide
 ! emptiness before calling, and every consumer repeats that decision.
 module graph_form
-  use graph_fractal, only : graph, graph_branch, GRAPH_NULL, GRAPH_KNOWN
+  use graph_fractal, only : graph, branch, GRAPH_NULL, GRAPH_KNOWN
   implicit none
   private
   public :: size_of, is_empty
 contains
   logical function is_empty(b) result(e)
-    type(graph_branch), intent(in) :: b       ! still needs the branch
+    type(branch), intent(in) :: b       ! still needs the branch
     e = b % status() .eq. GRAPH_NULL
   end function is_empty
   integer function size_of(first) result(n)

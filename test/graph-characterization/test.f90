@@ -28,20 +28,20 @@ program test_graph_characterization
   use iso_fortran_env        , only : dp => REAL64
   use view_directed    , only : GRAPH_SIDE_VERTEX
   use view_directed    , only : directed_graph
-  use field_calculus   , only : graph_field
+  use field_calculus   , only : field
   use graph_fractal           , only : set_graph => graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set           , only : set_map
   use map_label         , only : label_map
   use map_inclusion     , only : inclusion_map, declared_subobject
-  use view_directed_stored            , only : directed_stored_graph
-  use field_stored      , only : field
+  use view_directed_stored            , only : stored_directed_graph
+  use field_stored      , only : stored_field
   use transform_partitioner, only : partitioner, PARTITION_LINEAR
   use transform_assembler  , only : assembler
   use operation_differential, only : divergence, &
        &                                        differential_operator, &
-       &                                        vertex_differential_operator
+       &                                        vertex_derivative
 
   use relation_partition, only : partition_relation
   implicit none
@@ -97,15 +97,15 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)              :: g
+    type(stored_directed_graph)              :: g
     type(differential_operator)     :: div
-    class(graph_field), allocatable :: yf
+    class(field), allocatable :: yf
     type(set_graph)                   :: eon
-    type(field)                     :: zf
+    type(stored_field)                     :: zf
     integer, allocatable            :: idx(:)
     real(dp), allocatable           :: y(:)
 
-    g = directed_stored_graph(2, tails=[1, 1], heads=[2, 2])
+    g = stored_directed_graph(2, tails=[1, 1], heads=[2, 2])
 
     call report(g % num_edges() .eq. 2, &
          & "parallel edges keep two identities", nfail)
@@ -130,7 +130,7 @@ contains
 
     ! The divergence spends each edge separately: out minus in.
     eon = g % edge_set()
-    zf  = field('z', eon, g % num_edges())
+    zf  = stored_field('z', eon, g % num_edges())
     call zf % set_real_vector([3.0_dp, 5.0_dp])
     div = divergence()
     call div % apply(g, [zf], yf)
@@ -151,11 +151,11 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)              :: g
+    type(stored_directed_graph)              :: g
     type(differential_operator)     :: div
-    class(graph_field), allocatable :: yf
+    class(field), allocatable :: yf
     type(set_graph)                   :: eon
-    type(field)                     :: zf
+    type(stored_field)                     :: zf
     type(set_graph)                 :: sset
     type(set_map)                   :: sets
     type(label_map)                 :: labels
@@ -164,7 +164,7 @@ contains
     real(dp), allocatable           :: y(:)
 
     ! 1 --> 2 --> 3 --> wall
-    g = directed_stored_graph(3, tails=[1, 2, 3], heads=[2, 3, 0])
+    g = stored_directed_graph(3, tails=[1, 2, 3], heads=[2, 3, 0])
 
     call report(g % edge_has_head(1) .and. .not. g % edge_has_head(3), &
          & "the wall edge has a tail and no head", nfail)
@@ -195,7 +195,7 @@ contains
     ! gives 2, 2, 3 - and the total, 7, is the wall edge's sample:
     ! the half-edge contributes exactly once, to its tail alone.
     eon = g % edge_set()
-    zf  = field('z', eon, g % num_edges())
+    zf  = stored_field('z', eon, g % num_edges())
     call zf % set_real_vector([2.0_dp, 4.0_dp, 7.0_dp])
     div = divergence()
     call div % apply(g, [zf], yf)
@@ -217,10 +217,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)   :: g
+    type(stored_directed_graph)   :: g
     integer, allocatable :: idx(:)
 
-    g = directed_stored_graph(4, tails=[1, 1, 2, 3], heads=[2, 3, 4, 4])
+    g = stored_directed_graph(4, tails=[1, 1, 2, 3], heads=[2, 3, 4, 4])
 
     call g % outgoing_edges(1, idx)
     call report(size(idx) .eq. 2 .and. all(idx .eq. [1, 2]), &
@@ -321,13 +321,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)              :: g
+    type(stored_directed_graph)              :: g
     type(partitioner)               :: p
     type(assembler)                 :: a
     class(directed_graph), allocatable       :: part
-    class(graph_field), allocatable :: pd, fd
+    class(field), allocatable :: pd, fd
     type(set_graph)                   :: von, eon
-    type(field)                     :: q, w
+    type(stored_field)                     :: q, w
     real(dp), allocatable           :: v(:)
     real(dp)                        :: vtotal(6), etotal(5)
     integer                         :: k
@@ -335,17 +335,17 @@ contains
     type(label_map)     :: labels
     type(inclusion_map) :: inclusions
 
-    g = directed_stored_graph(6, tails=[1, 2, 3, 4, 5], heads=[2, 3, 4, 5, 6])
+    g = stored_directed_graph(6, tails=[1, 2, 3, 4, 5], heads=[2, 3, 4, 5, 6])
     a = assembler()
 
     von = g % vertex_set()
     call sets % bind(von, counted_set_representation(g % num_vertices()))
-    q   = field('q', von, g % num_vertices())
+    q   = stored_field('q', von, g % num_vertices())
     call q % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp, 5.0_dp, 6.0_dp])
 
     eon = g % edge_set()
     call sets % bind(eon, counted_set_representation(g % num_edges()))
-    w   = field('w', eon, g % num_edges())
+    w   = stored_field('w', eon, g % num_edges())
     call w % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp])
 
     vtotal = 0.0_dp
@@ -362,7 +362,7 @@ contains
        call p % partition_data(rel, g, q, part, sets, labels, inclusions, pd)
        call a % assemble_data(rel, part, pd, g, sets, labels, inclusions, fd)
        select type (fd)
-       class is (field)
+       class is (stored_field)
           call fd % get_real_vector(v)
           vtotal = vtotal + v(1:6)
        end select
@@ -370,7 +370,7 @@ contains
        call p % partition_data(rel, g, w, part, sets, labels, inclusions, pd)
        call a % assemble_data(rel, part, pd, g, sets, labels, inclusions, fd)
        select type (fd)
-       class is (field)
+       class is (stored_field)
           call fd % get_real_vector(v)
           etotal = etotal + v(1:5)
        end select
@@ -395,21 +395,21 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)              :: g
+    type(stored_directed_graph)              :: g
     type(differential_operator)     :: fwd, rev
-    class(graph_field), allocatable :: yf
+    class(field), allocatable :: yf
     type(set_graph)                   :: on
-    type(field)                     :: qf, pf
+    type(stored_field)                     :: qf, pf
     real(dp), allocatable           :: aq(:), ap(:)
     real(dp)                        :: q(4), p(4), cs(5)
     integer                         :: v, order
     logical                         :: ok
 
     ! 1 ==> 2 (twice, in parallel), 2 --> 3 --> 4 --> wall.
-    g  = directed_stored_graph(4, tails=[1, 1, 2, 3, 4], heads=[2, 2, 3, 4, 0])
+    g  = stored_directed_graph(4, tails=[1, 1, 2, 3, 4], heads=[2, 2, 3, 4, 0])
     on = g % vertex_set()
-    qf = field('q', on, g % num_vertices())
-    pf = field('p', on, g % num_vertices())
+    qf = stored_field('q', on, g % num_vertices())
+    pf = stored_field('p', on, g % num_vertices())
 
     do v = 1, 4
        q(v) = real(v, dp)**2 - 3.0_dp * v
@@ -422,8 +422,8 @@ contains
 
     ok = .true.
     do order = 1, 2
-       fwd = vertex_differential_operator(order=order, coefficients=cs)
-       rev = vertex_differential_operator(order=order, coefficients=cs, &
+       fwd = vertex_derivative(order=order, coefficients=cs)
+       rev = vertex_derivative(order=order, coefficients=cs, &
             &                             adjoint=.true.)
 
        call fwd % apply(g, [qf], yf)

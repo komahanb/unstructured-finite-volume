@@ -22,12 +22,12 @@
 program test_graph_differentiation
 
   use iso_fortran_env     , only : dp => REAL64
-  use field_calculus, only : graph_field
-  use operation_discretization      , only : linearization_operator
+  use field_calculus, only : field
+  use operation_discretization      , only : linearization
   use graph_fractal       , only : set_graph => graph
-  use view_directed_stored         , only : directed_stored_graph
-  use field_stored   , only : field
-  use operation_step    , only : step_operator, backward_euler, bdf_variable
+  use view_directed_stored         , only : stored_directed_graph
+  use field_stored   , only : stored_field
+  use operation_step    , only : scheme, backward_euler, bdf_variable
   use operation_chain_rule, only : chain_rule, argument_path
   use operation_linearization, only : tangent_of
   use operation_marching , only : marcher, MARCH_BACKWARD
@@ -44,7 +44,7 @@ program test_graph_differentiation
   type(equilibrium_law) :: equil
   type(linear_law)      :: lin
 
-  type(directed_stored_graph) :: lone
+  type(stored_directed_graph) :: lone
   type(set_graph)             :: cells
   type(marcher)               :: clock
 
@@ -55,7 +55,7 @@ program test_graph_differentiation
   write(*,'(1x,a)') "graph differentiation tower suite"
   write(*,'(1x,a)') "============================================="
 
-  lone  = directed_stored_graph(1, tails=[integer ::], heads=[integer ::])
+  lone  = stored_directed_graph(1, tails=[integer ::], heads=[integer ::])
   cells = lone % vertex_set()
 
   clock % rule = MARCH_BACKWARD
@@ -97,7 +97,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(step_operator) :: statement
+    type(scheme) :: statement
 
     statement = bdf_variable(2, lin, [2.0_dp, 3.0_dp])
     call report( &
@@ -137,9 +137,9 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(linearization_operator), allocatable :: tangent, slow
-    class(graph_field), allocatable :: output
-    type(field) :: direction
+    class(linearization), allocatable :: tangent, slow
+    class(field), allocatable :: output
+    type(stored_field) :: direction
     real(dp), allocatable :: rv(:)
 
     tangent = tangent_of(quartic)
@@ -154,7 +154,7 @@ contains
 
     call tangent % freeze([1.0_dp])
 
-    direction = field('v', cells, 1, ncomp=1)
+    direction = stored_field('v', cells, 1, ncomp=1)
     call direction % set_real_vector([3.0_dp])
     call tangent % apply(lone, [direction], output)
     call output % get_real_vector(rv)
@@ -182,8 +182,8 @@ contains
 
     type(chain_rule)    :: composer
     type(argument_path) :: full(2), sparse(2)
-    type(field)         :: inputs(2)
-    class(graph_field), allocatable :: output
+    type(stored_field)         :: inputs(2)
+    class(field), allocatable :: output
     real(dp), allocatable :: rv(:)
     real(dp) :: expected(0:4)
     logical  :: degrees_ok
@@ -240,8 +240,8 @@ contains
 
     type(chain_rule)    :: composer
     type(argument_path) :: paths(2)
-    type(field)         :: inputs(2)
-    class(graph_field), allocatable :: output
+    type(stored_field)         :: inputs(2)
+    class(field), allocatable :: output
     real(dp), allocatable :: rv(:)
     real(dp) :: qseats(8), xiseats(8)
     real(dp) :: acoef(0:8), upow(0:8), convolved(0:8)
@@ -318,7 +318,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(argument_path) :: xipath(1)
-    type(field) :: xifield(1)
+    type(stored_field) :: xifield(1)
     real(dp), allocatable :: trajectory(:,:), sensitivities(:,:,:)
     real(dp) :: q(1), lambda(1), seeds(1,3)
     real(dp) :: instant2(8), instant3(8)
@@ -341,7 +341,7 @@ contains
     ! input slot 2.
     !----------------------------------------------------------------!
 
-    xifield(1) = field('xi', cells, 1, ncomp=1)
+    xifield(1) = stored_field('xi', cells, 1, ncomp=1)
     call xifield(1) % set_real_vector([1.0_dp])
     call fill_path(xipath(1), 2, [1.0_dp], cells)
 

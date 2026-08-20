@@ -46,12 +46,12 @@ module operation_fitted_balance
 
   use iso_fortran_env    , only : dp => REAL64
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
-  use view_directed_stored        , only : directed_stored_graph
+  use field_calculus, only : field
+  use view_directed_stored        , only : stored_directed_graph
   use field_forms        , only : form
-  use field_stored  , only : field
+  use field_stored  , only : stored_field
   use view_mesh   , only : mesh
-  use operation_stencil, only : stencil_operator
+  use operation_stencil, only : stencil
   use operation_fitting      , only : fit
 
   implicit none
@@ -86,13 +86,13 @@ contains
     real(dp)   , intent(in), optional :: boundary_values(:)
     real(dp)   , intent(in), optional :: boundary_weights(:)
 
-    type(stencil_operator) :: op
+    type(stencil) :: op
 
-    type(field) :: fa, fn, fc, fcc
+    type(stored_field) :: fa, fn, fc, fcc
     type(fit) :: fitting
-    type(directed_stored_graph) :: constellation
-    type(field)   :: positions
-    class(graph_field), allocatable :: answer
+    type(stored_directed_graph) :: constellation
+    type(stored_field)   :: positions
+    class(field), allocatable :: answer
     real(dp), allocatable :: areas(:), normals(:), fcenters(:), centers(:)
     integer , allocatable :: rows(:), columns(:), hood(:)
     real(dp), allocatable :: weights(:), pts(:), w(:), constant(:)
@@ -135,8 +135,8 @@ contains
        xf = fcenters(3 * e - 2 : 3 * e)
        if (h == 0) pts(3 * npts - 2 : 3 * npts) = xf
 
-       constellation = directed_stored_graph(npts, tails=[integer ::], heads=[integer ::])
-       positions = field('positions', constellation % vertex_set(), &
+       constellation = stored_directed_graph(npts, tails=[integer ::], heads=[integer ::])
+       positions = stored_field('positions', constellation % vertex_set(), &
             & constellation % num_vertices(), ncomp=3)
        call positions % set_real_vector(pts)
 
@@ -185,7 +185,7 @@ contains
 
     end do
 
-    op = stencil_operator(rows, columns, weights, constant, &
+    op = stencil(rows, columns, weights, constant, &
          & label='fitted balance')
 
   end function fitted_balance_stencil

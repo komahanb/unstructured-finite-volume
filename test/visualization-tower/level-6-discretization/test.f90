@@ -8,7 +8,7 @@
 ! This is the first level to name production machinery, and the first
 ! executable consumer that
 !
-!      discretization_operator % dependencies()
+!      discretization % dependencies()
 !
 ! has ever had - the Level-6 census found ZERO callers of it anywhere
 ! in the repository.
@@ -91,8 +91,8 @@ program visualization_level_6
   use relation_finitary       , only : relation
   use relation_binary, only : csr_relation
   use view_directed  , only : directed_graph
-  use operation_stencil  , only : stencil_operator
-  use operation_step     , only : step_operator
+  use operation_stencil  , only : stencil
+  use operation_step     , only : scheme
   use visualization_carriers_fixture , only : structural_carriers
   use visualization_relations_fixture, only : occurrences_of_a1
   use visualization_relations_fixture, only : occurrences_of_a2
@@ -117,8 +117,8 @@ program visualization_level_6
   type(csr_relation)     :: t1, h1, t2, h2, t3, h3
   type(csr_relation)     :: d1, d2, d3
 
-  type(stencil_operator) :: sten_d2, sten_d1, sten_diag
-  type(step_operator)    :: clock_d2, clock_diag
+  type(stencil) :: sten_d2, sten_d1, sten_diag
+  type(scheme)    :: clock_d2, clock_diag
 
   class(directed_graph), allocatable :: pat_d2, pat_d1, pat_diag
   class(directed_graph), allocatable :: motif_d2, motif_diag

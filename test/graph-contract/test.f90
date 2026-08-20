@@ -17,15 +17,15 @@
 module nonlinear_sample_support
 
   use iso_fortran_env    , only : dp => REAL64
-  use operation_action, only : graph_operation
+  use operation_action, only : operation
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use view_directed, only : GRAPH_SIDE_VERTEX
   ! An operation names a domain and counts it. It asks no membership,
   ! so it imports no map: identity and count is the whole of what an
   ! operation is entitled to see.
   use graph_fractal      , only : set_graph => graph
-  use field_stored  , only : field
+  use field_stored  , only : stored_field
 
   use relation_partition, only : partition_relation
   implicit none
@@ -34,7 +34,7 @@ module nonlinear_sample_support
   private
   public :: nonlinear_sample
 
-  type, extends(graph_operation) :: nonlinear_sample
+  type, extends(operation) :: nonlinear_sample
    contains
      procedure :: name   => nonlinear_sample_name
      procedure :: domain => nonlinear_sample_domain
@@ -62,10 +62,10 @@ contains
 
     class(nonlinear_sample), intent(in)                 :: this
     class(directed_graph), intent(in)                            :: input_graph
-    class(graph_field), intent(in), optional             :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional             :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
-    type(field)      :: out
+    type(stored_field)      :: out
     type(set_graph)    :: on
     real(dp), allocatable :: q(:), z(:)
     real(dp)              :: qt, qh
@@ -73,14 +73,14 @@ contains
 
     ne = input_graph % num_edges()
     on = input_graph % edge_set()
-    out = field(this % name(), on, ne)
+    out = stored_field(this % name(), on, ne)
 
     allocate(z(ne))
     z = 0.0_dp
 
     if (present(input_data)) then
        select type (state => input_data(1))
-       class is (field)
+       class is (stored_field)
           call state % get_real_vector(q)
           do e = 1, ne
              t  = input_graph % edge_tail(e)
@@ -210,10 +210,10 @@ program test_graph_contract
   use field_calculus  , only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
   use field_calculus  , only : GRAPH_FIELD_CHARACTER
   use view_directed   , only : GRAPH_SIDE_VERTEX
-  use field_calculus  , only : graph_functional
-  use view_directed_stored           , only : directed_stored_graph
-  use field_stored     , only : field
-  use field_functional, only : functional
+  use field_calculus  , only : functional
+  use view_directed_stored           , only : stored_directed_graph
+  use field_stored     , only : stored_field
+  use field_functional, only : stored_functional
   use operation_reduction , only : reduction
   use operation_reduction , only : REDUCE_SUM, REDUCE_AVERAGE, REDUCE_MINIMUM
   use operation_reduction , only : REDUCE_MAXIMUM, REDUCE_NORM, REDUCE_COUNT
@@ -223,16 +223,16 @@ program test_graph_contract
   use transform_partitioner, only : PARTITION_BREADTH_FIRST, PARTITION_ADOPTED
   use transform_assembler , only : assembler
   use view_directed   , only : directed_graph
-  use field_calculus  , only : graph_field
+  use field_calculus  , only : field
   use transform_coarsener , only : coarsener, COARSEN_PAIRWISE, COARSEN_ADOPTED
   use transform_refiner   , only : refiner
   use operation_differential, only : differential_operator
-  use operation_differential, only : edge_differential_operator
-  use operation_differential, only : vertex_differential_operator
+  use operation_differential, only : edge_derivative
+  use operation_differential, only : vertex_derivative
   use operation_differential, only : gradient, interpolation
   use operation_differential, only : divergence, laplacian
   use operation_differential, only : stencil_of
-  use operation_stencil, only : stencil_operator
+  use operation_stencil, only : stencil
   use operation_balance   , only : balance
   use operation_walk      , only : walk, WALK_COLOURING, WALK_VISIT_ORDER
   use operation_walk      , only : WALK_COMPONENT, WALK_DEPTH
@@ -354,12 +354,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph) :: g, h
+    type(stored_directed_graph) :: g, h
     type(set_graph)    :: vs, es, vs2
     type(set_map)      :: sets
 
-    g = directed_stored_graph(3, tails=[1, 2], heads=[2, 3])
-    h = directed_stored_graph(3, tails=[1, 2], heads=[2, 3])
+    g = stored_directed_graph(3, tails=[1, 2], heads=[2, 3])
+    h = stored_directed_graph(3, tails=[1, 2], heads=[2, 3])
 
     vs = g % vertex_set()
     es = g % edge_set()
@@ -452,7 +452,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(set_graph)  :: on
-    type(field)    :: f
+    type(stored_field)    :: f
     real(dp), allocatable :: got(:)
     integer               :: entry_position, component, position
     logical               :: ok
@@ -460,7 +460,7 @@ contains
 
     call on % declare()
     call sets % bind(on, counted_set_representation(3))
-    f  = field('q', on, sets % size_of(on), ncomp=2)
+    f  = stored_field('q', on, sets % size_of(on), ncomp=2)
 
     call f % set_real_vector([71.0_dp, 72.0_dp, 31.0_dp, 32.0_dp, 111.0_dp, 112.0_dp])
 
@@ -513,14 +513,14 @@ contains
     integer, intent(inout) :: nfail
 
     type(set_graph)  :: on
-    type(field)    :: f
+    type(stored_field)    :: f
     real(dp), allocatable :: r(:)
     integer , allocatable :: i(:)
     type(set_map)     :: sets
 
     call on % declare()
     call sets % bind(on, counted_set_representation(2))
-    f  = field('q', on, sets % size_of(on))
+    f  = stored_field('q', on, sets % size_of(on))
 
     call f % set_real_vector([1.0_dp, 2.0_dp])
     call report(f % value_kind() .eq. GRAPH_FIELD_REAL, &
@@ -556,7 +556,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(set_graph)                :: on
-    type(field)                  :: f
+    type(stored_field)                  :: f
     integer         , allocatable     :: i(:)
     real(dp)        , allocatable     :: r(:)
     complex(dp)     , allocatable     :: c(:)
@@ -566,7 +566,7 @@ contains
 
     call on % declare()
     call sets % bind(on, counted_set_representation(2))
-    f  = field('F', on, sets % size_of(on))
+    f  = stored_field('F', on, sets % size_of(on))
 
     call f % set_integer_vector([3, 4])
     call f % get_integer_vector(i)
@@ -606,14 +606,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(functional)              :: j
+    type(stored_functional)              :: j
     integer                       :: i
     real(dp)                      :: r
     complex(dp)                   :: c
     logical                       :: l
     character(len=:), allocatable :: s
 
-    j = functional('J')
+    j = stored_functional('J')
 
     call j % set_integer_value(7)
     call value_integer(j, i)
@@ -666,9 +666,9 @@ contains
   ! and no imaginary cell sits on the far side of it.
   !===================================================================!
 
-  type(directed_stored_graph) function diamond() result(g)
+  type(stored_directed_graph) function diamond() result(g)
 
-    g = directed_stored_graph(4, tails=[1, 1, 2, 3, 4], heads=[2, 3, 4, 4, 0], &
+    g = stored_directed_graph(4, tails=[1, 1, 2, 3, 4], heads=[2, 3, 4, 4, 0], &
          &           etags=['none', 'none', 'none', 'none', 'wall'])
 
   end function diamond
@@ -681,7 +681,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph) :: g
+    type(stored_directed_graph) :: g
     type(set_map)     :: sets
 
     g = diamond()
@@ -711,7 +711,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)                       :: g
+    type(stored_directed_graph)                       :: g
     type(set_graph) :: vs
     type(set_graph) :: es
     integer, allocatable                     :: indices(:)
@@ -777,7 +777,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)   :: g
+    type(stored_directed_graph)   :: g
     integer, allocatable :: indices(:)
     type(set_map)     :: sets
 
@@ -835,7 +835,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)                       :: g
+    type(stored_directed_graph)                       :: g
     type(set_graph) :: vs
     integer, allocatable                     :: indices(:)
     type(set_map)     :: sets
@@ -888,11 +888,11 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)                   :: g
+    type(stored_directed_graph)                   :: g
     type(set_graph)                 :: on
-    type(field)                   :: f, vol
+    type(stored_field)                   :: f, vol
     type(reduction)                      :: rule
-    class(graph_functional), allocatable :: j
+    class(functional), allocatable :: j
     real(dp)                             :: r
     complex(dp)                          :: c
     logical                              :: l
@@ -906,7 +906,7 @@ contains
     call on % declare()
     call sets % bind(on, counted_set_representation(4))
 
-    f = field('q', on, sets % size_of(on))
+    f = stored_field('q', on, sets % size_of(on))
     call f % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
 
     rule = reduction(REDUCE_SUM)
@@ -917,7 +917,7 @@ contains
     ! With a measure the same rule becomes an integral. Each cell is
     ! weighted by its volume, so the answer stops depending on how
     ! finely the mesh was cut.
-    vol = field('cell_volume', on, sets % size_of(on))
+    vol = stored_field('cell_volume', on, sets % size_of(on))
     call vol % set_real_vector([2.0_dp, 2.0_dp, 2.0_dp, 2.0_dp])
     call rule % reduce(f, j, measure=vol)
     call value_real(j, r)
@@ -939,7 +939,7 @@ contains
     ! values: the norm check gets its own two-entry domain.
     call pair_pair % declare()
     call sets % bind(pair_pair, counted_set_representation(2))
-    f = field('q', pair_pair, 2)
+    f = stored_field('q', pair_pair, 2)
     call f % set_real_vector([3.0_dp, 4.0_dp])
     rule = reduction(REDUCE_NORM)
     call rule % reduce(f, j)
@@ -948,7 +948,7 @@ contains
 
     call pair_quad % declare()
     call sets % bind(pair_quad, counted_set_representation(4))
-    f = field('q', pair_quad, 4)
+    f = stored_field('q', pair_quad, 4)
     call f % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
     rule = reduction(REDUCE_COUNT)
     call rule % reduce(f, j)
@@ -976,7 +976,7 @@ contains
     ! a reduction that rounded through a real would return zero.
     ! The two-entry domain is the one already signed above: an identity
     ! is assigned once, and {1,2} is the same set both times.
-    f = field('q', pair_pair, 2)
+    f = stored_field('q', pair_pair, 2)
     call f % set_complex_vector([(1.0_dp, 1.0d-20), (2.0_dp, 3.0d-20)])
     rule = reduction(REDUCE_SUM)
     call rule % reduce(f, j)
@@ -1009,11 +1009,11 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)                   :: g
+    type(stored_directed_graph)                   :: g
     type(set_graph)                 :: s1, s2
-    type(field)                   :: f1, f2
+    type(stored_field)                   :: f1, f2
     type(reduction)                      :: rule
-    class(graph_functional), allocatable :: a, b, both, j
+    class(functional), allocatable :: a, b, both, j
     real(dp)                             :: r
     type(set_map)     :: sets
 
@@ -1024,12 +1024,12 @@ contains
     ! Two part-sized domains: three cells here, two there.
     call s1 % declare()
     call sets % bind(s1, counted_set_representation(3))
-    f1 = field('q', s1, sets % size_of(s1))
+    f1 = stored_field('q', s1, sets % size_of(s1))
     call f1 % set_real_vector([2.0_dp, 2.0_dp, 2.0_dp])
 
     call s2 % declare()
     call sets % bind(s2, counted_set_representation(2))
-    f2 = field('q', s2, sets % size_of(s2))
+    f2 = stored_field('q', s2, sets % size_of(s2))
     call f2 % set_real_vector([5.0_dp, 9.0_dp])
 
     ! Each part accumulates on its own, and neither one divides.
@@ -1071,9 +1071,9 @@ contains
   ! long enough that a cut has somewhere to fall.
   !===================================================================!
 
-  type(directed_stored_graph) function chain_of_six() result(g)
+  type(stored_directed_graph) function chain_of_six() result(g)
 
-    g = directed_stored_graph(6, tails=[1, 2, 3, 4, 5], heads=[2, 3, 4, 5, 6])
+    g = stored_directed_graph(6, tails=[1, 2, 3, 4, 5], heads=[2, 3, 4, 5, 6])
 
   end function chain_of_six
 
@@ -1096,13 +1096,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)             :: g
+    type(stored_directed_graph)             :: g
     type(partitioner)              :: p
     type(assembler)                :: a
     class(directed_graph), allocatable      :: part, back
-    class(graph_field), allocatable :: pd, fd
+    class(field), allocatable :: pd, fd
     type(set_graph)           :: on
-    type(field)             :: d
+    type(stored_field)             :: d
     real(dp), allocatable          :: v(:)
     integer                        :: e
     logical                        :: same
@@ -1143,14 +1143,14 @@ contains
 
     ! Now the same round trip with values riding along.
     on = g % vertex_set()
-    d  = field('q', on, sets % size_of(on))
+    d  = stored_field('q', on, sets % size_of(on))
     call d % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp])
 
     call p % partition_data(rel, g, d, part, sets, labels, inclusions, pd)
     call a % assemble_data(rel, part, pd, g, sets, labels, inclusions, fd)
 
     select type (fd)
-    class is (field)
+    class is (stored_field)
        call fd % get_real_vector(v)
        call report(size(v) .eq. 6, "the data returns at the right size", nfail)
        call report(all(abs(v - [10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp]) < 1.0d-13), &
@@ -1178,7 +1178,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)                       :: g
+    type(stored_directed_graph)                       :: g
     type(partitioner)                        :: p
     class(directed_graph), allocatable                :: part
     type(set_graph) :: vs
@@ -1239,7 +1239,7 @@ contains
 
   logical function covers_once(g, rule, nparts) result(ok)
 
-    type(directed_stored_graph), intent(in) :: g
+    type(stored_directed_graph), intent(in) :: g
     integer           , intent(in) :: rule
     integer           , intent(in) :: nparts
 
@@ -1292,13 +1292,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)             :: g
+    type(stored_directed_graph)             :: g
     type(partitioner)              :: p
     type(assembler)                :: a
     class(directed_graph), allocatable      :: part
-    class(graph_field), allocatable :: pd, fd
+    class(field), allocatable :: pd, fd
     type(set_graph)           :: on
-    type(field)             :: d
+    type(stored_field)             :: d
     real(dp), allocatable          :: v(:)
     real(dp)                       :: total(6)
     integer                        :: k
@@ -1311,7 +1311,7 @@ contains
     a = assembler()
 
     on = g % vertex_set()
-    d  = field('q', on, sets % size_of(on))
+    d  = stored_field('q', on, sets % size_of(on))
     call d % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp])
 
     total = 0.0_dp
@@ -1324,7 +1324,7 @@ contains
        call a % assemble_data(rel, part, pd, g, sets, labels, inclusions, fd)
 
        select type (fd)
-       class is (field)
+       class is (stored_field)
           call fd % get_real_vector(v)
           total = total + v(1:6)
        end select
@@ -1354,18 +1354,18 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)                       :: g
+    type(stored_directed_graph)                       :: g
     type(partitioner)                        :: p
     type(reduction)                          :: rule
     class(directed_graph), allocatable                :: part
-    class(graph_field), allocatable           :: pd
+    class(field), allocatable           :: pd
     type(set_graph) :: vs
-    class(graph_functional), allocatable     :: whole, piece, running, joined
+    class(functional), allocatable     :: whole, piece, running, joined
     type(set_graph)                        :: on
     ! Two parts, two owned sets: an identity is assigned once, so the
     ! loop cannot re-sign one name. They are different sets anyway.
     type(set_graph)                         :: owned_only(2)
-    type(field)                       :: d, owned_values
+    type(stored_field)                       :: d, owned_values
     real(dp), allocatable                    :: v(:), pick(:)
     integer, allocatable                     :: indices(:)
     real(dp)                                 :: a_whole, a_parts
@@ -1379,7 +1379,7 @@ contains
     rule = reduction(REDUCE_SUM)
 
     on = g % vertex_set()
-    d  = field('q', on, sets % size_of(on))
+    d  = stored_field('q', on, sets % size_of(on))
     call d % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp])
 
     ! A on the whole.
@@ -1402,7 +1402,7 @@ contains
        call members_of(sets, vs, indices)
 
        select type (pd)
-       class is (field)
+       class is (stored_field)
           call pd % get_real_vector(v)
           allocate(pick(size(indices)))
           do l = 1, size(indices)
@@ -1413,7 +1413,7 @@ contains
        call owned_only(k) % declare()
        call sets       % bind(owned_only(k), listed_set_representation(indices))
        call inclusions % include_in(owned_only(k), part % vertex_set())
-       owned_values = field('q', owned_only(k), sets % size_of(owned_only(k)))
+       owned_values = stored_field('q', owned_only(k), sets % size_of(owned_only(k)))
        call owned_values % set_real_vector(pick)
        deallocate(pick)
 
@@ -1445,13 +1445,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)             :: g
+    type(stored_directed_graph)             :: g
     type(coarsener)                :: c
     type(refiner)                  :: r
     class(directed_graph), allocatable      :: coarse, fine
-    class(graph_field), allocatable :: cd, fd
+    class(field), allocatable :: cd, fd
     type(set_graph)           :: on
-    type(field)             :: d
+    type(stored_field)             :: d
     real(dp), allocatable          :: v(:)
     type(set_map)     :: sets
 
@@ -1471,12 +1471,12 @@ contains
     ! Averaging onto the blocks. Cells 1 and 2 hold 10 and 20, so
     ! their block holds 15.
     on = g % vertex_set()
-    d  = field('q', on, sets % size_of(on))
+    d  = stored_field('q', on, sets % size_of(on))
     call d % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp, 60.0_dp])
 
     call c % coarsen_data(g, d, coarse, cd)
     select type (cd)
-    class is (field)
+    class is (stored_field)
        call cd % get_real_vector(v)
        call report(size(v) .eq. 3, "the coarse field has one value per block", nfail)
        call report(abs(v(1) - 15.0_dp) < 1.0d-13, &
@@ -1491,7 +1491,7 @@ contains
     c = coarsener(COARSEN_PAIRWISE, average=.false.)
     call c % coarsen_data(g, d, coarse, cd)
     select type (cd)
-    class is (field)
+    class is (stored_field)
        call cd % get_real_vector(v)
        call report(abs(v(1) - 30.0_dp) < 1.0d-13, &
             & "told to add rather than average, a block holds the total", nfail)
@@ -1507,7 +1507,7 @@ contains
     call c % coarsen_data(g, d, coarse, cd)
     call r % refine_data(coarse, cd, fine, fd)
     select type (fd)
-    class is (field)
+    class is (stored_field)
        call fd % get_real_vector(v)
        call report(size(v) .eq. 6, "the fine field has one value per cell", nfail)
        call report(abs(v(1) - v(2)) < 1.0d-13, &
@@ -1531,7 +1531,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)             :: one_cell, g
+    type(stored_directed_graph)             :: one_cell, g
     type(coarsener)                :: c
     type(assembler)                :: a
     type(partitioner)              :: p
@@ -1541,7 +1541,7 @@ contains
     type(partition_relation)       :: grel
 
     allocate(no_edges(0))
-    one_cell = directed_stored_graph(1, tails=no_edges, heads=no_edges)
+    one_cell = stored_directed_graph(1, tails=no_edges, heads=no_edges)
     call describe(sets, one_cell)
 
     ! A single cell is as coarse as a graph gets.
@@ -1608,26 +1608,26 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)                       :: ring, open_chain
+    type(stored_directed_graph)                       :: ring, open_chain
     type(differential_operator)         :: edge_term
     type(balance)                            :: bal
-    class(graph_field), allocatable   :: y
+    class(field), allocatable   :: y
     type(set_graph)                     :: on
-    type(field)                       :: q
+    type(stored_field)                       :: q
     real(dp), allocatable                    :: v(:)
     real(dp)                                 :: total
     logical                                  :: ok
     type(set_map)     :: sets
 
     ! A closed ring: four cells, four faces, not a wall in sight.
-    ring = directed_stored_graph(4, tails=[1, 2, 3, 4], heads=[2, 3, 4, 1])
+    ring = stored_directed_graph(4, tails=[1, 2, 3, 4], heads=[2, 3, 4, 1])
     call describe(sets, ring)
 
     edge_term = gradient(coefficient=1.0_dp)
     bal       = balance(edge_terms=[edge_term])
 
     on = ring % vertex_set()
-    q  = field('q', on, sets % size_of(on))
+    q  = stored_field('q', on, sets % size_of(on))
 
     ok = .true.
 
@@ -1675,11 +1675,11 @@ contains
     ! faces are walls and their numbers leave the mesh. If the closed
     ! case passed only because the balance was returning zeros, this
     ! catches it.
-    open_chain = directed_stored_graph(4, tails=[1, 2, 3, 4], heads=[2, 3, 4, 0])
+    open_chain = stored_directed_graph(4, tails=[1, 2, 3, 4], heads=[2, 3, 4, 0])
     call describe(sets, open_chain)
     ! Domains are identities now: the state must ride the graph it
     ! is applied against.
-    q = field('q', open_chain % vertex_set(), open_chain % num_vertices())
+    q = stored_field('q', open_chain % vertex_set(), open_chain % num_vertices())
     call q % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
     call bal % apply(open_chain, [q], y)
     call y % get_real_vector(v)
@@ -1700,9 +1700,9 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)                     :: g, split_mesh
+    type(stored_directed_graph)                     :: g, split_mesh
     type(walk)                             :: w
-    class(graph_field), allocatable :: f
+    class(field), allocatable :: f
     integer, allocatable                   :: c(:)
     integer                                :: e, t, h
     logical                                :: ok
@@ -1732,7 +1732,7 @@ contains
 
     ! The same must hold on a ring, where a naive alternating colouring
     ! would fail at the join if the count is odd.
-    split_mesh = directed_stored_graph(5, tails=[1, 2, 3, 4, 5], heads=[2, 3, 4, 5, 1])
+    split_mesh = stored_directed_graph(5, tails=[1, 2, 3, 4, 5], heads=[2, 3, 4, 5, 1])
     call describe(sets, split_mesh)
     call w % apply(split_mesh, output=f)
     call f % get_integer_vector(c)
@@ -1767,7 +1767,7 @@ contains
 
     ! A mesh in two halves says so, and the unreachable half is not
     ! given a distance it does not have.
-    split_mesh = directed_stored_graph(4, tails=[1, 3], heads=[2, 4])
+    split_mesh = stored_directed_graph(4, tails=[1, 3], heads=[2, 4])
     call describe(sets, split_mesh)
     call w % apply(split_mesh, output=f)
     call f % get_integer_vector(c)
@@ -1793,30 +1793,30 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)                     :: g7, g3, ring
+    type(stored_directed_graph)                     :: g7, g3, ring
     type(differential_operator)     :: op
-    class(graph_field), allocatable :: yf
+    class(field), allocatable :: yf
     type(set_graph)                   :: on
-    type(field)                     :: q
+    type(stored_field)                     :: q
     type(set_graph)                     :: eon
-    type(field)                       :: zf
+    type(stored_field)                       :: zf
     real(dp), allocatable                  :: y(:)
     real(dp)                               :: qv(7)
     integer                                :: v
     logical                                :: ok
     type(set_map)     :: sets
 
-    g7 = directed_stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
+    g7 = stored_directed_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
     call describe(sets, g7)
     on = g7 % vertex_set()
-    q  = field('q', on, sets % size_of(on))
+    q  = stored_field('q', on, sets % size_of(on))
 
     ! Order 0 is the term itself, coefficient and all.
     do v = 1, 7
        qv(v) = real(v, dp)
     end do
     call q % set_real_vector(qv)
-    op = vertex_differential_operator(order=0, coefficient=3.0_dp)
+    op = vertex_derivative(order=0, coefficient=3.0_dp)
     call op % apply(g7, [q], yf)
     call yf % get_real_vector(y)
     call report(all(abs(y - 3.0_dp * qv) < 1.0d-12), &
@@ -1824,7 +1824,7 @@ contains
 
     ! Order 1 of a straight line is c times the slope, both signs.
     call q % set_real_vector(10.0_dp * qv)
-    op = vertex_differential_operator(order=1, coefficient=1.0_dp)
+    op = vertex_derivative(order=1, coefficient=1.0_dp)
     call op % apply(g7, [q], yf)
     call yf % get_real_vector(y)
     ok = .true.
@@ -1833,7 +1833,7 @@ contains
     end do
     call report(ok, "order 1 of a straight line is the slope, inside", nfail)
 
-    op = vertex_differential_operator(order=1, coefficient=-1.0_dp)
+    op = vertex_derivative(order=1, coefficient=-1.0_dp)
     call op % apply(g7, [q], yf)
     call yf % get_real_vector(y)
     ok = .true.
@@ -1872,7 +1872,7 @@ contains
 
     ! Order 4: zero on the parabola, twenty-four on the fourth power,
     ! two rings inside. The guide's second claim.
-    op = vertex_differential_operator(order=4)
+    op = vertex_derivative(order=4)
     call op % apply(g7, [q], yf)
     call yf % get_real_vector(y)
     ok = .true.
@@ -1895,9 +1895,9 @@ contains
 
     ! Per-edge coefficients: three cells, weights 2 and 5, values
     ! 1, 2, 4. At the middle: 5*(4-2) - 2*(2-1) = 10 - 2 = 8.
-    g3 = directed_stored_graph(3, tails=[1, 2], heads=[2, 3])
+    g3 = stored_directed_graph(3, tails=[1, 2], heads=[2, 3])
     call describe(sets, g3)
-    q  = field('q', g3 % vertex_set(), g3 % num_vertices())
+    q  = stored_field('q', g3 % vertex_set(), g3 % num_vertices())
     call q % set_real_vector([1.0_dp, 2.0_dp, 4.0_dp])
     op = laplacian(coefficients=[2.0_dp, 5.0_dp])
     call op % apply(g3, [q], yf)
@@ -1907,10 +1907,10 @@ contains
 
     ! Divergence of a given edge field: a ring with samples 1,2,3,4.
     ! Out minus in at each vertex: -3, 1, 1, 1.
-    ring = directed_stored_graph(4, tails=[1,2,3,4], heads=[2,3,4,1])
+    ring = stored_directed_graph(4, tails=[1,2,3,4], heads=[2,3,4,1])
     call describe(sets, ring)
     eon = ring % edge_set()
-    zf   = field('z', eon, sets % size_of(eon))
+    zf   = stored_field('z', eon, sets % size_of(eon))
     call zf % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
     op = divergence()
     call op % apply(ring, [zf], yf)
@@ -1926,7 +1926,7 @@ contains
     ! samples 1,2,3,4 and coefficients 2,1,1,1 around the ring:
     ! scaled samples 2,2,3,4; first reduction -2,0,1,1; then the order-1
     ! chain on that: -3, 2, 1, 0.
-    op = vertex_differential_operator(order=2, &
+    op = vertex_derivative(order=2, &
          & coefficients=[2.0_dp, 1.0_dp, 1.0_dp, 1.0_dp])
     call op % apply(ring, [zf], yf)
     call yf % get_real_vector(y)
@@ -1952,21 +1952,21 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)                     :: g7
+    type(stored_directed_graph)                     :: g7
     type(differential_operator)     :: fwd, rev
-    class(graph_field), allocatable :: yf
+    class(field), allocatable :: yf
     type(set_graph)                   :: on
-    type(field)                     :: qf, pf
+    type(stored_field)                     :: qf, pf
     real(dp), allocatable                  :: aq(:), ap(:)
     real(dp)                               :: q(7), p(7), left, right
     integer                                :: v
     type(set_map)     :: sets
 
-    g7 = directed_stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
+    g7 = stored_directed_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
     call describe(sets, g7)
     on = g7 % vertex_set()
-    qf = field('q', on, sets % size_of(on))
-    pf = field('p', on, sets % size_of(on))
+    qf = stored_field('q', on, sets % size_of(on))
+    pf = stored_field('p', on, sets % size_of(on))
 
     ! Two fields with nothing special about them.
     do v = 1, 7
@@ -1977,8 +1977,8 @@ contains
     call pf % set_real_vector(p)
 
     ! The order-1 operator against its reverse walk.
-    fwd = vertex_differential_operator(order=1, coefficient=1.5_dp)
-    rev = vertex_differential_operator(order=1, coefficient=1.5_dp, adjoint=.true.)
+    fwd = vertex_derivative(order=1, coefficient=1.5_dp)
+    rev = vertex_derivative(order=1, coefficient=1.5_dp, adjoint=.true.)
 
     call fwd % apply(g7, [qf], yf)
     call yf % get_real_vector(aq)
@@ -2028,11 +2028,11 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)                     :: border
+    type(stored_directed_graph)                     :: border
     type(differential_operator)     :: reduce_edges
-    class(graph_field), allocatable :: yf
+    class(field), allocatable :: yf
     type(set_graph)                     :: eon
-    type(field)                       :: zf
+    type(stored_field)                       :: zf
     real(dp), allocatable                  :: y(:)
     real(dp)                               :: qsq(4)
     type(set_map)     :: sets
@@ -2041,10 +2041,10 @@ contains
     ! a..d, vertex 5 for the face; every border edge points at the
     ! face, and every square edge agrees with the walk, so every
     ! orientation coefficient is one.
-    border = directed_stored_graph(5, tails=[1, 2, 3, 4], heads=[5, 5, 5, 5])
+    border = stored_directed_graph(5, tails=[1, 2, 3, 4], heads=[5, 5, 5, 5])
     call describe(sets, border)
     eon = border % edge_set()
-    zf     = field('z', eon, sets % size_of(eon))
+    zf     = stored_field('z', eon, sets % size_of(eon))
     reduce_edges = divergence()
 
     ! A difference field around the square: values q at the corners,
@@ -2087,21 +2087,21 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)                     :: g7
+    type(stored_directed_graph)                     :: g7
     type(differential_operator)     :: op, fwd, rev
-    class(graph_field), allocatable :: yf
+    class(field), allocatable :: yf
     type(set_graph)                   :: on
-    type(field)                     :: qf, pf
+    type(stored_field)                     :: qf, pf
     real(dp), allocatable                  :: y(:), aq(:), ap(:)
     real(dp)                               :: q(14), p(14)
     integer                                :: v
     logical                                :: ok
     type(set_map)     :: sets
 
-    g7 = directed_stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
+    g7 = stored_directed_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
     call describe(sets, g7)
     on = g7 % vertex_set()
-    qf = field('q', on, sets % size_of(on), ncomp=2)
+    qf = stored_field('q', on, sets % size_of(on), ncomp=2)
 
     do v = 1, 7
        q(2*v - 1) = 10.0_dp * v          ! component one: a line
@@ -2126,14 +2126,14 @@ contains
 
     ! The adjoint pairing on the whole interleaved vector: with two
     ! components aboard, the sums must still balance.
-    pf = field('p', on, sets % size_of(on), ncomp=2)
+    pf = stored_field('p', on, sets % size_of(on), ncomp=2)
     do v = 1, 14
        p(v) = real(v, dp)**2 - 5.0_dp * v
     end do
     call pf % set_real_vector(p)
 
-    fwd = vertex_differential_operator(order=1, coefficient=2.0_dp)
-    rev = vertex_differential_operator(order=1, coefficient=2.0_dp, adjoint=.true.)
+    fwd = vertex_derivative(order=1, coefficient=2.0_dp)
+    rev = vertex_derivative(order=1, coefficient=2.0_dp, adjoint=.true.)
 
     call fwd % apply(g7, [qf], yf)
     call yf % get_real_vector(aq)
@@ -2146,7 +2146,7 @@ contains
 
   !===================================================================!
   ! The compiled form agrees with the operator it compiles from.
-  ! stencil_of returns the composed map as a stencil_operator -
+  ! stencil_of returns the composed map as a stencil -
   ! same triples, same constants - so applying either must give
   ! the same numbers, on a graph with a boundary edge so the
   ! affine part (the boundary value in the stencil's constants) is
@@ -2157,20 +2157,20 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph) :: chain
+    type(stored_directed_graph) :: chain
     type(differential_operator) :: op, rev
-    type(stencil_operator)      :: compiled
-    type(field)                     :: qf
-    class(graph_field), allocatable :: ya, yb
+    type(stencil)      :: compiled
+    type(stored_field)                     :: qf
+    class(field), allocatable :: ya, yb
     real(dp), allocatable           :: a(:), b(:)
     type(set_graph)                 :: on
     integer :: v
 
     ! five vertices, the last edge headless: a boundary
-    chain = directed_stored_graph(5, tails=[1,2,3,4,5], heads=[2,3,4,5,0])
+    chain = stored_directed_graph(5, tails=[1,2,3,4,5], heads=[2,3,4,5,0])
     on = chain % vertex_set()
 
-    qf = field('q', on, chain % num_vertices())
+    qf = stored_field('q', on, chain % num_vertices())
     call qf % set_real_vector([(real(v, dp)**2 + 3.0_dp * v, v = 1, 5)])
 
     op = laplacian(coefficients=[2.0_dp, 5.0_dp, 1.0_dp, 4.0_dp, 3.0_dp], &
@@ -2187,7 +2187,7 @@ contains
          & "the compiled stencil reproduces the operator, boundary included", &
          & nfail)
 
-    rev = vertex_differential_operator(order=2, &
+    rev = vertex_derivative(order=2, &
          & coefficients=[2.0_dp, 5.0_dp, 1.0_dp, 4.0_dp, 3.0_dp], &
          & adjoint=.true.)
 
@@ -2221,11 +2221,11 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)                     :: g
+    type(stored_directed_graph)                     :: g
     type(differential_operator)     :: fwd, rev
-    class(graph_field), allocatable :: yf
+    class(field), allocatable :: yf
     type(set_graph)                   :: on
-    type(field)                     :: unit
+    type(stored_field)                     :: unit
     real(dp), allocatable                  :: col(:)
     real(dp)                               :: a(5,5), at(5,5), e(5)
     real(dp)                               :: cs(5)
@@ -2235,10 +2235,10 @@ contains
 
     ! Five vertices, four interior edges, and one boundary edge
     ! hanging off the last vertex.
-    g = directed_stored_graph(5, tails=[1,2,3,4,5], heads=[2,3,4,5,0])
+    g = stored_directed_graph(5, tails=[1,2,3,4,5], heads=[2,3,4,5,0])
     call describe(sets, g)
     on = g % vertex_set()
-    unit = field('e', on, sets % size_of(on))
+    unit = stored_field('e', on, sets % size_of(on))
 
     ! Per-edge coefficients, so the transpose is tested with weights
     ! aboard, not just with ones.
@@ -2248,8 +2248,8 @@ contains
 
     do order = 1, 4
 
-       fwd = vertex_differential_operator(order=order, coefficients=cs)
-       rev = vertex_differential_operator(order=order, coefficients=cs, &
+       fwd = vertex_derivative(order=order, coefficients=cs)
+       rev = vertex_derivative(order=order, coefficients=cs, &
             &                             adjoint=.true.)
 
        do j = 1, 5
@@ -2302,24 +2302,24 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)                     :: ring
+    type(stored_directed_graph)                     :: ring
     type(nonlinear_sample)                 :: formula
     type(differential_operator)     :: reduce_edges
-    class(graph_field), allocatable   :: zf
-    class(graph_field), allocatable :: yf
+    class(field), allocatable   :: zf
+    class(field), allocatable :: yf
     type(set_graph)                   :: on
-    type(field)                     :: qf
+    type(stored_field)                     :: qf
     type(set_graph)                     :: eon
-    type(field)                       :: samples
+    type(stored_field)                       :: samples
     real(dp), allocatable                  :: z(:), y(:)
     real(dp)                               :: q(4), c(4)
     integer                                :: e, t, h
     type(set_map)     :: sets
 
-    ring = directed_stored_graph(4, tails=[1,2,3,4], heads=[2,3,4,1])
+    ring = stored_directed_graph(4, tails=[1,2,3,4], heads=[2,3,4,1])
     call describe(sets, ring)
     on = ring % vertex_set()
-    qf   = field('q', on, sets % size_of(on))
+    qf   = stored_field('q', on, sets % size_of(on))
 
     q = [3.0_dp, -1.0_dp, 4.0_dp, 1.5_dp]
     call qf % set_real_vector(q)
@@ -2335,7 +2335,7 @@ contains
     ! samples ride in a concrete field; gfortran 11 cannot build an
     ! array constructor from a polymorphic item.)
     eon = ring % edge_set()
-    samples = field('z', eon, sets % size_of(eon))
+    samples = stored_field('z', eon, sets % size_of(eon))
     call samples % set_real_vector(z)
     reduce_edges = divergence()
     call reduce_edges % apply(ring, [samples], yf)
@@ -2352,7 +2352,7 @@ contains
        c(e) = max(abs(q(t)), abs(q(h)))
     end do
 
-    reduce_edges = vertex_differential_operator(order=2, coefficients=c)
+    reduce_edges = vertex_derivative(order=2, coefficients=c)
     call reduce_edges % apply(ring, [qf], yf)
     call yf % get_real_vector(y)
 
@@ -2379,29 +2379,29 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)                     :: chain
+    type(stored_directed_graph)                     :: chain
     type(set_graph)                   :: on
     type(set_graph)                     :: eon
-    type(field)                     :: uf, vf, wf
-    type(field)                       :: zf, guf
+    type(stored_field)                     :: uf, vf, wf
+    type(stored_field)                       :: zf, guf
     type(differential_operator)     :: opposite
     type(differential_operator)       :: slope
     type(reduction)                        :: total
-    class(graph_functional), allocatable   :: answer
-    class(graph_field), allocatable :: work_v
-    class(graph_field), allocatable   :: work_e
+    class(functional), allocatable   :: answer
+    class(field), allocatable :: work_v
+    class(field), allocatable   :: work_e
     real(dp), allocatable                  :: values(:)
     real(dp)                               :: x, left, right
     type(set_map)     :: sets
     complex(dp)                            :: cx
 
-    chain = directed_stored_graph(4, tails=[1, 2, 3], heads=[2, 3, 4])
+    chain = stored_directed_graph(4, tails=[1, 2, 3], heads=[2, 3, 4])
     call describe(sets, chain)
     on = chain % vertex_set()
     eon = chain % edge_set()
 
-    uf = field('u', on, sets % size_of(on))
-    vf = field('v', on, sets % size_of(on))
+    uf = stored_field('u', on, sets % size_of(on))
+    vf = stored_field('v', on, sets % size_of(on))
     call uf % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
     call vf % set_real_vector([2.0_dp, 1.0_dp, 0.0_dp, 3.0_dp])
 
@@ -2415,13 +2415,13 @@ contains
     ! Integration by parts. G reads the slope of u onto the edges,
     ! D gathers z back onto the vertices, and the two products
     ! cancel: the transpose of G is minus D.
-    zf = field('z', eon, sets % size_of(eon))
+    zf = stored_field('z', eon, sets % size_of(eon))
     call zf % set_real_vector([2.0_dp, 0.0_dp, 1.0_dp])
 
     slope = gradient()
     call slope % apply(chain, [uf], work_e)
     call work_e % get_real_vector(values)
-    guf = field('Gu', eon, sets % size_of(eon))
+    guf = stored_field('Gu', eon, sets % size_of(eon))
     call guf % set_real_vector(values)
 
     call total % reduce(zf, answer, measure=guf)
@@ -2430,7 +2430,7 @@ contains
     opposite = divergence()
     call opposite % apply(chain, [zf], work_v)
     call work_v % get_real_vector(values)
-    wf = field('Dz', on, sets % size_of(on))
+    wf = stored_field('Dz', on, sets % size_of(on))
     call wf % set_real_vector(values)
 
     call total % reduce(wf, answer, measure=uf)
@@ -2445,7 +2445,7 @@ contains
     call uf % set_real_vector([0.0_dp, 1.0_dp, 3.0_dp, 6.0_dp])
     call slope % apply(chain, [uf], work_e)
     call work_e % get_real_vector(values)
-    guf = field('Gu', eon, sets % size_of(eon))
+    guf = stored_field('Gu', eon, sets % size_of(eon))
     call guf % set_real_vector(values)
     call total % reduce(guf, answer, measure=guf)
     call value_real(answer, x)
@@ -2477,19 +2477,19 @@ contains
     integer, intent(inout) :: nfail
 
     type(set_graph)                 :: on
-    type(field)                   :: f, uf
-    type(functional)                     :: seed
+    type(stored_field)                   :: f, uf
+    type(stored_functional)                     :: seed
     type(broadcast)                      :: copy_rule, share_rule
     type(reduction)                      :: total
-    class(graph_functional), allocatable :: answer
+    class(functional), allocatable :: answer
     real(dp)                             :: x
     type(set_map)     :: sets
     complex(dp)                          :: cx
 
     call on % declare()
     call sets % bind(on, counted_set_representation(4))
-    f  = field('seed', on, sets % size_of(on))
-    uf = field('u', on, sets % size_of(on))
+    f  = stored_field('seed', on, sets % size_of(on))
+    uf = stored_field('u', on, sets % size_of(on))
 
     copy_rule  % rule = BROADCAST_COPY
     share_rule % rule = BROADCAST_SHARE
@@ -2548,7 +2548,7 @@ contains
   end subroutine members_of
 
   subroutine value_integer(f, x)
-    class(graph_functional), intent(in) :: f
+    class(functional), intent(in) :: f
     integer, intent(out) :: x
     integer, allocatable :: t(:)
     call f % get_integer_vector(t)
@@ -2557,7 +2557,7 @@ contains
   end subroutine value_integer
 
   subroutine value_real(f, x)
-    class(graph_functional), intent(in) :: f
+    class(functional), intent(in) :: f
     real(dp), intent(out) :: x
     real(dp), allocatable :: t(:)
     call f % get_real_vector(t)
@@ -2566,7 +2566,7 @@ contains
   end subroutine value_real
 
   subroutine value_complex(f, x)
-    class(graph_functional), intent(in) :: f
+    class(functional), intent(in) :: f
     complex(dp), intent(out) :: x
     complex(dp), allocatable :: t(:)
     call f % get_complex_vector(t)
@@ -2575,7 +2575,7 @@ contains
   end subroutine value_complex
 
   subroutine value_logical(f, x)
-    class(graph_functional), intent(in) :: f
+    class(functional), intent(in) :: f
     logical, intent(out) :: x
     logical, allocatable :: t(:)
     call f % get_logical_vector(t)

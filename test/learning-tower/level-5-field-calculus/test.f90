@@ -35,13 +35,13 @@ program learning_level_5
        & listed_set_representation
   use map_set        , only : set_map
   use map_inclusion  , only : inclusion_map, declared_subobject
-  use field_stored, only : field
+  use field_stored, only : stored_field
 
   implicit none
 
   type(set_graph) :: v
   type(set_graph)  :: k, theta, u
-  type(field)       :: qk, theta0
+  type(stored_field)       :: qk, theta0
   integer           :: nfail
   type(set_map)     :: sets
   type(inclusion_map)     :: inclusions
@@ -131,7 +131,7 @@ contains
     type(set_graph) :: dom
     real(dp), allocatable          :: val(:)
 
-    qk = field('observations', k, sets % size_of(k))
+    qk = stored_field('observations', k, sets % size_of(k))
     call qk % set_real_vector([6.0_dp, 2.0_dp])
 
     dom = qk % domain()
@@ -164,7 +164,7 @@ contains
     type(set_graph) :: dom
     real(dp), allocatable          :: val(:)
 
-    theta0 = field('parameters', theta, sets % size_of(theta))
+    theta0 = stored_field('parameters', theta, sets % size_of(theta))
     call theta0 % set_real_vector([0.0_dp])
 
     dom = theta0 % domain()

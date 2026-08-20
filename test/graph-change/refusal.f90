@@ -26,13 +26,13 @@ program refusal
 
   use iso_fortran_env      , only : dp => REAL64
   use graph_fractal        , only : graph
-  use map_change_protocol, only : run_change, change_result
+  use map_change_protocol, only : run_change, change_record
   use map_value      , only : value_map, VALUE_UNKNOWN
   use map_value_change   , only : value_change
   use toy_changes          , only : silent_apply_change, silent_revert_change
 
   implicit none
-  type(change_result)         :: result
+  type(change_record)         :: result
   type(value_map)             :: map
   type(value_change)          :: loose
   type(silent_apply_change)   :: silent_apply

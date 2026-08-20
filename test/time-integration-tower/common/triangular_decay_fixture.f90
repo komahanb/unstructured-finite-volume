@@ -20,7 +20,7 @@
 ! IT STORES Q, AND IT STORES NO GRAPH.
 !
 ! That single sentence is the Level-6 experiment. The
-! graph_operation contract hands every operation an input_graph,
+! operation contract hands every operation an input_graph,
 ! and the established habit - visible in the marching fixtures, in
 ! operation_fitting, in reduction and broadcast - is to answer
 !
@@ -51,11 +51,11 @@
 module triangular_decay_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use operation_action, only : graph_operation
+  use operation_action, only : operation
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use graph_fractal    , only : set_graph => graph
-  use field_stored, only : field
+  use field_stored, only : stored_field
 
   implicit none
 
@@ -67,7 +67,7 @@ module triangular_decay_fixture
   ! state carrier Q - never a graph, and never a vertex set.
   !===================================================================!
 
-  type, extends(graph_operation) :: triangular_decay
+  type, extends(operation) :: triangular_decay
 
      ! WHICH domain, and how many coordinates stand in it. Both of
      ! the action's questions are answered from these two, so no map
@@ -151,11 +151,11 @@ contains
 
     class(triangular_decay), intent(in)            :: this
     class(directed_graph)           , intent(in)            :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
     type(set_graph)       :: given
-    type(field)           :: out
+    type(stored_field)           :: out
     real(dp), allocatable          :: q(:), s(:)
 
     associate (u1 => input_graph); end associate
@@ -178,7 +178,7 @@ contains
     s(1) = q(1)
     s(2) = q(2) - q(1)
 
-    out = field('triangular decay', this % state, this % n_state, ncomp=1)
+    out = stored_field('triangular decay', this % state, this % n_state, ncomp=1)
     call out % set_real_vector(s)
 
     if (allocated(output)) deallocate(output)

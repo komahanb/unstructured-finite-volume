@@ -26,11 +26,11 @@ module transform_refiner
 
   use iso_fortran_env     , only : dp => REAL64
   use view_directed , only : directed_graph
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use graph_fractal      , only : set_graph => graph
-  use transform_structure, only : graph_transform
-  use view_directed_stored         , only : directed_stored_graph
-  use field_stored   , only : field
+  use transform_structure, only : transform
+  use view_directed_stored         , only : stored_directed_graph
+  use field_stored   , only : stored_field
 
   implicit none
 
@@ -56,7 +56,7 @@ module transform_refiner
   ! direction needs a stored map.
   !===================================================================!
 
-  type, extends(graph_transform) :: refiner
+  type, extends(transform) :: refiner
 
      integer :: split = 2
 
@@ -111,12 +111,12 @@ contains
 
     class(refiner)   , intent(in) :: this
     class(directed_graph)     , intent(in) :: input_graph
-    class(graph_field), intent(in) :: input_data
+    class(field), intent(in) :: input_data
 
     defined_on_data = this % defined_on_graph(input_graph)
 
     select type (input_data)
-    class is (field)
+    class is (stored_field)
        block
          type(set_graph) :: dom
          integer         :: n_dom
@@ -181,7 +181,7 @@ contains
     end do
 
     allocate(fine_graph, source = &
-         & directed_stored_graph(nv * this % split, tails=tails(1:n), heads=heads(1:n), &
+         & stored_directed_graph(nv * this % split, tails=tails(1:n), heads=heads(1:n), &
          &              number=coarse_graph % id()))
 
   end subroutine refine_graph
@@ -211,21 +211,21 @@ contains
 
     class(refiner)   , intent(in)               :: this
     class(directed_graph)     , intent(in)               :: coarse_graph
-    class(graph_field), intent(in)               :: coarse_data
+    class(field), intent(in)               :: coarse_data
     class(directed_graph)     , intent(in)               :: fine_graph
-    class(graph_field), allocatable, intent(out) :: fine_data
+    class(field), allocatable, intent(out) :: fine_data
 
-    type(field)    :: out
+    type(stored_field)    :: out
     real(dp), allocatable :: cv(:), fv(:)
     integer :: nfine, ncomp, v, i, c, child
 
     select type (coarse_data)
-    class is (field)
+    class is (stored_field)
 
        nfine = fine_graph % num_vertices()
        ncomp = coarse_data % num_components()
 
-       out = field(coarse_data % name(), fine_graph % vertex_set(), fine_graph % num_vertices(), &
+       out = stored_field(coarse_data % name(), fine_graph % vertex_set(), fine_graph % num_vertices(), &
             &             ncomp=ncomp, unit_name=coarse_data % units())
 
        call coarse_data % get_real_vector(cv)

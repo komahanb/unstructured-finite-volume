@@ -104,7 +104,7 @@ invent it.
 | **3** | \(G_{\text{time}}=(\{Q,T,E\},\{\mathrm{Tail},\mathrm{Head},A_1,A_2\})\) | `graph_fractal`, `view_relational` | three bound carriers | four bound relations | one relational structure, not one domain | `level-3-graph/` | signature closure holds, **and** \(Q\) is lawfully owned while naming no relation | none |
 | **4** | directed views over \(A_1\), \(A_2\) | `directed_adjacency_view`, `graph_profile`, `relation_algorithms` | \(T\) (both views) | borrowed from the graph | **causality** | `level-4-graph-calculus/` | forward causal order \([t_0..t_4]\); two views, one carrier | none |
 | **5** | \(q_0:Q\to\mathbb R\); \(\mathrm{time}:T\to\mathbb R\); \(h:E\to\mathbb R\) | `field` | \(Q\), \(T\), \(E\) — three distinct | consumed, not made | values, no scheme | `level-5-field-calculus/` | **values live on domains, not on graphs** — \(q_0\) needs no graph, and \(\mathrm{time}(\mathrm{head}(e))-\mathrm{time}(\mathrm{tail}(e))=h(e)\) | none |
-| **6** | \(S:Q\to Q\); FE; BE residual; BDF2 residual | `step_operator`, `backward_euler`, `bdf` | \(Q\), beside a 5-vertex host \(H_t\) | \(A_1,A_2\) supply the history roles | the discrete law | `level-6-discretization/` | **temporal discretization preserves \(Q\)** — RED first, then a narrow correction | `operation_step.f90` — domain and width delegated to the action |
+| **6** | \(S:Q\to Q\); FE; BE residual; BDF2 residual | `scheme`, `backward_euler`, `bdf` | \(Q\), beside a 5-vertex host \(H_t\) | \(A_1,A_2\) supply the history roles | the discrete law | `level-6-discretization/` | **temporal discretization preserves \(Q\)** — RED first, then a narrow correction | `operation_step.f90` — domain and width delegated to the action |
 | **7** | solve temporal residual \(=0\) | `gmres` | unknown \(Q\), host \(H_t\) | — | the implicit solve | `level-7-minimization/` | **an explicit unknown domain \(Q\) survives minimization** while the host has five unrelated vertices | none — the minimizer was already right |
 | **8** | four-step marches: FE, BE, BDF2 | `marcher`, `newton`, `gmres` | \(Q\); control chain; \(H_{\text{context}}\) | control chain realizes \(A_1\) extensionally | multi-step constitution | `level-8-constitution/` | **the marcher's state domain is independent of its host**; three five-element objects stay apart | `operation_marching.f90`, `operation_linearization.f90` — both RED-earned |
 | **9** | the complete IVP: \(q(0)=[2,0]\), \(\dot q=-S(q)\), \(h=1/2\), BDF2 → \(q(t_4)\) | the whole constitution | \(Q\), in and out | — | the statement | `level-9-statement/` | \(q(t_4)=[7/24,\,83/144]\), **a field on \(Q\)** | none |
@@ -342,7 +342,7 @@ A1 and A2 are DIFFERENT STRUCTURAL VIEWS over the SAME T carrier
 ```
 
 **No arrow in that picture says \(Q = V(H_t)\), and none may.** The host
-enters from the side because the `graph_operation` contract requires
+enters from the side because the `operation` contract requires
 one; it leaves nothing behind. \(Q\) has two members and \(V(H_t)\) has
 five, throughout.
 
@@ -498,7 +498,7 @@ each other:
                             by clock % instants(4).  Five vertices.
 
     OPERATION HOST          H_context, the conduit the
-                            graph_operation contract requires.
+                            operation contract requires.
                             Five vertices — and a different object.
 ```
 
@@ -686,7 +686,7 @@ per step, walked in order."* That is production's own description of
 itself, read but not imported.
 
 Nothing here says the production marcher is wrong, or that
-`graph_operation` must change. Those remain questions for levels that
+`operation` must change. Those remain questions for levels that
 have not been built.
 
 ## Seam A2 at seal — the count, and its limit

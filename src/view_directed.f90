@@ -164,7 +164,7 @@ module view_directed
   !
   !     graph_fractal :: graph                 the ontology, G=(B1,B2)
   !     view_directed :: directed_graph  this contract, D
-  !     view_directed_stored :: directed_stored_graph   one stored realization
+  !     view_directed_stored :: stored_directed_graph   one stored realization
   !
   ! The migration debt that made this type share the ontology's name
   ! is discharged. What remains of it is the module name view_directed_stored,

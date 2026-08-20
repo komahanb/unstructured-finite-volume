@@ -18,7 +18,7 @@
 ! divide by a value indistinguishable from zero.
 !
 ! solve_dense_matrix_with_dense_direct serves callers holding a
-! plain dense array: the array is laid on a stencil_operator -
+! plain dense array: the array is laid on a stencil -
 ! each entry one weighted edge, column to row - a dense_direct is
 ! attached to that statement, and the solve runs through the same
 ! minimizer interface as every other solver. dense_matrix_of is
@@ -31,13 +31,13 @@
 module operation_dense_direct
 
   use iso_fortran_env    , only : dp => REAL64
-  use operation_action, only : graph_operation
+  use operation_action, only : operation
   use view_directed , only : directed_graph
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use graph_fractal      , only : set_graph => graph
   use operation_minimization , only : minimizer
-  use operation_stencil, only : stencil_operator
-  use field_stored  , only : field
+  use operation_stencil, only : stencil
+  use field_stored  , only : stored_field
 
   implicit none
 
@@ -163,7 +163,7 @@ contains
   ! Solve a plain dense array through the minimizer interface. The
   ! array must be square; a rectangular array stops the program.
   ! Each entry becomes one weighted edge (column to row, constants
-  ! zero) of a stencil_operator, so assembling that statement's
+  ! zero) of a stencil, so assembling that statement's
   ! matrix reproduces the given entries exactly and the
   ! elimination sees precisely the caller's matrix.
   !===================================================================!
@@ -177,7 +177,7 @@ contains
     real(dp), allocatable, intent(out) :: x(:)
     real(dp)             , intent(out) :: achieved
 
-    type(stencil_operator) :: statement
+    type(stencil) :: statement
     type(dense_direct)     :: solver
 
     integer :: n
@@ -188,7 +188,7 @@ contains
        error stop 'dense_direct: dense matrix is square'
     end if
 
-    statement = stencil_operator(a, 'dense matrix')
+    statement = stencil(a, 'dense matrix')
 
     solver % singular_tolerance = singular_tolerance
 
@@ -216,13 +216,13 @@ contains
 
   subroutine dense_matrix_of(action, on, width, a)
 
-    class(graph_operation), intent(in)  :: action
+    class(operation), intent(in)  :: action
     class(directed_graph) , intent(in)  :: on
     integer               , intent(in)  :: width
     real(dp), allocatable , intent(out) :: a(:,:)
 
-    type(field)     :: basis
-    class(graph_field), allocatable :: output
+    type(stored_field)     :: basis
+    class(field), allocatable :: output
     type(set_graph) :: dom
     real(dp), allocatable :: e(:), y(:)
     integer :: n_dom, ncomp, j
@@ -243,7 +243,7 @@ contains
     do j = 1, width
        e    = 0.0_dp
        e(j) = 1.0_dp
-       basis = field('basis', dom, n_dom, ncomp=ncomp)
+       basis = stored_field('basis', dom, n_dom, ncomp=ncomp)
        call basis % set_real_vector(e)
        call action % apply(on, [basis], output)
        call output % get_real_vector(y)

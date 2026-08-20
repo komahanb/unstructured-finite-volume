@@ -42,7 +42,7 @@ program adjoint_level_3
   use map_inclusion  , only : inclusion_map, declared_subobject
   use relation_finitary, only : stored_relation, relation
   use relation_algebra, only : compose_binary
-  use relation_binary , only : csr_relation, transposed_view, &
+  use relation_binary , only : csr_relation, transposed_relation, &
        &                             transpose_of, inclusion_of
   use graph_fractal        , only : graph, known_branch, null_branch
   use view_relational, only : relational_binding, &
@@ -55,7 +55,7 @@ program adjoint_level_3
   type(set_graph)               :: p_dom, q_dom, y_dom, z_dom
   type(stored_relation)          :: dep
   type(csr_relation), target     :: inc_y, inc_z, inc_q, inc_p
-  type(transposed_view)          :: inc_q_t, inc_p_t
+  type(transposed_relation)          :: inc_q_t, inc_p_t
   type(csr_relation)             :: jq, jp, fq, fp
   type(graph)             , target :: g
   type(graph)             , target :: scell(6), selem(6)

@@ -26,7 +26,7 @@
 !
 ! The compatibility host is a five-vertex graph that is NEITHER Q
 ! NOR Y and contributes nothing to either answer - the legacy
-! graph_operation face requires it, so it is supplied honestly and
+! operation face requires it, so it is supplied honestly and
 ! left alone. What Level 7 does NOT yet prove: that these two
 ! equations are one truth. They are independently supplied here, on
 ! purpose. Level 8 removes the duplication.
@@ -45,9 +45,9 @@ program adjoint_level_7
        & listed_set_representation
   use map_set        , only : set_map
   use map_inclusion  , only : inclusion_map, declared_subobject
-  use field_calculus, only : graph_field
-  use view_directed_stored      , only : directed_stored_graph
-  use field_stored, only : field
+  use field_calculus, only : field
+  use view_directed_stored      , only : stored_directed_graph
+  use field_stored, only : stored_field
   use operation_gmres, only : gmres
   use opaque_equation_fixture, only : opaque_primal, opaque_adjoint
 
@@ -55,13 +55,13 @@ program adjoint_level_7
 
   type(set_graph)               :: v, t, hv
   type(set_graph)                :: q_dom, y_dom
-  type(directed_stored_graph)              :: host
+  type(stored_directed_graph)              :: host
   type(opaque_primal)             :: primal_eq
   type(opaque_adjoint)            :: adjoint_eq
   type(gmres)                     :: primal_solver, adjoint_solver
-  type(field)                     :: rhs_y, rhs_q
+  type(stored_field)                     :: rhs_y, rhs_q
   type(set_graph)  :: dom
-  class(graph_field), allocatable :: q_sol, lam_sol
+  class(field), allocatable :: q_sol, lam_sol
   real(dp), allocatable           :: gv(:), qv(:), lv(:)
   integer                         :: nfail
   type(set_map)     :: sets
@@ -85,7 +85,7 @@ program adjoint_level_7
   call inclusions % include_in(y_dom, t)
 
   ! The compatibility host: five vertices, nobody's domain.
-  host = directed_stored_graph(5, tails=[1,2,3,4], heads=[2,3,4,5])
+  host = stored_directed_graph(5, tails=[1,2,3,4], heads=[2,3,4,5])
 
   primal_eq  = opaque_primal(q_dom, y_dom, sets)
   adjoint_eq = opaque_adjoint(y_dom, q_dom, sets)
@@ -151,7 +151,7 @@ contains
          &      < 1.0d-12, &
          & "R(0) = [-8, -22] on the residual rows", nfail)
 
-    rhs_y = field('rhs', y_dom, sets % size_of(y_dom))
+    rhs_y = stored_field('rhs', y_dom, sets % size_of(y_dom))
     call rhs_y % set_real_vector(-gv)
     call primal_solver % apply(host, [rhs_y], q_sol)
 
@@ -196,7 +196,7 @@ contains
          & "its constant is -c = [-1, -2], indexed by STATE slots", &
          & nfail)
 
-    rhs_q = field('rhs', q_dom, sets % size_of(q_dom))
+    rhs_q = stored_field('rhs', q_dom, sets % size_of(q_dom))
     call rhs_q % set_real_vector(-gv)
     call adjoint_solver % apply(host, [rhs_q], lam_sol)
 

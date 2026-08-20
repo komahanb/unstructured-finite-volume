@@ -1597,7 +1597,7 @@ At every derivative-tower level, append a **NUCLEUS OBSERVATIONS** section.
 Especially watch:
 
 ```text
-graph_operation host
+operation host
 relation transpose
 field domains
 local derivative law

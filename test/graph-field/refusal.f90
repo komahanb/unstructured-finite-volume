@@ -8,33 +8,33 @@ program field_refusal
   use graph_fractal           , only : graph
   use map_set_representation, only : counted_set_representation
   use map_set           , only : set_map
-  use field_stored, only : field
+  use field_stored, only : stored_field
   implicit none
   type(graph)       :: cells, raw
   type(set_map)     :: sets
-  type(field)       :: q
+  type(stored_field)       :: q
   character(len=32) :: which
   which=''; call get_command_argument(1, which)
   call cells % declare()
   call sets % bind(cells, counted_set_representation(4))
   select case (trim(which))
   case ('ishape')
-     q = field('q', cells, 4)
+     q = stored_field('q', cells, 4)
      call q % set_integer_vector([1, 2])
   case ('rshape')
-     q = field('q', cells, 4)
+     q = stored_field('q', cells, 4)
      call q % set_real_vector([1.0_dp, 2.0_dp])
   case ('cshape')
-     q = field('q', cells, 4)
+     q = stored_field('q', cells, 4)
      call q % set_complex_vector([(1.0_dp, 0.0_dp)])
   case ('lshape')
-     q = field('q', cells, 4)
+     q = stored_field('q', cells, 4)
      call q % set_logical_vector([.true., .false., .true.])
   case ('sshape')
-     q = field('q', cells, 4)
+     q = stored_field('q', cells, 4)
      call q % set_character_vector(['a', 'b'])
   case ('unsigned')
-     q = field('q', raw, 4)
+     q = stored_field('q', raw, 4)
   case default
      error stop 'no case chosen'
   end select

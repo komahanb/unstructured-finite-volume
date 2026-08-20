@@ -28,8 +28,8 @@
 ! is a graph read as (S, P), with a binding to the objects its
 ! elements denote, and it carries the mathematical structure: the
 ! external selectors are located inside it by identity and then
-! DESTROYED, and every number below comes through bound relations. The HOST is a seven-vertex directed_stored_graph that exists
-! only because the legacy graph_operation face demands a
+! DESTROYED, and every number below comes through bound relations. The HOST is a seven-vertex stored_directed_graph that exists
+! only because the legacy operation face demands a
 ! class(graph); it is provably neither Q nor Y nor their size, and
 ! it contributes no domain, no coefficient and no topology.
 !
@@ -55,15 +55,15 @@ program adjoint_level_9
   use map_inclusion  , only : inclusion_map, declared_subobject
   use relation_finitary   , only : stored_relation, relation
   use relation_algebra, only : compose_binary
-  use relation_binary , only : csr_relation, transposed_view, &
+  use relation_binary , only : csr_relation, transposed_relation, &
        &                             transpose_of, inclusion_of
   use graph_fractal        , only : graph, known_branch, null_branch
   use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
        & holds_set
-  use field_calculus, only : graph_field
-  use view_directed_stored      , only : directed_stored_graph
-  use field_stored, only : field
+  use field_calculus, only : field
+  use view_directed_stored      , only : stored_directed_graph
+  use field_stored, only : stored_field
   use operation_gmres, only : gmres
   use adjoint_constitution_fixture, only : constituted_primal, &
        & constituted_adjoint, constituted_tangent, &
@@ -82,7 +82,7 @@ program adjoint_level_9
   type(graph)             , target :: rcell(5), relem(5)
   type(relational_binding)         :: bnd
   integer                          :: kcell
-  type(directed_stored_graph)                 :: host
+  type(stored_directed_graph)                 :: host
   class(relation), pointer           :: rp   => null()
   class(relation), pointer           :: gdep => null()
   class(relation), pointer           :: gjq => null(), gjp => null()
@@ -92,9 +92,9 @@ program adjoint_level_9
   type(constituted_tangent)          :: tangent_eq
   type(gmres)                        :: primal_solver, adjoint_solver
   type(gmres)                        :: tangent_solver
-  type(field)                        :: p_field, rhs_y, rhs_q
+  type(stored_field)                        :: p_field, rhs_y, rhs_q
   type(set_graph) , allocatable    :: dom, dom2
-  class(graph_field), allocatable    :: sol
+  class(field), allocatable    :: sol
   real(dp), allocatable              :: pv(:), gv(:), qv(:), lv(:), qp(:)
   real(dp)                           :: fqt(2), rp_dir(2), resp(1)
   real(dp)                           :: direct(1), contrib(1), zbar(1)
@@ -210,7 +210,7 @@ program adjoint_level_9
   deallocate(inc_y, inc_z, inc_q, inc_p)
 
   !-- the compatibility host: nobody's domain -----------------------
-  host = directed_stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
+  host = stored_directed_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
 
   call check_hostile_enumeration(nfail)
   call check_model_ownership(nfail)
@@ -334,7 +334,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    p_field = field('parameter', p_dom, sets % size_of(p_dom))
+    p_field = stored_field('parameter', p_dom, sets % size_of(p_dom))
     call p_field % set_real_vector([2.0_dp])
     call p_field % get_real_vector(pv)
 
@@ -365,7 +365,7 @@ contains
          & "the primal solver answers on Q", nfail)
 
     call primal_solver % constant(gv)
-    rhs_y = field('rhs', y_dom, sets % size_of(y_dom))
+    rhs_y = stored_field('rhs', y_dom, sets % size_of(y_dom))
     call rhs_y % set_real_vector(-gv)
     call primal_solver % apply(host, [rhs_y], sol)
 
@@ -446,7 +446,7 @@ contains
          & "the right-hand side it consumes IS the generated " // &
          & "f_q^T", nfail)
 
-    rhs_q = field('rhs', q_dom, sets % size_of(q_dom))
+    rhs_q = stored_field('rhs', q_dom, sets % size_of(q_dom))
     call rhs_q % set_real_vector(-gv)
     call adjoint_solver % apply(host, [rhs_q], sol)
 
@@ -531,7 +531,7 @@ contains
     tangent_solver % max_iterations = 50
 
     call tangent_solver % constant(gv)
-    rhs_y = field('rhs', y_dom, sets % size_of(y_dom))
+    rhs_y = stored_field('rhs', y_dom, sets % size_of(y_dom))
     call rhs_y % set_real_vector(-gv)
     call tangent_solver % apply(host, [rhs_y], sol)
     call sol % get_real_vector(qp)

@@ -55,7 +55,6 @@ operation_newton.o \
 operation_multigrid.o \
 operation_step_policy.o \
 operation_marching.o \
-operation_sweep.o \
 util_verbosity.o \
 util_string.o \
 util_file.o \

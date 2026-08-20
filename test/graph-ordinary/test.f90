@@ -14,7 +14,7 @@
 
 program test_graph_ordinary
 
-  use view_directed_stored          , only : directed_stored_graph
+  use view_directed_stored          , only : stored_directed_graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set           , only : set_map
@@ -112,7 +112,7 @@ contains
   end subroutine ascending
 
   !===================================================================!
-  ! The oracle bout: build the old directed_stored_graph and the relational
+  ! The oracle bout: build the old stored_directed_graph and the relational
   ! road on one topology, then ask both everything and demand one
   ! answer. T gets every edge; H gets the headed ones; both tables
   ! in ascending edge order, as every mesh builder hands them.
@@ -126,7 +126,7 @@ contains
     integer         , intent(inout)        :: nfail
     logical         , intent(in), optional :: scrambled
 
-    type(directed_stored_graph)     :: old
+    type(stored_directed_graph)     :: old
     type(graph)               :: verts, edges
     type(set_map)               :: sets
     type(csr_relation)              :: t, h
@@ -137,7 +137,7 @@ contains
 
     ne = size(tails)
 
-    old = directed_stored_graph(nv, tails=tails, heads=heads)
+    old = stored_directed_graph(nv, tails=tails, heads=heads)
 
     call verts % declare()
     call sets % bind(verts, counted_set_representation(nv))
@@ -279,14 +279,14 @@ contains
     integer, intent(inout) :: nfail
 
     integer :: tails(1200), heads(1200)
-    type(directed_stored_graph) :: g
+    type(stored_directed_graph) :: g
     type(csr_relation) :: t, h
     integer, allocatable :: idx(:), ref(:)
     integer :: e, v
     logical :: ok
 
     call pseudo_random_topology(400, tails, heads)
-    g = directed_stored_graph(400, tails=tails, heads=heads)
+    g = stored_directed_graph(400, tails=tails, heads=heads)
 
     t = g % tail_relation()
     h = g % head_relation()
@@ -330,7 +330,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(directed_stored_graph)     :: old
+    type(stored_directed_graph)     :: old
     type(graph)               :: verts, edges
     type(set_map)                   :: sets
     type(csr_relation)              :: t, h
@@ -357,7 +357,7 @@ contains
     call report(ok, &
          & "no ghost tuple stands across the wall", nfail)
 
-    old = directed_stored_graph(3, tails=[1, 2, 3], heads=[2, 3, 0])
+    old = stored_directed_graph(3, tails=[1, 2, 3], heads=[2, 3, 0])
     call report(.not. old % edge_has_head(3) .and. &
          &      old % edge_head(3) .eq. 0, &
          & "and the stored graph reads the absence as zero", nfail)

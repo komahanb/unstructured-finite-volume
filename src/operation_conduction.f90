@@ -30,7 +30,7 @@
 module operation_conduction
 
   use iso_fortran_env  , only : dp => REAL64
-  use field_stored, only : field
+  use field_stored, only : stored_field
   use view_mesh , only : mesh
 
   implicit none
@@ -91,7 +91,7 @@ contains
     type(mesh), intent(in)             :: m
     real(dp), allocatable, intent(out) :: values(:)
 
-    type(field) :: fn
+    type(stored_field) :: fn
     real(dp), allocatable :: normals(:)
     real(dp) :: n(3)
     integer :: ne, e
@@ -120,7 +120,7 @@ contains
     type(mesh), intent(in)             :: m
     real(dp), allocatable, intent(out) :: values(:)
 
-    type(field) :: fa
+    type(stored_field) :: fa
     real(dp), allocatable :: areas(:)
     integer :: e
 

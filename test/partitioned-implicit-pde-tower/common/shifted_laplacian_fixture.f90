@@ -40,10 +40,10 @@ module shifted_laplacian_fixture
 
   use iso_fortran_env  , only : dp => REAL64
   use graph_fractal    , only : set_graph => graph
-  use operation_action, only : graph_operation
+  use operation_action, only : operation
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
-  use field_stored, only : field
+  use field_calculus, only : field
+  use field_stored, only : stored_field
   use operation_differential, only : differential_operator, &
        &                                        laplacian
 
@@ -52,7 +52,7 @@ module shifted_laplacian_fixture
   private
   public :: shifted_laplacian
 
-  type, extends(graph_operation) :: shifted_laplacian
+  type, extends(operation) :: shifted_laplacian
    contains
      procedure :: name   => shifted_name
      procedure :: domain => shifted_domain
@@ -95,12 +95,12 @@ contains
 
     class(shifted_laplacian), intent(in)           :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
     type(differential_operator)     :: lap
-    type(field)                     :: out
-    class(graph_field), allocatable :: lq
+    type(stored_field)                     :: out
+    class(field), allocatable :: lq
     type(set_graph) :: dom
     real(dp), allocatable           :: q(:), l(:)
 
@@ -123,7 +123,7 @@ contains
     call input_data(1) % get_real_vector(q)
     call lq % get_real_vector(l)
 
-    out = field('shifted laplacian', input_graph % vertex_set(), input_graph % num_vertices())
+    out = stored_field('shifted laplacian', input_graph % vertex_set(), input_graph % num_vertices())
     call out % set_real_vector(2.0_dp * q - l)
 
     if (allocated(output)) deallocate(output)

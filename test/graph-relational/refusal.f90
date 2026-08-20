@@ -20,7 +20,7 @@ program refusal
   use map_set        , only : set_map
   use map_label      , only : label_map
   use relation_finitary       , only : relation, stored_relation
-  use relation_binary, only : csr_relation, transposed_view, &
+  use relation_binary, only : csr_relation, transposed_relation, &
        &                            transpose_of
   use view_relational, only : relational_binding
 
@@ -135,7 +135,7 @@ program refusal
        type(relational_binding)   :: b
        type(set_graph)          :: ops
        type(csr_relation), target :: dep
-       type(transposed_view)      :: flipped
+       type(transposed_relation)      :: flipped
        type(set_map)     :: sets
        type(label_map)     :: labels
        call e1 % declare()

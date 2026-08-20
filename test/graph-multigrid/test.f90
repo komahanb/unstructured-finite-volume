@@ -20,7 +20,7 @@ program test_graph_multigrid
   use iso_fortran_env, only : dp => REAL64
   use view_directed, only : directed_graph
   use view_mesh   , only : mesh
-  use operation_stencil, only : stencil_operator
+  use operation_stencil, only : stencil
   use operation_fitted_balance, only : fitted_balance_stencil
   use field_forms       , only : polynomial_form
   use transform_coarsener, only : coarsener, COARSEN_PAIRWISE
@@ -89,7 +89,7 @@ contains
 
   end function chain_mesh
 
-  type(stencil_operator) function chain_statement(m) result(op)
+  type(stencil) function chain_statement(m) result(op)
 
     type(mesh), intent(in) :: m
 

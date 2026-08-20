@@ -18,14 +18,14 @@
 module cubic_statement_fixture
 
   use iso_fortran_env, only : dp => REAL64
-  use operation_action, only : graph_operation
+  use operation_action, only : operation
   use view_directed, only : directed_graph
-  use field_calculus, only : graph_field
+  use field_calculus, only : field
   use view_directed , only : GRAPH_SIDE_VERTEX
   ! An action names a domain and counts it. It asks no membership,
   ! so it holds no map: identity and count is the whole of it.
   use graph_fractal      , only : set_graph => graph
-  use field_stored  , only : field
+  use field_stored  , only : stored_field
   use operation_differential, only : differential_operator
 
   implicit none
@@ -39,7 +39,7 @@ module cubic_statement_fixture
   ! keeps the rows' own sign and the root is one.
   !===================================================================!
 
-  type, extends(graph_operation) :: cubic_statement
+  type, extends(operation) :: cubic_statement
 
      type(differential_operator) :: linear_part
      real(dp) :: strength = 0.0_dp
@@ -73,11 +73,11 @@ contains
 
     class(cubic_statement), intent(in)             :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
     type(set_graph)   :: cells
-    type(field)   :: out
+    type(stored_field)   :: out
     real(dp), allocatable :: q(:), y(:)
     integer :: nv, v
 
@@ -93,7 +93,7 @@ contains
     end if
 
     cells = input_graph % vertex_set()
-    out = field('cubic', cells, nv)
+    out = stored_field('cubic', cells, nv)
     call out % set_real_vector(y)
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
@@ -115,13 +115,13 @@ program test_graph_minimization
   use operation_robin_condition, only : robin_condition, dirichlet
   use operation_conduction     , only : conduction
   use operation_differential, only : differential_operator
-  use operation_differential, only : vertex_differential_operator
+  use operation_differential, only : vertex_derivative
   use operation_jacobi   , only : jacobi
   use operation_conjugate_gradient, only : conjugate_gradient
   use operation_gauss_seidel, only : gauss_seidel
   use operation_gmres    , only : gmres
   use operation_newton   , only : newton
-  use operation_differential, only : edge_differential_operator
+  use operation_differential, only : edge_derivative
   use operation_balance  , only : balance
   use cubic_statement_fixture, only : cubic_statement
 
@@ -206,7 +206,7 @@ contains
          & [dirichlet('west', 0.0_dp), dirichlet('east', 10.0_dp)], &
          & 1.0_dp, c, b)
 
-    op = vertex_differential_operator(order=2, coefficients=c, &
+    op = vertex_derivative(order=2, coefficients=c, &
          & spacings=[1.0_dp, 1.0_dp, 0.5_dp, 0.5_dp], boundary_values=b)
 
   end function chain_operator
@@ -350,13 +350,13 @@ contains
     c = -c
 
     block
-      use field_stored, only : field
-      type(field) :: fd
+      use field_stored, only : stored_field
+      type(stored_field) :: fd
       fd = m % face_delta()
       call fd % get_real_vector(deltas)
     end block
 
-    call cg % attach(vertex_differential_operator(order=2, &
+    call cg % attach(vertex_derivative(order=2, &
          & coefficients=c, spacings=deltas), m, m % vertex_set(), &
          & m % num_vertices())
     cg % max_iterations = 2000
@@ -450,11 +450,11 @@ contains
 
     ! Diffusion and upwind advection in one balance: unsymmetric.
     statement = balance(edge_terms=[ &
-         & edge_differential_operator(order=1, &
+         & edge_derivative(order=1, &
          &      coefficients=[1.0_dp, 1.0_dp, 2.0_dp, 2.0_dp], &
          &      spacings=[1.0_dp, 1.0_dp, 0.5_dp, 0.5_dp], &
          &      boundary_values=[0.0_dp, 0.0_dp, 0.0_dp, 10.0_dp]), &
-         & edge_differential_operator(order=0, &
+         & edge_derivative(order=0, &
          &      coefficients=[0.4_dp, 0.4_dp, 0.0_dp, 0.0_dp], &
          &      one_sided=.true.)])
 

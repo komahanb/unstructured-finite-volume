@@ -46,7 +46,7 @@
 
 module view_sequence
 
-  use graph_fractal, only : graph, graph_branch, &
+  use graph_fractal, only : graph, branch, &
        & GRAPH_NULL, GRAPH_UNKNOWN, GRAPH_KNOWN
 
   implicit none
@@ -65,7 +65,7 @@ contains
 
   logical function sequence_defined(b) result(known_extent)
 
-    type(graph_branch), intent(in) :: b
+    type(branch), intent(in) :: b
 
     type(graph), pointer :: cell
 
@@ -94,7 +94,7 @@ contains
 
   integer function sequence_size(b) result(n)
 
-    type(graph_branch), intent(in) :: b
+    type(branch), intent(in) :: b
 
     type(graph), pointer :: cell
 
@@ -121,7 +121,7 @@ contains
 
   function sequence_element(b, k) result(element)
 
-    type(graph_branch), intent(in) :: b
+    type(branch), intent(in) :: b
     integer           , intent(in) :: k
     type(graph), pointer           :: element
 
@@ -157,7 +157,7 @@ contains
 
   logical function sequence_contains(b, g) result(found)
 
-    type(graph_branch), intent(in) :: b
+    type(branch), intent(in) :: b
     type(graph)       , intent(in) :: g
 
     type(graph), pointer :: cell, element
@@ -202,7 +202,7 @@ contains
 
   subroutine require_reachable(b)
 
-    type(graph_branch), intent(in) :: b
+    type(branch), intent(in) :: b
 
     if (b % status() .eq. GRAPH_NULL) then
        error stop 'view_sequence: the sequence has no such element'

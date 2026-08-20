@@ -10,10 +10,10 @@
 
 program refusal
 
-  use fractal_graph          , only : graph
-  use graph_set_representation, only : counted_set_representation
-  use graph_set_map          , only : set_map
-  use graph_set_view         , only : set_size
+  use graph_fractal          , only : graph
+  use map_set_representation, only : counted_set_representation
+  use map_set          , only : set_map
+  use view_set         , only : set_num_members
 
   implicit none
 
@@ -60,7 +60,7 @@ program refusal
        type(set_map)       :: m
        call s % declare(); call other % declare()
        call m % bind(other, counted_set_representation(4))
-       print *, set_size(s, m)
+       print *, set_num_members(s, m)
      end block
 
   case default

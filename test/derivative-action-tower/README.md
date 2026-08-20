@@ -288,7 +288,7 @@ it is ordinary computation structure (Observation DA-1).
 \]
 
 earned — never written — through the certified road
-(`src/graph_relation_algebra.f90`):
+(`src/relation_algebra.f90`):
 
 ```text
 T_out3   = restrict_slot(T_flow, 3, {out})       two tuples
@@ -335,7 +335,7 @@ relational structure?
 with \(D\) rederived before admission — the container infers nothing.
 
 **Verification.** Three carriers and two relations owned by identity
-(`holds_set`, and relation ownership composed locally from
+(`has_set`, and relation ownership composed locally from
 `num_relations` / `relation_at` / `same_as`); the ternary flow survives
 ownership unchanged (arity 3, six tuples); the dependency survives
 (binary, one pair); signature closure — every relation slot resolves to
@@ -359,7 +359,7 @@ interpretation choice:
 ```text
 graph-owned D
     ↓ directed_adjacency_view(g, d)
-graph_algorithms: sources / sinks / reachable / topological_order
+relation_algorithms: sources / sinks / reachable / topological_order
 ```
 
 **Verification.**
@@ -525,7 +525,7 @@ yielding
 \]
 
 materialized once as a `csr_relation` over \((Z,X)\)
-(`src/graph_binary_relation.f90`). This is a structural Jacobian
+(`src/relation_binary.f90`). This is a structural Jacobian
 **pattern** only — there is still no
 \(\partial z/\partial x\) and no \(\partial z/\partial y\).
 
@@ -1047,12 +1047,12 @@ that distinction; nothing here anticipates it.
 - **`check_imports.sh`** — the fail-closed import gate. Every source may
   `use` only its level's allowlist; a directory with sources but no
   allowlist fails. Forbidden everywhere at Gate A:
-  `graph_minimization`, `class_graph_gmres`, and any legacy
+  `operation_minimization`, `operation_gmres`, and any legacy
   tangent/adjoint or linearization machinery.
 
 `doc/derivative-walks-plan.md` (2026-08-02) is historical design
 intuition only: no `class_graph_pipeline`, no vertex-stage ontology, and
-no numerical walks exist in this tower. The relation-centered nucleus
+no numerical walks exist in this tower. The relation-centred nucleus
 had first right of refusal — and at Gate A it refused nothing.
 
 ---
@@ -1062,14 +1062,14 @@ had first right of refusal — and at Gate A it refused nothing.
 | Level | Test directory | Principal modules exercised (per the import gate) |
 |---|---|---|
 | 0 | `level-0-carrier/` | `graph_carrier` |
-| 1 | `level-1-relation/` | + `graph_relation` |
-| 2 | `level-2-relation-algebra/` | + `graph_relation_algebra` (D held as `class(relation)`) |
+| 1 | `level-1-relation/` | + `relation_finitary` |
+| 2 | `level-2-relation-algebra/` | + `relation_algebra` (D held as `class(relation)`) |
 | 3 | `level-3-graph/` | + `graph_structure` |
-| 4 | `level-4-graph-calculus/` | + `graph_profile`, `graph_algorithms` |
-| 5 | `level-5-field-calculus/` | `graph_carrier`, `class_graph_field` — the smallest allowlist above ground |
-| 6 | `level-6-derivative-structure/` | + `graph_binary_relation` (`csr_relation`, `transpose_of` earned), `graph_structure`, `graph_profile`, `graph_algorithms` |
-| 8 | `level-8-derivative-constitution/` | carriers/relations/algebra/structure/profile/algorithms + `class_graph_field` + `derivative_constitution_fixture` (own file; refusal suite); **no** binary storage, no solver |
-| 9 | `level-9-statement/` | the same set, reusing the Level-8 fixture — no adapter, no new law, and `graph_minimization` / `class_graph_gmres` forbidden |
+| 4 | `level-4-graph-calculus/` | + `graph_profile`, `relation_algorithms` |
+| 5 | `level-5-field-calculus/` | `graph_carrier`, `field_stored` — the smallest allowlist above ground |
+| 6 | `level-6-derivative-structure/` | + `relation_binary` (`csr_relation`, `transpose_of` earned), `graph_structure`, `graph_profile`, `relation_algorithms` |
+| 8 | `level-8-derivative-constitution/` | carriers/relations/algebra/structure/profile/algorithms + `field_stored` + `derivative_constitution_fixture` (own file; refusal suite); **no** binary storage, no solver |
+| 9 | `level-9-statement/` | the same set, reusing the Level-8 fixture — no adapter, no new law, and `operation_minimization` / `operation_gmres` forbidden |
 
 Every level also imports `derivative_assert`
 (`common/derivative_assert.f90`) — dependency-free constants and

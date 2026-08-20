@@ -47,12 +47,12 @@
 
 module time_algebra_fixture
 
-  use fractal_graph         , only : set_graph => graph
-  use graph_set_map         , only : set_map
-  use graph_relation        , only : relation
-  use graph_relation_algebra, only : compose_binary
-  use graph_binary_relation , only : binary_relation, csr_relation, &
-       &                             transposed_view, transpose_of
+  use graph_fractal         , only : graph
+  use map_set         , only : set_map
+  use relation_finitary        , only : relation
+  use relation_algebra, only : compose_binary
+  use relation_binary , only : binary_relation, csr_relation, &
+       &                             transposed_relation, transpose_of
 
   implicit none
 
@@ -71,7 +71,7 @@ contains
     class(binary_relation), intent(in), target :: tail, head
     type(set_map)         , intent(in)         :: sets
 
-    type(transposed_view) :: tail_t
+    type(transposed_relation) :: tail_t
 
     tail_t = transpose_of(tail)                 ! T -> E
     a1     = compose_binary(tail_t, head, sets) ! T -> E -> T

@@ -20,13 +20,13 @@
 program refusal
 
   use iso_fortran_env     , only : dp => REAL64
-  use class_graph_stencil , only : stencil_operator
-  use class_graph_dense_direct, only : dense_direct, &
+  use operation_stencil , only : stencil
+  use operation_dense_direct, only : dense_direct, &
        & solve_dense_matrix_with_dense_direct, dense_matrix_of
 
   implicit none
 
-  type(stencil_operator) :: statement
+  type(stencil) :: statement
   type(dense_direct)     :: solver
 
   real(dp), allocatable :: xa(:), arebuilt(:,:)
@@ -41,7 +41,7 @@ program refusal
 
   case ('tolzero')
 
-     statement = stencil_operator([1], [1], [2.0_dp], [0.0_dp], 'one')
+     statement = stencil([1], [1], [2.0_dp], [0.0_dp], 'one')
      call solver % attach(statement, statement % pattern, &
           & statement % pattern % vertex_set(), &
           & statement % pattern % num_vertices())
@@ -51,7 +51,7 @@ program refusal
 
   case ('sizemismatch')
 
-     statement = stencil_operator([1, 1, 2, 2], [1, 2, 1, 2], &
+     statement = stencil([1, 1, 2, 2], [1, 2, 1, 2], &
           & [2.0_dp, 1.0_dp, 1.0_dp, 3.0_dp], [0.0_dp, 0.0_dp], 'two')
      call solver % attach(statement, statement % pattern, &
           & statement % pattern % vertex_set(), &
@@ -62,7 +62,7 @@ program refusal
   case ('singular')
 
      ! row 2 = 2 * row 1, so elimination produces no usable pivot
-     statement = stencil_operator([1, 1, 2, 2], [1, 2, 1, 2], &
+     statement = stencil([1, 1, 2, 2], [1, 2, 1, 2], &
           & [1.0_dp, 2.0_dp, 2.0_dp, 4.0_dp], [0.0_dp, 0.0_dp], 'flat')
      call solver % attach(statement, statement % pattern, &
           & statement % pattern % vertex_set(), &
@@ -80,7 +80,7 @@ program refusal
 
      ! three numbers over a two-member domain is not a whole
      ! number per member
-     statement = stencil_operator([1, 1, 2, 2], [1, 2, 1, 2], &
+     statement = stencil([1, 1, 2, 2], [1, 2, 1, 2], &
           & [2.0_dp, 1.0_dp, 1.0_dp, 3.0_dp], [0.0_dp, 0.0_dp], 'two')
      call dense_matrix_of(statement, statement % pattern, 3, arebuilt)
 

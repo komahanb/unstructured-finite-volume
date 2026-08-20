@@ -8,7 +8,7 @@
 ! This is the first level to name production machinery, and the first
 ! executable consumer that
 !
-!      discretization_operator % dependencies()
+!      discretization % dependencies()
 !
 ! has ever had - the Level-6 census found ZERO callers of it anywhere
 ! in the repository.
@@ -84,15 +84,15 @@ program visualization_level_6
   use visualization_assert , only : X0_A, X0_B, X0_C, X0_D
   use visualization_assert , only : X1_P, X1_Q, X1_R
   use visualization_assert , only : X2_U, X2_V, X2_W
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation
-  use graph_set_map        , only : set_map
-  use graph_label_map      , only : label_map
-  use graph_relation       , only : relation
-  use graph_binary_relation, only : csr_relation
-  use graph_directed_view  , only : directed_graph
-  use class_graph_stencil  , only : stencil_operator
-  use class_graph_step     , only : step_operator
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation
+  use map_set        , only : set_map
+  use map_label      , only : label_map
+  use relation_finitary       , only : relation
+  use relation_binary, only : csr_relation
+  use view_directed  , only : directed_graph
+  use operation_stencil  , only : stencil
+  use operation_step     , only : scheme
   use visualization_carriers_fixture , only : structural_carriers
   use visualization_relations_fixture, only : occurrences_of_a1
   use visualization_relations_fixture, only : occurrences_of_a2
@@ -111,14 +111,14 @@ program visualization_level_6
 
   implicit none
 
-  type(set_graph)      :: x0, x1, x2, x3, e1, e2, e3
+  type(graph)      :: x0, x1, x2, x3, e1, e2, e3
   type(set_map)     :: sets
   type(label_map)     :: labels
   type(csr_relation)     :: t1, h1, t2, h2, t3, h3
   type(csr_relation)     :: d1, d2, d3
 
-  type(stencil_operator) :: sten_d2, sten_d1, sten_diag
-  type(step_operator)    :: clock_d2, clock_diag
+  type(stencil) :: sten_d2, sten_d1, sten_diag
+  type(scheme)    :: clock_d2, clock_diag
 
   class(directed_graph), allocatable :: pat_d2, pat_d1, pat_diag
   class(directed_graph), allocatable :: motif_d2, motif_diag
@@ -234,7 +234,7 @@ contains
   subroutine say_the_measurement()
 
     type(picture)     :: pic
-    type(set_graph) :: verts
+    type(graph) :: verts
 
     write(*,'(1x,a)') "---------------------------------------------"
 
@@ -358,8 +358,8 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: from, to
-    type(set_graph)              :: verts
+    type(graph) :: from, to
+    type(graph)              :: verts
 
     verts = carrier_of(pat_d2)
     from  = d2 % domain(1)
@@ -379,7 +379,7 @@ contains
          & "ONE carrier in both places against TWO: the signatures " // &
          & "read 'vertices -> vertices' and 'X1 -> X2'", nfail)
 
-    call report(sets % size_of(verts) .eq. NX1 .and. sets % size_of(verts) .eq. NX2 .and. &
+    call report(sets % num_members_of(verts) .eq. NX1 .and. sets % num_members_of(verts) .eq. NX2 .and. &
          &      same_coordinate_pattern(d2, pat_d2, sets), &
          & "SAME PIXELS, NOT THE SAME TYPED STRUCTURAL OBJECT - equal " // &
          & "occupancy, equal counts, and three distinct carriers", nfail)
@@ -395,7 +395,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: from, to
+    type(graph) :: from, to
     type(picture)                  :: pic
     integer                        :: j
     logical                        :: phantom_empty
@@ -403,7 +403,7 @@ contains
     from = d1 % domain(1)
     to   = d1 % domain(2)
 
-    call report(sets % size_of(from) .eq. NX0 .and. sets % size_of(to) .eq. NX1 .and. &
+    call report(sets % num_members_of(from) .eq. NX0 .and. sets % num_members_of(to) .eq. NX1 .and. &
          &      NX0 .ne. NX1, &
          & "D1 : X0 -> X1 is RECTANGULAR - four columns, three rows", &
          & nfail)
@@ -557,7 +557,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(picture)     :: relational, production
-    type(set_graph) :: verts
+    type(graph) :: verts
     integer           :: k
     logical           :: grids_agree
 
@@ -599,7 +599,7 @@ contains
   ! Helpers.
   !===================================================================!
 
-  type(set_graph) function carrier_of(p)
+  type(graph) function carrier_of(p)
 
     class(directed_graph), intent(in) :: p
 

@@ -6,7 +6,7 @@
 !      CAN EVERYTHING THE TOWER HAS EARNED BE CONSTITUTED INTO AN
 !      ACTUAL MULTI-STEP TIME MARCH?
 !
-! This is where production class_graph_marcher is finally earned,
+! This is where production operation_marching is finally earned,
 ! and where the whole road meets itself: structural reach from
 ! Level 2, scheme coefficients from Level 6, implicit governance
 ! from Level 7, repeated along a causal chain.
@@ -25,7 +25,7 @@
 ! and the assertions below refuse to rely on it: no two are the
 ! same carrier, by identity.
 !
-!      H_context is the compatibility conduit the graph_operation
+!      H_context is the compatibility conduit the operation
 !      contract requires. It is NOT the time graph.
 !
 !      clock % instants(4) is the marcher's own control chain. It
@@ -65,14 +65,14 @@ program time_level_8
   use time_assert           , only : T0, T4, H_STEP, Q0
   use time_assert           , only : FE_TRAJECTORY, BE_TRAJECTORY, &
        &                             BDF2_TRAJECTORY
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
-  use graph_binary_relation , only : csr_relation
-  use class_graph           , only : directed_stored_graph
-  use class_graph_field     , only : field
-  use class_graph_gmres     , only : gmres
-  use class_graph_newton    , only : newton
-  use class_graph_marcher   , only : marcher, MARCH_FORWARD, &
+  use graph_fractal        , only : graph
+  use map_set        , only : set_map
+  use relation_binary , only : csr_relation
+  use view_directed_stored           , only : stored_directed_graph
+  use field_stored     , only : stored_field
+  use operation_gmres     , only : gmres
+  use operation_newton    , only : newton
+  use operation_marching   , only : marcher, MARCH_FORWARD, &
        &                             MARCH_BACKWARD, MARCH_BDF2
   use time_carriers_fixture , only : time_carriers
   use time_relations_fixture, only : tail_relation, head_relation
@@ -82,11 +82,11 @@ program time_level_8
 
   implicit none
 
-  type(set_graph)          :: q, t, e
+  type(graph)          :: q, t, e
   type(set_map)          :: sets
   type(csr_relation), target :: tail, head
   type(csr_relation)         :: a1
-  type(directed_stored_graph)         :: hcontext
+  type(stored_directed_graph)         :: hcontext
   type(triangular_decay)     :: decay
   integer                    :: nfail
 
@@ -102,7 +102,7 @@ program time_level_8
   a1   = derive_one_step_reach(tail, head, sets)
 
   ! The OPERATION HOST - the conduit, not the clock.
-  hcontext = directed_stored_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
+  hcontext = stored_directed_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
 
   decay = triangular_decay(q, NQ)
 
@@ -128,7 +128,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(marcher)      :: clock
-    type(directed_stored_graph) :: chain
+    type(stored_directed_graph) :: chain
     integer            :: i
     logical            :: ok
 
@@ -169,8 +169,8 @@ contains
     integer, intent(inout) :: nfail
 
     type(marcher)                  :: clock
-    type(directed_stored_graph)             :: chain
-    type(set_graph) :: cv, hv
+    type(stored_directed_graph)             :: chain
+    type(graph) :: cv, hv
 
     call clock % instants(NSTEPS, chain)
     cv = chain % vertex_set()
@@ -189,7 +189,7 @@ contains
          & "OPERATION HOST, though both are five-element chains here", &
          & nfail)
 
-    call report(.not. hv % same_as(q) .and. sets % size_of(q) .eq. NQ, &
+    call report(.not. hv % same_as(q) .and. sets % num_members_of(q) .eq. NQ, &
          & "and V(H_context) is still not Q - two members against " // &
          & "five, as at Levels 6 and 7", nfail)
 
@@ -207,17 +207,17 @@ contains
     integer, intent(inout) :: nfail
 
     type(marcher)         :: clock
-    type(field)           :: h
+    type(stored_field)           :: h
     real(dp), allocatable :: hv(:)
     integer               :: i
     logical               :: ok
 
     clock % step = H_STEP
     h = step_sizes(e)
-    call h % get_real_vector(hv)
+    call h % real_vector(hv)
 
     ok = .true.
-    do i = 1, sets % size_of(e)
+    do i = 1, sets % num_members_of(e)
        ok = ok .and. &
             & (abs(hv(sets % index_in(e, sets % member_of(e, i))) - clock % step) &
             &  .lt. TOL)

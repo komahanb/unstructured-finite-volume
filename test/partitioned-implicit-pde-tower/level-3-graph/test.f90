@@ -24,22 +24,22 @@
 program partitioned_pde_level_3
 
   use partitioned_pde_assert , only : report, verdict
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation
-  use graph_set_map        , only : set_map
-  use graph_binary_relation  , only : csr_relation
-  use class_graph            , only : directed_stored_graph
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation
+  use map_set        , only : set_map
+  use relation_binary  , only : csr_relation
+  use view_directed_stored            , only : stored_directed_graph
   use chain_carriers_fixture , only : chain_carriers
   use chain_relations_fixture, only : tail_relation, head_relation
 
-  use graph_partition_relation, only : partition_relation
+  use relation_partition, only : partition_relation
 
   implicit none
 
-  type(set_graph)  :: v, e, k
+  type(graph)  :: v, e, k
   type(set_map)  :: sets
   type(csr_relation) :: tail, head
-  type(directed_stored_graph) :: g
+  type(stored_directed_graph) :: g
   integer            :: nfail
 
   nfail = 0
@@ -52,7 +52,7 @@ program partitioned_pde_level_3
   tail = tail_relation(e, v, sets)
   head = head_relation(e, v, sets)
 
-  g = directed_stored_graph(6, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  g = stored_directed_graph(6, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
   call sets % bind(g % vertex_set(), &
        & counted_set_representation(g % num_vertices()))
   call sets % bind(g % edge_set(), &
@@ -71,8 +71,8 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(g % num_vertices() .eq. sets % size_of(v) .and. &
-         &      g % num_edges() .eq. sets % size_of(e), &
+    call report(g % num_vertices() .eq. sets % num_members_of(v) .and. &
+         &      g % num_edges() .eq. sets % num_members_of(e), &
          & "G realizes six vertices and five edges", nfail)
 
   end subroutine check_counts
@@ -86,23 +86,23 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: gv, ge
+    type(graph) :: gv, ge
     integer           :: i
     logical           :: ok
 
     gv = g % vertex_set()
     ge = g % edge_set()
 
-    ok = sets % size_of(gv) .eq. sets % size_of(v)
-    do i = 1, sets % size_of(v)
-       ok = ok .and. sets % has_in(gv, sets % member_of(v, i))
+    ok = sets % num_members_of(gv) .eq. sets % num_members_of(v)
+    do i = 1, sets % num_members_of(v)
+       ok = ok .and. sets % has(gv, sets % member_of(v, i))
     end do
     call report(ok, &
          & "G's vertex carrier holds exactly V's members", nfail)
 
-    ok = sets % size_of(ge) .eq. sets % size_of(e)
-    do i = 1, sets % size_of(e)
-       ok = ok .and. sets % has_in(ge, sets % member_of(e, i))
+    ok = sets % num_members_of(ge) .eq. sets % num_members_of(e)
+    do i = 1, sets % num_members_of(e)
+       ok = ok .and. sets % has(ge, sets % member_of(e, i))
     end do
     call report(ok, &
          & "and its edge carrier exactly E's", nfail)

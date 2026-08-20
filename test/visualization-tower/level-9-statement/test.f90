@@ -32,18 +32,18 @@ program visualization_level_9
 
   use iso_fortran_env      , only : dp => REAL64
   use visualization_assert , only : report, verdict
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation
-  use graph_set_map        , only : set_map
-  use graph_label_map      , only : label_map
-  use graph_relation       , only : relation
-  use graph_binary_relation, only : csr_relation
-  use graph_directed_view  , only : directed_graph
-  use class_graph          , only : directed_stored_graph
-  use class_graph_field    , only : field
-  use class_graph_stencil  , only : stencil_operator
-  use class_graph_step     , only : step_operator, bdf
-  use class_graph_jacobi   , only : jacobi
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation
+  use map_set        , only : set_map
+  use map_label      , only : label_map
+  use relation_finitary       , only : relation
+  use relation_binary, only : csr_relation
+  use view_directed  , only : directed_graph
+  use view_directed_stored          , only : stored_directed_graph
+  use field_stored    , only : stored_field
+  use operation_stencil  , only : stencil
+  use operation_step     , only : scheme, bdf
+  use operation_jacobi   , only : jacobi
   use visualization_carriers_fixture , only : structural_carriers
   use visualization_relations_fixture, only : occurrences_of_a2
   use visualization_algebra_fixture  , only : derive_dependency
@@ -65,17 +65,17 @@ program visualization_level_9
   real(dp), parameter :: A_TIMES_ONE(N) = [5.0_dp, 7.0_dp, 7.0_dp]
 
   ! ---- the relational half, as Gate A left it
-  type(set_graph)  :: x0, x1, x2, x3, e1, e2, e3
+  type(graph)  :: x0, x1, x2, x3, e1, e2, e3
   type(set_map)     :: sets
   type(label_map)     :: labels
   type(csr_relation) :: t2, h2, d2
-  type(field)        :: w2
+  type(stored_field)        :: w2
 
   ! ---- the production half
-  type(stencil_operator)    :: a
-  type(step_operator)       :: clock
+  type(stencil)    :: a
+  type(scheme)       :: clock
   class(directed_graph), allocatable :: dependent, independent
-  type(directed_stored_graph)        :: context
+  type(stored_directed_graph)        :: context
   type(jacobi)              :: solver
 
   integer , allocatable :: colours(:)
@@ -94,7 +94,7 @@ program visualization_level_9
   d2 = derive_dependency('D2', t2, h2, sets)
   w2 = coefficients_of_a2(e2, sets)
 
-  a = stencil_operator(rows     = [1, 2, 3, 1, 2, 2, 3], &
+  a = stencil(rows     = [1, 2, 3, 1, 2, 2, 3], &
        &               columns  = [1, 2, 3, 2, 1, 3, 2], &
        &               weights  = [4.0_dp, 5.0_dp, 6.0_dp, &
        &                           1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp], &
@@ -127,7 +127,7 @@ program visualization_level_9
   if (.not. labels % labelled(independent % edge_set())) &
        & call labels % bind(independent % edge_set(), 'edges')
 
-  context = directed_stored_graph(N, tails=[integer ::], heads=[integer ::])
+  context = stored_directed_graph(N, tails=[integer ::], heads=[integer ::])
   if (.not. sets % describes(context % vertex_set())) &
        & call sets % bind(context % vertex_set(), &
        &      counted_set_representation(context % num_vertices()))
@@ -236,7 +236,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: from, to
+    type(graph) :: from, to
     type(picture)                  :: valued
 
     ! ---- structure, from relations, with no numbers in it

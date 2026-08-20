@@ -45,30 +45,30 @@
 module partitioned_shifted_laplacian_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use fractal_graph      , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation
-  use graph_set_map      , only : set_map
-  use graph_label_map    , only : label_map
-  use graph_inclusion_map, only : inclusion_map
-  use graph_operation_view, only : graph_operation
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use class_graph      , only : directed_stored_graph
-  use class_graph_field, only : field
-  use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
-  use class_graph_assembler  , only : assembler
+  use graph_fractal      , only : graph
+  use map_set_representation, only : counted_set_representation
+  use map_set      , only : set_map
+  use map_label    , only : label_map
+  use map_inclusion, only : inclusion_map
+  use operation_action, only : operation
+  use view_directed, only : directed_graph
+  use field_calculus, only : field
+  use view_directed_stored      , only : stored_directed_graph
+  use field_stored, only : stored_field
+  use transform_partitioner, only : partitioner, PARTITION_LINEAR
+  use transform_assembler  , only : assembler
   use shifted_laplacian_fixture, only : shifted_laplacian
 
-  use graph_partition_relation, only : partition_relation
+  use relation_partition, only : partition_relation
   implicit none
 
   private
   public :: partitioned_shifted_laplacian
 
-  type, extends(graph_operation) :: partitioned_shifted_laplacian
+  type, extends(operation) :: partitioned_shifted_laplacian
 
      ! STRUCTURE, cut once and never rebuilt.
-     type(directed_stored_graph)        :: whole
+     type(stored_directed_graph)        :: whole
      class(directed_graph), allocatable :: g1, g2
      type(partitioner)         :: p1, p2
      type(assembler)           :: asm
@@ -101,11 +101,11 @@ contains
   type(partitioned_shifted_laplacian) function create_partitioned(g) &
        & result(this)
 
-    type(directed_stored_graph), intent(in) :: g
+    type(stored_directed_graph), intent(in) :: g
 
     this % whole = g
-    this % p1 = partitioner(PARTITION_LINEAR, nparts=2, part=1)
-    this % p2 = partitioner(PARTITION_LINEAR, nparts=2, part=2)
+    this % p1 = partitioner(PARTITION_LINEAR, num_parts=2, part=1)
+    this % p2 = partitioner(PARTITION_LINEAR, num_parts=2, part=2)
     call this % p1 % partition_graph(g, this % g1, this % r1)
     call this % p2 % partition_graph(g, this % g2, this % r2)
 
@@ -124,17 +124,17 @@ contains
   ! host dies here rather than deep inside a matvec.
   !===================================================================!
 
-  subroutine part_domain(this, input_graph, domain, nentries)
+  subroutine part_domain(this, input_graph, domain, num_entries)
 
     class(partitioned_shifted_laplacian), intent(in) :: this
     class(directed_graph)   , intent(in)  :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
 
     call demand_the_recorded_context(this, input_graph)
 
     domain   = this % whole % vertex_set()
-    nentries = this % whole % num_vertices()
+    num_entries = this % whole % num_vertices()
 
   end subroutine part_domain
 
@@ -148,12 +148,12 @@ contains
 
     class(partitioned_shifted_laplacian), intent(in) :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
-    type(field)                     :: out
-    class(graph_field), allocatable :: q1, q2, a1, a2
-    type(set_graph)                 :: dom
+    type(stored_field)                     :: out
+    class(field), allocatable :: q1, q2, a1, a2
+    type(graph)                 :: dom
     real(dp), allocatable           :: total(:)
 
     !----------------------------------------------------------------!
@@ -209,7 +209,7 @@ contains
     call add_owned(assembler(), this % r2, this % g2, a2, this % whole, &
          & sets, labels, inclusions, total)
 
-    out = field('partitioned action', this % whole % vertex_set(), &
+    out = stored_field('partitioned action', this % whole % vertex_set(), &
          & this % whole % num_vertices())
     call out % set_real_vector(total)
 
@@ -228,7 +228,7 @@ contains
     class(partitioned_shifted_laplacian), intent(in) :: this
     class(directed_graph)                        , intent(in) :: input_graph
 
-    type(set_graph) :: given, recorded
+    type(graph) :: given, recorded
 
     given    = input_graph % vertex_set()
     recorded = this % whole % vertex_set()
@@ -249,15 +249,15 @@ contains
 
     type(shifted_laplacian), intent(in)  :: local
     class(directed_graph)           , intent(in)  :: part
-    class(graph_field)     , intent(in)  :: q_part
-    class(graph_field), allocatable, intent(out) :: answer
+    class(field)     , intent(in)  :: q_part
+    class(field), allocatable, intent(out) :: answer
 
-    type(field)                     :: qf
-    class(graph_field), allocatable :: out
+    type(stored_field)                     :: qf
+    class(field), allocatable :: out
     real(dp), allocatable           :: v(:)
 
-    call q_part % get_real_vector(v)
-    qf = field('local state', part % vertex_set(), part % num_vertices())
+    call q_part % real_vector(v)
+    qf = stored_field('local state', part % vertex_set(), part % num_vertices())
     call qf % set_real_vector(v)
 
     call local % apply(part, [qf], out)
@@ -282,15 +282,15 @@ contains
     type(partition_relation), intent(in) :: rel
 
     class(directed_graph)      , intent(in)    :: part
-    class(graph_field), intent(in)    :: answer
-    type(directed_stored_graph), intent(in)    :: whole
+    class(field), intent(in)    :: answer
+    type(stored_directed_graph), intent(in)    :: whole
     type(set_map)     , intent(inout) :: sets
     type(label_map)   , intent(inout) :: labels
     type(inclusion_map), intent(inout) :: inclusions
     real(dp)          , intent(inout) :: total(:)
 
-    class(graph_field), allocatable :: home
-    type(set_graph)                 :: dom
+    class(field), allocatable :: home
+    type(graph)                 :: dom
     real(dp), allocatable           :: v(:)
     integer , allocatable           :: mem(:)
     integer                         :: i
@@ -298,7 +298,7 @@ contains
     call asm % assemble_data(rel, part, answer, whole, sets, labels, &
          & inclusions, home)
     dom = home % domain()
-    call home % get_real_vector(v)
+    call home % real_vector(v)
 
     !----------------------------------------------------------------!
     ! The select type asked whether the assembled domain was a subset

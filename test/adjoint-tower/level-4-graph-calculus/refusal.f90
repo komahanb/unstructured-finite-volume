@@ -19,30 +19,30 @@ program adjoint_level_4_refusal
 
   use adjoint_assert, only : VAR_P, VAR_U, VAR_V
   use adjoint_assert, only : TGT_R1, TGT_R2, TGT_F
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_label_map      , only : label_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use graph_relation, only : stored_relation
-  use graph_relation_algebra, only : compose_binary
-  use graph_binary_relation , only : csr_relation, transposed_view, &
+  use map_set        , only : set_map
+  use map_label      , only : label_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
+  use relation_finitary, only : stored_relation
+  use relation_algebra, only : compose_binary
+  use relation_binary , only : csr_relation, transposed_relation, &
        &                             transpose_of, inclusion_of
-  use graph_algorithms, only : topological_order
-  use fractal_graph        , only : graph, known_branch, null_branch
-  use graph_relational_view, only : relational_binding, &
+  use relation_algorithms, only : topological_order
+  use graph_fractal        , only : graph, known_branch, null_branch
+  use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
-       & holds_set
+       & has_set
 
   implicit none
 
 
-  type(set_graph)              :: v, t
-  type(set_graph)               :: q_dom, y_dom
+  type(graph)              :: v, t
+  type(graph)               :: q_dom, y_dom
   type(stored_relation)          :: dep
   type(csr_relation), target     :: inc_y, inc_q, jq
-  type(transposed_view)          :: inc_q_t, jq_t
+  type(transposed_relation)          :: inc_q_t, jq_t
   type(csr_relation)             :: coupling
   type(graph)             , target :: g
   type(graph)             , target :: scell(1), selem(1)

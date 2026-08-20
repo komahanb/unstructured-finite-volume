@@ -40,15 +40,15 @@
 
 program lifetime
 
-  use fractal_graph        , only : graph, null_branch, known_branch
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph, null_branch, known_branch
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_label_map      , only : label_map
-  use graph_relation       , only : relation, stored_relation
-  use graph_binary_relation, only : binary_relation, csr_relation
-  use graph_relational_view, only : relational_binding, relation_at, &
+  use map_set        , only : set_map
+  use map_label      , only : label_map
+  use relation_finitary       , only : relation, stored_relation
+  use relation_binary, only : binary_relation, csr_relation
+  use view_relational, only : relational_binding, relation_at, &
        & member_set_at
 
   implicit none
@@ -67,7 +67,7 @@ program lifetime
 
     type(graph), target      :: e1, e2, e3
     type(relational_binding) :: b
-    type(set_graph)        :: s
+    type(graph)        :: s
     type(stored_relation)    :: r1, r2
     class(relation), pointer :: p, q
     type(set_map)     :: sets
@@ -106,7 +106,7 @@ program lifetime
 
     type(graph), target      :: e1, e2, e3
     type(relational_binding) :: b, d
-    type(set_graph)        :: s
+    type(graph)        :: s
     type(stored_relation)    :: r1, r2, r3
     class(relation), pointer :: p, q
     type(set_map)     :: sets
@@ -142,7 +142,7 @@ program lifetime
 
     type(graph), target             :: g, rcell(2), relem(2), scell, selem
     type(relational_binding)        :: b
-    type(set_graph)               :: e, v
+    type(graph)               :: e, v
     type(csr_relation)              :: t
     type(stored_relation)           :: extra
     class(relation), pointer        :: p
@@ -199,10 +199,10 @@ program lifetime
 
     type(graph), target        :: g, scell, selem, rcell, relem
     type(relational_binding)   :: b                  ! no TARGET
-    type(set_graph)          :: e
+    type(graph)          :: e
     type(stored_relation)      :: p
     class(relation), pointer   :: rp
-    type(set_graph), pointer :: sp
+    type(graph), pointer :: sp
     type(set_map)     :: sets
 
     call g % declare(); call scell % declare(); call selem % declare()

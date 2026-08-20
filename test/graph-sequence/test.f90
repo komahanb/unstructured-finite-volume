@@ -17,10 +17,10 @@
 
 program test
 
-  use fractal_graph      , only : graph, GRAPH_NULL, GRAPH_UNKNOWN, &
+  use graph_fractal      , only : graph, BRANCH_NULL, BRANCH_UNKNOWN, &
        & null_branch, unknown_branch, known_branch
-  use graph_sequence_view, only : sequence_defined, sequence_size, &
-       & sequence_element, sequence_contains
+  use view_sequence, only : sequence_defined, sequence_num_elements, &
+       & sequence_element, sequence_has
 
   implicit none
 
@@ -41,9 +41,9 @@ program test
 
     call check('empty: NULL is the empty sequence, not a missing one', &
          & sequence_defined(holder % branch(1)))
-    call check('empty: size = 0', sequence_size(holder % branch(1)) .eq. 0)
+    call check('empty: size = 0', sequence_num_elements(holder % branch(1)) .eq. 0)
     call check('empty: contains nothing', &
-         & .not. sequence_contains(holder % branch(1), stranger))
+         & .not. sequence_has(holder % branch(1), stranger))
 
   end block empty_block
 
@@ -68,17 +68,17 @@ program test
     holder % branch(1) = known_branch(cell(1))
     e => sequence_element(holder % branch(1), 1)
     call check('singleton: size = 1, element(1) is the element', &
-         & sequence_size(holder % branch(1)) .eq. 1 .and. e % same_as(elem(1)))
+         & sequence_num_elements(holder % branch(1)) .eq. 1 .and. e % same_as(elem(1)))
 
     call wire(cell, elem, 2, .true.)
     holder % branch(1) = known_branch(cell(1))
     e => sequence_element(holder % branch(1), 2)
     call check('length 2: size = 2, element(2) is the second element', &
-         & sequence_size(holder % branch(1)) .eq. 2 .and. e % same_as(elem(2)))
+         & sequence_num_elements(holder % branch(1)) .eq. 2 .and. e % same_as(elem(2)))
 
     call wire(cell, elem, 5, .true.)
     holder % branch(1) = known_branch(cell(1))
-    call check('length n: size = 5', sequence_size(holder % branch(1)) .eq. 5)
+    call check('length n: size = 5', sequence_num_elements(holder % branch(1)) .eq. 5)
 
     ok = .true.
     do i = 1, 5
@@ -88,9 +88,9 @@ program test
     call check('length n: element(k) is the k-th element, k = 1..5', ok)
 
     call check('length n: membership holds for a member', &
-         & sequence_contains(holder % branch(1), elem(3)))
+         & sequence_has(holder % branch(1), elem(3)))
     call check('length n: and fails for a non-member', &
-         & .not. sequence_contains(holder % branch(1), holder))
+         & .not. sequence_has(holder % branch(1), holder))
 
   end block lengths_block
 
@@ -109,8 +109,8 @@ program test
     call check('unknown holder: the extent is not defined', &
          & .not. sequence_defined(holder % branch(1)))
     call check('unknown holder: UNKNOWN is not NULL', &
-         & holder % branch(1) % status() .ne. GRAPH_NULL .and. &
-         & holder % branch(1) % status() .eq. GRAPH_UNKNOWN)
+         & holder % branch(1) % status() .ne. BRANCH_NULL .and. &
+         & holder % branch(1) % status() .eq. BRANCH_UNKNOWN)
 
   end block unknown_holder_block
 
@@ -144,7 +144,7 @@ program test
          & e % same_as(elem(3)))
 
     call check('unknown tail: membership holds for a member of the prefix', &
-         & sequence_contains(holder % branch(1), elem(2)))
+         & sequence_has(holder % branch(1), elem(2)))
 
   end block unknown_tail_block
 

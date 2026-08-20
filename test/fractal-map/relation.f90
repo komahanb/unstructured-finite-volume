@@ -7,7 +7,7 @@
 !     (A_1,...,A_k)      the ordered signature, small
 !     extension(R)       the tuples, large
 !
-! The signature is built with graph_sequence_view over set graphs -
+! The signature is built with view_sequence over set graphs -
 ! repeated domains, mixed domains, arity three. The extension is left
 ! in the production representations, which already store integers.
 !
@@ -21,8 +21,8 @@
 
 module relation_prototype
 
-  use fractal_graph, only : graph, null_branch, known_branch
-  use graph_sequence_view, only : sequence_size, sequence_element
+  use graph_fractal, only : graph, null_branch, known_branch
+  use view_sequence, only : sequence_num_elements, sequence_element
 
   implicit none
 
@@ -57,8 +57,8 @@ contains
     integer              :: k, n
 
     equal = .false.
-    n = sequence_size(x % branch(1))
-    if (n .ne. sequence_size(y % branch(1))) return
+    n = sequence_num_elements(x % branch(1))
+    if (n .ne. sequence_num_elements(y % branch(1))) return
 
     equal = .true.
     do k = 1, n
@@ -91,18 +91,18 @@ end module relation_prototype
 
 program relation_map
 
-  use fractal_graph        , only : graph, null_branch, known_branch
-  use graph_sequence_view  , only : sequence_size, sequence_element
-  use fractal_graph           , only : graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph, null_branch, known_branch
+  use view_sequence  , only : sequence_num_elements, sequence_element
+  use graph_fractal           , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map           , only : set_map
-  use graph_label_map         , only : label_map
-  use graph_inclusion_map     , only : inclusion_map, declared_subobject
-  use graph_relation       , only : relation, stored_relation
-  use graph_binary_relation, only : binary_relation, csr_relation, &
-       & transposed_view, transpose_of
-  use graph_relational_view, only : relational_binding
+  use map_set           , only : set_map
+  use map_label         , only : label_map
+  use map_inclusion     , only : inclusion_map, declared_subobject
+  use relation_finitary       , only : relation, stored_relation
+  use relation_binary, only : binary_relation, csr_relation, &
+       & transposed_relation, transpose_of
+  use view_relational, only : relational_binding
   use relation_prototype   , only : same_tuple, role_view, &
        & transpose_role, apply_role
 
@@ -147,7 +147,7 @@ program relation_map
     raa % branch(1) = known_branch(saa(1))
 
     call check('1  A x A: arity 2, one repeated domain', &
-         & sequence_size(raa % branch(1)) .eq. 2)
+         & sequence_num_elements(raa % branch(1)) .eq. 2)
     d => sequence_element(raa % branch(1), 1)
     ok = d % same_as(a)
     d => sequence_element(raa % branch(1), 2)
@@ -162,7 +162,7 @@ program relation_map
 
     d => sequence_element(rab % branch(1), 2)
     call check('1  A x B: mixed domains, same mechanism', &
-         & sequence_size(rab % branch(1)) .eq. 2 .and. &
+         & sequence_num_elements(rab % branch(1)) .eq. 2 .and. &
          &  d % same_as(b) .and. .not. d % same_as(a))
 
     ! A x B x C.
@@ -173,7 +173,7 @@ program relation_map
     sabc(3) % branch(1) = known_branch(c)
     rabc % branch(1) = known_branch(sabc(1))
 
-    ok = sequence_size(rabc % branch(1)) .eq. 3
+    ok = sequence_num_elements(rabc % branch(1)) .eq. 3
     d => sequence_element(rabc % branch(1), 2); ok = ok .and. d % same_as(b)
     d => sequence_element(rabc % branch(1), 3); ok = ok .and. d % same_as(c)
     call check('1  A x B x C: arity 3 is a longer sequence, not a case', ok)
@@ -299,8 +299,8 @@ program relation_map
     type(graph), target        :: r
     type(graph)          :: e, v
     type(csr_relation), target :: c
-    type(transposed_view), target :: ct
-    type(transposed_view)      :: ctt
+    type(transposed_relation), target :: ct
+    type(transposed_relation)      :: ctt
     type(role_view)            :: rv, rvt, rvtt
     integer                    :: pairs(2, 3)
     integer, allocatable       :: back(:,:)

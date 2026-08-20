@@ -39,12 +39,12 @@
 module shifted_laplacian_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use fractal_graph    , only : set_graph => graph
-  use graph_operation_view, only : graph_operation
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use class_graph_field, only : field
-  use class_graph_differential_operator, only : differential_operator, &
+  use graph_fractal    , only : graph
+  use operation_action, only : operation
+  use view_directed, only : directed_graph
+  use field_calculus, only : field
+  use field_stored, only : stored_field
+  use operation_differential, only : differential_operator, &
        &                                        laplacian
 
   implicit none
@@ -52,7 +52,7 @@ module shifted_laplacian_fixture
   private
   public :: shifted_laplacian
 
-  type, extends(graph_operation) :: shifted_laplacian
+  type, extends(operation) :: shifted_laplacian
    contains
      procedure :: name   => shifted_name
      procedure :: domain => shifted_domain
@@ -72,15 +72,15 @@ contains
   ! no domain of its own.
   !===================================================================!
 
-  subroutine shifted_domain(this, input_graph, domain, nentries)
+  subroutine shifted_domain(this, input_graph, domain, num_entries)
 
     class(shifted_laplacian), intent(in) :: this
     class(directed_graph), intent(in) :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
 
     domain   = input_graph % vertex_set()
-    nentries = input_graph % num_vertices()
+    num_entries = input_graph % num_vertices()
 
   end subroutine shifted_domain
 
@@ -95,13 +95,13 @@ contains
 
     class(shifted_laplacian), intent(in)           :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
     type(differential_operator)     :: lap
-    type(field)                     :: out
-    class(graph_field), allocatable :: lq
-    type(set_graph) :: dom
+    type(stored_field)                     :: out
+    class(field), allocatable :: lq
+    type(graph) :: dom
     real(dp), allocatable           :: q(:), l(:)
 
     if (.not. present(input_data)) then
@@ -120,10 +120,10 @@ contains
     lap = laplacian(coefficient=1.0_dp, spacing=1.0_dp, measure=1.0_dp)
     call lap % apply(input_graph, input_data, lq)
 
-    call input_data(1) % get_real_vector(q)
-    call lq % get_real_vector(l)
+    call input_data(1) % real_vector(q)
+    call lq % real_vector(l)
 
-    out = field('shifted laplacian', input_graph % vertex_set(), input_graph % num_vertices())
+    out = stored_field('shifted laplacian', input_graph % vertex_set(), input_graph % num_vertices())
     call out % set_real_vector(2.0_dp * q - l)
 
     if (allocated(output)) deallocate(output)

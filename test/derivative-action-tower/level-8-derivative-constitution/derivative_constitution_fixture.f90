@@ -52,9 +52,9 @@ module derivative_constitution_fixture
   use iso_fortran_env, only : dp => REAL64
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
-  use graph_relation   , only : relation
+  use graph_fractal        , only : graph
+  use map_set        , only : set_map
+  use relation_finitary   , only : relation
 
   implicit none
 
@@ -117,7 +117,7 @@ contains
   integer function slot_for_port(flow, slots, sets, op, port) result(found)
 
     class(relation)  , intent(in) :: flow
-    type(set_graph), intent(in) :: slots
+    type(graph), intent(in) :: slots
     type(set_map)  , intent(in) :: sets
     integer          , intent(in) :: op, port
 
@@ -125,7 +125,7 @@ contains
 
     hits  = 0
     found = 0
-    do j = 1, sets % size_of(slots)
+    do j = 1, sets % num_members_of(slots)
        if (flow % has([op, sets % member_of(slots, j), port])) then
           hits  = hits + 1
           found = sets % member_of(slots, j)
@@ -149,27 +149,27 @@ contains
        & computed, order, values, available)
 
     class(relation)  , intent(in)  :: flow
-    type(set_graph), intent(in)  :: slots      ! V
+    type(graph), intent(in)  :: slots      ! V
     type(set_map)  , intent(in) :: sets
-    type(set_graph), intent(in)  :: indep      ! X
+    type(graph), intent(in)  :: indep      ! X
     real(dp)         , intent(in)  :: indep_values(:)
-    type(set_graph), intent(in)  :: computed   ! C
+    type(graph), intent(in)  :: computed   ! C
     integer          , intent(in)  :: order(:)   ! derived by caller
     real(dp)         , intent(out) :: values(:)
     logical          , intent(out) :: available(:)
 
     integer :: i, m, op, in1, in2, out
 
-    if (size(indep_values) .ne. sets % size_of(indep) .or. &
-         & size(values) .ne. sets % size_of(slots) .or. &
-         & size(available) .ne. sets % size_of(slots)) then
+    if (size(indep_values) .ne. sets % num_members_of(indep) .or. &
+         & size(values) .ne. sets % num_members_of(slots) .or. &
+         & size(available) .ne. sets % num_members_of(slots)) then
        error stop 'derivative constitution: every vector is sized by its domain'
     end if
 
     available = .false.
     values    = 0.0_dp
 
-    do i = 1, sets % size_of(indep)
+    do i = 1, sets % num_members_of(indep)
        m = sets % member_of(indep, i)
        values(sets % index_in(slots, m)) = &
             & indep_values(sets % index_in(indep, m))
@@ -186,7 +186,7 @@ contains
             & .not. available(sets % index_in(slots, in2))) then
           error stop 'derivative constitution: an operation was scheduled before its primal inputs exist'
        end if
-       if (.not. sets % has_in(computed, out)) then
+       if (.not. sets % has(computed, out)) then
           error stop 'derivative constitution: an operation must produce a computed slot'
        end if
 
@@ -209,11 +209,11 @@ contains
        & computed, order, primal, dot, dot_available)
 
     class(relation)  , intent(in)  :: flow
-    type(set_graph), intent(in)  :: slots
+    type(graph), intent(in)  :: slots
     type(set_map)  , intent(in) :: sets
-    type(set_graph), intent(in)  :: indep
+    type(graph), intent(in)  :: indep
     real(dp)         , intent(in)  :: seed_values(:)   ! on X
-    type(set_graph), intent(in)  :: computed
+    type(graph), intent(in)  :: computed
     integer          , intent(in)  :: order(:)
     real(dp)         , intent(in)  :: primal(:)        ! full V workspace
     real(dp)         , intent(out) :: dot(:)
@@ -222,17 +222,17 @@ contains
     real(dp) :: coeff(2)
     integer  :: i, m, op, in1, in2, out
 
-    if (size(seed_values) .ne. sets % size_of(indep) .or. &
-         & size(primal) .ne. sets % size_of(slots) .or. &
-         & size(dot) .ne. sets % size_of(slots) .or. &
-         & size(dot_available) .ne. sets % size_of(slots)) then
+    if (size(seed_values) .ne. sets % num_members_of(indep) .or. &
+         & size(primal) .ne. sets % num_members_of(slots) .or. &
+         & size(dot) .ne. sets % num_members_of(slots) .or. &
+         & size(dot_available) .ne. sets % num_members_of(slots)) then
        error stop 'derivative constitution: every vector is sized by its domain'
     end if
 
     dot_available = .false.
     dot           = 0.0_dp
 
-    do i = 1, sets % size_of(indep)
+    do i = 1, sets % num_members_of(indep)
        m = sets % member_of(indep, i)
        dot(sets % index_in(slots, m)) = &
             & seed_values(sets % index_in(indep, m))
@@ -249,7 +249,7 @@ contains
             & .not. dot_available(sets % index_in(slots, in2))) then
           error stop 'derivative constitution: a tangent was demanded before its input tangents exist'
        end if
-       if (.not. sets % has_in(computed, out)) then
+       if (.not. sets % has(computed, out)) then
           error stop 'derivative constitution: an operation must produce a computed slot'
        end if
 
@@ -291,12 +291,12 @@ contains
        & primal, response, seed_values, result_values, hits)
 
     class(relation)  , intent(in)  :: flow
-    type(set_graph), intent(in)  :: slots
+    type(graph), intent(in)  :: slots
     type(set_map)  , intent(in) :: sets
-    type(set_graph), intent(in)  :: indep
+    type(graph), intent(in)  :: indep
     integer          , intent(in)  :: order(:)
     real(dp)         , intent(in)  :: primal(:)        ! full V workspace
-    type(set_graph), intent(in)  :: response         ! Z
+    type(graph), intent(in)  :: response         ! Z
     real(dp)         , intent(in)  :: seed_values(:)   ! on Z
     real(dp)         , intent(out) :: result_values(:) ! on X
     integer, allocatable, intent(out), optional :: hits(:)
@@ -306,10 +306,10 @@ contains
     real(dp) :: coeff(2)
     integer  :: i, m, op, in1, in2, out
 
-    allocate(bar(sets % size_of(slots)), nhits(sets % size_of(slots)))
-    if (size(seed_values) .ne. sets % size_of(response) .or. &
-         & size(primal) .ne. sets % size_of(slots) .or. &
-         & size(result_values) .ne. sets % size_of(indep)) then
+    allocate(bar(sets % num_members_of(slots)), nhits(sets % num_members_of(slots)))
+    if (size(seed_values) .ne. sets % num_members_of(response) .or. &
+         & size(primal) .ne. sets % num_members_of(slots) .or. &
+         & size(result_values) .ne. sets % num_members_of(indep)) then
        error stop 'derivative constitution: every vector is sized by its domain'
     end if
 
@@ -318,7 +318,7 @@ contains
     bar   = 0.0_dp
     nhits = 0
 
-    do i = 1, sets % size_of(response)
+    do i = 1, sets % num_members_of(response)
        m = sets % member_of(response, i)
        bar(sets % index_in(slots, m)) = &
             & seed_values(sets % index_in(response, m))
@@ -347,7 +347,7 @@ contains
             & nhits(sets % index_in(slots, in2)) + 1
     end do
 
-    do i = 1, sets % size_of(indep)
+    do i = 1, sets % num_members_of(indep)
        m = sets % member_of(indep, i)
        result_values(sets % index_in(indep, m)) = &
             & bar(sets % index_in(slots, m))

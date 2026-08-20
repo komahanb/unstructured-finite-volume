@@ -1,16 +1,16 @@
 !=====================================================================!
-! Tests for graph_change_protocol, graph_value_map, and
-! graph_value_change:
+! Tests for map_change_protocol, map_value, and
+! map_value_change:
 !
-!  - the controller lifecycle apply -> check -> keep | revert on
+!  - the run_change lifecycle apply -> check -> keep | revert on
 !    accepted, rejected, vetoed, failing, and mixed changes, and
-!    the change_result flags after each outcome
+!    the change_record flags after each outcome
 !  - the value map status transitions UNATTACHED -> UNKNOWN ->
 !    KNOWN and back, and its storage rules: rows are keyed on
 !    copied identity tokens rather than position, values are
 !    copied on write, and rows outlive the variables that created
 !    them
-!  - value_change run through the same controller against every
+!  - value_change run through the same run_change lifecycle against every
 !    possible prior status, checking that revert restores the
 !    prior state exactly
 !
@@ -20,17 +20,15 @@
 program test_graph_change
 
   use iso_fortran_env      , only : dp => REAL64
-  use fractal_graph        , only : graph
-  use graph_change_protocol, only : change_controller, change_result
-  use graph_value_map      , only : value_map, &
+  use graph_fractal        , only : graph
+  use map_change_protocol, only : run_change, change_record
+  use map_value      , only : value_map, &
        & VALUE_UNATTACHED, VALUE_UNKNOWN, VALUE_KNOWN
-  use graph_value_change   , only : value_change
+  use map_value_change   , only : value_change
   use toy_changes          , only : counting_change, mixed_change
 
   implicit none
-
-  type(change_controller) :: controller
-  type(change_result)     :: result
+  type(change_record)     :: result
 
   integer :: nfail
 
@@ -54,9 +52,9 @@ program test_graph_change
 contains
 
   !===================================================================!
-  ! Run the counting toy through the controller four ways -
+  ! Run the counting toy through run_change four ways -
   ! accepted, rejected, vetoed by check, and failing in apply -
-  ! and verify the counter and the change_result flags after each
+  ! and verify the counter and the change_record flags after each
   ! run. Then run the mixed toy accepted and rejected, and check
   ! that reset clears every flag.
   !===================================================================!
@@ -68,7 +66,7 @@ contains
     type(counting_change) :: change
     type(mixed_change)    :: both
 
-    call controller % run(change, .true., result)
+    call run_change(change, .true., result)
     call report(change % rooms == 1 .and. &
          & result % attempted .and. result % applied .and. &
          & result % checked .and. result % check_passed .and. &
@@ -77,14 +75,14 @@ contains
          & result % touches_structure .and. .not. result % touches_value, &
          & "an accepted change is kept, and the record says so", nfail)
 
-    call controller % run(change, .false., result)
+    call run_change(change, .false., result)
     call report(change % rooms == 1 .and. &
          & result % reverted .and. .not. result % kept .and. &
          & .not. result % accepted, &
          & "a rejected change is reverted: the counter is restored", nfail)
 
     change % check_passes = .false.
-    call controller % run(change, .true., result)
+    call run_change(change, .true., result)
     call report(change % rooms == 1 .and. &
          & result % checked .and. .not. result % check_passed .and. &
          & result % reverted .and. .not. result % accepted, &
@@ -92,19 +90,19 @@ contains
 
     change % check_passes = .true.
     change % fail_apply   = .true.
-    call controller % run(change, .true., result)
+    call run_change(change, .true., result)
     call report(change % rooms == 1 .and. &
          & result % failed .and. result % reverted .and. &
          & .not. result % applied .and. .not. result % kept, &
          & "a failed apply is reverted and never kept", nfail)
 
-    call controller % run(both, .true., result)
+    call run_change(both, .true., result)
     call report(both % rooms == 1 .and. both % value == 2.0_dp .and. &
          & result % touches_structure .and. result % touches_value .and. &
          & result % kept, &
          & "an accepted mixed change keeps both mutations", nfail)
 
-    call controller % run(both, .false., result)
+    call run_change(both, .false., result)
     call report(both % rooms == 1 .and. both % value == 2.0_dp .and. &
          & result % reverted, &
          & "a rejected mixed change restores structure and value", nfail)
@@ -250,7 +248,7 @@ contains
   end subroutine attach_from_a_life
 
   !===================================================================!
-  ! value_change through the controller, one case per prior
+  ! value_change through run_change, one case per prior
   ! status: an accepted update on an unattached graph must leave a
   ! KNOWN entry; a rejected update on a KNOWN entry must restore
   ! the old values; a vetoed update on an UNKNOWN entry must leave
@@ -272,7 +270,7 @@ contains
     call f % declare()
 
     call update % bind(map, d, [1.5_dp, 2.5_dp])
-    call controller % run(update, .true., result)
+    call run_change(update, .true., result)
     call map % value_of(d, rv)
     call report(result % kept .and. result % touches_value .and. &
          & .not. result % touches_structure .and. &
@@ -281,7 +279,7 @@ contains
          & "an accepted update on an unattached graph: KNOWN and kept", nfail)
 
     call update % bind(map, d, [9.0_dp, 9.0_dp])
-    call controller % run(update, .false., result)
+    call run_change(update, .false., result)
     call map % value_of(d, rv)
     call report(result % reverted .and. &
          & rv(1) == 1.5_dp .and. rv(2) == 2.5_dp, &
@@ -289,13 +287,13 @@ contains
 
     call map % attach_unknown(e)
     call update % bind(map, e, [3.0_dp], check_passes=.false.)
-    call controller % run(update, .true., result)
+    call run_change(update, .true., result)
     call report(result % reverted .and. map % attached(e) .and. &
          & map % status_of(e) == VALUE_UNKNOWN, &
          & "a vetoed update on an UNKNOWN entry leaves it UNKNOWN", nfail)
 
     call update % bind(map, f, [4.0_dp])
-    call controller % run(update, .false., result)
+    call run_change(update, .false., result)
     call report(result % reverted .and. .not. map % attached(f) .and. &
          & map % status_of(f) == VALUE_UNATTACHED, &
          & "a rejected update on an unattached graph removes its entry", nfail)

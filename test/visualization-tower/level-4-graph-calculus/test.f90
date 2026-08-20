@@ -54,18 +54,18 @@ program visualization_level_4
   use visualization_assert , only : X1_P, X1_Q, X1_R
   use visualization_assert , only : X2_U, X2_V, X2_W
   use visualization_assert , only : X3_M, X3_N
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_label_map      , only : label_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use graph_relation       , only : relation
-  use graph_binary_relation, only : csr_relation, binary_relation
-  use fractal_graph        , only : graph, known_branch, null_branch
-  use graph_relational_view, only : relational_binding, &
+  use map_set        , only : set_map
+  use map_label      , only : label_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
+  use relation_finitary       , only : relation
+  use relation_binary, only : csr_relation, binary_relation
+  use graph_fractal        , only : graph, known_branch, null_branch
+  use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
-       & holds_set
+       & has_set
   use visualization_carriers_fixture , only : structural_carriers, label_for
   use visualization_relations_fixture, only : occurrences_of_a1
   use visualization_relations_fixture, only : occurrences_of_a2
@@ -81,7 +81,7 @@ program visualization_level_4
 
   implicit none
 
-  type(set_graph)          :: x0, x1, x2, x3, e1, e2, e3
+  type(graph)          :: x0, x1, x2, x3, e1, e2, e3
   type(set_map)     :: sets
   type(label_map)     :: labels
   type(csr_relation)         :: t1, h1, t2, h2, t3, h3
@@ -438,8 +438,8 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)  :: ambient
-    type(set_graph)   :: shuffled
+    type(graph)  :: ambient
+    type(graph)   :: shuffled
     type(csr_relation) :: probe
     type(picture)      :: pic
     type(inclusion_map)     :: inclusions
@@ -499,7 +499,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: tail_end, head_end, from, to
+    type(graph) :: tail_end, head_end, from, to
     type(picture)                  :: pic
 
     ! ---- ANSWERED: the nucleus alone drew it.
@@ -540,7 +540,7 @@ contains
          & "which a union would erase - direction would survive as " // &
          & "tuple order; the distinct source and codomain would not", nfail)
 
-    call report(num_member_sets(g) .eq. 7 .and. .not. holds_set(g, bnd, union_like()), &
+    call report(num_member_sets(g) .eq. 7 .and. .not. has_set(g, bnd, union_like()), &
          & "so nothing was collapsed to make a picture: seven typed " // &
          & "carriers went in, and seven came out", nfail)
 
@@ -556,7 +556,7 @@ contains
   ! of it is whether the graph holds it, and that is identity.
   !===================================================================!
 
-  type(set_graph) function union_like()
+  type(graph) function union_like()
 
     call union_like % declare()
 
@@ -566,7 +566,7 @@ contains
 
     class(binary_relation), intent(in) :: first, second
 
-    type(set_graph) :: here, there
+    type(graph) :: here, there
 
     here  = first % target()
     there = second % source()
@@ -578,15 +578,15 @@ contains
 
     class(relation), intent(in) :: r
 
-    type(set_graph) :: cols, rows
+    type(graph) :: cols, rows
     integer                        :: i, j
 
     cols = r % domain(1)
     rows = r % domain(2)
 
     filled_cells = 0
-    do j = 1, sets % size_of(cols)
-       do i = 1, sets % size_of(rows)
+    do j = 1, sets % num_members_of(cols)
+       do i = 1, sets % num_members_of(rows)
           if (glyph_at(r, sets % member_of(cols, j), sets % member_of(rows, i)) .eq. '#') then
              filled_cells = filled_cells + 1
           end if
@@ -604,7 +604,7 @@ contains
 
     class(relation), intent(in) :: r
 
-    type(set_graph) :: cols, rows
+    type(graph) :: cols, rows
     type(picture)                  :: pic
     character(len=:), allocatable  :: line
     integer                        :: i, j, stub, wide, at
@@ -618,9 +618,9 @@ contains
     wide = label_width(cols) + 1
 
     cells_match_membership = .true.
-    do i = 1, sets % size_of(rows)
+    do i = 1, sets % num_members_of(rows)
        line = pic % at(2 + i)
-       do j = 1, sets % size_of(cols)
+       do j = 1, sets % num_members_of(cols)
           at    = stub + (j - 1) * wide
           drawn = (line(at:at) .eq. '#')
           cells_match_membership = cells_match_membership .and. &
@@ -640,7 +640,7 @@ contains
 
     class(relation), intent(in) :: r
 
-    type(set_graph) :: cols, rows
+    type(graph) :: cols, rows
     type(picture)                  :: listing
     character(len=:), allocatable  :: said, wanted
     integer                        :: i, j
@@ -650,9 +650,9 @@ contains
     listing = dependency_listing(r, sets, labels)
 
     grid_agrees_with_listing = .true.
-    do j = 1, sets % size_of(cols)
+    do j = 1, sets % num_members_of(cols)
        wanted = label_for(cols, sets % member_of(cols, j), labels) // ' ->'
-       do i = 1, sets % size_of(rows)
+       do i = 1, sets % num_members_of(rows)
           if (glyph_at(r, sets % member_of(cols, j), sets % member_of(rows, i)) .eq. '#') then
              wanted = wanted // ' ' // label_for(rows, sets % member_of(rows, i), labels)
           end if
@@ -666,12 +666,12 @@ contains
 
   integer function label_width(carrier)
 
-    type(set_graph), intent(in) :: carrier
+    type(graph), intent(in) :: carrier
 
     integer :: k
 
     label_width = 1
-    do k = 1, sets % size_of(carrier)
+    do k = 1, sets % num_members_of(carrier)
        label_width = max(label_width, &
             &            len(label_for(carrier, sets % member_of(carrier, k), labels)))
     end do

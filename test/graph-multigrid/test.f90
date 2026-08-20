@@ -18,15 +18,15 @@
 program test_graph_multigrid
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_directed_view, only : directed_graph
-  use class_graph_mesh   , only : mesh
-  use class_graph_stencil, only : stencil_operator
-  use class_fitted_balance, only : fitted_balance_stencil
-  use class_polynomial_form, only : polynomial_form
-  use class_graph_coarsener, only : coarsener, COARSEN_PAIRWISE
-  use class_graph_multigrid, only : multigrid
-  use class_graph_jacobi   , only : jacobi
-  use class_graph_gmres    , only : gmres
+  use view_directed, only : directed_graph
+  use view_mesh   , only : mesh
+  use operation_stencil, only : stencil
+  use operation_fitted_balance, only : fitted_balance_stencil
+  use field_forms       , only : polynomial_form
+  use transform_coarsener, only : coarsener, COARSEN_PAIRWISE
+  use operation_multigrid, only : multigrid
+  use operation_jacobi   , only : jacobi
+  use operation_gmres    , only : gmres
 
   implicit none
 
@@ -75,21 +75,21 @@ contains
          & tails=[1, 2, 3, 4, 5, 6, 7,  1, 8], &
          & heads=[2, 3, 4, 5, 6, 7, 8,  0, 0], &
          & volumes      = [(1.0_dp, kf = 1, 8)], &
-         & cell_centers = [(real(kf - 1, dp) + 0.5_dp, 0.0_dp, 0.0_dp, &
+         & cell_centres = [(real(kf - 1, dp) + 0.5_dp, 0.0_dp, 0.0_dp, &
          &                  kf = 1, 8)], &
          & areas        = [(1.0_dp, kf = 1, 9)], &
          & deltas       = [(1.0_dp, kf = 1, 7), 0.5_dp, 0.5_dp], &
          & normals      = [(1.0_dp, 0.0_dp, 0.0_dp, kf = 1, 7), &
          &                 -1.0_dp, 0.0_dp, 0.0_dp, &
          &                  1.0_dp, 0.0_dp, 0.0_dp], &
-         & face_centers = [(real(kf, dp), 0.0_dp, 0.0_dp, kf = 1, 7), &
+         & face_centres = [(real(kf, dp), 0.0_dp, 0.0_dp, kf = 1, 7), &
          &                  0.0_dp, 0.0_dp, 0.0_dp, &
          &                  8.0_dp, 0.0_dp, 0.0_dp], &
          & weights      = [(0.5_dp, kf = 1, 9)])
 
   end function chain_mesh
 
-  type(stencil_operator) function chain_statement(m) result(op)
+  type(stencil) function chain_statement(m) result(op)
 
     type(mesh), intent(in) :: m
 
@@ -274,9 +274,9 @@ contains
       type(gmres)  :: q
       j = jacobi()
       q = gmres()
-      call report(j % n_unknown_domain .eq. 0 .and. &
-           &      q % n_unknown_domain .eq. 0 .and. &
-           &      j % n_residual_domain .eq. 0, &
+      call report(j % num_unknowns .eq. 0 .and. &
+           &      q % num_unknowns .eq. 0 .and. &
+           &      j % num_residuals .eq. 0, &
            & 'an unattached solver counts no unknowns, and says so', &
            & nfail)
     end block unnamed_components

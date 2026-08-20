@@ -101,12 +101,12 @@ invent it.
 | **0** | \(Q, T, E\) | `counted_set` | three carriers | — | none — sets only | `level-0-carrier/` | three independent identities; member 1 is \(x\), \(t_0\) **and** \(e_1\), and only identity separates them | none |
 | **1** | \(\mathrm{Tail},\mathrm{Head}\subseteq E\times T\) | `csr_relation` | \(E\times T\) | primitive temporal incidence | time acquires *direction* | `level-1-relation/` | direction is relation structure; \(Q\) participates in **no** relation, and that absence is the point | none |
 | **2** | \(A_1=\mathrm{Head}\circ\mathrm{Tail}^{T}\); \(A_2=A_1\circ A_1\) | `transpose_of`, `compose_binary` | \(T\to T\) | **derived** | one-step and two-step temporal *reach* | `level-2-relation-algebra/` | reach is generated, not stored; \(A_1\neq A_2\) | none |
-| **3** | \(G_{\text{time}}=(\{Q,T,E\},\{\mathrm{Tail},\mathrm{Head},A_1,A_2\})\) | `fractal_graph`, `graph_relational_view` | three bound carriers | four bound relations | one relational structure, not one domain | `level-3-graph/` | signature closure holds, **and** \(Q\) is lawfully owned while naming no relation | none |
-| **4** | directed views over \(A_1\), \(A_2\) | `directed_adjacency_view`, `graph_profile`, `graph_algorithms` | \(T\) (both views) | borrowed from the graph | **causality** | `level-4-graph-calculus/` | forward causal order \([t_0..t_4]\); two views, one carrier | none |
+| **3** | \(G_{\text{time}}=(\{Q,T,E\},\{\mathrm{Tail},\mathrm{Head},A_1,A_2\})\) | `graph_fractal`, `view_relational` | three bound carriers | four bound relations | one relational structure, not one domain | `level-3-graph/` | signature closure holds, **and** \(Q\) is lawfully owned while naming no relation | none |
+| **4** | directed views over \(A_1\), \(A_2\) | `directed_adjacency_view`, `graph_profile`, `relation_algorithms` | \(T\) (both views) | borrowed from the graph | **causality** | `level-4-graph-calculus/` | forward causal order \([t_0..t_4]\); two views, one carrier | none |
 | **5** | \(q_0:Q\to\mathbb R\); \(\mathrm{time}:T\to\mathbb R\); \(h:E\to\mathbb R\) | `field` | \(Q\), \(T\), \(E\) — three distinct | consumed, not made | values, no scheme | `level-5-field-calculus/` | **values live on domains, not on graphs** — \(q_0\) needs no graph, and \(\mathrm{time}(\mathrm{head}(e))-\mathrm{time}(\mathrm{tail}(e))=h(e)\) | none |
-| **6** | \(S:Q\to Q\); FE; BE residual; BDF2 residual | `step_operator`, `backward_euler`, `bdf` | \(Q\), beside a 5-vertex host \(H_t\) | \(A_1,A_2\) supply the history roles | the discrete law | `level-6-discretization/` | **temporal discretization preserves \(Q\)** — RED first, then a narrow correction | `class_graph_step.f90` — domain and width delegated to the action |
+| **6** | \(S:Q\to Q\); FE; BE residual; BDF2 residual | `scheme`, `backward_euler`, `bdf` | \(Q\), beside a 5-vertex host \(H_t\) | \(A_1,A_2\) supply the history roles | the discrete law | `level-6-discretization/` | **temporal discretization preserves \(Q\)** — RED first, then a narrow correction | `operation_step.f90` — domain and width delegated to the action |
 | **7** | solve temporal residual \(=0\) | `gmres` | unknown \(Q\), host \(H_t\) | — | the implicit solve | `level-7-minimization/` | **an explicit unknown domain \(Q\) survives minimization** while the host has five unrelated vertices | none — the minimizer was already right |
-| **8** | four-step marches: FE, BE, BDF2 | `marcher`, `newton`, `gmres` | \(Q\); control chain; \(H_{\text{context}}\) | control chain realizes \(A_1\) extensionally | multi-step constitution | `level-8-constitution/` | **the marcher's state domain is independent of its host**; three five-element objects stay apart | `class_graph_marcher.f90`, `class_graph_linearization.f90` — both RED-earned |
+| **8** | four-step marches: FE, BE, BDF2 | `marcher`, `newton`, `gmres` | \(Q\); control chain; \(H_{\text{context}}\) | control chain realizes \(A_1\) extensionally | multi-step constitution | `level-8-constitution/` | **the marcher's state domain is independent of its host**; three five-element objects stay apart | `operation_marching.f90`, `operation_linearization.f90` — both RED-earned |
 | **9** | the complete IVP: \(q(0)=[2,0]\), \(\dot q=-S(q)\), \(h=1/2\), BDF2 → \(q(t_4)\) | the whole constitution | \(Q\), in and out | — | the statement | `level-9-statement/` | \(q(t_4)=[7/24,\,83/144]\), **a field on \(Q\)** | none |
 
 The road as far as it has been built:
@@ -342,7 +342,7 @@ A1 and A2 are DIFFERENT STRUCTURAL VIEWS over the SAME T carrier
 ```
 
 **No arrow in that picture says \(Q = V(H_t)\), and none may.** The host
-enters from the side because the `graph_operation` contract requires
+enters from the side because the `operation` contract requires
 one; it leaves nothing behind. \(Q\) has two members and \(V(H_t)\) has
 five, throughout.
 
@@ -404,7 +404,7 @@ then died inside `set_real_vector`. The failure is recorded verbatim in
 [`NUCLEUS-OBSERVATIONS.md`](NUCLEUS-OBSERVATIONS.md) TI-8, written
 before production was touched.
 
-The correction is narrow and lives in `src/class_graph_step.f90` alone:
+The correction is narrow and lives in `src/operation_step.f90` alone:
 
 \[
 \boxed{\text{TEMPORAL DISCRETIZATION PRESERVES THE DOMAIN OF THE ACTION IT DISCRETIZES.}}
@@ -454,7 +454,7 @@ bdf-2            c = -2q1 + q0/2
 Both right-hand sides are fields **on \(Q\)**; both solutions come back
 **on \(Q\)**.
 
-**The minimizer needed no change.** `graph_minimization` already takes
+**The minimizer needed no change.** `operation_minimization` already takes
 its unknown domain as an explicit argument and asks the *action* for the
 residual domain — its own comment says "no hidden fallback to the host's
 vertices." That contrast is the evidence: the same seam that was open in
@@ -498,7 +498,7 @@ each other:
                             by clock % instants(4).  Five vertices.
 
     OPERATION HOST          H_context, the conduit the
-                            graph_operation contract requires.
+                            operation contract requires.
                             Five vertices — and a different object.
 ```
 
@@ -580,11 +580,11 @@ numerical one.
 ```text
 RED 1   read_statement built the state on the HOST's vertex set and
         took its width as size(q)/num_vertices() = 2/5 = 0.
-        → class_graph_marcher.f90, narrow fix                 TI-14
+        → operation_marching.f90, narrow fix                 TI-14
 
 RED 2   difference_linearization built its frozen and perturbed
         states on the HOST's vertex set.
-        → class_graph_linearization.f90, narrow fix           TI-16
+        → operation_linearization.f90, narrow fix           TI-16
 ```
 
 The second is the one that matters as evidence. It was reached through
@@ -666,10 +666,10 @@ The question, as Gate A posed it:
 stack answered differently.**
 
 ```text
-graph_minimization      ALREADY preserved Q.  Unknown domain explicit,
+operation_minimization      ALREADY preserved Q.  Unknown domain explicit,
                         residual domain asked of the action.  No change.
 
-class_graph_step        DID NOT.  It read the host's vertices for the
+operation_step        DID NOT.  It read the host's vertices for the
                         domain and the host's vertex count for the
                         width.  RED at Level 6; corrected there.
 ```
@@ -686,7 +686,7 @@ per step, walked in order."* That is production's own description of
 itself, read but not imported.
 
 Nothing here says the production marcher is wrong, or that
-`graph_operation` must change. Those remain questions for levels that
+`operation` must change. Those remain questions for levels that
 have not been built.
 
 ## Seam A2 at seal — the count, and its limit
@@ -701,8 +701,8 @@ AFTER this tower      + Time Integration
 ```
 
 **Time contributes ONE tower vote**, not three. The tower produced
-three separate REDs — `class_graph_step` at Level 6,
-`class_graph_marcher` at Level 8, `class_graph_linearization` at Level 8
+three separate REDs — `operation_step` at Level 6,
+`operation_marching` at Level 8, `operation_linearization` at Level 8
 — but its ten levels are one client, and counting them separately would
 be counting one experiment three times.
 
@@ -714,7 +714,7 @@ What *did* increase is **evidence quality**:
 + first full temporal PRODUCTION COMPOSITION
       marcher → newton → difference_linearization → gmres
 + a genuine CLASS-2 WITNESS, reached naturally: no level of this
-      tower may import class_graph_linearization, and the import
+      tower may import operation_linearization, and the import
       gate enforces it
 ```
 
@@ -910,7 +910,7 @@ operator refused below Level 6, the minimizer and GMRES below Level 7,
 the marcher and Newton below Level 8 — so no level can redescribe
 machinery it has not yet earned.
 
-`class_graph_linearization` is refused at **every** level, and that
+`operation_linearization` is refused at **every** level, and that
 refusal is load-bearing rather than hygienic: Level 8 reached its
 Class-2 defect through `marcher → newton → difference_linearization`,
 and because no level may name that module, the failure cannot have been

@@ -2,8 +2,8 @@ include ../../../Makefile.in
 
 #=====================================================================#
 # Level 6: the sparsity suite. Framework modules this level may
-# see: the set modules, graph_relation, graph_relation_algebra, and
-# graph_binary_relation - the last DELIBERATELY, because the
+# see: the set modules, relation_finitary, relation_algebra, and
+# relation_binary - the last DELIBERATELY, because the
 # reverse structure is transpose_of over the derived J, part of the
 # level's dependency boundary. The import gate holds the door.
 #=====================================================================#

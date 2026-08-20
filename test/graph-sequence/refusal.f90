@@ -14,10 +14,10 @@
 
 program refusal
 
-  use fractal_graph      , only : graph, &
+  use graph_fractal      , only : graph, &
        & null_branch, unknown_branch, known_branch
-  use graph_sequence_view, only : sequence_size, sequence_element, &
-       & sequence_contains
+  use view_sequence, only : sequence_num_elements, sequence_element, &
+       & sequence_has
 
   implicit none
 
@@ -41,7 +41,7 @@ program refusal
        cell % branch(1) = null_branch()          ! no element
        cell % branch(2) = null_branch()
        holder % branch(1) = known_branch(cell)
-       n = sequence_size(holder % branch(1))
+       n = sequence_num_elements(holder % branch(1))
        print *, n
      end block
 
@@ -52,7 +52,7 @@ program refusal
        cell % branch(1) = unknown_branch()       ! element not known
        cell % branch(2) = null_branch()
        holder % branch(1) = known_branch(cell)
-       n = sequence_size(holder % branch(1))
+       n = sequence_num_elements(holder % branch(1))
        print *, n
      end block
 
@@ -65,7 +65,7 @@ program refusal
        type(graph), target :: holder
        call holder % declare()
        holder % branch(1) = unknown_branch()
-       n = sequence_size(holder % branch(1))
+       n = sequence_num_elements(holder % branch(1))
        print *, n
      end block
 
@@ -76,7 +76,7 @@ program refusal
        cell % branch(1) = known_branch(elem)
        cell % branch(2) = unknown_branch()
        holder % branch(1) = known_branch(cell)
-       n = sequence_size(holder % branch(1))
+       n = sequence_num_elements(holder % branch(1))
        print *, n
      end block
 
@@ -88,7 +88,7 @@ program refusal
        cell % branch(1) = known_branch(elem)
        cell % branch(2) = unknown_branch()
        holder % branch(1) = known_branch(cell)
-       yes = sequence_contains(holder % branch(1), stranger)
+       yes = sequence_has(holder % branch(1), stranger)
        print *, yes
      end block
 

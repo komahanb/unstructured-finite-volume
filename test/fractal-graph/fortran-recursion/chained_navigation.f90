@@ -8,7 +8,7 @@
 ! Depth is reached by a pointer or an ASSOCIATE name; see
 ! encapsulated_navigation.f90.
 program chained_navigation
-  use fractal_graph
+  use graph_fractal
   implicit none
   type(graph), target :: a, b
   integer :: s

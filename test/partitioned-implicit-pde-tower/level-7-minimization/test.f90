@@ -36,19 +36,19 @@ program partitioned_pde_level_7
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : report, verdict
   use partitioned_pde_assert, only : NV, Q_EXACT, B_EXACT
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation
-  use graph_set_map        , only : set_map
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use class_graph      , only : directed_stored_graph
-  use class_graph_field, only : field
-  use class_graph_gmres, only : gmres
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation
+  use map_set        , only : set_map
+  use view_directed, only : directed_graph
+  use field_calculus, only : field
+  use view_directed_stored      , only : stored_directed_graph
+  use field_stored, only : stored_field
+  use operation_gmres, only : gmres
   use shifted_laplacian_fixture, only : shifted_laplacian
 
   implicit none
 
-  type(directed_stored_graph)      :: g, g_alt
+  type(stored_directed_graph)      :: g, g_alt
   type(shifted_laplacian) :: shifted
   integer                 :: nfail
   type(set_map)     :: sets
@@ -59,7 +59,7 @@ program partitioned_pde_level_7
   write(*,'(1x,a)') "partitioned pde tower . level 7 . minimization"
   write(*,'(1x,a)') "============================================="
 
-  g = directed_stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  g = stored_directed_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
   call sets % bind(g % vertex_set(), &
        & counted_set_representation(g % num_vertices()))
   call sets % bind(g % edge_set(), &
@@ -80,11 +80,11 @@ contains
     integer, intent(inout) :: nfail
 
     type(gmres)                     :: solver
-    type(field)                     :: rhs
-    type(set_graph)  :: dom
-    class(graph_field), allocatable :: sol
+    type(stored_field)                     :: rhs
+    type(graph)  :: dom
+    class(field), allocatable :: sol
     real(dp), allocatable           :: gv(:), v(:)
-    type(set_graph)               :: vs
+    type(graph)               :: vs
     integer         :: n_dom
     integer         :: n_vs
 
@@ -107,12 +107,12 @@ contains
     call report(maxval(abs(gv)) < 1.0d-12, &
          & "the affine constant is zero: A is linear", nfail)
 
-    rhs = field('b', vs, n_vs)
+    rhs = stored_field('b', vs, n_vs)
     call rhs % set_real_vector(B_EXACT)
     call solver % apply(g, [rhs], sol)
 
     dom = sol % domain()
-    call sol % get_real_vector(v)
+    call sol % real_vector(v)
     call report(dom % same_as(vs), &
          & "the solution is a field on V(G)", nfail)
     call report(by_member(sets, v, vs, Q_EXACT), &
@@ -132,13 +132,13 @@ contains
     integer, intent(inout) :: nfail
 
     type(gmres)           :: solver_g, solver_alt
-    type(set_graph)     :: vs, vs_alt
+    type(graph)     :: vs, vs_alt
     real(dp), allocatable :: y(:), y_alt(:)
     integer         :: n_vs
     integer         :: n_vs_alt
 
     ! Same counts, different shape: a star, not a chain.
-    g_alt = directed_stored_graph(NV, tails=[1,1,1,1,1], heads=[2,3,4,5,6])
+    g_alt = stored_directed_graph(NV, tails=[1,1,1,1,1], heads=[2,3,4,5,6])
     call sets % bind(g_alt % vertex_set(), &
          & counted_set_representation(g_alt % num_vertices()))
     call sets % bind(g_alt % edge_set(), &
@@ -177,13 +177,13 @@ contains
 
     type(set_map)  , intent(in) :: sets
     real(dp)       , intent(in) :: v(:)
-    type(set_graph), intent(in) :: dom
+    type(graph), intent(in) :: dom
     real(dp)       , intent(in) :: expect(:)
 
     integer :: i, m
 
     by_member = .true.
-    do i = 1, sets % size_of(dom)
+    do i = 1, sets % num_members_of(dom)
        m = sets % member_of(dom, i)
        by_member = by_member .and. &
             & (abs(v(sets % index_in(dom, m)) - expect(m)) < 1.0d-12)

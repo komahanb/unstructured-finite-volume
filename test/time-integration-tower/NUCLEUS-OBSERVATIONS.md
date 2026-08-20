@@ -34,8 +34,8 @@ touched. It is ONE tower's evidence, not three levels' worth: Levels
 0–9 of this tower are ONE client, and the count below moves by one.
 
 **This tower is ONE client, and it produced THREE REDs.**
-`class_graph_step` at Level 6 (TI-8), `class_graph_marcher` at Level 8
-(TI-14), and `class_graph_linearization` at Level 8 (TI-16). They are
+`operation_step` at Level 6 (TI-8), `operation_marching` at Level 8
+(TI-14), and `operation_linearization` at Level 8 (TI-16). They are
 one tower's evidence, not three. **Time contributes ONE tower vote to
 seam A2**, and the count moves from 2 to 3 — never to 5.
 
@@ -400,7 +400,7 @@ comparison:           the calculator tower killed its selector the
                       contract is general, which supports A3's KEEP
 
 suspected nucleus implication: none. graph_profile and
-                      graph_algorithms answered a subject they were
+                      relation_algorithms answered a subject they were
                       not designed for - time - without modification.
 
 confidence:           high
@@ -540,7 +540,7 @@ comparison:           the learning tower established that a field's
                       This client needed that to already be true, and
                       found it was
 
-suspected nucleus implication: none. class_graph_field needed
+suspected nucleus implication: none. field_stored needed
                       nothing; it was already right.
 
 confidence:           high
@@ -590,14 +590,14 @@ symptom / fact:       *** THE SEAM-A2 OBSERVATION. RED FIRST. ***
                                vertices - the state domain is not
                                inferred from the conduit
 
-                        ERROR STOP class_graph_field: a value vector
+                        ERROR STOP field_stored: a value vector
                         must fill its domain exactly
 
                         Error termination. Backtrace:
                         #3 __class_graph_field_MOD_field_set_real_vector
-                           at src/class_graph_field.f90:305
+                           at src/field_stored.f90:305
                         #4 __class_graph_step_MOD_step_apply
-                           at src/class_graph_step.f90:200
+                           at src/operation_step.f90:200
 
                       Two distinct defects in one operator:
 
@@ -619,7 +619,7 @@ symptom / fact:       *** THE SEAM-A2 OBSERVATION. RED FIRST. ***
 exact caller:         level-6-discretization/test.f90
                       (check_step_domain_is_the_action_s,
                       check_backward_euler_residual);
-                      src/class_graph_step.f90 (step_domain:163,
+                      src/operation_step.f90 (step_domain:163,
                       step_apply:179/198/199 as they stood)
 
 mathematical concept: an operator built from another operator
@@ -645,7 +645,7 @@ cross-tower recurrence: *** THIS IS THE THIRD INDEPENDENT TOWER FOR
                       levels are one client, not ten
 
 graph role:           compatibility conduit. H_t is present because
-                      the graph_operation contract requires a graph,
+                      the operation contract requires a graph,
                       and its topology is never read by this action
 
 comparison:           the reverse review predicted A2 would need a
@@ -679,12 +679,12 @@ symptom / fact:       DISCRETIZATION PRESERVES THE ACTION'S DOMAIN -
                       the correction TI-8's RED earned, and the whole
                       of it.
 
-                      In src/class_graph_step.f90 ONLY:
+                      In src/operation_step.f90 ONLY:
 
                         step_domain   delegates to
                                       this % action % domain(...)
 
-                        step_apply    takes ncomp from
+                        step_apply    takes num_components from
                                       input_data(1) % num_components()
                                       validates the input's domain
                                       validates the action's answer
@@ -708,20 +708,20 @@ symptom / fact:       DISCRETIZATION PRESERVES THE ACTION'S DOMAIN -
                       delegation returns exactly what asking the graph
                       returned, and test/graph-marching passes
                       unchanged, including its two-numbers-wide cell
-                      case, which is the one that exercises ncomp.
+                      case, which is the one that exercises num_components.
 
-                      class_graph_marcher is the ONLY consumer of
-                      step_operator in the repository, and it was not
+                      operation_marching is the ONLY consumer of
+                      scheme in the repository, and it was not
                       touched.
 
                       WHAT WAS NOT DONE, deliberately:
 
-                        graph_operation root      unchanged
+                        operation root      unchanged
                         graph_grammar             unchanged
-                        graph_fitting             unchanged
+                        operation_fitting             unchanged
                         reduction / broadcast     unchanged
                         difference_linearization  unchanged
-                        class_graph_marcher       unchanged
+                        operation_marching       unchanged
 
                       Strong evidence makes the broader A2 migration
                       ELIGIBLE for reverse review; it does not make
@@ -730,7 +730,7 @@ symptom / fact:       DISCRETIZATION PRESERVES THE ACTION'S DOMAIN -
                       tower, and a refactor of an untested call site
                       is a speculation wearing evidence's clothes.
 
-exact caller:         src/class_graph_step.f90 (step_domain,
+exact caller:         src/operation_step.f90 (step_domain,
                       step_apply); level-6-discretization/test.f90
 
 mathematical concept: delegation of a domain question to the object
@@ -745,7 +745,7 @@ cross-tower recurrence: the correction is new; the seam is TI-8's
 graph role:           unchanged - the host is still passed to the
                       action, which may consume its topology or not
 
-comparison:           graph_minimization already had this contract
+comparison:           operation_minimization already had this contract
                       (TI-11). One module asked the host, its
                       immediate collaborator asked the action, and
                       only a client with |Q| != |V(H)| could tell
@@ -858,7 +858,7 @@ symptom / fact:       MINIMIZATION WAS ALREADY DOMAIN-EXPLICIT, and
                       solutions come back ON Q; the affine constants
                       were measured, not assumed.
 
-                      graph_minimization takes its unknown domain as
+                      operation_minimization takes its unknown domain as
                       an EXPLICIT argument and asks the ACTION for
                       the residual domain. Its own comment says so:
                       "no hidden fallback to the host's vertices; a
@@ -868,8 +868,8 @@ symptom / fact:       MINIMIZATION WAS ALREADY DOMAIN-EXPLICIT, and
                       THE CONTRAST IS THE EVIDENCE. Two collaborating
                       modules, one seam:
 
-                        class_graph_step      asked the HOST     RED
-                        graph_minimization    asked the ACTION   fine
+                        operation_step      asked the HOST     RED
+                        operation_minimization    asked the ACTION   fine
 
                       Seam A2 is therefore not a uniform defect in
                       the nucleus. It is a contract that some modules
@@ -880,7 +880,7 @@ symptom / fact:       MINIMIZATION WAS ALREADY DOMAIN-EXPLICIT, and
 exact caller:         level-7-minimization/test.f90
                       (check_backward_euler_solve, check_bdf2_solve,
                       check_unknown_domain_is_the_caller_s_word);
-                      src/graph_minimization.f90 (attach:159-166)
+                      src/operation_minimization.f90 (attach:159-166)
 
 mathematical concept: an unknown domain is the caller's declaration,
                       not the container's property
@@ -907,7 +907,7 @@ comparison:           seam A1 stays CLOSED. The partitioned tower
                       finding
 
 suspected nucleus implication: NONE, and specifically no
-                      "improvement" to graph_minimization. Nothing
+                      "improvement" to operation_minimization. Nothing
                       here found anything to improve.
 
 confidence:           high
@@ -1008,7 +1008,7 @@ symptom / fact:       THE OPERATION HOST IS NOT THE TIME GRAPH, and
                       refuse to lean on it, and the naming was
                       corrected at this level: what Gate B called
                       H_t is H_context, the compatibility conduit
-                      the graph_operation contract requires - never
+                      the operation contract requires - never
                       the clock.
 
 exact caller:         level-8-constitution/test.f90
@@ -1071,16 +1071,16 @@ symptom / fact:       *** SEAM-A2 RED, SECOND SITE. RED FIRST. ***
 
                       Run against src at f7fb641, VERBATIM:
 
-                        ERROR STOP class_graph_field: a value vector
+                        ERROR STOP field_stored: a value vector
                         must fill its domain exactly
 
                         Error termination. Backtrace:
                         #3 __class_graph_field_MOD_field_set_real_vector
-                           at src/class_graph_field.f90:305
+                           at src/field_stored.f90:305
                         #4 read_statement
-                           at src/class_graph_marcher.f90:234
+                           at src/operation_marching.f90:234
                         #5 __class_graph_marcher_MOD_march
-                           at src/class_graph_marcher.f90:124
+                           at src/operation_marching.f90:124
 
                       (PRE-FIX line numbers; they will not match the
                       current source.)
@@ -1089,7 +1089,7 @@ symptom / fact:       *** SEAM-A2 RED, SECOND SITE. RED FIRST. ***
                       one level down:
 
                         nv    = on % num_vertices()      = 5
-                        ncomp = size(q) / max(nv, 1)     = 2/5 = 0
+                        num_components = size(q) / max(nv, 1)     = 2/5 = 0
                         state = field(..., on % vertex_set(), ...)
 
                       A march is a repeated application of ONE
@@ -1100,7 +1100,7 @@ symptom / fact:       *** SEAM-A2 RED, SECOND SITE. RED FIRST. ***
 
 exact caller:         level-8-constitution/test.f90
                       (check_forward_march);
-                      src/class_graph_marcher.f90
+                      src/operation_marching.f90
                       (read_statement:230-233, and the implicit
                       attach at 161-162, as they stood)
 
@@ -1141,7 +1141,7 @@ contextual radius:    1
 symptom / fact:       THE MARCHER PRESERVES THE ACTION'S DOMAIN -
                       the correction TI-14's RED earned.
 
-                      In src/class_graph_marcher.f90 ONLY:
+                      In src/operation_marching.f90 ONLY:
 
                         state_seat()  new, private: asks
                                       action % domain(on, ...),
@@ -1157,7 +1157,7 @@ symptom / fact:       THE MARCHER PRESERVES THE ACTION'S DOMAIN -
 
                         march (implicit) attaches the governed solve
                                         with unknown_domain =
-                                        state_domain and ncomp from
+                                        state_domain and num_components from
                                         the same source
 
                       The rule:
@@ -1180,14 +1180,14 @@ symptom / fact:       THE MARCHER PRESERVES THE ACTION'S DOMAIN -
                       WHAT WAS NOT DONE:
 
                         the public march signature   unchanged
-                        the graph_operation root     unchanged
+                        the operation root     unchanged
                         the host                     STILL PASSED to
                                                      every action
 
                       Host removed? No. Host as state domain? No.
                       Host as context? Yes. Seam A1 is not reopened.
 
-exact caller:         src/class_graph_marcher.f90 (state_seat,
+exact caller:         src/operation_marching.f90 (state_seat,
                       read_statement, march)
 
 mathematical concept: delegation of a domain question to the object
@@ -1241,22 +1241,22 @@ symptom / fact:       *** THE CLASS-2 WITNESS, AND IT IS NATURAL. ***
 
                       Run after the TI-15 correction, VERBATIM:
 
-                        ERROR STOP class_graph_field: a value vector
+                        ERROR STOP field_stored: a value vector
                         must fill its domain exactly
 
                         Error termination. Backtrace:
                         #3 __class_graph_field_MOD_field_set_real_vector
-                           at src/class_graph_field.f90:305
+                           at src/field_stored.f90:305
                         #4 __class_graph_linearization_MOD_derivative_apply
-                           at src/class_graph_linearization.f90:163
+                           at src/operation_linearization.f90:163
                         #5 raw_apply
-                           at src/graph_minimization.f90:202
+                           at src/operation_minimization.f90:202
                         #6 __graph_minimization_MOD_attach
-                           at src/graph_minimization.f90:173
+                           at src/operation_minimization.f90:173
                         #7 __class_graph_newton_MOD_solve
-                           at src/class_graph_newton.f90:100
+                           at src/operation_newton.f90:100
                         #8 __class_graph_marcher_MOD_march
-                           at src/class_graph_marcher.f90:172
+                           at src/operation_marching.f90:172
 
                       (PRE-FIX line numbers.)
 
@@ -1264,10 +1264,10 @@ symptom / fact:       *** THE CLASS-2 WITNESS, AND IT IS NATURAL. ***
                       correctly. derivative_apply had not:
 
                         nv    = input_graph % num_vertices()   = 5
-                        ncomp = max(size(at)/max(nv,1), 1)
+                        num_components = max(size(at)/max(nv,1), 1)
                               = max(2/5, 1) = 1
                         state = field(..., input_graph % vertex_set(),
-                                      ncomp=1)
+                                      num_components=1)
 
                       NOTE THE max(...,1) FLOOR. It converts a
                       divide-to-zero into a silently WRONG width of
@@ -1279,7 +1279,7 @@ symptom / fact:       *** THE CLASS-2 WITNESS, AND IT IS NATURAL. ***
                       is exactly the shape this seam takes.
 
                       WHY THIS IS NOT MANUFACTURED: the import gate
-                      refuses class_graph_linearization at EVERY
+                      refuses operation_linearization at EVERY
                       level of this tower, and --selftest asserts
                       that refusal. No level could have named the
                       module. It was reached by the production call
@@ -1287,7 +1287,7 @@ symptom / fact:       *** THE CLASS-2 WITNESS, AND IT IS NATURAL. ***
 
 exact caller:         level-8-constitution/test.f90
                       (check_backward_march, through the governor);
-                      src/class_graph_linearization.f90
+                      src/operation_linearization.f90
                       (derivative_apply:137/156/162/170 as it stood)
 
 mathematical concept: a finite difference of an operation is a
@@ -1332,14 +1332,14 @@ symptom / fact:       A SAME-DOMAIN FINITE DIFFERENCE CAN PRESERVE
                       RECTANGULAR - the correction TI-16 earned, and
                       the limit of it.
 
-                      In src/class_graph_linearization.f90 ONLY:
+                      In src/operation_linearization.f90 ONLY:
 
                         derivative_apply asks
                           this % of % domain(input_graph, on)
                         and builds the frozen state, the perturbed
                         state and the J v answer on `on`
 
-                        ncomp comes from size(at) / on % size(),
+                        num_components comes from size(at) / on % size(),
                         with exact divisibility required
 
                         a direction field, when present, must live
@@ -1375,12 +1375,12 @@ symptom / fact:       A SAME-DOMAIN FINITE DIFFERENCE CAN PRESERVE
 
                       REGRESSION: difference_linearization has
                       exactly ONE consumer in the repository,
-                      class_graph_newton, whose consumers are
+                      operation_newton, whose consumers are
                       graph-marching and graph-minimization. Both
                       were run IMMEDIATELY after this change and
                       passed.
 
-exact caller:         src/class_graph_linearization.f90
+exact caller:         src/operation_linearization.f90
                       (derivative_apply, answered_on)
 
 mathematical concept: a linearization inherits the domain of what it
@@ -1582,8 +1582,8 @@ WHAT GATE B ASKED, AND ANSWERED
     YES - after one narrow correction, and the two halves of the
     stack answered differently:
 
-        graph_minimization   already did          (TI-11)
-        class_graph_step     did not; RED         (TI-8)
+        operation_minimization   already did          (TI-11)
+        operation_step     did not; RED         (TI-8)
                              corrected            (TI-9)
 
 WHAT GATE C ASKED, AND ANSWERED
@@ -1595,9 +1595,9 @@ WHAT GATE C ASKED, AND ANSWERED
     YES. Three narrow production corrections were required, each
     RED-first:
 
-        class_graph_step          Gate B    (TI-8  -> TI-9)
-        class_graph_marcher       Gate C    (TI-14 -> TI-15)
-        class_graph_linearization Gate C    (TI-16 -> TI-17)
+        operation_step          Gate B    (TI-8  -> TI-9)
+        operation_marching       Gate C    (TI-14 -> TI-15)
+        operation_linearization Gate C    (TI-16 -> TI-17)
 
     q(t4) = [7/24, 83/144], a field on Q.
 
@@ -1642,8 +1642,8 @@ WHAT THIS LEDGER DOES NOT SAY
     that a rectangular or bidirectional linearization is earned
     that a nonuniform h or a supplied relational time graph is
         needed - see TI-18; both are exact specializations here
-    that graph_operation, graph_grammar, graph_fitting,
-        graph_calculus or graph_minimization must change - none
+    that operation, graph_grammar, operation_fitting,
+        graph_calculus or operation_minimization must change - none
         of them did
 
 A NOTE ON THE LABEL, because this ledger uses it both ways:

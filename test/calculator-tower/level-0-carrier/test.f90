@@ -20,14 +20,14 @@ program calculator_level_0
 
   use calculator_assert, only : report, verdict
   use calculator_assert, only : SLOT_A, SLOT_E, OP_PLUS, PORT_OUT
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
+  use map_set        , only : set_map
 
   implicit none
 
-  type(set_graph) :: x, o, p
+  type(graph) :: x, o, p
   integer           :: nfail
   type(set_map)     :: sets
 
@@ -62,11 +62,11 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(sets % size_of(x) .eq. 5, &
+    call report(sets % num_members_of(x) .eq. 5, &
          & "X counts its five value slots", nfail)
-    call report(sets % size_of(o) .eq. 2, &
+    call report(sets % num_members_of(o) .eq. 2, &
          & "O counts its two operations", nfail)
-    call report(sets % size_of(p) .eq. 3, &
+    call report(sets % num_members_of(p) .eq. 3, &
          & "P counts its three ports", nfail)
 
   end subroutine check_cardinalities
@@ -106,7 +106,7 @@ contains
     integer :: i
 
     ok = .true.
-    do i = 1, sets % size_of(x)
+    do i = 1, sets % num_members_of(x)
        ok = ok .and. (sets % member_of(x, sets % index_in(x, sets % member_of(x, i))) &
             &         .eq. sets % member_of(x, i))
        ok = ok .and. (sets % index_in(x, sets % member_of(x, i)) .eq. i)
@@ -114,7 +114,7 @@ contains
     call report(ok, "member and local_index invert on X", nfail)
 
     ok = .true.
-    do i = 1, sets % size_of(o)
+    do i = 1, sets % num_members_of(o)
        ok = ok .and. (sets % member_of(o, sets % index_in(o, sets % member_of(o, i))) &
             &         .eq. sets % member_of(o, i))
        ok = ok .and. (sets % index_in(o, sets % member_of(o, i)) .eq. i)
@@ -122,7 +122,7 @@ contains
     call report(ok, "member and local_index invert on O", nfail)
 
     ok = .true.
-    do i = 1, sets % size_of(p)
+    do i = 1, sets % num_members_of(p)
        ok = ok .and. (sets % member_of(p, sets % index_in(p, sets % member_of(p, i))) &
             &         .eq. sets % member_of(p, i))
        ok = ok .and. (sets % index_in(p, sets % member_of(p, i)) .eq. i)
@@ -140,16 +140,16 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(sets % has_in(x, SLOT_A) .and. sets % has_in(x, SLOT_E), &
+    call report(sets % has(x, SLOT_A) .and. sets % has(x, SLOT_E), &
          & "a and e are value slots", nfail)
-    call report(sets % has_in(o, OP_PLUS) .and. sets % has_in(p, PORT_OUT), &
+    call report(sets % has(o, OP_PLUS) .and. sets % has(p, PORT_OUT), &
          & "+ is an operation and out is a port", nfail)
 
-    call report(.not. sets % has_in(x, 6) .and. .not. sets % has_in(x, 0), &
+    call report(.not. sets % has(x, 6) .and. .not. sets % has(x, 0), &
          & "an outsider is rejected by X", nfail)
-    call report(.not. sets % has_in(o, 3), &
+    call report(.not. sets % has(o, 3), &
          & "and by O", nfail)
-    call report(.not. sets % has_in(p, 4), &
+    call report(.not. sets % has(p, 4), &
          & "and by P", nfail)
 
   end subroutine check_membership_boundary

@@ -33,22 +33,22 @@ program learning_level_8
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use graph_relation , only : stored_relation, relation
-  use graph_relation_algebra, only : restrict_slot, project_slots, &
+  use map_set        , only : set_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
+  use relation_finitary , only : stored_relation, relation
+  use relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_algorithms, only : reachable, topological_order
-  use class_graph_field, only : field
+  use relation_algorithms, only : reachable, topological_order
+  use field_stored, only : stored_field
   use learning_constitution_fixture, only : apply_law, slot_for_port, &
        &                                    located_slot, generated_residual
-  use fractal_graph        , only : graph, known_branch, null_branch
-  use graph_relational_view, only : relational_binding, &
+  use graph_fractal        , only : graph, known_branch, null_branch
+  use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
-       & holds_set
+       & has_set
 
   implicit none
 
@@ -56,8 +56,8 @@ program learning_level_8
   ! Residual rows exist only from Level 6 upward.
   integer, parameter :: ROW_R = 1
 
-  type(set_graph)              :: v, o, p, y
-  type(set_graph)               :: k, theta, u, p_in, p_out
+  type(graph)              :: v, o, p, y
+  type(graph)               :: k, theta, u, p_in, p_out
   type(stored_relation)          :: flow, backwards, located
   type(stored_relation)          :: consumes, produces
   class(relation), allocatable   :: d, a, d2
@@ -76,7 +76,7 @@ program learning_level_8
   type(graph)             , target :: rcell3(2), relem3(2)
   type(relational_binding)         :: bnd3
   integer                          :: kcell3
-  type(field)                    :: q_k, q_k2
+  type(stored_field)                    :: q_k, q_k2
   integer, allocatable           :: order(:), order2(:)
   real(dp), allocatable          :: obs(:)
   integer                        :: table(3, 6)
@@ -129,9 +129,9 @@ program learning_level_8
   ! The Level-5 observed field, carried forward: [6, 2] on K = {y, x}
   ! in declaration order. U gets NO field - before evaluation the
   ! computed domain owns no numbers, and that stays true.
-  q_k = field('observations', k, sets % size_of(k))
+  q_k = stored_field('observations', k, sets % num_members_of(k))
   call q_k % set_real_vector([6.0_dp, 2.0_dp])
-  call q_k % get_real_vector(obs)
+  call q_k % real_vector(obs)
 
   ! The lower road, walked again: D derived, admitted, interpreted,
   ! sorted - the structure supplies the execution order.
@@ -312,7 +312,7 @@ contains
     integer              :: ti, nsup, home
     logical              :: same
 
-    allocate(sup(sets % size_of(theta)))
+    allocate(sup(sets % num_members_of(theta)))
     a = compose_binary(consumes, produces, sets)
     ! 'value dependency': (S, P) as one sequence on each branch.
     call g_a % declare()
@@ -344,7 +344,7 @@ contains
 
     home = located_slot(located, v, sets, ROW_R)
     nsup = 0
-    do ti = 1, sets % size_of(theta)
+    do ti = 1, sets % num_members_of(theta)
        if (reachable(a, sets, sets % member_of(theta, ti), home)) then
           nsup      = nsup + 1
           sup(nsup) = sets % member_of(theta, ti)
@@ -385,9 +385,9 @@ contains
     real(dp)              :: r(1)
     real(dp), allocatable :: obs2(:)
 
-    q_k2 = field('observations again', k, sets % size_of(k))
+    q_k2 = stored_field('observations again', k, sets % num_members_of(k))
     call q_k2 % set_real_vector([8.0_dp, 4.0_dp])
-    call q_k2 % get_real_vector(obs2)
+    call q_k2 % real_vector(obs2)
 
     call generated_residual(flow, located, v, sets, y, k, obs2, &
          & theta, [2.0_dp], u, order, r)

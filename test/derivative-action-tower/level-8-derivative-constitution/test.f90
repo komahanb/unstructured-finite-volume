@@ -41,29 +41,29 @@ program derivative_level_8
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use graph_relation   , only : stored_relation, relation
-  use graph_relation_algebra, only : restrict_slot, project_slots, &
+  use map_set        , only : set_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
+  use relation_finitary   , only : stored_relation, relation
+  use relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_algorithms , only : reachable, topological_order
-  use class_graph_field, only : field
+  use relation_algorithms , only : reachable, topological_order
+  use field_stored, only : stored_field
   use derivative_constitution_fixture, only : apply_law, &
        & local_linearization, slot_for_port, primal_execution, &
        & tangent_action, reverse_action
-  use fractal_graph        , only : graph, known_branch, null_branch
-  use graph_relational_view, only : relational_binding, &
+  use graph_fractal        , only : graph, known_branch, null_branch
+  use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
-       & holds_set
+       & has_set
 
   implicit none
 
 
-  type(set_graph)              :: v, o, p
-  type(set_graph)               :: x_dom, c, z_dom, p_in, p_out
+  type(graph)              :: v, o, p
+  type(graph)               :: x_dom, c, z_dom, p_in, p_out
   type(stored_relation)          :: flow, backwards
   class(relation), allocatable   :: d, d2, av
   type(graph)             , target :: g
@@ -81,7 +81,7 @@ program derivative_level_8
   type(graph)             , target :: rcell2(1), relem2(1)
   type(relational_binding)         :: bnd2
   integer                          :: kcell2
-  type(field)                    :: qx, vx, zbar_f, jv_f, xbar_f
+  type(stored_field)                    :: qx, vx, zbar_f, jv_f, xbar_f
   integer, allocatable           :: order(:), order2(:), hits(:)
   real(dp), allocatable          :: obs(:), seedv(:), zseed(:), xbar(:)
   real(dp), allocatable          :: base(:), dot(:)
@@ -165,9 +165,9 @@ program derivative_level_8
   g % branch(2) = known_branch(rcell(1))
   call topological_order(d, sets, order)
 
-  allocate(base(sets % size_of(v)), avail(sets % size_of(v)))
-  allocate(dot(sets % size_of(v)), davail(sets % size_of(v)))
-  allocate(xbar(sets % size_of(x_dom)))
+  allocate(base(sets % num_members_of(v)), avail(sets % num_members_of(v)))
+  allocate(dot(sets % num_members_of(v)), davail(sets % num_members_of(v)))
+  allocate(xbar(sets % num_members_of(x_dom)))
 
   call check_derived_order(nfail)
   call check_laws(nfail)
@@ -286,9 +286,9 @@ contains
 
     integer, intent(inout) :: nfail
 
-    qx = field('base point', x_dom, sets % size_of(x_dom))
+    qx = stored_field('base point', x_dom, sets % num_members_of(x_dom))
     call qx % set_real_vector([3.0_dp, 2.0_dp])
-    call qx % get_real_vector(obs)
+    call qx % real_vector(obs)
 
     call primal_execution(flow, v, sets, x_dom, obs, c, order, base, avail)
 
@@ -298,7 +298,7 @@ contains
     call report(abs(base(sets % index_in(v, SLOT_Z)) - 9.0_dp) &
          &      < 1.0d-12, &
          & "z = 9: the base point stands complete", nfail)
-    call report(count(avail) .eq. sets % size_of(v), &
+    call report(count(avail) .eq. sets % num_members_of(v), &
          & "every slot is available after execution", nfail)
 
   end subroutine check_primal
@@ -313,12 +313,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dom
+    type(graph) :: dom
     real(dp), allocatable          :: out_val(:)
 
-    vx = field('tangent seed', x_dom, sets % size_of(x_dom))
+    vx = stored_field('tangent seed', x_dom, sets % num_members_of(x_dom))
     call vx % set_real_vector([-1.0_dp, 4.0_dp])
-    call vx % get_real_vector(seedv)
+    call vx % real_vector(seedv)
 
     call tangent_action(flow, v, sets, x_dom, seedv, c, order, base, &
          & dot, davail)
@@ -328,11 +328,11 @@ contains
          & "du = 3(4) + 2(-1) = 10, by the local shadow", nfail)
 
     jv = dot(sets % index_in(v, SLOT_Z))
-    jv_f = field('tangent response', z_dom, sets % size_of(z_dom))
+    jv_f = stored_field('tangent response', z_dom, sets % num_members_of(z_dom))
     call jv_f % set_real_vector([jv])
 
     dom = jv_f % domain()
-    call jv_f % get_real_vector(out_val)
+    call jv_f % real_vector(out_val)
     call report(dom % same_as(z_dom) .and. &
          &      abs(out_val(sets % index_in(z_dom, SLOT_Z)) - 9.0_dp) &
          &      < 1.0d-12, &
@@ -350,11 +350,11 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dom
+    type(graph) :: dom
 
-    zbar_f = field('reverse seed', z_dom, sets % size_of(z_dom))
+    zbar_f = stored_field('reverse seed', z_dom, sets % num_members_of(z_dom))
     call zbar_f % set_real_vector([2.0_dp])
-    call zbar_f % get_real_vector(zseed)
+    call zbar_f % real_vector(zseed)
 
     call reverse_action(flow, v, sets, x_dom, order, base, z_dom, &
          & zseed, xbar, hits)
@@ -366,7 +366,7 @@ contains
          &      < 1.0d-12, &
          & "xbar = 3(2) = 6", nfail)
 
-    xbar_f = field('reverse result', x_dom, sets % size_of(x_dom))
+    xbar_f = stored_field('reverse result', x_dom, sets % num_members_of(x_dom))
     call xbar_f % set_real_vector(xbar)
     dom = xbar_f % domain()
     call report(dom % same_as(x_dom), &
@@ -472,7 +472,7 @@ contains
     g_av % branch(2) = known_branch(rcell2(1))
 
     ok = .true.
-    do i = 1, sets % size_of(x_dom)
+    do i = 1, sets % num_members_of(x_dom)
        m = sets % member_of(x_dom, i)
        ok = ok .and. (reachable(av, sets, m, SLOT_Z) .eqv. &
             &         (hits(sets % index_in(v, m)) .gt. 0))
@@ -496,15 +496,15 @@ contains
     real(dp), allocatable :: obs2(:), base2(:), dot2(:), xbar2(:)
     logical , allocatable :: avail2(:), davail2(:)
     real(dp)              :: jv2, lhs, rhs
-    type(field)           :: qx2
+    type(stored_field)           :: qx2
 
-    allocate(base2(sets % size_of(v)), avail2(sets % size_of(v)))
-    allocate(dot2(sets % size_of(v)), davail2(sets % size_of(v)))
-    allocate(xbar2(sets % size_of(x_dom)))
+    allocate(base2(sets % num_members_of(v)), avail2(sets % num_members_of(v)))
+    allocate(dot2(sets % num_members_of(v)), davail2(sets % num_members_of(v)))
+    allocate(xbar2(sets % num_members_of(x_dom)))
 
-    qx2 = field('base point two', x_dom, sets % size_of(x_dom))
+    qx2 = stored_field('base point two', x_dom, sets % num_members_of(x_dom))
     call qx2 % set_real_vector([2.0_dp, 4.0_dp])
-    call qx2 % get_real_vector(obs2)
+    call qx2 % real_vector(obs2)
 
     call primal_execution(flow, v, sets, x_dom, obs2, c, order, &
          & base2, avail2)
@@ -576,9 +576,9 @@ contains
     logical , allocatable :: availb(:), davailb(:)
     real(dp)              :: jvb, lhs, rhs
 
-    allocate(baseb(sets % size_of(v)), availb(sets % size_of(v)))
-    allocate(dotb(sets % size_of(v)), davailb(sets % size_of(v)))
-    allocate(xbarb(sets % size_of(x_dom)))
+    allocate(baseb(sets % num_members_of(v)), availb(sets % num_members_of(v)))
+    allocate(dotb(sets % num_members_of(v)), davailb(sets % num_members_of(v)))
+    allocate(xbarb(sets % num_members_of(x_dom)))
 
     do k = 1, 6
        rev(:, k) = table(:, 7 - k)

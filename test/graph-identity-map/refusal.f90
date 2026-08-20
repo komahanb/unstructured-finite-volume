@@ -9,8 +9,8 @@
 
 program refusal
 
-  use fractal_graph  , only : graph
-  use graph_label_map, only : label_map
+  use graph_fractal  , only : graph
+  use map_label, only : label_map
 
   implicit none
 

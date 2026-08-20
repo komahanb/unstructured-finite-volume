@@ -29,15 +29,15 @@ program calculator_level_6
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use graph_relation   , only : stored_relation, relation
-  use graph_relation_algebra, only : restrict_slot, project_slots, &
+  use map_set        , only : set_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
+  use relation_finitary   , only : stored_relation, relation
+  use relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_binary_relation , only : csr_relation, transposed_view, &
+  use relation_binary , only : csr_relation, transposed_relation, &
        &                             transpose_of
 
   implicit none
@@ -46,12 +46,12 @@ program calculator_level_6
   integer, parameter :: ROW_C = 1
   integer, parameter :: ROW_E = 2
 
-  type(set_graph)          :: x, o, p, y
-  type(set_graph)           :: p_out
+  type(graph)          :: x, o, p, y
+  type(graph)           :: p_out
   type(stored_relation)      :: flow, backwards, located
   type(stored_relation)      :: q_prod, a_part
   type(csr_relation), target :: j, j2
-  type(transposed_view)      :: jt
+  type(transposed_relation)      :: jt
   integer                    :: table(3, 6)
   integer                    :: nfail
   type(set_map)     :: sets
@@ -132,7 +132,7 @@ contains
     character(len=*)  , intent(in) :: what
     integer           , intent(inout) :: nfail
 
-    type(set_graph) :: dom
+    type(graph) :: dom
 
     dom = jac % domain(1)
     call report(dom % same_as(y), &
@@ -164,17 +164,17 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)     :: src, sre
+    type(graph)     :: src, sre
     integer              :: i, n1, n2
     integer              :: nx
     integer, allocatable :: kept1(:), kept2(:)
 
-    nx = sets % size_of(x)
+    nx = sets % num_members_of(x)
     allocate(kept1(nx), kept2(nx))
 
     n1 = 0
     n2 = 0
-    do i = 1, sets % size_of(x)
+    do i = 1, sets % num_members_of(x)
        if (j % has([ROW_C, sets % member_of(x, i)])) then
           n1 = n1 + 1
           kept1(n1) = sets % member_of(x, i)
@@ -191,11 +191,11 @@ contains
     call sets       % bind(sre, listed_set_representation(kept2(1:n2)))
     call inclusions % include_in(sre, x)
 
-    call report(sets % size_of(src) .eq. 3 .and. sets % has_in(src, SLOT_A) .and. &
-         &      sets % has_in(src, SLOT_B) .and. sets % has_in(src, SLOT_C), &
+    call report(sets % num_members_of(src) .eq. 3 .and. sets % has(src, SLOT_A) .and. &
+         &      sets % has(src, SLOT_B) .and. sets % has(src, SLOT_C), &
          & "support(r_c) = { a, b, c }, composed, not stored", nfail)
-    call report(sets % size_of(sre) .eq. 3 .and. sets % has_in(sre, SLOT_C) .and. &
-         &      sets % has_in(sre, SLOT_D) .and. sets % has_in(sre, SLOT_E), &
+    call report(sets % num_members_of(sre) .eq. 3 .and. sets % has(sre, SLOT_C) .and. &
+         &      sets % has(sre, SLOT_D) .and. sets % has(sre, SLOT_E), &
          & "support(r_e) = { c, d, e }", nfail)
     call report(declared_subobject(src, x, inclusions) .and. declared_subobject(sre, x, inclusions), &
          & "and both stand embedded in the value slots", nfail)

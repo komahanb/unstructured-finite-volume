@@ -20,20 +20,20 @@
 program learning_level_3_refusal
 
   use learning_assert      , only : OP_PREDICT, OP_ERROR
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_binary_relation, only : csr_relation, transposed_view, &
+  use map_set        , only : set_map
+  use relation_binary, only : csr_relation, transposed_relation, &
        &                            transpose_of
-  use fractal_graph        , only : graph
-  use graph_relational_view, only : relational_binding
+  use graph_fractal        , only : graph
+  use view_relational, only : relational_binding
 
   implicit none
 
-  type(set_graph)          :: o
+  type(graph)          :: o
   type(csr_relation), target :: dep
-  type(transposed_view)      :: flipped
+  type(transposed_relation)      :: flipped
   type(graph)       , target :: elem
   type(relational_binding)   :: bnd
   character(len=32)          :: which

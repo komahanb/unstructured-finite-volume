@@ -7,16 +7,16 @@ module lopsided_fixture
   use iso_fortran_env  , only : dp => REAL64
   ! An action names a domain and counts it. It holds no map: the
   ! identity and the count are the whole of what it is entitled to.
-  use fractal_graph    , only : set_graph => graph
-  use graph_operation_view, only : graph_operation
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use class_graph_field, only : field
+  use graph_fractal    , only : graph
+  use operation_action, only : operation
+  use view_directed, only : directed_graph
+  use field_calculus, only : field
+  use field_stored, only : stored_field
   implicit none
   private
   public :: lopsided
-  type, extends(graph_operation) :: lopsided
-     type(set_graph) :: y
+  type, extends(operation) :: lopsided
+     type(graph) :: y
      integer         :: n_y = 0
    contains
      procedure :: name => l_name
@@ -29,23 +29,23 @@ contains
     character(len=:), allocatable :: name
     name = 'lopsided'
   end function l_name
-  subroutine l_domain(this, input_graph, domain, nentries)
+  subroutine l_domain(this, input_graph, domain, num_entries)
     class(lopsided), intent(in) :: this
     class(directed_graph), intent(in) :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
     associate (u => input_graph); end associate
     domain   = this % y
-    nentries = this % n_y
+    num_entries = this % n_y
   end subroutine l_domain
   subroutine l_apply(this, input_graph, input_data, output)
     class(lopsided), intent(in) :: this
     class(directed_graph), intent(in) :: input_graph
-    class(graph_field), intent(in), optional :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
-    type(field) :: out
+    class(field), intent(in), optional :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
+    type(stored_field) :: out
     associate (u => input_graph, u2 => input_data); end associate
-    out = field('r', this % y, this % n_y)
+    out = stored_field('r', this % y, this % n_y)
     call out % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp])
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
@@ -53,22 +53,22 @@ contains
 end module lopsided_fixture
 
 program minimization_refusal
-  use fractal_graph           , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal           , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map           , only : set_map
-  use graph_inclusion_map     , only : inclusion_map
-  use class_graph      , only : directed_stored_graph
-  use class_graph_gmres, only : gmres
+  use map_set           , only : set_map
+  use map_inclusion     , only : inclusion_map
+  use view_directed_stored      , only : stored_directed_graph
+  use operation_gmres, only : gmres
   use lopsided_fixture , only : lopsided
   implicit none
-  type(directed_stored_graph)  :: host
-  type(set_graph)     :: x, u
+  type(stored_directed_graph)  :: host
+  type(graph)     :: x, u
   type(lopsided)      :: action
   type(gmres)         :: solver
   type(set_map)       :: sets
   type(inclusion_map) :: inclusions
-  host = directed_stored_graph(4, tails=[1,2,3], heads=[2,3,4])
+  host = stored_directed_graph(4, tails=[1,2,3], heads=[2,3,4])
   call x % declare()
   call sets % bind(x, counted_set_representation(5))
   call u % declare()
@@ -77,6 +77,6 @@ program minimization_refusal
   call action % y % declare()
   call sets % bind(action % y, counted_set_representation(3))  ! three residuals
   action % n_y = 3
-  call solver % attach(action, host, u, sets % size_of(u))
+  call solver % attach(action, host, u, sets % num_members_of(u))
   write(*,'(1x,a)') "REACHED PAST THE REFUSAL"
 end program minimization_refusal

@@ -16,15 +16,15 @@
 program learning_level_1_refusal
 
   use learning_assert, only : SLOT_W, OP_PREDICT, PORT_IN1, PORT_OUT
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_relation , only : stored_relation
+  use map_set        , only : set_map
+  use relation_finitary , only : stored_relation
 
   implicit none
 
-  type(set_graph)     :: v, o, p, raw
+  type(graph)     :: v, o, p, raw
   type(stored_relation) :: flow
   character(len=32)     :: which
   type(set_map)     :: sets

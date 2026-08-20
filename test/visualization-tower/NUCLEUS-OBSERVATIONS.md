@@ -28,7 +28,7 @@ evidence for any seam of**
 
 Seam **A2** — *operations should carry their domain rather than ask a
 graph for one* — cannot have been exercised here, because **Gate A
-attached no operation to anything.** No `graph_operation` was
+attached no operation to anything.** No `operation` was
 constructed, none was applied, and the import gate refuses every
 module that owns one at every level. The seam-A2 count stands where
 the Time Integration Tower left it, at **three**, and nothing below
@@ -583,7 +583,7 @@ evidence:             L0-L4 PASS. src diff empty. No production
                       abstraction added: no graph_visualization, no
                       class_graph_visualization, no graph_renderer, no
                       visualize()/print()/dependencies() on
-                      graph_operation.
+                      operation.
 
 confidence:           high for the built radius; UNKNOWN beyond it.
                       Level 6 has not yet asked production what
@@ -841,7 +841,7 @@ symptom / fact:       EQUAL CARDINALITY DOES NOT MAKE ONE CARRIER A
                       NO NEW VALIDATION MECHANISM WAS INVENTED. The
                       check asks the field for its domain and the
                       domain for its identity, which is what
-                      graph_carrier and class_graph_field have always
+                      graph_carrier and field_stored have always
                       offered. Level 5 exposes those semantics; it
                       does not add to them.
 
@@ -963,7 +963,7 @@ symptom / fact:       THE PRODUCTION DEPENDENCY ANSWER CANNOT
                       serving both axes looks like, read off safely.
 
                       THIS IS A SPECIALIZATION, NOT A DEFECT.
-                      stencil_operator is a same-domain square-matrix
+                      stencil is a same-domain square-matrix
                       citizen, and its pattern contract is correct at
                       that radius. A defect would need an executable
                       promise that behaviour violates; see VIZ-22.
@@ -995,7 +995,7 @@ level:                6  (discretization)
 review gate:          not yet reviewed
 contextual radius:    4 (what one concrete's verb means)
 
-symptom / fact:       stencil_operator % dependencies() EXPOSES
+symptom / fact:       stencil % dependencies() EXPOSES
                       ALGEBRAIC STATE SPARSITY.
 
                       Its graph is built at construction, one edge per
@@ -1034,7 +1034,7 @@ level:                6  (discretization)
 review gate:          not yet reviewed
 contextual radius:    4 (what the other concrete's verb means)
 
-symptom / fact:       step_operator % dependencies() EXPOSES THE
+symptom / fact:       scheme % dependencies() EXPOSES THE
                       SCHEME'S TEMPORAL MOTIF.
 
                       BDF2 answers three vertices and two edges,
@@ -1141,16 +1141,16 @@ review gate:          not yet reviewed
 contextual radius:    4 (pressure toward the root)
 
 symptom / fact:       THIS TOWER DOES NOT JUSTIFY STRUCTURAL
-                      INTROSPECTION ON graph_operation.
+                      INTROSPECTION ON operation.
 
-                      Level 6 inspected discretization_operator and
+                      Level 6 inspected discretization and
                       its two concretes. It inspected NO other
                       operation family - not a linearization, not a
                       marcher, not a minimizer, not a partitioner.
 
                       The root question is:
 
-                        Does EVERY graph_operation possess one
+                        Does EVERY operation possess one
                         meaningful dependency structure?
 
                       Level 6 does not answer it, and VIZ-20 is if
@@ -1159,7 +1159,7 @@ symptom / fact:       THIS TOWER DOES NOT JUSTIFY STRUCTURAL
                       a single root-level verb across ALL families is
                       further from justified, not closer.
 
-                      Nothing was added to graph_operation. No
+                      Nothing was added to operation. No
                       dependencies(), no structure(), no visualize().
                       dependencies() was not moved upward and its
                       return type was not changed.
@@ -1190,16 +1190,16 @@ symptom / fact:       dependencies() HAS TWO IMPLEMENTATIONS AND, AT
                       The Level-6 census, run over every .f90 in the
                       repository at b134a1f:
 
-                        discretization_operator      graph_calculus:219
+                        discretization      graph_calculus:219
                           deferred :: dependencies    interface :406-410
                           returns class(graph), allocatable
 
-                        stencil_operator   class_graph_stencil.f90:47
+                        stencil   operation_stencil.f90:47
                           stencil_dependencies                    :168
                           returns a copy of its own stored pattern
                           repo callers: 0
 
-                        step_operator      class_graph_step.f90:46
+                        scheme      operation_step.f90:46
                           step_dependencies                       :127
                           builds a fresh reach+1 chain
                           repo callers: 0
@@ -1381,9 +1381,9 @@ symptom / fact:       MINIMIZATION IS STRUCTURALLY INHABITED. LEVEL 7
                       So the question was never WHETHER structure is
                       consumed. It is WHOSE.
 
-exact caller:         src/graph_minimization.f90 sweep_order :: diagonal;
-                      src/class_graph_jacobi.f90 solve;
-                      src/class_graph_gauss_seidel.f90 solve
+exact caller:         src/operation_minimization.f90 sweep_order :: diagonal;
+                      src/operation_jacobi.f90 solve;
+                      src/operation_gauss_seidel.f90 solve
 
 evidence:             read from the local source at 7d4c501, and
                       exercised at
@@ -1440,7 +1440,7 @@ symptom / fact:       sweep_order() DERIVES ITS COLOURING FROM THE
                       colour - which is exactly what a colouring is
                       supposed to prevent.
 
-exact caller:         src/graph_minimization.f90 sweep_order;
+exact caller:         src/operation_minimization.f90 sweep_order;
                       level-7-minimization/test.f90
                       check_the_colouring_is_host_dependent
 
@@ -1558,7 +1558,7 @@ symptom / fact:       THE REPORTED DIAGONAL CHANGES WHEN ONLY THE
 
 exact caller:         level-7-minimization/test.f90
                       check_the_diagonal
-                      -> src/graph_minimization.f90 diagonal
+                      -> src/operation_minimization.f90 diagonal
                       -> sweep_order -> colouring % apply(this % on)
 
 evidence:             FAIL : diagonal(A) on H_empty = [4,5,6] - THE
@@ -1630,7 +1630,7 @@ symptom / fact:       dependencies() CANNOT BE SUBSTITUTED BLINDLY.
                       to do with which unknowns are coupled.
 
                       Nor is a special case acceptable: no select type
-                      on stencil_operator, because that would encode
+                      on stencil, because that would encode
                       "this family member happens to mean the right
                       thing" as architecture.
 
@@ -1682,7 +1682,7 @@ symptom / fact:       A CONSUMER MAY NEED TO REQUEST A PARTICULAR KIND
                       and NOT as any of:
 
                         "dependencies() should move to
-                         graph_operation"
+                         operation"
                         "the ordinary graph needs replacing"
                         "add an explicit structural argument at
                          attach"
@@ -1721,8 +1721,8 @@ symptom / fact:       dependencies() IS AXIS-RELATIVE, AND THAT IS ONE
                         dependencies() = the stencil on the axis this
                                          concrete type represents
 
-                        stencil_operator -> DEPENDENT-variable stencil
-                        step_operator    -> INDEPENDENT-variable
+                        stencil -> DEPENDENT-variable stencil
+                        scheme    -> INDEPENDENT-variable
                                             stencil
 
                       Level 6 first read this as two unrelated
@@ -1757,7 +1757,7 @@ symptom / fact:       dependencies() IS AXIS-RELATIVE, AND THAT IS ONE
                       FAMILY-C: the apparent semantic difference
                       disappears under the axis-relative reading.
 
-exact caller:         src/class_graph_step.f90 step_dependencies;
+exact caller:         src/operation_step.f90 step_dependencies;
                       level-6-discretization/test.f90
                       check_the_step_pattern
 
@@ -1792,7 +1792,7 @@ symptom / fact:       THE CONSUMER IS HANDED ITS STRUCTURE; IT DOES
                       this tower reached needs no new production
                       vocabulary at all:
 
-                        stencil_operator
+                        stencil
                               |  dependencies()
                               v
                         dependent-variable stencil
@@ -1802,25 +1802,25 @@ symptom / fact:       THE CONSUMER IS HANDED ITS STRUCTURE; IT DOES
 
                       The CALLER knows which object owns the dependent
                       axis. Nothing in the minimizer inspects an
-                      action's type, and nothing asks a graph_operation
+                      action's type, and nothing asks a operation
                       for a structure it may not have.
 
                       WHAT WAS NOT BUILT, and was not needed:
 
-                        dependencies() on graph_operation
+                        dependencies() on operation
                         a structural-axis enum
                         graph_observation
                         graph_visualization
                         a structural_projection type
                         a generic visualization abstraction
 
-                      A step_operator's dependencies() is an
+                      A scheme's dependencies() is an
                       INDEPENDENT-axis stencil and is therefore never
                       passed as a minimizer's coupling. That is not a
                       special case; it is a caller reading a type it
                       already knows.
 
-exact caller:         src/graph_minimization.f90 attach :: sweep_order;
+exact caller:         src/operation_minimization.f90 attach :: sweep_order;
                       level-7-minimization/test.f90 attach_to
 
 evidence:             L7 PASS with coupling = P_A under two unrelated
@@ -1876,7 +1876,7 @@ symptom / fact:       THREE STRUCTURES COEXIST IN ONE COMPOSITION
                         graph_interpretation
                         graph_renderer
                         visualize() / print() / structure() on any root
-                        dependencies() on graph_operation
+                        dependencies() on operation
                         a structural-axis enum
                         a structural_projection type
                         a product-space type
@@ -1946,7 +1946,7 @@ TOWER SEALED.
 ```
 
 Production changed in three places, all narrow and all earned:
-class_graph_step (a stencil is not a chronology), graph_calculus
-(the contract's prose), graph_minimization (a seat for the coupling),
+operation_step (a stencil is not a chronology), graph_calculus
+(the contract's prose), operation_minimization (a seat for the coupling),
 plus the caller adjustments the new argument required. No root was
 generalized and no visualization abstraction was promoted.

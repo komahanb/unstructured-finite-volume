@@ -3,11 +3,11 @@
 ! graph, so class(graph) adds no admissible value.
 module polymorphic_known
   implicit none
-  type :: graph_branch
+  type :: branch
      integer               :: status = 0
      class(graph), pointer :: known  => null()
-  end type graph_branch
+  end type branch
   type :: graph
-     type(graph_branch) :: branch(2)
+     type(branch) :: branch(2)
   end type graph
 end module polymorphic_known

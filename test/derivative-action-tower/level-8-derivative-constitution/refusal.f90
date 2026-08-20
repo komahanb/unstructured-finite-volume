@@ -26,19 +26,19 @@ program derivative_level_8_refusal
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use graph_relation   , only : stored_relation
+  use map_set        , only : set_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
+  use relation_finitary   , only : stored_relation
   use derivative_constitution_fixture, only : apply_law, &
        & slot_for_port, primal_execution, tangent_action
 
   implicit none
 
-  type(set_graph)     :: v, o, p
-  type(set_graph)      :: x_dom, c
+  type(graph)     :: v, o, p
+  type(graph)      :: x_dom, c
   type(stored_relation) :: flow, lame
   integer               :: table(3, 6), short(3, 5)
   real(dp)              :: vals(4), dots(4), zz

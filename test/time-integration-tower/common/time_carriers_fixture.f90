@@ -35,9 +35,9 @@
 
 module time_carriers_fixture
 
-  use fractal_graph           , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation
-  use graph_set_map           , only : set_map
+  use graph_fractal           , only : graph
+  use map_set_representation, only : counted_set_representation
+  use map_set           , only : set_map
 
   implicit none
 
@@ -54,7 +54,7 @@ contains
   subroutine time_carriers(sets, q, t, e)
 
     type(set_map)  , intent(inout) :: sets
-    type(set_graph), intent(out)   :: q, t, e
+    type(graph), intent(out)   :: q, t, e
 
     call q % declare()      ! state coordinates
     call t % declare()      ! time instants

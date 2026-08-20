@@ -32,9 +32,9 @@ module learning_constitution_fixture
   use iso_fortran_env, only : dp => REAL64
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
-  use graph_relation , only : relation
+  use graph_fractal        , only : graph
+  use map_set        , only : set_map
+  use relation_finitary , only : relation
 
   implicit none
 
@@ -74,7 +74,7 @@ contains
   integer function slot_for_port(flow, slots, sets, op, port) result(found)
 
     class(relation)  , intent(in) :: flow
-    type(set_graph), intent(in) :: slots
+    type(graph), intent(in) :: slots
     type(set_map)  , intent(in) :: sets
     integer          , intent(in) :: op, port
 
@@ -82,7 +82,7 @@ contains
 
     hits  = 0
     found = 0
-    do j = 1, sets % size_of(slots)
+    do j = 1, sets % num_members_of(slots)
        if (flow % has([op, sets % member_of(slots, j), port])) then
           hits  = hits + 1
           found = sets % member_of(slots, j)
@@ -102,7 +102,7 @@ contains
   integer function located_slot(located, slots, sets, row) result(home)
 
     class(relation)  , intent(in) :: located
-    type(set_graph), intent(in) :: slots
+    type(graph), intent(in) :: slots
     type(set_map)  , intent(in) :: sets
     integer          , intent(in) :: row
 
@@ -110,7 +110,7 @@ contains
 
     hits = 0
     home = 0
-    do j = 1, sets % size_of(slots)
+    do j = 1, sets % num_members_of(slots)
        if (located % has([row, sets % member_of(slots, j)])) then
           hits = hits + 1
           home = sets % member_of(slots, j)
@@ -139,14 +139,14 @@ contains
        & computed, order, residual, touched, trace)
 
     class(relation)  , intent(in)  :: flow, located
-    type(set_graph), intent(in)  :: slots        ! V
+    type(graph), intent(in)  :: slots        ! V
     type(set_map)  , intent(in) :: sets
-    type(set_graph), intent(in)  :: rows         ! Y
-    type(set_graph), intent(in)  :: observed     ! K
+    type(graph), intent(in)  :: rows         ! Y
+    type(graph), intent(in)  :: observed     ! K
     real(dp)         , intent(in)  :: observed_values(:)
-    type(set_graph), intent(in)  :: trainable    ! Theta
+    type(graph), intent(in)  :: trainable    ! Theta
     real(dp)         , intent(in)  :: trainable_values(:)
-    type(set_graph), intent(in)  :: computed     ! U
+    type(graph), intent(in)  :: computed     ! U
     integer          , intent(in)  :: order(:)     ! derived by caller
     real(dp)         , intent(out) :: residual(:)
     integer , allocatable, intent(out), optional :: touched(:)
@@ -157,12 +157,12 @@ contains
     integer, allocatable  :: reads(:)
     integer  :: nreads, i, m, op, in1, in2, out
 
-    allocate(reads(sets % size_of(trainable)))
-    allocate(available(sets % size_of(slots)))
-    allocate(values(sets % size_of(slots)))
-    if (size(observed_values) .ne. sets % size_of(observed) .or. &
-         & size(trainable_values) .ne. sets % size_of(trainable) .or. &
-         & size(residual) .ne. sets % size_of(rows)) then
+    allocate(reads(sets % num_members_of(trainable)))
+    allocate(available(sets % num_members_of(slots)))
+    allocate(values(sets % num_members_of(slots)))
+    if (size(observed_values) .ne. sets % num_members_of(observed) .or. &
+         & size(trainable_values) .ne. sets % num_members_of(trainable) .or. &
+         & size(residual) .ne. sets % num_members_of(rows)) then
        error stop 'constitution: every vector is sized by its domain'
     end if
 
@@ -173,7 +173,7 @@ contains
     nreads    = 0
 
     ! Seed the observed state through K's own enumeration.
-    do i = 1, sets % size_of(observed)
+    do i = 1, sets % num_members_of(observed)
        m = sets % member_of(observed, i)
        values(sets % index_in(slots, m)) = &
             & observed_values(sets % index_in(observed, m))
@@ -182,7 +182,7 @@ contains
 
     ! Seed the trainable state through Theta's own enumeration -
     ! an INPUT to evaluation, never modified here.
-    do i = 1, sets % size_of(trainable)
+    do i = 1, sets % num_members_of(trainable)
        m = sets % member_of(trainable, i)
        values(sets % index_in(slots, m)) = &
             & trainable_values(sets % index_in(trainable, m))
@@ -203,7 +203,7 @@ contains
 
        ! The learning schema law: operations produce the slots the
        ! partition classified as computed.
-       if (.not. sets % has_in(computed, out)) then
+       if (.not. sets % has(computed, out)) then
           error stop 'constitution: an operation must produce a computed slot'
        end if
 
@@ -217,7 +217,7 @@ contains
     end do
 
     ! The learning residual rule, complete: the value at the home.
-    do i = 1, sets % size_of(rows)
+    do i = 1, sets % num_members_of(rows)
        m = located_slot(located, slots, sets, sets % member_of(rows, i))
        if (.not. available(sets % index_in(slots, m))) then
           error stop 'constitution: a residual home was never computed'
@@ -233,7 +233,7 @@ contains
 
     subroutine note_read(slot)
       integer, intent(in) :: slot
-      if (sets % has_in(trainable, slot)) then
+      if (sets % has(trainable, slot)) then
          if (.not. any(reads(1:nreads) .eq. slot)) then
             nreads        = nreads + 1
             reads(nreads) = slot

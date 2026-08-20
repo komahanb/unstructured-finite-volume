@@ -1,7 +1,7 @@
 !=====================================================================!
 ! The robustness suite: numerics that do not ask the mesh's pardon.
 !
-! A deliberately bad mesh: four cells whose centers wander off the
+! A deliberately bad mesh: four cells whose centres wander off the
 ! face normals, every face skewed, nothing orthogonal anywhere,
 !
 !        (3) ~~~~ (4)          c1 = (0.00, 0.00)
@@ -12,7 +12,7 @@
 ! and one exact linear field, q = 2x + 3y. Three verdicts:
 !
 !   1. the two-point flux MISSES, and by how much is measured - it
-!      reads the derivative along the center line, not the normal
+!      reads the derivative along the centre line, not the normal
 !   2. the exactness weights land the flux to machine precision on
 !      the same mesh, because they use the geometry instead of
 !      assuming it
@@ -22,23 +22,23 @@
 
 program test_graph_robustness
 
-  use class_graph, only : directed_stored_graph
+  use view_directed_stored, only : stored_directed_graph
   use iso_fortran_env, only : dp => REAL64
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use graph_directed_view , only : GRAPH_SIDE_VERTEX
-  use fractal_graph  , only : set_graph => graph
-  use class_graph_field  , only : field
-  use class_graph_mesh   , only : mesh
-  use class_graph_differential_operator, only : edge_differential_operator
-  use class_graph_differential_operator, only : differential_operator
-  use class_graph_stencil, only : stencil_operator
-  use class_fitted_balance, only : fitted_balance_stencil
-  use graph_fitting        , only : fit
-  use class_polynomial_form, only : polynomial_form
-  use class_harmonic_form  , only : harmonic_form
-  use class_form_pruner    , only : pruner
-  use class_graph_gmres  , only : gmres
+  use view_directed, only : directed_graph
+  use field_calculus, only : field
+  use view_directed , only : SIDE_VERTEX
+  use graph_fractal  , only : graph
+  use field_stored  , only : stored_field
+  use view_mesh   , only : mesh
+  use operation_differential, only : edge_derivative
+  use operation_differential, only : differential_operator
+  use operation_stencil, only : stencil
+  use operation_fitted_balance, only : fitted_balance_stencil
+  use operation_fitting        , only : fit
+  use field_forms       , only : polynomial_form
+  use field_forms   , only : harmonic_form
+  use operation_fitting , only : pruner
+  use operation_gmres  , only : gmres
 
   implicit none
 
@@ -79,7 +79,7 @@ contains
 
   !===================================================================!
   ! The bad mesh, in one place. Interior deltas are the true
-  ! center-to-center distances; every one of them leans away from
+  ! centre-to-centre distances; every one of them leans away from
   ! its normal.
   !===================================================================!
 
@@ -96,7 +96,7 @@ contains
          & tails=[1, 3, 1, 2,  1, 3, 1, 2, 2, 4, 3, 4], &
          & heads=[2, 4, 3, 4,  0, 0, 0, 0, 0, 0, 0, 0], &
          & volumes      = [1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp], &
-         & cell_centers = [c1(1), c1(2), 0.0_dp, &
+         & cell_centres = [c1(1), c1(2), 0.0_dp, &
          &                 c2(1), c2(2), 0.0_dp, &
          &                 c3(1), c3(2), 0.0_dp, &
          &                 c4(1), c4(2), 0.0_dp], &
@@ -116,7 +116,7 @@ contains
          &                  1.0_dp, 0.0_dp, 0.0_dp, &
          &                  0.0_dp, 1.0_dp, 0.0_dp, &
          &                  0.0_dp, 1.0_dp, 0.0_dp], &
-         & face_centers = [0.5_dp, 0.2_dp, 0.0_dp, &
+         & face_centres = [0.5_dp, 0.2_dp, 0.0_dp, &
          &                 0.7_dp, 1.4_dp, 0.0_dp, &
          &                 0.1_dp, 0.6_dp, 0.0_dp, &
          &                 1.2_dp, 1.0_dp, 0.0_dp, &
@@ -155,20 +155,20 @@ contains
     integer, intent(inout) :: nfail
 
     type(fit) :: fitting
-    type(directed_stored_graph) :: pair
-    type(field)   :: positions
-    class(graph_field), allocatable :: answer
+    type(stored_directed_graph) :: pair
+    type(stored_field)   :: positions
+    class(field), allocatable :: answer
     real(dp), allocatable :: w(:)
 
-    pair = directed_stored_graph(2, tails=[integer ::], heads=[integer ::])
-    positions = field('positions', pair % vertex_set(), pair % num_vertices(), ncomp=3)
+    pair = stored_directed_graph(2, tails=[integer ::], heads=[integer ::])
+    positions = stored_field('positions', pair % vertex_set(), pair % num_vertices(), num_components=3)
     call positions % set_real_vector([0.0_dp, 0.0_dp, 0.0_dp, &
          &                            0.5_dp, 0.0_dp, 0.0_dp])
 
     fitting = fit(polynomial_form(), at=[0.25_dp, 0.0_dp, 0.0_dp], &
          & direction=[1.0_dp, 0.0_dp, 0.0_dp])
     call fitting % apply(pair, [positions], answer)
-    call answer % get_real_vector(w)
+    call answer % real_vector(w)
 
     call report(all(abs(w - [-2.0_dp, 2.0_dp]) < 1.0d-12), &
          & 'two collinear points force the two-point stencil: a theorem', nfail)
@@ -176,7 +176,7 @@ contains
     fitting = fit(polynomial_form(), at=[0.25_dp, 0.0_dp, 0.0_dp], &
          & direction=[1.0_dp, 0.0_dp, 0.0_dp], scale=3.0_dp)
     call fitting % apply(pair, [positions], answer)
-    call answer % get_real_vector(w)
+    call answer % real_vector(w)
 
     call report(all(abs(w - [-6.0_dp, 6.0_dp]) < 1.0d-12), &
          & 'and the conductivity rides the scale, as the dictionary says', nfail)
@@ -198,9 +198,9 @@ contains
     type(fit)    :: wave
     type(fit)    :: poly
     type(pruner) :: gardener
-    type(directed_stored_graph) :: trio, pair
-    type(field)   :: positions
-    class(graph_field), allocatable :: answer
+    type(stored_directed_graph) :: trio, pair
+    type(stored_field)   :: positions
+    class(field), allocatable :: answer
     real(dp), allocatable :: w(:)
     real(dp) :: pts(9), sampled(3), got, expected
     integer :: j
@@ -211,15 +211,15 @@ contains
          & 0.4_dp, 0.0_dp, 0.0_dp, &
          & 0.8_dp, 0.0_dp, 0.0_dp]
 
-    trio = directed_stored_graph(3, tails=[integer ::], heads=[integer ::])
-    positions = field('positions', trio % vertex_set(), trio % num_vertices(), ncomp=3)
+    trio = stored_directed_graph(3, tails=[integer ::], heads=[integer ::])
+    positions = stored_field('positions', trio % vertex_set(), trio % num_vertices(), num_components=3)
     call positions % set_real_vector(pts)
 
     wave = fit(harmonic_form([2.5_dp, 0.0_dp, 0.0_dp]), &
          & at=[0.4_dp, 0.0_dp, 0.0_dp], &
          & direction=[1.0_dp, 0.0_dp, 0.0_dp])
     call wave % apply(trio, [positions], answer)
-    call answer % get_real_vector(w)
+    call answer % real_vector(w)
 
     do j = 1, 3
        sampled(j) = sin(2.5_dp * pts(3 * j - 2))
@@ -233,8 +233,8 @@ contains
 
     ! Two collinear points: the pruner strikes what they cannot see,
     ! and the fit still lands the two-point theorem.
-    pair = directed_stored_graph(2, tails=[integer ::], heads=[integer ::])
-    positions = field('positions', pair % vertex_set(), pair % num_vertices(), ncomp=3)
+    pair = stored_directed_graph(2, tails=[integer ::], heads=[integer ::])
+    positions = stored_field('positions', pair % vertex_set(), pair % num_vertices(), num_components=3)
     call positions % set_real_vector([0.0_dp, 0.0_dp, 0.0_dp, &
          &                            0.5_dp, 0.0_dp, 0.0_dp])
 
@@ -248,7 +248,7 @@ contains
          & 'the pruner strikes the members the points cannot see', nfail)
 
     call poly % apply(pair, [positions], answer)
-    call answer % get_real_vector(w)
+    call answer % real_vector(w)
     call report(all(abs(w - [-2.0_dp, 2.0_dp]) < 1.0d-12), &
          & 'and the governed fit still lands the theorem', nfail)
 
@@ -265,9 +265,9 @@ contains
 
     type(mesh) :: m
     type(differential_operator) :: slope
-    type(field) :: state, fd
-    type(set_graph) :: cells
-    class(graph_field), allocatable :: z
+    type(stored_field) :: state, fd
+    type(graph) :: cells
+    class(field), allocatable :: z
     real(dp), allocatable :: got(:), deltas(:), q(:)
     real(dp) :: exact_flux(4), worst
     integer :: v, e
@@ -275,17 +275,17 @@ contains
     m = skewed_mesh()
 
     cells = m % vertex_set()
-    state = field('q', cells, m % num_vertices())
+    state = stored_field('q', cells, m % num_vertices())
     q = [exact_at(0.0_dp, 0.0_dp), exact_at(1.0_dp, 0.45_dp), &
          & exact_at(0.15_dp, 1.1_dp), exact_at(1.3_dp, 1.6_dp)]
     call state % set_real_vector(q)
 
     fd = m % face_delta()
-    call fd % get_real_vector(deltas)
+    call fd % real_vector(deltas)
 
-    slope = edge_differential_operator(order=1, spacings=deltas)
+    slope = edge_derivative(order=1, spacings=deltas)
     call slope % apply(m, [state], z)
-    call z % get_real_vector(got)
+    call z % real_vector(got)
 
     ! What the flux claims to be: keff*area*dq/dn, here dq/dn along
     ! each interior normal.
@@ -315,43 +315,43 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(stencil_operator) :: op
-    type(field) :: state
-    type(set_graph) :: cells
-    class(graph_field), allocatable :: y
-    real(dp), allocatable :: got(:), q(:), vb(:), centers(:)
-    type(field) :: fc
+    type(stencil) :: op
+    type(stored_field) :: state
+    type(graph) :: cells
+    class(field), allocatable :: y
+    real(dp), allocatable :: got(:), q(:), vb(:), centres(:)
+    type(stored_field) :: fc
     integer :: v, e
 
     m = skewed_mesh()
 
-    ! The wall values: the exact field, read at each wall's center.
-    fc = m % face_center()
-    call fc % get_real_vector(centers)
+    ! The wall values: the exact field, read at each wall's centre.
+    fc = m % face_centre()
+    call fc % real_vector(centres)
 
     allocate(vb(12))
     vb = 0.0_dp
     do e = 5, 12
-       vb(e) = exact_at(centers(3 * e - 2), centers(3 * e - 1))
+       vb(e) = exact_at(centres(3 * e - 2), centres(3 * e - 1))
     end do
 
     block
-      type(field) :: fa
+      type(stored_field) :: fa
       real(dp), allocatable :: farea(:)
       fa = m % face_area()
-      call fa % get_real_vector(farea)
+      call fa % real_vector(farea)
       op = fitted_balance_stencil(m, polynomial_form(), farea, &
            & boundary_values=vb)
     end block
 
     cells = m % vertex_set()
-    state = field('q', cells, m % num_vertices())
+    state = stored_field('q', cells, m % num_vertices())
     q = [exact_at(0.0_dp, 0.0_dp), exact_at(1.0_dp, 0.45_dp), &
          & exact_at(0.15_dp, 1.1_dp), exact_at(1.3_dp, 1.6_dp)]
     call state % set_real_vector(q)
 
     call op % apply(m, [state], y)
-    call y % get_real_vector(got)
+    call y % real_vector(got)
 
     call report(maxval(abs(got)) < 1.0d-10, &
          & 'the exactness weights balance the same field to machine zero', nfail)
@@ -369,30 +369,30 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(stencil_operator) :: op
+    type(stencil) :: op
     type(gmres) :: gm
-    type(field) :: fc
-    real(dp), allocatable :: vb(:), centers(:), g(:), rhs(:), x(:)
+    type(stored_field) :: fc
+    real(dp), allocatable :: vb(:), centres(:), g(:), rhs(:), x(:)
     real(dp) :: achieved
     real(dp) :: q_exact(4)
     integer :: v, e
 
     m = skewed_mesh()
 
-    fc = m % face_center()
-    call fc % get_real_vector(centers)
+    fc = m % face_centre()
+    call fc % real_vector(centres)
 
     allocate(vb(12))
     vb = 0.0_dp
     do e = 5, 12
-       vb(e) = exact_at(centers(3 * e - 2), centers(3 * e - 1))
+       vb(e) = exact_at(centres(3 * e - 2), centres(3 * e - 1))
     end do
 
     block
-      type(field) :: fa
+      type(stored_field) :: fa
       real(dp), allocatable :: farea(:)
       fa = m % face_area()
-      call fa % get_real_vector(farea)
+      call fa % real_vector(farea)
       op = fitted_balance_stencil(m, polynomial_form(), farea, &
            & boundary_values=vb)
     end block

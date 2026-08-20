@@ -65,12 +65,12 @@
 
 module visualization_algebra_fixture
 
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
-  use graph_relation        , only : relation
-  use graph_binary_relation , only : binary_relation, csr_relation
-  use graph_binary_relation , only : transposed_view, transpose_of
-  use graph_relation_algebra, only : compose_binary
+  use graph_fractal        , only : graph
+  use map_set        , only : set_map
+  use relation_finitary        , only : relation
+  use relation_binary , only : binary_relation, csr_relation
+  use relation_binary , only : transposed_relation, transpose_of
+  use relation_algebra, only : compose_binary
 
   implicit none
 
@@ -101,7 +101,7 @@ contains
     class(relation)               , intent(in) :: head
     type(set_map)  , intent(in) :: sets
 
-    type(transposed_view) :: reads
+    type(transposed_relation) :: reads
 
     reads = transpose_of(tail)
     d     = named(label, compose_binary(reads, head, sets), sets)
@@ -149,7 +149,7 @@ contains
     class(binary_relation), target, intent(in) :: r
     type(set_map)  , intent(in) :: sets
 
-    type(transposed_view) :: reversed
+    type(transposed_relation) :: reversed
 
     reversed = transpose_of(r)
     rt       = named(label, reversed, sets)
@@ -167,7 +167,7 @@ contains
     class(relation) , intent(in) :: r
     type(set_map)  , intent(in) :: sets
 
-    type(set_graph) :: first, second
+    type(graph) :: first, second
     integer, allocatable           :: table(:,:)
 
     if (r % arity() .ne. 2) then
@@ -195,7 +195,7 @@ contains
     class(relation), intent(in) :: r
     class(relation), intent(in) :: s
 
-    type(set_graph) :: dr, ds
+    type(graph) :: dr, ds
     integer, allocatable           :: tr(:,:), ts(:,:)
     integer                        :: k, j
 

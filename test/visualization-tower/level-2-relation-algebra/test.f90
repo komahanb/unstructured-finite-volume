@@ -58,12 +58,12 @@ program visualization_level_2
   use visualization_assert , only : X1_P, X1_Q, X1_R
   use visualization_assert , only : X2_U, X2_V, X2_W
   use visualization_assert , only : X3_M, X3_N
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
-  use graph_label_map      , only : label_map
-  use graph_relation       , only : relation
-  use graph_binary_relation, only : csr_relation, binary_relation
-  use graph_binary_relation, only : transposed_view, transpose_of
+  use graph_fractal        , only : graph
+  use map_set        , only : set_map
+  use map_label      , only : label_map
+  use relation_finitary       , only : relation
+  use relation_binary, only : csr_relation, binary_relation
+  use relation_binary, only : transposed_relation, transpose_of
   use visualization_carriers_fixture , only : structural_carriers
   use visualization_relations_fixture, only : occurrences_of_a1
   use visualization_relations_fixture, only : occurrences_of_a2
@@ -75,7 +75,7 @@ program visualization_level_2
 
   implicit none
 
-  type(set_graph)          :: x0, x1, x2, x3, e1, e2, e3
+  type(graph)          :: x0, x1, x2, x3, e1, e2, e3
   type(set_map)     :: sets
   type(label_map)     :: labels
   type(csr_relation)         :: t1, h1, t2, h2, t3, h3
@@ -262,7 +262,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(transposed_view) :: live
+    type(transposed_relation) :: live
 
     call report(runs_from_to(d1t, x1, x0) .and. &
          &      runs_from_to(d2t, x2, x1) .and. &
@@ -365,9 +365,9 @@ contains
   logical function runs_from_to(r, first, second)
 
     class(binary_relation), intent(in) :: r
-    type(set_graph)     , intent(in) :: first, second
+    type(graph)     , intent(in) :: first, second
 
-    type(set_graph) :: d
+    type(graph) :: d
 
     d = r % source()
     runs_from_to = d % same_as(first)
@@ -399,9 +399,9 @@ contains
   logical function mentions(r, carrier)
 
     class(relation)  , intent(in) :: r
-    type(set_graph), intent(in) :: carrier
+    type(graph), intent(in) :: carrier
 
-    type(set_graph) :: d
+    type(graph) :: d
     integer                        :: k
 
     mentions = .false.
@@ -441,12 +441,12 @@ contains
     class(binary_relation), intent(in) :: first, second
     integer               , intent(in) :: from, to
 
-    type(set_graph) :: middle
+    type(graph) :: middle
     integer                        :: k, y
 
     middle    = first % target()
     witnesses = 0
-    do k = 1, sets % size_of(middle)
+    do k = 1, sets % num_members_of(middle)
        y = sets % member_of(middle, k)
        if (first % has([from, y]) .and. second % has([y, to])) then
           witnesses = witnesses + 1
@@ -459,14 +459,14 @@ contains
 
     class(binary_relation), intent(in) :: first, second
 
-    type(set_graph) :: start, finish
+    type(graph) :: start, finish
     integer                        :: i, j
 
     start  = first % source()
     finish = second % target()
     walks  = 0
-    do i = 1, sets % size_of(start)
-       do j = 1, sets % size_of(finish)
+    do i = 1, sets % num_members_of(start)
+       do j = 1, sets % num_members_of(finish)
           walks = walks + witnesses(first, second, &
                &                    sets % member_of(start, i), sets % member_of(finish, j))
        end do

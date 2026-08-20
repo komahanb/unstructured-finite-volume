@@ -125,7 +125,7 @@ done
 rm -f refusal.out
 
 echo ''
-echo " KERNEL SIZE (src/fractal_graph.f90)"
-printf '   code    : %s lines\n' "$(grep -c -v -E '^[[:space:]]*(!|$)' ../../src/fractal_graph.f90)"
-printf '   comment : %s lines\n' "$(grep -c -E '^[[:space:]]*!'        ../../src/fractal_graph.f90)"
-printf '   blank   : %s lines\n' "$(grep -c -E '^[[:space:]]*$'        ../../src/fractal_graph.f90)"
+echo " KERNEL SIZE (src/graph_fractal.f90)"
+printf '   code    : %s lines\n' "$(grep -c -v -E '^[[:space:]]*(!|$)' ../../src/graph_fractal.f90)"
+printf '   comment : %s lines\n' "$(grep -c -E '^[[:space:]]*!'        ../../src/graph_fractal.f90)"
+printf '   blank   : %s lines\n' "$(grep -c -E '^[[:space:]]*$'        ../../src/graph_fractal.f90)"

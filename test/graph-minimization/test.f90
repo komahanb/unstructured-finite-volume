@@ -18,15 +18,15 @@
 module cubic_statement_fixture
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_operation_view, only : graph_operation
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use graph_directed_view , only : GRAPH_SIDE_VERTEX
+  use operation_action, only : operation
+  use view_directed, only : directed_graph
+  use field_calculus, only : field
+  use view_directed , only : SIDE_VERTEX
   ! An action names a domain and counts it. It asks no membership,
   ! so it holds no map: identity and count is the whole of it.
-  use fractal_graph      , only : set_graph => graph
-  use class_graph_field  , only : field
-  use class_graph_differential_operator, only : differential_operator
+  use graph_fractal      , only : graph
+  use field_stored  , only : stored_field
+  use operation_differential, only : differential_operator
 
   implicit none
 
@@ -39,7 +39,7 @@ module cubic_statement_fixture
   ! keeps the rows' own sign and the root is one.
   !===================================================================!
 
-  type, extends(graph_operation) :: cubic_statement
+  type, extends(operation) :: cubic_statement
 
      type(differential_operator) :: linear_part
      real(dp) :: strength = 0.0_dp
@@ -60,40 +60,40 @@ contains
     name = 'cubic statement'
   end function cubic_name
 
-  subroutine cubic_domain(this, input_graph, domain, nentries)
+  subroutine cubic_domain(this, input_graph, domain, num_entries)
     class(cubic_statement), intent(in)     :: this
     class(directed_graph), intent(in)               :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
     domain   = input_graph % all_vertices()
-    nentries = input_graph % num_vertices()
+    num_entries = input_graph % num_vertices()
   end subroutine cubic_domain
 
   subroutine cubic_apply(this, input_graph, input_data, output)
 
     class(cubic_statement), intent(in)             :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
-    type(set_graph)   :: cells
-    type(field)   :: out
+    type(graph)   :: cells
+    type(stored_field)   :: out
     real(dp), allocatable :: q(:), y(:)
     integer :: nv, v
 
     call this % linear_part % apply(input_graph, input_data, output)
-    call output % get_real_vector(y)
+    call output % real_vector(y)
 
     nv = input_graph % num_vertices()
     if (present(input_data)) then
-       call input_data(1) % get_real_vector(q)
+       call input_data(1) % real_vector(q)
        do v = 1, min(nv, size(q))
           y(v) = y(v) - this % strength * q(v)**3
        end do
     end if
 
     cells = input_graph % vertex_set()
-    out = field('cubic', cells, nv)
+    out = stored_field('cubic', cells, nv)
     call out % set_real_vector(y)
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
@@ -105,24 +105,24 @@ end module cubic_statement_fixture
 program test_graph_minimization
 
   use iso_fortran_env, only : dp => REAL64
-  use fractal_graph  , only : set_graph => graph
-  use graph_set_map  , only : set_map
-  use graph_label_map, only : label_map
-  use graph_inclusion_map, only : inclusion_map
-  use graph_directed_view, only : directed_graph
-  use class_graph_mesh   , only : mesh
-  use class_mesh_builder , only : mesh_from_gmsh
-  use class_robin_condition, only : robin_condition, dirichlet
-  use class_conduction     , only : conduction
-  use class_graph_differential_operator, only : differential_operator
-  use class_graph_differential_operator, only : vertex_differential_operator
-  use class_graph_jacobi   , only : jacobi
-  use class_graph_conjugate_gradient, only : conjugate_gradient
-  use class_graph_gauss_seidel, only : gauss_seidel
-  use class_graph_gmres    , only : gmres
-  use class_graph_newton   , only : newton
-  use class_graph_differential_operator, only : edge_differential_operator
-  use class_graph_balance  , only : balance
+  use graph_fractal  , only : graph
+  use map_set  , only : set_map
+  use map_label, only : label_map
+  use map_inclusion, only : inclusion_map
+  use view_directed, only : directed_graph
+  use view_mesh   , only : mesh
+  use view_mesh_builder , only : mesh_from_gmsh
+  use operation_robin_condition, only : robin_condition, dirichlet
+  use operation_conduction     , only : conduction
+  use operation_differential, only : differential_operator
+  use operation_differential, only : vertex_derivative
+  use operation_jacobi   , only : jacobi
+  use operation_conjugate_gradient, only : conjugate_gradient
+  use operation_gauss_seidel, only : gauss_seidel
+  use operation_gmres    , only : gmres
+  use operation_newton   , only : newton
+  use operation_differential, only : edge_derivative
+  use operation_balance  , only : balance
   use cubic_statement_fixture, only : cubic_statement
 
   implicit none
@@ -171,7 +171,7 @@ contains
 
     m = mesh(3, tails=[1, 2, 1, 3], heads=[2, 3, 0, 0], &
          & volumes      = [1.0_dp, 1.0_dp, 1.0_dp], &
-         & cell_centers = [0.5_dp, 0.0_dp, 0.0_dp, &
+         & cell_centres = [0.5_dp, 0.0_dp, 0.0_dp, &
          &                 1.5_dp, 0.0_dp, 0.0_dp, &
          &                 2.5_dp, 0.0_dp, 0.0_dp], &
          & areas        = [1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp], &
@@ -180,7 +180,7 @@ contains
          &                  1.0_dp, 0.0_dp, 0.0_dp, &
          &                 -1.0_dp, 0.0_dp, 0.0_dp, &
          &                  1.0_dp, 0.0_dp, 0.0_dp], &
-         & face_centers = [1.0_dp, 0.0_dp, 0.0_dp, &
+         & face_centres = [1.0_dp, 0.0_dp, 0.0_dp, &
          &                 2.0_dp, 0.0_dp, 0.0_dp, &
          &                 0.0_dp, 0.0_dp, 0.0_dp, &
          &                 3.0_dp, 0.0_dp, 0.0_dp], &
@@ -206,7 +206,7 @@ contains
          & [dirichlet('west', 0.0_dp), dirichlet('east', 10.0_dp)], &
          & 1.0_dp, c, b)
 
-    op = vertex_differential_operator(order=2, coefficients=c, &
+    op = vertex_derivative(order=2, coefficients=c, &
          & spacings=[1.0_dp, 1.0_dp, 0.5_dp, 0.5_dp], boundary_values=b)
 
   end function chain_operator
@@ -219,7 +219,7 @@ contains
     real(dp), intent(in)              :: kappa
     real(dp), allocatable, intent(out) :: c(:), b(:)
 
-    type(set_graph)       :: members
+    type(graph)       :: members
     type(set_map)         :: sets
     type(label_map)       :: labels
     type(inclusion_map)   :: inclusions
@@ -350,13 +350,13 @@ contains
     c = -c
 
     block
-      use class_graph_field, only : field
-      type(field) :: fd
+      use field_stored, only : stored_field
+      type(stored_field) :: fd
       fd = m % face_delta()
-      call fd % get_real_vector(deltas)
+      call fd % real_vector(deltas)
     end block
 
-    call cg % attach(vertex_differential_operator(order=2, &
+    call cg % attach(vertex_derivative(order=2, &
          & coefficients=c, spacings=deltas), m, m % vertex_set(), &
          & m % num_vertices())
     cg % max_iterations = 2000
@@ -450,11 +450,11 @@ contains
 
     ! Diffusion and upwind advection in one balance: unsymmetric.
     statement = balance(edge_terms=[ &
-         & edge_differential_operator(order=1, &
+         & edge_derivative(order=1, &
          &      coefficients=[1.0_dp, 1.0_dp, 2.0_dp, 2.0_dp], &
          &      spacings=[1.0_dp, 1.0_dp, 0.5_dp, 0.5_dp], &
          &      boundary_values=[0.0_dp, 0.0_dp, 0.0_dp, 10.0_dp]), &
-         & edge_differential_operator(order=0, &
+         & edge_derivative(order=0, &
          &      coefficients=[0.4_dp, 0.4_dp, 0.0_dp, 0.0_dp], &
          &      one_sided=.true.)])
 

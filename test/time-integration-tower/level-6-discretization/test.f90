@@ -23,7 +23,7 @@
 !
 !      |V(H_t)| = 5        |Q| = 2        and they are not same_as
 !
-! H_t is a COMPATIBILITY HOST - the conduit the graph_operation
+! H_t is a COMPATIBILITY HOST - the conduit the operation
 ! contract requires - and this tower's action does not read its
 ! topology. That does not reopen seam A1: the partitioned tower
 ! settled on production evidence that the host is a real conduit
@@ -69,14 +69,14 @@ program time_level_6
   use time_assert           , only : T0, T1, T2
   use time_assert           , only : H_STEP, Q0, Q_FE1, Q_BE1, Q_BDF2
   use time_assert           , only : action_of
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
-  use graph_directed_view   , only : directed_graph
-  use graph_field_calculus  , only : graph_field
-  use graph_binary_relation , only : csr_relation
-  use class_graph           , only : directed_stored_graph
-  use class_graph_field     , only : field
-  use class_graph_step      , only : step_operator, backward_euler, bdf
+  use graph_fractal        , only : graph
+  use map_set        , only : set_map
+  use view_directed   , only : directed_graph
+  use field_calculus  , only : field
+  use relation_binary , only : csr_relation
+  use view_directed_stored           , only : stored_directed_graph
+  use field_stored     , only : stored_field
+  use operation_step      , only : scheme, backward_euler, bdf
   use time_carriers_fixture , only : time_carriers
   use time_relations_fixture, only : tail_relation, head_relation
   use time_algebra_fixture  , only : derive_one_step_reach, &
@@ -86,13 +86,13 @@ program time_level_6
 
   implicit none
 
-  type(set_graph)          :: q, t, e
+  type(graph)          :: q, t, e
   type(set_map)          :: sets
   type(csr_relation), target :: tail, head, a1
   type(csr_relation)         :: a2
-  type(directed_stored_graph)         :: ht
+  type(stored_directed_graph)         :: ht
   type(triangular_decay)     :: decay
-  type(field)                :: qf
+  type(stored_field)                :: qf
   integer                    :: nfail
 
   nfail = 0
@@ -109,7 +109,7 @@ program time_level_6
 
   ! The COMPATIBILITY HOST: five vertices, four edges, a chain -
   ! the same temporal extension as T, and emphatically not Q.
-  ht = directed_stored_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
+  ht = stored_directed_graph(NT, tails=[1,2,3,4], heads=[2,3,4,5])
 
   decay = triangular_decay(q, NQ)
   qf    = state_field(q)
@@ -137,11 +137,11 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: hv
+    type(graph) :: hv
 
     hv = ht % vertex_set()
 
-    call report(ht % num_vertices() .eq. NT .and. sets % size_of(q) .eq. NQ, &
+    call report(ht % num_vertices() .eq. NT .and. sets % num_members_of(q) .eq. NQ, &
          & "the compatibility host H_t has five vertices; Q has two", &
          & nfail)
 
@@ -165,7 +165,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: d, hv
+    type(graph) :: d, hv
     integer        :: n_d
 
     hv = ht % vertex_set()
@@ -181,15 +181,15 @@ contains
   !===================================================================!
   ! THE first half of the experiment, and it needs no production
   ! change: an action that carries its own domain already works
-  ! through the graph_operation face.
+  ! through the operation face.
   !===================================================================!
 
   subroutine check_direct_action_preserves_q(nfail)
 
     integer, intent(inout) :: nfail
 
-    class(graph_field), allocatable :: answer
-    type(set_graph)  :: d
+    class(field), allocatable :: answer
+    type(graph)  :: d
     integer         :: n_d
     real(dp), allocatable           :: s(:)
 
@@ -204,7 +204,7 @@ contains
          & "and it ANSWERS on Q: graph host and state domain are " // &
          & "independent concepts in this specimen", nfail)
 
-    call answer % get_real_vector(s)
+    call answer % real_vector(s)
     call report(size(s) .eq. NQ .and. &
          &      abs(s(1) - 2.0_dp) .lt. TOL .and. &
          &      abs(s(2) + 2.0_dp) .lt. TOL, &
@@ -259,8 +259,8 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(step_operator)            :: step
-    type(set_graph) :: d, hv
+    type(scheme)            :: step
+    type(graph) :: d, hv
     integer         :: n_d
 
     step = backward_euler(decay, H_STEP)
@@ -293,17 +293,17 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(step_operator)             :: step
-    type(field)                     :: state
-    class(graph_field), allocatable :: r
-    type(set_graph)  :: d
+    type(scheme)             :: step
+    type(stored_field)                     :: state
+    class(field), allocatable :: r
+    type(graph)  :: d
     real(dp), allocatable           :: v(:)
 
     step = backward_euler(decay, H_STEP)
     step % qold = Q0
 
     ! At the exact backward-euler state the residual vanishes.
-    state = field('trial', q, NQ, ncomp=1)
+    state = stored_field('trial', q, NQ, num_components=1)
     call state % set_real_vector(Q_BE1)
     call step % apply(ht, [state], r)
 
@@ -312,7 +312,7 @@ contains
          & "the backward-euler RESIDUAL lands on Q, not on the " // &
          & "host's vertices", nfail)
 
-    call r % get_real_vector(v)
+    call r % real_vector(v)
     call report(size(v) .eq. NQ .and. maxval(abs(v)) .lt. TOL, &
          & "and it is ZERO at q = [4/3, 4/9]: the exact discrete " // &
          & "backward-euler state, verified by substitution", nfail)
@@ -321,7 +321,7 @@ contains
     ! answer is a different number, as it must be.
     call state % set_real_vector(Q_FE1)
     call step % apply(ht, [state], r)
-    call r % get_real_vector(v)
+    call r % real_vector(v)
     call report(maxval(abs(v)) .gt. 1.0e-3_dp, &
          & "while the FORWARD-euler answer leaves a residual: the " // &
          & "two schemes are different statements", nfail)
@@ -340,21 +340,21 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(step_operator) :: scheme
+    type(scheme) :: bdf2
 
     call report(a1 % has([T1, T2]) .and. a2 % has([T0, T2]), &
          & "at instant t2 the one-step predecessor is t1 and the " // &
          & "two-step predecessor is t0 - STRUCTURAL REACH, from " // &
          & "Level 2", nfail)
 
-    scheme = bdf(2, decay, H_STEP)
-    call report(scheme % reach .eq. 2, &
+    bdf2 = bdf(2, decay, H_STEP)
+    call report(bdf2 % reach .eq. 2, &
          & "and bdf-2 reaches exactly two instants back, matching " // &
          & "the reach A2 describes", nfail)
 
-    call report(abs(scheme % a0 - 1.5_dp) .lt. TOL .and. &
-         &      abs(scheme % a1 + 2.0_dp) .lt. TOL .and. &
-         &      abs(scheme % a2 - 0.5_dp) .lt. TOL, &
+    call report(abs(bdf2 % a0 - 1.5_dp) .lt. TOL .and. &
+         &      abs(bdf2 % a1 + 2.0_dp) .lt. TOL .and. &
+         &      abs(bdf2 % a2 - 0.5_dp) .lt. TOL, &
          & "with coefficients a0 = 3/2 at t2, a1 = -2 at t1, " // &
          & "a2 = 1/2 at t0: NUMERICAL WEIGHTS ON THE HISTORY ROLES " // &
          & "reach already named", nfail)
@@ -379,17 +379,17 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(step_operator)             :: step
-    type(field)                     :: state
-    class(graph_field), allocatable :: r
-    type(set_graph)  :: d
+    type(scheme)             :: step
+    type(stored_field)                     :: state
+    class(field), allocatable :: r
+    type(graph)  :: d
     real(dp), allocatable           :: v(:)
 
     step = bdf(2, decay, H_STEP)
     step % qold   = Q_BE1
     step % qolder = Q0
 
-    state = field('trial', q, NQ, ncomp=1)
+    state = stored_field('trial', q, NQ, num_components=1)
     call state % set_real_vector(Q_BDF2)
     call step % apply(ht, [state], r)
 
@@ -398,7 +398,7 @@ contains
          & "the bdf-2 RESIDUAL lands on Q as well - a two-step " // &
          & "scheme changes the coefficients, never the domain", nfail)
 
-    call r % get_real_vector(v)
+    call r % real_vector(v)
     call report(size(v) .eq. NQ .and. maxval(abs(v)) .lt. TOL, &
          & "and it is ZERO at q2 = [5/6, 47/72], started from the " // &
          & "backward-euler q1", nfail)

@@ -33,18 +33,18 @@ program adjoint_level_5
   use iso_fortran_env  , only : dp => REAL64
   use adjoint_assert   , only : report, verdict
   use adjoint_assert   , only : VAR_P, VAR_U, VAR_V
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use class_graph_field, only : field
+  use map_set        , only : set_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
+  use field_stored, only : stored_field
 
   implicit none
 
-  type(set_graph) :: v
-  type(set_graph)  :: p_dom, q_dom
-  type(field)       :: p_field, q0
+  type(graph) :: v
+  type(graph)  :: p_dom, q_dom
+  type(stored_field)       :: p_field, q0
   integer           :: nfail
   type(set_map)     :: sets
   type(inclusion_map)     :: inclusions
@@ -83,10 +83,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dom
+    type(graph) :: dom
     real(dp), allocatable          :: val(:)
 
-    p_field = field('parameter', p_dom, sets % size_of(p_dom))
+    p_field = stored_field('parameter', p_dom, sets % num_members_of(p_dom))
     call p_field % set_real_vector([2.0_dp])
 
     dom = p_field % domain()
@@ -95,7 +95,7 @@ contains
     call report(p_field % num_entries() .eq. 1, &
          & "one parameter entry", nfail)
 
-    call p_field % get_real_vector(val)
+    call p_field % real_vector(val)
     call report(abs(val(sets % index_in(p_dom, VAR_P)) - 2.0_dp) &
          &      < 1.0d-14, &
          & "p = 2, read through the domain map", nfail)
@@ -111,10 +111,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dom
+    type(graph) :: dom
     real(dp), allocatable          :: val(:)
 
-    q0 = field('initial state', q_dom, sets % size_of(q_dom))
+    q0 = stored_field('initial state', q_dom, sets % num_members_of(q_dom))
     call q0 % set_real_vector([0.0_dp, 0.0_dp])
 
     dom = q0 % domain()
@@ -124,7 +124,7 @@ contains
          &      q0 % num_components() .eq. 1, &
          & "two state entries, one component", nfail)
 
-    call q0 % get_real_vector(val)
+    call q0 % real_vector(val)
     call report(abs(val(sets % index_in(q_dom, VAR_U))) < 1.0d-14 .and. &
          &      abs(val(sets % index_in(q_dom, VAR_V))) < 1.0d-14, &
          & "q0 = [0, 0]: a starting point, not an answer", nfail)
@@ -146,7 +146,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dp_, dq
+    type(graph) :: dp_, dq
 
     dp_ = p_field % domain()
     dq = q0 % domain()
@@ -155,7 +155,7 @@ contains
          &      .not. dq % same_as(p_dom), &
          & "parameter and state are distinguished by domain alone", &
          & nfail)
-    call report(sets % size_of(dp_) .ne. sets % size_of(dq), &
+    call report(sets % num_members_of(dp_) .ne. sets % num_members_of(dq), &
          & "and here even their sizes differ - though sizes are " // &
          & "never what settles it", nfail)
 

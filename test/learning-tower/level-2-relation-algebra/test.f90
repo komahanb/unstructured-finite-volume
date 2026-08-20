@@ -26,19 +26,19 @@ program learning_level_2
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use graph_relation , only : stored_relation, relation
-  use graph_relation_algebra, only : restrict_slot, project_slots, &
+  use map_set        , only : set_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
+  use relation_finitary , only : stored_relation, relation
+  use relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
 
   implicit none
 
-  type(set_graph)            :: v, o, p
-  type(set_graph)             :: p_out, p_in
+  type(graph)            :: v, o, p
+  type(graph)             :: p_out, p_in
   type(stored_relation)        :: flow, backwards
   type(stored_relation)        :: t_out3, t_in3, produces, consumes
   class(relation), allocatable :: d, d2
@@ -120,7 +120,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dom
+    type(graph) :: dom
 
     produces = project_slots(t_out3, [1, 2], sets)
     consumes = project_slots(t_in3 , [2, 1], sets)
@@ -162,7 +162,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dom
+    type(graph) :: dom
 
     call report(produces % has([OP_PREDICT, SLOT_YHAT]) .and. &
          &      consumes % has([SLOT_YHAT, OP_ERROR]), &
@@ -202,7 +202,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_relation)          :: out2, in2, prod2, cons2
-    type(set_graph) :: da, db
+    type(graph) :: da, db
     integer                        :: rev(3, 6), j
     integer, allocatable           :: dt(:,:), dt2(:,:)
     logical                        :: ok

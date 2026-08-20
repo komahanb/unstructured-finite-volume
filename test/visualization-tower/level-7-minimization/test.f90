@@ -99,16 +99,16 @@
 
 program visualization_level_7
 
-  use graph_set_representation, only : counted_set_representation
-  use graph_set_map        , only : set_map
-  use graph_label_map      , only : label_map
+  use map_set_representation, only : counted_set_representation
+  use map_set        , only : set_map
+  use map_label      , only : label_map
   use iso_fortran_env      , only : dp => REAL64
   use visualization_assert , only : report, verdict
-  use fractal_graph        , only : set_graph => graph
-  use graph_directed_view  , only : directed_graph
-  use class_graph          , only : directed_stored_graph
-  use class_graph_stencil  , only : stencil_operator
-  use class_graph_jacobi   , only : jacobi
+  use graph_fractal        , only : graph
+  use view_directed  , only : directed_graph
+  use view_directed_stored          , only : stored_directed_graph
+  use operation_stencil  , only : stencil
+  use operation_jacobi   , only : jacobi
   use production_pattern_renderer_fixture, only : pattern_picture
   use production_pattern_renderer_fixture, only : production_has
   use structural_renderer_fixture        , only : picture
@@ -137,9 +137,9 @@ program visualization_level_7
   ! oracle only - never as an acceptance criterion.
   real(dp), parameter :: A_TIMES_ONE(N) = [5.0_dp, 7.0_dp, 7.0_dp]
 
-  type(stencil_operator)    :: a
+  type(stencil)    :: a
   class(directed_graph), allocatable :: pa
-  type(directed_stored_graph)        :: h_empty
+  type(stored_directed_graph)        :: h_empty
   type(jacobi)              :: on_match, on_empty
   type(set_map)     :: sets
   type(label_map)     :: labels
@@ -158,7 +158,7 @@ program visualization_level_7
 
   ! ---- ONE production stencil, built through the actual API.
   !      edge k runs column -> row with weight k.
-  a = stencil_operator(rows     = [1, 2, 3, 1, 2, 2, 3], &
+  a = stencil(rows     = [1, 2, 3, 1, 2, 2, 3], &
        &               columns  = [1, 2, 3, 2, 1, 3, 2], &
        &               weights  = [4.0_dp, 5.0_dp, 6.0_dp, &
        &                           1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp], &
@@ -182,7 +182,7 @@ program visualization_level_7
   ! ---- two hosts, both of the right numerical dimension.
   !      H_match IS P_A - the most favourable host there is.
   !      H_empty has the same three vertices and no edges at all.
-  h_empty = directed_stored_graph(N, tails=[integer ::], heads=[integer ::])
+  h_empty = stored_directed_graph(N, tails=[integer ::], heads=[integer ::])
   if (.not. sets % describes(h_empty % vertex_set())) &
        & call sets % bind(h_empty % vertex_set(), &
        &      counted_set_representation(h_empty % num_vertices()))
@@ -228,7 +228,7 @@ contains
     type(jacobi), intent(out) :: solver
     class(directed_graph), intent(in)  :: on
 
-    type(set_graph) :: unknowns
+    type(graph) :: unknowns
 
     ! `on` is a production host whose carriers this scope must
     ! describe before it can size anything on them.
@@ -240,7 +240,7 @@ contains
     ! Two seats, and the experiment varies only the first. `on` is
     ! where the action executes; `coupling` is which unknowns feed
     ! which, and the caller knows the stencil owns that axis.
-    call solver % attach(a, on, unknowns, sets % size_of(unknowns), coupling = pa)
+    call solver % attach(a, on, unknowns, sets % num_members_of(unknowns), coupling = pa)
 
   end subroutine attach_to
 

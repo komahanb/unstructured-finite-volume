@@ -14,13 +14,13 @@
 
 program algorithms_refusal
 
-  use fractal_graph           , only : graph
-  use graph_set_representation, only : counted_set_representation
-  use graph_set_map           , only : set_map
-  use graph_label_map         , only : label_map
-  use graph_relation          , only : stored_relation
-  use graph_binary_relation   , only : csr_relation
-  use graph_algorithms        , only : topological_order
+  use graph_fractal           , only : graph
+  use map_set_representation, only : counted_set_representation
+  use map_set           , only : set_map
+  use map_label         , only : label_map
+  use relation_finitary          , only : stored_relation
+  use relation_binary   , only : csr_relation
+  use relation_algorithms        , only : topological_order
 
   implicit none
 

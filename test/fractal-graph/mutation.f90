@@ -2,7 +2,7 @@
 ! MUTATION AND IDENTITY
 !
 ! Evidence for the identity semantics, gathered against the shipped
-! kernel. Nothing here modifies fractal_graph.f90.
+! kernel. Nothing here modifies graph_fractal.f90.
 !
 !     T . the nine branch-state transitions
 !     I . identity under lawful branch mutation
@@ -15,9 +15,9 @@
 
 program mutation
 
-  use graph_identity, only : token
-  use fractal_graph , only : graph, graph_branch, &
-       & GRAPH_NULL, GRAPH_UNKNOWN, GRAPH_KNOWN, &
+  use token_identity, only : token
+  use graph_fractal , only : graph, branch, &
+       & BRANCH_NULL, BRANCH_UNKNOWN, BRANCH_KNOWN, &
        & null_branch, unknown_branch, known_branch
   use graph_views   , only : dp, attribute_map, csr, &
        & relation_view, residual, compile_csr
@@ -44,8 +44,8 @@ program mutation
     call ref % declare()
 
     ok = .true.
-    do from = GRAPH_NULL, GRAPH_KNOWN
-       do to = GRAPH_NULL, GRAPH_KNOWN
+    do from = BRANCH_NULL, BRANCH_KNOWN
+       do to = BRANCH_NULL, BRANCH_KNOWN
           ok = ok .and. transition(from, to, ref)
        end do
     end do
@@ -58,7 +58,7 @@ program mutation
     g % branch(1) = known_branch(ref)
     g % branch(1) = unknown_branch()
     call check('T  KNOWN -> UNKNOWN is applied, so knowledge is not monotone', &
-         & g % branch(1) % status() .eq. GRAPH_UNKNOWN .and. &
+         & g % branch(1) % status() .eq. BRANCH_UNKNOWN .and. &
          & .not. associated(g % branch(1) % known()))
 
   end block transition_block
@@ -271,21 +271,21 @@ contains
     after = t % id()
 
     good = (t % branch(1) % status() .eq. b)                          .and. &
-         & ((t % branch(1) % status() .eq. GRAPH_KNOWN)               .eqv. &
+         & ((t % branch(1) % status() .eq. BRANCH_KNOWN)               .eqv. &
          &  associated(t % branch(1) % known()))                      .and. &
          & before % matches(after)
 
   end function transition
 
-  type(graph_branch) function branch_with(s, ref) result(b)
+  type(branch) function branch_with(s, ref) result(b)
 
     integer            , intent(in) :: s
     type(graph), target, intent(in) :: ref
 
     select case (s)
-    case (GRAPH_NULL)
+    case (BRANCH_NULL)
        b = null_branch()
-    case (GRAPH_UNKNOWN)
+    case (BRANCH_UNKNOWN)
        b = unknown_branch()
     case default
        b = known_branch(ref)

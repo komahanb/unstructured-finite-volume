@@ -468,7 +468,7 @@ symptom / fact:       Gate A reached complete derivative structure
                       was touched by any Gate-A rung.
 
 exact caller:         the whole gate; check_imports.sh forbids
-                      graph_minimization and class_graph_gmres
+                      operation_minimization and operation_gmres
                       everywhere
 
 mathematical concept: (absence of) the upper-nucleus crossing
@@ -1131,7 +1131,7 @@ symptom / fact:       the first COMPLETE tower with an intentionally
 
                       where Level 7 is N/A: not missing, not failed,
                       not stubbed. Level 9 compiles and runs with
-                      graph_minimization and class_graph_gmres
+                      operation_minimization and operation_gmres
                       forbidden by the import gate.
 
 exact caller:         run.sh (the N/A row); the absence of

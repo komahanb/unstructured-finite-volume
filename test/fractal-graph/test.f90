@@ -18,8 +18,8 @@
 
 program test
 
-  use fractal_graph, only : graph, graph_branch, &
-       & GRAPH_NULL, GRAPH_UNKNOWN, GRAPH_KNOWN, &
+  use graph_fractal, only : graph, branch, &
+       & BRANCH_NULL, BRANCH_UNKNOWN, BRANCH_KNOWN, &
        & null_branch, unknown_branch, known_branch
   use graph_views  , only : dp, attribute_map, csr, &
        & evaluate, num_atoms, relation_view, residual, compile_csr
@@ -40,8 +40,8 @@ program test
     call b % declare()
 
     call check('A  (NULL,NULL) holds by default initialization', &
-         & a % branch(1) % status() .eq. GRAPH_NULL .and. &
-         & a % branch(2) % status() .eq. GRAPH_NULL)
+         & a % branch(1) % status() .eq. BRANCH_NULL .and. &
+         & a % branch(2) % status() .eq. BRANCH_NULL)
     call check('A  a same_as a', a % same_as(a))
     call check('A  a /= b although both are (NULL,NULL)', .not. a % same_as(b))
     call check('A  NULL implies .not. associated(known())', &
@@ -74,8 +74,8 @@ program test
 
     b % branch(1) = unknown_branch()
     call check('B  a change to b is observed on both branches: no copy', &
-         & x % branch(1) % status() .eq. GRAPH_UNKNOWN .and. &
-         & y % branch(1) % status() .eq. GRAPH_UNKNOWN)
+         & x % branch(1) % status() .eq. BRANCH_UNKNOWN .and. &
+         & y % branch(1) % status() .eq. BRANCH_UNKNOWN)
 
   end block sharing_block
 
@@ -107,7 +107,7 @@ program test
   !===================================================================!
   ! INV . Invariant closure.
   !
-  !     status() == GRAPH_KNOWN  iff  associated(known())
+  !     status() == BRANCH_KNOWN  iff  associated(known())
   !
   ! Compile-time protection is asserted by run.sh against the negative
   ! fixtures in fortran-recursion/: no external scope can assign
@@ -143,7 +143,7 @@ program test
     iff = .true.
     do i = 1, 3
        do s = 1, 2
-          iff = iff .and. ((g(i) % branch(s) % status() .eq. GRAPH_KNOWN) &
+          iff = iff .and. ((g(i) % branch(s) % status() .eq. BRANCH_KNOWN) &
                &     .eqv. associated(g(i) % branch(s) % known()))
        end do
     end do
@@ -152,13 +152,13 @@ program test
     ! Navigation remains concise at depth through ASSOCIATE.
     associate (r => g(3) % branch(1) % known())
       call check('INV g%branch(1)%known() then %branch(2)%status() reads directly', &
-           & r % same_as(ref) .and. r % branch(2) % status() .eq. GRAPH_NULL)
+           & r % same_as(ref) .and. r % branch(2) % status() .eq. BRANCH_NULL)
     end associate
 
     ! A whole branch value may be replaced; the iff survives it.
     g(3) % branch(1) = null_branch()
     call check('INV whole-branch replacement preserves the iff', &
-         & g(3) % branch(1) % status() .eq. GRAPH_NULL .and. &
+         & g(3) % branch(1) % status() .eq. BRANCH_NULL .and. &
          & .not. associated(g(3) % branch(1) % known()))
 
   end block invariant_block
@@ -188,8 +188,8 @@ program test
     call m % bind(times, symbol = '*')
 
     call check('D  the operands are (NULL,NULL): structure does not encode 2 or 3', &
-         & two % branch(1) % status() .eq. GRAPH_NULL .and. &
-         & three % branch(1) % status() .eq. GRAPH_NULL)
+         & two % branch(1) % status() .eq. BRANCH_NULL .and. &
+         & three % branch(1) % status() .eq. BRANCH_NULL)
     call check('D  evaluate(times) = 20', evaluate(times, m) .eq. 20.0_dp)
     call check('D  evaluate(plus) = 5', evaluate(plus, m) .eq. 5.0_dp)
 
@@ -261,8 +261,8 @@ program test
 
     ! G . connectivity, boundary by NULL
     call check('G  a boundary face has a NULL member', &
-         & f(1) % branch(1) % status() .eq. GRAPH_NULL .and. &
-         & f(4) % branch(2) % status() .eq. GRAPH_NULL)
+         & f(1) % branch(1) % status() .eq. BRANCH_NULL .and. &
+         & f(4) % branch(2) % status() .eq. BRANCH_NULL)
     call check('G  only a NULL member maps to index 0', &
          & left(1) .eq. 0 .and. right(4) .eq. 0)
 
@@ -308,15 +308,15 @@ program test
     ku % branch(1) = known_branch(ref)  ; ku % branch(2) = unknown_branch()
     kk % branch(1) = known_branch(ref)  ; kk % branch(2) = known_branch(ref)
 
-    call state('H  (N,N)', nn, GRAPH_NULL   , GRAPH_NULL   )
-    call state('H  (N,U)', nu, GRAPH_NULL   , GRAPH_UNKNOWN)
-    call state('H  (N,K)', nk, GRAPH_NULL   , GRAPH_KNOWN  )
-    call state('H  (U,N)', un, GRAPH_UNKNOWN, GRAPH_NULL   )
-    call state('H  (U,U)', uu, GRAPH_UNKNOWN, GRAPH_UNKNOWN)
-    call state('H  (U,K)', uk, GRAPH_UNKNOWN, GRAPH_KNOWN  )
-    call state('H  (K,N)', kn, GRAPH_KNOWN  , GRAPH_NULL   )
-    call state('H  (K,U)', ku, GRAPH_KNOWN  , GRAPH_UNKNOWN)
-    call state('H  (K,K)', kk, GRAPH_KNOWN  , GRAPH_KNOWN  )
+    call state('H  (N,N)', nn, BRANCH_NULL   , BRANCH_NULL   )
+    call state('H  (N,U)', nu, BRANCH_NULL   , BRANCH_UNKNOWN)
+    call state('H  (N,K)', nk, BRANCH_NULL   , BRANCH_KNOWN  )
+    call state('H  (U,N)', un, BRANCH_UNKNOWN, BRANCH_NULL   )
+    call state('H  (U,U)', uu, BRANCH_UNKNOWN, BRANCH_UNKNOWN)
+    call state('H  (U,K)', uk, BRANCH_UNKNOWN, BRANCH_KNOWN  )
+    call state('H  (K,N)', kn, BRANCH_KNOWN  , BRANCH_NULL   )
+    call state('H  (K,U)', ku, BRANCH_KNOWN  , BRANCH_UNKNOWN)
+    call state('H  (K,K)', kk, BRANCH_KNOWN  , BRANCH_KNOWN  )
 
     call check('H  NULL /= UNKNOWN by status, both disassociated', &
          & nu % branch(1) % status() .ne. nu % branch(2) % status() .and. &
@@ -375,7 +375,7 @@ program test
     x => a % branch(1) % known()
     call check('J  b1 /= b', .not. b1 % same_as(b))
     call check('J  a%branch(1)%known() same_as b, still UNKNOWN', &
-         & x % same_as(b) .and. x % branch(1) % status() .eq. GRAPH_UNKNOWN)
+         & x % same_as(b) .and. x % branch(1) % status() .eq. BRANCH_UNKNOWN)
 
     call a1 % declare()                     ! so a must be rebuilt as a1
     a1 % branch(1) = known_branch(b1)
@@ -432,8 +432,8 @@ contains
     logical :: ok
 
     ok = g % branch(1) % status() .eq. s1 .and. g % branch(2) % status() .eq. s2
-    ok = ok .and. (associated(g % branch(1) % known()) .eqv. (s1 .eq. GRAPH_KNOWN))
-    ok = ok .and. (associated(g % branch(2) % known()) .eqv. (s2 .eq. GRAPH_KNOWN))
+    ok = ok .and. (associated(g % branch(1) % known()) .eqv. (s1 .eq. BRANCH_KNOWN))
+    ok = ok .and. (associated(g % branch(2) % known()) .eqv. (s2 .eq. BRANCH_KNOWN))
     call check(label, ok)
 
   end subroutine state

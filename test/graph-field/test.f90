@@ -10,19 +10,19 @@
 program test_graph_field
 
   use iso_fortran_env  , only : dp => REAL64
-  use fractal_graph           , only : graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal           , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map           , only : set_map
-  use graph_inclusion_map     , only : inclusion_map, declared_subobject
-  use class_graph_field, only : field
+  use map_set           , only : set_map
+  use map_inclusion     , only : inclusion_map, declared_subobject
+  use field_stored, only : stored_field
 
   implicit none
 
   type(graph)         :: cells, walls, hot, none
   type(set_map)       :: sets
   type(inclusion_map) :: inclusions
-  type(field)         :: q, w, h, z, copy
+  type(stored_field)         :: q, w, h, z, copy
   type(graph)         :: dom
   real(dp), allocatable :: v(:)
   integer :: kk
@@ -48,31 +48,31 @@ program test_graph_field
   call sets       % bind(none, listed_set_representation([integer ::]))
   call inclusions % include_in(none, cells)
 
-  q = field('q', cells, 6, ncomp=2)
+  q = stored_field('q', cells, 6, num_components=2)
   call q % set_real_vector([(1.0_dp * kk, kk = 1, 12)])
   dom = q % domain()
   call report(dom % same_as(cells), &
        & "an ambient field's domain is the carrier, by identity", nfail)
   call report(q % num_entries() .eq. 6, &
        & "entries count the domain", nfail)
-  call q % get_real_vector(v)
+  call q % real_vector(v)
   call report(abs(v((4 - 1) * 2 + 2) - 8.0_dp) < 1.0d-14, &
-       & "values interleave at (entry-1)*ncomp + component", nfail)
+       & "values interleave at (entry-1)*num_components + component", nfail)
 
-  w = field('w', walls, 3)
+  w = stored_field('w', walls, 3)
   call w % set_real_vector([50.0_dp, 20.0_dp, 60.0_dp])
-  call w % get_real_vector(v)
+  call w % real_vector(v)
   call report(abs(v(sets % index_in(walls, 2)) - 20.0_dp) < 1.0d-14 .and. &
        &      abs(v(1) - 50.0_dp) < 1.0d-14, &
        & "a subset field stores by declaration, not by member value", nfail)
 
-  h = field('h', hot, 2)
+  h = stored_field('h', hot, 2)
   call h % set_real_vector([600.0_dp, 200.0_dp])
   dom = h % domain()
   call report(declared_subobject(dom, cells, inclusions), &
        & "a nested-subset field still descends from the ground", nfail)
 
-  z = field('z', none, 0)
+  z = stored_field('z', none, 0)
   call z % set_real_vector([real(dp) ::])
   call report(z % num_entries() .eq. 0, &
        & "the empty-domain field is lawful, zero entries", nfail)

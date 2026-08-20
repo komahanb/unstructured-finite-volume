@@ -19,13 +19,13 @@
 
 program test_graph_relation
 
-  use graph_identity    , only : token
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use token_identity    , only : token
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_label_map      , only : label_map
-  use graph_relation    , only : stored_relation
+  use map_set        , only : set_map
+  use map_label      , only : label_map
+  use relation_finitary    , only : stored_relation
 
   implicit none
 
@@ -82,9 +82,9 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)              :: cells, faces
+    type(graph)              :: cells, faces
     type(stored_relation)          :: r
-    type(set_graph) :: d
+    type(graph) :: d
     type(token)                    :: tk
     integer, allocatable           :: t(:,:)
     type(set_map)     :: sets
@@ -144,7 +144,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)     :: cells, faces
+    type(graph)     :: cells, faces
     type(stored_relation) :: r
     integer, allocatable  :: t(:,:)
     type(set_map)     :: sets
@@ -183,7 +183,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)     :: dup
+    type(graph)     :: dup
     integer, allocatable :: idx(:)
     integer              :: i, j
     logical              :: ok
@@ -192,7 +192,7 @@ contains
     call dup % declare()
     call sets % bind(dup, listed_set_representation([10, 20, 10, 30, 20]))
 
-    call report(sets % size_of(dup) .eq. 3, &
+    call report(sets % num_members_of(dup) .eq. 3, &
          & "a member handed in twice is in the domain once", nfail)
 
     call sets % members_of(dup, idx)
@@ -200,8 +200,8 @@ contains
          & "first appearances stand, in their first order", nfail)
 
     ok = .true.
-    do i = 1, sets % size_of(dup)
-       do j = i + 1, sets % size_of(dup)
+    do i = 1, sets % num_members_of(dup)
+       do j = i + 1, sets % num_members_of(dup)
           ok = ok .and. (sets % member_of(dup, i) /= sets % member_of(dup, j))
        end do
     end do
@@ -213,7 +213,7 @@ contains
          & "local_index finds the standing, zero for outsiders", nfail)
 
     ok = .true.
-    do i = 1, sets % size_of(dup)
+    do i = 1, sets % num_members_of(dup)
        ok = ok .and. (sets % member_of(dup, sets % index_in(dup, sets % member_of(dup, i))) &
             &         .eq. sets % member_of(dup, i))
        ok = ok .and. (sets % index_in(dup, sets % member_of(dup, i)) .eq. i)
@@ -233,10 +233,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)              :: cells
-    type(set_graph)               :: sensors
+    type(graph)              :: cells
+    type(graph)               :: sensors
     type(stored_relation)          :: r
-    type(set_graph) :: d
+    type(graph) :: d
     type(set_map)     :: sets
 
     call cells % declare()
@@ -256,7 +256,7 @@ contains
     d = r % domain(2)
     call report(d % same_as(sensors), &
          & "the listed slot answers the listed domain, by identity", nfail)
-    call report(sets % has_in(d, 20) .and. .not. sets % has_in(d, 15), &
+    call report(sets % has(d, 20) .and. .not. sets % has(d, 15), &
          & "and the carrier's own membership law travels with it", nfail)
 
   end subroutine check_mixed_carriers
@@ -270,9 +270,9 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)              :: cells
+    type(graph)              :: cells
     type(stored_relation)          :: adj
-    type(set_graph) :: d1, d2
+    type(graph) :: d1, d2
     type(set_map)     :: sets
 
     call cells % declare()
@@ -300,7 +300,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)     :: edges, verts, roles
+    type(graph)     :: edges, verts, roles
     type(stored_relation) :: ends
     integer               :: v
     logical               :: ok
@@ -343,9 +343,9 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)              :: cells, faces
+    type(graph)              :: cells, faces
     type(stored_relation)          :: adj, inc
-    type(set_graph) :: da, di
+    type(graph) :: da, di
     type(set_map)     :: sets
 
     call cells % declare()
@@ -374,7 +374,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)     :: cells, faces
+    type(graph)     :: cells, faces
     type(stored_relation) :: physical, coarse, copy
     type(set_map)     :: sets
 
@@ -408,7 +408,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)     :: cells
+    type(graph)     :: cells
     type(stored_relation) :: none
     type(token)           :: tk
     type(set_map)     :: sets

@@ -36,17 +36,17 @@
 
 program visualization_level_8
 
-  use graph_set_representation, only : counted_set_representation
-  use graph_set_map        , only : set_map
-  use graph_label_map      , only : label_map
+  use map_set_representation, only : counted_set_representation
+  use map_set        , only : set_map
+  use map_label      , only : label_map
   use iso_fortran_env      , only : dp => REAL64
   use visualization_assert , only : report, verdict
-  use fractal_graph        , only : set_graph => graph
-  use graph_directed_view  , only : directed_graph
-  use class_graph          , only : directed_stored_graph
-  use class_graph_stencil  , only : stencil_operator
-  use class_graph_step     , only : step_operator, bdf, backward_euler
-  use class_graph_jacobi   , only : jacobi
+  use graph_fractal        , only : graph
+  use view_directed  , only : directed_graph
+  use view_directed_stored          , only : stored_directed_graph
+  use operation_stencil  , only : stencil
+  use operation_step     , only : scheme, bdf, backward_euler
+  use operation_jacobi   , only : jacobi
   use production_pattern_renderer_fixture, only : pattern_picture
   use production_pattern_renderer_fixture, only : production_has
   use structural_renderer_fixture        , only : picture
@@ -61,10 +61,10 @@ program visualization_level_8
   real(dp), parameter :: A_TIMES_X(N) = [6.0_dp, 14.0_dp, 20.0_dp]
   real(dp), parameter :: TRUE_DIAG(N) = [4.0_dp, 5.0_dp, 6.0_dp]
 
-  type(stencil_operator)    :: a
-  type(step_operator)       :: clock, euler
+  type(stencil)    :: a
+  type(scheme)       :: clock, euler
   class(directed_graph), allocatable :: dependent, independent, independent_be
-  type(directed_stored_graph)        :: context
+  type(stored_directed_graph)        :: context
   type(jacobi)              :: solver
   type(set_map)     :: sets
   type(label_map)     :: labels
@@ -81,7 +81,7 @@ program visualization_level_8
   write(*,'(1x,a)') "============================================="
 
   ! ---- the dependent axis: a 3x3 state coupling.
-  a = stencil_operator(rows     = [1, 2, 3, 1, 2, 2, 3], &
+  a = stencil(rows     = [1, 2, 3, 1, 2, 2, 3], &
        &               columns  = [1, 2, 3, 2, 1, 3, 2], &
        &               weights  = [4.0_dp, 5.0_dp, 6.0_dp, &
        &                           1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp], &
@@ -130,7 +130,7 @@ program visualization_level_8
        & call labels % bind(independent_be % edge_set(), 'edges')
 
   ! ---- the execution context, deliberately neither of them.
-  context = directed_stored_graph(N, tails=[integer ::], heads=[integer ::])
+  context = stored_directed_graph(N, tails=[integer ::], heads=[integer ::])
   if (.not. sets % describes(context % vertex_set())) &
        & call sets % bind(context % vertex_set(), &
        &      counted_set_representation(context % num_vertices()))

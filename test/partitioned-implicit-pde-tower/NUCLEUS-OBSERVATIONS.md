@@ -208,7 +208,7 @@ symptom / fact:       ONE GLOBAL ENTITY, ONE ASSEMBLED CONTRIBUTION -
 exact caller:         gate-a-partition/test.f90
                       (check_edge_assembly_law,
                       document_canonical_edge_owner);
-                      src/class_graph_partitioner.f90 (the eowner
+                      src/transform_partitioner.f90 (the eowner
                       assignment)
 
 mathematical concept: a partition of a set of entities into ownership
@@ -376,12 +376,12 @@ graph role:           conduit (minimizer) and topology operand
 
 comparison:           the reverse review inferred this from
                       test/graph-minimization/test.f90:345 and
-                      class_graph_multigrid.f90:123. This tower
+                      operation_multigrid.f90:123. This tower
                       measures it: same operation, same probe,
                       different host, different answer
 
 suspected nucleus implication: the reverse review's REJECT of
-                      "remove class(graph) from graph_operation" is
+                      "remove class(graph) from operation" is
                       now supported by evidence rather than by
                       inference. Removing it would break this call
                       chain outright. Seam A1 is CLOSED as a refactor
@@ -576,7 +576,7 @@ the order the current code path would demand it:
                            over distributed vectors, and the collective
                            points that implies
 
-                      Items 4-6 sit in graph_minimization, NOT in this
+                      Items 4-6 sit in operation_minimization, NOT in this
                       tower's fixtures - which is itself informative:
                       the OPERATOR decomposed cleanly with no
                       production change, while the SOLVER is where
@@ -597,7 +597,7 @@ action:               observe; candidate subject for a future tower
 ## Reverse-evidence status after this tower
 
 ```text
-A1  graph_operation host          CLOSED at Gate B - measured, not
+A1  operation host          CLOSED at Gate B - measured, not
                                   inferred. Gate C reinforces it and
                                   does not reopen it.
 

@@ -40,50 +40,49 @@
   LEVEL 0  GRAMMAR      "what may exist"        graph_grammar.f90
   │         4 abstract roles, 55 operation symbols, zero math
   │         ├── graph            structure   (what joins what)
-  │         ├── graph_field      values      (what members carry)
-  │         ├── graph_operation  verb within (data → data)
-  │         └── graph_transform  verb between(graph → graph)
+  │         ├── field      values      (what members carry)
+  │         ├── operation  verb within (data → data)
+  │         └── transform  verb between(graph → graph)
   │
   LEVEL 1  CALCULUS     "how quantities relate"
   │         ├── graph_calculus.f90        the named citizens (support,
   functional,
   │         │                             reduction, broadcast … one bound param
   each)
-  │         ├── class_graph.f90           stored graph (edge list → adjacency)
-  │         ├── class_graph_mesh.f90      mesh IS a graph in space (the ONE
+  │         ├── view_directed_stored.f90           stored graph (edge list → adjacency)
+  │         ├── view_mesh.f90      mesh IS a graph in space (the ONE
   │         │                             inheritance crossing; boundary face =
   │         │                             half-edge, no ghost cell)
-  │         ├── class_graph_stencil.f90   sparse matrix = graph + weight per
+  │         ├── operation_stencil.f90   sparse matrix = graph + weight per
   edge
-  │         ├── class_graph_step.f90      time-discretization stencil (BDF
+  │         ├── operation_step.f90      time-discretization stencil (BDF
   motif)
-  │         ├── graph_forms.f90           basis = support of functions
-  │         │     ├── class_polynomial_form.f90   {1, x, y, z}
-  │         │     └── class_harmonic_form.f90     {1, sin, cos}
+  │         ├── field_forms.f90           basis = support of functions
+  │         │     (polynomial_form {1, x, y, z}; harmonic_form {1, sin, cos})
   │         └── fields/supports/reductions/walks/differential operators
   │
   LEVEL 2  MINIMIZATION "how answers are found"  (first level with a goal)
-  │         ├── graph_minimization.f90    ONE solver family: attach statement,
+  │         ├── operation_minimization.f90    ONE solver family: attach statement,
   │         │                             drive residual → 0
   │         │     ├── jacobi │ gauss_seidel (by colour) │ CG │ GMRES
-  │         │     ├── class_graph_newton.f90      linearize-in-place, same
+  │         │     ├── operation_newton.f90      linearize-in-place, same
   family
-  │         │     └── class_graph_multigrid.f90   two-grid: governs two held
+  │         │     └── operation_multigrid.f90   two-grid: governs two held
   minimizers
-  │         ├── graph_fitting.f90         form (slow) vs coefficients (fast); +
+  │         ├── operation_fitting.f90         form (slow) vs coefficients (fast); +
   pruner
-  │         └── class_graph_marcher.f90   time = a graph, walked forward AND
+  │         └── operation_marching.f90   time = a graph, walked forward AND
   │                                       backward (discrete adjoint for free)
   │
   LEVEL 3  CONSTITUTION "what the material says"  — coefficients only, no
   operators
-  │         ├── class_conduction.f90      K·grad, per-face coefficients
-  │         ├── class_advection.f90       v·n, per-face coefficients
-  │         ├── class_robin_condition.f90 a·φ + b·dφ/dn = c  (dirichlet/neumann
+  │         ├── operation_conduction.f90      K·grad, per-face coefficients
+  │         ├── operation_advection.f90       v·n, per-face coefficients
+  │         ├── operation_robin_condition.f90 a·φ + b·dφ/dn = c  (dirichlet/neumann
   = cases)
-  │         ├── class_diffusion_statement.f90  physics words in → compiled
+  │         ├── operation_diffusion.f90  physics words in → compiled
   operator out
-  │         └── class_fitted_balance.f90  exact edge values → one operator
+  │         └── operation_fitted_balance.f90  exact edge values → one operator
   │
   LEVEL 4  STATEMENT    "what is asked"   — named in the grammar, not yet a file
 
@@ -94,9 +93,9 @@
 
   Old world → new world bridge
 
-  gmsh file ──▶ class_gmsh_loader ──▶ class_mesh (old: geometry, measures)
+  gmsh file ──▶ view_gmsh_loader ──▶ class_mesh (old: geometry, measures)
                                           │
-                            class_mesh_builder.f90   ← the ONE crossing point
+                            view_mesh_builder.f90   ← the ONE crossing point
                                           ▼
                                 tower mesh (graph_mesh) — nothing downstream
                                 touches the old world again
@@ -253,16 +252,16 @@
   role
   └── edge ends     edge_tail | edge_head | edge_has_head → incidence_role(...)
 
-  CONCRETE  class_graph.f90 — storage is ALREADY symmetric
+  CONCRETE  view_directed_stored.f90 — storage is ALREADY symmetric
   ├── tail(:), head(:)          edge → vertex      (I read one way)
   ├── xinc/einc                 vertex → edge      (Iᵀ, already materialized)
   ├── xadj/vadj, xout/eout, xin/ein   derived adjacency caches (keep)
   └── vowner/eowner, vglobal/eglobal  side-paired partition data
 
   TRANSPORT  the Phase-4 collapse targets
-  ├── class_graph_partitioner.f90:490,534   carry_vertex_field |
+  ├── transform_partitioner.f90:490,534   carry_vertex_field |
   carry_edge_field
-  └── class_graph_assembler.f90:234,289     assemble_vertex_field |
+  └── transform_assembler.f90:234,289     assemble_vertex_field |
   assemble_edge_field
 
   PINNING TESTS  (must stay green through Phases 1–5)
@@ -271,7 +270,7 @@
       all speak the vertex/edge vocabulary → compatibility view keeps them
   compiling
 
-  The pleasant surprise: class_graph already stores both traversal directions
+  The pleasant surprise: view_directed_stored already stores both traversal directions
   (tail/head and xinc/einc), so the O(1)-dual requirement is nearly met by
   existing storage — Phase 1 is mostly re-keying the API by side and introducing
   the neutral incidence vocabulary, not re-engineering memory layout. The

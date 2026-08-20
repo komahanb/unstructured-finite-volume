@@ -41,12 +41,12 @@
 
 module chain_algebra_fixture
 
-  use graph_relation        , only : relation
-  use fractal_graph         , only : set_graph => graph
-  use graph_set_map         , only : set_map
-  use graph_relation_algebra, only : compose_binary
-  use graph_binary_relation , only : binary_relation, csr_relation, &
-       &                             transposed_view, transpose_of
+  use relation_finitary        , only : relation
+  use graph_fractal         , only : graph
+  use map_set         , only : set_map
+  use relation_algebra, only : compose_binary
+  use relation_binary , only : binary_relation, csr_relation, &
+       &                             transposed_relation, transpose_of
 
   implicit none
 
@@ -64,7 +64,7 @@ contains
     class(binary_relation), intent(in), target :: tail, head
     type(set_map)         , intent(in)         :: sets
 
-    type(transposed_view) :: tail_t
+    type(transposed_relation) :: tail_t
 
     tail_t = transpose_of(tail)          ! V -> E
     adj    = compose_binary(tail_t, head, sets) ! V -> E -> V
@@ -81,7 +81,7 @@ contains
     class(binary_relation), intent(in), target :: tail, own
     type(set_map)         , intent(in)         :: sets
 
-    type(transposed_view) :: own_t
+    type(transposed_relation) :: own_t
 
     own_t = transpose_of(own)          ! V -> K
     eo    = compose_binary(tail, own_t, sets) ! E -> V -> K
@@ -100,7 +100,7 @@ contains
     class(binary_relation), intent(in), target :: head, own
     type(set_map)         , intent(in)         :: sets
 
-    type(transposed_view) :: own_t
+    type(transposed_relation) :: own_t
 
     own_t = transpose_of(own)          ! V -> K
     eo    = compose_binary(head, own_t, sets) ! E -> V -> K

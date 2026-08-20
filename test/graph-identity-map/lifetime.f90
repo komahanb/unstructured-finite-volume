@@ -23,7 +23,7 @@
 ! probe below - bind inside a scope, let the binder's graph die, then
 ! ask the map about a COPY carrying the same token - measured:
 !
-!     native    describes = T, size_of = 10   answers, off freed store
+!     native    describes = T, num_members_of = 10   answers, off freed store
 !     valgrind  Invalid read of size 4        in row_of, the scan
 !
 ! The native run answering CORRECTLY is the danger, not the comfort:
@@ -50,11 +50,11 @@
 
 program lifetime
 
-  use fractal_graph           , only : graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal           , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map           , only : set_map
-  use graph_inclusion_map     , only : inclusion_map, declared_subobject
+  use map_set           , only : set_map
+  use map_inclusion     , only : inclusion_map, declared_subobject
 
   implicit none
 
@@ -81,13 +81,13 @@ program lifetime
     call check('A  the map still describes a set whose binder is gone', &
          & sets % describes(a) .and. sets % describes(s))
 
-    call check('A  and answers its size', sets % size_of(a) .eq. 10)
+    call check('A  and answers its size', sets % num_members_of(a) .eq. 10)
 
     call check('A  and its members, positions and membership', &
          & sets % member_of(s, 2) .eq. 5 .and. &
          &  sets % index_in(s, 6) .eq. 3   .and. &
-         &  sets % has_in(s, 5)            .and. &
-         &  .not. sets % has_in(s, 4))
+         &  sets % has(s, 5)            .and. &
+         &  .not. sets % has(s, 4))
 
     call sets % members_of(s, v)
     call check('A  and enumerates them', &
@@ -160,7 +160,7 @@ program lifetime
     call twin % bind(extra, counted_set_representation(4))
 
     call check('C  a copied map answers for the keys it copied', &
-         & twin % describes(a) .and. twin % size_of(a) .eq. 10)
+         & twin % describes(a) .and. twin % num_members_of(a) .eq. 10)
 
     call check('C  and growth of the copy does not reach the original', &
          & twin % describes(extra) .and. .not. sets % describes(extra))

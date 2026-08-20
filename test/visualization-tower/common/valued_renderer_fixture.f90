@@ -75,12 +75,12 @@
 module valued_renderer_fixture
 
   use iso_fortran_env               , only : dp => REAL64
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
-  use graph_label_map      , only : label_map
-  use graph_relation                , only : relation
-  use graph_field_calculus          , only : GRAPH_FIELD_REAL
-  use class_graph_field             , only : field
+  use graph_fractal        , only : graph
+  use map_set        , only : set_map
+  use map_label      , only : label_map
+  use relation_finitary                , only : relation
+  use field_calculus          , only : FIELD_REAL
+  use field_stored             , only : stored_field
   use visualization_carriers_fixture, only : label_for
   use structural_renderer_fixture   , only : picture, sparsity_picture
   use structural_renderer_fixture   , only : glyph_at
@@ -119,17 +119,17 @@ contains
 
   logical function coefficients_fit(w, occurrences)
 
-    class(field)     , intent(in) :: w
-    type(set_graph), intent(in) :: occurrences
+    class(stored_field)     , intent(in) :: w
+    type(graph), intent(in) :: occurrences
 
-    type(set_graph) :: on
+    type(graph) :: on
 
     on = w % domain()
 
     coefficients_fit = on % same_as(occurrences)
     coefficients_fit = coefficients_fit .and. (w % num_components() .eq. 1)
     coefficients_fit = coefficients_fit .and. &
-         &             (w % value_kind() .eq. GRAPH_FIELD_REAL)
+         &             (w % value_kind() .eq. FIELD_REAL)
 
   end function coefficients_fit
 
@@ -146,13 +146,13 @@ contains
 
     class(relation)  , intent(in) :: tail, head
     type(set_map)  , intent(in) :: sets
-    type(set_graph), intent(in) :: occurrences
+    type(graph), intent(in) :: occurrences
     integer          , intent(in) :: from, to
 
     integer :: k, e
 
     occurrence_joining = 0
-    do k = 1, sets % size_of(occurrences)
+    do k = 1, sets % num_members_of(occurrences)
        e = sets % member_of(occurrences, k)
        if (tail % has([e, from]) .and. head % has([e, to])) then
           occurrence_joining = e
@@ -172,14 +172,14 @@ contains
   integer function occurrences_joining(tail, head, occurrences, from, to, sets)
 
     class(relation)  , intent(in) :: tail, head
-    type(set_graph), intent(in) :: occurrences
+    type(graph), intent(in) :: occurrences
     integer          , intent(in) :: from, to
     type(set_map)  , intent(in) :: sets
 
     integer :: k, e
 
     occurrences_joining = 0
-    do k = 1, sets % size_of(occurrences)
+    do k = 1, sets % num_members_of(occurrences)
        e = sets % member_of(occurrences, k)
        if (tail % has([e, from]) .and. head % has([e, to])) then
           occurrences_joining = occurrences_joining + 1
@@ -198,15 +198,15 @@ contains
 
   real(dp) function value_at(w, occurrences, member, sets)
 
-    class(field)     , intent(in) :: w
-    type(set_graph), intent(in) :: occurrences
+    class(stored_field)     , intent(in) :: w
+    type(graph), intent(in) :: occurrences
     integer          , intent(in) :: member
     type(set_map)  , intent(in) :: sets
 
     real(dp), allocatable :: values(:)
     integer               :: seat
 
-    call w % get_real_vector(values)
+    call w % real_vector(values)
 
     seat = sets % index_in(occurrences, member)
     if (seat .lt. 1 .or. seat .gt. size(values)) then
@@ -262,13 +262,13 @@ contains
 
     class(relation)  , intent(in) :: d
     class(relation)  , intent(in) :: tail, head
-    type(set_graph), intent(in) :: occurrences
-    class(field)     , intent(in) :: w
+    type(graph), intent(in) :: occurrences
+    class(stored_field)     , intent(in) :: w
     type(set_map)  , intent(in) :: sets
     type(label_map), intent(in) :: labels
 
     type(picture)                  :: page
-    type(set_graph) :: cols, rows
+    type(graph) :: cols, rows
     character(len=:) , allocatable :: cell
     real(dp)         , allocatable :: values(:)
     integer :: stub, wide, i, j, at, e, seat, width
@@ -290,24 +290,24 @@ contains
     width = len(page % line)
     stub  = first_nonblank(page % line(2))
 
-    call w % get_real_vector(values)
+    call w % real_vector(values)
 
     wide = max(widest_label(cols, sets, labels), widest_value(values)) + 3
 
-    allocate(character(len=width) :: pic % line(2 + sets % size_of(rows)))
+    allocate(character(len=width) :: pic % line(2 + sets % num_members_of(rows)))
     pic % line = repeat(' ', width)
 
     call put(pic % line(1), 1, d % name() // ' VALUES')
 
-    do j = 1, sets % size_of(cols)
+    do j = 1, sets % num_members_of(cols)
        at = stub + (j - 1) * wide
        call put(pic % line(2), at, &
             &   right(label_for(cols, sets % member_of(cols, j), labels), wide - 1))
     end do
 
-    do i = 1, sets % size_of(rows)
+    do i = 1, sets % num_members_of(rows)
        call put(pic % line(2 + i), 1, label_for(rows, sets % member_of(rows, i), labels))
-       do j = 1, sets % size_of(cols)
+       do j = 1, sets % num_members_of(cols)
           at = stub + (j - 1) * wide
 
           ! FIRST the structural question, asked of the relation.
@@ -368,14 +368,14 @@ contains
 
   integer function widest_label(carrier, sets, labels)
 
-    type(set_graph), intent(in) :: carrier
+    type(graph), intent(in) :: carrier
     type(set_map)  , intent(in) :: sets
     type(label_map), intent(in) :: labels
 
     integer :: k
 
     widest_label = 1
-    do k = 1, sets % size_of(carrier)
+    do k = 1, sets % num_members_of(carrier)
        widest_label = max(widest_label, &
             &             len(label_for(carrier, sets % member_of(carrier, k), labels)))
     end do

@@ -51,29 +51,29 @@
 program partitioned_pde_level_4
 
   use partitioned_pde_assert , only : report, verdict
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation
-  use graph_set_map        , only : set_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use graph_label_map      , only : label_map
-  use graph_directed_view    , only : directed_graph
-  use graph_binary_relation  , only : csr_relation
-  use class_graph            , only : directed_stored_graph
-  use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation
+  use map_set        , only : set_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
+  use map_label      , only : label_map
+  use view_directed    , only : directed_graph
+  use relation_binary  , only : csr_relation
+  use view_directed_stored            , only : stored_directed_graph
+  use transform_partitioner, only : partitioner, PARTITION_LINEAR
   use chain_carriers_fixture , only : chain_carriers
   use chain_relations_fixture, only : tail_relation, head_relation, &
        &                              own_relation
   use chain_algebra_fixture  , only : derive_tail_owner, derive_head_owner
 
-  use graph_partition_relation, only : partition_relation
+  use relation_partition, only : partition_relation
   implicit none
   type(partition_relation) :: rel
 
-  type(set_graph)          :: v, e, k
+  type(graph)          :: v, e, k
   type(set_map)          :: sets
   type(csr_relation), target :: tail, head, own
   type(csr_relation)         :: tail_owner, head_owner
-  type(directed_stored_graph)         :: g
+  type(stored_directed_graph)         :: g
   class(directed_graph), allocatable  :: g1, g2
   integer                    :: nfail
 
@@ -92,7 +92,7 @@ program partitioned_pde_level_4
   tail_owner = derive_tail_owner(tail, own, sets)
   head_owner = derive_head_owner(head, own, sets)
 
-  g = directed_stored_graph(6, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  g = stored_directed_graph(6, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
   call sets % bind(g % vertex_set(), &
        & counted_set_representation(g % num_vertices()))
   call sets % bind(g % edge_set(), &
@@ -118,7 +118,7 @@ contains
 
     type(partitioner) :: p
 
-    p = partitioner(PARTITION_LINEAR, nparts=2, part=kpart)
+    p = partitioner(PARTITION_LINEAR, num_parts=2, part=kpart)
     call p % partition_graph(g, part, rel)
 
   end subroutine cut
@@ -135,7 +135,7 @@ contains
     write(tag,'(i1)') kpart
 
     select type (part)
-    type is (directed_stored_graph)
+    type is (stored_directed_graph)
        rel = part % whole_relation()
        call report(rel % has_part_relation() .and. &
             &      rel % num_parts() .eq. 2 .and. &
@@ -158,7 +158,7 @@ contains
     integer     , intent(in)    :: kpart, globals(:), borrowed_global
     integer     , intent(inout) :: nfail
 
-    type(set_graph) :: owned, borrowed, overlap
+    type(graph) :: owned, borrowed, overlap
     type(label_map)     :: labels
     type(inclusion_map)     :: inclusions
     character(len=1) :: tag
@@ -169,7 +169,7 @@ contains
     write(tag,'(i1)') kpart
 
     select type (part)
-    type is (directed_stored_graph)
+    type is (stored_directed_graph)
        rel = part % whole_relation()
 
        ok = part % num_vertices() .eq. size(globals)
@@ -195,14 +195,14 @@ contains
        call part % owned_vertices(kpart, sets, labels, inclusions, owned)
        call part % borrowed_vertices(kpart, sets, labels, inclusions, borrowed)
        call part % overlap_vertices(kpart, sets, labels, inclusions, overlap)
-       call report(sets % size_of(owned) .eq. 3 .and. sets % size_of(borrowed) .eq. 1 &
-            & .and. sets % size_of(overlap) .eq. part % num_vertices(), &
+       call report(sets % num_members_of(owned) .eq. 3 .and. sets % num_members_of(borrowed) .eq. 1 &
+            & .and. sets % num_members_of(overlap) .eq. part % num_vertices(), &
             & "G" // tag // ": three owned, one borrowed, and the " // &
             & "overlap is the whole local carrier", nfail)
 
        ok = .false.
        do i = 1, part % num_vertices()
-          if (sets % has_in(borrowed, i)) then
+          if (sets % has(borrowed, i)) then
              ok = rel % global_vertex_index(i) .eq. borrowed_global
           end if
        end do
@@ -281,7 +281,7 @@ contains
 
     holds_global_edge = .false.
     select type (part)
-    type is (directed_stored_graph)
+    type is (stored_directed_graph)
        rel = part % whole_relation()
        do i = 1, part % num_edges()
           if (rel % global_edge_index(i) .eq. ge) holds_global_edge = .true.
@@ -300,7 +300,7 @@ contains
 
     owner_of_global_edge = 0
     select type (part)
-    type is (directed_stored_graph)
+    type is (stored_directed_graph)
        rel = part % whole_relation()
        do i = 1, part % num_edges()
           if (rel % global_edge_index(i) .eq. ge) then

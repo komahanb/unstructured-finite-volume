@@ -302,7 +302,7 @@ D        = compose_binary(produces, consumes)    consumes ∘ produces
 
 which yields the same extension \(D=\{(+,\times)\}\) through
 restriction + projection + binary composition
-(`src/graph_relation_algebra.f90`).
+(`src/relation_algebra.f90`).
 
 ```mermaid
 flowchart LR
@@ -424,12 +424,12 @@ dependency and the algorithms act from outside:
 graph-owned D
     ↓ directed_adjacency_view(g, d)     borrows g's own relation;
     ↓                                   the selector may die
-graph_algorithms: sources / sinks / reachable / topological_order
+relation_algorithms: sources / sinks / reachable / topological_order
 ```
 
 Sources and sinks come back as `subset_set` subobjects of \(O\),
 canonical by the carrier's declaration order
-(`src/graph_profile.f90`, `src/graph_algorithms.f90`).
+(`src/graph_profile.f90`, `src/relation_algorithms.f90`).
 
 ## Minimal verification
 

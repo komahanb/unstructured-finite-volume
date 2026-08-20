@@ -42,16 +42,16 @@
 program partitioned_pde_level_1
 
   use partitioned_pde_assert , only : report, verdict
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
-  use graph_binary_relation  , only : csr_relation
+  use graph_fractal        , only : graph
+  use map_set        , only : set_map
+  use relation_binary  , only : csr_relation
   use chain_carriers_fixture , only : chain_carriers
   use chain_relations_fixture, only : tail_relation, head_relation, &
        &                              own_relation
 
   implicit none
 
-  type(set_graph)  :: v, e, k
+  type(graph)  :: v, e, k
   type(set_map)  :: sets
   type(csr_relation) :: tail, head, own
   integer            :: nfail
@@ -86,7 +86,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: d
+    type(graph) :: d
 
     d = tail % domain(1)
     call report(d % same_as(e), "Tail runs from the edges", nfail)
@@ -153,7 +153,7 @@ contains
     ! Every vertex has exactly one owner - the law that will make
     ! reconstruction possible three levels above this one.
     ok = .true.
-    do i = 1, sets % size_of(v)
+    do i = 1, sets % num_members_of(v)
        count_owners = 0
        if (own % has([1, sets % member_of(v, i)])) count_owners = count_owners + 1
        if (own % has([2, sets % member_of(v, i)])) count_owners = count_owners + 1

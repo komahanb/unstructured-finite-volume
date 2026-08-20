@@ -30,15 +30,15 @@ program adjoint_level_1
   use adjoint_assert, only : report, verdict
   use adjoint_assert, only : VAR_P, VAR_U, VAR_V
   use adjoint_assert, only : TGT_R1, TGT_R2, TGT_F
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_relation, only : stored_relation
+  use map_set        , only : set_map
+  use relation_finitary, only : stored_relation
 
   implicit none
 
-  type(set_graph)     :: v, t
+  type(graph)     :: v, t
   type(stored_relation) :: dep
   integer               :: table(2, 10)
   integer               :: nfail
@@ -87,7 +87,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: d
+    type(graph) :: d
 
     call report(dep % arity() .eq. 2, &
          & "the dependency is binary", nfail)
@@ -119,8 +119,8 @@ contains
          & "ten handed, nine held: a relation is a set", nfail)
 
     ok = .true.
-    do i = 1, sets % size_of(t)
-       do j = 1, sets % size_of(v)
+    do i = 1, sets % num_members_of(t)
+       do j = 1, sets % num_members_of(v)
           ok = ok .and. dep % has([sets % member_of(t, i), sets % member_of(v, j)])
        end do
     end do
@@ -163,8 +163,8 @@ contains
     logical :: any_absent
 
     any_absent = .false.
-    do i = 1, sets % size_of(t)
-       do j = 1, sets % size_of(v)
+    do i = 1, sets % num_members_of(t)
+       do j = 1, sets % num_members_of(v)
           any_absent = any_absent .or. &
                & .not. dep % has([sets % member_of(t, i), sets % member_of(v, j)])
        end do

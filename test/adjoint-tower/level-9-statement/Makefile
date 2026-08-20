@@ -6,7 +6,7 @@ include ../../../Makefile.in
 # graph that owns them, the field, the legacy operation host and
 # the GMRES citizen - plus the REUSED level-8 constitution,
 # compiled from its own rung's directory. No new law, no new type,
-# and deliberately no class_graph_linearization: the statement does
+# and deliberately no operation_linearization: the statement does
 # not retreat into the specialized same-domain path.
 #=====================================================================#
 

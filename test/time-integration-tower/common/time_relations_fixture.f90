@@ -41,9 +41,9 @@
 
 module time_relations_fixture
 
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
-  use graph_binary_relation, only : csr_relation
+  use graph_fractal        , only : graph
+  use map_set        , only : set_map
+  use relation_binary, only : csr_relation
 
   implicit none
 
@@ -63,7 +63,7 @@ contains
 
   type(csr_relation) function tail_relation(e, t, sets) result(tail)
 
-    type(set_graph), intent(in) :: e, t
+    type(graph), intent(in) :: e, t
     type(set_map)  , intent(in) :: sets
 
     integer :: table(2, 4), i
@@ -85,7 +85,7 @@ contains
 
   type(csr_relation) function head_relation(e, t, sets) result(head)
 
-    type(set_graph), intent(in) :: e, t
+    type(graph), intent(in) :: e, t
     type(set_map)  , intent(in) :: sets
 
     integer :: table(2, 4), i

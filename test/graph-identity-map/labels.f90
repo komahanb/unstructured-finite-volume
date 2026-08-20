@@ -1,7 +1,7 @@
 !=====================================================================!
 ! THE LABEL PROVENANCE SUITE
 !
-! graph_label_map is the third identity-keyed association, and it signs
+! map_label is the third identity-keyed association, and it signs
 ! the same storage law as the other two:
 !
 !     an identity map owns its keys by value;
@@ -23,8 +23,8 @@
 
 program labels
 
-  use fractal_graph  , only : graph
-  use graph_label_map, only : label_map
+  use graph_fractal  , only : graph
+  use map_label, only : label_map
 
   implicit none
 

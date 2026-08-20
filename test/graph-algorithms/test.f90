@@ -18,19 +18,19 @@
 
 program test_graph_algorithms
 
-  use fractal_graph           , only : graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal           , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map           , only : set_map
-  use graph_label_map         , only : label_map
-  use graph_inclusion_map     , only : inclusion_map, declared_subobject
-  use graph_binary_relation, only : csr_relation
-  use graph_algorithms     , only : sources, sinks, reachable, &
+  use map_set           , only : set_map
+  use map_label         , only : label_map
+  use map_inclusion     , only : inclusion_map, declared_subobject
+  use relation_binary, only : csr_relation
+  use relation_algorithms     , only : sources, sinks, reachable, &
        &                            topological_order
-  use fractal_graph        , only : graph, known_branch, null_branch
-  use graph_relational_view, only : relational_binding, &
+  use graph_fractal        , only : graph, known_branch, null_branch
+  use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
-       & holds_set
+       & has_set
 
   implicit none
 
@@ -152,7 +152,7 @@ contains
     call report(size(idx) .eq. 2 .and. all(idx .eq. [5, 2]), &
          & "sinks are [5, 2], likewise", nfail)
 
-    call report(sets % has_in(src, 5) .and. sets % has_in(snk, 5), &
+    call report(sets % has(src, 5) .and. sets % has(snk, 5), &
          & "the isolated member is both source and sink", nfail)
 
     call report(declared_subobject(src, v, inclusions) .and. declared_subobject(snk, v, inclusions), &

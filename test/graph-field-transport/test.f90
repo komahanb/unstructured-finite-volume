@@ -8,7 +8,7 @@
 !      full vertex . full edge . proper vertex subset {6,3,1} .
 !      proper edge subset {5,3,2} . empty subsets
 !
-! Proper subsets are declared in NONNUMERIC order with ncomp=2, so
+! Proper subsets are declared in NONNUMERIC order with num_components=2, so
 ! domain indexing and component indexing are tested at once, and
 ! every value is fetched through local_index - never by assuming
 ! member equals position. Transported subobjects are NEW
@@ -21,24 +21,24 @@
 program test_graph_field_transport
 
   use iso_fortran_env        , only : dp => REAL64
-  use fractal_graph           , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal           , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map           , only : set_map
-  use graph_label_map         , only : label_map
-  use graph_inclusion_map     , only : inclusion_map, declared_subobject
-  use graph_directed_view    , only : directed_graph
-  use graph_field_calculus   , only : graph_field
-  use class_graph            , only : directed_stored_graph
-  use class_graph_field      , only : field
-  use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
-  use class_graph_assembler  , only : assembler
+  use map_set           , only : set_map
+  use map_label         , only : label_map
+  use map_inclusion     , only : inclusion_map, declared_subobject
+  use view_directed    , only : directed_graph
+  use field_calculus   , only : field
+  use view_directed_stored            , only : stored_directed_graph
+  use field_stored      , only : stored_field
+  use transform_partitioner, only : partitioner, PARTITION_LINEAR
+  use transform_assembler  , only : assembler
 
-  use graph_partition_relation, only : partition_relation
+  use relation_partition, only : partition_relation
   implicit none
   type(partition_relation) :: rel
 
-  type(directed_stored_graph) :: g
+  type(stored_directed_graph) :: g
   type(assembler)    :: a
   integer            :: nfail
 
@@ -47,7 +47,7 @@ program test_graph_field_transport
   write(*,'(1x,a)') "graph field transport suite (phase 5B)"
   write(*,'(1x,a)') "============================================="
 
-  g = directed_stored_graph(6, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  g = stored_directed_graph(6, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
   a = assembler()
 
   call check_full(.true. , 6, nfail)
@@ -95,10 +95,10 @@ contains
     integer, intent(in)    :: n
     integer, intent(inout) :: nfail
 
-    type(field)                     :: d
+    type(stored_field)                     :: d
     type(partitioner)               :: p
     class(directed_graph), allocatable       :: part
-    class(graph_field), allocatable :: pd, fd
+    class(field), allocatable :: pd, fd
     type(set_map)                   :: sets
     type(label_map)                 :: labels
     type(inclusion_map)             :: inclusions
@@ -109,17 +109,17 @@ contains
     if (verts) then
        call sets % bind(g % vertex_set(), &
             & counted_set_representation(g % num_vertices()))
-       d = field('q', g % vertex_set(), g % num_vertices())
+       d = stored_field('q', g % vertex_set(), g % num_vertices())
     else
        call sets % bind(g % edge_set(), &
             & counted_set_representation(g % num_edges()))
-       d = field('q', g % edge_set(), g % num_edges())
+       d = stored_field('q', g % edge_set(), g % num_edges())
     end if
     call d % set_real_vector([(10.0_dp * i, i = 1, n)])
 
     total = 0.0_dp
     do k = 1, 2
-       p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
+       p = partitioner(PARTITION_LINEAR, num_parts=2, part=k)
        call p % partition_graph(g, part, rel)
        call sets % bind(part % vertex_set(), &
             & counted_set_representation(part % num_vertices()))
@@ -127,7 +127,7 @@ contains
             & counted_set_representation(part % num_edges()))
        call p % partition_data(rel, g, d, part, sets, labels, inclusions, pd)
        call a % assemble_data(rel, part, pd, g, sets, labels, inclusions, fd)
-       call fd % get_real_vector(v)
+       call fd % real_vector(v)
        total = total + v(1:n)
     end do
     call report(all(abs(total - [(10.0_dp * i, i = 1, n)]) < 1.0d-13), &
@@ -149,15 +149,15 @@ contains
     integer, intent(in)    :: chosen(:)
     integer, intent(inout) :: nfail
 
-    type(set_graph)                 :: carrier, s
+    type(graph)                 :: carrier, s
     type(set_map)                   :: sets
     type(label_map)                 :: labels
     type(inclusion_map)             :: inclusions
-    type(field)                     :: d
+    type(stored_field)                     :: d
     type(partitioner)               :: p
     class(directed_graph), allocatable       :: part
-    class(graph_field), allocatable :: pd, fd
-    type(set_graph)                 :: dp_, dg
+    class(field), allocatable :: pd, fd
+    type(graph)                 :: dp_, dg
     real(dp), allocatable           :: sv(:), v(:)
     integer, allocatable            :: mem(:)
     integer                         :: k, i, c, m, seen(size(chosen))
@@ -178,7 +178,7 @@ contains
     call labels     % bind(s, 'chosen')
     call inclusions % include_in(s, carrier)
 
-    d = field('q', s, size(chosen), ncomp=2)
+    d = stored_field('q', s, size(chosen), num_components=2)
 
     allocate(sv(2 * size(chosen)))
     do i = 1, size(chosen)
@@ -191,7 +191,7 @@ contains
     ok   = .true.
     okp  = .true.
     do k = 1, 2
-       p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
+       p = partitioner(PARTITION_LINEAR, num_parts=2, part=k)
        call p % partition_graph(g, part, rel)
        call sets % bind(part % vertex_set(), &
             & counted_set_representation(part % num_vertices()))
@@ -219,7 +219,7 @@ contains
        dg = fd % domain()
        ok = ok .and. declared_subobject(dg, carrier, inclusions)
        call sets % members_of(dg, mem)
-       call fd % get_real_vector(v)
+       call fd % real_vector(v)
        do i = 1, size(mem)
           m = mem(i)
           ! member identity: find m in the source declaration
@@ -256,14 +256,14 @@ contains
     logical, intent(in)    :: verts
     integer, intent(inout) :: nfail
 
-    type(set_graph)                 :: carrier, s
+    type(graph)                 :: carrier, s
     type(set_map)                   :: sets
     type(label_map)                 :: labels
     type(inclusion_map)             :: inclusions
-    type(field)                     :: d
+    type(stored_field)                     :: d
     type(partitioner)               :: p
     class(directed_graph), allocatable       :: part
-    class(graph_field), allocatable :: pd, fd
+    class(field), allocatable :: pd, fd
     real(dp), allocatable           :: v(:)
     logical                         :: ok
 
@@ -280,10 +280,10 @@ contains
     call labels     % bind(s, 'none')
     call inclusions % include_in(s, carrier)
 
-    d = field('q', s, 0)
+    d = stored_field('q', s, 0)
     call d % set_real_vector([real(dp) ::])
 
-    p = partitioner(PARTITION_LINEAR, nparts=2, part=1)
+    p = partitioner(PARTITION_LINEAR, num_parts=2, part=1)
     call p % partition_graph(g, part, rel)
     call sets % bind(part % vertex_set(), &
          & counted_set_representation(part % num_vertices()))
@@ -291,7 +291,7 @@ contains
          & counted_set_representation(part % num_edges()))
     call p % partition_data(rel, g, d, part, sets, labels, inclusions, pd)
     call a % assemble_data(rel, part, pd, g, sets, labels, inclusions, fd)
-    call fd % get_real_vector(v)
+    call fd % real_vector(v)
 
     ok = pd % num_entries() .eq. 0 .and. fd % num_entries() .eq. 0 &
          & .and. size(v) .eq. 0

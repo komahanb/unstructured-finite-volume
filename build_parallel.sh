@@ -16,15 +16,20 @@ FC="${CAF:-/usr/bin/caf.openmpi}"
 flags="-fcoarray=lib -cpp -fPIC -std=f2018 -Wno-line-truncation -O2 -g -fbacktrace -fbounds-check"
 
 mkdir -p "$root/lib_par"
-cd "$root/src"
+
+# compile FROM lib_par: gfortran always searches the working directory
+# for .mod files first, and src/ holds .mod droppings from the serial
+# build's (possibly newer) compiler - reading one of those is a fatal
+# version mismatch. lib_par as cwd sees only this build's own modules.
+cd "$root/lib_par"
 
 # OBJECTS lists the .o files in dependency order; compile each .f90 with caf,
 # placing objects + .mod files in lib_par/.
-objs=$(grep -v '^[[:space:]]*#' OBJECTS | sed 's/objects[[:space:]]*=//; s/\\//g')
+objs=$(grep -v '^[[:space:]]*#' "$root/src/OBJECTS" | sed 's/objects[[:space:]]*=//; s/\\//g')
 for o in $objs; do
    f="${o%.o}.f90"
    echo "caf  $f"
-   $FC $flags -J "$root/lib_par" -I "$root/lib_par" -c "$f" -o "$root/lib_par/$o"
+   $FC $flags -J "$root/lib_par" -I "$root/lib_par" -c "$root/src/$f" -o "$root/lib_par/$o"
 done
 
 cd "$root/lib_par"

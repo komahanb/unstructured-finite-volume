@@ -41,16 +41,16 @@ module learning_residual_fixture
 
   use iso_fortran_env  , only : dp => REAL64
   use learning_assert  , only : SLOT_W
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_set_representation, only : set_representation
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use graph_operation_view, only : graph_operation
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use class_graph_field, only : field
+  use map_set        , only : set_map
+  use map_set_representation, only : set_representation
+  use map_inclusion  , only : inclusion_map, declared_subobject
+  use operation_action, only : operation
+  use view_directed, only : directed_graph
+  use field_calculus, only : field
+  use field_stored, only : stored_field
 
   implicit none
 
@@ -59,11 +59,11 @@ module learning_residual_fixture
 
   integer, parameter :: ROW_R = 1
 
-  type, extends(graph_operation) :: affine_learning_residual
+  type, extends(operation) :: affine_learning_residual
      ! Identity, count, and the action's OWN coordinates: a
      ! representation carries no identity, so holding one keeps this
      ! type free of any caller's map.
-     type(set_graph) :: theta, y
+     type(graph) :: theta, y
      integer         :: n_theta = 0, n_y = 0
      class(set_representation), allocatable :: c_theta, c_y
      real(dp)                       :: x_data, y_data
@@ -81,11 +81,11 @@ contains
 
   type(affine_learning_residual) function create_oracle(theta, y, sets, &
        & x_data, y_data) result(this)
-    type(set_graph), intent(in) :: theta, y
+    type(graph), intent(in) :: theta, y
     type(set_map)  , intent(in) :: sets
     real(dp)       , intent(in) :: x_data, y_data
-    this % theta = theta ; this % n_theta = sets % size_of(theta)
-    this % y     = y     ; this % n_y     = sets % size_of(y)
+    this % theta = theta ; this % n_theta = sets % num_members_of(theta)
+    this % y     = y     ; this % n_y     = sets % num_members_of(y)
     call sets % extent_of(theta, this % c_theta)
     call sets % extent_of(y    , this % c_y)
     this % x_data = x_data
@@ -98,26 +98,26 @@ contains
     name = 'affine learning residual oracle'
   end function oracle_name
 
-  subroutine oracle_domain(this, input_graph, domain, nentries)
+  subroutine oracle_domain(this, input_graph, domain, num_entries)
     class(affine_learning_residual), intent(in) :: this
     class(directed_graph), intent(in) :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
     integer         :: n_y
     associate (u1 => input_graph); end associate
     domain   = this % y
-    nentries = this % n_y
+    num_entries = this % n_y
   end subroutine oracle_domain
 
   subroutine oracle_apply(this, input_graph, input_data, output)
 
     class(affine_learning_residual), intent(in)    :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
-    type(field)                    :: out
-    type(set_graph) :: dom
+    type(stored_field)                    :: out
+    type(graph) :: dom
     real(dp), allocatable          :: q(:), r(:)
     real(dp)                       :: w
     integer         :: n_y
@@ -128,7 +128,7 @@ contains
     if (.not. dom % same_as(this % theta)) then
        error stop 'oracle: the state must live on the trainable domain'
     end if
-    call input_data(1) % get_real_vector(q)
+    call input_data(1) % real_vector(q)
 
     ! The parameter, through Theta's own enumeration - never by
     ! assuming member integer = vector position.
@@ -137,7 +137,7 @@ contains
     allocate(r(1))
     r(this % c_y % local_index(ROW_R)) = this % x_data * w - this % y_data
 
-    out = field('residual', this % y, this % n_y)
+    out = stored_field('residual', this % y, this % n_y)
     call out % set_real_vector(r)
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
@@ -150,27 +150,27 @@ program learning_level_7
 
   use iso_fortran_env  , only : dp => REAL64
   use learning_assert  , only : report, verdict, SLOT_W
-  use graph_field_calculus, only : graph_field
-  use class_graph_field, only : field
-  use class_graph      , only : directed_stored_graph
-  use class_graph_gmres, only : gmres
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use field_calculus, only : field
+  use field_stored, only : stored_field
+  use view_directed_stored      , only : stored_directed_graph
+  use operation_gmres, only : gmres
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
+  use map_set        , only : set_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
   use learning_residual_fixture, only : affine_learning_residual, ROW_R
 
   implicit none
 
-  type(set_graph)     :: v, y, hv
-  type(set_graph)      :: theta
-  type(directed_stored_graph)    :: host
+  type(graph)     :: v, y, hv
+  type(graph)      :: theta
+  type(stored_directed_graph)    :: host
   type(affine_learning_residual) :: oracle, witness
   type(gmres)           :: solver, fitter
-  type(field)           :: state
-  class(graph_field), allocatable :: resid
-  type(set_graph)  :: dom
+  type(stored_field)           :: state
+  class(field), allocatable :: resid
+  type(graph)  :: dom
   real(dp), allocatable :: g(:), rhs(:), w_state(:), rr(:)
   real(dp)              :: achieved
   integer               :: nfail
@@ -192,7 +192,7 @@ program learning_level_7
   call sets % bind(y, counted_set_representation(1))
 
   ! Seven vertices: the wrong size for everything, on purpose.
-  host = directed_stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
+  host = stored_directed_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
 
   ! The primary training problem: (x, y) = (2, 6), supplied as data.
   oracle = affine_learning_residual(theta, y, sets, 2.0_dp, 6.0_dp)
@@ -202,10 +202,10 @@ program learning_level_7
        & "notwithstanding", nfail)
   hv = host % vertex_set()
   call report(.not. hv % same_as(theta) .and. &
-       &      host % num_vertices() /= sets % size_of(theta), &
+       &      host % num_vertices() /= sets % num_members_of(theta), &
        & "the host's seven vertices are nobody's trainables", nfail)
 
-  call solver % attach(oracle, host, theta, sets % size_of(theta))
+  call solver % attach(oracle, host, theta, sets % num_members_of(theta))
   solver % tolerance      = 1.0d-12
   solver % max_iterations = 50
 
@@ -239,10 +239,10 @@ program learning_level_7
        & nfail)
 
   ! Direct confirmation through the oracle itself: R(w_learned) = 0.
-  state = field('state', theta, sets % size_of(theta))
+  state = stored_field('state', theta, sets % num_members_of(theta))
   call state % set_real_vector(w_state)
   call oracle % apply(host, [state], resid)
-  call resid % get_real_vector(rr)
+  call resid % real_vector(rr)
   call report(abs(rr(1)) < 1.0d-9, &
        & "the supplied residual vanishes at the learned parameter", &
        & nfail)
@@ -251,7 +251,7 @@ program learning_level_7
   ! path, handed (x, y) = (4, 8) - and it fits w = 2, because the
   ! machinery solves x*w = y; it never recites 3.
   witness = affine_learning_residual(theta, y, sets, 4.0_dp, 8.0_dp)
-  call fitter % attach(witness, host, theta, sets % size_of(theta))
+  call fitter % attach(witness, host, theta, sets % num_members_of(theta))
   fitter % tolerance      = 1.0d-12
   fitter % max_iterations = 50
 

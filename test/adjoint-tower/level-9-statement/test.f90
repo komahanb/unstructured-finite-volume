@@ -28,8 +28,8 @@
 ! is a graph read as (S, P), with a binding to the objects its
 ! elements denote, and it carries the mathematical structure: the
 ! external selectors are located inside it by identity and then
-! DESTROYED, and every number below comes through bound relations. The HOST is a seven-vertex directed_stored_graph that exists
-! only because the legacy graph_operation face demands a
+! DESTROYED, and every number below comes through bound relations. The HOST is a seven-vertex stored_directed_graph that exists
+! only because the legacy operation face demands a
 ! class(graph); it is provably neither Q nor Y nor their size, and
 ! it contributes no domain, no coefficient and no topology.
 !
@@ -47,24 +47,24 @@ program adjoint_level_9
   use adjoint_assert   , only : report, verdict
   use adjoint_assert   , only : VAR_P, VAR_U, VAR_V
   use adjoint_assert   , only : TGT_R1, TGT_R2, TGT_F
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_label_map      , only : label_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use graph_relation   , only : stored_relation, relation
-  use graph_relation_algebra, only : compose_binary
-  use graph_binary_relation , only : csr_relation, transposed_view, &
+  use map_set        , only : set_map
+  use map_label      , only : label_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
+  use relation_finitary   , only : stored_relation, relation
+  use relation_algebra, only : compose_binary
+  use relation_binary , only : csr_relation, transposed_relation, &
        &                             transpose_of, inclusion_of
-  use fractal_graph        , only : graph, known_branch, null_branch
-  use graph_relational_view, only : relational_binding, &
+  use graph_fractal        , only : graph, known_branch, null_branch
+  use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
-       & holds_set
-  use graph_field_calculus, only : graph_field
-  use class_graph      , only : directed_stored_graph
-  use class_graph_field, only : field
-  use class_graph_gmres, only : gmres
+       & has_set
+  use field_calculus, only : field
+  use view_directed_stored      , only : stored_directed_graph
+  use field_stored, only : stored_field
+  use operation_gmres, only : gmres
   use adjoint_constitution_fixture, only : constituted_primal, &
        & constituted_adjoint, constituted_tangent, &
        & response_of, rq_forward, rp_forward, fq_forward, fq_reverse, &
@@ -72,8 +72,8 @@ program adjoint_level_9
 
   implicit none
 
-  type(set_graph)                  :: v, t, hv
-  type(set_graph)                   :: p_dom, q_dom, y_dom, z_dom
+  type(graph)                  :: v, t, hv
+  type(graph)                   :: p_dom, q_dom, y_dom, z_dom
   type(stored_relation), allocatable :: dep
   type(csr_relation)   , allocatable, target :: inc_y, inc_z, inc_q, inc_p
   type(csr_relation)   , allocatable :: jq, jp, fq, fp
@@ -82,7 +82,7 @@ program adjoint_level_9
   type(graph)             , target :: rcell(5), relem(5)
   type(relational_binding)         :: bnd
   integer                          :: kcell
-  type(directed_stored_graph)                 :: host
+  type(stored_directed_graph)                 :: host
   class(relation), pointer           :: rp   => null()
   class(relation), pointer           :: gdep => null()
   class(relation), pointer           :: gjq => null(), gjp => null()
@@ -92,9 +92,9 @@ program adjoint_level_9
   type(constituted_tangent)          :: tangent_eq
   type(gmres)                        :: primal_solver, adjoint_solver
   type(gmres)                        :: tangent_solver
-  type(field)                        :: p_field, rhs_y, rhs_q
-  type(set_graph) , allocatable    :: dom, dom2
-  class(graph_field), allocatable    :: sol
+  type(stored_field)                        :: p_field, rhs_y, rhs_q
+  type(graph) , allocatable    :: dom, dom2
+  class(field), allocatable    :: sol
   real(dp), allocatable              :: pv(:), gv(:), qv(:), lv(:), qp(:)
   real(dp)                           :: fqt(2), rp_dir(2), resp(1)
   real(dp)                           :: direct(1), contrib(1), zbar(1)
@@ -210,7 +210,7 @@ program adjoint_level_9
   deallocate(inc_y, inc_z, inc_q, inc_p)
 
   !-- the compatibility host: nobody's domain -----------------------
-  host = directed_stored_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
+  host = stored_directed_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
 
   call check_hostile_enumeration(nfail)
   call check_model_ownership(nfail)
@@ -250,7 +250,7 @@ contains
          & "Y is enumerated {r2, r1}: and so do the residual rows", &
          & nfail)
     call report(.not. q_dom % same_as(y_dom) .and. &
-         &      sets % size_of(q_dom) .eq. sets % size_of(y_dom), &
+         &      sets % num_members_of(q_dom) .eq. sets % num_members_of(y_dom), &
          & "and they are still two different domains of equal size", &
          & nfail)
 
@@ -316,11 +316,11 @@ contains
     call report(.not. hv % same_as(q_dom) .and. &
          &      .not. hv % same_as(y_dom), &
          & "the host's vertex set is neither Q nor Y", nfail)
-    call report(host % num_vertices() .ne. sets % size_of(q_dom) .and. &
-         &      host % num_vertices() .ne. sets % size_of(y_dom), &
+    call report(host % num_vertices() .ne. sets % num_members_of(q_dom) .and. &
+         &      host % num_vertices() .ne. sets % num_members_of(y_dom), &
          & "nor of their size: the solver host is not the model", &
          & nfail)
-    call report(.not. holds_set(model, bnd, hv), &
+    call report(.not. has_set(model, bnd, hv), &
          & "and the model does not own it at all", nfail)
 
   end subroutine check_host_is_not_the_model
@@ -334,9 +334,9 @@ contains
 
     integer, intent(inout) :: nfail
 
-    p_field = field('parameter', p_dom, sets % size_of(p_dom))
+    p_field = stored_field('parameter', p_dom, sets % num_members_of(p_dom))
     call p_field % set_real_vector([2.0_dp])
-    call p_field % get_real_vector(pv)
+    call p_field % real_vector(pv)
 
     dom = p_field % domain()
     call report(dom % same_as(p_dom) .and. &
@@ -356,7 +356,7 @@ contains
 
     primal_eq = constituted_primal(gjq, gjp, q_dom, y_dom, p_dom, pv, sets)
 
-    call primal_solver % attach(primal_eq, host, q_dom, sets % size_of(q_dom))
+    call primal_solver % attach(primal_eq, host, q_dom, sets % num_members_of(q_dom))
     primal_solver % tolerance      = 1.0d-12
     primal_solver % max_iterations = 50
 
@@ -365,12 +365,12 @@ contains
          & "the primal solver answers on Q", nfail)
 
     call primal_solver % constant(gv)
-    rhs_y = field('rhs', y_dom, sets % size_of(y_dom))
+    rhs_y = stored_field('rhs', y_dom, sets % num_members_of(y_dom))
     call rhs_y % set_real_vector(-gv)
     call primal_solver % apply(host, [rhs_y], sol)
 
     dom = sol % domain()
-    call sol % get_real_vector(qv)
+    call sol % real_vector(qv)
     call report(dom % same_as(q_dom), &
          & "and the state comes back as a field on Q", nfail)
     call report(abs(qv(sets % index_in(q_dom, VAR_U)) - 2.0_dp) < 1.0d-9, &
@@ -432,7 +432,7 @@ contains
 
     adjoint_eq = constituted_adjoint(gjq, gfq, y_dom, q_dom, z_dom, sets)
 
-    call adjoint_solver % attach(adjoint_eq, host, y_dom, sets % size_of(y_dom))
+    call adjoint_solver % attach(adjoint_eq, host, y_dom, sets % num_members_of(y_dom))
     adjoint_solver % tolerance      = 1.0d-12
     adjoint_solver % max_iterations = 50
 
@@ -446,12 +446,12 @@ contains
          & "the right-hand side it consumes IS the generated " // &
          & "f_q^T", nfail)
 
-    rhs_q = field('rhs', q_dom, sets % size_of(q_dom))
+    rhs_q = stored_field('rhs', q_dom, sets % num_members_of(q_dom))
     call rhs_q % set_real_vector(-gv)
     call adjoint_solver % apply(host, [rhs_q], sol)
 
     dom = sol % domain()
-    call sol % get_real_vector(lv)
+    call sol % real_vector(lv)
     call report(dom % same_as(y_dom), &
          & "lambda comes back as a field on Y", nfail)
     call report(abs(lv(sets % index_in(y_dom, TGT_R1)) + 0.4_dp) < 1.0d-9, &
@@ -526,15 +526,15 @@ contains
     tangent_eq = constituted_tangent(gjq, gjp, q_dom, y_dom, p_dom, &
          &                           [1.0_dp], sets)
 
-    call tangent_solver % attach(tangent_eq, host, q_dom, sets % size_of(q_dom))
+    call tangent_solver % attach(tangent_eq, host, q_dom, sets % num_members_of(q_dom))
     tangent_solver % tolerance      = 1.0d-12
     tangent_solver % max_iterations = 50
 
     call tangent_solver % constant(gv)
-    rhs_y = field('rhs', y_dom, sets % size_of(y_dom))
+    rhs_y = stored_field('rhs', y_dom, sets % num_members_of(y_dom))
     call rhs_y % set_real_vector(-gv)
     call tangent_solver % apply(host, [rhs_y], sol)
-    call sol % get_real_vector(qp)
+    call sol % real_vector(qp)
 
     call report(abs(qp(sets % index_in(q_dom, VAR_U)) - 1.0_dp) < 1.0d-9 &
          & .and. abs(qp(sets % index_in(q_dom, VAR_V)) - 2.0_dp) &

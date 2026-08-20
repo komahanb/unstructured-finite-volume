@@ -4,7 +4,7 @@ include ../../../Makefile.in
 # Level 2: the derivation suite. The refusal laws of the algebra
 # primitives are pinned generically in test/graph-algebra; this
 # level proves the derivation. Framework modules this level may
-# see: the set modules, graph_relation, graph_relation_algebra - the
+# see: the set modules, relation_finitary, relation_algebra - the
 # import gate holds the door.
 #=====================================================================#
 

@@ -19,22 +19,22 @@ program partitioned_pde_level_6_refusal
 
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : NV, Q_EXACT
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation
-  use graph_set_map        , only : set_map
-  use graph_field_calculus, only : graph_field
-  use class_graph      , only : directed_stored_graph
-  use class_graph_field, only : field
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation
+  use map_set        , only : set_map
+  use field_calculus, only : field
+  use view_directed_stored      , only : stored_directed_graph
+  use field_stored, only : stored_field
   use shifted_laplacian_fixture, only : shifted_laplacian
 
   implicit none
 
-  type(directed_stored_graph)              :: g
-  type(set_graph)                 :: foreign
+  type(stored_directed_graph)              :: g
+  type(graph)                 :: foreign
   type(set_map)                   :: sets
   type(shifted_laplacian)         :: shifted
-  type(field)                     :: q
-  class(graph_field), allocatable :: out
+  type(stored_field)                     :: q
+  class(field), allocatable :: out
   character(len=32)               :: which
 
   if (command_argument_count() .lt. 1) then
@@ -42,7 +42,7 @@ program partitioned_pde_level_6_refusal
   end if
   call get_command_argument(1, which)
 
-  g = directed_stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  g = stored_directed_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
   call sets % bind(g % vertex_set(), &
        & counted_set_representation(g % num_vertices()))
   call sets % bind(g % edge_set(), &
@@ -55,7 +55,7 @@ program partitioned_pde_level_6_refusal
      ! that identity, not cardinality, decides.
      call foreign % declare()
      call sets % bind(foreign, counted_set_representation(NV))
-     q = field('state on a foreign carrier', foreign, NV)
+     q = stored_field('state on a foreign carrier', foreign, NV)
      call q % set_real_vector(Q_EXACT)
      call shifted % apply(g, [q], out)
      write(*,*) 'a foreign carrier of the right size was accepted'

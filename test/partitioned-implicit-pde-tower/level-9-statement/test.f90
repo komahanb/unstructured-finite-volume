@@ -38,14 +38,14 @@ program partitioned_pde_level_9
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : report, verdict
   use partitioned_pde_assert, only : NV, Q_EXACT, B_EXACT
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation
-  use graph_set_map        , only : set_map
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use class_graph      , only : directed_stored_graph
-  use class_graph_field, only : field
-  use class_graph_gmres, only : gmres
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation
+  use map_set        , only : set_map
+  use view_directed, only : directed_graph
+  use field_calculus, only : field
+  use view_directed_stored      , only : stored_directed_graph
+  use field_stored, only : stored_field
+  use operation_gmres, only : gmres
   use shifted_laplacian_fixture, only : shifted_laplacian
   use partitioned_shifted_laplacian_fixture, only : &
        & partitioned_shifted_laplacian
@@ -59,7 +59,7 @@ program partitioned_pde_level_9
   real(dp), parameter :: E4(NV) = &
        & [0.0_dp, 0.0_dp, 0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp]
 
-  type(directed_stored_graph)                  :: g
+  type(stored_directed_graph)                  :: g
   type(shifted_laplacian)             :: direct
   type(partitioned_shifted_laplacian) :: composite
   type(gmres)                         :: solver_global, solver_part
@@ -73,7 +73,7 @@ program partitioned_pde_level_9
   write(*,'(1x,a)') "partitioned pde tower . level 9 . statement"
   write(*,'(1x,a)') "============================================="
 
-  g = directed_stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  g = stored_directed_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
   call sets % bind(g % vertex_set(), &
        & counted_set_representation(g % num_vertices()))
   call sets % bind(g % edge_set(), &
@@ -99,7 +99,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)     :: vs
+    type(graph)     :: vs
     real(dp), allocatable :: gv(:)
     integer         :: n_vs
 
@@ -152,22 +152,22 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(field)                     :: rhs
-    type(set_graph)               :: vs
-    class(graph_field), allocatable :: sol
-    type(set_graph)  :: dom
+    type(stored_field)                     :: rhs
+    type(graph)               :: vs
+    class(field), allocatable :: sol
+    type(graph)  :: dom
     real(dp), allocatable           :: v(:)
     integer         :: n_vs
 
     vs = g % vertex_set()
     n_vs = g % num_vertices()
-    rhs = field('b', vs, n_vs)
+    rhs = stored_field('b', vs, n_vs)
     call rhs % set_real_vector(B_EXACT)
 
     ! The partitioned road - the tower's own.
     call solver_part % apply(g, [rhs], sol)
     dom = sol % domain()
-    call sol % get_real_vector(v)
+    call sol % real_vector(v)
     q_part = v(1:NV)
 
     call report(dom % same_as(vs), &
@@ -177,7 +177,7 @@ contains
 
     ! The global baseline, run independently.
     call solver_global % apply(g, [rhs], sol)
-    call sol % get_real_vector(v)
+    call sol % real_vector(v)
     q_global = v(1:NV)
 
     call report(by_member(sets, q_global, vs, Q_EXACT), &
@@ -192,13 +192,13 @@ contains
 
     type(set_map)  , intent(in) :: sets
     real(dp)       , intent(in) :: v(:)
-    type(set_graph), intent(in) :: dom
+    type(graph), intent(in) :: dom
     real(dp)       , intent(in) :: expect(:)
 
     integer :: i, m
 
     by_member = .true.
-    do i = 1, sets % size_of(dom)
+    do i = 1, sets % num_members_of(dom)
        m = sets % member_of(dom, i)
        by_member = by_member .and. &
             & (abs(v(sets % index_in(dom, m)) - expect(m)) < 1.0d-9)

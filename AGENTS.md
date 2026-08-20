@@ -51,7 +51,7 @@ The framework must therefore treat **member sets and relations as first-class ma
 
 ## The graph ontology (2026-08-15, supersedes the two-graph notation reservation)
 
-There is **one** graph ontology, implemented in `src/fractal_graph.f90`:
+There is **one** graph ontology, implemented in `src/graph_fractal.f90`:
 
 \[
 \boxed{G=(B_1,B_2)}\qquad B\in\{\textsf{NULL},\ \textsf{UNKNOWN},\ \textsf{KNOWN}\to G\}
@@ -59,11 +59,11 @@ There is **one** graph ontology, implemented in `src/fractal_graph.f90`:
 
 ```fortran
 type :: graph
-   type(graph_branch) :: branch(2)
+   type(branch) :: branch(2)
 end type
 ```
 
-Two types, `graph` and `graph_branch`, and nothing else ontologically.
+Two types, `graph` and `branch`, and nothing else ontologically.
 
 \((\mathcal S,\mathcal P)\), \((Q,R)\) and \((V,E)\) are **views** of that one object, never
 distinct kinds of graph. The earlier reservation, which split a structural graph
@@ -88,8 +88,8 @@ The laws:
 
 The letter \(R\) is no longer reserved by a second ontology. Where a view reads a graph as
 \((Q,R)\), \(R\) is that view's residual; where a view reads it as \((\mathcal S,\mathcal P)\),
-its relations are \(P, T, H, A, \ldots\). Sections 4-14 below describe the relation-centered view
-and remain in force **as a view**. Its implementation is `graph_relational_view.f90` over the
+its relations are \(P, T, H, A, \ldots\). Sections 4-14 below describe the relation-centred view
+and remain in force **as a view**. Its implementation is `view_relational.f90` over the
 kernel: a graph plus a `relational_binding` from element graphs to the legacy objects they
 denote. The container `relational_graph` that once implemented it was retired on 2026-08-16.
 
@@ -1113,9 +1113,9 @@ f:S\to V.
 A field domain is therefore **always a member_set** — an ambient
 carrier or a `subset_set` subobject (a support IS a member_set) —
 one domain kind, never a carrier-or-predicate union, and never an
-edgeless graph. This is now implemented: `graph_field_calculus`
-owns the abstract field, `class_graph_field%on` is a polymorphic
-member_set, and the shape law `stored = domain.size * ncomp` is
+edgeless graph. This is now implemented: `field_calculus`
+owns the abstract field, `field_stored%on` is a polymorphic
+member_set, and the shape law `stored = domain.size * num_components` is
 refused loudly in every value kind.
 
 ## 20.2 Field contract
@@ -1361,9 +1361,9 @@ The existing `graph_grammar` currently places four roots at Level 0:
 
 ```text
 graph
-graph_field
-graph_operation
-graph_transform
+field
+operation
+transform
 ```
 
 and defines graph structurally through vertices, edges, tail, and head.
@@ -1557,7 +1557,7 @@ Global/local index correspondence may be a functional or bijective relation.
 Do not force all of these into the first refactor.
 But design the new graph core so they can become relations naturally.
 
-**Landed.** `graph_partition_relation :: partition_relation` is that
+**Landed.** `relation_partition :: partition_relation` is that
 object: r_p <= S_part x S_whole, one per part, written by the cut and
 handed to the three verbs that read it. Ownership rides beside it as the
 field own : S_part -> K, which is the functional-law constraint above.
@@ -2063,13 +2063,13 @@ The long-term module layout may evolve toward something conceptually like:
 
 ```text
 graph_carrier.f90
-graph_relation.f90
-graph_relation_algebra.f90
-graph_relational_view.f90
+relation_finitary.f90
+relation_algebra.f90
+view_relational.f90
 graph_calculus.f90
-graph_field_calculus.f90
-graph_discretization.f90
-graph_minimization.f90
+field_calculus.f90
+operation_discretization.f90
+operation_minimization.f90
 ...
 ```
 
@@ -2078,6 +2078,13 @@ These names are illustrative, not mandatory.
 Do not rename modules until their responsibilities are actually separated.
 
 Architecture first, filenames second.
+
+Status (2026-08-19): the separation precondition is met — the prime
+structure stands (doc/ARCHITECTURE.md) and every module has one
+responsibility. The naming pass that this section defers is executed
+under the naming law in doc/coding-standards.md: modules are
+`<prime>_<subject>` (namespace order), types read english order, so
+no type can collide with a module name.
 
 ---
 

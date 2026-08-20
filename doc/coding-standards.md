@@ -142,6 +142,47 @@ said what they run over.
 identifiers stay plain and standard; the COMMENTS may be vivid. the
 drawing goes in the banner, not in the variable name.
 
+## the naming law (2026-08-19)
+
+the whole repository follows one scheme. a name that breaks a rule
+below is a defect, not a style choice.
+
+1. module = `<prime>_<subject>`, prime one of graph, token, relation,
+   field, operation, transform, map, view — plus `util_` for the
+   non-mathematical helpers (string, file, verbosity). file = module,
+   one to one. TYPES read english order (`binary_relation`,
+   `stored_field`); MODULES read namespace order (`relation_binary`,
+   `field_stored`). corollary, statically checkable: no type name
+   begins with a prime word plus underscore, so a type can never
+   collide with a module name.
+2. cardinality is `num_<plural>` — bindings and components alike.
+   `size`, `size_of`, `x_size`, `_count`, and `n_` prefixes are out.
+   one exception, forced by the language: a private counter component
+   shadowed by its own `num_` binding keeps a short initial form
+   (`nv`, `ne`, `nc`, `np`), since fortran forbids a component and a
+   binding sharing one name.
+3. a predicate is a verb phrase asserting the property it tests
+   (`has(x)`, `matches(t)`, `labelled(g)`); set membership is `has`.
+4. a reader is the bare noun of what it returns; `get_` is banned.
+   a writer is `set_<noun>`.
+5. a function is named by its value (a noun); a subroutine by its
+   act (an imperative verb, e.g. `derive_faces`).
+6. constructors: the generic interface bears the type name; its
+   implementations are `create` or `create_<discriminant>`. free
+   builders are `x_of(y)` ("the x of y") or `x_from_y`.
+7. british spelling with oxford -ize: `colouring`, `neighbours`,
+   `centres`, `fibre`, `materialized`.
+8. a public constant is `<SUBJECT>_<VALUE>`; the subject names the
+   vocabulary it belongs to (`SWEEP_FORWARD`, `WALK_COLOURING`).
+9. an abstract interface is `<type>_<binding>_interface`.
+10. one type, one name: import-renaming aliases (`x => y`) are out,
+    and no module re-exports a name it does not define. the kind
+    constant `dp => real64` is the one sanctioned exception, named
+    here so the static check has a closed list.
+11. an abbreviation is allowed only when the abbreviation IS the
+    formal name (`csr`, `gmres`, `bdf`, `lhs`/`rhs`).
+12. every module carries `private` plus an explicit public list.
+
 ## the writing voice
 
 comments and commit messages are written like a person explaining to a

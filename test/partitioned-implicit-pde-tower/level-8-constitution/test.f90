@@ -36,11 +36,11 @@ program partitioned_pde_level_8
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : report, verdict
   use partitioned_pde_assert, only : NV, Q_EXACT
-  use fractal_graph        , only : set_graph => graph
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use class_graph      , only : directed_stored_graph
-  use class_graph_field, only : field
+  use graph_fractal        , only : graph
+  use view_directed, only : directed_graph
+  use field_calculus, only : field
+  use view_directed_stored      , only : stored_directed_graph
+  use field_stored, only : stored_field
   use shifted_laplacian_fixture, only : shifted_laplacian
   use partitioned_shifted_laplacian_fixture, only : &
        & partitioned_shifted_laplacian
@@ -54,7 +54,7 @@ program partitioned_pde_level_8
   real(dp), parameter :: E4(NV) = &
        & [0.0_dp, 0.0_dp, 0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp]
 
-  type(directed_stored_graph)                  :: g
+  type(stored_directed_graph)                  :: g
   type(shifted_laplacian)             :: direct
   type(partitioned_shifted_laplacian) :: composite
   integer                             :: nfail
@@ -64,7 +64,7 @@ program partitioned_pde_level_8
   write(*,'(1x,a)') "partitioned pde tower . level 8 . constitution"
   write(*,'(1x,a)') "============================================="
 
-  g = directed_stored_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
+  g = stored_directed_graph(NV, tails=[1,2,3,4,5], heads=[2,3,4,5,6])
 
   ! STRUCTURAL PARTITION - once, here, and never again.
   composite = partitioned_shifted_laplacian(g)
@@ -85,8 +85,8 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dom
-    type(set_graph)              :: vs
+    type(graph) :: dom
+    type(graph)              :: vs
     integer         :: n_dom
 
     vs = g % vertex_set()
@@ -172,11 +172,11 @@ contains
   function direct_on(v) result(answer)
 
     real(dp), intent(in)            :: v(:)
-    class(graph_field), allocatable :: answer
+    class(field), allocatable :: answer
 
-    type(field) :: q
+    type(stored_field) :: q
 
-    q = field('probe', g % vertex_set(), g % num_vertices())
+    q = stored_field('probe', g % vertex_set(), g % num_vertices())
     call q % set_real_vector(v)
     call direct % apply(g, [q], answer)
 
@@ -184,23 +184,23 @@ contains
   function part_on(v) result(answer)
 
     real(dp), intent(in)            :: v(:)
-    class(graph_field), allocatable :: answer
+    class(field), allocatable :: answer
 
-    type(field) :: q
+    type(stored_field) :: q
 
-    q = field('probe', g % vertex_set(), g % num_vertices())
+    q = stored_field('probe', g % vertex_set(), g % num_vertices())
     call q % set_real_vector(v)
     call composite % apply(g, [q], answer)
 
   end function part_on
   function act(answer) result(v)
 
-    class(graph_field), intent(in) :: answer
+    class(field), intent(in) :: answer
     real(dp)                       :: v(NV)
 
     real(dp), allocatable :: got(:)
 
-    call answer % get_real_vector(got)
+    call answer % real_vector(got)
     v = got(1:NV)
 
   end function act

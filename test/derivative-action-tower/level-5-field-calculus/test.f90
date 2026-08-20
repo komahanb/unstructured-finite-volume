@@ -30,18 +30,18 @@ program derivative_level_5
   use iso_fortran_env  , only : dp => REAL64
   use derivative_assert, only : report, verdict
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use class_graph_field, only : field
+  use map_set        , only : set_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
+  use field_stored, only : stored_field
 
   implicit none
 
-  type(set_graph) :: v
-  type(set_graph)  :: x_dom, c
-  type(field)       :: qx
+  type(graph) :: v
+  type(graph)  :: x_dom, c
+  type(stored_field)       :: qx
   integer           :: nfail
   type(set_map)     :: sets
   type(inclusion_map)     :: inclusions
@@ -87,11 +87,11 @@ contains
     integer :: i, m, homes
     logical :: ok
 
-    call report(sets % size_of(x_dom) .eq. 2 .and. sets % has_in(x_dom, SLOT_Y) .and. &
-         &      sets % has_in(x_dom, SLOT_X) .and. .not. sets % has_in(x_dom, SLOT_U), &
+    call report(sets % num_members_of(x_dom) .eq. 2 .and. sets % has(x_dom, SLOT_Y) .and. &
+         &      sets % has(x_dom, SLOT_X) .and. .not. sets % has(x_dom, SLOT_U), &
          & "X = { y, x }, the independent inputs", nfail)
-    call report(sets % size_of(c) .eq. 2 .and. sets % has_in(c, SLOT_U) .and. &
-         &      sets % has_in(c, SLOT_Z) .and. .not. sets % has_in(c, SLOT_X), &
+    call report(sets % num_members_of(c) .eq. 2 .and. sets % has(c, SLOT_U) .and. &
+         &      sets % has(c, SLOT_Z) .and. .not. sets % has(c, SLOT_X), &
          & "C = { u, z }, where answers will one day live", nfail)
 
     call report(declared_subobject(x_dom, v, inclusions) .and. &
@@ -99,9 +99,9 @@ contains
          & "both stand embedded in the value slots", nfail)
 
     ok = .true.
-    do i = 1, sets % size_of(v)
+    do i = 1, sets % num_members_of(v)
        m = sets % member_of(v, i)
-       homes = count([sets % has_in(x_dom, m), sets % has_in(c, m)])
+       homes = count([sets % has(x_dom, m), sets % has(c, m)])
        ok = ok .and. (homes .eq. 1)
     end do
     call report(ok, &
@@ -119,10 +119,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dom
+    type(graph) :: dom
     real(dp), allocatable          :: val(:)
 
-    qx = field('base point', x_dom, sets % size_of(x_dom))
+    qx = stored_field('base point', x_dom, sets % num_members_of(x_dom))
     call qx % set_real_vector([3.0_dp, 2.0_dp])
 
     dom = qx % domain()
@@ -132,7 +132,7 @@ contains
          &      qx % num_components() .eq. 1, &
          & "two entries, one component", nfail)
 
-    call qx % get_real_vector(val)
+    call qx % real_vector(val)
     call report(abs(val(sets % index_in(x_dom, SLOT_Y)) - 3.0_dp) &
          &      < 1.0d-14, &
          & "y = 3, read through the domain map", nfail)

@@ -45,9 +45,9 @@
 program partitioned_pde_level_2
 
   use partitioned_pde_assert , only : report, verdict
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
-  use graph_binary_relation  , only : csr_relation
+  use graph_fractal        , only : graph
+  use map_set        , only : set_map
+  use relation_binary  , only : csr_relation
   use chain_carriers_fixture , only : chain_carriers
   use chain_relations_fixture, only : tail_relation, head_relation, &
        &                              own_relation
@@ -56,7 +56,7 @@ program partitioned_pde_level_2
 
   implicit none
 
-  type(set_graph)          :: v, e, k
+  type(graph)          :: v, e, k
   type(set_map)          :: sets
   type(csr_relation), target :: tail, head, own
   type(csr_relation)         :: adj, tail_owner, head_owner
@@ -96,7 +96,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: d
+    type(graph) :: d
     integer                        :: i
     logical                        :: ok
 
@@ -129,7 +129,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: d
+    type(graph) :: d
 
     d = tail_owner % domain(1)
     call report(d % same_as(e), "TailOwner runs from the edges", nfail)
@@ -156,7 +156,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: d
+    type(graph) :: d
 
     d = head_owner % domain(1)
     call report(d % same_as(e), "HeadOwner runs from the edges too", nfail)
@@ -248,7 +248,7 @@ contains
 
     type(csr_relation), intent(in) :: policy
 
-    type(set_graph) :: d
+    type(graph) :: d
     integer                        :: i, j, m, owners
 
     d = policy % domain(1)
@@ -259,12 +259,12 @@ contains
     ! No fact lives outside E x K: exactly one tuple per edge, and
     ! the loop below then accounts for every one of them.
     is_total_function = is_total_function .and. &
-         & (policy % num_tuples() .eq. sets % size_of(e))
+         & (policy % num_tuples() .eq. sets % num_members_of(e))
 
-    do i = 1, sets % size_of(e)
+    do i = 1, sets % num_members_of(e)
        m = sets % member_of(e, i)
        owners = 0
-       do j = 1, sets % size_of(k)
+       do j = 1, sets % num_members_of(k)
           if (policy % has([m, sets % member_of(k, j)])) owners = owners + 1
        end do
        is_total_function = is_total_function .and. (owners .eq. 1)
@@ -279,7 +279,7 @@ contains
     integer :: j, m
 
     same_owner = .true.
-    do j = 1, sets % size_of(k)
+    do j = 1, sets % num_members_of(k)
        m = sets % member_of(k, j)
        same_owner = same_owner .and. &
             & (tail_owner % has([ge, m]) .eqv. head_owner % has([ge, m]))

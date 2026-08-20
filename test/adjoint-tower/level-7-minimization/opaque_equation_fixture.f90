@@ -35,13 +35,13 @@ module opaque_equation_fixture
 
   use iso_fortran_env  , only : dp => REAL64
   use adjoint_assert   , only : VAR_U, VAR_V, TGT_R1, TGT_R2
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
-  use graph_set_representation, only : set_representation
-  use graph_operation_view, only : graph_operation
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use class_graph_field, only : field
+  use graph_fractal        , only : graph
+  use map_set        , only : set_map
+  use map_set_representation, only : set_representation
+  use operation_action, only : operation
+  use view_directed, only : directed_graph
+  use field_calculus, only : field
+  use field_stored, only : stored_field
 
   implicit none
 
@@ -52,10 +52,10 @@ module opaque_equation_fixture
   ! The primal equation: a state on Q, a residual on Y.
   !===================================================================!
 
-  type, extends(graph_operation) :: opaque_primal
+  type, extends(operation) :: opaque_primal
      ! Identity and count. Both domains are counted 1..n here,
      ! so no coordinates beyond the count are needed.
-     type(set_graph) :: q_dom, y_dom
+     type(graph) :: q_dom, y_dom
      integer         :: n_q_dom = 0, n_y_dom = 0
      ! Both domains are LISTED, so a member is not its position: the
      ! action keeps its own coordinates, copied at construction.
@@ -71,10 +71,10 @@ module opaque_equation_fixture
   ! orientation is exchanged, and nothing else is.
   !===================================================================!
 
-  type, extends(graph_operation) :: opaque_adjoint
+  type, extends(operation) :: opaque_adjoint
      ! Identity and count. Both domains are counted 1..n here,
      ! so no coordinates beyond the count are needed.
-     type(set_graph) :: q_dom, y_dom
+     type(graph) :: q_dom, y_dom
      integer         :: n_q_dom = 0, n_y_dom = 0
      ! Both domains are LISTED, so a member is not its position: the
      ! action keeps its own coordinates, copied at construction.
@@ -96,19 +96,19 @@ module opaque_equation_fixture
 contains
 
   type(opaque_primal) function create_primal(q_dom, y_dom, sets) result(this)
-    type(set_graph), intent(in) :: q_dom, y_dom
+    type(graph), intent(in) :: q_dom, y_dom
     type(set_map)  , intent(in) :: sets
-    this % q_dom = q_dom ; this % n_q_dom = sets % size_of(q_dom)
-    this % y_dom = y_dom ; this % n_y_dom = sets % size_of(y_dom)
+    this % q_dom = q_dom ; this % n_q_dom = sets % num_members_of(q_dom)
+    this % y_dom = y_dom ; this % n_y_dom = sets % num_members_of(y_dom)
     call sets % extent_of(q_dom, this % c_q)
     call sets % extent_of(y_dom, this % c_y)
   end function create_primal
 
   type(opaque_adjoint) function create_adjoint(y_dom, q_dom, sets) result(this)
-    type(set_graph), intent(in) :: y_dom, q_dom
+    type(graph), intent(in) :: y_dom, q_dom
     type(set_map)  , intent(in) :: sets
-    this % y_dom = y_dom ; this % n_y_dom = sets % size_of(y_dom)
-    this % q_dom = q_dom ; this % n_q_dom = sets % size_of(q_dom)
+    this % y_dom = y_dom ; this % n_y_dom = sets % num_members_of(y_dom)
+    this % q_dom = q_dom ; this % n_q_dom = sets % num_members_of(q_dom)
     call sets % extent_of(y_dom, this % c_y)
     call sets % extent_of(q_dom, this % c_q)
   end function create_adjoint
@@ -125,24 +125,24 @@ contains
     name = 'opaque adjoint equation'
   end function adjoint_name
 
-  subroutine primal_domain(this, input_graph, domain, nentries)
+  subroutine primal_domain(this, input_graph, domain, num_entries)
     class(opaque_primal), intent(in) :: this
     class(directed_graph), intent(in) :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
     associate (u1 => input_graph); end associate
     domain   = this % y_dom
-    nentries = this % n_y_dom     ! answers on Y
+    num_entries = this % n_y_dom     ! answers on Y
   end subroutine primal_domain
 
-  subroutine adjoint_domain(this, input_graph, domain, nentries)
+  subroutine adjoint_domain(this, input_graph, domain, num_entries)
     class(opaque_adjoint), intent(in) :: this
     class(directed_graph), intent(in) :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
     associate (u1 => input_graph); end associate
     domain   = this % q_dom
-    nentries = this % n_q_dom     ! answers on Q
+    num_entries = this % n_q_dom     ! answers on Q
   end subroutine adjoint_domain
 
   !===================================================================!
@@ -154,11 +154,11 @@ contains
 
     class(opaque_primal), intent(in)               :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
-    type(field)                    :: out
-    type(set_graph) :: dom
+    type(stored_field)                    :: out
+    type(graph) :: dom
     real(dp), allocatable          :: q(:), r(:)
     real(dp)                       :: u, v
     type(set_map)     :: sets
@@ -172,7 +172,7 @@ contains
     if (.not. dom % same_as(this % q_dom)) then
        error stop 'opaque primal: the state must live on the state domain'
     end if
-    call input_data(1) % get_real_vector(q)
+    call input_data(1) % real_vector(q)
 
     u = q(this % c_q % local_index(VAR_U))
     v = q(this % c_q % local_index(VAR_V))
@@ -181,7 +181,7 @@ contains
     r(this % c_y % local_index(TGT_R1)) = 2.0_dp*u +      v -  8.0_dp
     r(this % c_y % local_index(TGT_R2)) = 3.0_dp*u + 4.0_dp*v - 22.0_dp
 
-    out = field('residual', this % y_dom, this % n_y_dom)
+    out = stored_field('residual', this % y_dom, this % n_y_dom)
     call out % set_real_vector(r)
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
@@ -198,11 +198,11 @@ contains
 
     class(opaque_adjoint), intent(in)              :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
-    type(field)                    :: out
-    type(set_graph) :: dom
+    type(stored_field)                    :: out
+    type(graph) :: dom
     real(dp), allocatable          :: lam(:), r(:)
     real(dp)                       :: l1, l2
     type(set_map)     :: sets
@@ -216,7 +216,7 @@ contains
     if (.not. dom % same_as(this % y_dom)) then
        error stop 'opaque adjoint: the covector must live on the residual-row domain'
     end if
-    call input_data(1) % get_real_vector(lam)
+    call input_data(1) % real_vector(lam)
 
     l1 = lam(this % c_y % local_index(TGT_R1))
     l2 = lam(this % c_y % local_index(TGT_R2))
@@ -225,7 +225,7 @@ contains
     r(this % c_q % local_index(VAR_U)) = 2.0_dp*l1 + 3.0_dp*l2 - 1.0_dp
     r(this % c_q % local_index(VAR_V)) =      l1 + 4.0_dp*l2 - 2.0_dp
 
-    out = field('adjoint residual', this % q_dom, this % n_q_dom)
+    out = stored_field('adjoint residual', this % q_dom, this % n_q_dom)
     call out % set_real_vector(r)
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)

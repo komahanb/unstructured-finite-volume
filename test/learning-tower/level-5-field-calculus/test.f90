@@ -18,7 +18,7 @@
 ! a stronger truth than constructing an empty one.
 !
 ! And the import list is the rung's own proof: a field needs a
-! domain - learning_assert, the set modules, class_graph_field - and
+! domain - learning_assert, the set modules, field_stored - and
 ! no graph topology anywhere. The model law is still unspoken:
 ! knowing x = 2 is not knowing what predict does with it.
 !
@@ -30,18 +30,18 @@ program learning_level_5
   use iso_fortran_env  , only : dp => REAL64
   use learning_assert  , only : report, verdict
   use learning_assert  , only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use class_graph_field, only : field
+  use map_set        , only : set_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
+  use field_stored, only : stored_field
 
   implicit none
 
-  type(set_graph) :: v
-  type(set_graph)  :: k, theta, u
-  type(field)       :: qk, theta0
+  type(graph) :: v
+  type(graph)  :: k, theta, u
+  type(stored_field)       :: qk, theta0
   integer           :: nfail
   type(set_map)     :: sets
   type(inclusion_map)     :: inclusions
@@ -92,14 +92,14 @@ contains
     integer :: i, m, homes
     logical :: ok
 
-    call report(sets % size_of(k) .eq. 2 .and. sets % has_in(k, SLOT_Y) .and. &
-         &      sets % has_in(k, SLOT_X) .and. .not. sets % has_in(k, SLOT_W), &
+    call report(sets % num_members_of(k) .eq. 2 .and. sets % has(k, SLOT_Y) .and. &
+         &      sets % has(k, SLOT_X) .and. .not. sets % has(k, SLOT_W), &
          & "K = { y, x }, the observations", nfail)
-    call report(sets % size_of(theta) .eq. 1 .and. sets % has_in(theta, SLOT_W) .and. &
-         &      .not. sets % has_in(theta, SLOT_X), &
+    call report(sets % num_members_of(theta) .eq. 1 .and. sets % has(theta, SLOT_W) .and. &
+         &      .not. sets % has(theta, SLOT_X), &
          & "Theta = { w }, the one trainable", nfail)
-    call report(sets % size_of(u) .eq. 2 .and. sets % has_in(u, SLOT_E) .and. &
-         &      sets % has_in(u, SLOT_YHAT) .and. .not. sets % has_in(u, SLOT_Y), &
+    call report(sets % num_members_of(u) .eq. 2 .and. sets % has(u, SLOT_E) .and. &
+         &      sets % has(u, SLOT_YHAT) .and. .not. sets % has(u, SLOT_Y), &
          & "U = { e, yhat }, where answers will one day live", nfail)
 
     call report(declared_subobject(k, v, inclusions) .and. &
@@ -108,9 +108,9 @@ contains
          & "all three stand embedded in the value slots", nfail)
 
     ok = .true.
-    do i = 1, sets % size_of(v)
+    do i = 1, sets % num_members_of(v)
        m = sets % member_of(v, i)
-       homes = count([sets % has_in(k, m), sets % has_in(theta, m), sets % has_in(u, m)])
+       homes = count([sets % has(k, m), sets % has(theta, m), sets % has(u, m)])
        ok = ok .and. (homes .eq. 1)
     end do
     call report(ok, &
@@ -128,10 +128,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dom
+    type(graph) :: dom
     real(dp), allocatable          :: val(:)
 
-    qk = field('observations', k, sets % size_of(k))
+    qk = stored_field('observations', k, sets % num_members_of(k))
     call qk % set_real_vector([6.0_dp, 2.0_dp])
 
     dom = qk % domain()
@@ -141,7 +141,7 @@ contains
          &      qk % num_components() .eq. 1, &
          & "two entries, one component", nfail)
 
-    call qk % get_real_vector(val)
+    call qk % real_vector(val)
     call report(abs(val(sets % index_in(k, SLOT_Y)) - 6.0_dp) < 1.0d-14, &
          & "y = 6, read through the domain map", nfail)
     call report(abs(val(sets % index_in(k, SLOT_X)) - 2.0_dp) < 1.0d-14, &
@@ -161,10 +161,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dom
+    type(graph) :: dom
     real(dp), allocatable          :: val(:)
 
-    theta0 = field('parameters', theta, sets % size_of(theta))
+    theta0 = stored_field('parameters', theta, sets % num_members_of(theta))
     call theta0 % set_real_vector([0.0_dp])
 
     dom = theta0 % domain()
@@ -173,7 +173,7 @@ contains
     call report(theta0 % num_entries() .eq. 1, &
          & "one trainable entry", nfail)
 
-    call theta0 % get_real_vector(val)
+    call theta0 % real_vector(val)
     call report(abs(val(sets % index_in(theta, SLOT_W))) < 1.0d-14, &
          & "w = 0: training has not happened, and nothing pretends it has", &
          & nfail)
@@ -189,7 +189,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dk, dt
+    type(graph) :: dk, dt
 
     dk = qk % domain()
     dt = theta0 % domain()

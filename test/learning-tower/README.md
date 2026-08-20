@@ -420,7 +420,7 @@ P_in  = {in₁, in₂}
 ```
 
 then restrict, project, and compose
-(`src/graph_relation_algebra.f90`):
+(`src/relation_algebra.f90`):
 
 ```text
 T_out3   = restrict_slot(T_flow, 3, P_out)      two tuples
@@ -547,7 +547,7 @@ g % branch(1) = known_branch(scell(1))            ! the member-set sequence
 g % branch(2) = known_branch(rcell(1))            ! the relation sequence
 ```
 
-(`src/fractal_graph.f90` and `src/graph_relational_view.f90`). Ownership
+(`src/graph_fractal.f90` and `src/view_relational.f90`). Ownership
 truths:
 
 ```text
@@ -623,13 +623,13 @@ flowchart LR
 graph-owned D
     ↓ directed_adjacency_view(g, d)     borrows g's OWN relation;
     ↓                                   the external selector may die
-graph_algorithms: sources / sinks / reachable / topological_order
+relation_algorithms: sources / sinks / reachable / topological_order
 ```
 
 The view (`src/graph_profile.f90`) locates the graph-owned relation that is
 `same_as` the selector and borrows **that** — the test deallocates the
 external selector `d` the moment the view exists, and every algorithm
-(`src/graph_algorithms.f90`) still answers. Algorithms remain outside
+(`src/relation_algorithms.f90`) still answers. Algorithms remain outside
 storage; sources and sinks come back as `subset_set` subobjects of \(O\).
 
 ## Minimal verification
@@ -725,7 +725,7 @@ u     = subset_set('computed' , v, [SLOT_E, SLOT_YHAT])
 ```
 
 The fields are the ordinary production `field` on those domains
-(`src/class_graph_field.f90`):
+(`src/field_stored.f90`):
 
 ```fortran
 qk = field('observations', k)
@@ -879,7 +879,7 @@ in declaration order (exactly one home, or refusal); each
 
 — but the pair \((r,w)\) appears only in assertions, never in the
 construction path. The generated pairs are materialized as a
-`csr_relation` over \((Y,\Theta)\) (`src/graph_binary_relation.f90`): this
+`csr_relation` over \((Y,\Theta)\) (`src/relation_binary.f90`): this
 is the rung that genuinely earns binary materialization and transpose.
 
 **The reverse structure.**
@@ -977,7 +977,7 @@ minimization independently of constitution.
 ## Construction / implementation
 
 The in-file fixture module `learning_residual_fixture` defines
-`affine_learning_residual` extending the legacy `graph_operation` face
+`affine_learning_residual` extending the legacy `operation` face
 (`graph_grammar`), constructed **parametrically**:
 
 ```text
@@ -1004,9 +1004,9 @@ seven-vertex `stored_graph` whose vertex count matches nothing —
 domain-driven, not host-driven. (See
 [Nucleus observations](#nucleus-observations-from-learning), Observation E.)
 
-The solver is the ordinary GMRES citizen (`class_graph_gmres`), which
+The solver is the ordinary GMRES citizen (`operation_gmres`), which
 inherits `attach` / `constant` / `solve` from the minimizer base
-(`graph_minimization` is therefore not even imported):
+(`operation_minimization` is therefore not even imported):
 
 ```text
 solver.attach(oracle, host, Theta)
@@ -1299,7 +1299,7 @@ independent minimizer certification below the frontier.
 
 The adapter `constituted_learning_residual`
 (`level-9-statement/constituted_residual_fixture.f90`) is an adapter
-**only** — Level-8 semantics wearing the legacy `graph_operation` face so
+**only** — Level-8 semantics wearing the legacy `operation` face so
 the ordinary solver can drive them. Its entire numerical act is one
 delegation to `learning_constitution_fixture::generated_residual`. It
 contains no law, no slot name, no order literal, no \(2w-6\).
@@ -1624,22 +1624,22 @@ Two mechanisms hold the stratification:
 | Level | Test directory | Principal modules exercised (per the import gate) |
 |---|---|---|
 | 0 | `level-0-carrier/` | `graph_carrier` |
-| 1 | `level-1-relation/` | + `graph_relation` (with refusal suite) |
-| 2 | `level-2-relation-algebra/` | + `graph_relation_algebra` (D held as `class(relation)`) |
-| 3 | `level-3-graph/` | + `graph_structure` (`graph_binary_relation` granted for the view refusal **only**) |
-| 4 | `level-4-graph-calculus/` | + `graph_profile`, `graph_algorithms` (binary storage stays forbidden) |
-| 5 | `level-5-field-calculus/` | `graph_carrier`, `class_graph_field` — the smallest allowlist above ground |
-| 6 | `level-6-discretization/` | + `graph_binary_relation` (`csr_relation`, `transpose_of` earned), `graph_structure`, `graph_profile`, `graph_algorithms` |
-| 7 | `level-7-minimization/` | `graph_carrier`, `graph_grammar`, `class_graph_field`, `class_graph`, `class_graph_gmres` + in-file `learning_residual_fixture` |
-| 8 | `level-8-constitution/` | carriers/relations/algebra/structure/profile/algorithms, `class_graph_field` + `learning_constitution_fixture` (own file; refusal suite) |
-| 9 | `level-9-statement/` | + `graph_grammar`, `class_graph`, `class_graph_gmres`, both fixtures (`constituted_residual_fixture.f90`) |
+| 1 | `level-1-relation/` | + `relation_finitary` (with refusal suite) |
+| 2 | `level-2-relation-algebra/` | + `relation_algebra` (D held as `class(relation)`) |
+| 3 | `level-3-graph/` | + `graph_structure` (`relation_binary` granted for the view refusal **only**) |
+| 4 | `level-4-graph-calculus/` | + `graph_profile`, `relation_algorithms` (binary storage stays forbidden) |
+| 5 | `level-5-field-calculus/` | `graph_carrier`, `field_stored` — the smallest allowlist above ground |
+| 6 | `level-6-discretization/` | + `relation_binary` (`csr_relation`, `transpose_of` earned), `graph_structure`, `graph_profile`, `relation_algorithms` |
+| 7 | `level-7-minimization/` | `graph_carrier`, `graph_grammar`, `field_stored`, `view_directed_stored`, `operation_gmres` + in-file `learning_residual_fixture` |
+| 8 | `level-8-constitution/` | carriers/relations/algebra/structure/profile/algorithms, `field_stored` + `learning_constitution_fixture` (own file; refusal suite) |
+| 9 | `level-9-statement/` | + `graph_grammar`, `view_directed_stored`, `operation_gmres`, both fixtures (`constituted_residual_fixture.f90`) |
 
 Every level also imports `learning_assert`
 (`common/learning_assert.f90`) — the tower's dependency-free constants and
 assertion helpers, deliberately **not** shared with `calculator_assert`:
 the learning tower is an independent second client and shares no fixture
 with the first. `gmres` inherits the minimizer face, so
-`graph_minimization` is never directly imported by any learning test.
+`operation_minimization` is never directly imported by any learning test.
 
 ```text
 test/learning-tower/
@@ -1813,7 +1813,7 @@ conflate law, policy, role, and statement.
 
 ## Observation E — the graph host appears locally unused in minimization
 
-At Levels 7 and 9 the legacy `graph_operation` face requires a graph host;
+At Levels 7 and 9 the legacy `operation` face requires a graph host;
 the tests deliberately supply a seven-vertex graph unrelated to every
 learning domain, and the mathematics never touches it.
 

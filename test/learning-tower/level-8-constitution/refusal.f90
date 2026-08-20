@@ -21,20 +21,20 @@ program learning_level_8_refusal
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use graph_relation , only : stored_relation
+  use map_set        , only : set_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
+  use relation_finitary , only : stored_relation
   use learning_constitution_fixture, only : apply_law, generated_residual
 
   implicit none
 
   integer, parameter :: ROW_R = 1
 
-  type(set_graph)     :: v, o, p, y
-  type(set_graph)      :: k, theta, u
+  type(graph)     :: v, o, p, y
+  type(graph)      :: k, theta, u
   type(stored_relation) :: flow, located
   integer               :: table(3, 6)
   real(dp)              :: r(1), z

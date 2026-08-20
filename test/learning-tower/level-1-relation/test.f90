@@ -18,7 +18,7 @@
 ! mean w*x, error does NOT yet mean yhat-y - structure before
 ! meaning, the learning tower's first real proof of it. No neuron,
 ! no layer, no network object anywhere: the import list IS the
-! negative truth - learning_assert, the set modules, graph_relation,
+! negative truth - learning_assert, the set modules, relation_finitary,
 ! and nothing above.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -30,15 +30,15 @@ program learning_level_1
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_relation , only : stored_relation
+  use map_set        , only : set_map
+  use relation_finitary , only : stored_relation
 
   implicit none
 
-  type(set_graph)     :: v, o, p
+  type(graph)     :: v, o, p
   type(stored_relation) :: flow
   integer               :: table(3, 7)
   integer               :: nfail
@@ -85,7 +85,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: d
+    type(graph) :: d
 
     call report(flow % arity() .eq. 3, &
          & "the flow is genuinely ternary", nfail)

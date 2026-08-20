@@ -470,7 +470,7 @@ contextual radius:    1
 symptom / fact:       Gate A's theorem became numerical and PRODUCTION
                       enforced it. A right-hand side on the wrong
                       domain has exactly the right SIZE when
-                      |Q| = |Y| = 2, and graph_minimization refuses it
+                      |Q| = |Y| = 2, and operation_minimization refuses it
                       by identity:
 
                         'a right-hand side lives on the residual domain'
@@ -482,7 +482,7 @@ symptom / fact:       Gate A's theorem became numerical and PRODUCTION
 
 exact caller:         level-7-minimization/refusal.f90 and
                       check_refusals.sh; the production check lives in
-                      src/graph_minimization.f90 (solver_apply)
+                      src/operation_minimization.f90 (solver_apply)
 
 mathematical concept: dimension agreement vs domain identity
 
@@ -519,7 +519,7 @@ gate / level:         B / 7-8
 contextual radius:    1
 
 symptom / fact:       the legacy graph host is COMPATIBILITY at this
-                      radius. The graph_operation face requires a
+                      radius. The operation face requires a
                       class(graph); a five-vertex stored_graph was
                       supplied whose vertex set is neither Q nor Y and
                       not even their size. It is never queried for
@@ -717,7 +717,7 @@ symptom / fact:       TWO questions, kept apart deliberately.
                         a reverse action reading the same law
                         the transpose orientation between the two
 
-exact caller:         src/class_graph_linearization.f90 (lines ~156-170)
+exact caller:         src/operation_linearization.f90 (lines ~156-170)
                       for (a); the two towers' fixtures for (b)
 
 mathematical concept: a general linearization contract between
@@ -779,7 +779,7 @@ symptom / fact:       "GRAPH" CARRIES TWO DIFFERENT SOFTWARE ROLES,
                       provably neither Q nor Y nor their size, not
                       owned by the model, never queried for topology
                       or coefficients. It exists because
-                      graph_operation demands a class(graph).
+                      operation demands a class(graph).
                       Compatibility scenery.
 
                       Therefore both of these are true at once:

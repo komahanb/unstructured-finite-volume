@@ -23,23 +23,23 @@
 program bench_graph_traversal
 
   use iso_fortran_env        , only : dp => REAL64, int64
-  use graph_directed_view    , only : directed_graph
-  use graph_field_calculus   , only : graph_field
-  use fractal_graph          , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation
-  use graph_set_map          , only : set_map
-  use graph_label_map        , only : label_map
-  use graph_inclusion_map    , only : inclusion_map
-  use graph_partition_relation, only : partition_relation
-  use graph_binary_relation  , only : csr_relation
-  use class_graph            , only : directed_stored_graph
-  use class_graph_field      , only : field
-  use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
-  use class_graph_assembler  , only : assembler
-  use class_graph_differential_operator, only : divergence, laplacian, &
+  use view_directed    , only : directed_graph
+  use field_calculus   , only : field
+  use graph_fractal          , only : graph
+  use map_set_representation, only : counted_set_representation
+  use map_set          , only : set_map
+  use map_label        , only : label_map
+  use map_inclusion    , only : inclusion_map
+  use relation_partition, only : partition_relation
+  use relation_binary  , only : csr_relation
+  use view_directed_stored            , only : stored_directed_graph
+  use field_stored      , only : stored_field
+  use transform_partitioner, only : partitioner, PARTITION_LINEAR
+  use transform_assembler  , only : assembler
+  use operation_differential, only : divergence, laplacian, &
        &                                        differential_operator, &
        &                                        stencil_of
-  use class_graph_stencil    , only : stencil_operator
+  use operation_stencil    , only : stencil
 
   implicit none
 
@@ -47,8 +47,8 @@ program bench_graph_traversal
   integer, parameter :: nv = nx * ny
   integer, parameter :: ne = (nx - 1) * ny + nx * (ny - 1)
 
-  type(directed_stored_graph)              :: g
-  type(set_graph)                 :: vcarrier, ecarrier
+  type(stored_directed_graph)              :: g
+  type(graph)                 :: vcarrier, ecarrier
   type(set_map)                   :: sets
   type(label_map)                 :: labels
   type(inclusion_map)             :: inclusions
@@ -57,13 +57,13 @@ program bench_graph_traversal
   integer, pointer                :: fp(:)
   integer, allocatable            :: tab(:,:)
   type(differential_operator)     :: op
-  type(stencil_operator)          :: compiled
+  type(stencil)          :: compiled
   type(partitioner)               :: p
   type(assembler)                 :: a
   class(directed_graph), allocatable       :: part
-  class(graph_field), allocatable :: pd, fd, yf
-  type(set_graph)                 :: von, eon
-  type(field)                     :: q, z
+  class(field), allocatable :: pd, fd, yf
+  type(graph)                 :: von, eon
+  type(stored_field)                     :: q, z
   integer, allocatable            :: tails(:), heads(:), idx(:)
   real(dp), allocatable           :: qv(:), zv(:)
   integer(int64)                  :: t0, t1, rate
@@ -97,9 +97,9 @@ program bench_graph_traversal
   end do
 
   call system_clock(t0, rate)
-  g = directed_stored_graph(nv, tails=tails, heads=heads)
+  g = stored_directed_graph(nv, tails=tails, heads=heads)
   call system_clock(t1)
-  call line("directed_stored_graph construction", t0, t1, rate, int(nv, int64))
+  call line("stored_directed_graph construction", t0, t1, rate, int(nv, int64))
 
   ! -- traversal sweeps: every vertex once per repetition.
   touched = 0
@@ -205,7 +205,7 @@ program bench_graph_traversal
   !    demands same_as on its input domain, so the field sits on the
   !    graph's OWN edge identity, never on a freshly declared one.
   eon = g % edge_set()
-  z   = field('z', eon, ne)
+  z   = stored_field('z', eon, ne)
   allocate(zv(ne))
   do e = 1, ne
      zv(e) = real(mod(e, 97), dp) - 48.0_dp
@@ -221,7 +221,7 @@ program bench_graph_traversal
   call line("divergence apply (x3)", t0, t1, rate, int(3, int64) * ne)
 
   von = g % vertex_set()
-  q   = field('q', von, nv)
+  q   = stored_field('q', von, nv)
   allocate(qv(nv))
   do v = 1, nv
      qv(v) = real(mod(v, 89), dp) - 44.0_dp
@@ -257,7 +257,7 @@ program bench_graph_traversal
   a = assembler()
   call system_clock(t0)
   do k = 1, 4
-     p = partitioner(PARTITION_LINEAR, nparts=4, part=k)
+     p = partitioner(PARTITION_LINEAR, num_parts=4, part=k)
      call p % partition_graph(g, part, rp)
   end do
   call system_clock(t1)
@@ -272,7 +272,7 @@ program bench_graph_traversal
 
   call system_clock(t0)
   do k = 1, 4
-     p = partitioner(PARTITION_LINEAR, nparts=4, part=k)
+     p = partitioner(PARTITION_LINEAR, num_parts=4, part=k)
      call p % partition_graph(g, part, rp)
      call sets % bind(part % vertex_set(), &
           & counted_set_representation(part % num_vertices()))

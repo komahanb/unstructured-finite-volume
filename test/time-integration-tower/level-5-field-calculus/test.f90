@@ -53,10 +53,10 @@ program time_level_5
   use time_assert           , only : NQ, NT, NE, TOL
   use time_assert           , only : C_X, C_Y, T0, T2, T4, E1
   use time_assert           , only : H_STEP, TIME_COORD, Q0
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
-  use graph_binary_relation , only : csr_relation
-  use class_graph_field     , only : field
+  use graph_fractal        , only : graph
+  use map_set        , only : set_map
+  use relation_binary , only : csr_relation
+  use field_stored     , only : stored_field
   use time_carriers_fixture , only : time_carriers
   use time_relations_fixture, only : tail_relation, head_relation
   use time_fields_fixture   , only : state_field, instant_coordinates, &
@@ -64,10 +64,10 @@ program time_level_5
 
   implicit none
 
-  type(set_graph)  :: q, t, e
+  type(graph)  :: q, t, e
   type(set_map)  :: sets
   type(csr_relation) :: tail, head
-  type(field)        :: qf, tf, hf
+  type(stored_field)        :: qf, tf, hf
   integer            :: nfail
 
   nfail = 0
@@ -103,7 +103,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: d
+    type(graph) :: d
 
     d = qf % domain()
     call report(d % same_as(q), &
@@ -136,7 +136,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dq, dt, de
+    type(graph) :: dq, dt, de
 
     dq = qf % domain()
     dt = tf % domain()
@@ -171,21 +171,21 @@ contains
     ! Read against the ORACLES in time_assert, never against a
     ! literal retyped here - a test that spells its own expected
     ! value twice has only proved it can copy.
-    call qf % get_real_vector(v)
+    call qf % real_vector(v)
     call report(abs(v(sets % index_in(q, C_X)) - Q0(1)) .lt. TOL .and. &
          &      abs(v(sets % index_in(q, C_Y)) - Q0(2)) .lt. TOL, &
          & "q0(x) = 2 and q0(y) = 0, read at Q's local positions", &
          & nfail)
 
-    call tf % get_real_vector(v)
+    call tf % real_vector(v)
     call report(abs(v(sets % index_in(t, T0)) - TIME_COORD(1)) .lt. TOL .and. &
          &      abs(v(sets % index_in(t, T2)) - TIME_COORD(3)) .lt. TOL .and. &
          &      abs(v(sets % index_in(t, T4)) - TIME_COORD(5)) .lt. TOL, &
          & "time(t0) = 0, time(t2) = 1, time(t4) = 2", nfail)
 
-    call hf % get_real_vector(v)
+    call hf % real_vector(v)
     ok = .true.
-    do i = 1, sets % size_of(e)
+    do i = 1, sets % num_members_of(e)
        ok = ok .and. (abs(v(sets % index_in(e, sets % member_of(e, i))) - H_STEP) &
             & .lt. TOL)
     end do
@@ -215,11 +215,11 @@ contains
     integer               :: i, m, from, into
     logical               :: ok
 
-    call tf % get_real_vector(tv)
-    call hf % get_real_vector(hv)
+    call tf % real_vector(tv)
+    call hf % real_vector(hv)
 
     ok = .true.
-    do i = 1, sets % size_of(e)
+    do i = 1, sets % num_members_of(e)
        m    = sets % member_of(e, i)
        from = instant_of(tail, m)
        into = instant_of(head, m)
@@ -260,7 +260,7 @@ contains
     integer :: j, m
 
     instant_of = 0
-    do j = 1, sets % size_of(t)
+    do j = 1, sets % num_members_of(t)
        m = sets % member_of(t, j)
        if (r % has([step, m])) instant_of = m
     end do

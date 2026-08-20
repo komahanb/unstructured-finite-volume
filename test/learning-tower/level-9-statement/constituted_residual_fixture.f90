@@ -1,6 +1,6 @@
 !=====================================================================!
 ! THE CONSTITUTED LEARNING RESIDUAL - the Level-9 adapter, test-
-! local: Level-8 semantics wearing the legacy graph_operation face
+! local: Level-8 semantics wearing the legacy operation face
 ! so the ordinary solver can drive them. Its entire numerical act
 ! is delegation to learning_constitution_fixture::generated_residual
 ! - no multiplication here, no subtraction, no slot name, no order
@@ -22,19 +22,19 @@
 module constituted_residual_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
-  use graph_set_representation, only : set_representation
-  use graph_relation   , only : relation
+  use graph_fractal        , only : graph
+  use map_set        , only : set_map
+  use map_set_representation, only : set_representation
+  use relation_finitary   , only : relation
   ! The kernel's graph and the ordinary view's directed_graph are two
   ! types with two names now, so nothing is renamed at this door.
-  use fractal_graph        , only : graph
-  use graph_relational_view, only : relational_binding, &
+  use graph_fractal        , only : graph
+  use view_relational, only : relational_binding, &
        & num_relations, relation_at
-  use graph_operation_view, only : graph_operation
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use class_graph_field, only : field
+  use operation_action, only : operation
+  use view_directed, only : directed_graph
+  use field_calculus, only : field
+  use field_stored, only : stored_field
   use learning_constitution_fixture, only : generated_residual
 
   implicit none
@@ -42,14 +42,14 @@ module constituted_residual_fixture
   private
   public :: constituted_learning_residual
 
-  type, extends(graph_operation) :: constituted_learning_residual
+  type, extends(operation) :: constituted_learning_residual
      class(relation), allocatable :: flow      ! the GRAPH-OWNED copy
      class(relation), allocatable :: located
      ! Identities, counts, and the action's OWN coordinates. A
      ! representation carries no identity, so holding one keeps this
      ! type free of any caller's map.
-     type(set_graph)            :: slots, rows
-     type(set_graph)             :: observed, trainable, computed
+     type(graph)            :: slots, rows
+     type(graph)             :: observed, trainable, computed
      integer :: n_slots = 0, n_rows = 0
      integer :: n_observed = 0, n_trainable = 0, n_computed = 0
      class(set_representation), allocatable :: c_slots, c_rows
@@ -81,9 +81,9 @@ contains
     type(graph)             , intent(in) :: g
     type(relational_binding), intent(in) :: b
     class(relation)  , intent(in) :: selector, located
-    type(set_graph), intent(in) :: slots, rows
+    type(graph), intent(in) :: slots, rows
     type(set_map)  , intent(in) :: sets
-    type(set_graph) , intent(in) :: observed, trainable, computed
+    type(graph) , intent(in) :: observed, trainable, computed
     real(dp)         , intent(in) :: observed_values(:)
     integer          , intent(in) :: order(:)
     type(constituted_learning_residual) :: this
@@ -119,11 +119,11 @@ contains
     this % observed_values = observed_values
     this % order           = order
 
-    this % n_slots     = sets % size_of(slots)
-    this % n_rows      = sets % size_of(rows)
-    this % n_observed  = sets % size_of(observed)
-    this % n_trainable = sets % size_of(trainable)
-    this % n_computed  = sets % size_of(computed)
+    this % n_slots     = sets % num_members_of(slots)
+    this % n_rows      = sets % num_members_of(rows)
+    this % n_observed  = sets % num_members_of(observed)
+    this % n_trainable = sets % num_members_of(trainable)
+    this % n_computed  = sets % num_members_of(computed)
 
     call sets % extent_of(slots,     this % c_slots)
     call sets % extent_of(rows,      this % c_rows)
@@ -139,26 +139,26 @@ contains
     name = 'constituted learning residual'
   end function clr_name
 
-  subroutine clr_domain(this, input_graph, domain, nentries)
+  subroutine clr_domain(this, input_graph, domain, num_entries)
     class(constituted_learning_residual), intent(in) :: this
     class(directed_graph), intent(in) :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
     integer         :: n_rows
     associate (u1 => input_graph); end associate
     domain   = this % rows
-    nentries = this % n_rows
+    num_entries = this % n_rows
   end subroutine clr_domain
 
   subroutine clr_apply(this, input_graph, input_data, output)
 
     class(constituted_learning_residual), intent(in) :: this
     class(directed_graph), intent(in)                 :: input_graph
-    class(graph_field), intent(in), optional         :: input_data(:)
-    class(graph_field), allocatable, intent(inout)   :: output
+    class(field), intent(in), optional         :: input_data(:)
+    class(field), allocatable, intent(inout)   :: output
 
-    type(field)                    :: out
-    type(set_graph) :: dom
+    type(stored_field)                    :: out
+    type(graph) :: dom
     real(dp), allocatable          :: tstate(:), r(:)
 
     !----------------------------------------------------------------!
@@ -189,7 +189,7 @@ contains
     if (.not. dom % same_as(this % trainable)) then
        error stop 'statement: the state must live on the trainable domain'
     end if
-    call input_data(1) % get_real_vector(tstate)
+    call input_data(1) % real_vector(tstate)
 
     allocate(r(this % n_rows))
     call generated_residual(this % flow, this % located, &
@@ -198,7 +198,7 @@ contains
          & this % trainable, tstate, &
          & this % computed, this % order, r)
 
-    out = field('residual', this % rows, this % n_rows)
+    out = stored_field('residual', this % rows, this % n_rows)
     call out % set_real_vector(r)
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)

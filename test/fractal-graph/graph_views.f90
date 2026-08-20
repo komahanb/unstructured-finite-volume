@@ -31,8 +31,8 @@
 
 module graph_views
 
-  use graph_identity, only : token
-  use fractal_graph , only : graph, GRAPH_NULL, GRAPH_UNKNOWN, GRAPH_KNOWN
+  use token_identity, only : token
+  use graph_fractal , only : graph, BRANCH_NULL, BRANCH_UNKNOWN, BRANCH_KNOWN
 
   implicit none
 
@@ -194,14 +194,14 @@ contains
 
     character(len=1) :: op
 
-    if (g % branch(1) % status() .eq. GRAPH_NULL .and. &
-         & g % branch(2) % status() .eq. GRAPH_NULL) then
+    if (g % branch(1) % status() .eq. BRANCH_NULL .and. &
+         & g % branch(2) % status() .eq. BRANCH_NULL) then
        v = m % number_of(g)
        return
     end if
 
-    if (g % branch(1) % status() .ne. GRAPH_KNOWN .or. &
-         & g % branch(2) % status() .ne. GRAPH_KNOWN) then
+    if (g % branch(1) % status() .ne. BRANCH_KNOWN .or. &
+         & g % branch(2) % status() .ne. BRANCH_KNOWN) then
        error stop 'graph_views: UNKNOWN branch has no value'
     end if
 
@@ -228,15 +228,15 @@ contains
 
     integer :: s
 
-    if (g % branch(1) % status() .eq. GRAPH_NULL .and. &
-         & g % branch(2) % status() .eq. GRAPH_NULL) then
+    if (g % branch(1) % status() .eq. BRANCH_NULL .and. &
+         & g % branch(2) % status() .eq. BRANCH_NULL) then
        n = 1
        return
     end if
 
     n = 0
     do s = 1, 2
-       if (g % branch(s) % status() .eq. GRAPH_KNOWN) then
+       if (g % branch(s) % status() .eq. BRANCH_KNOWN) then
           n = n + num_atoms(g % branch(s) % known())
        end if
     end do
@@ -264,14 +264,14 @@ contains
 
     node => sequence
     do
-       if (node % branch(1) % status() .ne. GRAPH_KNOWN) then
+       if (node % branch(1) % status() .ne. BRANCH_KNOWN) then
           error stop 'graph_views: sequence node requires a KNOWN element'
        end if
        pair => node % branch(1) % known()
        left  = [left , member(pair, 1)]
        right = [right, member(pair, 2)]
-       if (node % branch(2) % status() .eq. GRAPH_NULL) exit
-       if (node % branch(2) % status() .ne. GRAPH_KNOWN) then
+       if (node % branch(2) % status() .eq. BRANCH_NULL) exit
+       if (node % branch(2) % status() .ne. BRANCH_KNOWN) then
           error stop 'graph_views: sequence tail must be KNOWN or NULL'
        end if
        node => node % branch(2) % known()
@@ -283,9 +283,9 @@ contains
       type(graph), intent(in) :: p
       integer    , intent(in) :: s
       select case (p % branch(s) % status())
-      case (GRAPH_NULL)
+      case (BRANCH_NULL)
          member = 0
-      case (GRAPH_KNOWN)
+      case (BRANCH_KNOWN)
          member = m % index_of(p % branch(s) % known())
       case default
          error stop 'graph_views: UNKNOWN member is not NULL; only NULL denotes absence'
@@ -330,7 +330,7 @@ contains
 
   !===================================================================!
   ! COMPILED REPRESENTATION over the same sequence. The dependency
-  ! runs graph_views -> fractal_graph and not back: the kernel does not
+  ! runs graph_views -> graph_fractal and not back: the kernel does not
   ! name csr, and csr does not name graph.
   !===================================================================!
 

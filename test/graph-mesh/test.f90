@@ -28,18 +28,18 @@
 program test_graph_mesh
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use graph_directed_view , only : GRAPH_SIDE_VERTEX
-  use fractal_graph  , only : set_graph => graph
-  use graph_set_map  , only : set_map
-  use graph_label_map, only : label_map
-  use graph_inclusion_map, only : inclusion_map
-  use class_graph_field  , only : field
-  use class_graph_mesh   , only : mesh
-  use class_mesh_builder , only : mesh_from_gmsh
-  use class_graph_differential_operator, only : differential_operator
-  use class_graph_differential_operator, only : vertex_differential_operator
+  use view_directed, only : directed_graph
+  use field_calculus, only : field
+  use view_directed , only : SIDE_VERTEX
+  use graph_fractal  , only : graph
+  use map_set  , only : set_map
+  use map_label, only : label_map
+  use map_inclusion, only : inclusion_map
+  use field_stored  , only : stored_field
+  use view_mesh   , only : mesh
+  use view_mesh_builder , only : mesh_from_gmsh
+  use operation_differential, only : differential_operator
+  use operation_differential, only : vertex_derivative
 
   implicit none
 
@@ -89,7 +89,7 @@ contains
 
     m = mesh(3, tails=[1, 2, 1], heads=[2, 3, 0], &
          & volumes      = [2.0_dp, 3.0_dp, 4.0_dp], &
-         & cell_centers = [0.5_dp, 0.0_dp, 0.0_dp, &
+         & cell_centres = [0.5_dp, 0.0_dp, 0.0_dp, &
          &                 1.5_dp, 0.0_dp, 0.0_dp, &
          &                 2.5_dp, 0.0_dp, 0.0_dp], &
          & areas        = [1.5_dp, 2.5_dp, 1.0_dp], &
@@ -97,7 +97,7 @@ contains
          & normals      = [1.0_dp, 0.0_dp, 0.0_dp, &
          &                 1.0_dp, 0.0_dp, 0.0_dp, &
          &                -1.0_dp, 0.0_dp, 0.0_dp], &
-         & face_centers = [1.0_dp, 0.0_dp, 0.0_dp, &
+         & face_centres = [1.0_dp, 0.0_dp, 0.0_dp, &
          &                 2.0_dp, 0.0_dp, 0.0_dp, &
          &                 0.0_dp, 0.0_dp, 0.0_dp], &
          & weights      = [0.5_dp, 0.5_dp, 1.0_dp], &
@@ -116,7 +116,7 @@ contains
     type(mesh) :: m
 
     ! The wall faces are carved, asked and dropped here.
-    type(set_graph)     :: wall
+    type(graph)     :: wall
     type(set_map)       :: sets
     type(label_map)     :: labels
     type(inclusion_map) :: inclusions
@@ -133,7 +133,7 @@ contains
     call report(size(nbrs) == 2, 'the middle cell has two neighbours', nfail)
 
     call m % tagged_edges('wall', sets, labels, inclusions, wall)
-    call report(sets % size_of(wall) == 1, &
+    call report(sets % num_members_of(wall) == 1, &
          & 'the wall tag names one face', nfail)
     call report(sets % member_of(wall, 1) == 3, &
          & 'and it is the third face', nfail)
@@ -149,37 +149,37 @@ contains
     integer, intent(inout) :: nfail
 
     type(mesh) :: m
-    type(field) :: f
+    type(stored_field) :: f
     real(dp), allocatable :: v(:)
 
     m = hand_mesh()
 
     f = m % cell_volume()
-    call f % get_real_vector(v)
+    call f % real_vector(v)
     call report(size(v) == 3 .and. all(abs(v - [2.0_dp, 3.0_dp, 4.0_dp]) < 1.0d-14), &
          & 'cell_volume returns one volume per cell, as given', nfail)
 
     f = m % face_area()
-    call f % get_real_vector(v)
+    call f % real_vector(v)
     call report(all(abs(v - [1.5_dp, 2.5_dp, 1.0_dp]) < 1.0d-14), &
          & 'face_area returns one area per face, as given', nfail)
 
     f = m % face_delta()
-    call f % get_real_vector(v)
+    call f % real_vector(v)
     call report(all(abs(v - [0.5_dp, 0.25_dp, 1.0_dp]) < 1.0d-14), &
          & 'face_delta returns the spacings, as given', nfail)
 
     f = m % face_normal()
-    call f % get_real_vector(v)
+    call f % real_vector(v)
     call report(size(v) == 9 .and. abs(v(7) + 1.0_dp) < 1.0d-14, &
          & 'face_normal is three wide and keeps its signs', nfail)
 
-    f = m % cell_center()
+    f = m % cell_centre()
     call report(f % num_components() == 3, &
-         & 'cell_center is three wide', nfail)
+         & 'cell_centre is three wide', nfail)
 
     f = m % face_weights()
-    call f % get_real_vector(v)
+    call f % real_vector(v)
     call report(all(abs(v - [0.5_dp, 0.5_dp, 1.0_dp]) < 1.0d-14), &
          & 'face_weights returns the interpolation weights', nfail)
 
@@ -206,12 +206,12 @@ contains
 
     type(mesh) :: m
     type(differential_operator) :: second
-    type(field) :: state
-    type(set_graph) :: cells
-    class(graph_field), allocatable :: y
+    type(stored_field) :: state
+    type(graph) :: cells
+    class(field), allocatable :: y
     real(dp), allocatable :: farea(:), fdelta(:), vol(:), got(:)
     real(dp) :: k(3), c(3)
-    type(field) :: fa, fd, fv
+    type(stored_field) :: fa, fd, fv
     integer :: v
 
     m = hand_mesh()
@@ -219,34 +219,34 @@ contains
     ! The mesh's own measurements feed the constructor, per the
     ! dictionary. The wall face has no conductivity.
     fa = m % face_area()
-    call fa % get_real_vector(farea)
+    call fa % real_vector(farea)
     fd = m % face_delta()
-    call fd % get_real_vector(fdelta)
+    call fd % real_vector(fdelta)
     fv = m % cell_volume()
-    call fv % get_real_vector(vol)
+    call fv % real_vector(vol)
 
     k = [2.0_dp, 4.0_dp, 0.0_dp]
     c = k * farea
 
     cells = m % vertex_set()
-    state = field('q', cells, m % num_vertices())
+    state = stored_field('q', cells, m % num_vertices())
     call state % set_real_vector([1.0_dp, 3.0_dp, 6.0_dp])
 
     ! The raw rows: unit measures.
-    second = vertex_differential_operator(order=2, coefficients=c, &
+    second = vertex_derivative(order=2, coefficients=c, &
          & spacings=fdelta)
     call second % apply(m, [state], y)
-    call y % get_real_vector(got)
+    call y % real_vector(got)
 
     call report(size(got) == 3, 'the operator answers one row per cell', nfail)
     call report(all(abs(got - [12.0_dp, 108.0_dp, -120.0_dp]) < 1.0d-11), &
          & 'the rows match the old two-point stencil entry for entry', nfail)
 
     ! The same rows seated on the cell volumes.
-    second = vertex_differential_operator(order=2, coefficients=c, &
+    second = vertex_derivative(order=2, coefficients=c, &
          & spacings=fdelta, measures=vol)
     call second % apply(m, [state], y)
-    call y % get_real_vector(got)
+    call y % real_vector(got)
 
     call report(all(abs(got - [6.0_dp, 36.0_dp, -30.0_dp]) < 1.0d-11), &
          & 'seated on the volumes, each row divides by its cell', nfail)
@@ -267,10 +267,10 @@ contains
 
     type(mesh) :: m
     type(differential_operator) :: second
-    type(field) :: state
-    type(set_graph) :: cells
-    class(graph_field), allocatable :: y
-    type(field) :: fa, fd, fv
+    type(stored_field) :: state
+    type(graph) :: cells
+    class(field), allocatable :: y
+    type(stored_field) :: fa, fd, fv
     real(dp), allocatable :: farea(:), fdelta(:), vol(:), got(:), c(:), q(:)
     integer :: nv, ne, e, v, nwall
 
@@ -283,15 +283,15 @@ contains
          & 'the file arrives: more faces than cells, as a mesh has', nfail)
 
     fv = m % cell_volume()
-    call fv % get_real_vector(vol)
+    call fv % real_vector(vol)
     call report(all(vol > 0.0_dp), 'every cell volume is positive', nfail)
 
     fa = m % face_area()
-    call fa % get_real_vector(farea)
+    call fa % real_vector(farea)
     call report(all(farea > 0.0_dp), 'every face area is positive', nfail)
 
     fd = m % face_delta()
-    call fd % get_real_vector(fdelta)
+    call fd % real_vector(fdelta)
     call report(all(fdelta > 0.0_dp), 'every face delta is positive', nfail)
 
     nwall = 0
@@ -315,13 +315,13 @@ contains
     end do
 
     cells = m % vertex_set()
-    state = field('q', cells, m % num_vertices())
+    state = stored_field('q', cells, m % num_vertices())
     call state % set_real_vector(q)
 
-    second = vertex_differential_operator(order=2, coefficients=c, &
+    second = vertex_derivative(order=2, coefficients=c, &
          & spacings=fdelta)
     call second % apply(m, [state], y)
-    call y % get_real_vector(got)
+    call y % real_vector(got)
 
     call report(abs(sum(got)) < 1.0d-9 * sum(abs(got)) + 1.0d-12, &
          & 'the interior rows conserve: they sum to zero on the real mesh', nfail)

@@ -10,13 +10,13 @@
 
 program test_graph_algebra
 
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use graph_relation       , only : stored_relation, relation
-  use graph_relation_algebra, only : restrict_slot, project_slots, &
+  use map_set        , only : set_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
+  use relation_finitary       , only : stored_relation, relation
+  use relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
 
   implicit none
@@ -68,10 +68,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)              :: a, b, c
-    type(set_graph)               :: some_b, nobody
+    type(graph)              :: a, b, c
+    type(graph)               :: some_b, nobody
     type(stored_relation)          :: r, narrowed
-    type(set_graph) :: d
+    type(graph) :: d
     integer, allocatable           :: rt(:,:)
     integer                        :: j
     logical                        :: ok
@@ -146,9 +146,9 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)              :: a, b, c
+    type(graph)              :: a, b, c
     type(stored_relation)          :: r, image, none
-    type(set_graph) :: d
+    type(graph) :: d
     type(set_map)     :: sets
 
     call a % declare()
@@ -209,10 +209,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)              :: a, b, c
+    type(graph)              :: a, b, c
     type(stored_relation)          :: p_ab, p_bc
     class(relation), allocatable   :: chained
-    type(set_graph) :: d
+    type(graph) :: d
     type(set_map)     :: sets
 
     call a % declare()

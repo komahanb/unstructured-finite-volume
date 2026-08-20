@@ -39,24 +39,24 @@ program adjoint_level_6
   use adjoint_assert, only : report, verdict
   use adjoint_assert, only : VAR_P, VAR_U, VAR_V
   use adjoint_assert, only : TGT_R1, TGT_R2, TGT_F
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_label_map      , only : label_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use graph_relation, only : stored_relation, relation
-  use graph_relation_algebra, only : compose_binary
-  use graph_binary_relation , only : csr_relation, transposed_view, &
+  use map_set        , only : set_map
+  use map_label      , only : label_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
+  use relation_finitary, only : stored_relation, relation
+  use relation_algebra, only : compose_binary
+  use relation_binary , only : csr_relation, transposed_relation, &
        &                             transpose_of, inclusion_of
 
   implicit none
 
-  type(set_graph)          :: v, t
-  type(set_graph)           :: p_dom, q_dom, y_dom, z_dom
+  type(graph)          :: v, t
+  type(graph)           :: p_dom, q_dom, y_dom, z_dom
   type(stored_relation)      :: dep
   type(csr_relation), target :: inc_y, inc_z, inc_q, inc_p, jq
-  type(transposed_view)      :: inc_q_t, inc_p_t, jq_t
+  type(transposed_relation)      :: inc_q_t, inc_p_t, jq_t
   type(csr_relation)         :: jp, fq, fp
   integer                    :: table(2, 9)
   integer                    :: nfail
@@ -132,7 +132,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: row, col
+    type(graph) :: row, col
 
     row = jq % domain(1)
     col = jq % domain(2)
@@ -199,7 +199,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: row, col
+    type(graph) :: row, col
 
     row = jq_t % domain(1)
     col = jq_t % domain(2)
@@ -208,7 +208,7 @@ contains
          & "J_Q^T <= Q x Y supports Rq^T : Y -> Q - the domains " // &
          & "themselves are exchanged", nfail)
 
-    call report(sets % size_of(row) .eq. 2 .and. sets % size_of(col) .eq. 2 .and. &
+    call report(sets % num_members_of(row) .eq. 2 .and. sets % num_members_of(col) .eq. 2 .and. &
          &      .not. row % same_as(col), &
          & "both slots hold two members and are still different " // &
          & "domains: no size check could catch a reversed adjoint", &

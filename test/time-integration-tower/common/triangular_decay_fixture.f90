@@ -20,9 +20,9 @@
 ! IT STORES Q, AND IT STORES NO GRAPH.
 !
 ! That single sentence is the Level-6 experiment. The
-! graph_operation contract hands every operation an input_graph,
+! operation contract hands every operation an input_graph,
 ! and the established habit - visible in the marching fixtures, in
-! graph_fitting, in reduction and broadcast - is to answer
+! operation_fitting, in reduction and broadcast - is to answer
 !
 !      call input_graph % all_vertices(domain)
 !
@@ -51,11 +51,11 @@
 module triangular_decay_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_operation_view, only : graph_operation
-  use graph_directed_view, only : directed_graph
-  use graph_field_calculus, only : graph_field
-  use fractal_graph    , only : set_graph => graph
-  use class_graph_field, only : field
+  use operation_action, only : operation
+  use view_directed, only : directed_graph
+  use field_calculus, only : field
+  use graph_fractal    , only : graph
+  use field_stored, only : stored_field
 
   implicit none
 
@@ -67,13 +67,13 @@ module triangular_decay_fixture
   ! state carrier Q - never a graph, and never a vertex set.
   !===================================================================!
 
-  type, extends(graph_operation) :: triangular_decay
+  type, extends(operation) :: triangular_decay
 
      ! WHICH domain, and how many coordinates stand in it. Both of
      ! the action's questions are answered from these two, so no map
      ! enters this type - an operation that asks nothing about
      ! membership carries nothing that answers it.
-     type(set_graph) :: state
+     type(graph) :: state
      integer         :: n_state = 0
 
    contains
@@ -96,7 +96,7 @@ contains
 
   type(triangular_decay) function create_decay(state, n_state) result(this)
 
-    type(set_graph), intent(in) :: state
+    type(graph), intent(in) :: state
     integer        , intent(in) :: n_state
 
     if (.not. state % same_as(state)) then
@@ -125,17 +125,17 @@ contains
   ! contract says so, and is not consulted.
   !===================================================================!
 
-  subroutine decay_domain(this, input_graph, domain, nentries)
+  subroutine decay_domain(this, input_graph, domain, num_entries)
 
     class(triangular_decay), intent(in)  :: this
     class(directed_graph)           , intent(in)  :: input_graph
-    type(set_graph)        , intent(out) :: domain
-    integer                , intent(out) :: nentries
+    type(graph)        , intent(out) :: domain
+    integer                , intent(out) :: num_entries
 
     associate (u1 => input_graph); end associate
 
     domain   = this % state
-    nentries = this % n_state
+    num_entries = this % n_state
 
   end subroutine decay_domain
 
@@ -151,11 +151,11 @@ contains
 
     class(triangular_decay), intent(in)            :: this
     class(directed_graph)           , intent(in)            :: input_graph
-    class(graph_field), intent(in), optional       :: input_data(:)
-    class(graph_field), allocatable, intent(inout) :: output
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
 
-    type(set_graph)       :: given
-    type(field)           :: out
+    type(graph)       :: given
+    type(stored_field)           :: out
     real(dp), allocatable          :: q(:), s(:)
 
     associate (u1 => input_graph); end associate
@@ -169,7 +169,7 @@ contains
        error stop 'triangular_decay: the state must live on the action''s own domain'
     end if
 
-    call input_data(1) % get_real_vector(q)
+    call input_data(1) % real_vector(q)
     if (size(q) /= this % n_state) then
        error stop 'triangular_decay: one number per state coordinate'
     end if
@@ -178,7 +178,7 @@ contains
     s(1) = q(1)
     s(2) = q(2) - q(1)
 
-    out = field('triangular decay', this % state, this % n_state, ncomp=1)
+    out = stored_field('triangular decay', this % state, this % n_state, num_components=1)
     call out % set_real_vector(s)
 
     if (allocated(output)) deallocate(output)

@@ -42,9 +42,9 @@ TECIO_DIR  = $(HOME)/install/tecplot360ex
 ifeq ($(COMPILER),gnu)
   # auto-pick the newest available RELEASED gfortran (override with
   # `make F90=...`). gfortran-16 (trunk snapshot 20260315) is demoted
-  # to last: it miscompiles class_mesh.f90 (type-layout bug, ASAN
-  # stack-buffer-overflow; 13 is clean on the same code) - promote it
-  # back when 16 releases or the legacy chain is deleted.
+  # to last: it miscompiled the retired legacy mesh (type-layout bug,
+  # ASAN stack-buffer-overflow; 13 was clean on the same code) -
+  # promote it back when 16 releases.
   F90 := $(shell for c in gfortran-15 gfortran-14 gfortran-13 gfortran-12 gfortran gfortran-11 gfortran-10 gfortran-9 gfortran-8 gfortran-7 gfortran-16; do command -v $$c >/dev/null 2>&1 && { echo $$c; exit; }; done; echo gfortran)
   F90FLAGS := -fcoarray=single -cpp -fPIC -Wno-line-truncation
 

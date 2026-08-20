@@ -163,7 +163,7 @@ The nonlinear governor. Its Jacobian action is `tangent_of(action)`,
 so a differentiable statement is linearized exactly and any other
 statement by differences, with no dispatch of newton's own.
 
-### graph_change_protocol, graph_value_map, graph_value_change
+### map_change_protocol, map_value, map_value_change
 
 The reversible mutation stack. `run_change` owns the
 lifecycle apply -> check -> keep | revert; a failure reported by
@@ -190,8 +190,8 @@ restoring the prior row exactly.
 | degree-2 and degree-r directional drivers  | `march_directional`                        |
 | adaptive growth driver, controller         | `march_adaptive` + `class_graph_step_policy`|
 | linear solve helpers                       | `class_graph_dense_direct`                 |
-| change protocol                            | `graph_change_protocol`                    |
-| attached value map, value change           | `graph_value_map`, `graph_value_change`    |
+| change protocol                            | `map_change_protocol`                    |
+| attached value map, value change           | `map_value`, `map_value_change`    |
 
 ## Tests
 

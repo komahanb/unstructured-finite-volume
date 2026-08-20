@@ -14,7 +14,7 @@
 
 program refusal
 
-  use fractal_graph      , only : graph, &
+  use graph_fractal      , only : graph, &
        & null_branch, unknown_branch, known_branch
   use graph_sequence_view, only : sequence_size, sequence_element, &
        & sequence_contains

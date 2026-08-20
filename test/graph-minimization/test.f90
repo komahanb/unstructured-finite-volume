@@ -24,7 +24,7 @@ module cubic_statement_fixture
   use graph_directed_view , only : GRAPH_SIDE_VERTEX
   ! An action names a domain and counts it. It asks no membership,
   ! so it holds no map: identity and count is the whole of it.
-  use fractal_graph      , only : set_graph => graph
+  use graph_fractal      , only : set_graph => graph
   use class_graph_field  , only : field
   use class_graph_differential_operator, only : differential_operator
 
@@ -105,10 +105,10 @@ end module cubic_statement_fixture
 program test_graph_minimization
 
   use iso_fortran_env, only : dp => REAL64
-  use fractal_graph  , only : set_graph => graph
-  use graph_set_map  , only : set_map
-  use graph_label_map, only : label_map
-  use graph_inclusion_map, only : inclusion_map
+  use graph_fractal  , only : set_graph => graph
+  use map_set  , only : set_map
+  use map_label, only : label_map
+  use map_inclusion, only : inclusion_map
   use graph_directed_view, only : directed_graph
   use class_graph_mesh   , only : mesh
   use class_mesh_builder , only : mesh_from_gmsh

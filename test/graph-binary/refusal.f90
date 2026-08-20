@@ -11,11 +11,11 @@
 
 program binary_refusal
 
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_binary_relation, only : csr_relation
+  use map_set        , only : set_map
+  use relation_binary, only : csr_relation
 
   implicit none
 

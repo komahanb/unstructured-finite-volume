@@ -51,7 +51,7 @@ The framework must therefore treat **member sets and relations as first-class ma
 
 ## The graph ontology (2026-08-15, supersedes the two-graph notation reservation)
 
-There is **one** graph ontology, implemented in `src/fractal_graph.f90`:
+There is **one** graph ontology, implemented in `src/graph_fractal.f90`:
 
 \[
 \boxed{G=(B_1,B_2)}\qquad B\in\{\textsf{NULL},\ \textsf{UNKNOWN},\ \textsf{KNOWN}\to G\}
@@ -1557,7 +1557,7 @@ Global/local index correspondence may be a functional or bijective relation.
 Do not force all of these into the first refactor.
 But design the new graph core so they can become relations naturally.
 
-**Landed.** `graph_partition_relation :: partition_relation` is that
+**Landed.** `relation_partition :: partition_relation` is that
 object: r_p <= S_part x S_whole, one per part, written by the cut and
 handed to the three verbs that read it. Ownership rides beside it as the
 field own : S_part -> K, which is the functional-law constraint above.
@@ -2063,8 +2063,8 @@ The long-term module layout may evolve toward something conceptually like:
 
 ```text
 graph_carrier.f90
-graph_relation.f90
-graph_relation_algebra.f90
+relation_finitary.f90
+relation_algebra.f90
 graph_relational_view.f90
 graph_calculus.f90
 graph_field_calculus.f90

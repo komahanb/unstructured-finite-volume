@@ -19,11 +19,11 @@ module class_mesh_builder
 
   use iso_fortran_env      , only : dp => REAL64
   use class_graph_mesh     , only : mesh
-  use class_string         , only : string
+  use util_string         , only : string
   use interface_mesh_loader, only : mesh_loader
   use class_gmsh_loader    , only : gmsh_loader
   use graph_mesh_geometry  , only : elem_type_dimension
-  use graph_binary_relation, only : transpose_padded
+  use relation_binary, only : transpose_padded
   use graph_mesh_geometry  , only : derive_faces, derive_face_cells, &
        & cell_centers_of, face_centers_areas_of, &
        & cell_face_normals_of, cell_volumes_of, centroidal_vectors_of, &

@@ -29,13 +29,13 @@
 
 program test
 
-  use fractal_graph        , only : graph, null_branch, known_branch
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph, null_branch, known_branch
+  use graph_fractal        , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_relation       , only : relation, stored_relation
-  use graph_binary_relation, only : csr_relation
+  use map_set        , only : set_map
+  use relation_finitary       , only : relation, stored_relation
+  use relation_binary, only : csr_relation
   use graph_relational_view, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
        & holds_set, relational_valid

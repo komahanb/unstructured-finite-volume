@@ -51,8 +51,8 @@
 module visualization_values_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
+  use graph_fractal        , only : set_graph => graph
+  use map_set        , only : set_map
   use class_graph_field, only : field
 
   implicit none

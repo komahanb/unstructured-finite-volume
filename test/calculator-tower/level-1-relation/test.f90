@@ -15,7 +15,7 @@
 ! proves it independently. The + here is only a member of O; the
 ! slots carry no values; no graph reads these tuples yet. The
 ! import list IS the negative truth: calculator_assert,
-! the set modules, graph_relation, and nothing above (CALCULATOR.md
+! the set modules, relation_finitary, and nothing above (CALCULATOR.md
 ! 8; the ternary shape is the point - no binary reduction, no
 ! vertex, no edge).
 !
@@ -28,11 +28,11 @@ program calculator_level_1
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_relation   , only : stored_relation
+  use map_set        , only : set_map
+  use relation_finitary   , only : stored_relation
 
   implicit none
 

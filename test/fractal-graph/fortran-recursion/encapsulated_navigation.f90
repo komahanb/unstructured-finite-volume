@@ -7,7 +7,7 @@
 !     p => g % branch(i) % known()       pointer binding, for depth
 !     associate (x => ... % known())     ASSOCIATE name, for depth
 program encapsulated_navigation
-  use fractal_graph
+  use graph_fractal
   implicit none
   type(graph), target  :: a, b
   type(graph), pointer :: p

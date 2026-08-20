@@ -39,8 +39,8 @@
 
 module graph_set_view
 
-  use fractal_graph , only : graph
-  use graph_set_map , only : set_map
+  use graph_fractal , only : graph
+  use map_set , only : set_map
 
   implicit none
 

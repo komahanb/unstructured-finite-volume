@@ -288,7 +288,7 @@ it is ordinary computation structure (Observation DA-1).
 \]
 
 earned — never written — through the certified road
-(`src/graph_relation_algebra.f90`):
+(`src/relation_algebra.f90`):
 
 ```text
 T_out3   = restrict_slot(T_flow, 3, {out})       two tuples
@@ -525,7 +525,7 @@ yielding
 \]
 
 materialized once as a `csr_relation` over \((Z,X)\)
-(`src/graph_binary_relation.f90`). This is a structural Jacobian
+(`src/relation_binary.f90`). This is a structural Jacobian
 **pattern** only — there is still no
 \(\partial z/\partial x\) and no \(\partial z/\partial y\).
 
@@ -1062,12 +1062,12 @@ had first right of refusal — and at Gate A it refused nothing.
 | Level | Test directory | Principal modules exercised (per the import gate) |
 |---|---|---|
 | 0 | `level-0-carrier/` | `graph_carrier` |
-| 1 | `level-1-relation/` | + `graph_relation` |
-| 2 | `level-2-relation-algebra/` | + `graph_relation_algebra` (D held as `class(relation)`) |
+| 1 | `level-1-relation/` | + `relation_finitary` |
+| 2 | `level-2-relation-algebra/` | + `relation_algebra` (D held as `class(relation)`) |
 | 3 | `level-3-graph/` | + `graph_structure` |
 | 4 | `level-4-graph-calculus/` | + `graph_profile`, `graph_algorithms` |
 | 5 | `level-5-field-calculus/` | `graph_carrier`, `class_graph_field` — the smallest allowlist above ground |
-| 6 | `level-6-derivative-structure/` | + `graph_binary_relation` (`csr_relation`, `transpose_of` earned), `graph_structure`, `graph_profile`, `graph_algorithms` |
+| 6 | `level-6-derivative-structure/` | + `relation_binary` (`csr_relation`, `transpose_of` earned), `graph_structure`, `graph_profile`, `graph_algorithms` |
 | 8 | `level-8-derivative-constitution/` | carriers/relations/algebra/structure/profile/algorithms + `class_graph_field` + `derivative_constitution_fixture` (own file; refusal suite); **no** binary storage, no solver |
 | 9 | `level-9-statement/` | the same set, reusing the Level-8 fixture — no adapter, no new law, and `graph_minimization` / `class_graph_gmres` forbidden |
 

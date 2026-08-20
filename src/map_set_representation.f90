@@ -44,12 +44,12 @@
 ! Fortran forbids a module and its type sharing one name. The
 ! convention, recorded once and applied throughout: the MODULE carries
 ! the systematic name graph_<noun>_<role>; the TYPES inside drop the
-! graph_ prefix. graph_set_map/set_map is the precedent.
+! graph_ prefix. map_set/set_map is the precedent.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_set_representation
+module map_set_representation
 
   implicit none
 
@@ -310,4 +310,4 @@ contains
 
   end function listed_local_index
 
-end module graph_set_representation
+end module map_set_representation

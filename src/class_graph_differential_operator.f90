@@ -78,7 +78,7 @@ module class_graph_differential_operator
   use operation_action, only : graph_operation
   use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
-  use fractal_graph      , only : set_graph => graph
+  use graph_fractal      , only : set_graph => graph
   use graph_directed_view     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
   use class_graph_field  , only : field
   use class_graph_stencil, only : stencil_operator, combine_triples

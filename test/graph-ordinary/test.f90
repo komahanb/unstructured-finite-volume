@@ -15,11 +15,11 @@
 program test_graph_ordinary
 
   use class_graph          , only : directed_stored_graph
-  use graph_set_representation, only : counted_set_representation, &
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map           , only : set_map
-  use graph_binary_relation, only : csr_relation
-  use fractal_graph        , only : graph
+  use map_set           , only : set_map
+  use relation_binary, only : csr_relation
+  use graph_fractal        , only : graph
 
   implicit none
 

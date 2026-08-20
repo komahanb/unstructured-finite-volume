@@ -66,13 +66,13 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_relation_algebra
+module relation_algebra
 
-  use fractal_graph      , only : set_graph => graph
-  use graph_relation       , only : relation, stored_relation
-  use graph_set_map        , only : set_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use graph_binary_relation, only : group_by_key, csr_relation
+  use graph_fractal      , only : set_graph => graph
+  use relation_finitary       , only : relation, stored_relation
+  use map_set        , only : set_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
+  use relation_binary, only : group_by_key, csr_relation
 
   implicit none
 
@@ -106,7 +106,7 @@ contains
     integer                      :: k, j, n
 
     if (slot_index < 1 .or. slot_index > r % arity()) then
-       error stop 'graph_relation_algebra: a slot index must name a slot of the relation'
+       error stop 'relation_algebra: a slot index must name a slot of the relation'
     end if
 
     !----------------------------------------------------------------!
@@ -118,7 +118,7 @@ contains
 
     d = r % domain(slot_index)
     if (.not. declared_subobject(allowed, d, inclusions)) then
-       error stop 'graph_relation_algebra: a restriction domain must embed in the slot it restricts'
+       error stop 'relation_algebra: a restriction domain must embed in the slot it restricts'
     end if
 
     allocate(seats(r % arity()))
@@ -167,15 +167,15 @@ contains
     m = size(slot_indices)
 
     if (m < 1) then
-       error stop 'graph_relation_algebra: a projection selects at least one slot'
+       error stop 'relation_algebra: a projection selects at least one slot'
     end if
     do k = 1, m
        if (slot_indices(k) < 1 .or. slot_indices(k) > r % arity()) then
-          error stop 'graph_relation_algebra: a slot index must name a slot of the relation'
+          error stop 'relation_algebra: a slot index must name a slot of the relation'
        end if
        do l = 1, k - 1
           if (slot_indices(l) == slot_indices(k)) then
-             error stop 'graph_relation_algebra: a projection selects each slot at most once'
+             error stop 'relation_algebra: a projection selects each slot at most once'
           end if
        end do
     end do
@@ -223,13 +223,13 @@ contains
     integer              :: i, j, n
 
     if (r_ab % arity() /= 2 .or. r_bc % arity() /= 2) then
-       error stop 'graph_relation_algebra: composition takes two binary relations'
+       error stop 'relation_algebra: composition takes two binary relations'
     end if
 
     db  = r_ab % domain(2)
     db2 = r_bc % domain(1)
     if (.not. db % same_as(db2)) then
-       error stop 'graph_relation_algebra: composition requires one shared middle domain'
+       error stop 'relation_algebra: composition requires one shared middle domain'
     end if
 
     call r_ab % tuples(tab)
@@ -281,4 +281,4 @@ contains
 
   end function compose_binary
 
-end module graph_relation_algebra
+end module relation_algebra

@@ -18,7 +18,7 @@
 
 program test
 
-  use fractal_graph, only : graph, graph_branch, &
+  use graph_fractal, only : graph, graph_branch, &
        & GRAPH_NULL, GRAPH_UNKNOWN, GRAPH_KNOWN, &
        & null_branch, unknown_branch, known_branch
   use graph_views  , only : dp, attribute_map, csr, &

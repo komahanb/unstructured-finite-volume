@@ -420,7 +420,7 @@ P_in  = {in₁, in₂}
 ```
 
 then restrict, project, and compose
-(`src/graph_relation_algebra.f90`):
+(`src/relation_algebra.f90`):
 
 ```text
 T_out3   = restrict_slot(T_flow, 3, P_out)      two tuples
@@ -547,7 +547,7 @@ g % branch(1) = known_branch(scell(1))            ! the member-set sequence
 g % branch(2) = known_branch(rcell(1))            ! the relation sequence
 ```
 
-(`src/fractal_graph.f90` and `src/graph_relational_view.f90`). Ownership
+(`src/graph_fractal.f90` and `src/graph_relational_view.f90`). Ownership
 truths:
 
 ```text
@@ -879,7 +879,7 @@ in declaration order (exactly one home, or refusal); each
 
 — but the pair \((r,w)\) appears only in assertions, never in the
 construction path. The generated pairs are materialized as a
-`csr_relation` over \((Y,\Theta)\) (`src/graph_binary_relation.f90`): this
+`csr_relation` over \((Y,\Theta)\) (`src/relation_binary.f90`): this
 is the rung that genuinely earns binary materialization and transpose.
 
 **The reverse structure.**
@@ -1624,12 +1624,12 @@ Two mechanisms hold the stratification:
 | Level | Test directory | Principal modules exercised (per the import gate) |
 |---|---|---|
 | 0 | `level-0-carrier/` | `graph_carrier` |
-| 1 | `level-1-relation/` | + `graph_relation` (with refusal suite) |
-| 2 | `level-2-relation-algebra/` | + `graph_relation_algebra` (D held as `class(relation)`) |
-| 3 | `level-3-graph/` | + `graph_structure` (`graph_binary_relation` granted for the view refusal **only**) |
+| 1 | `level-1-relation/` | + `relation_finitary` (with refusal suite) |
+| 2 | `level-2-relation-algebra/` | + `relation_algebra` (D held as `class(relation)`) |
+| 3 | `level-3-graph/` | + `graph_structure` (`relation_binary` granted for the view refusal **only**) |
 | 4 | `level-4-graph-calculus/` | + `graph_profile`, `graph_algorithms` (binary storage stays forbidden) |
 | 5 | `level-5-field-calculus/` | `graph_carrier`, `class_graph_field` — the smallest allowlist above ground |
-| 6 | `level-6-discretization/` | + `graph_binary_relation` (`csr_relation`, `transpose_of` earned), `graph_structure`, `graph_profile`, `graph_algorithms` |
+| 6 | `level-6-discretization/` | + `relation_binary` (`csr_relation`, `transpose_of` earned), `graph_structure`, `graph_profile`, `graph_algorithms` |
 | 7 | `level-7-minimization/` | `graph_carrier`, `graph_grammar`, `class_graph_field`, `class_graph`, `class_graph_gmres` + in-file `learning_residual_fixture` |
 | 8 | `level-8-constitution/` | carriers/relations/algebra/structure/profile/algorithms, `class_graph_field` + `learning_constitution_fixture` (own file; refusal suite) |
 | 9 | `level-9-statement/` | + `graph_grammar`, `class_graph`, `class_graph_gmres`, both fixtures (`constituted_residual_fixture.f90`) |

@@ -22,7 +22,7 @@
 
 module set_prototype
 
-  use fractal_graph, only : graph
+  use graph_fractal, only : graph
 
   implicit none
 
@@ -258,7 +258,7 @@ end module set_prototype
 
 program set_map
 
-  use fractal_graph , only : graph, null_branch, known_branch, &
+  use graph_fractal , only : graph, null_branch, known_branch, &
        & GRAPH_NULL, GRAPH_KNOWN
   use graph_sequence_view, only : sequence_size, sequence_element
   use set_prototype , only : counted_extent, listed_extent, extent_of, &

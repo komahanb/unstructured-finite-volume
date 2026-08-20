@@ -29,9 +29,9 @@
 
 module chain_carriers_fixture
 
-  use fractal_graph           , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation
-  use graph_set_map           , only : set_map
+  use graph_fractal           , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation
+  use map_set           , only : set_map
 
   implicit none
 

@@ -941,8 +941,8 @@ fixture, with `--selftest`.
 | Level | Ceiling |
 |---|---|
 | L0 | `graph_carrier` |
-| L1 | `+ graph_relation`, `graph_binary_relation` |
-| L2 | `+ graph_relation_algebra` |
+| L1 | `+ relation_finitary`, `relation_binary` |
+| L2 | `+ relation_algebra` |
 | L3 | `+ graph_structure` |
 | L4 | `+ structural_renderer_fixture` |
 | — | ===== **REVIEW GATE A** ===== |

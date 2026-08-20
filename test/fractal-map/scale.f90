@@ -11,7 +11,7 @@
 
 program scale
 
-  use fractal_graph, only : graph, graph_branch
+  use graph_fractal, only : graph, graph_branch
 
   implicit none
 

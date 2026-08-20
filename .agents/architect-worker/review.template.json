@@ -1,0 +1,37 @@
+{
+  "protocol_version": "architect-worker-v1",
+  "task_id": "replace-with-stable-task-id",
+  "candidate_digest": "replace-with-current-candidate-digest",
+  "decision": "revision_requested",
+  "summary": "State the architect's decision and why.",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "major",
+      "requirement": "R1",
+      "statement": "State the defect precisely.",
+      "evidence": [
+        "Identify the relevant file, diff fact, or command result."
+      ],
+      "required_correction": "State the observable correction."
+    }
+  ],
+  "independent_checks": [
+    {
+      "id": "T1",
+      "command": "test/example/run.sh",
+      "status": "not_run",
+      "exit_code": null,
+      "evidence": [
+        "Explain why the check was not run or record its observed result."
+      ]
+    }
+  ],
+  "integration": {
+    "status": "not_applicable",
+    "evidence": []
+  },
+  "next_steps": [
+    "Give Claude one bounded correction or state the next architect action."
+  ]
+}

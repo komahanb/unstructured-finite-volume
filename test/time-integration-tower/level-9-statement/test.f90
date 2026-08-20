@@ -50,8 +50,8 @@ program time_level_9
   use time_assert           , only : NQ, NT, NSTEPS, TOL, TOL_MARCH
   use time_assert           , only : T0, T4, C_X, C_Y, H_STEP
   use time_assert           , only : TIME_COORD, BDF2_TRAJECTORY
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
+  use graph_fractal        , only : set_graph => graph
+  use map_set        , only : set_map
   use class_graph           , only : directed_stored_graph
   use class_graph_field     , only : field
   use class_graph_gmres     , only : gmres

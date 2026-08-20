@@ -69,11 +69,11 @@ program time_level_6
   use time_assert           , only : T0, T1, T2
   use time_assert           , only : H_STEP, Q0, Q_FE1, Q_BE1, Q_BDF2
   use time_assert           , only : action_of
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
+  use graph_fractal        , only : set_graph => graph
+  use map_set        , only : set_map
   use graph_directed_view   , only : directed_graph
   use graph_field_calculus  , only : graph_field
-  use graph_binary_relation , only : csr_relation
+  use relation_binary , only : csr_relation
   use class_graph           , only : directed_stored_graph
   use class_graph_field     , only : field
   use class_graph_step      , only : step_operator, backward_euler, bdf

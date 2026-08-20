@@ -9,8 +9,8 @@
 
 program refusal
 
-  use fractal_graph      , only : graph
-  use graph_inclusion_map, only : inclusion_map, declared_subobject
+  use graph_fractal      , only : graph
+  use map_inclusion, only : inclusion_map, declared_subobject
 
   implicit none
 

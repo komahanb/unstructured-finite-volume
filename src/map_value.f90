@@ -25,11 +25,11 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_value_map
+module map_value
 
   use iso_fortran_env  , only : dp => REAL64
-  use fractal_graph    , only : graph
-  use graph_identity   , only : token
+  use graph_fractal    , only : graph
+  use token_identity   , only : token
   use class_graph_field, only : field
 
   implicit none
@@ -110,7 +110,7 @@ contains
 
     key = element % id()
     if (.not. key % matches(key)) then
-       error stop 'graph_value_map: a value map is keyed on assigned identity'
+       error stop 'map_value: a value map is keyed on assigned identity'
     end if
 
   end function writer_key
@@ -133,7 +133,7 @@ contains
     key = writer_key(element)
 
     if (row_at(this, key) /= 0) then
-       error stop 'graph_value_map: a value row is attached once'
+       error stop 'map_value: a value row is attached once'
     end if
 
     if (.not. allocated(this % rows)) allocate(this % rows(0))
@@ -169,11 +169,11 @@ contains
 
     at = row_at(this, key)
     if (at == 0) then
-       error stop 'graph_value_map: an update touches an attached row'
+       error stop 'map_value: an update touches an attached row'
     end if
 
     if (size(values) == 0) then
-       error stop 'graph_value_map: a known value has values'
+       error stop 'map_value: a known value has values'
     end if
 
     width = 1
@@ -204,7 +204,7 @@ contains
 
     at = row_at(this, key)
     if (at == 0) then
-       error stop 'graph_value_map: an update touches an attached row'
+       error stop 'map_value: an update touches an attached row'
     end if
 
     this % rows(at) % value  = nothing
@@ -231,7 +231,7 @@ contains
 
     at = row_at(this, key)
     if (at == 0) then
-       error stop 'graph_value_map: a detach removes an attached row'
+       error stop 'map_value: a detach removes an attached row'
     end if
 
     n = size(this % rows)
@@ -297,15 +297,15 @@ contains
     at  = row_at(this, key)
 
     if (at == 0) then
-       error stop 'graph_value_map: a known value is read'
+       error stop 'map_value: a known value is read'
     end if
 
     if (this % rows(at) % status /= VALUE_KNOWN) then
-       error stop 'graph_value_map: a known value is read'
+       error stop 'map_value: a known value is read'
     end if
 
     call this % rows(at) % value % get_real_vector(values)
 
   end subroutine value_of
 
-end module graph_value_map
+end module map_value

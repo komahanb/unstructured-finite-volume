@@ -65,9 +65,9 @@ program time_level_8
   use time_assert           , only : T0, T4, H_STEP, Q0
   use time_assert           , only : FE_TRAJECTORY, BE_TRAJECTORY, &
        &                             BDF2_TRAJECTORY
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
-  use graph_binary_relation , only : csr_relation
+  use graph_fractal        , only : set_graph => graph
+  use map_set        , only : set_map
+  use relation_binary , only : csr_relation
   use class_graph           , only : directed_stored_graph
   use class_graph_field     , only : field
   use class_graph_gmres     , only : gmres

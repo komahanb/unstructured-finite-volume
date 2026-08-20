@@ -26,11 +26,11 @@ module class_gmsh_loader
   ! Import the dependencies.
   use iso_fortran_env       , only : dp => real64
   use interface_mesh_loader , only : mesh_loader
-  use class_file            , only : file
-  use class_string          , only : string
+  use util_file            , only : file
+  use util_string          , only : string
   use graph_mesh_geometry   , only : find, elem_type_dimension, &
        & elem_type_vertex_count
-  use module_verbosity      , only : verbosity
+  use util_verbosity      , only : verbosity
 
   implicit none
 

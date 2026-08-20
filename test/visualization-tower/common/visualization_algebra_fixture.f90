@@ -65,12 +65,12 @@
 
 module visualization_algebra_fixture
 
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
-  use graph_relation        , only : relation
-  use graph_binary_relation , only : binary_relation, csr_relation
-  use graph_binary_relation , only : transposed_view, transpose_of
-  use graph_relation_algebra, only : compose_binary
+  use graph_fractal        , only : set_graph => graph
+  use map_set        , only : set_map
+  use relation_finitary        , only : relation
+  use relation_binary , only : binary_relation, csr_relation
+  use relation_binary , only : transposed_view, transpose_of
+  use relation_algebra, only : compose_binary
 
   implicit none
 

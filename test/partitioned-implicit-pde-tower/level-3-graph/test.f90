@@ -24,15 +24,15 @@
 program partitioned_pde_level_3
 
   use partitioned_pde_assert , only : report, verdict
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation
-  use graph_set_map        , only : set_map
-  use graph_binary_relation  , only : csr_relation
+  use graph_fractal        , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation
+  use map_set        , only : set_map
+  use relation_binary  , only : csr_relation
   use class_graph            , only : directed_stored_graph
   use chain_carriers_fixture , only : chain_carriers
   use chain_relations_fixture, only : tail_relation, head_relation
 
-  use graph_partition_relation, only : partition_relation
+  use relation_partition, only : partition_relation
 
   implicit none
 

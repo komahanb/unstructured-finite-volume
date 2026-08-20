@@ -43,7 +43,7 @@ module class_graph_mesh
   use iso_fortran_env    , only : dp => REAL64, error_unit
   use class_graph_field  , only : field
   use class_graph        , only : directed_stored_graph
-  use fractal_graph      , only : set_graph => graph
+  use graph_fractal      , only : set_graph => graph
 
   implicit none
 

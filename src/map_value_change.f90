@@ -22,13 +22,13 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_value_change
+module map_value_change
 
   use iso_fortran_env      , only : dp => REAL64
-  use fractal_graph        , only : graph
-  use graph_value_map      , only : value_map, &
+  use graph_fractal        , only : graph
+  use map_value      , only : value_map, &
        & VALUE_UNATTACHED, VALUE_UNKNOWN, VALUE_KNOWN
-  use graph_change_protocol, only : reversible_change, change_result
+  use map_change_protocol, only : reversible_change, change_result
 
   implicit none
 
@@ -195,4 +195,4 @@ contains
 
   end subroutine revert
 
-end module graph_value_change
+end module map_value_change

@@ -25,7 +25,7 @@
 module toy_changes
 
   use iso_fortran_env      , only : dp => REAL64
-  use graph_change_protocol, only : reversible_change, change_result
+  use map_change_protocol, only : reversible_change, change_result
 
   implicit none
 

@@ -53,9 +53,9 @@ program time_level_5
   use time_assert           , only : NQ, NT, NE, TOL
   use time_assert           , only : C_X, C_Y, T0, T2, T4, E1
   use time_assert           , only : H_STEP, TIME_COORD, Q0
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
-  use graph_binary_relation , only : csr_relation
+  use graph_fractal        , only : set_graph => graph
+  use map_set        , only : set_map
+  use relation_binary , only : csr_relation
   use class_graph_field     , only : field
   use time_carriers_fixture , only : time_carriers
   use time_relations_fixture, only : tail_relation, head_relation

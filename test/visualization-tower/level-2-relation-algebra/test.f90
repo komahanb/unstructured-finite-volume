@@ -58,12 +58,12 @@ program visualization_level_2
   use visualization_assert , only : X1_P, X1_Q, X1_R
   use visualization_assert , only : X2_U, X2_V, X2_W
   use visualization_assert , only : X3_M, X3_N
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
-  use graph_label_map      , only : label_map
-  use graph_relation       , only : relation
-  use graph_binary_relation, only : csr_relation, binary_relation
-  use graph_binary_relation, only : transposed_view, transpose_of
+  use graph_fractal        , only : set_graph => graph
+  use map_set        , only : set_map
+  use map_label      , only : label_map
+  use relation_finitary       , only : relation
+  use relation_binary, only : csr_relation, binary_relation
+  use relation_binary, only : transposed_view, transpose_of
   use visualization_carriers_fixture , only : structural_carriers
   use visualization_relations_fixture, only : occurrences_of_a1
   use visualization_relations_fixture, only : occurrences_of_a2

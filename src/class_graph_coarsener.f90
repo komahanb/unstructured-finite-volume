@@ -31,7 +31,7 @@ module class_graph_coarsener
   use iso_fortran_env     , only : dp => REAL64
   use graph_directed_view , only : directed_graph
   use graph_field_calculus, only : graph_field
-  use fractal_graph      , only : set_graph => graph
+  use graph_fractal      , only : set_graph => graph
   use transform_structure, only : graph_transform
   use class_graph         , only : directed_stored_graph
   use class_graph_field   , only : field

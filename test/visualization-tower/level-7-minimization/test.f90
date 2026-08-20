@@ -99,12 +99,12 @@
 
 program visualization_level_7
 
-  use graph_set_representation, only : counted_set_representation
-  use graph_set_map        , only : set_map
-  use graph_label_map      , only : label_map
+  use map_set_representation, only : counted_set_representation
+  use map_set        , only : set_map
+  use map_label      , only : label_map
   use iso_fortran_env      , only : dp => REAL64
   use visualization_assert , only : report, verdict
-  use fractal_graph        , only : set_graph => graph
+  use graph_fractal        , only : set_graph => graph
   use graph_directed_view  , only : directed_graph
   use class_graph          , only : directed_stored_graph
   use class_graph_stencil  , only : stencil_operator

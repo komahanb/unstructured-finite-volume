@@ -7,7 +7,7 @@ module lopsided_fixture
   use iso_fortran_env  , only : dp => REAL64
   ! An action names a domain and counts it. It holds no map: the
   ! identity and the count are the whole of what it is entitled to.
-  use fractal_graph    , only : set_graph => graph
+  use graph_fractal    , only : set_graph => graph
   use operation_action, only : graph_operation
   use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
@@ -53,11 +53,11 @@ contains
 end module lopsided_fixture
 
 program minimization_refusal
-  use fractal_graph           , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal           , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map           , only : set_map
-  use graph_inclusion_map     , only : inclusion_map
+  use map_set           , only : set_map
+  use map_inclusion     , only : inclusion_map
   use class_graph      , only : directed_stored_graph
   use class_graph_gmres, only : gmres
   use lopsided_fixture , only : lopsided

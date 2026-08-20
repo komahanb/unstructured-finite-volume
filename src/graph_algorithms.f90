@@ -58,13 +58,13 @@
 
 module graph_algorithms
 
-  use fractal_graph           , only : set_graph => graph
-  use graph_relation          , only : relation
-  use graph_binary_relation   , only : binary_relation
-  use graph_set_map           , only : set_map
-  use graph_label_map         , only : label_map
-  use graph_inclusion_map     , only : inclusion_map
-  use graph_set_representation, only : listed_set_representation
+  use graph_fractal           , only : set_graph => graph
+  use relation_finitary          , only : relation
+  use relation_binary   , only : binary_relation
+  use map_set           , only : set_map
+  use map_label         , only : label_map
+  use map_inclusion     , only : inclusion_map
+  use map_set_representation, only : listed_set_representation
 
   implicit none
 

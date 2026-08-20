@@ -38,7 +38,7 @@
 
 module graph_epistemic_view
 
-  use fractal_graph, only : graph, GRAPH_UNKNOWN, GRAPH_KNOWN
+  use graph_fractal, only : graph, GRAPH_UNKNOWN, GRAPH_KNOWN
 
   implicit none
 

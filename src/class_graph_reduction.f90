@@ -79,7 +79,7 @@ module class_graph_reduction
   use iso_fortran_env       , only : dp => REAL64
   use graph_directed_view   , only : directed_graph
   use graph_field_calculus  , only : graph_field
-  use fractal_graph      , only : set_graph => graph
+  use graph_fractal      , only : set_graph => graph
   use graph_field_calculus  , only : GRAPH_FIELD_REAL, GRAPH_FIELD_COMPLEX
   use graph_field_calculus  , only : GRAPH_FIELD_LOGICAL
   use operation_action  , only : graph_operation

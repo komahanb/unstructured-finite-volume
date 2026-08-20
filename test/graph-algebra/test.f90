@@ -10,13 +10,13 @@
 
 program test_graph_algebra
 
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use graph_relation       , only : stored_relation, relation
-  use graph_relation_algebra, only : restrict_slot, project_slots, &
+  use map_set        , only : set_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
+  use relation_finitary       , only : stored_relation, relation
+  use relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
 
   implicit none

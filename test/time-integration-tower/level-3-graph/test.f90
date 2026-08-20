@@ -46,11 +46,11 @@ program time_level_3
 
   use time_assert           , only : report, verdict
   use time_assert           , only : T0, T1, T2, E1
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
-  use graph_relation        , only : relation
-  use graph_binary_relation , only : csr_relation
-  use fractal_graph        , only : graph, known_branch, null_branch
+  use graph_fractal        , only : set_graph => graph
+  use map_set        , only : set_map
+  use relation_finitary        , only : relation
+  use relation_binary , only : csr_relation
+  use graph_fractal        , only : graph, known_branch, null_branch
   use graph_relational_view, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
        & holds_set

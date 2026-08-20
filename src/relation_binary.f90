@@ -95,13 +95,13 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_binary_relation
+module relation_binary
 
-  use fractal_graph           , only : set_graph => graph
-  use graph_relation          , only : relation
-  use graph_set_map           , only : set_map
-  use graph_set_representation, only : set_representation
-  use graph_label_map         , only : label_map
+  use graph_fractal           , only : set_graph => graph
+  use relation_finitary          , only : relation
+  use map_set           , only : set_map
+  use map_set_representation, only : set_representation
+  use map_label         , only : label_map
 
   implicit none
 
@@ -323,11 +323,11 @@ contains
 
     if (.not. source % same_as(source) .or. &
          & .not. target % same_as(target)) then
-       error stop 'graph_binary_relation: a signature refers to declared domains only'
+       error stop 'relation_binary: a signature refers to declared domains only'
     end if
 
     if (size(table, 1) /= 2) then
-       error stop 'graph_binary_relation: each tuple has exactly one part per position'
+       error stop 'relation_binary: each tuple has exactly one part per position'
     end if
 
     !----------------------------------------------------------------!
@@ -350,7 +350,7 @@ contains
     do j = 1, nt
        if (.not. this % source_coords % has(table(1, j)) .or. &
             & .not. this % target_coords % has(table(2, j))) then
-          error stop 'graph_binary_relation: a tuple names a member its domain does not hold'
+          error stop 'relation_binary: a tuple names a member its domain does not hold'
        end if
        aloc(j) = this % source_coords % local_index(table(1, j))
        bloc(j) = this % target_coords % local_index(table(2, j))
@@ -726,4 +726,4 @@ contains
 
   end subroutine transpose_padded
 
-end module graph_binary_relation
+end module relation_binary

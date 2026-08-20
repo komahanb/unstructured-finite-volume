@@ -54,7 +54,7 @@
 module graph_field_calculus
 
   use iso_fortran_env, only : dp => REAL64
-  use fractal_graph  , only : set_graph => graph
+  use graph_fractal  , only : set_graph => graph
 
   implicit none
 

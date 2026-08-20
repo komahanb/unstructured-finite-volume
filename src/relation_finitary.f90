@@ -88,11 +88,11 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_relation
+module relation_finitary
 
-  use graph_identity, only : token, mint_token
-  use fractal_graph , only : set_graph => graph
-  use graph_set_map , only : set_map
+  use token_identity, only : token, mint_token
+  use graph_fractal , only : set_graph => graph
+  use map_set , only : set_map
 
   implicit none
 
@@ -125,7 +125,7 @@ module graph_relation
 
      !----------------------------------------------------------------!
      ! Identity, answered once for every concretion - the one token
-     ! law of graph_identity: sign once, refuse twice, copies carry
+     ! law of token_identity: sign once, refuse twice, copies carry
      ! the stamp, the undeclared equal nothing.
      !----------------------------------------------------------------!
 
@@ -236,7 +236,7 @@ contains
     character(len=*), intent(in), optional :: name
 
     if (this % identity % declared()) then
-       error stop 'graph_relation: a relation never signs twice'
+       error stop 'relation_finitary: a relation never signs twice'
     end if
 
     this % identity = mint_token()
@@ -327,26 +327,26 @@ contains
     logical              :: fresh
 
     if (size(domains) < 1) then
-       error stop 'graph_relation: a relation relates at least one domain'
+       error stop 'relation_finitary: a relation relates at least one domain'
     end if
 
     do k = 1, size(domains)
        if (.not. domains(k) % same_as(domains(k))) then
-          error stop 'graph_relation: a signature refers to declared domains only'
+          error stop 'relation_finitary: a signature refers to declared domains only'
        end if
        if (.not. sets % describes(domains(k))) then
-          error stop 'graph_relation: a signature refers to described domains only'
+          error stop 'relation_finitary: a signature refers to described domains only'
        end if
     end do
 
     if (size(table, 1) /= size(domains)) then
-       error stop 'graph_relation: each tuple has exactly one part per domain'
+       error stop 'relation_finitary: each tuple has exactly one part per domain'
     end if
 
     do j = 1, size(table, 2)
        do k = 1, size(domains)
           if (.not. sets % has_in(domains(k), table(k, j))) then
-             error stop 'graph_relation: a tuple names a member its domain does not hold'
+             error stop 'relation_finitary: a tuple names a member its domain does not hold'
           end if
        end do
     end do
@@ -446,4 +446,4 @@ contains
 
   end subroutine stored_tuples
 
-end module graph_relation
+end module relation_finitary

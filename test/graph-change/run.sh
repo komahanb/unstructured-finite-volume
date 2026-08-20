@@ -6,12 +6,12 @@ make -C "$here" clean >/dev/null 2>&1 || true
 make -C "$here" >/dev/null
 cd "$here" && ./run
 declare -A reason=(
-  [attachtwice]="graph_value_map: a value row is attached once"
-  [updatefree]="graph_value_map: an update touches an attached row"
-  [readunknown]="graph_value_map: a known value is read"
-  [detachfree]="graph_value_map: a detach removes an attached row"
-  [emptyknown]="graph_value_map: a known value has values"
-  [undeclared]="graph_value_map: a value map is keyed on assigned identity"
+  [attachtwice]="map_value: a value row is attached once"
+  [updatefree]="map_value: an update touches an attached row"
+  [readunknown]="map_value: a known value is read"
+  [detachfree]="map_value: a detach removes an attached row"
+  [emptyknown]="map_value: a known value has values"
+  [undeclared]="map_value: a value map is keyed on assigned identity"
   [silentapply]="run_change: applied change reports applied"
   [silentrevert]="run_change: reverted change reports reverted"
   [impossible]="change_result: terminal state is consistent"

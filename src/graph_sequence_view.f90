@@ -46,7 +46,7 @@
 
 module graph_sequence_view
 
-  use fractal_graph, only : graph, graph_branch, &
+  use graph_fractal, only : graph, graph_branch, &
        & GRAPH_NULL, GRAPH_UNKNOWN, GRAPH_KNOWN
 
   implicit none

@@ -3,7 +3,7 @@
 ! a function reference'. A function result is not a part-ref, so no
 ! data-ref may be built on one.
 program function_result_base
-  use fractal_graph
+  use graph_fractal
   implicit none
   integer :: s
   s = null_branch() % status()

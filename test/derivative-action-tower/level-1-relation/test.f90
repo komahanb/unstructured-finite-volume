@@ -21,7 +21,7 @@
 ! ordinary computation structure. product does not yet multiply;
 ! sum does not yet add; nothing differentiates anything. The import
 ! list is the negative truth - derivative_assert, the set modules,
-! graph_relation, and nothing above.
+! relation_finitary, and nothing above.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -32,11 +32,11 @@ program derivative_level_1
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_relation   , only : stored_relation
+  use map_set        , only : set_map
+  use relation_finitary   , only : stored_relation
 
   implicit none
 

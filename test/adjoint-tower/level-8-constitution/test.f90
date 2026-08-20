@@ -46,15 +46,15 @@ program adjoint_level_8
   use adjoint_assert   , only : report, verdict
   use adjoint_assert   , only : VAR_P, VAR_U, VAR_V
   use adjoint_assert   , only : TGT_R1, TGT_R2, TGT_F
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_label_map      , only : label_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use graph_relation   , only : stored_relation, relation
-  use graph_relation_algebra, only : compose_binary
-  use graph_binary_relation , only : csr_relation, transposed_view, &
+  use map_set        , only : set_map
+  use map_label      , only : label_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
+  use relation_finitary   , only : stored_relation, relation
+  use relation_algebra, only : compose_binary
+  use relation_binary , only : csr_relation, transposed_view, &
        &                             transpose_of, inclusion_of
   use graph_field_calculus, only : graph_field
   use class_graph      , only : directed_stored_graph

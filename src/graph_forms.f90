@@ -50,8 +50,8 @@ module graph_forms
 
   use iso_fortran_env    , only : dp => REAL64
   use graph_directed_view     , only : GRAPH_SIDE_VERTEX
-  use fractal_graph      , only : set_graph => graph
-  use graph_set_representation, only : listed_set_representation
+  use graph_fractal      , only : set_graph => graph
+  use map_set_representation, only : listed_set_representation
 
   implicit none
 

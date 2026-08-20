@@ -26,11 +26,11 @@ program adjoint_level_7_refusal
 
   use iso_fortran_env  , only : dp => REAL64
   use adjoint_assert   , only : VAR_U, VAR_V, TGT_R1, TGT_R2
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
+  use map_set        , only : set_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
   use graph_field_calculus, only : graph_field
   use class_graph      , only : directed_stored_graph
   use class_graph_field, only : field

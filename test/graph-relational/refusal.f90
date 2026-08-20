@@ -13,14 +13,14 @@
 
 program refusal
 
-  use fractal_graph        , only : graph
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : graph
+  use graph_fractal        , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_label_map      , only : label_map
-  use graph_relation       , only : relation, stored_relation
-  use graph_binary_relation, only : csr_relation, transposed_view, &
+  use map_set        , only : set_map
+  use map_label      , only : label_map
+  use relation_finitary       , only : relation, stored_relation
+  use relation_binary, only : csr_relation, transposed_view, &
        &                            transpose_of
   use graph_relational_view, only : relational_binding
 

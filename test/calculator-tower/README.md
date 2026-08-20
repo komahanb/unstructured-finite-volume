@@ -302,7 +302,7 @@ D        = compose_binary(produces, consumes)    consumes ∘ produces
 
 which yields the same extension \(D=\{(+,\times)\}\) through
 restriction + projection + binary composition
-(`src/graph_relation_algebra.f90`).
+(`src/relation_algebra.f90`).
 
 ```mermaid
 flowchart LR

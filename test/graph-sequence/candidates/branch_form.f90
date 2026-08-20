@@ -6,7 +6,7 @@
 !
 ! The empty sequence needs no graph, because it has no cell.
 module branch_form
-  use fractal_graph, only : graph, graph_branch, GRAPH_NULL, GRAPH_KNOWN
+  use graph_fractal, only : graph, graph_branch, GRAPH_NULL, GRAPH_KNOWN
   implicit none
   private
   public :: size_of

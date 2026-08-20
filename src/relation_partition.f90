@@ -75,7 +75,7 @@
 ! is the caller's, held in the caller's maps, and passed at the
 ! semantic boundary - never smuggled inside an action.
 !
-! WHY partition_relation AND NOT relation. graph_relation already
+! WHY partition_relation AND NOT relation. relation_finitary already
 ! owns `relation` and `stored_relation`, and they are a different
 ! thing: they have identity - they declare, they sign, they answer
 ! same_as - and they are built THROUGH a set map that describes their
@@ -87,9 +87,9 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_partition_relation
+module relation_partition
 
-  use fractal_graph      , only : set_graph => graph
+  use graph_fractal      , only : set_graph => graph
   use graph_directed_view, only : directed_graph
 
   implicit none
@@ -397,4 +397,4 @@ contains
 
   end function describes
 
-end module graph_partition_relation
+end module relation_partition

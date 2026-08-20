@@ -10,11 +10,11 @@
 program test_graph_field
 
   use iso_fortran_env  , only : dp => REAL64
-  use fractal_graph           , only : graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal           , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map           , only : set_map
-  use graph_inclusion_map     , only : inclusion_map, declared_subobject
+  use map_set           , only : set_map
+  use map_inclusion     , only : inclusion_map, declared_subobject
   use class_graph_field, only : field
 
   implicit none

@@ -39,11 +39,11 @@ module adjoint_constitution_fixture
   use iso_fortran_env  , only : dp => REAL64
   use adjoint_assert   , only : VAR_P, VAR_U, VAR_V
   use adjoint_assert   , only : TGT_R1, TGT_R2, TGT_F
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : set_graph => graph
+  use map_set        , only : set_map
+  use map_set_representation, only : counted_set_representation, &
        & set_representation
-  use graph_relation   , only : relation
+  use relation_finitary   , only : relation
   use operation_action, only : graph_operation
   use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field

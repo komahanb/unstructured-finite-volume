@@ -3,7 +3,7 @@ include ../../../Makefile.in
 #=====================================================================#
 # Level 1: the law suite and the refusals that must die. The
 # framework modules this level may see: the set modules and
-# graph_relation - the import gate holds the door.
+# relation_finitary - the import gate holds the door.
 #=====================================================================#
 
 F90FLAGS += -I../../../lib/ -I../../../src/

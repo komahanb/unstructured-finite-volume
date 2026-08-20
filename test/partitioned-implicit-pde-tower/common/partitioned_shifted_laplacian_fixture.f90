@@ -45,11 +45,11 @@
 module partitioned_shifted_laplacian_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use fractal_graph      , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation
-  use graph_set_map      , only : set_map
-  use graph_label_map    , only : label_map
-  use graph_inclusion_map, only : inclusion_map
+  use graph_fractal      , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation
+  use map_set      , only : set_map
+  use map_label    , only : label_map
+  use map_inclusion, only : inclusion_map
   use operation_action, only : graph_operation
   use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
@@ -59,7 +59,7 @@ module partitioned_shifted_laplacian_fixture
   use class_graph_assembler  , only : assembler
   use shifted_laplacian_fixture, only : shifted_laplacian
 
-  use graph_partition_relation, only : partition_relation
+  use relation_partition, only : partition_relation
   implicit none
 
   private

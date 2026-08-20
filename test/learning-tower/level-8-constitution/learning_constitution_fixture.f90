@@ -32,9 +32,9 @@ module learning_constitution_fixture
   use iso_fortran_env, only : dp => REAL64
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
-  use graph_relation , only : relation
+  use graph_fractal        , only : set_graph => graph
+  use map_set        , only : set_map
+  use relation_finitary , only : relation
 
   implicit none
 

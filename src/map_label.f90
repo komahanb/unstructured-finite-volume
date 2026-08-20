@@ -33,7 +33,7 @@
 !     sg = subset_set(dom % name(), global_carrier, kept(1:n))
 !
 ! That is metadata, and metadata belongs beside the mathematics rather
-! than inside it. Putting a label in fractal_graph would teach the core
+! than inside it. Putting a label in graph_fractal would teach the core
 ! a word it does not need; putting one in set_representation would make
 ! two descriptions of one set disagree about its name. So it lives
 ! here, orthogonal to both, and a consumer that does not name anything
@@ -60,10 +60,10 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_label_map
+module map_label
 
-  use fractal_graph , only : graph
-  use graph_identity, only : token
+  use graph_fractal , only : graph
+  use token_identity, only : token
 
   implicit none
 
@@ -111,11 +111,11 @@ contains
     ! An undeclared token does not match itself.
     key = element % id()
     if (.not. key % matches(key)) then
-       error stop 'graph_label_map: a label map is keyed on assigned identity'
+       error stop 'map_label: a label map is keyed on assigned identity'
     end if
 
     if (row_at(this, key) /= 0) then
-       error stop 'graph_label_map: a set is named once'
+       error stop 'map_label: a set is named once'
     end if
 
     if (.not. allocated(this % rows)) allocate(this % rows(0))
@@ -191,4 +191,4 @@ contains
 
   end function label_of
 
-end module graph_label_map
+end module map_label

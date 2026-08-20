@@ -21,7 +21,7 @@
 
 module relation_prototype
 
-  use fractal_graph, only : graph, null_branch, known_branch
+  use graph_fractal, only : graph, null_branch, known_branch
   use graph_sequence_view, only : sequence_size, sequence_element
 
   implicit none
@@ -91,16 +91,16 @@ end module relation_prototype
 
 program relation_map
 
-  use fractal_graph        , only : graph, null_branch, known_branch
+  use graph_fractal        , only : graph, null_branch, known_branch
   use graph_sequence_view  , only : sequence_size, sequence_element
-  use fractal_graph           , only : graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal           , only : graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map           , only : set_map
-  use graph_label_map         , only : label_map
-  use graph_inclusion_map     , only : inclusion_map, declared_subobject
-  use graph_relation       , only : relation, stored_relation
-  use graph_binary_relation, only : binary_relation, csr_relation, &
+  use map_set           , only : set_map
+  use map_label         , only : label_map
+  use map_inclusion     , only : inclusion_map, declared_subobject
+  use relation_finitary       , only : relation, stored_relation
+  use relation_binary, only : binary_relation, csr_relation, &
        & transposed_view, transpose_of
   use graph_relational_view, only : relational_binding
   use relation_prototype   , only : same_tuple, role_view, &

@@ -2,7 +2,7 @@
 ! counted is not the module but the CALL SITE: how much the consumer
 ! must know about emptiness.
 program compare
-  use fractal_graph, only : graph, GRAPH_NULL, null_branch, known_branch
+  use graph_fractal, only : graph, GRAPH_NULL, null_branch, known_branch
   use branch_form  , only : b_size => size_of
   use graph_form   , only : g_size => size_of, g_empty => is_empty
   implicit none

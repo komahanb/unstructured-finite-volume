@@ -10,9 +10,9 @@
 
 program refusal
 
-  use fractal_graph          , only : graph
-  use graph_set_representation, only : counted_set_representation
-  use graph_set_map          , only : set_map
+  use graph_fractal          , only : graph
+  use map_set_representation, only : counted_set_representation
+  use map_set          , only : set_map
   use graph_set_view         , only : set_size
 
   implicit none

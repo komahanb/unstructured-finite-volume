@@ -38,8 +38,8 @@ program time_level_0
   use time_assert          , only : report, verdict
   use time_assert          , only : NQ, NT, NE
   use time_assert          , only : C_X, T0, T4, E1, E4
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
+  use graph_fractal        , only : set_graph => graph
+  use map_set        , only : set_map
   use time_carriers_fixture, only : time_carriers
 
   implicit none

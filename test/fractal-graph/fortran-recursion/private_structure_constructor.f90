@@ -3,7 +3,7 @@
 ! PRIVATE component. The three branch constructors are therefore the
 ! only introductions of a branch value.
 program private_structure_constructor
-  use fractal_graph
+  use graph_fractal
   implicit none
   type(graph)        :: a
   type(graph_branch) :: x

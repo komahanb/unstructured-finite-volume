@@ -3,7 +3,7 @@
 ! There is no cell for the empty sequence, so the caller must decide
 ! emptiness before calling, and every consumer repeats that decision.
 module graph_form
-  use fractal_graph, only : graph, graph_branch, GRAPH_NULL, GRAPH_KNOWN
+  use graph_fractal, only : graph, graph_branch, GRAPH_NULL, GRAPH_KNOWN
   implicit none
   private
   public :: size_of, is_empty

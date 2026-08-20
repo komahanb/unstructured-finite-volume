@@ -80,10 +80,10 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_inclusion_map
+module map_inclusion
 
-  use fractal_graph , only : graph
-  use graph_identity, only : token
+  use graph_fractal , only : graph
+  use token_identity, only : token
 
   implicit none
 
@@ -134,15 +134,15 @@ contains
 
     ! An undeclared token does not match itself.
     if (.not. below % matches(below) .or. .not. above % matches(above)) then
-       error stop 'graph_inclusion_map: an inclusion is keyed on assigned identity'
+       error stop 'map_inclusion: an inclusion is keyed on assigned identity'
     end if
 
     if (below % matches(above)) then
-       error stop 'graph_inclusion_map: a set is not declared into itself'
+       error stop 'map_inclusion: a set is not declared into itself'
     end if
 
     if (row_at(this, below) /= 0) then
-       error stop 'graph_inclusion_map: a set is carved from one domain'
+       error stop 'map_inclusion: a set is carved from one domain'
     end if
 
     if (.not. allocated(this % rows)) allocate(this % rows(0))
@@ -262,9 +262,9 @@ contains
     end do
 
     if (row_at(m, here) /= 0) then
-       error stop 'graph_inclusion_map: an inclusion chain is finite'
+       error stop 'map_inclusion: an inclusion chain is finite'
     end if
 
   end function declared_subobject
 
-end module graph_inclusion_map
+end module map_inclusion

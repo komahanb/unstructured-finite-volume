@@ -31,8 +31,8 @@
 program partitioned_pde_level_0
 
   use partitioned_pde_assert , only : report, verdict
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
+  use graph_fractal        , only : set_graph => graph
+  use map_set        , only : set_map
   use chain_carriers_fixture , only : chain_carriers
 
   implicit none

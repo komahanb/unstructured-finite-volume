@@ -21,7 +21,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_change_protocol
+module map_change_protocol
 
   implicit none
 
@@ -257,4 +257,4 @@ contains
 
   end subroutine run_change
 
-end module graph_change_protocol
+end module map_change_protocol

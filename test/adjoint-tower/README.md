@@ -207,12 +207,12 @@ easiest way to get this tower wrong.
 | Level | Meaning in *this* problem | Framework abstraction | Source module | Test | New truth | Production |
 |---|---|---|---|---|---|---|
 | 0 | the four roles exist and differ | `counted_set`, `subset_set` | `graph_carrier` | `level-0-carrier/` | \(Q\neq Y\) though both size 2 | NONE |
-| 1 | who may participate in what | `stored_relation` | `graph_relation` | `level-1-relation/` | \(R_{\mathrm{dep}}\subseteq T\times V\), nine facts | NONE |
-| 2 | the four derivative supports | `restrict/project/compose`, `inclusion_of` | `graph_relation_algebra`, `graph_binary_relation` | `level-2-relation-algebra/` | \(J_Q,J_P,F_Q,F_P\) **derived** | NONE |
-| 3 | one owned structural model | `graph` read as (S, P) | `fractal_graph`, `graph_relational_view` | `level-3-graph/` | six carriers, five relations, closed | NONE |
+| 1 | who may participate in what | `stored_relation` | `relation_finitary` | `level-1-relation/` | \(R_{\mathrm{dep}}\subseteq T\times V\), nine facts | NONE |
+| 2 | the four derivative supports | `restrict/project/compose`, `inclusion_of` | `relation_algebra`, `relation_binary` | `level-2-relation-algebra/` | \(J_Q,J_P,F_Q,F_P\) **derived** | NONE |
+| 3 | one owned structural model | `graph` read as (S, P) | `graph_fractal`, `graph_relational_view` | `level-3-graph/` | six carriers, five relations, closed | NONE |
 | 4 | the implicit system is **cyclic** | `directed_adjacency_view`, `topological_order` | `graph_profile`, `graph_algorithms` | `level-4-graph-calculus/` | a topological order **refuses** | NONE |
 | 5 | the first numbers | `field` | `class_graph_field` | `level-5-field-calculus/` | \(p=2\), \(q_0=[0,0]\); nothing fabricated | NONE |
-| 6 | operator supports and orientation | `transpose_of` | `graph_binary_relation` | `level-6-discretization/` | \(J_Q^{T}\) swaps domain **identities** | NONE |
+| 6 | operator supports and orientation | `transpose_of` | `relation_binary` | `level-6-discretization/` | \(J_Q^{T}\) swaps domain **identities** | NONE |
 | 7 | primal and adjoint **solves** | `gmres` / minimizer | `class_graph_gmres` | `level-7-minimization/` | one solver family, both orientations | NONE |
 | 8 | one constitution, both actions | test-local law + Gate-A supports | — | `level-8-constitution/` | \(q,\lambda,q_p\) and both sensitivities from one law | NONE |
 | 9 | one question: \(df/dp\) | composition over a model graph | `graph_structure` + reused L8 law | `level-9-statement/` | the adjoint road alone answers \(7\) | NONE |

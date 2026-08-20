@@ -14,15 +14,15 @@ generating rule of the whole codebase is:
 Eight irreducible objects. Everything else in `src/` is a
 composition, a view, or a concretion of these.
 
-    graph            G = (B1, B2),  B in {NULL, UNKNOWN, KNOWN -> G}     fractal_graph
-    token            object identity, minted once by declare             graph_identity
-    relation         P subset of A1 x ... x Ak                           graph_relation
+    graph            G = (B1, B2),  B in {NULL, UNKNOWN, KNOWN -> G}     graph_fractal
+    token            object identity, minted once by declare             token_identity
+    relation         P subset of A1 x ... x Ak                           relation_finitary
     field            f : A -> V on one set-graph domain                  graph_field_calculus
     operation        (graph, fields) -> field                            operation_action
     transform        graph -> graph, data carried along                  transform_structure
     map              token -> {representation | name | inclusion | value}
-                                                                         graph_set_map, graph_label_map,
-                                                                         graph_inclusion_map, graph_value_map
+                                                                         map_set, map_label,
+                                                                         map_inclusion, map_value
     view             a reading of the kernel graph, never a new kind     graph_directed_view,
                                                                          graph_relational_view
 
@@ -35,13 +35,13 @@ this one object read differently. There is exactly one type named
 
 Indentation is `extends`; brackets name the file.
 
-    relation                                   [graph_relation]
-    ├── stored_relation                        [graph_relation]
-    └── binary_relation                        [graph_binary_relation]
-        ├── csr_relation                       [graph_binary_relation]
-        └── transposed_view                    [graph_binary_relation]
+    relation                                   [relation_finitary]
+    ├── stored_relation                        [relation_finitary]
+    └── binary_relation                        [relation_binary]
+        ├── csr_relation                       [relation_binary]
+        └── transposed_view                    [relation_binary]
 
-    group_by_key                               [graph_binary_relation]
+    group_by_key                               [relation_binary]
         the one grouping kernel (counting sort): the fibration of a
         stored relation over one slot. CSR builds, incidence lists,
         transpose_padded, and combine_triples are its callers; no
@@ -85,8 +85,8 @@ Indentation is `extends`; brackets name the file.
     ├── coarsener                              [class_graph_coarsener]
     └── refiner                                [class_graph_refiner]
 
-    reversible_change  apply -> check -> keep | revert   [graph_change_protocol]
-    └── value_change                           [graph_value_change]
+    reversible_change  apply -> check -> keep | revert   [map_change_protocol]
+    └── value_change                           [map_value_change]
 
     chain_rule + argument_path + path_derivative          [class_graph_chain_rule]
         total derivatives of S(x_1(s), ..., x_m(s)) by integer
@@ -119,9 +119,9 @@ Indentation is `extends`; brackets name the file.
 
 ## Level assignment (AGENTS.md section 2)
 
-    0-3  kernel:      fractal_graph, graph_identity, graph_relation,
-                      graph_binary_relation, graph_partition_relation,
-                      graph_set_representation, the four maps
+    0-3  kernel:      graph_fractal, token_identity, relation_finitary,
+                      relation_binary, relation_partition,
+                      map_set_representation, the four maps
     4    graph view:  graph_directed_view, graph_relational_view,
                       class_graph, class_graph_walk, graph_algorithms,
                       transforms (partitioner/assembler/coarsener/refiner)

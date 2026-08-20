@@ -41,7 +41,7 @@ module class_graph_functional
   use graph_field_calculus, only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
   use graph_field_calculus, only : GRAPH_FIELD_CHARACTER
   use graph_field_calculus     , only : graph_functional
-  use fractal_graph      , only : set_graph => graph
+  use graph_fractal      , only : set_graph => graph
 
   implicit none
 

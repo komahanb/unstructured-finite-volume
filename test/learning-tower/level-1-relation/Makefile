@@ -3,7 +3,7 @@ include ../../../Makefile.in
 #=====================================================================#
 # Learning level 1: the law suite and the refusals that must die.
 # The framework modules this level may see: the set modules and
-# graph_relation - no graph concept compiles here. The import gate
+# relation_finitary - no graph concept compiles here. The import gate
 # holds the door.
 #=====================================================================#
 

@@ -29,15 +29,15 @@ program calculator_level_6
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use graph_relation   , only : stored_relation, relation
-  use graph_relation_algebra, only : restrict_slot, project_slots, &
+  use map_set        , only : set_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
+  use relation_finitary   , only : stored_relation, relation
+  use relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
-  use graph_binary_relation , only : csr_relation, transposed_view, &
+  use relation_binary , only : csr_relation, transposed_view, &
        &                             transpose_of
 
   implicit none

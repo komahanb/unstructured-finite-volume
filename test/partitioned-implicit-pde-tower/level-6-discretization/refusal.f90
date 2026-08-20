@@ -19,9 +19,9 @@ program partitioned_pde_level_6_refusal
 
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : NV, Q_EXACT
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation
-  use graph_set_map        , only : set_map
+  use graph_fractal        , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation
+  use map_set        , only : set_map
   use graph_field_calculus, only : graph_field
   use class_graph      , only : directed_stored_graph
   use class_graph_field, only : field

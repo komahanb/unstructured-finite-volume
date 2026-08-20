@@ -22,10 +22,10 @@ program derivative_level_0
 
   use derivative_assert, only : report, verdict
   use derivative_assert, only : SLOT_X, SLOT_Z, OP_PRODUCT, PORT_OUT
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
+  use map_set        , only : set_map
 
   implicit none
 

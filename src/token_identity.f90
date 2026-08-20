@@ -25,7 +25,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_identity
+module token_identity
 
   implicit none
 
@@ -98,4 +98,4 @@ contains
 
   end function serial_number
 
-end module graph_identity
+end module token_identity

@@ -36,7 +36,7 @@ program partitioned_pde_level_8
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : report, verdict
   use partitioned_pde_assert, only : NV, Q_EXACT
-  use fractal_graph        , only : set_graph => graph
+  use graph_fractal        , only : set_graph => graph
   use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
   use class_graph      , only : directed_stored_graph

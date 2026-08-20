@@ -31,12 +31,12 @@ module affine_residual_fixture
 
   use iso_fortran_env  , only : dp => REAL64
   use calculator_assert, only : SLOT_C, SLOT_E
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_set_representation, only : set_representation
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
+  use map_set        , only : set_map
+  use map_set_representation, only : set_representation
+  use map_inclusion  , only : inclusion_map, declared_subobject
   use operation_action, only : graph_operation
   use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
@@ -148,12 +148,12 @@ program calculator_level_7
   use calculator_assert, only : report, verdict, SLOT_C, SLOT_E
   use class_graph      , only : directed_stored_graph
   use class_graph_gmres, only : gmres
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_set_representation, only : set_representation
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
+  use map_set        , only : set_map
+  use map_set_representation, only : set_representation
+  use map_inclusion  , only : inclusion_map, declared_subobject
   use affine_residual_fixture, only : affine_residual, ROW_C, ROW_E
 
   implicit none

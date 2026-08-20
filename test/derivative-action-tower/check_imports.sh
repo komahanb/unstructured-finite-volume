@@ -16,35 +16,35 @@ intrinsics="iso_fortran_env iso_c_binding ieee_arithmetic ieee_exceptions ieee_f
 allowed_for() {
     case "$1" in
         # 2026-08-16: the relational container is retired. A level reading
-        # (S, P) is granted fractal_graph and graph_relational_view,
+        # (S, P) is granted graph_fractal and graph_relational_view,
         # and builds the representation itself. Granted per level, in
         # review; the list is an assertion, not a history.
         common)                   echo "" ;;
-        level-0-carrier)          echo "derivative_assert fractal_graph graph_set_representation graph_set_map" ;;
-        level-1-relation)         echo "derivative_assert fractal_graph graph_set_representation graph_set_map graph_relation" ;;
-        level-2-relation-algebra) echo "derivative_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map graph_relation graph_relation_algebra" ;;
-        level-3-graph)            echo "derivative_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map graph_relation graph_relation_algebra fractal_graph graph_relational_view" ;;
-        level-4-graph-calculus)   echo "derivative_assert fractal_graph graph_set_representation graph_set_map graph_label_map graph_inclusion_map graph_relation graph_relation_algebra graph_algorithms fractal_graph graph_relational_view graph_binary_relation" ;;
+        level-0-carrier)          echo "derivative_assert graph_fractal map_set_representation map_set" ;;
+        level-1-relation)         echo "derivative_assert graph_fractal map_set_representation map_set relation_finitary" ;;
+        level-2-relation-algebra) echo "derivative_assert graph_fractal map_set_representation map_set map_inclusion relation_finitary relation_algebra" ;;
+        level-3-graph)            echo "derivative_assert graph_fractal map_set_representation map_set map_inclusion relation_finitary relation_algebra graph_fractal graph_relational_view" ;;
+        level-4-graph-calculus)   echo "derivative_assert graph_fractal map_set_representation map_set map_label map_inclusion relation_finitary relation_algebra graph_algorithms graph_fractal graph_relational_view relation_binary" ;;
         # level 5: primal values need domains, not graphs - and no
         # tangent/cotangent/seed type exists to be imported.
-        level-5-field-calculus)   echo "derivative_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map class_graph_field" ;;
+        level-5-field-calculus)   echo "derivative_assert graph_fractal map_set_representation map_set map_inclusion class_graph_field" ;;
         # level 6: the structural rung - the algebra derives value
         # dependency, the profile walks it, and the binary citizen
         # materializes J_ZX and answers its reverse as a view.
         # Fields stay forbidden: the pattern needs no numbers.
-        level-6-derivative-structure) echo "derivative_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map graph_relation graph_relation_algebra graph_binary_relation graph_algorithms fractal_graph graph_relational_view" ;;
+        level-6-derivative-structure) echo "derivative_assert graph_fractal map_set_representation map_set map_inclusion relation_finitary relation_algebra relation_binary graph_algorithms graph_fractal graph_relational_view" ;;
         # level 8 (Gate B): the numerical action rung. Structure
         # derives the order, the test-local constitution supplies
         # primal laws and ONE local linearization per operation,
         # fields carry seeds and results. NO binary storage - the
         # J-pattern is support metadata, never the propagation
         # itinerary - and no solver, ever, at this gate.
-        level-8-derivative-constitution) echo "derivative_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map graph_relation graph_relation_algebra graph_algorithms class_graph_field derivative_constitution_fixture fractal_graph graph_relational_view" ;;
+        level-8-derivative-constitution) echo "derivative_assert graph_fractal map_set_representation map_set map_inclusion relation_finitary relation_algebra graph_algorithms class_graph_field derivative_constitution_fixture graph_fractal graph_relational_view" ;;
         # level 9 (Gate C): the statement - the composition rung.
         # The REUSED level-8 constitution is the only fixture; no
         # adapter exists because nothing here must satisfy a legacy
         # operation face. No new mathematics, and still no solver.
-        level-9-statement)        echo "derivative_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map graph_relation graph_relation_algebra graph_algorithms class_graph_field derivative_constitution_fixture fractal_graph graph_relational_view" ;;
+        level-9-statement)        echo "derivative_assert graph_fractal map_set_representation map_set map_inclusion relation_finitary relation_algebra graph_algorithms class_graph_field derivative_constitution_fixture graph_fractal graph_relational_view" ;;
         *)                        echo "__no_allowlist__" ;;
     esac
 }

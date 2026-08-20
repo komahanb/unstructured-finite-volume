@@ -1,6 +1,6 @@
 !=====================================================================!
-! Tests for graph_change_protocol, graph_value_map, and
-! graph_value_change:
+! Tests for map_change_protocol, map_value, and
+! map_value_change:
 !
 !  - the run_change lifecycle apply -> check -> keep | revert on
 !    accepted, rejected, vetoed, failing, and mixed changes, and
@@ -20,11 +20,11 @@
 program test_graph_change
 
   use iso_fortran_env      , only : dp => REAL64
-  use fractal_graph        , only : graph
-  use graph_change_protocol, only : run_change, change_result
-  use graph_value_map      , only : value_map, &
+  use graph_fractal        , only : graph
+  use map_change_protocol, only : run_change, change_result
+  use map_value      , only : value_map, &
        & VALUE_UNATTACHED, VALUE_UNKNOWN, VALUE_KNOWN
-  use graph_value_change   , only : value_change
+  use map_value_change   , only : value_change
   use toy_changes          , only : counting_change, mixed_change
 
   implicit none

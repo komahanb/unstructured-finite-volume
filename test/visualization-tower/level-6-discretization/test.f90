@@ -84,12 +84,12 @@ program visualization_level_6
   use visualization_assert , only : X0_A, X0_B, X0_C, X0_D
   use visualization_assert , only : X1_P, X1_Q, X1_R
   use visualization_assert , only : X2_U, X2_V, X2_W
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation
-  use graph_set_map        , only : set_map
-  use graph_label_map      , only : label_map
-  use graph_relation       , only : relation
-  use graph_binary_relation, only : csr_relation
+  use graph_fractal        , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation
+  use map_set        , only : set_map
+  use map_label      , only : label_map
+  use relation_finitary       , only : relation
+  use relation_binary, only : csr_relation
   use graph_directed_view  , only : directed_graph
   use class_graph_stencil  , only : stencil_operator
   use class_graph_step     , only : step_operator

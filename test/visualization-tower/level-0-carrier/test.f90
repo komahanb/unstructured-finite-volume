@@ -55,11 +55,11 @@ program visualization_level_0
   use visualization_assert , only : X2_U, X2_V, X2_W
   use visualization_assert , only : X3_M, X3_N
   use visualization_assert , only : E1_1, E1_5, E2_1, E2_4, E3_1, E3_3
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_label_map      , only : label_map
+  use map_set        , only : set_map
+  use map_label      , only : label_map
   use visualization_carriers_fixture, only : structural_carriers, label_for
 
   implicit none

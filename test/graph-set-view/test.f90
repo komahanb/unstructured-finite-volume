@@ -14,10 +14,10 @@
 
 program set_foundation
 
-  use fractal_graph          , only : graph, null_branch, GRAPH_NULL
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal          , only : graph, null_branch, GRAPH_NULL
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map          , only : set_map
+  use map_set          , only : set_map
   use graph_set_view         , only : set_defined, set_size, set_member, &
        & set_members, set_has, set_local_index, set_equivalent
 

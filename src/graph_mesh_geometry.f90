@@ -16,7 +16,7 @@
 !                     intersections of cell pairs; with the file's
 !                     boundary faces they form the face member set
 !                     and the relation F2V subset of faces x vertices
-!      V2C            transpose(C2V), by graph_binary_relation's
+!      V2C            transpose(C2V), by relation_binary's
 !                     transpose_padded
 !      F2C            {(f, c) : F2V(f) subset of C2V(c)}, at most
 !                     two cells per face; one cell = boundary face

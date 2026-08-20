@@ -14,7 +14,7 @@
 module interface_mesh_loader
 
   use iso_fortran_env , only : dp => real64
-  use class_string    , only : string
+  use util_string    , only : string
 
   implicit none
 

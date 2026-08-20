@@ -10,12 +10,12 @@ program constitution_refusal
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use graph_relation   , only : stored_relation
+  use map_set        , only : set_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
+  use relation_finitary   , only : stored_relation
   use arithmetic_constitution_fixture, only : generated_residual
 
   implicit none

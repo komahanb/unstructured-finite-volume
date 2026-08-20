@@ -84,9 +84,9 @@
 
 module graph_relational_view
 
-  use fractal_graph      , only : graph
-  use fractal_graph      , only : set_graph => graph
-  use graph_relation     , only : relation
+  use graph_fractal      , only : graph
+  use graph_fractal      , only : set_graph => graph
+  use relation_finitary     , only : relation
   use graph_sequence_view, only : sequence_size, sequence_element, &
        & sequence_contains
 

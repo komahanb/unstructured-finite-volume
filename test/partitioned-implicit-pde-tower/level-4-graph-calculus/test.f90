@@ -51,13 +51,13 @@
 program partitioned_pde_level_4
 
   use partitioned_pde_assert , only : report, verdict
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation
-  use graph_set_map        , only : set_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use graph_label_map      , only : label_map
+  use graph_fractal        , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation
+  use map_set        , only : set_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
+  use map_label      , only : label_map
   use graph_directed_view    , only : directed_graph
-  use graph_binary_relation  , only : csr_relation
+  use relation_binary  , only : csr_relation
   use class_graph            , only : directed_stored_graph
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
   use chain_carriers_fixture , only : chain_carriers
@@ -65,7 +65,7 @@ program partitioned_pde_level_4
        &                              own_relation
   use chain_algebra_fixture  , only : derive_tail_owner, derive_head_owner
 
-  use graph_partition_relation, only : partition_relation
+  use relation_partition, only : partition_relation
   implicit none
   type(partition_relation) :: rel
 

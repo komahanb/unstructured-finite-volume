@@ -40,7 +40,7 @@ module class_graph_chain_rule
   use iso_fortran_env     , only : dp => REAL64, int64
   use graph_directed_view , only : directed_graph
   use graph_field_calculus, only : graph_field
-  use fractal_graph       , only : set_graph => graph
+  use graph_fractal       , only : set_graph => graph
   use graph_discretization      , only : differentiable_operation
   use class_graph_field   , only : field
 

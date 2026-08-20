@@ -32,16 +32,16 @@ module constituted_residual_fixture
   ! entire numerical act is delegation.
 
   use iso_fortran_env  , only : dp => REAL64
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_set_representation, only : set_representation
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
-  use graph_relation   , only : relation
+  use map_set        , only : set_map
+  use map_set_representation, only : set_representation
+  use map_inclusion  , only : inclusion_map, declared_subobject
+  use relation_finitary   , only : relation
   ! The kernel's graph and the ordinary view's directed_graph are two
   ! types with two names now, so nothing is renamed at this door.
-  use fractal_graph        , only : graph, known_branch, null_branch
+  use graph_fractal        , only : graph, known_branch, null_branch
   use graph_relational_view, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
        & holds_set
@@ -221,17 +221,17 @@ program calculator_level_9
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
   use graph_field_calculus, only : graph_field
-  use graph_relation   , only : stored_relation, relation
-  use fractal_graph        , only : graph, set_graph => graph, &
+  use relation_finitary   , only : stored_relation, relation
+  use graph_fractal        , only : graph, set_graph => graph, &
        & known_branch, null_branch
-  use graph_set_representation, only : counted_set_representation, &
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
+  use map_set        , only : set_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
   use graph_relational_view, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
        & holds_set
-  use graph_relation_algebra, only : restrict_slot, project_slots, &
+  use relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
   use class_graph      , only : directed_stored_graph
   use class_graph_field, only : field

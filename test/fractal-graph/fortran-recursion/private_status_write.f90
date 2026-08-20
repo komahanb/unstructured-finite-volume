@@ -2,7 +2,7 @@
 ! EXPECTED: rejected - 'status_' is a PRIVATE component.
 ! Admitting it would allow status = KNOWN with known disassociated.
 program private_status_write
-  use fractal_graph
+  use graph_fractal
   implicit none
   type(graph), target :: a
   call a % declare()

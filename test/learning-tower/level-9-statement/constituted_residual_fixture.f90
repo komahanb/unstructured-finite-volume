@@ -22,13 +22,13 @@
 module constituted_residual_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
-  use graph_set_representation, only : set_representation
-  use graph_relation   , only : relation
+  use graph_fractal        , only : set_graph => graph
+  use map_set        , only : set_map
+  use map_set_representation, only : set_representation
+  use relation_finitary   , only : relation
   ! The kernel's graph and the ordinary view's directed_graph are two
   ! types with two names now, so nothing is renamed at this door.
-  use fractal_graph        , only : graph
+  use graph_fractal        , only : graph
   use graph_relational_view, only : relational_binding, &
        & num_relations, relation_at
   use operation_action, only : graph_operation

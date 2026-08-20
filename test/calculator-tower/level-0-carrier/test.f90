@@ -20,10 +20,10 @@ program calculator_level_0
 
   use calculator_assert, only : report, verdict
   use calculator_assert, only : SLOT_A, SLOT_E, OP_PLUS, PORT_OUT
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
+  use map_set        , only : set_map
 
   implicit none
 

@@ -10,10 +10,10 @@
 
 program calculator_level_0_refusal
 
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
+  use map_set        , only : set_map
 
   implicit none
 

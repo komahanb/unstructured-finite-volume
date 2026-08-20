@@ -1,0 +1,54 @@
+{
+  "protocol_version": "architect-worker-v1",
+  "task_id": "replace-with-stable-task-id",
+  "objective": "State one bounded outcome in observable terms.",
+  "base_ref": "HEAD",
+  "policy_files": [
+    "AGENTS.md",
+    "FRACTAL-GRAPH-ARCHITECTURE.md"
+  ],
+  "sealed_facts": [
+    "List accepted results that this task may use but may not reopen."
+  ],
+  "scope": {
+    "naming_audit_required": true,
+    "allowed_paths": [
+      "src/example.f90",
+      "test/example/**"
+    ],
+    "forbidden_paths": [
+      "AGENTS.md"
+    ]
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "statement": "State an independently checkable obligation."
+    }
+  ],
+  "required_checks": [
+    {
+      "id": "T1",
+      "command": "test/example/run.sh",
+      "expected": "Exit 0 and print the named acceptance result."
+    }
+  ],
+  "stop_conditions": [
+    "A new taxonomy word is required.",
+    "A sealed fact conflicts with observed source behavior.",
+    "A required change falls outside allowed_paths."
+  ],
+  "deliverables": [
+    "Implementation satisfying R1.",
+    "Focused regression evidence for T1.",
+    "Naming audit for every touched mathematical interface."
+  ],
+  "execution": {
+    "mode": "write",
+    "model": "opus",
+    "effort": "xhigh",
+    "timeout_seconds": 3600,
+    "max_budget_usd": null,
+    "allow_network": false
+  }
+}

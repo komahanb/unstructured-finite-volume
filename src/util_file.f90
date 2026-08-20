@@ -12,9 +12,9 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_file
+module util_file
 
-  use class_string, only : string
+  use util_string, only : string
 
   implicit none
   
@@ -215,4 +215,4 @@ contains
 
   end subroutine read_lines
    
-end module class_file
+end module util_file

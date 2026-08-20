@@ -2,7 +2,7 @@ include ../../Makefile.in
 
 #=====================================================================#
 # Two-type graph kernel, the views over it, the test suite, and the
-# refusals. Links libufvm only for graph_identity's token.
+# refusals. Links libufvm only for token_identity's token.
 #=====================================================================#
 
 F90FLAGS += -I../../lib/ -Wtarget-lifetime
@@ -10,7 +10,7 @@ LDFLAGS  += -L../../lib/ ../../lib/libufvm.a
 
 all: run refusal mutation
 
-# fractal_graph now lives in src and arrives through libufvm.a; this
+# graph_fractal now lives in src and arrives through libufvm.a; this
 # directory builds only the views and the programs over them.
 
 run: graph_views.o test.o

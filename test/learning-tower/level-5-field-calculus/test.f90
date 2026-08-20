@@ -30,11 +30,11 @@ program learning_level_5
   use iso_fortran_env  , only : dp => REAL64
   use learning_assert  , only : report, verdict
   use learning_assert  , only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_representation, only : counted_set_representation, &
+  use graph_fractal        , only : set_graph => graph
+  use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
-  use graph_set_map        , only : set_map
-  use graph_inclusion_map  , only : inclusion_map, declared_subobject
+  use map_set        , only : set_map
+  use map_inclusion  , only : inclusion_map, declared_subobject
   use class_graph_field, only : field
 
   implicit none

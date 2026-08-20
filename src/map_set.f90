@@ -62,11 +62,11 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_set_map
+module map_set
 
-  use fractal_graph          , only : graph
-  use graph_identity         , only : token
-  use graph_set_representation, only : set_representation
+  use graph_fractal          , only : graph
+  use token_identity         , only : token
+  use map_set_representation, only : set_representation
 
   implicit none
 
@@ -138,11 +138,11 @@ contains
     ! An undeclared token does not match itself.
     key = element % id()
     if (.not. key % matches(key)) then
-       error stop 'graph_set_map: a set map is keyed on assigned identity'
+       error stop 'map_set: a set map is keyed on assigned identity'
     end if
 
     if (row_of(this, element) /= 0) then
-       error stop 'graph_set_map: a set is described once'
+       error stop 'map_set: a set is described once'
     end if
 
     if (.not. allocated(this % rows)) allocate(this % rows(0))
@@ -206,7 +206,7 @@ contains
     integer :: at
 
     at = row_of(this, element)
-    if (at == 0) error stop 'graph_set_map: no representation describes that set'
+    if (at == 0) error stop 'map_set: no representation describes that set'
 
     size_of = this % rows(at) % extent % size()
 
@@ -221,7 +221,7 @@ contains
     integer :: at
 
     at = row_of(this, element)
-    if (at == 0) error stop 'graph_set_map: no representation describes that set'
+    if (at == 0) error stop 'map_set: no representation describes that set'
 
     member_of = this % rows(at) % extent % member(position)
 
@@ -236,7 +236,7 @@ contains
     integer :: at
 
     at = row_of(this, element)
-    if (at == 0) error stop 'graph_set_map: no representation describes that set'
+    if (at == 0) error stop 'map_set: no representation describes that set'
 
     call this % rows(at) % extent % members(values)
 
@@ -251,7 +251,7 @@ contains
     integer :: at
 
     at = row_of(this, element)
-    if (at == 0) error stop 'graph_set_map: no representation describes that set'
+    if (at == 0) error stop 'map_set: no representation describes that set'
 
     has_in = this % rows(at) % extent % has(value)
 
@@ -266,7 +266,7 @@ contains
     integer :: at
 
     at = row_of(this, element)
-    if (at == 0) error stop 'graph_set_map: no representation describes that set'
+    if (at == 0) error stop 'map_set: no representation describes that set'
 
     allocate(extent, source=this % rows(at) % extent)
 
@@ -281,10 +281,10 @@ contains
     integer :: at
 
     at = row_of(this, element)
-    if (at == 0) error stop 'graph_set_map: no representation describes that set'
+    if (at == 0) error stop 'map_set: no representation describes that set'
 
     index_in = this % rows(at) % extent % local_index(value)
 
   end function index_in
 
-end module graph_set_map
+end module map_set

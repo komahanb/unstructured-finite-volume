@@ -5,7 +5,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_string
+module util_string
 
   use iso_fortran_env, only : dp => REAL64
 
@@ -215,4 +215,4 @@ contains
     
   end function asreal
   
-end module class_string
+end module util_string

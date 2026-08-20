@@ -1,5 +1,5 @@
 # Identity and mutation
-Spike only; `src/` is unchanged, and `fractal_graph.f90` is unchanged by this pass — still 67
+Spike only; `src/` is unchanged, and `graph_fractal.f90` is unchanged by this pass — still 67
 code lines. The previous report, on the branch invariant, is at commit `073451d`.
 Run by `run.sh`: 86 PASS, 0 FAIL. Fixtures compile against the shipped kernel, not a copy.
 
@@ -91,7 +91,7 @@ two states comparable at all.
 when it ran. Versioning, if a client ever needs it, belongs to that client.
 
 ## 10. Does the kernel need any change?
-**No.** `fractal_graph.f90` is byte-identical to `073451d` — 67 code lines. No `epoch`,
+**No.** `graph_fractal.f90` is byte-identical to `073451d` — 67 code lines. No `epoch`,
 `generation`, `version`, `dirty`, `seal` or `frozen` field was added, and no counterexample
 appeared that could not be handled outside it.
 
@@ -111,7 +111,7 @@ appeared that could not be handled outside it.
 
 ## Conclusion
 Adopt **A**. A graph is a mutable object with stable identity; compiled representations are
-snapshots; immutability and versioning belong to the clients that need them; `fractal_graph.f90`
+snapshots; immutability and versioning belong to the clients that need them; `graph_fractal.f90`
 requires no change.
 
 B is not refuted as a *semantics* — it is refuted as something this language can enforce without

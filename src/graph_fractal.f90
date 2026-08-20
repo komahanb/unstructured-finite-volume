@@ -29,9 +29,9 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module fractal_graph
+module graph_fractal
 
-  use graph_identity, only : token, mint_token
+  use token_identity, only : token, mint_token
 
   implicit none
 
@@ -127,7 +127,7 @@ contains
     type(graph), target, intent(in) :: that
 
     if (.not. that % identity % declared()) then
-       error stop 'fractal_graph: KNOWN requires a graph with assigned identity'
+       error stop 'graph_fractal: KNOWN requires a graph with assigned identity'
     end if
 
     this % status_ = GRAPH_KNOWN
@@ -144,7 +144,7 @@ contains
     class(graph), intent(inout) :: this
 
     if (this % identity % declared()) then
-       error stop 'fractal_graph: graph identity is assigned once'
+       error stop 'graph_fractal: graph identity is assigned once'
     end if
 
     this % identity = mint_token()
@@ -266,4 +266,4 @@ contains
 
   end function similar_as
 
-end module fractal_graph
+end module graph_fractal

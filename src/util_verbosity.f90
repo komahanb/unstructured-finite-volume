@@ -13,7 +13,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module module_verbosity
+module util_verbosity
 
   implicit none
 
@@ -38,4 +38,4 @@ contains
 
   end subroutine set_verbosity
 
-end module module_verbosity
+end module util_verbosity

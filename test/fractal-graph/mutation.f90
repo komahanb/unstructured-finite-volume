@@ -2,7 +2,7 @@
 ! MUTATION AND IDENTITY
 !
 ! Evidence for the identity semantics, gathered against the shipped
-! kernel. Nothing here modifies fractal_graph.f90.
+! kernel. Nothing here modifies graph_fractal.f90.
 !
 !     T . the nine branch-state transitions
 !     I . identity under lawful branch mutation
@@ -15,8 +15,8 @@
 
 program mutation
 
-  use graph_identity, only : token
-  use fractal_graph , only : graph, graph_branch, &
+  use token_identity, only : token
+  use graph_fractal , only : graph, graph_branch, &
        & GRAPH_NULL, GRAPH_UNKNOWN, GRAPH_KNOWN, &
        & null_branch, unknown_branch, known_branch
   use graph_views   , only : dp, attribute_map, csr, &

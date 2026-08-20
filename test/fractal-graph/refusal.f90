@@ -9,7 +9,7 @@
 
 program refusal
 
-  use fractal_graph, only : graph, null_branch, unknown_branch, known_branch
+  use graph_fractal, only : graph, null_branch, unknown_branch, known_branch
   use graph_views  , only : dp, attribute_map, evaluate, relation_view
 
   implicit none

@@ -36,10 +36,10 @@ module class_graph_stencil
   use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
   use graph_discretization     , only : discretization_operator
-  use graph_binary_relation, only : group_by_key
+  use relation_binary, only : group_by_key
   use class_graph_field  , only : field
   use class_graph        , only : directed_stored_graph
-  use fractal_graph      , only : set_graph => graph
+  use graph_fractal      , only : set_graph => graph
 
   implicit none
 

@@ -31,8 +31,8 @@
 
 module graph_views
 
-  use graph_identity, only : token
-  use fractal_graph , only : graph, GRAPH_NULL, GRAPH_UNKNOWN, GRAPH_KNOWN
+  use token_identity, only : token
+  use graph_fractal , only : graph, GRAPH_NULL, GRAPH_UNKNOWN, GRAPH_KNOWN
 
   implicit none
 
@@ -330,7 +330,7 @@ contains
 
   !===================================================================!
   ! COMPILED REPRESENTATION over the same sequence. The dependency
-  ! runs graph_views -> fractal_graph and not back: the kernel does not
+  ! runs graph_views -> graph_fractal and not back: the kernel does not
   ! name csr, and csr does not name graph.
   !===================================================================!
 

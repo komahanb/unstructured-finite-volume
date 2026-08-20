@@ -57,8 +57,8 @@ program time_level_7
   use time_assert           , only : report, verdict
   use time_assert           , only : NQ, NT, TOL
   use time_assert           , only : H_STEP, Q0, Q_BE1, Q_BDF2
-  use fractal_graph        , only : set_graph => graph
-  use graph_set_map        , only : set_map
+  use graph_fractal        , only : set_graph => graph
+  use map_set        , only : set_map
   use graph_directed_view   , only : directed_graph
   use graph_field_calculus  , only : graph_field
   use class_graph           , only : directed_stored_graph

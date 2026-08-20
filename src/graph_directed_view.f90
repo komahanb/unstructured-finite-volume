@@ -86,10 +86,10 @@ module graph_directed_view
   ! graph does not own them. It never learns what a set means.
   !===================================================================!
 
-  use fractal_graph       , only : set_graph => graph
-  use graph_set_map       , only : set_map
-  use graph_label_map     , only : label_map
-  use graph_inclusion_map , only : inclusion_map
+  use graph_fractal       , only : set_graph => graph
+  use map_set       , only : set_map
+  use map_label     , only : label_map
+  use map_inclusion , only : inclusion_map
 
   implicit none
 
@@ -162,7 +162,7 @@ module graph_directed_view
   !===================================================================!
   ! THE HIERARCHY, STATED ONCE. Three types, three roles, three names:
   !
-  !     fractal_graph :: graph                 the ontology, G=(B1,B2)
+  !     graph_fractal :: graph                 the ontology, G=(B1,B2)
   !     graph_directed_view :: directed_graph  this contract, D
   !     class_graph :: directed_stored_graph   one stored realization
   !

@@ -91,7 +91,7 @@ contains
   ! depth walk starts from; the other rules need no seed.
   !===================================================================!
 
-  pure type(walk) function create(rule, seed) result(this)
+  type(walk) function create(rule, seed) result(this)
 
     integer, intent(in)           :: rule
     integer, intent(in), optional :: seed
@@ -99,6 +99,9 @@ contains
     this % rule = rule
 
     if (present(seed)) this % seed = seed
+
+    ! a walk reads no input: every answer comes from the graph
+    call this % declare_arguments(0)
 
   end function create
 

@@ -104,10 +104,15 @@ contains
     type(stored_directed_graph), intent(in) :: g
 
     this % whole = g
+    this % local = shifted_laplacian()
     this % p1 = partitioner(PARTITION_LINEAR, num_parts=2, part=1)
     this % p2 = partitioner(PARTITION_LINEAR, num_parts=2, part=2)
     call this % p1 % partition_graph(g, this % g1, this % r1)
     call this % p2 % partition_graph(g, this % g2, this % r2)
+
+    ! the operation reads one input, its state
+    call this % declare_arguments(1)
+
 
   end function create_partitioned
 
@@ -121,7 +126,7 @@ contains
   ! The composite answers on the decomposition it was built from -
   ! and refuses to answer about any other graph. This is the
   ! earliest honest contract point: a solver attaching on a foreign
-  ! host dies here rather than deep inside a matvec.
+  ! host is refused here rather than deep inside a matvec.
   !===================================================================!
 
   subroutine part_domain(this, input_graph, domain, num_entries)
@@ -157,8 +162,8 @@ contains
     real(dp), allocatable           :: total(:)
 
     !----------------------------------------------------------------!
-    ! The interpretation environment of this call. Everything carved
-    ! below is consumed below, so it lives and dies here and no map
+    ! The interpretation environment of this call. Everything declared
+    ! below is consumed below, so it is created and released here and no map
     ! enters the operation's own type.
     !----------------------------------------------------------------!
 
@@ -180,7 +185,7 @@ contains
     end if
 
     !----------------------------------------------------------------!
-    ! The transports CARVE. Everything carved here is consumed here,
+    ! The transports DECLARE SUBOBJECTS. Everything declared here is consumed here,
     ! so the interpretation is local to the call and no map enters
     ! this operation's type - which holds an identity and a count and
     ! nothing else, like every other action in the tower.
@@ -317,7 +322,7 @@ contains
 
   !===================================================================!
   ! A part is a new graph, so its carriers are new domains and must be
-  ! described before a field can be seated on them.
+  ! described before a field can be placed on them.
   !===================================================================!
 
   subroutine bind_part(sets, g)

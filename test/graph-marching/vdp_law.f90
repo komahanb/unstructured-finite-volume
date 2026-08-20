@@ -14,7 +14,7 @@
 module vdp_fixture
 
   use iso_fortran_env    , only : dp => REAL64
-  use operation_action, only : operation
+  use operation_action, only : operation, variation
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use view_directed     , only : SIDE_VERTEX
@@ -36,8 +36,12 @@ module vdp_fixture
      procedure :: partial_action => law_partial_action
   end type vdp_law
 
+  interface vdp_law
+     module procedure create_law
+  end interface vdp_law
+
   ! The augmented statement: (q, dq) marched together; the tangent
-  ! rides the same forward walk as the state.
+  ! is carried by the same forward traversal as the state.
   type, extends(operation) :: vdp_tangent_law
      real(dp) :: mu = 1.0_dp
    contains
@@ -46,7 +50,26 @@ module vdp_fixture
      procedure :: apply  => tangent_apply
   end type vdp_tangent_law
 
+  interface vdp_tangent_law
+     module procedure create_tangent_law
+  end interface vdp_tangent_law
+
 contains
+
+  ! The constructors declare the one argument, the state.
+  function create_law(mu) result(this)
+    real(dp), intent(in), optional :: mu
+    type(vdp_law) :: this
+    if (present(mu)) this % mu = mu
+    call this % declare_arguments(1)
+  end function create_law
+
+  function create_tangent_law(mu) result(this)
+    real(dp), intent(in), optional :: mu
+    type(vdp_tangent_law) :: this
+    if (present(mu)) this % mu = mu
+    call this % declare_arguments(1)
+  end function create_tangent_law
 
   pure function law_name(this) result(name)
     class(vdp_law), intent(in) :: this
@@ -140,26 +163,29 @@ contains
     degree = 1
   end function law_max_degree
 
-  ! Minus J dq at the state in slot 1: the velocity jacobian, written
-  ! once; tangent_of reads it and the reverse walk transposes it.
-  subroutine law_partial_action(this, input_graph, input_data, slots, &
-       & directions, output)
+  ! Minus J dq at the state, the one argument: the velocity jacobian,
+  ! written once; tangent_of reads it and the reverse traversal
+  ! transposes it.
+  subroutine law_partial_action(this, input_graph, input_data, &
+       & variations, output)
 
     class(vdp_law), intent(in)               :: this
     class(directed_graph), intent(in)        :: input_graph
     class(field), intent(in)                 :: input_data(:)
-    integer, intent(in)                      :: slots(:)
-    class(field), intent(in)                 :: directions(:)
+    type(variation), intent(in)              :: variations(:)
     class(field), allocatable, intent(inout) :: output
 
     real(dp), allocatable :: q(:), d(:)
     real(dp) :: s(2), u, v
 
-    if (size(slots) /= 1) error stop 'van der pol: the law is exact to first order'
-    if (slots(1) /= 1)    error stop 'van der pol: the law takes one input slot'
+    call this % require_owned(variations)
+    if (size(variations) /= 1) error stop 'van der pol: the law is exact to first order'
+    if (.not. variations(1) % argument_is(this % argument(1))) then
+       error stop 'van der pol: the law takes one argument'
+    end if
 
     call input_data(1) % real_vector(q)
-    call directions(1) % real_vector(d)
+    call variations(1) % direction(d)
     u = q(1)
     v = q(2)
     s(1) = -d(2)

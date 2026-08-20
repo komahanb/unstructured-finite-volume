@@ -59,7 +59,17 @@ module shifted_laplacian_fixture
      procedure :: apply  => shifted_apply
   end type shifted_laplacian
 
+  interface shifted_laplacian
+     module procedure create_shifted
+  end interface shifted_laplacian
+
 contains
+
+  ! The constructor declares the one argument, the state.
+  function create_shifted() result(this)
+    type(shifted_laplacian) :: this
+    call this % declare_arguments(1)
+  end function create_shifted
 
   pure function shifted_name(this) result(name)
     class(shifted_laplacian), intent(in) :: this

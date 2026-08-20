@@ -13,15 +13,17 @@
 !                       so tangent_of must select the difference
 !                       linearization for it
 !
-! Partial derivatives are computed rather than tabulated: the
-! quartic differentiates each of its five monomials with falling
-! factorials, and every order-k mixed partial of power8 equals
-! 8!/(8-k)! (q + xi)^(8-k).
+! Each is built by its constructor, which declares its arguments:
+! q is argument 1 and xi argument 2 of the first three, q the one
+! argument of the fourth. Partial derivatives are computed rather
+! than tabulated: the quartic differentiates each of its five
+! monomials with falling factorials, and every order-k mixed partial
+! of power8 equals 8!/(8-k)! (q + xi)^(8-k).
 !
-! xi is read from input slot 2 when the caller passes two input
-! fields, and from the xi_default component otherwise. The chain
-! rule tests pass both inputs; the tangent passes only the
-! state, so the default keeps one operation usable by both.
+! xi is read from input 2 when the caller passes two input fields,
+! and from the xi_default component otherwise. The chain rule tests
+! pass both inputs; the tangent passes only the state, so the
+! default keeps one operation usable by both.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -29,7 +31,7 @@
 module toy_differentiable_forms
 
   use iso_fortran_env     , only : dp => REAL64
-  use operation_action, only : operation
+  use operation_action, only : operation, argument, variation
   use view_directed , only : directed_graph
   use field_calculus, only : field
   use graph_fractal       , only : graph
@@ -43,8 +45,8 @@ module toy_differentiable_forms
   public :: scalar_pair, fill_path
 
   !===================================================================!
-  ! Phi = q^4 + q^3 xi + q^2 xi^2 + q xi^3 + xi^4, scalar q in slot
-  ! one and scalar xi in slot two, exact to order 4.
+  ! Phi = q^4 + q^3 xi + q^2 xi^2 + q xi^3 + xi^4, scalar q in
+  ! argument one and scalar xi in argument two, exact to order 4.
   !===================================================================!
 
   type, extends(operation) :: quartic_form
@@ -57,11 +59,16 @@ module toy_differentiable_forms
      procedure :: partial_action => quartic_partial_action
   end type quartic_form
 
+  interface quartic_form
+     module procedure create_quartic
+  end interface quartic_form
+
   !===================================================================!
   ! Phi = (q + xi)^8. With u = q + xi, every mixed partial of
-  ! order k, in any mix of the two slots, equals 8!/(8-k)! u^(8-k).
-  ! Used by the degree-8 chain-rule test, whose expected values
-  ! are recomputed independently by Taylor convolution.
+  ! order k, in any mix of the two arguments, equals
+  ! 8!/(8-k)! u^(8-k). Used by the degree-8 chain-rule test, whose
+  ! expected values are recomputed independently by Taylor
+  ! convolution.
   !===================================================================!
 
   type, extends(operation) :: power8_form
@@ -73,6 +80,10 @@ module toy_differentiable_forms
      procedure :: max_degree     => power8_max_degree
      procedure :: partial_action => power8_partial_action
   end type power8_form
+
+  interface power8_form
+     module procedure create_power8
+  end interface power8_form
 
   !===================================================================!
   ! S_i(q, xi) = q_i^2 - xi, elementwise: the operation the
@@ -94,6 +105,10 @@ module toy_differentiable_forms
      procedure :: partial_action => equilibrium_partial_action
   end type equilibrium_law
 
+  interface equilibrium_law
+     module procedure create_equilibrium
+  end interface equilibrium_law
+
   !===================================================================!
   ! S(q) = q, overriding neither max_degree nor partial_action.
   ! Used to check that tangent_of falls back to the difference
@@ -108,7 +123,41 @@ module toy_differentiable_forms
      procedure :: apply  => linear_apply
   end type linear_law
 
+  interface linear_law
+     module procedure create_linear
+  end interface linear_law
+
 contains
+
+  !===================================================================!
+  ! The constructors: each declares the operation's arguments.
+  !===================================================================!
+
+  function create_quartic(xi_default) result(this)
+    real(dp), intent(in), optional :: xi_default
+    type(quartic_form) :: this
+    if (present(xi_default)) this % xi_default = xi_default
+    call this % declare_arguments(2)
+  end function create_quartic
+
+  function create_power8(xi_default) result(this)
+    real(dp), intent(in), optional :: xi_default
+    type(power8_form) :: this
+    if (present(xi_default)) this % xi_default = xi_default
+    call this % declare_arguments(2)
+  end function create_power8
+
+  function create_equilibrium(xi_default) result(this)
+    real(dp), intent(in), optional :: xi_default
+    type(equilibrium_law) :: this
+    if (present(xi_default)) this % xi_default = xi_default
+    call this % declare_arguments(2)
+  end function create_equilibrium
+
+  function create_linear() result(this)
+    type(linear_law) :: this
+    call this % declare_arguments(1)
+  end function create_linear
 
   !===================================================================!
   ! Domain used by every toy: the input graph's vertex set.
@@ -126,9 +175,9 @@ contains
   end subroutine vertex_domain
 
   !===================================================================!
-  ! Read the state vector from input slot 1, and xi from input
-  ! slot 2 when two inputs were passed or from xi_default when
-  ! only the state was passed.
+  ! Read the state vector from input 1, and xi from input 2 when
+  ! two inputs were passed or from xi_default when only the state
+  ! was passed.
   !===================================================================!
 
   subroutine read_arguments(input_data, xi_default, q, xi)
@@ -199,31 +248,35 @@ contains
   end function falling
 
   !===================================================================!
-  ! Count how many entries of slots(:) name input 1 (a) and input
-  ! 2 (b), and accumulate the product of the first value of every
-  ! direction field.
+  ! Count how many variations differentiate argument 1 (a) and
+  ! argument 2 (b) of the operation, and accumulate the product of
+  ! the first value of every direction. A variation on another
+  ! operation's argument is refused before counting.
   !===================================================================!
 
-  subroutine count_seats(slots, directions, a, b, product)
+  subroutine count_argument_occurrences(this, variations, a, b, product)
 
-    integer           , intent(in)  :: slots(:)
-    class(field), intent(in)  :: directions(:)
-    integer           , intent(out) :: a, b
-    real(dp)          , intent(out) :: product
+    class(operation), intent(in)  :: this
+    type(variation) , intent(in)  :: variations(:)
+    integer         , intent(out) :: a, b
+    real(dp)        , intent(out) :: product
 
     real(dp), allocatable :: v(:)
     integer :: j
 
-    a = count(slots == 1)
-    b = count(slots == 2)
+    call this % require_owned(variations)
 
+    a = 0
+    b = 0
     product = 1.0_dp
-    do j = 1, size(slots)
-       call directions(j) % real_vector(v)
+    do j = 1, size(variations)
+       if (variations(j) % argument_is(this % argument(1))) a = a + 1
+       if (variations(j) % argument_is(this % argument(2))) b = b + 1
+       call variations(j) % direction(v)
        product = product * v(1)
     end do
 
-  end subroutine count_seats
+  end subroutine count_argument_occurrences
 
   !===================================================================!
   ! Build the two scalar input fields (q, xi) on the given vertex
@@ -244,21 +297,20 @@ contains
   end subroutine scalar_pair
 
   !===================================================================!
-  ! Build an argument_path for the given input slot whose
-  ! derivative(k) holds the k-th scalar, every entry marked
-  ! occupied.
+  ! Build an argument_path on the given argument whose derivative(k)
+  ! holds the k-th scalar, every entry marked occupied.
   !===================================================================!
 
-  subroutine fill_path(path, slot, derivatives, cells)
+  subroutine fill_path(path, wrt, derivatives, cells)
 
     type(argument_path), intent(inout) :: path
-    integer            , intent(in)    :: slot
+    type(argument)     , intent(in)    :: wrt
     real(dp)           , intent(in)    :: derivatives(:)
     type(graph)    , intent(in)    :: cells
 
     integer :: k
 
-    path % slot = slot
+    path % wrt = wrt
     if (allocated(path % derivative)) deallocate(path % derivative)
     allocate(path % derivative(size(derivatives)))
 
@@ -342,14 +394,13 @@ contains
 
   end function quartic_mixed
 
-  subroutine quartic_partial_action(this, input_graph, input_data, slots, &
-       & directions, output)
+  subroutine quartic_partial_action(this, input_graph, input_data, &
+       & variations, output)
 
     class(quartic_form), intent(in)                :: this
     class(directed_graph), intent(in)              :: input_graph
     class(field), intent(in)                 :: input_data(:)
-    integer           , intent(in)                 :: slots(:)
-    class(field), intent(in)                 :: directions(:)
+    type(variation), intent(in)              :: variations(:)
     class(field), allocatable, intent(inout) :: output
 
     real(dp), allocatable :: q(:)
@@ -357,7 +408,7 @@ contains
     integer  :: a, b
 
     call read_arguments(input_data, this % xi_default, q, xi)
-    call count_seats(slots, directions, a, b, product)
+    call count_argument_occurrences(this, variations, a, b, product)
 
     call pack_output(input_graph, &
          & [quartic_mixed(a, b, q(1), xi) * product], output)
@@ -411,14 +462,13 @@ contains
 
   end subroutine power8_apply
 
-  subroutine power8_partial_action(this, input_graph, input_data, slots, &
-       & directions, output)
+  subroutine power8_partial_action(this, input_graph, input_data, &
+       & variations, output)
 
     class(power8_form), intent(in)                 :: this
     class(directed_graph), intent(in)              :: input_graph
     class(field), intent(in)                 :: input_data(:)
-    integer           , intent(in)                 :: slots(:)
-    class(field), intent(in)                 :: directions(:)
+    type(variation), intent(in)              :: variations(:)
     class(field), allocatable, intent(inout) :: output
 
     real(dp), allocatable :: q(:)
@@ -426,10 +476,10 @@ contains
     integer  :: a, b, order
 
     call read_arguments(input_data, this % xi_default, q, xi)
-    call count_seats(slots, directions, a, b, product)
+    call count_argument_occurrences(this, variations, a, b, product)
 
     ! d^k (q + xi)^8 = 8!/(8-k)! (q + xi)^(8-k) for every mix of
-    ! q and xi slots of total order k
+    ! q and xi arguments of total order k
     order = a + b
     term  = falling(8, order) * (q(1) + xi) ** (8 - order)
 
@@ -487,40 +537,37 @@ contains
   end subroutine equilibrium_apply
 
   subroutine equilibrium_partial_action(this, input_graph, input_data, &
-       & slots, directions, output)
+       & variations, output)
 
     class(equilibrium_law), intent(in)             :: this
     class(directed_graph), intent(in)              :: input_graph
     class(field), intent(in)                 :: input_data(:)
-    integer           , intent(in)                 :: slots(:)
-    class(field), intent(in)                 :: directions(:)
+    type(variation), intent(in)              :: variations(:)
     class(field), allocatable, intent(inout) :: output
 
     real(dp), allocatable :: q(:), s(:), v1(:), v2(:), w(:)
-    real(dp) :: xi
+    real(dp) :: xi, product
     integer  :: a, b, j
 
     call read_arguments(input_data, this % xi_default, q, xi)
-
-    a = count(slots == 1)
-    b = count(slots == 2)
+    call count_argument_occurrences(this, variations, a, b, product)
 
     ! collect up to two state direction vectors whole; only the
     ! first value of a xi direction is used
-    do j = 1, size(slots)
-       if (slots(j) == 1) then
+    do j = 1, size(variations)
+       if (variations(j) % argument_is(this % argument(1))) then
           if (.not. allocated(v1)) then
-             call directions(j) % real_vector(v1)
+             call variations(j) % direction(v1)
           else
-             call directions(j) % real_vector(v2)
+             call variations(j) % direction(v2)
           end if
        else
-          call directions(j) % real_vector(w)
+          call variations(j) % direction(w)
        end if
     end do
 
-    ! the three nonzero partials of q^2 - xi; every other slot
-    ! combination is zero
+    ! the three nonzero partials of q^2 - xi; every other
+    ! combination of arguments is zero
     allocate(s(size(q)))
     if (a == 1 .and. b == 0) then
        s = 2.0_dp * q * v1

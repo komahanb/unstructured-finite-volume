@@ -41,7 +41,7 @@
 module operation_marching
 
   use iso_fortran_env    , only : dp => REAL64
-  use operation_action, only : operation
+  use operation_action, only : operation, argument
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use graph_fractal      , only : graph
@@ -595,21 +595,22 @@ contains
     call read_state_domain(action, on, trajectory(:, 1), state_domain, &
          & n_state_domain, num_components)
 
-    ! check the parameter paths: each must name a slot >= 2 that a
-    ! supplied parameter field covers
+    ! check the parameter paths: each must name an auxiliary argument
+    ! of the action that a supplied parameter field covers -
+    ! parameters(j) is the field for the action's argument 1 + j
     npaths = 0
     if (present(paths)) then
        npaths = size(paths)
        do k = 1, npaths
-          if (paths(k) % slot <= 1) then
+          if (paths(k) % wrt % matches(action % argument(1))) then
              error stop 'march_directional: the state path is computed, &
                   &not supplied'
           end if
           if (.not. present(parameters)) then
-             error stop 'march_directional: a parameter path names a supplied slot'
+             error stop 'march_directional: a parameter path names a supplied argument'
           end if
-          if (paths(k) % slot > 1 + size(parameters)) then
-             error stop 'march_directional: a parameter path names a supplied slot'
+          if (.not. covered_by_parameters(action, paths(k) % wrt, size(parameters))) then
+             error stop 'march_directional: a parameter path names a supplied argument'
           end if
        end do
     end if
@@ -662,8 +663,18 @@ contains
 
        do s_order = 1, order
 
-          call build_paths(this, sensitivities, state_domain, &
-               & n_state_domain, num_components, at, s_order, npaths, paths, assembled)
+          ! the state path names the state argument of the statement
+          ! the composition runs over; under an implicit rule the
+          ! parameter paths are restated in the scheme's space
+          if (this % rule == MARCH_FORWARD) then
+             call build_paths(this, sensitivities, state_domain, &
+                  & n_state_domain, num_components, at, s_order, npaths, paths, &
+                  & action % argument(1), assembled)
+          else
+             call build_paths(this, sensitivities, state_domain, &
+                  & n_state_domain, num_components, at, s_order, npaths, paths, &
+                  & statement % state(), assembled, statement)
+          end if
 
           if (this % rule == MARCH_FORWARD) then
 
@@ -700,22 +711,48 @@ contains
   end subroutine march_directional
 
   !===================================================================!
+  ! Whether a parameter path's argument is one of the action's
+  ! auxiliaries that a supplied parameter field covers: parameters(j)
+  ! stands for the action's argument 1 + j.
+  !===================================================================!
+
+  logical function covered_by_parameters(action, wrt, num_parameters) result(covered)
+
+    class(operation), intent(in) :: action
+    type(argument)  , intent(in) :: wrt
+    integer         , intent(in) :: num_parameters
+
+    integer :: j
+
+    covered = .false.
+    do j = 1, min(num_parameters, action % num_arguments() - 1)
+       if (wrt % matches(action % argument(1 + j))) covered = .true.
+    end do
+
+  end function covered_by_parameters
+
+  !===================================================================!
   ! Build the argument paths for one edge and one order: the state
-  ! path holds the solved derivatives below the current order;
-  ! under an implicit rule its order-s entry is set to zero, which
-  ! makes the assembled total the right-hand side for the unknown
-  ! q^(s). The caller's parameter paths are appended unchanged.
+  ! path, on the given state argument, holds the solved derivatives
+  ! below the current order; under an implicit rule its order-s
+  ! entry is set to zero, which makes the assembled total the
+  ! right-hand side for the unknown q^(s). The caller's parameter
+  ! paths are appended, restated in the scheme's argument space when
+  ! the composition runs over a scheme.
   !===================================================================!
 
   subroutine build_paths(this, sensitivities, state_domain, n_state_domain, &
-       & num_components, at, s_order, npaths, parameter_paths, assembled)
+       & num_components, at, s_order, npaths, parameter_paths, state_argument, &
+       & assembled, statement)
 
     class(marcher), intent(in) :: this
     real(dp)      , intent(in) :: sensitivities(:,:,:)
     type(graph), intent(in) :: state_domain
     integer       , intent(in) :: n_state_domain, num_components, at, s_order, npaths
     type(argument_path), intent(in), optional :: parameter_paths(:)
+    type(argument), intent(in) :: state_argument
     type(argument_path), allocatable, intent(out) :: assembled(:)
+    type(scheme), intent(in), optional :: statement
 
     type(stored_field) :: derivative_field
     real(dp), allocatable :: derivative_values(:)
@@ -723,7 +760,7 @@ contains
 
     allocate(assembled(1 + npaths))
 
-    assembled(1) % slot = 1
+    assembled(1) % wrt = state_argument
     allocate(assembled(1) % derivative(s_order))
 
     do k = 1, s_order
@@ -748,6 +785,9 @@ contains
 
     do k = 1, npaths
        assembled(1 + k) = parameter_paths(k)
+       if (present(statement)) then
+          assembled(1 + k) % wrt = statement % from_action(parameter_paths(k) % wrt)
+       end if
     end do
 
   end subroutine build_paths

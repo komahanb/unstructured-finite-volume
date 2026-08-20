@@ -38,7 +38,7 @@
 !    (A2, k2) o (A1, k1) = (A2 A1, A2 k1 + k2),
 !
 ! computed here by sparse triple composition with duplicate (row,
-! column) entries combined. The coefficient rides the innermost
+! column) entries combined. The coefficient is carried by the innermost
 ! step, so a per-edge coefficient makes order 2 the operator
 ! div(k grad q).
 !
@@ -156,7 +156,7 @@ contains
   ! wins over its scalar when given.
   !===================================================================!
 
-  pure type(differential_operator) function edge_derivative &
+  type(differential_operator) function edge_derivative &
        & (order, coefficient, coefficients, spacing, spacings, &
        &  measure, measures, boundary_value, boundary_values, one_sided, &
        &  label) result(this)
@@ -188,6 +188,9 @@ contains
     if (present(boundary_values)) allocate(this % boundary_values, source=boundary_values)
     if (present(label))           this % label          = label
 
+    ! one argument: the field differentiated
+    call this % declare_arguments(1)
+
   end function edge_derivative
 
   !===================================================================!
@@ -195,7 +198,7 @@ contains
   ! flag: raised, the operator applies its transpose.
   !===================================================================!
 
-  pure type(differential_operator) function vertex_derivative &
+  type(differential_operator) function vertex_derivative &
        & (order, coefficient, coefficients, spacing, spacings, &
        &  measure, measures, boundary_value, boundary_values, adjoint, label) result(this)
 
@@ -225,6 +228,8 @@ contains
     if (present(adjoint))         this % adjoint        = adjoint
     if (present(label))           this % label          = label
 
+    call this % declare_arguments(1)
+
   end function vertex_derivative
 
   !===================================================================!
@@ -237,7 +242,7 @@ contains
   !    laplacian(...)       the second derivative at each vertex
   !===================================================================!
 
-  pure type(differential_operator) function gradient(coefficient, coefficients, &
+  type(differential_operator) function gradient(coefficient, coefficients, &
        & spacing, spacings, boundary_value, boundary_values) result(this)
 
     real(dp), intent(in), optional :: coefficient, coefficients(:)
@@ -251,7 +256,7 @@ contains
 
   end function gradient
 
-  pure type(differential_operator) function interpolation(coefficient, coefficients, &
+  type(differential_operator) function interpolation(coefficient, coefficients, &
        & boundary_value, boundary_values) result(this)
 
     real(dp), intent(in), optional :: coefficient, coefficients(:)
@@ -263,7 +268,7 @@ contains
 
   end function interpolation
 
-  pure type(differential_operator) function divergence(coefficient, coefficients, &
+  type(differential_operator) function divergence(coefficient, coefficients, &
        & measure, measures) result(this)
 
     real(dp), intent(in), optional :: coefficient, coefficients(:)
@@ -275,7 +280,7 @@ contains
 
   end function divergence
 
-  pure type(differential_operator) function laplacian(coefficient, coefficients, &
+  type(differential_operator) function laplacian(coefficient, coefficients, &
        & spacing, spacings, measure, measures, boundary_value, boundary_values) result(this)
 
     real(dp), intent(in), optional :: coefficient, coefficients(:)
@@ -967,7 +972,7 @@ contains
   end subroutine operator_apply
 
   !===================================================================!
-  ! Fetch the input values once and report how many components ride
+  ! Fetch the input values once and report how many components are carried
   ! in each entry. The field must cover the named side's whole set,
   ! by identity, because the sweep indexes it densely; anything
   ! else leaves a zero-length array and zero components.

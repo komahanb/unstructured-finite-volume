@@ -41,7 +41,17 @@ module nonlinear_sample_support
      procedure :: apply  => nonlinear_sample_apply
   end type nonlinear_sample
 
+  interface nonlinear_sample
+     module procedure create_nonlinear_sample
+  end interface nonlinear_sample
+
 contains
+
+  ! The constructor declares the one argument, the state.
+  function create_nonlinear_sample() result(this)
+    type(nonlinear_sample) :: this
+    call this % declare_arguments(1)
+  end function create_nonlinear_sample
 
   pure function nonlinear_sample_name(this) result(name)
     class(nonlinear_sample), intent(in) :: this
@@ -149,7 +159,7 @@ end module nonlinear_sample_support
 !  11. An uncut graph reports no partition record, and every
 !      partition query treats it as the whole of itself - one part,
 !      everything owned, nothing borrowed, identity maps.
-!  12. Geometry rides on the graph and is fetched by name, which is
+!  12. Geometry is held on the graph and is fetched by name, which is
 !      how an edge operation reaches a face normal without any caller
 !      threading it down through every call.
 !  13. Every reduction rule on numbers whose answer is obvious by
@@ -875,7 +885,7 @@ contains
   end subroutine check_graph_uncut
 
   !===================================================================!
-  ! Geometry rides on the graph and is fetched by name. This is how a
+  ! Geometry is held on the graph and is fetched by name. This is how a
   ! edge operation reaches a face normal without any caller threading
   ! it down through every call.
 
@@ -1677,7 +1687,7 @@ contains
     ! catches it.
     open_chain = stored_directed_graph(4, tails=[1, 2, 3, 4], heads=[2, 3, 4, 0])
     call describe(sets, open_chain)
-    ! Domains are identities now: the state must ride the graph it
+    ! Domains are identities now: the state must live on the graph it
     ! is applied against.
     q = stored_field('q', open_chain % vertex_set(), open_chain % num_vertices())
     call q % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
@@ -2325,6 +2335,7 @@ contains
     call qf % set_real_vector(q)
 
     ! The nonlinear formula runs through the ordinary leaf.
+    formula = nonlinear_sample()
     call formula % apply(ring, [qf], zf)
     call zf % real_vector(z)
     call report(abs(z(1) - 0.5_dp * (q(1) + q(2)) * abs(q(2) - q(1))) < 1.0d-12, &
@@ -2332,7 +2343,7 @@ contains
 
     ! Conservation belongs to incidence: the sum of ANY edge field
     ! over a closed ring sums to zero, this formula included. (The
-    ! samples ride in a concrete field; gfortran 11 cannot build an
+    ! samples are held in a concrete field; gfortran 11 cannot build an
     ! array constructor from a polymorphic item.)
     eon = ring % edge_set()
     samples = stored_field('z', eon, sets % num_members_of(eon))
@@ -2369,7 +2380,7 @@ contains
 
   !===================================================================!
   ! THE INNER PRODUCT. It is not a new machine; it is the reduction
-  ! with its measure seat occupied. Reducing u with measure v sums
+  ! with its measure position occupied. Reducing u with measure v sums
   ! u times v entry by entry, which is the product <u, v>. These
   ! checks pin that reading, and use it to state integration by
   ! parts and the Laplacian's energy on a chain.
@@ -2467,7 +2478,7 @@ contains
   !===================================================================!
   ! THE BROADCAST. The reduction's transpose: one value fills a
   ! field. The round trips pin the two rule pairs, the pairing pins
-  ! the transpose property, and a complex seed rides intact. No
+  ! the transpose property, and a complex seed is carried intact. No
   ! graph appears anywhere: the field's own support carries
   ! everything a broadcast needs.
   !===================================================================!
@@ -2491,8 +2502,8 @@ contains
     f  = stored_field('seed', on, sets % num_members_of(on))
     uf = stored_field('u', on, sets % num_members_of(on))
 
-    copy_rule  % rule = BROADCAST_COPY
-    share_rule % rule = BROADCAST_SHARE
+    copy_rule  = broadcast(BROADCAST_COPY)
+    share_rule = broadcast(BROADCAST_SHARE)
     call seed % set_real_value(6.0_dp)
 
     ! The average of four copies of 6 is 6.
@@ -2520,7 +2531,7 @@ contains
     call report(abs(x - 60.0_dp) < 1.0d-12, &
          & "<broadcast(J), u> = J sum(u): the transpose pairing", nfail)
 
-    ! A complex seed rides intact: four copies of 6 + 0.001i sum to
+    ! A complex seed is carried intact: four copies of 6 + 0.001i sum to
     ! 24 + 0.004i.
     call seed % set_complex_value((6.0_dp, 0.001_dp))
     call copy_rule % broadcast(seed, f)

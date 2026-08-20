@@ -106,6 +106,10 @@ contains
     this % state   = state
     this % n_state = n_state
 
+    ! the operation reads one input, its state
+    call this % declare_arguments(1)
+
+
   end function create_decay
 
   pure function decay_name(this) result(name)

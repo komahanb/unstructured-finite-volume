@@ -17,10 +17,10 @@ relation_algorithms.o \
 field_calculus.o \
 view_directed.o \
 relation_partition.o \
+field_stored.o \
 operation_action.o \
 transform_structure.o \
 operation_discretization.o \
-field_stored.o \
 map_value.o \
 map_value_change.o \
 field_functional.o \

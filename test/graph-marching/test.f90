@@ -161,6 +161,7 @@ contains
     ! The five points, as a graph of lone cells.
     points = stored_directed_graph(nv, tails=[integer ::], heads=[integer ::])
 
+    law = mandelbrot_law()
     law % creal = [0.0_dp, -1.0_dp, 1.0_dp, -2.0_dp, 0.0_dp]
     law % cimag = [0.0_dp,  0.0_dp, 0.0_dp,  0.0_dp, 2.0_dp]
 
@@ -255,7 +256,7 @@ contains
   end subroutine check_the_implicit_road
 
   !===================================================================!
-  ! The same numbers, seated two ways. Two cells carrying one number
+  ! The same numbers, placed two ways. Two cells carrying one number
   ! each and one cell carrying two are the same state written
   ! differently, and a decoupled law must march them to the same
   ! place. The implicit road is where this can go wrong quietly: a
@@ -377,6 +378,9 @@ contains
     real(dp), parameter :: h = 0.01_dp
     integer , parameter :: nsteps = 100
     integer :: i
+
+    law     = vdp_law()
+    tangent = vdp_tangent_law()
 
     cell = stored_directed_graph(1, tails=[integer ::], heads=[integer ::])
     clock % rule = 1

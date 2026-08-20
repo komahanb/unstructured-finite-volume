@@ -16,7 +16,7 @@
 ! The residual formula r(w) = x_data*w - y_data is TEST-LOCAL
 ! ORACLE DATA supplied from above the frontier: Level 7 does not
 ! derive it from T_flow, and predict/error remain lawless members
-! of O until Level 8. The solver is the ordinary GMRES citizen -
+! of O until Level 8. The solver is the ordinary GMRES type -
 ! attach, constant, solve - which discovers the linear action
 ! 2w from the opaque residual through the minimizer's own affine
 ! split R(w) - R(0). This is exact parameter fitting for an
@@ -90,6 +90,10 @@ contains
     call sets % extent_of(y    , this % c_y)
     this % x_data = x_data
     this % y_data = y_data
+
+    ! the operation reads one input, its state
+    call this % declare_arguments(1)
+
   end function create_oracle
 
   pure function oracle_name(this) result(name)

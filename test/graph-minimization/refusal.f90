@@ -23,7 +23,15 @@ module lopsided_fixture
      procedure :: domain => l_domain
      procedure :: apply => l_apply
   end type lopsided
+  interface lopsided
+     module procedure create_lopsided
+  end interface lopsided
 contains
+  ! The constructor declares the one argument, the state.
+  function create_lopsided() result(this)
+    type(lopsided) :: this
+    call this % declare_arguments(1)
+  end function create_lopsided
   pure function l_name(this) result(name)
     class(lopsided), intent(in) :: this
     character(len=:), allocatable :: name
@@ -74,6 +82,7 @@ program minimization_refusal
   call u % declare()
   call sets       % bind(u, listed_set_representation([5, 1])) ! two unknowns
   call inclusions % include_in(u, x)
+  action = lopsided()
   call action % y % declare()
   call sets % bind(action % y, counted_set_representation(3))  ! three residuals
   action % n_y = 3

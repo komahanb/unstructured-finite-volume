@@ -62,10 +62,15 @@ Indentation is `extends`; brackets name the file.
         └── stored_functional                  [field_functional]
 
     operation                                  [operation_action]
-    │     name, domain, apply; and max_degree (0 unless overridden)
-    │     with partial_action, so differentiability is a capability
-    │     of every operation - tangent_of picks the exact tangent
-    │     when max_degree >= 1, the difference tangent otherwise
+    │     name, domain, apply; an argument space declared once by the
+    │     constructor (declare_arguments: the readable input positions,
+    │     not a required length); argument(k) names a position in it,
+    │     and arguments of two operations never match. max_degree (0
+    │     unless overridden) with partial_action over a list of
+    │     variations - one (argument, direction) factor each - so
+    │     differentiability is a capability of every operation;
+    │     tangent_of picks the exact tangent when max_degree >= 1,
+    │     the difference tangent otherwise
     ├── reduction   field -> functional  (sum, average, norm, ...)   [operation_reduction]
     ├── broadcast   functional -> field  (copy, share)               [operation_reduction]
     ├── discretization                             [operation_discretization]
@@ -74,15 +79,27 @@ Indentation is `extends`; brackets name the file.
     │   │       compiled from an operation on the standard basis;
     │   │       transpose; its own tangent (a linear map, max_degree
     │   │       1); exports combine_triples (one entry per pair)
-    │   └── scheme   time: a0 q + a1 qold + a2 qolder + hs S(q)  [operation_step]
-    │           max_degree and partial_action are the action's, with
-    │           a0 v added to the first derivative in the state: the
-    │           tangent of the step equation is exact when S's is
-    ├── linearization  J v at a frozen state       [operation_linearization]
-    │       the tangent of any statement, derived by tangent_of: exact
+    │   └── scheme   time: a0 q_n + a1 q_(n-1) + a2 q_(n-2)        [operation_step]
+    │           + h [theta S(q_n, xi) + (1-theta) S(q_(n-1), xi)]
+    │           (theta 1 backward euler / BDF2, 0 forward euler,
+    │           1/2 Crank-Nicolson); its argument space is the
+    │           action's (state, auxiliaries) followed by history(k),
+    │           k <= reach; every partial is derived from the action's
+    │           by that formula, each factor restated on the action's
+    │           argument first - the tangent of the step equation is
+    │           exact when S's is. History may arrive as inputs; the
+    │           stored qold/qolder remain until the marcher passes it
+    ├── linearization  D_a S(x)[v] at a frozen input tuple   [operation_linearization]
+    │       the tangent of any statement in any of its arguments,
+    │       derived by tangent_of(statement, wrt, at_inputs): exact
     │       through partial_action when max_degree >= 1, by differences
-    │       otherwise - the primal is written once
+    │       otherwise - the primal is written once; dual_by_basis forms
+    │       (D_a S)^T lambda under the Euclidean pairing on stored
+    │       values, for rectangular blocks the square stencil cannot
     ├── minimizer                              [operation_minimization]
+    │   │     attach holds the statement, the unknown domain and any
+    │   │     held_inputs - inputs fixed during this solve, applied
+    │   │     after the unknown, the affine part's included
     │   ├── jacobi, gauss_seidel, conjugate_gradient, gmres, multigrid
     │   ├── newton        Jacobian action = tangent_of(action)
     │   └── dense_direct  elimination on the attached operation's basis columns
@@ -125,8 +142,9 @@ Indentation is `extends`; brackets name the file.
     relation     = graph  x  tuples
     operation    = graph  x  fields  ->  field
     stencil      = operation with weights on edges          (a matrix)
-    scheme       = operation x (a0, a1, a2, hs)             (a step rule)
-    tangent      = operation frozen at a state              (a matrix action)
+    scheme       = operation x (a0, a1, a2, h, theta)       (a step rule)
+    variation    = argument x direction                     (one derivative factor)
+    tangent      = operation x argument, frozen at inputs   (a matrix action)
     derivative   = incidence o difference o ... o average   (one stencil)
     chain rule   = partitions x partial actions             (any derivative)
     minimizer    = operation + a stopping rule              (a solve)

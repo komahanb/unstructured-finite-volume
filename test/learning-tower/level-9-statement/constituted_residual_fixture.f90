@@ -70,7 +70,7 @@ contains
 
   !===================================================================!
   ! The selector only NAMES the flow; what the adapter keeps is the
-  ! graph-owned citizen, found by identity and refused if GAMMA does
+  ! graph-owned member, found by identity and refused if GAMMA does
   ! not own it.
   !===================================================================!
 
@@ -130,6 +130,10 @@ contains
     call sets % extent_of(observed,  this % c_observed)
     call sets % extent_of(trainable, this % c_trainable)
     call sets % extent_of(computed,  this % c_computed)
+
+    ! the operation reads one input, its state
+    call this % declare_arguments(1)
+
 
   end function create_adapter
 

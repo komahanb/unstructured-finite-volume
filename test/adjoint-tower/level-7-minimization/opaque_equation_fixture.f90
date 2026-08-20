@@ -102,6 +102,10 @@ contains
     this % y_dom = y_dom ; this % n_y_dom = sets % num_members_of(y_dom)
     call sets % extent_of(q_dom, this % c_q)
     call sets % extent_of(y_dom, this % c_y)
+
+    ! the operation reads one input, its state
+    call this % declare_arguments(1)
+
   end function create_primal
 
   type(opaque_adjoint) function create_adjoint(y_dom, q_dom, sets) result(this)
@@ -111,6 +115,10 @@ contains
     this % q_dom = q_dom ; this % n_q_dom = sets % num_members_of(q_dom)
     call sets % extent_of(y_dom, this % c_y)
     call sets % extent_of(q_dom, this % c_q)
+
+    ! the operation reads one input, its state
+    call this % declare_arguments(1)
+
   end function create_adjoint
 
   pure function primal_name(this) result(name)

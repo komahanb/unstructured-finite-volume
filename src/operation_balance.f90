@@ -92,13 +92,16 @@ contains
   ! balance answers zero.
   !===================================================================!
 
-  pure type(balance) function create(edge_terms, source) result(this)
+  type(balance) function create(edge_terms, source) result(this)
 
     type(differential_operator), intent(in), optional :: edge_terms(:)
     real(dp)  , intent(in), optional :: source
 
     if (present(edge_terms)) allocate(this % edge_terms, source=edge_terms)
     if (present(source))     this % source = source
+
+    ! one argument: the state the balance is taken of
+    call this % declare_arguments(1)
 
   end function create
 

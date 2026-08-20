@@ -51,7 +51,7 @@
 ! The measure carries one value per entry. A field several components
 ! wide weights every component of an entry by that entry's measure.
 !
-! The measure seat is also the inner product's second field: a sum
+! The measure position is also the inner product's second field: a sum
 ! reduced with measure v answers the sum of q times v, the product
 ! <q, v>.
 !
@@ -168,12 +168,16 @@ module operation_reduction
      module procedure create
   end interface reduction
 
+  interface broadcast
+     module procedure create_broadcast
+  end interface broadcast
+
   !===================================================================!
   ! The reduction's pair: one value fills a field. Copy is the
   ! transpose of a sum, share the transpose of an average, and the
-  ! round trip reduce(broadcast(J)) = J pins them. The rule
-  ! component is public, so the intrinsic structure constructor
-  ! broadcast(BROADCAST_SHARE) builds one.
+  ! round trip reduce(broadcast(J)) = J pins them. The constructor
+  ! broadcast(BROADCAST_SHARE) builds one and declares its one
+  ! argument.
   !===================================================================!
 
   type, extends(operation) :: broadcast
@@ -212,7 +216,26 @@ contains
 
     call this % home % declare()
 
+    ! two readable positions, the values and the measure; a call may
+    ! still pass one or none, as it always could
+    call this % declare_arguments(2)
+
   end function create
+
+  !===================================================================!
+  ! Build a broadcast that follows one rule: one argument, the
+  ! functional it spreads.
+  !===================================================================!
+
+  type(broadcast) function create_broadcast(rule) result(this)
+
+    integer, intent(in) :: rule
+
+    this % rule = rule
+
+    call this % declare_arguments(1)
+
+  end function create_broadcast
 
   !===================================================================!
   ! The empty answer a reduction starts from. Zero for a sum, the largest

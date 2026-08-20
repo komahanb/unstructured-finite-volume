@@ -91,6 +91,7 @@ contains
     vs = g % vertex_set()
     n_vs = g % num_vertices()
 
+    shifted = shifted_laplacian()
     call solver % attach(shifted, g, vs, n_vs)
     solver % tolerance      = 1.0d-12
     solver % max_iterations = 200

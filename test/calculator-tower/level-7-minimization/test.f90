@@ -16,7 +16,7 @@
 ! TEST DATA supplied from above the frontier: Level 7 does not
 ! derive 5, 4, +, or multiplication, and their calculator meaning
 ! is not certified until Level 8. The solver is the ordinary GMRES
-! citizen: attach, constant, solve - no calculator API, no Newton,
+! type: attach, constant, solve - no calculator API, no Newton,
 ! no manual Jacobian, no arithmetic knowledge anywhere in
 ! production.
 !
@@ -80,6 +80,10 @@ contains
     this % y = y ; this % n_y = sets % num_members_of(y)
     call sets % extent_of(u, this % u_coords)
     call sets % extent_of(y, this % y_coords)
+
+    ! the operation reads one input, its state
+    call this % declare_arguments(1)
+
   end function create_oracle
 
   pure function oracle_name(this) result(name)

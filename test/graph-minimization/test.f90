@@ -7,12 +7,12 @@
 !       0 |--- (1) --- (2) --- (3) ---| 10        k = 1, A = 1
 !         d 0.5     1       1     0.5
 !
-! whose exact answer is q = [5/3, 5, 25/3]. The mesh seats the
+! whose exact answer is q = [5/3, 5, 25/3]. The mesh holds the
 ! measurements, the constitution supplies the coefficients, the
 ! calculus builds the rows, and the minimization drives the residual
 ! down - every level doing only its own job, and the solver speaking
 ! only its own words: matvec, inner product, norm, diagonal, sweep
-! order, each a delegation to an engine seat.
+! order, each a delegation to an engine entry.
 !=====================================================================!
 
 module cubic_statement_fixture
@@ -52,7 +52,18 @@ module cubic_statement_fixture
 
   end type cubic_statement
 
+  interface cubic_statement
+     module procedure create_cubic
+  end interface cubic_statement
+
 contains
+
+  ! The constructor declares the one argument, the state; the linear
+  ! part and the strength are assigned afterwards.
+  function create_cubic() result(this)
+    type(cubic_statement) :: this
+    call this % declare_arguments(1)
+  end function create_cubic
 
   pure function cubic_name(this) result(name)
     class(cubic_statement), intent(in) :: this
@@ -478,7 +489,7 @@ contains
   end subroutine check_gmres_family
 
   !===================================================================!
-  ! Newton over the linear family. A cubic term rides the chain
+  ! Newton over the linear family. A cubic term is added to the chain
   ! statement; newton linearizes by directional differences, hands
   ! each linear question to the gmres it governs, and drives the
   ! nonlinear residual to zero.
@@ -496,6 +507,7 @@ contains
 
     m = chain_mesh()
 
+    action = cubic_statement()
     action % linear_part = chain_operator(m)
     action % strength    = 0.05_dp
 

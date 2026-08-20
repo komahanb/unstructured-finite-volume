@@ -57,6 +57,7 @@ program partitioned_pde_level_6_refusal
      call sets % bind(foreign, counted_set_representation(NV))
      q = stored_field('state on a foreign carrier', foreign, NV)
      call q % set_real_vector(Q_EXACT)
+     shifted = shifted_laplacian()
      call shifted % apply(g, [q], out)
      write(*,*) 'a foreign carrier of the right size was accepted'
 

@@ -12,7 +12,7 @@
 ! owned outputs and hands GMRES an operator that behaves exactly
 ! like the global one.
 !
-! Equivalence is required first at solver % matvec - the exact seat
+! Equivalence is required first at solver % matvec - the exact entry
 ! GMRES consumes, not merely between fixtures - on all four Level-8
 ! probes. Then both roads are solved INDEPENDENTLY from the same b,
 ! and must meet:
@@ -106,6 +106,7 @@ contains
     vs = g % vertex_set()
     n_vs = g % num_vertices()
 
+    direct = shifted_laplacian()
     call solver_global % attach(direct, g, vs, n_vs)
     call solver_part % attach(composite, g, vs, n_vs)
     solver_global % tolerance      = 1.0d-12

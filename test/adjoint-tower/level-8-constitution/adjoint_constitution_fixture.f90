@@ -428,6 +428,10 @@ contains
     this % p_dom = p_dom ; this % n_p_dom = sets % num_members_of(p_dom)
     call sets % extent_of(p_dom, this % c_p)
     this % p_val = p_val
+
+    ! the operation reads one input, its state
+    call this % declare_arguments(1)
+
   end function create_primal
 
   type(constituted_adjoint) function create_adjoint(jq, fq, y_dom, &
@@ -443,6 +447,10 @@ contains
     call sets % extent_of(q_dom, this % c_q)
     this % z_dom = z_dom ; this % n_z_dom = sets % num_members_of(z_dom)
     call sets % extent_of(z_dom, this % c_z)
+
+    ! the operation reads one input, its state
+    call this % declare_arguments(1)
+
   end function create_adjoint
 
   type(constituted_tangent) function create_tangent(jq, jp, q_dom, &
@@ -460,6 +468,10 @@ contains
     this % p_dom = p_dom ; this % n_p_dom = sets % num_members_of(p_dom)
     call sets % extent_of(p_dom, this % c_p)
     this % dp_val = dp_val
+
+    ! the operation reads one input, its state
+    call this % declare_arguments(1)
+
   end function create_tangent
 
   pure function primal_name(this) result(name)

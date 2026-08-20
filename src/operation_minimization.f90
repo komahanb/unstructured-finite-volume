@@ -12,7 +12,7 @@
 ! newton, and whatever else minimizes a residual are its
 ! concretions; their differences are governance inside the family,
 ! never a second taxonomy. The solver vocabulary is defined here as
-! thin delegations to engine seats, so the engine never learns a
+! thin delegations to engine entries, so the engine never learns a
 ! solver word and the solver never says apply or measure:
 !
 !      matvec ········· the operation applied, minus its constant
@@ -78,7 +78,7 @@ module operation_minimization
      ! gauss-seidel - is handed it by a caller that knows which object
      ! owns the dependent axis, and fails loudly if it was not.
      !
-     ! `coupling := on` would be exactly the mistake this seat exists
+     ! `coupling := on` would be exactly the mistake this component exists
      ! to prevent: the graph an action happens to execute over is not
      ! evidence about which unknowns are coupled. Where the two really
      ! are the same graph, the CALLER says so, at its own call site.
@@ -94,11 +94,11 @@ module operation_minimization
      type(graph) :: residual_domain
      integer         :: num_residuals = 0
 
-     ! A second seat, one member per NUMBER rather than per cell.
+     ! A second domain, one member per NUMBER rather than per cell.
      ! The pairings live here: a measure carries one weight per
      ! entry, so a dot product over wide entries must be taken on
      ! the values themselves - the calculus says as much in its own
-     ! banner. With one number per cell the two seats are the same
+     ! banner. With one number per cell the two domains are the same
      ! set, and nothing changes.
      type(graph) :: numbers
      integer         :: num_numbers = 0
@@ -112,6 +112,12 @@ module operation_minimization
      integer :: num_components = 1
 
      real(dp), allocatable :: affine(:)
+
+     ! THE HELD INPUTS. Inputs held fixed during this solve - a
+     ! scheme's history, an action's parameters - applied after the
+     ! unknown on every evaluation. Solve-context data: the solver
+     ! varies the unknown and nothing else.
+     type(stored_field), allocatable :: held(:)
 
      integer  :: max_iterations = 1000
      real(dp) :: tolerance      = 1.0d-10
@@ -164,7 +170,7 @@ contains
   !===================================================================!
 
   subroutine attach(this, action, on, unknown_domain, num_unknowns, &
-       & num_components, coupling)
+       & num_components, coupling, held_inputs)
 
     class(minimizer)  , intent(inout) :: this
     class(operation), intent(in)    :: action
@@ -173,6 +179,7 @@ contains
     integer               , intent(in)    :: num_unknowns
     integer, intent(in), optional         :: num_components
     class(directed_graph)  , intent(in), optional  :: coupling
+    type(stored_field), intent(in), optional :: held_inputs(:)
 
     real(dp), allocatable :: zero(:)
     integer :: n
@@ -181,6 +188,14 @@ contains
     allocate(this % action, source=action)
     if (allocated(this % on)) deallocate(this % on)
     allocate(this % on, source=on)
+
+    ! the inputs held fixed during this solve follow the unknown in
+    ! every evaluation, the affine part's included
+    if (allocated(this % held)) deallocate(this % held)
+    if (present(held_inputs)) allocate(this % held, source=held_inputs)
+
+    ! the solver's own operation face reads one input, the right-hand side
+    call this % declare_arguments(1)
 
     ! The dependent-variable coupling arrives EXPLICIT or not at all.
     ! No fallback to the execution context: a solver that needs
@@ -251,7 +266,11 @@ contains
     state = stored_field('state', this % unknown_domain, this % num_unknowns, num_components=this % num_components)
     call state % set_real_vector(x)
 
-    call this % action % apply(this % on, [state], answer)
+    if (allocated(this % held)) then
+       call this % action % apply(this % on, [state, this % held], answer)
+    else
+       call this % action % apply(this % on, [state], answer)
+    end if
 
     block
       type(graph) :: got
@@ -368,7 +387,7 @@ contains
     if (this % num_components > 1) then
        ! The probe reads one answer per cell, and a wide entry has
        ! several. A block probe is the honest generalization and no
-       ! citizen has asked for one yet.
+       ! caller has asked for one yet.
        error stop 'diagonal: the coloured probe answers one number per cell'
     end if
 

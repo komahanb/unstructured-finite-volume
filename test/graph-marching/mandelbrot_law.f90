@@ -49,7 +49,18 @@ module mandelbrot_law_fixture
 
   end type mandelbrot_law
 
+  interface mandelbrot_law
+     module procedure create_law
+  end interface mandelbrot_law
+
 contains
+
+  ! The constructor declares the one argument, the state; the
+  ! coefficient arrays are assigned afterwards.
+  function create_law() result(this)
+    type(mandelbrot_law) :: this
+    call this % declare_arguments(1)
+  end function create_law
 
   pure function law_name(this) result(name)
     class(mandelbrot_law), intent(in) :: this

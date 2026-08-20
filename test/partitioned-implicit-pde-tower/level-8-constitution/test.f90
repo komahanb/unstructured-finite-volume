@@ -178,6 +178,7 @@ contains
 
     q = stored_field('probe', g % vertex_set(), g % num_vertices())
     call q % set_real_vector(v)
+    direct = shifted_laplacian()
     call direct % apply(g, [q], answer)
 
   end function direct_on

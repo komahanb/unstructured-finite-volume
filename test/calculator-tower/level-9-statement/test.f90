@@ -15,7 +15,7 @@
 ! of Levels 7 and 8 - so the requested e sits second in storage and
 ! any raw solution(1) habit fails. The residual operation is a
 ! test-local adapter that holds the GRAPH-OWNED flow (the external
-! selector dies before the solve) and delegates every number to the
+! selector is released before the solve) and delegates every number to the
 ! Level-8 fixture; ordinary GMRES solves through its own operation
 ! face, rhs on Y in, solution on U out; and the answer is read
 ! through U's local_index alone. The literal 20 stands only in the
@@ -85,7 +85,7 @@ contains
 
   !===================================================================!
   ! The selector only NAMES the relation; what the adapter keeps is
-  ! the graph-owned citizen, found by identity and refused if GAMMA
+  ! the graph-owned member, found by identity and refused if GAMMA
   ! does not own it.
   !===================================================================!
 
@@ -136,6 +136,10 @@ contains
     call sets % extent_of(known,   this % c_known)
     call sets % extent_of(unknown, this % c_unknown)
     this % known_values = known_values
+
+    ! the operation reads one input, its state
+    call this % declare_arguments(1)
+
 
   end function create_adapter
 
@@ -346,7 +350,7 @@ program calculator_level_9
   call sets       % bind(u, listed_set_representation([SLOT_C, SLOT_E]))
   call inclusions % include_in(u, x)
 
-  ! -- the adapter keeps the GRAPH-OWNED flow; the selector dies.
+  ! -- the adapter keeps the GRAPH-OWNED flow; the selector is released.
   residual_op = constituted_residual(g, bnd, flow, located, x, o, y, sets, &
        &                             k, [4.0_dp, 2.0_dp, 3.0_dp], u)
   deallocate(flow)

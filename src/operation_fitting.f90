@@ -21,7 +21,7 @@
 !                         form change is a re-typing event; the fit
 !                         then works inside the new form.
 !
-! The form lives one level DOWN, as its own citizen: a fit HOLDS a
+! The form lives one level DOWN, as its own type: a fit HOLDS a
 ! form the way an operator holds coefficients. Polynomial or wave,
 ! the fit does not care - it evaluates the shape it was handed and
 ! finds the coefficients. One concrete fit; the variation lives on
@@ -52,7 +52,7 @@ module operation_fitting
   public :: form_optimizer
 
   !===================================================================!
-  ! The fit: one concrete. The target rides as components, the shape
+  ! The fit: one concrete. The target is carried as components, the shape
   ! is HELD - a level-1 form whose membership the form sector writes
   ! and this fit honours: the form IS a support, and its members say
   ! which table entries stand.
@@ -105,7 +105,7 @@ module operation_fitting
 !=====================================================================!
 ! The pruner: the form family's first concretion.
 !
-! The simplest form decision, made a citizen: a basis member the
+! The simplest form decision, made a type: a basis member the
 ! points cannot see - one whose column of values vanishes on the
 ! whole constellation - is struck from the roster before any fit
 ! runs. What used to hide inside a solve as a pivot trick is now a
@@ -139,6 +139,9 @@ contains
     this % at        = at
     this % direction = direction
     if (present(scale)) this % scale = scale
+
+    ! one argument: the field the form is fitted to
+    call this % declare_arguments(1)
 
   end function create_fit
 

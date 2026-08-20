@@ -41,7 +41,7 @@ module operation_chain_rule
   use view_directed , only : directed_graph
   use field_calculus, only : field
   use graph_fractal       , only : graph
-  use operation_action    , only : operation
+  use operation_action    , only : operation, argument, variation
   use field_stored   , only : stored_field
 
   implicit none
@@ -64,13 +64,14 @@ module operation_chain_rule
   end type path_derivative
 
   !===================================================================!
-  ! One argument's path: the input slot it perturbs, and its
-  ! derivative sequence - derivative(k) holds x^(k).
+  ! One argument's path: the argument of the statement it perturbs,
+  ! obtained from the statement itself, and its derivative sequence
+  ! - derivative(k) holds x^(k).
   !===================================================================!
 
   type :: argument_path
 
-     integer :: slot = 0
+     type(argument) :: wrt
      type(path_derivative), allocatable :: derivative(:)
 
    contains
@@ -99,7 +100,7 @@ module operation_chain_rule
   type :: derivative_partition
 
      integer(int64) :: coefficient = 1_int64
-     integer, allocatable :: slot_degree(:)
+     integer, allocatable :: path_degree(:)
 
   end type derivative_partition
 
@@ -151,7 +152,7 @@ contains
        error stop 'chain_rule: degree is supported'
     end if
 
-    call require_valid_paths(paths, size(input_data))
+    call require_valid_paths(paths, statement)
 
     ! degree 0 is the statement's own value
     if (degree == 0) then
@@ -175,29 +176,30 @@ contains
   end subroutine assemble
 
   !===================================================================!
-  ! Check the paths: each must name an input slot the statement
-  ! takes, and no two may name the same slot, because a duplicated
-  ! slot would double count chain-rule terms. Both violations stop
-  ! the program.
+  ! Check the paths: each must name an argument of the statement -
+  ! one of its own declared positions, not another operation's - and
+  ! no two may name the same argument, because a duplicated argument
+  ! would double count chain-rule terms. Both violations stop the
+  ! program.
   !===================================================================!
 
-  pure subroutine require_valid_paths(paths, nslots)
+  pure subroutine require_valid_paths(paths, statement)
 
     type(argument_path), intent(in) :: paths(:)
-    integer            , intent(in) :: nslots
+    class(operation)   , intent(in) :: statement
 
     integer :: i, j
 
     do i = 1, size(paths)
-       if (paths(i) % slot < 1 .or. paths(i) % slot > nslots) then
-          error stop 'chain_rule: a path names an input slot'
+       if (.not. statement % owns(paths(i) % wrt)) then
+          error stop 'chain_rule: a path names an argument of the statement'
        end if
     end do
 
     do i = 1, size(paths)
        do j = i + 1, size(paths)
-          if (paths(i) % slot == paths(j) % slot) then
-             error stop 'chain_rule: duplicate slot path is refused'
+          if (paths(i) % wrt % matches(paths(j) % wrt)) then
+             error stop 'chain_rule: duplicate argument path is refused'
           end if
        end do
     end do
@@ -268,7 +270,7 @@ contains
     n = size(partitions)
     allocate(grown(n + 1))
     grown(1:n) = partitions
-    grown(n + 1) % slot_degree = tuple
+    grown(n + 1) % path_degree = tuple
     grown(n + 1) % coefficient = partition_coefficient(sum(tuple), tuple)
     call move_alloc(grown, partitions)
 
@@ -280,23 +282,23 @@ contains
   ! multiplicity a contiguous run.
   !===================================================================!
 
-  pure function partition_coefficient(total, slot_degree) result(coefficient)
+  pure function partition_coefficient(total, path_degree) result(coefficient)
 
     integer, intent(in) :: total
-    integer, intent(in) :: slot_degree(:)
+    integer, intent(in) :: path_degree(:)
     integer(int64)      :: coefficient
 
     integer(int64) :: denominator
     integer :: j, run
 
     denominator = 1_int64
-    do j = 1, size(slot_degree)
-       denominator = denominator * factorial_int64(slot_degree(j))
+    do j = 1, size(path_degree)
+       denominator = denominator * factorial_int64(path_degree(j))
     end do
 
     run = 1
-    do j = 2, size(slot_degree)
-       if (slot_degree(j) == slot_degree(j - 1)) then
+    do j = 2, size(path_degree)
+       if (path_degree(j) == path_degree(j - 1)) then
           run = run + 1
        else
           denominator = denominator * factorial_int64(run)
@@ -347,11 +349,11 @@ contains
     logical                        , intent(inout) :: started
     integer                        , intent(inout) :: num_components
 
-    integer :: chosen(size(partition % slot_degree))
+    integer :: chosen(size(partition % path_degree))
     integer :: k, j, npaths
     logical :: admitted
 
-    k      = size(partition % slot_degree)
+    k      = size(partition % path_degree)
     npaths = size(paths)
     if (npaths == 0) return
 
@@ -362,7 +364,7 @@ contains
        admitted = .true.
        do j = 1, k
           if (.not. paths(chosen(j)) % &
-               & has_degree(partition % slot_degree(j))) then
+               & has_degree(partition % path_degree(j))) then
              admitted = .false.
              exit
           end if
@@ -410,8 +412,7 @@ contains
     integer                        , intent(inout) :: num_components
 
     class(field), allocatable :: output
-    type(stored_field) :: directions(size(chosen))
-    integer     :: slots(size(chosen))
+    type(variation) :: variations(size(chosen))
     real(dp), allocatable :: term(:)
     integer :: j, k
 
@@ -421,14 +422,14 @@ contains
        error stop 'chain_rule: the statement supports the requested order'
     end if
 
+    ! one factor per chosen path: its argument, and the derivative
+    ! of the order this partition entry asks for as the direction
     do j = 1, k
-       slots(j)      = paths(chosen(j)) % slot
-       directions(j) = paths(chosen(j)) % &
-            & derivative(partition % slot_degree(j)) % direction
+       variations(j) = variation(paths(chosen(j)) % wrt, &
+            & paths(chosen(j)) % derivative(partition % path_degree(j)) % direction)
     end do
 
-    call statement % partial_action(input_graph, input_data, slots, &
-         & directions, output)
+    call statement % partial_action(input_graph, input_data, variations, output)
 
     call output % real_vector(term)
 

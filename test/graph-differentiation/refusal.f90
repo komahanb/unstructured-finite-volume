@@ -9,9 +9,14 @@
 !                    tables)
 !      bdfcount      a step count that disagrees with the order
 !      bdfstep       a nonpositive time step
-!      dupslot       two paths naming one input slot
-!      badslot       a path naming an input slot that does not
-!                    exist
+!      dupslot       two paths naming one argument
+!      badslot       an argument the operation does not declare
+!      foreignpath   a path naming another operation's argument
+!      foreignvariation  a variation on another operation's
+!                    argument, of the same position
+!      undeclared    an argument asked of an operation built
+!                    without its constructor
+!      historyreach  history(2) of a reach-1 statement
 !      negdegree     a negative derivative degree
 !      pastcalculus  a degree needing more derivative slots than
 !                    the operation's max_degree
@@ -37,7 +42,8 @@ program refusal
   use graph_fractal       , only : graph
   use view_directed_stored         , only : stored_directed_graph
   use field_stored   , only : stored_field
-  use operation_step    , only : scheme
+  use operation_action  , only : variation
+  use operation_step    , only : scheme, backward_euler
   use operation_chain_rule, only : chain_rule, argument_path
   use operation_linearization, only : linearization, tangent_of
   use operation_marching , only : marcher, MARCH_BACKWARD
@@ -50,6 +56,7 @@ program refusal
   type(quartic_form)    :: quartic
   type(equilibrium_law) :: equil
   type(linear_law)      :: lin
+  type(linear_law)      :: bare
 
   type(stored_directed_graph) :: lone
   type(graph)             :: cells
@@ -73,6 +80,10 @@ program refusal
   lone  = stored_directed_graph(1, tails=[integer ::], heads=[integer ::])
   cells = lone % vertex_set()
 
+  quartic = quartic_form()
+  equil   = equilibrium_law()
+  lin     = linear_law()
+
   clock % rule = MARCH_BACKWARD
   trajectory   = 1.0_dp
 
@@ -93,28 +104,50 @@ program refusal
   case ('dupslot')
 
      call scalar_pair(1.0_dp, 2.0_dp, cells, inputs)
-     call fill_path(paths(1), 1, [1.0_dp], cells)
-     call fill_path(paths(2), 1, [1.0_dp], cells)
+     call fill_path(paths(1), quartic % argument(1), [1.0_dp], cells)
+     call fill_path(paths(2), quartic % argument(1), [1.0_dp], cells)
      call composer % assemble(quartic, lone, inputs, 1, paths, output)
 
   case ('badslot')
 
+     call fill_path(paths(1), quartic % argument(3), [1.0_dp], cells)
+
+  case ('foreignpath')
+
+     ! equil's first argument is not quartic's, though both are position 1
      call scalar_pair(1.0_dp, 2.0_dp, cells, inputs)
-     call fill_path(paths(1), 1, [1.0_dp], cells)
-     call fill_path(paths(2), 3, [1.0_dp], cells)
-     call composer % assemble(quartic, lone, inputs, 1, paths, output)
+     call fill_path(paths(1), equil % argument(1), [1.0_dp], cells)
+     call composer % assemble(quartic, lone, inputs, 1, paths(1:1), output)
+
+  case ('foreignvariation')
+
+     call scalar_pair(1.0_dp, 2.0_dp, cells, inputs)
+     direction = stored_field('v', cells, 1, num_components=1)
+     call direction % set_real_vector([1.0_dp])
+     call quartic % partial_action(lone, inputs, &
+          & [variation(equil % argument(1), direction)], output)
+
+  case ('undeclared')
+
+     ! bare was never built by linear_law(), so it owns no arguments
+     call fill_path(paths(1), bare % argument(1), [1.0_dp], cells)
+
+  case ('historyreach')
+
+     statement = backward_euler(quartic, 1.0_dp)
+     call fill_path(paths(1), statement % history(2), [1.0_dp], cells)
 
   case ('negdegree')
 
      call scalar_pair(1.0_dp, 2.0_dp, cells, inputs)
-     call fill_path(paths(1), 1, [1.0_dp], cells)
+     call fill_path(paths(1), quartic % argument(1), [1.0_dp], cells)
      call composer % assemble(quartic, lone, inputs, -1, paths(1:1), &
           & output)
 
   case ('pastcalculus')
 
      call scalar_pair(1.0_dp, 2.0_dp, cells, inputs)
-     call fill_path(paths(1), 1, &
+     call fill_path(paths(1), quartic % argument(1), &
           & [1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp], cells)
      call composer % assemble(quartic, lone, inputs, 5, paths(1:1), &
           & output)
@@ -122,13 +155,13 @@ program refusal
   case ('hugedegree')
 
      call scalar_pair(1.0_dp, 2.0_dp, cells, inputs)
-     call fill_path(paths(1), 1, [1.0_dp], cells)
+     call fill_path(paths(1), quartic % argument(1), [1.0_dp], cells)
      call composer % assemble(quartic, lone, inputs, 21, paths(1:1), &
           & output)
 
   case ('statepath')
 
-     call fill_path(paths(1), 1, [1.0_dp], cells)
+     call fill_path(paths(1), equil % argument(1), [1.0_dp], cells)
      call clock % march_directional(equil, lone, 2, trajectory, 1, &
           & sensitivities, paths=paths(1:1))
 
@@ -154,7 +187,8 @@ program refusal
 
      direction = stored_field('v', cells, 1, num_components=1)
      call direction % set_real_vector([1.0_dp])
-     call lin % partial_action(lone, [direction], [1], [direction], output)
+     call lin % partial_action(lone, [direction], &
+          & [variation(lin % argument(1), direction)], output)
 
   case ('shallowcalculus')
 

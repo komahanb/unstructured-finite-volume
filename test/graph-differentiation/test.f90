@@ -30,9 +30,11 @@ program test_graph_differentiation
   use graph_fractal       , only : graph
   use view_directed_stored         , only : stored_directed_graph
   use field_stored   , only : stored_field
+  use operation_action  , only : variation
   use operation_step    , only : scheme, backward_euler, bdf_variable
   use operation_chain_rule, only : chain_rule, argument_path
-  use operation_linearization, only : linearization, tangent_of
+  use operation_linearization, only : linearization, tangent_of, dual_by_basis
+  use operation_stencil , only : stencil
   use operation_marching , only : marcher, MARCH_BACKWARD
   use operation_step_policy, only : halving_policy
   use operation_newton  , only : newton
@@ -61,6 +63,13 @@ program test_graph_differentiation
   lone  = stored_directed_graph(1, tails=[integer ::], heads=[integer ::])
   cells = lone % vertex_set()
 
+  ! every fixture is built by its constructor, which declares its
+  ! arguments: q first, xi second
+  quartic = quartic_form()
+  p8      = power8_form()
+  equil   = equilibrium_law()
+  lin     = linear_law()
+
   clock % rule = MARCH_BACKWARD
   clock % step = 1.0_dp
   allocate(clock % inner, source=newton())
@@ -78,6 +87,7 @@ program test_graph_differentiation
   call check_the_taylor_convolution(nfail)
   call check_the_derivative_walks(nfail)
   call check_the_adaptive_walk(nfail)
+  call check_the_argument_calculus(nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
@@ -223,13 +233,16 @@ contains
     one = stored_field('one', cells, 1, num_components=1)
     call one % set_real_vector([1.0_dp])
 
-    call statement % partial_action(lone, inputs, [1], [v], output)
+    call statement % partial_action(lone, inputs, &
+         & [variation(statement % state(), v)], output)
     call output % real_vector(rv)
     ok = size(rv) == 1 .and. near(rv(1), 42.0_dp, 1.0e-12_dp)
-    call statement % partial_action(lone, inputs, [2], [w], output)
+    call statement % partial_action(lone, inputs, &
+         & [variation(statement % auxiliary(1), w)], output)
     call output % real_vector(rv)
     ok = ok .and. near(rv(1), 24.5_dp, 1.0e-12_dp)
-    call statement % partial_action(lone, inputs, [1, 1], [one, one], output)
+    call statement % partial_action(lone, inputs, &
+         & [variation(statement % state(), one), variation(statement % state(), one)], output)
     call output % real_vector(rv)
     ok = ok .and. near(rv(1), 16.0_dp, 1.0e-12_dp)
     call report(ok, &
@@ -254,8 +267,8 @@ contains
          &set_bdf(2, [2, 3])", nfail)
 
     call statement % set_bdf(1, [0.5_dp])
-    call fill_path(full(1), 1, [1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp], cells)
-    call fill_path(full(2), 2, [5.0_dp, 7.0_dp, 11.0_dp, 13.0_dp], cells)
+    call fill_path(full(1), statement % state(), [1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp], cells)
+    call fill_path(full(2), statement % auxiliary(1), [5.0_dp, 7.0_dp, 11.0_dp, 13.0_dp], cells)
     expected = [16.5_dp, 136.5_dp, 1105.5_dp, 8347.0_dp, 59129.5_dp]
     ok = .true.
     do n = 0, 4
@@ -307,11 +320,11 @@ contains
 
     call scalar_pair(1.0_dp, 2.0_dp, cells, inputs)
 
-    call fill_path(full(1), 1, [1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp], cells)
-    call fill_path(full(2), 2, [5.0_dp, 7.0_dp, 11.0_dp, 13.0_dp], cells)
+    call fill_path(full(1), quartic % argument(1), [1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp], cells)
+    call fill_path(full(2), quartic % argument(2), [5.0_dp, 7.0_dp, 11.0_dp, 13.0_dp], cells)
 
     sparse(1) = full(1)
-    call fill_path(sparse(2), 2, [5.0_dp], cells)
+    call fill_path(sparse(2), quartic % argument(2), [5.0_dp], cells)
 
     expected = [31.0_dp, 271.0_dp, 2207.0_dp, 16688.0_dp, 118251.0_dp]
 
@@ -359,7 +372,7 @@ contains
     type(stored_field)         :: inputs(2)
     class(field), allocatable :: output
     real(dp), allocatable :: rv(:)
-    real(dp) :: qseats(8), xiseats(8)
+    real(dp) :: qseats(8), xiseats(8)   ! the path derivatives of q and xi
     real(dp) :: acoef(0:8), upow(0:8), convolved(0:8)
     real(dp) :: fact, expected
     logical  :: degrees_ok
@@ -374,8 +387,8 @@ contains
        xiseats(k) = real(k, dp) * fact
     end do
 
-    call fill_path(paths(1), 1, qseats, cells)
-    call fill_path(paths(2), 2, xiseats, cells)
+    call fill_path(paths(1), p8 % argument(1), qseats, cells)
+    call fill_path(paths(2), p8 % argument(2), xiseats, cells)
 
     acoef(0) = 3.0_dp
     do k = 1, 8
@@ -459,7 +472,7 @@ contains
 
     xifield(1) = stored_field('xi', cells, 1, num_components=1)
     call xifield(1) % set_real_vector([1.0_dp])
-    call fill_path(xipath(1), 2, [1.0_dp], cells)
+    call fill_path(xipath(1), equil % argument(2), [1.0_dp], cells)
 
     call clock % march_directional(equil, lone, 2, trajectory, 8, &
          & sensitivities, parameters=xifield, paths=xipath)
@@ -611,5 +624,143 @@ contains
        nfail = nfail + 1
     end if
   end subroutine report
+
+
+  !===================================================================!
+  ! The argument calculus. (1) The scheme's partials at theta = 1/2
+  ! over the quartic at (q, xi) = (1, 2), qold = 0, h = 1/2. With
+  ! Phi_q(1,2) = 26, Phi_xi(1,2) = 49, Phi_qq(1,2) = 32 and, at the
+  ! previous state, Phi_q(0,2) = 8, Phi_xi(0,2) = 32, Phi_qq(0,2) = 8:
+  !
+  !      state, v = 3      a0 v + h theta Phi_q(1,2) v        = 22.5
+  !      history(1), v = 3 a1 v + h (1-theta) Phi_q(0,2) v    = 3
+  !      auxiliary, w = 1  h [theta Phi_xi(1,2) + (1-theta) Phi_xi(0,2)] = 20.25
+  !      state x2          h theta Phi_qq(1,2)                = 8
+  !      history(1) x2     h (1-theta) Phi_qq(0,2)            = 2
+  !      state x history   0
+  !      the residual      q - qold + h [theta Phi(1,2) + (1-theta) Phi(0,2)]
+  !                        = 1 + (31 + 16)/4                  = 12.75
+  !
+  ! (2) A history state supplied as input 3 wins over the stored
+  ! qold: with qold_in = 1 and theta = 1 the residual is
+  ! 0 + h Phi(1,2) = 15.5, not 16.5. (3) The dual by basis under the
+  ! Euclidean pairing, on S = q^2 - xi over three vertices at
+  ! q = (1,2,3): in the state the block is diag(2q), so the dual of
+  ! lambda is 2 q lambda and equals the compiled transpose; in xi the
+  ! block is the column (-1,-1,-1), so the dual of lambda is the
+  ! scalar -sum(lambda); both satisfy <J v, lambda> = <v, J^T lambda>.
+  !===================================================================!
+
+  subroutine check_the_argument_calculus(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(scheme) :: statement
+    type(stored_directed_graph) :: three
+    type(graph) :: points
+    type(linearization) :: tangent_q, tangent_xi
+    type(stencil) :: compiled, adjoint
+    type(stored_field) :: inputs(2), with_history(3), v, w, one
+    type(stored_field) :: qf, xif, vf, wf, lf
+    class(field), allocatable :: output
+    real(dp), allocatable :: rv(:), g(:), jv(:), gt(:)
+    real(dp) :: q3(3), lambda(3), lhs, rhs
+    logical  :: ok
+
+    statement = backward_euler(quartic, 0.5_dp)
+    statement % qold  = [0.0_dp]
+    statement % theta = 0.5_dp
+    call scalar_pair(1.0_dp, 2.0_dp, cells, inputs)
+
+    v = stored_field('v', cells, 1, num_components=1)
+    call v % set_real_vector([3.0_dp])
+    w = stored_field('w', cells, 1, num_components=1)
+    call w % set_real_vector([1.0_dp])
+    one = stored_field('one', cells, 1, num_components=1)
+    call one % set_real_vector([1.0_dp])
+
+    call statement % partial_action(lone, inputs, [variation(statement % state(), v)], output)
+    call output % real_vector(rv)
+    ok = near(rv(1), 22.5_dp, 1.0e-12_dp)
+    call statement % partial_action(lone, inputs, [variation(statement % history(1), v)], output)
+    call output % real_vector(rv)
+    ok = ok .and. near(rv(1), 3.0_dp, 1.0e-12_dp)
+    call statement % partial_action(lone, inputs, [variation(statement % auxiliary(1), w)], output)
+    call output % real_vector(rv)
+    ok = ok .and. near(rv(1), 20.25_dp, 1.0e-12_dp)
+    call statement % partial_action(lone, inputs, &
+         & [variation(statement % state(), one), variation(statement % state(), one)], output)
+    call output % real_vector(rv)
+    ok = ok .and. near(rv(1), 8.0_dp, 1.0e-12_dp)
+    call statement % partial_action(lone, inputs, &
+         & [variation(statement % history(1), one), variation(statement % history(1), one)], output)
+    call output % real_vector(rv)
+    ok = ok .and. near(rv(1), 2.0_dp, 1.0e-12_dp)
+    call statement % partial_action(lone, inputs, &
+         & [variation(statement % state(), one), variation(statement % history(1), one)], output)
+    call output % real_vector(rv)
+    ok = ok .and. near(rv(1), 0.0_dp, 1.0e-12_dp)
+    call statement % apply(lone, inputs, output)
+    call output % real_vector(rv)
+    ok = ok .and. near(rv(1), 12.75_dp, 1.0e-12_dp)
+    call report(ok, &
+         & "theta = 1/2: the scheme's partials in state, history and auxiliary &
+         &are 22.5, 3, 20.25, 8, 2, 0 and the residual 12.75", nfail)
+
+    statement % theta = 1.0_dp
+    with_history(1:2) = inputs
+    with_history(3) = stored_field('qold', cells, 1, num_components=1)
+    call with_history(3) % set_real_vector([1.0_dp])
+    call statement % apply(lone, with_history, output)
+    call output % real_vector(rv)
+    call report(near(rv(1), 15.5_dp, 1.0e-12_dp), &
+         & "a history state supplied as input 3 is read before the stored qold: 15.5", &
+         & nfail)
+
+    three  = stored_directed_graph(3, tails=[integer ::], heads=[integer ::])
+    points = three % vertex_set()
+    q3     = [1.0_dp, 2.0_dp, 3.0_dp]
+    lambda = [0.5_dp, -1.0_dp, 2.0_dp]
+
+    qf = stored_field('q', points, 3, num_components=1)
+    call qf % set_real_vector(q3)
+    xif = stored_field('xi', cells, 1, num_components=1)
+    call xif % set_real_vector([1.0_dp])
+    vf = stored_field('v', points, 3, num_components=1)
+    call vf % set_real_vector([1.0_dp, -2.0_dp, 0.5_dp])
+    wf = stored_field('w', cells, 1, num_components=1)
+    call wf % set_real_vector([0.75_dp])
+    lf = stored_field('lambda', points, 3, num_components=1)
+    call lf % set_real_vector(lambda)
+
+    ! the state block, square: dual by basis against the compiled transpose
+    tangent_q = tangent_of(equil, equil % argument(1), at_inputs=[qf, xif])
+    call tangent_q % apply(three, [vf], output)
+    call output % real_vector(jv)
+    lhs = dot_product(jv, lambda)
+    call dual_by_basis(tangent_q, three, lambda, g)
+    rhs = dot_product([1.0_dp, -2.0_dp, 0.5_dp], g)
+    compiled = stencil(tangent_q, three, 3)
+    adjoint  = compiled % transpose()
+    call adjoint % apply(three, [lf], output)
+    call output % real_vector(gt)
+    call report(near(lhs, rhs, 1.0e-12_dp) .and. maxval(abs(g - 2.0_dp * q3 * lambda)) < 1.0e-12_dp &
+         & .and. maxval(abs(g - gt)) < 1.0e-12_dp, &
+         & "state block: <J v, lambda> = <v, J^T lambda>, J^T lambda = 2 q lambda, &
+         &and the dual by basis equals the compiled transpose", nfail)
+
+    ! the auxiliary block, rectangular: three residuals, one parameter
+    tangent_xi = tangent_of(equil, equil % argument(2), at_inputs=[qf, xif])
+    call tangent_xi % apply(three, [wf], output)
+    call output % real_vector(jv)
+    lhs = dot_product(jv, lambda)
+    call dual_by_basis(tangent_xi, three, lambda, g)
+    rhs = 0.75_dp * g(1)
+    call report(size(g) == 1 .and. near(lhs, rhs, 1.0e-12_dp) .and. &
+         & near(g(1), -sum(lambda), 1.0e-12_dp), &
+         & "auxiliary block: the dual of lambda in xi is -sum(lambda), and the &
+         &pairing law holds on a rectangular block", nfail)
+
+  end subroutine check_the_argument_calculus
 
 end program test_graph_differentiation

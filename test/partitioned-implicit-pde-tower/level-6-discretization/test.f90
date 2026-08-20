@@ -128,6 +128,7 @@ contains
          & "the production Laplacian on G gives " // &
          & "[1,1,1,1,1,-5], by member", nfail)
 
+    shifted = shifted_laplacian()
     call shifted % apply(g, [q], aq)
     dom = aq % domain()
     call aq % real_vector(v)
@@ -235,7 +236,7 @@ contains
     class(field), allocatable :: lq, aq
     real(dp), allocatable           :: v(:)
     character(len=1)                :: tag
-    integer                         :: i, seat
+    integer                         :: i, position
     logical                         :: ok
     type(label_map)     :: labels
     type(inclusion_map)     :: inclusions
@@ -252,34 +253,35 @@ contains
     call lq % real_vector(v)
     ok = .true.
     do i = 1, size(globals)
-       seat = seat_of_global(part, globals(i))
-       ok = ok .and. (seat .gt. 0)
-       if (seat .gt. 0) then
-          ok = ok .and. (abs(v(seat) - expect_l(i)) < 1.0d-12)
+       position = position_of_global(part, globals(i))
+       ok = ok .and. (position .gt. 0)
+       if (position .gt. 0) then
+          ok = ok .and. (abs(v(position) - expect_l(i)) < 1.0d-12)
        end if
     end do
     call report(ok, &
          & "L on G" // tag // " traverses the PART's topology, read " // &
          & "by global member", nfail)
 
+    shifted = shifted_laplacian()
     call shifted % apply(part, [qp], aq)
     call aq % real_vector(v)
     ok = .true.
     do i = 1, size(globals)
-       seat = seat_of_global(part, globals(i))
-       ok = ok .and. (seat .gt. 0)
-       if (seat .gt. 0) then
-          ok = ok .and. (abs(v(seat) - expect_a(i)) < 1.0d-12)
+       position = position_of_global(part, globals(i))
+       ok = ok .and. (position .gt. 0)
+       if (position .gt. 0) then
+          ok = ok .and. (abs(v(position) - expect_a(i)) < 1.0d-12)
        end if
     end do
     call report(ok, &
          & "and A on G" // tag // " answers on all four local " // &
          & "members, borrowed one included", nfail)
 
-    ! The borrowed seat, located through the global map.
-    seat = seat_of_global(part, borrowed_global)
-    call report(seat .gt. 0 .and. &
-         &      abs(v(seat) - borrowed_says) < 1.0d-12 .and. &
+    ! The borrowed position, located through the global map.
+    position = position_of_global(part, borrowed_global)
+    call report(position .gt. 0 .and. &
+         &      abs(v(position) - borrowed_says) < 1.0d-12 .and. &
          &      abs(borrowed_says - global_says) > 1.0_dp, &
          & "G" // tag // "'s BORROWED output disagrees with the " // &
          & "global action - it is a copy, not an answer", nfail)
@@ -341,8 +343,8 @@ contains
 
     write(tag,'(i1)') k
 
-    bseat = seat_of_global(part, borrowed_global)
-    wseat = seat_of_global(part, watched_global)
+    bseat = position_of_global(part, borrowed_global)
+    wseat = position_of_global(part, watched_global)
 
     ! Unperturbed: the owned answer stands where it should.
     qp = local_state(part, k, sets, labels, inclusions)
@@ -453,8 +455,8 @@ contains
        end do
 
   end subroutine add_local_action
-  ! The local seat holding this global member, or 0.
-  integer function seat_of_global(part, gm)
+  ! The local position holding this global member, or 0.
+  integer function position_of_global(part, gm)
 
     class(directed_graph), intent(in) :: part
     integer     , intent(in) :: gm
@@ -462,16 +464,16 @@ contains
     integer :: i
     type(partition_relation) :: rel
 
-    seat_of_global = 0
+    position_of_global = 0
     select type (part)
     type is (stored_directed_graph)
        rel = part % whole_relation()
        do i = 1, part % num_vertices()
-          if (rel % global_vertex_index(i) .eq. gm) seat_of_global = i
+          if (rel % global_vertex_index(i) .eq. gm) position_of_global = i
        end do
     end select
 
-  end function seat_of_global
+  end function position_of_global
   ! Values compared through the domain's own map, never by position.
   logical function by_member(sets, v, dom, expect)
 

@@ -40,7 +40,7 @@ module operation_stencil
   use iso_fortran_env    , only : dp => REAL64
   use view_directed, only : directed_graph
   use field_calculus, only : field
-  use operation_action, only : operation
+  use operation_action, only : operation, variation
   use operation_discretization     , only : discretization
   use relation_binary, only : group_by_key
   use field_stored  , only : stored_field
@@ -113,6 +113,9 @@ contains
     else
        this % label = 'stencil'
     end if
+
+    ! one argument: the state the matrix multiplies
+    call this % declare_arguments(1)
 
   end function create
 
@@ -314,14 +317,13 @@ contains
 
   end function stencil_max_degree
 
-  subroutine stencil_partial_action(this, input_graph, input_data, slots, &
-       & directions, output)
+  subroutine stencil_partial_action(this, input_graph, input_data, &
+       & variations, output)
 
     class(stencil), intent(in)               :: this
     class(directed_graph), intent(in)        :: input_graph
     class(field), intent(in)                 :: input_data(:)
-    integer, intent(in)                      :: slots(:)
-    class(field), intent(in)                 :: directions(:)
+    type(variation), intent(in)              :: variations(:)
     class(field), allocatable, intent(inout) :: output
 
     type(stored_field)   :: out
@@ -329,14 +331,16 @@ contains
 
     associate (u1 => input_data); end associate
 
-    if (size(slots) /= 1) then
+    call this % require_owned(variations)
+
+    if (size(variations) /= 1) then
        error stop 'stencil: the requested order is within max_degree'
     end if
-    if (slots(1) /= 1) then
-       error stop 'stencil: the partial action is taken in the one input slot'
+    if (.not. variations(1) % argument_is(this % argument(1))) then
+       error stop 'stencil: the partial action is taken in the one argument'
     end if
 
-    call directions(1) % real_vector(v)
+    call variations(1) % direction(v)
     allocate(y(this % pattern % num_vertices()))
     y = 0.0_dp
     call accumulate_edges(this, v, y)

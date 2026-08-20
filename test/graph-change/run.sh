@@ -12,8 +12,8 @@ declare -A reason=(
   [detachfree]="graph_value_map: a detach removes an attached row"
   [emptyknown]="graph_value_map: a known value has values"
   [undeclared]="graph_value_map: a value map is keyed on assigned identity"
-  [silentapply]="change_controller: applied change reports applied"
-  [silentrevert]="change_controller: reverted change reports reverted"
+  [silentapply]="run_change: applied change reports applied"
+  [silentrevert]="run_change: reverted change reports reverted"
   [impossible]="change_result: terminal state is consistent"
   [unbound]="value_change: value map is bound"
 )

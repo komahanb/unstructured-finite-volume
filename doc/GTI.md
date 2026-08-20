@@ -165,7 +165,7 @@ statement by differences, with no dispatch of newton's own.
 
 ### graph_change_protocol, graph_value_map, graph_value_change
 
-The reversible mutation stack. `change_controller % run` owns the
+The reversible mutation stack. `run_change` owns the
 lifecycle apply -> check -> keep | revert; a failure reported by
 apply or check is reverted and returned; a step that returns without
 marking its work stops the program. `value_map` stores, per graph

@@ -13,11 +13,11 @@
 !                        reports touches_structure and
 !                        touches_value.
 !      silent_apply_change        returns from apply without marking
-!                        applied or failed; the controller must
+!                        applied or failed; run_change must
 !                        error stop on it.
 !      silent_revert_change       marks failure in apply, then returns from
 !                        revert without marking reverted; the
-!                        controller must error stop on it.
+!                        run_change must error stop on it.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -212,7 +212,7 @@ contains
 
   !===================================================================!
   ! silent_apply_change: apply returns having marked neither applied nor
-  ! failed; the controller must refuse this.
+  ! failed; run_change must refuse this.
   !===================================================================!
 
   subroutine silent_apply_apply(this, result)
@@ -244,7 +244,7 @@ contains
 
   !===================================================================!
   ! silent_revert_change: apply marks failure; revert returns without
-  ! marking reverted; the controller must refuse this.
+  ! marking reverted; run_change must refuse this.
   !===================================================================!
 
   subroutine silent_revert_apply(this, result)

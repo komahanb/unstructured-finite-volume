@@ -28,7 +28,7 @@ module graph_change_protocol
   private
   public :: change_result
   public :: reversible_change
-  public :: change_controller
+  public :: run_change
 
   !===================================================================!
   ! The record of one change's lifecycle: what was attempted, what
@@ -108,18 +108,6 @@ module graph_change_protocol
      end subroutine change_revert
 
   end interface
-
-  !===================================================================!
-  ! The stateless lifecycle runner.
-  !===================================================================!
-
-  type :: change_controller
-
-   contains
-
-     procedure :: run
-
-  end type change_controller
 
 contains
 
@@ -211,9 +199,8 @@ contains
   ! record can be silently incomplete.
   !===================================================================!
 
-  subroutine run(this, change, accept, result)
+  subroutine run_change(change, accept, result)
 
-    class(change_controller), intent(in)    :: this
     class(reversible_change), intent(inout) :: change
     logical                     , intent(in)    :: accept
     type(change_result)     , intent(inout) :: result
@@ -226,28 +213,28 @@ contains
     if (result % failed) then
        call change % revert(result)
        if (.not. result % reverted) then
-          error stop 'change_controller: reverted change reports reverted'
+          error stop 'run_change: reverted change reports reverted'
        end if
        call result % validate_terminal()
        return
     end if
 
     if (.not. result % applied) then
-       error stop 'change_controller: applied change reports applied'
+       error stop 'run_change: applied change reports applied'
     end if
 
     call change % check(result)
 
     if (.not. result % failed) then
        if (.not. result % checked) then
-          error stop 'change_controller: checked change reports checked'
+          error stop 'run_change: checked change reports checked'
        end if
     end if
 
     if (result % failed .or. .not. result % check_passed) then
        call change % revert(result)
        if (.not. result % reverted) then
-          error stop 'change_controller: reverted change reports reverted'
+          error stop 'run_change: reverted change reports reverted'
        end if
        call result % validate_terminal()
        return
@@ -257,17 +244,17 @@ contains
        result % accepted = .true.
        call change % keep(result)
        if (.not. result % kept) then
-          error stop 'change_controller: kept change reports kept'
+          error stop 'run_change: kept change reports kept'
        end if
     else
        call change % revert(result)
        if (.not. result % reverted) then
-          error stop 'change_controller: reverted change reports reverted'
+          error stop 'run_change: reverted change reports reverted'
        end if
     end if
 
     call result % validate_terminal()
 
-  end subroutine run
+  end subroutine run_change
 
 end module graph_change_protocol

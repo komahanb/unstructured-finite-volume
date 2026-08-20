@@ -26,14 +26,12 @@ program refusal
 
   use iso_fortran_env      , only : dp => REAL64
   use fractal_graph        , only : graph
-  use graph_change_protocol, only : change_controller, change_result
+  use graph_change_protocol, only : run_change, change_result
   use graph_value_map      , only : value_map, VALUE_UNKNOWN
   use graph_value_change   , only : value_change
   use toy_changes          , only : silent_apply_change, silent_revert_change
 
   implicit none
-
-  type(change_controller)     :: controller
   type(change_result)         :: result
   type(value_map)             :: map
   type(value_change)          :: loose
@@ -80,11 +78,11 @@ program refusal
 
   case ('silentapply')
 
-     call controller % run(silent_apply, .true., result)
+     call run_change(silent_apply, .true., result)
 
   case ('silentrevert')
 
-     call controller % run(silent_revert, .true., result)
+     call run_change(silent_revert, .true., result)
 
   case ('impossible')
 
@@ -94,7 +92,7 @@ program refusal
 
   case ('unbound')
 
-     call controller % run(loose, .true., result)
+     call run_change(loose, .true., result)
 
   case default
 

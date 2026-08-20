@@ -9,8 +9,8 @@ declare -A reason=(
   [tolzero]="dense_direct: singular tolerance is positive"
   [sizemismatch]="dense_direct: solution size matches rhs"
   [singular]="dense_direct: pivot is nonsingular"
-  [nonsquare]="dense_direct: dense matrix is square"
-  [badwidth]="dense_direct: the width carries a whole number per member"
+  [nonsquare]="stencil: a dense matrix is square"
+  [badwidth]="stencil: the width carries a whole number per member"
   [badresult]="stencil: the operation result matches the width"
 )
 for case in tolzero sizemismatch singular nonsquare badwidth badresult; do
@@ -22,15 +22,21 @@ rm -f refusal.out
 src="$here/../../src/operation_dense_direct.f90"
 
 # Static checks on src/operation_dense_direct.f90: dense_direct
-# must extend minimizer, must import operation_minimization and
-# operation_stencil, and must not reference gti_ modules, the
-# word "backend", or define a solve_transpose method.
+# must extend minimizer, must import operation_minimization, and
+# must not reference gti_ modules, the word "backend", or define a
+# solve_transpose method. The dense-array adapters stay deleted:
+# neither the solver nor the marcher names them outside a comment.
 grep -q "extends(minimizer) :: dense_direct" "$src" \
     && echo " PASS : dense_direct extends operation_minimization's minimizer" \
     || { echo " FAIL : dense_direct is not a minimizer concretion"; exit 1; }
-grep -q "use operation_minimization" "$src" && grep -q "use operation_stencil" "$src" \
-    && echo " PASS : the solver imports operation_minimization and operation_stencil" \
+grep -q "use operation_minimization" "$src" \
+    && echo " PASS : the solver imports operation_minimization" \
     || { echo " FAIL : a required import is missing"; exit 1; }
+grep -hv '^ *!' "$src" "$here/../../src/operation_marching.f90" \
+    | grep -v '% transpose()' \
+    | grep -qE "dense_matrix_of|solve_dense_matrix|jstep|transpose\(" \
+    && { echo " FAIL : a dense-array adapter or a hand-built step matrix is referenced"; exit 1; } \
+    || echo " PASS : the dense-array adapters stay deleted"
 grep -v '^ *!' "$src" | grep -qE "gti_" \
     && { echo " FAIL : a gti_ reference appears in the solver source"; exit 1; } \
     || echo " PASS : no gti_ reference exists in the solver source"

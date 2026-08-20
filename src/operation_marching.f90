@@ -19,16 +19,17 @@
 !
 ! The implicit rules use the held minimizer (inner) on one
 ! scheme per edge; every BDF coefficient comes from
-! scheme's set_bdf. The action returns minus the velocity.
+! scheme's set_bdf, and configure_edge is the one place a scheme
+! is set up for an edge. The action returns minus the velocity.
 !
 ! march_adjoint runs the chain in reverse. Under MARCH_FORWARD it
 ! applies the caller's transposed statement edge by edge. Under
 ! the implicit rules it is backward substitution: at each edge the
-! step Jacobian a0 I + h S'(q_e) is assembled at the recorded
-! state via tangent_of and dense_matrix_of, its transpose is
-! solved by the dense direct minimizer, and the couplings to
-! earlier instants are the constant coefficients a1 and a2. This
-! requires the action and the forward trajectory as arguments.
+! tangent of the step equation, tangent_of(scheme) at the recorded
+! state, is compiled to a stencil, transposed, and solved by the
+! dense direct minimizer; the couplings to earlier instants are the
+! scheme's constant coefficients a1 and a2. This requires the
+! action and the forward trajectory as arguments.
 !
 ! march_directional computes forward directional derivatives of
 ! any order along the recorded trajectory. march_adaptive chooses
@@ -53,8 +54,8 @@ module operation_marching
   use operation_chain_rule, only : chain_rule, argument_path, &
        & path_derivative
   use operation_step_policy, only : step_policy
-  use operation_dense_direct, only : solve_dense_matrix_with_dense_direct, &
-       & dense_matrix_of
+  use operation_stencil, only : stencil
+  use operation_dense_direct, only : dense_direct
 
   implicit none
 
@@ -126,7 +127,7 @@ contains
     type(graph) :: state_domain
     integer         :: n_state_domain
     real(dp), allocatable :: s(:), qold(:), qolder(:), zeros(:)
-    real(dp) :: answered, h_edge, h_previous
+    real(dp) :: achieved, h_edge, h_previous
     integer :: e, num_components
 
     call require_valid_steps(steps, nsteps)
@@ -150,8 +151,9 @@ contains
     end if
 
     ! Implicit rules: one minimizer solve per edge. BDF2 needs two
-    ! history states, so its first edge is a backward-euler step.
-    ! All coefficients come from set_bdf; none are written here.
+    ! history states, so its first edge is a backward-euler step:
+    ! qolder is unallocated until the second edge, and configure_edge
+    ! reads an absent qolder as order 1.
     statement = bdf(1, action, this % step)
 
     h_previous = this % step
@@ -169,20 +171,13 @@ contains
 
        h_edge = edge_step(this, steps, e)
 
-       if (this % rule == MARCH_BDF2 .and. e > 1) then
-          call statement % set_bdf(2, [h_edge, h_previous])
-          statement % qolder = qolder
-       else
-          call statement % set_bdf(1, [h_edge])
-       end if
-
-       statement % qold = qold
+       call configure_edge(this, statement, h_edge, qold, h_previous, qolder)
 
        ! num_components is the state's component count, so a multi-component
        ! entry is solved whole
        call this % inner % attach(statement, on, state_domain, &
             & n_state_domain, num_components = num_components)
-       call this % inner % solve(zeros, q, answered)
+       call this % inner % solve(zeros, q, achieved)
 
        qolder     = qold
        qold       = q
@@ -236,6 +231,59 @@ contains
     end if
 
   end function edge_step
+
+  !===================================================================!
+  ! The scheme for one edge: order 2 with the previous step when the
+  ! rule is MARCH_BDF2 and a previous state and step are given,
+  ! order 1 otherwise; qold is the state the edge starts from. Every
+  ! coefficient comes from set_bdf.
+  !===================================================================!
+
+  subroutine configure_edge(this, statement, h, qold, h_previous, qolder)
+
+    class(marcher), intent(in)     :: this
+    type(scheme), intent(inout)    :: statement
+    real(dp), intent(in)           :: h
+    real(dp), intent(in)           :: qold(:)
+    real(dp), intent(in), optional :: h_previous
+    real(dp), intent(in), optional :: qolder(:)
+
+    if (this % rule == MARCH_BDF2 .and. present(qolder) .and. &
+         & present(h_previous)) then
+       call statement % set_bdf(2, [h, h_previous])
+       statement % qolder = qolder
+    else
+       call statement % set_bdf(1, [h])
+    end if
+
+    statement % qold = qold
+
+  end subroutine configure_edge
+
+  !===================================================================!
+  ! The scheme for a recorded edge: the step of edge e with the
+  ! state at instant e as qold and, past the first edge, the
+  ! previous step and the state at instant e - 1 as qolder.
+  !===================================================================!
+
+  subroutine recorded_edge(this, statement, steps, e, trajectory)
+
+    class(marcher), intent(in)     :: this
+    type(scheme), intent(inout)    :: statement
+    real(dp), intent(in), optional :: steps(:)
+    integer , intent(in)           :: e
+    real(dp), intent(in)           :: trajectory(:,:)
+
+    if (e > 1) then
+       call configure_edge(this, statement, edge_step(this, steps, e), &
+            & trajectory(:, e), edge_step(this, steps, e - 1), &
+            & trajectory(:, e - 1))
+    else
+       call configure_edge(this, statement, edge_step(this, steps, e), &
+            & trajectory(:, e))
+    end if
+
+  end subroutine recorded_edge
 
   !===================================================================!
   ! Reverse traversal. Under MARCH_FORWARD the caller's transposed
@@ -292,15 +340,15 @@ contains
   ! Backward substitution over the chain: at each edge, in reverse
   ! order, solve
   !
-  !      (a0 I + h_e S'(q_e))^T lambda_e = seed_e,
+  !      J_e^T lambda_e = seed_e,      J_e = tangent_of(scheme),
   !
-  ! with the Jacobian assembled at the recorded state through
-  ! tangent_of and dense_matrix_of and the transpose solved by the
+  ! with the tangent of the step equation taken at the recorded
+  ! state, compiled to a stencil, transposed, and solved by the
   ! dense direct minimizer. The couplings to earlier instants are
-  ! the constant coefficients a1 and a2, so the seed carried to
-  ! edge e-1 is -a1 lambda_e plus the -a2 term from the edge after
-  ! it. On return, lambda holds the sensitivity at the first
-  ! instant.
+  ! the scheme's constant coefficients a1 and a2, so the seed
+  ! carried to edge e-1 is -a1 lambda_e plus the -a2 term from the
+  ! edge after it. On return, lambda holds the sensitivity at the
+  ! first instant.
   !
   ! The trajectory must hold one state per instant, and seeds, if
   ! present, one entry per instant; both are checked and stop the
@@ -320,12 +368,13 @@ contains
     real(dp), intent(in)               :: trajectory(:,:)
     real(dp), intent(in), optional     :: seeds(:,:)
 
+    type(scheme)       :: statement
+    type(dense_direct) :: direct
     class(linearization), allocatable :: tangent
-    type(scheme) :: table
-    real(dp), allocatable :: jac(:,:), jstep(:,:)
+    type(stencil) :: compiled, adjoint
     real(dp), allocatable :: seed(:), lambda_e(:), carry_one(:), carry_two(:)
-    real(dp) :: answered, h_edge, h_previous
-    integer :: e, n, j
+    real(dp) :: achieved
+    integer :: e, n
 
     n = size(lambda)
 
@@ -341,9 +390,10 @@ contains
        end if
     end if
 
-    tangent = tangent_of(action)
+    statement = bdf(1, action, this % step)
+    direct % singular_tolerance = this % singular_tolerance
 
-    allocate(carry_one(n), carry_two(n))
+    allocate(carry_one(n), carry_two(n), lambda_e(n))
     carry_one = 0.0_dp
     carry_two = 0.0_dp
 
@@ -351,15 +401,7 @@ contains
 
     do e = chain % num_edges(), 1, -1
 
-       h_edge = edge_step(this, steps, e)
-
-       ! same coefficients as the forward march
-       if (this % rule == MARCH_BDF2 .and. e > 1) then
-          h_previous = edge_step(this, steps, e - 1)
-          call table % set_bdf(2, [h_edge, h_previous])
-       else
-          call table % set_bdf(1, [h_edge])
-       end if
+       call recorded_edge(this, statement, steps, e, trajectory)
 
        ! seeds(:, k), if given, is added when instant k is reached
        if (e < chain % num_edges()) then
@@ -367,20 +409,22 @@ contains
           if (present(seeds)) seed = seed + seeds(:, e + 1)
        end if
 
+       ! the tangent copies the statement, so it is taken after the
+       ! edge is configured, and frozen before it is compiled
+       tangent = tangent_of(statement)
        call tangent % freeze(trajectory(:, e + 1))
-       call dense_matrix_of(tangent, on, n, jac)
+       compiled = stencil(tangent, on, n)
+       adjoint  = compiled % transpose()
 
-       jstep = table % hs * jac
-       do j = 1, n
-          jstep(j, j) = jstep(j, j) + table % a0
-       end do
-
-       call solve_dense_matrix_with_dense_direct(transpose(jstep), seed, &
-            & this % singular_tolerance, lambda_e, answered)
+       call direct % attach(adjoint, adjoint % pattern, &
+            & adjoint % pattern % vertex_set(), &
+            & adjoint % pattern % num_vertices())
+       lambda_e = 0.0_dp
+       call direct % solve(seed, lambda_e, achieved)
 
        ! carry the couplings to the two earlier instants
-       carry_one = carry_two - table % a1 * lambda_e
-       carry_two = -table % a2 * lambda_e
+       carry_one = carry_two - statement % a1 * lambda_e
+       carry_two = -statement % a2 * lambda_e
 
     end do
 
@@ -466,19 +510,20 @@ contains
 
   !===================================================================!
   ! Forward directional derivatives of any order along the
-  ! recorded trajectory. At each edge the derivative of the step
-  ! equation splits into
+  ! recorded trajectory. Under an implicit rule the derivative of
+  ! the step equation at edge e splits into
   !
   !      J_e q_e^(s) = -( a1 qprev^(s) + a2 qolder^(s)
-  !                       + h_e * (degree-s composition with the
-  !                         order-s state derivative set to zero) ),
-  !      J_e = a0 I + h_e S'(q_e),
+  !                       + degree-s composition over the scheme
+  !                         with the order-s state derivative zero ),
+  !      J_e = tangent_of(scheme) at the solved state,
   !
-  ! because the couplings to earlier instants are the constant
-  ! coefficients a1 and a2 while everything inside S is assembled
-  ! by chain_rule. One Jacobian per edge serves every order; only
-  ! the right-hand side changes with s. Under MARCH_FORWARD the
-  ! same recursion needs no solve.
+  ! because the couplings to earlier instants are the scheme's
+  ! constant coefficients while everything else is assembled by
+  ! chain_rule over the scheme itself. One tangent per edge is
+  ! attached to the dense direct minimizer and solved once per
+  ! order; only the right-hand side changes with s. Under
+  ! MARCH_FORWARD the same recursion over the action needs no solve.
   !
   ! Parameter paths arrive as argument_path values on input slots
   ! 2 and higher, each covered by a supplied parameter field. A
@@ -504,17 +549,18 @@ contains
 
     type(stored_directed_graph) :: chain
     type(chain_rule)            :: composer
-    type(scheme)         :: table
+    type(scheme)                :: statement
+    type(dense_direct)          :: direct
     class(linearization), allocatable :: tangent
     type(argument_path), allocatable :: assembled(:)
     type(stored_field), allocatable         :: inputs(:)
     class(field), allocatable  :: total_field
     type(stored_field)     :: state
     type(graph) :: state_domain
-    real(dp), allocatable :: jac(:,:), jstep(:,:), total(:), b(:), q_s(:)
-    real(dp) :: answered, h_edge, h_previous
+    real(dp), allocatable :: total(:), b(:), q_s(:)
+    real(dp) :: achieved, h_edge
     integer :: n_state_domain, num_components
-    integer :: e, s_order, k, j, n, at, npaths
+    integer :: e, s_order, k, n, at, npaths
 
     if (order < 1) then
        error stop 'march_directional: the order is positive'
@@ -560,20 +606,17 @@ contains
     allocate(sensitivities(n, order, nsteps + 1))
     sensitivities = 0.0_dp
 
-    tangent = tangent_of(action)
+    if (this % rule /= MARCH_FORWARD) then
+       statement = bdf(1, action, this % step)
+       direct % singular_tolerance = this % singular_tolerance
+       allocate(q_s(n))
+    end if
 
     ! for each edge, assemble the composition degree by degree and
     ! advance each order's derivative
     do e = 1, chain % num_edges()
 
        h_edge = edge_step(this, steps, e)
-
-       if (this % rule == MARCH_BDF2 .and. e > 1) then
-          h_previous = edge_step(this, steps, e - 1)
-          call table % set_bdf(2, [h_edge, h_previous])
-       else
-          call table % set_bdf(1, [h_edge])
-       end if
 
        ! the composition is evaluated at the solved instant under
        ! an implicit rule and at the previous instant under the
@@ -582,6 +625,13 @@ contains
           at = e
        else
           at = e + 1
+          call recorded_edge(this, statement, steps, e, trajectory)
+          ! the tangent copies the statement, so it is taken after
+          ! the edge is configured, and frozen before it is attached
+          tangent = tangent_of(statement)
+          call tangent % freeze(trajectory(:, e + 1))
+          call direct % attach(tangent, on, state_domain, n_state_domain, &
+               & num_components = num_components)
        end if
 
        state = stored_field('state', state_domain, n_state_domain, num_components=num_components)
@@ -599,38 +649,35 @@ contains
           inputs(1) = state
        end if
 
-       if (this % rule /= MARCH_FORWARD) then
-          call tangent % freeze(trajectory(:, e + 1))
-          call dense_matrix_of(tangent, on, n, jac)
-          jstep = h_edge * jac
-          do j = 1, n
-             jstep(j, j) = jstep(j, j) + table % a0
-          end do
-       end if
-
        do s_order = 1, order
 
           call build_paths(this, sensitivities, state_domain, &
                & n_state_domain, num_components, at, s_order, npaths, paths, assembled)
 
-          call composer % assemble(action, on, inputs, s_order, assembled, &
-               & total_field)
-          call total_field % real_vector(total)
-
           if (this % rule == MARCH_FORWARD) then
+
+             call composer % assemble(action, on, inputs, s_order, assembled, &
+                  & total_field)
+             call total_field % real_vector(total)
 
              sensitivities(:, s_order, e + 1) = &
                   & sensitivities(:, s_order, e) - h_edge * total
 
           else
 
-             b = table % a1 * sensitivities(:, s_order, e) + h_edge * total
-             if (this % rule == MARCH_BDF2 .and. e > 1) then
-                b = b + table % a2 * sensitivities(:, s_order, e - 1)
+             ! over the scheme, with the order-s state derivative
+             ! zero, the total is hs times the action's composition
+             call composer % assemble(statement, on, inputs, s_order, &
+                  & assembled, total_field)
+             call total_field % real_vector(total)
+
+             b = statement % a1 * sensitivities(:, s_order, e) + total
+             if (e > 1) then
+                b = b + statement % a2 * sensitivities(:, s_order, e - 1)
              end if
 
-             call solve_dense_matrix_with_dense_direct(jstep, -b, &
-                  & this % singular_tolerance, q_s, answered)
+             q_s = 0.0_dp
+             call direct % solve(-b, q_s, achieved)
              sensitivities(:, s_order, e + 1) = q_s
 
           end if
@@ -728,7 +775,7 @@ contains
     integer             :: n_state_domain, num_components
     real(dp), allocatable :: trial(:), predictor(:), qprev(:), s(:), zeros(:)
     real(dp), allocatable :: grown(:)
-    real(dp) :: t, h, h_previous, estimate, answered
+    real(dp) :: t, h, h_previous, estimate, achieved
     integer  :: attempt, taken
     logical  :: accepted, have_previous
 
@@ -778,18 +825,14 @@ contains
 
           else
 
-             if (this % rule == MARCH_BDF2 .and. have_previous) then
-                call statement % set_bdf(2, [h, h_previous])
-                statement % qolder = qprev
-             else
-                call statement % set_bdf(1, [h])
-             end if
-             statement % qold = q
+             ! qprev is unallocated until the first accepted edge, so
+             ! configure_edge reads it as absent and takes order 1
+             call configure_edge(this, statement, h, q, h_previous, qprev)
 
              trial = q
              call this % inner % attach(statement, on, state_domain, &
                   & n_state_domain, num_components = num_components)
-             call this % inner % solve(zeros, trial, answered)
+             call this % inner % solve(zeros, trial, achieved)
 
           end if
 

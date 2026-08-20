@@ -104,11 +104,12 @@ The integrator. Rules: `MARCH_FORWARD` (explicit), `MARCH_BACKWARD`
   rule: the caller's transposed statement is applied edge by edge.
   Implicit rules: backward substitution; at each edge
 
-      (a0 I + h_e S'(q_e))^T lambda_e = seed_e,
+      J_e^T lambda_e = seed_e,      J_e = tangent_of(scheme),
 
-  the Jacobian assembled at the recorded state through `tangent_of`
-  and `dense_matrix_of`, the couplings to earlier instants carried
-  as the constant coefficients a1 and a2. Requires `action` and
+  the tangent of the step equation taken at the recorded state,
+  compiled to a `stencil`, transposed, and solved by `dense_direct`;
+  the couplings to earlier instants are the scheme's constant
+  coefficients a1 and a2. Requires `action` and
   `trajectory`. `seeds(:, k)` is added when instant k is reached; on
   return `lambda` is the sensitivity at the first instant.
 - `march_directional(action, on, nsteps, trajectory, order,
@@ -117,13 +118,14 @@ The integrator. Rules: `MARCH_FORWARD` (explicit), `MARCH_BACKWARD`
   each edge
 
       J_e q_e^(s) = -( a1 qprev^(s) + a2 qolder^(s)
-                       + h_e * (degree-s composition with the
-                         order-s state derivative set to zero) ),
-      J_e = a0 I + h_e S'(q_e),
+                       + degree-s composition over the scheme with
+                         the order-s state derivative set to zero ),
+      J_e = tangent_of(scheme) at the solved state,
 
-  so one Jacobian per edge serves every order. Parameter paths ride
-  input slots 2 and higher as `argument_path` values; the state's
-  path is computed, never supplied.
+  so one tangent per edge, attached to `dense_direct`, serves every
+  order. Parameter paths arrive on input slots 2 and higher as
+  `argument_path` values; the state's path is computed, never
+  supplied.
 - `march_adaptive(action, on, q, duration, policy, max_attempts,
   steps_taken, completed)` chooses steps at run time: the policy
   proposes, the marcher computes a trial without modifying q,
@@ -146,17 +148,14 @@ accept at or below `tolerance`, halve on rejection.
 Gaussian elimination with partial pivoting as a concrete minimizer
 in the `operation_minimization` family. The matrix is assembled by
 applying the attached operation's matvec to each basis vector. A
-pivot at or below `singular_tolerance` stops the program.
+pivot at or below `singular_tolerance` stops the program. It owns no
+matrix representation: `stencil(action, on, width)` compiles any
+operation onto a stencil by evaluation on the standard basis, and a
+stencil's `transpose()` reverses its edges, so a dense array is
+never built by hand.
 
-- `solve_dense_matrix_with_dense_direct(a, b, tol, x, achieved)`
-  lays a plain dense array on a `stencil` and solves it
-  through the same minimizer interface.
-- `dense_matrix_of(action, on, width, a)` assembles any operation's
-  dense matrix column by column - the reverse direction.
-
-There is no `solve_transpose`: a transpose is one array away
-(`transpose(a)`), and the transposed system is solved like any
-other.
+There is no `solve_transpose`: the transposed stencil is attached
+and solved like any other operation.
 
 ### operation_newton
 
@@ -203,7 +202,7 @@ restoring the prior row exactly.
   nonuniform implicit march.
 - `test/graph-change`: the controller lifecycle, the value map
   transitions and storage rules, value_change restorations.
-- `test/graph-dense-direct`: the elimination, the dense-array
-  adapter, dense_matrix_of, and static checks on the source.
+- `test/graph-dense-direct`: the elimination, a stencil compiled
+  from an operation, its transpose, and static checks on the source.
 - `test/graph-marching`, `test/graph-minimization`: the marcher's
   integration rules and the minimizer family.

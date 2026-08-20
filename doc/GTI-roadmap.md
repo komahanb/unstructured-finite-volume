@@ -40,11 +40,11 @@ remain binding, and what is still open.
   `operation_minimization`; a new linear-algebra hierarchy is not
   accepted.
 - No `solve_transpose` method: a transposed system is solved by
-  handing `transpose(a)` to the same solver.
+  handing the transposed stencil to the same solver.
 - Every BDF coefficient is written in `set_bdf` and nowhere else.
-- One Jacobian per edge serves every derivative order in
-  `march_directional`; only the right-hand side changes with the
-  order.
+- One tangent per edge, `tangent_of(scheme)`, serves every
+  derivative order in `march_directional`; only the right-hand side
+  changes with the order.
 - Linearization dispatch happens only in `tangent_of`, by the
   statement's `max_degree`; callers do not inspect statement types
   themselves.
@@ -62,9 +62,10 @@ remain binding, and what is still open.
 - The Adams corrector at nonuniform history (history-ratio
   coefficients) is not implemented; the current corrector reuses
   the backward step with a scaled hs.
-- `march_adjoint` and `march_directional` assemble dense step
-  Jacobians (`dense_matrix_of`); large states need a sparse or
-  matrix-free route through the same minimizer family.
+- `march_adjoint` and `march_directional` solve through
+  `dense_direct`, which assembles the tangent densely on every
+  solve; large states need a sparse or matrix-free minimizer, or a
+  direct solver that factors once per attach.
 - The comment and naming rules above are enforced in the modules
   listed in `doc/GTI.md`; older modules elsewhere in `src/` have
   not been rewritten to them.

@@ -12,8 +12,9 @@
 !      the marcher        march with trajectory recording,
 !                         march_directional to degree 8,
 !                         march_adjoint with terminal and
-!                         per-instant seeds, march_adaptive, and a
-!                         nonuniform implicit march
+!                         per-instant seeds, march_adaptive, a
+!                         nonuniform implicit march, and the
+!                         adjoint on the difference road
 !
 ! Every expected value is an exact rational or a closed form
 ! derived independently of the code under test; the derivation is
@@ -511,6 +512,21 @@ contains
     call clock % march(lin, lone, q, 2, steps=[1.0_dp, 0.5_dp])
     call report(near(q(1), 1.0_dp / 3.0_dp, 1.0e-9_dp), &
          & "S = q on steps (1, 1/2) gives exactly 1/3", nfail)
+
+    !----------------------------------------------------------------!
+    ! The difference road: S = q keeps the difference tangent, so
+    ! the step Jacobian a0 + h = 2 at h = 1 is differenced from the
+    ! whole residual; a terminal seed crosses two edges as (1/2)^2.
+    !----------------------------------------------------------------!
+
+    q = [1.0_dp]
+    call clock % march(lin, lone, q, 2, trajectory=trajectory)
+    lambda = [1.0_dp]
+    call clock % march_adjoint(lin, lone, lambda, 2, action=lin, &
+         & trajectory=trajectory)
+    call report(near(lambda(1), 0.25_dp, 1.0e-7_dp), &
+         & "on the difference road a terminal seed crosses two edges as (1/2)^2", &
+         & nfail)
 
   end subroutine check_the_derivative_walks
 

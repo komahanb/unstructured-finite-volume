@@ -6,13 +6,10 @@
 ! residual, which must be the attached operation's norm of
 ! rhs - matvec(x); repeated solves on one attached operation; the
 ! stencil weights being left unmodified by a solve; a zero leading
-! pivot handled by partial pivoting;
-! solve_dense_matrix_with_dense_direct, which lays a plain dense
-! array on a stencil and solves it through the same interface; and
-! dense_matrix_of, which rebuilds an operation's matrix column by
-! column; a stencil compiled from an operation by evaluation on the
-! standard basis, constants split from weights; and the transpose of
-! a stencil, solved through the same minimizer.
+! pivot handled by partial pivoting; a stencil compiled from an
+! operation by evaluation on the standard basis, constants split
+! from weights; and the transpose of a stencil, solved through the
+! same minimizer.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -23,8 +20,7 @@ program test_graph_dense_direct
   use field_calculus, only : field
   use field_stored  , only : stored_field
   use operation_stencil , only : stencil
-  use operation_dense_direct, only : dense_direct, &
-       & solve_dense_matrix_with_dense_direct, dense_matrix_of
+  use operation_dense_direct, only : dense_direct
 
   implicit none
 
@@ -34,8 +30,8 @@ program test_graph_dense_direct
   class(field), allocatable :: image
   type(dense_direct)     :: solver
 
-  real(dp), allocatable :: x(:), xa(:), w_before(:), w_after(:)
-  real(dp), allocatable :: arebuilt(:,:), col1(:), col2(:), c(:)
+  real(dp), allocatable :: x(:), w_before(:), w_after(:)
+  real(dp), allocatable :: col1(:), col2(:), c(:)
   real(dp) :: achieved
   real(dp) :: amat(2,2), umat(2,2)
   integer  :: nfail
@@ -127,40 +123,13 @@ program test_graph_dense_direct
   deallocate(x)
 
   !-------------------------------------------------------------------!
-  ! solve_dense_matrix_with_dense_direct: a plain dense array is
-  ! laid on a stencil and solved through the same minimizer
-  ! interface.
-  !-------------------------------------------------------------------!
-
-  amat = reshape([2.0_dp, 1.0_dp, 1.0_dp, 3.0_dp], [2, 2])
-  call solve_dense_matrix_with_dense_direct(amat, [4.0_dp, 7.0_dp], &
-       & 1.0e-14_dp, xa, achieved)
-
-  call report(matches(xa, [1.0_dp, 2.0_dp], 1.0e-12_dp) .and. &
-       & achieved <= 1.0e-12_dp, &
-       & "the dense-array adapter solves through the same minimizer", nfail)
-
-  !-------------------------------------------------------------------!
-  ! dense_matrix_of: one apply per basis column. Applied to the
-  ! stencil that carries A it must reproduce A exactly.
-  !-------------------------------------------------------------------!
-
-  call dense_matrix_of(two_by_two, two_by_two % pattern, 2, arebuilt)
-
-  call report(size(arebuilt, 1) == 2 .and. size(arebuilt, 2) == 2 .and. &
-       & matches([arebuilt(1,1), arebuilt(2,1), arebuilt(1,2), &
-       &          arebuilt(2,2)], &
-       &         [amat(1,1), amat(2,1), amat(1,2), amat(2,2)], &
-       &         0.0_dp + tiny(1.0_dp)), &
-       & "dense_matrix_of reassembles the stencil's matrix exactly", nfail)
-
-  !-------------------------------------------------------------------!
   ! A stencil compiled from an operation by evaluation on the
   ! standard basis: compiled from two_by_two, its columns are the
   ! columns of A exactly and its constants are zero; compiled from
   ! an affine stencil, the constants are split from the weights.
   !-------------------------------------------------------------------!
 
+  amat = reshape([2.0_dp, 1.0_dp, 1.0_dp, 3.0_dp], [2, 2])
   compiled = stencil(two_by_two, two_by_two % pattern, 2)
   call column_of(compiled, 1, col1)
   call column_of(compiled, 2, col2)

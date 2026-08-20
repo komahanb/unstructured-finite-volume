@@ -9,9 +9,8 @@
 !      sizemismatch  a solution array whose length disagrees with
 !                    the right-hand side
 !      singular      dependent rows - no pivot survives elimination
-!      nonsquare     a rectangular array given to the dense-array
-!                    adapter
-!      badwidth      a dense_matrix_of width carrying a fractional
+!      nonsquare     a rectangular array laid on a stencil
+!      badwidth      a compiled-stencil width carrying a fractional
 !                    number per member of the operation's domain
 !      badresult     compiling a stencil at a width the operation
 !                    does not return
@@ -23,15 +22,13 @@ program refusal
 
   use iso_fortran_env     , only : dp => REAL64
   use operation_stencil , only : stencil
-  use operation_dense_direct, only : dense_direct, &
-       & solve_dense_matrix_with_dense_direct, dense_matrix_of
+  use operation_dense_direct, only : dense_direct
 
   implicit none
 
   type(stencil) :: statement, compiled
   type(dense_direct)     :: solver
 
-  real(dp), allocatable :: xa(:), arebuilt(:,:)
   real(dp) :: x2(2), x3(3), achieved
   real(dp) :: rect(2,3)
 
@@ -75,8 +72,7 @@ program refusal
   case ('nonsquare')
 
      rect = 1.0_dp
-     call solve_dense_matrix_with_dense_direct(rect, [1.0_dp, 1.0_dp], &
-          & 1.0e-14_dp, xa, achieved)
+     statement = stencil(rect, 'rect')
 
   case ('badwidth')
 
@@ -84,7 +80,7 @@ program refusal
      ! number per member
      statement = stencil([1, 1, 2, 2], [1, 2, 1, 2], &
           & [2.0_dp, 1.0_dp, 1.0_dp, 3.0_dp], [0.0_dp, 0.0_dp], 'two')
-     call dense_matrix_of(statement, statement % pattern, 3, arebuilt)
+     compiled = stencil(statement, statement % pattern, 3)
 
   case ('badresult')
 

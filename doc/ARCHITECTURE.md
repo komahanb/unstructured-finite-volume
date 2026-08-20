@@ -83,7 +83,7 @@ Indentation is `extends`; brackets name the file.
     ├── minimizer                              [operation_minimization]
     │   ├── jacobi, gauss_seidel, conjugate_gradient, gmres, multigrid
     │   ├── newton        Jacobian action = tangent_of(action)
-    │   └── dense_direct  elimination; + dense_matrix_of, dense-array adapter
+    │   └── dense_direct  elimination on the attached operation's basis columns
     ├── differential_operator  d^n on graph sides, compiled     [operation_differential]
     │       the average, difference, and incidence steps as affine
     │       sparse maps, composed by parity into one matrix + constant;
@@ -106,8 +106,11 @@ Indentation is `extends`; brackets name the file.
         partitions of the degree, from partial actions alone
 
     marcher  time as a chain graph             [operation_marching]
-        march, march_adjoint (backward substitution),
-        march_directional (any order), march_adaptive
+        march, march_adjoint (backward substitution through
+        tangent_of(scheme), compiled to a stencil and transposed),
+        march_directional (any order, one tangent_of(scheme) per
+        edge), march_adaptive; configure_edge sets up the scheme
+        for an edge, once for all four
     step_policy -> halving_policy              [operation_step_policy]
 
     form -> polynomial_form, harmonic_form     [field_forms]

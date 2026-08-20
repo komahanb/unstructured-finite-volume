@@ -396,8 +396,12 @@ contains
 
   !===================================================================!
   ! The history state k instants back: input m+k when the caller
-  ! supplied it (checked to live on the action's domain), else the
-  ! stored qold/qolder. Neither given stops the program.
+  ! supplied it, else the stored qold/qolder. A supplied state must
+  ! live on the action's domain and carry the current state's storage
+  ! shape - the same entry count and component count; a stored one
+  ! must carry its width. A violation, or neither given, stops the
+  ! program, because the history is combined with the state entry by
+  ! entry.
   !===================================================================!
 
   subroutine history_values(this, k, input_data, expected, values)
@@ -409,25 +413,31 @@ contains
     real(dp), allocatable, intent(out) :: values(:)
 
     type(graph) :: given
-    integer     :: at
+    integer     :: at, width
 
-    at = this % action % num_arguments() + k
+    at    = this % action % num_arguments() + k
+    width = input_data(1) % num_entries() * input_data(1) % num_components()
 
     if (size(input_data) >= at) then
        given = input_data(at) % domain()
        if (.not. given % same_as(expected)) then
           error stop 'step: a history state lives on the action''s own domain'
        end if
+       if (input_data(at) % num_entries() /= input_data(1) % num_entries() .or. &
+            & input_data(at) % num_components() /= input_data(1) % num_components()) then
+          error stop 'step: a history state matches the state''s storage shape'
+       end if
        call input_data(at) % real_vector(values)
-       return
-    end if
-
-    if (k == 1 .and. allocated(this % qold)) then
+    else if (k == 1 .and. allocated(this % qold)) then
        values = this % qold
     else if (k == 2 .and. allocated(this % qolder)) then
        values = this % qolder
     else
        error stop 'step: the history state is given'
+    end if
+
+    if (size(values) /= width) then
+       error stop 'step: a history state matches the state''s storage shape'
     end if
 
   end subroutine history_values

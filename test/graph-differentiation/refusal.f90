@@ -17,6 +17,8 @@
 !      undeclared    an argument asked of an operation built
 !                    without its constructor
 !      historyreach  history(2) of a reach-1 statement
+!      historyshape  a supplied history state of another storage
+!                    shape than the state
 !      negdegree     a negative derivative degree
 !      pastcalculus  a degree needing more derivative slots than
 !                    the operation's max_degree
@@ -67,7 +69,7 @@ program refusal
   type(marcher)               :: clock
   type(halving_policy)        :: policy
 
-  type(stored_field) :: inputs(2), direction
+  type(stored_field) :: inputs(2), direction, wide
   class(field), allocatable :: output
   real(dp), allocatable :: sensitivities(:,:,:), taken(:)
   real(dp) :: trajectory(1,3), q(1)
@@ -131,6 +133,14 @@ program refusal
 
      ! bare was never built by linear_law(), so it owns no arguments
      call fill_path(paths(1), bare % argument(1), [1.0_dp], cells)
+
+  case ('historyshape')
+
+     statement = backward_euler(quartic, 0.5_dp)
+     call scalar_pair(1.0_dp, 2.0_dp, cells, inputs)
+     wide = stored_field('qold', cells, 1, num_components=2)
+     call wide % set_real_vector([1.0_dp, 1.0_dp])
+     call statement % apply(lone, [inputs(1), inputs(2), wide], output)
 
   case ('historyreach')
 

@@ -124,10 +124,12 @@ contains
     type(stored_directed_graph) :: chain
     type(scheme) :: statement
     type(graph) :: state_domain
+    type(stored_field), allocatable :: inputs(:)
     integer         :: n_state_domain
     real(dp), allocatable :: s(:), qold(:), qolder(:), zeros(:)
     real(dp) :: achieved, h_edge, h_previous
     integer :: e, num_components
+    logical :: complete
 
     call require_valid_steps(steps, nsteps)
 
@@ -173,9 +175,18 @@ contains
        call configure_edge(this, statement, h_edge, qold, h_previous, qolder)
 
        ! num_components is the state's component count, so a multi-component
-       ! entry is solved whole
-       call this % inner % attach(statement, on, state_domain, &
-            & n_state_domain, num_components = num_components)
+       ! entry is solved whole; the history is held by the solve when
+       ! the statement's tuple is complete
+       call edge_inputs(statement, q, qold, state_domain, n_state_domain, &
+            & num_components, inputs, complete, qolder=qolder)
+       if (complete) then
+          call this % inner % attach(statement, on, state_domain, &
+               & n_state_domain, num_components = num_components, &
+               & held_inputs = inputs(2:))
+       else
+          call this % inner % attach(statement, on, state_domain, &
+               & n_state_domain, num_components = num_components)
+       end if
        call this % inner % solve(zeros, q, achieved)
 
        qolder     = qold
@@ -283,6 +294,93 @@ contains
     end if
 
   end subroutine recorded_edge
+
+  !===================================================================!
+  ! The statement's input tuple for one edge, in the scheme's argument
+  ! order: the state, then - when every auxiliary argument of the
+  ! action is supplied as a parameter field - the parameters and the
+  ! history states the statement reaches. complete reports whether the
+  ! tuple reaches the history; when it does not (an action with
+  ! auxiliaries and no parameters given) the tuple is the state alone
+  ! and the scheme reads its stored history. The tuple is what the
+  ! minimizer holds during the solve and what a tangent is frozen at,
+  ! so residual and tangent see one function.
+  !===================================================================!
+
+  subroutine edge_inputs(statement, state_values, qold, state_domain, &
+       & n_state_domain, num_components, inputs, complete, qolder, parameters)
+
+    type(scheme), intent(in) :: statement
+    real(dp)    , intent(in) :: state_values(:)
+    real(dp)    , intent(in) :: qold(:)
+    type(graph) , intent(in) :: state_domain
+    integer     , intent(in) :: n_state_domain, num_components
+    type(stored_field), allocatable, intent(out) :: inputs(:)
+    logical     , intent(out) :: complete
+    real(dp)    , intent(in), optional :: qolder(:)
+    type(stored_field), intent(in), optional :: parameters(:)
+
+    integer :: m, np, n, j
+
+    m  = statement % action % num_arguments()
+    np = 0
+    if (present(parameters)) np = size(parameters)
+    complete = (np == m - 1)
+
+    n = 1
+    if (complete) n = m + statement % reach
+    allocate(inputs(n))
+
+    inputs(1) = stored_field('state', state_domain, n_state_domain, num_components=num_components)
+    call inputs(1) % set_real_vector(state_values)
+
+    if (.not. complete) return
+
+    do j = 1, m - 1
+       inputs(1 + j) = parameters(j)
+    end do
+
+    inputs(m + 1) = stored_field('history 1', state_domain, n_state_domain, num_components=num_components)
+    call inputs(m + 1) % set_real_vector(qold)
+
+    if (statement % reach >= 2) then
+       if (.not. present(qolder)) then
+          error stop 'marcher: a reach-2 statement is given two history states'
+       end if
+       inputs(m + 2) = stored_field('history 2', state_domain, n_state_domain, num_components=num_components)
+       call inputs(m + 2) % set_real_vector(qolder)
+    end if
+
+  end subroutine edge_inputs
+
+  !===================================================================!
+  ! The input tuple of a recorded edge: the state at instant e + 1,
+  ! the history at e and, past the first edge, e - 1.
+  !===================================================================!
+
+  subroutine recorded_inputs(statement, e, trajectory, state_domain, &
+       & n_state_domain, num_components, inputs, complete, parameters)
+
+    type(scheme), intent(in) :: statement
+    integer     , intent(in) :: e
+    real(dp)    , intent(in) :: trajectory(:,:)
+    type(graph) , intent(in) :: state_domain
+    integer     , intent(in) :: n_state_domain, num_components
+    type(stored_field), allocatable, intent(out) :: inputs(:)
+    logical     , intent(out) :: complete
+    type(stored_field), intent(in), optional :: parameters(:)
+
+    if (e > 1) then
+       call edge_inputs(statement, trajectory(:, e + 1), trajectory(:, e), &
+            & state_domain, n_state_domain, num_components, inputs, complete, &
+            & qolder=trajectory(:, e - 1), parameters=parameters)
+    else
+       call edge_inputs(statement, trajectory(:, e + 1), trajectory(:, e), &
+            & state_domain, n_state_domain, num_components, inputs, complete, &
+            & parameters=parameters)
+    end if
+
+  end subroutine recorded_inputs
 
   !===================================================================!
   ! Reverse traversal over the recorded trajectory. The adjoint of
@@ -395,11 +493,16 @@ contains
     type(dense_direct) :: direct
     type(linearization) :: tangent
     type(stencil) :: compiled, adjoint
+    type(stored_field), allocatable :: inputs(:)
+    type(graph) :: state_domain
     real(dp), allocatable :: seed(:), lambda_e(:), carry_one(:), carry_two(:)
     real(dp) :: achieved
-    integer :: e, n
+    integer :: e, n, n_state_domain, num_components
+    logical :: complete
 
     n = size(lambda)
+
+    call read_state_domain(action, on, lambda, state_domain, n_state_domain, num_components)
 
     statement = bdf(1, action, this % step)
     direct % singular_tolerance = this % singular_tolerance
@@ -421,9 +524,12 @@ contains
        end if
 
        ! the tangent copies the statement, so it is taken after the
-       ! edge is configured, and frozen before it is compiled
+       ! edge is configured, and frozen - at the edge's input tuple -
+       ! before it is compiled
        tangent = tangent_of(statement)
-       call tangent % freeze(trajectory(:, e + 1))
+       call recorded_inputs(statement, e, trajectory, state_domain, &
+            & n_state_domain, num_components, inputs, complete)
+       call tangent % freeze(inputs)
        compiled = stencil(tangent, on, n)
        adjoint  = compiled % transpose()
 
@@ -564,7 +670,7 @@ contains
     type(dense_direct)          :: direct
     type(linearization) :: tangent
     type(argument_path), allocatable :: assembled(:)
-    type(stored_field), allocatable         :: inputs(:)
+    type(stored_field), allocatable         :: inputs(:), frozen(:)
     class(field), allocatable  :: total_field
     type(stored_field)     :: state
     type(graph) :: state_domain
@@ -572,6 +678,7 @@ contains
     real(dp) :: achieved, h_edge
     integer :: n_state_domain, num_components
     integer :: e, s_order, k, n, at, npaths
+    logical :: complete
 
     if (order < 1) then
        error stop 'march_directional: the order is positive'
@@ -639,9 +746,13 @@ contains
           at = e + 1
           call recorded_edge(this, statement, steps, e, trajectory)
           ! the tangent copies the statement, so it is taken after
-          ! the edge is configured, and frozen before it is attached
+          ! the edge is configured, and frozen - at the edge's input
+          ! tuple - before it is attached
           tangent = tangent_of(statement)
-          call tangent % freeze(trajectory(:, e + 1))
+          call recorded_inputs(statement, e, trajectory, state_domain, &
+               & n_state_domain, num_components, frozen, complete, &
+               & parameters=parameters)
+          call tangent % freeze(frozen)
           call direct % attach(tangent, on, state_domain, n_state_domain, &
                & num_components = num_components)
        end if
@@ -823,12 +934,13 @@ contains
 
     type(scheme) :: statement
     type(graph)     :: state_domain
+    type(stored_field), allocatable :: inputs(:)
     integer             :: n_state_domain, num_components
     real(dp), allocatable :: trial(:), predictor(:), qprev(:), s(:), zeros(:)
     real(dp), allocatable :: grown(:)
     real(dp) :: t, h, h_previous, estimate, achieved
     integer  :: attempt, taken
-    logical  :: accepted, have_previous
+    logical  :: accepted, have_previous, complete
 
     if (duration <= 0.0_dp) then
        error stop 'march_adaptive: the duration is positive'
@@ -881,8 +993,16 @@ contains
              call configure_edge(this, statement, h, q, h_previous, qprev)
 
              trial = q
-             call this % inner % attach(statement, on, state_domain, &
-                  & n_state_domain, num_components = num_components)
+             call edge_inputs(statement, q, q, state_domain, n_state_domain, &
+                  & num_components, inputs, complete, qolder=qprev)
+             if (complete) then
+                call this % inner % attach(statement, on, state_domain, &
+                     & n_state_domain, num_components = num_components, &
+                     & held_inputs = inputs(2:))
+             else
+                call this % inner % attach(statement, on, state_domain, &
+                     & n_state_domain, num_components = num_components)
+             end if
              call this % inner % solve(zeros, trial, achieved)
 
           end if

@@ -125,6 +125,7 @@ module operation_minimization
    contains
 
      procedure :: attach
+     procedure :: evaluation_inputs
      procedure :: matvec
      procedure :: inner_product
      procedure :: norm
@@ -251,6 +252,32 @@ contains
   end subroutine attach
 
   !===================================================================!
+  ! The inputs the statement is evaluated on at the unknown x: the
+  ! state on the unknown domain, then the held inputs. The residual
+  ! and every tangent taken of it are built on this one tuple, so
+  ! they linearize the same function.
+  !===================================================================!
+
+  subroutine evaluation_inputs(this, x, inputs)
+
+    class(minimizer), intent(in) :: this
+    real(dp), intent(in)         :: x(:)
+    type(stored_field), allocatable, intent(out) :: inputs(:)
+
+    type(stored_field) :: state
+
+    state = stored_field('state', this % unknown_domain, this % num_unknowns, num_components=this % num_components)
+    call state % set_real_vector(x)
+
+    if (allocated(this % held)) then
+       inputs = [state, this % held]
+    else
+       inputs = [state]
+    end if
+
+  end subroutine evaluation_inputs
+
+  !===================================================================!
   ! The operation applied as it stands, affine part and all.
   !===================================================================!
 
@@ -260,17 +287,11 @@ contains
     real(dp), intent(in)               :: x(:)
     real(dp), allocatable, intent(out) :: y(:)
 
-    type(stored_field) :: state
+    type(stored_field), allocatable :: inputs(:)
     class(field), allocatable :: answer
 
-    state = stored_field('state', this % unknown_domain, this % num_unknowns, num_components=this % num_components)
-    call state % set_real_vector(x)
-
-    if (allocated(this % held)) then
-       call this % action % apply(this % on, [state, this % held], answer)
-    else
-       call this % action % apply(this % on, [state], answer)
-    end if
+    call this % evaluation_inputs(x, inputs)
+    call this % action % apply(this % on, inputs, answer)
 
     block
       type(graph) :: got

@@ -28,6 +28,7 @@ module operation_newton
 
   use iso_fortran_env           , only : dp => REAL64
   use operation_minimization        , only : minimizer
+  use field_stored  , only : stored_field
   use operation_linearization, only : linearization, tangent_of
 
   implicit none
@@ -76,6 +77,7 @@ contains
     real(dp), intent(out)   :: achieved
 
     type(linearization) :: jacobian
+    type(stored_field), allocatable :: inputs(:)
     real(dp), allocatable :: residual(:), g(:), y(:), dq(:)
     real(dp) :: linear_achieved
     integer :: it
@@ -84,9 +86,9 @@ contains
 
     call this % constant(g)
 
-    ! the seat is filled by what the statement is - the shelf's
-    ! own chooser answers, and no dispatch lives here
-    jacobian = tangent_of(this % action)
+    ! the tangent in the unknown's argument; which road it takes is
+    ! the statement's own answer, and no dispatch lives here
+    jacobian = tangent_of(this % action, this % action % argument(1))
 
     do it = 1, this % max_iterations
 
@@ -98,8 +100,10 @@ contains
        if (achieved < this % tolerance) return
 
        ! The linear question at this point, answered by the governed
-       ! minimizer.
-       call jacobian % freeze(x, base=y + g)
+       ! minimizer: the Jacobian is frozen at the same input tuple the
+       ! residual was evaluated on, held inputs included.
+       call this % evaluation_inputs(x, inputs)
+       call jacobian % freeze(inputs, base=y + g)
 
        call this % inner % attach(jacobian, this % on, this % unknown_domain, &
             & this % num_unknowns, num_components = this % num_components)

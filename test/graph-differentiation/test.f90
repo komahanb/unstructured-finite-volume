@@ -88,6 +88,7 @@ program test_graph_differentiation
   call check_the_derivative_walks(nfail)
   call check_the_adaptive_walk(nfail)
   call check_the_argument_calculus(nfail)
+  call check_held_inputs(nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
@@ -762,5 +763,59 @@ contains
          &pairing law holds on a rectangular block", nfail)
 
   end subroutine check_the_argument_calculus
+
+
+  !===================================================================!
+  ! Held inputs. Newton attached to the quartic with xi = 3 held: the
+  ! residual is evaluated on [q, xi] and the Jacobian is frozen at the
+  ! same tuple, so the tangent at q = 1 is Phi_q(1, 3) = 58 (it would
+  ! read 26 at the default xi = 2), it agrees with the differenced
+  ! matvec, and the solve of Phi(q, 3) = Phi(2, 3) = 211 from q = 1
+  ! lands on 2.
+  !===================================================================!
+
+  subroutine check_held_inputs(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(newton) :: solver
+    type(linearization) :: jacobian
+    type(stored_field) :: held(1), v
+    type(stored_field), allocatable :: inputs(:)
+    class(field), allocatable :: output
+    real(dp), allocatable :: rv(:), y0(:), y1(:)
+    real(dp) :: x(1), achieved, differenced
+    real(dp), parameter :: eps = 1.0e-7_dp
+
+    held(1) = stored_field('xi', cells, 1, num_components=1)
+    call held(1) % set_real_vector([3.0_dp])
+    v = stored_field('v', cells, 1, num_components=1)
+    call v % set_real_vector([1.0_dp])
+
+    allocate(solver % inner, source=gmres())
+    solver % inner % tolerance = 1.0d-14
+    solver % tolerance = 1.0d-12
+    call solver % attach(quartic, lone, cells, 1, held_inputs=held)
+
+    call solver % evaluation_inputs([1.0_dp], inputs)
+    jacobian = tangent_of(quartic, quartic % argument(1), at_inputs=inputs)
+    call jacobian % apply(lone, [v], output)
+    call output % real_vector(rv)
+
+    call solver % matvec([1.0_dp], y0)
+    call solver % matvec([1.0_dp + eps], y1)
+    differenced = (y1(1) - y0(1)) / eps
+
+    call report(size(inputs) == 2 .and. near(rv(1), 58.0_dp, 1.0e-12_dp) .and. &
+         & near(differenced, 58.0_dp, 1.0e-4_dp), &
+         & "the Jacobian frozen at the evaluation tuple reads the held xi: &
+         &Phi_q(1, 3) = 58, and agrees with the differenced residual", nfail)
+
+    x = [1.0_dp]
+    call solver % solve([211.0_dp], x, achieved)
+    call report(near(x(1), 2.0_dp, 1.0e-9_dp), &
+         & "newton solves Phi(q, 3) = 211 with xi held: q = 2", nfail)
+
+  end subroutine check_held_inputs
 
 end program test_graph_differentiation

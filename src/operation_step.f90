@@ -434,10 +434,12 @@ contains
   end subroutine history_values
 
   !===================================================================!
-  ! The action's input list at a state: the state as input 1 on the
-  ! action's domain, then the auxiliaries the caller supplied in
-  ! inputs 2..m, copied as stored fields. Fewer auxiliaries than the
-  ! action declares are passed as fewer, as a direct call would.
+  ! The action's full input tuple rebuilt at another state - the
+  ! history state - from the scheme's inputs: the given values as
+  ! input 1 on the action's domain, then the scheme's inputs 2..m,
+  ! which are the action's auxiliaries, copied as stored fields. The
+  ! scheme's inputs hold the whole action tuple before the history,
+  ! so every auxiliary is present here.
   !===================================================================!
 
   subroutine inputs_at(this, input_data, expected, n_expected, &

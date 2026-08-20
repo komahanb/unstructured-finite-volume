@@ -128,16 +128,17 @@ contains
 
     type(scheme)             :: step
     type(gmres)                     :: solver
-    type(stored_field)                     :: rhs
+    type(stored_field)                     :: rhs, hist
     class(field), allocatable :: answer
     type(graph)  :: d
     integer         :: n_d
     real(dp), allocatable           :: c(:), v(:)
 
     step = backward_euler(decay, H_STEP)
-    step % qold = Q0
+    hist = stored_field('q0', q, NQ, num_components=1)
+    call hist % set_real_vector(Q0)
 
-    call solver % attach(step, ht, q, NQ, num_components=1)
+    call solver % attach(step, ht, q, NQ, num_components=1, held_inputs=[hist])
 
     call solver % domain(ht, d, n_d)
     call report(d % same_as(q), &
@@ -180,17 +181,19 @@ contains
 
     type(scheme)             :: step
     type(gmres)                     :: solver
-    type(stored_field)                     :: rhs
+    type(stored_field)                     :: rhs, hist1, hist2
     class(field), allocatable :: answer
     type(graph)  :: d
     real(dp), allocatable           :: c(:), v(:)
     real(dp)                        :: expected_rhs(NQ)
 
     step = bdf(2, decay, H_STEP)
-    step % qold   = Q_BE1
-    step % qolder = Q0
+    hist1 = stored_field('q1', q, NQ, num_components=1)
+    call hist1 % set_real_vector(Q_BE1)
+    hist2 = stored_field('q0', q, NQ, num_components=1)
+    call hist2 % set_real_vector(Q0)
 
-    call solver % attach(step, ht, q, NQ, num_components=1)
+    call solver % attach(step, ht, q, NQ, num_components=1, held_inputs=[hist1, hist2])
 
     ! c = -2 q1 + (1/2) q0, so the linear right-hand side is -c.
     expected_rhs = 2.0_dp * Q_BE1 - 0.5_dp * Q0
@@ -239,13 +242,15 @@ contains
 
     type(scheme)            :: step
     type(gmres)                    :: solver
+    type(stored_field)             :: hist
     type(graph) :: d, hv
     integer         :: n_d
 
     step = backward_euler(decay, H_STEP)
-    step % qold = Q0
+    hist = stored_field('q0', q, NQ, num_components=1)
+    call hist % set_real_vector(Q0)
 
-    call solver % attach(step, ht, q, NQ, num_components=1)
+    call solver % attach(step, ht, q, NQ, num_components=1, held_inputs=[hist])
     call solver % domain(ht, d, n_d)
     hv = ht % vertex_set()
 

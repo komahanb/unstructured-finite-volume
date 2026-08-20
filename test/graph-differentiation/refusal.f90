@@ -19,6 +19,9 @@
 !      historyreach  history(2) of a reach-1 statement
 !      historyshape  a supplied history state of another storage
 !                    shape than the state
+!      historymissing  a scheme applied without its history input
+!      unsupplied    a march over an action with an auxiliary
+!                    argument and no parameter supplied for it
 !      negdegree     a negative derivative degree
 !      pastcalculus  a degree needing more derivative slots than
 !                    the operation's max_degree
@@ -69,7 +72,7 @@ program refusal
   type(marcher)               :: clock
   type(halving_policy)        :: policy
 
-  type(stored_field) :: inputs(2), direction, wide
+  type(stored_field) :: inputs(2), direction, wide, xifield(1)
   class(field), allocatable :: output
   real(dp), allocatable :: sensitivities(:,:,:), taken(:)
   real(dp) :: trajectory(1,3), q(1)
@@ -88,6 +91,9 @@ program refusal
 
   clock % rule = MARCH_BACKWARD
   trajectory   = 1.0_dp
+
+  xifield(1) = stored_field('xi', cells, 1, num_components=1)
+  call xifield(1) % set_real_vector([1.0_dp])
 
   select case (trim(which))
 
@@ -173,12 +179,25 @@ program refusal
 
      call fill_path(paths(1), equil % argument(1), [1.0_dp], cells)
      call clock % march_directional(equil, lone, 2, trajectory, 1, &
-          & sensitivities, paths=paths(1:1))
+          & sensitivities, parameters=xifield, paths=paths(1:1))
 
   case ('orderzero')
 
      call clock % march_directional(equil, lone, 2, trajectory, 0, &
-          & sensitivities)
+          & sensitivities, parameters=xifield)
+
+  case ('unsupplied')
+
+     ! equil declares xi as an auxiliary; a march without it is refused
+     ! before any history could be placed behind the missing argument
+     q = [1.0_dp]
+     call clock % march(equil, lone, q, 2)
+
+  case ('historymissing')
+
+     statement = backward_euler(quartic, 0.5_dp)
+     call scalar_pair(1.0_dp, 2.0_dp, cells, inputs)
+     call statement % apply(lone, inputs, output)
 
   case ('unfrozen')
 
@@ -191,7 +210,7 @@ program refusal
 
      q = [2.0_dp]
      call clock % march_adaptive(equil, lone, q, 0.0_dp, policy, 3, &
-          & taken, completed)
+          & taken, completed, parameters=xifield)
 
   case ('flatcalculus')
 

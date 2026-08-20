@@ -294,18 +294,19 @@ contains
     integer, intent(inout) :: nfail
 
     type(scheme)             :: step
-    type(stored_field)                     :: state
+    type(stored_field)                     :: state, hist
     class(field), allocatable :: r
     type(graph)  :: d
     real(dp), allocatable           :: v(:)
 
     step = backward_euler(decay, H_STEP)
-    step % qold = Q0
+    hist = stored_field('q0', q, NQ, num_components=1)
+    call hist % set_real_vector(Q0)
 
     ! At the exact backward-euler state the residual vanishes.
     state = stored_field('trial', q, NQ, num_components=1)
     call state % set_real_vector(Q_BE1)
-    call step % apply(ht, [state], r)
+    call step % apply(ht, [state, hist], r)
 
     d = r % domain()
     call report(d % same_as(q), &
@@ -320,7 +321,7 @@ contains
     ! And it is not zero anywhere convenient - the forward-euler
     ! answer is a different number, as it must be.
     call state % set_real_vector(Q_FE1)
-    call step % apply(ht, [state], r)
+    call step % apply(ht, [state, hist], r)
     call r % real_vector(v)
     call report(maxval(abs(v)) .gt. 1.0e-3_dp, &
          & "while the FORWARD-euler answer leaves a residual: the " // &
@@ -380,18 +381,20 @@ contains
     integer, intent(inout) :: nfail
 
     type(scheme)             :: step
-    type(stored_field)                     :: state
+    type(stored_field)                     :: state, hist1, hist2
     class(field), allocatable :: r
     type(graph)  :: d
     real(dp), allocatable           :: v(:)
 
     step = bdf(2, decay, H_STEP)
-    step % qold   = Q_BE1
-    step % qolder = Q0
+    hist1 = stored_field('q1', q, NQ, num_components=1)
+    call hist1 % set_real_vector(Q_BE1)
+    hist2 = stored_field('q0', q, NQ, num_components=1)
+    call hist2 % set_real_vector(Q0)
 
     state = stored_field('trial', q, NQ, num_components=1)
     call state % set_real_vector(Q_BDF2)
-    call step % apply(ht, [state], r)
+    call step % apply(ht, [state, hist1, hist2], r)
 
     d = r % domain()
     call report(d % same_as(q), &

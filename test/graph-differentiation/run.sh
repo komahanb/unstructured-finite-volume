@@ -16,6 +16,8 @@ declare -A reason=(
   [undeclared]="operation: the argument space is declared before an argument is named"
   [historyreach]="step: the history argument is within the reach"
   [historyshape]="step: a history state matches the state's storage shape"
+  [historymissing]="step: the history state is given"
+  [unsupplied]="marcher: every auxiliary argument of the action is supplied as a parameter"
   [negdegree]="chain_rule: degree is supported"
   [pastcalculus]="chain_rule: the statement supports the requested order"
   [hugedegree]="chain_rule: partition coefficient is representable"
@@ -27,7 +29,8 @@ declare -A reason=(
   [shallowcalculus]="march_directional: the action's max_degree covers the requested order"
 )
 for case in bdforder bdfcount bdfstep dupslot badslot foreignpath \
-            foreignvariation undeclared historyreach historyshape negdegree \
+            foreignvariation undeclared historyreach historyshape historymissing \
+            unsupplied negdegree \
             pastcalculus hugedegree statepath orderzero \
             unfrozen eagerclock flatcalculus shallowcalculus; do
     if ./refusal "$case" >refusal.out 2>&1; then echo " FAIL : '$case' accepted"; exit 1; fi

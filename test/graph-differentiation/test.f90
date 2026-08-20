@@ -210,7 +210,7 @@ contains
     type(linearization) :: tangent, slow
     type(chain_rule)    :: composer
     type(argument_path) :: full(2)
-    type(stored_field)  :: inputs(2), v, w, one
+    type(stored_field)  :: inputs(3), v, w, one, slow_inputs(2)
     class(field), allocatable :: output
     real(dp), allocatable :: rv(:)
     real(dp) :: expected(0:4)
@@ -224,8 +224,9 @@ contains
          & "a scheme's max_degree is its action's", nfail)
 
     statement = backward_euler(quartic, 0.5_dp)
-    statement % qold = [0.0_dp]
     call scalar_pair(1.0_dp, 2.0_dp, cells, inputs)
+    inputs(3) = stored_field('qold', cells, 1, num_components=1)
+    call inputs(3) % set_real_vector([0.0_dp])
 
     v = stored_field('v', cells, 1, num_components=1)
     call v % set_real_vector([3.0_dp])
@@ -251,15 +252,17 @@ contains
          &42, 24.5, 16", nfail)
 
     tangent = tangent_of(statement)
-    call tangent % freeze([1.0_dp])
+    call tangent % freeze(inputs)
     call tangent % apply(lone, [v], output)
     call output % real_vector(rv)
     ok = index(tangent % name(), 'exact derivative of') == 1 .and. &
          & near(rv(1), 42.0_dp, 1.0e-12_dp)
 
+    ! order 2 reaches a second history state; at zero it adds nothing
+    ! to the tangent
     call statement % set_bdf(2, [2.0_dp, 3.0_dp])
     tangent = tangent_of(statement)
-    call tangent % freeze([1.0_dp])
+    call tangent % freeze([inputs, inputs(3)])
     call tangent % apply(lone, [v], output)
     call output % real_vector(rv)
     ok = ok .and. near(rv(1), 160.2_dp, 1.0e-12_dp)
@@ -282,9 +285,10 @@ contains
          &1105.5, 8347, 59129.5", nfail)
 
     slowstep = backward_euler(lin, 1.0_dp)
-    slowstep % qold = [0.0_dp]
+    slow_inputs(1) = inputs(1)
+    slow_inputs(2) = inputs(3)
     slow = tangent_of(slowstep)
-    call slow % freeze([1.0_dp])
+    call slow % freeze(slow_inputs)
     call slow % apply(lone, [w], output)
     call output % real_vector(rv)
     call report(index(slow % name(), 'exact') == 0 .and. &
@@ -459,20 +463,21 @@ contains
     ! march with trajectory recording: 3 instants, all equal to 1.
     !----------------------------------------------------------------!
 
+    xifield(1) = stored_field('xi', cells, 1, num_components=1)
+    call xifield(1) % set_real_vector([1.0_dp])
+
     q = [1.0_dp]
-    call clock % march(equil, lone, q, 2, trajectory=trajectory)
+    call clock % march(equil, lone, q, 2, trajectory=trajectory, parameters=xifield)
 
     call report(size(trajectory, 2) == 3 .and. &
          & maxval(abs(trajectory - 1.0_dp)) < 1.0e-12_dp, &
          & "march records the trajectory: constant at the fixed point", nfail)
 
     !----------------------------------------------------------------!
-    ! march_directional to order 8, the parameter path supplied on
-    ! input slot 2.
+    ! march_directional to order 8, the parameter path on the
+    ! action's second argument.
     !----------------------------------------------------------------!
 
-    xifield(1) = stored_field('xi', cells, 1, num_components=1)
-    call xifield(1) % set_real_vector([1.0_dp])
     call fill_path(xipath(1), equil % argument(2), [1.0_dp], cells)
 
     call clock % march_directional(equil, lone, 2, trajectory, 8, &
@@ -505,14 +510,14 @@ contains
     !----------------------------------------------------------------!
 
     lambda = [1.0_dp]
-    call clock % march_adjoint(equil, lone, lambda, 2, trajectory)
+    call clock % march_adjoint(equil, lone, lambda, 2, trajectory, parameters=xifield)
     call report(near(lambda(1), 1.0_dp / 9.0_dp, 1.0e-12_dp), &
          & "a terminal seed crosses two edges as (1/3)^2 = 1/9", nfail)
 
     lambda = [1.0_dp]
     seeds  = 1.0_dp
     call clock % march_adjoint(equil, lone, lambda, 2, trajectory, &
-         & seeds=seeds)
+         & seeds=seeds, parameters=xifield)
     call report(near(lambda(1), 13.0_dp / 9.0_dp, 1.0e-12_dp), &
          & "per-instant seeds accumulate to 13/9", nfail)
 
@@ -563,16 +568,20 @@ contains
     integer, intent(inout) :: nfail
 
     type(halving_policy) :: generous, strict, impossible
+    type(stored_field) :: xifield(1)
     real(dp), allocatable :: taken(:)
     real(dp) :: q(1), first, second
     logical  :: completed
+
+    xifield(1) = stored_field('xi', cells, 1, num_components=1)
+    call xifield(1) % set_real_vector([1.0_dp])
 
     generous % first_step = 0.5_dp
     generous % tolerance  = 1.0_dp
 
     q = [2.0_dp]
     call clock % march_adaptive(equil, lone, q, 0.5_dp, generous, 5, &
-         & taken, completed)
+         & taken, completed, parameters=xifield)
     call report(completed .and. size(taken) == 1 .and. &
          & taken(1) == 0.5_dp .and. &
          & near(q(1), -1.0_dp + sqrt(6.0_dp), 1.0e-9_dp), &
@@ -586,7 +595,7 @@ contains
 
     q = [2.0_dp]
     call clock % march_adaptive(equil, lone, q, 0.5_dp, strict, 5, &
-         & taken, completed)
+         & taken, completed, parameters=xifield)
     call report(completed .and. size(taken) == 2 .and. &
          & all(taken == 0.25_dp) .and. near(q(1), second, 1.0e-9_dp), &
          & "a rejected proposal halves: the march takes steps (1/4, 1/4)", &
@@ -597,7 +606,7 @@ contains
 
     q = [2.0_dp]
     call clock % march_adaptive(equil, lone, q, 0.5_dp, impossible, 3, &
-         & taken, completed)
+         & taken, completed, parameters=xifield)
     call report((.not. completed) .and. size(taken) == 0 .and. &
          & q(1) == 2.0_dp, &
          & "a spent attempt budget: completed false, no steps, q unchanged", &
@@ -661,7 +670,7 @@ contains
     type(graph) :: points
     type(linearization) :: tangent_q, tangent_xi
     type(stencil) :: compiled, adjoint
-    type(stored_field) :: inputs(2), with_history(3), v, w, one
+    type(stored_field) :: inputs(3), with_history(3), v, w, one
     type(stored_field) :: qf, xif, vf, wf, lf
     class(field), allocatable :: output
     real(dp), allocatable :: rv(:), g(:), jv(:), gt(:)
@@ -669,9 +678,10 @@ contains
     logical  :: ok
 
     statement = backward_euler(quartic, 0.5_dp)
-    statement % qold  = [0.0_dp]
     statement % theta = 0.5_dp
-    call scalar_pair(1.0_dp, 2.0_dp, cells, inputs)
+    call scalar_pair(1.0_dp, 2.0_dp, cells, inputs(1:2))
+    inputs(3) = stored_field('qold', cells, 1, num_components=1)
+    call inputs(3) % set_real_vector([0.0_dp])
 
     v = stored_field('v', cells, 1, num_components=1)
     call v % set_real_vector([3.0_dp])
@@ -709,13 +719,13 @@ contains
          &are 22.5, 3, 20.25, 8, 2, 0 and the residual 12.75", nfail)
 
     statement % theta = 1.0_dp
-    with_history(1:2) = inputs
+    with_history(1:2) = inputs(1:2)
     with_history(3) = stored_field('qold', cells, 1, num_components=1)
     call with_history(3) % set_real_vector([1.0_dp])
     call statement % apply(lone, with_history, output)
     call output % real_vector(rv)
     call report(near(rv(1), 15.5_dp, 1.0e-12_dp), &
-         & "a history state supplied as input 3 is read before the stored qold: 15.5", &
+         & "the history state is input 3 of the scheme: q - qold + h Phi = 15.5", &
          & nfail)
 
     three  = stored_directed_graph(3, tails=[integer ::], heads=[integer ::])

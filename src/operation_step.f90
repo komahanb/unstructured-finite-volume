@@ -21,8 +21,8 @@
 ! its history: arguments 1..m stand for the action's arguments 1..m
 ! (the state, then any auxiliaries such as a parameter xi); argument
 ! m+k is history(k), the state k instants back, k <= reach. The
-! history may arrive as inputs m+1.. or, for now, from the stored
-! qold/qolder the marcher assigns; the inputs win when given.
+! history arrives as inputs m+1..m+reach; the scheme stores no state
+! of its own.
 !
 ! DERIVATIVES. Every partial of R is derived from the action's own
 ! partial actions by the formula above: the state block is
@@ -55,9 +55,6 @@ module operation_step
   type, extends(discretization) :: scheme
 
      class(operation), allocatable :: action
-
-     real(dp), allocatable :: qold(:)
-     real(dp), allocatable :: qolder(:)
 
      real(dp) :: a0 = 1.0_dp
      real(dp) :: a1 = -1.0_dp
@@ -395,13 +392,11 @@ contains
   end subroutine step_domain
 
   !===================================================================!
-  ! The history state k instants back: input m+k when the caller
-  ! supplied it, else the stored qold/qolder. A supplied state must
+  ! The history state k instants back, input m+k. It must be given,
   ! live on the action's domain and carry the current state's storage
-  ! shape - the same entry count and component count; a stored one
-  ! must carry its width. A violation, or neither given, stops the
-  ! program, because the history is combined with the state entry by
-  ! entry.
+  ! shape - the same entry count and component count - because it is
+  ! combined with the state entry by entry; a violation stops the
+  ! program.
   !===================================================================!
 
   subroutine history_values(this, k, input_data, expected, values)
@@ -418,23 +413,19 @@ contains
     at    = this % action % num_arguments() + k
     width = input_data(1) % num_entries() * input_data(1) % num_components()
 
-    if (size(input_data) >= at) then
-       given = input_data(at) % domain()
-       if (.not. given % same_as(expected)) then
-          error stop 'step: a history state lives on the action''s own domain'
-       end if
-       if (input_data(at) % num_entries() /= input_data(1) % num_entries() .or. &
-            & input_data(at) % num_components() /= input_data(1) % num_components()) then
-          error stop 'step: a history state matches the state''s storage shape'
-       end if
-       call input_data(at) % real_vector(values)
-    else if (k == 1 .and. allocated(this % qold)) then
-       values = this % qold
-    else if (k == 2 .and. allocated(this % qolder)) then
-       values = this % qolder
-    else
+    if (size(input_data) < at) then
        error stop 'step: the history state is given'
     end if
+
+    given = input_data(at) % domain()
+    if (.not. given % same_as(expected)) then
+       error stop 'step: a history state lives on the action''s own domain'
+    end if
+    if (input_data(at) % num_entries() /= input_data(1) % num_entries() .or. &
+         & input_data(at) % num_components() /= input_data(1) % num_components()) then
+       error stop 'step: a history state matches the state''s storage shape'
+    end if
+    call input_data(at) % real_vector(values)
 
     if (size(values) /= width) then
        error stop 'step: a history state matches the state''s storage shape'

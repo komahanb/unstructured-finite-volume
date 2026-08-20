@@ -87,8 +87,9 @@ Indentation is `extends`; brackets name the file.
     │           k <= reach; every partial is derived from the action's
     │           by that formula, each factor restated on the action's
     │           argument first - the tangent of the step equation is
-    │           exact when S's is. History may arrive as inputs; the
-    │           stored qold/qolder remain until the marcher passes it
+    │           exact when S's is. The history arrives as inputs
+    │           m+1..m+reach, shape-checked against the state; the
+    │           scheme stores no state of its own
     ├── linearization  D_a S(x)[v] at a frozen input tuple   [operation_linearization]
     │       the tangent of any statement in any of its arguments,
     │       derived by tangent_of(statement, wrt, at_inputs): exact
@@ -125,12 +126,17 @@ Indentation is `extends`; brackets name the file.
         partitions of the degree, from partial actions alone
 
     marcher  time as a chain graph             [operation_marching]
-        march, march_adjoint (the adjoint of either rule derived
-        from the primal: tangent_of at each recorded state, compiled
-        to a stencil and transposed; implicit rules by backward
-        substitution), march_directional (any order, one
-        tangent_of(scheme) per edge), march_adaptive; configure_edge
-        sets up the scheme for an edge, once for all four
+        every rule is one scheme (forward euler theta 0, backward
+        euler theta 1, BDF2 reach 2) and every verb one traversal:
+        march and march_adaptive step by the residual at the zero
+        state over -a0 when theta = 0, else by the held minimizer
+        with the rest of the tuple held; march_adjoint traverses the
+        converse chain, solves the transposed state block and
+        subtracts the dual of each history block from the seed of the
+        instant it reads; march_directional solves the state block
+        against the chain rule over state, history and parameter
+        paths. Nothing names a1 or a2. Every auxiliary argument of
+        the action is supplied as a parameter, or the march is refused
     step_policy -> halving_policy              [operation_step_policy]
 
     form -> polynomial_form, harmonic_form     [field_forms]

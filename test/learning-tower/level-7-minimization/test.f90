@@ -153,7 +153,7 @@ program learning_level_7
   use field_calculus, only : graph_field
   use field_stored, only : field
   use view_directed_stored      , only : directed_stored_graph
-  use class_graph_gmres, only : gmres
+  use operation_gmres, only : gmres
   use graph_fractal        , only : set_graph => graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation

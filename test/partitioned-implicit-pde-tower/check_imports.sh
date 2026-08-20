@@ -34,7 +34,7 @@
 # history once got wrong.
 #
 # This is deliberately a NON-DERIVATIVE-FAMILY client: the
-# derivative and adjoint fixtures, and class_graph_linearization,
+# derivative and adjoint fixtures, and operation_linearization,
 # are forbidden at every level.
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -74,7 +74,7 @@ allowed_for() {
         common/chain_relations_fixture.f90) echo "graph_fractal map_set relation_finitary relation_binary" ;;
         common/chain_algebra_fixture.f90) echo "graph_fractal map_set relation_finitary relation_algebra relation_binary" ;;
         # The operation holds an identity and a count. No map.
-        common/shifted_laplacian_fixture.f90) echo "graph_fractal operation_action view_directed field_calculus field_stored class_graph_differential_operator" ;;
+        common/shifted_laplacian_fixture.f90) echo "graph_fractal operation_action view_directed field_calculus field_stored operation_differential" ;;
         # Calls partition_data and assemble_data - both carve - and
         # queries the domains it transports. It also DESCRIBES the
         # part carriers it transports onto, so it constructs
@@ -107,16 +107,16 @@ allowed_for() {
         # ---- L6: + the differential operator and its fixture.
         #          Still no solver. Transport carves; the refusal
         #          builds a foreign carrier, and is keyed below.
-        level-6-discretization) echo "partitioned_pde_assert shifted_laplacian_fixture graph_fractal map_set_representation map_set map_label map_inclusion view_directed relation_partition field_calculus view_directed_stored field_stored transform_partitioner transform_assembler class_graph_differential_operator" ;;
-        level-6-discretization/refusal.f90) echo "partitioned_pde_assert shifted_laplacian_fixture graph_fractal map_set_representation map_set field_calculus view_directed_stored field_stored class_graph_differential_operator" ;;
+        level-6-discretization) echo "partitioned_pde_assert shifted_laplacian_fixture graph_fractal map_set_representation map_set map_label map_inclusion view_directed relation_partition field_calculus view_directed_stored field_stored transform_partitioner transform_assembler operation_differential" ;;
+        level-6-discretization/refusal.f90) echo "partitioned_pde_assert shifted_laplacian_fixture graph_fractal map_set_representation map_set field_calculus view_directed_stored field_stored operation_differential" ;;
         # ---- L7: + minimization. Consumes Level 6, not Level 8.
-        level-7-minimization) echo "partitioned_pde_assert shifted_laplacian_fixture graph_fractal map_set_representation map_set view_directed field_calculus view_directed_stored field_stored class_graph_gmres" ;;
+        level-7-minimization) echo "partitioned_pde_assert shifted_laplacian_fixture graph_fractal map_set_representation map_set view_directed field_calculus view_directed_stored field_stored operation_gmres" ;;
         # ---- L8: + the partitioned constitution, which consumes L6.
         #          It asks its domains WHICH and nothing else, so it is
         #          granted identity alone - no map of any kind.
-        level-8-constitution) echo "partitioned_pde_assert shifted_laplacian_fixture partitioned_shifted_laplacian_fixture graph_fractal view_directed field_calculus view_directed_stored field_stored class_graph_gmres" ;;
+        level-8-constitution) echo "partitioned_pde_assert shifted_laplacian_fixture partitioned_shifted_laplacian_fixture graph_fractal view_directed field_calculus view_directed_stored field_stored operation_gmres" ;;
         # ---- L9: the statement, consuming Level 8 and the solver.
-        level-9-statement) echo "partitioned_pde_assert shifted_laplacian_fixture partitioned_shifted_laplacian_fixture graph_fractal map_set_representation map_set view_directed field_calculus view_directed_stored field_stored class_graph_gmres" ;;
+        level-9-statement) echo "partitioned_pde_assert shifted_laplacian_fixture partitioned_shifted_laplacian_fixture graph_fractal map_set_representation map_set view_directed field_calculus view_directed_stored field_stored operation_gmres" ;;
 
         *)                 echo "__no_allowlist__" ;;
     esac

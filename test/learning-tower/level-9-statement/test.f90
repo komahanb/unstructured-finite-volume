@@ -55,7 +55,7 @@ program learning_level_9
   use field_calculus, only : graph_field
   use view_directed_stored    , only : directed_stored_graph
   use field_stored, only : field
-  use class_graph_gmres, only : gmres
+  use operation_gmres, only : gmres
   use learning_constitution_fixture, only : apply_law, slot_for_port
   use constituted_residual_fixture , only : constituted_learning_residual
   use graph_fractal        , only : graph, known_branch, null_branch

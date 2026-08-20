@@ -41,9 +41,9 @@ program visualization_level_9
   use view_directed  , only : directed_graph
   use view_directed_stored          , only : directed_stored_graph
   use field_stored    , only : field
-  use class_graph_stencil  , only : stencil_operator
-  use class_graph_step     , only : step_operator, bdf
-  use class_graph_jacobi   , only : jacobi
+  use operation_stencil  , only : stencil_operator
+  use operation_step     , only : step_operator, bdf
+  use operation_jacobi   , only : jacobi
   use visualization_carriers_fixture , only : structural_carriers
   use visualization_relations_fixture, only : occurrences_of_a2
   use visualization_algebra_fixture  , only : derive_dependency

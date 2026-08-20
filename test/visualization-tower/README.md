@@ -347,7 +347,7 @@ discretization_operator                    src/graph_calculus.f90:219
 │   subroutine (this, pattern)
 │       class(graph), allocatable, intent(out) :: pattern
 │
-├── stencil_operator                       src/class_graph_stencil.f90:47
+├── stencil_operator                       src/operation_stencil.f90:47
 │   ├── implementation   stencil_dependencies              :168
 │   ├── meaning          a copy of its own stored pattern, built at
 │   │                    construction as
@@ -356,7 +356,7 @@ discretization_operator                    src/graph_calculus.f90:219
 │   ├── returns          class(graph) → concretely stored_graph
 │   └── repo callers     0
 │
-└── step_operator                          src/class_graph_step.f90:46
+└── step_operator                          src/operation_step.f90:46
     ├── implementation   step_dependencies                 :127
     ├── meaning          a freshly built linear chain of reach+1
     │                    instants, tails=[1..reach], heads=[2..reach+1]
@@ -947,8 +947,8 @@ fixture, with `--selftest`.
 | L4 | `+ structural_renderer_fixture` |
 | — | ===== **REVIEW GATE A** ===== |
 | L5 | `+ field_stored`, `field_calculus`, `visualization_values_fixture`, `valued_renderer_fixture` |
-| L6 | `+ graph_grammar`, `class_graph_stencil`, `class_graph_step`, `production_discretization_fixture`, `production_pattern_renderer_fixture` |
-| L7 | `+ view_directed_stored`, `class_graph_jacobi` |
+| L6 | `+ graph_grammar`, `operation_stencil`, `operation_step`, `production_discretization_fixture`, `production_pattern_renderer_fixture` |
+| L7 | `+ view_directed_stored`, `operation_jacobi` |
 | L8–L9 | the same, plus the L5 coefficient view at L9 |
 
 The shared fixtures are keyed by file and classified by the first
@@ -971,11 +971,11 @@ Values used to be a third, and Level 5 is where it stopped being one:
    have left the back door open, and the ceiling lifting at exactly
    one rung is what keeps Level 4's claim mechanical after Gate A.
 2. **Operators, refused at L0–L5 and PARTLY earned at L6.**
-   `graph_grammar`, `class_graph_stencil` and `class_graph_step` lift
+   `graph_grammar`, `operation_stencil` and `operation_step` lift
    at Level 6 — and only those three, because only those three are
-   used. `graph_calculus`, `graph_fitting`,
-   `class_graph_linearization`, `graph_minimization`,
-   `class_graph_gmres`, `class_graph_newton`, `class_graph_marcher`
+   used. `graph_calculus`, `operation_fitting`,
+   `operation_linearization`, `operation_minimization`,
+   `operation_gmres`, `operation_newton`, `operation_marching`
    and the derivative/adjoint fixtures stay refused **everywhere**,
    Level 6 included.
 
@@ -983,7 +983,7 @@ Values used to be a third, and Level 5 is where it stopped being one:
    `step_operator` are additionally refused by a direct source scan,
    in case a later level finds another road to them — and that scan is
    level-sensitive in the same way: **forbidden L0–L5, allowed L6.**
-   A planted `use class_graph_stencil` in a Level-5 source is refused
+   A planted `use operation_stencil` in a Level-5 source is refused
    twice over, by the module scan and by the name scan.
 
 2b. **Application, refused everywhere.** A `% apply(` in any tower

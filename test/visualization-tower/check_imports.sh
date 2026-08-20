@@ -45,11 +45,11 @@
 #    levels below Level 5 must remain unable to reach a coefficient -
 #    which is a ceiling that lifted, not a refusal that was deleted.
 #
-# 2. OPERATORS. view_directed, class_graph_stencil, class_graph_step
+# 2. OPERATORS. view_directed, operation_stencil, operation_step
 #    and everything that solves, steps, linearizes or marches. The
 #    types the brief names explicitly - discretization_operator and
-#    stencil_operator - live inside class_graph_stencil,
-#    class_graph_step, graph_calculus and graph_fitting, so refusing
+#    stencil_operator - live inside operation_stencil,
+#    operation_step, graph_calculus and operation_fitting, so refusing
 #    those modules refuses the types; a second scan below refuses the
 #    bare names too, in case a later level finds another road to them.
 #    dependencies() is Level 6's question and Level 6 is unbuilt.
@@ -114,7 +114,7 @@ allowed_for() {
         common/structural_renderer_fixture.f90) echo "graph_fractal map_set map_label visualization_carriers_fixture relation_finitary relation_binary" ;;
         common/visualization_values_fixture.f90) echo "graph_fractal map_set  field_stored" ;;
         common/valued_renderer_fixture.f90) echo "graph_fractal map_set map_label visualization_carriers_fixture structural_renderer_fixture relation_finitary relation_binary field_calculus field_stored" ;;
-        common/production_discretization_fixture.f90) echo "graph_fractal operation_action class_graph_stencil class_graph_step" ;;
+        common/production_discretization_fixture.f90) echo "graph_fractal operation_action operation_stencil operation_step" ;;
         common/production_pattern_renderer_fixture.f90) echo "graph_fractal map_set map_label visualization_carriers_fixture structural_renderer_fixture relation_finitary view_directed" ;;
         common)            echo "__no_allowlist__" ;;
 
@@ -146,25 +146,25 @@ allowed_for() {
         #          view_directed_stored are NOT permitted: the test reaches the
         #          concrete citizens, never the abstract type or the
         #          stored graph directly, and a ceiling permits what is
-        #          used rather than what is nearby. graph_fitting is
+        #          used rather than what is nearby. operation_fitting is
         #          refused outright, and so is everything that solves.
-        level-6-discretization) echo "graph_fractal map_set_representation map_set map_label visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_discretization_fixture production_pattern_renderer_fixture relation_finitary relation_binary relation_algebra view_directed class_graph_stencil class_graph_step" ;;
+        level-6-discretization) echo "graph_fractal map_set_representation map_set map_label visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_discretization_fixture production_pattern_renderer_fixture relation_finitary relation_binary relation_algebra view_directed operation_stencil operation_step" ;;
 
         # ---- L7: + MINIMIZATION, and only the concrete the
-        #          experiment uses. graph_minimization itself is not
+        #          experiment uses. operation_minimization itself is not
         #          named (jacobi inherits attach/matvec/sweep_order/
         #          diagonal), and gauss_seidel is inspected in the
         #          census rather than run. Nothing that solves beyond
         #          jacobi: no gmres, no newton, no multigrid, no
         #          marcher, no linearization.
-        level-7-minimization) echo "graph_fractal map_set_representation map_set map_label visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_pattern_renderer_fixture relation_finitary relation_binary relation_algebra view_directed view_directed_stored class_graph_stencil class_graph_jacobi" ;;
+        level-7-minimization) echo "graph_fractal map_set_representation map_set map_label visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_pattern_renderer_fixture relation_finitary relation_binary relation_algebra view_directed view_directed_stored operation_stencil operation_jacobi" ;;
 
         # ---- L8: the constitution. Both axes and the context at once,
         #          on the vocabulary Levels 6 and 7 already earned.
-        level-8-constitution) echo "graph_fractal map_set_representation map_set map_label visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_pattern_renderer_fixture relation_finitary relation_binary relation_algebra view_directed view_directed_stored class_graph_stencil class_graph_step class_graph_jacobi" ;;
+        level-8-constitution) echo "graph_fractal map_set_representation map_set map_label visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_pattern_renderer_fixture relation_finitary relation_binary relation_algebra view_directed view_directed_stored operation_stencil operation_step operation_jacobi" ;;
         # ---- L9: the statement, on the same constitution plus the
         #          coefficient view Level 5 earned.
-        level-9-statement) echo "graph_fractal map_set_representation map_set map_label visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture valued_renderer_fixture visualization_values_fixture production_pattern_renderer_fixture relation_finitary relation_binary relation_algebra view_directed field_calculus view_directed_stored field_stored class_graph_stencil class_graph_step class_graph_jacobi" ;;
+        level-9-statement) echo "graph_fractal map_set_representation map_set map_label visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture valued_renderer_fixture visualization_values_fixture production_pattern_renderer_fixture relation_finitary relation_binary relation_algebra view_directed field_calculus view_directed_stored field_stored operation_stencil operation_step operation_jacobi" ;;
 
         *)                 echo "__no_allowlist__" ;;
     esac
@@ -358,15 +358,15 @@ if [ "$1" = "--selftest" ]; then
     for lvl in $with_five; do
         refuses "$lvl" operation_action
         refuses "$lvl" view_directed
-        refuses "$lvl" class_graph_stencil
-        refuses "$lvl" class_graph_step
+        refuses "$lvl" operation_stencil
+        refuses "$lvl" operation_step
         refuses "$lvl" graph_calculus
-        refuses "$lvl" graph_fitting
-        refuses "$lvl" class_graph_linearization
-        refuses "$lvl" graph_minimization
-        refuses "$lvl" class_graph_gmres
-        refuses "$lvl" class_graph_newton
-        refuses "$lvl" class_graph_marcher
+        refuses "$lvl" operation_fitting
+        refuses "$lvl" operation_linearization
+        refuses "$lvl" operation_minimization
+        refuses "$lvl" operation_gmres
+        refuses "$lvl" operation_newton
+        refuses "$lvl" operation_marching
         refuses "$lvl" derivative_fixture
         refuses "$lvl" adjoint_fixture
     done
@@ -411,11 +411,11 @@ if [ "$1" = "--selftest" ]; then
     # L5 does NOT lift the frontier. Values arrived; machinery did not.
     refuses level-5-field-calculus graph_profile
     refuses level-5-field-calculus relation_algorithms
-    refuses level-5-field-calculus class_graph_step
-    refuses level-5-field-calculus class_graph_stencil
+    refuses level-5-field-calculus operation_step
+    refuses level-5-field-calculus operation_stencil
     refuses level-5-field-calculus operation_action
     refuses level-5-field-calculus view_directed
-    refuses level-5-field-calculus class_graph_linearization
+    refuses level-5-field-calculus operation_linearization
 
     # The valued renderer stands ON the structural one, never inside
     # it - and the structural one may not learn about fields.
@@ -427,15 +427,15 @@ if [ "$1" = "--selftest" ]; then
     refuses common/visualization_values_fixture.f90 structural_renderer_fixture
 
     # ---- L6 earns production discretization, and only what it uses.
-    permits level-6-discretization class_graph_stencil
-    permits level-6-discretization class_graph_step
+    permits level-6-discretization operation_stencil
+    permits level-6-discretization operation_step
     permits level-6-discretization view_directed
     permits level-6-discretization production_discretization_fixture
     permits level-6-discretization production_pattern_renderer_fixture
     permits level-6-discretization structural_renderer_fixture
     for lvl in $with_five; do
-        refuses "$lvl" class_graph_stencil
-        refuses "$lvl" class_graph_step
+        refuses "$lvl" operation_stencil
+        refuses "$lvl" operation_step
         refuses "$lvl" operation_action
         refuses "$lvl" view_directed
         refuses "$lvl" graph_calculus
@@ -445,12 +445,12 @@ if [ "$1" = "--selftest" ]; then
 
     # L6 does NOT lift the rest of the frontier. Nothing that solves,
     # and nothing merely adjacent to discretization machinery.
-    refuses level-6-discretization graph_fitting
-    refuses level-6-discretization graph_minimization
-    refuses level-6-discretization class_graph_gmres
-    refuses level-6-discretization class_graph_newton
-    refuses level-6-discretization class_graph_marcher
-    refuses level-6-discretization class_graph_linearization
+    refuses level-6-discretization operation_fitting
+    refuses level-6-discretization operation_minimization
+    refuses level-6-discretization operation_gmres
+    refuses level-6-discretization operation_newton
+    refuses level-6-discretization operation_marching
+    refuses level-6-discretization operation_linearization
     refuses level-6-discretization graph_profile
     refuses level-6-discretization relation_algorithms
     refuses level-6-discretization graph_calculus
@@ -462,34 +462,34 @@ if [ "$1" = "--selftest" ]; then
     # Level-4 renderer still knows nothing of production.
     permits common/production_pattern_renderer_fixture.f90 view_directed
     permits common/production_pattern_renderer_fixture.f90 structural_renderer_fixture
-    permits common/production_discretization_fixture.f90 class_graph_stencil
+    permits common/production_discretization_fixture.f90 operation_stencil
     refuses common/structural_renderer_fixture.f90 operation_action
     refuses common/structural_renderer_fixture.f90 view_directed
-    refuses common/structural_renderer_fixture.f90 class_graph_stencil
-    refuses common/valued_renderer_fixture.f90 class_graph_step
-    refuses common/production_pattern_renderer_fixture.f90 class_graph_stencil
+    refuses common/structural_renderer_fixture.f90 operation_stencil
+    refuses common/valued_renderer_fixture.f90 operation_step
+    refuses common/production_pattern_renderer_fixture.f90 operation_stencil
 
     # ---- L7 earns minimization, and only the concrete it uses.
-    permits level-7-minimization class_graph_jacobi
+    permits level-7-minimization operation_jacobi
     permits level-7-minimization view_directed_stored
-    permits level-7-minimization class_graph_stencil
+    permits level-7-minimization operation_stencil
     permits level-7-minimization production_pattern_renderer_fixture
     for lvl in $with_five level-6-discretization; do
-        refuses "$lvl" class_graph_jacobi
-        refuses "$lvl" class_graph_gauss_seidel
-        refuses "$lvl" graph_minimization
+        refuses "$lvl" operation_jacobi
+        refuses "$lvl" operation_gauss_seidel
+        refuses "$lvl" operation_minimization
     done
 
     # L7 does NOT lift the rest of the frontier.
-    refuses level-7-minimization class_graph_gmres
-    refuses level-7-minimization class_graph_newton
-    refuses level-7-minimization class_graph_multigrid
-    refuses level-7-minimization class_graph_marcher
-    refuses level-7-minimization class_graph_linearization
-    refuses level-7-minimization graph_fitting
+    refuses level-7-minimization operation_gmres
+    refuses level-7-minimization operation_newton
+    refuses level-7-minimization operation_multigrid
+    refuses level-7-minimization operation_marching
+    refuses level-7-minimization operation_linearization
+    refuses level-7-minimization operation_fitting
     refuses level-7-minimization graph_profile
-    refuses level-7-minimization class_graph_gauss_seidel
-    refuses level-7-minimization graph_minimization
+    refuses level-7-minimization operation_gauss_seidel
+    refuses level-7-minimization operation_minimization
 
     # ---- THE DISCRETIZATION VOCABULARY: WHERE IT LIFTS.
     for below in level-0-carrier/test.f90 level-4-graph-calculus/test.f90 \

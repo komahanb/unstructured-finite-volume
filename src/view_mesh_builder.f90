@@ -4,7 +4,7 @@
 !      m = mesh_from_gmsh('square-10.msh')
 !
 ! The pipeline is the prime decomposition stated in
-! graph_mesh_geometry: the loader parses the file into member sets,
+! view_mesh_geometry: the loader parses the file into member sets,
 ! the cell-to-vertex relation, the vertex coordinates, and the tag
 ! names; the geometry module derives the face set, the incidence
 ! relations, and every measurement; this builder seats the results
@@ -15,16 +15,16 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_mesh_builder
+module view_mesh_builder
 
   use iso_fortran_env      , only : dp => REAL64
-  use class_graph_mesh     , only : mesh
+  use view_mesh     , only : mesh
   use util_string         , only : string
-  use interface_mesh_loader, only : mesh_loader
-  use class_gmsh_loader    , only : gmsh_loader
-  use graph_mesh_geometry  , only : elem_type_dimension
+  use view_mesh_loader, only : mesh_loader
+  use view_gmsh_loader    , only : gmsh_loader
+  use view_mesh_geometry  , only : elem_type_dimension
   use relation_binary, only : transpose_padded
-  use graph_mesh_geometry  , only : derive_faces, derive_face_cells, &
+  use view_mesh_geometry  , only : derive_faces, derive_face_cells, &
        & cell_centers_of, face_centers_areas_of, &
        & cell_face_normals_of, cell_volumes_of, centroidal_vectors_of, &
        & face_deltas_of, face_weights_of
@@ -186,4 +186,4 @@ contains
 
   end function mesh_from_gmsh
 
-end module class_mesh_builder
+end module view_mesh_builder

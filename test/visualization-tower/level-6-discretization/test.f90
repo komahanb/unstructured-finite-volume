@@ -91,8 +91,8 @@ program visualization_level_6
   use relation_finitary       , only : relation
   use relation_binary, only : csr_relation
   use view_directed  , only : directed_graph
-  use class_graph_stencil  , only : stencil_operator
-  use class_graph_step     , only : step_operator
+  use operation_stencil  , only : stencil_operator
+  use operation_step     , only : step_operator
   use visualization_carriers_fixture , only : structural_carriers
   use visualization_relations_fixture, only : occurrences_of_a1
   use visualization_relations_fixture, only : occurrences_of_a2

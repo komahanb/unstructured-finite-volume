@@ -27,11 +27,11 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_conduction
+module operation_conduction
 
   use iso_fortran_env  , only : dp => REAL64
   use field_stored, only : field
-  use class_graph_mesh , only : mesh
+  use view_mesh , only : mesh
 
   implicit none
 
@@ -139,4 +139,4 @@ contains
 
   end subroutine edge_coefficients
 
-end module class_conduction
+end module operation_conduction

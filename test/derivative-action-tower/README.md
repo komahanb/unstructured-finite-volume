@@ -1047,7 +1047,7 @@ that distinction; nothing here anticipates it.
 - **`check_imports.sh`** — the fail-closed import gate. Every source may
   `use` only its level's allowlist; a directory with sources but no
   allowlist fails. Forbidden everywhere at Gate A:
-  `graph_minimization`, `class_graph_gmres`, and any legacy
+  `operation_minimization`, `operation_gmres`, and any legacy
   tangent/adjoint or linearization machinery.
 
 `doc/derivative-walks-plan.md` (2026-08-02) is historical design
@@ -1069,7 +1069,7 @@ had first right of refusal — and at Gate A it refused nothing.
 | 5 | `level-5-field-calculus/` | `graph_carrier`, `field_stored` — the smallest allowlist above ground |
 | 6 | `level-6-derivative-structure/` | + `relation_binary` (`csr_relation`, `transpose_of` earned), `graph_structure`, `graph_profile`, `relation_algorithms` |
 | 8 | `level-8-derivative-constitution/` | carriers/relations/algebra/structure/profile/algorithms + `field_stored` + `derivative_constitution_fixture` (own file; refusal suite); **no** binary storage, no solver |
-| 9 | `level-9-statement/` | the same set, reusing the Level-8 fixture — no adapter, no new law, and `graph_minimization` / `class_graph_gmres` forbidden |
+| 9 | `level-9-statement/` | the same set, reusing the Level-8 fixture — no adapter, no new law, and `operation_minimization` / `operation_gmres` forbidden |
 
 Every level also imports `derivative_assert`
 (`common/derivative_assert.f90`) — dependency-free constants and

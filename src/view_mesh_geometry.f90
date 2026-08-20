@@ -27,7 +27,7 @@
 !                     and interpolation weights
 !      directed view  cells as graph vertices, the two-cell faces
 !                     as edges with tail/head = F2C(f); assembled
-!                     by class_mesh_builder into class_graph_mesh
+!                     by view_mesh_builder into view_mesh
 !
 ! Every routine takes plain arrays and returns plain arrays; no
 ! graph type is needed to measure geometry. Incidence tables are
@@ -40,7 +40,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_mesh_geometry
+module view_mesh_geometry
 
   use iso_fortran_env  , only : dp => REAL64
 
@@ -180,7 +180,7 @@ contains
                   & cell_vertices(:, jcell), shared_vertices(1:4))
              face_vertices(1:4, nf) = shared_vertices(1:4)
           case default
-             error stop 'graph_mesh_geometry: two cells share at most four vertices'
+             error stop 'view_mesh_geometry: two cells share at most four vertices'
           end select
 
        end do
@@ -188,11 +188,11 @@ contains
     end do
 
     if (nf .ne. num_faces) then
-       error stop 'graph_mesh_geometry: the derived face count matches the algebraic count'
+       error stop 'view_mesh_geometry: the derived face count matches the algebraic count'
     end if
 
     if (maxval(face_vertices) .ne. num_points) then
-       error stop 'graph_mesh_geometry: every last vertex belongs to a face'
+       error stop 'view_mesh_geometry: every last vertex belongs to a face'
     end if
 
   end subroutine derive_faces
@@ -245,7 +245,7 @@ contains
     end do
 
     if (minval(num_face_cells) .lt. 1) then
-       error stop 'graph_mesh_geometry: every face touches a cell'
+       error stop 'view_mesh_geometry: every face touches a cell'
     end if
 
   end subroutine derive_face_cells
@@ -318,7 +318,7 @@ contains
        end do
 
        if (abs(minval(face_areas)) .lt. 10.0d0*tiny(1.0d0)) then
-          error stop 'graph_mesh_geometry: a face has two distinct end points'
+          error stop 'view_mesh_geometry: a face has two distinct end points'
        end if
 
     else
@@ -351,7 +351,7 @@ contains
        end do
 
        if (minval(face_areas) .lt. 0.0_dp) then
-          error stop 'graph_mesh_geometry: a face area is nonnegative'
+          error stop 'view_mesh_geometry: a face area is nonnegative'
        end if
 
     end if
@@ -482,7 +482,7 @@ contains
     end do
 
     if (minval(cell_volumes) .lt. 0.0_dp) then
-       error stop 'graph_mesh_geometry: a cell volume is nonnegative'
+       error stop 'view_mesh_geometry: a cell volume is nonnegative'
     end if
 
   end subroutine cell_volumes_of
@@ -900,4 +900,4 @@ contains
   end subroutine order_face_vertices
 
 
-end module graph_mesh_geometry
+end module view_mesh_geometry

@@ -30,12 +30,12 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_graph_stencil
+module operation_stencil
 
   use iso_fortran_env    , only : dp => REAL64
   use view_directed, only : directed_graph
   use field_calculus, only : graph_field
-  use graph_discretization     , only : discretization_operator
+  use operation_discretization     , only : discretization_operator
   use relation_binary, only : group_by_key
   use field_stored  , only : field
   use view_directed_stored        , only : directed_stored_graph
@@ -280,4 +280,4 @@ contains
 
   end subroutine combine_triples
 
-end module class_graph_stencil
+end module operation_stencil

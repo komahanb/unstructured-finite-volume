@@ -5,7 +5,7 @@
 # derivative source may `use` only the framework modules its level
 # has been explicitly granted; a directory with sources but no
 # allowlist fails closed. Gate A especially forbids everywhere:
-# graph_minimization, class_graph_gmres, any legacy tangent/adjoint
+# operation_minimization, operation_gmres, any legacy tangent/adjoint
 # or linearization machinery - structure first, numbers never, at
 # this gate. This gate audits the DERIVATIVE TESTS' imports only.
 

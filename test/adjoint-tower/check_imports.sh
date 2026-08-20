@@ -37,24 +37,24 @@ allowed_for() {
         # where an operator stands is not what it multiplies.
         level-6-discretization)   echo "adjoint_assert graph_fractal map_set_representation map_set map_label map_inclusion relation_finitary relation_algebra relation_binary" ;;
         # level 7: the solver rung. gmres inherits attach/constant/
-        # apply from the minimizer base, so graph_minimization is not
+        # apply from the minimizer base, so operation_minimization is not
         # imported directly; the equations are SUPPLIED by the level's
         # own fixture, and no Level-8 constitution may be reached.
-        level-7-minimization)     echo "adjoint_assert graph_fractal map_set_representation map_set map_inclusion operation_action view_directed field_calculus field_stored view_directed_stored class_graph_gmres opaque_equation_fixture" ;;
+        level-7-minimization)     echo "adjoint_assert graph_fractal map_set_representation map_set map_inclusion operation_action view_directed field_calculus field_stored view_directed_stored operation_gmres opaque_equation_fixture" ;;
         # level 8: one constitution. It may see everything legitimately
         # below it - the relation stack that carries the structural
         # supports, the field, and the solver - plus its own fixture.
         # It may NOT reach back into Level 7's supplied equations.
-        level-8-constitution)     echo "adjoint_assert graph_fractal map_set_representation map_set map_label map_inclusion relation_finitary relation_algebra relation_binary operation_action view_directed field_calculus field_stored view_directed_stored class_graph_gmres adjoint_constitution_fixture" ;;
+        level-8-constitution)     echo "adjoint_assert graph_fractal map_set_representation map_set map_label map_inclusion relation_finitary relation_algebra relation_binary operation_action view_directed field_calculus field_stored view_directed_stored operation_gmres adjoint_constitution_fixture" ;;
         # level 9: the statement - the composition rung. It may see
         # the relation stack that carries the supports, the model
         # graph that owns them, the field, the legacy host and the
         # solver, plus the REUSED level-8 constitution. It may NOT
-        # import class_graph_linearization (the specialized
+        # import operation_linearization (the specialized
         # same-domain path this tower cannot use), nor the graph
         # algorithms: an implicit system does not become a DAG at
         # the statement.
-        level-9-statement)        echo "adjoint_assert graph_fractal map_set_representation map_set map_label map_inclusion relation_finitary relation_algebra relation_binary field_calculus view_directed_stored field_stored class_graph_gmres adjoint_constitution_fixture graph_fractal view_relational" ;;
+        level-9-statement)        echo "adjoint_assert graph_fractal map_set_representation map_set map_label map_inclusion relation_finitary relation_algebra relation_binary field_calculus view_directed_stored field_stored operation_gmres adjoint_constitution_fixture graph_fractal view_relational" ;;
         *)                        echo "__no_allowlist__" ;;
     esac
 }

@@ -37,7 +37,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_graph_marcher
+module operation_marching
 
   use iso_fortran_env    , only : dp => REAL64
   use operation_action, only : graph_operation
@@ -46,15 +46,15 @@ module class_graph_marcher
   use graph_fractal      , only : set_graph => graph
   use field_stored  , only : field
   use view_directed_stored        , only : directed_stored_graph
-  use class_graph_step   , only : step_operator, bdf
-  use graph_minimization , only : minimizer
-  use graph_discretization     , only : linearization_operator, &
+  use operation_step   , only : step_operator, bdf
+  use operation_minimization , only : minimizer
+  use operation_discretization     , only : linearization_operator, &
        & differentiable_operation
-  use class_graph_linearization, only : tangent_of
-  use class_graph_chain_rule, only : chain_rule, argument_path, &
+  use operation_linearization, only : tangent_of
+  use operation_chain_rule, only : chain_rule, argument_path, &
        & path_derivative
-  use class_graph_step_policy, only : step_policy
-  use class_graph_dense_direct, only : solve_dense_matrix_with_dense_direct, &
+  use operation_step_policy, only : step_policy
+  use operation_dense_direct, only : solve_dense_matrix_with_dense_direct, &
        & dense_matrix_of
 
   implicit none
@@ -825,4 +825,4 @@ contains
 
   end subroutine march_adaptive
 
-end module class_graph_marcher
+end module operation_marching

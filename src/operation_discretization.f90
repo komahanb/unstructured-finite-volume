@@ -27,7 +27,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_discretization
+module operation_discretization
 
   use iso_fortran_env     , only : dp => REAL64
   use view_directed , only : directed_graph
@@ -144,4 +144,4 @@ module graph_discretization
 
   end interface
 
-end module graph_discretization
+end module operation_discretization

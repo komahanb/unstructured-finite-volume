@@ -6,7 +6,7 @@
 !      CAN EVERYTHING THE TOWER HAS EARNED BE CONSTITUTED INTO AN
 !      ACTUAL MULTI-STEP TIME MARCH?
 !
-! This is where production class_graph_marcher is finally earned,
+! This is where production operation_marching is finally earned,
 ! and where the whole road meets itself: structural reach from
 ! Level 2, scheme coefficients from Level 6, implicit governance
 ! from Level 7, repeated along a causal chain.
@@ -70,9 +70,9 @@ program time_level_8
   use relation_binary , only : csr_relation
   use view_directed_stored           , only : directed_stored_graph
   use field_stored     , only : field
-  use class_graph_gmres     , only : gmres
-  use class_graph_newton    , only : newton
-  use class_graph_marcher   , only : marcher, MARCH_FORWARD, &
+  use operation_gmres     , only : gmres
+  use operation_newton    , only : newton
+  use operation_marching   , only : marcher, MARCH_FORWARD, &
        &                             MARCH_BACKWARD, MARCH_BDF2
   use time_carriers_fixture , only : time_carriers
   use time_relations_fixture, only : tail_relation, head_relation

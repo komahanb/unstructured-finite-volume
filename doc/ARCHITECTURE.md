@@ -58,20 +58,20 @@ Indentation is `extends`; brackets name the file.
     graph_operation                            [operation_action]
     ├── reduction   field -> functional  (sum, average, norm, ...)   [operation_reduction]
     ├── broadcast   functional -> field  (copy, share)               [operation_reduction]
-    ├── discretization_operator                [graph_discretization]
-    │   ├── stencil_operator  space: matrix as weighted edges   [class_graph_stencil]
+    ├── discretization_operator                [operation_discretization]
+    │   ├── stencil_operator  space: matrix as weighted edges   [operation_stencil]
     │   │       constructed from triples or from a dense array;
     │   │       exports combine_triples (one entry per pair)
-    │   └── step_operator     time:  a0 q + a1 qold + a2 qolder + hs S(q)   [class_graph_step]
-    ├── linearization_operator  J v at a frozen state           [graph_discretization]
-    │   ├── difference_linearization           [class_graph_linearization]
-    │   └── exact_linearization  + tangent_of chooser           [class_graph_linearization]
-    ├── differentiable_operation  exact partial actions to max_degree   [graph_discretization]
-    ├── minimizer                              [graph_minimization]
+    │   └── step_operator     time:  a0 q + a1 qold + a2 qolder + hs S(q)   [operation_step]
+    ├── linearization_operator  J v at a frozen state           [operation_discretization]
+    │   ├── difference_linearization           [operation_linearization]
+    │   └── exact_linearization  + tangent_of chooser           [operation_linearization]
+    ├── differentiable_operation  exact partial actions to max_degree   [operation_discretization]
+    ├── minimizer                              [operation_minimization]
     │   ├── jacobi, gauss_seidel, conjugate_gradient, gmres, multigrid
     │   ├── newton        Jacobian action = tangent_of(action)
     │   └── dense_direct  elimination; + dense_matrix_of, dense-array adapter
-    ├── differential_operator  d^n on graph sides, compiled     [class_graph_differential_operator]
+    ├── differential_operator  d^n on graph sides, compiled     [operation_differential]
     │       the average, difference, and incidence steps as affine
     │       sparse maps, composed by parity into one matrix + constant;
     │       adjoint = transpose; stencil_of returns the square compiled
@@ -88,17 +88,17 @@ Indentation is `extends`; brackets name the file.
     reversible_change  apply -> check -> keep | revert   [map_change_protocol]
     └── value_change                           [map_value_change]
 
-    chain_rule + argument_path + path_derivative          [class_graph_chain_rule]
+    chain_rule + argument_path + path_derivative          [operation_chain_rule]
         total derivatives of S(x_1(s), ..., x_m(s)) by integer
         partitions of the degree, from partial actions alone
 
-    marcher  time as a chain graph             [class_graph_marcher]
+    marcher  time as a chain graph             [operation_marching]
         march, march_adjoint (backward substitution),
         march_directional (any order), march_adaptive
-    step_policy -> halving_policy              [class_graph_step_policy]
+    step_policy -> halving_policy              [operation_step_policy]
 
-    form -> polynomial_form, harmonic_form     [graph_forms]
-    form_optimizer -> pruner, fit              [graph_fitting]
+    form -> polynomial_form, harmonic_form     [field_forms]
+    form_optimizer -> pruner, fit              [operation_fitting]
 
 ## Composition, stated as arithmetic
 
@@ -127,10 +127,10 @@ Indentation is `extends`; brackets name the file.
                       transforms (partitioner/assembler/coarsener/refiner)
     5    field:       field_calculus, field_stored,
                       field_functional, operation_reduction
-    6    calculus:    graph_discretization, stencil, step,
+    6    calculus:    operation_discretization, stencil, step,
                       linearizations, chain rule, differential
                       operator, forms/fitting
-    7    solve:       graph_minimization + members, marcher,
+    7    solve:       operation_minimization + members, marcher,
                       step_policy, change protocol + value map
     8-9  physics:     balance, fitted_balance, advection, conduction,
                       diffusion_statement, robin_condition,
@@ -143,7 +143,7 @@ An import may only point downward in this list.
 A mesh file supplies member sets (vertices, cells, tagged boundary
 faces), one relation (C2V, cell to vertex), one field (coordinates
 on vertices), and tag names. Everything else is derived, in
-`graph_mesh_geometry`, by relation algebra and geometry:
+`view_mesh_geometry`, by relation algebra and geometry:
 
     faces  = boundary faces + shared-vertex intersections of cell pairs
     V2C    = transpose(C2V)
@@ -153,14 +153,14 @@ on vertices), and tag names. Everything else is derived, in
                    cell centers/volumes, face centers/areas/normals,
                    center-to-center vectors, deltas, weights
 
-`class_mesh_builder` seats the result as `class_graph_mesh`: the
+`view_mesh_builder` seats the result as `view_mesh`: the
 directed view whose vertices are cells and whose edges are the
 two-cell faces (a one-cell face is an edge without a head), with
 the measurements as fields and the tag names on the boundary edges.
 
 The pre-tower graph stack (`interface_graph`, `class_stored_graph`,
 `class_mesh`, `class_array_mesh_loader`, about 4,400 lines) was
-deleted on 2026-08-19 after `graph_mesh_geometry` reproduced its
+deleted on 2026-08-19 after `view_mesh_geometry` reproduced its
 derived arrays bitwise on all eleven sample meshes (2d quadrilateral
 and triangle, 3d hexahedral and tetrahedral). A static in
 test/graph-mesh keeps it deleted. AGENTS.md phase 11 is complete:

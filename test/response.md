@@ -50,39 +50,39 @@
   │         │                             reduction, broadcast … one bound param
   each)
   │         ├── view_directed_stored.f90           stored graph (edge list → adjacency)
-  │         ├── class_graph_mesh.f90      mesh IS a graph in space (the ONE
+  │         ├── view_mesh.f90      mesh IS a graph in space (the ONE
   │         │                             inheritance crossing; boundary face =
   │         │                             half-edge, no ghost cell)
-  │         ├── class_graph_stencil.f90   sparse matrix = graph + weight per
+  │         ├── operation_stencil.f90   sparse matrix = graph + weight per
   edge
-  │         ├── class_graph_step.f90      time-discretization stencil (BDF
+  │         ├── operation_step.f90      time-discretization stencil (BDF
   motif)
-  │         ├── graph_forms.f90           basis = support of functions
+  │         ├── field_forms.f90           basis = support of functions
   │         │     (polynomial_form {1, x, y, z}; harmonic_form {1, sin, cos})
   │         └── fields/supports/reductions/walks/differential operators
   │
   LEVEL 2  MINIMIZATION "how answers are found"  (first level with a goal)
-  │         ├── graph_minimization.f90    ONE solver family: attach statement,
+  │         ├── operation_minimization.f90    ONE solver family: attach statement,
   │         │                             drive residual → 0
   │         │     ├── jacobi │ gauss_seidel (by colour) │ CG │ GMRES
-  │         │     ├── class_graph_newton.f90      linearize-in-place, same
+  │         │     ├── operation_newton.f90      linearize-in-place, same
   family
-  │         │     └── class_graph_multigrid.f90   two-grid: governs two held
+  │         │     └── operation_multigrid.f90   two-grid: governs two held
   minimizers
-  │         ├── graph_fitting.f90         form (slow) vs coefficients (fast); +
+  │         ├── operation_fitting.f90         form (slow) vs coefficients (fast); +
   pruner
-  │         └── class_graph_marcher.f90   time = a graph, walked forward AND
+  │         └── operation_marching.f90   time = a graph, walked forward AND
   │                                       backward (discrete adjoint for free)
   │
   LEVEL 3  CONSTITUTION "what the material says"  — coefficients only, no
   operators
-  │         ├── class_conduction.f90      K·grad, per-face coefficients
-  │         ├── class_advection.f90       v·n, per-face coefficients
-  │         ├── class_robin_condition.f90 a·φ + b·dφ/dn = c  (dirichlet/neumann
+  │         ├── operation_conduction.f90      K·grad, per-face coefficients
+  │         ├── operation_advection.f90       v·n, per-face coefficients
+  │         ├── operation_robin_condition.f90 a·φ + b·dφ/dn = c  (dirichlet/neumann
   = cases)
-  │         ├── class_diffusion_statement.f90  physics words in → compiled
+  │         ├── operation_diffusion.f90  physics words in → compiled
   operator out
-  │         └── class_fitted_balance.f90  exact edge values → one operator
+  │         └── operation_fitted_balance.f90  exact edge values → one operator
   │
   LEVEL 4  STATEMENT    "what is asked"   — named in the grammar, not yet a file
 
@@ -93,9 +93,9 @@
 
   Old world → new world bridge
 
-  gmsh file ──▶ class_gmsh_loader ──▶ class_mesh (old: geometry, measures)
+  gmsh file ──▶ view_gmsh_loader ──▶ class_mesh (old: geometry, measures)
                                           │
-                            class_mesh_builder.f90   ← the ONE crossing point
+                            view_mesh_builder.f90   ← the ONE crossing point
                                           ▼
                                 tower mesh (graph_mesh) — nothing downstream
                                 touches the old world again

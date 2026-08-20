@@ -2068,8 +2068,8 @@ relation_algebra.f90
 view_relational.f90
 graph_calculus.f90
 field_calculus.f90
-graph_discretization.f90
-graph_minimization.f90
+operation_discretization.f90
+operation_minimization.f90
 ...
 ```
 

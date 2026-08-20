@@ -32,17 +32,17 @@ program test_graph_constitution
   use map_label, only : label_map
   use map_inclusion, only : inclusion_map
   use field_stored  , only : field
-  use class_graph_mesh   , only : mesh
-  use class_robin_condition, only : robin_condition, robin, dirichlet, neumann
-  use class_graph_differential_operator, only : differential_operator
-  use class_graph_differential_operator, only : vertex_differential_operator
-  use class_graph_differential_operator, only : edge_differential_operator
-  use class_graph_balance  , only : balance
-  use class_conduction     , only : conduction
-  use class_advection      , only : advection
-  use class_diffusion_statement, only : diffusion_statement
-  use class_graph_stencil  , only : stencil_operator
-  use class_graph_gmres    , only : gmres
+  use view_mesh   , only : mesh
+  use operation_robin_condition, only : robin_condition, robin, dirichlet, neumann
+  use operation_differential, only : differential_operator
+  use operation_differential, only : vertex_differential_operator
+  use operation_differential, only : edge_differential_operator
+  use operation_balance  , only : balance
+  use operation_conduction     , only : conduction
+  use operation_advection      , only : advection
+  use operation_diffusion, only : diffusion_statement
+  use operation_stencil  , only : stencil_operator
+  use operation_gmres    , only : gmres
 
   implicit none
 

@@ -35,12 +35,12 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_graph_multigrid
+module operation_multigrid
 
   use iso_fortran_env    , only : dp => REAL64
   use view_directed, only : directed_graph
-  use class_graph_stencil, only : stencil_operator, combine_triples
-  use graph_minimization , only : minimizer
+  use operation_stencil, only : stencil_operator, combine_triples
+  use operation_minimization , only : minimizer
 
   implicit none
 
@@ -200,4 +200,4 @@ contains
 
   end subroutine solve
 
-end module class_graph_multigrid
+end module operation_multigrid

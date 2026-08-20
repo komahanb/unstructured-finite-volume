@@ -5,7 +5,7 @@ include ../../../Makefile.in
 # may see: the carrier/domain machinery, the field, the legacy
 # graph_operation host contract and the GMRES citizen - which
 # inherits attach, constant and solve from the minimizer base, so
-# graph_minimization itself stays off the allowlist. Constitution
+# operation_minimization itself stays off the allowlist. Constitution
 # and statement remain forbidden: the solver never learns what
 # predict or error mean. The import gate holds the door.
 #=====================================================================#

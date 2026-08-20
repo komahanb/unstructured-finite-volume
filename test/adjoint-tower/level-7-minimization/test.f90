@@ -48,7 +48,7 @@ program adjoint_level_7
   use field_calculus, only : graph_field
   use view_directed_stored      , only : directed_stored_graph
   use field_stored, only : field
-  use class_graph_gmres, only : gmres
+  use operation_gmres, only : gmres
   use opaque_equation_fixture, only : opaque_primal, opaque_adjoint
 
   implicit none

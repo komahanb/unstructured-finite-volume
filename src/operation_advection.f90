@@ -30,11 +30,11 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_advection
+module operation_advection
 
   use iso_fortran_env  , only : dp => REAL64
   use field_stored, only : field
-  use class_graph_mesh , only : mesh
+  use view_mesh , only : mesh
 
   implicit none
 
@@ -122,4 +122,4 @@ contains
 
   end subroutine edge_coefficients
 
-end module class_advection
+end module operation_advection

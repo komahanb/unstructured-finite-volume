@@ -19,10 +19,10 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_graph_gmres
+module operation_gmres
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_minimization, only : minimizer
+  use operation_minimization, only : minimizer
 
   implicit none
 
@@ -157,4 +157,4 @@ contains
 
   end subroutine solve
 
-end module class_graph_gmres
+end module operation_gmres

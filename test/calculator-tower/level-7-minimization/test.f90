@@ -147,7 +147,7 @@ program calculator_level_7
   use iso_fortran_env  , only : dp => REAL64
   use calculator_assert, only : report, verdict, SLOT_C, SLOT_E
   use view_directed_stored      , only : directed_stored_graph
-  use class_graph_gmres, only : gmres
+  use operation_gmres, only : gmres
   use graph_fractal        , only : set_graph => graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation

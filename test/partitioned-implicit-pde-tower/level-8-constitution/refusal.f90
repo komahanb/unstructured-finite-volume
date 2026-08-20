@@ -21,7 +21,7 @@ program partitioned_pde_level_8_refusal
   use field_calculus, only : graph_field
   use view_directed_stored      , only : directed_stored_graph
   use field_stored, only : field
-  use class_graph_gmres, only : gmres
+  use operation_gmres, only : gmres
   use partitioned_shifted_laplacian_fixture, only : &
        & partitioned_shifted_laplacian
 

@@ -226,14 +226,14 @@ program test_graph_contract
   use field_calculus  , only : graph_field
   use transform_coarsener , only : coarsener, COARSEN_PAIRWISE, COARSEN_ADOPTED
   use transform_refiner   , only : refiner
-  use class_graph_differential_operator, only : differential_operator
-  use class_graph_differential_operator, only : edge_differential_operator
-  use class_graph_differential_operator, only : vertex_differential_operator
-  use class_graph_differential_operator, only : gradient, interpolation
-  use class_graph_differential_operator, only : divergence, laplacian
-  use class_graph_differential_operator, only : stencil_of
-  use class_graph_stencil, only : stencil_operator
-  use class_graph_balance   , only : balance
+  use operation_differential, only : differential_operator
+  use operation_differential, only : edge_differential_operator
+  use operation_differential, only : vertex_differential_operator
+  use operation_differential, only : gradient, interpolation
+  use operation_differential, only : divergence, laplacian
+  use operation_differential, only : stencil_of
+  use operation_stencil, only : stencil_operator
+  use operation_balance   , only : balance
   use operation_walk      , only : walk, WALK_COLOURING, WALK_VISIT_ORDER
   use operation_walk      , only : WALK_COMPONENT, WALK_DEPTH
   use nonlinear_sample_support, only : nonlinear_sample

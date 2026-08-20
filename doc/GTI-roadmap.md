@@ -11,7 +11,7 @@ remain binding, and what is still open.
 
 1. Hand-tabulated derivative patterns -> retired. The chain rule
    generates integer partitions of the degree recursively
-   (`class_graph_chain_rule`); no degree is privileged, and the
+   (`operation_chain_rule`); no degree is privileged, and the
    int64 bound on the multinomial count (degree > 20) is checked.
 
 2. Affine-only design paths -> retired. Parameter paths arrive as
@@ -27,7 +27,7 @@ remain binding, and what is still open.
    run time; the marcher measures, the policy decides.
 
 5. Execution/solver seats -> retired. Linear solves live in the
-   `graph_minimization` family (`class_graph_dense_direct`); no
+   `operation_minimization` family (`operation_dense_direct`); no
    separate solver hierarchy exists.
 
 6. Typed evaluation components, GEOM and time channels -> deleted
@@ -37,7 +37,7 @@ remain binding, and what is still open.
 ## Rules that remain binding
 
 - No gti_* module may exist. Solvers of every kind join
-  `graph_minimization`; a new linear-algebra hierarchy is not
+  `operation_minimization`; a new linear-algebra hierarchy is not
   accepted.
 - No `solve_transpose` method: a transposed system is solved by
   handing `transpose(a)` to the same solver.

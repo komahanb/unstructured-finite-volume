@@ -36,10 +36,10 @@ program test_graph_mesh
   use map_label, only : label_map
   use map_inclusion, only : inclusion_map
   use field_stored  , only : field
-  use class_graph_mesh   , only : mesh
-  use class_mesh_builder , only : mesh_from_gmsh
-  use class_graph_differential_operator, only : differential_operator
-  use class_graph_differential_operator, only : vertex_differential_operator
+  use view_mesh   , only : mesh
+  use view_mesh_builder , only : mesh_from_gmsh
+  use operation_differential, only : differential_operator
+  use operation_differential, only : vertex_differential_operator
 
   implicit none
 

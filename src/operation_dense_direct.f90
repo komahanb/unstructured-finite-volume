@@ -9,7 +9,7 @@
 ! and A x = rhs is then eliminated. matvec and the norm come from
 ! the attached operation, and the achieved residual is measured
 ! through them; no matrix representation is owned here, since
-! class_graph_stencil already provides one.
+! operation_stencil already provides one.
 !
 ! A direct solve is a single pass, so the tolerance and iteration
 ! budget inherited from the minimizer family are unused. The one
@@ -28,15 +28,15 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_graph_dense_direct
+module operation_dense_direct
 
   use iso_fortran_env    , only : dp => REAL64
   use operation_action, only : graph_operation
   use view_directed , only : directed_graph
   use field_calculus, only : graph_field
   use graph_fractal      , only : set_graph => graph
-  use graph_minimization , only : minimizer
-  use class_graph_stencil, only : stencil_operator
+  use operation_minimization , only : minimizer
+  use operation_stencil, only : stencil_operator
   use field_stored  , only : field
 
   implicit none
@@ -255,4 +255,4 @@ contains
 
   end subroutine dense_matrix_of
 
-end module class_graph_dense_direct
+end module operation_dense_direct

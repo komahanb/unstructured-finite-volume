@@ -42,7 +42,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_robin_condition
+module operation_robin_condition
 
   use iso_fortran_env , only : dp => REAL64
   use view_directed, only : directed_graph
@@ -51,7 +51,7 @@ module class_robin_condition
   use map_label    , only : label_map
   use map_inclusion, only : inclusion_map
   use field_stored, only : field
-  use class_graph_mesh, only : mesh
+  use view_mesh, only : mesh
 
   implicit none
 
@@ -369,4 +369,4 @@ contains
 
   end function denom
 
-end module class_robin_condition
+end module operation_robin_condition

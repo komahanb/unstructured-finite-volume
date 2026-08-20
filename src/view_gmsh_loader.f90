@@ -21,14 +21,14 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_gmsh_loader
+module view_gmsh_loader
 
   ! Import the dependencies.
   use iso_fortran_env       , only : dp => real64
-  use interface_mesh_loader , only : mesh_loader
+  use view_mesh_loader , only : mesh_loader
   use util_file            , only : file
   use util_string          , only : string
-  use graph_mesh_geometry   , only : find, elem_type_dimension, &
+  use view_mesh_geometry   , only : find, elem_type_dimension, &
        & elem_type_vertex_count
   use util_verbosity      , only : verbosity
 
@@ -671,4 +671,4 @@ contains
 
   end subroutine find_tags
 
-end module class_gmsh_loader
+end module view_gmsh_loader

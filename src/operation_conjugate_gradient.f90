@@ -19,10 +19,10 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_graph_conjugate_gradient
+module operation_conjugate_gradient
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_minimization, only : minimizer
+  use operation_minimization, only : minimizer
 
   implicit none
 
@@ -95,4 +95,4 @@ contains
 
   end subroutine solve
 
-end module class_graph_conjugate_gradient
+end module operation_conjugate_gradient

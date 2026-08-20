@@ -1004,9 +1004,9 @@ seven-vertex `stored_graph` whose vertex count matches nothing —
 domain-driven, not host-driven. (See
 [Nucleus observations](#nucleus-observations-from-learning), Observation E.)
 
-The solver is the ordinary GMRES citizen (`class_graph_gmres`), which
+The solver is the ordinary GMRES citizen (`operation_gmres`), which
 inherits `attach` / `constant` / `solve` from the minimizer base
-(`graph_minimization` is therefore not even imported):
+(`operation_minimization` is therefore not even imported):
 
 ```text
 solver.attach(oracle, host, Theta)
@@ -1630,16 +1630,16 @@ Two mechanisms hold the stratification:
 | 4 | `level-4-graph-calculus/` | + `graph_profile`, `relation_algorithms` (binary storage stays forbidden) |
 | 5 | `level-5-field-calculus/` | `graph_carrier`, `field_stored` — the smallest allowlist above ground |
 | 6 | `level-6-discretization/` | + `relation_binary` (`csr_relation`, `transpose_of` earned), `graph_structure`, `graph_profile`, `relation_algorithms` |
-| 7 | `level-7-minimization/` | `graph_carrier`, `graph_grammar`, `field_stored`, `view_directed_stored`, `class_graph_gmres` + in-file `learning_residual_fixture` |
+| 7 | `level-7-minimization/` | `graph_carrier`, `graph_grammar`, `field_stored`, `view_directed_stored`, `operation_gmres` + in-file `learning_residual_fixture` |
 | 8 | `level-8-constitution/` | carriers/relations/algebra/structure/profile/algorithms, `field_stored` + `learning_constitution_fixture` (own file; refusal suite) |
-| 9 | `level-9-statement/` | + `graph_grammar`, `view_directed_stored`, `class_graph_gmres`, both fixtures (`constituted_residual_fixture.f90`) |
+| 9 | `level-9-statement/` | + `graph_grammar`, `view_directed_stored`, `operation_gmres`, both fixtures (`constituted_residual_fixture.f90`) |
 
 Every level also imports `learning_assert`
 (`common/learning_assert.f90`) — the tower's dependency-free constants and
 assertion helpers, deliberately **not** shared with `calculator_assert`:
 the learning tower is an independent second client and shares no fixture
 with the first. `gmres` inherits the minimizer face, so
-`graph_minimization` is never directly imported by any learning test.
+`operation_minimization` is never directly imported by any learning test.
 
 ```text
 test/learning-tower/

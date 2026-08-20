@@ -213,7 +213,7 @@ easiest way to get this tower wrong.
 | 4 | the implicit system is **cyclic** | `directed_adjacency_view`, `topological_order` | `graph_profile`, `relation_algorithms` | `level-4-graph-calculus/` | a topological order **refuses** | NONE |
 | 5 | the first numbers | `field` | `field_stored` | `level-5-field-calculus/` | \(p=2\), \(q_0=[0,0]\); nothing fabricated | NONE |
 | 6 | operator supports and orientation | `transpose_of` | `relation_binary` | `level-6-discretization/` | \(J_Q^{T}\) swaps domain **identities** | NONE |
-| 7 | primal and adjoint **solves** | `gmres` / minimizer | `class_graph_gmres` | `level-7-minimization/` | one solver family, both orientations | NONE |
+| 7 | primal and adjoint **solves** | `gmres` / minimizer | `operation_gmres` | `level-7-minimization/` | one solver family, both orientations | NONE |
 | 8 | one constitution, both actions | test-local law + Gate-A supports | — | `level-8-constitution/` | \(q,\lambda,q_p\) and both sensitivities from one law | NONE |
 | 9 | one question: \(df/dp\) | composition over a model graph | `graph_structure` + reused L8 law | `level-9-statement/` | the adjoint road alone answers \(7\) | NONE |
 

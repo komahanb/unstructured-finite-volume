@@ -44,9 +44,9 @@ program visualization_level_8
   use graph_fractal        , only : set_graph => graph
   use view_directed  , only : directed_graph
   use view_directed_stored          , only : directed_stored_graph
-  use class_graph_stencil  , only : stencil_operator
-  use class_graph_step     , only : step_operator, bdf, backward_euler
-  use class_graph_jacobi   , only : jacobi
+  use operation_stencil  , only : stencil_operator
+  use operation_step     , only : step_operator, bdf, backward_euler
+  use operation_jacobi   , only : jacobi
   use production_pattern_renderer_fixture, only : pattern_picture
   use production_pattern_renderer_fixture, only : production_has
   use structural_renderer_fixture        , only : picture

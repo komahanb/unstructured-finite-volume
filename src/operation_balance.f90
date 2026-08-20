@@ -42,7 +42,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_graph_balance
+module operation_balance
 
   use iso_fortran_env    , only : dp => REAL64
   use operation_action, only : graph_operation
@@ -50,7 +50,7 @@ module class_graph_balance
   use field_calculus, only : graph_field
   use graph_fractal      , only : set_graph => graph
   use field_stored  , only : field
-  use class_graph_differential_operator, only : differential_operator
+  use operation_differential, only : differential_operator
 
   implicit none
 
@@ -201,4 +201,4 @@ contains
 
   end subroutine balance_apply
 
-end module class_graph_balance
+end module operation_balance

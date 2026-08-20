@@ -35,13 +35,13 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_graph_chain_rule
+module operation_chain_rule
 
   use iso_fortran_env     , only : dp => REAL64, int64
   use view_directed , only : directed_graph
   use field_calculus, only : graph_field
   use graph_fractal       , only : set_graph => graph
-  use graph_discretization      , only : differentiable_operation
+  use operation_discretization      , only : differentiable_operation
   use field_stored   , only : field
 
   implicit none
@@ -485,4 +485,4 @@ contains
 
   end subroutine write_output
 
-end module class_graph_chain_rule
+end module operation_chain_rule

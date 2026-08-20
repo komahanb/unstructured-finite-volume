@@ -13,10 +13,10 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_graph_jacobi
+module operation_jacobi
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_minimization, only : minimizer
+  use operation_minimization, only : minimizer
 
   implicit none
 
@@ -83,4 +83,4 @@ contains
 
   end subroutine solve
 
-end module class_graph_jacobi
+end module operation_jacobi

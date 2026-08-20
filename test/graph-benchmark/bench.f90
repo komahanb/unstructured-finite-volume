@@ -36,10 +36,10 @@ program bench_graph_traversal
   use field_stored      , only : field
   use transform_partitioner, only : partitioner, PARTITION_LINEAR
   use transform_assembler  , only : assembler
-  use class_graph_differential_operator, only : divergence, laplacian, &
+  use operation_differential, only : divergence, laplacian, &
        &                                        differential_operator, &
        &                                        stencil_of
-  use class_graph_stencil    , only : stencil_operator
+  use operation_stencil    , only : stencil_operator
 
   implicit none
 

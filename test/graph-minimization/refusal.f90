@@ -59,7 +59,7 @@ program minimization_refusal
   use map_set           , only : set_map
   use map_inclusion     , only : inclusion_map
   use view_directed_stored      , only : directed_stored_graph
-  use class_graph_gmres, only : gmres
+  use operation_gmres, only : gmres
   use lopsided_fixture , only : lopsided
   implicit none
   type(directed_stored_graph)  :: host

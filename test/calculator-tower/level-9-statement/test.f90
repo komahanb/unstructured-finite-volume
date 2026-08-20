@@ -235,7 +235,7 @@ program calculator_level_9
        &                             compose_binary
   use view_directed_stored      , only : directed_stored_graph
   use field_stored, only : field
-  use class_graph_gmres, only : gmres
+  use operation_gmres, only : gmres
   use constituted_residual_fixture, only : constituted_residual
 
   implicit none

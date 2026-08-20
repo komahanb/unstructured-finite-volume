@@ -4,7 +4,7 @@ include ../../../Makefile.in
 # Adjoint level 7: the solver-neutrality suite and the same-size
 # refusals. The equations are SUPPLIED here, not generated - Level 8
 # removes that independence. gmres inherits attach/constant/apply
-# from the minimizer base, so graph_minimization is not imported
+# from the minimizer base, so operation_minimization is not imported
 # directly. The import gate holds the door.
 #=====================================================================#
 

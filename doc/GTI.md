@@ -35,7 +35,7 @@ contracted against the matching direction field, returned on the
 statement's domain. `max_degree()` declares how deep this calculus
 goes. No derivative tensor is stored.
 
-### class_graph_linearization
+### operation_linearization
 
 Two members of the linearization family. `difference_linearization`
 computes J v by finite differences of two residuals.
@@ -46,7 +46,7 @@ in input slot 1, exact to the statement's `max_degree`.
 exact for a `differentiable_operation`, difference otherwise. Every
 caller (newton, the marcher) selects through this one function.
 
-### class_graph_chain_rule
+### operation_chain_rule
 
 `chain_rule % assemble(statement, input_graph, input_data, degree,
 paths, output)` computes the total derivative d^n/ds^n of the
@@ -69,7 +69,7 @@ statement does not take, two paths naming one slot, a partition
 needing a partial past `max_degree`, and a multinomial count outside
 int64 (degree 21 and beyond).
 
-### class_graph_step
+### operation_step
 
 `step_operator` is the step recurrence as an operation. Constructors
 `backward_euler(action, h)`, `bdf(k, action, h)`, and
@@ -89,7 +89,7 @@ externally assembled base, so they need no constructors.
 `dependencies()` returns the fan-in of reach + 1 instants onto the
 newest, including the self-edge for the implicit unknown.
 
-### class_graph_marcher
+### operation_marching
 
 The integrator. Rules: `MARCH_FORWARD` (explicit), `MARCH_BACKWARD`
 (backward Euler, one solve per edge by the held minimizer `inner`),
@@ -132,7 +132,7 @@ The integrator. Rules: `MARCH_FORWARD` (explicit), `MARCH_BACKWARD`
   state. What returns is `steps_taken`; trajectory and adjoint come
   from marching again with those steps.
 
-### class_graph_step_policy
+### operation_step_policy
 
 The decision half of adaptive marching: `propose` (first step at a
 new edge), `judge` (accept or reject from the estimate alone),
@@ -140,10 +140,10 @@ new edge), `judge` (accept or reject from the estimate alone),
 `halving_policy` is the reference member: start at `first_step`,
 accept at or below `tolerance`, halve on rejection.
 
-### class_graph_dense_direct
+### operation_dense_direct
 
 Gaussian elimination with partial pivoting as a concrete minimizer
-in the `graph_minimization` family. The matrix is assembled by
+in the `operation_minimization` family. The matrix is assembled by
 applying the attached operation's matvec to each basis vector. A
 pivot at or below `singular_tolerance` stops the program.
 
@@ -157,7 +157,7 @@ There is no `solve_transpose`: a transpose is one array away
 (`transpose(a)`), and the transposed system is solved like any
 other.
 
-### class_graph_newton
+### operation_newton
 
 The nonlinear governor. Its Jacobian action is `tangent_of(action)`,
 so a differentiable statement is linearized exactly and any other
@@ -181,15 +181,15 @@ restoring the prior row exactly.
 |--------------------------------------------|-------------------------------------------|
 | differentiable form contract               | `graph_calculus` (differentiable_operation)|
 | form evaluator, evaluation point, buffers  | deleted; fields and domain checks cover it |
-| chain-rule assembler                       | `class_graph_chain_rule`                   |
-| motifs, motif builders, variable-step rows | `class_graph_step` (set_bdf)               |
-| time graph, forward driver                 | `class_graph_marcher` (march)              |
-| local newton driver                        | `class_graph_newton` + `tangent_of`        |
-| tangent driver                             | `class_graph_linearization`          |
+| chain-rule assembler                       | `operation_chain_rule`                   |
+| motifs, motif builders, variable-step rows | `operation_step` (set_bdf)               |
+| time graph, forward driver                 | `operation_marching` (march)              |
+| local newton driver                        | `operation_newton` + `tangent_of`        |
+| tangent driver                             | `operation_linearization`          |
 | adjoint, reverse, seed drivers             | `march_adjoint` (backward substitution)    |
 | degree-2 and degree-r directional drivers  | `march_directional`                        |
-| adaptive growth driver, controller         | `march_adaptive` + `class_graph_step_policy`|
-| linear solve helpers                       | `class_graph_dense_direct`                 |
+| adaptive growth driver, controller         | `march_adaptive` + `operation_step_policy`|
+| linear solve helpers                       | `operation_dense_direct`                 |
 | change protocol                            | `map_change_protocol`                    |
 | attached value map, value change           | `map_value`, `map_value_change`    |
 

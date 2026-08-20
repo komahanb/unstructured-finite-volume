@@ -22,7 +22,7 @@
 ! That single sentence is the Level-6 experiment. The
 ! graph_operation contract hands every operation an input_graph,
 ! and the established habit - visible in the marching fixtures, in
-! graph_fitting, in reduction and broadcast - is to answer
+! operation_fitting, in reduction and broadcast - is to answer
 !
 !      call input_graph % all_vertices(domain)
 !

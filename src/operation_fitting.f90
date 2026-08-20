@@ -33,17 +33,17 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_fitting
+module operation_fitting
 
   use iso_fortran_env    , only : dp => REAL64
   use operation_action, only : graph_operation
   use view_directed, only : directed_graph
   use field_calculus, only : graph_field
   use graph_fractal      , only : set_graph => graph
-  use graph_forms        , only : form
+  use field_forms        , only : form
   use field_stored  , only : field
-  use class_graph_stencil, only : stencil_operator
-  use class_graph_conjugate_gradient, only : conjugate_gradient
+  use operation_stencil, only : stencil_operator
+  use operation_conjugate_gradient, only : conjugate_gradient
 
   implicit none
 
@@ -319,4 +319,4 @@ contains
   end subroutine adapt
 
 
-end module graph_fitting
+end module operation_fitting

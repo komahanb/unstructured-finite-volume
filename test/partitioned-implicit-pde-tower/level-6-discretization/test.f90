@@ -49,7 +49,7 @@ program partitioned_pde_level_6
   use field_stored, only : field
   use transform_partitioner, only : partitioner, PARTITION_LINEAR
   use transform_assembler  , only : assembler
-  use class_graph_differential_operator, only : differential_operator, &
+  use operation_differential, only : differential_operator, &
        &                                        laplacian
   use shifted_laplacian_fixture, only : shifted_laplacian
 

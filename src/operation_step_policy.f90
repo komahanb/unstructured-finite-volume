@@ -19,7 +19,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_graph_step_policy
+module operation_step_policy
 
   use iso_fortran_env, only : dp => REAL64
 
@@ -125,4 +125,4 @@ contains
 
   end subroutine halving_retry
 
-end module class_graph_step_policy
+end module operation_step_policy

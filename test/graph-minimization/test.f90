@@ -26,7 +26,7 @@ module cubic_statement_fixture
   ! so it holds no map: identity and count is the whole of it.
   use graph_fractal      , only : set_graph => graph
   use field_stored  , only : field
-  use class_graph_differential_operator, only : differential_operator
+  use operation_differential, only : differential_operator
 
   implicit none
 
@@ -110,19 +110,19 @@ program test_graph_minimization
   use map_label, only : label_map
   use map_inclusion, only : inclusion_map
   use view_directed, only : directed_graph
-  use class_graph_mesh   , only : mesh
-  use class_mesh_builder , only : mesh_from_gmsh
-  use class_robin_condition, only : robin_condition, dirichlet
-  use class_conduction     , only : conduction
-  use class_graph_differential_operator, only : differential_operator
-  use class_graph_differential_operator, only : vertex_differential_operator
-  use class_graph_jacobi   , only : jacobi
-  use class_graph_conjugate_gradient, only : conjugate_gradient
-  use class_graph_gauss_seidel, only : gauss_seidel
-  use class_graph_gmres    , only : gmres
-  use class_graph_newton   , only : newton
-  use class_graph_differential_operator, only : edge_differential_operator
-  use class_graph_balance  , only : balance
+  use view_mesh   , only : mesh
+  use view_mesh_builder , only : mesh_from_gmsh
+  use operation_robin_condition, only : robin_condition, dirichlet
+  use operation_conduction     , only : conduction
+  use operation_differential, only : differential_operator
+  use operation_differential, only : vertex_differential_operator
+  use operation_jacobi   , only : jacobi
+  use operation_conjugate_gradient, only : conjugate_gradient
+  use operation_gauss_seidel, only : gauss_seidel
+  use operation_gmres    , only : gmres
+  use operation_newton   , only : newton
+  use operation_differential, only : edge_differential_operator
+  use operation_balance  , only : balance
   use cubic_statement_fixture, only : cubic_statement
 
   implicit none

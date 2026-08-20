@@ -39,7 +39,7 @@ program test_graph_characterization
   use field_stored      , only : field
   use transform_partitioner, only : partitioner, PARTITION_LINEAR
   use transform_assembler  , only : assembler
-  use class_graph_differential_operator, only : divergence, &
+  use operation_differential, only : divergence, &
        &                                        differential_operator, &
        &                                        vertex_differential_operator
 

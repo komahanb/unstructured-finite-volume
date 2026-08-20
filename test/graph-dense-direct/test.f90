@@ -1,5 +1,5 @@
 !=====================================================================!
-! Tests for class_graph_dense_direct. dense_direct assembles its
+! Tests for operation_dense_direct. dense_direct assembles its
 ! matrix by applying the attached operation's matvec to each basis
 ! vector, then eliminates with partial pivoting. Covered here:
 ! exact solutions of 1x1 and 2x2 stencil systems; the achieved
@@ -18,8 +18,8 @@
 program test_graph_dense_direct
 
   use iso_fortran_env     , only : dp => REAL64
-  use class_graph_stencil , only : stencil_operator
-  use class_graph_dense_direct, only : dense_direct, &
+  use operation_stencil , only : stencil_operator
+  use operation_dense_direct, only : dense_direct, &
        & solve_dense_matrix_with_dense_direct, dense_matrix_of
 
   implicit none

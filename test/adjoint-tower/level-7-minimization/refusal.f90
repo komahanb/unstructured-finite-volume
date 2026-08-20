@@ -12,7 +12,7 @@
 !   primal-state-on-Y ... a state on Y handed to the primal equation
 !   adjoint-covector-on-Q  a covector on Q handed to the adjoint one
 !
-! The first two are refused by PRODUCTION - graph_minimization
+! The first two are refused by PRODUCTION - operation_minimization
 ! already knows that a right-hand side lives on the residual
 ! domain - and the last two by the test-local equations themselves.
 ! Both layers must hold: a solver that trusted sizes, or an
@@ -34,7 +34,7 @@ program adjoint_level_7_refusal
   use field_calculus, only : graph_field
   use view_directed_stored      , only : directed_stored_graph
   use field_stored, only : field
-  use class_graph_gmres, only : gmres
+  use operation_gmres, only : gmres
   use opaque_equation_fixture, only : opaque_primal, opaque_adjoint
 
   implicit none

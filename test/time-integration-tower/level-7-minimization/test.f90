@@ -11,7 +11,7 @@
 !
 !                    THE MINIMIZER WAS ALREADY RIGHT
 !
-! graph_minimization takes its unknown domain as an EXPLICIT
+! operation_minimization takes its unknown domain as an EXPLICIT
 ! argument - `attach(action, on, unknown_domain, ncomp)` - and asks
 ! the ACTION for the residual domain rather than the host. Its own
 ! comment says so: "no hidden fallback to the host's vertices; a
@@ -22,7 +22,7 @@
 ! That contrast is the evidence: the same seam that was open in the
 ! discretization was already closed in the minimization, by a
 ! contract written the other way round. Nothing here "improves"
-! graph_minimization, because nothing here found anything to
+! operation_minimization, because nothing here found anything to
 ! improve.
 !
 !                    THE TWO SOLVES
@@ -63,8 +63,8 @@ program time_level_7
   use field_calculus  , only : graph_field
   use view_directed_stored           , only : directed_stored_graph
   use field_stored     , only : field
-  use class_graph_step      , only : step_operator, backward_euler, bdf
-  use class_graph_gmres     , only : gmres
+  use operation_step      , only : step_operator, backward_euler, bdf
+  use operation_gmres     , only : gmres
   use time_carriers_fixture , only : time_carriers
   use triangular_decay_fixture, only : triangular_decay
 

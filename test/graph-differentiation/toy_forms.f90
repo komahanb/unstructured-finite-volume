@@ -32,10 +32,10 @@ module toy_differentiable_forms
   use operation_action, only : graph_operation
   use view_directed , only : directed_graph
   use field_calculus, only : graph_field
-  use graph_discretization      , only : differentiable_operation
+  use operation_discretization      , only : differentiable_operation
   use graph_fractal       , only : set_graph => graph
   use field_stored   , only : field
-  use class_graph_chain_rule, only : argument_path
+  use operation_chain_rule, only : argument_path
 
   implicit none
 

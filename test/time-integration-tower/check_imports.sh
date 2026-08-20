@@ -38,11 +38,11 @@
 # one rung at a time, each where its level earns it:
 #
 #     field_stored       earned at Level 5
-#     class_graph_step        earned at Level 6, refused at 0-5
-#     graph_minimization      earned at Level 7, refused at 0-6
-#     class_graph_gmres       earned at Level 7, refused at 0-6
-#     class_graph_marcher     earned at Level 8, refused at 0-7
-#     class_graph_newton      earned at Level 8, refused at 0-7
+#     operation_step        earned at Level 6, refused at 0-5
+#     operation_minimization      earned at Level 7, refused at 0-6
+#     operation_gmres       earned at Level 7, refused at 0-6
+#     operation_marching     earned at Level 8, refused at 0-7
+#     operation_newton      earned at Level 8, refused at 0-7
 #
 # A level that could reach the step operator before Level 6 could
 # have redescribed production instead of establishing the meaning
@@ -51,7 +51,7 @@
 #
 # UNIVERSAL refusals never lift, at ANY level of this tower:
 #
-#     class_graph_linearization
+#     operation_linearization
 #     the derivative and adjoint fixtures
 #
 # THE LINEARIZATION REFUSAL IS THE SHARPEST ASSERTION IN THIS GATE,
@@ -149,19 +149,19 @@ allowed_for() {
         # ---- L6: + the directed graph (the compatibility host), the
         #          operation contract, and the step operators. NO
         #          minimizer: the scheme is tested before the solve.
-        level-6-discretization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_fractal map_set view_directed relation_finitary relation_algebra relation_binary field_calculus view_directed_stored field_stored class_graph_step" ;;
+        level-6-discretization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_fractal map_set view_directed relation_finitary relation_algebra relation_binary field_calculus view_directed_stored field_stored operation_step" ;;
         # ---- L7: + minimization and its gmres concretion. Still no
         #          marcher.
-        level-7-minimization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_fractal map_set view_directed relation_finitary relation_binary field_calculus view_directed_stored field_stored class_graph_step graph_minimization class_graph_gmres" ;;
+        level-7-minimization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_fractal map_set view_directed relation_finitary relation_binary field_calculus view_directed_stored field_stored operation_step operation_minimization operation_gmres" ;;
 
         # ===== REVIEW GATE B =====
 
         # ---- L8: + the marcher and newton, the constituted citizens
-        #          under test. NOT class_graph_linearization: newton
+        #          under test. NOT operation_linearization: newton
         #          reaches it, and the tower may not.
-        level-8-constitution) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_fractal map_set relation_finitary relation_algebra relation_binary field_calculus view_directed_stored field_stored class_graph_step graph_minimization class_graph_gmres class_graph_newton class_graph_marcher" ;;
+        level-8-constitution) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_fractal map_set relation_finitary relation_algebra relation_binary field_calculus view_directed_stored field_stored operation_step operation_minimization operation_gmres operation_newton operation_marching" ;;
         # ---- L9: the statement, on the same constitution.
-        level-9-statement) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_fractal map_set relation_finitary relation_binary field_calculus view_directed_stored field_stored class_graph_step graph_minimization class_graph_gmres class_graph_newton class_graph_marcher" ;;
+        level-9-statement) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture graph_fractal map_set relation_finitary relation_binary field_calculus view_directed_stored field_stored operation_step operation_minimization operation_gmres operation_newton operation_marching" ;;
 
         *)                 echo "__no_allowlist__" ;;
     esac
@@ -265,36 +265,36 @@ if [ "$1" = "--selftest" ]; then
     refuses level-4-graph-calculus field_stored
     refuses level-4-graph-calculus time_fields_fixture
 
-    permits level-6-discretization class_graph_step
+    permits level-6-discretization operation_step
     permits level-6-discretization triangular_decay_fixture
     for lvl in $before_six; do
-        refuses "$lvl" class_graph_step
+        refuses "$lvl" operation_step
         refuses "$lvl" triangular_decay_fixture
     done
 
-    permits level-7-minimization graph_minimization
-    permits level-7-minimization class_graph_gmres
+    permits level-7-minimization operation_minimization
+    permits level-7-minimization operation_gmres
     for lvl in $before_seven; do
-        refuses "$lvl" graph_minimization
-        refuses "$lvl" class_graph_gmres
+        refuses "$lvl" operation_minimization
+        refuses "$lvl" operation_gmres
     done
 
-    permits level-8-constitution class_graph_marcher
-    permits level-8-constitution class_graph_newton
-    permits level-9-statement class_graph_marcher
+    permits level-8-constitution operation_marching
+    permits level-8-constitution operation_newton
+    permits level-9-statement operation_marching
     for lvl in $before_eight; do
-        refuses "$lvl" class_graph_marcher
-        refuses "$lvl" class_graph_newton
+        refuses "$lvl" operation_marching
+        refuses "$lvl" operation_newton
     done
 
     # ---- UNIVERSAL: refusals that never lift at ANY level.
-    #      class_graph_linearization is the load-bearing one: Level 8
+    #      operation_linearization is the load-bearing one: Level 8
     #      reached its Class-2 defect through
     #      marcher -> newton -> difference_linearization, and because
     #      no level may name that module, the failure cannot have been
     #      manufactured.
     for lvl in $levels; do
-        refuses "$lvl" class_graph_linearization
+        refuses "$lvl" operation_linearization
         refuses "$lvl" derivative_fixture
         refuses "$lvl" adjoint_fixture
     done
@@ -324,8 +324,8 @@ if [ "$1" = "--selftest" ]; then
     refuses level-5-field-calculus map_label
     refuses level-9-statement map_label
     permits common/triangular_decay_fixture.f90 operation_action
-    refuses common/triangular_decay_fixture.f90 class_graph_step
-    refuses common/triangular_decay_fixture.f90 class_graph_marcher
+    refuses common/triangular_decay_fixture.f90 operation_step
+    refuses common/triangular_decay_fixture.f90 operation_marching
 
     # An unclassified source still fails closed rather than silently
     # open - the ten levels are named, and nothing else is.

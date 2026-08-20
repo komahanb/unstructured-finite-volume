@@ -19,14 +19,14 @@ program test_graph_multigrid
 
   use iso_fortran_env, only : dp => REAL64
   use view_directed, only : directed_graph
-  use class_graph_mesh   , only : mesh
-  use class_graph_stencil, only : stencil_operator
-  use class_fitted_balance, only : fitted_balance_stencil
-  use graph_forms       , only : polynomial_form
+  use view_mesh   , only : mesh
+  use operation_stencil, only : stencil_operator
+  use operation_fitted_balance, only : fitted_balance_stencil
+  use field_forms       , only : polynomial_form
   use transform_coarsener, only : coarsener, COARSEN_PAIRWISE
-  use class_graph_multigrid, only : multigrid
-  use class_graph_jacobi   , only : jacobi
-  use class_graph_gmres    , only : gmres
+  use operation_multigrid, only : multigrid
+  use operation_jacobi   , only : jacobi
+  use operation_gmres    , only : gmres
 
   implicit none
 

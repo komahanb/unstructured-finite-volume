@@ -40,13 +40,13 @@ allowed_for() {
         # level 7: the ordinary minimization machinery and the legacy
         # operation-host compatibility it still rides; no constitution,
         # no statement, no flow relation, no operator meanings.
-        level-7-minimization)    echo "calculator_assert graph_fractal map_set_representation map_set map_inclusion operation_action view_directed field_calculus field_stored view_directed_stored graph_minimization class_graph_gmres affine_residual_fixture" ;;
+        level-7-minimization)    echo "calculator_assert graph_fractal map_set_representation map_set map_inclusion operation_action view_directed field_calculus field_stored view_directed_stored operation_minimization operation_gmres affine_residual_fixture" ;;
         # level 8: constitution binds meaning to domains, relations
         # and fields - no solver, no graph host, no statement.
         level-8-constitution)    echo "calculator_assert graph_fractal map_set_representation map_set map_inclusion relation_finitary relation_algebra field_stored arithmetic_constitution_fixture" ;;
         # level 9: the composition rung - everything the statement
         # SELECTS, and nothing it would have to invent.
-        level-9-statement)       echo "calculator_assert graph_fractal map_set_representation map_set map_inclusion relation_finitary relation_algebra field_calculus field_stored operation_action view_directed view_directed_stored graph_minimization class_graph_gmres arithmetic_constitution_fixture constituted_residual_fixture graph_fractal view_relational" ;;
+        level-9-statement)       echo "calculator_assert graph_fractal map_set_representation map_set map_inclusion relation_finitary relation_algebra field_calculus field_stored operation_action view_directed view_directed_stored operation_minimization operation_gmres arithmetic_constitution_fixture constituted_residual_fixture graph_fractal view_relational" ;;
         # level 5: a field needs a domain, never a graph container.
         level-5-field-calculus)  echo "calculator_assert graph_fractal map_set_representation map_set map_inclusion field_calculus field_stored" ;;
         *)                       echo "__no_allowlist__" ;;

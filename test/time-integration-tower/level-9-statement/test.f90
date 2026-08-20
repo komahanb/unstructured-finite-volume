@@ -54,9 +54,9 @@ program time_level_9
   use map_set        , only : set_map
   use view_directed_stored           , only : directed_stored_graph
   use field_stored     , only : field
-  use class_graph_gmres     , only : gmres
-  use class_graph_newton    , only : newton
-  use class_graph_marcher   , only : marcher, MARCH_BDF2
+  use operation_gmres     , only : gmres
+  use operation_newton    , only : newton
+  use operation_marching   , only : marcher, MARCH_BDF2
   use time_carriers_fixture , only : time_carriers
   use time_fields_fixture   , only : state_field, instant_coordinates
   use triangular_decay_fixture, only : triangular_decay

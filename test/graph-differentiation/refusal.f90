@@ -35,11 +35,11 @@ program refusal
   use graph_fractal       , only : set_graph => graph
   use view_directed_stored         , only : directed_stored_graph
   use field_stored   , only : field
-  use class_graph_step    , only : step_operator
-  use class_graph_chain_rule, only : chain_rule, argument_path
-  use class_graph_linearization, only : exact_linearization
-  use class_graph_marcher , only : marcher, MARCH_BACKWARD
-  use class_graph_step_policy, only : halving_policy
+  use operation_step    , only : step_operator
+  use operation_chain_rule, only : chain_rule, argument_path
+  use operation_linearization, only : exact_linearization
+  use operation_marching , only : marcher, MARCH_BACKWARD
+  use operation_step_policy, only : halving_policy
   use toy_differentiable_forms, only : quartic_form, equilibrium_law, &
        & scalar_pair, fill_path
 

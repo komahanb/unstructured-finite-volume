@@ -42,17 +42,17 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_fitted_balance
+module operation_fitted_balance
 
   use iso_fortran_env    , only : dp => REAL64
   use view_directed, only : directed_graph
   use field_calculus, only : graph_field
   use view_directed_stored        , only : directed_stored_graph
-  use graph_forms        , only : form
+  use field_forms        , only : form
   use field_stored  , only : field
-  use class_graph_mesh   , only : mesh
-  use class_graph_stencil, only : stencil_operator
-  use graph_fitting      , only : fit
+  use view_mesh   , only : mesh
+  use operation_stencil, only : stencil_operator
+  use operation_fitting      , only : fit
 
   implicit none
 
@@ -235,4 +235,4 @@ contains
 
   end subroutine grow
 
-end module class_fitted_balance
+end module operation_fitted_balance

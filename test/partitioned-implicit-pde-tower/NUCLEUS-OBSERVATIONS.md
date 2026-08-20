@@ -376,7 +376,7 @@ graph role:           conduit (minimizer) and topology operand
 
 comparison:           the reverse review inferred this from
                       test/graph-minimization/test.f90:345 and
-                      class_graph_multigrid.f90:123. This tower
+                      operation_multigrid.f90:123. This tower
                       measures it: same operation, same probe,
                       different host, different answer
 
@@ -576,7 +576,7 @@ the order the current code path would demand it:
                            over distributed vectors, and the collective
                            points that implies
 
-                      Items 4-6 sit in graph_minimization, NOT in this
+                      Items 4-6 sit in operation_minimization, NOT in this
                       tower's fixtures - which is itself informative:
                       the OPERATOR decomposed cleanly with no
                       production change, while the SOLVER is where

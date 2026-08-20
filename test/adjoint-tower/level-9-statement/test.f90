@@ -64,7 +64,7 @@ program adjoint_level_9
   use field_calculus, only : graph_field
   use view_directed_stored      , only : directed_stored_graph
   use field_stored, only : field
-  use class_graph_gmres, only : gmres
+  use operation_gmres, only : gmres
   use adjoint_constitution_fixture, only : constituted_primal, &
        & constituted_adjoint, constituted_tangent, &
        & response_of, rq_forward, rp_forward, fq_forward, fq_reverse, &

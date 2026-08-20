@@ -16,7 +16,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module module_solve_mode
+module operation_sweep
 
   implicit none
 
@@ -75,4 +75,4 @@ contains
 
   end function is_valid_part
 
-end module module_solve_mode
+end module operation_sweep

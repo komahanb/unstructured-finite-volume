@@ -29,16 +29,16 @@ program test_graph_robustness
   use view_directed , only : GRAPH_SIDE_VERTEX
   use graph_fractal  , only : set_graph => graph
   use field_stored  , only : field
-  use class_graph_mesh   , only : mesh
-  use class_graph_differential_operator, only : edge_differential_operator
-  use class_graph_differential_operator, only : differential_operator
-  use class_graph_stencil, only : stencil_operator
-  use class_fitted_balance, only : fitted_balance_stencil
-  use graph_fitting        , only : fit
-  use graph_forms       , only : polynomial_form
-  use graph_forms   , only : harmonic_form
-  use graph_fitting , only : pruner
-  use class_graph_gmres  , only : gmres
+  use view_mesh   , only : mesh
+  use operation_differential, only : edge_differential_operator
+  use operation_differential, only : differential_operator
+  use operation_stencil, only : stencil_operator
+  use operation_fitted_balance, only : fitted_balance_stencil
+  use operation_fitting        , only : fit
+  use field_forms       , only : polynomial_form
+  use field_forms   , only : harmonic_form
+  use operation_fitting , only : pruner
+  use operation_gmres  , only : gmres
 
   implicit none
 

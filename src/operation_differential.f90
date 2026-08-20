@@ -72,7 +72,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_graph_differential_operator
+module operation_differential
 
   use iso_fortran_env    , only : dp => REAL64
   use operation_action, only : graph_operation
@@ -81,7 +81,7 @@ module class_graph_differential_operator
   use graph_fractal      , only : set_graph => graph
   use view_directed     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
   use field_stored  , only : field
-  use class_graph_stencil, only : stencil_operator, combine_triples
+  use operation_stencil, only : stencil_operator, combine_triples
 
   implicit none
 
@@ -1008,4 +1008,4 @@ contains
 
   end subroutine fetch_values
 
-end module class_graph_differential_operator
+end module operation_differential

@@ -76,7 +76,7 @@ program time_level_6
   use relation_binary , only : csr_relation
   use view_directed_stored           , only : directed_stored_graph
   use field_stored     , only : field
-  use class_graph_step      , only : step_operator, backward_euler, bdf
+  use operation_step      , only : step_operator, backward_euler, bdf
   use time_carriers_fixture , only : time_carriers
   use time_relations_fixture, only : tail_relation, head_relation
   use time_algebra_fixture  , only : derive_one_step_reach, &

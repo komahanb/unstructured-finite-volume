@@ -23,17 +23,17 @@ program test_graph_differentiation
 
   use iso_fortran_env     , only : dp => REAL64
   use field_calculus, only : graph_field
-  use graph_discretization      , only : linearization_operator
+  use operation_discretization      , only : linearization_operator
   use graph_fractal       , only : set_graph => graph
   use view_directed_stored         , only : directed_stored_graph
   use field_stored   , only : field
-  use class_graph_step    , only : step_operator, backward_euler, bdf_variable
-  use class_graph_chain_rule, only : chain_rule, argument_path
-  use class_graph_linearization, only : tangent_of
-  use class_graph_marcher , only : marcher, MARCH_BACKWARD
-  use class_graph_step_policy, only : halving_policy
-  use class_graph_newton  , only : newton
-  use class_graph_gmres   , only : gmres
+  use operation_step    , only : step_operator, backward_euler, bdf_variable
+  use operation_chain_rule, only : chain_rule, argument_path
+  use operation_linearization, only : tangent_of
+  use operation_marching , only : marcher, MARCH_BACKWARD
+  use operation_step_policy, only : halving_policy
+  use operation_newton  , only : newton
+  use operation_gmres   , only : gmres
   use toy_differentiable_forms, only : quartic_form, power8_form, &
        & equilibrium_law, linear_law, scalar_pair, fill_path
 

@@ -22,7 +22,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_diffusion_statement
+module operation_diffusion
 
   use iso_fortran_env      , only : dp => REAL64
   use view_directed  , only : directed_graph
@@ -30,14 +30,14 @@ module class_diffusion_statement
   use map_set      , only : set_map
   use map_label    , only : label_map
   use map_inclusion, only : inclusion_map
-  use graph_forms          , only : form
+  use field_forms          , only : form
   use field_stored    , only : field
-  use class_graph_mesh     , only : mesh
-  use class_graph_stencil  , only : stencil_operator
-  use class_fitted_balance , only : fitted_balance_stencil
-  use class_conduction     , only : conduction
-  use class_robin_condition, only : robin_condition
-  use graph_forms       , only : polynomial_form
+  use view_mesh     , only : mesh
+  use operation_stencil  , only : stencil_operator
+  use operation_fitted_balance , only : fitted_balance_stencil
+  use operation_conduction     , only : conduction
+  use operation_robin_condition, only : robin_condition
+  use field_forms       , only : polynomial_form
 
   implicit none
 
@@ -110,4 +110,4 @@ contains
 
   end function diffusion_statement
 
-end module class_diffusion_statement
+end module operation_diffusion

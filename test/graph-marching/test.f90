@@ -29,12 +29,12 @@ program test_graph_marching
   use graph_fractal         , only : set_graph => graph
   use field_stored  , only : field
   use view_directed_stored        , only : directed_stored_graph
-  use class_graph_differential_operator, only : vertex_differential_operator
-  use class_graph_differential_operator, only : differential_operator
-  use class_graph_marcher, only : marcher, MARCH_BACKWARD, MARCH_BDF2
-  use class_graph_stencil , only : stencil_operator
-  use class_graph_newton  , only : newton
-  use class_graph_gmres   , only : gmres
+  use operation_differential, only : vertex_differential_operator
+  use operation_differential, only : differential_operator
+  use operation_marching, only : marcher, MARCH_BACKWARD, MARCH_BDF2
+  use operation_stencil , only : stencil_operator
+  use operation_newton  , only : newton
+  use operation_gmres   , only : gmres
   use mandelbrot_law_fixture, only : mandelbrot_law
   use vdp_fixture, only : vdp_law, vdp_tangent_law, vdp_adjoint_law
 

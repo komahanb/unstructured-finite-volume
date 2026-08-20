@@ -24,12 +24,12 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_graph_newton
+module operation_newton
 
   use iso_fortran_env           , only : dp => REAL64
-  use graph_minimization        , only : minimizer
-  use graph_discretization            , only : linearization_operator
-  use class_graph_linearization, only : tangent_of
+  use operation_minimization        , only : minimizer
+  use operation_discretization            , only : linearization_operator
+  use operation_linearization, only : tangent_of
 
   implicit none
 
@@ -116,4 +116,4 @@ contains
 
   end subroutine solve
 
-end module class_graph_newton
+end module operation_newton

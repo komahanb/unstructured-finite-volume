@@ -53,8 +53,8 @@ module production_discretization_fixture
 
   use iso_fortran_env    , only : dp => REAL64
   use operation_action, only : graph_operation
-  use class_graph_stencil, only : stencil_operator
-  use class_graph_step   , only : step_operator, bdf
+  use operation_stencil, only : stencil_operator
+  use operation_step   , only : step_operator, bdf
 
   implicit none
 

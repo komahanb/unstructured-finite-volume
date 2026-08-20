@@ -1194,12 +1194,12 @@ symptom / fact:       dependencies() HAS TWO IMPLEMENTATIONS AND, AT
                           deferred :: dependencies    interface :406-410
                           returns class(graph), allocatable
 
-                        stencil_operator   class_graph_stencil.f90:47
+                        stencil_operator   operation_stencil.f90:47
                           stencil_dependencies                    :168
                           returns a copy of its own stored pattern
                           repo callers: 0
 
-                        step_operator      class_graph_step.f90:46
+                        step_operator      operation_step.f90:46
                           step_dependencies                       :127
                           builds a fresh reach+1 chain
                           repo callers: 0
@@ -1381,9 +1381,9 @@ symptom / fact:       MINIMIZATION IS STRUCTURALLY INHABITED. LEVEL 7
                       So the question was never WHETHER structure is
                       consumed. It is WHOSE.
 
-exact caller:         src/graph_minimization.f90 sweep_order :: diagonal;
-                      src/class_graph_jacobi.f90 solve;
-                      src/class_graph_gauss_seidel.f90 solve
+exact caller:         src/operation_minimization.f90 sweep_order :: diagonal;
+                      src/operation_jacobi.f90 solve;
+                      src/operation_gauss_seidel.f90 solve
 
 evidence:             read from the local source at 7d4c501, and
                       exercised at
@@ -1440,7 +1440,7 @@ symptom / fact:       sweep_order() DERIVES ITS COLOURING FROM THE
                       colour - which is exactly what a colouring is
                       supposed to prevent.
 
-exact caller:         src/graph_minimization.f90 sweep_order;
+exact caller:         src/operation_minimization.f90 sweep_order;
                       level-7-minimization/test.f90
                       check_the_colouring_is_host_dependent
 
@@ -1558,7 +1558,7 @@ symptom / fact:       THE REPORTED DIAGONAL CHANGES WHEN ONLY THE
 
 exact caller:         level-7-minimization/test.f90
                       check_the_diagonal
-                      -> src/graph_minimization.f90 diagonal
+                      -> src/operation_minimization.f90 diagonal
                       -> sweep_order -> colouring % apply(this % on)
 
 evidence:             FAIL : diagonal(A) on H_empty = [4,5,6] - THE
@@ -1757,7 +1757,7 @@ symptom / fact:       dependencies() IS AXIS-RELATIVE, AND THAT IS ONE
                       FAMILY-C: the apparent semantic difference
                       disappears under the axis-relative reading.
 
-exact caller:         src/class_graph_step.f90 step_dependencies;
+exact caller:         src/operation_step.f90 step_dependencies;
                       level-6-discretization/test.f90
                       check_the_step_pattern
 
@@ -1820,7 +1820,7 @@ symptom / fact:       THE CONSUMER IS HANDED ITS STRUCTURE; IT DOES
                       special case; it is a caller reading a type it
                       already knows.
 
-exact caller:         src/graph_minimization.f90 attach :: sweep_order;
+exact caller:         src/operation_minimization.f90 attach :: sweep_order;
                       level-7-minimization/test.f90 attach_to
 
 evidence:             L7 PASS with coupling = P_A under two unrelated
@@ -1946,7 +1946,7 @@ TOWER SEALED.
 ```
 
 Production changed in three places, all narrow and all earned:
-class_graph_step (a stencil is not a chronology), graph_calculus
-(the contract's prose), graph_minimization (a seat for the coupling),
+operation_step (a stencil is not a chronology), graph_calculus
+(the contract's prose), operation_minimization (a seat for the coupling),
 plus the caller adjustments the new argument required. No root was
 generalized and no visualization abstraction was promoted.

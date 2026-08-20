@@ -16,10 +16,10 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_graph_gauss_seidel
+module operation_gauss_seidel
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_minimization, only : minimizer
+  use operation_minimization, only : minimizer
 
   implicit none
 
@@ -90,4 +90,4 @@ contains
 
   end subroutine solve
 
-end module class_graph_gauss_seidel
+end module operation_gauss_seidel

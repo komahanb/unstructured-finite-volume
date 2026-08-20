@@ -36,7 +36,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_minimization
+module operation_minimization
 
   use iso_fortran_env       , only : dp => REAL64
   use operation_action  , only : graph_operation
@@ -469,4 +469,4 @@ contains
 
   end subroutine solver_apply
 
-end module graph_minimization
+end module operation_minimization

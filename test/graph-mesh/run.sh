@@ -12,7 +12,7 @@ make -C "$here" >/dev/null
 
 cd "$here" && ./run
 
-# The pre-tower graph stack was deleted after graph_mesh_geometry
+# The pre-tower graph stack was deleted after view_mesh_geometry
 # reproduced its measurements bitwise on all eleven sample meshes.
 # This guard keeps it deleted: the files must not return and nothing
 # may reference them.

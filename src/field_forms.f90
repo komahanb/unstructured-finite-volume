@@ -46,7 +46,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module graph_forms
+module field_forms
 
   use iso_fortran_env    , only : dp => REAL64
   use view_directed     , only : GRAPH_SIDE_VERTEX
@@ -329,4 +329,4 @@ contains
   end subroutine harmonic_slopes
 
 
-end module graph_forms
+end module field_forms

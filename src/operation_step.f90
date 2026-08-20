@@ -26,14 +26,14 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_graph_step
+module operation_step
 
   use iso_fortran_env    , only : dp => REAL64
   use operation_action, only : graph_operation
   use view_directed, only : directed_graph
   use field_calculus, only : graph_field
   use graph_fractal      , only : set_graph => graph
-  use graph_discretization     , only : discretization_operator
+  use operation_discretization     , only : discretization_operator
   use field_stored  , only : field
   use view_directed_stored        , only : directed_stored_graph
 
@@ -319,4 +319,4 @@ contains
 
   end subroutine step_apply
 
-end module class_graph_step
+end module operation_step

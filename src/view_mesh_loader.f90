@@ -11,7 +11,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module interface_mesh_loader
+module view_mesh_loader
 
   use iso_fortran_env , only : dp => real64
   use util_string    , only : string
@@ -101,4 +101,4 @@ module interface_mesh_loader
 
 contains
 
-end module interface_mesh_loader
+end module view_mesh_loader

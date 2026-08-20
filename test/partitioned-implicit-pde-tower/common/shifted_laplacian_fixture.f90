@@ -44,7 +44,7 @@ module shifted_laplacian_fixture
   use view_directed, only : directed_graph
   use field_calculus, only : graph_field
   use field_stored, only : field
-  use class_graph_differential_operator, only : differential_operator, &
+  use operation_differential, only : differential_operator, &
        &                                        laplacian
 
   implicit none

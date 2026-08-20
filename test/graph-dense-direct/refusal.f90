@@ -20,8 +20,8 @@
 program refusal
 
   use iso_fortran_env     , only : dp => REAL64
-  use class_graph_stencil , only : stencil_operator
-  use class_graph_dense_direct, only : dense_direct, &
+  use operation_stencil , only : stencil_operator
+  use operation_dense_direct, only : dense_direct, &
        & solve_dense_matrix_with_dense_direct, dense_matrix_of
 
   implicit none

@@ -38,7 +38,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module class_graph_mesh
+module view_mesh
 
   use iso_fortran_env    , only : dp => REAL64, error_unit
   use field_stored  , only : field
@@ -228,4 +228,4 @@ contains
 
   end function face_weights
 
-end module class_graph_mesh
+end module view_mesh

@@ -231,6 +231,8 @@ program test_graph_contract
   use class_graph_differential_operator, only : vertex_differential_operator
   use class_graph_differential_operator, only : gradient, interpolation
   use class_graph_differential_operator, only : divergence, laplacian
+  use class_graph_differential_operator, only : stencil_of
+  use class_graph_stencil, only : stencil_operator
   use class_graph_balance   , only : balance
   use class_graph_walk      , only : walk, WALK_COLOURING, WALK_VISIT_ORDER
   use class_graph_walk      , only : WALK_COMPONENT, WALK_DEPTH
@@ -273,6 +275,7 @@ program test_graph_contract
   call check_curl_on_border_graph(nfail)
   call check_components(nfail)
   call check_adjoint_is_the_transpose(nfail)
+  call check_compiled_stencil_agrees(nfail)
   call check_nonlinear_edge_formulas(nfail)
   call check_inner_products(nfail)
   call check_broadcast(nfail)
@@ -2140,6 +2143,65 @@ contains
          & "the reverse walk pairs exactly with two components aboard", nfail)
 
   end subroutine check_components
+
+  !===================================================================!
+  ! The compiled form agrees with the operator it compiles from.
+  ! stencil_of returns the composed map as a stencil_operator -
+  ! same triples, same constants - so applying either must give
+  ! the same numbers, on a graph with a boundary edge so the
+  ! affine part (the boundary value in the stencil's constants) is
+  ! checked too, forward and adjoint.
+  !===================================================================!
+
+  subroutine check_compiled_stencil_agrees(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(directed_stored_graph) :: chain
+    type(differential_operator) :: op, rev
+    type(stencil_operator)      :: compiled
+    type(field)                     :: qf
+    class(graph_field), allocatable :: ya, yb
+    real(dp), allocatable           :: a(:), b(:)
+    type(set_graph)                 :: on
+    integer :: v
+
+    ! five vertices, the last edge headless: a boundary
+    chain = directed_stored_graph(5, tails=[1,2,3,4,5], heads=[2,3,4,5,0])
+    on = chain % vertex_set()
+
+    qf = field('q', on, chain % num_vertices())
+    call qf % set_real_vector([(real(v, dp)**2 + 3.0_dp * v, v = 1, 5)])
+
+    op = laplacian(coefficients=[2.0_dp, 5.0_dp, 1.0_dp, 4.0_dp, 3.0_dp], &
+         & boundary_value=7.0_dp)
+
+    call op % apply(chain, [qf], ya)
+    call ya % get_real_vector(a)
+
+    compiled = stencil_of(op, chain)
+    call compiled % apply(chain, [qf], yb)
+    call yb % get_real_vector(b)
+
+    call report(size(a) .eq. size(b) .and. maxval(abs(a - b)) .le. 0.0_dp, &
+         & "the compiled stencil reproduces the operator, boundary included", &
+         & nfail)
+
+    rev = vertex_differential_operator(order=2, &
+         & coefficients=[2.0_dp, 5.0_dp, 1.0_dp, 4.0_dp, 3.0_dp], &
+         & adjoint=.true.)
+
+    call rev % apply(chain, [qf], ya)
+    call ya % get_real_vector(a)
+
+    compiled = stencil_of(rev, chain)
+    call compiled % apply(chain, [qf], yb)
+    call yb % get_real_vector(b)
+
+    call report(size(a) .eq. size(b) .and. maxval(abs(a - b)) .le. 0.0_dp, &
+         & "the compiled adjoint is the transposed stencil", nfail)
+
+  end subroutine check_compiled_stencil_agrees
 
   !===================================================================!
   ! The strongest statement the adjoint flag can make: the matrix.

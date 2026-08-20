@@ -1,161 +1,73 @@
 !=====================================================================!
-! Differential operators on a graph.
+! Differential operators on a graph, compiled onto stencils.
 !
-! Two operators live here, one per side, and everything both of them
-! do is built from three elementary steps. The theory guide
-! (doc/graph-differential-operators.pdf) states and proves what these
-! comments draw.
+! Values live on vertices or on edges; three elementary steps move
+! them, and each step is an affine sparse map - a matrix plus a
+! constant vector, the constant carrying what boundary values leave
+! behind:
 !
+!    S   the average step        edges x vertices
 !
-!                     THE THREE ELEMENTARY STEPS
+!        z_e = (q_i + q_j)/2, or one end, chosen by the sign of
+!        the coefficient when the step carries it. The half is the
+!        mean of a straight-line q along the edge. An edge with no
+!        head reads the stored boundary value in place of the
+!        head, which lands in the constant.
 !
-! Values live on vertices or on edges, and the steps move them:
+!    G   the difference step     edges x vertices
 !
-!                 q_i                       q_j
-!                (i) ---------------------> (j)
-!                            z_e
+!        z_e = c (q_j - q_i) / h_e
 !
-!    S   the edge average step   vertices -> edges
+!    D   the incidence step      vertices x edges
 !
-!        z_e = (q_i + q_j) / 2,  or one end, chosen by the
-!                                sign of the coefficient
+!        y_v = (out - in) / m_v : the values on edges leaving v,
+!        minus the values on edges entering v, over the measure of
+!        v. An edge with no head contributes to its tail alone.
 !
-!        The half is not arbitrary: the mean of a straight-line q
-!        along the edge - its integral over the edge divided by the
-!        edge's length - is exactly (q_i + q_j)/2. The one-sided
-!        variant reads the same integral at one end.
+! The operator of order n is the composition of those maps by
+! parity,
 !
-!    G   the difference step     vertices -> edges
+!    vertex(0) = C q            vertex(n) = D vertex-side(n-1)
+!    edge(0)   = S q            edge(n)   = G vertex(n-1)
 !
-!        z_e = (q_j - q_i) / h_e
+!    vertex(2k)   = (D G)^k
+!    vertex(2k+1) = (D G)^k D S
 !
-!    D   the incidence step      edges -> vertices
+! and a composition of affine maps is one affine map,
 !
-!             \    |    /
-!              v   v   v                    out - in
-!            ---> (v) --->        y_v  =  ------------
-!              ^   ^   ^                      m_v
-!             /    |    \
+!    (A2, k2) o (A1, k1) = (A2 A1, A2 k1 + k2),
 !
-!        the values on edges leaving v, minus the values on
-!        edges entering v, over the measure of v.
-!        An edge with no head contributes to its tail alone.
+! computed here by sparse triple composition with duplicate (row,
+! column) entries combined. The coefficient rides the innermost
+! step, so a per-edge coefficient makes order 2 the operator
+! div(k grad q).
 !
+! THE ADJOINT IS THE TRANSPOSE. With `adjoint` true the operator
+! applies the transpose of the composed matrix - rows and columns
+! swapped, the constant dropped, because the adjoint acts on the
+! linear part. No reversed step kernels exist: (C B A)^T =
+! A^T B^T C^T is an identity of the composition, not code.
 !
-!                    ANY ORDER, BY REPEATING THEM
+! THE STENCIL DOOR. The composed map on the vertex landing is
+! square, and stencil_of returns it as a stencil_operator - the
+! same triples, the same constant - so a minimizer can attach the
+! compiled matrix directly. The edge landing is a rectangular
+! relation (edges x vertices) and is refused there, because a
+! stencil's input and output share one vertex set. apply walks the
+! composed triples the same way the stencil walks its edges.
 !
-! With q the vertex field and c the coefficient the operator carries:
+! Handed an EDGE field on the vertex landing, the composition
+! enters at the incidence step: order 1 is then the divergence of
+! that field. Handed no field, or a field on the wrong domain, the
+! operator returns zeros rather than reading memory it was never
+! given.
 !
-!    vertex side                        edge side
-!
-!    order 0    c q                     order 0    S q
-!    order 1    D S q                   order 1    G q
-!    order 2    D G q                   order 2    G D S q
-!    order 3    D G D S q               order 3    G D G q
-!    order 4    D G D G q               order 4    G D G D S q
-!
-! The recurrence, stated once:
-!
-!    vertex(0) = c q          vertex(n) = D of edge(n - 1)
-!    edge(0)   = S q          edge(n)   = G of vertex(n - 1)
-!
-! which closes by parity on the vertex side:
-!
-!    vertex(2k)     = (D G)^k
-!    vertex(2k + 1) = (D G)^k D S
-!
-! The coefficient is applied once, at the innermost step - the first
-! moment the values land on edges - so a per-edge coefficient makes
-! order 2 the operator div(k grad q) with k varying edge to edge.
-!
-! Each step consults an edge's two ends, so order n reaches exactly
-! n RINGS of neighbours. Ring r of a vertex is the set a walk of
-! exactly r edges reaches and no shorter walk does - the level sets
-! of the depth walk, which the engine already computes:
-!
-!             2   2   2
-!           2   1   1   2         ring 1: the neighbours
-!           2   1 (v) 1   2       ring 2: the neighbours' neighbours,
-!           2   1   1   2                 minus what ring 1 took
-!             2   2   2
-!
-! The operators are defined on any graph - every parameter is
-! per-entity. The UNIFORM CHAIN is not an assumption; it is where
-! exactness is claimed, because there the discrete formulas coincide
-! with the calculus ones: a straight line has zero second derivative,
-! x squared has second derivative two, x to the fourth has fourth
-! derivative twenty-four. The test suite checks those numbers.
-!
-!
-!                    TWO INCIDENCE DIRECTIONS
-!
-! The incidence step above counts out minus in, which gives the
-! derivatives their textbook signs. The balance counts in minus out,
-! because a balance measures what a vertex gains. One sign apart;
-! each is stated where it is used.
-!
-!
-!                  THE ADJOINT IS THE REVERSE WALK
-!
-!    the walk                       the walk, reversed
-!
-!    (o)-->(o)-->(o)                (o)<--(o)<--(o)
-!
-! Reversing every edge swaps tail with head, so out becomes in: the
-! transposed incidence step is a difference, the transposed
-! difference an incidence step, each with one sign flipped, and the
-! transposed edge average returns each value - unsigned - to the end
-! it was read from. An adjoint runs the transposed steps in reverse
-! order.
-!
-! Parity decides the adjoint's character:
-!
-!    even orders    vertex(2k) = (D G)^k is its own adjoint whenever
-!                   the same weights sit on its steps - the transpose
-!                   of a power is the power of the transpose
-!
-!    odd orders     the adjoint reverses the sampled end: a one-sided
-!                   operator's adjoint is one-sided the other way,
-!                   the downstream walk of an upstream sample
-!
-! And no walk must run end to end. Transposes factor stage by stage,
-!
-!    (C B A) transposed = A* B* C*
-!
-! so any contiguous segment of a reverse walk is itself a valid
-! adjoint - the sensitivity of the answer with respect to that
-! segment's input. Checkpointed time marches and mid-chain
-! sensitivities are segment walks; they belong to the pipeline,
-! which walks stages by construction.
-!
-!
-!                     CURL, WITH NOTHING NEW
-!
-! Around a loop of edges there is one more derivative: add the edge
-! values as the loop is walked. Which edge borders which face is
-! itself a graph - one vertex per edge, one per face, a connection
-! where an edge borders a face, coefficient +1 or -1 by direction -
-! and the incidence step on that graph is the curl. The suite walks a
-! square: a difference field sums to zero around it, a circulating
-! field does not.
-!
-!
-!                        WHAT IS NOT HERE
-!
-! No physical names and no physical signs. This layer computes
-! derivatives; models name them, each order carrying its own physics
-! in its own class:
-!
-!    order 0    storage, reaction, mass
-!    order 1    transport along a flow
-!    order 2    diffusion, conduction, viscosity, pressure fields
-!    order 3    dispersion - waves whose speed depends on length
-!    order 4    bending - beams, plates, and the interfaces of
-!               phase separation
-!    order 6    pattern-forming films and crystals
-!
-! The signs those models require - a flux running down its gradient -
-! are theirs to state, in their own classes.
+! Each step consults an edge's two ends, so order n reaches
+! exactly n rings of neighbours; the composed pattern states that
+! reach explicitly. Exactness is claimed on the uniform chain,
+! where the discrete formulas coincide with calculus, and the test
+! suite checks those numbers. No physical names and no physical
+! signs live here; models state their own.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -169,6 +81,7 @@ module class_graph_differential_operator
   use fractal_graph      , only : set_graph => graph
   use graph_directed_view     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
   use class_graph_field  , only : field
+  use class_graph_stencil, only : stencil_operator
 
   implicit none
 
@@ -177,45 +90,18 @@ module class_graph_differential_operator
   public :: edge_differential_operator
   public :: vertex_differential_operator
   public :: gradient, interpolation, divergence, laplacian
+  public :: stencil_of
 
   !===================================================================!
-  ! The shared parameters of both operators. Each is one number for
-  ! the uniform case, with an optional per-entity array that wins
-  ! when it is allocated:
+  ! The shared parameters. Each is one number for the uniform case,
+  ! with an optional per-entity array that wins when allocated:
   !
-  !    coefficient   c     applied at the innermost step
-  !                        (per edge; per vertex at order 0 on the
-  !                        vertex side)
+  !    coefficient   c     applied at the innermost step (per edge;
+  !                        per vertex at order 0 on the vertex side)
   !    spacing       h_e   the length of an edge, in G
   !    measure       m_v   the size of a vertex, in D
-  !    boundary      b_e   the value standing in for the missing end
-  !                        of an edge with no head, in S and G
-  !===================================================================!
-
-  !===================================================================!
-  ! ONE OPERATOR, TWO LANDINGS. The derivative of order n, landing on
-  ! the side the constructor chose:
-  !
-  !    landing = edge      order 0   S q    the average on each edge
-  !                        order 1   G q    the slope along each edge
-  !                        order n   G of the vertex result of n - 1
-  !
-  !    landing = vertex    order 0   c q    the term itself
-  !                        order 1   D S q  first derivative
-  !                        order 2   D G q  second derivative
-  !                        order n   keep going
-  !
-  ! Handed an EDGE field on the vertex landing, the chain enters at
-  ! the incidence step: order 1 is then the divergence of that field.
-  ! With `adjoint` true the operator runs the reverse walk: the
-  ! transposed steps, in reverse order.
-  !
-  ! INTERPRETED AND COMPILED. This operator and the stencil operator
-  ! are the same mathematics in two execution styles. This one
-  ! INTERPRETS: it reads the incidence at every apply, matrix-free,
-  ! always fresh - the right default. The stencil is the COMPILED
-  ! form, weights computed once and walked many times. Neither
-  ! learns the other's business.
+  !    boundary      b_e   the value standing in for the missing
+  !                        end of an edge with no head, in S and G
   !===================================================================!
 
   type, extends(graph_operation) :: differential_operator
@@ -244,6 +130,24 @@ module class_graph_differential_operator
      procedure :: apply  => operator_apply
 
   end type differential_operator
+
+  !===================================================================!
+  ! One affine sparse map, y = A q + k: the triples of A and the
+  ! constant k, with the two extents. Private: maps are how this
+  ! module computes, not what it promises.
+  !===================================================================!
+
+  type :: affine_map
+
+     integer :: nrows = 0
+     integer :: ncols = 0
+
+     integer , allocatable :: rows(:)
+     integer , allocatable :: cols(:)
+     real(dp), allocatable :: weights(:)
+     real(dp), allocatable :: constants(:)
+
+  end type affine_map
 
 contains
 
@@ -287,8 +191,8 @@ contains
   end function edge_differential_operator
 
   !===================================================================!
-  ! The same constructor, for the vertex side, plus the adjoint flag:
-  ! raised, the operator applies its transpose.
+  ! The same constructor, for the vertex landing, plus the adjoint
+  ! flag: raised, the operator applies its transpose.
   !===================================================================!
 
   pure type(differential_operator) function vertex_differential_operator &
@@ -387,8 +291,8 @@ contains
   end function laplacian
 
   !===================================================================!
-  ! Names. A named operator answers with its name; any other answers
-  ! with its order.
+  ! Names. A named operator answers with its name; any other with
+  ! its order.
   !===================================================================!
 
   pure function operator_name(this) result(name)
@@ -396,33 +300,21 @@ contains
     class(differential_operator), intent(in) :: this
     character(len=:), allocatable            :: name
 
+    character(len=12) :: digits
+
     if (allocated(this % label)) then
        name = this % label
     else
-       name = order_name(this % order)
+       write(digits, '(i0)') this % order
+       name = 'derivative of order ' // trim(digits)
     end if
 
   end function operator_name
 
   !===================================================================!
-  ! The spelled-out order, for an operator with no name of its own.
-  !===================================================================!
-
-  pure function order_name(order) result(name)
-
-    integer, intent(in)           :: order
-    character(len=:), allocatable :: name
-
-    character(len=12) :: digits
-
-    write(digits, '(i0)') order
-    name = 'derivative of order ' // trim(digits)
-
-  end function order_name
-
-  !===================================================================!
-  ! Supports: every edge, every vertex. An operator aimed at a subset
-  ! is a second instance handed that subset's graph.
+  ! Domains: every edge, or every vertex, by the landing. An
+  ! operator aimed at a subset is a second instance handed that
+  ! subset's graph.
   !===================================================================!
 
   subroutine operator_domain(this, input_graph, domain, nentries)
@@ -443,8 +335,7 @@ contains
   end subroutine operator_domain
 
   !===================================================================!
-  ! Parameter lookups. One line each, so the kernels read identically
-  ! in the uniform and the varying case.
+  ! Parameter lookup: the array wins when allocated.
   !===================================================================!
 
   pure real(dp) function coefficient_at(uniform, varying, e)
@@ -462,92 +353,40 @@ contains
   end function coefficient_at
 
   !===================================================================!
-  ! THE AVERAGE STEP, forward and reversed.
+  ! THE THREE STEP MAPS, as affine triples.
   !
-  !    forward           q_i     q_j              reversed
-  !                       \      /
-  !                        v    v            z_e goes back, whole or
-  !        z_e = (q_i + q_j) / 2             halved, to the end or
-  !        or one end, by sign of c          ends it was read from
-  !
-  ! The coefficient rides along when this is the innermost step.
-  ! An edge with no head reads the stored boundary value in place of
-  ! the head; on the way back, that column belongs to no vertex and
-  ! is dropped.
+  ! The average step S, edges x vertices. When it carries the
+  ! coefficient and the one-sided choice is on, the sign of the
+  ! per-edge coefficient picks the end: positive samples the tail,
+  ! negative the head; otherwise both ends, half each. A missing
+  ! head reads the boundary value into the constant.
   !===================================================================!
 
-  pure subroutine average_step(g, one_sided_by, with_c, op_c, op_cs, op_b, op_bs, q, z)
+  pure function average_map(g, one_sided_by, with_c, op_c, op_cs, &
+       & op_b, op_bs) result(a)
 
-    class(directed_graph), intent(in)          :: g
-    real(dp)    , intent(in)          :: one_sided_by   ! sign chooses the end; zero averages
-    logical     , intent(in)          :: with_c
-    real(dp)    , intent(in)          :: op_c
-    real(dp), allocatable, intent(in) :: op_cs(:)
-    real(dp)    , intent(in)          :: op_b
-    real(dp), allocatable, intent(in) :: op_bs(:)
-    real(dp)    , intent(in)          :: q(:)
-    real(dp)    , intent(out)         :: z(:)
-
-    real(dp) :: qt, qh, c, pick
-    integer  :: e, t, h
-
-    do e = 1, size(z)
-
-       t  = g % edge_tail(e)
-       qt = q(t)
-
-       if (g % edge_has_head(e)) then
-          h  = g % edge_head(e)
-          qh = q(h)
-       else
-          qh = coefficient_at(op_b, op_bs, e)
-       end if
-
-       c = 1.0_dp
-       if (with_c) c = coefficient_at(op_c, op_cs, e)
-
-       pick = one_sided_by
-       if (with_c) pick = sign(1.0_dp, c) * merge(1.0_dp, 0.0_dp, one_sided_by /= 0.0_dp)
-
-       if (pick > 0.0_dp) then
-          z(e) = c * qt                     ! the end the walk leaves
-       else if (pick < 0.0_dp) then
-          z(e) = c * qh                     ! the end the walk enters
-       else
-          z(e) = c * 0.5_dp * (qt + qh)     ! both ends, evenly
-       end if
-
-    end do
-
-  end subroutine average_step
-
-  !===================================================================!
-  ! The transpose of the average step. Reading an edge from its two
-  ! ends transposes to returning the edge value to those ends:
-  !
-  !    z_e ---> y_i and y_j     both ends, half each - or all of it
-  !                             to the sampled end, unsigned, when
-  !                             the step was one-sided
-  !===================================================================!
-
-  pure subroutine average_step_reversed(g, one_sided_by, with_c, op_c, op_cs, z, y)
-
-    class(directed_graph), intent(in)          :: g
+    class(directed_graph), intent(in) :: g
     real(dp)    , intent(in)          :: one_sided_by
     logical     , intent(in)          :: with_c
     real(dp)    , intent(in)          :: op_c
     real(dp), allocatable, intent(in) :: op_cs(:)
-    real(dp)    , intent(in)          :: z(:)
-    real(dp)    , intent(inout)       :: y(:)
+    real(dp)    , intent(in)          :: op_b
+    real(dp), allocatable, intent(in) :: op_bs(:)
+    type(affine_map)                  :: a
 
-    real(dp) :: c, pick
-    integer  :: e, t, h
+    real(dp) :: c, pick, b
+    integer  :: e, n
 
-    y = 0.0_dp
+    a % nrows = g % num_edges()
+    a % ncols = g % num_vertices()
 
-    do e = 1, size(z)
+    allocate(a % rows(2 * a % nrows), a % cols(2 * a % nrows))
+    allocate(a % weights(2 * a % nrows))
+    allocate(a % constants(a % nrows))
+    a % constants = 0.0_dp
 
-       t = g % edge_tail(e)
+    n = 0
+    do e = 1, a % nrows
 
        c = 1.0_dp
        if (with_c) c = coefficient_at(op_c, op_cs, e)
@@ -555,40 +394,47 @@ contains
        pick = one_sided_by
        if (with_c) pick = sign(1.0_dp, c) * merge(1.0_dp, 0.0_dp, one_sided_by /= 0.0_dp)
 
+       b = coefficient_at(op_b, op_bs, e)
+
        if (pick > 0.0_dp) then
-          y(t) = y(t) + c * z(e)
+          ! the end the walk leaves
+          call put(a, n, e, g % edge_tail(e), c)
        else if (pick < 0.0_dp) then
+          ! the end the walk enters, or the boundary value
           if (g % edge_has_head(e)) then
-             h = g % edge_head(e)
-             y(h) = y(h) + c * z(e)
+             call put(a, n, e, g % edge_head(e), c)
+          else
+             a % constants(e) = c * b
           end if
        else
-          y(t) = y(t) + c * 0.5_dp * z(e)
+          ! both ends, evenly
+          call put(a, n, e, g % edge_tail(e), c * 0.5_dp)
           if (g % edge_has_head(e)) then
-             h = g % edge_head(e)
-             y(h) = y(h) + c * 0.5_dp * z(e)
+             call put(a, n, e, g % edge_head(e), c * 0.5_dp)
+          else
+             a % constants(e) = c * 0.5_dp * b
           end if
        end if
 
     end do
 
-  end subroutine average_step_reversed
+    call shrink(a, n)
+
+  end function average_map
 
   !===================================================================!
-  ! THE DIFFERENCE STEP, forward and reversed.
+  ! The difference step G, edges x vertices:
   !
-  !    forward                              reversed
+  !    z_e = c (q_head - q_tail) / h_e,
   !
-  !    (i) ------> (j)                  (i) <------ (j)
-  !
-  !         q_j - q_i                    -z_e / h to the tail,
-  !    z_e = ---------                   +z_e / h to the head:
-  !            h_e                       an incidence, one sign flipped
+  ! the head replaced by the boundary value - into the constant -
+  ! on an edge with no head.
   !===================================================================!
 
-  pure subroutine difference_step(g, with_c, op_c, op_cs, op_h, op_hs, op_b, op_bs, q, z)
+  pure function difference_map(g, with_c, op_c, op_cs, op_h, op_hs, &
+       & op_b, op_bs) result(a)
 
-    class(directed_graph), intent(in)          :: g
+    class(directed_graph), intent(in) :: g
     logical     , intent(in)          :: with_c
     real(dp)    , intent(in)          :: op_c
     real(dp), allocatable, intent(in) :: op_cs(:)
@@ -596,168 +442,513 @@ contains
     real(dp), allocatable, intent(in) :: op_hs(:)
     real(dp)    , intent(in)          :: op_b
     real(dp), allocatable, intent(in) :: op_bs(:)
-    real(dp)    , intent(in)          :: q(:)
-    real(dp)    , intent(out)         :: z(:)
-
-    real(dp) :: qt, qh, c
-    integer  :: e, t, h
-
-    do e = 1, size(z)
-
-       t  = g % edge_tail(e)
-       qt = q(t)
-
-       if (g % edge_has_head(e)) then
-          h  = g % edge_head(e)
-          qh = q(h)
-       else
-          qh = coefficient_at(op_b, op_bs, e)
-       end if
-
-       c = 1.0_dp
-       if (with_c) c = coefficient_at(op_c, op_cs, e)
-
-       z(e) = c * (qh - qt) / coefficient_at(op_h, op_hs, e)
-
-    end do
-
-  end subroutine difference_step
-
-  !===================================================================!
-  ! The transpose of the difference step. A difference read off two
-  ! ends transposes to a signed return:
-  !
-  !    z_e / h_e   subtracted at the tail, added at the head
-  !
-  ! - an incidence, with the measure's seat taken by the spacing.
-  !===================================================================!
-
-  pure subroutine difference_step_reversed(g, with_c, op_c, op_cs, op_h, op_hs, z, y)
-
-    class(directed_graph), intent(in)          :: g
-    logical     , intent(in)          :: with_c
-    real(dp)    , intent(in)          :: op_c
-    real(dp), allocatable, intent(in) :: op_cs(:)
-    real(dp)    , intent(in)          :: op_h
-    real(dp), allocatable, intent(in) :: op_hs(:)
-    real(dp)    , intent(in)          :: z(:)
-    real(dp)    , intent(inout)       :: y(:)
+    type(affine_map)                  :: a
 
     real(dp) :: c, w
-    integer  :: e, t, h
+    integer  :: e, n
 
-    y = 0.0_dp
+    a % nrows = g % num_edges()
+    a % ncols = g % num_vertices()
 
-    do e = 1, size(z)
+    allocate(a % rows(2 * a % nrows), a % cols(2 * a % nrows))
+    allocate(a % weights(2 * a % nrows))
+    allocate(a % constants(a % nrows))
+    a % constants = 0.0_dp
+
+    n = 0
+    do e = 1, a % nrows
 
        c = 1.0_dp
        if (with_c) c = coefficient_at(op_c, op_cs, e)
+       w = c / coefficient_at(op_h, op_hs, e)
 
-       w = c * z(e) / coefficient_at(op_h, op_hs, e)
-
-       t = g % edge_tail(e)
-       y(t) = y(t) - w
+       call put(a, n, e, g % edge_tail(e), -w)
 
        if (g % edge_has_head(e)) then
-          h = g % edge_head(e)
-          y(h) = y(h) + w
+          call put(a, n, e, g % edge_head(e), w)
+       else
+          a % constants(e) = w * coefficient_at(op_b, op_bs, e)
        end if
 
     end do
 
-  end subroutine difference_step_reversed
+    call shrink(a, n)
+
+  end function difference_map
 
   !===================================================================!
-  ! THE INCIDENCE STEP, forward and reversed.
+  ! The incidence step D, vertices x edges:
   !
-  !    forward                              reversed
+  !    y_v = (out - in) / m_v.
   !
-  !         out - in                        q_tail   q_head
-  !    y_v = --------                z_e =  ------ - ------
-  !            m_v                          m_tail   m_head
-  !
-  ! Out minus in gives the derivatives their textbook signs; the
-  ! balance counts in minus out because it measures what a vertex
-  ! gains. An edge with no head contributes to its tail alone.
+  ! Out minus in gives the derivatives their textbook signs; an
+  ! edge with no head contributes to its tail alone.
   !===================================================================!
 
-  pure subroutine incidence_step(g, op_m, op_ms, z, y)
+  pure function incidence_map(g, op_m, op_ms) result(a)
 
-    class(directed_graph), intent(in)          :: g
+    class(directed_graph), intent(in) :: g
     real(dp)    , intent(in)          :: op_m
     real(dp), allocatable, intent(in) :: op_ms(:)
-    real(dp)    , intent(in)          :: z(:)
-    real(dp)    , intent(out)         :: y(:)
+    type(affine_map)                  :: a
 
-    integer :: e, t, h, v
+    integer :: e, t, h, n
 
-    y = 0.0_dp
+    a % nrows = g % num_vertices()
+    a % ncols = g % num_edges()
 
-    do e = 1, size(z)
+    allocate(a % rows(2 * a % ncols), a % cols(2 * a % ncols))
+    allocate(a % weights(2 * a % ncols))
+    allocate(a % constants(a % nrows))
+    a % constants = 0.0_dp
+
+    n = 0
+    do e = 1, a % ncols
 
        t = g % edge_tail(e)
-       y(t) = y(t) + z(e)                   ! the edge leaves its tail
+       call put(a, n, t, e, 1.0_dp / coefficient_at(op_m, op_ms, t))
 
        if (g % edge_has_head(e)) then
           h = g % edge_head(e)
-          y(h) = y(h) - z(e)                ! and enters its head
+          call put(a, n, h, e, -1.0_dp / coefficient_at(op_m, op_ms, h))
        end if
 
     end do
 
-    do v = 1, size(y)
-       y(v) = y(v) / coefficient_at(op_m, op_ms, v)
+    call shrink(a, n)
+
+  end function incidence_map
+
+  !===================================================================!
+  ! The diagonal map, n x n: y_i = c_i q_i. Order 0 on the vertex
+  ! landing, and the per-edge coefficient of an edge-field entry.
+  !===================================================================!
+
+  pure function diagonal_map(n, op_c, op_cs) result(a)
+
+    integer     , intent(in)          :: n
+    real(dp)    , intent(in)          :: op_c
+    real(dp), allocatable, intent(in) :: op_cs(:)
+    type(affine_map)                  :: a
+
+    integer :: i
+
+    a % nrows = n
+    a % ncols = n
+
+    allocate(a % rows(n), a % cols(n), a % weights(n), a % constants(n))
+    a % constants = 0.0_dp
+
+    do i = 1, n
+       a % rows(i)    = i
+       a % cols(i)    = i
+       a % weights(i) = coefficient_at(op_c, op_cs, i)
     end do
 
-  end subroutine incidence_step
+  end function diagonal_map
 
   !===================================================================!
-  ! The transpose of the incidence step. Out minus in at each vertex
-  ! transposes to, per edge: the tail's value over its measure minus
-  ! the head's value over its measure - a difference, read the other
-  ! way round.
+  ! Triple bookkeeping: append one entry; trim to the count.
   !===================================================================!
 
-  pure subroutine incidence_step_reversed(g, op_m, op_ms, q, z)
+  pure subroutine put(a, n, r, c, w)
 
-    class(directed_graph), intent(in)          :: g
-    real(dp)    , intent(in)          :: op_m
-    real(dp), allocatable, intent(in) :: op_ms(:)
-    real(dp)    , intent(in)          :: q(:)
-    real(dp)    , intent(out)         :: z(:)
+    type(affine_map), intent(inout) :: a
+    integer         , intent(inout) :: n
+    integer         , intent(in)    :: r, c
+    real(dp)        , intent(in)    :: w
 
-    integer :: e, t, h
+    n = n + 1
+    a % rows(n)    = r
+    a % cols(n)    = c
+    a % weights(n) = w
 
-    do e = 1, size(z)
+  end subroutine put
 
-       t = g % edge_tail(e)
-       z(e) = q(t) / coefficient_at(op_m, op_ms, t)
+  pure subroutine shrink(a, n)
 
-       if (g % edge_has_head(e)) then
-          h = g % edge_head(e)
-          z(e) = z(e) - q(h) / coefficient_at(op_m, op_ms, h)
+    type(affine_map), intent(inout) :: a
+    integer         , intent(in)    :: n
+
+    a % rows    = a % rows(1:n)
+    a % cols    = a % cols(1:n)
+    a % weights = a % weights(1:n)
+
+  end subroutine shrink
+
+  !===================================================================!
+  ! Composition of affine maps:
+  !
+  !    (A2, k2) o (A1, k1) = (A2 A1, A2 k1 + k2),
+  !
+  ! by sparse triple product - the inner extent of A2 must equal
+  ! A1's row count, checked because a mismatch means the chain was
+  ! assembled wrong. Duplicate (row, column) entries are combined,
+  ! so the result is a matrix, one entry per pair.
+  !===================================================================!
+
+  pure function compose(a2, a1) result(a)
+
+    type(affine_map), intent(in) :: a2, a1
+    type(affine_map)             :: a
+
+    integer , allocatable :: ptr(:), r(:), c(:)
+    real(dp), allocatable :: w(:)
+    integer :: k2, j, n, row1
+
+    if (a2 % ncols /= a1 % nrows) then
+       error stop 'differential_operator: composed maps agree on the inner extent'
+    end if
+
+    a % nrows = a2 % nrows
+    a % ncols = a1 % ncols
+
+    ! group A1's entries by row, counting-sort style
+    allocate(ptr(a1 % nrows + 1))
+    ptr = 0
+    do j = 1, size(a1 % rows)
+       ptr(a1 % rows(j) + 1) = ptr(a1 % rows(j) + 1) + 1
+    end do
+    ptr(1) = 1
+    do j = 1, a1 % nrows
+       ptr(j + 1) = ptr(j + 1) + ptr(j)
+    end do
+
+    block
+      integer , allocatable :: order(:), cursor(:)
+      allocate(order(size(a1 % rows)), cursor(a1 % nrows))
+      cursor = ptr(1:a1 % nrows)
+      do j = 1, size(a1 % rows)
+         order(cursor(a1 % rows(j))) = j
+         cursor(a1 % rows(j)) = cursor(a1 % rows(j)) + 1
+      end do
+
+      ! emit one product entry per (A2 entry, matching A1 entry)
+      n = 0
+      do k2 = 1, size(a2 % rows)
+         row1 = a2 % cols(k2)
+         n = n + ptr(row1 + 1) - ptr(row1)
+      end do
+
+      allocate(r(n), c(n), w(n))
+      n = 0
+      do k2 = 1, size(a2 % rows)
+         row1 = a2 % cols(k2)
+         do j = ptr(row1), ptr(row1 + 1) - 1
+            n = n + 1
+            r(n) = a2 % rows(k2)
+            c(n) = a1 % cols(order(j))
+            w(n) = a2 % weights(k2) * a1 % weights(order(j))
+         end do
+      end do
+    end block
+
+    call combine(a % nrows, a % ncols, r, c, w, &
+         & a % rows, a % cols, a % weights)
+
+    ! the constant travels through the outer map
+    allocate(a % constants(a % nrows))
+    a % constants = a2 % constants
+    do k2 = 1, size(a2 % rows)
+       a % constants(a2 % rows(k2)) = a % constants(a2 % rows(k2)) &
+            & + a2 % weights(k2) * a1 % constants(a2 % cols(k2))
+    end do
+
+  end function compose
+
+  !===================================================================!
+  ! Combine duplicate (row, column) entries: two stable counting
+  ! sorts group equal pairs adjacently, then one pass sums them.
+  !===================================================================!
+
+  pure subroutine combine(nrows, ncols, r, c, w, rows, cols, weights)
+
+    integer , intent(in) :: nrows, ncols
+    integer , intent(in) :: r(:), c(:)
+    real(dp), intent(in) :: w(:)
+    integer , allocatable, intent(out) :: rows(:)
+    integer , allocatable, intent(out) :: cols(:)
+    real(dp), allocatable, intent(out) :: weights(:)
+
+    integer, allocatable :: by_c(:), by_rc(:)
+    integer :: j, n, m
+
+    n = size(r)
+
+    call stable_sort_by_key(ncols, c, by_c)
+
+    block
+      integer, allocatable :: rkey(:)
+      allocate(rkey(n))
+      do j = 1, n
+         rkey(j) = r(by_c(j))
+      end do
+      call stable_sort_by_key(nrows, rkey, by_rc)
+      do j = 1, n
+         by_rc(j) = by_c(by_rc(j))
+      end do
+    end block
+
+    allocate(rows(n), cols(n), weights(n))
+    m = 0
+    do j = 1, n
+       if (m > 0) then
+          if (rows(m) == r(by_rc(j)) .and. cols(m) == c(by_rc(j))) then
+             weights(m) = weights(m) + w(by_rc(j))
+             cycle
+          end if
+       end if
+       m = m + 1
+       rows(m)    = r(by_rc(j))
+       cols(m)    = c(by_rc(j))
+       weights(m) = w(by_rc(j))
+    end do
+
+    rows    = rows(1:m)
+    cols    = cols(1:m)
+    weights = weights(1:m)
+
+  end subroutine combine
+
+  pure subroutine stable_sort_by_key(nkeys, keys, order)
+
+    integer, intent(in)               :: nkeys
+    integer, intent(in)               :: keys(:)
+    integer, allocatable, intent(out) :: order(:)
+
+    integer, allocatable :: ptr(:), cursor(:)
+    integer :: j, k
+
+    allocate(ptr(nkeys + 1))
+    ptr = 0
+    do j = 1, size(keys)
+       ptr(keys(j) + 1) = ptr(keys(j) + 1) + 1
+    end do
+    ptr(1) = 1
+    do k = 1, nkeys
+       ptr(k + 1) = ptr(k + 1) + ptr(k)
+    end do
+
+    allocate(order(size(keys)), cursor(nkeys))
+    cursor = ptr(1:nkeys)
+    do j = 1, size(keys)
+       order(cursor(keys(j))) = j
+       cursor(keys(j)) = cursor(keys(j)) + 1
+    end do
+
+  end subroutine stable_sort_by_key
+
+  !===================================================================!
+  ! The transpose: rows and columns swapped, the constant dropped -
+  ! the adjoint acts on the linear part.
+  !===================================================================!
+
+  pure function transpose_of(a) result(t)
+
+    type(affine_map), intent(in) :: a
+    type(affine_map)             :: t
+
+    t % nrows = a % ncols
+    t % ncols = a % nrows
+
+    t % rows    = a % cols
+    t % cols    = a % rows
+    t % weights = a % weights
+
+    allocate(t % constants(t % nrows))
+    t % constants = 0.0_dp
+
+  end function transpose_of
+
+  !===================================================================!
+  ! The vertex chain of one order, composed:
+  !
+  !    order 0:   C                     (the diagonal)
+  !    order 2k:  (D G)^k               coefficient on the first G
+  !    order 2k+1: (D G)^k D S          coefficient on S, one-sided
+  !                                     by its sign
+  !
+  ! The innermost step carries the coefficient; every later step
+  ! runs bare.
+  !===================================================================!
+
+  pure function vertex_chain_map(order, g, c, cs, h, hs, m, ms, b, bs) result(a)
+
+    integer     , intent(in)          :: order
+    class(directed_graph), intent(in) :: g
+    real(dp)    , intent(in)          :: c, h, m, b
+    real(dp), allocatable, intent(in) :: cs(:), hs(:), ms(:), bs(:)
+    type(affine_map)                  :: a
+
+    type(affine_map) :: d
+    integer          :: k
+    logical          :: innermost
+
+    if (order <= 0) then
+       a = diagonal_map(g % num_vertices(), c, cs)
+       return
+    end if
+
+    d = incidence_map(g, m, ms)
+
+    k = order
+    innermost = .true.
+
+    do while (k > 0)
+
+       if (mod(k, 2) == 1) then
+          ! the odd step: the one-sided average, side by the sign
+          ! of the coefficient it carries
+          if (innermost) then
+             a = compose(d, average_map(g, 1.0_dp, .true., c, cs, b, bs))
+          else
+             a = compose(d, compose(average_map(g, 1.0_dp, .true., &
+                  & c, cs, b, bs), a))
+          end if
+          k = k - 1
+       else
+          if (innermost) then
+             a = compose(d, difference_map(g, .true., c, cs, h, hs, b, bs))
+          else
+             a = compose(d, compose(difference_map(g, .false., c, cs, &
+                  & h, hs, b, bs), a))
+          end if
+          k = k - 2
        end if
 
+       innermost = .false.
+
     end do
 
-  end subroutine incidence_step_reversed
+  end function vertex_chain_map
 
   !===================================================================!
-  ! COMPONENTS. A field may carry several values per entry - the
-  ! three parts of a velocity, the five of a conserved state. The
-  ! ordering rule interleaves them:
+  ! The whole operator as one affine map, by landing and entry:
   !
-  !      entry           1        1        2        2
-  !      component       1        2        1        2
-  !                   +--------+--------+--------+--------+--
-  !      flat vector  |  v(1)  |  v(2)  |  v(3)  |  v(4)  |
-  !                   +--------+--------+--------+--------+--
+  !    edge landing            order 0: S; order 1: G; order n:
+  !                            G (bare) after the vertex chain of
+  !                            n - 1
+  !    vertex landing          the vertex chain, transposed when
+  !                            adjoint
+  !    vertex landing, entry   diag(c) then D, then the bare vertex
+  !    on an edge field        chain of n - 1: order 1 is the
+  !                            divergence of the given field
+  !===================================================================!
+
+  pure function compiled_map(this, g, enters_on_edges) result(a)
+
+    class(differential_operator), intent(in) :: this
+    class(directed_graph)       , intent(in) :: g
+    logical                     , intent(in) :: enters_on_edges
+    type(affine_map)                         :: a
+
+    real(dp), allocatable :: spent(:)   ! never allocated: the
+                                        ! coefficient is applied once
+
+    if (this % landing == GRAPH_SIDE_EDGE) then
+
+       if (this % order <= 0) then
+          a = average_map(g, merge(1.0_dp, 0.0_dp, this % one_sided), &
+               & .true., this % coefficient, this % coefficients, &
+               & this % boundary_value, this % boundary_values)
+       else if (this % order == 1) then
+          a = difference_map(g, .true., this % coefficient, &
+               & this % coefficients, this % spacing, this % spacings, &
+               & this % boundary_value, this % boundary_values)
+       else
+          a = compose(difference_map(g, .false., this % coefficient, &
+               & this % coefficients, this % spacing, this % spacings, &
+               & this % boundary_value, this % boundary_values), &
+               & vertex_chain_map(this % order - 1, g, &
+               & this % coefficient, this % coefficients, &
+               & this % spacing, this % spacings, &
+               & this % measure, this % measures, &
+               & this % boundary_value, this % boundary_values))
+       end if
+
+    else if (enters_on_edges) then
+
+       a = compose(incidence_map(g, this % measure, this % measures), &
+            & diagonal_map(g % num_edges(), this % coefficient, &
+            & this % coefficients))
+       if (this % order > 1) then
+          a = compose(vertex_chain_map(this % order - 1, g, &
+               & 1.0_dp, spent, &
+               & this % spacing, this % spacings, &
+               & this % measure, this % measures, &
+               & this % boundary_value, this % boundary_values), a)
+       end if
+
+    else
+
+       a = vertex_chain_map(this % order, g, &
+            & this % coefficient, this % coefficients, &
+            & this % spacing, this % spacings, &
+            & this % measure, this % measures, &
+            & this % boundary_value, this % boundary_values)
+       if (this % adjoint) a = transpose_of(a)
+
+    end if
+
+  end function compiled_map
+
+  !===================================================================!
+  ! THE STENCIL DOOR: the compiled operator as a stencil_operator.
+  ! Only the vertex landing compiles to one, because a stencil's
+  ! input and output share one vertex set; the edge landing is a
+  ! rectangular relation and stops the program here.
+  !===================================================================!
+
+  impure function stencil_of(operator, input_graph) result(compiled)
+
+    type(differential_operator), intent(in) :: operator
+    class(directed_graph)      , intent(in) :: input_graph
+    type(stencil_operator)                  :: compiled
+
+    type(affine_map) :: a
+
+    if (operator % landing /= GRAPH_SIDE_VERTEX) then
+       error stop 'differential_operator: a stencil is square - only the &
+            &vertex landing compiles to one'
+    end if
+
+    a = compiled_map(operator, input_graph, enters_on_edges=.false.)
+
+    compiled = stencil_operator(a % rows, a % cols, a % weights, &
+         & a % constants, label=operator % name())
+
+  end function stencil_of
+
+  !===================================================================!
+  ! The affine sweep, the same walk the stencil's apply performs:
+  ! y = k, then every triple carries its weight times the column's
+  ! value onto its row.
+  !===================================================================!
+
+  pure subroutine sweep(a, q, y)
+
+    type(affine_map), intent(in)  :: a
+    real(dp)        , intent(in)  :: q(:)
+    real(dp)        , intent(out) :: y(:)
+
+    integer :: j
+
+    y = a % constants
+    do j = 1, size(a % rows)
+       y(a % rows(j)) = y(a % rows(j)) + a % weights(j) * q(a % cols(j))
+    end do
+
+  end subroutine sweep
+
+  !===================================================================!
+  ! COMPONENTS. A field may carry several values per entry,
+  ! interleaved entry-fastest:
   !
-  ! The kernels stay scalar. The walk gathers one component into a
-  ! contiguous work array, runs the chain, and scatters the result
-  ! back into its slot - one pass of the graph per component. The
-  ! coefficients, spacings, measures and boundary values are shared
-  ! by all components; a component that needs its own gets its own
+  !      flat((entry - 1) * ncomp + component)
+  !
+  ! The map is compiled once; each component is gathered, swept,
+  ! and scattered back. The parameters are shared by all
+  ! components; a component that needs its own gets its own
   ! operator instance.
   !===================================================================!
 
@@ -775,11 +966,6 @@ contains
 
   end subroutine gather_component
 
-  !===================================================================!
-  ! The way back: write component c into its interleaved seats,
-  ! flat((entry - 1) n + c) - the ordering law, inverted.
-  !===================================================================!
-
   pure subroutine scatter_component(comp, ncomp, c, flat)
 
     real(dp), intent(in)    :: comp(:)
@@ -795,15 +981,11 @@ contains
   end subroutine scatter_component
 
   !===================================================================!
-  ! THE EDGE OPERATOR. Order 0 is the average step; order 1 is the
-  ! difference step; order n is the difference step applied to the
-  ! vertex result of n - 1.
-  !
-  !      q on vertices
-  !          |
-  !          |  (vertex chain of order n - 1, when n > 1)
-  !          v
-  !      G or S  ------>  the derivative, sampled on edges
+  ! Apply: fetch the input, compile the map once, sweep it per
+  ! component. A vertex field enters the chain at its innermost
+  ! step; an edge field on the vertex landing enters at the
+  ! incidence step; no field, or a field on the wrong domain,
+  ! returns zeros rather than reading memory it was never given.
   !===================================================================!
 
   subroutine operator_apply(this, input_graph, input_data, output)
@@ -813,353 +995,92 @@ contains
     class(graph_field), intent(in), optional       :: input_data(:)
     class(graph_field), allocatable, intent(inout) :: output
 
-    type(field) :: out
-
-    if (this % landing == GRAPH_SIDE_EDGE) then
-       call apply_on_edges(this, input_graph, input_data, out)
-    else
-       call apply_on_vertices(this, input_graph, input_data, out)
-    end if
-
-    ! A supplied buffer is overwritten, never added to.
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=out)
-
-  end subroutine operator_apply
-
-  !===================================================================!
-  ! The edge landing, worked out.
-  !===================================================================!
-
-  subroutine apply_on_edges(this, input_graph, input_data, out)
-
-    class(differential_operator), intent(in) :: this
-    class(directed_graph), intent(in)                 :: input_graph
-    class(graph_field), intent(in), optional :: input_data(:)
-    type(field), intent(out)                 :: out
-
-    real(dp), allocatable :: q(:), z(:), qc(:), zc(:), yc(:)
-    integer               :: nv, ne, e, nc, c
+    type(affine_map) :: a
+    type(field)      :: out
+    real(dp), allocatable :: q(:), y(:), qc(:), yc(:)
+    integer :: nv, ne, nout, nc, c
+    logical :: enters_on_edges
 
     nv = input_graph % num_vertices()
     ne = input_graph % num_edges()
 
-    call fetch_vertex_values(input_data, input_graph, nv, q, nc)
+    ! the input: vertex values first; on the vertex landing an edge
+    ! field is also lawful and enters at the incidence step
+    enters_on_edges = .false.
+    call fetch_values(input_data, input_graph, .false., nv, q, nc)
+    if (nc == 0 .and. this % landing == GRAPH_SIDE_VERTEX) then
+       call fetch_values(input_data, input_graph, .true., ne, q, nc)
+       enters_on_edges = nc > 0
+    end if
 
-    out = field(this % name(), input_graph % edge_set(), input_graph % num_edges(), ncomp=max(nc, 1))
+    if (this % landing == GRAPH_SIDE_EDGE) then
+       nout = ne
+       out  = field(this % name(), input_graph % edge_set(), ne, &
+            & ncomp=max(nc, 1))
+    else
+       nout = nv
+       out  = field(this % name(), input_graph % vertex_set(), nv, &
+            & ncomp=max(nc, 1))
+    end if
 
-    allocate(z(ne * max(nc, 1)))
-    z = 0.0_dp
+    allocate(y(nout * max(nc, 1)))
+    y = 0.0_dp
 
     if (nc >= 1) then
 
-       allocate(qc(nv), zc(ne))
+       a = compiled_map(this, input_graph, enters_on_edges)
+
+       allocate(qc(a % ncols), yc(a % nrows))
 
        do c = 1, nc
-
           call gather_component(q, nc, c, qc)
-
-          if (this % order <= 0) then
-             call average_step(input_graph, &
-                  & merge(1.0_dp, 0.0_dp, this % one_sided), .true., &
-                  & this % coefficient, this % coefficients, &
-                  & this % boundary_value, this % boundary_values, qc, zc)
-          else if (this % order == 1) then
-             call difference_step(input_graph, .true., &
-                  & this % coefficient, this % coefficients, &
-                  & this % spacing, this % spacings, &
-                  & this % boundary_value, this % boundary_values, qc, zc)
-          else
-             ! The chain: the vertex result of order n - 1, then one
-             ! difference step on top, coefficient already aboard.
-             call run_vertex_chain(this % order - 1, input_graph, qc, &
-                  & this % coefficient, this % coefficients, &
-                  & this % spacing, this % spacings, &
-                  & this % measure, this % measures, &
-                  & this % boundary_value, this % boundary_values, yc)
-             call difference_step(input_graph, .false., &
-                  & this % coefficient, this % coefficients, &
-                  & this % spacing, this % spacings, &
-                  & this % boundary_value, this % boundary_values, yc, zc)
-          end if
-
-          call scatter_component(zc, nc, c, z)
-
-       end do
-
-    end if
-
-    call out % set_real_vector(z)
-
-  end subroutine apply_on_edges
-
-  !===================================================================!
-  ! THE VERTEX OPERATOR. The chain of steps, or - with `adjoint`
-  ! true - the same chain transposed and walked backwards.
-  !
-  ! Handed an edge field, the chain enters at the incidence step: order 1 is
-  ! then the divergence of the given field. Each component of the
-  ! input makes the walk once.
-  !===================================================================!
-
-  subroutine apply_on_vertices(this, input_graph, input_data, out)
-
-    class(differential_operator), intent(in) :: this
-    class(directed_graph), intent(in)                 :: input_graph
-    class(graph_field), intent(in), optional :: input_data(:)
-    type(field), intent(out)                 :: out
-
-    real(dp), allocatable :: q(:), z(:), y(:), qc(:), zc(:), yc(:), y2(:)
-    real(dp), allocatable :: spent(:)   ! never allocated: the
-                                        ! coefficient is applied once,
-                                        ! before the incidence step, and
-                                        ! empty array keeps the deeper
-                                        ! chain from applying it again
-    integer , allocatable :: indices(:)
-    integer               :: nv, ne, v, e, nc, c
-
-    nv = input_graph % num_vertices()
-    ne = input_graph % num_edges()
-
-    call fetch_vertex_values(input_data, input_graph, nv, q, nc)
-    if (nc == 0) call fetch_edge_values(input_data, input_graph, ne, z, nc)
-
-    out = field(this % name(), input_graph % vertex_set(), input_graph % num_vertices(), ncomp=max(nc, 1))
-
-    allocate(y(nv * max(nc, 1)))
-    y = 0.0_dp
-
-    if (allocated(q) .and. size(q) > 0) then
-
-       ! A vertex field: the whole chain per component, forward or
-       ! reversed.
-       allocate(qc(nv))
-
-       do c = 1, nc
-
-          call gather_component(q, nc, c, qc)
-
-          if (this % order <= 0 .and. .not. this % adjoint) then
-             allocate(yc(nv))
-             do v = 1, nv
-                yc(v) = coefficient_at(this % coefficient, this % coefficients, v) * qc(v)
-             end do
-          else if (this % adjoint) then
-             call run_vertex_chain_reversed(this % order, input_graph, qc, &
-                  & this % coefficient, this % coefficients, &
-                  & this % spacing, this % spacings, &
-                  & this % measure, this % measures, yc)
-          else
-             call run_vertex_chain(this % order, input_graph, qc, &
-                  & this % coefficient, this % coefficients, &
-                  & this % spacing, this % spacings, &
-                  & this % measure, this % measures, &
-                  & this % boundary_value, this % boundary_values, yc)
-          end if
-
+          call sweep(a, qc, yc)
           call scatter_component(yc, nc, c, y)
-          deallocate(yc)
-
-       end do
-
-    else if (allocated(z) .and. size(z) > 0) then
-
-       ! An edge field: enter at the incidence step, per component.
-       ! Order 1 is
-       ! the divergence of the given samples; a higher order keeps
-       ! walking.
-       allocate(zc(ne), yc(nv))
-
-       do c = 1, nc
-
-          call gather_component(z, nc, c, zc)
-
-          do e = 1, ne
-             zc(e) = coefficient_at(this % coefficient, this % coefficients, e) * zc(e)
-          end do
-          call incidence_step(input_graph, this % measure, this % measures, zc, yc)
-
-          if (this % order > 1) then
-             call run_vertex_chain(this % order - 1, input_graph, yc, &
-                  & 1.0_dp, spent, &
-                  & this % spacing, this % spacings, &
-                  & this % measure, this % measures, &
-                  & this % boundary_value, this % boundary_values, y2)
-             yc = y2
-          end if
-
-          call scatter_component(yc, nc, c, y)
-
        end do
 
     end if
 
     call out % set_real_vector(y)
 
-  end subroutine apply_on_vertices
+    ! a supplied buffer is overwritten, never added to
+    if (allocated(output)) deallocate(output)
+    allocate(output, source=out)
+
+  end subroutine operator_apply
 
   !===================================================================!
-  ! The forward chain, drawn once and run everywhere.
-  !
-  !    order 4:   q --G--> --D--> --G--> --D--> y
-  !    order 3:   q --S--> --D--> --G--> --D--> y
-  !    order 2:   q --G--> --D--> y
-  !    order 1:   q --S--> --D--> y
-  !    order 0:   y = c q
-  !
-  ! The innermost step - the first arrow - carries the coefficient;
-  ! for odd orders it is the one-sided average, chosen by the sign of
-  ! the coefficient, and for even orders the difference.
+  ! Fetch the input values once and report how many components ride
+  ! in each entry. The field must cover the named side's whole set,
+  ! by identity, because the sweep indexes it densely; anything
+  ! else leaves a zero-length array and zero components.
   !===================================================================!
 
-  subroutine run_vertex_chain(order, g, q, c, cs, h, hs, m, ms, b, bs, y)
-
-    integer     , intent(in)          :: order
-    class(directed_graph), intent(in)          :: g
-    real(dp)    , intent(in)          :: q(:)
-    real(dp)    , intent(in)          :: c, h, m, b
-    real(dp), allocatable, intent(in) :: cs(:), hs(:), ms(:), bs(:)
-    real(dp), allocatable, intent(out):: y(:)
-
-    real(dp), allocatable :: z(:)
-    integer               :: nv, ne, k, v
-    logical               :: innermost
-
-    nv = g % num_vertices()
-    ne = g % num_edges()
-
-    allocate(y(nv), z(ne))
-
-    if (order <= 0) then
-       do v = 1, nv
-          y(v) = coefficient_at(c, cs, v) * q(v)
-       end do
-       return
-    end if
-
-    y = q
-    k = order
-    innermost = .true.
-
-    do while (k > 0)
-
-       if (mod(k, 2) == 1) then
-          ! The odd step: one-sided average, side by the sign of c.
-          call average_step(g, 1.0_dp, innermost, c, cs, b, bs, y, z)
-          k = k - 1
-       else
-          call difference_step(g, innermost, c, cs, h, hs, b, bs, y, z)
-          k = k - 2
-       end if
-
-       call incidence_step(g, m, ms, z, y)
-       innermost = .false.
-
-    end do
-
-  end subroutine run_vertex_chain
-
-  !===================================================================!
-  ! The reverse walk: the transposed steps, in reverse order.
-  !
-  !    forward, order 2:   q --G--> --D--> y
-  !    adjoint, order 2:   q --D'--> --G'--> y
-  !
-  ! where D' is the transposed incidence step (a difference, sign
-  ! flipped) and G' the transposed difference (an incidence step,
-  ! sign flipped). The two sign
-  ! flips cancel in pairs, which is why the order-2 operator with
-  ! symmetric coefficients is its own adjoint - checked in the suite.
-  !===================================================================!
-
-  subroutine run_vertex_chain_reversed(order, g, q, c, cs, h, hs, m, ms, y)
-
-    integer     , intent(in)          :: order
-    class(directed_graph), intent(in)          :: g
-    real(dp)    , intent(in)          :: q(:)
-    real(dp)    , intent(in)          :: c, h, m
-    real(dp), allocatable, intent(in) :: cs(:), hs(:), ms(:)
-    real(dp), allocatable, intent(out):: y(:)
-
-    real(dp), allocatable :: z(:), w(:)
-    integer               :: nv, ne, pairs, i, v
-
-    nv = g % num_vertices()
-    ne = g % num_edges()
-
-    allocate(y(nv), z(ne), w(nv))
-
-    if (order <= 0) then
-       do v = 1, nv
-          y(v) = coefficient_at(c, cs, v) * q(v)
-       end do
-       return
-    end if
-
-    ! The forward chain, first step to last, is
-    !
-    !    even order:   G  D  G  D ... G  D      (coefficient on the
-    !    odd order:    S  D  G  D ... G  D       first step)
-    !
-    ! so the reverse walk transposes each step and runs them last to
-    ! first: the transposed incidence steps and differences make the
-    ! pairs, and
-    ! for an odd order the transposed average comes at the very end -
-    ! carrying the coefficient, because its forward twin carried it.
-
-    y = q
-
-    if (mod(order, 2) == 0) then
-       pairs = order / 2
-    else
-       pairs = (order - 1) / 2
-    end if
-
-    do i = 1, pairs
-       call incidence_step_reversed(g, m, ms, y, z)
-       call difference_step_reversed(g, &
-            & mod(order, 2) == 0 .and. i == pairs, c, cs, h, hs, z, y)
-    end do
-
-    if (mod(order, 2) == 1) then
-       call incidence_step_reversed(g, m, ms, y, z)
-       call average_step_reversed(g, 1.0_dp, .true., c, cs, z, w)
-       y = w
-    end if
-
-  end subroutine run_vertex_chain_reversed
-
-  !===================================================================!
-  ! Fetch the values once, before any loop, and report how many
-  ! components ride in each entry. A wrong or missing field leaves a
-  ! zero-length array and zero components, and the operator returns
-  ! zeros rather than reading memory it was never given.
-  !===================================================================!
-
-  subroutine fetch_vertex_values(input_data, input_graph, nv, q, ncomp)
+  subroutine fetch_values(input_data, input_graph, on_edges, n, q, ncomp)
 
     class(graph_field), intent(in), optional :: input_data(:)
     class(directed_graph)     , intent(in)           :: input_graph
-    integer          , intent(in)           :: nv
+    logical          , intent(in)           :: on_edges
+    integer          , intent(in)           :: n
     real(dp), allocatable, intent(out)      :: q(:)
     integer          , intent(out)          :: ncomp
 
-    type(set_graph) :: dom
-    integer         :: n_dom
+    type(set_graph) :: dom, expected
 
     ncomp = 0
 
     if (present(input_data)) then
        select type (state => input_data(1))
        class is (field)
-          dom   = state % domain()
-          n_dom = state % num_entries()
-          ! Full coverage, by identity: this kernel indexes every
-          ! vertex densely (routing is not admissibility).
-          if (dom % same_as(input_graph % vertex_set())) then
+          dom = state % domain()
+          if (on_edges) then
+             expected = input_graph % edge_set()
+          else
+             expected = input_graph % vertex_set()
+          end if
+          if (dom % same_as(expected)) then
              ncomp = max(state % num_components(), 1)
              call state % get_real_vector(q)
-             if (size(q) == nv * ncomp) return
+             if (size(q) == n * ncomp) return
              ncomp = 0
           end if
        end select
@@ -1167,42 +1088,6 @@ contains
 
     allocate(q(0))
 
-  end subroutine fetch_vertex_values
-
-  !===================================================================!
-  ! The same fetch, for a field on edges.
-  !===================================================================!
-
-  subroutine fetch_edge_values(input_data, input_graph, ne, z, ncomp)
-
-    class(graph_field), intent(in), optional :: input_data(:)
-    class(directed_graph)     , intent(in)           :: input_graph
-    integer          , intent(in)           :: ne
-    real(dp), allocatable, intent(out)      :: z(:)
-    integer          , intent(out)          :: ncomp
-
-    type(set_graph) :: dom
-    integer         :: n_dom
-
-    ncomp = 0
-
-    if (present(input_data)) then
-       select type (state => input_data(1))
-       class is (field)
-          dom   = state % domain()
-          n_dom = state % num_entries()
-          if (dom % same_as(input_graph % edge_set())) then
-             ncomp = max(state % num_components(), 1)
-             call state % get_real_vector(z)
-             if (size(z) == ne * ncomp) return
-             ncomp = 0
-          end if
-       end select
-    end if
-
-    allocate(z(0))
-
-  end subroutine fetch_edge_values
-
+  end subroutine fetch_values
 
 end module class_graph_differential_operator

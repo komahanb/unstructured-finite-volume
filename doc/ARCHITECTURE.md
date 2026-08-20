@@ -65,7 +65,11 @@ Indentation is `extends`; brackets name the file.
     │   ├── jacobi, gauss_seidel, conjugate_gradient, gmres, multigrid
     │   ├── newton        Jacobian action = tangent_of(action)
     │   └── dense_direct  elimination; + dense_matrix_of, dense-array adapter
-    ├── differential_operator  div/grad on graph sides          [class_graph_differential_operator]
+    ├── differential_operator  d^n on graph sides, compiled     [class_graph_differential_operator]
+    │       the average, difference, and incidence steps as affine
+    │       sparse maps, composed by parity into one matrix + constant;
+    │       adjoint = transpose; stencil_of returns the square compiled
+    │       form as a stencil_operator
     ├── balance, fit, walk                     [clients and utilities]
     └── ...
 
@@ -98,6 +102,7 @@ Indentation is `extends`; brackets name the file.
     stencil      = operation with weights on edges          (a matrix)
     step         = operation x (a0, a1, a2, hs)             (a scheme)
     tangent      = operation frozen at a state              (a matrix action)
+    derivative   = incidence o difference o ... o average   (one stencil)
     chain rule   = partitions x partial actions             (any derivative)
     minimizer    = operation + a stopping rule              (a solve)
     newton       = minimizer x tangent_of                   (nonlinear solve)
@@ -155,12 +160,18 @@ and triangle, 3d hexahedral and tetrahedral). A static in
 test/graph-mesh keeps it deleted. AGENTS.md phase 11 is complete:
 exactly one type named `graph` exists.
 
-## Review candidates (not duplication, but under watch)
+## The differential operator, in the primes
 
-- `class_graph_differential_operator` (1,208 lines, level 6): the
-  original FV differential operator. Overlaps `stencil_operator`
-  conceptually; consumed by `class_graph_balance` and ten suites.
-  Candidate for re-expression over stencils.
+The differential operator's three elementary steps - average,
+difference, incidence - are affine sparse maps (a matrix plus the
+constant a boundary value leaves behind). The order-n operator is
+their composition by parity, computed as one sparse triple product
+with duplicates combined, so the operator IS a stencil: `stencil_of`
+returns the square vertex-landing form as a `stencil_operator`, and
+the adjoint is the transpose of the composed matrix - no reversed
+step kernels exist. The contract suite holds the agreement law:
+applying the operator and applying its compiled stencil give the
+same numbers, boundary constants and adjoint included.
 
 ## Documentation rule
 

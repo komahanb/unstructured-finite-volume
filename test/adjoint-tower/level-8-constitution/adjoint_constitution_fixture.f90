@@ -44,7 +44,7 @@ module adjoint_constitution_fixture
   use graph_set_representation, only : counted_set_representation, &
        & set_representation
   use graph_relation   , only : relation
-  use graph_operation_view, only : graph_operation
+  use operation_action, only : graph_operation
   use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
   use class_graph_field, only : field

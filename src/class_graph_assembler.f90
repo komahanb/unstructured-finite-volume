@@ -68,7 +68,7 @@ module class_graph_assembler
   use graph_label_map    , only : label_map
   use graph_inclusion_map, only : inclusion_map, declared_subobject
   use graph_set_representation, only : listed_set_representation
-  use graph_operation_view, only : graph_transform
+  use transform_structure, only : graph_transform
   use class_graph         , only : directed_stored_graph
   use class_graph_field   , only : field
 

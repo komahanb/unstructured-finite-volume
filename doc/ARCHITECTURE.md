@@ -18,8 +18,8 @@ composition, a view, or a concretion of these.
     token            object identity, minted once by declare             graph_identity
     relation         P subset of A1 x ... x Ak                           graph_relation
     field            f : A -> V on one set-graph domain                  graph_field_calculus
-    operation        (graph, fields) -> field                            graph_operation_view
-    transform        graph -> graph, data carried along                  graph_operation_view
+    operation        (graph, fields) -> field                            operation_action
+    transform        graph -> graph, data carried along                  transform_structure
     map              token -> {representation | name | inclusion | value}
                                                                          graph_set_map, graph_label_map,
                                                                          graph_inclusion_map, graph_value_map
@@ -55,7 +55,7 @@ Indentation is `extends`; brackets name the file.
     └── graph_functional  (one entry)          [graph_field_calculus]
         └── functional                         [class_graph_functional]
 
-    graph_operation                            [graph_operation_view]
+    graph_operation                            [operation_action]
     ├── reduction   field -> functional  (sum, average, norm, ...)   [class_graph_reduction]
     ├── broadcast   functional -> field  (copy, share)               [class_graph_reduction]
     ├── discretization_operator                [graph_discretization]
@@ -79,7 +79,7 @@ Indentation is `extends`; brackets name the file.
     ├── balance, fit, walk                     [clients and utilities]
     └── ...
 
-    graph_transform                            [graph_operation_view]
+    graph_transform                            [transform_structure]
     ├── partitioner                            [class_graph_partitioner]
     ├── assembler                              [class_graph_assembler]
     ├── coarsener                              [class_graph_coarsener]

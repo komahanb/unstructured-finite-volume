@@ -82,7 +82,7 @@ module class_graph_reduction
   use fractal_graph      , only : set_graph => graph
   use graph_field_calculus  , only : GRAPH_FIELD_REAL, GRAPH_FIELD_COMPLEX
   use graph_field_calculus  , only : GRAPH_FIELD_LOGICAL
-  use graph_operation_view  , only : graph_operation
+  use operation_action  , only : graph_operation
   use graph_field_calculus  , only : graph_functional
   use graph_directed_view   , only : GRAPH_SIDE_VERTEX
   use class_graph_field     , only : plain_field => field

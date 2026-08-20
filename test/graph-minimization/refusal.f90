@@ -8,7 +8,7 @@ module lopsided_fixture
   ! An action names a domain and counts it. It holds no map: the
   ! identity and the count are the whole of what it is entitled to.
   use fractal_graph    , only : set_graph => graph
-  use graph_operation_view, only : graph_operation
+  use operation_action, only : graph_operation
   use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
   use class_graph_field, only : field

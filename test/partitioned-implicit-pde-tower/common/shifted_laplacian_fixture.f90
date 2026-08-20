@@ -40,7 +40,7 @@ module shifted_laplacian_fixture
 
   use iso_fortran_env  , only : dp => REAL64
   use fractal_graph    , only : set_graph => graph
-  use graph_operation_view, only : graph_operation
+  use operation_action, only : graph_operation
   use graph_directed_view, only : directed_graph
   use graph_field_calculus, only : graph_field
   use class_graph_field, only : field

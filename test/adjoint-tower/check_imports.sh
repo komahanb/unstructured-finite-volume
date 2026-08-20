@@ -40,12 +40,12 @@ allowed_for() {
         # apply from the minimizer base, so graph_minimization is not
         # imported directly; the equations are SUPPLIED by the level's
         # own fixture, and no Level-8 constitution may be reached.
-        level-7-minimization)     echo "adjoint_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map graph_operation_view graph_directed_view graph_field_calculus class_graph_field class_graph class_graph_gmres opaque_equation_fixture" ;;
+        level-7-minimization)     echo "adjoint_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map operation_action graph_directed_view graph_field_calculus class_graph_field class_graph class_graph_gmres opaque_equation_fixture" ;;
         # level 8: one constitution. It may see everything legitimately
         # below it - the relation stack that carries the structural
         # supports, the field, and the solver - plus its own fixture.
         # It may NOT reach back into Level 7's supplied equations.
-        level-8-constitution)     echo "adjoint_assert fractal_graph graph_set_representation graph_set_map graph_label_map graph_inclusion_map graph_relation graph_relation_algebra graph_binary_relation graph_operation_view graph_directed_view graph_field_calculus class_graph_field class_graph class_graph_gmres adjoint_constitution_fixture" ;;
+        level-8-constitution)     echo "adjoint_assert fractal_graph graph_set_representation graph_set_map graph_label_map graph_inclusion_map graph_relation graph_relation_algebra graph_binary_relation operation_action graph_directed_view graph_field_calculus class_graph_field class_graph class_graph_gmres adjoint_constitution_fixture" ;;
         # level 9: the statement - the composition rung. It may see
         # the relation stack that carries the supports, the model
         # graph that owns them, the field, the legacy host and the

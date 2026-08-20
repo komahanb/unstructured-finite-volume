@@ -17,7 +17,8 @@ graph_algorithms.o \
 graph_field_calculus.o \
 graph_directed_view.o \
 graph_partition_relation.o \
-graph_operation_view.o \
+operation_action.o \
+transform_structure.o \
 graph_discretization.o \
 class_graph_field.o \
 graph_value_map.o \

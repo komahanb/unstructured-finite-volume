@@ -27,12 +27,10 @@
 ! many times - coarse levels, preconditioners, assembled exactness.
 ! Neither learns the other's business.
 !
-! Two more ways to obtain a stencil. Compiled from any operation by
-! evaluation on the standard basis: the operation applied to the
-! zero state is the constant, applied to each basis vector minus
-! that constant is one column. Transposed from another stencil:
-! every edge reversed, constants dropped, because the affine part
-! of a map has no transpose.
+! A stencil is also compiled from any operation by evaluation on the
+! standard basis (zero state -> constant, basis vector minus constant
+! -> column), and transposed from another stencil (edges reversed,
+! constants dropped: the affine part of a map has no transpose).
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -192,14 +190,22 @@ contains
 
     allocate(a(width, width), e(width))
 
-    e = 0.0_dp
-    call evaluate(e, constant)
-
-    do j = 1, width
-       e    = 0.0_dp
-       e(j) = 1.0_dp
-       call evaluate(e, y)
-       a(:, j) = y - constant
+    ! j = 0 is the zero state, whose value is the constant
+    do j = 0, width
+       e = 0.0_dp
+       if (j > 0) e(j) = 1.0_dp
+       state = stored_field('basis', dom, n_dom, num_components=num_components)
+       call state % set_real_vector(e)
+       call action % apply(on, [state], output)
+       call output % real_vector(y)
+       if (size(y) /= width) then
+          error stop 'stencil: the operation result matches the width'
+       end if
+       if (j == 0) then
+          constant = y
+       else
+          a(:, j) = y - constant
+       end if
     end do
 
     if (present(label)) then
@@ -208,23 +214,6 @@ contains
        this = create_dense(a, action % name())
     end if
     call this % constants % set_real_vector(constant)
-
-  contains
-
-    subroutine evaluate(values, result)
-
-      real(dp), intent(in)               :: values(:)
-      real(dp), allocatable, intent(out) :: result(:)
-
-      state = stored_field('basis', dom, n_dom, num_components=num_components)
-      call state % set_real_vector(values)
-      call action % apply(on, [state], output)
-      call output % real_vector(result)
-      if (size(result) /= width) then
-         error stop 'stencil: the operation result matches the width'
-      end if
-
-    end subroutine evaluate
 
   end function create_compiled
 

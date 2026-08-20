@@ -5,12 +5,9 @@
 !      a0 q  +  a1 qold  +  a2 qolder  +  hs S(q),
 !
 ! the temporal counterpart of the spatial stencil. Its calculus is
-! the action's: max_degree is the action's max_degree, and a partial
-! action is hs times the action's partial, plus a0 v for the first
-! derivative in slot 1 only, because a0 q is linear in the state,
-! constant in every other slot, and qold, qolder are constants of
-! the solve. So tangent_of(scheme) is exact whenever tangent_of(S)
-! is. Constructors:
+! the action's: a partial action is hs times the action's partial,
+! plus a0 v for the first derivative in the state, since a0 q is
+! linear there and qold, qolder are constants. Constructors:
 !
 !      backward_euler(action, h)          reach 1, [1, -1]
 !      bdf(k, action, h)                  reach k, uniform

@@ -15,13 +15,11 @@
 ! an argument the compiler checks - so apply fetches nothing by name.
 !
 ! Every operation also reports max_degree, the highest order of
-! exact partial action it computes (0 unless the concrete type
-! overrides it), and partial_action, one mixed partial: the
-! operation differentiated once per entry of slots(:), contracted
-! against the matching direction field, returned on its own domain.
-! The default partial_action stops the program, because an operation
-! with max_degree 0 has declared no partials. No derivative tensor
-! is stored anywhere; an action is computed, contracted, discarded.
+! exact partial action it computes (0 unless overridden), and
+! partial_action, one mixed partial - differentiated once per entry
+! of slots(:), contracted against the matching direction field, on
+! its own domain. The default stops the program, since an operation
+! with max_degree 0 declares no partials.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!

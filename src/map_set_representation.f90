@@ -1,22 +1,27 @@
 !=====================================================================!
 ! SET REPRESENTATION
 !
-! How a finite set's members are stored and enumerated HERE. Five
-! questions, and nothing else:
+! How a finite set's members are stored and enumerated HERE. Three
+! primitive questions, and nothing else:
 !
-!     size          how many
-!     member(k)     which one stands at position k
-!     members       all of them
-!     has(v)        is v one of them
+!     num_members    how many
+!     member(k)      which one stands at position k
 !     local_index(v) where does v stand, 0 for an outsider
 !
 ! bound by the enumeration laws
 !
 !     member(local_index(v)) = v      for every member v
-!     local_index(member(k)) = k      for k = 1 .. size
+!     local_index(member(k)) = k      for k = 1 .. num_members
 !
 ! which force enumeration to be injective: a representation lists each
-! member once.
+! member once. Two further questions are theorems of those laws and
+! are answered once, on the abstract type, for every concretion:
+!
+!     has(v)    = (local_index(v) /= 0)
+!     members   = [ member(k), k = 1 .. num_members ]
+!
+! A concretion that overrides either must answer the same; in
+! particular an outsider's local_index is 0 and no other sentinel.
 !
 !                       NO SEMANTIC IDENTITY
 !
@@ -58,7 +63,8 @@ module map_set_representation
   public :: counted_set_representation, listed_set_representation
 
   !===================================================================!
-  ! The contract. Deferred everywhere, identity nowhere.
+  ! The contract: the three primitives deferred, the two theorems
+  ! concrete, identity nowhere.
   !===================================================================!
 
   type, abstract :: set_representation
@@ -67,9 +73,10 @@ module map_set_representation
 
      procedure(representation_num_members_interface), deferred :: num_members
      procedure(representation_member_interface)     , deferred :: member
-     procedure(representation_members_interface)    , deferred :: members
-     procedure(representation_has_interface)        , deferred :: has
      procedure(representation_local_index_interface), deferred :: local_index
+
+     procedure :: members => representation_members
+     procedure :: has     => representation_has
 
   end type set_representation
 
@@ -86,18 +93,6 @@ module map_set_representation
        integer                  , intent(in) :: position
      end function representation_member_interface
 
-     pure subroutine representation_members_interface(this, values)
-       import set_representation
-       class(set_representation), intent(in)  :: this
-       integer, allocatable     , intent(out) :: values(:)
-     end subroutine representation_members_interface
-
-     pure logical function representation_has_interface(this, value)
-       import set_representation
-       class(set_representation), intent(in) :: this
-       integer                  , intent(in) :: value
-     end function representation_has_interface
-
      pure integer function representation_local_index_interface(this, value)
        import set_representation
        class(set_representation), intent(in) :: this
@@ -108,7 +103,7 @@ module map_set_representation
 
   !===================================================================!
   ! The counted representation: members 1..n, stored as n. O(1),
-  ! whatever n is, and every query is one comparison.
+  ! whatever n is: every primitive is a comparison or an identity.
   !===================================================================!
 
   type, extends(set_representation) :: counted_set_representation
@@ -119,8 +114,6 @@ module map_set_representation
 
      procedure :: num_members => counted_num_members
      procedure :: member      => counted_member
-     procedure :: members     => counted_members
-     procedure :: has         => counted_has
      procedure :: local_index => counted_local_index
 
   end type counted_set_representation
@@ -143,8 +136,6 @@ module map_set_representation
 
      procedure :: num_members => listed_num_members
      procedure :: member      => listed_member
-     procedure :: members     => listed_members
-     procedure :: has         => listed_has
      procedure :: local_index => listed_local_index
 
   end type listed_set_representation
@@ -154,6 +145,31 @@ module map_set_representation
   end interface listed_set_representation
 
 contains
+
+  !===================================================================!
+  ! The two theorems, for every concretion: membership is a nonzero
+  ! position, and the members are the enumeration.
+  !===================================================================!
+
+  pure logical function representation_has(this, value)
+
+    class(set_representation), intent(in) :: this
+    integer                  , intent(in) :: value
+
+    representation_has = this % local_index(value) /= 0
+
+  end function representation_has
+
+  pure subroutine representation_members(this, values)
+
+    class(set_representation), intent(in)  :: this
+    integer, allocatable     , intent(out) :: values(:)
+
+    integer :: k
+
+    values = [(this % member(k), k = 1, this % num_members())]
+
+  end subroutine representation_members
 
   !===================================================================!
   ! Counted: n, clamped at zero. The empty set is a set.
@@ -185,39 +201,13 @@ contains
 
   end function counted_member
 
-  pure subroutine counted_members(this, values)
-
-    class(counted_set_representation), intent(in)  :: this
-    integer, allocatable             , intent(out) :: values(:)
-
-    integer :: k
-
-    allocate(values(this % n))
-    do k = 1, this % n
-       values(k) = k
-    end do
-
-  end subroutine counted_members
-
-  pure logical function counted_has(this, value)
-
-    class(counted_set_representation), intent(in) :: this
-    integer                          , intent(in) :: value
-
-    counted_has = (value >= 1) .and. (value <= this % n)
-
-  end function counted_has
-
   pure integer function counted_local_index(this, value)
 
     class(counted_set_representation), intent(in) :: this
     integer                          , intent(in) :: value
 
-    if (this % has(value)) then
-       counted_local_index = value
-    else
-       counted_local_index = 0
-    end if
+    counted_local_index = 0
+    if (value >= 1 .and. value <= this % n) counted_local_index = value
 
   end function counted_local_index
 
@@ -267,29 +257,6 @@ contains
     listed_member = this % roll(position)
 
   end function listed_member
-
-  pure subroutine listed_members(this, values)
-
-    class(listed_set_representation), intent(in)  :: this
-    integer, allocatable            , intent(out) :: values(:)
-
-    if (allocated(this % roll)) then
-       values = this % roll
-    else
-       allocate(values(0))
-    end if
-
-  end subroutine listed_members
-
-  pure logical function listed_has(this, value)
-
-    class(listed_set_representation), intent(in) :: this
-    integer                         , intent(in) :: value
-
-    listed_has = .false.
-    if (allocated(this % roll)) listed_has = any(this % roll == value)
-
-  end function listed_has
 
   pure integer function listed_local_index(this, value)
 

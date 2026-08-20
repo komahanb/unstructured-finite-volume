@@ -11,8 +11,9 @@ declare -A reason=(
   [singular]="dense_direct: pivot is nonsingular"
   [nonsquare]="dense_direct: dense matrix is square"
   [badwidth]="dense_direct: the width carries a whole number per member"
+  [badresult]="stencil: the operation result matches the width"
 )
-for case in tolzero sizemismatch singular nonsquare badwidth; do
+for case in tolzero sizemismatch singular nonsquare badwidth badresult; do
     if ./refusal "$case" >refusal.out 2>&1; then echo " FAIL : '$case' accepted"; exit 1; fi
     grep -q "${reason[$case]}" refusal.out && echo " PASS : '$case' is refused, loudly" || { cat refusal.out; exit 1; }
 done

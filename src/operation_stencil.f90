@@ -27,6 +27,13 @@
 ! many times - coarse levels, preconditioners, assembled exactness.
 ! Neither learns the other's business.
 !
+! Two more ways to obtain a stencil. Compiled from any operation by
+! evaluation on the standard basis: the operation applied to the
+! zero state is the constant, applied to each basis vector minus
+! that constant is one column. Transposed from another stencil:
+! every edge reversed, constants dropped, because the affine part
+! of a map has no transpose.
+!
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
@@ -35,6 +42,7 @@ module operation_stencil
   use iso_fortran_env    , only : dp => REAL64
   use view_directed, only : directed_graph
   use field_calculus, only : field
+  use operation_action, only : operation
   use operation_discretization     , only : discretization
   use relation_binary, only : group_by_key
   use field_stored  , only : stored_field
@@ -62,12 +70,14 @@ module operation_stencil
      procedure :: domain       => stencil_domain
      procedure :: apply        => stencil_apply
      procedure :: dependencies => stencil_dependencies
+     procedure :: transpose     => stencil_transpose
 
   end type stencil
 
   interface stencil
      module procedure create
      module procedure create_dense
+     module procedure create_compiled
   end interface stencil
 
 contains
@@ -144,6 +154,80 @@ contains
 
   end function create_dense
 
+  !===================================================================!
+  ! Build from an operation by evaluation on the standard basis: the
+  ! operation applied to the zero state is the constant, and applied
+  ! to each basis vector minus that constant is one column. width is
+  ! the number of values a state carries; it must be a positive
+  ! whole multiple of the operation's domain size, and every apply
+  ! must return exactly width values; both are checked and stop the
+  ! program, because a mismatched column cannot be placed in the
+  ! matrix. The label defaults to the operation's name.
+  !===================================================================!
+
+  type(stencil) function create_compiled(action, on, width, label) &
+       & result(this)
+
+    class(operation)     , intent(in) :: action
+    class(directed_graph), intent(in) :: on
+    integer              , intent(in) :: width
+    character(len=*), intent(in), optional :: label
+
+    type(stored_field)        :: state
+    class(field), allocatable :: output
+    type(graph) :: dom
+    real(dp), allocatable :: a(:,:), e(:), y(:), constant(:)
+    integer :: n_dom, num_components, j
+
+    call action % domain(on, dom, n_dom)
+
+    if (n_dom <= 0) then
+       error stop 'stencil: the operation''s domain is nonempty'
+    end if
+    if (width <= 0 .or. mod(width, n_dom) /= 0) then
+       error stop 'stencil: the width carries a whole number per member'
+    end if
+
+    num_components = width / n_dom
+
+    allocate(a(width, width), e(width))
+
+    e = 0.0_dp
+    call evaluate(e, constant)
+
+    do j = 1, width
+       e    = 0.0_dp
+       e(j) = 1.0_dp
+       call evaluate(e, y)
+       a(:, j) = y - constant
+    end do
+
+    if (present(label)) then
+       this = create_dense(a, label)
+    else
+       this = create_dense(a, action % name())
+    end if
+    call this % constants % set_real_vector(constant)
+
+  contains
+
+    subroutine evaluate(values, result)
+
+      real(dp), intent(in)               :: values(:)
+      real(dp), allocatable, intent(out) :: result(:)
+
+      state = stored_field('basis', dom, n_dom, num_components=num_components)
+      call state % set_real_vector(values)
+      call action % apply(on, [state], output)
+      call output % real_vector(result)
+      if (size(result) /= width) then
+         error stop 'stencil: the operation result matches the width'
+      end if
+
+    end subroutine evaluate
+
+  end function create_compiled
+
   pure function stencil_name(this) result(name)
 
     class(stencil), intent(in) :: this
@@ -217,6 +301,38 @@ contains
     allocate(pattern, source=this % pattern)
 
   end subroutine stencil_dependencies
+
+  !===================================================================!
+  ! The transpose: every edge reversed, so the weight that carried
+  ! the tail's value onto the head now carries the head's onto the
+  ! tail. The constants are dropped, because the affine part of a
+  ! map has no transpose.
+  !===================================================================!
+
+  type(stencil) function stencil_transpose(this) result(transposed)
+
+    class(stencil), intent(in) :: this
+
+    integer , allocatable :: tails(:), heads(:)
+    real(dp), allocatable :: weights(:), zeros(:)
+    integer :: e, ne, nv
+
+    ne = this % pattern % num_edges()
+    nv = this % pattern % num_vertices()
+
+    allocate(tails(ne), heads(ne), zeros(nv))
+    do e = 1, ne
+       tails(e) = this % pattern % edge_tail(e)
+       heads(e) = this % pattern % edge_head(e)
+    end do
+    zeros = 0.0_dp
+
+    call this % weights % real_vector(weights)
+
+    transposed = create(rows=tails, columns=heads, weights=weights, &
+         & constant=zeros, label='transpose of ' // this % label)
+
+  end function stencil_transpose
 
   !===================================================================!
   ! Combine duplicate (row, column) entries of a weighted triple

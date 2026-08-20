@@ -13,6 +13,8 @@
 !                    adapter
 !      badwidth      a dense_matrix_of width carrying a fractional
 !                    number per member of the operation's domain
+!      badresult     compiling a stencil at a width the operation
+!                    does not return
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -26,7 +28,7 @@ program refusal
 
   implicit none
 
-  type(stencil) :: statement
+  type(stencil) :: statement, compiled
   type(dense_direct)     :: solver
 
   real(dp), allocatable :: xa(:), arebuilt(:,:)
@@ -83,6 +85,14 @@ program refusal
      statement = stencil([1, 1, 2, 2], [1, 2, 1, 2], &
           & [2.0_dp, 1.0_dp, 1.0_dp, 3.0_dp], [0.0_dp, 0.0_dp], 'two')
      call dense_matrix_of(statement, statement % pattern, 3, arebuilt)
+
+  case ('badresult')
+
+     ! four numbers over a two-member domain is two per member, but
+     ! the stencil returns two numbers, not four
+     statement = stencil([1, 1, 2, 2], [1, 2, 1, 2], &
+          & [2.0_dp, 1.0_dp, 1.0_dp, 3.0_dp], [0.0_dp, 0.0_dp], 'two')
+     compiled = stencil(statement, statement % pattern, 4)
 
   case default
 

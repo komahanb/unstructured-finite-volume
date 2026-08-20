@@ -70,8 +70,9 @@ Indentation is `extends`; brackets name the file.
     ├── broadcast   functional -> field  (copy, share)               [operation_reduction]
     ├── discretization                             [operation_discretization]
     │   ├── stencil  space: matrix as weighted edges         [operation_stencil]
-    │   │       constructed from triples or from a dense array;
-    │   │       exports combine_triples (one entry per pair)
+    │   │       constructed from triples, from a dense array, or
+    │   │       compiled from an operation on the standard basis;
+    │   │       transpose; exports combine_triples (one entry per pair)
     │   └── scheme   time: a0 q + a1 qold + a2 qolder + hs S(q)  [operation_step]
     │           max_degree and partial_action are the action's, with
     │           a0 v added to the first derivative in the state: the

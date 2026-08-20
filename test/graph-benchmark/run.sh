@@ -6,3 +6,9 @@ here="$(cd "$(dirname "$0")" && pwd)"
 make -C "$here" clean >/dev/null 2>&1 || true
 make -C "$here" >/dev/null
 cd "$here" && ./run
+
+# The section-66 reference: printed beside every run so a regression
+# reads as a before/after table.
+echo ""
+echo " --- baseline (test/graph-benchmark/baseline) ---"
+cat "$here/baseline"

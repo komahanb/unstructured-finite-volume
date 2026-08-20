@@ -37,7 +37,9 @@ program bench_graph_traversal
   use class_graph_partitioner, only : partitioner, PARTITION_LINEAR
   use class_graph_assembler  , only : assembler
   use class_graph_differential_operator, only : divergence, laplacian, &
-       &                                        differential_operator
+       &                                        differential_operator, &
+       &                                        stencil_of
+  use class_graph_stencil    , only : stencil_operator
 
   implicit none
 
@@ -55,6 +57,7 @@ program bench_graph_traversal
   integer, pointer                :: fp(:)
   integer, allocatable            :: tab(:,:)
   type(differential_operator)     :: op
+  type(stencil_operator)          :: compiled
   type(partitioner)               :: p
   type(assembler)                 :: a
   class(directed_graph), allocatable       :: part
@@ -232,6 +235,21 @@ program bench_graph_traversal
   end do
   call system_clock(t1)
   call line("laplacian apply (x3)", t0, t1, rate, int(3, int64) * ne)
+
+  ! -- the compiled solver path: the laplacian's stencil, built once
+  !    (the compile reads the incidence whole) and applied three
+  !    times (the matvec every solver iteration runs).
+  call system_clock(t0)
+  compiled = stencil_of(op, g)
+  call system_clock(t1)
+  call line("stencil_of laplacian", t0, t1, rate, int(ne, int64))
+
+  call system_clock(t0)
+  do rep = 1, 3
+     call compiled % apply(g, [q], yf)
+  end do
+  call system_clock(t1)
+  call line("stencil matvec (x3)", t0, t1, rate, int(3, int64) * ne)
 
   ! -- partition construction and the field round trip, four ways.
   ! The assembler is handed r_p, the relation the cut wrote. It holds

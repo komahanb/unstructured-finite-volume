@@ -1,0 +1,26 @@
+Reference numbers for the section-66 gate (AGENTS.md), recorded
+2026-08-19 on the development machine, gfortran-15 default flags,
+700 x 700 grid: 490000 vertices, 978600 edges. The gate for the
+directed-view consolidation: no act slower than 1.10x these
+values, measured on the same machine.
+
+ directed_stored_graph constructi     0.177 s       360.5 ns/item
+        incident_edges sweep (x3)     0.049 s        33.5 ns/item
+     adjacent_vertices sweep (x3)     0.050 s        34.1 ns/item
+        outgoing_edges sweep (x3)     0.046 s        31.2 ns/item
+        incoming_edges sweep (x3)     0.045 s        30.7 ns/item
+        csr_relation construction     0.098 s       200.8 ns/item
+             csr image sweep (x3)     0.067 s        45.7 ns/item
+          csr preimage sweep (x3)     0.129 s        44.0 ns/item
+        csr image_view sweep (x3)     0.034 s        23.4 ns/item
+     csr preimage_view sweep (x3)     0.068 s        23.2 ns/item
+            divergence apply (x3)     1.000 s       340.5 ns/item
+             laplacian apply (x3)     1.604 s       546.2 ns/item
+             stencil_of laplacian     0.825 s       843.1 ns/item
+              stencil matvec (x3)     0.128 s        43.5 ns/item
+         partition_graph, 4 parts     0.253 s       516.8 ns/item
+  carry + assemble field, 4 parts     0.302 s       617.0 ns/item
+
+The already-decisive reading: the relation's pointer-slice fibre
+views (23 ns) are FASTER than the stored graph's neighbourhood
+sweeps (31-34 ns), so the re-seat has headroom, not risk.

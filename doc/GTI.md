@@ -38,14 +38,13 @@ program. No derivative tensor is stored.
 
 ### operation_linearization
 
-Two members of the linearization family. `difference_linearization`
-computes J v by finite differences of two residuals.
-`exact_linearization` computes J v = D S(q)[v] as one partial action
-in input slot 1, exact to the statement's `max_degree`.
-
-`tangent_of(action)` selects between them by the statement's
-`max_degree`: exact when it is at least one, difference otherwise.
-Every caller (newton, the marcher) selects through this one function.
+One derived operation, `linearization`: the tangent J v of a
+statement at a frozen state, built by `tangent_of(action)`. It takes
+the exact road, J v = D S(q)[v] as one partial action in input slot
+1, when the statement's `max_degree` is at least one, and finite
+differences of two residuals otherwise; its name begins `exact
+derivative of` or `derivative of` accordingly. Every caller (newton,
+the marcher) builds it through this one function.
 
 ### operation_chain_rule
 

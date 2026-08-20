@@ -27,13 +27,12 @@ program test_graph_differentiation
 
   use iso_fortran_env     , only : dp => REAL64
   use field_calculus, only : field
-  use operation_discretization      , only : linearization
   use graph_fractal       , only : graph
   use view_directed_stored         , only : stored_directed_graph
   use field_stored   , only : stored_field
   use operation_step    , only : scheme, backward_euler, bdf_variable
   use operation_chain_rule, only : chain_rule, argument_path
-  use operation_linearization, only : tangent_of
+  use operation_linearization, only : linearization, tangent_of
   use operation_marching , only : marcher, MARCH_BACKWARD
   use operation_step_policy, only : halving_policy
   use operation_newton  , only : newton
@@ -130,10 +129,10 @@ contains
   end subroutine check_the_table_seat
 
   !===================================================================!
-  ! tangent_of must return exact_linearization when the operation's
-  ! max_degree is at least one and difference_linearization
-  ! otherwise; the two are distinguished here by their name()
-  ! prefixes. The exact tangent of the quartic frozen at
+  ! tangent_of must take the exact road when the operation's
+  ! max_degree is at least one and the difference road otherwise;
+  ! the two are distinguished here by their name() prefixes. The
+  ! exact tangent of the quartic frozen at
   ! q = 1 (xi defaulting to 2) is Phi_q(1, 2) = 26, so applying it
   ! to the direction v = 3 must return 78.
   !===================================================================!
@@ -142,7 +141,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(linearization), allocatable :: tangent, slow
+    type(linearization) :: tangent, slow
     class(field), allocatable :: output
     type(stored_field) :: direction
     real(dp), allocatable :: rv(:)
@@ -197,7 +196,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(scheme) :: statement, shallow, slowstep
-    class(linearization), allocatable :: tangent, slow
+    type(linearization) :: tangent, slow
     type(chain_rule)    :: composer
     type(argument_path) :: full(2)
     type(stored_field)  :: inputs(2), v, w, one

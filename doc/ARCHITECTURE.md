@@ -77,9 +77,10 @@ Indentation is `extends`; brackets name the file.
     │           max_degree and partial_action are the action's, with
     │           a0 v added to the first derivative in the state: the
     │           tangent of the step equation is exact when S's is
-    ├── linearization  J v at a frozen state       [operation_discretization]
-    │   ├── difference_linearization               [operation_linearization]
-    │   └── exact_linearization  + tangent_of chooser  [operation_linearization]
+    ├── linearization  J v at a frozen state       [operation_linearization]
+    │       the tangent of any statement, derived by tangent_of: exact
+    │       through partial_action when max_degree >= 1, by differences
+    │       otherwise - the primal is written once
     ├── minimizer                              [operation_minimization]
     │   ├── jacobi, gauss_seidel, conjugate_gradient, gmres, multigrid
     │   ├── newton        Jacobian action = tangent_of(action)

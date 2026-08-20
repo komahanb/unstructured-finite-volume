@@ -1,24 +1,19 @@
 !=====================================================================!
-! The difference linearization: a derivative bought with two
-! residuals.
+! The linearization: the tangent J v of a statement S at a frozen
+! state q, behind the operation interface, so a minimizer sees an
+! ordinary linear operation. The primal S is written once; its
+! tangent is this derived operation, evaluated by one of two roads
+! chosen from S's max_degree:
 !
-! LEVEL 1 OF THE STRATIFICATION. The first concretion of the
-! linearization operator: the tangent of a statement S at the
-! standing state q, computed as a difference,
+!      exact       J v = D S(q) [v]                    max_degree >= 1,
+!                  one partial action in input slot 1
+!      difference  J v ~ ( S(q + eps v) - S(q) ) / eps  otherwise,
+!                  two residuals, about eight digits
 !
-!      J v  ~  ( S(q + eps v) - S(q) ) / eps
-!
-! wrapped as an operation, so whoever governs it - newton, one rank
-! up - sees an ordinary linear question and asks no questions. The
-! difference buys generality and pays in precision: the residual
-! floor is the machine epsilon over the step times the residual
-! scale, about eight digits. A statement that can linearize itself
-! exactly joins this family as a second concretion when it arrives,
-! and the governor never notices the change.
-!
-! freeze moves the standing state between the governor's steps; the
-! base residual rides along when the caller already holds it, and is
-! measured here once when it does not.
+! freeze moves the frozen state between a governor's steps; a base
+! residual handed to freeze is used by the difference road and
+! ignored by the exact one. The tangent linearizes S : U -> U in its
+! first input slot only.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -30,15 +25,15 @@ module operation_linearization
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use graph_fractal      , only : graph
-  use operation_discretization     , only : linearization
   use field_stored  , only : stored_field
 
   implicit none
 
   private
-  public :: difference_linearization
+  public :: linearization
+  public :: tangent_of
 
-  type, extends(linearization) :: difference_linearization
+  type, extends(operation) :: linearization
 
      class(operation), allocatable :: of
 
@@ -48,83 +43,57 @@ module operation_linearization
 
    contains
 
-     procedure :: name   => derivative_name
-     procedure :: domain => derivative_domain
-     procedure :: apply  => derivative_apply
-     procedure :: freeze => derivative_freeze
+     procedure :: name   => linearization_name
+     procedure :: domain => linearization_domain
+     procedure :: apply  => linearization_apply
+     procedure :: freeze => linearization_freeze
+     procedure :: exact  => linearization_exact
 
-  end type difference_linearization
-
-  interface difference_linearization
-     module procedure create_difference
-  end interface difference_linearization
-
-!=====================================================================!
-! Exact linearization: the second concrete member of the
-! linearization family. The tangent of a statement S with
-! max_degree at least one, at the frozen state q, is one partial
-! action,
-!
-!      J v = D S(q) [v],
-!
-! exact to the statement's declared max_degree - no finite
-! difference. freeze moves the frozen state; a base residual
-! passed to freeze is accepted and ignored, since an exact tangent
-! does not use the residual value. Like the difference member,
-! this linearizes S : U -> U in its first input slot only.
-!
-!=====================================================================!
-
-  public :: exact_linearization
-  public :: tangent_of
-
-  type, extends(linearization) :: exact_linearization
-
-     class(operation), allocatable :: of
-
-     real(dp), allocatable :: at(:)
-
-   contains
-
-     procedure :: name   => exact_name
-     procedure :: domain => exact_domain
-     procedure :: apply  => exact_apply
-     procedure :: freeze => exact_freeze
-
-  end type exact_linearization
-
-  interface exact_linearization
-     module procedure create_exact
-  end interface exact_linearization
+  end type linearization
 
 contains
 
   !===================================================================!
-  ! Built about a statement; the state and base may arrive now or
+  ! The tangent of a statement; the state and base may arrive now or
   ! through freeze.
   !===================================================================!
 
-  function create_difference(of, at, base) result(this)
+  function tangent_of(of, at, base) result(this)
 
-    class(operation), intent(in) :: of
-    real(dp), intent(in), optional     :: at(:)
-    real(dp), intent(in), optional     :: base(:)
-    type(difference_linearization)     :: this
+    class(operation), intent(in)   :: of
+    real(dp), intent(in), optional :: at(:)
+    real(dp), intent(in), optional :: base(:)
+    type(linearization)            :: this
 
     allocate(this % of, source=of)
     if (present(at))   allocate(this % at  , source=at)
     if (present(base)) allocate(this % base, source=base)
 
-  end function create_difference
+  end function tangent_of
 
   !===================================================================!
-  ! Move the standing state. The base residual is stored when handed
-  ! over, and forgotten otherwise so apply measures it fresh.
+  ! The exact road is open when the statement computes at least a
+  ! first partial action.
   !===================================================================!
 
-  subroutine derivative_freeze(this, at, base)
+  pure function linearization_exact(this) result(exact)
 
-    class(difference_linearization), intent(inout) :: this
+    class(linearization), intent(in) :: this
+    logical :: exact
+
+    exact = this % of % max_degree() >= 1
+
+  end function linearization_exact
+
+  !===================================================================!
+  ! Move the frozen state. The base residual is stored when handed
+  ! over, and forgotten otherwise so the difference road measures it
+  ! fresh.
+  !===================================================================!
+
+  subroutine linearization_freeze(this, at, base)
+
+    class(linearization), intent(inout) :: this
     real(dp), intent(in)           :: at(:)
     real(dp), intent(in), optional :: base(:)
 
@@ -136,270 +105,72 @@ contains
        if (allocated(this % base)) deallocate(this % base)
     end if
 
-  end subroutine derivative_freeze
+  end subroutine linearization_freeze
 
-  pure function derivative_name(this) result(name)
+  pure function linearization_name(this) result(name)
 
-    class(difference_linearization), intent(in) :: this
+    class(linearization), intent(in) :: this
     character(len=:), allocatable :: name
 
-    name = 'derivative of ' // this % of % name()
+    if (this % exact()) then
+       name = 'exact derivative of ' // this % of % name()
+    else
+       name = 'derivative of ' // this % of % name()
+    end if
 
-  end function derivative_name
+  end function linearization_name
 
-  subroutine derivative_domain(this, input_graph, domain, num_entries)
+  subroutine linearization_domain(this, input_graph, domain, num_entries)
 
-    class(difference_linearization), intent(in) :: this
-    class(directed_graph), intent(in)                    :: input_graph
+    class(linearization), intent(in)  :: this
+    class(directed_graph), intent(in) :: input_graph
     type(graph), intent(out) :: domain
-    integer        , intent(out) :: num_entries
+    integer    , intent(out) :: num_entries
 
     call this % of % domain(input_graph, domain, num_entries)
 
-  end subroutine derivative_domain
+  end subroutine linearization_domain
 
   !===================================================================!
-  ! J v as two residuals and a difference. The direction arrives as
-  ! the input field; the answer leaves on the same cells.
+  ! J v at the frozen state, on the statement's own domain. Checks,
+  ! each stopping the program: the domain must be nonempty; a state
+  ! must have been frozen; the frozen state must hold a whole number
+  ! of components per domain member; the direction must live on the
+  ! statement's domain and match the frozen state's size; every
+  ! result of the statement must live on that same domain, because
+  ! a field of equal length from another domain would pass
+  ! otherwise. Without input data the direction is zero.
   !===================================================================!
 
-  !===================================================================!
-  ! THE DIFFERENCE IS TAKEN WHERE THE OPERATION LIVES.
-  !
-  ! derivative_domain has always delegated to the underlying
-  ! operation; the states this routine builds now do the same. A
-  ! finite difference of an operation is a statement about that
-  ! operation's own domain, and the graph it is reached through was
-  ! never the seat of it.
-  !
-  ! For every operation that reads its domain off the graph - which
-  ! is all of them on the directed-graph road - the domain asked for
-  ! here is exactly the vertex set that was being used before, so
-  ! nothing a graph-based caller sees changes.
-  !
-  ! THIS CITIZEN REMAINS SAME-DOMAIN. It differences L : U -> U and
-  ! nothing wider. No rectangular U -> Y, no transpose, no reverse
-  ! action: those would be a different mathematical object, and this
-  ! correction deliberately does not become one.
-  !===================================================================!
+  subroutine linearization_apply(this, input_graph, input_data, output)
 
-  subroutine derivative_apply(this, input_graph, input_data, output)
-
-    class(difference_linearization), intent(in)    :: this
-    class(directed_graph), intent(in)                       :: input_graph
+    class(linearization), intent(in)         :: this
+    class(directed_graph), intent(in)        :: input_graph
     class(field), intent(in), optional       :: input_data(:)
     class(field), allocatable, intent(inout) :: output
 
-    type(stored_field)   :: state
+    type(stored_field)   :: state, direction, out
     class(field), allocatable :: pushed
     type(graph) :: on, given
-    integer         :: n_on, n_given
     real(dp), allocatable :: v(:), y(:), base(:)
-    integer :: n, num_components
+    integer :: n_on, num_components
 
     call this % of % domain(input_graph, on, n_on)
 
-    n = n_on
-    if (n <= 0) then
-       error stop 'linearization: the operation''s domain is empty'
-    end if
-    if (mod(size(this % at), n) /= 0) then
-       error stop 'linearization: the frozen state must carry a whole number &
-            &per member of the operation''s domain'
-    end if
-
-    ! The width the frozen state carries. A statement of several
-    ! numbers per member is differenced whole, like any other.
-    num_components = max(size(this % at) / n, 1)
-
-    if (present(input_data)) then
-       given   = input_data(1) % domain()
-       n_given = input_data(1) % num_entries()
-       if (.not. given % same_as(on)) then
-          error stop 'linearization: the direction must live on the operation''s domain'
-       end if
-       call input_data(1) % real_vector(v)
-       if (size(v) /= size(this % at)) then
-          error stop 'linearization: the direction must match the frozen state''s width'
-       end if
-    else
-       allocate(v(n * num_components))
-       v = 0.0_dp
-    end if
-
-    ! The base residual: taken from the freeze when it rode along,
-    ! measured here once when it did not.
-    if (allocated(this % base)) then
-       base = this % base
-    else
-       state = stored_field('state', on, n_on, num_components=num_components)
-       call state % set_real_vector(this % at)
-       call this % of % apply(input_graph, [state], pushed)
-       call answered_on(pushed, on)
-       call pushed % real_vector(base)
-    end if
-
-    state = stored_field('state', on, n_on, num_components=num_components)
-    call state % set_real_vector(this % at + this % step * v)
-
-    call this % of % apply(input_graph, [state], pushed)
-    call answered_on(pushed, on)
-    call pushed % real_vector(y)
-
-    y = (y - base) / this % step
-
-    state = stored_field('J v', on, n_on, num_components=num_components)
-    call state % set_real_vector(y)
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=state)
-
-  end subroutine derivative_apply
-
-  !===================================================================!
-  ! A same-domain difference subtracts two answers, so both must
-  ! have come from the same place. Equal length is not that claim.
-  !===================================================================!
-
-  subroutine answered_on(answer, expected)
-
-    class(field), intent(in) :: answer
-    type(graph)   , intent(in) :: expected
-
-    type(graph) :: got
-
-    got = answer % domain()
-    if (.not. got % same_as(expected)) then
-       error stop 'linearization: the operation must answer on its stated domain'
-    end if
-
-  end subroutine answered_on
-
-
-  !===================================================================!
-  ! Select the linearization by the statement's max_degree: exact
-  ! when it computes at least a first partial action, difference
-  ! otherwise. Callers (newton, the marcher) use this instead of
-  ! dispatching themselves, so the rule exists in one place.
-  !===================================================================!
-
-  function tangent_of(action) result(tangent)
-
-    class(operation), intent(in)         :: action
-    class(linearization), allocatable :: tangent
-
-    if (action % max_degree() >= 1) then
-       allocate(tangent, source=exact_linearization(action))
-    else
-       allocate(tangent, source=difference_linearization(action))
-    end if
-
-  end function tangent_of
-
-  !===================================================================!
-  ! Construct about a statement; the state may arrive now or later
-  ! through freeze. A statement with max_degree 0 is refused,
-  ! because it declares no partial action to take the tangent from.
-  !===================================================================!
-
-  function create_exact(of, at) result(this)
-
-    class(operation), intent(in)   :: of
-    real(dp), intent(in), optional :: at(:)
-    type(exact_linearization)      :: this
-
-    if (of % max_degree() < 1) then
-       error stop 'linearization: an exact tangent needs max_degree at least one'
-    end if
-
-    allocate(this % of, source=of)
-    if (present(at)) allocate(this % at, source=at)
-
-  end function create_exact
-
-  !===================================================================!
-  ! Move the frozen state. base is part of the family's freeze
-  ! signature and is ignored here.
-  !===================================================================!
-
-  subroutine exact_freeze(this, at, base)
-
-    class(exact_linearization), intent(inout) :: this
-    real(dp), intent(in)           :: at(:)
-    real(dp), intent(in), optional :: base(:)
-
-    if (present(base)) then
-       associate(unread => base)
-       end associate
-    end if
-
-    this % at = at
-
-  end subroutine exact_freeze
-
-  pure function exact_name(this) result(name)
-
-    class(exact_linearization), intent(in) :: this
-    character(len=:), allocatable :: name
-
-    name = 'exact derivative of ' // this % of % name()
-
-  end function exact_name
-
-  subroutine exact_domain(this, input_graph, domain, num_entries)
-
-    class(exact_linearization), intent(in) :: this
-    class(directed_graph), intent(in)      :: input_graph
-    type(graph), intent(out) :: domain
-    integer        , intent(out) :: num_entries
-
-    call this % of % domain(input_graph, domain, num_entries)
-
-  end subroutine exact_domain
-
-  !===================================================================!
-  ! Apply J v as one partial action in input slot 1 at the frozen
-  ! state. Checks, each stopping the program: the domain must be
-  ! nonempty; a state must have been frozen; the frozen state must
-  ! hold a whole number of components per domain member; the
-  ! direction must live on the statement's domain and match the
-  ! frozen state's size. Without input data the result is zero,
-  ! returned without calling the statement.
-  !===================================================================!
-
-  subroutine exact_apply(this, input_graph, input_data, output)
-
-    class(exact_linearization), intent(in)          :: this
-    class(directed_graph), intent(in)               :: input_graph
-    class(field), intent(in), optional        :: input_data(:)
-    class(field), allocatable, intent(inout)  :: output
-
-    type(stored_field)     :: state, direction, zero
-    type(graph) :: on, given
-    real(dp), allocatable :: v(:)
-    integer         :: n_on
-    integer         :: n, num_components
-
-    call this % of % domain(input_graph, on, n_on)
-
-    n = n_on
-    if (n <= 0) then
+    if (n_on <= 0) then
        error stop 'linearization: the operation''s domain is empty'
     end if
     if (.not. allocated(this % at)) then
-       error stop 'linearization: an exact tangent is taken at a frozen state'
+       error stop 'linearization: the tangent is taken at a frozen state'
     end if
-    if (mod(size(this % at), n) /= 0) then
+    if (mod(size(this % at), n_on) /= 0) then
        error stop 'linearization: the frozen state must carry a whole number &
             &per member of the operation''s domain'
     end if
 
-    num_components = max(size(this % at) / n, 1)
-
-    state = stored_field('state', on, n_on, num_components=num_components)
-    call state % set_real_vector(this % at)
+    num_components = max(size(this % at) / n_on, 1)
 
     if (present(input_data)) then
-
        given = input_data(1) % domain()
        if (.not. given % same_as(on)) then
           error stop 'linearization: the direction must live on the operation''s domain'
@@ -408,27 +179,68 @@ contains
        if (size(v) /= size(this % at)) then
           error stop 'linearization: the direction must match the frozen state''s width'
        end if
+    else
+       allocate(v(size(this % at)))
+       v = 0.0_dp
+    end if
 
-       ! copy into a concrete field: a polymorphic entity cannot
-       ! appear in an array constructor
+    state = stored_field('state', on, n_on, num_components=num_components)
+    call state % set_real_vector(this % at)
+
+    if (this % exact()) then
+
        direction = stored_field('direction', on, n_on, num_components=num_components)
        call direction % set_real_vector(v)
-
-       call this % of % partial_action(input_graph, [state], [1], &
-            & [direction], output)
+       call this % of % partial_action(input_graph, [state], [1], [direction], pushed)
+       call require_domain(pushed, on)
+       call pushed % real_vector(y)
 
     else
 
-       ! no direction means the zero direction, and the tangent of
-       ! zero is zero
-       zero = stored_field('J v', on, n_on, num_components=num_components)
-       call zero % set_real_vector(spread(0.0_dp, 1, size(this % at)))
-       if (allocated(output)) deallocate(output)
-       allocate(output, source=zero)
+       ! the base residual: from freeze when handed over, measured
+       ! here once when not
+       if (allocated(this % base)) then
+          base = this % base
+       else
+          call this % of % apply(input_graph, [state], pushed)
+          call require_domain(pushed, on)
+          call pushed % real_vector(base)
+       end if
+
+       call state % set_real_vector(this % at + this % step * v)
+       call this % of % apply(input_graph, [state], pushed)
+       call require_domain(pushed, on)
+       call pushed % real_vector(y)
+
+       y = (y - base) / this % step
 
     end if
 
-  end subroutine exact_apply
+    out = stored_field('J v', on, n_on, num_components=num_components)
+    call out % set_real_vector(y)
+    if (allocated(output)) deallocate(output)
+    allocate(output, source=out)
 
+  end subroutine linearization_apply
+
+  !===================================================================!
+  ! A same-domain tangent subtracts or contracts results, so each
+  ! must have come from the statement's domain; equal length is not
+  ! that claim.
+  !===================================================================!
+
+  subroutine require_domain(result, expected)
+
+    class(field), intent(in) :: result
+    type(graph) , intent(in) :: expected
+
+    type(graph) :: got
+
+    got = result % domain()
+    if (.not. got % same_as(expected)) then
+       error stop 'linearization: the operation result lives on its stated domain'
+    end if
+
+  end subroutine require_domain
 
 end module operation_linearization

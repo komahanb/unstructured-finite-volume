@@ -1,29 +1,19 @@
 !=====================================================================!
 ! LEVEL 6 OF THE TOWER: DISCRETIZATION CALCULUS
 !
-! The two abstract contracts by which a continuous statement
-! becomes discrete algebra:
-!
-!      discretization   an operation built from an operation by
-!                       binding it to a graph's arithmetic; owes
-!                       its dependency pattern as a graph
-!      linearization    an operation built from an operation by
-!                       freezing a state: the tangent J v at that
-!                       state, behind the ordinary operation
-!                       interface; freeze moves the state
-!
-! Concrete members: stencil and scheme discretize on the dependent
-! and independent axes; difference_linearization and
-! exact_linearization are the two tangents, selected by tangent_of
-! from the operation's max_degree; chain_rule composes partial
-! actions to any degree.
+! The abstract contract by which a continuous statement becomes
+! discrete algebra: a discretization is an operation built from an
+! operation by binding it to a graph's arithmetic, and it owes its
+! dependency pattern as a graph. stencil and scheme discretize on the
+! dependent and independent axes; the tangent of any statement is the
+! derived operation in operation_linearization; chain_rule composes
+! partial actions to any degree.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module operation_discretization
 
-  use iso_fortran_env     , only : dp => REAL64
   use view_directed , only : directed_graph
   use operation_action, only : operation
 
@@ -31,7 +21,6 @@ module operation_discretization
 
   private
   public :: discretization
-  public :: linearization
 
   !===================================================================!
   ! DISCRETIZATION. Owes by contract its dependency
@@ -49,22 +38,6 @@ module operation_discretization
 
   end type discretization
 
-  !===================================================================!
-  ! LINEARIZATION. The tangent of S at a frozen state,
-  ! behind the operation interface, so a minimizer sees an
-  ! ordinary linear operation. One deferred routine beyond the
-  ! interface: freeze, which moves the state (and may cache the
-  ! base residual) between a governor's steps.
-  !===================================================================!
-
-  type, abstract, extends(operation) :: linearization
-
-   contains
-
-     procedure(linearization_freeze_interface), deferred :: freeze
-
-  end type linearization
-
   abstract interface
 
      !===============================================================!
@@ -77,18 +50,6 @@ module operation_discretization
        class(discretization), intent(in) :: this
        class(directed_graph), allocatable, intent(out)     :: pattern
      end subroutine discretization_pattern_interface
-
-     !===============================================================!
-     ! Move the frozen state; base optionally carries the residual
-     ! at that state for members that cache it.
-     !===============================================================!
-
-     subroutine linearization_freeze_interface(this, at, base)
-       import :: linearization, dp
-       class(linearization), intent(inout) :: this
-       real(dp), intent(in)           :: at(:)
-       real(dp), intent(in), optional :: base(:)
-     end subroutine linearization_freeze_interface
 
   end interface
 

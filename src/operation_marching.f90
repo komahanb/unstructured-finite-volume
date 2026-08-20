@@ -49,8 +49,7 @@ module operation_marching
   use view_directed_stored        , only : stored_directed_graph
   use operation_step   , only : scheme, bdf
   use operation_minimization , only : minimizer
-  use operation_discretization     , only : linearization
-  use operation_linearization, only : tangent_of
+  use operation_linearization, only : linearization, tangent_of
   use operation_chain_rule, only : chain_rule, argument_path, &
        & path_derivative
   use operation_step_policy, only : step_policy
@@ -370,7 +369,7 @@ contains
 
     type(scheme)       :: statement
     type(dense_direct) :: direct
-    class(linearization), allocatable :: tangent
+    type(linearization) :: tangent
     type(stencil) :: compiled, adjoint
     real(dp), allocatable :: seed(:), lambda_e(:), carry_one(:), carry_two(:)
     real(dp) :: achieved
@@ -551,7 +550,7 @@ contains
     type(chain_rule)            :: composer
     type(scheme)                :: statement
     type(dense_direct)          :: direct
-    class(linearization), allocatable :: tangent
+    type(linearization) :: tangent
     type(argument_path), allocatable :: assembled(:)
     type(stored_field), allocatable         :: inputs(:)
     class(field), allocatable  :: total_field

@@ -20,7 +20,7 @@
 !
 ! xi is read from input slot 2 when the caller passes two input
 ! fields, and from the xi_default component otherwise. The chain
-! rule tests pass both inputs; exact_linearization passes only the
+! rule tests pass both inputs; the tangent passes only the
 ! state, so the default keeps one operation usable by both.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)

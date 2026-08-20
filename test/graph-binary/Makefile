@@ -6,7 +6,7 @@ include ../../Makefile.in
 # fixture, one truth.
 #=====================================================================#
 
-# Ufvm (-I../../src for scalar.fpp, -I../../lib for the .mod files)
+# Ufvm (-I../../lib for the .mod files)
 F90FLAGS += -I../../lib/ -I../../src/
 LDFLAGS += -L../../lib/ ../../lib/libufvm.a
 

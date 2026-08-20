@@ -2079,6 +2079,13 @@ Do not rename modules until their responsibilities are actually separated.
 
 Architecture first, filenames second.
 
+Status (2026-08-19): the separation precondition is met — the prime
+structure stands (doc/ARCHITECTURE.md) and every module has one
+responsibility. The naming pass that this section defers is executed
+under the naming law in doc/coding-standards.md: modules are
+`<prime>_<subject>` (namespace order), types read english order, so
+no type can collide with a module name.
+
 ---
 
 # 59. Migration strategy

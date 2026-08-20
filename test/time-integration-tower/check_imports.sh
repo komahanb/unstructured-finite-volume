@@ -252,7 +252,7 @@ if [ "$1" = "--selftest" ]; then
     # its business.
     permits level-3-graph fractal_graph
     permits level-3-graph graph_relational_view
-    refuses level-3-graph
+    refuses level-3-graph graph_profile
     refuses level-3-graph graph_algorithms
 
     # L4 earns the interpretation.

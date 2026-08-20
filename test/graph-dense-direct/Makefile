@@ -6,7 +6,7 @@ include ../../Makefile.in
 # outlive its target.
 #=====================================================================#
 
-# Ufvm (-I../../src for scalar.fpp, -I../../lib for the .mod files)
+# Ufvm (-I../../lib for the .mod files)
 F90FLAGS += -I../../lib/ -I../../src/ -Wtarget-lifetime
 LDFLAGS += -L../../lib/ ../../lib/libufvm.a
 

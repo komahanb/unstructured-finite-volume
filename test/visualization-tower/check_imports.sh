@@ -376,7 +376,7 @@ if [ "$1" = "--selftest" ]; then
     #      no ordinary-graph reading; because no level may name the
     #      profile, that conclusion cannot have been reached with one.
     for lvl in $with_five; do
-        refuses "$lvl"
+        refuses "$lvl" graph_profile
         refuses "$lvl" graph_algorithms
         refuses "$lvl" class_graph
         refuses "$lvl" class_stored_graph
@@ -392,7 +392,7 @@ if [ "$1" = "--selftest" ]; then
     refuses common/visualization_assert.f90 fractal_graph
     permits common/structural_renderer_fixture.f90 visualization_carriers_fixture
     refuses common/structural_renderer_fixture.f90 graph_relational_view
-    refuses common/structural_renderer_fixture.f90
+    refuses common/structural_renderer_fixture.f90 graph_profile
     refuses common/visualization_relations_fixture.f90 graph_relation_algebra
     refuses common/visualization_algebra_fixture.f90 graph_relational_view
 

@@ -49,3 +49,4 @@ test/graph-set-view/run
 test/graph-set-view/refusal
 test/graph-inclusion/run
 test/graph-inclusion/refusal
+test/graph-identity-map/labels

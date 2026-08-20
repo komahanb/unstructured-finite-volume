@@ -45,8 +45,9 @@ remain binding, and what is still open.
 - One Jacobian per edge serves every derivative order in
   `march_directional`; only the right-hand side changes with the
   order.
-- Linearization dispatch happens only in `tangent_of`; callers do
-  not inspect statement types themselves.
+- Linearization dispatch happens only in `tangent_of`, by the
+  statement's `max_degree`; callers do not inspect statement types
+  themselves.
 - A step policy reads scalars only (estimate, step, attempt count),
   never a state, a graph, or a statement.
 - A coupled multi-stage (block implicit) scheme is one state of

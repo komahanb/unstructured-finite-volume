@@ -48,8 +48,7 @@ module operation_marching
   use view_directed_stored        , only : stored_directed_graph
   use operation_step   , only : scheme, bdf
   use operation_minimization , only : minimizer
-  use operation_discretization     , only : linearization, &
-       & differentiable_operation
+  use operation_discretization     , only : linearization
   use operation_linearization, only : tangent_of
   use operation_chain_rule, only : chain_rule, argument_path, &
        & path_derivative
@@ -493,7 +492,7 @@ contains
        & sensitivities, steps, parameters, paths)
 
     class(marcher), intent(inout)               :: this
-    class(differentiable_operation), intent(in) :: action
+    class(operation), intent(in)                :: action
     class(directed_graph), intent(in)           :: on
     integer, intent(in)                         :: nsteps
     real(dp), intent(in)                        :: trajectory(:,:)
@@ -519,6 +518,13 @@ contains
 
     if (order < 1) then
        error stop 'march_directional: the order is positive'
+    end if
+
+    ! degree s always requests the order-s partial (the all-ones
+    ! partition), so a shallower calculus is refused before any work
+    if (action % max_degree() < order) then
+       error stop 'march_directional: the action''s max_degree covers the &
+            &requested order'
     end if
 
     call require_valid_steps(steps, nsteps)

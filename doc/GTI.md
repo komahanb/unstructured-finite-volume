@@ -24,16 +24,17 @@ dense matrix is required, by evaluating it on the standard basis.
 
 ## Modules
 
-### graph_calculus: differentiable_operation
+### operation_action: max_degree and partial_action
 
-An operation that, beyond `apply`, computes exact partial actions:
+Every operation reports, beyond `apply`, its exact partial actions:
 
     partial_action(input_graph, input_data, slots, directions, output)
 
 is the statement differentiated once per entry of `slots(:)`,
 contracted against the matching direction field, returned on the
 statement's domain. `max_degree()` declares how deep this calculus
-goes. No derivative tensor is stored.
+goes; the default is 0, and the default `partial_action` stops the
+program. No derivative tensor is stored.
 
 ### operation_linearization
 
@@ -42,9 +43,9 @@ computes J v by finite differences of two residuals.
 `exact_linearization` computes J v = D S(q)[v] as one partial action
 in input slot 1, exact to the statement's `max_degree`.
 
-`tangent_of(action)` selects between them by the statement's type:
-exact for a `differentiable_operation`, difference otherwise. Every
-caller (newton, the marcher) selects through this one function.
+`tangent_of(action)` selects between them by the statement's
+`max_degree`: exact when it is at least one, difference otherwise.
+Every caller (newton, the marcher) selects through this one function.
 
 ### operation_chain_rule
 
@@ -179,7 +180,7 @@ restoring the prior row exactly.
 
 | Old gti_* content                          | Current location                          |
 |--------------------------------------------|-------------------------------------------|
-| differentiable form contract               | `graph_calculus` (differentiable_operation)|
+| differentiable form contract               | `operation_action` (max_degree, partial_action) |
 | form evaluator, evaluation point, buffers  | deleted; fields and domain checks cover it |
 | chain-rule assembler                       | `operation_chain_rule`                   |
 | motifs, motif builders, variable-step rows | `operation_step` (set_bdf)               |

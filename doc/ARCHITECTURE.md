@@ -62,6 +62,10 @@ Indentation is `extends`; brackets name the file.
         └── stored_functional                  [field_functional]
 
     operation                                  [operation_action]
+    │     name, domain, apply; and max_degree (0 unless overridden)
+    │     with partial_action, so differentiability is a capability
+    │     of every operation - tangent_of picks the exact tangent
+    │     when max_degree >= 1, the difference tangent otherwise
     ├── reduction   field -> functional  (sum, average, norm, ...)   [operation_reduction]
     ├── broadcast   functional -> field  (copy, share)               [operation_reduction]
     ├── discretization                             [operation_discretization]
@@ -72,7 +76,6 @@ Indentation is `extends`; brackets name the file.
     ├── linearization  J v at a frozen state       [operation_discretization]
     │   ├── difference_linearization               [operation_linearization]
     │   └── exact_linearization  + tangent_of chooser  [operation_linearization]
-    ├── differentiable_operation  exact partial actions to max_degree   [operation_discretization]
     ├── minimizer                              [operation_minimization]
     │   ├── jacobi, gauss_seidel, conjugate_gradient, gmres, multigrid
     │   ├── newton        Jacobian action = tangent_of(action)

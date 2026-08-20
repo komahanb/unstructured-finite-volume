@@ -125,10 +125,10 @@ contains
   end subroutine check_the_table_seat
 
   !===================================================================!
-  ! tangent_of must return exact_linearization for a
-  ! differentiable_operation and difference_linearization for any
-  ! other operation; the two are distinguished here by their
-  ! name() prefixes. The exact tangent of the quartic frozen at
+  ! tangent_of must return exact_linearization when the operation's
+  ! max_degree is at least one and difference_linearization
+  ! otherwise; the two are distinguished here by their name()
+  ! prefixes. The exact tangent of the quartic frozen at
   ! q = 1 (xi defaulting to 2) is Phi_q(1, 2) = 26, so applying it
   ! to the direction v = 3 must return 78.
   !===================================================================!
@@ -145,6 +145,8 @@ contains
     tangent = tangent_of(quartic)
     slow    = tangent_of(lin)
 
+    call report(lin % max_degree() == 0 .and. quartic % max_degree() == 4, &
+         & "max_degree is 0 unless the operation differentiates itself", nfail)
     call report(index(tangent % name(), 'exact derivative of') == 1, &
          & "tangent_of picks the exact linearization when differentiable", &
          & nfail)

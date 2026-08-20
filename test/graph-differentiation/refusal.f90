@@ -24,6 +24,12 @@
 !                    action and trajectory it needs
 !      unfrozen      an exact tangent applied before freeze
 !      eagerclock    march_adaptive with duration 0
+!      nodegree      an exact tangent about an operation with
+!                    max_degree 0
+!      flatcalculus  a partial action requested from an operation
+!                    that declares none
+!      shallowcalculus  march_directional past the action's
+!                    max_degree
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -41,12 +47,13 @@ program refusal
   use operation_marching , only : marcher, MARCH_BACKWARD
   use operation_step_policy, only : halving_policy
   use toy_differentiable_forms, only : quartic_form, equilibrium_law, &
-       & scalar_pair, fill_path
+       & linear_law, scalar_pair, fill_path
 
   implicit none
 
   type(quartic_form)    :: quartic
   type(equilibrium_law) :: equil
+  type(linear_law)      :: lin
 
   type(stored_directed_graph) :: lone
   type(graph)             :: cells
@@ -151,6 +158,21 @@ program refusal
      q = [2.0_dp]
      call clock % march_adaptive(equil, lone, q, 0.0_dp, policy, 3, &
           & taken, completed)
+
+  case ('nodegree')
+
+     tangent = exact_linearization(lin)
+
+  case ('flatcalculus')
+
+     direction = stored_field('v', cells, 1, num_components=1)
+     call direction % set_real_vector([1.0_dp])
+     call lin % partial_action(lone, [direction], [1], [direction], output)
+
+  case ('shallowcalculus')
+
+     call clock % march_directional(lin, lone, 2, trajectory, 1, &
+          & sensitivities)
 
   case default
 

@@ -41,7 +41,7 @@ module operation_chain_rule
   use view_directed , only : directed_graph
   use field_calculus, only : field
   use graph_fractal       , only : graph
-  use operation_discretization      , only : differentiable_operation
+  use operation_action    , only : operation
   use field_stored   , only : stored_field
 
   implicit none
@@ -132,7 +132,7 @@ contains
        & paths, output)
 
     class(chain_rule)              , intent(in)    :: this
-    class(differentiable_operation), intent(in)    :: statement
+    class(operation)               , intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
     type(stored_field)                    , intent(in)    :: input_data(:)
     integer                        , intent(in)    :: degree
@@ -338,7 +338,7 @@ contains
   subroutine assemble_partition(statement, input_graph, input_data, &
        & partition, paths, running, started, num_components)
 
-    class(differentiable_operation), intent(in)    :: statement
+    class(operation)               , intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
     type(stored_field)                    , intent(in)    :: input_data(:)
     type(derivative_partition)     , intent(in)    :: partition
@@ -399,7 +399,7 @@ contains
   subroutine emit_term(statement, input_graph, input_data, partition, &
        & paths, chosen, running, started, num_components)
 
-    class(differentiable_operation), intent(in)    :: statement
+    class(operation)               , intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
     type(stored_field)                    , intent(in)    :: input_data(:)
     type(derivative_partition)     , intent(in)    :: partition
@@ -454,7 +454,7 @@ contains
   subroutine write_output(statement, input_graph, input_data, running, &
        & started, num_components, output)
 
-    class(differentiable_operation), intent(in)    :: statement
+    class(operation)               , intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
     type(stored_field)                    , intent(in)    :: input_data(:)
     real(dp), allocatable          , intent(inout) :: running(:)

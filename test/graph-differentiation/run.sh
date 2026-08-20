@@ -19,10 +19,13 @@ declare -A reason=(
   [blindreverse]="march_adjoint: the implicit reverse traversal needs the action"
   [unfrozen]="linearization: an exact tangent is taken at a frozen state"
   [eagerclock]="march_adaptive: the duration is positive"
+  [nodegree]="linearization: an exact tangent needs max_degree at least one"
+  [flatcalculus]="operation: the requested order is within max_degree"
+  [shallowcalculus]="march_directional: the action's max_degree covers the requested order"
 )
 for case in bdforder bdfcount bdfstep dupslot badslot negdegree \
             pastcalculus hugedegree statepath orderzero blindreverse \
-            unfrozen eagerclock; do
+            unfrozen eagerclock nodegree flatcalculus shallowcalculus; do
     if ./refusal "$case" >refusal.out 2>&1; then echo " FAIL : '$case' accepted"; exit 1; fi
     grep -q "${reason[$case]}" refusal.out && echo " PASS : '$case' is refused, loudly" || { cat refusal.out; exit 1; }
 done

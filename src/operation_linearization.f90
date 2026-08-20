@@ -30,8 +30,7 @@ module operation_linearization
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use graph_fractal      , only : graph
-  use operation_discretization     , only : linearization, &
-       & differentiable_operation
+  use operation_discretization     , only : linearization
   use field_stored  , only : stored_field
 
   implicit none
@@ -62,8 +61,9 @@ module operation_linearization
 
 !=====================================================================!
 ! Exact linearization: the second concrete member of the
-! linearization family. The tangent of a differentiable statement
-! S at the frozen state q is one partial action,
+! linearization family. The tangent of a statement S with
+! max_degree at least one, at the frozen state q, is one partial
+! action,
 !
 !      J v = D S(q) [v],
 !
@@ -80,7 +80,7 @@ module operation_linearization
 
   type, extends(linearization) :: exact_linearization
 
-     class(differentiable_operation), allocatable :: of
+     class(operation), allocatable :: of
 
      real(dp), allocatable :: at(:)
 
@@ -276,10 +276,10 @@ contains
 
 
   !===================================================================!
-  ! Select the linearization by the statement's type: exact for a
-  ! differentiable_operation, difference for anything else.
-  ! Callers (newton, the marcher) use this instead of dispatching
-  ! themselves, so the dispatch rule exists in one place.
+  ! Select the linearization by the statement's max_degree: exact
+  ! when it computes at least a first partial action, difference
+  ! otherwise. Callers (newton, the marcher) use this instead of
+  ! dispatching themselves, so the rule exists in one place.
   !===================================================================!
 
   function tangent_of(action) result(tangent)
@@ -287,25 +287,29 @@ contains
     class(operation), intent(in)         :: action
     class(linearization), allocatable :: tangent
 
-    select type (action)
-    class is (differentiable_operation)
+    if (action % max_degree() >= 1) then
        allocate(tangent, source=exact_linearization(action))
-    class default
+    else
        allocate(tangent, source=difference_linearization(action))
-    end select
+    end if
 
   end function tangent_of
 
   !===================================================================!
-  ! Construct from a differentiable statement; the state may
-  ! arrive now or later through freeze.
+  ! Construct about a statement; the state may arrive now or later
+  ! through freeze. A statement with max_degree 0 is refused,
+  ! because it declares no partial action to take the tangent from.
   !===================================================================!
 
   function create_exact(of, at) result(this)
 
-    class(differentiable_operation), intent(in) :: of
-    real(dp), intent(in), optional              :: at(:)
-    type(exact_linearization)                   :: this
+    class(operation), intent(in)   :: of
+    real(dp), intent(in), optional :: at(:)
+    type(exact_linearization)      :: this
+
+    if (of % max_degree() < 1) then
+       error stop 'linearization: an exact tangent needs max_degree at least one'
+    end if
 
     allocate(this % of, source=of)
     if (present(at)) allocate(this % at, source=at)

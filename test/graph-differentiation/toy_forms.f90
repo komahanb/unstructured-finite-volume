@@ -9,7 +9,7 @@
 !      power8_form      Phi(q, xi) = (q + xi)^8,     max_degree 8
 !      equilibrium_law  S_i(q, xi) = q_i^2 - xi,     max_degree 8;
 !                       every partial of order 3 or higher is zero
-!      linear_law       S(q) = q; implements operation only,
+!      linear_law       S(q) = q; keeps the default max_degree 0,
 !                       so tangent_of must select the difference
 !                       linearization for it
 !
@@ -32,7 +32,6 @@ module toy_differentiable_forms
   use operation_action, only : operation
   use view_directed , only : directed_graph
   use field_calculus, only : field
-  use operation_discretization      , only : differentiable_operation
   use graph_fractal       , only : graph
   use field_stored   , only : stored_field
   use operation_chain_rule, only : argument_path
@@ -48,7 +47,7 @@ module toy_differentiable_forms
   ! one and scalar xi in slot two, exact to order 4.
   !===================================================================!
 
-  type, extends(differentiable_operation) :: quartic_form
+  type, extends(operation) :: quartic_form
      real(dp) :: xi_default = 2.0_dp
    contains
      procedure :: name           => quartic_name
@@ -65,7 +64,7 @@ module toy_differentiable_forms
   ! are recomputed independently by Taylor convolution.
   !===================================================================!
 
-  type, extends(differentiable_operation) :: power8_form
+  type, extends(operation) :: power8_form
      real(dp) :: xi_default = 2.0_dp
    contains
      procedure :: name           => power8_name
@@ -85,7 +84,7 @@ module toy_differentiable_forms
   ! order 3 or higher is returned as exactly zero.
   !===================================================================!
 
-  type, extends(differentiable_operation) :: equilibrium_law
+  type, extends(operation) :: equilibrium_law
      real(dp) :: xi_default = 1.0_dp
    contains
      procedure :: name           => equilibrium_name
@@ -96,10 +95,10 @@ module toy_differentiable_forms
   end type equilibrium_law
 
   !===================================================================!
-  ! S(q) = q, implementing operation only. Used to check
-  ! that tangent_of falls back to the difference linearization for
-  ! a non-differentiable operation, and as the statement of the
-  ! nonuniform implicit march test.
+  ! S(q) = q, overriding neither max_degree nor partial_action.
+  ! Used to check that tangent_of falls back to the difference
+  ! linearization for an operation without partial actions, and as
+  ! the statement of the nonuniform implicit march test.
   !===================================================================!
 
   type, extends(operation) :: linear_law

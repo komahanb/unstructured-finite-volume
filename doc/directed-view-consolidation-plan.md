@@ -90,7 +90,7 @@ the snapshot doctrine so section 66 can pass.
 Each phase is one commit on master with the full battery green;
 phases 3 and 5 additionally pass the benchmark gate.
 
-    Phase 0   The measuring stick.
+    Phase 0   DONE (174ede7). The measuring stick.
               Extend test/graph-benchmark to time, on square-80 and
               box-3 scales: incident/adjacent/in/out queries,
               stencil matvec, differential operator apply, field
@@ -100,17 +100,24 @@ phases 3 and 5 additionally pass the benchmark gate.
               than 1.10x baseline, else stop and write the
               optimization plan section 66 demands.
 
-    Phase 1   The equivalence law.
-              A characterization test builds the same graph as a
-              directed_stored_graph and as T,H relations read
-              through fibres, asks all 28 contract questions plus
-              the tagged/owned variants, and requires identical
-              answers (sets by same_as, lists by value). This is
-              the same harness discipline that made the mesh
-              deletion safe. It must be green BEFORE internals move
-              and stays green after every phase.
+    Phase 1   DONE. The equivalence law.
+              test/graph-ordinary's compare_topology engine asks
+              the nine view-answerable questions of both
+              constructions; phase 1 added a 400-vertex
+              pseudo-random topology with walls, tuples shuffled.
+              The set, tag, and ownership battery exists only on
+              the stored graph; its characterization through the
+              re-seat is the full 35-suite battery itself. Green
+              BEFORE internals move and after every phase.
 
-    Phase 2   The relation's borrow face.
+    Phase 2   DONE, by verification - no code change. Findings:
+              counted_local_index is O(1) (range check plus
+              identity); the benchmark's 23 ns fibre sweeps measure
+              it in place; image_view/preimage_view cover the
+              re-seat's needs. Requirement pinned for phase 3: the
+              graph's T, H relations are built over COUNTED
+              coordinate sets only - listed_local_index scans.
+              The relation's borrow face.
               Verify csr_relation exposes everything the snapshot
               rebuild and the fibre reads need without copying:
               image_view/preimage_view (exist), whole-table reads,

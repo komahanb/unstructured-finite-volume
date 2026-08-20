@@ -60,6 +60,8 @@ program test_graph_ordinary
   call compare_topology(3, [1, 2, 2, 3], [2, 2, 3, 0], &
        & "the self-loop, tuples shuffled", nfail, scrambled=.true.)
 
+  call compare_large_topology(nfail)
+
   call check_wall_is_absence(nfail)
   call check_declared_order(nfail)
 
@@ -222,6 +224,48 @@ contains
   ! The boundary law, said directly: the wall edge stands in T and
   ! is an absence in H - no imaginary member, no ghost tuple.
   !===================================================================!
+
+  !===================================================================!
+  ! The equivalence law at scale (consolidation plan, phase 1): a
+  ! 400-vertex pseudo-random topology - three edges per vertex to
+  ! deterministic LCG targets, roughly one in seven headless - is
+  ! compared question by question between the two constructions,
+  ! tuples shuffled. The remaining contract questions (the set,
+  ! tag, and ownership battery) exist only on the stored graph and
+  ! are characterized by the wider battery.
+  !===================================================================!
+
+  subroutine compare_large_topology(nfail)
+
+    integer, intent(inout) :: nfail
+
+    integer, parameter :: nv = 400
+    integer, parameter :: ne = 3 * nv
+    integer :: tails(ne), heads(ne)
+    integer :: v, k, e
+    integer :: state
+
+    ! a fixed linear congruential walk: deterministic, seedless
+    state = 12345
+    e = 0
+    do v = 1, nv
+       do k = 1, 3
+          e = e + 1
+          tails(e) = v
+          state    = mod(1103515245 * state + 12345, 2147483647)
+          if (mod(state, 7) == 0) then
+             heads(e) = 0                       ! a wall
+          else
+             heads(e) = 1 + mod(state, nv)      ! any vertex, self allowed
+          end if
+       end do
+    end do
+
+    call compare_topology(nv, tails, heads, &
+         & "a 400-vertex pseudo-random topology, tuples shuffled", &
+         & nfail, scrambled=.true.)
+
+  end subroutine compare_large_topology
 
   subroutine check_wall_is_absence(nfail)
 

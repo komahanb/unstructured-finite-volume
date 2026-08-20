@@ -140,7 +140,7 @@ allowed_for() {
         #          a carving operation must therefore HOLD a label map
         #          even where it will never read one. The grant records
         #          that cost rather than hiding it: held, not queried.
-        level-4-graph-calculus) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture fractal_graph graph_set_map graph_label_map graph_inclusion_map graph_relation graph_relation_algebra graph_binary_relation graph_profile graph_algorithms graph_relational_view" ;;
+        level-4-graph-calculus) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture fractal_graph graph_set_map graph_label_map graph_inclusion_map graph_relation graph_relation_algebra graph_binary_relation graph_algorithms graph_relational_view" ;;
 
         # ===== REVIEW GATE A =====
 
@@ -252,11 +252,11 @@ if [ "$1" = "--selftest" ]; then
     # its business.
     permits level-3-graph fractal_graph
     permits level-3-graph graph_relational_view
-    refuses level-3-graph graph_profile
+    refuses level-3-graph
     refuses level-3-graph graph_algorithms
 
     # L4 earns the interpretation.
-    permits level-4-graph-calculus graph_profile
+    refuses level-4-graph-calculus graph_profile
     permits level-4-graph-calculus graph_algorithms
 
     # ---- STAGED: ceilings that rise, each at the level that earns it.

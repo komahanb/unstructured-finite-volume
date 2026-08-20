@@ -29,7 +29,7 @@ allowed_for() {
         level-3-graph)            echo "adjoint_assert fractal_graph graph_set_representation graph_set_map graph_label_map graph_inclusion_map graph_relation graph_relation_algebra graph_binary_relation fractal_graph graph_relational_view" ;;
         # level 4: the profile and the algorithms - which are here to
         # REFUSE an order, not to produce one.
-        level-4-graph-calculus)   echo "adjoint_assert fractal_graph graph_set_representation graph_set_map graph_label_map graph_inclusion_map graph_relation graph_relation_algebra graph_binary_relation graph_profile graph_algorithms fractal_graph graph_relational_view" ;;
+        level-4-graph-calculus)   echo "adjoint_assert fractal_graph graph_set_representation graph_set_map graph_label_map graph_inclusion_map graph_relation graph_relation_algebra graph_binary_relation graph_algorithms fractal_graph graph_relational_view" ;;
         # level 5: values need domains, not graphs - the smallest
         # allowlist above the ground.
         level-5-field-calculus)   echo "adjoint_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map class_graph_field" ;;

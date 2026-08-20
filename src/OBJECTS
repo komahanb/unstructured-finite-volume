@@ -13,7 +13,6 @@ graph_relation.o \
 graph_relational_view.o \
 graph_binary_relation.o \
 graph_relation_algebra.o \
-graph_profile.o \
 graph_algorithms.o \
 graph_field_calculus.o \
 graph_directed_view.o \

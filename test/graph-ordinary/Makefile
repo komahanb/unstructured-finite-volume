@@ -9,18 +9,15 @@ include ../../Makefile.in
 F90FLAGS += -I../../lib/ -I../../src/ -Wtarget-lifetime
 LDFLAGS += -L../../lib/ ../../lib/libufvm.a -llapack
 
-all: run refusal
+all: run
 
 run: test.o
 	$(F90) test.o -o $@ $(LDFLAGS)
 
-refusal: refusal.o
-	$(F90) refusal.o -o $@ $(LDFLAGS)
-
 
 
 clean:
-	@rm -f *.o *.mod *.so run refusal
+	@rm -f *.o *.mod *.so run
 
 .SUFFIXES: .f90 .o
 .PHONY: all clean

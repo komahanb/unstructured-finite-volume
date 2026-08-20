@@ -54,7 +54,7 @@
 #    bare names too, in case a later level finds another road to them.
 #    dependencies() is Level 6's question and Level 6 is unbuilt.
 #
-# 3. THE ORDINARY GRAPH. graph_profile and graph_algorithms, refused
+# 3. THE ORDINARY GRAPH. and graph_algorithms, refused
 #    at every level, Level 5 included.
 #
 # THAT THIRD REFUSAL IS THE SHARPEST ASSERTION IN THIS GATE, and it
@@ -64,7 +64,7 @@
 # rectangular typed dependency X -> Y, and that the ordinary-graph
 # profile is intentionally too specialized to express one - both its
 # readings demand a SINGLE vertex carrier. Because no level of this
-# tower may name graph_profile, the pictures Level 4 produced cannot
+# tower may name, the pictures Level 4 produced cannot
 # have leaned on it. The gate is what makes "no ordinary graph was
 # required" checkable instead of promised.
 #
@@ -127,7 +127,7 @@ allowed_for() {
         level-2-relation-algebra) echo "fractal_graph graph_set_map graph_label_map visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture graph_relation graph_binary_relation graph_relation_algebra" ;;
         # ---- L3: + the relational graph container
         level-3-graph)     echo "fractal_graph graph_set_representation graph_set_map graph_label_map graph_inclusion_map visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture graph_relation graph_binary_relation graph_relation_algebra graph_relational_view" ;;
-        # ---- L4: + the renderer, and NOTHING ELSE. No graph_profile:
+        # ---- L4: + the renderer, and NOTHING ELSE. No:
         #          the level's conclusion is that the ordinary graph
         #          was not required, and the gate is what makes that
         #          claim mechanical.
@@ -376,7 +376,7 @@ if [ "$1" = "--selftest" ]; then
     #      no ordinary-graph reading; because no level may name the
     #      profile, that conclusion cannot have been reached with one.
     for lvl in $with_five; do
-        refuses "$lvl" graph_profile
+        refuses "$lvl"
         refuses "$lvl" graph_algorithms
         refuses "$lvl" class_graph
         refuses "$lvl" class_stored_graph
@@ -392,7 +392,7 @@ if [ "$1" = "--selftest" ]; then
     refuses common/visualization_assert.f90 fractal_graph
     permits common/structural_renderer_fixture.f90 visualization_carriers_fixture
     refuses common/structural_renderer_fixture.f90 graph_relational_view
-    refuses common/structural_renderer_fixture.f90 graph_profile
+    refuses common/structural_renderer_fixture.f90
     refuses common/visualization_relations_fixture.f90 graph_relation_algebra
     refuses common/visualization_algebra_fixture.f90 graph_relational_view
 

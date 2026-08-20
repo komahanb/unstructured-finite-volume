@@ -28,7 +28,7 @@ allowed_for() {
         # level 4: the profile's interpretation and the algorithms
         # that walk it - the binary storage the view leans on stays
         # forbidden to the learning client.
-        level-4-graph-calculus)  echo "learning_assert fractal_graph graph_set_representation graph_set_map graph_label_map graph_inclusion_map graph_relation graph_relation_algebra graph_profile graph_algorithms fractal_graph graph_relational_view graph_binary_relation" ;;
+        level-4-graph-calculus)  echo "learning_assert fractal_graph graph_set_representation graph_set_map graph_label_map graph_inclusion_map graph_relation graph_relation_algebra graph_algorithms fractal_graph graph_relational_view graph_binary_relation" ;;
         # level 3: the container; graph_binary_relation is granted
         # for the view refusal ONLY - the production path never
         # touches it.
@@ -38,7 +38,7 @@ allowed_for() {
         # pairs and answer its reverse as a transpose view. Fields
         # stay forbidden: dependency structure belongs to the model,
         # not to one data instance.
-        level-6-discretization)  echo "learning_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map graph_relation graph_relation_algebra graph_binary_relation graph_profile graph_algorithms fractal_graph graph_relational_view" ;;
+        level-6-discretization)  echo "learning_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map graph_relation graph_relation_algebra graph_binary_relation graph_algorithms fractal_graph graph_relational_view" ;;
         # level 7: the fitting rung. The GMRES citizen inherits
         # attach/constant/solve from the minimizer base, so
         # graph_minimization is not directly imported and stays off
@@ -50,13 +50,13 @@ allowed_for() {
         # the test-local constitution supplies the laws, L supplies
         # the home - no solver, no legacy host, no minimization, no
         # binary storage. The named fixture is the level's own.
-        level-8-constitution)    echo "learning_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map graph_relation graph_relation_algebra graph_profile graph_algorithms class_graph_field learning_constitution_fixture fractal_graph graph_relational_view" ;;
+        level-8-constitution)    echo "learning_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map graph_relation graph_relation_algebra graph_algorithms class_graph_field learning_constitution_fixture fractal_graph graph_relational_view" ;;
         # level 9: the statement - the composition rung. The REUSED
         # level-8 constitution and the level's own adapter are the
         # named fixtures; Level 7's affine oracle is deliberately
         # absent, and graph_minimization stays off: gmres inherits
         # the minimizer face. No new mathematics enters here.
-        level-9-statement)       echo "learning_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map graph_relation graph_relation_algebra graph_profile graph_algorithms graph_operation_view graph_directed_view graph_field_calculus class_graph class_graph_field class_graph_gmres learning_constitution_fixture constituted_residual_fixture fractal_graph graph_relational_view" ;;
+        level-9-statement)       echo "learning_assert fractal_graph graph_set_representation graph_set_map graph_inclusion_map graph_relation graph_relation_algebra graph_algorithms graph_operation_view graph_directed_view graph_field_calculus class_graph class_graph_field class_graph_gmres learning_constitution_fixture constituted_residual_fixture fractal_graph graph_relational_view" ;;
         *)                       echo "__no_allowlist__" ;;
     esac
 }

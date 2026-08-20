@@ -32,7 +32,7 @@ allowed_for() {
         # level 4: the profile's interpretation and the algorithms
         # that walk it; the legacy graph stack, fields and all above
         # stay forbidden.
-        level-4-graph-calculus)  echo "calculator_assert fractal_graph graph_set_representation graph_set_map graph_label_map graph_inclusion_map graph_relation graph_relation_algebra graph_profile graph_algorithms fractal_graph graph_relational_view" ;;
+        level-4-graph-calculus)  echo "calculator_assert fractal_graph graph_set_representation graph_set_map graph_label_map graph_inclusion_map graph_relation graph_relation_algebra graph_algorithms fractal_graph graph_relational_view" ;;
         # level 6: sparsity is structure - carriers, relations, the
         # algebra, and the binary transpose view; no field, no graph
         # container, no value ever needed.

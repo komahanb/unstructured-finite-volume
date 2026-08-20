@@ -2,7 +2,7 @@
 ! THE BINDING LIFETIME SUITE
 !
 ! relational_binding lends pointers into the objects it owns, and
-! graph_profile keeps such a pointer for the life of its view. This
+! a long-lived reader keeps such a pointer across growth. This
 ! suite holds the storage law that makes that safe:
 !
 !     relational_binding is not assignable; bind_* preserves every
@@ -134,7 +134,7 @@ program lifetime
   end block independent_block
 
   !===================================================================!
-  ! E . The graph_profile pattern: borrow, narrow the dynamic type,
+  ! E . The long-lived reader pattern: borrow, narrow the dynamic type,
   ! keep the narrowed pointer, then grow the binding.
   !===================================================================!
 
@@ -183,7 +183,7 @@ program lifetime
          & tails % same_as(t) .and. tails % arity() .eq. 2)
 
     call b % bind_relation(relem(2), extra)          ! growth after narrowing
-    call check('E  and after growth: this is the graph_profile pattern', &
+    call check('E  and after growth: the long-lived reader pattern', &
          & tails % same_as(t) .and. tails % arity() .eq. 2)
 
   end block profile_pattern_block

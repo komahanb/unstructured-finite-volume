@@ -483,14 +483,13 @@ contains
   ! X0 and X1, or otherwise change its meaning? The two profiles'
   ! contracts are inspected rather than provoked:
   !
-  !   directed_incidence_view  requires  T <= E x V  and  H <= E x V
-  !                                  with ONE V, and refuses with
-  !                                  'the head relation must share
-  !                                  the tail''s domains' otherwise
+  !   a directed reading    requires  T <= E x V  and  H <= E x V
+  !                                  with ONE V - the stored graph
+  !                                  cannot even express otherwise
   !
-  !   directed_adjacency_view  requires  A <= V x V, and refuses with
-  !                                  'a directed adjacency runs over
-  !                                  one domain' otherwise
+  !   the graph algorithms  require  A <= V x V, and refuse with
+  !                                  'the adjacency runs over one
+  !                                  domain' otherwise
   !
   ! Both demand a SINGLE vertex carrier. The specimen's premises are
   ! checked here; the conclusion is Gate A's to state.
@@ -515,20 +514,19 @@ contains
     head_end = h1 % target()
     call report(.not. tail_end % same_as(head_end), &
          & "T1 lands in X0 and H1 in X1, so no SINGLE vertex carrier " // &
-         & "V exists for directed_incidence_view to read them over", nfail)
+         & "V exists for a directed reading of them", nfail)
 
     from = d1 % source()
     to   = d1 % target()
     call report(.not. from % same_as(to), &
          & "and D1's two ends are two domains, which is exactly what " // &
-         & "directed_adjacency_view refuses", nfail)
+         & "the graph algorithms refuse", nfail)
 
     ! ---- What a union would cost, stated exactly.
     !
     !      DIRECTION IS NOT WHAT IS LOST. An ordinary directed graph
     !      preserves ordered-pair direction perfectly well - the tuple
-    !      order of a same-domain relation IS the direction, as
-    !      directed_adjacency_view documents.
+    !      order of a same-domain relation IS the direction.
     !
     !      What a union loses is the intrinsic distinct TYPED source
     !      and codomain: D : X_i -> X_j against D^T : X_j -> X_i. Under

@@ -24,7 +24,7 @@ composition, a view, or a concretion of these.
                                                                          graph_set_map, graph_label_map,
                                                                          graph_inclusion_map, graph_value_map
     view             a reading of the kernel graph, never a new kind     graph_directed_view,
-                                                                         graph_relational_view, graph_profile
+                                                                         graph_relational_view
 
 The kernel graph is self-similar: each branch is NULL, UNKNOWN, or
 another graph. Sets, tuples, relations, domains, and chains are all
@@ -125,7 +125,7 @@ Indentation is `extends`; brackets name the file.
                       graph_binary_relation, graph_partition_relation,
                       graph_set_representation, the four maps
     4    graph view:  graph_directed_view, graph_relational_view,
-                      graph_profile, class_graph, class_graph_walk,
+                      class_graph, class_graph_walk, graph_algorithms,
                       transforms (partitioner/assembler/coarsener/refiner)
     5    field:       graph_field_calculus, class_graph_field,
                       class_graph_functional, class_graph_reduction
@@ -181,18 +181,24 @@ step kernels exist. The contract suite holds the agreement law:
 applying the operator and applying its compiled stencil give the
 same numbers, boundary constants and adjoint included.
 
-## The known dual representation (by design, not by accident)
+## One directed view, relation-seated (consolidated 2026-08-19)
 
-The directed view D = (V, E, tail, head) has two implementations:
-`class_graph`'s `directed_stored_graph` (stored arrays, the
-workhorse every operation executes over) and `graph_profile`'s
-relation-backed views (the constitution's target reading, AGENTS.md
-section 16). This is the migration seam AGENTS.md phases 9-10 name,
-not duplicated mathematics to delete casually: consolidating it
-means moving every hot loop onto relation fibres and passing the
-performance acceptance in AGENTS.md section 66. Until that is
-undertaken deliberately, both stand, and new code takes
-`directed_stored_graph`.
+The directed view D = (V, E, tail, head) has one implementation:
+`directed_stored_graph`. Its stored arrays are the compiled
+snapshots the hot paths read; its `tail_relation()` and
+`head_relation()` derive T <= E x V and H <= E x V as csr_relations
+on request, over counted coordinates, so a graph nobody reads
+relationally pays nothing (the section-66 benchmark rejected the
+eager form at 1.7-2.2x on pattern and part construction; the lazy
+form is within noise of baseline). `graph_algorithms` (sources,
+sinks, reachable, topological_order) takes any `class(relation)`,
+selects the binary reading, and refuses a non-binary or two-domain
+adjacency. `graph_profile` and its two view types are deleted; a
+static in test/graph-ordinary keeps them deleted, and that suite
+holds the equivalence law: the stored graph against externally
+built T and H relations, per edge and per vertex, lists compared
+as sets, on topologies up to a 400-vertex pseudo-random one with
+walls. AGENTS.md phases 9-11 are complete.
 
 ## Documentation rule
 

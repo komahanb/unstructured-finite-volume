@@ -12,26 +12,14 @@ make -C "$here" >/dev/null
 
 cd "$here" && ./run
 
-declare -A reason=(
-  [tailless]="every edge has exactly one tail"
-  [twotailed]="every edge has exactly one tail"
-  [twoheaded]="no edge has two heads"
-  [ternary]="must be binary"
-  [mismatched]="must share the tail's domains"
-  [selfsame]="edges and vertices are distinct domains"
-)
-
-for case in tailless twotailed twoheaded ternary mismatched selfsame; do
-    if ./refusal "$case" >refusal.out 2>&1; then
-        echo " FAIL : '$case' was accepted"
-        exit 1
-    fi
-    if grep -q "${reason[$case]}" refusal.out; then
-        echo " PASS : '$case' is refused, loudly"
-    else
-        echo " FAIL : '$case' died for the wrong reason"
-        cat refusal.out
-        exit 1
-    fi
-done
-rm -f refusal.out
+# The schema refusals retired with graph_profile: the stored graph
+# makes a two-tailed or two-headed edge unrepresentable rather than
+# refused. This guard keeps the profile deleted: the file must not
+# return and nothing may import it.
+if [ -e "$here/../../src/graph_profile.f90" ]; then
+    echo " FAIL : the deleted graph_profile has returned"
+    exit 1
+fi
+grep -q "use graph_profile" "$here"/../../src/*.f90 "$here"/../../test/*/*.f90 "$here"/../../test/*/*/*.f90 2>/dev/null \
+    && { echo " FAIL : a reference to the deleted graph_profile exists"; exit 1; } \
+    || echo " PASS : graph_profile stays deleted"

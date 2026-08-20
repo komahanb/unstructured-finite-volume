@@ -85,8 +85,8 @@ module operation_reduction
   use operation_action  , only : operation
   use field_calculus  , only : functional
   use view_directed   , only : SIDE_VERTEX
-  use field_stored     , only : plain_field => stored_field
-  use field_functional, only : scalar_result => stored_functional
+  use field_stored    , only : stored_field
+  use field_functional, only : stored_functional
 
   implicit none
 
@@ -229,10 +229,10 @@ contains
     class(functional), allocatable, intent(inout)     :: state
 
     if (allocated(state)) deallocate(state)
-    allocate(scalar_result :: state)
+    allocate(stored_functional :: state)
 
     select type (state)
-    type is (scalar_result)
+    type is (stored_functional)
 
        state % tally  = 0.0_dp
        state % weight = 0.0_dp
@@ -295,7 +295,7 @@ contains
     case (REDUCE_COUNT)
 
        select type (state)
-       type is (scalar_result)
+       type is (stored_functional)
           state % tally = state % tally + real(nentry, dp)
        end select
 
@@ -336,7 +336,7 @@ contains
              ! Both carry a running total and a running weight, and
              ! both divide or root only at the very end.
              select type (state)
-             type is (scalar_result)
+             type is (stored_functional)
                 do i = 1, nentry
                    do c = 1, num_components
                       k = (i - 1) * num_components + c
@@ -414,7 +414,7 @@ contains
     logical     :: la, lb
 
     if (allocated(combined)) deallocate(combined)
-    allocate(scalar_result :: combined)
+    allocate(stored_functional :: combined)
 
     select case (this % rule)
 
@@ -432,11 +432,11 @@ contains
 
        ! The running totals join; the division and the root still wait.
        select type (combined)
-       type is (scalar_result)
+       type is (stored_functional)
           select type (left)
-          type is (scalar_result)
+          type is (stored_functional)
              select type (right)
-             type is (scalar_result)
+             type is (stored_functional)
                 combined % tally  = left % tally  + right % tally
                 combined % weight = left % weight + right % weight
              end select
@@ -491,7 +491,7 @@ contains
     case (REDUCE_AVERAGE)
 
        select type (state)
-       type is (scalar_result)
+       type is (stored_functional)
           if (state % weight > 0.0_dp) then
              call set_real(scalar, state % tally / state % weight)
           else
@@ -502,7 +502,7 @@ contains
     case (REDUCE_NORM)
 
        select type (state)
-       type is (scalar_result)
+       type is (stored_functional)
           if (state % tally > 0.0_dp) then
              call set_real(scalar, state % tally**(1.0_dp / this % power))
           else
@@ -513,7 +513,7 @@ contains
     case (REDUCE_COUNT)
 
        select type (state)
-       type is (scalar_result)
+       type is (stored_functional)
           call scalar % set_integer_vector([nint(state % tally)])
        end select
 
@@ -655,9 +655,9 @@ contains
     class(field), intent(in), optional       :: input_data(:)
     class(field), allocatable, intent(inout) :: output
 
-    type(plain_field) :: out
+    type(stored_field) :: out
 
-    out = plain_field('broadcast', input_graph % vertex_set(), input_graph % num_vertices())
+    out = stored_field('broadcast', input_graph % vertex_set(), input_graph % num_vertices())
 
     if (present(input_data)) then
        select type (f => input_data(1))

@@ -50,3 +50,7 @@ test/graph-set-view/refusal
 test/graph-inclusion/run
 test/graph-inclusion/refusal
 test/graph-identity-map/labels
+.agents/
+.codex/
+GTI\.md
+GTI_PHASE1_AGENT_TASK.md

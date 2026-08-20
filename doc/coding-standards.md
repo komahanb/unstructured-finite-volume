@@ -176,7 +176,9 @@ below is a defect, not a style choice.
    vocabulary it belongs to (`SWEEP_FORWARD`, `WALK_COLOURING`).
 9. an abstract interface is `<type>_<binding>_interface`.
 10. one type, one name: import-renaming aliases (`x => y`) are out,
-    and no module re-exports a name it does not define.
+    and no module re-exports a name it does not define. the kind
+    constant `dp => real64` is the one sanctioned exception, named
+    here so the static check has a closed list.
 11. an abbreviation is allowed only when the abbreviation IS the
     formal name (`csr`, `gmres`, `bdf`, `lhs`/`rhs`).
 12. every module carries `private` plus an explicit public list.

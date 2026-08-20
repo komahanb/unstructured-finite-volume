@@ -39,7 +39,7 @@
 module shifted_laplacian_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_fractal    , only : set_graph => graph
+  use graph_fractal    , only : graph
   use operation_action, only : operation
   use view_directed, only : directed_graph
   use field_calculus, only : field
@@ -72,15 +72,15 @@ contains
   ! no domain of its own.
   !===================================================================!
 
-  subroutine shifted_domain(this, input_graph, domain, nentries)
+  subroutine shifted_domain(this, input_graph, domain, num_entries)
 
     class(shifted_laplacian), intent(in) :: this
     class(directed_graph), intent(in) :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
 
     domain   = input_graph % vertex_set()
-    nentries = input_graph % num_vertices()
+    num_entries = input_graph % num_vertices()
 
   end subroutine shifted_domain
 
@@ -101,7 +101,7 @@ contains
     type(differential_operator)     :: lap
     type(stored_field)                     :: out
     class(field), allocatable :: lq
-    type(set_graph) :: dom
+    type(graph) :: dom
     real(dp), allocatable           :: q(:), l(:)
 
     if (.not. present(input_data)) then
@@ -120,8 +120,8 @@ contains
     lap = laplacian(coefficient=1.0_dp, spacing=1.0_dp, measure=1.0_dp)
     call lap % apply(input_graph, input_data, lq)
 
-    call input_data(1) % get_real_vector(q)
-    call lq % get_real_vector(l)
+    call input_data(1) % real_vector(q)
+    call lq % real_vector(l)
 
     out = stored_field('shifted laplacian', input_graph % vertex_set(), input_graph % num_vertices())
     call out % set_real_vector(2.0_dp * q - l)

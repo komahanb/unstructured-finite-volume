@@ -51,7 +51,7 @@
 program partitioned_pde_level_4
 
   use partitioned_pde_assert , only : report, verdict
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation
   use map_set        , only : set_map
   use map_inclusion  , only : inclusion_map, declared_subobject
@@ -69,7 +69,7 @@ program partitioned_pde_level_4
   implicit none
   type(partition_relation) :: rel
 
-  type(set_graph)          :: v, e, k
+  type(graph)          :: v, e, k
   type(set_map)          :: sets
   type(csr_relation), target :: tail, head, own
   type(csr_relation)         :: tail_owner, head_owner
@@ -118,7 +118,7 @@ contains
 
     type(partitioner) :: p
 
-    p = partitioner(PARTITION_LINEAR, nparts=2, part=kpart)
+    p = partitioner(PARTITION_LINEAR, num_parts=2, part=kpart)
     call p % partition_graph(g, part, rel)
 
   end subroutine cut
@@ -158,7 +158,7 @@ contains
     integer     , intent(in)    :: kpart, globals(:), borrowed_global
     integer     , intent(inout) :: nfail
 
-    type(set_graph) :: owned, borrowed, overlap
+    type(graph) :: owned, borrowed, overlap
     type(label_map)     :: labels
     type(inclusion_map)     :: inclusions
     character(len=1) :: tag
@@ -195,14 +195,14 @@ contains
        call part % owned_vertices(kpart, sets, labels, inclusions, owned)
        call part % borrowed_vertices(kpart, sets, labels, inclusions, borrowed)
        call part % overlap_vertices(kpart, sets, labels, inclusions, overlap)
-       call report(sets % size_of(owned) .eq. 3 .and. sets % size_of(borrowed) .eq. 1 &
-            & .and. sets % size_of(overlap) .eq. part % num_vertices(), &
+       call report(sets % num_members_of(owned) .eq. 3 .and. sets % num_members_of(borrowed) .eq. 1 &
+            & .and. sets % num_members_of(overlap) .eq. part % num_vertices(), &
             & "G" // tag // ": three owned, one borrowed, and the " // &
             & "overlap is the whole local carrier", nfail)
 
        ok = .false.
        do i = 1, part % num_vertices()
-          if (sets % has_in(borrowed, i)) then
+          if (sets % has(borrowed, i)) then
              ok = rel % global_vertex_index(i) .eq. borrowed_global
           end if
        end do

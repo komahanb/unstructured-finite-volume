@@ -54,7 +54,7 @@ module triangular_decay_fixture
   use operation_action, only : operation
   use view_directed, only : directed_graph
   use field_calculus, only : field
-  use graph_fractal    , only : set_graph => graph
+  use graph_fractal    , only : graph
   use field_stored, only : stored_field
 
   implicit none
@@ -73,7 +73,7 @@ module triangular_decay_fixture
      ! the action's questions are answered from these two, so no map
      ! enters this type - an operation that asks nothing about
      ! membership carries nothing that answers it.
-     type(set_graph) :: state
+     type(graph) :: state
      integer         :: n_state = 0
 
    contains
@@ -96,7 +96,7 @@ contains
 
   type(triangular_decay) function create_decay(state, n_state) result(this)
 
-    type(set_graph), intent(in) :: state
+    type(graph), intent(in) :: state
     integer        , intent(in) :: n_state
 
     if (.not. state % same_as(state)) then
@@ -125,17 +125,17 @@ contains
   ! contract says so, and is not consulted.
   !===================================================================!
 
-  subroutine decay_domain(this, input_graph, domain, nentries)
+  subroutine decay_domain(this, input_graph, domain, num_entries)
 
     class(triangular_decay), intent(in)  :: this
     class(directed_graph)           , intent(in)  :: input_graph
-    type(set_graph)        , intent(out) :: domain
-    integer                , intent(out) :: nentries
+    type(graph)        , intent(out) :: domain
+    integer                , intent(out) :: num_entries
 
     associate (u1 => input_graph); end associate
 
     domain   = this % state
-    nentries = this % n_state
+    num_entries = this % n_state
 
   end subroutine decay_domain
 
@@ -154,7 +154,7 @@ contains
     class(field), intent(in), optional       :: input_data(:)
     class(field), allocatable, intent(inout) :: output
 
-    type(set_graph)       :: given
+    type(graph)       :: given
     type(stored_field)           :: out
     real(dp), allocatable          :: q(:), s(:)
 
@@ -169,7 +169,7 @@ contains
        error stop 'triangular_decay: the state must live on the action''s own domain'
     end if
 
-    call input_data(1) % get_real_vector(q)
+    call input_data(1) % real_vector(q)
     if (size(q) /= this % n_state) then
        error stop 'triangular_decay: one number per state coordinate'
     end if
@@ -178,7 +178,7 @@ contains
     s(1) = q(1)
     s(2) = q(2) - q(1)
 
-    out = stored_field('triangular decay', this % state, this % n_state, ncomp=1)
+    out = stored_field('triangular decay', this % state, this % n_state, num_components=1)
     call out % set_real_vector(s)
 
     if (allocated(output)) deallocate(output)

@@ -22,7 +22,7 @@
 module constituted_residual_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set        , only : set_map
   use map_set_representation, only : set_representation
   use relation_finitary   , only : relation
@@ -48,8 +48,8 @@ module constituted_residual_fixture
      ! Identities, counts, and the action's OWN coordinates. A
      ! representation carries no identity, so holding one keeps this
      ! type free of any caller's map.
-     type(set_graph)            :: slots, rows
-     type(set_graph)             :: observed, trainable, computed
+     type(graph)            :: slots, rows
+     type(graph)             :: observed, trainable, computed
      integer :: n_slots = 0, n_rows = 0
      integer :: n_observed = 0, n_trainable = 0, n_computed = 0
      class(set_representation), allocatable :: c_slots, c_rows
@@ -81,9 +81,9 @@ contains
     type(graph)             , intent(in) :: g
     type(relational_binding), intent(in) :: b
     class(relation)  , intent(in) :: selector, located
-    type(set_graph), intent(in) :: slots, rows
+    type(graph), intent(in) :: slots, rows
     type(set_map)  , intent(in) :: sets
-    type(set_graph) , intent(in) :: observed, trainable, computed
+    type(graph) , intent(in) :: observed, trainable, computed
     real(dp)         , intent(in) :: observed_values(:)
     integer          , intent(in) :: order(:)
     type(constituted_learning_residual) :: this
@@ -119,11 +119,11 @@ contains
     this % observed_values = observed_values
     this % order           = order
 
-    this % n_slots     = sets % size_of(slots)
-    this % n_rows      = sets % size_of(rows)
-    this % n_observed  = sets % size_of(observed)
-    this % n_trainable = sets % size_of(trainable)
-    this % n_computed  = sets % size_of(computed)
+    this % n_slots     = sets % num_members_of(slots)
+    this % n_rows      = sets % num_members_of(rows)
+    this % n_observed  = sets % num_members_of(observed)
+    this % n_trainable = sets % num_members_of(trainable)
+    this % n_computed  = sets % num_members_of(computed)
 
     call sets % extent_of(slots,     this % c_slots)
     call sets % extent_of(rows,      this % c_rows)
@@ -139,15 +139,15 @@ contains
     name = 'constituted learning residual'
   end function clr_name
 
-  subroutine clr_domain(this, input_graph, domain, nentries)
+  subroutine clr_domain(this, input_graph, domain, num_entries)
     class(constituted_learning_residual), intent(in) :: this
     class(directed_graph), intent(in) :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
     integer         :: n_rows
     associate (u1 => input_graph); end associate
     domain   = this % rows
-    nentries = this % n_rows
+    num_entries = this % n_rows
   end subroutine clr_domain
 
   subroutine clr_apply(this, input_graph, input_data, output)
@@ -158,7 +158,7 @@ contains
     class(field), allocatable, intent(inout)   :: output
 
     type(stored_field)                    :: out
-    type(set_graph) :: dom
+    type(graph) :: dom
     real(dp), allocatable          :: tstate(:), r(:)
 
     !----------------------------------------------------------------!
@@ -189,7 +189,7 @@ contains
     if (.not. dom % same_as(this % trainable)) then
        error stop 'statement: the state must live on the trainable domain'
     end if
-    call input_data(1) % get_real_vector(tstate)
+    call input_data(1) % real_vector(tstate)
 
     allocate(r(this % n_rows))
     call generated_residual(this % flow, this % located, &

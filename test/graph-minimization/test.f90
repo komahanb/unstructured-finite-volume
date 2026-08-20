@@ -21,10 +21,10 @@ module cubic_statement_fixture
   use operation_action, only : operation
   use view_directed, only : directed_graph
   use field_calculus, only : field
-  use view_directed , only : GRAPH_SIDE_VERTEX
+  use view_directed , only : SIDE_VERTEX
   ! An action names a domain and counts it. It asks no membership,
   ! so it holds no map: identity and count is the whole of it.
-  use graph_fractal      , only : set_graph => graph
+  use graph_fractal      , only : graph
   use field_stored  , only : stored_field
   use operation_differential, only : differential_operator
 
@@ -60,13 +60,13 @@ contains
     name = 'cubic statement'
   end function cubic_name
 
-  subroutine cubic_domain(this, input_graph, domain, nentries)
+  subroutine cubic_domain(this, input_graph, domain, num_entries)
     class(cubic_statement), intent(in)     :: this
     class(directed_graph), intent(in)               :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
     domain   = input_graph % all_vertices()
-    nentries = input_graph % num_vertices()
+    num_entries = input_graph % num_vertices()
   end subroutine cubic_domain
 
   subroutine cubic_apply(this, input_graph, input_data, output)
@@ -76,17 +76,17 @@ contains
     class(field), intent(in), optional       :: input_data(:)
     class(field), allocatable, intent(inout) :: output
 
-    type(set_graph)   :: cells
+    type(graph)   :: cells
     type(stored_field)   :: out
     real(dp), allocatable :: q(:), y(:)
     integer :: nv, v
 
     call this % linear_part % apply(input_graph, input_data, output)
-    call output % get_real_vector(y)
+    call output % real_vector(y)
 
     nv = input_graph % num_vertices()
     if (present(input_data)) then
-       call input_data(1) % get_real_vector(q)
+       call input_data(1) % real_vector(q)
        do v = 1, min(nv, size(q))
           y(v) = y(v) - this % strength * q(v)**3
        end do
@@ -105,7 +105,7 @@ end module cubic_statement_fixture
 program test_graph_minimization
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_fractal  , only : set_graph => graph
+  use graph_fractal  , only : graph
   use map_set  , only : set_map
   use map_label, only : label_map
   use map_inclusion, only : inclusion_map
@@ -171,7 +171,7 @@ contains
 
     m = mesh(3, tails=[1, 2, 1, 3], heads=[2, 3, 0, 0], &
          & volumes      = [1.0_dp, 1.0_dp, 1.0_dp], &
-         & cell_centers = [0.5_dp, 0.0_dp, 0.0_dp, &
+         & cell_centres = [0.5_dp, 0.0_dp, 0.0_dp, &
          &                 1.5_dp, 0.0_dp, 0.0_dp, &
          &                 2.5_dp, 0.0_dp, 0.0_dp], &
          & areas        = [1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp], &
@@ -180,7 +180,7 @@ contains
          &                  1.0_dp, 0.0_dp, 0.0_dp, &
          &                 -1.0_dp, 0.0_dp, 0.0_dp, &
          &                  1.0_dp, 0.0_dp, 0.0_dp], &
-         & face_centers = [1.0_dp, 0.0_dp, 0.0_dp, &
+         & face_centres = [1.0_dp, 0.0_dp, 0.0_dp, &
          &                 2.0_dp, 0.0_dp, 0.0_dp, &
          &                 0.0_dp, 0.0_dp, 0.0_dp, &
          &                 3.0_dp, 0.0_dp, 0.0_dp], &
@@ -219,7 +219,7 @@ contains
     real(dp), intent(in)              :: kappa
     real(dp), allocatable, intent(out) :: c(:), b(:)
 
-    type(set_graph)       :: members
+    type(graph)       :: members
     type(set_map)         :: sets
     type(label_map)       :: labels
     type(inclusion_map)   :: inclusions
@@ -353,7 +353,7 @@ contains
       use field_stored, only : stored_field
       type(stored_field) :: fd
       fd = m % face_delta()
-      call fd % get_real_vector(deltas)
+      call fd % real_vector(deltas)
     end block
 
     call cg % attach(vertex_derivative(order=2, &

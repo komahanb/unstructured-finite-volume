@@ -30,7 +30,7 @@
 program test
 
   use graph_fractal        , only : graph, null_branch, known_branch
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -38,7 +38,7 @@ program test
   use relation_binary, only : csr_relation
   use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
-       & holds_set, relational_valid
+       & has_set, relational_valid
 
   implicit none
 
@@ -74,8 +74,8 @@ program test
 
     type(graph), target        :: g, cell(2), elem(2)
     type(relational_binding)   :: b
-    type(set_graph)          :: e, v
-    type(set_graph), pointer :: s
+    type(graph)          :: e, v
+    type(graph), pointer :: s
     integer                    :: i
     type(set_map)     :: sets
 
@@ -108,8 +108,8 @@ program test
     s => member_set_at(g, b, 2)
     call check('member_set_at(2) is V', s % same_as(v))
 
-    call check('holds_set answers for both, and refuses none', &
-         & holds_set(g, b, e) .and. holds_set(g, b, v))
+    call check('has_set answers for both, and refuses none', &
+         & has_set(g, b, e) .and. has_set(g, b, v))
     call check('sets only is vacuously valid', relational_valid(g, b))
 
   end block sets_only_block
@@ -123,7 +123,7 @@ program test
     type(graph), target        :: g
     type(graph), target        :: scell(2), selem(2), rcell(1), relem(1)
     type(relational_binding)   :: b
-    type(set_graph)          :: e, v
+    type(graph)          :: e, v
     type(stored_relation)      :: t
     class(relation), pointer   :: r
     integer                    :: i
@@ -180,7 +180,7 @@ program test
 
     type(graph), target      :: g, scell, selem, rcell, relem
     type(relational_binding) :: b
-    type(set_graph)        :: e, v, foreign
+    type(graph)        :: e, v, foreign
     type(stored_relation)    :: t
     type(set_map)     :: sets
 
@@ -210,11 +210,11 @@ program test
 
     call check('foreign domain: the graph is well formed', &
          & num_member_sets(g) .eq. 1 .and. num_relations(g) .eq. 1)
-    call check('the graph does not hold W', .not. holds_set(g, b, foreign))
+    call check('the graph does not hold W', .not. has_set(g, b, foreign))
     call check('so it is relationally INVALID, and reported, not refused', &
          & .not. relational_valid(g, b))
     call check('E is still held, and V was never bound', &
-         & holds_set(g, b, e) .and. .not. holds_set(g, b, v))
+         & has_set(g, b, e) .and. .not. has_set(g, b, v))
 
   end block foreign_block
 
@@ -227,7 +227,7 @@ program test
 
     type(graph), target      :: g, rcell, relem
     type(relational_binding) :: b
-    type(set_graph)        :: e
+    type(graph)        :: e
     type(stored_relation)    :: p
     type(set_map)     :: sets
 
@@ -262,7 +262,7 @@ program test
 
     type(graph), target      :: g, scell(2), selem(2)
     type(relational_binding) :: b
-    type(set_graph)        :: e
+    type(graph)        :: e
     integer                  :: i
     type(set_map)     :: sets
 
@@ -295,7 +295,7 @@ program test
 
     type(graph), target      :: g, scell, selem, rcell(2), relem(2)
     type(relational_binding) :: b
-    type(set_graph)        :: e
+    type(graph)        :: e
     type(stored_relation)    :: p
     integer                  :: i
     type(set_map)     :: sets
@@ -338,7 +338,7 @@ program test
 
     type(graph), target      :: g, scell(2), selem(2), rcell(3), relem(3)
     type(relational_binding) :: b
-    type(set_graph)        :: ops, vals
+    type(graph)        :: ops, vals
     type(csr_relation)       :: physical, scheduled
     type(stored_relation)    :: flow
     class(relation), pointer :: r1, r2, r3

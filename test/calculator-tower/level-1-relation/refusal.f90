@@ -17,7 +17,7 @@
 program calculator_level_1_refusal
 
   use calculator_assert, only : SLOT_A, OP_PLUS, PORT_IN1, PORT_OUT
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -25,7 +25,7 @@ program calculator_level_1_refusal
 
   implicit none
 
-  type(set_graph)     :: x, o, p, raw
+  type(graph)     :: x, o, p, raw
   type(stored_relation) :: flow
   character(len=32)     :: which
   type(set_map)     :: sets

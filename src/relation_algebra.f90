@@ -68,7 +68,7 @@
 
 module relation_algebra
 
-  use graph_fractal      , only : set_graph => graph
+  use graph_fractal      , only : graph
   use relation_finitary       , only : relation, stored_relation
   use map_set        , only : set_map
   use map_inclusion  , only : inclusion_map, declared_subobject
@@ -96,12 +96,12 @@ contains
 
     class(relation)    , intent(in) :: r
     integer            , intent(in) :: slot_index
-    type(set_graph)    , intent(in) :: allowed
+    type(graph)    , intent(in) :: allowed
     type(set_map)      , intent(in) :: sets
     type(inclusion_map), intent(in) :: inclusions
 
-    type(set_graph), allocatable :: seats(:)
-    type(set_graph)              :: d
+    type(graph), allocatable :: seats(:)
+    type(graph)              :: d
     integer, allocatable         :: table(:,:), kept(:,:)
     integer                      :: k, j, n
 
@@ -130,7 +130,7 @@ contains
     allocate(kept(size(table, 1), size(table, 2)))
     n = 0
     do j = 1, size(table, 2)
-       if (sets % has_in(allowed, table(slot_index, j))) then
+       if (sets % has(allowed, table(slot_index, j))) then
           n = n + 1
           kept(:, n) = table(:, j)
        end if
@@ -160,7 +160,7 @@ contains
     integer        , intent(in) :: slot_indices(:)
     type(set_map)  , intent(in) :: sets
 
-    type(set_graph), allocatable :: seats(:)
+    type(graph), allocatable :: seats(:)
     integer, allocatable         :: table(:,:), proj(:,:)
     integer                      :: k, l, j, m
 
@@ -218,7 +218,7 @@ contains
     class(relation), intent(in) :: r_bc
     type(set_map)  , intent(in) :: sets
 
-    type(set_graph)      :: da, db, db2, dc
+    type(graph)      :: da, db, db2, dc
     integer, allocatable :: tab(:,:), tbc(:,:), pairs(:,:)
     integer              :: i, j, n
 
@@ -237,7 +237,7 @@ contains
 
     ! The sparse product: group the right factor's tuples by the
     ! local index of their first slot once, then walk each left
-    ! tuple's matching fiber - linear in the tuples plus the
+    ! tuple's matching fibre - linear in the tuples plus the
     ! output, never the all-pairs scan. Emission order is
     ! unchanged: left tuples in order, matches in the right
     ! factor's arrival order.
@@ -246,7 +246,7 @@ contains
       integer, allocatable :: keys(:), identity(:), ptr(:), grouped(:)
       integer :: nmid, k, m
 
-      nmid = sets % size_of(db)
+      nmid = sets % num_members_of(db)
 
       allocate(keys(size(tbc, 2)), identity(size(tbc, 2)))
       do j = 1, size(tbc, 2)

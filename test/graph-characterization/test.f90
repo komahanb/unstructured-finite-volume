@@ -26,10 +26,10 @@
 program test_graph_characterization
 
   use iso_fortran_env        , only : dp => REAL64
-  use view_directed    , only : GRAPH_SIDE_VERTEX
+  use view_directed    , only : SIDE_VERTEX
   use view_directed    , only : directed_graph
   use field_calculus   , only : field
-  use graph_fractal           , only : set_graph => graph
+  use graph_fractal           , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set           , only : set_map
@@ -100,7 +100,7 @@ contains
     type(stored_directed_graph)              :: g
     type(differential_operator)     :: div
     class(field), allocatable :: yf
-    type(set_graph)                   :: eon
+    type(graph)                   :: eon
     type(stored_field)                     :: zf
     integer, allocatable            :: idx(:)
     real(dp), allocatable           :: y(:)
@@ -134,7 +134,7 @@ contains
     call zf % set_real_vector([3.0_dp, 5.0_dp])
     div = divergence()
     call div % apply(g, [zf], yf)
-    call yf % get_real_vector(y)
+    call yf % real_vector(y)
     call report(abs(y(1) - 8.0_dp) < 1.0d-12 .and. &
          &      abs(y(2) + 8.0_dp) < 1.0d-12, &
          & "the divergence counts each parallel edge once", nfail)
@@ -154,9 +154,9 @@ contains
     type(stored_directed_graph)              :: g
     type(differential_operator)     :: div
     class(field), allocatable :: yf
-    type(set_graph)                   :: eon
+    type(graph)                   :: eon
     type(stored_field)                     :: zf
-    type(set_graph)                 :: sset
+    type(graph)                 :: sset
     type(set_map)                   :: sets
     type(label_map)                 :: labels
     type(inclusion_map)             :: inclusions
@@ -199,7 +199,7 @@ contains
     call zf % set_real_vector([2.0_dp, 4.0_dp, 7.0_dp])
     div = divergence()
     call div % apply(g, [zf], yf)
-    call yf % get_real_vector(y)
+    call yf % real_vector(y)
     call report(all(abs(y - [2.0_dp, 2.0_dp, 3.0_dp]) < 1.0d-12), &
          & "the half-edge contributes once, to its tail alone", nfail)
     call report(abs(sum(y) - 7.0_dp) < 1.0d-12, &
@@ -274,8 +274,8 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)    :: faces
-    type(set_graph)     :: es, none
+    type(graph)    :: faces
+    type(graph)     :: es, none
     integer, allocatable :: idx(:)
     type(set_map)       :: sets
     type(label_map)     :: labels
@@ -291,21 +291,21 @@ contains
 
     call report(declared_subobject(es, faces, inclusions), &
          & "a support is a subobject of its host domain", nfail)
-    call report(sets % size_of(es) .eq. 3, &
+    call report(sets % num_members_of(es) .eq. 3, &
          & "and knows how many it holds", nfail)
 
     call sets % members_of(es, idx)
     call report(all(idx .eq. [11, 14, 19]), &
          & "members return exactly as given, in order", nfail)
 
-    call report(sets % has_in(es, 14) .and. .not. sets % has_in(es, 12), &
+    call report(sets % has(es, 14) .and. .not. sets % has(es, 12), &
          & "membership answers the chosen family alone", nfail)
 
     call none % declare()
     call sets % bind(none, listed_set_representation([integer ::]))
     call labels % bind(none, 'nothing')
     call inclusions % include_in(none, faces)
-    call report(sets % size_of(none) .eq. 0, &
+    call report(sets % num_members_of(none) .eq. 0, &
          & "the empty support is a support", nfail)
 
   end subroutine check_supports
@@ -326,7 +326,7 @@ contains
     type(assembler)                 :: a
     class(directed_graph), allocatable       :: part
     class(field), allocatable :: pd, fd
-    type(set_graph)                   :: von, eon
+    type(graph)                   :: von, eon
     type(stored_field)                     :: q, w
     real(dp), allocatable           :: v(:)
     real(dp)                        :: vtotal(6), etotal(5)
@@ -352,7 +352,7 @@ contains
     etotal = 0.0_dp
 
     do k = 1, 2
-       p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
+       p = partitioner(PARTITION_LINEAR, num_parts=2, part=k)
        call p % partition_graph(g, part, rel)
        call sets % bind(part % vertex_set(), &
             & counted_set_representation(part % num_vertices()))
@@ -363,7 +363,7 @@ contains
        call a % assemble_data(rel, part, pd, g, sets, labels, inclusions, fd)
        select type (fd)
        class is (stored_field)
-          call fd % get_real_vector(v)
+          call fd % real_vector(v)
           vtotal = vtotal + v(1:6)
        end select
 
@@ -371,7 +371,7 @@ contains
        call a % assemble_data(rel, part, pd, g, sets, labels, inclusions, fd)
        select type (fd)
        class is (stored_field)
-          call fd % get_real_vector(v)
+          call fd % real_vector(v)
           etotal = etotal + v(1:5)
        end select
     end do
@@ -398,7 +398,7 @@ contains
     type(stored_directed_graph)              :: g
     type(differential_operator)     :: fwd, rev
     class(field), allocatable :: yf
-    type(set_graph)                   :: on
+    type(graph)                   :: on
     type(stored_field)                     :: qf, pf
     real(dp), allocatable           :: aq(:), ap(:)
     real(dp)                        :: q(4), p(4), cs(5)
@@ -427,9 +427,9 @@ contains
             &                             adjoint=.true.)
 
        call fwd % apply(g, [qf], yf)
-       call yf % get_real_vector(aq)
+       call yf % real_vector(aq)
        call rev % apply(g, [pf], yf)
-       call yf % get_real_vector(ap)
+       call yf % real_vector(ap)
 
        ok = ok .and. abs(sum(aq * p) - sum(q * ap)) < 1.0d-11
     end do
@@ -446,7 +446,7 @@ contains
   subroutine members(sets, g, indices)
 
     type(set_map)       , intent(in)  :: sets
-    type(set_graph)     , intent(in)  :: g
+    type(graph)     , intent(in)  :: g
     integer, allocatable, intent(out) :: indices(:)
 
     call sets % members_of(g, indices)

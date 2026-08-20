@@ -41,7 +41,7 @@ program visualization_level_8
   use map_label      , only : label_map
   use iso_fortran_env      , only : dp => REAL64
   use visualization_assert , only : report, verdict
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use view_directed  , only : directed_graph
   use view_directed_stored          , only : stored_directed_graph
   use operation_stencil  , only : stencil

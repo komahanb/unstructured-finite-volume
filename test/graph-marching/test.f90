@@ -25,8 +25,8 @@ program test_graph_marching
   use operation_action, only : operation
   use view_directed, only : directed_graph
   use field_calculus, only : field
-  use view_directed , only : GRAPH_SIDE_VERTEX
-  use graph_fractal         , only : set_graph => graph
+  use view_directed , only : SIDE_VERTEX
+  use graph_fractal         , only : graph
   use field_stored  , only : stored_field
   use view_directed_stored        , only : stored_directed_graph
   use operation_differential, only : vertex_derivative
@@ -114,7 +114,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(marcher) :: clock
-    type(set_graph) :: cells
+    type(graph) :: cells
     type(stored_directed_graph) :: lone
     type(differential_operator) :: decay
     real(dp) :: q(1), expected
@@ -151,7 +151,7 @@ contains
     type(marcher) :: clock
     type(mandelbrot_law) :: law
     type(stored_directed_graph) :: points
-    type(set_graph) :: cells
+    type(graph) :: cells
     type(stored_field) :: escape_field
     real(dp), allocatable :: q(:)
     integer, allocatable :: escape(:)

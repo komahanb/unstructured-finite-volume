@@ -38,7 +38,7 @@ program partitioned_pde_level_6
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : report, verdict
   use partitioned_pde_assert, only : NV, Q_EXACT, B_EXACT, L_EXACT
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation
   use map_set        , only : set_map
   use map_inclusion  , only : inclusion_map, declared_subobject
@@ -95,7 +95,7 @@ contains
 
     type(partitioner) :: p
 
-    p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
+    p = partitioner(PARTITION_LINEAR, num_parts=2, part=k)
     call p % partition_graph(g, part, rel)
 
   end subroutine cut
@@ -111,9 +111,9 @@ contains
     type(differential_operator)     :: lap
     type(stored_field)                     :: q
     class(field), allocatable :: lq, aq
-    type(set_graph)  :: dom
+    type(graph)  :: dom
     real(dp), allocatable           :: v(:)
-    type(set_graph)               :: vs
+    type(graph)               :: vs
     integer         :: n_vs
 
     vs = g % vertex_set()
@@ -123,14 +123,14 @@ contains
 
     lap = laplacian(coefficient=1.0_dp, spacing=1.0_dp, measure=1.0_dp)
     call lap % apply(g, [q], lq)
-    call lq % get_real_vector(v)
+    call lq % real_vector(v)
     call report(by_member(sets, v, vs, L_EXACT), &
          & "the production Laplacian on G gives " // &
          & "[1,1,1,1,1,-5], by member", nfail)
 
     call shifted % apply(g, [q], aq)
     dom = aq % domain()
-    call aq % get_real_vector(v)
+    call aq % real_vector(v)
     call report(dom % same_as(vs) .and. by_member(sets, v, vs, B_EXACT), &
          & "and A q* = 2q* - Lq* = b = [1,3,7,13,21,37] on V(G)", &
          & nfail)
@@ -164,9 +164,9 @@ contains
     type(partitioner)               :: p
     type(stored_field)                     :: q
     class(field), allocatable :: pd
-    type(set_graph)  :: dom
+    type(graph)  :: dom
     real(dp), allocatable           :: v(:)
-    type(set_graph)               :: pvs
+    type(graph)               :: pvs
     type(label_map)     :: labels
     type(inclusion_map)     :: inclusions
     character(len=1)                :: tag
@@ -177,7 +177,7 @@ contains
     q = stored_field('q star', g % vertex_set(), g % num_vertices())
     call q % set_real_vector(Q_EXACT)
 
-    p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
+    p = partitioner(PARTITION_LINEAR, num_parts=2, part=k)
 
     ! The relation of THIS part, not whichever cut ran last.
     select type (part)
@@ -188,7 +188,7 @@ contains
     call p % partition_data(rel, g, q, part, sets, labels, inclusions, pd)
 
     dom = pd % domain()
-    call pd % get_real_vector(v)
+    call pd % real_vector(v)
 
     select type (part)
     type is (stored_directed_graph)
@@ -249,7 +249,7 @@ contains
     ! up here rather than hide behind a coincidental ordering.
     lap = laplacian(coefficient=1.0_dp, spacing=1.0_dp, measure=1.0_dp)
     call lap % apply(part, [qp], lq)
-    call lq % get_real_vector(v)
+    call lq % real_vector(v)
     ok = .true.
     do i = 1, size(globals)
        seat = seat_of_global(part, globals(i))
@@ -263,7 +263,7 @@ contains
          & "by global member", nfail)
 
     call shifted % apply(part, [qp], aq)
-    call aq % get_real_vector(v)
+    call aq % real_vector(v)
     ok = .true.
     do i = 1, size(globals)
        seat = seat_of_global(part, globals(i))
@@ -347,18 +347,18 @@ contains
     ! Unperturbed: the owned answer stands where it should.
     qp = local_state(part, k, sets, labels, inclusions)
     call shifted % apply(part, [qp], aq)
-    call aq % get_real_vector(v)
+    call aq % real_vector(v)
     call report(abs(v(wseat) - before) < 1.0d-12, &
          & "G" // tag // ": the owned result at global " // &
          & achar(48 + watched_global) // " starts correct", nfail)
 
     ! Perturb ONLY the borrowed copy, by its global identity.
-    call qp % get_real_vector(state)
+    call qp % real_vector(state)
     state(bseat) = state(bseat) + 10.0_dp
     call qp % set_real_vector(state)
 
     call shifted % apply(part, [qp], aq)
-    call aq % get_real_vector(v)
+    call aq % real_vector(v)
     call report(abs(v(wseat) - after) < 1.0d-12, &
          & "G" // tag // ": +10 on the BORROWED copy of global " // &
          & achar(48 + borrowed_global) // " moves the OWNED result " // &
@@ -368,7 +368,7 @@ contains
     ! Restore, and the correct answer returns.
     qp = local_state(part, k, sets, labels, inclusions)
     call shifted % apply(part, [qp], aq)
-    call aq % get_real_vector(v)
+    call aq % real_vector(v)
     call report(abs(v(wseat) - before) < 1.0d-12, &
          & "G" // tag // ": restore the halo and equivalence returns", &
          & nfail)
@@ -397,7 +397,7 @@ contains
     q = stored_field('q star', g % vertex_set(), g % num_vertices())
     call q % set_real_vector(Q_EXACT)
 
-    p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
+    p = partitioner(PARTITION_LINEAR, num_parts=2, part=k)
 
     ! The relation of THIS part, not whichever cut ran last.
     select type (part)
@@ -407,7 +407,7 @@ contains
 
     call p % partition_data(rel, g, q, part, sets, labels, inclusions, pd)
 
-    call pd % get_real_vector(v)
+    call pd % real_vector(v)
     qp = stored_field('local q', part % vertex_set(), part % num_vertices())
     call qp % set_real_vector(v)
 
@@ -421,7 +421,7 @@ contains
 
     type(stored_field)                     :: qp, aq_local
     class(field), allocatable :: aq, fd
-    type(set_graph)  :: dom
+    type(graph)  :: dom
     type(label_map)     :: labels
     type(inclusion_map)     :: inclusions
     real(dp), allocatable           :: v(:)
@@ -436,7 +436,7 @@ contains
 
     qp = local_state(part, k, sets, labels, inclusions)
     call shifted % apply(part, [qp], aq)
-    call aq % get_real_vector(v)
+    call aq % real_vector(v)
 
     aq_local = stored_field('A local', part % vertex_set(), part % num_vertices())
     call aq_local % set_real_vector(v)
@@ -445,7 +445,7 @@ contains
     ! from. It binds nothing.
     call a % assemble_data(rel, part, aq_local, g, sets, labels, inclusions, fd)
     dom = fd % domain()
-    call fd % get_real_vector(v)
+    call fd % real_vector(v)
 
        call sets % members_of(dom, mem)
        do i = 1, size(mem)
@@ -477,13 +477,13 @@ contains
 
     type(set_map)  , intent(in) :: sets
     real(dp)       , intent(in) :: v(:)
-    type(set_graph), intent(in) :: dom
+    type(graph), intent(in) :: dom
     real(dp)       , intent(in) :: expect(:)
 
     integer :: i, m
 
     by_member = .true.
-    do i = 1, sets % size_of(dom)
+    do i = 1, sets % num_members_of(dom)
        m = sets % member_of(dom, i)
        by_member = by_member .and. &
             & (abs(v(sets % index_in(dom, m)) - expect(m)) < 1.0d-12)

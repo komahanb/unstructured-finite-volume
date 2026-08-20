@@ -104,7 +104,7 @@ program visualization_level_7
   use map_label      , only : label_map
   use iso_fortran_env      , only : dp => REAL64
   use visualization_assert , only : report, verdict
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use view_directed  , only : directed_graph
   use view_directed_stored          , only : stored_directed_graph
   use operation_stencil  , only : stencil
@@ -228,7 +228,7 @@ contains
     type(jacobi), intent(out) :: solver
     class(directed_graph), intent(in)  :: on
 
-    type(set_graph) :: unknowns
+    type(graph) :: unknowns
 
     ! `on` is a production host whose carriers this scope must
     ! describe before it can size anything on them.
@@ -240,7 +240,7 @@ contains
     ! Two seats, and the experiment varies only the first. `on` is
     ! where the action executes; `coupling` is which unknowns feed
     ! which, and the caller knows the stencil owns that axis.
-    call solver % attach(a, on, unknowns, sets % size_of(unknowns), coupling = pa)
+    call solver % attach(a, on, unknowns, sets % num_members_of(unknowns), coupling = pa)
 
   end subroutine attach_to
 

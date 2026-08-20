@@ -29,8 +29,8 @@ module util_string
      procedure :: print
      procedure :: equals
      procedure :: tokenize
-     procedure :: asinteger
-     procedure :: asreal
+     procedure :: as_integer
+     procedure :: as_real
 
      ! The destructor.
      final :: destroy
@@ -195,24 +195,24 @@ contains
   ! Return the integer evaluation of the string.
   !===================================================================!
   
-  pure elemental type(integer)  function asinteger(this)
+  pure elemental type(integer)  function as_integer(this)
 
     class(string), intent(in) :: this
 
-    read (this % str,*) asinteger
+    read (this % str,*) as_integer
 
-  end function asinteger
+  end function as_integer
 
   !===================================================================!  
   ! Return the real number parsed from the string.
   !===================================================================!
   
-  pure elemental type(real(dp)) function asreal(this)
+  pure elemental type(real(dp)) function as_real(this)
 
     class(string), intent(in) :: this
 
-    read (this % str,*) asreal
+    read (this % str,*) as_real
     
-  end function asreal
+  end function as_real
   
 end module util_string

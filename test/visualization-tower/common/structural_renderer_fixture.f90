@@ -17,7 +17,7 @@
 !
 !      domain(1), domain(2)          which carriers this relation
 !                                    relates
-!      sets % size_of(carrier)              how many rows, how many columns
+!      sets % num_members_of(carrier)              how many rows, how many columns
 !      sets % member_of(carrier, i)           WHICH member stands at position i
 !      relation % has([col, row])    whether this cell is filled
 !      relation % name()             what to call the picture
@@ -61,7 +61,7 @@
 
 module structural_renderer_fixture
 
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set        , only : set_map
   use map_label      , only : label_map
   use relation_finitary                , only : relation
@@ -158,7 +158,7 @@ contains
     type(set_map)  , intent(in) :: sets
     type(label_map), intent(in) :: labels
 
-    type(set_graph) :: cols, rows
+    type(graph) :: cols, rows
     integer                        :: stub, wide, i, j, at
 
     if (r % arity() .ne. 2) then
@@ -171,21 +171,21 @@ contains
     stub = max(widest(rows, sets, labels), MIN_STUB) + 2
     wide = widest(cols, sets, labels) + 1
 
-    allocate(pic % line(2 + sets % size_of(rows)))
+    allocate(pic % line(2 + sets % num_members_of(rows)))
     pic % line = repeat(' ', LINE)
 
     call put(pic % line(1), 1, r % name())
 
     ! The header: the domain's members, at their own positions.
-    do j = 1, sets % size_of(cols)
+    do j = 1, sets % num_members_of(cols)
        at = stub + (j - 1) * wide
        call put(pic % line(2), at, label_for(cols, sets % member_of(cols, j), labels))
     end do
 
     ! One line per member of the codomain, in its own order.
-    do i = 1, sets % size_of(rows)
+    do i = 1, sets % num_members_of(rows)
        call put(pic % line(2 + i), 1, label_for(rows, sets % member_of(rows, i), labels))
-       do j = 1, sets % size_of(cols)
+       do j = 1, sets % num_members_of(cols)
           at = stub + (j - 1) * wide
           call put(pic % line(2 + i), at, &
                &   glyph_at(r, sets % member_of(cols, j), sets % member_of(rows, i)))
@@ -232,7 +232,7 @@ contains
     type(stage)     , intent(in) :: legs(:)
     type(label_map), intent(in) :: labels
 
-    type(set_graph) :: here, there
+    type(graph) :: here, there
     character(len=:) , allocatable :: text
     integer                        :: k
 
@@ -288,7 +288,7 @@ contains
     type(set_map)  , intent(in) :: sets
     type(label_map), intent(in) :: labels
 
-    type(set_graph) :: cols, rows
+    type(graph) :: cols, rows
     character(len=:) , allocatable :: text
     integer                        :: i, j
     logical                        :: any_reached
@@ -300,15 +300,15 @@ contains
     cols = r % domain(1)
     rows = r % domain(2)
 
-    allocate(pic % line(1 + sets % size_of(cols)))
+    allocate(pic % line(1 + sets % num_members_of(cols)))
     pic % line = repeat(' ', LINE)
 
     call put(pic % line(1), 1, r % name())
 
-    do j = 1, sets % size_of(cols)
+    do j = 1, sets % num_members_of(cols)
        text        = label_for(cols, sets % member_of(cols, j), labels) // ' ->'
        any_reached = .false.
-       do i = 1, sets % size_of(rows)
+       do i = 1, sets % num_members_of(rows)
           if (r % has([sets % member_of(cols, j), sets % member_of(rows, i)])) then
              text        = text // ' ' // label_for(rows, sets % member_of(rows, i), labels)
              any_reached = .true.
@@ -363,14 +363,14 @@ contains
 
   integer function widest(carrier, sets, labels)
 
-    type(set_graph), intent(in) :: carrier
+    type(graph), intent(in) :: carrier
     type(set_map)  , intent(in) :: sets
     type(label_map), intent(in) :: labels
 
     integer :: k
 
     widest = 1
-    do k = 1, sets % size_of(carrier)
+    do k = 1, sets % num_members_of(carrier)
        widest = max(widest, len(label_for(carrier, sets % member_of(carrier, k), labels)))
     end do
 
@@ -378,7 +378,7 @@ contains
 
   function carrier_name(carrier, labels) result(text)
 
-    type(set_graph), intent(in) :: carrier
+    type(graph), intent(in) :: carrier
     type(label_map), intent(in) :: labels
 
     character(len=:), allocatable :: text

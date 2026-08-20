@@ -29,7 +29,7 @@ module operation_linearization
   use operation_action, only : operation
   use view_directed, only : directed_graph
   use field_calculus, only : field
-  use graph_fractal      , only : set_graph => graph
+  use graph_fractal      , only : graph
   use operation_discretization     , only : linearization, &
        & differentiable_operation
   use field_stored  , only : stored_field
@@ -147,14 +147,14 @@ contains
 
   end function derivative_name
 
-  subroutine derivative_domain(this, input_graph, domain, nentries)
+  subroutine derivative_domain(this, input_graph, domain, num_entries)
 
     class(difference_linearization), intent(in) :: this
     class(directed_graph), intent(in)                    :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
 
-    call this % of % domain(input_graph, domain, nentries)
+    call this % of % domain(input_graph, domain, num_entries)
 
   end subroutine derivative_domain
 
@@ -192,10 +192,10 @@ contains
 
     type(stored_field)   :: state
     class(field), allocatable :: pushed
-    type(set_graph) :: on, given
+    type(graph) :: on, given
     integer         :: n_on, n_given
     real(dp), allocatable :: v(:), y(:), base(:)
-    integer :: n, ncomp
+    integer :: n, num_components
 
     call this % of % domain(input_graph, on, n_on)
 
@@ -210,7 +210,7 @@ contains
 
     ! The width the frozen state carries. A statement of several
     ! numbers per member is differenced whole, like any other.
-    ncomp = max(size(this % at) / n, 1)
+    num_components = max(size(this % at) / n, 1)
 
     if (present(input_data)) then
        given   = input_data(1) % domain()
@@ -218,12 +218,12 @@ contains
        if (.not. given % same_as(on)) then
           error stop 'linearization: the direction must live on the operation''s domain'
        end if
-       call input_data(1) % get_real_vector(v)
+       call input_data(1) % real_vector(v)
        if (size(v) /= size(this % at)) then
           error stop 'linearization: the direction must match the frozen state''s width'
        end if
     else
-       allocate(v(n * ncomp))
+       allocate(v(n * num_components))
        v = 0.0_dp
     end if
 
@@ -232,23 +232,23 @@ contains
     if (allocated(this % base)) then
        base = this % base
     else
-       state = stored_field('state', on, n_on, ncomp=ncomp)
+       state = stored_field('state', on, n_on, num_components=num_components)
        call state % set_real_vector(this % at)
        call this % of % apply(input_graph, [state], pushed)
        call answered_on(pushed, on)
-       call pushed % get_real_vector(base)
+       call pushed % real_vector(base)
     end if
 
-    state = stored_field('state', on, n_on, ncomp=ncomp)
+    state = stored_field('state', on, n_on, num_components=num_components)
     call state % set_real_vector(this % at + this % step * v)
 
     call this % of % apply(input_graph, [state], pushed)
     call answered_on(pushed, on)
-    call pushed % get_real_vector(y)
+    call pushed % real_vector(y)
 
     y = (y - base) / this % step
 
-    state = stored_field('J v', on, n_on, ncomp=ncomp)
+    state = stored_field('J v', on, n_on, num_components=num_components)
     call state % set_real_vector(y)
     if (allocated(output)) deallocate(output)
     allocate(output, source=state)
@@ -263,9 +263,9 @@ contains
   subroutine answered_on(answer, expected)
 
     class(field), intent(in) :: answer
-    type(set_graph)   , intent(in) :: expected
+    type(graph)   , intent(in) :: expected
 
-    type(set_graph) :: got
+    type(graph) :: got
 
     got = answer % domain()
     if (.not. got % same_as(expected)) then
@@ -341,14 +341,14 @@ contains
 
   end function exact_name
 
-  subroutine exact_domain(this, input_graph, domain, nentries)
+  subroutine exact_domain(this, input_graph, domain, num_entries)
 
     class(exact_linearization), intent(in) :: this
     class(directed_graph), intent(in)      :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
 
-    call this % of % domain(input_graph, domain, nentries)
+    call this % of % domain(input_graph, domain, num_entries)
 
   end subroutine exact_domain
 
@@ -370,10 +370,10 @@ contains
     class(field), allocatable, intent(inout)  :: output
 
     type(stored_field)     :: state, direction, zero
-    type(set_graph) :: on, given
+    type(graph) :: on, given
     real(dp), allocatable :: v(:)
     integer         :: n_on
-    integer         :: n, ncomp
+    integer         :: n, num_components
 
     call this % of % domain(input_graph, on, n_on)
 
@@ -389,9 +389,9 @@ contains
             &per member of the operation''s domain'
     end if
 
-    ncomp = max(size(this % at) / n, 1)
+    num_components = max(size(this % at) / n, 1)
 
-    state = stored_field('state', on, n_on, ncomp=ncomp)
+    state = stored_field('state', on, n_on, num_components=num_components)
     call state % set_real_vector(this % at)
 
     if (present(input_data)) then
@@ -400,14 +400,14 @@ contains
        if (.not. given % same_as(on)) then
           error stop 'linearization: the direction must live on the operation''s domain'
        end if
-       call input_data(1) % get_real_vector(v)
+       call input_data(1) % real_vector(v)
        if (size(v) /= size(this % at)) then
           error stop 'linearization: the direction must match the frozen state''s width'
        end if
 
        ! copy into a concrete field: a polymorphic entity cannot
        ! appear in an array constructor
-       direction = stored_field('direction', on, n_on, ncomp=ncomp)
+       direction = stored_field('direction', on, n_on, num_components=num_components)
        call direction % set_real_vector(v)
 
        call this % of % partial_action(input_graph, [state], [1], &
@@ -417,7 +417,7 @@ contains
 
        ! no direction means the zero direction, and the tangent of
        ! zero is zero
-       zero = stored_field('J v', on, n_on, ncomp=ncomp)
+       zero = stored_field('J v', on, n_on, num_components=num_components)
        call zero % set_real_vector(spread(0.0_dp, 1, size(this % at)))
        if (allocated(output)) deallocate(output)
        allocate(output, source=zero)

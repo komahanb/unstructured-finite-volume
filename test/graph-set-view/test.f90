@@ -14,11 +14,11 @@
 
 program set_foundation
 
-  use graph_fractal          , only : graph, null_branch, GRAPH_NULL
+  use graph_fractal          , only : graph, null_branch, BRANCH_NULL
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set          , only : set_map
-  use view_set         , only : set_defined, set_size, set_member, &
+  use view_set         , only : set_defined, set_num_members, set_member, &
        & set_members, set_has, set_local_index, set_equivalent
 
   implicit none
@@ -57,7 +57,7 @@ program set_foundation
     call check('1  and are NOT the same set', &
          & .not. empty_a % same_as(empty_b))
     call check('1  even when described by different representations', &
-         & set_size(empty_a, m) .eq. 0 .and. set_size(empty_b, m) .eq. 0)
+         & set_num_members(empty_a, m) .eq. 0 .and. set_num_members(empty_b, m) .eq. 0)
 
     call check('1  identity is the graph''s alone', &
          & a % same_as(a) .and. b % same_as(b))
@@ -84,7 +84,7 @@ program set_foundation
     call m % bind(cells, counted_set_representation(1000000000))
 
     call check('2  |cells| = 10^9, and no member object exists', &
-         & set_size(cells, m) .eq. 1000000000)
+         & set_num_members(cells, m) .eq. 1000000000)
     call check('2  membership is one comparison', &
          & set_has(cells, m, 999999999) .and. &
          &  .not. set_has(cells, m, 1000000001))
@@ -92,8 +92,8 @@ program set_foundation
          & set_local_index(cells, m, 7) .eq. 7 .and. &
          &  set_member(cells, m, 7) .eq. 7)
     call check('2  the graph carries no extension: both branches NULL', &
-         & cells % branch(1) % status() .eq. GRAPH_NULL .and. &
-         &  cells % branch(2) % status() .eq. GRAPH_NULL)
+         & cells % branch(1) % status() .eq. BRANCH_NULL .and. &
+         &  cells % branch(2) % status() .eq. BRANCH_NULL)
 
     ! And at a size a test may enumerate, the roster is the identity map.
     block
@@ -128,7 +128,7 @@ program set_foundation
     call m % bind(s, listed_set_representation([2, 5, 6]))
 
     call check('3  |S| = 3, and its members are its own values', &
-         & set_size(s, m) .eq. 3)
+         & set_num_members(s, m) .eq. 3)
     call set_members(s, m, v)
     call check('3  enumerated in declaration order', &
          & all(v .eq. [2, 5, 6]))
@@ -139,7 +139,7 @@ program set_foundation
          & set_member(a, m, 5) .eq. 5 .and. set_local_index(a, m, 5) .eq. 5)
 
     both_ways = .true.
-    do k = 1, set_size(s, m)
+    do k = 1, set_num_members(s, m)
        both_ways = both_ways .and. &
             & set_local_index(s, m, set_member(s, m, k)) .eq. k
        both_ways = both_ways .and. &
@@ -157,7 +157,7 @@ program set_foundation
       call loose % declare()
       call m % bind(loose, listed_set_representation([30, 10, 20]))
       call check('3  and a listed set needs no ambient to exist', &
-           & set_size(loose, m) .eq. 3 .and. &
+           & set_num_members(loose, m) .eq. 3 .and. &
            &  set_member(loose, m, 1) .eq. 30 .and. &
            &  set_local_index(loose, m, 20) .eq. 3)
     end block
@@ -190,18 +190,18 @@ program set_foundation
     call a % declare(); call b % declare(); call c % declare()
 
     call m % bind(a, counted_set_representation(4))
-    call check('4  a is described', set_size(a, m) .eq. 4)
+    call check('4  a is described', set_num_members(a, m) .eq. 4)
 
     call m % bind(b, counted_set_representation(9))          ! growth
     call check('4  and still is after the row array grows', &
-         & set_size(a, m) .eq. 4 .and. set_size(b, m) .eq. 9)
+         & set_num_members(a, m) .eq. 4 .and. set_num_members(b, m) .eq. 9)
 
     copy = m
     call copy % bind(c, listed_set_representation([7]))
     call check('4  a copy is independent: c is in the copy', &
          & set_defined(c, copy) .and. .not. set_defined(c, m))
     call check('4  and the original''s answers are unchanged', &
-         & set_size(a, m) .eq. 4 .and. set_size(a, copy) .eq. 4)
+         & set_num_members(a, m) .eq. 4 .and. set_num_members(a, copy) .eq. 4)
 
   end block storage_block
 

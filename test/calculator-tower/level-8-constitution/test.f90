@@ -29,7 +29,7 @@ program calculator_level_8
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -46,8 +46,8 @@ program calculator_level_8
   integer, parameter :: ROW_C = 1
   integer, parameter :: ROW_E = 2
 
-  type(set_graph)     :: x, o, p, y
-  type(set_graph)      :: k, u, p_out
+  type(graph)     :: x, o, p, y
+  type(graph)      :: k, u, p_out
   type(stored_relation) :: flow, located
   type(stored_field)           :: qk, qu
   integer               :: table(3, 6)
@@ -90,9 +90,9 @@ program calculator_level_8
   call u % declare()
   call sets       % bind(u, listed_set_representation([SLOT_E, SLOT_C]))
   call inclusions % include_in(u, x)
-  qk = stored_field('q known', k, sets % size_of(k))
+  qk = stored_field('q known', k, sets % num_members_of(k))
   call qk % set_real_vector([4.0_dp, 2.0_dp, 3.0_dp])
-  qu = stored_field('q unknown', u, sets % size_of(u))
+  qu = stored_field('q unknown', u, sets % num_members_of(u))
 
   call check_coverage(nfail)
   call check_laws(nfail)
@@ -117,9 +117,9 @@ contains
     logical :: ok
 
     ok = .true.
-    do i = 1, sets % size_of(x)
+    do i = 1, sets % num_members_of(x)
        m = sets % member_of(x, i)
-       ok = ok .and. (count([sets % has_in(k, m), sets % has_in(u, m)]) .eq. 1)
+       ok = ok .and. (count([sets % has(k, m), sets % has(u, m)]) .eq. 1)
     end do
     call report(ok, &
          & "K and U are disjoint and cover X together", nfail)
@@ -214,10 +214,10 @@ contains
     jac = compose_binary(b_, a_, sets)
 
     ok = .true.
-    do i = 1, sets % size_of(y)
+    do i = 1, sets % num_members_of(y)
        row = sets % member_of(y, i)
        call constitution_support(t_flow, located, x, o, sets, row, mine)
-       do j = 1, sets % size_of(x)
+       do j = 1, sets % num_members_of(x)
           ok = ok .and. ( jac % has([row, sets % member_of(x, j)]) .eqv. &
                &          any(mine == sets % member_of(x, j)) )
        end do
@@ -256,7 +256,7 @@ contains
       integer :: i, jj
       logical :: ok
       ok = .true.
-      do i = 1, sets % size_of(y)
+      do i = 1, sets % num_members_of(y)
          call constitution_support(flow     , located, x, o, sets, sets % member_of(y, i), s1)
          call constitution_support(backwards, located, x, o, sets, sets % member_of(y, i), s2)
          ok = ok .and. (size(s1) .eq. size(s2))
@@ -282,7 +282,7 @@ contains
 
     real(dp), allocatable :: kv(:)
 
-    call qk % get_real_vector(kv)
+    call qk % real_vector(kv)
     call generated_residual(t_flow, located, x, o, y, sets, k, kv, u, ustate, r)
 
   end subroutine gen

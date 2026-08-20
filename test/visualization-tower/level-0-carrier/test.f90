@@ -55,7 +55,7 @@ program visualization_level_0
   use visualization_assert , only : X2_U, X2_V, X2_W
   use visualization_assert , only : X3_M, X3_N
   use visualization_assert , only : E1_1, E1_5, E2_1, E2_4, E3_1, E3_3
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -64,8 +64,8 @@ program visualization_level_0
 
   implicit none
 
-  type(set_graph) :: x0, x1, x2, x3, e1, e2, e3
-  type(set_graph) :: roll(7)
+  type(graph) :: x0, x1, x2, x3, e1, e2, e3
+  type(graph) :: roll(7)
   type(set_map)     :: sets
   type(label_map)     :: labels
   integer           :: nfail
@@ -101,13 +101,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(sets % size_of(x0) .eq. NX0 .and. sets % size_of(x1) .eq. NX1 .and. &
-         &      sets % size_of(x2) .eq. NX2 .and. sets % size_of(x3) .eq. NX3, &
+    call report(sets % num_members_of(x0) .eq. NX0 .and. sets % num_members_of(x1) .eq. NX1 .and. &
+         &      sets % num_members_of(x2) .eq. NX2 .and. sets % num_members_of(x3) .eq. NX3, &
          & "|X0|=4  |X1|=3  |X2|=3  |X3|=2 - the four state carriers " // &
          & "of the operator chain", nfail)
 
-    call report(sets % size_of(e1) .eq. NE1 .and. sets % size_of(e2) .eq. NE2 .and. &
-         &      sets % size_of(e3) .eq. NE3, &
+    call report(sets % num_members_of(e1) .eq. NE1 .and. sets % num_members_of(e2) .eq. NE2 .and. &
+         &      sets % num_members_of(e3) .eq. NE3, &
          & "|E1|=5  |E2|=4  |E3|=3 - the dependency OCCURRENCES, " // &
          & "first-class before any coefficient exists", nfail)
 
@@ -157,12 +157,12 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(sets % size_of(x1) .eq. sets % size_of(x2) .and. &
+    call report(sets % num_members_of(x1) .eq. sets % num_members_of(x2) .and. &
          &      .not. x1 % same_as(x2), &
          & "|X1| = |X2| = 3, AND X1 IS NOT X2 - counting the same " // &
          & "is not being the same", nfail)
 
-    call report(sets % size_of(x0) .eq. sets % size_of(e2) .and. &
+    call report(sets % num_members_of(x0) .eq. sets % num_members_of(e2) .and. &
          &      .not. x0 % same_as(e2), &
          & "|X0| = |E2| = 4, and a state carrier is still not an " // &
          & "occurrence carrier", nfail)
@@ -184,7 +184,7 @@ contains
 
     everywhere = .true.
     do i = 1, 7
-       everywhere = everywhere .and. sets % has_in(roll(i), 1)
+       everywhere = everywhere .and. sets % has(roll(i), 1)
     end do
 
     call report(everywhere, &
@@ -196,14 +196,14 @@ contains
          & "a, p, u, m, e11, e21 and e31 are all written 1 - SEVEN " // &
          & "OBJECTS WEARING ONE INTEGER", nfail)
 
-    call report(.not. sets % has_in(x0, NX0 + 1) .and. .not. sets % has_in(x3, NX3 + 1) .and. &
-         &      .not. sets % has_in(e3, NE3 + 1), &
+    call report(.not. sets % has(x0, NX0 + 1) .and. .not. sets % has(x3, NX3 + 1) .and. &
+         &      .not. sets % has(e3, NE3 + 1), &
          & "and each carrier refuses the member just past its last: " // &
          & "membership is the carrier's own answer", nfail)
 
-    call report(sets % has_in(x0, X0_D) .and. sets % has_in(x1, X1_R) .and. &
-         &      sets % has_in(x2, X2_W) .and. sets % has_in(x3, X3_N) .and. &
-         &      sets % has_in(e1, E1_5) .and. sets % has_in(e2, E2_4) .and. sets % has_in(e3, E3_3), &
+    call report(sets % has(x0, X0_D) .and. sets % has(x1, X1_R) .and. &
+         &      sets % has(x2, X2_W) .and. sets % has(x3, X3_N) .and. &
+         &      sets % has(e1, E1_5) .and. sets % has(e2, E2_4) .and. sets % has(e3, E3_3), &
          & "every named member of the specimen is held by the carrier " // &
          & "that names it", nfail)
 
@@ -225,7 +225,7 @@ contains
     forward  = .true.
     backward = .true.
     do i = 1, 7
-       do k = 1, sets % size_of(roll(i))
+       do k = 1, sets % num_members_of(roll(i))
           forward  = forward .and. &
                &     (sets % index_in(roll(i), sets % member_of(roll(i), k)) .eq. k)
           backward = backward .and. &
@@ -258,7 +258,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: nameless
+    type(graph) :: nameless
 
     call report(label_for(x0, X0_A, labels) .eq. 'a' .and. &
          &      label_for(x0, X0_D, labels) .eq. 'd' .and. &

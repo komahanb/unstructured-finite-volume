@@ -54,10 +54,10 @@
 module view_directed_stored
 
   use view_directed, only : directed_graph
-  use graph_fractal      , only : set_graph => graph
+  use graph_fractal      , only : graph
   use relation_binary, only : group_by_key, csr_relation
   use relation_partition, only : partition_relation
-  use view_directed     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
+  use view_directed     , only : SIDE_VERTEX, SIDE_EDGE
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set      , only : set_map
@@ -131,8 +131,8 @@ module view_directed_stored
      ! interpretations, which it is not.
      !----------------------------------------------------------------!
 
-     type(set_graph) :: vset
-     type(set_graph) :: eset
+     type(graph) :: vset
+     type(graph) :: eset
 
    contains
 
@@ -248,8 +248,8 @@ contains
 
   type(stored_directed_graph) function create(nv, tails, heads, vtags, etags, &
        &                             number, vglobal, vowner, eglobal, &
-       &                             eowner, nparts, whole_verts, whole_edges, &
-       &                             n_whole_verts, n_whole_edges) result(this)
+       &                             eowner, num_parts, whole_vertices, whole_edges, &
+       &                             num_whole_vertices, num_whole_edges) result(this)
 
     integer           , intent(in)           :: nv
     integer           , intent(in)           :: tails(:)
@@ -272,7 +272,7 @@ contains
     integer           , intent(in), optional :: vowner(:)
     integer           , intent(in), optional :: eglobal(:)
     integer           , intent(in), optional :: eowner(:)
-    integer           , intent(in), optional :: nparts
+    integer           , intent(in), optional :: num_parts
 
     !----------------------------------------------------------------!
     ! The far side of r, by identity and count. A relation that could
@@ -281,8 +281,8 @@ contains
     ! silence.
     !----------------------------------------------------------------!
 
-    type(set_graph)   , intent(in), optional :: whole_verts, whole_edges
-    integer           , intent(in), optional :: n_whole_verts, n_whole_edges
+    type(graph)   , intent(in), optional :: whole_vertices, whole_edges
+    integer           , intent(in), optional :: num_whole_vertices, num_whole_edges
 
     integer :: e
 
@@ -318,14 +318,14 @@ contains
 
     if (present(vglobal)) then
        this % whole_rel = partition_relation( &
-            & part_verts    = this % vset, n_part_verts = this % nv, &
-            & part_edges    = this % eset, n_part_edges = this % ne, &
-            & whole_verts   = merge_set(whole_verts, this % vset),   &
-            & n_whole_verts = merge_count(n_whole_verts, this % nv), &
+            & part_vertices    = this % vset, num_part_vertices = this % nv, &
+            & part_edges    = this % eset, num_part_edges = this % ne, &
+            & whole_vertices   = merge_set(whole_vertices, this % vset),   &
+            & num_whole_vertices = merge_count(num_whole_vertices, this % nv), &
             & whole_edges   = merge_set(whole_edges, this % eset),   &
-            & n_whole_edges = merge_count(n_whole_edges, this % ne), &
+            & num_whole_edges = merge_count(num_whole_edges, this % ne), &
             & number  = this % number,                               &
-            & nparts  = merge_count(nparts, 1),                      &
+            & num_parts  = merge_count(num_parts, 1),                      &
             & vglobal = vglobal,                                     &
             & vowner  = pick_owner(vowner, size(vglobal), this % number), &
             & eglobal = pick_global(eglobal, this % ne),             &
@@ -366,7 +366,7 @@ contains
     integer :: ne, e
 
     ! one (endpoint, edge) pair per end, interleaved tail-then-head
-    ! so each vertex's fiber keeps the single-pass edge order; a
+    ! so each vertex's fibre keeps the single-pass edge order; a
     ! missing head is key zero and belongs to no vertex
     ne = size(tail)
     allocate(keys(2 * ne), values(2 * ne))
@@ -512,7 +512,7 @@ contains
   ! the same set (AGENTS.md, phase 1).
   !===================================================================!
 
-  type(set_graph) function vertex_set(this)
+  type(graph) function vertex_set(this)
 
     class(stored_directed_graph), intent(in) :: this
 
@@ -520,7 +520,7 @@ contains
 
   end function vertex_set
 
-  type(set_graph) function edge_set(this)
+  type(graph) function edge_set(this)
 
     class(stored_directed_graph), intent(in) :: this
 
@@ -602,7 +602,7 @@ contains
   ! boundary edge; an interior vertex is one that does not.
   !===================================================================!
 
-  type(set_graph) function all_vertices(this) result(members)
+  type(graph) function all_vertices(this) result(members)
 
     class(stored_directed_graph), intent(in) :: this
 
@@ -620,7 +620,7 @@ contains
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
     type(inclusion_map), intent(inout) :: inclusions
-    type(set_graph)    , intent(out)   :: members
+    type(graph)    , intent(out)   :: members
 
     integer, allocatable :: pick(:)
     integer :: v, n
@@ -649,7 +649,7 @@ contains
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
     type(inclusion_map), intent(inout) :: inclusions
-    type(set_graph)    , intent(out)   :: members
+    type(graph)    , intent(out)   :: members
 
     integer, allocatable :: pick(:)
     integer :: v, n
@@ -680,7 +680,7 @@ contains
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
     type(inclusion_map), intent(inout) :: inclusions
-    type(set_graph)    , intent(out)   :: members
+    type(graph)    , intent(out)   :: members
 
     integer, allocatable :: pick(:)
     integer :: v, n
@@ -724,10 +724,10 @@ contains
 
   subroutine carve(members, roll, label, ambient, sets, labels, inclusions)
 
-    type(set_graph)    , intent(out)   :: members
+    type(graph)    , intent(out)   :: members
     integer            , intent(in)    :: roll(:)
     character(len=*)   , intent(in)    :: label
-    type(set_graph)    , intent(in)    :: ambient
+    type(graph)    , intent(in)    :: ambient
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
     type(inclusion_map), intent(inout) :: inclusions
@@ -766,7 +766,7 @@ contains
   ! The named edge sets. A boundary edge is one with no head.
   !===================================================================!
 
-  type(set_graph) function all_edges(this) result(members)
+  type(graph) function all_edges(this) result(members)
 
     class(stored_directed_graph), intent(in) :: this
 
@@ -784,7 +784,7 @@ contains
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
     type(inclusion_map), intent(inout) :: inclusions
-    type(set_graph)    , intent(out)   :: members
+    type(graph)    , intent(out)   :: members
 
     integer, allocatable :: pick(:)
     integer :: e, n
@@ -813,7 +813,7 @@ contains
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
     type(inclusion_map), intent(inout) :: inclusions
-    type(set_graph)    , intent(out)   :: members
+    type(graph)    , intent(out)   :: members
 
     integer, allocatable :: pick(:)
     integer :: e, n
@@ -844,7 +844,7 @@ contains
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
     type(inclusion_map), intent(inout) :: inclusions
-    type(set_graph)    , intent(out)   :: members
+    type(graph)    , intent(out)   :: members
 
     integer, allocatable :: pick(:)
     integer :: e, n
@@ -880,7 +880,7 @@ contains
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
     type(inclusion_map), intent(inout) :: inclusions
-    type(set_graph)    , intent(out)   :: members
+    type(graph)    , intent(out)   :: members
 
     call carve(members, owner_matches(this % whole_rel, this % nv, part_id, .true., .true.), 'owned_vertices', &
          & this % vset, sets, labels, inclusions)
@@ -899,7 +899,7 @@ contains
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
     type(inclusion_map), intent(inout) :: inclusions
-    type(set_graph)    , intent(out)   :: members
+    type(graph)    , intent(out)   :: members
 
     call carve(members, owner_matches(this % whole_rel, this % nv, part_id, .true., .false.), 'borrowed_vertices', &
          & this % vset, sets, labels, inclusions)
@@ -918,7 +918,7 @@ contains
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
     type(inclusion_map), intent(inout) :: inclusions
-    type(set_graph)    , intent(out)   :: members
+    type(graph)    , intent(out)   :: members
 
     integer, allocatable :: owned(:), borrowed(:)
 
@@ -941,7 +941,7 @@ contains
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
     type(inclusion_map), intent(inout) :: inclusions
-    type(set_graph)    , intent(out)   :: members
+    type(graph)    , intent(out)   :: members
 
     call carve(members, owner_matches(this % whole_rel, this % ne, part_id, .false., .true.), 'owned_edges', &
          & this % eset, sets, labels, inclusions)
@@ -959,7 +959,7 @@ contains
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
     type(inclusion_map), intent(inout) :: inclusions
-    type(set_graph)    , intent(out)   :: members
+    type(graph)    , intent(out)   :: members
 
     call carve(members, owner_matches(this % whole_rel, this % ne, part_id, .false., .false.), 'borrowed_edges', &
          & this % eset, sets, labels, inclusions)
@@ -977,7 +977,7 @@ contains
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
     type(inclusion_map), intent(inout) :: inclusions
-    type(set_graph)    , intent(out)   :: members
+    type(graph)    , intent(out)   :: members
 
     integer, allocatable :: owned(:), borrowed(:)
 
@@ -1004,9 +1004,9 @@ contains
   !===================================================================!
 
   function merge_set(given, fallback) result(s)
-    type(set_graph), intent(in), optional :: given
-    type(set_graph), intent(in)           :: fallback
-    type(set_graph)                       :: s
+    type(graph), intent(in), optional :: given
+    type(graph), intent(in)           :: fallback
+    type(graph)                       :: s
     if (present(given)) then
        s = given
     else

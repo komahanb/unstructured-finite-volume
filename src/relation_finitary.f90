@@ -1,7 +1,7 @@
 !=====================================================================!
 ! LEVEL 1 OF THE NEW TOWER . THE RELATIONS
 !
-! The second object of the relation-centered tower (AGENTS.md): a
+! The second object of the relation-centred tower (AGENTS.md): a
 ! named finite-arity subset of a cartesian product,
 !
 !      P  <=  A_1 x A_2 x ... x A_k ,        k >= 1
@@ -90,8 +90,8 @@
 
 module relation_finitary
 
-  use token_identity, only : token, mint_token
-  use graph_fractal , only : set_graph => graph
+  use token_identity, only : token, next_token
+  use graph_fractal , only : graph
   use map_set , only : set_map
 
   implicit none
@@ -168,8 +168,8 @@ module relation_finitary
      ! representation, never here.
      !--------------------------------------------------------------!
 
-     type(set_graph) function relation_domain_interface(this, position)
-       import relation, set_graph
+     type(graph) function relation_domain_interface(this, position)
+       import relation, graph
        class(relation), intent(in) :: this
        integer        , intent(in) :: position
      end function relation_domain_interface
@@ -206,7 +206,7 @@ module relation_finitary
 
   type, extends(relation) :: stored_relation
 
-     type(set_graph), allocatable, private :: signature(:)
+     type(graph), allocatable, private :: signature(:)
      integer        , allocatable, private :: entry(:,:)
 
    contains
@@ -239,7 +239,7 @@ contains
        error stop 'relation_finitary: a relation never signs twice'
     end if
 
-    this % identity = mint_token()
+    this % identity = next_token()
     if (present(name)) this % label = name
 
   end subroutine declare
@@ -318,7 +318,7 @@ contains
        & result(this)
 
     character(len=*), intent(in) :: name
-    type(set_graph) , intent(in) :: domains(:)
+    type(graph) , intent(in) :: domains(:)
     integer         , intent(in) :: table(:,:)
     type(set_map)   , intent(in) :: sets
 
@@ -345,7 +345,7 @@ contains
 
     do j = 1, size(table, 2)
        do k = 1, size(domains)
-          if (.not. sets % has_in(domains(k), table(k, j))) then
+          if (.not. sets % has(domains(k), table(k, j))) then
              error stop 'relation_finitary: a tuple names a member its domain does not hold'
           end if
        end do
@@ -395,7 +395,7 @@ contains
   ! as the same declared domain.
   !===================================================================!
 
-  type(set_graph) function stored_domain(this, position) result(domain)
+  type(graph) function stored_domain(this, position) result(domain)
 
     class(stored_relation), intent(in) :: this
     integer               , intent(in) :: position

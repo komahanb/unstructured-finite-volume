@@ -43,7 +43,7 @@ module operation_marching
   use operation_action, only : operation
   use view_directed, only : directed_graph
   use field_calculus, only : field
-  use graph_fractal      , only : set_graph => graph
+  use graph_fractal      , only : graph
   use field_stored  , only : stored_field
   use view_directed_stored        , only : stored_directed_graph
   use operation_step   , only : scheme, bdf
@@ -124,11 +124,11 @@ contains
 
     type(stored_directed_graph) :: chain
     type(scheme) :: statement
-    type(set_graph) :: state_domain
+    type(graph) :: state_domain
     integer         :: n_state_domain
     real(dp), allocatable :: s(:), qold(:), qolder(:), zeros(:)
     real(dp) :: answered, h_edge, h_previous
-    integer :: e, ncomp
+    integer :: e, num_components
 
     call require_valid_steps(steps, nsteps)
 
@@ -159,7 +159,7 @@ contains
 
     ! the unknown of each implicit solve is the state, so the
     ! solve is attached on the action's domain, read once here
-    call read_state_domain(action, on, q, state_domain, n_state_domain, ncomp)
+    call read_state_domain(action, on, q, state_domain, n_state_domain, num_components)
 
     allocate(zeros(size(q)))
     zeros = 0.0_dp
@@ -179,10 +179,10 @@ contains
 
        statement % qold = qold
 
-       ! ncomp is the state's component count, so a multi-component
+       ! num_components is the state's component count, so a multi-component
        ! entry is solved whole
        call this % inner % attach(statement, on, state_domain, &
-            & n_state_domain, ncomp = ncomp)
+            & n_state_domain, num_components = num_components)
        call this % inner % solve(zeros, q, answered)
 
        qolder     = qold
@@ -394,18 +394,18 @@ contains
   ! Read the action's domain and check the state fits it: the
   ! domain must be nonempty and size(q) must be a whole multiple
   ! of its entry count; both violations stop the program, because
-  ! ncomp is derived from that division.
+  ! num_components is derived from that division.
   !===================================================================!
 
   subroutine read_state_domain(action, on, q, state_domain, n_state_domain, &
-       & ncomp)
+       & num_components)
 
     class(operation), intent(in)  :: action
     class(directed_graph)          , intent(in)  :: on
     real(dp)              , intent(in)  :: q(:)
-    type(set_graph)       , intent(out) :: state_domain
+    type(graph)       , intent(out) :: state_domain
     integer               , intent(out) :: n_state_domain
-    integer               , intent(out) :: ncomp
+    integer               , intent(out) :: num_components
 
     integer :: n
 
@@ -420,7 +420,7 @@ contains
             &of the action''s domain'
     end if
 
-    ncomp = size(q) / n
+    num_components = size(q) / n
 
   end subroutine read_state_domain
 
@@ -441,13 +441,13 @@ contains
 
     type(stored_field)   :: state
     class(field), allocatable :: output
-    type(set_graph) :: state_domain, given
+    type(graph) :: state_domain, given
     integer         :: n_state_domain, n_given
-    integer :: ncomp
+    integer :: num_components
 
-    call read_state_domain(action, on, q, state_domain, n_state_domain, ncomp)
+    call read_state_domain(action, on, q, state_domain, n_state_domain, num_components)
 
-    state = stored_field('state', state_domain, n_state_domain, ncomp=ncomp)
+    state = stored_field('state', state_domain, n_state_domain, num_components=num_components)
     call state % set_real_vector(q)
 
     call action % apply(on, [state], output)
@@ -458,7 +458,7 @@ contains
        error stop 'marcher: the action result lives on the state''s domain'
     end if
 
-    call output % get_real_vector(s)
+    call output % real_vector(s)
     if (size(s) /= size(q)) then
        error stop 'marcher: the action result matches the state''s width'
     end if
@@ -511,10 +511,10 @@ contains
     type(stored_field), allocatable         :: inputs(:)
     class(field), allocatable  :: total_field
     type(stored_field)     :: state
-    type(set_graph) :: state_domain
+    type(graph) :: state_domain
     real(dp), allocatable :: jac(:,:), jstep(:,:), total(:), b(:), q_s(:)
     real(dp) :: answered, h_edge, h_previous
-    integer :: n_state_domain, ncomp
+    integer :: n_state_domain, num_components
     integer :: e, s_order, k, j, n, at, npaths
 
     if (order < 1) then
@@ -530,7 +530,7 @@ contains
     end if
 
     call read_state_domain(action, on, trajectory(:, 1), state_domain, &
-         & n_state_domain, ncomp)
+         & n_state_domain, num_components)
 
     ! check the parameter paths: each must name a slot >= 2 that a
     ! supplied parameter field covers
@@ -578,7 +578,7 @@ contains
           at = e + 1
        end if
 
-       state = stored_field('state', state_domain, n_state_domain, ncomp=ncomp)
+       state = stored_field('state', state_domain, n_state_domain, num_components=num_components)
        call state % set_real_vector(trajectory(:, at))
 
        if (allocated(inputs)) deallocate(inputs)
@@ -605,11 +605,11 @@ contains
        do s_order = 1, order
 
           call build_paths(this, sensitivities, state_domain, &
-               & n_state_domain, ncomp, at, s_order, npaths, paths, assembled)
+               & n_state_domain, num_components, at, s_order, npaths, paths, assembled)
 
           call composer % assemble(action, on, inputs, s_order, assembled, &
                & total_field)
-          call total_field % get_real_vector(total)
+          call total_field % real_vector(total)
 
           if (this % rule == MARCH_FORWARD) then
 
@@ -644,12 +644,12 @@ contains
   !===================================================================!
 
   subroutine build_paths(this, sensitivities, state_domain, n_state_domain, &
-       & ncomp, at, s_order, npaths, parameter_paths, assembled)
+       & num_components, at, s_order, npaths, parameter_paths, assembled)
 
     class(marcher), intent(in) :: this
     real(dp)      , intent(in) :: sensitivities(:,:,:)
-    type(set_graph), intent(in) :: state_domain
-    integer       , intent(in) :: n_state_domain, ncomp, at, s_order, npaths
+    type(graph), intent(in) :: state_domain
+    integer       , intent(in) :: n_state_domain, num_components, at, s_order, npaths
     type(argument_path), intent(in), optional :: parameter_paths(:)
     type(argument_path), allocatable, intent(out) :: assembled(:)
 
@@ -674,7 +674,7 @@ contains
        end if
 
        derivative_field = stored_field('state path', state_domain, n_state_domain, &
-            & ncomp=ncomp)
+            & num_components=num_components)
        call derivative_field % set_real_vector(derivative_values)
        assembled(1) % derivative(k) % occupied  = .true.
        assembled(1) % derivative(k) % direction = derivative_field
@@ -718,8 +718,8 @@ contains
     logical, intent(out)               :: completed
 
     type(scheme) :: statement
-    type(set_graph)     :: state_domain
-    integer             :: n_state_domain, ncomp
+    type(graph)     :: state_domain
+    integer             :: n_state_domain, num_components
     real(dp), allocatable :: trial(:), predictor(:), qprev(:), s(:), zeros(:)
     real(dp), allocatable :: grown(:)
     real(dp) :: t, h, h_previous, estimate, answered
@@ -733,7 +733,7 @@ contains
        error stop 'march_adaptive: the attempt budget is positive'
     end if
 
-    call read_state_domain(action, on, q, state_domain, n_state_domain, ncomp)
+    call read_state_domain(action, on, q, state_domain, n_state_domain, num_components)
 
     if (this % rule /= MARCH_FORWARD) then
        statement = bdf(1, action, this % step)
@@ -782,7 +782,7 @@ contains
 
              trial = q
              call this % inner % attach(statement, on, state_domain, &
-                  & n_state_domain, ncomp = ncomp)
+                  & n_state_domain, num_components = num_components)
              call this % inner % solve(zeros, trial, answered)
 
           end if

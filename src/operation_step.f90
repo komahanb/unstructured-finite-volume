@@ -32,7 +32,7 @@ module operation_step
   use operation_action, only : operation
   use view_directed, only : directed_graph
   use field_calculus, only : field
-  use graph_fractal      , only : set_graph => graph
+  use graph_fractal      , only : graph
   use operation_discretization     , only : discretization
   use field_stored  , only : stored_field
   use view_directed_stored        , only : stored_directed_graph
@@ -246,14 +246,14 @@ contains
   ! statement about, so the question is delegated to the action.
   !===================================================================!
 
-  subroutine step_domain(this, input_graph, domain, nentries)
+  subroutine step_domain(this, input_graph, domain, num_entries)
 
     class(scheme), intent(in)       :: this
     class(directed_graph), intent(in)               :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
 
-    call this % action % domain(input_graph, domain, nentries)
+    call this % action % domain(input_graph, domain, num_entries)
 
   end subroutine step_domain
 
@@ -274,10 +274,10 @@ contains
 
     type(stored_field)   :: out
     class(field), allocatable :: velocity
-    type(set_graph) :: expected, given
+    type(graph) :: expected, given
     integer         :: n_expected, n_given
     real(dp), allocatable :: q(:), s(:), y(:)
-    integer :: ncomp
+    integer :: num_components
 
     call this % action % domain(input_graph, expected, n_expected)
 
@@ -288,9 +288,9 @@ contains
        if (.not. given % same_as(expected)) then
           error stop 'step: the state must live on the action''s own domain'
        end if
-       ncomp = input_data(1) % num_components()
+       num_components = input_data(1) % num_components()
 
-       call input_data(1) % get_real_vector(q)
+       call input_data(1) % real_vector(q)
 
        call this % action % apply(input_graph, input_data, velocity)
        given   = velocity % domain()
@@ -298,7 +298,7 @@ contains
        if (.not. given % same_as(expected)) then
           error stop 'step: the action result lives on its stated domain'
        end if
-       call velocity % get_real_vector(s)
+       call velocity % real_vector(s)
 
        y = this % a0 * q + this % a1 * this % qold + this % hs * s
        if (allocated(this % qolder) .and. abs(this % a2) > 0.0_dp) then
@@ -306,12 +306,12 @@ contains
        end if
 
     else
-       ncomp = 1
+       num_components = 1
        allocate(y(n_expected))
        y = 0.0_dp
     end if
 
-    out = stored_field('step residual', expected, n_expected, ncomp=ncomp)
+    out = stored_field('step residual', expected, n_expected, num_components=num_components)
     call out % set_real_vector(y)
 
     if (allocated(output)) deallocate(output)

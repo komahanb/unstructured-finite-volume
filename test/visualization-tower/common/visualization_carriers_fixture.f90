@@ -47,7 +47,7 @@
 
 module visualization_carriers_fixture
 
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -68,8 +68,8 @@ contains
 
   subroutine structural_carriers(x0, x1, x2, x3, e1, e2, e3, sets, labels)
 
-    type(set_graph), intent(out)   :: x0, x1, x2, x3
-    type(set_graph), intent(out)   :: e1, e2, e3
+    type(graph), intent(out)   :: x0, x1, x2, x3
+    type(graph), intent(out)   :: e1, e2, e3
     type(set_map)  , intent(inout) :: sets
     type(label_map), intent(inout) :: labels
 
@@ -104,7 +104,7 @@ contains
 
   function label_for(carrier, member, labels) result(text)
 
-    type(set_graph), intent(in) :: carrier
+    type(graph), intent(in) :: carrier
     integer        , intent(in) :: member
     type(label_map), intent(in) :: labels
 

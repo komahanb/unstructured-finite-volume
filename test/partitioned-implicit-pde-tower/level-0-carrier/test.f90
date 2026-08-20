@@ -31,13 +31,13 @@
 program partitioned_pde_level_0
 
   use partitioned_pde_assert , only : report, verdict
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set        , only : set_map
   use chain_carriers_fixture , only : chain_carriers
 
   implicit none
 
-  type(set_graph) :: v, e, k
+  type(graph) :: v, e, k
   type(set_map) :: sets
   integer           :: nfail
 
@@ -62,9 +62,9 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(sets % size_of(v) .eq. 6, "V counts six global vertices", nfail)
-    call report(sets % size_of(e) .eq. 5, "E counts five global edges", nfail)
-    call report(sets % size_of(k) .eq. 2, "K counts two partition labels", nfail)
+    call report(sets % num_members_of(v) .eq. 6, "V counts six global vertices", nfail)
+    call report(sets % num_members_of(e) .eq. 5, "E counts five global edges", nfail)
+    call report(sets % num_members_of(k) .eq. 2, "K counts two partition labels", nfail)
 
   end subroutine check_cardinalities
 
@@ -81,7 +81,7 @@ contains
     call report(.not. v % same_as(k), "V is not K", nfail)
     call report(.not. e % same_as(k), "E is not K", nfail)
 
-    call report(sets % has_in(v, 1) .and. sets % has_in(e, 1) .and. sets % has_in(k, 1), &
+    call report(sets % has(v, 1) .and. sets % has(e, 1) .and. sets % has(k, 1), &
          & "and the integer 1 is a member of ALL THREE: identity " // &
          & "does this work, never the numerals", nfail)
 
@@ -101,21 +101,21 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(.not. sets % has_in(v, 7) .and. .not. sets % has_in(v, 0), &
+    call report(.not. sets % has(v, 7) .and. .not. sets % has(v, 0), &
          & "an outsider is rejected by V", nfail)
-    call report(.not. sets % has_in(e, 6) .and. .not. sets % has_in(k, 3), &
+    call report(.not. sets % has(e, 6) .and. .not. sets % has(k, 3), &
          & "and by E and K, each at its own edge", nfail)
 
   end subroutine check_boundaries
 
   logical function round_trips(s)
 
-    type(set_graph), intent(in) :: s
+    type(graph), intent(in) :: s
 
     integer :: i, m
 
     round_trips = .true.
-    do i = 1, sets % size_of(s)
+    do i = 1, sets % num_members_of(s)
        m = sets % member_of(s, i)
        round_trips = round_trips .and. &
             & (sets % member_of(s, sets % index_in(s, m)) .eq. m)

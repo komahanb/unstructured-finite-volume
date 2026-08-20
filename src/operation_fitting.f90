@@ -39,7 +39,7 @@ module operation_fitting
   use operation_action, only : operation
   use view_directed, only : directed_graph
   use field_calculus, only : field
-  use graph_fractal      , only : set_graph => graph
+  use graph_fractal      , only : graph
   use field_forms        , only : form
   use field_stored  , only : stored_field
   use operation_stencil, only : stencil
@@ -152,17 +152,17 @@ contains
 
   end function fit_name
 
-  subroutine fit_domain(this, input_graph, domain, nentries)
+  subroutine fit_domain(this, input_graph, domain, num_entries)
 
     class(fit), intent(in)                 :: this
     class(directed_graph), intent(in)               :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
 
     associate (u1 => this); end associate
 
     domain   = input_graph % all_vertices()
-    nentries = input_graph % num_vertices()
+    num_entries = input_graph % num_vertices()
 
   end subroutine fit_domain
 
@@ -195,9 +195,9 @@ contains
 
     if (present(input_data)) then
 
-       call input_data(1) % get_real_vector(positions)
+       call input_data(1) % real_vector(positions)
 
-       nc = this % shape % size_of()
+       nc = this % shape % num_members()
        allocate(b(nc, npts), g(nc, nc), r(nc), lam(nc))
 
        ! The distance metric: a point's share is priced by how far
@@ -290,7 +290,7 @@ contains
     real(dp) :: middle(3)
     integer :: nc, npts, j, m
 
-    nc   = shape % size_of()
+    nc   = shape % num_members()
     npts = size(positions) / 3
 
     ! The members are read about the constellation's own middle, so

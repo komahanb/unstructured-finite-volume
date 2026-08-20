@@ -22,8 +22,8 @@
 !                     two cells per face; one cell = boundary face
 !      C2F            transpose(F2C)
 !      measurements   fields from coordinates and the relations:
-!                     cell centers and volumes, face centers, areas,
-!                     normals, center-to-center vectors, deltas,
+!                     cell centres and volumes, face centres, areas,
+!                     normals, centre-to-centre vectors, deltas,
 !                     and interpolation weights
 !      directed view  cells as graph vertices, the two-cell faces
 !                     as edges with tail/head = F2C(f); assembled
@@ -49,16 +49,16 @@ module view_mesh_geometry
   private
   public :: derive_faces
   public :: derive_face_cells
-  public :: cell_centers_of
-  public :: face_centers_areas_of
-  public :: cell_face_normals_of
-  public :: cell_volumes_of
-  public :: centroidal_vectors_of
-  public :: face_deltas_of
-  public :: face_weights_of
+  public :: derive_cell_centres
+  public :: derive_face_centres_areas
+  public :: derive_cell_face_normals
+  public :: derive_cell_volumes
+  public :: derive_centroidal_vectors
+  public :: derive_face_deltas
+  public :: derive_face_weights
   public :: find
-  public :: elem_type_dimension
-  public :: elem_type_vertex_count
+  public :: element_dimension
+  public :: element_num_vertices
 
 contains
 
@@ -107,7 +107,7 @@ contains
     integer :: shared_vertices(4)
     integer :: nf
 
-    num_faces = (sum(elem_type_face_count(cell_types)) - nbfaces)/2 + nbfaces
+    num_faces = (sum(element_num_faces(cell_types)) - nbfaces)/2 + nbfaces
 
     allocate(face_vertices(4, num_faces))
     allocate(num_face_vertices(num_faces))
@@ -251,48 +251,48 @@ contains
   end subroutine derive_face_cells
 
   !===================================================================!
-  ! Cell centers: the mean of each cell's vertex coordinates.
+  ! Cell centres: the mean of each cell's vertex coordinates.
   !===================================================================!
 
-  pure subroutine cell_centers_of(coordinates, cell_vertices, &
-       & num_cell_vertices, cell_centers)
+  pure subroutine derive_cell_centres(coordinates, cell_vertices, &
+       & num_cell_vertices, cell_centres)
 
     real(dp), intent(in)  :: coordinates(:,:)
     integer , intent(in)  :: cell_vertices(:,:)
     integer , intent(in)  :: num_cell_vertices(:)
-    real(dp), allocatable, intent(out) :: cell_centers(:,:)
+    real(dp), allocatable, intent(out) :: cell_centres(:,:)
 
     integer :: icell
 
-    allocate(cell_centers(3, size(num_cell_vertices)))
+    allocate(cell_centres(3, size(num_cell_vertices)))
 
     do icell = 1, size(num_cell_vertices)
        associate(&
             & num_vertices => real(num_cell_vertices(icell), kind=dp), &
             & vids => cell_vertices(1:num_cell_vertices(icell), icell))
-         cell_centers(:, icell) = sum(coordinates(:, vids), dim=2)/num_vertices
+         cell_centres(:, icell) = sum(coordinates(:, vids), dim=2)/num_vertices
        end associate
     end do
 
-  end subroutine cell_centers_of
+  end subroutine derive_cell_centres
 
   !===================================================================!
-  ! Face centers and areas. In 2d a face is a segment: the center
+  ! Face centres and areas. In 2d a face is a segment: the centre
   ! is its midpoint and the area its length; a zero length stops
-  ! the program (two coincident points). In 3d the center is the
+  ! the program (two coincident points). In 3d the centre is the
   ! vertex mean and the area sums the half cross-products of the
   ! corner fan (one triangle, plus a second for a quadrilateral);
   ! a negative area stops the program.
   !===================================================================!
 
-  pure subroutine face_centers_areas_of(spatial_dim, coordinates, &
-       & face_vertices, num_face_vertices, face_centers, face_areas)
+  pure subroutine derive_face_centres_areas(spatial_dim, coordinates, &
+       & face_vertices, num_face_vertices, face_centres, face_areas)
 
     integer , intent(in)  :: spatial_dim
     real(dp), intent(in)  :: coordinates(:,:)
     integer , intent(in)  :: face_vertices(:,:)
     integer , intent(in)  :: num_face_vertices(:)
-    real(dp), allocatable, intent(out) :: face_centers(:,:)
+    real(dp), allocatable, intent(out) :: face_centres(:,:)
     real(dp), allocatable, intent(out) :: face_areas(:)
 
     integer  :: iface, num_faces
@@ -300,15 +300,15 @@ contains
 
     num_faces = size(num_face_vertices)
     allocate(face_areas(num_faces))
-    allocate(face_centers(3, num_faces))
+    allocate(face_centres(3, num_faces))
     face_areas   = 0.0_dp
-    face_centers = 0.0_dp
+    face_centres = 0.0_dp
 
     if (spatial_dim .eq. 2) then
 
        do iface = 1, num_faces
           associate(facenodes => face_vertices(1:num_face_vertices(iface), iface))
-            face_centers(1:3, iface) = &
+            face_centres(1:3, iface) = &
                  & sum(coordinates(1:3, facenodes), dim=2)/real(2, kind=dp)
             associate(v1 => coordinates(:, facenodes(1)), &
                  &    v2 => coordinates(:, facenodes(2)))
@@ -327,7 +327,7 @@ contains
           associate(facenodes => face_vertices(1:num_face_vertices(iface), iface))
 
             associate(num_vertices => real(num_face_vertices(iface), kind=dp))
-              face_centers(:, iface) = &
+              face_centres(:, iface) = &
                    & sum(coordinates(:, facenodes), dim=2)/num_vertices
             end associate
 
@@ -356,22 +356,22 @@ contains
 
     end if
 
-  end subroutine face_centers_areas_of
+  end subroutine derive_face_centres_areas
 
   !===================================================================!
   ! Outward unit normals, one per (cell, local face) pair. In 3d
   ! the normal comes from the corner-fan cross products; in 2d it
   ! is the segment tangent turned a quarter turn in plane. Either
-  ! way it is flipped, if needed, to point from the cell center
-  ! toward the face center - out of the cell - so the same
+  ! way it is flipped, if needed, to point from the cell centre
+  ! toward the face centre - out of the cell - so the same
   ! interior face carries opposite normals seen from its two
   ! cells, which is what makes the assembled operator
   ! conservative.
   !===================================================================!
 
-  pure subroutine cell_face_normals_of(spatial_dim, coordinates, &
+  pure subroutine derive_cell_face_normals(spatial_dim, coordinates, &
        & face_vertices, num_face_vertices, cell_faces, num_cell_faces, &
-       & face_centers, cell_centers, cell_face_normals)
+       & face_centres, cell_centres, cell_face_normals)
 
     integer , intent(in)  :: spatial_dim
     real(dp), intent(in)  :: coordinates(:,:)
@@ -379,8 +379,8 @@ contains
     integer , intent(in)  :: num_face_vertices(:)
     integer , intent(in)  :: cell_faces(:,:)
     integer , intent(in)  :: num_cell_faces(:)
-    real(dp), intent(in)  :: face_centers(:,:)
-    real(dp), intent(in)  :: cell_centers(:,:)
+    real(dp), intent(in)  :: face_centres(:,:)
+    real(dp), intent(in)  :: cell_centres(:,:)
     real(dp), allocatable, intent(out) :: cell_face_normals(:,:,:)
 
     integer  :: icell, iface, gface, num_cells
@@ -431,7 +431,7 @@ contains
 
           end if
 
-          if (dot_product(n, face_centers(:, gface) - cell_centers(:, icell)) &
+          if (dot_product(n, face_centres(:, gface) - cell_centres(:, icell)) &
                & .lt. real(0, dp)) then
              n = -n
           end if
@@ -441,7 +441,7 @@ contains
        end do
     end do
 
-  end subroutine cell_face_normals_of
+  end subroutine derive_cell_face_normals
 
   !===================================================================!
   ! Cell volumes by the divergence theorem,
@@ -452,11 +452,11 @@ contains
   ! inside-out cell and stops the program.
   !===================================================================!
 
-  pure subroutine cell_volumes_of(spatial_dim, face_centers, face_areas, &
+  pure subroutine derive_cell_volumes(spatial_dim, face_centres, face_areas, &
        & cell_face_normals, cell_faces, num_cell_faces, cell_volumes)
 
     integer , intent(in)  :: spatial_dim
-    real(dp), intent(in)  :: face_centers(:,:)
+    real(dp), intent(in)  :: face_centres(:,:)
     real(dp), intent(in)  :: face_areas(:)
     real(dp), intent(in)  :: cell_face_normals(:,:,:)
     integer , intent(in)  :: cell_faces(:,:)
@@ -472,11 +472,11 @@ contains
        do lface = 1, num_cell_faces(lcell)
           gface = cell_faces(lface, lcell)
           associate(&
-               & face_center => face_centers(:, gface)/real(spatial_dim, dp), &
+               & face_centre => face_centres(:, gface)/real(spatial_dim, dp), &
                & face_normal => cell_face_normals(:, lface, lcell), &
                & face_area   => face_areas(gface))
             cell_volumes(lcell) = cell_volumes(lcell) + &
-                 & face_area*dot_product(face_normal, face_center)
+                 & face_area*dot_product(face_normal, face_centre)
           end associate
        end do
     end do
@@ -485,22 +485,22 @@ contains
        error stop 'view_mesh_geometry: a cell volume is nonnegative'
     end if
 
-  end subroutine cell_volumes_of
+  end subroutine derive_cell_volumes
 
   !===================================================================!
-  ! The center-to-center vector of each face: cell center to cell
-  ! center across an interior face, cell center to face center on
+  ! The centre-to-centre vector of each face: cell centre to cell
+  ! centre across an interior face, cell centre to face centre on
   ! a boundary face. This is the segment a two-point gradient
   ! differences along.
   !===================================================================!
 
-  pure subroutine centroidal_vectors_of(face_cells, num_face_cells, &
-       & cell_centers, face_centers, lvec)
+  pure subroutine derive_centroidal_vectors(face_cells, num_face_cells, &
+       & cell_centres, face_centres, lvec)
 
     integer , intent(in)  :: face_cells(:,:)
     integer , intent(in)  :: num_face_cells(:)
-    real(dp), intent(in)  :: cell_centers(:,:)
-    real(dp), intent(in)  :: face_centers(:,:)
+    real(dp), intent(in)  :: cell_centres(:,:)
+    real(dp), intent(in)  :: face_centres(:,:)
     real(dp), allocatable, intent(out) :: lvec(:,:)
 
     integer :: iface
@@ -510,24 +510,24 @@ contains
 
     do iface = 1, size(num_face_cells)
        if (num_face_cells(iface) .eq. 1) then
-          lvec(:, iface) = face_centers(:, iface) &
-               & - cell_centers(:, face_cells(1, iface))
+          lvec(:, iface) = face_centres(:, iface) &
+               & - cell_centres(:, face_cells(1, iface))
        else
-          lvec(:, iface) = cell_centers(:, face_cells(2, iface)) &
-               & - cell_centers(:, face_cells(1, iface))
+          lvec(:, iface) = cell_centres(:, face_cells(2, iface)) &
+               & - cell_centres(:, face_cells(1, iface))
        end if
     end do
 
-  end subroutine centroidal_vectors_of
+  end subroutine derive_centroidal_vectors
 
   !===================================================================!
-  ! Face deltas: the center-to-center vector projected on the face
+  ! Face deltas: the centre-to-centre vector projected on the face
   ! normal. On a skewed mesh the segment crosses its face at a
   ! slant, so this normal distance is shorter than the segment; it
   ! is the denominator of every two-point face gradient.
   !===================================================================!
 
-  pure subroutine face_deltas_of(num_faces, lvec, cell_face_normals, &
+  pure subroutine derive_face_deltas(num_faces, lvec, cell_face_normals, &
        & cell_faces, num_cell_faces, face_deltas)
 
     integer , intent(in)  :: num_faces
@@ -551,21 +551,21 @@ contains
        end do
     end do
 
-  end subroutine face_deltas_of
+  end subroutine derive_face_deltas
 
   !===================================================================!
   ! Interpolation weights per face: the two cells' shares by
-  ! inverse distance to the face center, stored as (w, 1-w). A
+  ! inverse distance to the face centre, stored as (w, 1-w). A
   ! boundary face has one cell, which takes the whole weight.
   !===================================================================!
 
-  pure subroutine face_weights_of(face_cells, num_face_cells, &
-       & cell_centers, face_centers, face_cell_weights)
+  pure subroutine derive_face_weights(face_cells, num_face_cells, &
+       & cell_centres, face_centres, face_cell_weights)
 
     integer , intent(in)  :: face_cells(:,:)
     integer , intent(in)  :: num_face_cells(:)
-    real(dp), intent(in)  :: cell_centers(:,:)
-    real(dp), intent(in)  :: face_centers(:,:)
+    real(dp), intent(in)  :: cell_centres(:,:)
+    real(dp), intent(in)  :: face_centres(:,:)
     real(dp), allocatable, intent(out) :: face_cell_weights(:,:)
 
     integer  :: iface
@@ -575,13 +575,13 @@ contains
 
     do iface = 1, size(num_face_cells)
 
-       d1    = distance(cell_centers(:, face_cells(1, iface)), &
-            &           face_centers(:, iface))
+       d1    = distance(cell_centres(:, face_cells(1, iface)), &
+            &           face_centres(:, iface))
        dinv1 = 1.0_dp/d1
 
        if (num_face_cells(iface) .ne. 1) then
-          d2    = distance(cell_centers(:, face_cells(2, iface)), &
-               &           face_centers(:, iface))
+          d2    = distance(cell_centres(:, face_cells(2, iface)), &
+               &           face_centres(:, iface))
           dinv2 = 1.0_dp/d2
        else
           dinv2 = 0.0_dp
@@ -593,7 +593,7 @@ contains
 
     end do
 
-  end subroutine face_weights_of
+  end subroutine derive_face_weights
 
 
   !===================================================================!
@@ -633,11 +633,11 @@ contains
 
     integer, intent(in) :: array(:)
     integer, intent(in) :: target_value
-    integer :: i, nentries
+    integer :: i, num_entries
 
-    nentries = size(array, dim=1)
+    num_entries = size(array, dim=1)
 
-    do i = 1, nentries
+    do i = 1, num_entries
        if (array(i) .eq. target_value) then
           find = i
           return
@@ -653,7 +653,7 @@ contains
   ! generalize to the number of lower dimensional entities.
   !===================================================================!
 
-  pure elemental integer function elem_type_face_count(cell_type) result (num_faces)
+  pure elemental integer function element_num_faces(cell_type) result (num_faces)
 
     integer, intent(in) :: cell_type
 
@@ -683,7 +683,7 @@ contains
        num_faces = 0
     end select
 
-  end function elem_type_face_count
+  end function element_num_faces
 
   !===================================================================!
   ! Return the spatial dimension of a gmsh element type: a point is
@@ -692,7 +692,7 @@ contains
   ! faces, and edges by dimension rather than by type.
   !===================================================================!
 
-  pure elemental integer function elem_type_dimension(elem_type) result (dim)
+  pure elemental integer function element_dimension(elem_type) result (dim)
 
     integer, intent(in) :: elem_type
 
@@ -713,14 +713,14 @@ contains
        dim = -1
     end select
 
-  end function elem_type_dimension
+  end function element_dimension
 
   !===================================================================!
   ! Return the number of vertices a gmsh element type owns. The name
   ! could generalize to the number of lower dimensional entities.
   !===================================================================!
 
-  pure elemental integer function elem_type_vertex_count(elem_type) result (num_vertices)
+  pure elemental integer function element_num_vertices(elem_type) result (num_vertices)
 
     integer, intent(in) :: elem_type
 
@@ -750,7 +750,7 @@ contains
        num_vertices = 0
     end select
 
-  end function elem_type_vertex_count
+  end function element_num_vertices
 
   !===================================================================!
   ! Put a face's vertices into the cell's own winding order. Each

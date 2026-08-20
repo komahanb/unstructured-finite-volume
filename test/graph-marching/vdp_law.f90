@@ -17,8 +17,8 @@ module vdp_fixture
   use operation_action, only : operation
   use view_directed, only : directed_graph
   use field_calculus, only : field
-  use view_directed     , only : GRAPH_SIDE_VERTEX
-  use graph_fractal         , only : set_graph => graph
+  use view_directed     , only : SIDE_VERTEX
+  use graph_fractal         , only : graph
   use field_stored  , only : stored_field
 
   implicit none
@@ -78,34 +78,34 @@ contains
     name = 'van der pol, transposed'
   end function adjoint_name
 
-  subroutine law_domain(this, input_graph, domain, nentries)
+  subroutine law_domain(this, input_graph, domain, num_entries)
     class(vdp_law), intent(in) :: this
     class(directed_graph), intent(in) :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
     associate (u1 => this); end associate
     domain   = input_graph % all_vertices()
-    nentries = input_graph % num_vertices()
+    num_entries = input_graph % num_vertices()
   end subroutine law_domain
 
-  subroutine law_domain2(this, input_graph, domain, nentries)
+  subroutine law_domain2(this, input_graph, domain, num_entries)
     class(vdp_tangent_law), intent(in) :: this
     class(directed_graph), intent(in) :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
     associate (u1 => this); end associate
     domain   = input_graph % all_vertices()
-    nentries = input_graph % num_vertices()
+    num_entries = input_graph % num_vertices()
   end subroutine law_domain2
 
-  subroutine law_domain3(this, input_graph, domain, nentries)
+  subroutine law_domain3(this, input_graph, domain, num_entries)
     class(vdp_adjoint_law), intent(in) :: this
     class(directed_graph), intent(in) :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
     associate (u1 => this); end associate
     domain   = input_graph % all_vertices()
-    nentries = input_graph % num_vertices()
+    num_entries = input_graph % num_vertices()
   end subroutine law_domain3
 
   subroutine law_apply(this, input_graph, input_data, output)
@@ -120,7 +120,7 @@ contains
 
     s = 0.0_dp
     if (present(input_data)) then
-       call input_data(1) % get_real_vector(q)
+       call input_data(1) % real_vector(q)
        u = q(1)
        v = q(2)
        s(1) = -v
@@ -143,7 +143,7 @@ contains
 
     s = 0.0_dp
     if (present(input_data)) then
-       call input_data(1) % get_real_vector(q)
+       call input_data(1) % real_vector(q)
        u  = q(1)
        v  = q(2)
        du = q(3)
@@ -171,7 +171,7 @@ contains
 
     s = 0.0_dp
     if (present(input_data)) then
-       call input_data(1) % get_real_vector(lam)
+       call input_data(1) % real_vector(lam)
        u = this % at(1)
        v = this % at(2)
        ! Minus J^T lambda: the transpose of the velocity jacobian.
@@ -189,12 +189,12 @@ contains
     real(dp), intent(in) :: s(:)
     class(field), allocatable, intent(inout) :: output
 
-    type(set_graph) :: cells
+    type(graph) :: cells
     type(stored_field)   :: out
     integer :: v
 
     cells = input_graph % vertex_set()
-    out = stored_field('velocity', cells, input_graph % num_vertices(), ncomp=size(s))
+    out = stored_field('velocity', cells, input_graph % num_vertices(), num_components=size(s))
     call out % set_real_vector(s)
 
     if (allocated(output)) deallocate(output)

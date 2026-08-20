@@ -40,7 +40,7 @@ program adjoint_level_7
   use adjoint_assert   , only : report, verdict
   use adjoint_assert   , only : VAR_P, VAR_U, VAR_V
   use adjoint_assert   , only : TGT_R1, TGT_R2, TGT_F
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -53,14 +53,14 @@ program adjoint_level_7
 
   implicit none
 
-  type(set_graph)               :: v, t, hv
-  type(set_graph)                :: q_dom, y_dom
+  type(graph)               :: v, t, hv
+  type(graph)                :: q_dom, y_dom
   type(stored_directed_graph)              :: host
   type(opaque_primal)             :: primal_eq
   type(opaque_adjoint)            :: adjoint_eq
   type(gmres)                     :: primal_solver, adjoint_solver
   type(stored_field)                     :: rhs_y, rhs_q
-  type(set_graph)  :: dom
+  type(graph)  :: dom
   class(field), allocatable :: q_sol, lam_sol
   real(dp), allocatable           :: gv(:), qv(:), lv(:)
   integer                         :: nfail
@@ -115,8 +115,8 @@ contains
     call report(.not. hv % same_as(q_dom) .and. &
          &      .not. hv % same_as(y_dom), &
          & "the host's vertex set is neither Q nor Y", nfail)
-    call report(host % num_vertices() .ne. sets % size_of(q_dom) .and. &
-         &      host % num_vertices() .ne. sets % size_of(y_dom), &
+    call report(host % num_vertices() .ne. sets % num_members_of(q_dom) .and. &
+         &      host % num_vertices() .ne. sets % num_members_of(y_dom), &
          & "and it is not even their size: solver host, unknown " // &
          & "domain and residual domain are three different things", &
          & nfail)
@@ -133,7 +133,7 @@ contains
     integer, intent(inout) :: nfail
     integer         :: n_dom
 
-    call primal_solver % attach(primal_eq, host, q_dom, sets % size_of(q_dom))
+    call primal_solver % attach(primal_eq, host, q_dom, sets % num_members_of(q_dom))
     primal_solver % tolerance      = 1.0d-12
     primal_solver % max_iterations = 50
 
@@ -151,7 +151,7 @@ contains
          &      < 1.0d-12, &
          & "R(0) = [-8, -22] on the residual rows", nfail)
 
-    rhs_y = stored_field('rhs', y_dom, sets % size_of(y_dom))
+    rhs_y = stored_field('rhs', y_dom, sets % num_members_of(y_dom))
     call rhs_y % set_real_vector(-gv)
     call primal_solver % apply(host, [rhs_y], q_sol)
 
@@ -159,7 +159,7 @@ contains
     call report(dom % same_as(q_dom), &
          & "the solution field lives on Q", nfail)
 
-    call q_sol % get_real_vector(qv)
+    call q_sol % real_vector(qv)
     call report(abs(qv(sets % index_in(q_dom, VAR_U)) - 2.0_dp) < 1.0d-9, &
          & "u = 2, read through Q's enumeration", nfail)
     call report(abs(qv(sets % index_in(q_dom, VAR_V)) - 4.0_dp) < 1.0d-9, &
@@ -177,7 +177,7 @@ contains
     integer, intent(inout) :: nfail
     integer         :: n_dom
 
-    call adjoint_solver % attach(adjoint_eq, host, y_dom, sets % size_of(y_dom))
+    call adjoint_solver % attach(adjoint_eq, host, y_dom, sets % num_members_of(y_dom))
     adjoint_solver % tolerance      = 1.0d-12
     adjoint_solver % max_iterations = 50
 
@@ -196,7 +196,7 @@ contains
          & "its constant is -c = [-1, -2], indexed by STATE slots", &
          & nfail)
 
-    rhs_q = stored_field('rhs', q_dom, sets % size_of(q_dom))
+    rhs_q = stored_field('rhs', q_dom, sets % num_members_of(q_dom))
     call rhs_q % set_real_vector(-gv)
     call adjoint_solver % apply(host, [rhs_q], lam_sol)
 
@@ -204,7 +204,7 @@ contains
     call report(dom % same_as(y_dom), &
          & "the adjoint field lives on Y", nfail)
 
-    call lam_sol % get_real_vector(lv)
+    call lam_sol % real_vector(lv)
     call report(abs(lv(sets % index_in(y_dom, TGT_R1)) + 0.4_dp) < 1.0d-9, &
          & "lambda(r1) = -0.4", nfail)
     call report(abs(lv(sets % index_in(y_dom, TGT_R2)) - 0.6_dp) < 1.0d-9, &
@@ -239,14 +239,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: a, b
+    type(graph) :: a, b
     integer         :: n_a
     integer         :: n_b
 
     call primal_solver % domain(host, a, n_a)
     call adjoint_solver % domain(host, b, n_b)
 
-    call report(.not. a % same_as(b) .and. sets % size_of(a) .eq. sets % size_of(b), &
+    call report(.not. a % same_as(b) .and. sets % num_members_of(a) .eq. sets % num_members_of(b), &
          & "the two solvers answer on different domains of equal " // &
          & "size - the same machinery, told apart only by identity", &
          & nfail)

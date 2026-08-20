@@ -48,7 +48,7 @@ module operation_balance
   use operation_action, only : operation
   use view_directed, only : directed_graph
   use field_calculus, only : field
-  use graph_fractal      , only : set_graph => graph
+  use graph_fractal      , only : graph
   use field_stored  , only : stored_field
   use operation_differential, only : differential_operator
 
@@ -122,17 +122,17 @@ contains
   ! caller wanting only part of one hands it only part of one.
   !===================================================================!
 
-  subroutine balance_domain(this, input_graph, domain, nentries)
+  subroutine balance_domain(this, input_graph, domain, num_entries)
 
     class(balance), intent(in)             :: this
     class(directed_graph)  , intent(in)             :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
 
     associate (u1 => this); end associate
 
     domain   = input_graph % all_vertices()
-    nentries = input_graph % num_vertices()
+    num_entries = input_graph % num_vertices()
 
   end subroutine balance_domain
 
@@ -172,7 +172,7 @@ contains
           ! One edge term, computed for every edge at once. This is
           ! the only place the edge values are computed.
           call this % edge_terms(k) % apply(input_graph, input_data, edge_values)
-          call edge_values % get_real_vector(z)
+          call edge_values % real_vector(z)
 
           ! And reduced onto the vertices through incidence, each
           ! edge touching its two

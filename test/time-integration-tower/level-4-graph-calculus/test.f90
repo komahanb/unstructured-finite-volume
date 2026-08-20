@@ -59,7 +59,7 @@ program time_level_4
   use time_assert           , only : report, verdict
   use time_assert           , only : NT
   use time_assert           , only : T0, T1, T2, T3, T4
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set        , only : set_map
   use map_label      , only : label_map
   use map_inclusion  , only : inclusion_map, declared_subobject
@@ -74,12 +74,12 @@ program time_level_4
   use graph_fractal        , only : graph, known_branch, null_branch
   use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
-       & holds_set
+       & has_set
 
   implicit none
 
 
-  type(set_graph)              :: q, t, e
+  type(graph)              :: q, t, e
   type(set_map)              :: sets
   type(inclusion_map)              :: inclusions
   ! sources/sinks CARVE, and a carve binds extension,
@@ -166,15 +166,15 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: src, snk
+    type(graph) :: src, snk
 
     call sources(a1, sets, labels, inclusions, src)
     call sinks(a1, sets, labels, inclusions, snk)
 
-    call report(sets % size_of(src) .eq. 1 .and. sets % has_in(src, T0), &
+    call report(sets % num_members_of(src) .eq. 1 .and. sets % has(src, T0), &
          & "sources(A1) = { t0 }: one instant nothing leads to, the " // &
          & "selector long dead", nfail)
-    call report(sets % size_of(snk) .eq. 1 .and. sets % has_in(snk, T4), &
+    call report(sets % num_members_of(snk) .eq. 1 .and. sets % has(snk, T4), &
          & "sinks(A1) = { t4 }: one instant leading nowhere", nfail)
 
     call report(declared_subobject(src, t, inclusions) .and. declared_subobject(snk, t, inclusions), &
@@ -227,7 +227,7 @@ contains
     call topological_order(a1, sets, order)
 
     ok = size(order) .eq. NT
-    do i = 1, min(size(order), sets % size_of(t))
+    do i = 1, min(size(order), sets % num_members_of(t))
        ok = ok .and. (order(i) .eq. sets % member_of(t, i))
     end do
     call report(ok, &
@@ -251,7 +251,7 @@ contains
     ok = .true.
     do i = 1, size(order)
        ok = ok .and. (order(size(order) - i + 1) .eq. &
-            &         sets % member_of(t, sets % size_of(t) - i + 1))
+            &         sets % member_of(t, sets % num_members_of(t) - i + 1))
     end do
     call report(ok, &
          & "and read backwards it is [t4 t3 t2 t1 t0]: REVERSE " // &
@@ -303,7 +303,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: d1, d2
+    type(graph) :: d1, d2
 
     d1 = a1 % source()
     d2 = a2 % source()

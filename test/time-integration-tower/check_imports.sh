@@ -109,7 +109,7 @@ allowed_for() {
         common/time_fields_fixture.f90) echo "graph_fractal field_calculus field_stored time_assert" ;;
         # The action stores an identity and a count, so it needs
         # neither a representation nor a map. Each name comes from
-        # its owner: set_graph from the KERNEL, the directed graph
+        # its owner: graph from the KERNEL, the directed graph
         # from view_directed, the field from the field
         # calculus, and the operation contract from
         # operation_action. graph_grammar, which once lent all

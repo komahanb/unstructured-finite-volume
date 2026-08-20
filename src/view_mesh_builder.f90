@@ -22,12 +22,12 @@ module view_mesh_builder
   use util_string         , only : string
   use view_mesh_loader, only : mesh_loader
   use view_gmsh_loader    , only : gmsh_loader
-  use view_mesh_geometry  , only : elem_type_dimension
+  use view_mesh_geometry  , only : element_dimension
   use relation_binary, only : transpose_padded
   use view_mesh_geometry  , only : derive_faces, derive_face_cells, &
-       & cell_centers_of, face_centers_areas_of, &
-       & cell_face_normals_of, cell_volumes_of, centroidal_vectors_of, &
-       & face_deltas_of, face_weights_of
+       & derive_cell_centres, derive_face_centres_areas, &
+       & derive_cell_face_normals, derive_cell_volumes, derive_centroidal_vectors, &
+       & derive_face_deltas, derive_face_weights
 
   implicit none
 
@@ -74,7 +74,7 @@ contains
     integer , allocatable :: vertex_cells(:,:), num_vertex_cells(:)
     integer , allocatable :: face_cells(:,:), num_face_cells(:)
     integer , allocatable :: cell_faces(:,:), num_cell_faces(:)
-    real(dp), allocatable :: cell_centers(:,:), face_centers(:,:)
+    real(dp), allocatable :: cell_centres(:,:), face_centres(:,:)
     real(dp), allocatable :: face_areas(:), cell_volumes(:)
     real(dp), allocatable :: cell_face_normals(:,:,:), lvec(:,:)
     real(dp), allocatable :: face_deltas(:), face_cell_weights(:,:)
@@ -88,7 +88,7 @@ contains
 
     allocate(gl, source=gmsh_loader(trim(filename)))
 
-    call gl % get_mesh_data( &
+    call gl % mesh_data( &
          & num_vertices, vertex_numbers, vertex_tags, vertices, &
          & num_edges, edge_numbers, edge_tags, edge_vertices, &
          & num_edge_vertices, &
@@ -99,7 +99,7 @@ contains
          & cell_types, bface_types, edge_types, &
          & num_tags, tag_numbers, tag_physical_dimensions, tag_info)
 
-    spatial_dim = maxval(elem_type_dimension(cell_types))
+    spatial_dim = maxval(element_dimension(cell_types))
 
     ! the face member set and its relations
     call derive_faces(spatial_dim, num_vertices, num_cells, &
@@ -119,21 +119,21 @@ contains
          & cell_faces, num_cell_faces)
 
     ! the measurements
-    call cell_centers_of(vertices, cell_vertices, num_cell_vertices, &
-         & cell_centers)
-    call face_centers_areas_of(spatial_dim, vertices, face_vertices, &
-         & num_face_vertices, face_centers, face_areas)
-    call cell_face_normals_of(spatial_dim, vertices, face_vertices, &
-         & num_face_vertices, cell_faces, num_cell_faces, face_centers, &
-         & cell_centers, cell_face_normals)
-    call cell_volumes_of(spatial_dim, face_centers, face_areas, &
+    call derive_cell_centres(vertices, cell_vertices, num_cell_vertices, &
+         & cell_centres)
+    call derive_face_centres_areas(spatial_dim, vertices, face_vertices, &
+         & num_face_vertices, face_centres, face_areas)
+    call derive_cell_face_normals(spatial_dim, vertices, face_vertices, &
+         & num_face_vertices, cell_faces, num_cell_faces, face_centres, &
+         & cell_centres, cell_face_normals)
+    call derive_cell_volumes(spatial_dim, face_centres, face_areas, &
          & cell_face_normals, cell_faces, num_cell_faces, cell_volumes)
-    call centroidal_vectors_of(face_cells, num_face_cells, cell_centers, &
-         & face_centers, lvec)
-    call face_deltas_of(num_faces, lvec, cell_face_normals, cell_faces, &
+    call derive_centroidal_vectors(face_cells, num_face_cells, cell_centres, &
+         & face_centres, lvec)
+    call derive_face_deltas(num_faces, lvec, cell_face_normals, cell_faces, &
          & num_cell_faces, face_deltas)
-    call face_weights_of(face_cells, num_face_cells, cell_centers, &
-         & face_centers, face_cell_weights)
+    call derive_face_weights(face_cells, num_face_cells, cell_centres, &
+         & face_centres, face_cell_weights)
 
     ! tails and heads from the face-to-cell relation; a face with
     ! one cell is a boundary face, an edge without a head
@@ -176,11 +176,11 @@ contains
 
     m = mesh(num_cells, tails=tails, heads=heads, &
          & volumes      = cell_volumes, &
-         & cell_centers = reshape(cell_centers, [3 * num_cells]), &
+         & cell_centres = reshape(cell_centres, [3 * num_cells]), &
          & areas        = face_areas, &
          & deltas       = face_deltas, &
          & normals      = normals, &
-         & face_centers = reshape(face_centers, [3 * num_faces]), &
+         & face_centres = reshape(face_centres, [3 * num_faces]), &
          & weights      = weights, &
          & etags        = etags)
 

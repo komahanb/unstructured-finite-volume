@@ -25,7 +25,7 @@
 ! to `directed_`, because `ordinary` names no mathematical role and
 ! `directed` names the one this contract actually holds.
 !
-! WHAT IT LENDS. One name: the abstract type. set_graph is imported
+! WHAT IT LENDS. One name: the abstract type. graph is imported
 ! to spell the signatures below and is NOT re-exported - a consumer
 ! wanting the kernel graph asks the kernel, which mints it. Importing
 ! a name to write a declaration is not the same act as lending it on.
@@ -70,7 +70,7 @@ module view_directed
   !===================================================================!
   ! THE DOMAIN IS A GRAPH, AND ITS INTERPRETATION IS THE CALLER'S.
   !
-  ! set_graph is the kernel's graph, renamed on import for one reason
+  ! graph is the kernel's graph, renamed on import for one reason
   ! only: this module and the kernel both speak of graphs, and a
   ! reader of a signature must be able to tell which. The COLLISION is
   ! gone - the abstract type below is `directed_graph` now, and no
@@ -86,7 +86,7 @@ module view_directed
   ! graph does not own them. It never learns what a set means.
   !===================================================================!
 
-  use graph_fractal       , only : set_graph => graph
+  use graph_fractal       , only : graph
   use map_set       , only : set_map
   use map_label     , only : label_map
   use map_inclusion , only : inclusion_map
@@ -96,8 +96,8 @@ module view_directed
   private
 
   public :: directed_graph
-  public :: GRAPH_SIDE_VERTEX
-  public :: GRAPH_SIDE_EDGE
+  public :: SIDE_VERTEX
+  public :: SIDE_EDGE
 
   !===================================================================!
   ! The two sides of a directed graph an operation's output may
@@ -105,8 +105,8 @@ module view_directed
   ! identity and not a subset: domains are set graph identities.
   !===================================================================!
 
-  integer, parameter :: GRAPH_SIDE_VERTEX = 1
-  integer, parameter :: GRAPH_SIDE_EDGE   = 2
+  integer, parameter :: SIDE_VERTEX = 1
+  integer, parameter :: SIDE_EDGE   = 2
 
   !===================================================================!
   ! GRAPH. The reader of structure.
@@ -179,22 +179,22 @@ module view_directed
    contains
 
      ! Identity and size.
-     procedure(graph_id_interface)    , deferred :: id
-     procedure(graph_count_interface) , deferred :: num_vertices
-     procedure(graph_count_interface) , deferred :: num_edges
+     procedure(directed_id_interface)    , deferred :: id
+     procedure(directed_count_interface) , deferred :: num_vertices
+     procedure(directed_count_interface) , deferred :: num_edges
 
      ! The carrier bridge (migration, AGENTS.md 5B): the graph's two
      ! persistent declared domains, for consumers that must ask
      ! where a field domain ultimately lives. This root is already
      ! explicitly the directed vertex/edge contract: V and E, by
      ! identity.
-     procedure(set_graph_interface), deferred :: vertex_set
-     procedure(set_graph_interface), deferred :: edge_set
+     procedure(member_set_interface), deferred :: vertex_set
+     procedure(member_set_interface), deferred :: edge_set
 
      ! Incidence: the two integer edge fields that ARE the structure.
-     procedure(graph_edge_end_interface)     , deferred :: edge_tail
-     procedure(graph_edge_end_interface)     , deferred :: edge_head
-     procedure(graph_edge_has_head_interface), deferred :: edge_has_head
+     procedure(directed_edge_end_interface)     , deferred :: edge_tail
+     procedure(directed_edge_end_interface)     , deferred :: edge_head
+     procedure(directed_edge_has_head_interface), deferred :: edge_has_head
 
      ! The named sets, split by whether the answer already exists.
      !
@@ -205,32 +205,32 @@ module view_directed
      !
      ! The split is not cosmetic: the first kind may be asked twice
      ! and answer one set, the second kind answers two.
-     procedure(set_graph_interface)   , deferred :: all_vertices
-     procedure(graph_carved_set_interface), deferred :: interior_vertices
-     procedure(graph_carved_set_interface), deferred :: boundary_vertices
-     procedure(graph_tagged_set_interface), deferred :: tagged_vertices
-     procedure(set_graph_interface)   , deferred :: all_edges
-     procedure(graph_carved_set_interface), deferred :: interior_edges
-     procedure(graph_carved_set_interface), deferred :: boundary_edges
-     procedure(graph_tagged_set_interface), deferred :: tagged_edges
+     procedure(member_set_interface)   , deferred :: all_vertices
+     procedure(directed_carved_set_interface), deferred :: interior_vertices
+     procedure(directed_carved_set_interface), deferred :: boundary_vertices
+     procedure(directed_tagged_set_interface), deferred :: tagged_vertices
+     procedure(member_set_interface)   , deferred :: all_edges
+     procedure(directed_carved_set_interface), deferred :: interior_edges
+     procedure(directed_carved_set_interface), deferred :: boundary_edges
+     procedure(directed_tagged_set_interface), deferred :: tagged_edges
 
      ! Carved by ownership, one part at a time.
-     procedure(graph_part_set_interface), deferred :: owned_vertices
-     procedure(graph_part_set_interface), deferred :: borrowed_vertices
-     procedure(graph_part_set_interface), deferred :: overlap_vertices
-     procedure(graph_part_set_interface), deferred :: owned_edges
-     procedure(graph_part_set_interface), deferred :: borrowed_edges
-     procedure(graph_part_set_interface), deferred :: overlap_edges
+     procedure(directed_part_set_interface), deferred :: owned_vertices
+     procedure(directed_part_set_interface), deferred :: borrowed_vertices
+     procedure(directed_part_set_interface), deferred :: overlap_vertices
+     procedure(directed_part_set_interface), deferred :: owned_edges
+     procedure(directed_part_set_interface), deferred :: borrowed_edges
+     procedure(directed_part_set_interface), deferred :: overlap_edges
 
      ! Neighbourhoods. Called inside loops, so the answers are bare
      ! indices and the procedures are pure; handing back a graph here
      ! would allocate three times per neighbour query.
-     procedure(graph_from_vertex_interface), deferred :: incident_edges
-     procedure(graph_from_vertex_interface), deferred :: adjacent_vertices
-     procedure(graph_from_vertex_interface), deferred :: outgoing_edges
-     procedure(graph_from_vertex_interface), deferred :: incoming_edges
-     procedure(graph_from_vertex_interface), deferred :: outgoing_vertices
-     procedure(graph_from_vertex_interface), deferred :: incoming_vertices
+     procedure(directed_from_vertex_interface), deferred :: incident_edges
+     procedure(directed_from_vertex_interface), deferred :: adjacent_vertices
+     procedure(directed_from_vertex_interface), deferred :: outgoing_edges
+     procedure(directed_from_vertex_interface), deferred :: incoming_edges
+     procedure(directed_from_vertex_interface), deferred :: outgoing_vertices
+     procedure(directed_from_vertex_interface), deferred :: incoming_vertices
 
      !----------------------------------------------------------------!
      ! THE PARTITION RELATION IS GONE FROM HERE, and this note stands
@@ -257,15 +257,15 @@ module view_directed
      ! Structure: identity, counts, incidence.
      !===============================================================!
 
-     pure integer function graph_id_interface(this)
+     pure integer function directed_id_interface(this)
        import :: directed_graph
        class(directed_graph), intent(in) :: this
-     end function graph_id_interface
+     end function directed_id_interface
 
-     pure integer function graph_count_interface(this)
+     pure integer function directed_count_interface(this)
        import :: directed_graph
        class(directed_graph), intent(in) :: this
-     end function graph_count_interface
+     end function directed_count_interface
 
      !---------------------------------------------------------------!
      ! A domain the graph already holds: identity, and nothing else.
@@ -277,22 +277,22 @@ module view_directed
      ! Not pure: a set graph carries a pointer component, so copying
      ! one out of an INTENT(IN) dummy is barred from a pure subprogram
      ! (F2018 C1594). Identity is still answered by value.
-     type(set_graph) function set_graph_interface(this)
-       import :: directed_graph, set_graph
+     type(graph) function member_set_interface(this)
+       import :: directed_graph, graph
        class(directed_graph), intent(in) :: this
-     end function set_graph_interface
+     end function member_set_interface
 
-     pure integer function graph_edge_end_interface(this, edge_index)
+     pure integer function directed_edge_end_interface(this, edge_index)
        import :: directed_graph
        class(directed_graph), intent(in) :: this
        integer, intent(in) :: edge_index
-     end function graph_edge_end_interface
+     end function directed_edge_end_interface
 
-     pure logical function graph_edge_has_head_interface(this, edge_index)
+     pure logical function directed_edge_has_head_interface(this, edge_index)
        import :: directed_graph
        class(directed_graph), intent(in) :: this
        integer, intent(in) :: edge_index
-     end function graph_edge_has_head_interface
+     end function directed_edge_has_head_interface
 
      !===============================================================!
      ! THE CARVED SETS. Called once, when an operation begins, so the
@@ -316,48 +316,48 @@ module view_directed
      ! dependency and hiding one.
      !===============================================================!
 
-     subroutine graph_carved_set_interface(this, sets, labels, &
+     subroutine directed_carved_set_interface(this, sets, labels, &
           & inclusions, members)
-       import :: directed_graph, set_graph, set_map, label_map, inclusion_map
+       import :: directed_graph, graph, set_map, label_map, inclusion_map
        class(directed_graph)       , intent(in)    :: this
        type(set_map)      , intent(inout) :: sets
        type(label_map)    , intent(inout) :: labels
        type(inclusion_map), intent(inout) :: inclusions
-       type(set_graph)    , intent(out)   :: members
-     end subroutine graph_carved_set_interface
+       type(graph)    , intent(out)   :: members
+     end subroutine directed_carved_set_interface
 
-     subroutine graph_tagged_set_interface(this, tag, sets, labels, &
+     subroutine directed_tagged_set_interface(this, tag, sets, labels, &
           & inclusions, members)
-       import :: directed_graph, set_graph, set_map, label_map, inclusion_map
+       import :: directed_graph, graph, set_map, label_map, inclusion_map
        class(directed_graph)       , intent(in)    :: this
        character(len=*)   , intent(in)    :: tag
        type(set_map)      , intent(inout) :: sets
        type(label_map)    , intent(inout) :: labels
        type(inclusion_map), intent(inout) :: inclusions
-       type(set_graph)    , intent(out)   :: members
-     end subroutine graph_tagged_set_interface
+       type(graph)    , intent(out)   :: members
+     end subroutine directed_tagged_set_interface
 
-     subroutine graph_part_set_interface(this, part_id, sets, labels, &
+     subroutine directed_part_set_interface(this, part_id, sets, labels, &
           & inclusions, members)
-       import :: directed_graph, set_graph, set_map, label_map, inclusion_map
+       import :: directed_graph, graph, set_map, label_map, inclusion_map
        class(directed_graph)       , intent(in)    :: this
        integer            , intent(in)    :: part_id
        type(set_map)      , intent(inout) :: sets
        type(label_map)    , intent(inout) :: labels
        type(inclusion_map), intent(inout) :: inclusions
-       type(set_graph)    , intent(out)   :: members
-     end subroutine graph_part_set_interface
+       type(graph)    , intent(out)   :: members
+     end subroutine directed_part_set_interface
 
      !===============================================================!
      ! Neighbourhoods. Bare indices, pure, loop-safe.
      !===============================================================!
 
-     pure subroutine graph_from_vertex_interface(this, vertex_index, indices)
+     pure subroutine directed_from_vertex_interface(this, vertex_index, indices)
        import :: directed_graph
        class(directed_graph), intent(in) :: this
        integer, intent(in) :: vertex_index
        integer, allocatable, intent(out) :: indices(:)
-     end subroutine graph_from_vertex_interface
+     end subroutine directed_from_vertex_interface
   end interface
 
 end module view_directed

@@ -3,7 +3,7 @@
 !
 ! A graph read as a finite set, through a representation the map holds:
 !
-!     set_size(g, m)              how many members
+!     set_num_members(g, m)              how many members
 !     set_member(g, m, k)         which member stands at position k
 !     set_members(g, m, v)        all of them
 !     set_has(g, m, v)            is v one of them
@@ -45,7 +45,7 @@ module view_set
   implicit none
 
   private
-  public :: set_defined, set_size, set_member, set_members
+  public :: set_defined, set_num_members, set_member, set_members
   public :: set_has, set_local_index, set_equivalent
 
 contains
@@ -59,14 +59,14 @@ contains
 
   end function set_defined
 
-  integer function set_size(g, m)
+  integer function set_num_members(g, m)
 
     type(graph)  , intent(in) :: g
     type(set_map), intent(in) :: m
 
-    set_size = m % size_of(g)
+    set_num_members = m % num_members_of(g)
 
-  end function set_size
+  end function set_num_members
 
   integer function set_member(g, m, position)
 
@@ -94,7 +94,7 @@ contains
     type(set_map), intent(in) :: m
     integer      , intent(in) :: value
 
-    set_has = m % has_in(g, value)
+    set_has = m % has(g, value)
 
   end function set_has
 

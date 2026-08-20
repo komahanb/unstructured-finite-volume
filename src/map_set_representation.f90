@@ -65,7 +65,7 @@ module map_set_representation
 
    contains
 
-     procedure(representation_size_interface)       , deferred :: size
+     procedure(representation_num_members_interface), deferred :: num_members
      procedure(representation_member_interface)     , deferred :: member
      procedure(representation_members_interface)    , deferred :: members
      procedure(representation_has_interface)        , deferred :: has
@@ -75,10 +75,10 @@ module map_set_representation
 
   abstract interface
 
-     pure integer function representation_size_interface(this)
+     pure integer function representation_num_members_interface(this)
        import set_representation
        class(set_representation), intent(in) :: this
-     end function representation_size_interface
+     end function representation_num_members_interface
 
      pure integer function representation_member_interface(this, position)
        import set_representation
@@ -117,7 +117,7 @@ module map_set_representation
 
    contains
 
-     procedure :: size        => counted_size
+     procedure :: num_members => counted_num_members
      procedure :: member      => counted_member
      procedure :: members     => counted_members
      procedure :: has         => counted_has
@@ -141,7 +141,7 @@ module map_set_representation
 
    contains
 
-     procedure :: size        => listed_size
+     procedure :: num_members => listed_num_members
      procedure :: member      => listed_member
      procedure :: members     => listed_members
      procedure :: has         => listed_has
@@ -168,13 +168,13 @@ contains
 
   end function create_counted
 
-  pure integer function counted_size(this)
+  pure integer function counted_num_members(this)
 
     class(counted_set_representation), intent(in) :: this
 
-    counted_size = this % n
+    counted_num_members = this % n
 
-  end function counted_size
+  end function counted_num_members
 
   pure integer function counted_member(this, position)
 
@@ -247,17 +247,17 @@ contains
 
   end function create_listed
 
-  pure integer function listed_size(this)
+  pure integer function listed_num_members(this)
 
     class(listed_set_representation), intent(in) :: this
 
     if (allocated(this % roll)) then
-       listed_size = size(this % roll)
+       listed_num_members = size(this % roll)
     else
-       listed_size = 0
+       listed_num_members = 0
     end if
 
-  end function listed_size
+  end function listed_num_members
 
   pure integer function listed_member(this, position)
 

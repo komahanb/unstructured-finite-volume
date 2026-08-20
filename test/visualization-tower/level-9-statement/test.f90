@@ -32,7 +32,7 @@ program visualization_level_9
 
   use iso_fortran_env      , only : dp => REAL64
   use visualization_assert , only : report, verdict
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation
   use map_set        , only : set_map
   use map_label      , only : label_map
@@ -65,7 +65,7 @@ program visualization_level_9
   real(dp), parameter :: A_TIMES_ONE(N) = [5.0_dp, 7.0_dp, 7.0_dp]
 
   ! ---- the relational half, as Gate A left it
-  type(set_graph)  :: x0, x1, x2, x3, e1, e2, e3
+  type(graph)  :: x0, x1, x2, x3, e1, e2, e3
   type(set_map)     :: sets
   type(label_map)     :: labels
   type(csr_relation) :: t2, h2, d2
@@ -236,7 +236,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: from, to
+    type(graph) :: from, to
     type(picture)                  :: valued
 
     ! ---- structure, from relations, with no numbers in it

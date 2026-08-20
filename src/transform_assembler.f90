@@ -63,7 +63,7 @@ module transform_assembler
   use view_directed , only : directed_graph
   use relation_partition, only : partition_relation
   use field_calculus, only : field
-  use graph_fractal      , only : set_graph => graph
+  use graph_fractal      , only : graph
   use map_set      , only : set_map
   use map_label    , only : label_map
   use map_inclusion, only : inclusion_map, declared_subobject
@@ -254,7 +254,7 @@ contains
     type(inclusion_map), intent(inout)            :: inclusions
     class(field), allocatable, intent(out) :: global_data
 
-    type(set_graph) :: dom
+    type(graph) :: dom
     integer         :: n_dom
 
     if (.not. this % defined_on_relation(rel, part_graph)) then
@@ -301,11 +301,11 @@ contains
        &                  sets, labels, inclusions, global_data)
 
     type(stored_field)        , intent(in)               :: part_data
-    type(set_graph)    , intent(in)               :: dom
+    type(graph)    , intent(in)               :: dom
     integer            , intent(in)               :: n_dom
     class(directed_graph)       , intent(in)               :: part_graph
     type(partition_relation), intent(in)          :: rel
-    type(set_graph)    , intent(in)               :: part_carrier
+    type(graph)    , intent(in)               :: part_carrier
     integer            , intent(in)               :: n_part_carrier
     class(directed_graph)       , intent(in)               :: global_graph
     logical            , intent(in)               :: on_vertices
@@ -315,11 +315,11 @@ contains
     class(field) , allocatable, intent(out) :: global_data
 
     type(stored_field)           :: out
-    type(set_graph)       :: global_carrier
-    type(set_graph)       :: sg
+    type(graph)       :: global_carrier
+    type(graph)       :: sg
     real(dp), allocatable :: lv(:), fv(:)
     integer , allocatable :: kept(:), came(:)
-    integer :: nglobal, nlocal, ncomp, l, c, f, me, n, at
+    integer :: nglobal, nlocal, num_components, l, c, f, me, n, at
 
     if (on_vertices) then
        nglobal        = global_graph % num_vertices()
@@ -330,17 +330,17 @@ contains
        nlocal         = part_graph % num_edges()
        global_carrier = global_graph % edge_set()
     end if
-    ncomp = part_data % num_components()
+    num_components = part_data % num_components()
     me    = rel % part_id()
 
-    call part_data % get_real_vector(lv)
+    call part_data % real_vector(lv)
 
     if (dom % same_as(part_carrier)) then
 
        ! Full coverage: the established dense assembly, owned only.
-       out = stored_field(part_data % name(), global_carrier, nglobal, ncomp=ncomp, &
+       out = stored_field(part_data % name(), global_carrier, nglobal, num_components=num_components, &
             &      unit_name=part_data % units())
-       allocate(fv(nglobal * ncomp))
+       allocate(fv(nglobal * num_components))
        fv = 0.0_dp
 
        do l = 1, nlocal
@@ -348,8 +348,8 @@ contains
              if (owner_of(rel, l, on_vertices) /= me) cycle
           end if
           f = global_of(rel, l, on_vertices)
-          do c = 1, ncomp
-             associate (to => (f - 1) * ncomp + c, from => (l - 1) * ncomp + c)
+          do c = 1, num_components
+             associate (to => (f - 1) * num_components + c, from => (l - 1) * num_components + c)
                if (to >= 1 .and. to <= size(fv) .and. from <= size(lv)) fv(to) = lv(from)
              end associate
           end do
@@ -383,13 +383,13 @@ contains
        call labels     % bind(sg, labels % label_of(dom))
        call inclusions % include_in(sg, global_carrier)
 
-       allocate(fv(n * ncomp))
+       allocate(fv(n * num_components))
        do l = 1, n
-          do c = 1, ncomp
-             fv((l - 1) * ncomp + c) = lv((came(l) - 1) * ncomp + c)
+          do c = 1, num_components
+             fv((l - 1) * num_components + c) = lv((came(l) - 1) * num_components + c)
           end do
        end do
-       out = stored_field(part_data % name(), sg, n, ncomp=ncomp, &
+       out = stored_field(part_data % name(), sg, n, num_components=num_components, &
             &      unit_name=part_data % units())
        call out % set_real_vector(fv)
 

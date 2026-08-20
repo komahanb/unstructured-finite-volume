@@ -24,7 +24,7 @@ program test_graph_differentiation
   use iso_fortran_env     , only : dp => REAL64
   use field_calculus, only : field
   use operation_discretization      , only : linearization
-  use graph_fractal       , only : set_graph => graph
+  use graph_fractal       , only : graph
   use view_directed_stored         , only : stored_directed_graph
   use field_stored   , only : stored_field
   use operation_step    , only : scheme, backward_euler, bdf_variable
@@ -45,7 +45,7 @@ program test_graph_differentiation
   type(linear_law)      :: lin
 
   type(stored_directed_graph) :: lone
-  type(set_graph)             :: cells
+  type(graph)             :: cells
   type(marcher)               :: clock
 
   integer :: nfail
@@ -154,10 +154,10 @@ contains
 
     call tangent % freeze([1.0_dp])
 
-    direction = stored_field('v', cells, 1, ncomp=1)
+    direction = stored_field('v', cells, 1, num_components=1)
     call direction % set_real_vector([3.0_dp])
     call tangent % apply(lone, [direction], output)
-    call output % get_real_vector(rv)
+    call output % real_vector(rv)
 
     call report(size(rv) == 1 .and. near(rv(1), 78.0_dp, 1.0e-12_dp), &
          & "the exact tangent of the quartic at 1: J v = 26 v", nfail)
@@ -202,7 +202,7 @@ contains
     degrees_ok = .true.
     do n = 0, 4
        call composer % assemble(quartic, lone, inputs, n, full, output)
-       call output % get_real_vector(rv)
+       call output % real_vector(rv)
        degrees_ok = degrees_ok .and. size(rv) == 1 .and. &
             & near(rv(1), expected(n), 1.0e-10_dp)
     end do
@@ -210,13 +210,13 @@ contains
          & "quartic degrees 0..4: 31, 271, 2207, 16688, 118251", nfail)
 
     call composer % assemble(quartic, lone, inputs, 3, sparse, output)
-    call output % get_real_vector(rv)
+    call output % real_vector(rv)
     call report(near(rv(1), 9156.0_dp, 1.0e-10_dp), &
          & "an unoccupied derivative reads as zero: sparse degree 3 is 9156", &
          & nfail)
 
     call composer % assemble(quartic, lone, inputs, 4, sparse, output)
-    call output % get_real_vector(rv)
+    call output % real_vector(rv)
     call report(near(rv(1), 27908.0_dp, 1.0e-10_dp), &
          & "an unoccupied derivative reads as zero: sparse degree 4 is 27908", &
          & nfail)
@@ -282,7 +282,7 @@ contains
        fact     = fact * real(n, dp)
        expected = fact * upow(n)
        call composer % assemble(p8, lone, inputs, n, paths, output)
-       call output % get_real_vector(rv)
+       call output % real_vector(rv)
        degrees_ok = degrees_ok .and. size(rv) == 1 .and. &
             & abs(rv(1) - expected) <= 1.0e-12_dp * abs(expected)
     end do
@@ -341,7 +341,7 @@ contains
     ! input slot 2.
     !----------------------------------------------------------------!
 
-    xifield(1) = stored_field('xi', cells, 1, ncomp=1)
+    xifield(1) = stored_field('xi', cells, 1, num_components=1)
     call xifield(1) % set_real_vector([1.0_dp])
     call fill_path(xipath(1), 2, [1.0_dp], cells)
 

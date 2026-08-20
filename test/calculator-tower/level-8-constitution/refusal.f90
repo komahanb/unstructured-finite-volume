@@ -10,7 +10,7 @@ program constitution_refusal
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -20,9 +20,9 @@ program constitution_refusal
 
   implicit none
 
-  type(set_graph)     :: x, o, y
-  type(set_graph)     :: ports
-  type(set_graph)      :: k, u
+  type(graph)     :: x, o, y
+  type(graph)     :: ports
+  type(graph)      :: k, u
   type(stored_relation) :: flow, doubled
   real(dp), allocatable :: r(:)
   integer               :: table(3, 6)

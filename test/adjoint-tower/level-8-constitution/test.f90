@@ -46,7 +46,7 @@ program adjoint_level_8
   use adjoint_assert   , only : report, verdict
   use adjoint_assert   , only : VAR_P, VAR_U, VAR_V
   use adjoint_assert   , only : TGT_R1, TGT_R2, TGT_F
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -67,9 +67,9 @@ program adjoint_level_8
 
   implicit none
 
-  type(set_graph)     :: v, t
-  type(set_graph)      :: p_dom, z_dom
-  type(set_graph)      :: q_can, y_can, q_perm, y_perm
+  type(graph)     :: v, t
+  type(graph)      :: p_dom, z_dom
+  type(graph)      :: q_can, y_can, q_perm, y_perm
   type(stored_directed_graph)    :: host
   type(stored_relation) :: dep
   integer               :: table(2, 9)
@@ -142,7 +142,7 @@ contains
 
   subroutine run_battery(q_dom, y_dom, sets, tag, u_at, r1_at, nfail)
 
-    type(set_graph) , intent(in)    :: q_dom, y_dom
+    type(graph) , intent(in)    :: q_dom, y_dom
     type(set_map)   , intent(in)    :: sets
     character(len=*) , intent(in)    :: tag
     integer          , intent(in)    :: u_at, r1_at
@@ -157,7 +157,7 @@ contains
     type(gmres)                     :: primal_solver, adjoint_solver
     type(gmres)                     :: tangent_solver
     type(stored_field)                     :: rhs_y, rhs_q, state
-    type(set_graph)  :: dom
+    type(graph)  :: dom
     class(field), allocatable :: sol
     real(dp), allocatable           :: gv(:), qv(:), lv(:), qp(:)
     real(dp), allocatable           :: rp_dir(:)
@@ -167,10 +167,10 @@ contains
     real(dp)                        :: tangent_sens, adjoint_sens
     real(dp)                        :: lam_rp
 
-    allocate(rp_dir(sets % size_of(y_dom)))
-    allocate(direct(sets % size_of(z_dom)))
-    allocate(contrib(sets % size_of(z_dom)))
-    allocate(resp(sets % size_of(z_dom)))
+    allocate(rp_dir(sets % num_members_of(y_dom)))
+    allocate(direct(sets % num_members_of(z_dom)))
+    allocate(contrib(sets % num_members_of(z_dom)))
+    allocate(resp(sets % num_members_of(z_dom)))
     write(*,'(1x,a,a,a)') "--- ", tag, " enumeration ---"
 
     ! Prove the enumeration is what the tag claims, so a "permuted"
@@ -201,17 +201,17 @@ contains
          &                           [1.0_dp], sets)
 
     !-- the primal, through the constituted residual ----------------
-    call primal_solver % attach(primal_eq, host, q_dom, sets % size_of(q_dom))
+    call primal_solver % attach(primal_eq, host, q_dom, sets % num_members_of(q_dom))
     primal_solver % tolerance      = 1.0d-12
     primal_solver % max_iterations = 50
 
     call primal_solver % constant(gv)
-    rhs_y = stored_field('rhs', y_dom, sets % size_of(y_dom))
+    rhs_y = stored_field('rhs', y_dom, sets % num_members_of(y_dom))
     call rhs_y % set_real_vector(-gv)
     call primal_solver % apply(host, [rhs_y], sol)
 
     dom = sol % domain()
-    call sol % get_real_vector(qv)
+    call sol % real_vector(qv)
     call report(dom % same_as(q_dom) .and. &
          &      abs(qv(sets % index_in(q_dom, VAR_U)) - 2.0_dp) < 1.0d-9 &
          & .and. abs(qv(sets % index_in(q_dom, VAR_V)) - 4.0_dp) &
@@ -226,17 +226,17 @@ contains
          & tag // ": f = 14 at the solved state", nfail)
 
     !-- the adjoint, through the reverse reading of the same law ----
-    call adjoint_solver % attach(adjoint_eq, host, y_dom, sets % size_of(y_dom))
+    call adjoint_solver % attach(adjoint_eq, host, y_dom, sets % num_members_of(y_dom))
     adjoint_solver % tolerance      = 1.0d-12
     adjoint_solver % max_iterations = 50
 
     call adjoint_solver % constant(gv)
-    rhs_q = stored_field('rhs', q_dom, sets % size_of(q_dom))
+    rhs_q = stored_field('rhs', q_dom, sets % num_members_of(q_dom))
     call rhs_q % set_real_vector(-gv)
     call adjoint_solver % apply(host, [rhs_q], sol)
 
     dom = sol % domain()
-    call sol % get_real_vector(lv)
+    call sol % real_vector(lv)
     call report(dom % same_as(y_dom) .and. &
          &      abs(lv(sets % index_in(y_dom, TGT_R1)) + 0.4_dp) < 1.0d-9 &
          & .and. abs(lv(sets % index_in(y_dom, TGT_R2)) - 0.6_dp) &
@@ -249,16 +249,16 @@ contains
          & nfail)
 
     !-- the tangent, an INDEPENDENT road to the same sensitivity ----
-    call tangent_solver % attach(tangent_eq, host, q_dom, sets % size_of(q_dom))
+    call tangent_solver % attach(tangent_eq, host, q_dom, sets % num_members_of(q_dom))
     tangent_solver % tolerance      = 1.0d-12
     tangent_solver % max_iterations = 50
 
     call tangent_solver % constant(gv)
-    rhs_y = stored_field('rhs', y_dom, sets % size_of(y_dom))
+    rhs_y = stored_field('rhs', y_dom, sets % num_members_of(y_dom))
     call rhs_y % set_real_vector(-gv)
     call tangent_solver % apply(host, [rhs_y], sol)
 
-    call sol % get_real_vector(qp)
+    call sol % real_vector(qp)
     call report(abs(qp(sets % index_in(q_dom, VAR_U)) - 1.0_dp) < 1.0d-9 &
          & .and. abs(qp(sets % index_in(q_dom, VAR_V)) - 2.0_dp) &
          &      < 1.0d-9, &
@@ -302,7 +302,7 @@ contains
   subroutine check_duality(jq, q_dom, y_dom, sets, tag, nfail)
 
     class(relation)  , intent(in)    :: jq
-    type(set_graph) , intent(in)    :: q_dom, y_dom
+    type(graph) , intent(in)    :: q_dom, y_dom
     type(set_map)   , intent(in)    :: sets
     character(len=*) , intent(in)    :: tag
     integer          , intent(inout) :: nfail
@@ -310,8 +310,8 @@ contains
     real(dp), allocatable :: vq(:), mu(:), av(:), atmu(:)
     real(dp) :: lhs, rhs
 
-    allocate(vq(sets % size_of(q_dom)), mu(sets % size_of(y_dom)))
-    allocate(av(sets % size_of(y_dom)), atmu(sets % size_of(q_dom)))
+    allocate(vq(sets % num_members_of(q_dom)), mu(sets % num_members_of(y_dom)))
+    allocate(av(sets % num_members_of(y_dom)), atmu(sets % num_members_of(q_dom)))
     ! Seeded BY MEMBER: v = [-1 at u, 4 at v], mu = [2 at r1, -3 at r2]
     vq(sets % index_in(q_dom, VAR_U)) = -1.0_dp
     vq(sets % index_in(q_dom, VAR_V)) =  4.0_dp

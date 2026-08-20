@@ -32,7 +32,7 @@ program refusal
 
   use iso_fortran_env     , only : dp => REAL64
   use field_calculus, only : field
-  use graph_fractal       , only : set_graph => graph
+  use graph_fractal       , only : graph
   use view_directed_stored         , only : stored_directed_graph
   use field_stored   , only : stored_field
   use operation_step    , only : scheme
@@ -49,7 +49,7 @@ program refusal
   type(equilibrium_law) :: equil
 
   type(stored_directed_graph) :: lone
-  type(set_graph)             :: cells
+  type(graph)             :: cells
   type(scheme)         :: statement
   type(chain_rule)            :: composer
   type(argument_path)         :: paths(2)
@@ -142,7 +142,7 @@ program refusal
   case ('unfrozen')
 
      tangent = exact_linearization(quartic)
-     direction = stored_field('v', cells, 1, ncomp=1)
+     direction = stored_field('v', cells, 1, num_components=1)
      call direction % set_real_vector([1.0_dp])
      call tangent % apply(lone, [direction], output)
 

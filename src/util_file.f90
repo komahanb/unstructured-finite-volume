@@ -6,7 +6,7 @@
 !     (line 1)──▶(line 2)──▶(line 3)──▶ ...
 !
 ! Open and close bracket the walk, read_line takes one step,
-! read_lines walks the whole chain into memory, and get_num_lines
+! read_lines walks the whole chain into memory, and num_lines
 ! measures its length.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -36,10 +36,10 @@ module util_file
      ! Overridden procedures.
      procedure :: open
      procedure :: close
-     procedure :: get_unit
+     procedure :: unit
      procedure :: read_line
      procedure :: read_lines
-     procedure :: get_num_lines
+     procedure :: num_lines
 
      ! The destructor.
      final :: destroy
@@ -137,19 +137,19 @@ contains
   ! Return the file unit number.
   !===================================================================!
 
-  pure type(integer) function get_unit(this)
+  pure type(integer) function unit(this)
 
     class(file), intent(in) :: this
 
-    get_unit = this % file_unit
+    unit = this % file_unit
 
-  end function get_unit
+  end function unit
 
   !===================================================================!
   ! A utility function that counts the number of lines in the mesh file.
   !===================================================================!
 
-  impure type(integer) function get_num_lines(this) result(nlines)
+  impure type(integer) function num_lines(this) result(nlines)
 
     class(file) , intent(in) :: this
     integer :: stat
@@ -157,13 +157,13 @@ contains
     nlines = 0 
     call this % open()
     do
-       read(this % get_unit(),*, iostat=stat)
+       read(this % unit(),*, iostat=stat)
        if (stat .ne. 0) exit
        nlines = nlines + 1
     end do
     call this % close()
 
-  end function get_num_lines
+  end function num_lines
 
   !=================================================================!
   ! Read one line and return a string object.
@@ -178,7 +178,7 @@ contains
     ! Locals.
     character(len=this % buffer_size) :: buffer
 
-    read(this % get_unit(), fmt = '(a)') buffer
+    read(this % unit(), fmt = '(a)') buffer
     line = string(trim(buffer))
 
   end subroutine read_line
@@ -203,7 +203,7 @@ contains
     ! needs a fix.
     !-----------------------------------------------------------------!
 
-    num_lines = this % get_num_lines()
+    num_lines = this % num_lines()
     allocate(lines(num_lines))
 
     ! Walk the chain and store each line into the lines array.

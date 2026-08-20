@@ -31,7 +31,7 @@ program calculator_level_2
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -42,8 +42,8 @@ program calculator_level_2
 
   implicit none
 
-  type(set_graph)            :: x, o, p
-  type(set_graph)             :: p_out, p_in
+  type(graph)            :: x, o, p
+  type(graph)             :: p_out, p_in
   type(stored_relation)        :: flow, backwards
   type(stored_relation)        :: t_out3, t_in3, produces, consumes
   class(relation), allocatable :: d, d2
@@ -121,7 +121,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dom
+    type(graph) :: dom
 
     produces = project_slots(t_out3, [1, 2], sets)
     consumes = project_slots(t_in3 , [2, 1], sets)
@@ -183,7 +183,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dom
+    type(graph) :: dom
 
     d = compose_binary(produces, consumes, sets)
 
@@ -219,7 +219,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_relation)          :: out2, in2, prod2, cons2
-    type(set_graph) :: da, db
+    type(graph) :: da, db
     integer                        :: rev(3, 6)
     integer, allocatable           :: dt(:,:)
     integer                        :: j

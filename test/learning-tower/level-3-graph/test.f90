@@ -26,7 +26,7 @@ program learning_level_3
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -37,12 +37,12 @@ program learning_level_3
   use graph_fractal        , only : graph, known_branch, null_branch
   use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
-       & holds_set, relational_valid
+       & has_set, relational_valid
 
   implicit none
 
-  type(set_graph)              :: v, o, p
-  type(set_graph)               :: p_out, p_in
+  type(graph)              :: v, o, p
+  type(graph)               :: p_out, p_in
   type(stored_relation)          :: flow, t_out3, t_in3
   type(stored_relation)          :: produces, consumes
   class(relation), allocatable   :: d
@@ -147,8 +147,8 @@ contains
          &      num_relations(g) .eq. 2, &
          & "the graph owns three member sets and two relations", nfail)
 
-    call report(holds_set(g, bnd, v) .and. holds_set(g, bnd, o) .and. &
-         &      holds_set(g, bnd, p), &
+    call report(has_set(g, bnd, v) .and. has_set(g, bnd, o) .and. &
+         &      has_set(g, bnd, p), &
          & "V, O and P are its own, by identity", nfail)
 
     call report(graph_holds_relation(g, bnd, flow), &
@@ -197,7 +197,7 @@ contains
     integer, intent(inout) :: nfail
 
     class(relation), pointer       :: rp
-    type(set_graph) :: dom
+    type(graph) :: dom
     integer                        :: k
 
     do k = 1, num_relations(g)
@@ -229,7 +229,7 @@ contains
     integer, intent(inout) :: nfail
 
     class(relation), pointer       :: rp
-    type(set_graph) :: dom
+    type(graph) :: dom
     integer                        :: k, s
     logical                        :: ok
 
@@ -238,7 +238,7 @@ contains
        rp => relation_at(g, bnd, k)
        do s = 1, rp % arity()
           dom = rp % domain(s)
-          ok = ok .and. holds_set(g, bnd, dom)
+          ok = ok .and. has_set(g, bnd, dom)
        end do
     end do
     call report(ok, &

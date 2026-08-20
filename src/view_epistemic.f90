@@ -38,7 +38,7 @@
 
 module view_epistemic
 
-  use graph_fractal, only : graph, GRAPH_UNKNOWN, GRAPH_KNOWN
+  use graph_fractal, only : graph, BRANCH_UNKNOWN, BRANCH_KNOWN
 
   implicit none
 
@@ -57,7 +57,7 @@ contains
 
     type(graph), intent(in) :: g
 
-    has_data = g % branch(1) % status() .eq. GRAPH_KNOWN
+    has_data = g % branch(1) % status() .eq. BRANCH_KNOWN
 
   end function has_data
 
@@ -65,7 +65,7 @@ contains
 
     type(graph), intent(in) :: g
 
-    has_operator = g % branch(2) % status() .eq. GRAPH_KNOWN
+    has_operator = g % branch(2) % status() .eq. BRANCH_KNOWN
 
   end function has_operator
 
@@ -83,8 +83,8 @@ contains
     epistemic_defined = .true.
     do s = 1, 2
        epistemic_defined = epistemic_defined .and. &
-            & (g % branch(s) % status() .eq. GRAPH_UNKNOWN .or. &
-            &  g % branch(s) % status() .eq. GRAPH_KNOWN)
+            & (g % branch(s) % status() .eq. BRANCH_UNKNOWN .or. &
+            &  g % branch(s) % status() .eq. BRANCH_KNOWN)
     end do
 
   end function epistemic_defined

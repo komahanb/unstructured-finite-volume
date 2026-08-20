@@ -70,7 +70,7 @@
 
 module production_pattern_renderer_fixture
 
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set        , only : set_map
   use map_label      , only : label_map
   use relation_finitary                , only : relation
@@ -129,7 +129,7 @@ contains
     type(label_map), intent(in) :: labels
 
     character(len=:), allocatable :: text
-    type(set_graph)             :: v
+    type(graph)             :: v
 
     v    = p % vertex_set()
     text = carrier_name(v, labels) // ' -> ' // carrier_name(v, labels)
@@ -147,7 +147,7 @@ contains
     type(label_map), intent(in) :: labels
 
     character(len=:), allocatable  :: text
-    type(set_graph) :: from, to
+    type(graph) :: from, to
 
     from = r % domain(1)
     to   = r % domain(2)
@@ -170,7 +170,7 @@ contains
     class(directed_graph)   , intent(in) :: p
     type(set_map)  , intent(in) :: sets
 
-    type(set_graph) :: cols, rows
+    type(graph) :: cols, rows
 
     coordinate_shapes_fit = .false.
     if (r % arity() .ne. 2) return
@@ -178,8 +178,8 @@ contains
     cols = r % domain(1)
     rows = r % domain(2)
 
-    coordinate_shapes_fit = (sets % size_of(cols) .eq. p % num_vertices()) .and. &
-         &                  (sets % size_of(rows) .eq. p % num_vertices())
+    coordinate_shapes_fit = (sets % num_members_of(cols) .eq. p % num_vertices()) .and. &
+         &                  (sets % num_members_of(rows) .eq. p % num_vertices())
 
   end function coordinate_shapes_fit
 
@@ -194,8 +194,8 @@ contains
     class(directed_graph)   , intent(in) :: p
     type(set_map)  , intent(in) :: sets
 
-    type(set_graph) :: cols, rows
-    type(set_graph)              :: verts
+    type(graph) :: cols, rows
+    type(graph)              :: verts
     integer                        :: i, j
 
     same_coordinate_pattern = coordinate_shapes_fit(r, p, sets)
@@ -205,8 +205,8 @@ contains
     rows  = r % domain(2)
     verts = p % vertex_set()
 
-    do j = 1, sets % size_of(cols)
-       do i = 1, sets % size_of(rows)
+    do j = 1, sets % num_members_of(cols)
+       do i = 1, sets % num_members_of(rows)
           same_coordinate_pattern = same_coordinate_pattern .and. &
                & (r % has([sets % member_of(cols, j), sets % member_of(rows, i)]) .eqv. &
                &  production_has(p, sets % member_of(verts, j), sets % member_of(verts, i)))
@@ -234,11 +234,11 @@ contains
     type(set_map)  , intent(in) :: sets
     type(label_map), intent(in) :: labels
 
-    type(set_graph) :: verts
+    type(graph) :: verts
     integer           :: stub, wide, i, j, at, n
 
     verts = p % vertex_set()
-    n     = sets % size_of(verts)
+    n     = sets % num_members_of(verts)
 
     stub = max(widest(verts, sets, labels), MIN_STUB) + 2
     wide = widest(verts, sets, labels) + 1
@@ -274,14 +274,14 @@ contains
 
   integer function widest(carrier, sets, labels)
 
-    type(set_graph), intent(in) :: carrier
+    type(graph), intent(in) :: carrier
     type(set_map)  , intent(in) :: sets
     type(label_map), intent(in) :: labels
 
     integer :: k
 
     widest = 1
-    do k = 1, sets % size_of(carrier)
+    do k = 1, sets % num_members_of(carrier)
        widest = max(widest, len(label_for(carrier, sets % member_of(carrier, k), labels)))
     end do
 
@@ -289,7 +289,7 @@ contains
 
   function carrier_name(carrier, labels) result(text)
 
-    type(set_graph), intent(in) :: carrier
+    type(graph), intent(in) :: carrier
     type(label_map), intent(in) :: labels
 
     character(len=:), allocatable :: text

@@ -92,10 +92,10 @@ program test_graph_dense_direct
   ! A solve must not modify the stencil's weights.
   !-------------------------------------------------------------------!
 
-  call two_by_two % weights % get_real_vector(w_before)
+  call two_by_two % weights % real_vector(w_before)
   allocate(x(2)); x = 0.0_dp
   call solver % solve([4.0_dp, 7.0_dp], x, achieved)
-  call two_by_two % weights % get_real_vector(w_after)
+  call two_by_two % weights % real_vector(w_after)
   call report(matches(w_after, w_before, 0.0_dp + tiny(1.0_dp)), &
        & "the solve leaves the stencil's weights unmodified", nfail)
   deallocate(x)

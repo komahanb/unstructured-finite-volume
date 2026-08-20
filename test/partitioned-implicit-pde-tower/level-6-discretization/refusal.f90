@@ -19,7 +19,7 @@ program partitioned_pde_level_6_refusal
 
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : NV, Q_EXACT
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation
   use map_set        , only : set_map
   use field_calculus, only : field
@@ -30,7 +30,7 @@ program partitioned_pde_level_6_refusal
   implicit none
 
   type(stored_directed_graph)              :: g
-  type(set_graph)                 :: foreign
+  type(graph)                 :: foreign
   type(set_map)                   :: sets
   type(shifted_laplacian)         :: shifted
   type(stored_field)                     :: q

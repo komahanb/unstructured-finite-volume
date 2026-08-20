@@ -25,7 +25,7 @@ program inclusion_suite
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set          , only : set_map
-  use view_set         , only : set_size, set_member, set_has, &
+  use view_set         , only : set_num_members, set_member, set_has, &
        & set_local_index, set_equivalent
   use map_inclusion    , only : inclusion_map, declared_subobject
 
@@ -62,7 +62,7 @@ program inclusion_suite
          & set_equivalent(a, b, sets) .and. .not. a % same_as(b))
 
     fits = .true.
-    do k = 1, set_size(s, sets)
+    do k = 1, set_num_members(s, sets)
        fits = fits .and. set_has(b, sets, set_member(s, sets, k))
     end do
     call check('1  every member of S fits inside B: the trap is real', fits)
@@ -108,7 +108,7 @@ program inclusion_suite
     call inc % include_in(s, a)
 
     inside_a = .true.; inside_b = .true.
-    do k = 1, set_size(s, sets)
+    do k = 1, set_num_members(s, sets)
        inside_a = inside_a .and. set_has(a, sets, set_member(s, sets, k))
        inside_b = inside_b .and. set_has(b, sets, set_member(s, sets, k))
     end do
@@ -145,7 +145,7 @@ program inclusion_suite
 
     same_value       = .true.
     position_differs = .false.
-    do k = 1, set_size(s, sets)
+    do k = 1, set_num_members(s, sets)
        associate (v => set_member(s, sets, k))
          same_value = same_value .and. set_has(a, sets, v)
          if (set_local_index(a, sets, v) /= set_local_index(s, sets, v)) &

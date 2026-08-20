@@ -65,7 +65,7 @@
 
 module visualization_algebra_fixture
 
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set        , only : set_map
   use relation_finitary        , only : relation
   use relation_binary , only : binary_relation, csr_relation
@@ -167,7 +167,7 @@ contains
     class(relation) , intent(in) :: r
     type(set_map)  , intent(in) :: sets
 
-    type(set_graph) :: first, second
+    type(graph) :: first, second
     integer, allocatable           :: table(:,:)
 
     if (r % arity() .ne. 2) then
@@ -195,7 +195,7 @@ contains
     class(relation), intent(in) :: r
     class(relation), intent(in) :: s
 
-    type(set_graph) :: dr, ds
+    type(graph) :: dr, ds
     integer, allocatable           :: tr(:,:), ts(:,:)
     integer                        :: k, j
 

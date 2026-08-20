@@ -157,6 +157,10 @@ below is a defect, not a style choice.
    collide with a module name.
 2. cardinality is `num_<plural>` — bindings and components alike.
    `size`, `size_of`, `x_size`, `_count`, and `n_` prefixes are out.
+   one exception, forced by the language: a private counter component
+   shadowed by its own `num_` binding keeps a short initial form
+   (`nv`, `ne`, `nc`, `np`), since fortran forbids a component and a
+   binding sharing one name.
 3. a predicate is a verb phrase asserting the property it tests
    (`has(x)`, `matches(t)`, `labelled(g)`); set membership is `has`.
 4. a reader is the bare noun of what it returns; `get_` is banned.

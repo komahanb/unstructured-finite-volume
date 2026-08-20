@@ -89,7 +89,7 @@
 
 module relation_partition
 
-  use graph_fractal      , only : set_graph => graph
+  use graph_fractal      , only : graph
   use view_directed, only : directed_graph
 
   implicit none
@@ -113,20 +113,20 @@ module relation_partition
      ! WHICH sets are related, by identity: the part's two carriers,
      ! and the two of the whole. Identity, never extension - it says
      ! which sets it relates, not who belongs to them.
-     type(set_graph), private :: part_verts
-     type(set_graph), private :: part_edges
-     type(set_graph), private :: whole_verts
-     type(set_graph), private :: whole_edges
+     type(graph), private :: part_vertices
+     type(graph), private :: part_edges
+     type(graph), private :: whole_vertices
+     type(graph), private :: whole_edges
 
      ! HOW MANY, on both sides. A count is not a membership question.
-     integer, private :: n_part_verts  = 0
-     integer, private :: n_part_edges  = 0
-     integer, private :: n_whole_verts = 0
-     integer, private :: n_whole_edges = 0
+     integer, private :: num_part_vertices  = 0
+     integer, private :: num_part_edges  = 0
+     integer, private :: nwv = 0
+     integer, private :: nwe = 0
 
      ! WHICH part this relation is for, and how many there are.
      integer, private :: number = 1
-     integer, private :: nparts = 1
+     integer, private :: np = 1
      logical, private :: cut    = .false.
 
      ! The tuples of r_V and r_E, and the ownership field beside them.
@@ -167,28 +167,28 @@ contains
   !===================================================================!
 
   type(partition_relation) function create_relation( &
-       & part_verts, n_part_verts, part_edges, n_part_edges, &
-       & whole_verts, n_whole_verts, whole_edges, n_whole_edges, &
-       & number, nparts, vglobal, vowner, eglobal, eowner) result(this)
+       & part_vertices, num_part_vertices, part_edges, num_part_edges, &
+       & whole_vertices, num_whole_vertices, whole_edges, num_whole_edges, &
+       & number, num_parts, vglobal, vowner, eglobal, eowner) result(this)
 
-    type(set_graph), intent(in) :: part_verts, part_edges
-    integer        , intent(in) :: n_part_verts, n_part_edges
-    type(set_graph), intent(in) :: whole_verts, whole_edges
-    integer        , intent(in) :: n_whole_verts, n_whole_edges
-    integer        , intent(in) :: number, nparts
+    type(graph), intent(in) :: part_vertices, part_edges
+    integer        , intent(in) :: num_part_vertices, num_part_edges
+    type(graph), intent(in) :: whole_vertices, whole_edges
+    integer        , intent(in) :: num_whole_vertices, num_whole_edges
+    integer        , intent(in) :: number, num_parts
     integer        , intent(in) :: vglobal(:), vowner(:)
     integer        , intent(in) :: eglobal(:), eowner(:)
 
-    this % part_verts    = part_verts
+    this % part_vertices    = part_vertices
     this % part_edges    = part_edges
-    this % whole_verts   = whole_verts
+    this % whole_vertices   = whole_vertices
     this % whole_edges   = whole_edges
-    this % n_part_verts  = n_part_verts
-    this % n_part_edges  = n_part_edges
-    this % n_whole_verts = n_whole_verts
-    this % n_whole_edges = n_whole_edges
+    this % num_part_vertices  = num_part_vertices
+    this % num_part_edges  = num_part_edges
+    this % nwv = num_whole_vertices
+    this % nwe = num_whole_edges
     this % number        = number
-    this % nparts        = nparts
+    this % np        = num_parts
     this % cut           = .true.
 
     allocate(this % vglobal, source=vglobal)
@@ -207,19 +207,19 @@ contains
   type(partition_relation) function &
        & create_identity_relation(verts, nverts, edges, nedges) result(this)
 
-    type(set_graph), intent(in) :: verts, edges
+    type(graph), intent(in) :: verts, edges
     integer        , intent(in) :: nverts, nedges
 
-    this % part_verts    = verts
+    this % part_vertices    = verts
     this % part_edges    = edges
-    this % whole_verts   = verts
+    this % whole_vertices   = verts
     this % whole_edges   = edges
-    this % n_part_verts  = nverts
-    this % n_part_edges  = nedges
-    this % n_whole_verts = nverts
-    this % n_whole_edges = nedges
+    this % num_part_vertices  = nverts
+    this % num_part_edges  = nedges
+    this % nwv = nverts
+    this % nwe = nedges
     this % number        = 1
-    this % nparts        = 1
+    this % np        = 1
     this % cut           = .false.
 
   end function create_identity_relation
@@ -231,7 +231,7 @@ contains
 
   pure integer function num_parts(this)
     class(partition_relation), intent(in) :: this
-    num_parts = this % nparts
+    num_parts = this % np
   end function num_parts
 
   pure logical function has_part_relation(this)
@@ -348,24 +348,24 @@ contains
   ! that must size or name the destination of an assembly.
   !===================================================================!
 
-  type(set_graph) function whole_vertex_set(this)
+  type(graph) function whole_vertex_set(this)
     class(partition_relation), intent(in) :: this
-    whole_vertex_set = this % whole_verts
+    whole_vertex_set = this % whole_vertices
   end function whole_vertex_set
 
-  type(set_graph) function whole_edge_set(this)
+  type(graph) function whole_edge_set(this)
     class(partition_relation), intent(in) :: this
     whole_edge_set = this % whole_edges
   end function whole_edge_set
 
   pure integer function num_whole_vertices(this)
     class(partition_relation), intent(in) :: this
-    num_whole_vertices = this % n_whole_verts
+    num_whole_vertices = this % nwv
   end function num_whole_vertices
 
   pure integer function num_whole_edges(this)
     class(partition_relation), intent(in) :: this
-    num_whole_edges = this % n_whole_edges
+    num_whole_edges = this % nwe
   end function num_whole_edges
 
   !===================================================================!
@@ -385,15 +385,15 @@ contains
     class(partition_relation), intent(in) :: this
     class(directed_graph)                    , intent(in) :: g
 
-    type(set_graph) :: v, e
+    type(graph) :: v, e
 
     v = g % vertex_set()
     e = g % edge_set()
 
-    describes = v % same_as(this % part_verts)      .and. &
+    describes = v % same_as(this % part_vertices)      .and. &
          &      e % same_as(this % part_edges)      .and. &
-         &      g % num_vertices() == this % n_part_verts .and. &
-         &      g % num_edges()    == this % n_part_edges
+         &      g % num_vertices() == this % num_part_vertices .and. &
+         &      g % num_edges()    == this % num_part_edges
 
   end function describes
 

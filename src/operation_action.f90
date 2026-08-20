@@ -20,7 +20,7 @@
 module operation_action
 
   use view_directed , only : directed_graph
-  use graph_fractal       , only : set_graph => graph
+  use graph_fractal       , only : graph
   use field_calculus, only : field
 
   implicit none
@@ -55,12 +55,12 @@ module operation_action
      !---------------------------------------------------------------!
 
      subroutine operation_domain_interface(this, input_graph, domain, &
-          & nentries)
-       import :: operation, directed_graph, set_graph
+          & num_entries)
+       import :: operation, directed_graph, graph
        class(operation), intent(in)  :: this
        class(directed_graph)          , intent(in)  :: input_graph
-       type(set_graph)       , intent(out) :: domain
-       integer               , intent(out) :: nentries
+       type(graph)       , intent(out) :: domain
+       integer               , intent(out) :: num_entries
      end subroutine operation_domain_interface
 
      subroutine operation_apply_interface(this, input_graph, input_data, output)

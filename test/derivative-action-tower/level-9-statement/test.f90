@@ -47,7 +47,7 @@ program derivative_level_9
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -62,13 +62,13 @@ program derivative_level_9
   use graph_fractal        , only : graph, known_branch, null_branch
   use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
-       & holds_set
+       & has_set
 
   implicit none
 
 
-  type(set_graph)                  :: v, o, p
-  type(set_graph)                   :: x_dom, c, z_dom, p_in, p_out
+  type(graph)                  :: v, o, p
+  type(graph)                   :: x_dom, c, z_dom, p_in, p_out
   type(stored_relation), allocatable :: flow
   class(relation), allocatable       :: d
   class(relation), pointer           :: gflow => null()
@@ -79,7 +79,7 @@ program derivative_level_9
   type(relational_binding)         :: bnd
   integer                          :: kcell
   type(stored_field)                        :: qx, zbar_f, grad_f, vseed_f
-  type(set_graph)     :: dom
+  type(graph)     :: dom
   integer, allocatable               :: order(:)
   real(dp), allocatable              :: obs(:), gradient(:), gvals(:)
   real(dp), allocatable              :: seed1(:), vdir(:), base(:), dot(:)
@@ -179,9 +179,9 @@ program derivative_level_9
   end if
   deallocate(flow)
 
-  allocate(base(sets % size_of(v)), avail(sets % size_of(v)))
-  allocate(dot(sets % size_of(v)), davail(sets % size_of(v)))
-  allocate(gradient(sets % size_of(x_dom)))
+  allocate(base(sets % num_members_of(v)), avail(sets % num_members_of(v)))
+  allocate(dot(sets % num_members_of(v)), davail(sets % num_members_of(v)))
+  allocate(gradient(sets % num_members_of(x_dom)))
 
   call check_selection(nfail)
   call check_primal(nfail)
@@ -195,9 +195,9 @@ program derivative_level_9
   !    member, in X's own enumeration order, at full round-trip
   !    precision: the marker carries the actual field, never a
   !    rounded image of it. No integer conversion lives on this path.
-  call grad_f % get_real_vector(gvals)
+  call grad_f % real_vector(gvals)
   write(*,'(1x,a)', advance='no') "DERIVATIVE_RESULT ="
-  do i = 1, sets % size_of(x_dom)
+  do i = 1, sets % num_members_of(x_dom)
      write(*,'(es24.16)', advance='no') gvals(i)
   end do
   write(*,'(a)') ""
@@ -236,9 +236,9 @@ contains
 
     integer, intent(inout) :: nfail
 
-    qx = stored_field('base point', x_dom, sets % size_of(x_dom))
+    qx = stored_field('base point', x_dom, sets % num_members_of(x_dom))
     call qx % set_real_vector([3.0_dp, 2.0_dp])
-    call qx % get_real_vector(obs)
+    call qx % real_vector(obs)
 
     call primal_execution(gflow, v, sets, x_dom, obs, c, order, base, avail)
 
@@ -260,14 +260,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    zbar_f = stored_field('reverse seed', z_dom, sets % size_of(z_dom))
+    zbar_f = stored_field('reverse seed', z_dom, sets % num_members_of(z_dom))
     call zbar_f % set_real_vector([1.0_dp])
-    call zbar_f % get_real_vector(seed1)
+    call zbar_f % real_vector(seed1)
 
     call reverse_action(gflow, v, sets, x_dom, order, base, z_dom, &
          & seed1, gradient)
 
-    grad_f = stored_field('derivative of z on X', x_dom, sets % size_of(x_dom))
+    grad_f = stored_field('derivative of z on X', x_dom, sets % num_members_of(x_dom))
     call grad_f % set_real_vector(gradient)
 
     dom = grad_f % domain()
@@ -331,9 +331,9 @@ contains
 
     integer, intent(inout) :: nfail
 
-    vseed_f = stored_field('tangent direction', x_dom, sets % size_of(x_dom))
+    vseed_f = stored_field('tangent direction', x_dom, sets % num_members_of(x_dom))
     call vseed_f % set_real_vector([-1.0_dp, 4.0_dp])
-    call vseed_f % get_real_vector(vdir)
+    call vseed_f % real_vector(vdir)
 
     call tangent_action(gflow, v, sets, x_dom, vdir, c, order, base, &
          & dot, davail)
@@ -359,11 +359,11 @@ contains
     real(dp), allocatable :: xbar2(:), seed2(:)
     type(stored_field)           :: zbar2_f
 
-    allocate(xbar2(sets % size_of(x_dom)))
+    allocate(xbar2(sets % num_members_of(x_dom)))
 
-    zbar2_f = stored_field('reverse seed two', z_dom, sets % size_of(z_dom))
+    zbar2_f = stored_field('reverse seed two', z_dom, sets % num_members_of(z_dom))
     call zbar2_f % set_real_vector([2.0_dp])
-    call zbar2_f % get_real_vector(seed2)
+    call zbar2_f % real_vector(seed2)
 
     call reverse_action(gflow, v, sets, x_dom, order, base, z_dom, &
          & seed2, xbar2)

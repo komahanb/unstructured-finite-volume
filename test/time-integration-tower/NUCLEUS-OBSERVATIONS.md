@@ -684,7 +684,7 @@ symptom / fact:       DISCRETIZATION PRESERVES THE ACTION'S DOMAIN -
                         step_domain   delegates to
                                       this % action % domain(...)
 
-                        step_apply    takes ncomp from
+                        step_apply    takes num_components from
                                       input_data(1) % num_components()
                                       validates the input's domain
                                       validates the action's answer
@@ -708,7 +708,7 @@ symptom / fact:       DISCRETIZATION PRESERVES THE ACTION'S DOMAIN -
                       delegation returns exactly what asking the graph
                       returned, and test/graph-marching passes
                       unchanged, including its two-numbers-wide cell
-                      case, which is the one that exercises ncomp.
+                      case, which is the one that exercises num_components.
 
                       operation_marching is the ONLY consumer of
                       scheme in the repository, and it was not
@@ -1089,7 +1089,7 @@ symptom / fact:       *** SEAM-A2 RED, SECOND SITE. RED FIRST. ***
                       one level down:
 
                         nv    = on % num_vertices()      = 5
-                        ncomp = size(q) / max(nv, 1)     = 2/5 = 0
+                        num_components = size(q) / max(nv, 1)     = 2/5 = 0
                         state = field(..., on % vertex_set(), ...)
 
                       A march is a repeated application of ONE
@@ -1157,7 +1157,7 @@ symptom / fact:       THE MARCHER PRESERVES THE ACTION'S DOMAIN -
 
                         march (implicit) attaches the governed solve
                                         with unknown_domain =
-                                        state_domain and ncomp from
+                                        state_domain and num_components from
                                         the same source
 
                       The rule:
@@ -1264,10 +1264,10 @@ symptom / fact:       *** THE CLASS-2 WITNESS, AND IT IS NATURAL. ***
                       correctly. derivative_apply had not:
 
                         nv    = input_graph % num_vertices()   = 5
-                        ncomp = max(size(at)/max(nv,1), 1)
+                        num_components = max(size(at)/max(nv,1), 1)
                               = max(2/5, 1) = 1
                         state = field(..., input_graph % vertex_set(),
-                                      ncomp=1)
+                                      num_components=1)
 
                       NOTE THE max(...,1) FLOOR. It converts a
                       divide-to-zero into a silently WRONG width of
@@ -1339,7 +1339,7 @@ symptom / fact:       A SAME-DOMAIN FINITE DIFFERENCE CAN PRESERVE
                         and builds the frozen state, the perturbed
                         state and the J v answer on `on`
 
-                        ncomp comes from size(at) / on % size(),
+                        num_components comes from size(at) / on % size(),
                         with exact divisibility required
 
                         a direction field, when present, must live

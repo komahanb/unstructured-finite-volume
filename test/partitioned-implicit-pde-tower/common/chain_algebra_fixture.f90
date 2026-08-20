@@ -42,7 +42,7 @@
 module chain_algebra_fixture
 
   use relation_finitary        , only : relation
-  use graph_fractal         , only : set_graph => graph
+  use graph_fractal         , only : graph
   use map_set         , only : set_map
   use relation_algebra, only : compose_binary
   use relation_binary , only : binary_relation, csr_relation, &

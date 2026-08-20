@@ -335,7 +335,7 @@ relational structure?
 with \(D\) rederived before admission — the container infers nothing.
 
 **Verification.** Three carriers and two relations owned by identity
-(`holds_set`, and relation ownership composed locally from
+(`has_set`, and relation ownership composed locally from
 `num_relations` / `relation_at` / `same_as`); the ternary flow survives
 ownership unchanged (arity 3, six tuples); the dependency survives
 (binary, one pair); signature closure — every relation slot resolves to
@@ -1052,7 +1052,7 @@ that distinction; nothing here anticipates it.
 
 `doc/derivative-walks-plan.md` (2026-08-02) is historical design
 intuition only: no `class_graph_pipeline`, no vertex-stage ontology, and
-no numerical walks exist in this tower. The relation-centered nucleus
+no numerical walks exist in this tower. The relation-centred nucleus
 had first right of refusal — and at Gate A it refused nothing.
 
 ---

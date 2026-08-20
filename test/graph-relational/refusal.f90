@@ -14,7 +14,7 @@
 program refusal
 
   use graph_fractal        , only : graph
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -40,8 +40,8 @@ program refusal
      block
        type(graph), target        :: e1, e2
        type(relational_binding)   :: b
-       type(set_graph)          :: s
-       type(set_graph), pointer :: p
+       type(graph)          :: s
+       type(graph), pointer :: p
        type(set_map)     :: sets
        type(label_map)     :: labels
        call e1 % declare(); call e2 % declare()
@@ -56,7 +56,7 @@ program refusal
      block
        type(graph), target      :: e1, e2
        type(relational_binding) :: b
-       type(set_graph)        :: s
+       type(graph)        :: s
        type(stored_relation)    :: r1
        class(relation), pointer :: p
        type(set_map)     :: sets
@@ -81,7 +81,7 @@ program refusal
      block
        type(graph), target      :: e1, e2
        type(relational_binding) :: b, d
-       type(set_graph)        :: s
+       type(graph)        :: s
        type(stored_relation)    :: r1, r2
        class(relation), pointer :: p
        type(set_map)     :: sets
@@ -108,7 +108,7 @@ program refusal
      block
        type(graph), target      :: e1
        type(relational_binding) :: b
-       type(set_graph)        :: raw
+       type(graph)        :: raw
        call e1 % declare()
        call b % bind_set(e1, raw)
      end block
@@ -133,7 +133,7 @@ program refusal
      block
        type(graph), target        :: e1
        type(relational_binding)   :: b
-       type(set_graph)          :: ops
+       type(graph)          :: ops
        type(csr_relation), target :: dep
        type(transposed_relation)      :: flipped
        type(set_map)     :: sets

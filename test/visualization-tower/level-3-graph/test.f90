@@ -50,7 +50,7 @@ program visualization_level_3
   use visualization_assert , only : X1_P, X1_Q, X1_R
   use visualization_assert , only : X2_U, X2_V, X2_W
   use visualization_assert , only : X3_M, X3_N
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -62,7 +62,7 @@ program visualization_level_3
   use graph_fractal        , only : graph, known_branch, null_branch
   use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
-       & holds_set
+       & has_set
   use visualization_carriers_fixture , only : structural_carriers
   use visualization_relations_fixture, only : occurrences_of_a1
   use visualization_relations_fixture, only : occurrences_of_a2
@@ -74,7 +74,7 @@ program visualization_level_3
 
   implicit none
 
-  type(set_graph)              :: x0, x1, x2, x3, e1, e2, e3
+  type(graph)              :: x0, x1, x2, x3, e1, e2, e3
   type(set_map)     :: sets
   type(label_map)     :: labels
   type(csr_relation)     , target :: t1, h1, t2, h2, t3, h3
@@ -160,10 +160,10 @@ contains
          & "the graph holds SEVEN member sets - four state carriers " // &
          & "and three occurrence carriers", nfail)
 
-    call report(holds_set(g, bnd, x0) .and. holds_set(g, bnd, x1) .and. &
-         &      holds_set(g, bnd, x2) .and. holds_set(g, bnd, x3) .and. &
-         &      holds_set(g, bnd, e1) .and. holds_set(g, bnd, e2) .and. &
-         &      holds_set(g, bnd, e3), &
+    call report(has_set(g, bnd, x0) .and. has_set(g, bnd, x1) .and. &
+         &      has_set(g, bnd, x2) .and. has_set(g, bnd, x3) .and. &
+         &      has_set(g, bnd, e1) .and. has_set(g, bnd, e2) .and. &
+         &      has_set(g, bnd, e3), &
          & "and each of X0 X1 X2 X3 E1 E2 E3 answers same_as against " // &
          & "one of them: OWNERSHIP IS IDENTITY", nfail)
 
@@ -209,7 +209,7 @@ contains
     integer, intent(inout) :: nfail
 
     class(relation)  , pointer     :: r
-    type(set_graph) :: d
+    type(graph) :: d
     integer                        :: k, s
     logical                        :: closed
 
@@ -218,7 +218,7 @@ contains
        r => relation_at(g, bnd, k)
        do s = 1, r % arity()
           d = r % domain(s)
-          closed = closed .and. holds_set(g, bnd, d)
+          closed = closed .and. has_set(g, bnd, d)
        end do
     end do
 
@@ -241,7 +241,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph), pointer :: a, b
+    type(graph), pointer :: a, b
     integer                    :: i, j
     logical                    :: apart
 
@@ -259,8 +259,8 @@ contains
          & "no two OWNED carriers are the same domain - X0 X1 X2 X3 " // &
          & "stay distinct, and so do E1 E2 E3", nfail)
 
-    call report(.not. x1 % same_as(x2) .and. holds_set(g, bnd, x1) .and. &
-         &      holds_set(g, bnd, x2), &
+    call report(.not. x1 % same_as(x2) .and. has_set(g, bnd, x1) .and. &
+         &      has_set(g, bnd, x2), &
          & "the graph holds both three-member state carriers, and " // &
          & "still tells X1 from X2", nfail)
 
@@ -276,7 +276,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: union_like
+    type(graph) :: union_like
 
     ! A manufactured carrier: declared and described here so the
     ! test can ask its size, and NOT held by the graph.
@@ -284,11 +284,11 @@ contains
     call sets % bind(union_like, &
          & counted_set_representation(NX0 + NX1 + NX2 + NX3))
 
-    call report(.not. holds_set(g, bnd, union_like), &
+    call report(.not. has_set(g, bnd, union_like), &
          & "a manufactured twelve-member vertex carrier IS NOT HELD - " // &
          & "the chain was not collapsed to make it renderable", nfail)
 
-    call report(num_member_sets(g) .eq. 7 .and. sets % size_of(union_like) .eq. 12, &
+    call report(num_member_sets(g) .eq. 7 .and. sets % num_members_of(union_like) .eq. 12, &
          & "the graph keeps seven typed domains where an ordinary " // &
          & "graph would want one untyped set of twelve", nfail)
 
@@ -433,14 +433,14 @@ contains
 
   logical function sizes_kept()
 
-    type(set_graph), pointer :: c
+    type(graph), pointer :: c
     integer                    :: want(7), k
 
     want = [NX0, NX1, NX2, NX3, NE1, NE2, NE3]
     sizes_kept = .true.
     do k = 1, 7
        c => member_set_at(g, bnd, k)
-       sizes_kept = sizes_kept .and. (sets % size_of(c) .eq. want(k))
+       sizes_kept = sizes_kept .and. (sets % num_members_of(c) .eq. want(k))
     end do
 
   end function sizes_kept
@@ -483,7 +483,7 @@ contains
 
     class(relation), intent(in) :: r
 
-    type(set_graph) :: first, second
+    type(graph) :: first, second
 
     runs_between_states = .false.
     if (r % arity() .ne. 2) return

@@ -84,7 +84,7 @@ program visualization_level_6
   use visualization_assert , only : X0_A, X0_B, X0_C, X0_D
   use visualization_assert , only : X1_P, X1_Q, X1_R
   use visualization_assert , only : X2_U, X2_V, X2_W
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation
   use map_set        , only : set_map
   use map_label      , only : label_map
@@ -111,7 +111,7 @@ program visualization_level_6
 
   implicit none
 
-  type(set_graph)      :: x0, x1, x2, x3, e1, e2, e3
+  type(graph)      :: x0, x1, x2, x3, e1, e2, e3
   type(set_map)     :: sets
   type(label_map)     :: labels
   type(csr_relation)     :: t1, h1, t2, h2, t3, h3
@@ -234,7 +234,7 @@ contains
   subroutine say_the_measurement()
 
     type(picture)     :: pic
-    type(set_graph) :: verts
+    type(graph) :: verts
 
     write(*,'(1x,a)') "---------------------------------------------"
 
@@ -358,8 +358,8 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: from, to
-    type(set_graph)              :: verts
+    type(graph) :: from, to
+    type(graph)              :: verts
 
     verts = carrier_of(pat_d2)
     from  = d2 % domain(1)
@@ -379,7 +379,7 @@ contains
          & "ONE carrier in both places against TWO: the signatures " // &
          & "read 'vertices -> vertices' and 'X1 -> X2'", nfail)
 
-    call report(sets % size_of(verts) .eq. NX1 .and. sets % size_of(verts) .eq. NX2 .and. &
+    call report(sets % num_members_of(verts) .eq. NX1 .and. sets % num_members_of(verts) .eq. NX2 .and. &
          &      same_coordinate_pattern(d2, pat_d2, sets), &
          & "SAME PIXELS, NOT THE SAME TYPED STRUCTURAL OBJECT - equal " // &
          & "occupancy, equal counts, and three distinct carriers", nfail)
@@ -395,7 +395,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: from, to
+    type(graph) :: from, to
     type(picture)                  :: pic
     integer                        :: j
     logical                        :: phantom_empty
@@ -403,7 +403,7 @@ contains
     from = d1 % domain(1)
     to   = d1 % domain(2)
 
-    call report(sets % size_of(from) .eq. NX0 .and. sets % size_of(to) .eq. NX1 .and. &
+    call report(sets % num_members_of(from) .eq. NX0 .and. sets % num_members_of(to) .eq. NX1 .and. &
          &      NX0 .ne. NX1, &
          & "D1 : X0 -> X1 is RECTANGULAR - four columns, three rows", &
          & nfail)
@@ -557,7 +557,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(picture)     :: relational, production
-    type(set_graph) :: verts
+    type(graph) :: verts
     integer           :: k
     logical           :: grids_agree
 
@@ -599,7 +599,7 @@ contains
   ! Helpers.
   !===================================================================!
 
-  type(set_graph) function carrier_of(p)
+  type(graph) function carrier_of(p)
 
     class(directed_graph), intent(in) :: p
 

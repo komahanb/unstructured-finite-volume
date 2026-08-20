@@ -2,12 +2,12 @@
 ! THE PARTITION / ASSEMBLY LAW, FOR MORE THAN ONE PART
 !
 ! What was proven before this suite: assemble(partition(G)) = G at
-! nparts = 1, and the test that proves it calls that the weakest case.
-! Nothing was proven for nparts > 1, and the maps therefore refused to
+! num_parts = 1, and the test that proves it calls that the weakest case.
+! Nothing was proven for num_parts > 1, and the maps therefore refused to
 ! call the pair a section.
 !
 ! This suite asks what the CURRENT PUBLIC INTERFACES can actually
-! express at nparts = 2 and 3. Nothing is migrated and no merge
+! express at num_parts = 2 and 3. Nothing is migrated and no merge
 ! operation is invented so that an equation can be written; where the
 ! API cannot state a law, the suite records that it cannot.
 !
@@ -30,7 +30,7 @@ program partition_law
   use view_directed  , only : directed_graph
   use field_calculus , only : field
   use field_stored    , only : stored_field
-  use graph_fractal      , only : set_graph => graph
+  use graph_fractal      , only : graph
   use map_set_representation, only : counted_set_representation
   use map_set      , only : set_map
   use map_label    , only : label_map
@@ -92,13 +92,13 @@ contains
   !     every assembled edge is an edge of G          soundness
   !     every edge of G is assembled by some part     completeness
   !
-  ! At nparts = 1 coverage collapses to equality, which is the law that
+  ! At num_parts = 1 coverage collapses to equality, which is the law that
   ! was already proven.
   !===================================================================!
 
-  subroutine structure_law(nparts)
+  subroutine structure_law(num_parts)
 
-    integer, intent(in) :: nparts
+    integer, intent(in) :: num_parts
 
     type(stored_directed_graph)        :: g
     type(partitioner)         :: p
@@ -114,8 +114,8 @@ contains
     seen  = 0
     sound = .true.
 
-    do k = 1, nparts
-       p = partitioner(PARTITION_LINEAR, nparts=nparts, part=k)
+    do k = 1, num_parts
+       p = partitioner(PARTITION_LINEAR, num_parts=num_parts, part=k)
        call p % partition_graph(g, part, rel)
        call a % assemble_graph(rel, part, back)
 
@@ -129,11 +129,11 @@ contains
        end do
     end do
 
-    write(what, '(a,i0,a)') "A  nparts = ", nparts, &
+    write(what, '(a,i0,a)') "A  num_parts = ", num_parts, &
          & ": every assembled edge is an edge of G"
     call check(trim(what), sound)
 
-    write(what, '(a,i0,a)') "A  nparts = ", nparts, &
+    write(what, '(a,i0,a)') "A  num_parts = ", num_parts, &
          & ": every edge of G is assembled by some part"
     call check(trim(what), all(seen .ge. 1))
 
@@ -170,16 +170,16 @@ contains
   ! the current API does express.
   !===================================================================!
 
-  subroutine vertex_data_law(nparts)
+  subroutine vertex_data_law(num_parts)
 
-    integer, intent(in) :: nparts
+    integer, intent(in) :: num_parts
 
     type(stored_directed_graph)              :: g
     type(partitioner)               :: p
     type(assembler)                 :: a
     class(directed_graph), allocatable       :: part
     class(field), allocatable :: pd, fd
-    type(set_graph)                 :: on
+    type(graph)                 :: on
     type(stored_field)                     :: d
 
     !----------------------------------------------------------------!
@@ -214,8 +214,8 @@ contains
     call d % set_real_vector(want)
 
     total = 0.0_dp
-    do k = 1, nparts
-       p = partitioner(PARTITION_LINEAR, nparts=nparts, part=k)
+    do k = 1, num_parts
+       p = partitioner(PARTITION_LINEAR, num_parts=num_parts, part=k)
        call p % partition_graph(g, part, rel)
 
        ! Each part is a new graph, so its own carriers are new domains
@@ -230,12 +230,12 @@ contains
 
        select type (fd)
        class is (stored_field)
-          call fd % get_real_vector(v)
+          call fd % real_vector(v)
           if (size(v) .eq. 6) total = total + v
        end select
     end do
 
-    write(what, '(a,i0,a)') "B  nparts = ", nparts, &
+    write(what, '(a,i0,a)') "B  num_parts = ", num_parts, &
          & ": sum_k A_k(P_k(D)) = D on vertex data"
     call check(trim(what), all(abs(total - want) .lt. 1.0e-13_dp))
 
@@ -248,16 +248,16 @@ contains
   ! carries over.
   !===================================================================!
 
-  subroutine edge_data_law(nparts)
+  subroutine edge_data_law(num_parts)
 
-    integer, intent(in) :: nparts
+    integer, intent(in) :: num_parts
 
     type(stored_directed_graph)              :: g
     type(partitioner)               :: p
     type(assembler)                 :: a
     class(directed_graph), allocatable       :: part
     class(field), allocatable :: pd, fd
-    type(set_graph)                 :: on
+    type(graph)                 :: on
     type(stored_field)                     :: d
 
     !----------------------------------------------------------------!
@@ -294,8 +294,8 @@ contains
 
     total       = 0.0_dp
     expressible = .true.
-    do k = 1, nparts
-       p = partitioner(PARTITION_LINEAR, nparts=nparts, part=k)
+    do k = 1, num_parts
+       p = partitioner(PARTITION_LINEAR, num_parts=num_parts, part=k)
        call p % partition_graph(g, part, rel)
 
        ! Each part is a new graph, so its own carriers are new domains
@@ -310,7 +310,7 @@ contains
 
        select type (fd)
        class is (stored_field)
-          call fd % get_real_vector(v)
+          call fd % real_vector(v)
           if (size(v) .eq. 5) then
              total = total + v
           else
@@ -319,12 +319,12 @@ contains
        end select
     end do
 
-    write(what, '(a,i0,a)') "C  nparts = ", nparts, &
+    write(what, '(a,i0,a)') "C  num_parts = ", num_parts, &
          & ": edge data round trip is expressible"
     call check(trim(what), expressible)
 
     if (expressible) then
-       write(what, '(a,i0,a)') "C  nparts = ", nparts, &
+       write(what, '(a,i0,a)') "C  num_parts = ", num_parts, &
             & ": sum_k A_k(P_k(D)) = D on edge data"
        call check(trim(what), all(abs(total - want) .lt. 1.0e-13_dp))
     end if
@@ -333,18 +333,18 @@ contains
 
   !===================================================================!
   ! D . OWNERSHIP. Every whole-graph cell is owned by exactly one part.
-  ! This is what actually holds at nparts > 1, and it is weaker than
+  ! This is what actually holds at num_parts > 1, and it is weaker than
   ! any round trip: it is a statement about the partition alone.
   !===================================================================!
 
-  subroutine ownership_law(nparts)
+  subroutine ownership_law(num_parts)
 
-    integer, intent(in) :: nparts
+    integer, intent(in) :: num_parts
 
     type(stored_directed_graph)             :: g
     type(partitioner)              :: p
     class(directed_graph), allocatable      :: part
-    type(set_graph)                :: owned, borrowed
+    type(graph)                :: owned, borrowed
     type(set_map)                  :: sets
     type(label_map)                :: labels
     type(inclusion_map)            :: inclusions
@@ -357,8 +357,8 @@ contains
     times = 0
     borrows = .false.
 
-    do k = 1, nparts
-       p = partitioner(PARTITION_LINEAR, nparts=nparts, part=k)
+    do k = 1, num_parts
+       p = partitioner(PARTITION_LINEAR, num_parts=num_parts, part=k)
        call p % partition_graph(g, part, rel)
 
        call part % owned_vertices(k, sets, labels, inclusions, owned)
@@ -369,14 +369,14 @@ contains
        end do
 
        call part % borrowed_vertices(k, sets, labels, inclusions, borrowed)
-       if (sets % size_of(borrowed) .gt. 0) borrows = .true.
+       if (sets % num_members_of(borrowed) .gt. 0) borrows = .true.
     end do
 
-    write(what, '(a,i0,a)') "D  nparts = ", nparts, &
+    write(what, '(a,i0,a)') "D  num_parts = ", num_parts, &
          & ": every cell is owned exactly once"
     call check(trim(what), all(times .eq. 1))
 
-    write(what, '(a,i0,a)') "D  nparts = ", nparts, &
+    write(what, '(a,i0,a)') "D  num_parts = ", num_parts, &
          & ": and cells across a cut are borrowed, not owned twice"
     call check(trim(what), borrows)
 
@@ -385,13 +385,13 @@ contains
   subroutine roster(sets, s, idx)
 
     type(set_map)       , intent(in)  :: sets
-    type(set_graph)     , intent(in)  :: s
+    type(graph)     , intent(in)  :: s
     integer, allocatable, intent(out) :: idx(:)
 
     integer :: k
 
-    allocate(idx(sets % size_of(s)))
-    do k = 1, sets % size_of(s)
+    allocate(idx(sets % num_members_of(s)))
+    do k = 1, sets % num_members_of(s)
        idx(k) = sets % member_of(s, k)
     end do
 
@@ -414,7 +414,7 @@ contains
 
     g = chain_of_six()
     a = assembler()
-    p = partitioner(PARTITION_LINEAR, nparts=1, part=1)
+    p = partitioner(PARTITION_LINEAR, num_parts=1, part=1)
 
     call p % partition_graph(g, part, rel)
     call a % assemble_graph(rel, part, back)
@@ -426,20 +426,20 @@ contains
        same = same .and. back % edge_head(e) .eq. g % edge_head(e)
     end do
 
-    call check('E  at nparts = 1 the round trip is the identity', same)
+    call check('E  at num_parts = 1 the round trip is the identity', same)
 
-    ! And at nparts = 2 it is not: at least one part assembles back to
+    ! And at num_parts = 2 it is not: at least one part assembles back to
     ! strictly fewer edges than G has. That is what RESTRICTED means,
     ! and it is why the one-part law is not a global section.
     some_part_is_short = .false.
     do e = 1, 2
-       p = partitioner(PARTITION_LINEAR, nparts=2, part=e)
+       p = partitioner(PARTITION_LINEAR, num_parts=2, part=e)
        call p % partition_graph(g, part, rel)
        call a % assemble_graph(rel, part, back)
        if (back % num_edges() .lt. g % num_edges()) some_part_is_short = .true.
     end do
 
-    call check('E  at nparts = 2 one part alone does NOT give G back', &
+    call check('E  at num_parts = 2 one part alone does NOT give G back', &
          & some_part_is_short)
 
   end subroutine one_part_is_restricted_identity
@@ -477,7 +477,7 @@ contains
     type(label_map)           :: labels
     type(inclusion_map)       :: inclusions
     type(stored_field)               :: d
-    type(set_graph)           :: on
+    type(graph)           :: on
     real(dp), allocatable     :: home(:)
     integer                   :: l, gm
     logical                   :: ok
@@ -487,13 +487,13 @@ contains
          & counted_set_representation(g % num_vertices()))
 
     ! 1. THE CUT WRITES r. Nothing else in this routine writes rel_p.
-    p = partitioner(PARTITION_LINEAR, nparts=2, part=2)
+    p = partitioner(PARTITION_LINEAR, num_parts=2, part=2)
     call p % partition_graph(g, part, rel_p)
     call sets % bind(part % vertex_set(), &
          & counted_set_representation(part % num_vertices()))
 
     on = g % vertex_set()
-    d  = stored_field('q', on, sets % size_of(on))
+    d  = stored_field('q', on, sets % num_members_of(on))
     call d % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, &
          &                    40.0_dp, 50.0_dp, 60.0_dp])
 
@@ -513,7 +513,7 @@ contains
     ! And so did the values: every entry this part OWNS is standing at
     ! the member r_p names, and every entry it does not own is zero -
     ! which is what stops the other part''s copy being counted twice.
-    call fd % get_real_vector(home)
+    call fd % real_vector(home)
     ok = .true.
     do l = 1, part % num_vertices()
        gm = rel_p % global_vertex_index(l)
@@ -552,8 +552,8 @@ contains
     g = chain_of_six()
     a = assembler()
 
-    p1 = partitioner(PARTITION_LINEAR, nparts=2, part=1)
-    p2 = partitioner(PARTITION_LINEAR, nparts=2, part=2)
+    p1 = partitioner(PARTITION_LINEAR, num_parts=2, part=1)
+    p2 = partitioner(PARTITION_LINEAR, num_parts=2, part=2)
     call p1 % partition_graph(g, part1, r1)
     call p2 % partition_graph(g, part2, r2)
 

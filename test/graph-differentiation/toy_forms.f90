@@ -33,7 +33,7 @@ module toy_differentiable_forms
   use view_directed , only : directed_graph
   use field_calculus, only : field
   use operation_discretization      , only : differentiable_operation
-  use graph_fractal       , only : set_graph => graph
+  use graph_fractal       , only : graph
   use field_stored   , only : stored_field
   use operation_chain_rule, only : argument_path
 
@@ -115,14 +115,14 @@ contains
   ! Domain used by every toy: the input graph's vertex set.
   !===================================================================!
 
-  subroutine vertex_domain(input_graph, domain, nentries)
+  subroutine vertex_domain(input_graph, domain, num_entries)
 
     class(directed_graph), intent(in)  :: input_graph
-    type(set_graph)      , intent(out) :: domain
-    integer              , intent(out) :: nentries
+    type(graph)      , intent(out) :: domain
+    integer              , intent(out) :: num_entries
 
     domain   = input_graph % all_vertices()
-    nentries = input_graph % num_vertices()
+    num_entries = input_graph % num_vertices()
 
   end subroutine vertex_domain
 
@@ -141,10 +141,10 @@ contains
 
     real(dp), allocatable :: xv(:)
 
-    call input_data(1) % get_real_vector(q)
+    call input_data(1) % real_vector(q)
 
     if (size(input_data) >= 2) then
-       call input_data(2) % get_real_vector(xv)
+       call input_data(2) % real_vector(xv)
        xi = xv(1)
     else
        xi = xi_default
@@ -163,15 +163,15 @@ contains
     real(dp), intent(in) :: values(:)
     class(field), allocatable, intent(inout) :: output
 
-    type(set_graph) :: cells
+    type(graph) :: cells
     type(stored_field)     :: out
-    integer         :: nentries
+    integer         :: num_entries
 
     cells    = input_graph % vertex_set()
-    nentries = input_graph % num_vertices()
+    num_entries = input_graph % num_vertices()
 
-    out = stored_field('toy value', cells, nentries, &
-         & ncomp = size(values) / nentries)
+    out = stored_field('toy value', cells, num_entries, &
+         & num_components = size(values) / num_entries)
     call out % set_real_vector(values)
 
     if (allocated(output)) deallocate(output)
@@ -220,7 +220,7 @@ contains
 
     product = 1.0_dp
     do j = 1, size(slots)
-       call directions(j) % get_real_vector(v)
+       call directions(j) % real_vector(v)
        product = product * v(1)
     end do
 
@@ -234,12 +234,12 @@ contains
   subroutine scalar_pair(q, xi, cells, inputs)
 
     real(dp)       , intent(in)  :: q, xi
-    type(set_graph), intent(in)  :: cells
+    type(graph), intent(in)  :: cells
     type(stored_field)    , intent(out) :: inputs(2)
 
-    inputs(1) = stored_field('q', cells, 1, ncomp=1)
+    inputs(1) = stored_field('q', cells, 1, num_components=1)
     call inputs(1) % set_real_vector([q])
-    inputs(2) = stored_field('xi', cells, 1, ncomp=1)
+    inputs(2) = stored_field('xi', cells, 1, num_components=1)
     call inputs(2) % set_real_vector([xi])
 
   end subroutine scalar_pair
@@ -255,7 +255,7 @@ contains
     type(argument_path), intent(inout) :: path
     integer            , intent(in)    :: slot
     real(dp)           , intent(in)    :: derivatives(:)
-    type(set_graph)    , intent(in)    :: cells
+    type(graph)    , intent(in)    :: cells
 
     integer :: k
 
@@ -265,7 +265,7 @@ contains
 
     do k = 1, size(derivatives)
        path % derivative(k) % occupied  = .true.
-       path % derivative(k) % direction = stored_field('path', cells, 1, ncomp=1)
+       path % derivative(k) % direction = stored_field('path', cells, 1, num_components=1)
        call path % derivative(k) % direction % &
             & set_real_vector([derivatives(k)])
     end do
@@ -283,13 +283,13 @@ contains
     name = 'toy quartic'
   end function quartic_name
 
-  subroutine quartic_domain(this, input_graph, domain, nentries)
+  subroutine quartic_domain(this, input_graph, domain, num_entries)
     class(quartic_form), intent(in) :: this
     class(directed_graph), intent(in) :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
     associate (u1 => this); end associate
-    call vertex_domain(input_graph, domain, nentries)
+    call vertex_domain(input_graph, domain, num_entries)
   end subroutine quartic_domain
 
   pure function quartic_max_degree(this) result(degree)
@@ -376,13 +376,13 @@ contains
     name = 'toy power eight'
   end function power8_name
 
-  subroutine power8_domain(this, input_graph, domain, nentries)
+  subroutine power8_domain(this, input_graph, domain, num_entries)
     class(power8_form), intent(in) :: this
     class(directed_graph), intent(in) :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
     associate (u1 => this); end associate
-    call vertex_domain(input_graph, domain, nentries)
+    call vertex_domain(input_graph, domain, num_entries)
   end subroutine power8_domain
 
   pure function power8_max_degree(this) result(degree)
@@ -449,13 +449,13 @@ contains
     name = 'toy equilibrium'
   end function equilibrium_name
 
-  subroutine equilibrium_domain(this, input_graph, domain, nentries)
+  subroutine equilibrium_domain(this, input_graph, domain, num_entries)
     class(equilibrium_law), intent(in) :: this
     class(directed_graph), intent(in) :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
     associate (u1 => this); end associate
-    call vertex_domain(input_graph, domain, nentries)
+    call vertex_domain(input_graph, domain, num_entries)
   end subroutine equilibrium_domain
 
   pure function equilibrium_max_degree(this) result(degree)
@@ -511,12 +511,12 @@ contains
     do j = 1, size(slots)
        if (slots(j) == 1) then
           if (.not. allocated(v1)) then
-             call directions(j) % get_real_vector(v1)
+             call directions(j) % real_vector(v1)
           else
-             call directions(j) % get_real_vector(v2)
+             call directions(j) % real_vector(v2)
           end if
        else
-          call directions(j) % get_real_vector(w)
+          call directions(j) % real_vector(w)
        end if
     end do
 
@@ -548,13 +548,13 @@ contains
     name = 'toy linear'
   end function linear_name
 
-  subroutine linear_domain(this, input_graph, domain, nentries)
+  subroutine linear_domain(this, input_graph, domain, num_entries)
     class(linear_law), intent(in) :: this
     class(directed_graph), intent(in) :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
     associate (u1 => this); end associate
-    call vertex_domain(input_graph, domain, nentries)
+    call vertex_domain(input_graph, domain, num_entries)
   end subroutine linear_domain
 
   subroutine linear_apply(this, input_graph, input_data, output)
@@ -569,7 +569,7 @@ contains
     associate (u1 => this); end associate
 
     if (present(input_data)) then
-       call input_data(1) % get_real_vector(s)
+       call input_data(1) % real_vector(s)
     else
        allocate(s(input_graph % num_vertices()))
        s = 0.0_dp

@@ -70,12 +70,12 @@ program visualization_level_5
   use visualization_assert , only : X3_M, X3_N
   use visualization_assert , only : E1_1, E1_2, E1_3, E1_4, E1_5
   use visualization_assert , only : E2_1, E2_4, E3_1, E3_2, E3_3
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set        , only : set_map
   use map_label      , only : label_map
   use relation_finitary       , only : relation
   use relation_binary, only : csr_relation
-  use field_calculus , only : GRAPH_FIELD_REAL
+  use field_calculus , only : FIELD_REAL
   use field_stored    , only : stored_field
   use visualization_carriers_fixture , only : structural_carriers, label_for
   use visualization_relations_fixture, only : occurrences_of_a1
@@ -101,7 +101,7 @@ program visualization_level_5
 
   implicit none
 
-  type(set_graph)          :: x0, x1, x2, x3, e1, e2, e3
+  type(graph)          :: x0, x1, x2, x3, e1, e2, e3
   type(set_map)     :: sets
   type(label_map)     :: labels
   type(csr_relation)         :: t1, h1, t2, h2, t3, h3
@@ -138,7 +138,7 @@ program visualization_level_5
   w1_alt = alternate_coefficients_of_a1(e1, sets)
 
   ! A perfectly valid field that is simply not about E2. |X0| = |E2|.
-  decoy = stored_field('four numbers on X0', x0, sets % size_of(x0), ncomp=1)
+  decoy = stored_field('four numbers on X0', x0, sets % num_members_of(x0), num_components=1)
   call decoy % set_real_vector([7.0_dp, 7.0_dp, 7.0_dp, 7.0_dp])
 
   ! ---- the compositions, derived AFTER the fields exist.
@@ -250,9 +250,9 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(w1 % num_entries() .eq. sets % size_of(e1) .and. &
-         &      w2 % num_entries() .eq. sets % size_of(e2) .and. &
-         &      w3 % num_entries() .eq. sets % size_of(e3), &
+    call report(w1 % num_entries() .eq. sets % num_members_of(e1) .and. &
+         &      w2 % num_entries() .eq. sets % num_members_of(e2) .and. &
+         &      w3 % num_entries() .eq. sets % num_members_of(e3), &
          & "w1, w2, w3 have one entry per occurrence: 5, 4, 3 - the " // &
          & "field takes its count from the domain it lives on", nfail)
 
@@ -261,9 +261,9 @@ contains
          &      w3 % num_components() .eq. 1, &
          & "each carries one number per occurrence", nfail)
 
-    call report(w1 % value_kind() .eq. GRAPH_FIELD_REAL .and. &
-         &      w2 % value_kind() .eq. GRAPH_FIELD_REAL .and. &
-         &      w3 % value_kind() .eq. GRAPH_FIELD_REAL, &
+    call report(w1 % value_kind() .eq. FIELD_REAL .and. &
+         &      w2 % value_kind() .eq. FIELD_REAL .and. &
+         &      w3 % value_kind() .eq. FIELD_REAL, &
          & "and all three are REAL fields - THE FIRST NUMBERS IN " // &
          & "THIS TOWER", nfail)
 
@@ -313,7 +313,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: on
+    type(graph) :: on
 
     on = w1 % domain()
     call report(on % same_as(e1) .and. .not. on % same_as(x0) .and. &
@@ -554,7 +554,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: on
+    type(graph) :: on
     type(picture)                  :: with_w1, with_alt, structural
 
     on = w1_alt % domain()
@@ -603,13 +603,13 @@ contains
   logical function all_values_recovered(w, occurrences, want)
 
     class(stored_field)     , intent(in) :: w
-    type(set_graph), intent(in) :: occurrences
+    type(graph), intent(in) :: occurrences
     real(dp)         , intent(in) :: want(:)
 
     integer :: k
 
-    all_values_recovered = (sets % size_of(occurrences) .eq. size(want))
-    do k = 1, sets % size_of(occurrences)
+    all_values_recovered = (sets % num_members_of(occurrences) .eq. size(want))
+    do k = 1, sets % num_members_of(occurrences)
        all_values_recovered = all_values_recovered .and. &
             & near(value_at(w, occurrences, sets % member_of(occurrences, k), sets), want(k))
     end do
@@ -624,17 +624,17 @@ contains
   logical function seats_are_unique(d, tail, head, occurrences)
 
     class(relation)  , intent(in) :: d, tail, head
-    type(set_graph), intent(in) :: occurrences
+    type(graph), intent(in) :: occurrences
 
-    type(set_graph) :: cols, rows
+    type(graph) :: cols, rows
     integer                        :: i, j, want
 
     cols = d % domain(1)
     rows = d % domain(2)
 
     seats_are_unique = .true.
-    do j = 1, sets % size_of(cols)
-       do i = 1, sets % size_of(rows)
+    do j = 1, sets % num_members_of(cols)
+       do i = 1, sets % num_members_of(rows)
           if (d % has([sets % member_of(cols, j), sets % member_of(rows, i)])) then
              want = 1
           else
@@ -667,10 +667,10 @@ contains
   logical function views_agree(d, tail, head, occurrences, w)
 
     class(relation)  , intent(in) :: d, tail, head
-    type(set_graph), intent(in) :: occurrences
+    type(graph), intent(in) :: occurrences
     class(stored_field)     , intent(in) :: w
 
-    type(set_graph) :: cols, rows
+    type(graph) :: cols, rows
     type(picture)                  :: structural, valued
     character(len=32)              :: sbit(16), vbit(16)
     integer :: i, j, ns, nv
@@ -683,17 +683,17 @@ contains
     valued     = valued_sparsity_picture(d, tail, head, occurrences, w, sets, labels)
 
     views_agree = .true.
-    do i = 1, sets % size_of(rows)
+    do i = 1, sets % num_members_of(rows)
 
        call split(structural % at(2 + i), sbit, ns)
        call split(valued     % at(2 + i), vbit, nv)
 
        ! One row label plus one token per column, in both.
-       views_agree = views_agree .and. (ns .eq. sets % size_of(cols) + 1) &
-            &                    .and. (nv .eq. sets % size_of(cols) + 1)
+       views_agree = views_agree .and. (ns .eq. sets % num_members_of(cols) + 1) &
+            &                    .and. (nv .eq. sets % num_members_of(cols) + 1)
        if (.not. views_agree) return
 
-       do j = 1, sets % size_of(cols)
+       do j = 1, sets % num_members_of(cols)
           in_structure = (trim(sbit(j + 1)) .eq. '#')
           in_values    = (trim(vbit(j + 1)) .ne. ABSENT)
           in_relation  = d % has([sets % member_of(cols, j), sets % member_of(rows, i)])

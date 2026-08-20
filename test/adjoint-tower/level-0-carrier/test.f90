@@ -31,7 +31,7 @@ program adjoint_level_0
   use adjoint_assert, only : report, verdict
   use adjoint_assert, only : VAR_P, VAR_U, VAR_V
   use adjoint_assert, only : TGT_R1, TGT_R2, TGT_F
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -39,8 +39,8 @@ program adjoint_level_0
 
   implicit none
 
-  type(set_graph) :: v, t
-  type(set_graph)  :: p_dom, q_dom, y_dom, z_dom
+  type(graph) :: v, t
+  type(graph)  :: p_dom, q_dom, y_dom, z_dom
   integer           :: nfail
   type(set_map)     :: sets
   type(inclusion_map)     :: inclusions
@@ -84,11 +84,11 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(sets % size_of(v) .eq. 3 .and. sets % size_of(t) .eq. 3, &
+    call report(sets % num_members_of(v) .eq. 3 .and. sets % num_members_of(t) .eq. 3, &
          & "V and T each count three members", nfail)
-    call report(sets % size_of(p_dom) .eq. 1 .and. sets % size_of(q_dom) .eq. 2, &
+    call report(sets % num_members_of(p_dom) .eq. 1 .and. sets % num_members_of(q_dom) .eq. 2, &
          & "P holds the parameter, Q the two state slots", nfail)
-    call report(sets % size_of(y_dom) .eq. 2 .and. sets % size_of(z_dom) .eq. 1, &
+    call report(sets % num_members_of(y_dom) .eq. 2 .and. sets % num_members_of(z_dom) .eq. 1, &
          & "Y holds the two residual rows, Z the response", nfail)
 
   end subroutine check_cardinalities
@@ -125,19 +125,19 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(sets % has_in(p_dom, VAR_P) .and. .not. sets % has_in(p_dom, VAR_U), &
+    call report(sets % has(p_dom, VAR_P) .and. .not. sets % has(p_dom, VAR_U), &
          & "P holds p alone", nfail)
-    call report(sets % has_in(q_dom, VAR_U) .and. sets % has_in(q_dom, VAR_V) .and. &
-         &      .not. sets % has_in(q_dom, VAR_P), &
+    call report(sets % has(q_dom, VAR_U) .and. sets % has(q_dom, VAR_V) .and. &
+         &      .not. sets % has(q_dom, VAR_P), &
          & "Q holds u and v, and not the parameter", nfail)
-    call report(sets % has_in(y_dom, TGT_R1) .and. sets % has_in(y_dom, TGT_R2) .and. &
-         &      .not. sets % has_in(y_dom, TGT_F), &
+    call report(sets % has(y_dom, TGT_R1) .and. sets % has(y_dom, TGT_R2) .and. &
+         &      .not. sets % has(y_dom, TGT_F), &
          & "Y holds the residual rows, and not the response", nfail)
-    call report(sets % has_in(z_dom, TGT_F) .and. .not. sets % has_in(z_dom, TGT_R1), &
+    call report(sets % has(z_dom, TGT_F) .and. .not. sets % has(z_dom, TGT_R1), &
          & "Z holds the response alone", nfail)
 
-    call report(.not. sets % has_in(v, 4) .and. .not. sets % has_in(v, 0) .and. &
-         &      .not. sets % has_in(t, 4), &
+    call report(.not. sets % has(v, 4) .and. .not. sets % has(v, 0) .and. &
+         &      .not. sets % has(t, 4), &
          & "an outsider is rejected by both parents", nfail)
 
   end subroutine check_membership_boundary
@@ -175,7 +175,7 @@ contains
     call report(.not. y_dom % same_as(z_dom), &
          & "the residual domain is not the response domain", nfail)
 
-    call report(sets % size_of(q_dom) .eq. sets % size_of(y_dom) .and. &
+    call report(sets % num_members_of(q_dom) .eq. sets % num_members_of(y_dom) .and. &
          &      .not. q_dom % same_as(y_dom), &
          & "|Q| = |Y| = 2, and Q is STILL not Y: equal dimensions " // &
          & "are not equal domains", nfail)
@@ -192,12 +192,12 @@ contains
 
   logical function round_trips(s)
 
-    type(set_graph), intent(in) :: s
+    type(graph), intent(in) :: s
 
     integer :: i, m
 
     round_trips = .true.
-    do i = 1, sets % size_of(s)
+    do i = 1, sets % num_members_of(s)
        m = sets % member_of(s, i)
        round_trips = round_trips .and. &
             & (sets % member_of(s, sets % index_in(s, m)) .eq. m)

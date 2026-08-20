@@ -155,12 +155,12 @@ contains
   ! could not be read back.
   !===================================================================!
 
-  subroutine mark_known(this, element, values, ncomp)
+  subroutine mark_known(this, element, values, num_components)
 
     class(value_map)  , intent(inout) :: this
     type(graph)       , intent(in)    :: element
     real(dp)          , intent(in)    :: values(:)
-    integer , optional, intent(in)    :: ncomp
+    integer , optional, intent(in)    :: num_components
 
     type(token) :: key
     integer     :: at, width
@@ -177,10 +177,10 @@ contains
     end if
 
     width = 1
-    if (present(ncomp)) width = max(ncomp, 1)
+    if (present(num_components)) width = max(num_components, 1)
 
     this % rows(at) % value = stored_field('attached value', element, &
-         & size(values) / width, ncomp=width)
+         & size(values) / width, num_components=width)
     call this % rows(at) % value % set_real_vector(values)
     this % rows(at) % status = VALUE_KNOWN
 
@@ -304,7 +304,7 @@ contains
        error stop 'map_value: a known value is read'
     end if
 
-    call this % rows(at) % value % get_real_vector(values)
+    call this % rows(at) % value % real_vector(values)
 
   end subroutine value_of
 

@@ -48,7 +48,7 @@ program derivative_level_6
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -62,13 +62,13 @@ program derivative_level_6
   use graph_fractal        , only : graph, known_branch, null_branch
   use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
-       & holds_set
+       & has_set
 
   implicit none
 
 
-  type(set_graph)              :: v, o, p
-  type(set_graph)               :: x_dom, c, z, p_in, p_out
+  type(graph)              :: v, o, p
+  type(graph)               :: x_dom, c, z, p_in, p_out
   type(stored_relation)          :: flow, backwards
   type(stored_relation)          :: consumes, produces
   type(csr_relation)             :: a, a2
@@ -209,11 +209,11 @@ contains
     integer, allocatable :: pairs(:,:)
     integer :: npairs, zi, xi
 
-    allocate(pairs(2, sets % size_of(z) * sets % size_of(x_dom)))
+    allocate(pairs(2, sets % num_members_of(z) * sets % num_members_of(x_dom)))
 
     npairs = 0
-    do zi = 1, sets % size_of(z)
-       do xi = 1, sets % size_of(x_dom)
+    do zi = 1, sets % num_members_of(z)
+       do xi = 1, sets % num_members_of(x_dom)
           if (reachable(dv, sets, sets % member_of(x_dom, xi), &
                &        sets % member_of(z, zi))) then
              npairs = npairs + 1
@@ -238,8 +238,8 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(sets % size_of(z) .eq. 1 .and. sets % has_in(z, SLOT_Z) .and. &
-         &      .not. sets % has_in(z, SLOT_U), &
+    call report(sets % num_members_of(z) .eq. 1 .and. sets % has(z, SLOT_Z) .and. &
+         &      .not. sets % has(z, SLOT_U), &
          & "Z = { z }, the response", nfail)
     call report(declared_subobject(z, c, inclusions) .and. declared_subobject(z, v, inclusions), &
          & "embedded in the computed slots, and through them in V - " // &
@@ -256,7 +256,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dom
+    type(graph) :: dom
 
     dom = consumes % domain(1)
     call report(dom % same_as(v), "I runs from the value slots", nfail)
@@ -290,7 +290,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dom
+    type(graph) :: dom
 
     dom = a % domain(1)
     call report(dom % same_as(v), "A_V runs from the value slots", nfail)
@@ -344,7 +344,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dom
+    type(graph) :: dom
 
     dom = j_zx % domain(1)
     call report(dom % same_as(z), &

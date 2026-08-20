@@ -26,7 +26,7 @@ program derivative_level_8_refusal
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -37,8 +37,8 @@ program derivative_level_8_refusal
 
   implicit none
 
-  type(set_graph)     :: v, o, p
-  type(set_graph)      :: x_dom, c
+  type(graph)     :: v, o, p
+  type(graph)      :: x_dom, c
   type(stored_relation) :: flow, lame
   integer               :: table(3, 6), short(3, 5)
   real(dp)              :: vals(4), dots(4), zz

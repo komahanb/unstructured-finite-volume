@@ -96,10 +96,10 @@ module map_set
      !----------------------------------------------------------------!
 
      procedure :: describes
-     procedure :: size_of
+     procedure :: num_members_of
      procedure :: member_of
      procedure :: members_of
-     procedure :: has_in
+     procedure :: has
      procedure :: index_in
 
      !----------------------------------------------------------------!
@@ -198,7 +198,7 @@ contains
   ! can answer for, and it says so rather than inventing an extent.
   !===================================================================!
 
-  integer function size_of(this, element)
+  integer function num_members_of(this, element)
 
     class(set_map), intent(in) :: this
     type(graph)   , intent(in) :: element
@@ -208,9 +208,9 @@ contains
     at = row_of(this, element)
     if (at == 0) error stop 'map_set: no representation describes that set'
 
-    size_of = this % rows(at) % extent % size()
+    num_members_of = this % rows(at) % extent % num_members()
 
-  end function size_of
+  end function num_members_of
 
   integer function member_of(this, element, position)
 
@@ -242,7 +242,7 @@ contains
 
   end subroutine members_of
 
-  logical function has_in(this, element, value)
+  logical function has(this, element, value)
 
     class(set_map), intent(in) :: this
     type(graph)   , intent(in) :: element
@@ -253,9 +253,9 @@ contains
     at = row_of(this, element)
     if (at == 0) error stop 'map_set: no representation describes that set'
 
-    has_in = this % rows(at) % extent % has(value)
+    has = this % rows(at) % extent % has(value)
 
-  end function has_in
+  end function has
 
   subroutine extent_of(this, element, extent)
 

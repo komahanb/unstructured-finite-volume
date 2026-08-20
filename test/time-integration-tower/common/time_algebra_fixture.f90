@@ -47,7 +47,7 @@
 
 module time_algebra_fixture
 
-  use graph_fractal         , only : set_graph => graph
+  use graph_fractal         , only : graph
   use map_set         , only : set_map
   use relation_finitary        , only : relation
   use relation_algebra, only : compose_binary

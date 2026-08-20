@@ -30,7 +30,7 @@
 
 module chain_relations_fixture
 
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set        , only : set_map
   use relation_binary, only : csr_relation
 
@@ -47,7 +47,7 @@ contains
 
   type(csr_relation) function tail_relation(e, v, sets) result(tail)
 
-    type(set_graph), intent(in) :: e, v
+    type(graph), intent(in) :: e, v
     type(set_map)  , intent(in) :: sets
 
     integer :: table(2, 5), i
@@ -65,7 +65,7 @@ contains
 
   type(csr_relation) function head_relation(e, v, sets) result(head)
 
-    type(set_graph), intent(in) :: e, v
+    type(graph), intent(in) :: e, v
     type(set_map)  , intent(in) :: sets
 
     integer :: table(2, 5), i
@@ -84,7 +84,7 @@ contains
 
   type(csr_relation) function own_relation(k, v, sets) result(own)
 
-    type(set_graph), intent(in) :: k, v
+    type(graph), intent(in) :: k, v
     type(set_map)  , intent(in) :: sets
 
     integer :: table(2, 6)

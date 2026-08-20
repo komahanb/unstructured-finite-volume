@@ -4,7 +4,7 @@
 ! edge -> vertex, face -> vertex and cell -> vertex tables, plus the
 ! physical tags. That is a graph described by its edges, delivered
 ! before any geometry is measured; class_mesh does the wiring and
-! the measuring. One deferred procedure, get_mesh_data, carries it
+! the measuring. One deferred procedure, mesh_data, carries it
 ! all - a gmsh file on disk and an in-memory array satisfy the same
 ! contract.
 !
@@ -31,7 +31,7 @@ module view_mesh_loader
 
      ! This deferred procedure returns all the information needed for
      ! mesh creation.
-     procedure(get_mesh_data_interface), deferred :: get_mesh_data
+     procedure(mesh_data_interface), deferred :: mesh_data
 
   end type mesh_loader
 
@@ -43,7 +43,7 @@ module view_mesh_loader
      ! describe the mesh graph.
      !================================================================!
 
-     subroutine get_mesh_data_interface(this, &
+     subroutine mesh_data_interface(this, &
           & num_vertices, vertex_numbers, vertex_tags , vertices ,  & 
           & num_edges   , edge_numbers  , edge_tags   , edge_vertices , num_edge_vertices , &
           & num_faces   , face_numbers  , face_tags   , face_vertices , num_face_vertices , &
@@ -95,7 +95,7 @@ module view_mesh_loader
        integer     , allocatable, intent(out) :: tag_physical_dimensions(:)
        type(string), allocatable, intent(out) :: tag_info(:)
 
-     end subroutine get_mesh_data_interface
+     end subroutine mesh_data_interface
 
   end interface
 

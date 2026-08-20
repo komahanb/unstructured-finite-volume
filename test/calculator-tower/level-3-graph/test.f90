@@ -30,7 +30,7 @@ program calculator_level_3
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -41,12 +41,12 @@ program calculator_level_3
   use graph_fractal        , only : graph, known_branch, null_branch
   use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
-       & holds_set, relational_valid
+       & has_set, relational_valid
 
   implicit none
 
-  type(set_graph)              :: x, o, p
-  type(set_graph)               :: p_out, p_in
+  type(graph)              :: x, o, p
+  type(graph)               :: p_out, p_in
   type(stored_relation)          :: flow, t_out3, t_in3
   type(stored_relation)          :: produces, consumes
   class(relation), allocatable   :: d
@@ -140,7 +140,7 @@ contains
   !===================================================================!
   ! The graph owns exactly the three carriers and the two relations
   ! it was handed - by structural identity, through the generators
-  ! alone: holds_set for the carriers, and a scan of relation_at
+  ! alone: has_set for the carriers, and a scan of relation_at
   ! identities for the relations, composed here rather than added
   ! to the contract.
   !===================================================================!
@@ -154,8 +154,8 @@ contains
     call report(num_relations(g) .eq. 2, &
          & "and two relations", nfail)
 
-    call report(holds_set(g, bnd, x) .and. holds_set(g, bnd, o) .and. &
-         &      holds_set(g, bnd, p), &
+    call report(has_set(g, bnd, x) .and. has_set(g, bnd, o) .and. &
+         &      has_set(g, bnd, p), &
          & "X, O and P are its own, by identity", nfail)
 
     call report(graph_holds_relation(g, bnd, flow), &
@@ -175,7 +175,7 @@ contains
     integer, intent(inout) :: nfail
 
     class(relation), pointer       :: rp
-    type(set_graph) :: dom
+    type(graph) :: dom
     integer                        :: k, s
     logical                        :: ok
 
@@ -184,7 +184,7 @@ contains
        rp => relation_at(g, bnd, k)
        do s = 1, rp % arity()
           dom = rp % domain(s)
-          ok = ok .and. holds_set(g, bnd, dom)
+          ok = ok .and. has_set(g, bnd, dom)
        end do
     end do
     call report(ok, &
@@ -234,7 +234,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)               :: times_only
+    type(graph)               :: times_only
     type(stored_relation)          :: d_empty
     type(graph)             , target :: aux
     type(graph)             , target :: scell2(1), selem2(1)
@@ -242,7 +242,7 @@ contains
     type(relational_binding)         :: bnd2
     integer                          :: k2
     class(relation), pointer       :: r1, r2
-    type(set_graph) :: da, db
+    type(graph) :: da, db
     logical                        :: ok
 
     call times_only % declare()

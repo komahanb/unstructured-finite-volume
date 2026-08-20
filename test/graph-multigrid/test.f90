@@ -75,14 +75,14 @@ contains
          & tails=[1, 2, 3, 4, 5, 6, 7,  1, 8], &
          & heads=[2, 3, 4, 5, 6, 7, 8,  0, 0], &
          & volumes      = [(1.0_dp, kf = 1, 8)], &
-         & cell_centers = [(real(kf - 1, dp) + 0.5_dp, 0.0_dp, 0.0_dp, &
+         & cell_centres = [(real(kf - 1, dp) + 0.5_dp, 0.0_dp, 0.0_dp, &
          &                  kf = 1, 8)], &
          & areas        = [(1.0_dp, kf = 1, 9)], &
          & deltas       = [(1.0_dp, kf = 1, 7), 0.5_dp, 0.5_dp], &
          & normals      = [(1.0_dp, 0.0_dp, 0.0_dp, kf = 1, 7), &
          &                 -1.0_dp, 0.0_dp, 0.0_dp, &
          &                  1.0_dp, 0.0_dp, 0.0_dp], &
-         & face_centers = [(real(kf, dp), 0.0_dp, 0.0_dp, kf = 1, 7), &
+         & face_centres = [(real(kf, dp), 0.0_dp, 0.0_dp, kf = 1, 7), &
          &                  0.0_dp, 0.0_dp, 0.0_dp, &
          &                  8.0_dp, 0.0_dp, 0.0_dp], &
          & weights      = [(0.5_dp, kf = 1, 9)])
@@ -274,9 +274,9 @@ contains
       type(gmres)  :: q
       j = jacobi()
       q = gmres()
-      call report(j % n_unknown_domain .eq. 0 .and. &
-           &      q % n_unknown_domain .eq. 0 .and. &
-           &      j % n_residual_domain .eq. 0, &
+      call report(j % num_unknowns .eq. 0 .and. &
+           &      q % num_unknowns .eq. 0 .and. &
+           &      j % num_residuals .eq. 0, &
            & 'an unattached solver counts no unknowns, and says so', &
            & nfail)
     end block unnamed_components

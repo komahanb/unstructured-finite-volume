@@ -12,7 +12,7 @@
 !                    THE MINIMIZER WAS ALREADY RIGHT
 !
 ! operation_minimization takes its unknown domain as an EXPLICIT
-! argument - `attach(action, on, unknown_domain, ncomp)` - and asks
+! argument - `attach(action, on, unknown_domain, num_components)` - and asks
 ! the ACTION for the residual domain rather than the host. Its own
 ! comment says so: "no hidden fallback to the host's vertices; a
 ! caller that means vertices says so at its own call site."
@@ -57,7 +57,7 @@ program time_level_7
   use time_assert           , only : report, verdict
   use time_assert           , only : NQ, NT, TOL
   use time_assert           , only : H_STEP, Q0, Q_BE1, Q_BDF2
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set        , only : set_map
   use view_directed   , only : directed_graph
   use field_calculus  , only : field
@@ -70,7 +70,7 @@ program time_level_7
 
   implicit none
 
-  type(set_graph)      :: q, t, e
+  type(graph)      :: q, t, e
   type(set_map)      :: sets
   type(stored_directed_graph)     :: ht
   type(triangular_decay) :: decay
@@ -107,11 +107,11 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: hv
+    type(graph) :: hv
 
     hv = ht % vertex_set()
 
-    call report(ht % num_vertices() .eq. NT .and. sets % size_of(q) .eq. NQ &
+    call report(ht % num_vertices() .eq. NT .and. sets % num_members_of(q) .eq. NQ &
          &      .and. .not. hv % same_as(q), &
          & "the host still has five vertices and Q still has two: " // &
          & "the solve below is not a coincidence of sizes", nfail)
@@ -130,14 +130,14 @@ contains
     type(gmres)                     :: solver
     type(stored_field)                     :: rhs
     class(field), allocatable :: answer
-    type(set_graph)  :: d
+    type(graph)  :: d
     integer         :: n_d
     real(dp), allocatable           :: c(:), v(:)
 
     step = backward_euler(decay, H_STEP)
     step % qold = Q0
 
-    call solver % attach(step, ht, q, NQ, ncomp=1)
+    call solver % attach(step, ht, q, NQ, num_components=1)
 
     call solver % domain(ht, d, n_d)
     call report(d % same_as(q), &
@@ -152,7 +152,7 @@ contains
          & "measured rather than assumed", nfail)
 
     ! ... so the linear statement is (I + hM) q1 = q0.
-    rhs = stored_field('rhs', q, NQ, ncomp=1)
+    rhs = stored_field('rhs', q, NQ, num_components=1)
     call rhs % set_real_vector(Q0)
 
     call solver % apply(ht, [rhs], answer)
@@ -162,7 +162,7 @@ contains
          & "and the SOLUTION lands on Q, through the operation " // &
          & "face, with the host present and unread", nfail)
 
-    call answer % get_real_vector(v)
+    call answer % real_vector(v)
     call report(size(v) .eq. NQ .and. maxval(abs(v - Q_BE1)) .lt. TOL, &
          & "q1 = [4/3, 4/9] - THE FIRST COMPLETE IMPLICIT TEMPORAL " // &
          & "STEP, solved on the state domain", nfail)
@@ -182,7 +182,7 @@ contains
     type(gmres)                     :: solver
     type(stored_field)                     :: rhs
     class(field), allocatable :: answer
-    type(set_graph)  :: d
+    type(graph)  :: d
     real(dp), allocatable           :: c(:), v(:)
     real(dp)                        :: expected_rhs(NQ)
 
@@ -190,7 +190,7 @@ contains
     step % qold   = Q_BE1
     step % qolder = Q0
 
-    call solver % attach(step, ht, q, NQ, ncomp=1)
+    call solver % attach(step, ht, q, NQ, num_components=1)
 
     ! c = -2 q1 + (1/2) q0, so the linear right-hand side is -c.
     expected_rhs = 2.0_dp * Q_BE1 - 0.5_dp * Q0
@@ -206,7 +206,7 @@ contains
          & "which is the oracle, arrived at from the history rather " // &
          & "than copied in", nfail)
 
-    rhs = stored_field('rhs', q, NQ, ncomp=1)
+    rhs = stored_field('rhs', q, NQ, num_components=1)
     call rhs % set_real_vector(expected_rhs)
 
     call solver % apply(ht, [rhs], answer)
@@ -215,7 +215,7 @@ contains
     call report(d % same_as(q), &
          & "the bdf-2 solution lands on Q as well", nfail)
 
-    call answer % get_real_vector(v)
+    call answer % real_vector(v)
     call report(size(v) .eq. NQ .and. maxval(abs(v - Q_BDF2)) .lt. TOL, &
          & "q2 = [5/6, 47/72] - structural reach at Level 2, scheme " // &
          & "coefficients at Level 6, implicit solve here", nfail)
@@ -239,13 +239,13 @@ contains
 
     type(scheme)            :: step
     type(gmres)                    :: solver
-    type(set_graph) :: d, hv
+    type(graph) :: d, hv
     integer         :: n_d
 
     step = backward_euler(decay, H_STEP)
     step % qold = Q0
 
-    call solver % attach(step, ht, q, NQ, ncomp=1)
+    call solver % attach(step, ht, q, NQ, num_components=1)
     call solver % domain(ht, d, n_d)
     hv = ht % vertex_set()
 

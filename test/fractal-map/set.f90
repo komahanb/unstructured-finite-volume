@@ -259,8 +259,8 @@ end module set_prototype
 program set_map
 
   use graph_fractal , only : graph, null_branch, known_branch, &
-       & GRAPH_NULL, GRAPH_KNOWN
-  use view_sequence, only : sequence_size, sequence_element
+       & BRANCH_NULL, BRANCH_KNOWN
+  use view_sequence, only : sequence_num_elements, sequence_element
   use set_prototype , only : counted_extent, listed_extent, extent_of, &
        & bind_extent, set_equivalent
 
@@ -327,7 +327,7 @@ program set_map
     s % branch(2) = null_branch()
 
     call check('2  design A: the set graph answers |S| = 4', &
-         & sequence_size(s % branch(1)) .eq. 4)
+         & sequence_num_elements(s % branch(1)) .eq. 4)
 
     ok = .true.
     do k = 1, 4
@@ -366,8 +366,8 @@ program set_map
     call check('3  and position is the representation''s numbering', &
          & e % local_index(7) .eq. 7 .and. e % member(7) .eq. 7)
     call check('3  the graph carries no extension: both branches NULL', &
-         & cells % branch(1) % status() .eq. GRAPH_NULL .and. &
-         &  cells % branch(2) % status() .eq. GRAPH_NULL)
+         & cells % branch(1) % status() .eq. BRANCH_NULL .and. &
+         &  cells % branch(2) % status() .eq. BRANCH_NULL)
 
   end block counted_block
 

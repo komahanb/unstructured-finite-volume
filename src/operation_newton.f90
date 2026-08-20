@@ -103,7 +103,7 @@ contains
        call jacobian % freeze(x, base=y + g)
 
        call this % inner % attach(jacobian, this % on, this % unknown_domain, &
-            & this % n_unknown_domain, ncomp = this % ncomp)
+            & this % num_unknowns, num_components = this % num_components)
        dq = 0.0_dp
        call this % inner % solve(-residual, dq, linear_achieved)
 

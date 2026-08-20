@@ -6,5 +6,5 @@ program private_status_write
   implicit none
   type(graph), target :: a
   call a % declare()
-  a % branch(1) % status_ = GRAPH_KNOWN
+  a % branch(1) % status_ = BRANCH_KNOWN
 end program private_status_write

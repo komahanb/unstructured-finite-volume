@@ -14,7 +14,7 @@
 
 program algebra_refusal
 
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -26,8 +26,8 @@ program algebra_refusal
 
   implicit none
 
-  type(set_graph)     :: a, b, c, other
-  type(set_graph)      :: foreign
+  type(graph)     :: a, b, c, other
+  type(graph)      :: foreign
   type(stored_relation) :: r, r_ab, r_bc, fat
   type(stored_relation) :: out1
   type(csr_relation)    :: out2

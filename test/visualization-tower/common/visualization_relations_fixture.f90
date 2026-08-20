@@ -44,7 +44,7 @@
 
 module visualization_relations_fixture
 
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set        , only : set_map
   use relation_binary, only : csr_relation
   use visualization_assert , only : X0_A, X0_B, X0_C, X0_D
@@ -72,7 +72,7 @@ contains
 
   subroutine occurrences_of_a1(e1, x0, x1, tail, head, sets)
 
-    type(set_graph) , intent(in)  :: e1, x0, x1
+    type(graph) , intent(in)  :: e1, x0, x1
     type(csr_relation), intent(out) :: tail, head
     type(set_map)  , intent(in) :: sets
 
@@ -101,7 +101,7 @@ contains
 
   subroutine occurrences_of_a2(e2, x1, x2, tail, head, sets)
 
-    type(set_graph) , intent(in)  :: e2, x1, x2
+    type(graph) , intent(in)  :: e2, x1, x2
     type(csr_relation), intent(out) :: tail, head
     type(set_map)  , intent(in) :: sets
 
@@ -128,7 +128,7 @@ contains
 
   subroutine occurrences_of_a3(e3, x2, x3, tail, head, sets)
 
-    type(set_graph) , intent(in)  :: e3, x2, x3
+    type(graph) , intent(in)  :: e3, x2, x3
     type(csr_relation), intent(out) :: tail, head
     type(set_map)  , intent(in) :: sets
 

@@ -19,7 +19,7 @@ program adjoint_level_4_refusal
 
   use adjoint_assert, only : VAR_P, VAR_U, VAR_V
   use adjoint_assert, only : TGT_R1, TGT_R2, TGT_F
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -33,13 +33,13 @@ program adjoint_level_4_refusal
   use graph_fractal        , only : graph, known_branch, null_branch
   use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
-       & holds_set
+       & has_set
 
   implicit none
 
 
-  type(set_graph)              :: v, t
-  type(set_graph)               :: q_dom, y_dom
+  type(graph)              :: v, t
+  type(graph)               :: q_dom, y_dom
   type(stored_relation)          :: dep
   type(csr_relation), target     :: inc_y, inc_q, jq
   type(transposed_relation)          :: inc_q_t, jq_t

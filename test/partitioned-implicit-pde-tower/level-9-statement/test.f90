@@ -38,7 +38,7 @@ program partitioned_pde_level_9
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : report, verdict
   use partitioned_pde_assert, only : NV, Q_EXACT, B_EXACT
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation
   use map_set        , only : set_map
   use view_directed, only : directed_graph
@@ -99,7 +99,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)     :: vs
+    type(graph)     :: vs
     real(dp), allocatable :: gv(:)
     integer         :: n_vs
 
@@ -153,9 +153,9 @@ contains
     integer, intent(inout) :: nfail
 
     type(stored_field)                     :: rhs
-    type(set_graph)               :: vs
+    type(graph)               :: vs
     class(field), allocatable :: sol
-    type(set_graph)  :: dom
+    type(graph)  :: dom
     real(dp), allocatable           :: v(:)
     integer         :: n_vs
 
@@ -167,7 +167,7 @@ contains
     ! The partitioned road - the tower's own.
     call solver_part % apply(g, [rhs], sol)
     dom = sol % domain()
-    call sol % get_real_vector(v)
+    call sol % real_vector(v)
     q_part = v(1:NV)
 
     call report(dom % same_as(vs), &
@@ -177,7 +177,7 @@ contains
 
     ! The global baseline, run independently.
     call solver_global % apply(g, [rhs], sol)
-    call sol % get_real_vector(v)
+    call sol % real_vector(v)
     q_global = v(1:NV)
 
     call report(by_member(sets, q_global, vs, Q_EXACT), &
@@ -192,13 +192,13 @@ contains
 
     type(set_map)  , intent(in) :: sets
     real(dp)       , intent(in) :: v(:)
-    type(set_graph), intent(in) :: dom
+    type(graph), intent(in) :: dom
     real(dp)       , intent(in) :: expect(:)
 
     integer :: i, m
 
     by_member = .true.
-    do i = 1, sets % size_of(dom)
+    do i = 1, sets % num_members_of(dom)
        m = sets % member_of(dom, i)
        by_member = by_member .and. &
             & (abs(v(sets % index_in(dom, m)) - expect(m)) < 1.0d-9)

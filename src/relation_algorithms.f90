@@ -58,7 +58,7 @@
 
 module relation_algorithms
 
-  use graph_fractal           , only : set_graph => graph
+  use graph_fractal           , only : graph
   use relation_finitary          , only : relation
   use relation_binary   , only : binary_relation
   use map_set           , only : set_map
@@ -84,16 +84,16 @@ contains
     type(set_map)                , intent(inout) :: sets
     type(label_map)              , intent(inout) :: labels
     type(inclusion_map)          , intent(inout) :: inclusions
-    type(set_graph)              , intent(out)   :: chosen
+    type(graph)              , intent(out)   :: chosen
 
     class(binary_relation), pointer :: a
-    type(set_graph)      :: dom
+    type(graph)      :: dom
     integer, allocatable :: keep(:)
     integer, pointer     :: fibre(:)
     integer              :: i, n, m, size_of_dom
 
     call require_adjacency(adjacency, a, dom)
-    size_of_dom = sets % size_of(dom)
+    size_of_dom = sets % num_members_of(dom)
 
     allocate(keep(size_of_dom))
     n = 0
@@ -120,16 +120,16 @@ contains
     type(set_map)                , intent(inout) :: sets
     type(label_map)              , intent(inout) :: labels
     type(inclusion_map)          , intent(inout) :: inclusions
-    type(set_graph)              , intent(out)   :: chosen
+    type(graph)              , intent(out)   :: chosen
 
     class(binary_relation), pointer :: a
-    type(set_graph)      :: dom
+    type(graph)      :: dom
     integer, allocatable :: keep(:)
     integer, pointer     :: fibre(:)
     integer              :: i, n, m, size_of_dom
 
     call require_adjacency(adjacency, a, dom)
-    size_of_dom = sets % size_of(dom)
+    size_of_dom = sets % num_members_of(dom)
 
     allocate(keep(size_of_dom))
     n = 0
@@ -161,7 +161,7 @@ contains
     integer                      , intent(in) :: to
 
     class(binary_relation), pointer :: a
-    type(set_graph)      :: dom
+    type(graph)      :: dom
     logical, allocatable :: visited(:)
     integer, allocatable :: queue(:)
     integer, pointer     :: fibre(:)
@@ -170,14 +170,14 @@ contains
     reachable = .false.
 
     call require_adjacency(adjacency, a, dom)
-    if (.not. (sets % has_in(dom, from) .and. sets % has_in(dom, to))) return
+    if (.not. (sets % has(dom, from) .and. sets % has(dom, to))) return
 
     if (from == to) then
        reachable = .true.
        return
     end if
 
-    n = sets % size_of(dom)
+    n = sets % num_members_of(dom)
     allocate(visited(n), queue(n))
     visited = .false.
 
@@ -221,14 +221,14 @@ contains
     integer, allocatable         , intent(out) :: order(:)
 
     class(binary_relation), pointer :: a
-    type(set_graph)      :: dom
+    type(graph)      :: dom
     integer, allocatable :: indegree(:)
     logical, allocatable :: placed(:)
     integer, pointer     :: fibre(:)
     integer              :: n, i, j, round, pick
 
     call require_adjacency(adjacency, a, dom)
-    n   = sets % size_of(dom)
+    n   = sets % num_members_of(dom)
 
     allocate(indegree(n), placed(n), order(n))
     placed = .false.
@@ -272,9 +272,9 @@ contains
 
     class(relation), target        , intent(in)  :: adjacency
     class(binary_relation), pointer, intent(out) :: a
-    type(set_graph)                , intent(out) :: dom
+    type(graph)                , intent(out) :: dom
 
-    type(set_graph) :: s, t
+    type(graph) :: s, t
 
     select type (adjacency)
     class is (binary_relation)
@@ -301,10 +301,10 @@ contains
 
   subroutine carve(members, roll, label, ambient, sets, labels, inclusions)
 
-    type(set_graph)    , intent(out)   :: members
+    type(graph)    , intent(out)   :: members
     integer            , intent(in)    :: roll(:)
     character(len=*)   , intent(in)    :: label
-    type(set_graph)    , intent(in)    :: ambient
+    type(graph)    , intent(in)    :: ambient
     type(set_map)      , intent(inout) :: sets
     type(label_map)    , intent(inout) :: labels
     type(inclusion_map), intent(inout) :: inclusions

@@ -45,7 +45,7 @@
 module partitioned_shifted_laplacian_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_fractal      , only : set_graph => graph
+  use graph_fractal      , only : graph
   use map_set_representation, only : counted_set_representation
   use map_set      , only : set_map
   use map_label    , only : label_map
@@ -104,8 +104,8 @@ contains
     type(stored_directed_graph), intent(in) :: g
 
     this % whole = g
-    this % p1 = partitioner(PARTITION_LINEAR, nparts=2, part=1)
-    this % p2 = partitioner(PARTITION_LINEAR, nparts=2, part=2)
+    this % p1 = partitioner(PARTITION_LINEAR, num_parts=2, part=1)
+    this % p2 = partitioner(PARTITION_LINEAR, num_parts=2, part=2)
     call this % p1 % partition_graph(g, this % g1, this % r1)
     call this % p2 % partition_graph(g, this % g2, this % r2)
 
@@ -124,17 +124,17 @@ contains
   ! host dies here rather than deep inside a matvec.
   !===================================================================!
 
-  subroutine part_domain(this, input_graph, domain, nentries)
+  subroutine part_domain(this, input_graph, domain, num_entries)
 
     class(partitioned_shifted_laplacian), intent(in) :: this
     class(directed_graph)   , intent(in)  :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
 
     call demand_the_recorded_context(this, input_graph)
 
     domain   = this % whole % vertex_set()
-    nentries = this % whole % num_vertices()
+    num_entries = this % whole % num_vertices()
 
   end subroutine part_domain
 
@@ -153,7 +153,7 @@ contains
 
     type(stored_field)                     :: out
     class(field), allocatable :: q1, q2, a1, a2
-    type(set_graph)                 :: dom
+    type(graph)                 :: dom
     real(dp), allocatable           :: total(:)
 
     !----------------------------------------------------------------!
@@ -228,7 +228,7 @@ contains
     class(partitioned_shifted_laplacian), intent(in) :: this
     class(directed_graph)                        , intent(in) :: input_graph
 
-    type(set_graph) :: given, recorded
+    type(graph) :: given, recorded
 
     given    = input_graph % vertex_set()
     recorded = this % whole % vertex_set()
@@ -256,7 +256,7 @@ contains
     class(field), allocatable :: out
     real(dp), allocatable           :: v(:)
 
-    call q_part % get_real_vector(v)
+    call q_part % real_vector(v)
     qf = stored_field('local state', part % vertex_set(), part % num_vertices())
     call qf % set_real_vector(v)
 
@@ -290,7 +290,7 @@ contains
     real(dp)          , intent(inout) :: total(:)
 
     class(field), allocatable :: home
-    type(set_graph)                 :: dom
+    type(graph)                 :: dom
     real(dp), allocatable           :: v(:)
     integer , allocatable           :: mem(:)
     integer                         :: i
@@ -298,7 +298,7 @@ contains
     call asm % assemble_data(rel, part, answer, whole, sets, labels, &
          & inclusions, home)
     dom = home % domain()
-    call home % get_real_vector(v)
+    call home % real_vector(v)
 
     !----------------------------------------------------------------!
     ! The select type asked whether the assembled domain was a subset

@@ -37,11 +37,11 @@ module field_functional
 
   use iso_fortran_env    , only : dp => REAL64
   use view_directed, only : directed_graph
-  use field_calculus, only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
-  use field_calculus, only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
-  use field_calculus, only : GRAPH_FIELD_CHARACTER
+  use field_calculus, only : FIELD_INTEGER, FIELD_REAL
+  use field_calculus, only : FIELD_COMPLEX, FIELD_LOGICAL
+  use field_calculus, only : FIELD_CHARACTER
   use field_calculus     , only : functional
-  use graph_fractal      , only : set_graph => graph
+  use graph_fractal      , only : graph
 
   implicit none
 
@@ -56,12 +56,12 @@ module field_functional
 
      ! The one-entry home, declared at construction so domain()
      ! answers one stable identity for the life of the functional.
-     type(set_graph), private :: home
+     type(graph), private :: home
 
      character(len=:), allocatable :: label
      character(len=:), allocatable :: unit_name
 
-     integer :: vkind = GRAPH_FIELD_REAL
+     integer :: vkind = FIELD_REAL
 
      integer                       :: ival = 0
      real(dp)                      :: rval = 0.0_dp
@@ -92,15 +92,15 @@ module field_functional
      procedure :: num_entries    => functional_num_entries
      procedure :: value_kind     => functional_value_kind
 
-     procedure :: get_integer_vector   => functional_get_integer_vector
+     procedure :: integer_vector   => functional_get_integer_vector
      procedure :: set_integer_vector   => functional_set_integer_vector
-     procedure :: get_real_vector      => functional_get_real_vector
+     procedure :: real_vector      => functional_get_real_vector
      procedure :: set_real_vector      => functional_set_real_vector
-     procedure :: get_complex_vector   => functional_get_complex_vector
+     procedure :: complex_vector   => functional_get_complex_vector
      procedure :: set_complex_vector   => functional_set_complex_vector
-     procedure :: get_logical_vector   => functional_get_logical_vector
+     procedure :: logical_vector   => functional_get_logical_vector
      procedure :: set_logical_vector   => functional_set_logical_vector
-     procedure :: get_character_vector => functional_get_character_vector
+     procedure :: character_vector => functional_get_character_vector
      procedure :: set_character_vector => functional_set_character_vector
 
      !----------------------------------------------------------------!
@@ -108,15 +108,15 @@ module field_functional
      ! the concrete type: the same ten doors without the array.
      !----------------------------------------------------------------!
 
-     procedure :: get_integer_value
+     procedure :: integer_value
      procedure :: set_integer_value
-     procedure :: get_real_value
+     procedure :: real_value
      procedure :: set_real_value
-     procedure :: get_complex_value
+     procedure :: complex_value
      procedure :: set_complex_value
-     procedure :: get_logical_value
+     procedure :: logical_value
      procedure :: set_logical_value
-     procedure :: get_character_value
+     procedure :: character_value
      procedure :: set_character_value
 
   end type stored_functional
@@ -193,7 +193,7 @@ contains
   ! convention, and nothing downstream reads it.
   !===================================================================!
 
-  type(set_graph) function functional_domain(this) result(domain)
+  type(graph) function functional_domain(this) result(domain)
 
     class(stored_functional), intent(in) :: this
 
@@ -245,7 +245,7 @@ contains
     class(stored_functional), intent(in)     :: this
     integer, allocatable, intent(out) :: values(:)
 
-    if (this % vkind == GRAPH_FIELD_INTEGER) then
+    if (this % vkind == FIELD_INTEGER) then
        values = [this % ival]
     else
        allocate(values(0))
@@ -260,7 +260,7 @@ contains
 
     if (size(values) >= 1) then
        this % ival  = values(1)
-       this % vkind = GRAPH_FIELD_INTEGER
+       this % vkind = FIELD_INTEGER
     end if
 
   end subroutine functional_set_integer_vector
@@ -270,7 +270,7 @@ contains
     class(stored_functional), intent(in)      :: this
     real(dp), allocatable, intent(out) :: values(:)
 
-    if (this % vkind == GRAPH_FIELD_REAL) then
+    if (this % vkind == FIELD_REAL) then
        values = [this % rval]
     else
        allocate(values(0))
@@ -285,7 +285,7 @@ contains
 
     if (size(values) >= 1) then
        this % rval  = values(1)
-       this % vkind = GRAPH_FIELD_REAL
+       this % vkind = FIELD_REAL
     end if
 
   end subroutine functional_set_real_vector
@@ -295,7 +295,7 @@ contains
     class(stored_functional), intent(in)         :: this
     complex(dp), allocatable, intent(out) :: values(:)
 
-    if (this % vkind == GRAPH_FIELD_COMPLEX) then
+    if (this % vkind == FIELD_COMPLEX) then
        values = [this % cval]
     else
        allocate(values(0))
@@ -310,7 +310,7 @@ contains
 
     if (size(values) >= 1) then
        this % cval  = values(1)
-       this % vkind = GRAPH_FIELD_COMPLEX
+       this % vkind = FIELD_COMPLEX
     end if
 
   end subroutine functional_set_complex_vector
@@ -320,7 +320,7 @@ contains
     class(stored_functional), intent(in)     :: this
     logical, allocatable, intent(out) :: values(:)
 
-    if (this % vkind == GRAPH_FIELD_LOGICAL) then
+    if (this % vkind == FIELD_LOGICAL) then
        values = [this % lval]
     else
        allocate(values(0))
@@ -335,7 +335,7 @@ contains
 
     if (size(values) >= 1) then
        this % lval  = values(1)
-       this % vkind = GRAPH_FIELD_LOGICAL
+       this % vkind = FIELD_LOGICAL
     end if
 
   end subroutine functional_set_logical_vector
@@ -345,7 +345,7 @@ contains
     class(stored_functional), intent(in)              :: this
     character(len=:), allocatable, intent(out) :: values(:)
 
-    if (this % vkind == GRAPH_FIELD_CHARACTER .and. allocated(this % sval)) then
+    if (this % vkind == FIELD_CHARACTER .and. allocated(this % sval)) then
        allocate(character(len=len(this % sval)) :: values(1))
        values(1) = this % sval
     else
@@ -361,7 +361,7 @@ contains
 
     if (size(values) >= 1) then
        this % sval  = values(1)
-       this % vkind = GRAPH_FIELD_CHARACTER
+       this % vkind = FIELD_CHARACTER
     end if
 
   end subroutine functional_set_character_vector
@@ -371,18 +371,18 @@ contains
   ! of the asked kind; a setter replaces the value and the kind.
   !===================================================================!
 
-  pure subroutine get_integer_value(this, value)
+  pure subroutine integer_value(this, value)
 
     class(stored_functional), intent(in) :: this
     integer, intent(out) :: value
 
-    if (this % vkind == GRAPH_FIELD_INTEGER) then
+    if (this % vkind == FIELD_INTEGER) then
        value = this % ival
     else
        value = 0
     end if
 
-  end subroutine get_integer_value
+  end subroutine integer_value
 
   pure subroutine set_integer_value(this, value)
 
@@ -390,22 +390,22 @@ contains
     integer, intent(in) :: value
 
     this % ival  = value
-    this % vkind = GRAPH_FIELD_INTEGER
+    this % vkind = FIELD_INTEGER
 
   end subroutine set_integer_value
 
-  pure subroutine get_real_value(this, value)
+  pure subroutine real_value(this, value)
 
     class(stored_functional), intent(in) :: this
     real(dp), intent(out) :: value
 
-    if (this % vkind == GRAPH_FIELD_REAL) then
+    if (this % vkind == FIELD_REAL) then
        value = this % rval
     else
        value = 0.0_dp
     end if
 
-  end subroutine get_real_value
+  end subroutine real_value
 
   pure subroutine set_real_value(this, value)
 
@@ -413,22 +413,22 @@ contains
     real(dp), intent(in) :: value
 
     this % rval  = value
-    this % vkind = GRAPH_FIELD_REAL
+    this % vkind = FIELD_REAL
 
   end subroutine set_real_value
 
-  pure subroutine get_complex_value(this, value)
+  pure subroutine complex_value(this, value)
 
     class(stored_functional), intent(in) :: this
     complex(dp), intent(out) :: value
 
-    if (this % vkind == GRAPH_FIELD_COMPLEX) then
+    if (this % vkind == FIELD_COMPLEX) then
        value = this % cval
     else
        value = (0.0_dp, 0.0_dp)
     end if
 
-  end subroutine get_complex_value
+  end subroutine complex_value
 
   pure subroutine set_complex_value(this, value)
 
@@ -436,22 +436,22 @@ contains
     complex(dp), intent(in) :: value
 
     this % cval  = value
-    this % vkind = GRAPH_FIELD_COMPLEX
+    this % vkind = FIELD_COMPLEX
 
   end subroutine set_complex_value
 
-  pure subroutine get_logical_value(this, value)
+  pure subroutine logical_value(this, value)
 
     class(stored_functional), intent(in) :: this
     logical, intent(out) :: value
 
-    if (this % vkind == GRAPH_FIELD_LOGICAL) then
+    if (this % vkind == FIELD_LOGICAL) then
        value = this % lval
     else
        value = .false.
     end if
 
-  end subroutine get_logical_value
+  end subroutine logical_value
 
   pure subroutine set_logical_value(this, value)
 
@@ -459,22 +459,22 @@ contains
     logical, intent(in) :: value
 
     this % lval  = value
-    this % vkind = GRAPH_FIELD_LOGICAL
+    this % vkind = FIELD_LOGICAL
 
   end subroutine set_logical_value
 
-  pure subroutine get_character_value(this, value)
+  pure subroutine character_value(this, value)
 
     class(stored_functional), intent(in) :: this
     character(len=:), allocatable, intent(out) :: value
 
-    if (this % vkind == GRAPH_FIELD_CHARACTER .and. allocated(this % sval)) then
+    if (this % vkind == FIELD_CHARACTER .and. allocated(this % sval)) then
        value = this % sval
     else
        value = ''
     end if
 
-  end subroutine get_character_value
+  end subroutine character_value
 
   pure subroutine set_character_value(this, value)
 
@@ -482,7 +482,7 @@ contains
     character(len=*), intent(in) :: value
 
     this % sval  = value
-    this % vkind = GRAPH_FIELD_CHARACTER
+    this % vkind = FIELD_CHARACTER
 
   end subroutine set_character_value
 

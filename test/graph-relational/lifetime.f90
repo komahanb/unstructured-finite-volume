@@ -41,7 +41,7 @@
 program lifetime
 
   use graph_fractal        , only : graph, null_branch, known_branch
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -67,7 +67,7 @@ program lifetime
 
     type(graph), target      :: e1, e2, e3
     type(relational_binding) :: b
-    type(set_graph)        :: s
+    type(graph)        :: s
     type(stored_relation)    :: r1, r2
     class(relation), pointer :: p, q
     type(set_map)     :: sets
@@ -106,7 +106,7 @@ program lifetime
 
     type(graph), target      :: e1, e2, e3
     type(relational_binding) :: b, d
-    type(set_graph)        :: s
+    type(graph)        :: s
     type(stored_relation)    :: r1, r2, r3
     class(relation), pointer :: p, q
     type(set_map)     :: sets
@@ -142,7 +142,7 @@ program lifetime
 
     type(graph), target             :: g, rcell(2), relem(2), scell, selem
     type(relational_binding)        :: b
-    type(set_graph)               :: e, v
+    type(graph)               :: e, v
     type(csr_relation)              :: t
     type(stored_relation)           :: extra
     class(relation), pointer        :: p
@@ -199,10 +199,10 @@ program lifetime
 
     type(graph), target        :: g, scell, selem, rcell, relem
     type(relational_binding)   :: b                  ! no TARGET
-    type(set_graph)          :: e
+    type(graph)          :: e
     type(stored_relation)      :: p
     class(relation), pointer   :: rp
-    type(set_graph), pointer :: sp
+    type(graph), pointer :: sp
     type(set_map)     :: sets
 
     call g % declare(); call scell % declare(); call selem % declare()

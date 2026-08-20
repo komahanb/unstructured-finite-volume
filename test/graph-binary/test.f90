@@ -15,7 +15,7 @@
 
 program test_graph_binary
 
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -76,9 +76,9 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)              :: cells, faces
+    type(graph)              :: cells, faces
     type(csr_relation)             :: r
-    type(set_graph) :: d
+    type(graph) :: d
     integer, allocatable           :: idx(:), t(:,:)
     type(set_map)     :: sets
 
@@ -137,7 +137,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)          :: cells, faces
+    type(graph)          :: cells, faces
     type(csr_relation), target :: r
     integer, pointer           :: f(:)
     integer, allocatable       :: owned(:)
@@ -182,10 +182,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)               :: sensors
-    type(set_graph)              :: cells
+    type(graph)               :: sensors
+    type(graph)              :: cells
     type(csr_relation)             :: r
-    type(set_graph) :: d
+    type(graph) :: d
     integer, allocatable           :: idx(:)
     type(set_map)     :: sets
 
@@ -234,10 +234,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)              :: faces
-    type(set_graph)               :: walls
+    type(graph)              :: faces
+    type(graph)               :: walls
     type(csr_relation), target     :: inc
-    type(set_graph) :: d
+    type(graph) :: d
     integer, pointer               :: f(:)
     integer                        :: k
     logical                        :: ok
@@ -270,7 +270,7 @@ contains
          & "the target is the ambient it was carved from", nfail)
 
     ok = .true.
-    do k = 1, sets % size_of(walls)
+    do k = 1, sets % num_members_of(walls)
        f => inc % image_view(sets % member_of(walls, k))
        ok = ok .and. (size(f) .eq. 1) .and. (f(1) .eq. sets % member_of(walls, k))
     end do
@@ -300,10 +300,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)              :: a, b
-    type(set_graph)               :: sa, sb
+    type(graph)              :: a, b
+    type(graph)               :: sa, sb
     type(csr_relation)             :: ia, ib
-    type(set_graph) :: d
+    type(graph) :: d
     integer, allocatable           :: ta(:,:), tb(:,:)
     type(set_map)     :: sets
     type(inclusion_map)     :: inclusions
@@ -354,10 +354,10 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)               :: cells, faces
+    type(graph)               :: cells, faces
     type(csr_relation), target      :: r
     type(transposed_relation)           :: t
-    type(set_graph)  :: d
+    type(graph)  :: d
     integer, allocatable            :: fwd(:), rev(:)
     type(set_map)     :: sets
 
@@ -422,11 +422,11 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph)               :: cells, faces
+    type(graph)               :: cells, faces
     type(csr_relation) , target    :: r
     type(transposed_relation), target  :: t
     type(transposed_relation)          :: tt
-    type(set_graph) :: da, db
+    type(graph) :: da, db
     integer, allocatable           :: rt(:,:)
     integer                        :: j
     logical                        :: ok

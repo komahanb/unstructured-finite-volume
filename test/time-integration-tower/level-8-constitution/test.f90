@@ -65,7 +65,7 @@ program time_level_8
   use time_assert           , only : T0, T4, H_STEP, Q0
   use time_assert           , only : FE_TRAJECTORY, BE_TRAJECTORY, &
        &                             BDF2_TRAJECTORY
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set        , only : set_map
   use relation_binary , only : csr_relation
   use view_directed_stored           , only : stored_directed_graph
@@ -82,7 +82,7 @@ program time_level_8
 
   implicit none
 
-  type(set_graph)          :: q, t, e
+  type(graph)          :: q, t, e
   type(set_map)          :: sets
   type(csr_relation), target :: tail, head
   type(csr_relation)         :: a1
@@ -170,7 +170,7 @@ contains
 
     type(marcher)                  :: clock
     type(stored_directed_graph)             :: chain
-    type(set_graph) :: cv, hv
+    type(graph) :: cv, hv
 
     call clock % instants(NSTEPS, chain)
     cv = chain % vertex_set()
@@ -189,7 +189,7 @@ contains
          & "OPERATION HOST, though both are five-element chains here", &
          & nfail)
 
-    call report(.not. hv % same_as(q) .and. sets % size_of(q) .eq. NQ, &
+    call report(.not. hv % same_as(q) .and. sets % num_members_of(q) .eq. NQ, &
          & "and V(H_context) is still not Q - two members against " // &
          & "five, as at Levels 6 and 7", nfail)
 
@@ -214,10 +214,10 @@ contains
 
     clock % step = H_STEP
     h = step_sizes(e)
-    call h % get_real_vector(hv)
+    call h % real_vector(hv)
 
     ok = .true.
-    do i = 1, sets % size_of(e)
+    do i = 1, sets % num_members_of(e)
        ok = ok .and. &
             & (abs(hv(sets % index_in(e, sets % member_of(e, i))) - clock % step) &
             &  .lt. TOL)

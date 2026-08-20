@@ -43,7 +43,7 @@ program time_level_2
   use time_assert           , only : report, verdict
   use time_assert           , only : NT
   use time_assert           , only : T0, T1, T2, T3, T4
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set        , only : set_map
   use relation_binary , only : csr_relation
   use time_carriers_fixture , only : time_carriers
@@ -53,7 +53,7 @@ program time_level_2
 
   implicit none
 
-  type(set_graph)          :: q, t, e
+  type(graph)          :: q, t, e
   type(set_map)          :: sets
   type(csr_relation), target :: tail, head, a1
   type(csr_relation)         :: a2
@@ -90,7 +90,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: d
+    type(graph) :: d
     logical                        :: ok
 
     d = a1 % domain(1)
@@ -120,7 +120,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: d
+    type(graph) :: d
     logical                        :: ok
 
     d = a2 % domain(1)
@@ -189,7 +189,7 @@ contains
     ! relation: these are chains, and reach along a chain is a
     ! partial function.
     ok = .true.
-    do i = 1, sets % size_of(t)
+    do i = 1, sets % num_members_of(t)
        m = sets % member_of(t, i)
        reached = count_images(a2, m)
        ok = ok .and. (reached .le. 1)
@@ -208,7 +208,7 @@ contains
     integer :: j
 
     count_images = 0
-    do j = 1, sets % size_of(t)
+    do j = 1, sets % num_members_of(t)
        if (r % has([m, sets % member_of(t, j)])) count_images = count_images + 1
     end do
 

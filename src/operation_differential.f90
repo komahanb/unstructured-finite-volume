@@ -78,8 +78,8 @@ module operation_differential
   use operation_action, only : operation
   use view_directed, only : directed_graph
   use field_calculus, only : field
-  use graph_fractal      , only : set_graph => graph
-  use view_directed     , only : GRAPH_SIDE_VERTEX, GRAPH_SIDE_EDGE
+  use graph_fractal      , only : graph
+  use view_directed     , only : SIDE_VERTEX, SIDE_EDGE
   use field_stored  , only : stored_field
   use operation_stencil, only : stencil, combine_triples
 
@@ -106,7 +106,7 @@ module operation_differential
 
   type, extends(operation) :: differential_operator
 
-     integer :: landing = GRAPH_SIDE_VERTEX
+     integer :: landing = SIDE_VERTEX
      integer :: order   = 2
 
      logical :: adjoint   = .false.
@@ -173,7 +173,7 @@ contains
     logical         , intent(in), optional :: one_sided
     character(len=*), intent(in), optional :: label
 
-    this % landing = GRAPH_SIDE_EDGE
+    this % landing = SIDE_EDGE
     this % order   = max(order, 0)
 
     if (present(one_sided)) this % one_sided = one_sided
@@ -211,7 +211,7 @@ contains
     logical         , intent(in), optional :: adjoint
     character(len=*), intent(in), optional :: label
 
-    this % landing = GRAPH_SIDE_VERTEX
+    this % landing = SIDE_VERTEX
     this % order   = max(order, 0)
 
     if (present(coefficient))     this % coefficient    = coefficient
@@ -317,19 +317,19 @@ contains
   ! subset's graph.
   !===================================================================!
 
-  subroutine operator_domain(this, input_graph, domain, nentries)
+  subroutine operator_domain(this, input_graph, domain, num_entries)
 
     class(differential_operator), intent(in) :: this
     class(directed_graph), intent(in)                 :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
 
-    if (this % landing == GRAPH_SIDE_EDGE) then
+    if (this % landing == SIDE_EDGE) then
        domain   = input_graph % all_edges()
-       nentries = input_graph % num_edges()
+       num_entries = input_graph % num_edges()
     else
        domain   = input_graph % all_vertices()
-       nentries = input_graph % num_vertices()
+       num_entries = input_graph % num_vertices()
     end if
 
   end subroutine operator_domain
@@ -763,7 +763,7 @@ contains
     real(dp), allocatable :: spent(:)   ! never allocated: the
                                         ! coefficient is applied once
 
-    if (this % landing == GRAPH_SIDE_EDGE) then
+    if (this % landing == SIDE_EDGE) then
 
        if (this % order <= 0) then
           a = average_map(g, merge(1.0_dp, 0.0_dp, this % one_sided), &
@@ -825,7 +825,7 @@ contains
 
     type(affine_map) :: a
 
-    if (operator % landing /= GRAPH_SIDE_VERTEX) then
+    if (operator % landing /= SIDE_VERTEX) then
        error stop 'differential_operator: a stencil is square - only the &
             &vertex landing compiles to one'
     end if
@@ -862,7 +862,7 @@ contains
   ! COMPONENTS. A field may carry several values per entry,
   ! interleaved entry-fastest:
   !
-  !      flat((entry - 1) * ncomp + component)
+  !      flat((entry - 1) * num_components + component)
   !
   ! The map is compiled once; each component is gathered, swept,
   ! and scattered back. The parameters are shared by all
@@ -870,30 +870,30 @@ contains
   ! operator instance.
   !===================================================================!
 
-  pure subroutine gather_component(flat, ncomp, c, comp)
+  pure subroutine gather_component(flat, num_components, c, comp)
 
     real(dp), intent(in)  :: flat(:)
-    integer , intent(in)  :: ncomp, c
+    integer , intent(in)  :: num_components, c
     real(dp), intent(out) :: comp(:)
 
     integer :: i
 
     do i = 1, size(comp)
-       comp(i) = flat((i - 1) * ncomp + c)
+       comp(i) = flat((i - 1) * num_components + c)
     end do
 
   end subroutine gather_component
 
-  pure subroutine scatter_component(comp, ncomp, c, flat)
+  pure subroutine scatter_component(comp, num_components, c, flat)
 
     real(dp), intent(in)    :: comp(:)
-    integer , intent(in)    :: ncomp, c
+    integer , intent(in)    :: num_components, c
     real(dp), intent(inout) :: flat(:)
 
     integer :: i
 
     do i = 1, size(comp)
-       flat((i - 1) * ncomp + c) = comp(i)
+       flat((i - 1) * num_components + c) = comp(i)
     end do
 
   end subroutine scatter_component
@@ -926,19 +926,19 @@ contains
     ! field is also lawful and enters at the incidence step
     enters_on_edges = .false.
     call fetch_values(input_data, input_graph, .false., nv, q, nc)
-    if (nc == 0 .and. this % landing == GRAPH_SIDE_VERTEX) then
+    if (nc == 0 .and. this % landing == SIDE_VERTEX) then
        call fetch_values(input_data, input_graph, .true., ne, q, nc)
        enters_on_edges = nc > 0
     end if
 
-    if (this % landing == GRAPH_SIDE_EDGE) then
+    if (this % landing == SIDE_EDGE) then
        nout = ne
        out  = stored_field(this % name(), input_graph % edge_set(), ne, &
-            & ncomp=max(nc, 1))
+            & num_components=max(nc, 1))
     else
        nout = nv
        out  = stored_field(this % name(), input_graph % vertex_set(), nv, &
-            & ncomp=max(nc, 1))
+            & num_components=max(nc, 1))
     end if
 
     allocate(y(nout * max(nc, 1)))
@@ -973,18 +973,18 @@ contains
   ! else leaves a zero-length array and zero components.
   !===================================================================!
 
-  subroutine fetch_values(input_data, input_graph, on_edges, n, q, ncomp)
+  subroutine fetch_values(input_data, input_graph, on_edges, n, q, num_components)
 
     class(field), intent(in), optional :: input_data(:)
     class(directed_graph)     , intent(in)           :: input_graph
     logical          , intent(in)           :: on_edges
     integer          , intent(in)           :: n
     real(dp), allocatable, intent(out)      :: q(:)
-    integer          , intent(out)          :: ncomp
+    integer          , intent(out)          :: num_components
 
-    type(set_graph) :: dom, expected
+    type(graph) :: dom, expected
 
-    ncomp = 0
+    num_components = 0
 
     if (present(input_data)) then
        select type (state => input_data(1))
@@ -996,10 +996,10 @@ contains
              expected = input_graph % vertex_set()
           end if
           if (dom % same_as(expected)) then
-             ncomp = max(state % num_components(), 1)
-             call state % get_real_vector(q)
-             if (size(q) == n * ncomp) return
-             ncomp = 0
+             num_components = max(state % num_components(), 1)
+             call state % real_vector(q)
+             if (size(q) == n * num_components) return
+             num_components = 0
           end if
        end select
     end if

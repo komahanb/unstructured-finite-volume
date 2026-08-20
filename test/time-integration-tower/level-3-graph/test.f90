@@ -46,14 +46,14 @@ program time_level_3
 
   use time_assert           , only : report, verdict
   use time_assert           , only : T0, T1, T2, E1
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set        , only : set_map
   use relation_finitary        , only : relation
   use relation_binary , only : csr_relation
   use graph_fractal        , only : graph, known_branch, null_branch
   use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
-       & holds_set
+       & has_set
   use time_carriers_fixture , only : time_carriers
   use time_relations_fixture, only : tail_relation, head_relation
   use time_algebra_fixture  , only : derive_one_step_reach, &
@@ -61,7 +61,7 @@ program time_level_3
 
   implicit none
 
-  type(set_graph)              :: q, t, e
+  type(graph)              :: q, t, e
   type(set_map)              :: sets
   type(csr_relation), target     :: tail, head, a1
   type(csr_relation)             :: a2
@@ -141,8 +141,8 @@ contains
     call report(num_relations(g) .eq. 4, &
          & "and four relations", nfail)
 
-    call report(holds_set(g, bnd, q) .and. holds_set(g, bnd, t) .and. &
-         &      holds_set(g, bnd, e), &
+    call report(has_set(g, bnd, q) .and. has_set(g, bnd, t) .and. &
+         &      has_set(g, bnd, e), &
          & "it holds Q, T and E - both axes and the steps between " // &
          & "them, in one structure", nfail)
 
@@ -165,7 +165,7 @@ contains
     integer, intent(inout) :: nfail
 
     class(relation)  , pointer     :: r
-    type(set_graph) :: d
+    type(graph) :: d
     integer                        :: k, slot, s
     logical                        :: ok, found
 
@@ -223,7 +223,7 @@ contains
     integer, intent(inout) :: nfail
 
     class(relation)  , pointer     :: r
-    type(set_graph) :: d
+    type(graph) :: d
     integer                        :: k, slot
     logical                        :: named
 
@@ -236,7 +236,7 @@ contains
        end do
     end do
 
-    call report(holds_set(g, bnd, q) .and. .not. named, &
+    call report(has_set(g, bnd, q) .and. .not. named, &
          & "Q IS OWNED AND NO RELATION NAMES IT - the container " // &
          & "validates relations against sets, never sets against " // &
          & "relations", nfail)
@@ -245,7 +245,7 @@ contains
          & "and no relation was invented to attach it: a relational " // &
          & "structure need not be connected", nfail)
 
-    call report(holds_set(g, bnd, t) .and. .not. q % same_as(t) .and. &
+    call report(has_set(g, bnd, t) .and. .not. q % same_as(t) .and. &
          &      .not. q % same_as(e), &
          & "both axes live in one structure, and neither has become " // &
          & "the other", nfail)
@@ -274,10 +274,10 @@ contains
   logical function owned_runs(selector, from, into)
 
     class(relation)  , intent(in) :: selector
-    type(set_graph), intent(in) :: from, into
+    type(graph), intent(in) :: from, into
 
     class(relation)  , pointer     :: held
-    type(set_graph) :: d
+    type(graph) :: d
     integer                        :: k
 
     owned_runs = .false.

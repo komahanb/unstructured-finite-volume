@@ -47,13 +47,13 @@
 module view_sequence
 
   use graph_fractal, only : graph, branch, &
-       & GRAPH_NULL, GRAPH_UNKNOWN, GRAPH_KNOWN
+       & BRANCH_NULL, BRANCH_UNKNOWN, BRANCH_KNOWN
 
   implicit none
 
   private
-  public :: sequence_defined, sequence_size
-  public :: sequence_element, sequence_contains
+  public :: sequence_defined, sequence_num_elements
+  public :: sequence_element, sequence_has
 
 contains
 
@@ -70,8 +70,8 @@ contains
     type(graph), pointer :: cell
 
     known_extent = .false.
-    if (b % status() .eq. GRAPH_UNKNOWN) return
-    if (b % status() .eq. GRAPH_NULL) then
+    if (b % status() .eq. BRANCH_UNKNOWN) return
+    if (b % status() .eq. BRANCH_NULL) then
        known_extent = .true.
        return
     end if
@@ -79,8 +79,8 @@ contains
     cell => b % known()
     do
        call require_cell(cell)
-       if (cell % branch(2) % status() .eq. GRAPH_NULL) exit
-       if (cell % branch(2) % status() .eq. GRAPH_UNKNOWN) return
+       if (cell % branch(2) % status() .eq. BRANCH_NULL) exit
+       if (cell % branch(2) % status() .eq. BRANCH_UNKNOWN) return
        cell => cell % branch(2) % known()
     end do
     known_extent = .true.
@@ -92,7 +92,7 @@ contains
   ! an unknown extent is refused.
   !===================================================================!
 
-  integer function sequence_size(b) result(n)
+  integer function sequence_num_elements(b) result(n)
 
     type(branch), intent(in) :: b
 
@@ -103,16 +103,16 @@ contains
     end if
 
     n = 0
-    if (b % status() .eq. GRAPH_NULL) return
+    if (b % status() .eq. BRANCH_NULL) return
 
     cell => b % known()
     do
        n = n + 1
-       if (cell % branch(2) % status() .eq. GRAPH_NULL) exit
+       if (cell % branch(2) % status() .eq. BRANCH_NULL) exit
        cell => cell % branch(2) % known()
     end do
 
-  end function sequence_size
+  end function sequence_num_elements
 
   !===================================================================!
   ! The k-th element, counting from one. Only the first k cells are
@@ -155,7 +155,7 @@ contains
   ! outside.
   !===================================================================!
 
-  logical function sequence_contains(b, g) result(found)
+  logical function sequence_has(b, g) result(found)
 
     type(branch), intent(in) :: b
     type(graph)       , intent(in) :: g
@@ -163,8 +163,8 @@ contains
     type(graph), pointer :: cell, element
 
     found = .false.
-    if (b % status() .eq. GRAPH_NULL) return
-    if (b % status() .eq. GRAPH_UNKNOWN) then
+    if (b % status() .eq. BRANCH_NULL) return
+    if (b % status() .eq. BRANCH_UNKNOWN) then
        error stop 'view_sequence: membership depends on an unknown sequence'
     end if
 
@@ -176,14 +176,14 @@ contains
           found = .true.
           return
        end if
-       if (cell % branch(2) % status() .eq. GRAPH_NULL) return
-       if (cell % branch(2) % status() .eq. GRAPH_UNKNOWN) then
+       if (cell % branch(2) % status() .eq. BRANCH_NULL) return
+       if (cell % branch(2) % status() .eq. BRANCH_UNKNOWN) then
           error stop 'view_sequence: membership depends on an unknown tail'
        end if
        cell => cell % branch(2) % known()
     end do
 
-  end function sequence_contains
+  end function sequence_has
 
   !===================================================================!
   ! The two guards. require_cell refuses a malformed representation;
@@ -194,7 +194,7 @@ contains
 
     type(graph), intent(in) :: cell
 
-    if (cell % branch(1) % status() .ne. GRAPH_KNOWN) then
+    if (cell % branch(1) % status() .ne. BRANCH_KNOWN) then
        error stop 'view_sequence: a sequence cell holds a KNOWN element'
     end if
 
@@ -204,10 +204,10 @@ contains
 
     type(branch), intent(in) :: b
 
-    if (b % status() .eq. GRAPH_NULL) then
+    if (b % status() .eq. BRANCH_NULL) then
        error stop 'view_sequence: the sequence has no such element'
     end if
-    if (b % status() .eq. GRAPH_UNKNOWN) then
+    if (b % status() .eq. BRANCH_UNKNOWN) then
        error stop 'view_sequence: that element lies beyond an unknown tail'
     end if
 

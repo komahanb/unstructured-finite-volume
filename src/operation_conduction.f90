@@ -97,7 +97,7 @@ contains
     integer :: ne, e
 
     fn = m % face_normal()
-    call fn % get_real_vector(normals)
+    call fn % real_vector(normals)
 
     ne = m % num_edges()
     allocate(values(ne))
@@ -127,7 +127,7 @@ contains
     call this % normal_conductivity(m, values)
 
     fa = m % face_area()
-    call fa % get_real_vector(areas)
+    call fa % real_vector(areas)
 
     do e = 1, size(values)
        if (m % edge_has_head(e)) then

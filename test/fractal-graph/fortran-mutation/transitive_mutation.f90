@@ -20,8 +20,8 @@ program transitive_mutation
   p % branch(1) = known_branch(c)
   after  = b % branch(1) % status()
 
-  if (before /= GRAPH_UNKNOWN) error stop 'b did not start UNKNOWN'
-  if (after  /= GRAPH_KNOWN)   error stop 'the transitive mutation did not take'
+  if (before /= BRANCH_UNKNOWN) error stop 'b did not start UNKNOWN'
+  if (after  /= BRANCH_KNOWN)   error stop 'the transitive mutation did not take'
   if (.not. b % same_as(b))    error stop 'b lost its identity'
   print *, ' E: b mutated through a pointer obtained from a; identity intact'
 end program transitive_mutation

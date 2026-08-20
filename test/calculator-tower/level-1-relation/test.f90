@@ -28,7 +28,7 @@ program calculator_level_1
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -36,7 +36,7 @@ program calculator_level_1
 
   implicit none
 
-  type(set_graph)     :: x, o, p
+  type(graph)     :: x, o, p
   type(stored_relation) :: flow
   integer               :: table(3, 7)
   integer               :: nfail
@@ -83,7 +83,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: d
+    type(graph) :: d
 
     call report(flow % arity() .eq. 3, &
          & "the flow is genuinely ternary", nfail)

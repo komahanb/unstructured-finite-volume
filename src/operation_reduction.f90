@@ -79,12 +79,12 @@ module operation_reduction
   use iso_fortran_env       , only : dp => REAL64
   use view_directed   , only : directed_graph
   use field_calculus  , only : field
-  use graph_fractal      , only : set_graph => graph
-  use field_calculus  , only : GRAPH_FIELD_REAL, GRAPH_FIELD_COMPLEX
-  use field_calculus  , only : GRAPH_FIELD_LOGICAL
+  use graph_fractal      , only : graph
+  use field_calculus  , only : FIELD_REAL, FIELD_COMPLEX
+  use field_calculus  , only : FIELD_LOGICAL
   use operation_action  , only : operation
   use field_calculus  , only : functional
-  use view_directed   , only : GRAPH_SIDE_VERTEX
+  use view_directed   , only : SIDE_VERTEX
   use field_stored     , only : plain_field => stored_field
   use field_functional, only : scalar_result => stored_functional
 
@@ -130,7 +130,7 @@ module operation_reduction
      ! not answer same_as against the second.
      !----------------------------------------------------------------!
 
-     type(set_graph), private :: home
+     type(graph), private :: home
 
    contains
 
@@ -272,9 +272,9 @@ contains
     real(dp)    :: acc
     complex(dp) :: cacc
     logical     :: lacc
-    integer     :: i, c, k, ncomp, nentry
+    integer     :: i, c, k, num_components, nentry
 
-    ncomp  = values % num_components()
+    num_components  = values % num_components()
     nentry = values % num_entries()
 
     call weights_of(measure, nentry, m)
@@ -283,8 +283,8 @@ contains
 
     case (REDUCE_ALL, REDUCE_ANY)
 
-       call values % get_logical_vector(lv)
-       call get_logical(state, lacc)
+       call values % logical_vector(lv)
+       call read_logical(state, lacc)
        if (this % rule == REDUCE_ALL) then
           lacc = lacc .and. all(lv)
        else
@@ -304,13 +304,13 @@ contains
        ! A complex values takes the complex road; everything else the
        ! real one. Only summing is defined for complex values, since
        ! ordering them has no meaning.
-       if (values % value_kind() == GRAPH_FIELD_COMPLEX) then
+       if (values % value_kind() == FIELD_COMPLEX) then
 
-          call values % get_complex_vector(cv)
-          call get_complex(state, cacc)
+          call values % complex_vector(cv)
+          call read_complex(state, cacc)
           do i = 1, nentry
-             do c = 1, ncomp
-                k = (i - 1) * ncomp + c
+             do c = 1, num_components
+                k = (i - 1) * num_components + c
                 if (k <= size(cv)) cacc = cacc + cv(k) * m(i)
              end do
           end do
@@ -318,15 +318,15 @@ contains
 
        else
 
-          call values % get_real_vector(v)
+          call values % real_vector(v)
 
           select case (this % rule)
 
           case (REDUCE_SUM)
-             call get_real(state, acc)
+             call read_real(state, acc)
              do i = 1, nentry
-                do c = 1, ncomp
-                   k = (i - 1) * ncomp + c
+                do c = 1, num_components
+                   k = (i - 1) * num_components + c
                    if (k <= size(v)) acc = acc + v(k) * m(i)
                 end do
              end do
@@ -338,8 +338,8 @@ contains
              select type (state)
              type is (scalar_result)
                 do i = 1, nentry
-                   do c = 1, ncomp
-                      k = (i - 1) * ncomp + c
+                   do c = 1, num_components
+                      k = (i - 1) * num_components + c
                       if (k <= size(v)) then
                          if (this % rule == REDUCE_AVERAGE) then
                             state % tally = state % tally + v(k) * m(i)
@@ -353,14 +353,14 @@ contains
              end select
 
           case (REDUCE_MINIMUM)
-             call get_real(state, acc)
+             call read_real(state, acc)
              do k = 1, size(v)
                 acc = min(acc, v(k))
              end do
              call set_real(state, acc)
 
           case (REDUCE_MAXIMUM)
-             call get_real(state, acc)
+             call read_real(state, acc)
              do k = 1, size(v)
                 acc = max(acc, v(k))
              end do
@@ -390,7 +390,7 @@ contains
     m = 1.0_dp
 
     if (present(measure)) then
-       call measure % get_real_vector(raw)
+       call measure % real_vector(raw)
        if (size(raw) >= nentry) m(1:nentry) = raw(1:nentry)
     end if
 
@@ -420,8 +420,8 @@ contains
 
     case (REDUCE_ALL, REDUCE_ANY)
 
-       call get_logical(left, la)
-       call get_logical(right, lb)
+       call read_logical(left, la)
+       call read_logical(right, lb)
        if (this % rule == REDUCE_ALL) then
           call set_logical(combined, la .and. lb)
        else
@@ -445,8 +445,8 @@ contains
 
     case (REDUCE_MINIMUM, REDUCE_MAXIMUM)
 
-       call get_real(left, a)
-       call get_real(right, b)
+       call read_real(left, a)
+       call read_real(right, b)
        if (this % rule == REDUCE_MINIMUM) then
           call set_real(combined, min(a, b))
        else
@@ -456,14 +456,14 @@ contains
     case default
 
        ! Summing, on whichever road the parts travelled.
-       if (left % value_kind() == GRAPH_FIELD_COMPLEX .or. &
-            & right % value_kind() == GRAPH_FIELD_COMPLEX) then
-          call get_complex(left, ca)
-          call get_complex(right, cb)
+       if (left % value_kind() == FIELD_COMPLEX .or. &
+            & right % value_kind() == FIELD_COMPLEX) then
+          call read_complex(left, ca)
+          call read_complex(right, cb)
           call set_complex(combined, ca + cb)
        else
-          call get_real(left, a)
-          call get_real(right, b)
+          call read_real(left, a)
+          call read_real(right, b)
           call set_real(combined, a + b)
        end if
 
@@ -561,18 +561,18 @@ contains
 
   end function reduction_name
 
-  subroutine reduction_domain(this, input_graph, domain, nentries)
+  subroutine reduction_domain(this, input_graph, domain, num_entries)
 
     class(reduction), intent(in)           :: this
     class(directed_graph), intent(in)               :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
 
     associate (u1 => input_graph); end associate
 
     ! The answer's home is this reduction's own one-entry domain.
     domain   = this % home
-    nentries = 1
+    num_entries = 1
 
   end subroutine reduction_domain
 
@@ -634,17 +634,17 @@ contains
 
   end function broadcast_name
 
-  subroutine broadcast_domain(this, input_graph, domain, nentries)
+  subroutine broadcast_domain(this, input_graph, domain, num_entries)
 
     class(broadcast), intent(in)           :: this
     class(directed_graph), intent(in)               :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
 
     associate (u1 => this); end associate
 
     domain   = input_graph % all_vertices()
-    nentries = input_graph % num_vertices()
+    num_entries = input_graph % num_vertices()
 
   end subroutine broadcast_domain
 
@@ -694,14 +694,14 @@ contains
 
     n = values % num_entries() * max(values % num_components(), 1)
 
-    if (scalar % value_kind() == GRAPH_FIELD_COMPLEX) then
-       call get_complex(scalar, complex_value)
+    if (scalar % value_kind() == FIELD_COMPLEX) then
+       call read_complex(scalar, complex_value)
        if (this % rule == BROADCAST_SHARE .and. n > 0) then
           complex_value = complex_value / real(n, dp)
        end if
        call values % set_complex_vector([(complex_value, i = 1, n)])
     else
-       call get_real(scalar, value)
+       call read_real(scalar, value)
        if (this % rule == BROADCAST_SHARE .and. n > 0) then
           value = value / real(n, dp)
        end if
@@ -716,21 +716,21 @@ contains
   ! kind, matching the adapters' zero-length signal.
   !===================================================================!
 
-  pure subroutine get_real(f, x)
+  pure subroutine read_real(f, x)
 
     class(functional), intent(in) :: f
     real(dp), intent(out) :: x
 
     real(dp), allocatable :: t(:)
 
-    call f % get_real_vector(t)
+    call f % real_vector(t)
     if (size(t) >= 1) then
        x = t(1)
     else
        x = 0.0_dp
     end if
 
-  end subroutine get_real
+  end subroutine read_real
 
   pure subroutine set_real(f, x)
 
@@ -741,21 +741,21 @@ contains
 
   end subroutine set_real
 
-  pure subroutine get_complex(f, x)
+  pure subroutine read_complex(f, x)
 
     class(functional), intent(in) :: f
     complex(dp), intent(out) :: x
 
     complex(dp), allocatable :: t(:)
 
-    call f % get_complex_vector(t)
+    call f % complex_vector(t)
     if (size(t) >= 1) then
        x = t(1)
     else
        x = (0.0_dp, 0.0_dp)
     end if
 
-  end subroutine get_complex
+  end subroutine read_complex
 
   pure subroutine set_complex(f, x)
 
@@ -766,21 +766,21 @@ contains
 
   end subroutine set_complex
 
-  pure subroutine get_logical(f, x)
+  pure subroutine read_logical(f, x)
 
     class(functional), intent(in) :: f
     logical, intent(out) :: x
 
     logical, allocatable :: t(:)
 
-    call f % get_logical_vector(t)
+    call f % logical_vector(t)
     if (size(t) >= 1) then
        x = t(1)
     else
        x = .false.
     end if
 
-  end subroutine get_logical
+  end subroutine read_logical
 
   pure subroutine set_logical(f, x)
 

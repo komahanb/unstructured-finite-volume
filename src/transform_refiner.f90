@@ -27,7 +27,7 @@ module transform_refiner
   use iso_fortran_env     , only : dp => REAL64
   use view_directed , only : directed_graph
   use field_calculus, only : field
-  use graph_fractal      , only : set_graph => graph
+  use graph_fractal      , only : graph
   use transform_structure, only : transform
   use view_directed_stored         , only : stored_directed_graph
   use field_stored   , only : stored_field
@@ -118,7 +118,7 @@ contains
     select type (input_data)
     class is (stored_field)
        block
-         type(set_graph) :: dom
+         type(graph) :: dom
          integer         :: n_dom
          dom   = input_data % domain()
          n_dom = input_data % num_entries()
@@ -217,26 +217,26 @@ contains
 
     type(stored_field)    :: out
     real(dp), allocatable :: cv(:), fv(:)
-    integer :: nfine, ncomp, v, i, c, child
+    integer :: nfine, num_components, v, i, c, child
 
     select type (coarse_data)
     class is (stored_field)
 
        nfine = fine_graph % num_vertices()
-       ncomp = coarse_data % num_components()
+       num_components = coarse_data % num_components()
 
        out = stored_field(coarse_data % name(), fine_graph % vertex_set(), fine_graph % num_vertices(), &
-            &             ncomp=ncomp, unit_name=coarse_data % units())
+            &             num_components=num_components, unit_name=coarse_data % units())
 
-       call coarse_data % get_real_vector(cv)
-       allocate(fv(nfine * ncomp))
+       call coarse_data % real_vector(cv)
+       allocate(fv(nfine * num_components))
        fv = 0.0_dp
 
        do v = 1, coarse_graph % num_vertices()
           do i = 1, this % split
              child = child_of(v, i, this % split)
-             do c = 1, ncomp
-                associate (to => (child - 1) * ncomp + c, from => (v - 1) * ncomp + c)
+             do c = 1, num_components
+                associate (to => (child - 1) * num_components + c, from => (v - 1) * num_components + c)
                   if (to <= size(fv) .and. from <= size(cv)) fv(to) = cv(from)
                 end associate
              end do

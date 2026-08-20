@@ -25,7 +25,7 @@
 program test
 
   use token_identity     , only : token
-  use graph_fractal      , only : graph, GRAPH_NULL, GRAPH_UNKNOWN, GRAPH_KNOWN, &
+  use graph_fractal      , only : graph, BRANCH_NULL, BRANCH_UNKNOWN, BRANCH_KNOWN, &
        & null_branch, unknown_branch, known_branch
   use view_epistemic, only : has_data, has_operator, &
        & epistemic_defined, epistemic_name, data_of, residual_of
@@ -169,15 +169,15 @@ program test
     ku % branch = [known_branch(ref), unknown_branch() ]
     kk % branch = [known_branch(ref), known_branch(ref)]
 
-    call state('(N,N)', nn, GRAPH_NULL   , GRAPH_NULL   , .false.)
-    call state('(N,U)', nu, GRAPH_NULL   , GRAPH_UNKNOWN, .false.)
-    call state('(N,K)', nk, GRAPH_NULL   , GRAPH_KNOWN  , .false.)
-    call state('(U,N)', un, GRAPH_UNKNOWN, GRAPH_NULL   , .false.)
-    call state('(U,U)', uu, GRAPH_UNKNOWN, GRAPH_UNKNOWN, .true. )
-    call state('(U,K)', uk, GRAPH_UNKNOWN, GRAPH_KNOWN  , .true. )
-    call state('(K,N)', kn, GRAPH_KNOWN  , GRAPH_NULL   , .false.)
-    call state('(K,U)', ku, GRAPH_KNOWN  , GRAPH_UNKNOWN, .true. )
-    call state('(K,K)', kk, GRAPH_KNOWN  , GRAPH_KNOWN  , .true. )
+    call state('(N,N)', nn, BRANCH_NULL   , BRANCH_NULL   , .false.)
+    call state('(N,U)', nu, BRANCH_NULL   , BRANCH_UNKNOWN, .false.)
+    call state('(N,K)', nk, BRANCH_NULL   , BRANCH_KNOWN  , .false.)
+    call state('(U,N)', un, BRANCH_UNKNOWN, BRANCH_NULL   , .false.)
+    call state('(U,U)', uu, BRANCH_UNKNOWN, BRANCH_UNKNOWN, .true. )
+    call state('(U,K)', uk, BRANCH_UNKNOWN, BRANCH_KNOWN  , .true. )
+    call state('(K,N)', kn, BRANCH_KNOWN  , BRANCH_NULL   , .false.)
+    call state('(K,U)', ku, BRANCH_KNOWN  , BRANCH_UNKNOWN, .true. )
+    call state('(K,K)', kk, BRANCH_KNOWN  , BRANCH_KNOWN  , .true. )
 
     call check('four of nine combinations carry an epistemic name', &
          & count([epistemic_defined(nn), epistemic_defined(nu), epistemic_defined(nk), &

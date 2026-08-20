@@ -34,7 +34,7 @@ module operation_dense_direct
   use operation_action, only : operation
   use view_directed , only : directed_graph
   use field_calculus, only : field
-  use graph_fractal      , only : set_graph => graph
+  use graph_fractal      , only : graph
   use operation_minimization , only : minimizer
   use operation_stencil, only : stencil
   use field_stored  , only : stored_field
@@ -223,9 +223,9 @@ contains
 
     type(stored_field)     :: basis
     class(field), allocatable :: output
-    type(set_graph) :: dom
+    type(graph) :: dom
     real(dp), allocatable :: e(:), y(:)
-    integer :: n_dom, ncomp, j
+    integer :: n_dom, num_components, j
 
     call action % domain(on, dom, n_dom)
 
@@ -236,17 +236,17 @@ contains
        error stop 'dense_direct: the width carries a whole number per member'
     end if
 
-    ncomp = width / n_dom
+    num_components = width / n_dom
 
     allocate(a(width, width), e(width))
 
     do j = 1, width
        e    = 0.0_dp
        e(j) = 1.0_dp
-       basis = stored_field('basis', dom, n_dom, ncomp=ncomp)
+       basis = stored_field('basis', dom, n_dom, num_components=num_components)
        call basis % set_real_vector(e)
        call action % apply(on, [basis], output)
-       call output % get_real_vector(y)
+       call output % real_vector(y)
        if (size(y) /= width) then
           error stop 'dense_direct: the operation result matches the width'
        end if

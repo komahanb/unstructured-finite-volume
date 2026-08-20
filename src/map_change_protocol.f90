@@ -74,38 +74,38 @@ module map_change_protocol
 
    contains
 
-     procedure(change_apply) , deferred :: apply
-     procedure(change_check) , deferred :: check
-     procedure(change_keep)  , deferred :: keep
-     procedure(change_revert), deferred :: revert
+     procedure(change_apply_interface) , deferred :: apply
+     procedure(change_check_interface) , deferred :: check
+     procedure(change_keep_interface)  , deferred :: keep
+     procedure(change_revert_interface), deferred :: revert
 
   end type reversible_change
 
   abstract interface
 
-     subroutine change_apply(this, result)
+     subroutine change_apply_interface(this, result)
        import :: reversible_change, change_record
        class(reversible_change), intent(inout) :: this
        type(change_record)     , intent(inout) :: result
-     end subroutine change_apply
+     end subroutine change_apply_interface
 
-     subroutine change_check(this, result)
+     subroutine change_check_interface(this, result)
        import :: reversible_change, change_record
        class(reversible_change), intent(inout) :: this
        type(change_record)     , intent(inout) :: result
-     end subroutine change_check
+     end subroutine change_check_interface
 
-     subroutine change_keep(this, result)
+     subroutine change_keep_interface(this, result)
        import :: reversible_change, change_record
        class(reversible_change), intent(inout) :: this
        type(change_record)     , intent(inout) :: result
-     end subroutine change_keep
+     end subroutine change_keep_interface
 
-     subroutine change_revert(this, result)
+     subroutine change_revert_interface(this, result)
        import :: reversible_change, change_record
        class(reversible_change), intent(inout) :: this
        type(change_record)     , intent(inout) :: result
-     end subroutine change_revert
+     end subroutine change_revert_interface
 
   end interface
 

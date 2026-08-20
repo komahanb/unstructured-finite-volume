@@ -8,7 +8,7 @@
 !      full vertex . full edge . proper vertex subset {6,3,1} .
 !      proper edge subset {5,3,2} . empty subsets
 !
-! Proper subsets are declared in NONNUMERIC order with ncomp=2, so
+! Proper subsets are declared in NONNUMERIC order with num_components=2, so
 ! domain indexing and component indexing are tested at once, and
 ! every value is fetched through local_index - never by assuming
 ! member equals position. Transported subobjects are NEW
@@ -21,7 +21,7 @@
 program test_graph_field_transport
 
   use iso_fortran_env        , only : dp => REAL64
-  use graph_fractal           , only : set_graph => graph
+  use graph_fractal           , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set           , only : set_map
@@ -119,7 +119,7 @@ contains
 
     total = 0.0_dp
     do k = 1, 2
-       p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
+       p = partitioner(PARTITION_LINEAR, num_parts=2, part=k)
        call p % partition_graph(g, part, rel)
        call sets % bind(part % vertex_set(), &
             & counted_set_representation(part % num_vertices()))
@@ -127,7 +127,7 @@ contains
             & counted_set_representation(part % num_edges()))
        call p % partition_data(rel, g, d, part, sets, labels, inclusions, pd)
        call a % assemble_data(rel, part, pd, g, sets, labels, inclusions, fd)
-       call fd % get_real_vector(v)
+       call fd % real_vector(v)
        total = total + v(1:n)
     end do
     call report(all(abs(total - [(10.0_dp * i, i = 1, n)]) < 1.0d-13), &
@@ -149,7 +149,7 @@ contains
     integer, intent(in)    :: chosen(:)
     integer, intent(inout) :: nfail
 
-    type(set_graph)                 :: carrier, s
+    type(graph)                 :: carrier, s
     type(set_map)                   :: sets
     type(label_map)                 :: labels
     type(inclusion_map)             :: inclusions
@@ -157,7 +157,7 @@ contains
     type(partitioner)               :: p
     class(directed_graph), allocatable       :: part
     class(field), allocatable :: pd, fd
-    type(set_graph)                 :: dp_, dg
+    type(graph)                 :: dp_, dg
     real(dp), allocatable           :: sv(:), v(:)
     integer, allocatable            :: mem(:)
     integer                         :: k, i, c, m, seen(size(chosen))
@@ -178,7 +178,7 @@ contains
     call labels     % bind(s, 'chosen')
     call inclusions % include_in(s, carrier)
 
-    d = stored_field('q', s, size(chosen), ncomp=2)
+    d = stored_field('q', s, size(chosen), num_components=2)
 
     allocate(sv(2 * size(chosen)))
     do i = 1, size(chosen)
@@ -191,7 +191,7 @@ contains
     ok   = .true.
     okp  = .true.
     do k = 1, 2
-       p = partitioner(PARTITION_LINEAR, nparts=2, part=k)
+       p = partitioner(PARTITION_LINEAR, num_parts=2, part=k)
        call p % partition_graph(g, part, rel)
        call sets % bind(part % vertex_set(), &
             & counted_set_representation(part % num_vertices()))
@@ -219,7 +219,7 @@ contains
        dg = fd % domain()
        ok = ok .and. declared_subobject(dg, carrier, inclusions)
        call sets % members_of(dg, mem)
-       call fd % get_real_vector(v)
+       call fd % real_vector(v)
        do i = 1, size(mem)
           m = mem(i)
           ! member identity: find m in the source declaration
@@ -256,7 +256,7 @@ contains
     logical, intent(in)    :: verts
     integer, intent(inout) :: nfail
 
-    type(set_graph)                 :: carrier, s
+    type(graph)                 :: carrier, s
     type(set_map)                   :: sets
     type(label_map)                 :: labels
     type(inclusion_map)             :: inclusions
@@ -283,7 +283,7 @@ contains
     d = stored_field('q', s, 0)
     call d % set_real_vector([real(dp) ::])
 
-    p = partitioner(PARTITION_LINEAR, nparts=2, part=1)
+    p = partitioner(PARTITION_LINEAR, num_parts=2, part=1)
     call p % partition_graph(g, part, rel)
     call sets % bind(part % vertex_set(), &
          & counted_set_representation(part % num_vertices()))
@@ -291,7 +291,7 @@ contains
          & counted_set_representation(part % num_edges()))
     call p % partition_data(rel, g, d, part, sets, labels, inclusions, pd)
     call a % assemble_data(rel, part, pd, g, sets, labels, inclusions, fd)
-    call fd % get_real_vector(v)
+    call fd % real_vector(v)
 
     ok = pd % num_entries() .eq. 0 .and. fd % num_entries() .eq. 0 &
          & .and. size(v) .eq. 0

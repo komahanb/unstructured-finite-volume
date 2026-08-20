@@ -46,7 +46,7 @@ module operation_robin_condition
 
   use iso_fortran_env , only : dp => REAL64
   use view_directed, only : directed_graph
-  use graph_fractal      , only : set_graph => graph
+  use graph_fractal      , only : graph
   use map_set      , only : set_map
   use map_label    , only : label_map
   use map_inclusion, only : inclusion_map
@@ -76,8 +76,8 @@ module operation_robin_condition
      procedure :: faces
      procedure :: lhs_coefficients
      procedure :: rhs_coefficients
-     procedure :: adv_lhs_coefficients
-     procedure :: adv_rhs_coefficients
+     procedure :: advection_lhs_coefficients
+     procedure :: advection_rhs_coefficients
      procedure :: operator_coefficients
      procedure :: boundary_values
      procedure :: wall_relation
@@ -138,7 +138,7 @@ contains
     type(set_map)         , intent(inout) :: sets
     type(label_map)       , intent(inout) :: labels
     type(inclusion_map)   , intent(inout) :: inclusions
-    type(set_graph)       , intent(out)   :: members
+    type(graph)       , intent(out)   :: members
 
     call m % tagged_edges(this % tag, sets, labels, inclusions, members)
 
@@ -188,7 +188,7 @@ contains
 
   end subroutine rhs_coefficients
 
-  subroutine adv_lhs_coefficients(this, m, vn, values)
+  subroutine advection_lhs_coefficients(this, m, vn, values)
 
     class(robin_condition), intent(in) :: this
     type(mesh), intent(in)             :: m
@@ -205,9 +205,9 @@ contains
             & / denom(this, delta(f))
     end do
 
-  end subroutine adv_lhs_coefficients
+  end subroutine advection_lhs_coefficients
 
-  subroutine adv_rhs_coefficients(this, m, vn, values)
+  subroutine advection_rhs_coefficients(this, m, vn, values)
 
     class(robin_condition), intent(in) :: this
     type(mesh), intent(in)             :: m
@@ -223,7 +223,7 @@ contains
        values(f) = vn * area(f) * this % c / denom(this, delta(f))
     end do
 
-  end subroutine adv_rhs_coefficients
+  end subroutine advection_rhs_coefficients
 
   !===================================================================!
   ! The operator road, for a > 0. The edge coefficient and the
@@ -329,7 +329,7 @@ contains
     ! environment. Nothing that needs them escapes.
     !----------------------------------------------------------------!
 
-    type(set_graph)     :: members
+    type(graph)     :: members
     type(set_map)       :: sets
     type(label_map)     :: labels
     type(inclusion_map) :: inclusions
@@ -341,12 +341,12 @@ contains
     call m % tagged_edges(this % tag, sets, labels, inclusions, members)
 
     fa = m % face_area()
-    call fa % get_real_vector(all_areas)
+    call fa % real_vector(all_areas)
     fd = m % face_delta()
-    call fd % get_real_vector(all_deltas)
+    call fd % real_vector(all_deltas)
 
-    allocate(area(sets % size_of(members)))
-    allocate(delta(sets % size_of(members)))
+    allocate(area(sets % num_members_of(members)))
+    allocate(delta(sets % num_members_of(members)))
 
     do f = 1, size(area)
        e = sets % member_of(members, f)

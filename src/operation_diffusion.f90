@@ -26,7 +26,7 @@ module operation_diffusion
 
   use iso_fortran_env      , only : dp => REAL64
   use view_directed  , only : directed_graph
-  use graph_fractal      , only : set_graph => graph
+  use graph_fractal      , only : graph
   use map_set      , only : set_map
   use map_label    , only : label_map
   use map_inclusion, only : inclusion_map
@@ -42,11 +42,11 @@ module operation_diffusion
   implicit none
 
   private
-  public :: diffusion_statement
+  public :: diffusion_stencil
 
 contains
 
-  function diffusion_statement(m, law, conditions, shape) result(op)
+  function diffusion_stencil(m, law, conditions, shape) result(op)
 
     type(mesh)           , intent(in) :: m
     type(conduction)     , intent(in) :: law
@@ -63,7 +63,7 @@ contains
     ! two of them claiming to describe one set.
     !----------------------------------------------------------------!
 
-    type(set_graph)     :: members
+    type(graph)     :: members
     type(set_map)       :: sets
     type(label_map)     :: labels
     type(inclusion_map) :: inclusions
@@ -78,7 +78,7 @@ contains
     ! The material, through every face.
     call law % normal_conductivity(m, keff)
     fa = m % face_area()
-    call fa % get_real_vector(areas)
+    call fa % real_vector(areas)
     scales = keff * areas
 
     ! The walls, each condition on its own tagged faces. Both
@@ -91,7 +91,7 @@ contains
     do k = 1, size(conditions)
        call conditions(k) % faces(m, sets, labels, inclusions, members)
        call conditions(k) % wall_relation(m, weights, values)
-       do f = 1, sets % size_of(members)
+       do f = 1, sets % num_members_of(members)
           e = sets % member_of(members, f)
           wb(e) = weights(f)
           vb(e) = values(f)
@@ -108,6 +108,6 @@ contains
     op = fitted_balance_stencil(m, chosen, scales, &
          & boundary_values=vb, boundary_weights=wb)
 
-  end function diffusion_statement
+  end function diffusion_stencil
 
 end module operation_diffusion

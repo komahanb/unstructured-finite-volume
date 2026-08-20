@@ -5,7 +5,7 @@
 ! two independent things held together, and it HAS them rather than
 ! being either:
 !
-!      evaluation      size_of, values, slopes - the concretion's
+!      evaluation      num_members, values, slopes - the concretion's
 !                      own table of functions, read whole
 !      active basis    WHICH table entries stand, as a declared set:
 !                      an identity, and a representation listing them
@@ -26,7 +26,7 @@
 ! What the form adds beyond membership is only its evaluation
 ! symbols, read over the FULL table, membership saying who stands:
 !
-!      size_of                  the table's width
+!      num_members                  the table's width
 !      values(x, at)            each table entry, evaluated at x,
 !                               reckoned about the point `at`
 !      slopes(x, at, n)         each entry's derivative along n
@@ -49,8 +49,8 @@
 module field_forms
 
   use iso_fortran_env    , only : dp => REAL64
-  use view_directed     , only : GRAPH_SIDE_VERTEX
-  use graph_fractal      , only : set_graph => graph
+  use view_directed     , only : SIDE_VERTEX
+  use graph_fractal      , only : graph
   use map_set_representation, only : listed_set_representation
 
   implicit none
@@ -65,12 +65,12 @@ module field_forms
      ! by the concretion; the representation is what restrict replaces.
      !----------------------------------------------------------------!
 
-     type(set_graph)                , private :: basis
+     type(graph)                , private :: basis
      type(listed_set_representation), private :: active
 
    contains
 
-     procedure(form_size_interface)  , deferred :: size_of
+     procedure(form_num_members_interface), deferred :: num_members
      procedure(form_values_interface), deferred :: values
      procedure(form_slopes_interface), deferred :: slopes
 
@@ -83,10 +83,10 @@ module field_forms
 
   abstract interface
 
-     pure integer function form_size_interface(this)
+     pure integer function form_num_members_interface(this)
        import :: form
        class(form), intent(in) :: this
-     end function form_size_interface
+     end function form_num_members_interface
 
      pure subroutine form_values_interface(this, x, at, phi)
        import :: form, dp
@@ -117,7 +117,7 @@ module field_forms
 
    contains
 
-     procedure :: size_of => polynomial_size
+     procedure :: num_members => polynomial_num_members
      procedure :: values  => polynomial_values
      procedure :: slopes  => polynomial_slopes
 
@@ -146,7 +146,7 @@ module field_forms
 
    contains
 
-     procedure :: size_of => harmonic_size
+     procedure :: num_members => harmonic_num_members
      procedure :: values  => harmonic_values
      procedure :: slopes  => harmonic_slopes
 
@@ -183,7 +183,7 @@ contains
   ! does not make it a different basis.
   !===================================================================!
 
-  type(set_graph) function basis_set(this) result(b)
+  type(graph) function basis_set(this) result(b)
 
     class(form), intent(in) :: this
 
@@ -231,15 +231,15 @@ contains
 
   end function create_polynomial
 
-  pure integer function polynomial_size(this)
+  pure integer function polynomial_num_members(this)
 
     class(polynomial_form), intent(in) :: this
 
     associate (u1 => this); end associate
 
-    polynomial_size = 4
+    polynomial_num_members = 4
 
-  end function polynomial_size
+  end function polynomial_num_members
 
   pure subroutine polynomial_values(this, x, at, phi)
 
@@ -281,15 +281,15 @@ contains
 
   end function create_harmonic
 
-  pure integer function harmonic_size(this)
+  pure integer function harmonic_num_members(this)
 
     class(harmonic_form), intent(in) :: this
 
     associate (u1 => this); end associate
 
-    harmonic_size = 3
+    harmonic_num_members = 3
 
-  end function harmonic_size
+  end function harmonic_num_members
 
   pure subroutine harmonic_values(this, x, at, phi)
 

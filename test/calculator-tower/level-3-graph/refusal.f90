@@ -22,7 +22,7 @@
 program calculator_level_3_refusal
 
   use calculator_assert     , only : OP_PLUS, OP_TIMES
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -33,7 +33,7 @@ program calculator_level_3_refusal
 
   implicit none
 
-  type(set_graph)          :: o
+  type(graph)          :: o
   type(csr_relation), target :: dep
   type(transposed_relation)      :: flipped
   type(graph)       , target :: elem

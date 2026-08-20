@@ -31,7 +31,7 @@ module affine_residual_fixture
 
   use iso_fortran_env  , only : dp => REAL64
   use calculator_assert, only : SLOT_C, SLOT_E
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -58,7 +58,7 @@ module affine_residual_fixture
      ! no identity and answers only where a member stands, so holding
      ! one keeps this type free of any caller's interpretation.
      !----------------------------------------------------------------!
-     type(set_graph) :: u, y
+     type(graph) :: u, y
      integer         :: n_u = 0, n_y = 0
      class(set_representation), allocatable :: u_coords, y_coords
    contains
@@ -74,10 +74,10 @@ module affine_residual_fixture
 contains
 
   type(affine_residual) function create_oracle(u, y, sets) result(this)
-    type(set_graph), intent(in) :: u, y
+    type(graph), intent(in) :: u, y
     type(set_map)  , intent(in) :: sets
-    this % u = u ; this % n_u = sets % size_of(u)
-    this % y = y ; this % n_y = sets % size_of(y)
+    this % u = u ; this % n_u = sets % num_members_of(u)
+    this % y = y ; this % n_y = sets % num_members_of(y)
     call sets % extent_of(u, this % u_coords)
     call sets % extent_of(y, this % y_coords)
   end function create_oracle
@@ -88,15 +88,15 @@ contains
     name = 'affine residual oracle'
   end function oracle_name
 
-  subroutine oracle_domain(this, input_graph, domain, nentries)
+  subroutine oracle_domain(this, input_graph, domain, num_entries)
     class(affine_residual), intent(in) :: this
     class(directed_graph), intent(in) :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
     integer         :: n_y
     associate (u1 => input_graph); end associate
     domain   = this % y
-    nentries = this % n_y
+    num_entries = this % n_y
   end subroutine oracle_domain
 
   subroutine oracle_apply(this, input_graph, input_data, output)
@@ -107,7 +107,7 @@ contains
     class(field), allocatable, intent(inout) :: output
 
     type(stored_field)                    :: out
-    type(set_graph) :: dom
+    type(graph) :: dom
     real(dp), allocatable          :: q(:), r(:)
     real(dp)                       :: qc, qe
     !----------------------------------------------------------------!
@@ -123,7 +123,7 @@ contains
     if (.not. dom % same_as(this % u)) then
        error stop 'oracle: the state must live on the unknown domain'
     end if
-    call input_data(1) % get_real_vector(q)
+    call input_data(1) % real_vector(q)
 
     ! Every access through U's own enumeration: U is { e, c }.
     qc = q(this % u_coords % local_index(SLOT_C))
@@ -148,7 +148,7 @@ program calculator_level_7
   use calculator_assert, only : report, verdict, SLOT_C, SLOT_E
   use view_directed_stored      , only : stored_directed_graph
   use operation_gmres, only : gmres
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -158,12 +158,12 @@ program calculator_level_7
 
   implicit none
 
-  type(set_graph)     :: x, y, hv
-  type(set_graph)      :: u
+  type(graph)     :: x, y, hv
+  type(graph)      :: u
   type(stored_directed_graph)    :: host
   type(affine_residual) :: oracle
   type(gmres)           :: solver
-  type(set_graph) :: dom
+  type(graph) :: dom
   real(dp), allocatable :: g(:), rhs(:), q(:)
   real(dp)              :: achieved
   integer               :: nfail
@@ -194,10 +194,10 @@ program calculator_level_7
        & nfail)
   hv = host % vertex_set()
   call report(.not. hv % same_as(u) .and. &
-       &      host % num_vertices() /= sets % size_of(u), &
+       &      host % num_vertices() /= sets % num_members_of(u), &
        & "the host's seven vertices are nobody's unknowns", nfail)
 
-  call solver % attach(oracle, host, u, sets % size_of(u))
+  call solver % attach(oracle, host, u, sets % num_members_of(u))
   solver % tolerance      = 1.0d-12
   solver % max_iterations = 50
 

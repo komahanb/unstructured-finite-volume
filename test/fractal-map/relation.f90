@@ -22,7 +22,7 @@
 module relation_prototype
 
   use graph_fractal, only : graph, null_branch, known_branch
-  use view_sequence, only : sequence_size, sequence_element
+  use view_sequence, only : sequence_num_elements, sequence_element
 
   implicit none
 
@@ -57,8 +57,8 @@ contains
     integer              :: k, n
 
     equal = .false.
-    n = sequence_size(x % branch(1))
-    if (n .ne. sequence_size(y % branch(1))) return
+    n = sequence_num_elements(x % branch(1))
+    if (n .ne. sequence_num_elements(y % branch(1))) return
 
     equal = .true.
     do k = 1, n
@@ -92,7 +92,7 @@ end module relation_prototype
 program relation_map
 
   use graph_fractal        , only : graph, null_branch, known_branch
-  use view_sequence  , only : sequence_size, sequence_element
+  use view_sequence  , only : sequence_num_elements, sequence_element
   use graph_fractal           , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
@@ -147,7 +147,7 @@ program relation_map
     raa % branch(1) = known_branch(saa(1))
 
     call check('1  A x A: arity 2, one repeated domain', &
-         & sequence_size(raa % branch(1)) .eq. 2)
+         & sequence_num_elements(raa % branch(1)) .eq. 2)
     d => sequence_element(raa % branch(1), 1)
     ok = d % same_as(a)
     d => sequence_element(raa % branch(1), 2)
@@ -162,7 +162,7 @@ program relation_map
 
     d => sequence_element(rab % branch(1), 2)
     call check('1  A x B: mixed domains, same mechanism', &
-         & sequence_size(rab % branch(1)) .eq. 2 .and. &
+         & sequence_num_elements(rab % branch(1)) .eq. 2 .and. &
          &  d % same_as(b) .and. .not. d % same_as(a))
 
     ! A x B x C.
@@ -173,7 +173,7 @@ program relation_map
     sabc(3) % branch(1) = known_branch(c)
     rabc % branch(1) = known_branch(sabc(1))
 
-    ok = sequence_size(rabc % branch(1)) .eq. 3
+    ok = sequence_num_elements(rabc % branch(1)) .eq. 3
     d => sequence_element(rabc % branch(1), 2); ok = ok .and. d % same_as(b)
     d => sequence_element(rabc % branch(1), 3); ok = ok .and. d % same_as(c)
     call check('1  A x B x C: arity 3 is a longer sequence, not a case', ok)

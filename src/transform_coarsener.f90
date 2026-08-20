@@ -31,7 +31,7 @@ module transform_coarsener
   use iso_fortran_env     , only : dp => REAL64
   use view_directed , only : directed_graph
   use field_calculus, only : field
-  use graph_fractal      , only : set_graph => graph
+  use graph_fractal      , only : graph
   use transform_structure, only : transform
   use view_directed_stored         , only : stored_directed_graph
   use field_stored   , only : stored_field
@@ -170,7 +170,7 @@ contains
     select type (input_data)
     class is (stored_field)
        block
-         type(set_graph) :: dom
+         type(graph) :: dom
          integer         :: n_dom
          dom   = input_data % domain()
          n_dom = input_data % num_entries()
@@ -330,7 +330,7 @@ contains
     type(stored_field)    :: out
     integer , allocatable :: blk(:), tally(:)
     real(dp), allocatable :: fv(:), cv(:)
-    integer :: nb, nv, ncomp, v, c, b
+    integer :: nb, nv, num_components, v, c, b
 
     select type (fine_data)
     class is (stored_field)
@@ -338,21 +338,21 @@ contains
        call blocks_of(this, fine_graph, blk, nb)
 
        nv    = fine_graph % num_vertices()
-       ncomp = fine_data % num_components()
+       num_components = fine_data % num_components()
 
        out = stored_field(fine_data % name(), coarse_graph % vertex_set(), coarse_graph % num_vertices(), &
-            &             ncomp=ncomp, unit_name=fine_data % units())
+            &             num_components=num_components, unit_name=fine_data % units())
 
-       call fine_data % get_real_vector(fv)
-       allocate(cv(nb * ncomp), tally(nb))
+       call fine_data % real_vector(fv)
+       allocate(cv(nb * num_components), tally(nb))
        cv    = 0.0_dp
        tally = 0
 
        do v = 1, nv
           b = blk(v)
           tally(b) = tally(b) + 1
-          do c = 1, ncomp
-             associate (to => (b - 1) * ncomp + c, from => (v - 1) * ncomp + c)
+          do c = 1, num_components
+             associate (to => (b - 1) * num_components + c, from => (v - 1) * num_components + c)
                if (from <= size(fv)) cv(to) = cv(to) + fv(from)
              end associate
           end do
@@ -361,8 +361,8 @@ contains
        if (this % average) then
           do b = 1, nb
              if (tally(b) > 0) then
-                do c = 1, ncomp
-                   cv((b - 1) * ncomp + c) = cv((b - 1) * ncomp + c) / real(tally(b), dp)
+                do c = 1, num_components
+                   cv((b - 1) * num_components + c) = cv((b - 1) * num_components + c) / real(tally(b), dp)
                 end do
              end if
           end do

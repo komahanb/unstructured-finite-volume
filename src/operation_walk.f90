@@ -49,7 +49,7 @@ module operation_walk
   use operation_action, only : operation
   use view_directed, only : directed_graph
   use field_calculus, only : field
-  use graph_fractal      , only : set_graph => graph
+  use graph_fractal      , only : graph
   use field_stored  , only : stored_field
 
   implicit none
@@ -133,17 +133,17 @@ contains
   !      depth          a distance per vertex
   !===================================================================!
 
-  subroutine walk_domain(this, input_graph, domain, nentries)
+  subroutine walk_domain(this, input_graph, domain, num_entries)
 
     class(walk) , intent(in)               :: this
     class(directed_graph), intent(in)               :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
 
     associate (u1 => this); end associate
 
     domain   = input_graph % all_vertices()
-    nentries = input_graph % num_vertices()
+    num_entries = input_graph % num_vertices()
 
   end subroutine walk_domain
 

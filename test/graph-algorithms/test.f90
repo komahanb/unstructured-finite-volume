@@ -30,7 +30,7 @@ program test_graph_algorithms
   use graph_fractal        , only : graph, known_branch, null_branch
   use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
-       & holds_set
+       & has_set
 
   implicit none
 
@@ -152,7 +152,7 @@ contains
     call report(size(idx) .eq. 2 .and. all(idx .eq. [5, 2]), &
          & "sinks are [5, 2], likewise", nfail)
 
-    call report(sets % has_in(src, 5) .and. sets % has_in(snk, 5), &
+    call report(sets % has(src, 5) .and. sets % has(snk, 5), &
          & "the isolated member is both source and sink", nfail)
 
     call report(declared_subobject(src, v, inclusions) .and. declared_subobject(snk, v, inclusions), &

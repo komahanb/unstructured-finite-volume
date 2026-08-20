@@ -23,11 +23,11 @@
 !
 !      members ····· structure     the edge's two ends and their
 !                                  neighbours, and on a headless
-!                                  edge its own center point
-!      positions ··· data          centers on that constellation
+!                                  edge its own centre point
+!      positions ··· data          centres on that constellation
 !      fit ········· algebra       one apply of a fit over the HANDED
 !                                  form, aimed along the edge normal
-!                                  at the edge center
+!                                  at the edge centre
 !      exchange ···· incidence     the value lands plus on the tail
 !                                  and minus on the head, once -
 !                                  what one end receives the other
@@ -93,7 +93,7 @@ contains
     type(stored_directed_graph) :: constellation
     type(stored_field)   :: positions
     class(field), allocatable :: answer
-    real(dp), allocatable :: areas(:), normals(:), fcenters(:), centers(:)
+    real(dp), allocatable :: areas(:), normals(:), fcentres(:), centres(:)
     integer , allocatable :: rows(:), columns(:), hood(:)
     real(dp), allocatable :: weights(:), pts(:), w(:), constant(:)
     real(dp) :: xf(3), vb, wb
@@ -103,13 +103,13 @@ contains
     ne = m % num_edges()
 
     fa = m % face_area()
-    call fa % get_real_vector(areas)
+    call fa % real_vector(areas)
     fn = m % face_normal()
-    call fn % get_real_vector(normals)
-    fc = m % face_center()
-    call fc % get_real_vector(fcenters)
-    fcc = m % cell_center()
-    call fcc % get_real_vector(centers)
+    call fn % real_vector(normals)
+    fc = m % face_centre()
+    call fc % real_vector(fcentres)
+    fcc = m % cell_centre()
+    call fcc % real_vector(centres)
 
     allocate(rows(0), columns(0), weights(0))
     allocate(constant(nv))
@@ -130,14 +130,14 @@ contains
        ! Data: the positions on it.
        allocate(pts(3 * npts))
        do j = 1, size(hood)
-          pts(3 * j - 2 : 3 * j) = centers(3 * hood(j) - 2 : 3 * hood(j))
+          pts(3 * j - 2 : 3 * j) = centres(3 * hood(j) - 2 : 3 * hood(j))
        end do
-       xf = fcenters(3 * e - 2 : 3 * e)
+       xf = fcentres(3 * e - 2 : 3 * e)
        if (h == 0) pts(3 * npts - 2 : 3 * npts) = xf
 
        constellation = stored_directed_graph(npts, tails=[integer ::], heads=[integer ::])
        positions = stored_field('positions', constellation % vertex_set(), &
-            & constellation % num_vertices(), ncomp=3)
+            & constellation % num_vertices(), num_components=3)
        call positions % set_real_vector(pts)
 
        ! Algebra: one apply, aimed along the normal at the face.
@@ -145,7 +145,7 @@ contains
             & direction=normals(3 * e - 2 : 3 * e), &
             & scale=scales(e))
        call fitting % apply(constellation, [positions], answer)
-       call answer % get_real_vector(w)
+       call answer % real_vector(w)
 
        ! The exchange: the value lands once, plus to the tail,
        ! minus to the head; the edge's own point leaves its share

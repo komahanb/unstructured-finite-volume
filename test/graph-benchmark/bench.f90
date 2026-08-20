@@ -25,7 +25,7 @@ program bench_graph_traversal
   use iso_fortran_env        , only : dp => REAL64, int64
   use view_directed    , only : directed_graph
   use field_calculus   , only : field
-  use graph_fractal          , only : set_graph => graph
+  use graph_fractal          , only : graph
   use map_set_representation, only : counted_set_representation
   use map_set          , only : set_map
   use map_label        , only : label_map
@@ -48,7 +48,7 @@ program bench_graph_traversal
   integer, parameter :: ne = (nx - 1) * ny + nx * (ny - 1)
 
   type(stored_directed_graph)              :: g
-  type(set_graph)                 :: vcarrier, ecarrier
+  type(graph)                 :: vcarrier, ecarrier
   type(set_map)                   :: sets
   type(label_map)                 :: labels
   type(inclusion_map)             :: inclusions
@@ -62,7 +62,7 @@ program bench_graph_traversal
   type(assembler)                 :: a
   class(directed_graph), allocatable       :: part
   class(field), allocatable :: pd, fd, yf
-  type(set_graph)                 :: von, eon
+  type(graph)                 :: von, eon
   type(stored_field)                     :: q, z
   integer, allocatable            :: tails(:), heads(:), idx(:)
   real(dp), allocatable           :: qv(:), zv(:)
@@ -257,7 +257,7 @@ program bench_graph_traversal
   a = assembler()
   call system_clock(t0)
   do k = 1, 4
-     p = partitioner(PARTITION_LINEAR, nparts=4, part=k)
+     p = partitioner(PARTITION_LINEAR, num_parts=4, part=k)
      call p % partition_graph(g, part, rp)
   end do
   call system_clock(t1)
@@ -272,7 +272,7 @@ program bench_graph_traversal
 
   call system_clock(t0)
   do k = 1, 4
-     p = partitioner(PARTITION_LINEAR, nparts=4, part=k)
+     p = partitioner(PARTITION_LINEAR, num_parts=4, part=k)
      call p % partition_graph(g, part, rp)
      call sets % bind(part % vertex_set(), &
           & counted_set_representation(part % num_vertices()))

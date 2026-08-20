@@ -32,7 +32,7 @@ module constituted_residual_fixture
   ! entire numerical act is delegation.
 
   use iso_fortran_env  , only : dp => REAL64
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -44,7 +44,7 @@ module constituted_residual_fixture
   use graph_fractal        , only : graph, known_branch, null_branch
   use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
-       & holds_set
+       & has_set
   use operation_action, only : operation
   use view_directed, only : directed_graph
   use field_calculus, only : field
@@ -59,8 +59,8 @@ module constituted_residual_fixture
   type, extends(operation) :: constituted_residual
      class(relation), allocatable :: flow      ! the GRAPH-OWNED copy
      class(relation), allocatable :: located
-     type(set_graph)            :: xs, os, ys
-     type(set_graph)             :: known, unknown
+     type(graph)            :: xs, os, ys
+     type(graph)             :: known, unknown
      ! Identities, counts, and the action's OWN coordinates - copied
      ! in at construction, the way a CSR relation copies the numbering
      ! it executes against. A representation carries no identity and
@@ -95,9 +95,9 @@ contains
     type(graph)             , intent(in) :: g
     type(relational_binding), intent(in) :: b
     class(relation)  , intent(in) :: selector, located
-    type(set_graph), intent(in) :: xs, os, ys
+    type(graph), intent(in) :: xs, os, ys
     type(set_map)  , intent(in) :: sets
-    type(set_graph) , intent(in) :: known, unknown
+    type(graph) , intent(in) :: known, unknown
     real(dp)         , intent(in) :: known_values(:)
     type(constituted_residual)    :: this
 
@@ -124,11 +124,11 @@ contains
     allocate(this % flow, source=rp)
 
     allocate(this % located, source=located)
-    this % xs = xs ; this % n_xs = sets % size_of(xs)
-    this % os = os ; this % n_os = sets % size_of(os)
-    this % ys = ys ; this % n_ys = sets % size_of(ys)
-    this % known   = known   ; this % n_known   = sets % size_of(known)
-    this % unknown = unknown ; this % n_unknown = sets % size_of(unknown)
+    this % xs = xs ; this % n_xs = sets % num_members_of(xs)
+    this % os = os ; this % n_os = sets % num_members_of(os)
+    this % ys = ys ; this % n_ys = sets % num_members_of(ys)
+    this % known   = known   ; this % n_known   = sets % num_members_of(known)
+    this % unknown = unknown ; this % n_unknown = sets % num_members_of(unknown)
 
     call sets % extent_of(xs,      this % c_xs)
     call sets % extent_of(os,      this % c_os)
@@ -145,15 +145,15 @@ contains
     name = 'constituted residual'
   end function cr_name
 
-  subroutine cr_domain(this, input_graph, domain, nentries)
+  subroutine cr_domain(this, input_graph, domain, num_entries)
     class(constituted_residual), intent(in) :: this
     class(directed_graph), intent(in) :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
     integer         :: n_ys
     associate (u1 => input_graph); end associate
     domain   = this % ys
-    nentries = this % n_ys
+    num_entries = this % n_ys
   end subroutine cr_domain
 
   subroutine cr_apply(this, input_graph, input_data, output)
@@ -166,7 +166,7 @@ contains
     type(set_map) :: mine
 
     type(stored_field)                    :: out
-    type(set_graph) :: dom
+    type(graph) :: dom
     real(dp), allocatable          :: ustate(:), r(:)
     integer         :: n_os
     integer         :: n_xs
@@ -185,7 +185,7 @@ contains
     if (.not. dom % same_as(this % unknown)) then
        error stop 'statement: the state must live on the unknown domain'
     end if
-    call input_data(1) % get_real_vector(ustate)
+    call input_data(1) % real_vector(ustate)
 
     !----------------------------------------------------------------!
     ! The action's own coordinates, rebound into a LOCAL map for the
@@ -222,7 +222,7 @@ program calculator_level_9
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
   use field_calculus, only : field
   use relation_finitary   , only : stored_relation, relation
-  use graph_fractal        , only : graph, set_graph => graph, &
+  use graph_fractal        , only : graph, graph, &
        & known_branch, null_branch
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
@@ -230,7 +230,7 @@ program calculator_level_9
   use map_inclusion  , only : inclusion_map, declared_subobject
   use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
-       & holds_set
+       & has_set
   use relation_algebra, only : restrict_slot, project_slots, &
        &                             compose_binary
   use view_directed_stored      , only : stored_directed_graph
@@ -243,8 +243,8 @@ program calculator_level_9
   integer, parameter :: ROW_C = 1
   integer, parameter :: ROW_E = 2
 
-  type(set_graph)     :: x, o, p, y
-  type(set_graph)      :: k, u, p_out, p_in
+  type(graph)     :: x, o, p, y
+  type(graph)      :: k, u, p_out, p_in
   type(stored_relation), allocatable :: flow
   type(stored_relation) :: located, t_out3, t_in3, produces, consumes
   class(relation), allocatable       :: d
@@ -257,7 +257,7 @@ program calculator_level_9
   type(constituted_residual) :: residual_op
   type(gmres)           :: solver
   type(stored_field)           :: rhsf
-  type(set_graph)  :: dom
+  type(graph)  :: dom
   class(field), allocatable :: sol, rf
   real(dp), allocatable :: gv(:), solval(:), rv(:)
   real(dp)              :: answer
@@ -355,7 +355,7 @@ program calculator_level_9
   host = stored_directed_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
 
   ! -- the ordinary solver, through its own operation face
-  call solver % attach(residual_op, host, u, sets % size_of(u))
+  call solver % attach(residual_op, host, u, sets % num_members_of(u))
   solver % tolerance      = 1.0d-12
   solver % max_iterations = 50
 
@@ -364,7 +364,7 @@ program calculator_level_9
        & "the solver answers on U = { c, e }", nfail)
 
   call solver % constant(gv)
-  rhsf = stored_field('rhs', y, sets % size_of(y))
+  rhsf = stored_field('rhs', y, sets % num_members_of(y))
   call rhsf % set_real_vector(-gv)
 
   call solver % apply(host, [rhsf], sol)
@@ -378,12 +378,12 @@ program calculator_level_9
   type is (stored_field)
      call residual_op % apply(host, [sol], rf)
   end select
-  call rf % get_real_vector(rv)
+  call rf % real_vector(rv)
   call report(sqrt(sum(rv * rv)) < 1.0d-9, &
        & "the constituted residual vanishes at the solution", nfail)
 
   ! -- the statement's one question
-  call sol % get_real_vector(solval)
+  call sol % real_vector(solval)
   answer = solval(sets % index_in(u, SLOT_E))
 
   call report(abs(answer - 20.0_dp) < 1.0d-9, &

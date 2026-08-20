@@ -133,7 +133,7 @@ Indentation is `extends`; brackets name the file.
     7    solve:       operation_minimization + members, marcher,
                       step_policy, change protocol + value map
     8-9  physics:     balance, fitted_balance, advection, conduction,
-                      diffusion_statement, robin_condition,
+                      diffusion_stencil, robin_condition,
                       mesh + loaders
 
 An import may only point downward in this list.
@@ -150,8 +150,8 @@ on vertices), and tag names. Everything else is derived, in
     F2C    = {(f, c) : F2V(f) subset of C2V(c)}     (<= 2 cells per face)
     C2F    = transpose(F2C)
     measurements = pure functions of coordinates and the relations:
-                   cell centers/volumes, face centers/areas/normals,
-                   center-to-center vectors, deltas, weights
+                   cell centres/volumes, face centres/areas/normals,
+                   centre-to-centre vectors, deltas, weights
 
 `view_mesh_builder` seats the result as `view_mesh`: the
 directed view whose vertices are cells and whose edges are the

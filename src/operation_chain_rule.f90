@@ -40,7 +40,7 @@ module operation_chain_rule
   use iso_fortran_env     , only : dp => REAL64, int64
   use view_directed , only : directed_graph
   use field_calculus, only : field
-  use graph_fractal       , only : set_graph => graph
+  use graph_fractal       , only : graph
   use operation_discretization      , only : differentiable_operation
   use field_stored   , only : stored_field
 
@@ -142,7 +142,7 @@ contains
     type(derivative_partition), allocatable :: partitions(:)
     real(dp), allocatable :: running(:)
     logical :: started
-    integer :: p, ncomp
+    integer :: p, num_components
 
     associate(unread => this)
     end associate
@@ -159,18 +159,18 @@ contains
        return
     end if
 
-    call get_partitions(degree, partitions)
+    call enumerate_partitions(degree, partitions)
 
     started = .false.
-    ncomp   = 1
+    num_components   = 1
 
     do p = 1, size(partitions)
        call assemble_partition(statement, input_graph, input_data, &
-            & partitions(p), paths, running, started, ncomp)
+            & partitions(p), paths, running, started, num_components)
     end do
 
     call write_output(statement, input_graph, input_data, running, &
-         & started, ncomp, output)
+         & started, num_components, output)
 
   end subroutine assemble
 
@@ -210,7 +210,7 @@ contains
   ! then lexicographically, each with its multinomial count.
   !===================================================================!
 
-  subroutine get_partitions(degree, partitions)
+  subroutine enumerate_partitions(degree, partitions)
 
     integer                                , intent(in)  :: degree
     type(derivative_partition), allocatable, intent(out) :: partitions(:)
@@ -226,7 +226,7 @@ contains
        deallocate(tuple)
     end do
 
-  end subroutine get_partitions
+  end subroutine enumerate_partitions
 
   recursive subroutine generate_partitions(remaining, tuple, position, &
        & minimum, partitions)
@@ -336,7 +336,7 @@ contains
   !===================================================================!
 
   subroutine assemble_partition(statement, input_graph, input_data, &
-       & partition, paths, running, started, ncomp)
+       & partition, paths, running, started, num_components)
 
     class(differentiable_operation), intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
@@ -345,7 +345,7 @@ contains
     type(argument_path)            , intent(in)    :: paths(:)
     real(dp), allocatable          , intent(inout) :: running(:)
     logical                        , intent(inout) :: started
-    integer                        , intent(inout) :: ncomp
+    integer                        , intent(inout) :: num_components
 
     integer :: chosen(size(partition % slot_degree))
     integer :: k, j, npaths
@@ -370,7 +370,7 @@ contains
 
        if (admitted) then
           call emit_term(statement, input_graph, input_data, partition, &
-               & paths, chosen, running, started, ncomp)
+               & paths, chosen, running, started, num_components)
        end if
 
        ! the odometer: advance the last entry, carrying leftwards
@@ -397,7 +397,7 @@ contains
   !===================================================================!
 
   subroutine emit_term(statement, input_graph, input_data, partition, &
-       & paths, chosen, running, started, ncomp)
+       & paths, chosen, running, started, num_components)
 
     class(differentiable_operation), intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
@@ -407,7 +407,7 @@ contains
     integer                        , intent(in)    :: chosen(:)
     real(dp), allocatable          , intent(inout) :: running(:)
     logical                        , intent(inout) :: started
-    integer                        , intent(inout) :: ncomp
+    integer                        , intent(inout) :: num_components
 
     class(field), allocatable :: output
     type(stored_field) :: directions(size(chosen))
@@ -430,7 +430,7 @@ contains
     call statement % partial_action(input_graph, input_data, slots, &
          & directions, output)
 
-    call output % get_real_vector(term)
+    call output % real_vector(term)
 
     if (started) then
        if (size(term) /= size(running)) then
@@ -439,7 +439,7 @@ contains
        running = running + real(partition % coefficient, dp) * term
     else
        running = real(partition % coefficient, dp) * term
-       ncomp   = output % num_components()
+       num_components   = output % num_components()
        started = .true.
     end if
 
@@ -452,32 +452,32 @@ contains
   !===================================================================!
 
   subroutine write_output(statement, input_graph, input_data, running, &
-       & started, ncomp, output)
+       & started, num_components, output)
 
     class(differentiable_operation), intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
     type(stored_field)                    , intent(in)    :: input_data(:)
     real(dp), allocatable          , intent(inout) :: running(:)
     logical                        , intent(in)    :: started
-    integer                        , intent(in)    :: ncomp
+    integer                        , intent(in)    :: num_components
     class(field), allocatable, intent(inout) :: output
 
     class(field), allocatable :: value
     type(stored_field)     :: total
-    type(set_graph) :: on
+    type(graph) :: on
     integer         :: n_on, width
 
     call statement % domain(input_graph, on, n_on)
 
-    width = ncomp
+    width = num_components
     if (.not. started) then
        call statement % apply(input_graph, input_data, value)
-       call value % get_real_vector(running)
+       call value % real_vector(running)
        running = 0.0_dp
        width   = value % num_components()
     end if
 
-    total = stored_field('total derivative', on, size(running) / width, ncomp=width)
+    total = stored_field('total derivative', on, size(running) / width, num_components=width)
     call total % set_real_vector(running)
 
     if (allocated(output)) deallocate(output)

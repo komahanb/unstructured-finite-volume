@@ -103,7 +103,7 @@ contains
        ne = fine % pattern % num_edges()
        allocate(rows(ne), columns(ne), weights(ne))
 
-       call fine % weights % get_real_vector(weights)
+       call fine % weights % real_vector(weights)
        do e = 1, ne
           rows(e)    = aggregates(fine % pattern % edge_head(e))
           columns(e) = aggregates(fine % pattern % edge_tail(e))
@@ -135,7 +135,7 @@ contains
     ! unknowns, and saying so here makes that a caller's statement
     ! rather than the minimizer's assumption.
     call this % smoother % attach(this % action, this % on, &
-         & this % unknown_domain, this % n_unknown_domain, coupling = this % on)
+         & this % unknown_domain, this % num_unknowns, coupling = this % on)
 
     ! The coarse statement carries its own stencil, and that stencil
     ! is exactly the coupling of the coarse unknowns.

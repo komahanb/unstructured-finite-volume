@@ -39,7 +39,7 @@ module operation_stencil
   use relation_binary, only : group_by_key
   use field_stored  , only : stored_field
   use view_directed_stored        , only : stored_directed_graph
-  use graph_fractal      , only : set_graph => graph
+  use graph_fractal      , only : graph
 
   implicit none
 
@@ -153,17 +153,17 @@ contains
 
   end function stencil_name
 
-  subroutine stencil_domain(this, input_graph, domain, nentries)
+  subroutine stencil_domain(this, input_graph, domain, num_entries)
 
     class(stencil), intent(in)    :: this
     class(directed_graph), intent(in)               :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
 
     associate (u1 => this); end associate
 
     domain   = input_graph % all_vertices()
-    nentries = input_graph % num_vertices()
+    num_entries = input_graph % num_vertices()
 
   end subroutine stencil_domain
 
@@ -185,11 +185,11 @@ contains
 
     nv = input_graph % num_vertices()
 
-    call this % constants % get_real_vector(y)
+    call this % constants % real_vector(y)
 
     if (present(input_data)) then
-       call input_data(1) % get_real_vector(q)
-       call this % weights % get_real_vector(w)
+       call input_data(1) % real_vector(q)
+       call this % weights % real_vector(w)
        do e = 1, this % pattern % num_edges()
           y(this % pattern % edge_head(e)) = &
                & y(this % pattern % edge_head(e)) &

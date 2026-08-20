@@ -26,8 +26,8 @@ program test_graph_constitution
   use iso_fortran_env, only : dp => REAL64
   use view_directed, only : directed_graph
   use field_calculus, only : field
-  use view_directed , only : GRAPH_SIDE_VERTEX
-  use graph_fractal  , only : set_graph => graph
+  use view_directed , only : SIDE_VERTEX
+  use graph_fractal  , only : graph
   use map_set  , only : set_map
   use map_label, only : label_map
   use map_inclusion, only : inclusion_map
@@ -40,7 +40,7 @@ program test_graph_constitution
   use operation_balance  , only : balance
   use operation_conduction     , only : conduction
   use operation_advection      , only : advection
-  use operation_diffusion, only : diffusion_statement
+  use operation_diffusion, only : diffusion_stencil
   use operation_stencil  , only : stencil
   use operation_gmres    , only : gmres
 
@@ -91,14 +91,14 @@ contains
 
     m = mesh(2, tails=[1, 1, 2], heads=[2, 0, 0], &
          & volumes      = [1.5_dp, 2.5_dp], &
-         & cell_centers = [0.5_dp, 0.0_dp, 0.0_dp, &
+         & cell_centres = [0.5_dp, 0.0_dp, 0.0_dp, &
          &                 1.5_dp, 0.0_dp, 0.0_dp], &
          & areas        = [2.0_dp, 0.7_dp, 1.1_dp], &
          & deltas       = [0.8_dp, 0.3_dp, 0.6_dp], &
          & normals      = [ 1.0_dp, 0.0_dp, 0.0_dp, &
          &                 -1.0_dp, 0.0_dp, 0.0_dp, &
          &                  1.0_dp, 0.0_dp, 0.0_dp], &
-         & face_centers = [1.0_dp, 0.0_dp, 0.0_dp, &
+         & face_centres = [1.0_dp, 0.0_dp, 0.0_dp, &
          &                 0.0_dp, 0.0_dp, 0.0_dp, &
          &                 2.0_dp, 0.0_dp, 0.0_dp], &
          & weights      = [0.5_dp, 1.0_dp, 1.0_dp], &
@@ -122,7 +122,7 @@ contains
     ! check, so their interpretation is local to it.
     !----------------------------------------------------------------!
 
-    type(set_graph)     :: members
+    type(graph)     :: members
     type(set_map)       :: sets
     type(label_map)     :: labels
     type(inclusion_map) :: inclusions
@@ -131,7 +131,7 @@ contains
     bc = dirichlet('in', 5.0_dp)
 
     call bc % faces(m, sets, labels, inclusions, members)
-    call report(sets % size_of(members) == 1, &
+    call report(sets % num_members_of(members) == 1, &
          & 'the tag names one face', nfail)
     call report(sets % member_of(members, 1) == 2, &
          & 'and it is the second face', nfail)
@@ -191,11 +191,11 @@ contains
     call report(abs(got(1) - (-kappa * area * c / (delta * denom))) < tol, &
          & name // ': the diffusive constant matches', nfail)
 
-    call bc % adv_lhs_coefficients(m, vn, got)
+    call bc % advection_lhs_coefficients(m, vn, got)
     call report(abs(got(1) - (-vn * area * (b / delta) / denom)) < tol, &
          & name // ': the advective diagonal matches', nfail)
 
-    call bc % adv_rhs_coefficients(m, vn, got)
+    call bc % advection_rhs_coefficients(m, vn, got)
     call report(abs(got(1) - (vn * area * c / denom)) < tol, &
          & name // ': the advective constant matches', nfail)
 
@@ -217,7 +217,7 @@ contains
     type(robin_condition) :: bc
     type(differential_operator) :: with_wall, without
     type(stored_field) :: state
-    type(set_graph) :: cells
+    type(graph) :: cells
     class(field), allocatable :: y
     real(dp), allocatable :: cin(:), bin(:), rows_with(:), rows_without(:)
     real(dp) :: c(3), b(3), expected
@@ -242,13 +242,13 @@ contains
     with_wall = vertex_derivative(order=2, coefficients=c, &
          & spacings=[0.8_dp, 0.3_dp, 0.6_dp], boundary_values=b)
     call with_wall % apply(m, [state], y)
-    call y % get_real_vector(rows_with)
+    call y % real_vector(rows_with)
 
     without = vertex_derivative(order=2, &
          & coefficients=[c(1), 0.0_dp, 0.0_dp], &
          & spacings=[0.8_dp, 0.3_dp, 0.6_dp])
     call without % apply(m, [state], y)
-    call y % get_real_vector(rows_without)
+    call y % real_vector(rows_without)
 
     ! lhs*q1 - rhs, from the recorded formulas at a=1, b=0, c=5.
     expected = (-kappa * 0.7_dp / 0.3_dp) * q1 &
@@ -322,7 +322,7 @@ contains
     type(advection) :: flow
     type(balance) :: sums
     type(stored_field) :: state
-    type(set_graph) :: cells
+    type(graph) :: cells
     class(field), allocatable :: y
     real(dp), allocatable :: vn(:), c(:), got(:)
     real(dp), parameter :: q1 = 2.0_dp, q2 = 4.0_dp
@@ -349,7 +349,7 @@ contains
     sums = balance(edge_terms=[edge_derivative(order=0, &
          & coefficients=c, one_sided=.true.)])
     call sums % apply(m, [state], y)
-    call y % get_real_vector(got)
+    call y % real_vector(got)
 
     wp = max(vn(1), 0.0_dp)
     wn = min(vn(1), 0.0_dp)
@@ -363,7 +363,7 @@ contains
     sums = balance(edge_terms=[edge_derivative(order=0, &
          & coefficients=c, one_sided=.true.)])
     call sums % apply(m, [state], y)
-    call y % get_real_vector(got)
+    call y % real_vector(got)
 
     wp = max(-1.5_dp, 0.0_dp)
     wn = min(-1.5_dp, 0.0_dp)
@@ -376,7 +376,7 @@ contains
     sums = balance(edge_terms=[edge_derivative(order=0, &
          & coefficients=c, one_sided=.false.)])
     call sums % apply(m, [state], y)
-    call y % get_real_vector(got)
+    call y % real_vector(got)
 
     wp = 0.5_dp * 1.5_dp
     wn = 0.5_dp * 1.5_dp
@@ -403,7 +403,7 @@ contains
 
     m = hand_mesh()
 
-    op = diffusion_statement(m, conduction(1.7_dp), &
+    op = diffusion_stencil(m, conduction(1.7_dp), &
          & [dirichlet('in', 0.0_dp), dirichlet('out', 10.0_dp)])
 
     call gm % attach(op, m, m % vertex_set(), m % num_vertices())
@@ -449,7 +449,7 @@ contains
 
     ! Held at five on one side, insulated on the other: nothing
     ! enters and nothing leaves, so five fills the domain exactly.
-    op = diffusion_statement(m, conduction(1.7_dp), &
+    op = diffusion_stencil(m, conduction(1.7_dp), &
          & [dirichlet('in', 5.0_dp), neumann('out', 0.0_dp)])
 
     call solve_statement(op, m, x, achieved)
@@ -461,11 +461,11 @@ contains
 
     ! And a mixed wall is its own wall: robin(2, 3, 5) shares c/a
     ! with dirichlet(2.5) and must not compile to the same operator.
-    op = diffusion_statement(m, conduction(1.7_dp), &
+    op = diffusion_stencil(m, conduction(1.7_dp), &
          & [dirichlet('in', 0.0_dp), robin('out', 2.0_dp, 3.0_dp, 5.0_dp)])
     call solve_statement(op, m, mixed, achieved)
 
-    op = diffusion_statement(m, conduction(1.7_dp), &
+    op = diffusion_stencil(m, conduction(1.7_dp), &
          & [dirichlet('in', 0.0_dp), dirichlet('out', 2.5_dp)])
     call solve_statement(op, m, pinned, achieved)
 

@@ -28,8 +28,8 @@ module view_gmsh_loader
   use view_mesh_loader , only : mesh_loader
   use util_file            , only : file
   use util_string          , only : string
-  use view_mesh_geometry   , only : find, elem_type_dimension, &
-       & elem_type_vertex_count
+  use view_mesh_geometry   , only : find, element_dimension, &
+       & element_num_vertices
   use util_verbosity      , only : verbosity
 
   implicit none
@@ -56,7 +56,7 @@ module view_gmsh_loader
    contains
 
      ! Implement the deferred procedure from the interface.
-     procedure :: get_mesh_data
+     procedure :: mesh_data
 
   end type gmsh_loader
 
@@ -84,7 +84,7 @@ contains
   ! Supply all the information needed to create a mesh object.
   !====================================================================!
 
-  impure subroutine get_mesh_data(this, &
+  impure subroutine mesh_data(this, &
        & num_vertices, vertex_numbers, vertex_tags , vertices ,  &
        & num_edges   , edge_numbers  , edge_tags   , edge_vertices , num_edge_vertices , &
        & num_faces   , face_numbers  , face_tags   , face_vertices , num_face_vertices , &
@@ -179,7 +179,7 @@ contains
       ! The first line of $MeshFormat carries the version number.
       associate(mlines => lines(idx_start_mesh+1:idx_start_mesh+1))
         call mlines(1) % tokenize(" ", num_tokens, tokens)
-        if (floor(tokens(1) % asreal()) .ne. 4) then
+        if (floor(tokens(1) % as_real()) .ne. 4) then
            print *, "mesh format ", tokens(1) % str, &
                 & " is not msh 4.x - regenerate with python meshgen/generate.py"
            error stop
@@ -203,7 +203,7 @@ contains
       associate(tag_lines => lines(idx_start_physical_names+1:idx_end_physical_names-1))
 
         ! Set the intent(out) variable for the number of tags present.
-        num_tags = tag_lines(1) % asinteger()
+        num_tags = tag_lines(1) % as_integer()
 
         ! Allocate space for the other two return variables.
         allocate(tag_info(num_tags))
@@ -218,8 +218,8 @@ contains
            call tag_lines(iline+1) % tokenize(" ", num_tokens, tokens)
 
            ! The first token is the physical dimension; the second is the tag number.
-           tag_physical_dimensions(iline) = tokens(1) % asinteger()
-           tag_numbers(iline)             = tokens(2) % asinteger()
+           tag_physical_dimensions(iline) = tokens(1) % as_integer()
+           tag_numbers(iline)             = tokens(2) % as_integer()
 
            !----------------------------------------------------------!
            ! The name is the quoted string on the line. Take everything
@@ -264,10 +264,10 @@ contains
       ! The header line counts the points, curves, surfaces and volumes.
       il = idx_start_entities + 1
       call lines(il) % tokenize(" ", num_tokens, tokens)
-      np = tokens(1) % asinteger()
-      nc = tokens(2) % asinteger()
-      ns = tokens(3) % asinteger()
-      nv = tokens(4) % asinteger()
+      np = tokens(1) % as_integer()
+      nc = tokens(2) % as_integer()
+      ns = tokens(3) % as_integer()
+      nv = tokens(4) % as_integer()
 
       allocate(ent_tag0(np), ent_phys0(np))
       ent_phys0 = 0
@@ -283,34 +283,34 @@ contains
       ! A point line reads: tag x y z numPhys phys... (numPhys sits at token 5).
       do ie = 1, np
          call lines(il) % tokenize(" ", num_tokens, tokens)
-         ent_tag0(ie) = tokens(1) % asinteger()
-         nphys = tokens(5) % asinteger()
-         if (nphys .gt. 0) ent_phys0(ie) = tokens(6) % asinteger()
+         ent_tag0(ie) = tokens(1) % as_integer()
+         nphys = tokens(5) % as_integer()
+         if (nphys .gt. 0) ent_phys0(ie) = tokens(6) % as_integer()
          il = il + 1
       end do
 
       ! A curve, surface or volume line reads: tag bbox(6) numPhys phys... (numPhys sits at token 8).
       do ie = 1, nc
          call lines(il) % tokenize(" ", num_tokens, tokens)
-         ent_tag1(ie) = tokens(1) % asinteger()
-         nphys = tokens(8) % asinteger()
-         if (nphys .gt. 0) ent_phys1(ie) = tokens(9) % asinteger()
+         ent_tag1(ie) = tokens(1) % as_integer()
+         nphys = tokens(8) % as_integer()
+         if (nphys .gt. 0) ent_phys1(ie) = tokens(9) % as_integer()
          il = il + 1
       end do
 
       do ie = 1, ns
          call lines(il) % tokenize(" ", num_tokens, tokens)
-         ent_tag2(ie) = tokens(1) % asinteger()
-         nphys = tokens(8) % asinteger()
-         if (nphys .gt. 0) ent_phys2(ie) = tokens(9) % asinteger()
+         ent_tag2(ie) = tokens(1) % as_integer()
+         nphys = tokens(8) % as_integer()
+         if (nphys .gt. 0) ent_phys2(ie) = tokens(9) % as_integer()
          il = il + 1
       end do
 
       do ie = 1, nv
          call lines(il) % tokenize(" ", num_tokens, tokens)
-         ent_tag3(ie) = tokens(1) % asinteger()
-         nphys = tokens(8) % asinteger()
-         if (nphys .gt. 0) ent_phys3(ie) = tokens(9) % asinteger()
+         ent_tag3(ie) = tokens(1) % as_integer()
+         nphys = tokens(8) % as_integer()
+         if (nphys .gt. 0) ent_phys3(ie) = tokens(9) % as_integer()
          il = il + 1
       end do
 
@@ -336,8 +336,8 @@ contains
 
       il = idx_start_nodes + 1
       call lines(il) % tokenize(" ", num_tokens, tokens)
-      numblocks    = tokens(1) % asinteger()
-      num_vertices = tokens(2) % asinteger()
+      numblocks    = tokens(1) % as_integer()
+      num_vertices = tokens(2) % as_integer()
 
       allocate(vertex_numbers(num_vertices))
       vertex_numbers = 0
@@ -353,7 +353,7 @@ contains
 
          ! The block header reads: entityDim entityTag parametric numNodesInBlock.
          call lines(il) % tokenize(" ", num_tokens, tokens)
-         k  = tokens(4) % asinteger()
+         k  = tokens(4) % as_integer()
          il = il + 1
 
          !------------------------------------------------------------!
@@ -405,7 +405,7 @@ contains
 
       il = idx_start_elements + 1
       call lines(il) % tokenize(" ", num_tokens, tokens)
-      numblocks = tokens(1) % asinteger()
+      numblocks = tokens(1) % as_integer()
       il0       = idx_start_elements + 2
 
       ! Pass A finds the mesh (top) dimension from the element types present.
@@ -413,9 +413,9 @@ contains
       il = il0
       do ib = 1, numblocks
          call lines(il) % tokenize(" ", num_tokens, tokens)
-         etype    = tokens(3) % asinteger()
-         k        = tokens(4) % asinteger()
-         mesh_dim = max(mesh_dim, elem_type_dimension(etype))
+         etype    = tokens(3) % as_integer()
+         k        = tokens(4) % as_integer()
+         mesh_dim = max(mesh_dim, element_dimension(etype))
          il = il + 1 + k
       end do
 
@@ -426,9 +426,9 @@ contains
       il = il0
       do ib = 1, numblocks
          call lines(il) % tokenize(" ", num_tokens, tokens)
-         etype = tokens(3) % asinteger()
-         k     = tokens(4) % asinteger()
-         edim  = elem_type_dimension(etype)
+         etype = tokens(3) % as_integer()
+         k     = tokens(4) % as_integer()
+         edim  = element_dimension(etype)
          if (edim .eq. mesh_dim) then
             num_cells = num_cells + k
          else if (edim .eq. mesh_dim - 1) then
@@ -490,13 +490,13 @@ contains
 
          ! The block header reads: entityDim entityTag elementType numElementsInBlock.
          call lines(il) % tokenize(" ", num_tokens, tokens)
-         bdim  = tokens(1) % asinteger()
-         btag  = tokens(2) % asinteger()
-         etype = tokens(3) % asinteger()
-         k     = tokens(4) % asinteger()
+         bdim  = tokens(1) % as_integer()
+         btag  = tokens(2) % as_integer()
+         etype = tokens(3) % as_integer()
+         k     = tokens(4) % as_integer()
 
-         edim  = elem_type_dimension(etype)
-         nv    = elem_type_vertex_count(etype)
+         edim  = element_dimension(etype)
+         nv    = element_num_vertices(etype)
          phys  = entity_phys(bdim, btag)
 
          il = il + 1
@@ -509,34 +509,34 @@ contains
             if (edim .eq. mesh_dim) then
 
                cell_idx = cell_idx + 1
-               cell_numbers(cell_idx)      = tokens(1) % asinteger()
+               cell_numbers(cell_idx)      = tokens(1) % as_integer()
                cell_types(cell_idx)        = etype
                cell_tags(cell_idx)         = phys
                num_cell_vertices(cell_idx) = nv
                do j = 1, nv
-                  cell_vertices(j,cell_idx) = find(vertex_numbers, tokens(1+j) % asinteger())
+                  cell_vertices(j,cell_idx) = find(vertex_numbers, tokens(1+j) % as_integer())
                end do
 
             else if (edim .eq. mesh_dim - 1) then
 
                face_idx = face_idx + 1
-               face_numbers(face_idx)      = tokens(1) % asinteger()
+               face_numbers(face_idx)      = tokens(1) % as_integer()
                face_types(face_idx)        = etype
                face_tags(face_idx)         = phys
                num_face_vertices(face_idx) = nv
                do j = 1, nv
-                  face_vertices(j,face_idx) = find(vertex_numbers, tokens(1+j) % asinteger())
+                  face_vertices(j,face_idx) = find(vertex_numbers, tokens(1+j) % as_integer())
                end do
 
             else if (edim .eq. mesh_dim - 2) then
 
                edge_idx = edge_idx + 1
-               edge_numbers(edge_idx)      = tokens(1) % asinteger()
+               edge_numbers(edge_idx)      = tokens(1) % as_integer()
                edge_types(edge_idx)        = etype
                edge_tags(edge_idx)         = phys
                num_edge_vertices(edge_idx) = nv
                do j = 1, nv
-                  edge_vertices(j,edge_idx) = find(vertex_numbers, tokens(1+j) % asinteger())
+                  edge_vertices(j,edge_idx) = find(vertex_numbers, tokens(1+j) % as_integer())
                end do
 
             end if
@@ -586,7 +586,7 @@ contains
 
     end function entity_phys
 
-  end subroutine get_mesh_data
+  end subroutine mesh_data
 
   !====================================================================!
   ! Scan the file for the start and end line of each section we need.

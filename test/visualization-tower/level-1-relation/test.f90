@@ -47,7 +47,7 @@ program visualization_level_1
   use visualization_assert , only : X1_P, X1_Q, X1_R
   use visualization_assert , only : X2_U, X2_V, X2_W
   use visualization_assert , only : X3_M, X3_N
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set        , only : set_map
   use map_label      , only : label_map
   use relation_binary, only : csr_relation, binary_relation
@@ -58,7 +58,7 @@ program visualization_level_1
 
   implicit none
 
-  type(set_graph)  :: x0, x1, x2, x3, e1, e2, e3
+  type(graph)  :: x0, x1, x2, x3, e1, e2, e3
   type(set_map)     :: sets
   type(label_map)     :: labels
   type(csr_relation) :: t1, h1, t2, h2, t3, h3
@@ -120,7 +120,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: tail_end, head_end
+    type(graph) :: tail_end, head_end
 
     tail_end = t1 % target()
     head_end = h1 % target()
@@ -243,9 +243,9 @@ contains
   logical function signed(r, first, second)
 
     class(binary_relation), intent(in) :: r
-    type(set_graph)     , intent(in) :: first, second
+    type(graph)     , intent(in) :: first, second
 
-    type(set_graph) :: d
+    type(graph) :: d
 
     d = r % source()
     signed = d % same_as(first)
@@ -257,7 +257,7 @@ contains
   logical function relates(r, first, second)
 
     class(binary_relation), intent(in) :: r
-    type(set_graph)     , intent(in) :: first, second
+    type(graph)     , intent(in) :: first, second
 
     relates = signed(r, first, second)
 
@@ -266,9 +266,9 @@ contains
   logical function about_an_occurrence(r, occurrences)
 
     class(binary_relation), intent(in) :: r
-    type(set_graph)     , intent(in) :: occurrences
+    type(graph)     , intent(in) :: occurrences
 
-    type(set_graph) :: d
+    type(graph) :: d
 
     d = r % source()
     about_an_occurrence = d % same_as(occurrences)
@@ -278,13 +278,13 @@ contains
   logical function exactly_one_end_each(tail, head, occurrences)
 
     class(binary_relation), target, intent(in) :: tail, head
-    type(set_graph)             , intent(in) :: occurrences
+    type(graph)             , intent(in) :: occurrences
 
     integer, pointer :: fibre(:)
     integer          :: k, e
 
     exactly_one_end_each = .true.
-    do k = 1, sets % size_of(occurrences)
+    do k = 1, sets % num_members_of(occurrences)
        e = sets % member_of(occurrences, k)
        fibre => tail % image_view(e)
        exactly_one_end_each = exactly_one_end_each .and. (size(fibre) .eq. 1)

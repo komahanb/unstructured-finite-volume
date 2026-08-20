@@ -30,7 +30,7 @@ module token_identity
   implicit none
 
   private
-  public :: token, mint_token
+  public :: token, next_token
 
   !===================================================================!
   ! The stamp roll of this image. Serial zero is reserved for the
@@ -55,17 +55,17 @@ module token_identity
 contains
 
   !===================================================================!
-  ! mint_token hands out the next stamp of this image: fresh,
+  ! next_token hands out the next stamp of this image: fresh,
   ! unrepeatable, contents unchoosable.
   !===================================================================!
 
-  type(token) function mint_token()
+  type(token) function next_token()
 
     last_serial          = last_serial + 1
-    mint_token % serial  = last_serial
-    mint_token % image   = this_image()
+    next_token % serial  = last_serial
+    next_token % image   = this_image()
 
-  end function mint_token
+  end function next_token
 
   !===================================================================!
   ! The token's three answers.

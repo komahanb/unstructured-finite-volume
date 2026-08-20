@@ -85,10 +85,9 @@
 module view_relational
 
   use graph_fractal      , only : graph
-  use graph_fractal      , only : set_graph => graph
   use relation_finitary     , only : relation
-  use view_sequence, only : sequence_size, sequence_element, &
-       & sequence_contains
+  use view_sequence, only : sequence_num_elements, sequence_element, &
+       & sequence_has
 
   implicit none
 
@@ -96,7 +95,7 @@ module view_relational
   public :: relational_binding
   public :: num_member_sets, member_set_at
   public :: num_relations, relation_at
-  public :: holds_set, relational_valid
+  public :: has_set, relational_valid
 
   !===================================================================!
   ! Owned storage. One row per bound element.
@@ -104,7 +103,7 @@ module view_relational
 
   type :: bound_set
      type(graph)      , pointer :: element => null()
-     type(set_graph)  , pointer :: object  => null()
+     type(graph)  , pointer :: object  => null()
   end type bound_set
 
   type :: bound_relation
@@ -148,7 +147,7 @@ contains
 
     class(relational_binding), intent(inout)        :: this
     type(graph)              , intent(in) , target  :: element
-    type(set_graph)          , intent(in)           :: object
+    type(graph)          , intent(in)           :: object
 
     type(bound_set), allocatable :: grown(:)
     integer                      :: n
@@ -204,7 +203,7 @@ contains
 
     class(relational_binding), intent(in) :: this
     type(graph)              , intent(in) :: element
-    type(set_graph), pointer              :: s
+    type(graph), pointer              :: s
 
     integer :: k
 
@@ -294,7 +293,7 @@ contains
 
     type(graph), intent(in) :: g
 
-    n = sequence_size(g % branch(1))
+    n = sequence_num_elements(g % branch(1))
 
   end function num_member_sets
 
@@ -302,7 +301,7 @@ contains
 
     type(graph), intent(in) :: g
 
-    n = sequence_size(g % branch(2))
+    n = sequence_num_elements(g % branch(2))
 
   end function num_relations
 
@@ -311,7 +310,7 @@ contains
     type(graph)             , intent(in) :: g
     type(relational_binding), intent(in) :: b
     integer                 , intent(in) :: k
-    type(set_graph), pointer             :: s
+    type(graph), pointer             :: s
 
     type(graph), pointer :: element
 
@@ -340,11 +339,11 @@ contains
   ! sequence: O(m + n), never O(m*n).
   !===================================================================!
 
-  logical function holds_set(g, b, s) result(held)
+  logical function has_set(g, b, s) result(held)
 
     type(graph)             , intent(in) :: g
     type(relational_binding), intent(in) :: b
-    type(set_graph)         , intent(in) :: s
+    type(graph)         , intent(in) :: s
 
     integer :: k
 
@@ -353,12 +352,12 @@ contains
 
     do k = 1, size(b % sets)
        if (b % sets(k) % object % same_as(s)) then
-          held = sequence_contains(g % branch(1), b % sets(k) % element)
+          held = sequence_has(g % branch(1), b % sets(k) % element)
           return
        end if
     end do
 
-  end function holds_set
+  end function has_set
 
   !===================================================================!
   ! The validity law. S and P are sets, and every domain of every
@@ -370,9 +369,9 @@ contains
     type(graph)             , intent(in) :: g
     type(relational_binding), intent(in) :: b
 
-    type(set_graph)  , pointer     :: s, s_earlier
+    type(graph)  , pointer     :: s, s_earlier
     class(relation)  , pointer     :: r, r_earlier
-    type(set_graph)                :: d
+    type(graph)                :: d
     integer                        :: k, j
 
     ok = .false.
@@ -397,7 +396,7 @@ contains
        r => relation_at(g, b, k)
        do j = 1, r % arity()
           d = r % domain(j)
-          if (.not. holds_set(g, b, d)) return
+          if (.not. has_set(g, b, d)) return
        end do
     end do
 

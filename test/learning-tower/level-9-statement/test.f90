@@ -43,7 +43,7 @@ program learning_level_9
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -61,15 +61,15 @@ program learning_level_9
   use graph_fractal        , only : graph, known_branch, null_branch
   use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
-       & holds_set
+       & has_set
 
   implicit none
 
 
   integer, parameter :: ROW_R = 1
 
-  type(set_graph)                  :: v, o, p, y
-  type(set_graph)                   :: k, theta, u, p_in, p_out
+  type(graph)                  :: v, o, p, y
+  type(graph)                   :: k, theta, u, p_in, p_out
   type(stored_relation), allocatable :: flow
   type(stored_relation)              :: located, consumes, produces
   class(relation), allocatable       :: d
@@ -83,7 +83,7 @@ program learning_level_9
   type(constituted_learning_residual) :: residual_op
   type(gmres)                        :: solver
   type(stored_field)                        :: q_k, rhsf
-  type(set_graph)     :: dom
+  type(graph)     :: dom
   integer     :: n_dom
   class(field), allocatable    :: sol, rf
   integer, allocatable               :: order(:)
@@ -180,9 +180,9 @@ program learning_level_9
        & "the derived order is [predict, error], exactly", nfail)
 
   ! -- the observation: Level 5's field on K, and NO field on U
-  q_k = stored_field('observations', k, sets % size_of(k))
+  q_k = stored_field('observations', k, sets % num_members_of(k))
   call q_k % set_real_vector([6.0_dp, 2.0_dp])
-  call q_k % get_real_vector(obs)
+  call q_k % real_vector(obs)
 
   ! -- the adapter keeps the GRAPH-OWNED flow; the selector dies.
   residual_op = constituted_learning_residual(g, bnd, flow, located, &
@@ -195,7 +195,7 @@ program learning_level_9
   call check_structure(nfail, "before training")
 
   ! -- the ordinary solver, through its own operation face
-  call solver % attach(residual_op, host, theta, sets % size_of(theta))
+  call solver % attach(residual_op, host, theta, sets % num_members_of(theta))
   solver % tolerance      = 1.0d-12
   solver % max_iterations = 50
 
@@ -212,7 +212,7 @@ program learning_level_9
        & "R(0) = -6: the full model evaluated at the untrained w", &
        & nfail)
 
-  rhsf = stored_field('rhs', y, sets % size_of(y))
+  rhsf = stored_field('rhs', y, sets % num_members_of(y))
   call rhsf % set_real_vector(-gv)
 
   ! -- the solve: rhs on Y in, solution on Theta out; the internal
@@ -224,7 +224,7 @@ program learning_level_9
   call report(dom % same_as(theta), &
        & "the learned state is a field on Theta, by identity", nfail)
 
-  call sol % get_real_vector(solval)
+  call sol % real_vector(solval)
   w_learned = solval(sets % index_in(theta, SLOT_W))
   call report(abs(w_learned - 3.0_dp) < 1.0d-9, &
        & "learned w = 3, read through Theta's enumeration", nfail)
@@ -236,7 +236,7 @@ program learning_level_9
   type is (stored_field)
      call residual_op % apply(host, [sol], rf)
   end select
-  call rf % get_real_vector(rv)
+  call rf % real_vector(rv)
   call report(sqrt(sum(rv * rv)) < 1.0d-9, &
        & "the constituted residual vanishes at the learned w", nfail)
 
@@ -285,11 +285,11 @@ contains
        end if
     end do
 
-    roles_ok = sets % size_of(theta) .eq. 1 .and. sets % has_in(theta, SLOT_W)  .and. &
-         &     sets % size_of(k) .eq. 2 .and. sets % has_in(k, SLOT_Y)          .and. &
-         &     sets % has_in(k, SLOT_X)                                  .and. &
-         &     sets % size_of(u) .eq. 2 .and. sets % has_in(u, SLOT_E)          .and. &
-         &     sets % has_in(u, SLOT_YHAT)
+    roles_ok = sets % num_members_of(theta) .eq. 1 .and. sets % has(theta, SLOT_W)  .and. &
+         &     sets % num_members_of(k) .eq. 2 .and. sets % has(k, SLOT_Y)          .and. &
+         &     sets % has(k, SLOT_X)                                  .and. &
+         &     sets % num_members_of(u) .eq. 2 .and. sets % has(u, SLOT_E)          .and. &
+         &     sets % has(u, SLOT_YHAT)
 
     call report(flow_ok .and. d_ok .and. roles_ok, &
          & "six facts, one dependency, three roles - intact " // when, &
@@ -326,12 +326,12 @@ contains
     ! Positions dictated by the discovered ports; roles decide the
     ! values: the trainable slot carries the learned state, the
     ! other carries the fresh input.
-    if (sets % has_in(theta, in1)) then
+    if (sets % has(theta, in1)) then
        a1 = w_learned
     else
        a1 = xstar
     end if
-    if (sets % has_in(theta, in2)) then
+    if (sets % has(theta, in2)) then
        a2 = w_learned
     else
        a2 = xstar

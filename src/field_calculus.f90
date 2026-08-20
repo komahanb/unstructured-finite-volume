@@ -38,11 +38,11 @@
 !
 ! THE SHAPE INVARIANT, now that the domain is mathematically real:
 !
-!      stored scalars  =  domain % size() * num_components()
+!      stored scalars  =  domain % num_members() * num_components()
 !
 ! with the established interleaving
 !
-!      position = (domain_local_position - 1) * ncomp + component
+!      position = (domain_local_position - 1) * num_components + component
 !
 ! Values are addressed by the DOMAIN'S local position, never by raw
 ! member value: a field on the subset declared { d a b } stores d's
@@ -54,26 +54,25 @@
 module field_calculus
 
   use iso_fortran_env, only : dp => REAL64
-  use graph_fractal  , only : set_graph => graph
+  use graph_fractal  , only : graph
 
   implicit none
 
   private
   public :: field
   public :: functional
-  public :: set_graph
-  public :: GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL, GRAPH_FIELD_COMPLEX
-  public :: GRAPH_FIELD_LOGICAL, GRAPH_FIELD_CHARACTER
+  public :: FIELD_INTEGER, FIELD_REAL, FIELD_COMPLEX
+  public :: FIELD_LOGICAL, FIELD_CHARACTER
 
   !===================================================================!
   ! The five value kinds: one absorbed axis, as ever.
   !===================================================================!
 
-  integer, parameter :: GRAPH_FIELD_INTEGER   = 1
-  integer, parameter :: GRAPH_FIELD_REAL      = 2
-  integer, parameter :: GRAPH_FIELD_COMPLEX   = 3
-  integer, parameter :: GRAPH_FIELD_LOGICAL   = 4
-  integer, parameter :: GRAPH_FIELD_CHARACTER = 5
+  integer, parameter :: FIELD_INTEGER   = 1
+  integer, parameter :: FIELD_REAL      = 2
+  integer, parameter :: FIELD_COMPLEX   = 3
+  integer, parameter :: FIELD_LOGICAL   = 4
+  integer, parameter :: FIELD_CHARACTER = 5
 
   !===================================================================!
   ! The abstract field: identity, domain, shape, and the
@@ -93,16 +92,16 @@ module field_calculus
      procedure(field_count_interface) , deferred :: num_entries
      procedure(field_count_interface) , deferred :: value_kind
 
-     procedure(field_get_integer_interface)  , deferred :: get_integer_vector
-     procedure(field_set_integer_interface)  , deferred :: set_integer_vector
-     procedure(field_get_real_interface)     , deferred :: get_real_vector
-     procedure(field_set_real_interface)     , deferred :: set_real_vector
-     procedure(field_get_complex_interface)  , deferred :: get_complex_vector
-     procedure(field_set_complex_interface)  , deferred :: set_complex_vector
-     procedure(field_get_logical_interface)  , deferred :: get_logical_vector
-     procedure(field_set_logical_interface)  , deferred :: set_logical_vector
-     procedure(field_get_character_interface), deferred :: get_character_vector
-     procedure(field_set_character_interface), deferred :: set_character_vector
+     procedure(field_integer_vector_interface)  , deferred :: integer_vector
+     procedure(field_set_integer_vector_interface)  , deferred :: set_integer_vector
+     procedure(field_real_vector_interface)     , deferred :: real_vector
+     procedure(field_set_real_vector_interface)     , deferred :: set_real_vector
+     procedure(field_complex_vector_interface)  , deferred :: complex_vector
+     procedure(field_set_complex_vector_interface)  , deferred :: set_complex_vector
+     procedure(field_logical_vector_interface)  , deferred :: logical_vector
+     procedure(field_set_logical_vector_interface)  , deferred :: set_logical_vector
+     procedure(field_character_vector_interface), deferred :: character_vector
+     procedure(field_set_character_vector_interface), deferred :: set_character_vector
 
   end type field
 
@@ -132,8 +131,8 @@ module field_calculus
      ! decides, and nothing is lent.
      !--------------------------------------------------------------!
 
-     type(set_graph) function field_domain_interface(this)
-       import :: field, set_graph
+     type(graph) function field_domain_interface(this)
+       import :: field, graph
        class(field), intent(in) :: this
      end function field_domain_interface
 
@@ -142,65 +141,65 @@ module field_calculus
        class(field), intent(in) :: this
      end function field_count_interface
 
-     pure subroutine field_get_integer_interface(this, values)
+     pure subroutine field_integer_vector_interface(this, values)
        import :: field
        class(field), intent(in) :: this
        integer, allocatable, intent(out) :: values(:)
-     end subroutine field_get_integer_interface
+     end subroutine field_integer_vector_interface
 
-     pure subroutine field_set_integer_interface(this, values)
+     pure subroutine field_set_integer_vector_interface(this, values)
        import :: field
        class(field), intent(inout) :: this
        integer, intent(in) :: values(:)
-     end subroutine field_set_integer_interface
+     end subroutine field_set_integer_vector_interface
 
-     pure subroutine field_get_real_interface(this, values)
+     pure subroutine field_real_vector_interface(this, values)
        import :: field, dp
        class(field), intent(in) :: this
        real(dp), allocatable, intent(out) :: values(:)
-     end subroutine field_get_real_interface
+     end subroutine field_real_vector_interface
 
-     pure subroutine field_set_real_interface(this, values)
+     pure subroutine field_set_real_vector_interface(this, values)
        import :: field, dp
        class(field), intent(inout) :: this
        real(dp), intent(in) :: values(:)
-     end subroutine field_set_real_interface
+     end subroutine field_set_real_vector_interface
 
-     pure subroutine field_get_complex_interface(this, values)
+     pure subroutine field_complex_vector_interface(this, values)
        import :: field, dp
        class(field), intent(in) :: this
        complex(dp), allocatable, intent(out) :: values(:)
-     end subroutine field_get_complex_interface
+     end subroutine field_complex_vector_interface
 
-     pure subroutine field_set_complex_interface(this, values)
+     pure subroutine field_set_complex_vector_interface(this, values)
        import :: field, dp
        class(field), intent(inout) :: this
        complex(dp), intent(in) :: values(:)
-     end subroutine field_set_complex_interface
+     end subroutine field_set_complex_vector_interface
 
-     pure subroutine field_get_logical_interface(this, values)
+     pure subroutine field_logical_vector_interface(this, values)
        import :: field
        class(field), intent(in) :: this
        logical, allocatable, intent(out) :: values(:)
-     end subroutine field_get_logical_interface
+     end subroutine field_logical_vector_interface
 
-     pure subroutine field_set_logical_interface(this, values)
+     pure subroutine field_set_logical_vector_interface(this, values)
        import :: field
        class(field), intent(inout) :: this
        logical, intent(in) :: values(:)
-     end subroutine field_set_logical_interface
+     end subroutine field_set_logical_vector_interface
 
-     pure subroutine field_get_character_interface(this, values)
+     pure subroutine field_character_vector_interface(this, values)
        import :: field
        class(field), intent(in) :: this
        character(len=:), allocatable, intent(out) :: values(:)
-     end subroutine field_get_character_interface
+     end subroutine field_character_vector_interface
 
-     pure subroutine field_set_character_interface(this, values)
+     pure subroutine field_set_character_vector_interface(this, values)
        import :: field
        class(field), intent(inout) :: this
        character(len=*), intent(in) :: values(:)
-     end subroutine field_set_character_interface
+     end subroutine field_set_character_vector_interface
 
   end interface
 

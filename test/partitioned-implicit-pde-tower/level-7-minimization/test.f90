@@ -36,7 +36,7 @@ program partitioned_pde_level_7
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : report, verdict
   use partitioned_pde_assert, only : NV, Q_EXACT, B_EXACT
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation
   use map_set        , only : set_map
   use view_directed, only : directed_graph
@@ -81,10 +81,10 @@ contains
 
     type(gmres)                     :: solver
     type(stored_field)                     :: rhs
-    type(set_graph)  :: dom
+    type(graph)  :: dom
     class(field), allocatable :: sol
     real(dp), allocatable           :: gv(:), v(:)
-    type(set_graph)               :: vs
+    type(graph)               :: vs
     integer         :: n_dom
     integer         :: n_vs
 
@@ -112,7 +112,7 @@ contains
     call solver % apply(g, [rhs], sol)
 
     dom = sol % domain()
-    call sol % get_real_vector(v)
+    call sol % real_vector(v)
     call report(dom % same_as(vs), &
          & "the solution is a field on V(G)", nfail)
     call report(by_member(sets, v, vs, Q_EXACT), &
@@ -132,7 +132,7 @@ contains
     integer, intent(inout) :: nfail
 
     type(gmres)           :: solver_g, solver_alt
-    type(set_graph)     :: vs, vs_alt
+    type(graph)     :: vs, vs_alt
     real(dp), allocatable :: y(:), y_alt(:)
     integer         :: n_vs
     integer         :: n_vs_alt
@@ -177,13 +177,13 @@ contains
 
     type(set_map)  , intent(in) :: sets
     real(dp)       , intent(in) :: v(:)
-    type(set_graph), intent(in) :: dom
+    type(graph), intent(in) :: dom
     real(dp)       , intent(in) :: expect(:)
 
     integer :: i, m
 
     by_member = .true.
-    do i = 1, sets % size_of(dom)
+    do i = 1, sets % num_members_of(dom)
        m = sets % member_of(dom, i)
        by_member = by_member .and. &
             & (abs(v(sets % index_in(dom, m)) - expect(m)) < 1.0d-12)

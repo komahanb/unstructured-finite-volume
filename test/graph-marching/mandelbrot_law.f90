@@ -27,8 +27,8 @@ module mandelbrot_law_fixture
   use operation_action, only : operation
   use view_directed, only : directed_graph
   use field_calculus, only : field
-  use view_directed     , only : GRAPH_SIDE_VERTEX
-  use graph_fractal         , only : set_graph => graph
+  use view_directed     , only : SIDE_VERTEX
+  use graph_fractal         , only : graph
   use field_stored  , only : stored_field
 
   implicit none
@@ -58,14 +58,14 @@ contains
     name = 'mandelbrot law'
   end function law_name
 
-  subroutine law_domain(this, input_graph, domain, nentries)
+  subroutine law_domain(this, input_graph, domain, num_entries)
     class(mandelbrot_law), intent(in)      :: this
     class(directed_graph), intent(in)               :: input_graph
-    type(set_graph), intent(out) :: domain
-    integer        , intent(out) :: nentries
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
     associate (u1 => this); end associate
     domain   = input_graph % all_vertices()
-    nentries = input_graph % num_vertices()
+    num_entries = input_graph % num_vertices()
   end subroutine law_domain
 
   subroutine law_apply(this, input_graph, input_data, output)
@@ -75,7 +75,7 @@ contains
     class(field), intent(in), optional       :: input_data(:)
     class(field), allocatable, intent(inout) :: output
 
-    type(set_graph) :: cells
+    type(graph) :: cells
     type(stored_field)   :: out
     real(dp), allocatable :: q(:), s(:)
     real(dp) :: u, v
@@ -86,7 +86,7 @@ contains
     s = 0.0_dp
 
     if (present(input_data)) then
-       call input_data(1) % get_real_vector(q)
+       call input_data(1) % real_vector(q)
        do k = 1, nv
           u = q(2 * k - 1)
           v = q(2 * k)
@@ -96,7 +96,7 @@ contains
     end if
 
     cells = input_graph % vertex_set()
-    out = stored_field('velocity', cells, input_graph % num_vertices(), ncomp=2)
+    out = stored_field('velocity', cells, input_graph % num_vertices(), num_components=2)
     call out % set_real_vector(s)
 
     if (allocated(output)) deallocate(output)

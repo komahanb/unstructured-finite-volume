@@ -38,13 +38,13 @@ program time_level_0
   use time_assert          , only : report, verdict
   use time_assert          , only : NQ, NT, NE
   use time_assert          , only : C_X, T0, T4, E1, E4
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set        , only : set_map
   use time_carriers_fixture, only : time_carriers
 
   implicit none
 
-  type(set_graph) :: q, t, e
+  type(graph) :: q, t, e
   type(set_map) :: sets
   integer           :: nfail
 
@@ -69,9 +69,9 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(sets % size_of(q) .eq. NQ, "Q counts two state coordinates", nfail)
-    call report(sets % size_of(t) .eq. NT, "T counts five time instants", nfail)
-    call report(sets % size_of(e) .eq. NE, "E counts four time steps", nfail)
+    call report(sets % num_members_of(q) .eq. NQ, "Q counts two state coordinates", nfail)
+    call report(sets % num_members_of(t) .eq. NT, "T counts five time instants", nfail)
+    call report(sets % num_members_of(e) .eq. NE, "E counts four time steps", nfail)
 
   end subroutine check_cardinalities
 
@@ -91,7 +91,7 @@ contains
     call report(.not. t % same_as(e), &
          & "T is not E: an instant is not a step between instants", nfail)
 
-    call report(sets % has_in(q, 1) .and. sets % has_in(t, 1) .and. sets % has_in(e, 1), &
+    call report(sets % has(q, 1) .and. sets % has(t, 1) .and. sets % has(e, 1), &
          & "and the integer 1 is a member of ALL THREE - it is x, " // &
          & "t0 and e1 at once: identity does this work, never the " // &
          & "numerals", nfail)
@@ -121,18 +121,18 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(.not. sets % has_in(q, 0) .and. .not. sets % has_in(q, NQ + 1), &
+    call report(.not. sets % has(q, 0) .and. .not. sets % has(q, NQ + 1), &
          & "an outsider is rejected by Q", nfail)
-    call report(.not. sets % has_in(t, 0) .and. .not. sets % has_in(t, NT + 1), &
+    call report(.not. sets % has(t, 0) .and. .not. sets % has(t, NT + 1), &
          & "and by T, at its own edge", nfail)
-    call report(.not. sets % has_in(e, 0) .and. .not. sets % has_in(e, NE + 1), &
+    call report(.not. sets % has(e, 0) .and. .not. sets % has(e, NE + 1), &
          & "and by E, at another", nfail)
 
-    call report(sets % has_in(t, T4) .and. .not. sets % has_in(e, T4) .and. &
-         &      .not. sets % has_in(q, T4), &
+    call report(sets % has(t, T4) .and. .not. sets % has(e, T4) .and. &
+         &      .not. sets % has(q, T4), &
          & "the last instant t4 is a member of T alone - E and Q " // &
          & "are not that long", nfail)
-    call report(sets % has_in(e, E4) .and. sets % has_in(t, E4) .and. .not. sets % has_in(q, E4), &
+    call report(sets % has(e, E4) .and. sets % has(t, E4) .and. .not. sets % has(q, E4), &
          & "while e4's numeral IS a member of T, meaning t3, and " // &
          & "means nothing at all in Q", nfail)
 
@@ -147,12 +147,12 @@ contains
   logical function round_trips(sets, s)
 
     type(set_map)  , intent(in) :: sets
-    type(set_graph), intent(in) :: s
+    type(graph), intent(in) :: s
 
     integer :: i, m
 
     round_trips = .true.
-    do i = 1, sets % size_of(s)
+    do i = 1, sets % num_members_of(s)
        m = sets % member_of(s, i)
        round_trips = round_trips .and. &
             & (sets % member_of(s, sets % index_in(s, m)) .eq. m)

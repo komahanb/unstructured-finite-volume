@@ -18,11 +18,11 @@
 ! fields with compiled names:
 !
 !      cell_volume()    one number per cell
-!      cell_center()    three per cell
+!      cell_centre()    three per cell
 !      face_area()      one per face
 !      face_delta()     the centre-to-centre distance, one per face
 !      face_normal()    three per face
-!      face_center()    three per face
+!      face_centre()    three per face
 !      face_weights()   the interpolation weight, one per face
 !
 ! No string names any of these. The dictionary in
@@ -43,7 +43,7 @@ module view_mesh
   use iso_fortran_env    , only : dp => REAL64, error_unit
   use field_stored  , only : stored_field
   use view_directed_stored        , only : stored_directed_graph
-  use graph_fractal      , only : set_graph => graph
+  use graph_fractal      , only : graph
 
   implicit none
 
@@ -57,7 +57,7 @@ module view_mesh
   type, extends(stored_directed_graph) :: mesh
 
      type(stored_field) :: volumes
-     type(stored_field) :: cell_centers
+     type(stored_field) :: cell_centres
      type(stored_field) :: areas
      type(stored_field) :: deltas
      type(stored_field) :: normals
@@ -67,11 +67,11 @@ module view_mesh
    contains
 
      procedure :: cell_volume
-     procedure :: cell_center
+     procedure :: cell_centre
      procedure :: face_area
      procedure :: face_delta
      procedure :: face_normal
-     procedure :: face_center
+     procedure :: face_centre
      procedure :: face_weights
 
   end type mesh
@@ -91,24 +91,24 @@ contains
   !===================================================================!
 
   impure type(mesh) function create(nv, tails, heads, volumes, &
-       & cell_centers, areas, deltas, normals, face_centers, weights, &
+       & cell_centres, areas, deltas, normals, face_centres, weights, &
        & vtags, etags, number) result(this)
 
     integer         , intent(in)           :: nv
     integer         , intent(in)           :: tails(:)
     integer         , intent(in)           :: heads(:)
     real(dp)        , intent(in)           :: volumes(:)
-    real(dp)        , intent(in)           :: cell_centers(:)
+    real(dp)        , intent(in)           :: cell_centres(:)
     real(dp)        , intent(in)           :: areas(:)
     real(dp)        , intent(in)           :: deltas(:)
     real(dp)        , intent(in)           :: normals(:)
-    real(dp)        , intent(in)           :: face_centers(:)
+    real(dp)        , intent(in)           :: face_centres(:)
     real(dp)        , intent(in)           :: weights(:)
     character(len=*), intent(in), optional :: vtags(:)
     character(len=*), intent(in), optional :: etags(:)
     integer         , intent(in), optional :: number
 
-    type(set_graph) :: cells, faces
+    type(graph) :: cells, faces
     integer :: ne
 
     ! The structure first, through the parent's own constructor.
@@ -119,11 +119,11 @@ contains
 
     ! The gate: measurements must fit the structure they measure.
     call gate(size(volumes)      == nv    , 'one volume per cell')
-    call gate(size(cell_centers) == 3 * nv, 'three center parts per cell')
+    call gate(size(cell_centres) == 3 * nv, 'three centre parts per cell')
     call gate(size(areas)        == ne    , 'one area per face')
     call gate(size(deltas)       == ne    , 'one delta per face')
     call gate(size(normals)      == 3 * ne, 'three normal parts per face')
-    call gate(size(face_centers) == 3 * ne, 'three center parts per face')
+    call gate(size(face_centres) == 3 * ne, 'three centre parts per face')
     call gate(size(weights)      == ne    , 'one weight per face')
 
     ! Geometry rides the graph's OWN carriers, so a field's domain
@@ -132,19 +132,19 @@ contains
     faces = this % edge_set()
 
     this % volumes       = stored_field('cell_volume' , cells, nv, unit_name='m3')
-    this % cell_centers  = stored_field('cell_center' , cells, nv, ncomp=3, unit_name='m')
+    this % cell_centres  = stored_field('cell_centre' , cells, nv, num_components=3, unit_name='m')
     this % areas         = stored_field('face_area'   , faces, ne, unit_name='m2')
     this % deltas        = stored_field('face_delta'  , faces, ne, unit_name='m')
-    this % normals       = stored_field('face_normal' , faces, ne, ncomp=3, unit_name='-')
-    this % face_centers_ = stored_field('face_center' , faces, ne, ncomp=3, unit_name='m')
+    this % normals       = stored_field('face_normal' , faces, ne, num_components=3, unit_name='-')
+    this % face_centers_ = stored_field('face_centre' , faces, ne, num_components=3, unit_name='m')
     this % weights       = stored_field('face_weights', faces, ne, unit_name='-')
 
     call this % volumes       % set_real_vector(volumes)
-    call this % cell_centers  % set_real_vector(cell_centers)
+    call this % cell_centres  % set_real_vector(cell_centres)
     call this % areas         % set_real_vector(areas)
     call this % deltas        % set_real_vector(deltas)
     call this % normals       % set_real_vector(normals)
-    call this % face_centers_ % set_real_vector(face_centers)
+    call this % face_centers_ % set_real_vector(face_centres)
     call this % weights       % set_real_vector(weights)
 
   end function create
@@ -180,13 +180,13 @@ contains
 
   end function cell_volume
 
-  type(stored_field) function cell_center(this)
+  type(stored_field) function cell_centre(this)
 
     class(mesh), intent(in) :: this
 
-    cell_center = this % cell_centers
+    cell_centre = this % cell_centres
 
-  end function cell_center
+  end function cell_centre
 
   type(stored_field) function face_area(this)
 
@@ -212,13 +212,13 @@ contains
 
   end function face_normal
 
-  type(stored_field) function face_center(this)
+  type(stored_field) function face_centre(this)
 
     class(mesh), intent(in) :: this
 
-    face_center = this % face_centers_
+    face_centre = this % face_centers_
 
-  end function face_center
+  end function face_centre
 
   type(stored_field) function face_weights(this)
 

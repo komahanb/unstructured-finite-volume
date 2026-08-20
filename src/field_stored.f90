@@ -10,7 +10,7 @@
 !                  WHAT THE FIELD KEEPS OF ITS DOMAIN
 !
 !      type(graph) :: on          which set        O(1)
-!      integer     :: nentries    how many         O(1)
+!      integer     :: num_entries    how many         O(1)
 !
 ! and nothing else. It once kept a COPY of the whole domain object,
 ! which for a listed domain meant a copy of the member roll: 40 fields
@@ -30,8 +30,8 @@
 ! A field holds one kind of value at a time. Only the matching store
 ! is ever allocated:
 !
-!      value_kind() = GRAPH_FIELD_REAL     ->   only rvals is live
-!      value_kind() = GRAPH_FIELD_INTEGER  ->   only ivals is live
+!      value_kind() = FIELD_REAL     ->   only rvals is live
+!      value_kind() = FIELD_INTEGER  ->   only ivals is live
 !
 ! From that, three rules that hold for all ten adapters:
 !
@@ -75,10 +75,11 @@
 module field_stored
 
   use iso_fortran_env    , only : dp => REAL64
-  use field_calculus, only : field, set_graph
-  use field_calculus, only : GRAPH_FIELD_INTEGER, GRAPH_FIELD_REAL
-  use field_calculus, only : GRAPH_FIELD_COMPLEX, GRAPH_FIELD_LOGICAL
-  use field_calculus, only : GRAPH_FIELD_CHARACTER
+  use field_calculus, only : field
+  use graph_fractal , only : graph
+  use field_calculus, only : FIELD_INTEGER, FIELD_REAL
+  use field_calculus, only : FIELD_COMPLEX, FIELD_LOGICAL
+  use field_calculus, only : FIELD_CHARACTER
 
   implicit none
 
@@ -97,11 +98,11 @@ module field_stored
      ! The one domain: which set, and how many entries it had when
      ! this field was built. Private, so consumers ask through
      ! domain() and num_entries() rather than inspecting on.
-     type(set_graph), private :: on
-     integer        , private :: nentries = 0
+     type(graph), private :: on
+     integer        , private :: ne = 0
 
-     integer :: ncomp = 1
-     integer :: vkind = GRAPH_FIELD_REAL
+     integer, private :: nc = 1
+     integer :: vkind = FIELD_REAL
 
      integer         , allocatable :: ivals(:)
      real(dp)        , allocatable :: rvals(:)
@@ -131,15 +132,15 @@ module field_stored
      ! The plain-vector adapters, one pair per kind.
      !----------------------------------------------------------------!
 
-     procedure :: get_integer_vector   => field_get_integer_vector
+     procedure :: integer_vector   => field_get_integer_vector
      procedure :: set_integer_vector   => field_set_integer_vector
-     procedure :: get_real_vector      => field_get_real_vector
+     procedure :: real_vector      => field_get_real_vector
      procedure :: set_real_vector      => field_set_real_vector
-     procedure :: get_complex_vector   => field_get_complex_vector
+     procedure :: complex_vector   => field_get_complex_vector
      procedure :: set_complex_vector   => field_set_complex_vector
-     procedure :: get_logical_vector   => field_get_logical_vector
+     procedure :: logical_vector   => field_get_logical_vector
      procedure :: set_logical_vector   => field_set_logical_vector
-     procedure :: get_character_vector => field_get_character_vector
+     procedure :: character_vector => field_get_character_vector
      procedure :: set_character_vector => field_set_character_vector
 
   end type stored_field
@@ -162,31 +163,31 @@ contains
   ! repeat the fact.
   !===================================================================!
 
-  type(stored_field) function create(label, on, nentries, ncomp, unit_name) &
+  type(stored_field) function create(label, on, num_entries, num_components, unit_name) &
        & result(this)
 
     character(len=*), intent(in)           :: label
-    type(set_graph) , intent(in)           :: on
-    integer         , intent(in)           :: nentries
-    integer         , intent(in), optional :: ncomp
+    type(graph) , intent(in)           :: on
+    integer         , intent(in)           :: num_entries
+    integer         , intent(in), optional :: num_components
     character(len=*), intent(in), optional :: unit_name
 
     if (.not. on % same_as(on)) then
        error stop 'field_stored: a field needs a declared domain'
     end if
 
-    if (nentries < 0) then
+    if (num_entries < 0) then
        error stop 'field_stored: a domain does not have fewer than no entries'
     end if
 
     this % label    = label
     this % on       = on
-    this % nentries = nentries
+    this % ne = num_entries
 
-    if (present(ncomp)) then
-       this % ncomp = ncomp
+    if (present(num_components)) then
+       this % nc = num_components
     else
-       this % ncomp = 1
+       this % nc = 1
     end if
 
     if (present(unit_name)) then
@@ -236,7 +237,7 @@ contains
   ! answer is the same declared domain; nothing is lent.
   !===================================================================!
 
-  type(set_graph) function field_domain(this) result(domain)
+  type(graph) function field_domain(this) result(domain)
 
     class(stored_field), intent(in) :: this
 
@@ -254,7 +255,7 @@ contains
 
     class(stored_field), intent(in) :: this
 
-    field_num_components = this % ncomp
+    field_num_components = this % nc
 
   end function field_num_components
 
@@ -262,7 +263,7 @@ contains
 
     class(stored_field), intent(in) :: this
 
-    field_num_entries = this % nentries
+    field_num_entries = this % ne
 
   end function field_num_entries
 
@@ -285,7 +286,7 @@ contains
     class(stored_field), intent(in)          :: this
     integer, allocatable, intent(out) :: values(:)
 
-    if (this % vkind == GRAPH_FIELD_INTEGER .and. allocated(this % ivals)) then
+    if (this % vkind == FIELD_INTEGER .and. allocated(this % ivals)) then
        values = this % ivals
     else
        allocate(values(0))
@@ -298,11 +299,11 @@ contains
     class(stored_field), intent(inout) :: this
     integer     , intent(in)    :: values(:)
 
-    if (size(values) /= this % nentries * this % ncomp) then
+    if (size(values) /= this % ne * this % nc) then
        error stop 'field_stored: a value vector must fill its domain exactly'
     end if
     this % ivals = values
-    this % vkind = GRAPH_FIELD_INTEGER
+    this % vkind = FIELD_INTEGER
 
   end subroutine field_set_integer_vector
 
@@ -311,7 +312,7 @@ contains
     class(stored_field), intent(in)           :: this
     real(dp), allocatable, intent(out) :: values(:)
 
-    if (this % vkind == GRAPH_FIELD_REAL .and. allocated(this % rvals)) then
+    if (this % vkind == FIELD_REAL .and. allocated(this % rvals)) then
        values = this % rvals
     else
        allocate(values(0))
@@ -324,11 +325,11 @@ contains
     class(stored_field), intent(inout) :: this
     real(dp)    , intent(in)    :: values(:)
 
-    if (size(values) /= this % nentries * this % ncomp) then
+    if (size(values) /= this % ne * this % nc) then
        error stop 'field_stored: a value vector must fill its domain exactly'
     end if
     this % rvals = values
-    this % vkind = GRAPH_FIELD_REAL
+    this % vkind = FIELD_REAL
 
   end subroutine field_set_real_vector
 
@@ -342,7 +343,7 @@ contains
     class(stored_field), intent(in)              :: this
     complex(dp), allocatable, intent(out) :: values(:)
 
-    if (this % vkind == GRAPH_FIELD_COMPLEX .and. allocated(this % cvals)) then
+    if (this % vkind == FIELD_COMPLEX .and. allocated(this % cvals)) then
        values = this % cvals
     else
        allocate(values(0))
@@ -355,11 +356,11 @@ contains
     class(stored_field), intent(inout) :: this
     complex(dp) , intent(in)    :: values(:)
 
-    if (size(values) /= this % nentries * this % ncomp) then
+    if (size(values) /= this % ne * this % nc) then
        error stop 'field_stored: a value vector must fill its domain exactly'
     end if
     this % cvals = values
-    this % vkind = GRAPH_FIELD_COMPLEX
+    this % vkind = FIELD_COMPLEX
 
   end subroutine field_set_complex_vector
 
@@ -368,7 +369,7 @@ contains
     class(stored_field), intent(in)          :: this
     logical, allocatable, intent(out) :: values(:)
 
-    if (this % vkind == GRAPH_FIELD_LOGICAL .and. allocated(this % lvals)) then
+    if (this % vkind == FIELD_LOGICAL .and. allocated(this % lvals)) then
        values = this % lvals
     else
        allocate(values(0))
@@ -381,11 +382,11 @@ contains
     class(stored_field), intent(inout) :: this
     logical     , intent(in)    :: values(:)
 
-    if (size(values) /= this % nentries * this % ncomp) then
+    if (size(values) /= this % ne * this % nc) then
        error stop 'field_stored: a value vector must fill its domain exactly'
     end if
     this % lvals = values
-    this % vkind = GRAPH_FIELD_LOGICAL
+    this % vkind = FIELD_LOGICAL
 
   end subroutine field_set_logical_vector
 
@@ -394,7 +395,7 @@ contains
     class(stored_field), intent(in)                   :: this
     character(len=:), allocatable, intent(out) :: values(:)
 
-    if (this % vkind == GRAPH_FIELD_CHARACTER .and. allocated(this % svals)) then
+    if (this % vkind == FIELD_CHARACTER .and. allocated(this % svals)) then
        values = this % svals
     else
        allocate(character(len=1) :: values(0))
@@ -407,11 +408,11 @@ contains
     class(stored_field), intent(inout)  :: this
     character(len=*), intent(in) :: values(:)
 
-    if (size(values) /= this % nentries * this % ncomp) then
+    if (size(values) /= this % ne * this % nc) then
        error stop 'field_stored: a value vector must fill its domain exactly'
     end if
     this % svals = values
-    this % vkind = GRAPH_FIELD_CHARACTER
+    this % vkind = FIELD_CHARACTER
 
   end subroutine field_set_character_vector
 

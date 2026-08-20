@@ -36,7 +36,7 @@ program partitioned_pde_level_8
   use iso_fortran_env  , only : dp => REAL64
   use partitioned_pde_assert, only : report, verdict
   use partitioned_pde_assert, only : NV, Q_EXACT
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use view_directed_stored      , only : stored_directed_graph
@@ -85,8 +85,8 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dom
-    type(set_graph)              :: vs
+    type(graph) :: dom
+    type(graph)              :: vs
     integer         :: n_dom
 
     vs = g % vertex_set()
@@ -200,7 +200,7 @@ contains
 
     real(dp), allocatable :: got(:)
 
-    call answer % get_real_vector(got)
+    call answer % real_vector(got)
     v = got(1:NV)
 
   end function act

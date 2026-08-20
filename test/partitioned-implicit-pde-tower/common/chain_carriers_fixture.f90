@@ -29,7 +29,7 @@
 
 module chain_carriers_fixture
 
-  use graph_fractal           , only : set_graph => graph
+  use graph_fractal           , only : graph
   use map_set_representation, only : counted_set_representation
   use map_set           , only : set_map
 
@@ -47,7 +47,7 @@ contains
   subroutine chain_carriers(sets, v, e, k)
 
     type(set_map)  , intent(inout) :: sets
-    type(set_graph), intent(out)   :: v, e, k
+    type(graph), intent(out)   :: v, e, k
 
     call v % declare()      ! global vertices
     call e % declare()      ! global edges

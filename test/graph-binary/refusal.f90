@@ -11,7 +11,7 @@
 
 program binary_refusal
 
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -19,7 +19,7 @@ program binary_refusal
 
   implicit none
 
-  type(set_graph)  :: cells, faces, raw
+  type(graph)  :: cells, faces, raw
   type(csr_relation) :: r
   character(len=32)  :: which
   type(set_map)     :: sets

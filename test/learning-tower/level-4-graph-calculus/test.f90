@@ -25,7 +25,7 @@ program learning_level_4
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -40,13 +40,13 @@ program learning_level_4
   use graph_fractal        , only : graph, known_branch, null_branch
   use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
-       & holds_set
+       & has_set
 
   implicit none
 
 
-  type(set_graph)              :: v, o, p
-  type(set_graph)               :: p_out, p_in
+  type(graph)              :: v, o, p
+  type(graph)               :: p_out, p_in
   type(stored_relation)          :: flow, t_out3, t_in3
   type(stored_relation)          :: produces, consumes
   class(relation), allocatable   :: d
@@ -145,13 +145,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dom
+    type(graph) :: dom
 
     select type (d)
     class is (binary_relation)
        dom = d % source()
     end select
-    call report(dom % same_as(o) .and. sets % size_of(dom) .eq. 2, &
+    call report(dom % same_as(o) .and. sets % num_members_of(dom) .eq. 2, &
          & "the view walks the operations, and nothing invented", nfail)
 
   end subroutine check_view_domain
@@ -165,17 +165,17 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: src, snk
+    type(graph) :: src, snk
     type(label_map)     :: labels
 
     call sources(d, sets, labels, inclusions, src)
     call sinks(d, sets, labels, inclusions, snk)
 
-    call report(sets % size_of(src) .eq. 1 .and. sets % has_in(src, OP_PREDICT) .and. &
-         &      .not. sets % has_in(src, OP_ERROR), &
+    call report(sets % num_members_of(src) .eq. 1 .and. sets % has(src, OP_PREDICT) .and. &
+         &      .not. sets % has(src, OP_ERROR), &
          & "sources = { predict }, the selector long dead", nfail)
-    call report(sets % size_of(snk) .eq. 1 .and. sets % has_in(snk, OP_ERROR) .and. &
-         &      .not. sets % has_in(snk, OP_PREDICT), &
+    call report(sets % num_members_of(snk) .eq. 1 .and. sets % has(snk, OP_ERROR) .and. &
+         &      .not. sets % has(snk, OP_PREDICT), &
          & "sinks = { error }", nfail)
 
     call report(declared_subobject(src, o, inclusions) .and. declared_subobject(snk, o, inclusions), &

@@ -50,7 +50,7 @@ program time_level_9
   use time_assert           , only : NQ, NT, NSTEPS, TOL, TOL_MARCH
   use time_assert           , only : T0, T4, C_X, C_Y, H_STEP
   use time_assert           , only : TIME_COORD, BDF2_TRAJECTORY
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set        , only : set_map
   use view_directed_stored           , only : stored_directed_graph
   use field_stored     , only : stored_field
@@ -63,7 +63,7 @@ program time_level_9
 
   implicit none
 
-  type(set_graph)      :: q, t, e
+  type(graph)      :: q, t, e
   type(set_map)      :: sets
   type(stored_directed_graph)     :: hcontext
   type(triangular_decay) :: decay
@@ -98,10 +98,10 @@ program time_level_9
   end select
 
   ! ---- fetch once, march, write back once.
-  call q_initial % get_real_vector(state)
+  call q_initial % real_vector(state)
   call clock % march(decay, hcontext, state, NSTEPS)
 
-  q_final = stored_field('q(t4)', q, NQ, ncomp=1)
+  q_final = stored_field('q(t4)', q, NQ, num_components=1)
   call q_final % set_real_vector(state)
 
   call check_the_statement_s_two_ends(nfail)
@@ -123,7 +123,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: d
+    type(graph) :: d
 
     d = q_initial % domain()
     call report(d % same_as(q), &
@@ -156,7 +156,7 @@ contains
     integer               :: here, i
     logical               :: ok
 
-    call tcoord % get_real_vector(tv)
+    call tcoord % real_vector(tv)
 
     call report(abs(tv(sets % index_in(t, T0))) .lt. TOL .and. &
          &      abs(tv(sets % index_in(t, T4)) - 2.0_dp) .lt. TOL, &
@@ -194,7 +194,7 @@ contains
 
     real(dp), allocatable :: v(:)
 
-    call q_final % get_real_vector(v)
+    call q_final % real_vector(v)
 
     call report(maxval(abs(v - BDF2_TRAJECTORY(:, NSTEPS))) .lt. TOL_MARCH, &
          & "q(t4) = [7/24, 83/144] - the complete initial-value " // &
@@ -217,7 +217,7 @@ contains
 
     real(dp), allocatable :: v(:)
 
-    call q_final % get_real_vector(v)
+    call q_final % real_vector(v)
 
     write(*,'(1x,a,2(1x,es23.16))') "TIME_INTEGRATION_RESULT =", &
          & v(sets % index_in(q, C_X)), v(sets % index_in(q, C_Y))

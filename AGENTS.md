@@ -88,7 +88,7 @@ The laws:
 
 The letter \(R\) is no longer reserved by a second ontology. Where a view reads a graph as
 \((Q,R)\), \(R\) is that view's residual; where a view reads it as \((\mathcal S,\mathcal P)\),
-its relations are \(P, T, H, A, \ldots\). Sections 4-14 below describe the relation-centered view
+its relations are \(P, T, H, A, \ldots\). Sections 4-14 below describe the relation-centred view
 and remain in force **as a view**. Its implementation is `view_relational.f90` over the
 kernel: a graph plus a `relational_binding` from element graphs to the legacy objects they
 denote. The container `relational_graph` that once implemented it was retired on 2026-08-16.
@@ -1115,7 +1115,7 @@ carrier or a `subset_set` subobject (a support IS a member_set) —
 one domain kind, never a carrier-or-predicate union, and never an
 edgeless graph. This is now implemented: `field_calculus`
 owns the abstract field, `field_stored%on` is a polymorphic
-member_set, and the shape law `stored = domain.size * ncomp` is
+member_set, and the shape law `stored = domain.size * num_components` is
 refused loudly in every value kind.
 
 ## 20.2 Field contract

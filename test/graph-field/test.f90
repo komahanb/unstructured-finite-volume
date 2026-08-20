@@ -48,20 +48,20 @@ program test_graph_field
   call sets       % bind(none, listed_set_representation([integer ::]))
   call inclusions % include_in(none, cells)
 
-  q = stored_field('q', cells, 6, ncomp=2)
+  q = stored_field('q', cells, 6, num_components=2)
   call q % set_real_vector([(1.0_dp * kk, kk = 1, 12)])
   dom = q % domain()
   call report(dom % same_as(cells), &
        & "an ambient field's domain is the carrier, by identity", nfail)
   call report(q % num_entries() .eq. 6, &
        & "entries count the domain", nfail)
-  call q % get_real_vector(v)
+  call q % real_vector(v)
   call report(abs(v((4 - 1) * 2 + 2) - 8.0_dp) < 1.0d-14, &
-       & "values interleave at (entry-1)*ncomp + component", nfail)
+       & "values interleave at (entry-1)*num_components + component", nfail)
 
   w = stored_field('w', walls, 3)
   call w % set_real_vector([50.0_dp, 20.0_dp, 60.0_dp])
-  call w % get_real_vector(v)
+  call w % real_vector(v)
   call report(abs(v(sets % index_in(walls, 2)) - 20.0_dp) < 1.0d-14 .and. &
        &      abs(v(1) - 50.0_dp) < 1.0d-14, &
        & "a subset field stores by declaration, not by member value", nfail)

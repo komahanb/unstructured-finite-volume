@@ -97,7 +97,7 @@
 
 module relation_binary
 
-  use graph_fractal           , only : set_graph => graph
+  use graph_fractal           , only : graph
   use relation_finitary          , only : relation
   use map_set           , only : set_map
   use map_set_representation, only : set_representation
@@ -182,7 +182,7 @@ module relation_binary
   type, extends(binary_relation) :: csr_relation
 
      ! Semantic: which two domains.
-     type(set_graph), allocatable, private :: signature(:)
+     type(graph), allocatable, private :: signature(:)
 
      ! Compiled: how a member value becomes a row, each direction.
      class(set_representation), allocatable, private :: source_coords
@@ -253,7 +253,7 @@ contains
   ! The two ends of the signature, named as arity two names them.
   !===================================================================!
 
-  type(set_graph) function source(this) result(domain)
+  type(graph) function source(this) result(domain)
 
     class(binary_relation), intent(in) :: this
 
@@ -261,7 +261,7 @@ contains
 
   end function source
 
-  type(set_graph) function target(this) result(domain)
+  type(graph) function target(this) result(domain)
 
     class(binary_relation), intent(in) :: this
 
@@ -311,8 +311,8 @@ contains
        & result(this)
 
     character(len=*), intent(in) :: name
-    type(set_graph) , intent(in) :: source
-    type(set_graph) , intent(in) :: target
+    type(graph) , intent(in) :: source
+    type(graph) , intent(in) :: target
     integer         , intent(in) :: table(:,:)
     type(set_map)   , intent(in) :: sets
 
@@ -340,8 +340,8 @@ contains
     call sets % extent_of(source, this % source_coords)
     call sets % extent_of(target, this % target_coords)
 
-    na = this % source_coords % size()
-    nb = this % target_coords % size()
+    na = this % source_coords % num_members()
+    nb = this % target_coords % num_members()
     nt = size(table, 2)
 
     ! Validate through the coordinates' own membership, and read every
@@ -400,7 +400,7 @@ contains
 
   end function create_csr
 
-  type(set_graph) function csr_domain(this, position) result(domain)
+  type(graph) function csr_domain(this, position) result(domain)
 
     class(csr_relation), intent(in) :: this
     integer            , intent(in) :: position
@@ -529,7 +529,7 @@ contains
   ! The view's answers: everything through the base, ends swapped.
   !===================================================================!
 
-  type(set_graph) function view_domain(this, position) result(domain)
+  type(graph) function view_domain(this, position) result(domain)
 
     class(transposed_relation), intent(in) :: this
     integer               , intent(in) :: position
@@ -615,15 +615,15 @@ contains
   type(csr_relation) function inclusion_of(s, host, sets, labels) &
        & result(inclusion)
 
-    type(set_graph) , intent(in) :: s
-    type(set_graph) , intent(in) :: host
+    type(graph) , intent(in) :: s
+    type(graph) , intent(in) :: host
     type(set_map)   , intent(in) :: sets
     type(label_map) , intent(in) :: labels
 
     integer, allocatable :: table(:,:)
     integer              :: k, n
 
-    n = sets % size_of(s)
+    n = sets % num_members_of(s)
 
     allocate(table(2, n))
     do k = 1, n
@@ -636,12 +636,12 @@ contains
   end function inclusion_of
 
   !===================================================================!
-  ! Group a finite family of (key, value) pairs by key: the fibers
+  ! Group a finite family of (key, value) pairs by key: the fibres
   ! of a stored binary relation over one slot, as the compressed
   ! rows ptr(k) .. ptr(k+1)-1 into grouped(:). One counting pass,
   ! one prefix sum, one scatter - stable, so arrival order is kept
   ! within each key. A key outside 1..nkeys is skipped: a pair with
-  ! no key belongs to no fiber. This is the one grouping kernel in
+  ! no key belongs to no fibre. This is the one grouping kernel in
   ! the codebase; CSR builds, incidence lists, padded transposes,
   ! and triple combination are its callers.
   !===================================================================!

@@ -36,7 +36,7 @@ program learning_level_6
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -50,7 +50,7 @@ program learning_level_6
   use graph_fractal        , only : graph, known_branch, null_branch
   use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
-       & holds_set
+       & has_set
 
   implicit none
 
@@ -58,8 +58,8 @@ program learning_level_6
   ! Residual rows exist only from this level upward.
   integer, parameter :: ROW_R = 1
 
-  type(set_graph)              :: v, o, p, y
-  type(set_graph)               :: theta, p_in, p_out
+  type(graph)              :: v, o, p, y
+  type(graph)               :: theta, p_in, p_out
   type(stored_relation)          :: flow, backwards, located
   type(stored_relation)          :: consumes, produces
   type(csr_relation)             :: a, a2
@@ -199,7 +199,7 @@ contains
 
     hits = 0
     home = 0
-    do jv = 1, sets % size_of(v)
+    do jv = 1, sets % num_members_of(v)
        if (located % has([row, sets % member_of(v, jv)])) then
           hits = hits + 1
           home = sets % member_of(v, jv)
@@ -225,12 +225,12 @@ contains
     integer, allocatable :: pairs(:,:)
     integer :: npairs, ri, ti, row
 
-    allocate(pairs(2, sets % size_of(y) * sets % size_of(theta)))
+    allocate(pairs(2, sets % num_members_of(y) * sets % num_members_of(theta)))
 
     npairs = 0
-    do ri = 1, sets % size_of(y)
+    do ri = 1, sets % num_members_of(y)
        row = sets % member_of(y, ri)
-       do ti = 1, sets % size_of(theta)
+       do ti = 1, sets % num_members_of(theta)
           if (reachable(dep_view, sets, sets % member_of(theta, ti), home_of(row))) then
              npairs = npairs + 1
              pairs(:, npairs) = [row, sets % member_of(theta, ti)]
@@ -252,7 +252,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dom
+    type(graph) :: dom
 
     dom = consumes % domain(1)
     call report(dom % same_as(v), "I runs from the value slots", nfail)
@@ -286,7 +286,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dom
+    type(graph) :: dom
 
     dom = a % domain(1)
     call report(dom % same_as(v), "A runs from the value slots", nfail)
@@ -317,7 +317,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dom
+    type(graph) :: dom
 
     dom = a % source()
     call report(dom % same_as(v), &
@@ -367,7 +367,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: dom
+    type(graph) :: dom
 
     dom = j_theta % domain(1)
     call report(dom % same_as(y), &
@@ -393,13 +393,13 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: sr
+    type(graph) :: sr
     integer          :: ti, n
     integer, allocatable          :: kept(:)
 
-    allocate(kept(sets % size_of(theta)))
+    allocate(kept(sets % num_members_of(theta)))
     n = 0
-    do ti = 1, sets % size_of(theta)
+    do ti = 1, sets % num_members_of(theta)
        if (j_theta % has([ROW_R, sets % member_of(theta, ti)])) then
           n = n + 1
           kept(n) = sets % member_of(theta, ti)
@@ -409,7 +409,7 @@ contains
     call sets       % bind(sr, listed_set_representation(kept(1:n)))
     call inclusions % include_in(sr, theta)
 
-    call report(sets % size_of(sr) .eq. 1 .and. sets % has_in(sr, SLOT_W), &
+    call report(sets % num_members_of(sr) .eq. 1 .and. sets % has(sr, SLOT_W), &
          & "support(r) = { w }, composed, not stored", nfail)
     call report(declared_subobject(sr, theta, inclusions), &
          & "and it stands embedded in the trainable domain", nfail)

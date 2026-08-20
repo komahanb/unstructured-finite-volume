@@ -31,20 +31,20 @@
 
 module graph_fractal
 
-  use token_identity, only : token, mint_token
+  use token_identity, only : token, next_token
 
   implicit none
 
   private
   public :: graph, branch
-  public :: GRAPH_NULL, GRAPH_UNKNOWN, GRAPH_KNOWN
+  public :: BRANCH_NULL, BRANCH_UNKNOWN, BRANCH_KNOWN
   public :: null_branch, unknown_branch, known_branch
 
   ! The three branch states are values, not subtypes.
 
-  integer, parameter :: GRAPH_NULL    = 0
-  integer, parameter :: GRAPH_UNKNOWN = 1
-  integer, parameter :: GRAPH_KNOWN   = 2
+  integer, parameter :: BRANCH_NULL    = 0
+  integer, parameter :: BRANCH_UNKNOWN = 1
+  integer, parameter :: BRANCH_KNOWN   = 2
 
   ! branch precedes graph: a forward reference to an undefined
   ! derived type is admitted only as a pointer component.
@@ -52,7 +52,7 @@ module graph_fractal
   type :: branch
 
      private
-     integer              :: status_ = GRAPH_NULL
+     integer              :: status_ = BRANCH_NULL
      type(graph), pointer :: known_  => null()
 
    contains
@@ -72,7 +72,7 @@ module graph_fractal
      procedure :: declare
      procedure :: id
      procedure :: same_as
-     procedure :: similar_as
+     procedure :: similar_to
 
   end type graph
 
@@ -112,13 +112,13 @@ contains
 
   pure type(branch) function null_branch() result(this)
 
-    this % status_ = GRAPH_NULL
+    this % status_ = BRANCH_NULL
 
   end function null_branch
 
   pure type(branch) function unknown_branch() result(this)
 
-    this % status_ = GRAPH_UNKNOWN
+    this % status_ = BRANCH_UNKNOWN
 
   end function unknown_branch
 
@@ -130,7 +130,7 @@ contains
        error stop 'graph_fractal: KNOWN requires a graph with assigned identity'
     end if
 
-    this % status_ = GRAPH_KNOWN
+    this % status_ = BRANCH_KNOWN
     this % known_  => that
 
   end function known_branch
@@ -147,7 +147,7 @@ contains
        error stop 'graph_fractal: graph identity is assigned once'
     end if
 
-    this % identity = mint_token()
+    this % identity = next_token()
 
   end subroutine declare
 
@@ -169,43 +169,43 @@ contains
   end function same_as
 
   !===================================================================!
-  ! STRUCTURAL COMPARISON: similar_as
+  ! STRUCTURAL COMPARISON: similar_to
   !
   ! Two graphs are similar if their branch states match structurally,
   ! regardless of identity. For KNOWN branches, similarity is tested
   ! recursively. Distinguishes from same_as (identity) to enable
   ! structural change detection in evolving systems.
   !
-  ! SAME_AS vs SIMILAR_AS:
+  ! SAME_AS vs SIMILAR_TO:
   !
   !   g1.same_as(g2)     => g1 and g2 are the identical graph
-  !   g1.similar_as(g2)  => g1 and g2 have the same structure
+  !   g1.similar_to(g2)  => g1 and g2 have the same structure
   !
   ! Use cases:
   !
   !   1. CONVERGENCE DETECTION (adaptive refinement):
   !      do
   !        refined = refiner.apply(mesh)
-  !        if (refined.similar_as(mesh)) exit  ! No finer structure
+  !        if (refined.similar_to(mesh)) exit  ! No finer structure
   !        mesh = refined
   !      end do
   !
   !   2. COARSENING TERMINATION (multigrid levels):
   !      do level = 1, max_levels
   !        coarse = coarsener.apply(current)
-  !        if (coarse.similar_as(current)) exit  ! Already coarsest
+  !        if (coarse.similar_to(current)) exit  ! Already coarsest
   !        current = coarse
   !      end do
   !
   !   3. STRUCTURE VALIDATION (post-transformation):
   !      partition = partitioner.apply(mesh)
-  !      call assert(partition.similar_as(expected_structure), &
+  !      call assert(partition.similar_to(expected_structure), &
   !           & "partition structure mismatch")
   !
   !   4. EQUILIBRIUM DETECTION (evolving systems):
   !      state_old = state
   !      call marcher.step(state)
-  !      if (state.similar_as(state_old)) converged = .true.
+  !      if (state.similar_to(state_old)) converged = .true.
   !
   ! STRUCTURE COMPARISON LAW:
   !
@@ -222,7 +222,7 @@ contains
   !
   !===================================================================!
 
-  recursive logical function similar_as(this, other)
+  recursive logical function similar_to(this, other)
 
     class(graph), intent(in) :: this
     type(graph) , intent(in) :: other
@@ -232,38 +232,38 @@ contains
 
     ! Branch(1) states must match
     if (this % branch(1) % status() /= other % branch(1) % status()) then
-       similar_as = .false.
+       similar_to = .false.
        return
     end if
 
     ! Branch(2) states must match
     if (this % branch(2) % status() /= other % branch(2) % status()) then
-       similar_as = .false.
+       similar_to = .false.
        return
     end if
 
     ! If branch(1) is KNOWN, recursively check the referenced graphs
-    if (this % branch(1) % status() == GRAPH_KNOWN) then
+    if (this % branch(1) % status() == BRANCH_KNOWN) then
        this_known_1  => this % branch(1) % known()
        other_known_1 => other % branch(1) % known()
-       if (.not. this_known_1 % similar_as(other_known_1)) then
-          similar_as = .false.
+       if (.not. this_known_1 % similar_to(other_known_1)) then
+          similar_to = .false.
           return
        end if
     end if
 
     ! If branch(2) is KNOWN, recursively check the referenced graphs
-    if (this % branch(2) % status() == GRAPH_KNOWN) then
+    if (this % branch(2) % status() == BRANCH_KNOWN) then
        this_known_2  => this % branch(2) % known()
        other_known_2 => other % branch(2) % known()
-       if (.not. this_known_2 % similar_as(other_known_2)) then
-          similar_as = .false.
+       if (.not. this_known_2 % similar_to(other_known_2)) then
+          similar_to = .false.
           return
        end if
     end if
 
-    similar_as = .true.
+    similar_to = .true.
 
-  end function similar_as
+  end function similar_to
 
 end module graph_fractal

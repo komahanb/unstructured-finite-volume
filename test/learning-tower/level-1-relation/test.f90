@@ -30,7 +30,7 @@ program learning_level_1
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
-  use graph_fractal        , only : set_graph => graph
+  use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
        & listed_set_representation
   use map_set        , only : set_map
@@ -38,7 +38,7 @@ program learning_level_1
 
   implicit none
 
-  type(set_graph)     :: v, o, p
+  type(graph)     :: v, o, p
   type(stored_relation) :: flow
   integer               :: table(3, 7)
   integer               :: nfail
@@ -85,7 +85,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    type(set_graph) :: d
+    type(graph) :: d
 
     call report(flow % arity() .eq. 3, &
          & "the flow is genuinely ternary", nfail)

@@ -59,7 +59,7 @@ module transform_partitioner
   use view_directed , only : directed_graph
   use relation_partition, only : partition_relation
   use field_calculus, only : field
-  use graph_fractal      , only : set_graph => graph
+  use graph_fractal      , only : graph
   use map_set      , only : set_map
   use map_label    , only : label_map
   use map_inclusion, only : inclusion_map, declared_subobject
@@ -115,7 +115,7 @@ module transform_partitioner
   type, extends(transform) :: partitioner
 
      integer :: rule   = PARTITION_LINEAR
-     integer :: nparts = 1
+     integer :: num_parts = 1
      integer :: part   = 1
 
      !----------------------------------------------------------------!
@@ -145,15 +145,15 @@ contains
   ! which piece you want back.
   !===================================================================!
 
-  pure type(partitioner) function create(rule, nparts, part, adopted) result(this)
+  pure type(partitioner) function create(rule, num_parts, part, adopted) result(this)
 
     integer, intent(in)           :: rule
-    integer, intent(in)           :: nparts
+    integer, intent(in)           :: num_parts
     integer, intent(in), optional :: part
     integer, intent(in), optional :: adopted(:)
 
     this % rule   = rule
-    this % nparts = nparts
+    this % num_parts = num_parts
 
     if (present(part))    this % part = part
     if (present(adopted)) allocate(this % adopted, source=adopted)
@@ -170,7 +170,7 @@ contains
     class(partitioner), intent(in) :: this
     class(directed_graph)      , intent(in) :: input_graph
 
-    defined_on_graph = input_graph % num_vertices() > 0 .and. this % nparts >= 1
+    defined_on_graph = input_graph % num_vertices() > 0 .and. this % num_parts >= 1
 
     if (this % rule == PARTITION_ADOPTED) then
        if (.not. allocated(this % adopted)) then
@@ -288,15 +288,15 @@ contains
     allocate(part_graph, source = &
          & stored_directed_graph(size(mine), tails=ltail(1:nkeep), heads=lhead(1:nkeep), &
          &              number  = this % part,   &
-         &              nparts  = this % nparts, &
+         &              num_parts  = this % num_parts, &
          &              vglobal = mine,          &
          &              vowner  = vowner,        &
          &              eglobal = eglobal(1:nkeep), &
          &              eowner  = eowner(1:nkeep),  &
-         &              whole_verts   = global_graph % vertex_set(), &
+         &              whole_vertices   = global_graph % vertex_set(), &
          &              whole_edges   = global_graph % edge_set(),   &
-         &              n_whole_verts = nv,                          &
-         &              n_whole_edges = ne))
+         &              num_whole_vertices = nv,                          &
+         &              num_whole_edges = ne))
 
     select type (part_graph)
     class is (stored_directed_graph)
@@ -326,10 +326,10 @@ contains
        owner = this % adopted(1:nv)
 
     case (PARTITION_BREADTH_FIRST)
-       call assign_owners_breadth_first(global_graph, this % nparts, owner)
+       call assign_owners_breadth_first(global_graph, this % num_parts, owner)
 
     case default
-       call assign_owners_linear(nv, this % nparts, owner)
+       call assign_owners_linear(nv, this % num_parts, owner)
 
     end select
 
@@ -340,18 +340,18 @@ contains
   ! cell when the count does not divide evenly.
   !===================================================================!
 
-  pure subroutine assign_owners_linear(nv, nparts, owner)
+  pure subroutine assign_owners_linear(nv, num_parts, owner)
 
-    integer, intent(in)    :: nv, nparts
+    integer, intent(in)    :: nv, num_parts
     integer, intent(inout) :: owner(:)
 
     integer :: v, base, extra, lo, hi, k
 
-    base  = nv / nparts
-    extra = mod(nv, nparts)
+    base  = nv / num_parts
+    extra = mod(nv, num_parts)
 
     hi = 0
-    do k = 1, nparts
+    do k = 1, num_parts
        lo = hi + 1
        hi = lo + base - 1
        if (k <= extra) hi = hi + 1
@@ -367,10 +367,10 @@ contains
   ! part comes out connected and few edges are left crossing.
   !===================================================================!
 
-  subroutine assign_owners_breadth_first(global_graph, nparts, owner)
+  subroutine assign_owners_breadth_first(global_graph, num_parts, owner)
 
     class(directed_graph), intent(in)    :: global_graph
-    integer     , intent(in)    :: nparts
+    integer     , intent(in)    :: num_parts
     integer     , intent(inout) :: owner(:)
 
     type(stored_directed_graph) :: untaken
@@ -382,11 +382,11 @@ contains
     nv    = global_graph % num_vertices()
     ne    = global_graph % num_edges()
     owner = 0
-    share = (nv + nparts - 1) / nparts
+    share = (nv + num_parts - 1) / num_parts
 
     allocate(locals(nv), whereis(nv), tails(ne), heads(ne))
 
-    do k = 1, nparts
+    do k = 1, num_parts
 
        ! The unclaimed remainder, as the graph it is. The walk owns
        ! breadth-first; this routine only asks and reads.
@@ -419,7 +419,7 @@ contains
        ! says who its share of the ring is.
        visit = walk(WALK_VISIT_ORDER, seed=1)
        call visit % apply(untaken, output=reached)
-       call reached % get_integer_vector(order)
+       call reached % integer_vector(order)
 
        do v = 1, n
           if (order(v) >= 1 .and. order(v) <= share) owner(locals(v)) = k
@@ -430,7 +430,7 @@ contains
     ! Anything the rings never reached goes to the last part, so every
     ! cell ends up owned exactly once.
     do v = 1, nv
-       if (owner(v) == 0) owner(v) = nparts
+       if (owner(v) == 0) owner(v) = num_parts
     end do
 
   end subroutine assign_owners_breadth_first
@@ -505,7 +505,7 @@ contains
     type(inclusion_map), intent(inout)            :: inclusions
     class(field) , allocatable, intent(out) :: part_data
 
-    type(set_graph) :: dom
+    type(graph) :: dom
     integer         :: n_dom
 
     associate (u1 => this); end associate
@@ -560,9 +560,9 @@ contains
        &                 sets, labels, inclusions, part_data)
 
     type(stored_field)        , intent(in)               :: global_data
-    type(set_graph)    , intent(in)               :: dom
+    type(graph)    , intent(in)               :: dom
     integer            , intent(in)               :: n_dom
-    type(set_graph)    , intent(in)               :: global_carrier
+    type(graph)    , intent(in)               :: global_carrier
     integer            , intent(in)               :: n_global_carrier
     class(directed_graph)       , intent(in)               :: part_graph
     type(partition_relation), intent(in)          :: rel
@@ -573,11 +573,11 @@ contains
     class(field) , allocatable, intent(out) :: part_data
 
     type(stored_field)           :: out
-    type(set_graph)       :: part_carrier
-    type(set_graph)       :: sp
+    type(graph)       :: part_carrier
+    type(graph)       :: sp
     real(dp), allocatable :: fv(:), lv(:)
     integer , allocatable :: kept(:)
-    integer :: nlocal, ncomp, l, c, g, n, at
+    integer :: nlocal, num_components, l, c, g, n, at
 
     if (on_vertices) then
        nlocal       = part_graph % num_vertices()
@@ -586,25 +586,25 @@ contains
        nlocal       = part_graph % num_edges()
        part_carrier = part_graph % edge_set()
     end if
-    ncomp = global_data % num_components()
+    num_components = global_data % num_components()
 
-    call global_data % get_real_vector(fv)
+    call global_data % real_vector(fv)
 
     if (dom % same_as(global_carrier)) then
 
        ! Full coverage: the part field lives on the part's carrier.
-       allocate(lv(nlocal * ncomp))
+       allocate(lv(nlocal * num_components))
        lv = 0.0_dp
        do l = 1, nlocal
           g = global_of(rel, l, on_vertices)
           at = sets % index_in(dom, g)
           if (at >= 1) then
-             do c = 1, ncomp
-                lv((l - 1) * ncomp + c) = fv((at - 1) * ncomp + c)
+             do c = 1, num_components
+                lv((l - 1) * num_components + c) = fv((at - 1) * num_components + c)
              end do
           end if
        end do
-       out = stored_field(global_data % name(), part_carrier, nlocal, ncomp=ncomp, &
+       out = stored_field(global_data % name(), part_carrier, nlocal, num_components=num_components, &
             &      unit_name=global_data % units())
        call out % set_real_vector(lv)
 
@@ -615,7 +615,7 @@ contains
        n = 0
        do l = 1, nlocal
           g = global_of(rel, l, on_vertices)
-          if (sets % has_in(dom, g)) then
+          if (sets % has(dom, g)) then
              n = n + 1
              kept(n) = l
           end if
@@ -632,15 +632,15 @@ contains
        call labels     % bind(sp, labels % label_of(dom))
        call inclusions % include_in(sp, part_carrier)
 
-       allocate(lv(n * ncomp))
+       allocate(lv(n * num_components))
        do l = 1, n
           g  = global_of(rel, kept(l), on_vertices)
           at = sets % index_in(dom, g)
-          do c = 1, ncomp
-             lv((l - 1) * ncomp + c) = fv((at - 1) * ncomp + c)
+          do c = 1, num_components
+             lv((l - 1) * num_components + c) = fv((at - 1) * num_components + c)
           end do
        end do
-       out = stored_field(global_data % name(), sp, n, ncomp=ncomp, &
+       out = stored_field(global_data % name(), sp, n, num_components=num_components, &
             &      unit_name=global_data % units())
        call out % set_real_vector(lv)
 

@@ -67,6 +67,7 @@ module class_graph_stencil
 
   interface stencil_operator
      module procedure create
+     module procedure create_dense
   end interface stencil_operator
 
 contains
@@ -104,6 +105,44 @@ contains
     end if
 
   end function create
+
+  !===================================================================!
+  ! Build from a dense matrix: each entry becomes one weighted edge,
+  ! column to row, constants zero. The matrix must be square,
+  ! because a stencil's input and output share one vertex set;
+  ! a rectangular array stops the program.
+  !===================================================================!
+
+  type(stencil_operator) function create_dense(a, label) result(this)
+
+    real(dp)        , intent(in)           :: a(:,:)
+    character(len=*), intent(in), optional :: label
+
+    integer , allocatable :: rows(:), columns(:)
+    real(dp), allocatable :: weights(:), constant(:)
+    integer :: n, i, j, e
+
+    n = size(a, 1)
+    if (size(a, 2) /= n) then
+       error stop 'stencil: a dense matrix is square'
+    end if
+
+    allocate(rows(n * n), columns(n * n), weights(n * n), constant(n))
+    constant = 0.0_dp
+
+    e = 0
+    do j = 1, n
+       do i = 1, n
+          e          = e + 1
+          rows(e)    = i
+          columns(e) = j
+          weights(e) = a(i, j)
+       end do
+    end do
+
+    this = create(rows, columns, weights, constant, label)
+
+  end function create_dense
 
   pure function stencil_name(this) result(name)
 

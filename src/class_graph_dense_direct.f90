@@ -180,9 +180,7 @@ contains
     type(stencil_operator) :: statement
     type(dense_direct)     :: solver
 
-    integer , allocatable :: rows(:), columns(:)
-    real(dp), allocatable :: weights(:), constant(:)
-    integer :: n, i, j, e
+    integer :: n
 
     n = size(b)
 
@@ -190,21 +188,7 @@ contains
        error stop 'dense_direct: dense matrix is square'
     end if
 
-    allocate(rows(n * n), columns(n * n), weights(n * n), constant(n))
-    constant = 0.0_dp
-
-    e = 0
-    do j = 1, n
-       do i = 1, n
-          e          = e + 1
-          rows(e)    = i
-          columns(e) = j
-          weights(e) = a(i, j)
-       end do
-    end do
-
-    statement = stencil_operator(rows, columns, weights, constant, &
-         & 'dense matrix')
+    statement = stencil_operator(a, 'dense matrix')
 
     solver % singular_tolerance = singular_tolerance
 

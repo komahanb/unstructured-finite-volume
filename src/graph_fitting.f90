@@ -158,8 +158,8 @@ contains
     type(stencil_operator) :: dual
     type(conjugate_gradient) :: solver
     real(dp), allocatable :: positions(:), w(:), b(:,:), bw(:,:)
-    real(dp), allocatable :: g(:,:), r(:), lam(:), entries(:), price(:)
-    integer , allocatable :: rows(:), columns(:), standing(:)
+    real(dp), allocatable :: g(:,:), r(:), lam(:), price(:)
+    integer , allocatable :: standing(:)
     logical , allocatable :: stands(:)
     real(dp) :: achieved, d2, nearest
     integer :: npts, nc, i, j, v
@@ -222,17 +222,7 @@ contains
           if (.not. stands(i)) g(i, i) = 1.0_dp
        end do
 
-       allocate(rows(nc * nc), columns(nc * nc), entries(nc * nc))
-       do i = 1, nc
-          do j = 1, nc
-             rows((i - 1) * nc + j)    = i
-             columns((i - 1) * nc + j) = j
-             entries((i - 1) * nc + j) = g(i, j)
-          end do
-       end do
-
-       dual = stencil_operator(rows, columns, entries, &
-            & [(0.0_dp, i = 1, nc)], label='fitting dual')
+       dual = stencil_operator(g, label='fitting dual')
 
        call solver % attach(dual, dual % pattern, dual % pattern % vertex_set(), &
             & dual % pattern % num_vertices())

@@ -91,7 +91,6 @@ module class_graph_reduction
   implicit none
 
   private
-  public :: graph_reduction, graph_broadcast
   public :: reduction
   public :: REDUCE_SUM, REDUCE_AVERAGE, REDUCE_MINIMUM, REDUCE_MAXIMUM
   public :: REDUCE_NORM, REDUCE_COUNT, REDUCE_ALL, REDUCE_ANY
@@ -111,101 +110,15 @@ module class_graph_reduction
   integer, parameter :: BROADCAST_SHARE = 2   ! transpose of an average
 
   !===================================================================!
-  ! GRAPH_REDUCTION. Many values become one: field -> functional.
-  ! Four staged steps so a partitioned run combines partial states
-  ! before finishing once - a mean of part-means is not the mean -
-  ! plus the one-call form. The measure argument turns a bare sum
-  ! into an integral and is the inner product's second field.
+  ! REDUCTION. Many values become one: field -> functional, carrying
+  ! the rule it follows. Four staged steps so a partitioned run
+  ! combines partial states before finishing once - a mean of
+  ! part-means is not the mean - plus the one-call form. The measure
+  ! argument turns a bare sum into an integral and is the inner
+  ! product's second field.
   !===================================================================!
 
-  type, abstract, extends(graph_operation) :: graph_reduction
-
-   contains
-
-     procedure(reduction_initialize_interface), deferred :: initialize
-     procedure(reduction_accumulate_interface), deferred :: accumulate
-     procedure(reduction_combine_interface)   , deferred :: combine
-     procedure(reduction_finalize_interface)  , deferred :: finalize
-     procedure(reduction_reduce_interface)    , deferred :: reduce
-
-  end type graph_reduction
-
-  !===================================================================!
-  ! GRAPH_BROADCAST. One value becomes many: functional -> field,
-  ! the transpose of a reduction. One step, because writing the
-  ! same fill on every part needs no combining.
-  !===================================================================!
-
-  type, abstract, extends(graph_operation) :: graph_broadcast
-
-   contains
-
-     procedure(broadcast_interface), deferred :: broadcast
-
-  end type graph_broadcast
-
-  abstract interface
-
-     ! start empty: zero for a sum, one for a product
-     pure subroutine reduction_initialize_interface(this, state)
-       import :: graph_reduction, graph_functional
-       class(graph_reduction), intent(in) :: this
-       class(graph_functional), allocatable, intent(inout) :: state
-     end subroutine reduction_initialize_interface
-
-     ! add one part's values into the running state
-     pure subroutine reduction_accumulate_interface(this, field, state, measure)
-       import :: graph_reduction, graph_field, graph_functional
-       class(graph_reduction), intent(in) :: this
-       class(graph_field), intent(in) :: field
-       class(graph_functional), intent(inout) :: state
-       class(graph_field), intent(in), optional :: measure
-     end subroutine reduction_accumulate_interface
-
-     ! join two part states; must not depend on arrival order
-     pure subroutine reduction_combine_interface(this, left, right, combined)
-       import :: graph_reduction, graph_functional
-       class(graph_reduction), intent(in) :: this
-       class(graph_functional), intent(in) :: left
-       class(graph_functional), intent(in) :: right
-       class(graph_functional), allocatable, intent(inout) :: combined
-     end subroutine reduction_combine_interface
-
-     ! finish once, after every part is joined: an average divides
-     ! here, a norm takes its root here
-     pure subroutine reduction_finalize_interface(this, state, functional)
-       import :: graph_reduction, graph_functional
-       class(graph_reduction), intent(in) :: this
-       class(graph_functional), intent(in) :: state
-       class(graph_functional), allocatable, intent(inout) :: functional
-     end subroutine reduction_finalize_interface
-
-     ! all four steps in one call; not pure, because a field lying
-     ! across images must communicate here
-     subroutine reduction_reduce_interface(this, field, functional, measure)
-       import :: graph_reduction, graph_field, graph_functional
-       class(graph_reduction), intent(in) :: this
-       class(graph_field), intent(in) :: field
-       class(graph_functional), allocatable, intent(inout) :: functional
-       class(graph_field), intent(in), optional :: measure
-     end subroutine reduction_reduce_interface
-
-     ! the field arrives constructed on its domain; only its
-     ! values change
-     pure subroutine broadcast_interface(this, functional, field)
-       import :: graph_broadcast, graph_functional, graph_field
-       class(graph_broadcast) , intent(in)    :: this
-       class(graph_functional), intent(in)    :: functional
-       class(graph_field)     , intent(inout) :: field
-     end subroutine broadcast_interface
-
-  end interface
-
-  !===================================================================!
-  ! One reduction, carrying the rule it follows.
-  !===================================================================!
-
-  type, extends(graph_reduction) :: reduction
+  type, extends(graph_operation) :: reduction
 
      integer  :: rule  = REDUCE_SUM
      real(dp) :: power = 2.0_dp     ! which norm, when the rule is a norm
@@ -263,7 +176,7 @@ module class_graph_reduction
   ! broadcast(BROADCAST_SHARE) builds one.
   !===================================================================!
 
-  type, extends(graph_broadcast) :: broadcast
+  type, extends(graph_operation) :: broadcast
 
      integer :: rule = BROADCAST_COPY
 

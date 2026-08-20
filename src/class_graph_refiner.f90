@@ -35,46 +35,15 @@ module class_graph_refiner
   implicit none
 
   private
-  public :: graph_refiner
   public :: refiner
 
   !===================================================================!
-  ! GRAPH_REFINER. The transform from one cell to several. The
+  ! REFINER. The transform from one cell to several. The
   ! pair's identity is one-sided - coarsen(refine(G)) = G - and
   ! only that direction, because refinement invents detail that
   ! coarsening cannot recover. refine_data states how one coarse
   ! value lands on the new cells: copied, or interpolated.
   !===================================================================!
-
-  type, abstract, extends(graph_transform) :: graph_refiner
-
-   contains
-
-     procedure(refine_graph_interface), deferred :: refine_graph
-     procedure(refine_data_interface) , deferred :: refine_data
-
-  end type graph_refiner
-
-  abstract interface
-
-     subroutine refine_graph_interface(this, coarse_graph, fine_graph)
-       import :: graph_refiner, directed_graph
-       class(graph_refiner), intent(in) :: this
-       class(directed_graph), intent(in) :: coarse_graph
-       class(directed_graph), allocatable, intent(out) :: fine_graph
-     end subroutine refine_graph_interface
-
-     subroutine refine_data_interface(this, coarse_graph, coarse_data, &
-          & fine_graph, fine_data)
-       import :: graph_refiner, directed_graph, graph_field
-       class(graph_refiner), intent(in) :: this
-       class(directed_graph), intent(in) :: coarse_graph
-       class(graph_field), intent(in) :: coarse_data
-       class(directed_graph), intent(in) :: fine_graph
-       class(graph_field), allocatable, intent(out) :: fine_data
-     end subroutine refine_data_interface
-
-  end interface
 
   !===================================================================!
   ! One refiner: how many children each cell splits into.
@@ -87,7 +56,7 @@ module class_graph_refiner
   ! direction needs a stored map.
   !===================================================================!
 
-  type, extends(graph_refiner) :: refiner
+  type, extends(graph_transform) :: refiner
 
      integer :: split = 2
 

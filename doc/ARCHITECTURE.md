@@ -56,10 +56,8 @@ Indentation is `extends`; brackets name the file.
         └── functional                         [class_graph_functional]
 
     graph_operation                            [graph_operation_view]
-    ├── graph_reduction   field -> functional  [class_graph_reduction]
-    │   └── reduction   (sum, average, norm, ...)
-    ├── graph_broadcast   functional -> field  [class_graph_reduction]
-    │   └── broadcast   (copy, share)
+    ├── reduction   field -> functional  (sum, average, norm, ...)   [class_graph_reduction]
+    ├── broadcast   functional -> field  (copy, share)               [class_graph_reduction]
     ├── discretization_operator                [graph_discretization]
     │   ├── stencil_operator  space: matrix as weighted edges   [class_graph_stencil]
     │   │       constructed from triples or from a dense array;
@@ -82,10 +80,10 @@ Indentation is `extends`; brackets name the file.
     └── ...
 
     graph_transform                            [graph_operation_view]
-    ├── graph_partitioner -> partitioner       [class_graph_partitioner]
-    ├── graph_assembler   -> assembler         [class_graph_assembler]
-    ├── graph_coarsener   -> coarsener         [class_graph_coarsener]
-    └── graph_refiner     -> refiner           [class_graph_refiner]
+    ├── partitioner                            [class_graph_partitioner]
+    ├── assembler                              [class_graph_assembler]
+    ├── coarsener                              [class_graph_coarsener]
+    └── refiner                                [class_graph_refiner]
 
     reversible_change  apply -> check -> keep | revert   [graph_change_protocol]
     └── value_change                           [graph_value_change]

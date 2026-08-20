@@ -39,46 +39,15 @@ module class_graph_coarsener
   implicit none
 
   private
-  public :: graph_coarsener
   public :: coarsener
   public :: COARSEN_PAIRWISE, COARSEN_ADOPTED
 
   !===================================================================!
-  ! GRAPH_COARSENER. The transform to fewer, larger cells - a
+  ! COARSENER. The transform to fewer, larger cells - a
   ! multigrid level. coarsen_data states how several fine values
   ! merge onto one coarse cell: added for a residual, averaged for
   ! a state, volume-weighted for unequal cells.
   !===================================================================!
-
-  type, abstract, extends(graph_transform) :: graph_coarsener
-
-   contains
-
-     procedure(coarsen_graph_interface), deferred :: coarsen_graph
-     procedure(coarsen_data_interface) , deferred :: coarsen_data
-
-  end type graph_coarsener
-
-  abstract interface
-
-     subroutine coarsen_graph_interface(this, fine_graph, coarse_graph)
-       import :: graph_coarsener, directed_graph
-       class(graph_coarsener), intent(in) :: this
-       class(directed_graph), intent(in) :: fine_graph
-       class(directed_graph), allocatable, intent(out) :: coarse_graph
-     end subroutine coarsen_graph_interface
-
-     subroutine coarsen_data_interface(this, fine_graph, fine_data, &
-          & coarse_graph, coarse_data)
-       import :: graph_coarsener, directed_graph, graph_field
-       class(graph_coarsener), intent(in) :: this
-       class(directed_graph), intent(in) :: fine_graph
-       class(graph_field), intent(in) :: fine_data
-       class(directed_graph), intent(in) :: coarse_graph
-       class(graph_field), allocatable, intent(out) :: coarse_data
-     end subroutine coarsen_data_interface
-
-  end interface
 
   !-------------------------------------------------------------------!
   ! Walk the cells and glue each unclaimed one to a neighbour that is
@@ -98,7 +67,7 @@ module class_graph_coarsener
   ! One coarsener, holding how it glues and the map it ends up with.
   !===================================================================!
 
-  type, extends(graph_coarsener) :: coarsener
+  type, extends(graph_transform) :: coarsener
 
      integer :: rule = COARSEN_PAIRWISE
 
